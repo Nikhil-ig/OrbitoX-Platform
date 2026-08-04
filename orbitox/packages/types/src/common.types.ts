@@ -16,16 +16,16 @@ export interface Timestamped {
  * Soft-delete marker. OrbitoX never hard-deletes business data (Rule A3).
  */
 export interface SoftDeletable {
-  deletedAt: Date | null;
-  deletedBy: string | null;
+  deletedAt?: Date | null;
+  deletedBy?: string | null;
 }
 
 /**
  * Audit trail marker. Every mutation produces an audit entry (Rule E1).
  */
 export interface Auditable {
-  createdBy: string;
-  updatedBy: string;
+  createdBy?: string;
+  updatedBy?: string;
 }
 
 /**

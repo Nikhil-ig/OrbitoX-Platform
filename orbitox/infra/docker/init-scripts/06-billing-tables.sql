@@ -1,4 +1,4 @@
-CREATE TABLE billing.plans (
+CREATE TABLE IF NOT EXISTS billing.plans (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   context_id UUID REFERENCES platform.contexts(id), -- null = platform wide
   name VARCHAR(100) NOT NULL,
@@ -15,7 +15,7 @@ CREATE TABLE billing.plans (
   updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
-CREATE TABLE billing.subscriptions (
+CREATE TABLE IF NOT EXISTS billing.subscriptions (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   context_id UUID NOT NULL REFERENCES platform.contexts(id),
   plan_id UUID NOT NULL REFERENCES billing.plans(id),
@@ -32,7 +32,7 @@ CREATE TABLE billing.subscriptions (
   updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
-CREATE TABLE billing.invoices (
+CREATE TABLE IF NOT EXISTS billing.invoices (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   context_id UUID NOT NULL REFERENCES platform.contexts(id),
   subscription_id UUID REFERENCES billing.subscriptions(id),

@@ -1,4 +1,4 @@
-CREATE TABLE audit.events (
+CREATE TABLE IF NOT EXISTS audit.events (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
 
   -- What happened
@@ -35,7 +35,7 @@ CREATE TABLE audit.events (
 ) PARTITION BY RANGE (occurred_at);
 
 -- Create initial partition
-CREATE TABLE audit.events_y2026m08 PARTITION OF audit.events
+CREATE TABLE IF NOT EXISTS audit.events_y2026m08 PARTITION OF audit.events
     FOR VALUES FROM ('2026-08-01') TO ('2026-09-01');
 
 -- We are superuser here so we can create roles

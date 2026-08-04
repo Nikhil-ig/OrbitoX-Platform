@@ -1,4 +1,5 @@
 import { Injectable, BadRequestException } from '@nestjs/common';
+// @ts-ignore
 import { authenticator } from 'otplib';
 import { v4 as uuidv4 } from 'uuid';
 

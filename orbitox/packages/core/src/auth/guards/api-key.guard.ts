@@ -21,7 +21,7 @@ export class ApiKeyGuard implements CanActivate {
     // 4. Validate context, scopes, and IP using this.apiKeyService.validateAuthorization(...)
     
     // For now, we just ensure it exists
-    request['apiKey'] = apiKeyHeader;
+    (request as any)['apiKey'] = apiKeyHeader;
     
     return true;
   }

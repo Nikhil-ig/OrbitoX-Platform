@@ -3,4 +3,5 @@ packages:
   - "packages/*"
   - "packages/config/*"
   - "plugins/*"
+  - "plugins/*/backend"
   - "tools/*"

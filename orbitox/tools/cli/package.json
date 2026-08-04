@@ -1,0 +1,16 @@
+{
+  "name": "@orbitox/cli",
+  "version": "1.0.0",
+  "private": true,
+  "bin": {
+    "orbitox": "./dist/bin.js"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json"
+  },
+  "devDependencies": {
+    "@orbitox/tsconfig": "workspace:*",
+    "@types/node": "^20.0.0",
+    "typescript": "^5.0.0"
+  }
+}

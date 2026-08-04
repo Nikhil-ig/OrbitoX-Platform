@@ -1,4 +1,4 @@
-CREATE TABLE rbac.roles (
+CREATE TABLE IF NOT EXISTS rbac.roles (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   context_id UUID NOT NULL REFERENCES platform.contexts(id),
   name VARCHAR(100) NOT NULL,
@@ -11,7 +11,7 @@ CREATE TABLE rbac.roles (
   UNIQUE (context_id, name)
 );
 
-CREATE TABLE rbac.role_assignments (
+CREATE TABLE IF NOT EXISTS rbac.role_assignments (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   user_id UUID NOT NULL REFERENCES platform.users(id) ON DELETE CASCADE,
   role_id UUID NOT NULL REFERENCES rbac.roles(id) ON DELETE CASCADE,
@@ -22,7 +22,7 @@ CREATE TABLE rbac.role_assignments (
   UNIQUE (user_id, role_id, context_id)
 );
 
-CREATE TABLE rbac.policies (
+CREATE TABLE IF NOT EXISTS rbac.policies (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   context_id UUID REFERENCES platform.contexts(id),
   plugin_id VARCHAR(100),
@@ -37,7 +37,7 @@ CREATE TABLE rbac.policies (
   updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
-CREATE TABLE rbac.approval_requests (
+CREATE TABLE IF NOT EXISTS rbac.approval_requests (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   policy_id UUID NOT NULL REFERENCES rbac.policies(id),
   context_id UUID NOT NULL REFERENCES platform.contexts(id),

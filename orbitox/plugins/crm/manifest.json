@@ -1,0 +1,33 @@
+{
+  "id": "crm",
+  "name": "@orbitox/crm",
+  "version": "1.0.0",
+  "displayName": "CRM",
+  "description": "Customer Relationship Management plugin",
+  "icon": "briefcase",
+  "category": "sales",
+  "author": "OrbitoX Platform Team",
+  "permissions": [
+    "crm.leads.create",
+    "crm.leads.read",
+    "crm.leads.update",
+    "crm.leads.delete"
+  ],
+  "menus": [
+    {
+      "id": "crm-root",
+      "label": "CRM",
+      "icon": "briefcase",
+      "sortOrder": 100,
+      "children": [
+        { "id": "crm-leads", "label": "Leads", "path": "/crm/leads", "permission": "crm.leads.read" }
+      ]
+    }
+  ],
+  "pages": [
+    { "id": "crm-leads", "path": "/crm/leads", "component": "LeadsListPage" }
+  ],
+  "widgets": [
+    { "id": "crm.leads.count", "title": "Total Leads", "size": "1x1" }
+  ]
+}

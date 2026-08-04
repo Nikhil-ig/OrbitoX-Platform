@@ -1,4 +1,4 @@
-CREATE TABLE workflow.definitions (
+CREATE TABLE IF NOT EXISTS workflow.definitions (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   context_id UUID NOT NULL REFERENCES platform.contexts(id),
   name VARCHAR(255) NOT NULL,
@@ -12,7 +12,7 @@ CREATE TABLE workflow.definitions (
   updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
-CREATE TABLE workflow.runs (
+CREATE TABLE IF NOT EXISTS workflow.runs (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   workflow_id UUID NOT NULL REFERENCES workflow.definitions(id),
   context_id UUID NOT NULL REFERENCES platform.contexts(id),
