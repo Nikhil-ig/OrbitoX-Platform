@@ -1,0 +1,42 @@
+{
+  "name": "@orbitox/crm",
+  "version": "0.1.0",
+  "description": "Headless CRM domain core package providing UI-agnostic business actions, state machines, and hooks.",
+  "main": "./dist/index.js",
+  "module": "./dist/index.mjs",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.mjs",
+      "require": "./dist/index.js"
+    },
+    "./react": {
+      "types": "./dist/react/index.d.ts",
+      "import": "./dist/react/index.mjs",
+      "require": "./dist/react/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc --build",
+    "clean": "rm -rf dist",
+    "test": "jest --passWithNoTests"
+  },
+  "dependencies": {
+    "@orbitox/types": "workspace:*",
+    "@orbitox/utils": "workspace:*"
+  },
+  "peerDependencies": {
+    "react": "^18.0.0 || ^19.0.0"
+  },
+  "devDependencies": {
+    "@orbitox/jest-config": "workspace:*",
+    "@types/jest": "^29.0.0",
+    "@types/node": "^20.0.0",
+    "@types/react": "^19.0.0",
+    "jest": "^29.0.0",
+    "ts-jest": "^29.0.0",
+    "react": "^19.0.0",
+    "typescript": "^5.0.0"
+  }
+}

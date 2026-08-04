@@ -18,6 +18,7 @@ export * from './rbac/rbac.service';
 export * from './rbac/role.service';
 export * from './rbac/permission.registry';
 export * from './rbac/policy.engine';
+export * from './rbac/abac-evaluator';
 export * from './rbac/guards/permission.guard';
 export * from './rbac/decorators/require-permission.decorator';
 
@@ -50,3 +51,5 @@ export * from './metadata/metadata.service';
 
 export * from './feature-flags/feature-flags.module';
 export * from './feature-flags/feature-flag.service';
+
+export * from './approval/approval-engine';

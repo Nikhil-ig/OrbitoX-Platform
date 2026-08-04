@@ -248,9 +248,15 @@ importers:
       '@types/node':
         specifier: ^20.0.0
         version: 20.19.43
+      '@types/react':
+        specifier: ^19.0.0
+        version: 19.2.18
       jest:
         specifier: ^29.5.0
         version: 29.7.0(@types/node@20.19.43)
+      react:
+        specifier: ^19.0.0
+        version: 19.2.8
       ts-jest:
         specifier: ^29.1.0
         version: 29.4.12(@babel/core@7.29.7)(@jest/transform@29.7.0)(@jest/types@29.6.3)(babel-jest@29.7.0(@babel/core@7.29.7))(jest-util@29.7.0)(jest@29.7.0(@types/node@20.19.43))(typescript@5.9.3)
@@ -366,7 +372,205 @@ importers:
         specifier: ^20
         version: 20.19.43
 
+  plugins/crm:
+    dependencies:
+      '@orbitox/types':
+        specifier: workspace:*
+        version: link:../../packages/types
+      '@orbitox/utils':
+        specifier: workspace:*
+        version: link:../../packages/utils
+    devDependencies:
+      '@orbitox/jest-config':
+        specifier: workspace:*
+        version: link:../../packages/config/jest
+      '@types/jest':
+        specifier: ^29.0.0
+        version: 29.5.14
+      '@types/node':
+        specifier: ^20.0.0
+        version: 20.19.43
+      '@types/react':
+        specifier: ^19.0.0
+        version: 19.2.18
+      jest:
+        specifier: ^29.0.0
+        version: 29.7.0(@types/node@20.19.43)
+      react:
+        specifier: ^19.0.0
+        version: 19.2.8
+      ts-jest:
+        specifier: ^29.0.0
+        version: 29.4.12(@babel/core@7.29.7)(@jest/transform@29.7.0)(@jest/types@29.6.3)(babel-jest@29.7.0(@babel/core@7.29.7))(jest-util@29.7.0)(jest@29.7.0(@types/node@20.19.43))(typescript@5.9.3)
+      typescript:
+        specifier: ^5.0.0
+        version: 5.9.3
+
   plugins/crm/backend:
+    dependencies:
+      '@nestjs/common':
+        specifier: ^10.0.0
+        version: 10.4.22(class-transformer@0.5.1)(class-validator@0.14.4)(reflect-metadata@0.2.2)(rxjs@7.8.2)
+      '@orbitox/core':
+        specifier: workspace:*
+        version: link:../../../packages/core
+      '@orbitox/sdk':
+        specifier: workspace:*
+        version: link:../../../packages/sdk
+    devDependencies:
+      '@orbitox/tsconfig':
+        specifier: workspace:*
+        version: link:../../../packages/config/tsconfig
+      typescript:
+        specifier: ^5.0.0
+        version: 5.9.3
+
+  plugins/finance:
+    dependencies:
+      '@orbitox/types':
+        specifier: workspace:*
+        version: link:../../packages/types
+      '@orbitox/utils':
+        specifier: workspace:*
+        version: link:../../packages/utils
+    devDependencies:
+      '@types/node':
+        specifier: ^20.0.0
+        version: 20.19.43
+      '@types/react':
+        specifier: ^19.0.0
+        version: 19.2.18
+      react:
+        specifier: ^19.0.0
+        version: 19.2.8
+      typescript:
+        specifier: ^5.0.0
+        version: 5.9.3
+
+  plugins/finance/backend:
+    dependencies:
+      '@nestjs/common':
+        specifier: ^10.0.0
+        version: 10.4.22(class-transformer@0.5.1)(class-validator@0.14.4)(reflect-metadata@0.2.2)(rxjs@7.8.2)
+      '@orbitox/core':
+        specifier: workspace:*
+        version: link:../../../packages/core
+      '@orbitox/sdk':
+        specifier: workspace:*
+        version: link:../../../packages/sdk
+    devDependencies:
+      '@orbitox/tsconfig':
+        specifier: workspace:*
+        version: link:../../../packages/config/tsconfig
+      typescript:
+        specifier: ^5.0.0
+        version: 5.9.3
+
+  plugins/hms:
+    dependencies:
+      '@orbitox/types':
+        specifier: workspace:*
+        version: link:../../packages/types
+      '@orbitox/utils':
+        specifier: workspace:*
+        version: link:../../packages/utils
+    devDependencies:
+      '@types/node':
+        specifier: ^20.0.0
+        version: 20.19.43
+      '@types/react':
+        specifier: ^19.0.0
+        version: 19.2.18
+      react:
+        specifier: ^19.0.0
+        version: 19.2.8
+      typescript:
+        specifier: ^5.0.0
+        version: 5.9.3
+
+  plugins/hms/backend:
+    dependencies:
+      '@nestjs/common':
+        specifier: ^10.0.0
+        version: 10.4.22(class-transformer@0.5.1)(class-validator@0.14.4)(reflect-metadata@0.2.2)(rxjs@7.8.2)
+      '@orbitox/core':
+        specifier: workspace:*
+        version: link:../../../packages/core
+      '@orbitox/sdk':
+        specifier: workspace:*
+        version: link:../../../packages/sdk
+    devDependencies:
+      '@orbitox/tsconfig':
+        specifier: workspace:*
+        version: link:../../../packages/config/tsconfig
+      typescript:
+        specifier: ^5.0.0
+        version: 5.9.3
+
+  plugins/hrms:
+    dependencies:
+      '@orbitox/types':
+        specifier: workspace:*
+        version: link:../../packages/types
+      '@orbitox/utils':
+        specifier: workspace:*
+        version: link:../../packages/utils
+    devDependencies:
+      '@types/node':
+        specifier: ^20.0.0
+        version: 20.19.43
+      '@types/react':
+        specifier: ^19.0.0
+        version: 19.2.18
+      react:
+        specifier: ^19.0.0
+        version: 19.2.8
+      typescript:
+        specifier: ^5.0.0
+        version: 5.9.3
+
+  plugins/hrms/backend:
+    dependencies:
+      '@nestjs/common':
+        specifier: ^10.0.0
+        version: 10.4.22(class-transformer@0.5.1)(class-validator@0.14.4)(reflect-metadata@0.2.2)(rxjs@7.8.2)
+      '@orbitox/core':
+        specifier: workspace:*
+        version: link:../../../packages/core
+      '@orbitox/sdk':
+        specifier: workspace:*
+        version: link:../../../packages/sdk
+    devDependencies:
+      '@orbitox/tsconfig':
+        specifier: workspace:*
+        version: link:../../../packages/config/tsconfig
+      typescript:
+        specifier: ^5.0.0
+        version: 5.9.3
+
+  plugins/inventory:
+    dependencies:
+      '@orbitox/types':
+        specifier: workspace:*
+        version: link:../../packages/types
+      '@orbitox/utils':
+        specifier: workspace:*
+        version: link:../../packages/utils
+    devDependencies:
+      '@types/node':
+        specifier: ^20.0.0
+        version: 20.19.43
+      '@types/react':
+        specifier: ^19.0.0
+        version: 19.2.18
+      react:
+        specifier: ^19.0.0
+        version: 19.2.8
+      typescript:
+        specifier: ^5.0.0
+        version: 5.9.3
+
+  plugins/inventory/backend:
     dependencies:
       '@nestjs/common':
         specifier: ^10.0.0

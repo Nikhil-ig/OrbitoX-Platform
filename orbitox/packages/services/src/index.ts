@@ -16,3 +16,9 @@ export * from './ai/ai.module';
 export * from './ai/ai-gateway.service';
 export * from './ai/llm-router.service';
 export * from './ai/prompt-library.service';
+export * from './ai/ai-agent.service';
+export * from './ai/rag-engine.service';
+export * from './ai/memory.service';
+
+export * from './compliance/compliance.module';
+export * from './compliance/gdpr.service';

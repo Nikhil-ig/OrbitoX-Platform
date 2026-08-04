@@ -35,12 +35,56 @@ export class WorkflowRunner {
     }
   }
 
-  private evaluateConditions(conditions: any[] | undefined, payload: any, entity: any): boolean {
+  public evaluateConditions(conditions: any[] | undefined, payload: any, entity: any): boolean {
     if (!conditions || conditions.length === 0) return true;
     
-    // Mock condition evaluation for now
-    // In a real engine, we'd resolve JSON paths in payload/entity and compare against conditions
+    for (const cond of conditions) {
+      const actualValue = this.resolvePathValue(cond.field, payload, entity);
+      const targetValue = cond.value;
+
+      switch (cond.operator) {
+        case 'eq':
+          if (actualValue !== targetValue) return false;
+          break;
+        case 'neq':
+          if (actualValue === targetValue) return false;
+          break;
+        case 'gt':
+          if (Number(actualValue) <= Number(targetValue)) return false;
+          break;
+        case 'gte':
+          if (Number(actualValue) < Number(targetValue)) return false;
+          break;
+        case 'lt':
+          if (Number(actualValue) >= Number(targetValue)) return false;
+          break;
+        case 'lte':
+          if (Number(actualValue) > Number(targetValue)) return false;
+          break;
+        case 'contains':
+          if (typeof actualValue === 'string' && !actualValue.includes(String(targetValue))) return false;
+          if (Array.isArray(actualValue) && !actualValue.includes(targetValue)) return false;
+          break;
+        case 'in':
+          if (Array.isArray(targetValue) && !targetValue.includes(actualValue)) return false;
+          break;
+        default:
+          break;
+      }
+    }
+
     return true; 
+  }
+
+  private resolvePathValue(path: string, payload: any, entity: any): any {
+    if (!path) return undefined;
+    const parts = path.split('.');
+    let current: any = { payload, entity, ...payload };
+    for (const part of parts) {
+      if (current === null || current === undefined) return undefined;
+      current = current[part];
+    }
+    return current;
   }
 
   async startRun(workflow: WorkflowDefinition, payload: any, entity?: any): Promise<string> {
@@ -55,10 +99,6 @@ export class WorkflowRunner {
       stepLogs: [],
     };
 
-    // In a real engine, we would persist the runContext to DB here
-    // and then potentially hand off execution to a BullMQ worker for distributed execution
-    
-    // For now, we execute in-memory for the mock
     this.executeSteps(workflow.steps, runContext).catch(err => {
       this.logger.error(`Workflow run ${runId} failed: ${err.message}`);
     });
@@ -77,17 +117,14 @@ export class WorkflowRunner {
         const onError = (step as any).onError;
         
         if (stepType === 'action' && onError === 'stop') {
-           throw err; // Stop workflow
+           throw err;
         } else if (stepType === 'action' && onError === 'continue') {
            this.logger.warn(`Step ${step.id} failed, but continuing: ${err.message}`);
         } else if (stepType === 'action' && onError === 'retry') {
-           // Basic retry logic, could be more robust
            this.logger.warn(`Step ${step.id} failed, retrying once...`);
            await this.executeStep(step, ctx);
         } else if (stepType === 'delay') {
-           // If we hit a delay, we pause execution and let the scheduler resume it
            const delayMs = this.calculateDelayMs(step as any);
-           // In real app, we persist state and schedule a job to resume at step i+1
            this.logger.debug(`Workflow ${ctx.runId} paused for ${delayMs}ms at step ${step.id}`);
            return; 
         }
@@ -102,14 +139,13 @@ export class WorkflowRunner {
     ctx.stepLogs.push({ stepId: step.id, startedAt: new Date() });
     
     if (step.type === 'action') {
-      // Resolve config templating (e.g., "{{payload.amount}}")
       const resolvedConfig = this.resolveVariables((step as any).config, ctx);
       await this.workflowActions.executeAction((step as any).actionType, resolvedConfig, ctx);
     } else if (step.type === 'branch') {
       for (const branch of (step as any).branches) {
         if (this.evaluateConditions(branch.conditions, ctx.payload, ctx.entity)) {
           await this.executeSteps(branch.steps, ctx);
-          return; // Only execute first matching branch
+          return;
         }
       }
       if ((step as any).defaultBranch) {
@@ -121,8 +157,21 @@ export class WorkflowRunner {
   }
 
   private resolveVariables(config: Record<string, any>, ctx: WorkflowRunContext): Record<string, any> {
-    // Mock template resolver
-    return config;
+    if (!config) return {};
+    const result: Record<string, any> = {};
+
+    for (const [key, value] of Object.entries(config)) {
+      if (typeof value === 'string') {
+        result[key] = value.replace(/\{\{\s*([\w.]+)\s*\}\}/g, (_, path) => {
+          const val = this.resolvePathValue(path, ctx.payload, ctx.entity);
+          return val !== undefined ? String(val) : '';
+        });
+      } else {
+        result[key] = value;
+      }
+    }
+
+    return result;
   }
 
   private calculateDelayMs(step: any): number {

@@ -1,0 +1,33 @@
+{
+  "id": "hrms",
+  "name": "@orbitox/hrms",
+  "version": "1.0.0",
+  "displayName": "HRMS — Employee & Leave Management",
+  "description": "Employee directory, organizational structures, and leave approval workflows",
+  "icon": "users",
+  "category": "hr",
+  "author": "OrbitoX Platform Team",
+  "permissions": [
+    "hrms.employees.create",
+    "hrms.employees.read",
+    "hrms.employees.update",
+    "hrms.leaves.approve"
+  ],
+  "menus": [
+    {
+      "id": "hrms-root",
+      "label": "HRMS",
+      "icon": "users",
+      "sortOrder": 300,
+      "children": [
+        { "id": "hrms-employees", "label": "Employee Directory", "path": "/hrms/employees", "permission": "hrms.employees.read" }
+      ]
+    }
+  ],
+  "pages": [
+    { "id": "hrms-employees", "path": "/hrms/employees", "component": "EmployeesListPage" }
+  ],
+  "widgets": [
+    { "id": "hrms.active_employees.count", "title": "Active Staff", "size": "1x1" }
+  ]
+}

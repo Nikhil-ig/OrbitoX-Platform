@@ -8,11 +8,43 @@
 The OrbitoX SDK (`@orbitox/plugin-engine`) provides everything a plugin developer needs to build, register, and interact with the platform.
 
 ```bash
-# Install in your plugin
-pnpm add @orbitox/plugin-engine @orbitox/core @orbitox/types
+# Install in your plugin or external project
+pnpm add @orbitox/plugin-engine @orbitox/core @orbitox/sdk @orbitox/types
 ```
 
 ---
+
+## Headless Architecture & Domain Core Decoupling
+
+All `@orbitox/*` packages and domain plugins (CRM, HRMS, HMS, Inventory, Finance) strictly adhere to the **Headless Domain Architecture**:
+- **Zero Mandatory UI Dependencies**: Core business logic, validation schemas (Zod/Class-Validator), state machines, DTOs, API action handlers, and state management hooks (`useLeads`, `useLeadActions`) are compiled as pure, UI-agnostic packages.
+- **Portability**: You can import `@orbitox/sdk` or `@orbitox/crm` into **any project** (Next.js with custom Tailwind, React Native mobile apps, Vue, Node.js microservices, CLI tools).
+- **Custom UI Integration**: You can build your own custom UIs while leveraging 100% of OrbitoX's domain validation, tenant isolation, audit trails, and backend event bus actions.
+
+```typescript
+// Example: Using Headless CRM Domain Actions in a Custom UI
+import { LeadStateEngine, CreateLeadSchema } from '@orbitox/crm';
+import { useLeads, useLeadActions } from '@orbitox/crm/react';
+
+// Use headless state management and business logic hooks with ANY custom UI design!
+export function MyCustomLeadComponent() {
+  const { leads, loading } = useLeads({ status: 'QUALIFIED' });
+  const { convertToCustomer } = useLeadActions();
+
+  return (
+    <div className="custom-dashboard">
+      {leads.map(lead => (
+        <button key={lead.id} onClick={() => convertToCustomer(lead.id)}>
+          Convert {lead.name}
+        </button>
+      ))}
+    </div>
+  );
+}
+```
+
+---
+
 
 ## Plugin Base Class
 

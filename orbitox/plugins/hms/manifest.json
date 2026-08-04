@@ -1,0 +1,33 @@
+{
+  "id": "hms",
+  "name": "@orbitox/hms",
+  "version": "1.0.0",
+  "displayName": "HMS — Hospital & Healthcare Management",
+  "description": "Patients, doctor scheduling, electronic health records (EHR), and prescriptions",
+  "icon": "activity",
+  "category": "healthcare",
+  "author": "OrbitoX Platform Team",
+  "permissions": [
+    "hms.patients.create",
+    "hms.patients.read",
+    "hms.patients.update",
+    "hms.appointments.schedule"
+  ],
+  "menus": [
+    {
+      "id": "hms-root",
+      "label": "Healthcare (HMS)",
+      "icon": "activity",
+      "sortOrder": 400,
+      "children": [
+        { "id": "hms-patients", "label": "Patient Records", "path": "/hms/patients", "permission": "hms.patients.read" }
+      ]
+    }
+  ],
+  "pages": [
+    { "id": "hms-patients", "path": "/hms/patients", "component": "PatientsListPage" }
+  ],
+  "widgets": [
+    { "id": "hms.today_appointments.count", "title": "Today Appointments", "size": "1x1" }
+  ]
+}

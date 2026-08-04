@@ -1,0 +1,18 @@
+{
+  "id": "finance",
+  "name": "OrbitoX Finance & Accounting",
+  "version": "1.0.0",
+  "description": "Headless Finance & Invoicing engine providing ledger accounting, tax calculations, and payment tracking.",
+  "author": "OrbitoX Core Team",
+  "entry": {
+    "backend": "backend/dist/index.js",
+    "frontend": "frontend/dist/index.js"
+  },
+  "permissions": [
+    "finance.invoices.read",
+    "finance.invoices.create",
+    "finance.invoices.pay",
+    "finance.reports.view"
+  ],
+  "dependencies": {}
+}

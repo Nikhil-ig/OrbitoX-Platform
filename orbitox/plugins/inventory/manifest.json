@@ -1,0 +1,34 @@
+{
+  "id": "inventory",
+  "name": "@orbitox/inventory",
+  "version": "1.0.0",
+  "displayName": "Inventory & Stock Logistics",
+  "description": "Stock tracking, warehouses, product catalog, and movement logs",
+  "icon": "box",
+  "category": "logistics",
+  "author": "OrbitoX Platform Team",
+  "permissions": [
+    "inventory.products.create",
+    "inventory.products.read",
+    "inventory.products.update",
+    "inventory.stock.manage"
+  ],
+  "menus": [
+    {
+      "id": "inventory-root",
+      "label": "Inventory",
+      "icon": "box",
+      "sortOrder": 200,
+      "children": [
+        { "id": "inventory-products", "label": "Products", "path": "/inventory/products", "permission": "inventory.products.read" },
+        { "id": "inventory-stock", "label": "Stock Movements", "path": "/inventory/stock", "permission": "inventory.stock.manage" }
+      ]
+    }
+  ],
+  "pages": [
+    { "id": "inventory-products", "path": "/inventory/products", "component": "ProductsListPage" }
+  ],
+  "widgets": [
+    { "id": "inventory.low_stock.count", "title": "Low Stock Alerts", "size": "1x1" }
+  ]
+}
