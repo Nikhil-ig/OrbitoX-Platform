@@ -64,10 +64,11 @@ export class SchedulerService implements OnModuleInit, OnModuleDestroy {
   /**
    * Schedules a one-off delayed job
    */
-  async scheduleOnce(name: string, delayMs: number, data?: any): Promise<void> {
+  async scheduleOnce(name: string, delayMs: number, data?: any, options?: any): Promise<void> {
     await this.queue.add(name, data || {}, {
       delay: delayMs,
       jobId: `delayed:${name}:${Date.now()}`,
+      ...options,
     });
     this.logger.debug(`Scheduled delayed job ${name} in ${delayMs}ms`);
   }

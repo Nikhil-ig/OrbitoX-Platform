@@ -7,6 +7,7 @@ import { MarketplaceService } from './marketplace/marketplace.service';
 import { MenuRegistry } from './registries/menu.registry';
 import { PageRegistry } from './registries/page.registry';
 import { WidgetRegistry } from './registries/widget.registry';
+import { ActionRegistry } from './registries/action.registry';
 
 @Module({
   imports: [RbacModule, EventsModule],
@@ -18,6 +19,7 @@ import { WidgetRegistry } from './registries/widget.registry';
     MenuRegistry,
     PageRegistry,
     WidgetRegistry,
+    ActionRegistry,
   ],
   exports: [
     PluginLoaderService,
@@ -26,6 +28,7 @@ import { WidgetRegistry } from './registries/widget.registry';
     MenuRegistry,
     PageRegistry,
     WidgetRegistry,
+    ActionRegistry,
   ],
 })
 export class PluginEngineModule {}

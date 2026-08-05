@@ -4,15 +4,31 @@ import { PluginWidgetItem } from '@orbitox/sdk';
 @Injectable()
 export class WidgetRegistry {
   private readonly logger = new Logger(WidgetRegistry.name);
-  private readonly widgetsByContext = new Map<string, PluginWidgetItem[]>();
+  private readonly widgetsByContextPlugin = new Map<string, Map<string, PluginWidgetItem[]>>();
 
   register(contextId: string, pluginId: string, widgets: PluginWidgetItem[]): void {
     this.logger.log(`Registering ${widgets.length} widgets for plugin ${pluginId} in context ${contextId}`);
-    const existing = this.widgetsByContext.get(contextId) || [];
-    this.widgetsByContext.set(contextId, [...existing, ...widgets]);
+    if (!this.widgetsByContextPlugin.has(contextId)) {
+      this.widgetsByContextPlugin.set(contextId, new Map());
+    }
+    this.widgetsByContextPlugin.get(contextId)!.set(pluginId, widgets);
   }
 
   getWidgets(contextId: string): PluginWidgetItem[] {
-    return this.widgetsByContext.get(contextId) || [];
+    const pluginMaps = this.widgetsByContextPlugin.get(contextId);
+    if (!pluginMaps) return [];
+    let all: PluginWidgetItem[] = [];
+    for (const widgets of pluginMaps.values()) {
+      all = all.concat(widgets);
+    }
+    return all;
+  }
+
+  deregister(contextId: string, pluginId: string): void {
+    const pluginMaps = this.widgetsByContextPlugin.get(contextId);
+    if (pluginMaps) {
+      pluginMaps.delete(pluginId);
+      this.logger.log(`Deregistered widgets for plugin ${pluginId} in context ${contextId}`);
+    }
   }
 }

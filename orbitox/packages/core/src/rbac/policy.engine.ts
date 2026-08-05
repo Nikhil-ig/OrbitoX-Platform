@@ -1,5 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { PermissionCheck } from '@orbitox/types';
+import { AbacEvaluator, UserContext, ResourceContext } from './abac-evaluator';
 
 export enum PolicyDecision {
   ALLOW = 'allow',
@@ -25,31 +26,107 @@ export class PolicyEngine {
 
   /**
    * Evaluates ABAC policies (Attribute-based)
+   * Enforces Zero-Trust: Defaults to DENY.
    */
-  async evaluateAbac(check: PermissionCheck, entity?: any): Promise<PolicyDecision> {
-    // In a real implementation, this would fetch ABAC policies from DB for the resource/action
-    // and evaluate the conditions against `check.attributes` or `entity`.
-    return PolicyDecision.ALLOW; // Mock default
-  }
+  async evaluateAbac(check: PermissionCheck, entity?: any, userRoles: string[] = [], userId: string = '', tenantId: string = check.contextId): Promise<PolicyDecision> {
+    const parts = check.permission.split('.');
+    const actionPart = parts.pop() || 'read';
+    const resourcePart = parts.join('.');
 
-  /**
-   * Evaluates PBAC policies (Custom evaluators)
-   */
-  async evaluatePbac(check: PermissionCheck, entity?: any): Promise<PolicyDecision> {
-    // Mock: assuming no custom evaluators deny by default
+    this.logger.debug(`Evaluating ABAC for ${actionPart} on ${resourcePart}`);
+    
+    // Map to ABAC structures
+    const userCtx: UserContext = {
+      userId,
+      roles: userRoles,
+      tenantId
+    };
+
+    const resourceCtx: ResourceContext = {
+      resourceType: resourcePart,
+      resourceId: entity?.id || 'unknown',
+      ownerId: entity?.ownerId,
+      assignedTo: entity?.assignedTo,
+      tenantId: entity?.tenantId || tenantId,
+      attributes: entity
+    };
+
+    // Strict action mapping
+    const actionMap: Record<string, 'create'|'read'|'update'|'delete'> = {
+      'create': 'create',
+      'read': 'read',
+      'update': 'update',
+      'delete': 'delete',
+      'list': 'read'
+    };
+    
+    const mappedAction = actionMap[actionPart] || 'read';
+
+    const isAllowed = AbacEvaluator.canAccess(userCtx, resourceCtx, mappedAction);
+
+    if (!isAllowed) {
+      this.logger.warn(`ABAC DENY: User ${userId} blocked from ${actionPart} on ${resourcePart}`);
+      return PolicyDecision.DENY;
+    }
+
     return PolicyDecision.ALLOW;
   }
 
   /**
+   * Evaluates PBAC policies (Custom evaluators)
+   * Enforces Zero-Trust: Defaults to DENY if no custom evaluator approves.
+   */
+  async evaluatePbac(check: PermissionCheck, entity?: any): Promise<PolicyDecision> {
+    if (this.evaluators.size === 0) {
+      return PolicyDecision.DENY;
+    }
+    
+    // If ANY evaluator explicitly denies, it is a deny
+    // If NO evaluator allows, it is a deny
+    let hasAllow = false;
+
+    for (const [name, evaluator] of this.evaluators.entries()) {
+      try {
+        const decision = await evaluator(check, entity);
+        if (decision === PolicyDecision.DENY) {
+          this.logger.warn(`PBAC DENY by evaluator '${name}'`);
+          return PolicyDecision.DENY;
+        }
+        if (decision === PolicyDecision.ALLOW) {
+          hasAllow = true;
+        }
+      } catch (e: any) {
+        this.logger.error(`PBAC Evaluator '${name}' threw an error: ${e.message}`);
+        return PolicyDecision.DENY;
+      }
+    }
+
+    return hasAllow ? PolicyDecision.ALLOW : PolicyDecision.DENY;
+  }
+
+  /**
    * Gets additional WHERE clauses for repository-level data scoping based on visibility policies
+   * Enforces Zero-Trust: Limits visibility strictly to owner/assigned if no admin roles.
    */
   async getVisibilityClause(
     contextId: string,
     userId: string,
     resource: string,
-    action: string
+    action: string,
+    roles: string[] = []
   ): Promise<Record<string, any>> {
-    // Real implementation would return { assignedTo: userId } etc based on policies
-    return {};
+    // Admins and owners can see all records in the tenant
+    if (roles.includes('admin') || roles.includes('owner')) {
+      return { tenantId: contextId };
+    }
+
+    // Default strict visibility: User can only see records they own or are assigned to
+    return {
+      tenantId: contextId,
+      OR: [
+        { ownerId: userId },
+        { assignedTo: userId }
+      ]
+    };
   }
 }

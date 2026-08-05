@@ -45,4 +45,32 @@ export class PiiService {
     
     return '*'.repeat(stripped.length - 4) + stripped.substring(stripped.length - 4);
   }
+
+  /**
+   * Deeply sanitizes an object by masking PII fields.
+   */
+  sanitize(data: any): any {
+    if (!data) return data;
+    if (typeof data !== 'object') return data;
+    if (Array.isArray(data)) return data.map(item => this.sanitize(item));
+
+    const result = { ...data };
+    for (const key of Object.keys(result)) {
+      if (typeof result[key] === 'object' && result[key] !== null) {
+        result[key] = this.sanitize(result[key]);
+      } else if (typeof result[key] === 'string') {
+        const lowerKey = key.toLowerCase();
+        if (lowerKey.includes('email')) {
+          result[key] = this.maskEmail(result[key]);
+        } else if (lowerKey.includes('phone')) {
+          result[key] = this.maskPhone(result[key]);
+        } else if (lowerKey.includes('card') || lowerKey.includes('cc')) {
+          result[key] = this.maskCreditCard(result[key]);
+        } else if (lowerKey.includes('password') || lowerKey.includes('secret') || lowerKey.includes('token')) {
+          result[key] = '***REDACTED***';
+        }
+      }
+    }
+    return result;
+  }
 }

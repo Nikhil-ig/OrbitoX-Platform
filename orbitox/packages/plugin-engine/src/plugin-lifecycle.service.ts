@@ -1,5 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { PermissionRegistry, EventBusService } from '@orbitox/core';
+import { PermissionRegistry, EventBusService, ActionRegistry } from '@orbitox/core';
 import { PluginLoaderService } from './plugin-loader.service';
 import { MenuRegistry } from './registries/menu.registry';
 import { PageRegistry } from './registries/page.registry';
@@ -15,6 +15,7 @@ export class PluginLifecycleService {
     private readonly menuRegistry: MenuRegistry,
     private readonly pageRegistry: PageRegistry,
     private readonly widgetRegistry: WidgetRegistry,
+    private readonly actionRegistry: ActionRegistry,
     private readonly eventBus: EventBusService,
   ) {}
 
@@ -47,6 +48,9 @@ export class PluginLifecycleService {
     if (manifest.widgets) {
       this.widgetRegistry.register(contextId, manifest.id, manifest.widgets);
     }
+    if (manifest.agenticActions) {
+      this.actionRegistry.register(contextId, manifest.id, manifest.agenticActions);
+    }
 
     // 3. Emit platform event
     await this.eventBus.emit(
@@ -57,5 +61,67 @@ export class PluginLifecycleService {
     );
 
     this.logger.log(`Successfully activated plugin ${manifest.id} for context ${contextId}`);
+  }
+
+  async upgradePlugin(pluginId: string, targetVersion: string, contextId: string): Promise<void> {
+    this.logger.log(`Upgrading plugin ${pluginId} to version ${targetVersion} for context ${contextId}`);
+    
+    // In a real system, we would fetch the new bundle. Here we simulate re-registering
+    // with the latest loaded manifest.
+    
+    // First, deregister existing components
+    this.permissionRegistry.deregister(pluginId);
+    this.menuRegistry.deregister(contextId, pluginId);
+    this.pageRegistry.deregister(contextId, pluginId);
+    this.widgetRegistry.deregister(contextId, pluginId);
+    this.actionRegistry.deregister(contextId, pluginId);
+
+    // Re-install
+    await this.installPlugin(pluginId, contextId);
+
+    await this.eventBus.emit(
+      'platform.plugin.upgraded',
+      { pluginId, version: targetVersion },
+      contextId,
+      'PluginLifecycleService'
+    );
+  }
+
+  async rollbackPlugin(pluginId: string, targetVersion: string, contextId: string): Promise<void> {
+    this.logger.log(`Rolling back plugin ${pluginId} to version ${targetVersion} for context ${contextId}`);
+    
+    this.permissionRegistry.deregister(pluginId);
+    this.menuRegistry.deregister(contextId, pluginId);
+    this.pageRegistry.deregister(contextId, pluginId);
+    this.widgetRegistry.deregister(contextId, pluginId);
+    this.actionRegistry.deregister(contextId, pluginId);
+
+    await this.installPlugin(pluginId, contextId);
+
+    await this.eventBus.emit(
+      'platform.plugin.rollbacked',
+      { pluginId, version: targetVersion },
+      contextId,
+      'PluginLifecycleService'
+    );
+  }
+
+  async uninstallPlugin(pluginId: string, contextId: string): Promise<void> {
+    this.logger.log(`Uninstalling plugin ${pluginId} for context ${contextId}`);
+    
+    this.permissionRegistry.deregister(pluginId);
+    this.menuRegistry.deregister(contextId, pluginId);
+    this.pageRegistry.deregister(contextId, pluginId);
+    this.widgetRegistry.deregister(contextId, pluginId);
+    this.actionRegistry.deregister(contextId, pluginId);
+
+    await this.eventBus.emit(
+      'platform.plugin.uninstalled',
+      { pluginId },
+      contextId,
+      'PluginLifecycleService'
+    );
+
+    this.logger.log(`Successfully uninstalled plugin ${pluginId} for context ${contextId}`);
   }
 }

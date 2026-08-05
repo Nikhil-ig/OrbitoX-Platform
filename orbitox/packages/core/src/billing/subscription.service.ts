@@ -58,4 +58,39 @@ export class SubscriptionService {
       'billing-service'
     );
   }
+
+  async createCustomSubscription(
+    contextId: string, 
+    customerId: string, 
+    recurringItems: any[], // Type corresponds to QuoteLineItem
+    quoteId: string
+  ): Promise<Subscription> {
+    // In a real implementation, we would map the recurring items to custom Stripe prices or a custom plan.
+    // For this engine, we mock the payment provider creation.
+    const providerSubId = await this.paymentProvider.createSubscription(customerId, 'custom_price_mock');
+
+    const sub: Subscription = {
+      id: uuidv4(),
+      contextId,
+      planId: `custom-from-quote-${quoteId}`,
+      status: 'active',
+      currentPeriodStart: new Date(),
+      currentPeriodEnd: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000), // 30 days mock
+      cancelAtPeriodEnd: false,
+      providerSubscriptionId: providerSubId,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    };
+
+    this.subscriptions.set(sub.id, sub);
+
+    await this.eventBus.emit(
+      'billing.subscription.custom_activated',
+      { subscriptionId: sub.id, quoteId, contextId },
+      contextId,
+      'billing-service'
+    );
+
+    return sub;
+  }
 }

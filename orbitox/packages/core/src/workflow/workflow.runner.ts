@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { WorkflowService } from './workflow.service';
 import { WorkflowActions } from './workflow.actions';
 import { WorkflowDefinition, WorkflowStep } from './workflow.types';
@@ -15,8 +15,20 @@ export interface WorkflowRunContext {
   stepLogs: any[];
 }
 
+export interface WorkflowResumePayload {
+  workflowId: string;
+  ctx: WorkflowRunContext;
+  nextStepIndex: number;
+}
+
+export class DelayException extends Error {
+  constructor(public readonly delayMs: number) {
+    super('Delay step reached, suspending execution');
+  }
+}
+
 @Injectable()
-export class WorkflowRunner {
+export class WorkflowRunner implements OnModuleInit {
   private readonly logger = new Logger(WorkflowRunner.name);
 
   constructor(
@@ -24,6 +36,12 @@ export class WorkflowRunner {
     private readonly workflowActions: WorkflowActions,
     private readonly schedulerService: SchedulerService,
   ) {}
+
+  async onModuleInit() {
+    this.schedulerService.registerHandler('workflow.resume', async (data: WorkflowResumePayload) => {
+      await this.resumeRun(data);
+    });
+  }
 
   async triggerEventWorkflows(contextId: string, eventName: string, payload: any, entity?: any): Promise<void> {
     const workflows = await this.workflowService.getActiveWorkflowsForEvent(contextId, eventName);
@@ -99,20 +117,43 @@ export class WorkflowRunner {
       stepLogs: [],
     };
 
-    this.executeSteps(workflow.steps, runContext).catch(err => {
+    this.executeSteps(workflow.steps, runContext, 0).catch(err => {
       this.logger.error(`Workflow run ${runId} failed: ${err.message}`);
     });
 
     return runId;
   }
 
+  async resumeRun(data: WorkflowResumePayload): Promise<void> {
+    this.logger.log(`Resuming workflow run ${data.ctx.runId} from step index ${data.nextStepIndex}`);
+    try {
+      const workflow = await this.workflowService.getDefinition(data.workflowId);
+      await this.executeSteps(workflow.steps, data.ctx, data.nextStepIndex);
+    } catch (err: any) {
+      this.logger.error(`Failed to resume workflow run ${data.ctx.runId}: ${err.message}`);
+    }
+  }
+
   async executeSteps(steps: WorkflowStep[], ctx: WorkflowRunContext, startIndex = 0): Promise<void> {
     for (let i = startIndex; i < steps.length; i++) {
       const step = steps[i];
       if (!step) continue;
+      
       try {
         await this.executeStep(step, ctx);
       } catch (err: any) {
+        if (err instanceof DelayException) {
+          this.logger.debug(`Workflow ${ctx.runId} paused for ${err.delayMs}ms at step ${step.id}. Scheduling resumption.`);
+          
+          await this.schedulerService.scheduleOnce('workflow.resume', err.delayMs, {
+            workflowId: ctx.workflowId,
+            ctx,
+            nextStepIndex: i + 1, // Resume at the next step
+          } as WorkflowResumePayload);
+          
+          return; // Gracefully suspend execution
+        }
+
         const stepType = step.type;
         const onError = (step as any).onError;
         
@@ -123,10 +164,6 @@ export class WorkflowRunner {
         } else if (stepType === 'action' && onError === 'retry') {
            this.logger.warn(`Step ${step.id} failed, retrying once...`);
            await this.executeStep(step, ctx);
-        } else if (stepType === 'delay') {
-           const delayMs = this.calculateDelayMs(step as any);
-           this.logger.debug(`Workflow ${ctx.runId} paused for ${delayMs}ms at step ${step.id}`);
-           return; 
         }
       }
     }
@@ -144,15 +181,16 @@ export class WorkflowRunner {
     } else if (step.type === 'branch') {
       for (const branch of (step as any).branches) {
         if (this.evaluateConditions(branch.conditions, ctx.payload, ctx.entity)) {
-          await this.executeSteps(branch.steps, ctx);
+          await this.executeSteps(branch.steps, ctx, 0);
           return;
         }
       }
       if ((step as any).defaultBranch) {
-        await this.executeSteps((step as any).defaultBranch, ctx);
+        await this.executeSteps((step as any).defaultBranch, ctx, 0);
       }
     } else if (step.type === 'delay') {
-      throw new Error('Delay step reached, suspending execution');
+      const delayMs = this.calculateDelayMs(step as any);
+      throw new DelayException(delayMs);
     }
   }
 

@@ -5,6 +5,7 @@ import { TemplateService } from './template.service';
 import { SendGridAdapter } from './providers/sendgrid.adapter';
 import { TwilioSmsAdapter } from './providers/twilio-sms.adapter';
 import { InAppAdapter } from './providers/in-app.adapter';
+import { PreferenceService } from './preference.service';
 
 @Module({
   imports: [EventsModule],
@@ -14,6 +15,7 @@ import { InAppAdapter } from './providers/in-app.adapter';
     SendGridAdapter,
     TwilioSmsAdapter,
     InAppAdapter,
+    PreferenceService,
   ],
   exports: [NotificationService],
 })

@@ -30,6 +30,21 @@ export interface PluginCronJobItem {
   description?: string;
 }
 
+export interface AgenticActionParameter {
+  type: string;
+  description: string;
+  required?: boolean;
+}
+
+export interface AgenticAction {
+  id: string;
+  name: string;
+  description: string;
+  handler: string;
+  permission?: string;
+  parameters?: Record<string, AgenticActionParameter>;
+}
+
 export interface PluginEventsConfig {
   emits?: string[];
   subscribes?: string[];
@@ -63,4 +78,5 @@ export interface PluginManifest {
       relatedEntity?: string;
     }>;
   };
+  agenticActions?: AgenticAction[];
 }

@@ -63,4 +63,18 @@ export class PermissionRegistry {
   exists(key: string): boolean {
     return this.permissions.has(key);
   }
+
+  /**
+   * Deregisters all permissions for a specific plugin
+   */
+  deregister(pluginId: string): void {
+    const keys = this.pluginPermissions.get(pluginId);
+    if (keys) {
+      for (const key of keys) {
+        this.permissions.delete(key);
+      }
+      this.pluginPermissions.delete(pluginId);
+      this.logger.debug(`Deregistered permissions for plugin '${pluginId}'`);
+    }
+  }
 }

@@ -29,5 +29,17 @@
   ],
   "widgets": [
     { "id": "crm.leads.count", "title": "Total Leads", "size": "1x1" }
+  ],
+  "agenticActions": [
+    {
+      "id": "crm.convertLead",
+      "name": "convert_lead",
+      "description": "Converts a Lead into a Customer via the Headless State Machine.",
+      "handler": "LeadAction.convertLead",
+      "permission": "crm.leads.update",
+      "parameters": {
+        "leadId": { "type": "string", "description": "The unique ID of the Lead", "required": true }
+      }
+    }
   ]
 }

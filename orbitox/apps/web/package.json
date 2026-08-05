@@ -15,7 +15,9 @@
     "@orbitox/ui": "workspace:*",
     "@orbitox/sdk": "workspace:*",
     "@orbitox/types": "workspace:*",
-    "@orbitox/plugin-engine": "workspace:*"
+    "@orbitox/plugin-engine": "workspace:*",
+    "@orbitox/school": "workspace:*",
+    "@orbitox/pos": "workspace:*"
   },
   "devDependencies": {
     "@types/node": "^20",
