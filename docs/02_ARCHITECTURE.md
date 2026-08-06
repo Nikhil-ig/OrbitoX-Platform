@@ -81,7 +81,8 @@ graph LR
 | 🚩 **Features** | `orbitox.features` | Contextual Flag Overrides | `define()`, `isEnabled()`, `setOverride()` | `Promise<boolean>` |
 | 🤖 **AI Gateway**| `orbitox.ai` | Multi-Provider LLMs | `ask()`, `extract()`, `classify()`, `embed()` | `Promise<string / object>` |
 | 📦 **Workflows** | `orbitox.workflows` | Automated Trigger Pipeline | `define()`, `trigger()` | `Promise<void>` |
-| 💳 **Billing** | `orbitox.billing` | Plans & Subscriptions | `createPlan()`, `listPlans()`, `getPlan()` | `Promise<Plan / Plan[]>` |
+| 💳 **Billing** | `orbitox.billing` | Plans & Subscriptions | `createPlan()`, `listPlans()`, `subscribeContext()`, `hasEntitlement()`, `checkQuota()` | `Promise<Plan[]>` / `boolean` / `Quota` |
+| 🔌 **Plugins** | `orbitox.use()` | Platform Extension System | `use({ id, name, install })` | `this` (Chainable) |
 
 ---
 

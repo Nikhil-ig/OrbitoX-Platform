@@ -140,6 +140,12 @@ orbitox.events.on('order.completed', async (payload) => {
     await inventoryService.decrementStock(item.productId, item.quantity);
   }
 });
+
+// Pattern 4: High-throughput batch event emission
+await orbitox.events.emitBatch([
+  { name: 'order.placed', payload: { orderId: 'ord_101', total: 29.99 }, contextId: 'branch-downtown' },
+  { name: 'order.placed', payload: { orderId: 'ord_102', total: 45.00 }, contextId: 'branch-downtown' },
+]);
 ```
 
 ---

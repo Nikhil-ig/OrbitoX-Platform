@@ -127,8 +127,10 @@ const flags = await Promise.all([
   orbitox.features.isEnabled('tip_prompt_screen', contextId),
 ]);
 
-const [showNewKDS, showAIMenu, showTipScreen] = flags;
-renderDashboard({ showNewKDS, showAIMenu, showTipScreen });
+// Step 4: Evaluate All Flags for a Context (Bulk Resolution for UI)
+const allTenantFlags = await orbitox.features.evaluateAll('tenant_branch_101');
+console.log('Evaluated Flags Map:', allTenantFlags);
+// Returns: { 'new_kitchen_display_ui': true, 'ai_menu_recommender': true, 'tip_prompt_screen': false }
 ```
 
 ---

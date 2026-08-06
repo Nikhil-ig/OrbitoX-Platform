@@ -146,6 +146,26 @@ async function generateAIMenuSuggestions(tenantId: string) {
   );
   return suggestions;
 }
+
+### Step 5.4: Subscribe Context & Enforce Monthly Quotas
+
+```typescript
+// Subscribe tenant context node to Pro Plan
+await orbitox.billing.subscribeContext({
+  contextId: 'tenant-ny',
+  planId: proPlan.id,
+  paymentMethodId: 'pm_card_visa'
+});
+
+// Check usage quota before executing an action
+const quota = await orbitox.billing.checkQuota('tenant-ny', 'maxBranches', 4);
+
+if (!quota.allowed) {
+  throw new Error(`Branch limit reached (${quota.limit}). Upgrade plan for more branches.`);
+}
+
+console.log(`Remaining branch slots: ${quota.remaining}`);
+```
 ```
 
 ---

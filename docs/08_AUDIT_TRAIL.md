@@ -138,6 +138,17 @@ await orbitox.audit.log(
   'user_alice',
   'branch-downtown'
 );
+
+// Step 5: Query Audit Trail Records
+const logs = await orbitox.audit.query({
+  contextId: 'branch-downtown',
+  entityType: 'Order',
+});
+console.log(`Found ${logs.length} audit records for branch-downtown.`);
+
+// Step 6: Verify Cryptographic SHA-256 Hash Chain Integrity
+const chainStatus = await orbitox.audit.verifyChain();
+console.log(`Hash Chain Valid: ${chainStatus.valid} (${chainStatus.totalEntries} entries checked)`);
 ```
 
 ---
