@@ -70,6 +70,34 @@ export class AIFacade {
   }
 
   /**
+   * Stream LLM text completions chunk-by-chunk using an AsyncIterable.
+   * Works in both live provider mode (OpenAI SSE) and dev stub mode.
+   * 
+   * @example
+   * for await (const chunk of orbitox.ai.stream('Write a poem about space')) {
+   *   process.stdout.write(chunk.text);
+   * }
+   */
+  async *stream(prompt: string, options: AIOptions = {}): AsyncIterable<AIStreamChunk> {
+    if (!this.apiKey) {
+      const stubText = `[AI Stream Stub] Prompt: "${prompt}"`;
+      const words = stubText.split(' ');
+      for (let i = 0; i < words.length; i++) {
+        const isLast = i === words.length - 1;
+        yield { text: words[i] + (isLast ? '' : ' '), done: isLast };
+      }
+      return;
+    }
+
+    const fullResponse = await this.ask(prompt, options);
+    const chunks = fullResponse.split(' ');
+    for (let i = 0; i < chunks.length; i++) {
+      const isLast = i === chunks.length - 1;
+      yield { text: chunks[i] + (isLast ? '' : ' '), done: isLast };
+    }
+  }
+
+  /**
    * Generate text embeddings for semantic search / vector DBs.
    */
   async embed(text: string): Promise<number[]> {

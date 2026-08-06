@@ -36,7 +36,7 @@ graph LR
 | **Structured JSON Extraction** | `extract()` | ✅ Native JSON Mode | ✅ Schema Enforcement | ✅ Schema Default |
 | **Text Classification** | `classify()` | ✅ Structured Output | ✅ Category Detection | ✅ First Category |
 | **Vector Embeddings** | `embed()` | ✅ 1536-dim Ada-002 | ✅ 768-dim text-004 | ✅ Mock Array |
-| **Streaming** | Future | 🔜 Planned | 🔜 Planned | ➖ N/A |
+| **Real-time Streaming** | `stream()` | ✅ AsyncIterable Chunk Stream | ✅ AsyncIterable Chunk Stream | ✅ Mock Word Chunks |
 
 ---
 

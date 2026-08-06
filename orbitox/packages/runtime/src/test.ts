@@ -57,7 +57,14 @@ async function run() {
   const reply = await orbitox.ai.ask('Summarize the CRM data', { contextId: ctx.id });
   console.log('AI Reply:', reply);
 
-  console.log('\\nAll tests passed successfully!');
+  // 8. AI Streaming
+  process.stdout.write('AI Stream output: ');
+  for await (const chunk of orbitox.ai.stream('Hello universe')) {
+    process.stdout.write(chunk.text);
+  }
+  console.log('\n');
+
+  console.log('\nAll tests passed successfully!');
 }
 
 run().catch(console.error);
