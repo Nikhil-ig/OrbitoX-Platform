@@ -56,4 +56,32 @@ export class PolicyBuilder {
       rule: rule
     });
   }
+
+  get(): any {
+    return this.securityFacade.getAbacPolicy(this.id);
+  }
+
+  update(): void {
+    const existing = this.get();
+    if (!existing) throw new Error(`Policy '${this.id}' does not exist.`);
+
+    let rule: any = true;
+    if (this._conditions.length === 1) {
+      rule = this._conditions[0];
+    } else if (this._conditions.length > 1) {
+      rule = { "and": this._conditions };
+    } else {
+      rule = existing.rule;
+    }
+
+    this.securityFacade.updateAbacPolicy(this.id, {
+      resourceType: this._resourceType !== '*' ? this._resourceType : existing.resourceType,
+      action: this._action !== '*' ? (this._action as any) : existing.action,
+      rule: rule
+    });
+  }
+
+  delete(): void {
+    this.securityFacade.deleteAbacPolicy(this.id);
+  }
 }

@@ -87,6 +87,27 @@ export class SecurityFacade {
   }
 
   /**
+   * Get a custom ABAC policy rule.
+   */
+  getAbacPolicy(id: string): AbacPolicyRule | undefined {
+    return AbacEvaluator.getPolicy(id);
+  }
+
+  /**
+   * Update a custom ABAC policy rule.
+   */
+  updateAbacPolicy(id: string, updates: Partial<AbacPolicyRule>): void {
+    AbacEvaluator.updatePolicy(id, updates);
+  }
+
+  /**
+   * Delete a custom ABAC policy rule.
+   */
+  deleteAbacPolicy(id: string): void {
+    AbacEvaluator.deletePolicy(id);
+  }
+
+  /**
    * Register a custom PBAC evaluator function.
    * @example
    * orbitox.security.addPolicy('ip-restrict', async (check) => {

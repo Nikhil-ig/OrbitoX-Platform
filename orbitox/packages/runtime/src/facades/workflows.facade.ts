@@ -43,6 +43,27 @@ export class WorkflowsFacade {
   }
 
   /**
+   * Get a workflow definition.
+   */
+  async get(id: string): Promise<WorkflowDefinition> {
+    return this.svc.getDefinition(id);
+  }
+
+  /**
+   * Update a workflow definition.
+   */
+  async update(id: string, updates: Partial<WorkflowDefinition>): Promise<WorkflowDefinition> {
+    return this.svc.updateDefinition(id, updates);
+  }
+
+  /**
+   * Delete a workflow definition.
+   */
+  async delete(id: string): Promise<boolean> {
+    return this.svc.deleteDefinition(id);
+  }
+
+  /**
    * Get all active workflows for a context.
    */
   async list(contextId: string): Promise<WorkflowDefinition[]> {

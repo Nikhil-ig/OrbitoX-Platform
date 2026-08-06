@@ -46,4 +46,29 @@ export class PlanBuilder {
       limits: this._limits,
     }, contextId);
   }
+
+  async get(): Promise<any> {
+    const plans = await this.billingFacade.listPlans();
+    return plans.find(p => p.name === this.name);
+  }
+
+  async update(): Promise<any> {
+    const existing = await this.get();
+    if (!existing) throw new Error(`Plan '${this.name}' does not exist.`);
+
+    return this.billingFacade.updatePlan(existing.id, {
+      description: this._description || existing.description,
+      price: this._price > 0 ? this._price : existing.price,
+      currency: this._currency || existing.currency,
+      interval: this._interval || existing.interval,
+      features: this._features.length > 0 ? this._features : existing.features,
+      limits: Object.keys(this._limits).length > 0 ? this._limits : existing.limits,
+    });
+  }
+
+  async delete(): Promise<boolean> {
+    const existing = await this.get();
+    if (!existing) return false;
+    return this.billingFacade.deletePlan(existing.id);
+  }
 }

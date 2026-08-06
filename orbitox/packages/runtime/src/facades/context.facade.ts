@@ -15,8 +15,22 @@ export class ContextFacade {
    * Resolve a context by ID or slug.
    * Returns undefined if not found (never throws).
    */
-  get(contextIdOrSlug: string): Context | undefined {
-    return this.svc.resolveContext(contextIdOrSlug);
+  get(idOrSlug: string): Context | undefined {
+    return this.svc.resolveContext(idOrSlug);
+  }
+
+  /**
+   * Update an existing context.
+   */
+  update(idOrSlug: string, updates: Partial<Context>): Context {
+    return this.svc.updateContext(idOrSlug, updates);
+  }
+
+  /**
+   * Delete a context.
+   */
+  delete(idOrSlug: string): boolean {
+    return this.svc.deleteContext(idOrSlug);
   }
 
   /**

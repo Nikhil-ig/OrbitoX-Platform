@@ -66,6 +66,22 @@ export class BillingFacade {
 
   private subscriptions: Map<string, { contextId: string; planId: string; status: string }> = new Map();
 
+
+
+  /**
+   * Update a billing plan.
+   */
+  async updatePlan(planId: string, data: Partial<any>): Promise<any> {
+    return this.planSvc.updatePlan(planId, data);
+  }
+
+  /**
+   * Delete a billing plan.
+   */
+  async deletePlan(planId: string): Promise<boolean> {
+    return this.planSvc.deletePlan(planId);
+  }
+
   /**
    * Subscribe a context node (tenant/branch) to a billing plan.
    */

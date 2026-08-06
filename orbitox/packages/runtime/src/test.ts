@@ -145,6 +145,29 @@ async function run() {
   const mw = orbitox.middleware();
   console.log('Middleware created:', typeof mw === 'function');
 
+  console.log('\\n--- Testing Builder CRUD Operations ---');
+  // Tenant CRUD
+  await orbitox.tenant('mega-corp', 'Mega Corp Inc').settings({ test: true }).update();
+  console.log('Tenant Updated:', orbitox.tenant('mega-corp', '').get()?.settings.test === true);
+  
+  // Plan CRUD
+  await orbitox.billing.buildPlan('Enterprise').price(1999).update();
+  console.log('Plan Updated:', (await orbitox.billing.buildPlan('Enterprise').get()).price === 1999);
+  
+  // Workflow CRUD
+  await orbitox.workflows.build('onboarding-flow', easyTenant.id).delay(5, 'days').update();
+  console.log('Workflow Updated:', (await orbitox.workflows.build('onboarding-flow', easyTenant.id).get()).steps.length > 0);
+  
+  // Delete all
+  const workflowDeleted = await orbitox.workflows.build('onboarding-flow', easyTenant.id).delete();
+  const planDeleted = await orbitox.billing.buildPlan('Enterprise').delete();
+  const tenantDeleted = orbitox.tenant('mega-corp', '').delete();
+  
+  orbitox.security.policy('strict-refund').delete();
+  const policyDeleted = !orbitox.security.policy('strict-refund').get();
+  
+  console.log('CRUD Deletions passed:', workflowDeleted && planDeleted && tenantDeleted && policyDeleted);
+
   console.log('\nAll tests passed successfully!');
 }
 

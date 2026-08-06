@@ -35,4 +35,15 @@ export class WorkflowService {
   async createDefinition(def: WorkflowDefinition): Promise<void> {
     this.definitions.set(def.id, def);
   }
+
+  async updateDefinition(id: string, updates: Partial<WorkflowDefinition>): Promise<WorkflowDefinition> {
+    const def = await this.getDefinition(id);
+    const updated = { ...def, ...updates };
+    this.definitions.set(id, updated);
+    return updated;
+  }
+
+  async deleteDefinition(id: string): Promise<boolean> {
+    return this.definitions.delete(id);
+  }
 }

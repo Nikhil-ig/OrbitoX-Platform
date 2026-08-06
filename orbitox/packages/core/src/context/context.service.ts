@@ -120,6 +120,45 @@ export class ContextService {
     return undefined;
   }
 
+  updateContext(identifier: string, updates: Partial<Context>): Context {
+    const context = this.resolveContext(identifier);
+    if (!context) {
+      throw new Error(`Context ${identifier} not found`);
+    }
+
+    const updated = {
+      ...context,
+      ...updates,
+      updatedAt: new Date().toISOString()
+    };
+    
+    // Deep merge for nested objects like settings, theme
+    if (updates.settings) updated.settings = { ...context.settings, ...updates.settings };
+    if (updates.theme) updated.theme = { ...context.theme, ...updates.theme };
+    if (updates.features) updated.features = { ...context.features, ...updates.features };
+
+    this.contexts.set(context.id, updated);
+    this.logger.debug(`Updated context ${context.id}`);
+    return updated;
+  }
+
+  deleteContext(identifier: string): boolean {
+    const context = this.resolveContext(identifier);
+    if (!context) return false;
+
+    // Check if it's the root (cannot delete root)
+    if (context.id === 'platform_root') {
+      throw new Error(`Cannot delete platform_root context`);
+    }
+
+    this.slugIndex.delete(context.slug);
+    const deleted = this.contexts.delete(context.id);
+    if (deleted) {
+      this.logger.debug(`Deleted context ${context.id}`);
+    }
+    return deleted;
+  }
+
   resolveConfig<K extends keyof Context>(contextId: string, keys: K[]): Pick<Context, K> {
     const context = this.contexts.get(contextId);
     if (!context) {

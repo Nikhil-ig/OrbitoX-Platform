@@ -44,6 +44,24 @@ export class AbacEvaluator {
     this.policies.push(rule);
   }
 
+  static getPolicy(id: string): AbacPolicyRule | undefined {
+    return this.policies.find(p => p.id === id);
+  }
+
+  static updatePolicy(id: string, updates: Partial<AbacPolicyRule>): void {
+    const idx = this.policies.findIndex(p => p.id === id);
+    if (idx !== -1) {
+      this.policies[idx] = { ...this.policies[idx], ...updates } as AbacPolicyRule;
+    }
+  }
+
+  static deletePolicy(id: string): void {
+    const idx = this.policies.findIndex(p => p.id === id);
+    if (idx !== -1) {
+      this.policies.splice(idx, 1);
+    }
+  }
+
   static canAccess(user: UserContext, resource: ResourceContext, action: 'create' | 'read' | 'update' | 'delete'): boolean {
     if (user.tenantId !== resource.tenantId) {
       return false; // Cross-tenant security isolation

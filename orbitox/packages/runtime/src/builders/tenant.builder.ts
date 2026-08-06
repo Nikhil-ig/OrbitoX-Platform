@@ -97,4 +97,46 @@ export class TenantBuilder {
 
     return ctx;
   }
+
+  get(): Context | undefined {
+    return this.contextFacade.get(this.slug);
+  }
+
+  async update(): Promise<Context> {
+    const existing = this.get();
+    if (!existing) throw new Error(`Cannot update: Tenant ${this.slug} does not exist`);
+
+    const ctx = this.contextFacade.update(existing.id, {
+      displayName: this.displayName,
+      type: this._type,
+      ownerId: this._ownerId,
+      locale: this._locale,
+      currency: this._currency,
+      timezone: this._timezone,
+      settings: this._settings,
+    });
+
+    if (this._planId) {
+      await this.billingFacade.subscribeContext({
+        contextId: ctx.id,
+        planId: this._planId,
+      });
+    }
+
+    for (const featureId of this._featuresToEnable) {
+      await this.featuresFacade.setOverride(featureId, ctx.id, true);
+    }
+
+    for (const featureId of this._featuresToDisable) {
+      await this.featuresFacade.setOverride(featureId, ctx.id, false);
+    }
+
+    return ctx;
+  }
+
+  delete(): boolean {
+    const existing = this.get();
+    if (!existing) return false;
+    return this.contextFacade.delete(existing.id);
+  }
 }

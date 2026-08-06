@@ -51,4 +51,30 @@ export class PlanService {
   async listActivePlans(contextId: string): Promise<Plan[]> {
     return Array.from(this.plans.values()).filter(p => p.isActive && (p.contextId === contextId || !p.contextId));
   }
+
+  async updatePlan(planId: string, data: Partial<CreatePlanDto>): Promise<Plan> {
+    const plan = await this.getPlan(planId);
+    const updated = {
+      ...plan,
+      ...data,
+      updatedAt: new Date()
+    };
+    
+    // Deep merge limits
+    if (data.limits) {
+      updated.limits = { ...plan.limits, ...data.limits };
+    }
+    
+    this.plans.set(planId, updated);
+    return updated;
+  }
+
+  async deletePlan(planId: string): Promise<boolean> {
+    const plan = await this.getPlan(planId);
+    // Soft delete
+    plan.isActive = false;
+    plan.updatedAt = new Date();
+    this.plans.set(planId, plan);
+    return true; // Soft delete success
+  }
 }

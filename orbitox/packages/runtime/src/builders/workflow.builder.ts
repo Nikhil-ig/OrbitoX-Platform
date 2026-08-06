@@ -57,4 +57,24 @@ export class WorkflowBuilder {
       settings: {}
     });
   }
+
+  async get(): Promise<any> {
+    return this.workflowsFacade.get(this.id);
+  }
+
+  async update(): Promise<void> {
+    const existing = await this.get();
+    if (!existing) throw new Error(`Workflow '${this.id}' does not exist.`);
+    
+    await this.workflowsFacade.update(this.id, {
+      name: this._name || existing.name,
+      trigger: this._trigger || existing.trigger,
+      steps: this._steps.length > 0 ? this._steps : existing.steps,
+      updatedAt: new Date().toISOString()
+    } as any);
+  }
+
+  async delete(): Promise<boolean> {
+    return this.workflowsFacade.delete(this.id);
+  }
 }
