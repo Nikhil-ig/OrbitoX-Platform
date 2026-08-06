@@ -74,6 +74,28 @@ export class TenantBuilder {
     return this;
   }
 
+  private _peersToLink: Array<{ peerId: string; permissions: string[] }> = [];
+
+  /**
+   * Link this branch/tenant to a peer branch to enable inter-branch stock viewing,
+   * supply requests, and cross-branch communication.
+   */
+  linkPeer(peerContextId: string, permissions: string[] = ['inventory.read', 'supply.request', 'messages.send']): this {
+    this._peersToLink.push({ peerId: peerContextId, permissions });
+    return this;
+  }
+
+  /**
+   * Automatically enable peer sharing permissions for this tenant/branch.
+   */
+  allowSiblingSharing(permissions: string[] = ['inventory.read', 'supply.request', 'messages.send']): this {
+    this._settings.interBranchMesh = {
+      enabled: true,
+      permissions
+    };
+    return this;
+  }
+
   async create(): Promise<Context> {
     const ctx = this.contextFacade.create({
       slug: this.slug,
@@ -100,6 +122,10 @@ export class TenantBuilder {
 
     for (const featureId of this._featuresToDisable) {
       await this.featuresFacade.setOverride(featureId, ctx.id, false);
+    }
+
+    for (const item of this._peersToLink) {
+      this.contextFacade.linkPeers(ctx.id, item.peerId, item.permissions);
     }
 
     return ctx;

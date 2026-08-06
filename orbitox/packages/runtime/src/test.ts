@@ -256,6 +256,32 @@ async function run() {
   const cacheKey = buildCacheKey('tenant_123', 'rules', 'billing');
   console.log('Multi-Tier Cache Key Namespace Isolated:', cacheKey === 'context:tenant_123:billing:rules');
 
+  console.log('\n--- Testing Inter-Branch Mesh & Peer Collaboration Policy Engine ---');
+  const hospitalOrg = await orbitox.tenant('hospital-net', 'Metro Hospital Group').type('organisation').create();
+  const hospitalA = await orbitox.tenant('hospital-east', 'East Branch Hospital').type('branch').parent(hospitalOrg.id).create();
+  
+  const hospitalB = await orbitox.tenant('hospital-west', 'West Branch Hospital')
+    .type('branch')
+    .parent(hospitalOrg.id)
+    .linkPeer(hospitalA.id, ['inventory.read', 'supply.request'])
+    .create();
+
+  const canEastViewWestStock = orbitox.context.canPeerAccess(hospitalA.id, hospitalB.id, 'inventory.read');
+  const canEastRequestWestSupply = orbitox.context.canPeerAccess(hospitalA.id, hospitalB.id, 'supply.request');
+  const peerContexts = orbitox.context.getAccessiblePeerContexts(hospitalA.id, 'inventory.read');
+  const peerIds = peerContexts.map(c => c.id);
+  const peerClause = await orbitox.security.getPeerVisibilityClause(hospitalA.id, peerIds.slice(1), 'user_admin');
+
+  console.log('Inter-Branch Stock Visibility Granted:', canEastViewWestStock);
+  console.log('Inter-Branch Supply Request Granted:', canEastRequestWestSupply);
+  console.log('Peer Branches Discovered:', peerContexts.length === 2);
+  console.log('Peer Multi-Branch WHERE Clause Generated:', peerClause.OR.length === 2);
+
+  // Cleanup mesh test
+  orbitox.tenant('hospital-east', '').parent(hospitalOrg.id).delete();
+  orbitox.tenant('hospital-west', '').parent(hospitalOrg.id).delete();
+  orbitox.tenant('hospital-net', '').delete();
+
   console.log('\nAll tests passed successfully!');
 }
 

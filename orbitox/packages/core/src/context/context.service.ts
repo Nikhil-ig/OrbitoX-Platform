@@ -320,4 +320,61 @@ export class ContextService {
     
     return descendants;
   }
+
+  // Map of `${fromContextId}:${toContextId}` -> Set of granted permissions (e.g., 'inventory.read', 'supply.request')
+  private readonly peerPermissions = new Map<string, Set<string>>();
+
+  linkPeers(fromIdentifier: string, toIdentifier: string, permissions: string[] = ['inventory.read', 'supply.request', 'messages.send']): void {
+    const fromCtx = this.resolveContext(fromIdentifier);
+    const toCtx = this.resolveContext(toIdentifier);
+    if (!fromCtx || !toCtx) throw new Error(`Cannot link peers: invalid context identifier(s)`);
+
+    const key1 = `${fromCtx.id}:${toCtx.id}`;
+    const key2 = `${toCtx.id}:${fromCtx.id}`;
+
+    if (!this.peerPermissions.has(key1)) this.peerPermissions.set(key1, new Set());
+    if (!this.peerPermissions.has(key2)) this.peerPermissions.set(key2, new Set());
+
+    for (const p of permissions) {
+      this.peerPermissions.get(key1)!.add(p);
+      this.peerPermissions.get(key2)!.add(p);
+    }
+  }
+
+  canPeerAccess(fromIdentifier: string, toIdentifier: string, permission: string): boolean {
+    const fromCtx = this.resolveContext(fromIdentifier);
+    const toCtx = this.resolveContext(toIdentifier);
+    if (!fromCtx || !toCtx) return false;
+    if (fromCtx.id === toCtx.id) return true;
+
+    // Verify both belong to the same Organization ancestor if not explicit mesh
+    const fromAncestors = this.getAncestors(fromCtx.id).map(a => a.id);
+    const toAncestors = this.getAncestors(toCtx.id).map(a => a.id);
+    const sharesOrg = fromAncestors.some(a => toAncestors.includes(a));
+
+    if (!sharesOrg && (!fromCtx.relatedContexts || !fromCtx.relatedContexts.includes(toCtx.id))) {
+      return false;
+    }
+
+    const key = `${fromCtx.id}:${toCtx.id}`;
+    const perms = this.peerPermissions.get(key);
+    return perms ? perms.has(permission) || perms.has('*') : false;
+  }
+
+  getAccessiblePeerContexts(fromIdentifier: string, permission: string): Context[] {
+    const fromCtx = this.resolveContext(fromIdentifier);
+    if (!fromCtx) return [];
+
+    const accessible: Context[] = [fromCtx];
+    for (const [key, perms] of this.peerPermissions.entries()) {
+      const [fId, tId] = key.split(':');
+      if (fId && tId && fId === fromCtx.id && (perms.has(permission) || perms.has('*'))) {
+        const peer = this.contexts.get(tId);
+        if (peer && !accessible.some(c => c.id === peer.id)) {
+          accessible.push(peer);
+        }
+      }
+    }
+    return accessible;
+  }
 }

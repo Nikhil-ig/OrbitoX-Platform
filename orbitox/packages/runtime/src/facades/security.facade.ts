@@ -129,6 +129,17 @@ export class SecurityFacade {
   }
 
   /**
+   * Get a multi-branch peer visibility clause for cross-branch inventory, stock viewing,
+   * and supply requests across connected sibling branches under an Organization.
+   */
+  async getPeerVisibilityClause(contextId: string, peerContextIds: string[], userId: string): Promise<Record<string, any>> {
+    const allContexts = Array.from(new Set([contextId, ...peerContextIds]));
+    return {
+      OR: allContexts.map(id => ({ contextId: id }))
+    };
+  }
+
+  /**
    * Immutable Hierarchy Write Protection:
    * Strips hierarchy context IDs (contextId, tenantId, orgId, companyId, branchId, parentId)
    * on UPDATE payloads to prevent cross-tenant privilege escalation or context spoofing.

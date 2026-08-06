@@ -102,4 +102,26 @@ export class ContextFacade {
       return undefined;
     }
   }
+
+  /**
+   * Link sibling branches/tenants under an Organization to grant peer collaboration
+   * (e.g. inventory viewing, supply requests, messaging across Amazon warehouses/Hospitals).
+   */
+  linkPeers(fromIdentifier: string, toIdentifier: string, permissions: string[] = ['inventory.read', 'supply.request', 'messages.send']): void {
+    this.svc.linkPeers(fromIdentifier, toIdentifier, permissions);
+  }
+
+  /**
+   * Validate if a branch/tenant can access a peer context for a specific permission.
+   */
+  canPeerAccess(fromIdentifier: string, toIdentifier: string, permission: string): boolean {
+    return this.svc.canPeerAccess(fromIdentifier, toIdentifier, permission);
+  }
+
+  /**
+   * Get all peer/sibling branch contexts accessible for a given permission.
+   */
+  getAccessiblePeerContexts(fromIdentifier: string, permission: string): Context[] {
+    return this.svc.getAccessiblePeerContexts(fromIdentifier, permission);
+  }
 }

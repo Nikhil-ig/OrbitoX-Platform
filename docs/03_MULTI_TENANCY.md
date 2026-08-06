@@ -164,6 +164,40 @@ await orbitox.tenant('ny-franchise')
 orbitox.tenant('downtown-store').delete();
 ```
 
+### Step 3.7: Inter-Branch Mesh & Peer Collaboration (Amazon / Hospital Network Style)
+
+Organizations can grant explicit permissions for sibling branches under the same Org (or connected hospital/fulfillment networks) to view stock, dispatch inter-branch supply requests, and communicate securely:
+
+```typescript
+// 1. Link Sibling Branch A and Branch B for Stock Viewing & Supply Requests
+orbitox.context.linkPeers(branchDowntown.id, branchMidtown.id, [
+  'inventory.read', 
+  'supply.request', 
+  'messages.send'
+]);
+
+// Or configure via TenantBuilder on creation:
+const branchMidtown = await orbitox.tenant('midtown-store', 'Midtown Store #102')
+  .type('branch')
+  .parent(tenantNY.id)
+  .linkPeer(branchDowntown.id, ['inventory.read', 'supply.request'])
+  .create();
+
+// 2. Validate Inter-Branch Supply Access
+const canCheckStock = orbitox.context.canPeerAccess(branchDowntown.id, branchMidtown.id, 'inventory.read');
+console.log('Downtown can view Midtown stock?', canCheckStock); // true
+
+// 3. Query Stock across all authorized Peer Branches
+const peerBranches = orbitox.context.getAccessiblePeerContexts(branchDowntown.id, 'inventory.read');
+const peerIds = peerBranches.map(b => b.id);
+
+// Generate multi-branch WHERE clause for inventory ORM queries
+const whereClause = await orbitox.security.getPeerVisibilityClause(branchDowntown.id, peerIds, 'user_alice');
+// Result: { OR: [{ contextId: 'branch-downtown' }, { contextId: 'branch-midtown' }] }
+
+const multiBranchStock = await StockRepository.findAll(whereClause);
+```
+
 ---
 
 [⬅️ Prev: Architecture](./02_ARCHITECTURE.md) | [Back to Index](./README.md) | [Next: Zero-Trust Security ➔](./04_ZERO_TRUST_SECURITY.md)
