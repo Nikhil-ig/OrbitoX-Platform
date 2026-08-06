@@ -4,6 +4,7 @@ import { PluginLoaderService } from './plugin-loader.service';
 import { MenuRegistry } from './registries/menu.registry';
 import { PageRegistry } from './registries/page.registry';
 import { WidgetRegistry } from './registries/widget.registry';
+import { MetadataEngine } from './metadata/metadata.engine';
 
 @Injectable()
 export class PluginLifecycleService {
@@ -16,6 +17,7 @@ export class PluginLifecycleService {
     private readonly pageRegistry: PageRegistry,
     private readonly widgetRegistry: WidgetRegistry,
     private readonly actionRegistry: ActionRegistry,
+    private readonly metadataEngine: MetadataEngine,
     private readonly eventBus: EventBusService,
   ) {}
 
@@ -50,6 +52,13 @@ export class PluginLifecycleService {
     }
     if (manifest.agenticActions) {
       this.actionRegistry.register(contextId, manifest.id, manifest.agenticActions);
+    }
+    if (manifest.entities) {
+      manifest.entities.forEach(entity => {
+        // Associate the entity with the current context before registering
+        const contextEntity = { ...entity, contextId };
+        this.metadataEngine.registerEntity(contextEntity);
+      });
     }
 
     // 3. Emit platform event

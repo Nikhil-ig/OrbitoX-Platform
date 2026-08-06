@@ -20,6 +20,10 @@ export class WorkflowService {
     return active;
   }
 
+  async getDefinitionsForContext(contextId: string): Promise<WorkflowDefinition[]> {
+    return Array.from(this.definitions.values()).filter(def => def.contextId === contextId);
+  }
+
   async getDefinition(id: string): Promise<WorkflowDefinition> {
     const def = this.definitions.get(id);
     if (!def) {

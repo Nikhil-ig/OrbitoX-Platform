@@ -18,7 +18,7 @@ export class ContextService {
     const rootId = 'platform_root';
     const rootContext: Context = {
       id: rootId,
-      type: PlatformContextType.PLATFORM,
+      type: 'platform',
       slug: 'root',
       displayName: 'OrbitoX Platform Root',
       parentId: null,
@@ -71,6 +71,7 @@ export class ContextService {
       slug: payload.slug,
       displayName: payload.displayName,
       parentId,
+      relatedContexts: payload.relatedContexts || [],
       rootId,
       path,
       depth,
@@ -125,7 +126,7 @@ export class ContextService {
       throw new Error(`Context ${contextId} not found`);
     }
 
-    const result = {} as Pick<Context, K>;
+    const result = {} as any;
     const hierarchy = this.getHierarchy(contextId);
 
     for (const key of keys) {
@@ -177,5 +178,77 @@ export class ContextService {
       }
     }
     return children;
+  }
+
+  /**
+   * Graph traversal: Get all ancestors (following parentId and relatedContexts)
+   * with cycle detection.
+   */
+  getAncestors(contextId: string): Context[] {
+    const ancestors: Context[] = [];
+    const visited = new Set<string>();
+    const queue: string[] = [contextId];
+
+    while (queue.length > 0) {
+      const currentId = queue.shift()!;
+      if (visited.has(currentId)) continue;
+      
+      visited.add(currentId);
+      const current = this.contexts.get(currentId);
+      if (!current) continue;
+      
+      if (currentId !== contextId) {
+        ancestors.push(current);
+      }
+
+      if (current.parentId && !visited.has(current.parentId)) {
+        queue.push(current.parentId);
+      }
+      
+      if (current.relatedContexts) {
+        for (const relatedId of current.relatedContexts) {
+          if (!visited.has(relatedId)) {
+            queue.push(relatedId);
+          }
+        }
+      }
+    }
+    
+    return ancestors;
+  }
+
+  /**
+   * Graph traversal: Get all descendants (contexts that have this context as parentId or in relatedContexts)
+   * with cycle detection.
+   */
+  getDescendants(contextId: string): Context[] {
+    const descendants: Context[] = [];
+    const visited = new Set<string>();
+    const queue: string[] = [contextId];
+
+    while (queue.length > 0) {
+      const currentId = queue.shift()!;
+      if (visited.has(currentId)) continue;
+      
+      visited.add(currentId);
+      const current = this.contexts.get(currentId);
+      if (!current && currentId !== contextId) continue;
+      
+      if (currentId !== contextId && current) {
+        descendants.push(current);
+      }
+
+      // Find all contexts that point to currentId
+      for (const ctx of this.contexts.values()) {
+        const isChild = ctx.parentId === currentId;
+        const isRelated = ctx.relatedContexts?.includes(currentId);
+        
+        if ((isChild || isRelated) && !visited.has(ctx.id)) {
+          queue.push(ctx.id);
+        }
+      }
+    }
+    
+    return descendants;
   }
 }

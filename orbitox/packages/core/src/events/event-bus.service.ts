@@ -45,7 +45,7 @@ export class EventBusService implements OnModuleInit, OnModuleDestroy {
    */
   private getQueue(domain: string): Queue {
     if (!this.queues.has(domain)) {
-      const queue = new Queue(`domain:${domain}`, { connection: this.connection });
+      const queue = new Queue(`domain-${domain}`, { connection: this.connection });
       this.queues.set(domain, queue);
     }
     return this.queues.get(domain)!;

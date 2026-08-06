@@ -48,6 +48,11 @@ export * from './scheduler/scheduler.service';
 export * from './workflow/workflow.module';
 export * from './workflow/workflow.service';
 export * from './context/types';
+
+export * from './ai/ai.gateway';
+export * from './ai/action.registry';
+export * from './feature-flag/feature-flag.service';
+export * from './capability/capability.engine';
 export * from './context/context.service';
 export * from './feature-flag/types';
 export * from './feature-flag/feature-flag.service';

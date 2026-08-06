@@ -1,5 +1,5 @@
 import { Injectable, LoggerService as NestLoggerService } from '@nestjs/common';
-import pino from 'pino';
+import { PinoLogger } from 'nestjs-pino';
 import { PiiService } from '../security/pii.service';
 
 export interface LogContext {
@@ -12,18 +12,10 @@ export interface LogContext {
 
 @Injectable()
 export class PlatformLoggerService implements NestLoggerService {
-  private readonly pinoLogger: pino.Logger;
-
-  constructor(private readonly piiService: PiiService) {
-    this.pinoLogger = pino({
-      level: process.env.LOG_LEVEL || 'info',
-      formatters: {
-        level: (label) => {
-          return { level: label };
-        },
-      },
-    });
-  }
+  constructor(
+    private readonly piiService: PiiService,
+    private readonly logger: PinoLogger,
+  ) {}
 
   private formatMessage(message: string, context?: LogContext): any {
     const safeContext = this.piiService.sanitize(context || {});
@@ -35,26 +27,26 @@ export class PlatformLoggerService implements NestLoggerService {
   }
 
   log(message: string, context?: LogContext) {
-    this.pinoLogger.info(this.formatMessage(message, context));
+    this.logger.info(this.formatMessage(message, context));
   }
 
   info(message: string, context?: LogContext) {
-    this.pinoLogger.info(this.formatMessage(message, context));
+    this.logger.info(this.formatMessage(message, context));
   }
 
   error(message: string, context?: LogContext & { error?: Error }) {
-    this.pinoLogger.error(this.formatMessage(message, context));
+    this.logger.error(this.formatMessage(message, context));
   }
 
   warn(message: string, context?: LogContext) {
-    this.pinoLogger.warn(this.formatMessage(message, context));
+    this.logger.warn(this.formatMessage(message, context));
   }
 
   debug(message: string, context?: LogContext) {
-    this.pinoLogger.debug(this.formatMessage(message, context));
+    this.logger.debug(this.formatMessage(message, context));
   }
 
   verbose(message: string, context?: LogContext) {
-    this.pinoLogger.trace(this.formatMessage(message, context));
+    this.logger.trace(this.formatMessage(message, context));
   }
 }

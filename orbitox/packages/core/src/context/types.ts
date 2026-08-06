@@ -1,9 +1,13 @@
-export enum PlatformContextType {
-  PLATFORM = 'platform',
-  ORGANISATION = 'organisation',
-  TENANT = 'tenant',
-  BRANCH = 'branch',
-}
+export type PlatformContextType =
+  | 'platform'
+  | 'organisation'
+  | 'tenant'
+  | 'branch'
+  | 'franchise'
+  | 'vendor'
+  | 'consumer'
+  | 'marketplace'
+  | string; // Allow arbitrary context types for universal models
 
 export interface ThemeConfig {
   primaryColor?: string;
@@ -18,6 +22,7 @@ export interface Context {
   displayName: string;
 
   parentId: string | null;
+  relatedContexts?: string[]; // To support O2O2B2B mesh networks and DAGs
   rootId: string;
   path: string; // 'rootId.orgId.tenantId'
   depth: number;

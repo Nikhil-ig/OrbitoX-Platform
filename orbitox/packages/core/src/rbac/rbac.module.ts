@@ -4,9 +4,11 @@ import { RoleService } from './role.service';
 import { PermissionRegistry } from './permission.registry';
 import { PolicyEngine } from './policy.engine';
 import { PermissionGuard } from './guards/permission.guard';
+import { LoggerModule } from '../logger/logger.module';
 
 @Global()
 @Module({
+  imports: [LoggerModule],
   providers: [
     RbacService,
     RoleService,

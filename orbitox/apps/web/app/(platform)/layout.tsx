@@ -4,8 +4,9 @@ import React from 'react';
 import { DynamicSidebar, MenuItem, ThemeProvider, useTheme, ThemeConfig, Button, DynamicCopilot } from '@orbitox/ui';
 
 const sampleMenuItems: MenuItem[] = [
-  { id: 'dash', label: 'Dashboard', path: '/' },
-  { id: 'marketplace', label: 'Marketplace', path: '/admin/marketplace' },
+  { id: 'hms', label: 'HMS', path: '/hms' },
+  { id: 'automations', label: 'Automations', path: '/automations' },
+  { id: 'marketplace', label: 'App Marketplace', path: '/admin/marketplace' },
   {
     id: 'crm',
     label: 'CRM Plugin',

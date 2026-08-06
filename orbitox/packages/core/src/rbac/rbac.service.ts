@@ -2,12 +2,14 @@ import { Injectable, ForbiddenException } from '@nestjs/common';
 import { RoleService } from './role.service';
 import { PolicyEngine, PolicyDecision } from './policy.engine';
 import { PermissionCheck } from '@orbitox/types';
+import { PlatformLoggerService } from '../logger/logger.service';
 
 @Injectable()
 export class RbacService {
   constructor(
     private readonly roleService: RoleService,
     private readonly policyEngine: PolicyEngine,
+    private readonly logger: PlatformLoggerService,
   ) {}
 
   /**
@@ -17,8 +19,22 @@ export class RbacService {
   async authorize(check: PermissionCheck, entity?: any): Promise<boolean> {
     const isAllowed = await this.checkPermission(check, entity);
     if (!isAllowed) {
+      this.logger.warn(`Authorization DENIED`, { 
+        userId: check.userId, 
+        contextId: check.contextId, 
+        permission: check.permission,
+        action: 'authorize'
+      });
       throw new ForbiddenException(`Access denied for permission: ${check.permission}`);
     }
+    
+    this.logger.info(`Authorization ALLOWED`, {
+      userId: check.userId,
+      contextId: check.contextId,
+      permission: check.permission,
+      action: 'authorize'
+    });
+    
     return true;
   }
 

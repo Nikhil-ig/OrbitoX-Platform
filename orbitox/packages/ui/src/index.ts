@@ -8,3 +8,4 @@ export * from './dynamic/dynamic-dashboard';
 export * from './dynamic/dynamic-marketplace';
 export * from './dynamic/dynamic-form';
 export * from './dynamic/dynamic-copilot';
+export * from './dynamic/dynamic-workflow-builder';

@@ -1,3 +1,5 @@
+import jsonLogic from 'json-logic-js';
+
 export interface UserContext {
   userId: string;
   roles: string[];
@@ -18,7 +20,7 @@ export interface AbacPolicyRule {
   id: string;
   resourceType: string;
   action: 'create' | 'read' | 'update' | 'delete' | '*';
-  condition: (user: UserContext, resource: ResourceContext) => boolean;
+  rule: any; // JSON Logic rule
 }
 
 export class AbacEvaluator {
@@ -27,12 +29,13 @@ export class AbacEvaluator {
       id: 'default-owner-or-assigned',
       resourceType: '*',
       action: '*',
-      condition: (user, resource) => {
-        if (user.tenantId !== resource.tenantId) return false;
-        if (user.roles.includes('admin') || user.roles.includes('owner')) return true;
-        if (resource.ownerId && resource.ownerId === user.userId) return true;
-        if (resource.assignedTo && resource.assignedTo === user.userId) return true;
-        return false;
+      rule: {
+        "or": [
+          { "in": ["admin", { "var": "user.roles" }] },
+          { "in": ["owner", { "var": "user.roles" }] },
+          { "==": [{ "var": "resource.ownerId" }, { "var": "user.userId" }] },
+          { "==": [{ "var": "resource.assignedTo" }, { "var": "user.userId" }] }
+        ]
       }
     }
   ];
@@ -51,6 +54,14 @@ export class AbacEvaluator {
              (p.action === '*' || p.action === action)
     );
 
-    return applicablePolicies.some((p) => p.condition(user, resource));
+    const contextData = { user, resource };
+
+    return applicablePolicies.some((p) => {
+      try {
+        return jsonLogic.apply(p.rule, contextData);
+      } catch (e) {
+        return false;
+      }
+    });
   }
 }

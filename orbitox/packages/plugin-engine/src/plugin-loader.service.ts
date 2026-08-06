@@ -1,5 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { PluginManifest, ORBITOX_PLUGIN_METADATA_KEY } from '@orbitox/sdk';
+import { PluginManifest, ORBITOX_PLUGIN_METADATA_KEY, HeadlessPlugin } from '@orbitox/sdk';
 import { ManifestValidator } from './manifest.validator';
 
 export interface LoadedPlugin {
@@ -14,15 +14,25 @@ export class PluginLoaderService {
 
   constructor(private readonly validator: ManifestValidator) {}
 
-  registerPluginModule(moduleClass: any): PluginManifest {
-    const manifest: PluginManifest = Reflect.getMetadata(ORBITOX_PLUGIN_METADATA_KEY, moduleClass);
-    if (!manifest) {
-      throw new Error(`Module ${moduleClass.name} is missing @OrbitoXPlugin decorator metadata`);
+  registerPluginModule(moduleOrConfig: any): PluginManifest {
+    let manifest: PluginManifest;
+    let moduleClass: any = moduleOrConfig;
+
+    if (moduleOrConfig && moduleOrConfig.isOrbitoXPlugin) {
+      // It's a declarative definePlugin config
+      manifest = (moduleOrConfig as HeadlessPlugin).manifest;
+      moduleClass = null; // No NestJS module for declarative plugins
+    } else {
+      // It's a traditional NestJS module
+      manifest = Reflect.getMetadata(ORBITOX_PLUGIN_METADATA_KEY, moduleOrConfig);
+      if (!manifest) {
+        throw new Error(`Module ${moduleOrConfig.name || 'Unknown'} is missing @OrbitoXPlugin decorator metadata`);
+      }
     }
 
     this.validator.validate(manifest);
     this.loadedPlugins.set(manifest.id, { manifest, moduleClass });
-    this.logger.log(`Loaded plugin module: ${manifest.name} (v${manifest.version})`);
+    this.logger.log(`Loaded plugin: ${manifest.name} (v${manifest.version})`);
     return manifest;
   }
 

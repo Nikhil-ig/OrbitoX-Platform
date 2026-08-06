@@ -1,0 +1,33 @@
+{
+  "name": "external-restaurant-os",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "start": "npx tsx src/main.ts"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "devDependencies": {
+    "@types/node": "^26.1.2",
+    "@types/react": "^19.2.18",
+    "ts-node": "^10.9.2",
+    "tsx": "^4.23.7",
+    "typescript": "^7.0.2"
+  },
+  "dependencies": {
+    "@nestjs/common": "^11.1.28",
+    "@nestjs/core": "^11.1.28",
+    "@orbitox/core": "file:../orbitox/packages/core/orbitox-core-0.0.0.tgz",
+    "@orbitox/plugin-engine": "file:../orbitox/packages/plugin-engine/orbitox-plugin-engine-0.0.0.tgz",
+    "@orbitox/sdk": "file:../orbitox/packages/sdk/orbitox-sdk-0.0.0.tgz",
+    "@orbitox/types": "file:../orbitox/packages/types/orbitox-types-0.0.0.tgz",
+    "@orbitox/utils": "file:../orbitox/packages/utils/orbitox-utils-0.0.0.tgz",
+    "json-logic-js": "^2.0.5",
+    "pino": "^10.3.1",
+    "reflect-metadata": "^0.2.2",
+    "rxjs": "^7.8.2"
+  }
+}

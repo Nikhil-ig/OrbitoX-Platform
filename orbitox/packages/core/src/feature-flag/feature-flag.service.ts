@@ -1,7 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { FeatureFlag, FlagCondition, FlagOverride } from './types';
 import { ContextService } from '../context/context.service';
-import { PlatformContextType } from '../context/types';
 
 @Injectable()
 export class FeatureFlagService {
@@ -15,7 +14,26 @@ export class FeatureFlagService {
       this.logger.warn(`Feature flag ${flag.id} is already registered. Overwriting.`);
     }
     this.flags.set(flag.id, flag);
+    this.flags.set(flag.id, flag);
     this.logger.debug(`Registered feature flag: ${flag.id}`);
+  }
+
+  setOverride(flagId: string, contextId: string, effect: boolean): void {
+    const flag = this.flags.get(flagId);
+    if (!flag) return;
+
+    // Remove existing exact override
+    flag.overrides = (flag.overrides || []).filter(
+      (o) => !(o.conditions && o.conditions.length === 1 && o.conditions[0]?.dimension === 'context_id' && o.conditions[0]?.value === contextId)
+    );
+
+    // Add new override
+    flag.overrides.push({
+      id: `override_${contextId}_${Date.now()}`,
+      priority: 100,
+      effect,
+      conditions: [{ dimension: 'context_id', operator: 'eq', value: contextId }],
+    });
   }
 
   async isEnabled(flagId: string, contextId: string): Promise<boolean> {
@@ -50,8 +68,8 @@ export class FeatureFlagService {
 
     // We must resolve hierarchy to get effective org/tenant IDs
     const hierarchy = this.contextService.getHierarchy(contextId);
-    const org = hierarchy.find(c => c.type === PlatformContextType.ORGANISATION);
-    const tenant = hierarchy.find(c => c.type === PlatformContextType.TENANT);
+    const org = hierarchy.find(c => c.type === 'organisation');
+    const tenant = hierarchy.find(c => c.type === 'tenant');
 
     for (const condition of conditions) {
       let subjectValue: any;

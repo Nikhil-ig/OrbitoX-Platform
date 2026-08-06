@@ -5,6 +5,8 @@ import { commandList } from './commands/list';
 import { commandDoctor } from './commands/doctor';
 import { commandValidate } from './commands/validate';
 import { commandStatus } from './commands/status';
+import { commandCreate } from './commands/create';
+import { commandGenerate } from './commands/generate';
 
 const VERSION = '3.0.0';
 
@@ -20,6 +22,9 @@ Usage: orbitox <command> [options]
 
 Commands:
   new <plugin-name>       Scaffold a production-ready dual-architecture plugin
+  create <app-name>       Scaffold a full standalone SaaS project from a template
+  generate:db             Auto-generate Prisma schema from manifest.json
+  generate:api            Auto-generate Express API routes from manifest.json
   list                    Show all installed plugins with metadata
   validate <plugin>       Validate a plugin's manifest against the schema
   status                  Show platform kernel status and workspace info
@@ -28,6 +33,8 @@ Commands:
   help                    Show this help message
 
 Examples:
+  orbitox create restaurant-os --template=restaurant
+  orbitox generate:db
   orbitox new tickets
   orbitox list
   orbitox validate crm
@@ -37,6 +44,18 @@ Examples:
 }
 
 switch (command) {
+  case 'create':
+    commandCreate(commandArgs);
+    break;
+
+  case 'generate:db':
+    commandGenerate('db', commandArgs);
+    break;
+    
+  case 'generate:api':
+    commandGenerate('api', commandArgs);
+    break;
+
   case 'new':
     commandNew(commandArgs);
     break;

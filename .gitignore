@@ -1,0 +1,35 @@
+# Dependencies
+node_modules/
+.pnpm-store/
+
+# Build outputs & tarballs
+dist/
+.next/
+out/
+build/
+*.tgz
+*.tsbuildinfo
+
+# Temporary CLI test outputs & scratch plugins
+orbitox/tools/cli/super-restaurant/
+orbitox/plugins/my-noob-plugin/
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# IDE & OS
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# Logs & Coverage
+*.log
+npm-debug.log*
+pnpm-debug.log*
+coverage/
