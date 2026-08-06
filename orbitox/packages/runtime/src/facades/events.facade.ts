@@ -102,6 +102,22 @@ export class EventsFacade {
   }
 
   /**
+   * Emit multiple events in a single concurrent batch call.
+   * High-throughput stream processing helper.
+   * 
+   * @example
+   * await orbitox.events.emitBatch([
+   *   { name: 'order.item_added', payload: { itemId: '1' }, contextId },
+   *   { name: 'order.item_added', payload: { itemId: '2' }, contextId },
+   * ]);
+   */
+  async emitBatch(events: Array<{ name: string; payload: any; contextId?: string; source?: string }>): Promise<void> {
+    await Promise.all(
+      events.map(evt => this.emit(evt.name, evt.payload, evt.contextId || 'global', evt.source || 'orbitox'))
+    );
+  }
+
+  /**
    * Listen for an event.
    * @example
    * orbitox.events.on('crm.lead.created', async (payload, meta) => {

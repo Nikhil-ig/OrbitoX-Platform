@@ -54,6 +54,10 @@ async function run() {
   });
   
   await orbitox.events.emit('lead.created', { id: 'lead_001', name: 'John Doe' }, ctx.id);
+  await orbitox.events.emitBatch([
+    { name: 'lead.created', payload: { id: 'lead_002', name: 'Jane Smith' }, contextId: ctx.id },
+    { name: 'lead.created', payload: { id: 'lead_003', name: 'Bob Johnson' }, contextId: ctx.id },
+  ]);
 
   // 7. AI 
   const reply = await orbitox.ai.ask('Summarize the CRM data', { contextId: ctx.id });
