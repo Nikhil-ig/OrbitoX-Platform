@@ -12,25 +12,25 @@ export class ContextFacade {
   constructor(private readonly svc: ContextService) {}
 
   /**
-   * Resolve a context by ID or slug.
+   * Resolve a context by ID or slug (optionally within a parent context scope).
    * Returns undefined if not found (never throws).
    */
-  get(idOrSlug: string): Context | undefined {
-    return this.svc.resolveContext(idOrSlug);
+  get(idOrSlug: string, parentId?: string): Context | undefined {
+    return this.svc.resolveContext(idOrSlug, parentId);
   }
 
   /**
    * Update an existing context.
    */
-  update(idOrSlug: string, updates: Partial<Context>): Context {
-    return this.svc.updateContext(idOrSlug, updates);
+  update(idOrSlug: string, updates: Partial<Context>, parentId?: string): Context {
+    return this.svc.updateContext(idOrSlug, updates, parentId);
   }
 
   /**
    * Delete a context.
    */
-  delete(idOrSlug: string): boolean {
-    return this.svc.deleteContext(idOrSlug);
+  delete(idOrSlug: string, parentId?: string): boolean {
+    return this.svc.deleteContext(idOrSlug, parentId);
   }
 
   /**

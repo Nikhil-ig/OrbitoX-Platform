@@ -166,6 +166,24 @@ async function run() {
   orbitox.security.policy('strict-refund').delete();
   const policyDeleted = !orbitox.security.policy('strict-refund').get();
   
+  // Multi-Org Same-Slug Isolation Test
+  const orgA = await orbitox.tenant('org-a', 'Org A').type('organisation').create();
+  const orgB = await orbitox.tenant('org-b', 'Org B').type('organisation').create();
+
+  const childA = await orbitox.tenant('ny-franchise', 'Acme NY').parent(orgA.id).create();
+  const childB = await orbitox.tenant('ny-franchise', 'Globex NY').parent(orgB.id).create();
+
+  const getChildA = orbitox.tenant('ny-franchise', '').parent(orgA.id).get();
+  const getChildB = orbitox.tenant('ny-franchise', '').parent(orgB.id).get();
+
+  const isIsolated = getChildA?.displayName === 'Acme NY' && getChildB?.displayName === 'Globex NY';
+  console.log('Multi-Org Parent-Scoped Slug Isolation Passed:', isIsolated);
+
+  orbitox.tenant('ny-franchise', '').parent(orgA.id).delete();
+  orbitox.tenant('ny-franchise', '').parent(orgB.id).delete();
+  orbitox.tenant('org-a', '').delete();
+  orbitox.tenant('org-b', '').delete();
+
   console.log('CRUD Deletions passed:', workflowDeleted && planDeleted && tenantDeleted && policyDeleted);
 
   console.log('\nAll tests passed successfully!');

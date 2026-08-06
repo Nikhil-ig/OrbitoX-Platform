@@ -4,6 +4,7 @@ import { FeaturesFacade } from '../facades/features.facade';
 import { PlatformContextType, Context } from '@orbitox/core';
 
 export class TenantBuilder {
+  private _parentId?: string;
   private _type: PlatformContextType = 'tenant';
   private _ownerId: string = 'system';
   private _locale?: string;
@@ -22,6 +23,11 @@ export class TenantBuilder {
     private readonly billingFacade: BillingFacade,
     private readonly featuresFacade: FeaturesFacade
   ) {}
+
+  parent(parentId: string): this {
+    this._parentId = parentId;
+    return this;
+  }
 
   type(type: PlatformContextType): this {
     this._type = type;
@@ -73,6 +79,7 @@ export class TenantBuilder {
       slug: this.slug,
       displayName: this.displayName,
       type: this._type,
+      parentId: this._parentId,
       ownerId: this._ownerId,
       locale: this._locale,
       currency: this._currency,
@@ -99,12 +106,12 @@ export class TenantBuilder {
   }
 
   get(): Context | undefined {
-    return this.contextFacade.get(this.slug);
+    return this.contextFacade.get(this.slug, this._parentId);
   }
 
   async update(): Promise<Context> {
     const existing = this.get();
-    if (!existing) throw new Error(`Cannot update: Tenant ${this.slug} does not exist`);
+    if (!existing) throw new Error(`Cannot update: Tenant '${this.slug}' does not exist under specified parent scope.`);
 
     const ctx = this.contextFacade.update(existing.id, {
       displayName: this.displayName,
@@ -114,7 +121,7 @@ export class TenantBuilder {
       currency: this._currency,
       timezone: this._timezone,
       settings: this._settings,
-    });
+    }, this._parentId);
 
     if (this._planId) {
       await this.billingFacade.subscribeContext({
@@ -137,6 +144,6 @@ export class TenantBuilder {
   delete(): boolean {
     const existing = this.get();
     if (!existing) return false;
-    return this.contextFacade.delete(existing.id);
+    return this.contextFacade.delete(existing.id, this._parentId);
   }
 }

@@ -48,17 +48,21 @@ export class ContextService {
   }
 
   createContext(payload: CreateContextPayload): Context {
-    if (this.slugIndex.has(payload.slug)) {
-      throw new Error(`Context with slug '${payload.slug}' already exists`);
+    const parentId = payload.parentId || 'platform_root';
+    const compositeKey = `${parentId}:${payload.slug}`;
+    
+    if (this.slugIndex.has(compositeKey)) {
+      throw new Error(`Context with slug '${payload.slug}' already exists under parent '${parentId}'`);
     }
 
     const id = `ctx_${Date.now()}_${Math.floor(Math.random() * 1000)}`;
-    let parentId = payload.parentId || 'platform_root';
     let rootId = 'platform_root';
     let path = id;
     let depth = 0;
 
-    const parent = this.contexts.get(parentId);
+    const parent = this.contexts.get(parentId) || Array.from(this.contexts.values()).find(c => c.slug === parentId);
+    const resolvedParentId = parent ? parent.id : parentId;
+
     if (parent) {
       rootId = parent.rootId;
       path = `${parent.path}.${id}`;
@@ -70,7 +74,7 @@ export class ContextService {
       type: payload.type,
       slug: payload.slug,
       displayName: payload.displayName,
-      parentId,
+      parentId: resolvedParentId,
       relatedContexts: payload.relatedContexts || [],
       rootId,
       path,
@@ -99,29 +103,55 @@ export class ContextService {
     };
 
     this.contexts.set(id, context);
-    this.slugIndex.set(context.slug, id);
+    // Store composite key parentId:slug and parentSlug:slug
+    this.slugIndex.set(`${resolvedParentId}:${context.slug}`, id);
+    if (parent) {
+      this.slugIndex.set(`${parent.slug}:${context.slug}`, id);
+      this.slugIndex.set(`${parent.slug}/${context.slug}`, id);
+    }
+    // Also store plain slug if not already taken (fallback)
+    if (!this.slugIndex.has(context.slug)) {
+      this.slugIndex.set(context.slug, id);
+    }
     
     this.logger.debug(`Created context ${id} (${payload.slug}) at depth ${depth}`);
     return context;
   }
 
-  resolveContext(identifier: string): Context | undefined {
-    // Try by ID first
+  resolveContext(identifier: string, parentId?: string): Context | undefined {
+    // 1. Try direct ID match
     if (this.contexts.has(identifier)) {
       return this.contexts.get(identifier);
     }
+
+    // 2. Try parentId-scoped lookup
+    if (parentId) {
+      const parent = this.resolveContext(parentId);
+      if (parent) {
+        const compositeKey = `${parent.id}:${identifier}`;
+        const compositeSlugKey = `${parent.slug}:${identifier}`;
+        const id = this.slugIndex.get(compositeKey) || this.slugIndex.get(compositeSlugKey);
+        if (id) return this.contexts.get(id);
+      }
+    }
+
+    // 3. Try slash-scoped path (e.g. 'acme/ny-franchise')
+    if (identifier.includes('/')) {
+      const id = this.slugIndex.get(identifier);
+      if (id) return this.contexts.get(id);
+    }
     
-    // Try by Slug
-    const id = this.slugIndex.get(identifier);
-    if (id) {
-      return this.contexts.get(id);
+    // 4. Try global slug fallback
+    const fallbackId = this.slugIndex.get(identifier);
+    if (fallbackId) {
+      return this.contexts.get(fallbackId);
     }
     
     return undefined;
   }
 
-  updateContext(identifier: string, updates: Partial<Context>): Context {
-    const context = this.resolveContext(identifier);
+  updateContext(identifier: string, updates: Partial<Context>, parentId?: string): Context {
+    const context = this.resolveContext(identifier, parentId);
     if (!context) {
       throw new Error(`Context ${identifier} not found`);
     }
@@ -142,8 +172,8 @@ export class ContextService {
     return updated;
   }
 
-  deleteContext(identifier: string): boolean {
-    const context = this.resolveContext(identifier);
+  deleteContext(identifier: string, parentId?: string): boolean {
+    const context = this.resolveContext(identifier, parentId);
     if (!context) return false;
 
     // Check if it's the root (cannot delete root)
