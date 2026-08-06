@@ -228,6 +228,35 @@ class OrbitoXSingleton {
 
   private registeredPlugins: Map<string, any> = new Map();
 
+  // ─── Ultra-Easy Builders & Middleware ────────────────────────
+
+  /**
+   * Ultra-Easy Fluent Builder for creating Tenants & Branches.
+   * Auto-wires contexts, billing plans, and feature flags in one chain.
+   * 
+   * @example
+   * const tenant = await orbitox.tenant('acme', 'Acme Corp')
+   *   .subscribe('pro')
+   *   .enableFeature('new-ui')
+   *   .create();
+   */
+  tenant(slug: string, displayName: string): import('./builders/tenant.builder').TenantBuilder {
+    const { TenantBuilder } = require('./builders/tenant.builder');
+    return new TenantBuilder(slug, displayName, this.context, this.billing, this.features);
+  }
+
+  /**
+   * Express/Fastify Middleware that auto-resolves multi-tenancy context,
+   * validates auth, and automatically logs audit trails for API requests.
+   * 
+   * @example
+   * app.use(orbitox.middleware({ enforceAuth: true }));
+   */
+  middleware(options: import('./middleware/orbitox.middleware').MiddlewareOptions = {}): any {
+    const { createMiddleware } = require('./middleware/orbitox.middleware');
+    return createMiddleware(this.context, this.security, this.audit, options);
+  }
+
   /**
    * 🔌 Plugin Extension System — Register custom plugins and extensions.
    * Enables developers to seamlessly customize and extend the `orbitox` platform.

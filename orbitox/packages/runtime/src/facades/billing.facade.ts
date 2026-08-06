@@ -6,9 +6,17 @@
  */
 
 import { PlanService } from '@orbitox/core';
+import { PlanBuilder } from '../builders/plan.builder';
 
 export class BillingFacade {
   constructor(private readonly planSvc: PlanService) {}
+
+  /**
+   * Use the fluent builder to create a billing plan easily.
+   */
+  buildPlan(name: string): PlanBuilder {
+    return new PlanBuilder(name, this);
+  }
 
   /**
    * Create a billing plan.

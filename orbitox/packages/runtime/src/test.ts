@@ -102,6 +102,49 @@ async function run() {
     }
   });
 
+  // 11. Ultra-Easy Builders
+  console.log('\\n--- Testing Ultra-Easy Builders ---');
+  
+  // 11.1 Plan Builder
+  const easyPlan = await orbitox.billing.buildPlan('Enterprise')
+    .price(999, 'USD', 'year')
+    .includeFeatures('crm', 'ai_assistant', 'sso')
+    .limit('maxUsers', 1000)
+    .publish();
+  console.log('Builder created plan:', easyPlan.name, easyPlan.features);
+
+  // 11.2 Tenant Builder
+  const easyTenant = await orbitox.tenant('mega-corp', 'Mega Corp Inc')
+    .type('tenant')
+    .owner('user_999')
+    .subscribe(easyPlan.id)
+    .enableFeature('new-ui')
+    .create();
+  console.log('Builder created tenant:', easyTenant.id, 'with plan and features enabled.');
+
+  // 11.3 Workflow Builder
+  await orbitox.workflows.build('onboarding-flow', easyTenant.id)
+    .name('New Client Onboarding')
+    .onEvent('client.joined')
+    .action('send-email', 'notifications.email', { template: 'welcome' })
+    .delay(2, 'days')
+    .action('check-in', 'crm.task', { title: 'Check in with client' })
+    .activate();
+  console.log('Builder registered workflow: onboarding-flow');
+
+  // 11.4 Policy Builder
+  orbitox.security.policy('strict-refund')
+    .resource('order')
+    .action('refund')
+    .maxFieldValue('amount', 100)
+    .requireUserAttribute('role', 'manager')
+    .register();
+  console.log('Builder registered security policy: strict-refund');
+
+  // 11.5 Middleware Verification (Just ensure it returns a function)
+  const mw = orbitox.middleware();
+  console.log('Middleware created:', typeof mw === 'function');
+
   console.log('\nAll tests passed successfully!');
 }
 

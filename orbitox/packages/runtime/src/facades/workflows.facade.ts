@@ -23,9 +23,17 @@
 
 import { WorkflowService } from '@orbitox/core';
 import { WorkflowDefinition, WorkflowStep, WorkflowTrigger } from '@orbitox/core';
+import { WorkflowBuilder } from '../builders/workflow.builder';
 
 export class WorkflowsFacade {
   constructor(private readonly svc: WorkflowService) {}
+
+  /**
+   * Use the fluent builder to create and activate a workflow easily.
+   */
+  build(id: string, contextId: string = 'global'): WorkflowBuilder {
+    return new WorkflowBuilder(id, contextId, this);
+  }
 
   /**
    * Register a workflow definition.

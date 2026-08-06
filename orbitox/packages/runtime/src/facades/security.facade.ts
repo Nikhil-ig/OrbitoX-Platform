@@ -11,14 +11,22 @@
  */
 
 import { RbacService, PolicyEngine, PolicyDecision, AbacPolicyRule, AbacEvaluator, PiiService } from '@orbitox/core';
+import { PolicyBuilder } from '../builders/policy.builder';
 
 export class SecurityFacade {
   constructor(
     private readonly rbac: RbacService,
-    private readonly policy: PolicyEngine,
+    private readonly policyEngine: PolicyEngine,
     private readonly mode: 'open' | 'strict',
     private readonly piiService: PiiService,
   ) {}
+
+  /**
+   * Use the fluent builder to create a security policy easily.
+   */
+  policy(id: string): PolicyBuilder {
+    return new PolicyBuilder(id, this);
+  }
 
   /**
    * Deeply sanitizes an object by masking PII fields (emails, phones, credit cards, secrets).
@@ -87,7 +95,7 @@ export class SecurityFacade {
    * });
    */
   addPolicy(name: string, evaluator: (check: any) => Promise<PolicyDecision>): void {
-    this.policy.registerEvaluator(name, evaluator);
+    this.policyEngine.registerEvaluator(name, evaluator);
   }
 
   /**
@@ -96,6 +104,6 @@ export class SecurityFacade {
    */
   async getVisibilityClause(contextId: string, userId: string, resource: string): Promise<Record<string, any>> {
     if (this.mode === 'open') return { contextId };
-    return this.policy.getVisibilityClause(contextId, userId, resource, 'read');
+    return this.policyEngine.getVisibilityClause(contextId, userId, resource, 'read');
   }
 }
