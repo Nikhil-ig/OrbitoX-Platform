@@ -25,17 +25,20 @@ export class FeatureFlagService {
     const flag = this.flags.get(flagId);
     if (!flag) return;
 
+    const resolved = this.contextService.resolveContext(contextId);
+    const targetId = resolved ? resolved.id : contextId;
+
     // Remove existing exact override
     flag.overrides = (flag.overrides || []).filter(
-      (o) => !(o.conditions && o.conditions.length === 1 && o.conditions[0]?.dimension === 'context_id' && o.conditions[0]?.value === contextId)
+      (o) => !(o.conditions && o.conditions.length === 1 && o.conditions[0]?.dimension === 'context_id' && (o.conditions[0]?.value === targetId || o.conditions[0]?.value === contextId))
     );
 
     // Add new override
     flag.overrides.push({
-      id: `override_${contextId}_${Date.now()}`,
+      id: `override_${targetId}_${Date.now()}`,
       priority: 100,
       effect,
-      conditions: [{ dimension: 'context_id', operator: 'eq', value: contextId }],
+      conditions: [{ dimension: 'context_id', operator: 'eq', value: targetId }],
     });
   }
 

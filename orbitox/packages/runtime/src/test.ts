@@ -186,6 +186,55 @@ async function run() {
 
   console.log('CRUD Deletions passed:', workflowDeleted && planDeleted && tenantDeleted && policyDeleted);
 
+  console.log('\n--- Testing Mandatory Header & Domain Protection Middleware ---');
+  const strictMw = orbitox.middleware({
+    strictDomainProtection: true,
+    baseDomain: 'orbitox.com',
+    enforceAuth: true,
+  });
+
+  // Test 1: Valid subdomain (acme.orbitox.com)
+  let nextCalled = false;
+  let statusResult = 200;
+  let jsonResult: any = null;
+
+  const mockReq1 = {
+    headers: { host: 'acme.orbitox.com', authorization: 'Bearer user_subdomain' },
+    method: 'GET',
+    url: '/api/menu'
+  };
+  const mockRes1 = {
+    status(s: number) { statusResult = s; return this; },
+    json(obj: any) { jsonResult = obj; return this; }
+  };
+
+  await strictMw(mockReq1, mockRes1, () => { nextCalled = true; });
+  console.log('Subdomain Resolution (acme.orbitox.com):', nextCalled && (mockReq1 as any).orbitoxContext?.slug === 'acme');
+
+  // Test 2: Multi-Header Resolution (x-org-id)
+  nextCalled = false;
+  const mockReq2 = {
+    headers: { 'x-org-id': 'acme', authorization: 'Bearer user_header' },
+    method: 'GET',
+    url: '/api/menu'
+  };
+  const mockRes2 = { status() { return this; }, json() { return this; } };
+  await strictMw(mockReq2, mockRes2, () => { nextCalled = true; });
+  console.log('Multi-Header Resolution (x-org-id):', nextCalled && (mockReq2 as any).orbitoxContext?.slug === 'acme');
+
+  // Test 3: Unknown Tenant Blocking (403 Forbidden)
+  let forbiddenCalled = false;
+  const mockReq3 = {
+    headers: { 'x-tenant-id': 'non-existent-tenant-999', authorization: 'Bearer user_unknown' },
+    method: 'GET',
+  };
+  const mockRes3 = {
+    status(s: number) { if (s === 403) forbiddenCalled = true; return this; },
+    json(obj: any) { return this; }
+  };
+  await strictMw(mockReq3, mockRes3, () => {});
+  console.log('Unknown Tenant Blocked with 403:', forbiddenCalled);
+
   console.log('\nAll tests passed successfully!');
 }
 
