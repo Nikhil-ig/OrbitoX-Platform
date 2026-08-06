@@ -70,4 +70,19 @@ export class FeaturesFacade {
   async setOverride(flagId: string, contextId: string, enabled: boolean): Promise<void> {
     await this.svc.setOverride(flagId, contextId, enabled);
   }
+
+  /**
+   * Evaluate all registered feature flags for a given context and return a flagId → boolean map.
+   * Useful for UI frontends to load all tenant flags in a single API call.
+   */
+  async evaluateAll(contextId: string = 'global'): Promise<Record<string, boolean>> {
+    const flags = this.svc.getAllFlags();
+    const results: Record<string, boolean> = {};
+    await Promise.all(
+      flags.map(async f => {
+        results[f.id] = await this.isEnabled(f.id, contextId);
+      })
+    );
+    return results;
+  }
 }

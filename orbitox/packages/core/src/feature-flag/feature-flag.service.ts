@@ -14,8 +14,11 @@ export class FeatureFlagService {
       this.logger.warn(`Feature flag ${flag.id} is already registered. Overwriting.`);
     }
     this.flags.set(flag.id, flag);
-    this.flags.set(flag.id, flag);
     this.logger.debug(`Registered feature flag: ${flag.id}`);
+  }
+
+  getAllFlags(): FeatureFlag[] {
+    return Array.from(this.flags.values());
   }
 
   setOverride(flagId: string, contextId: string, effect: boolean): void {

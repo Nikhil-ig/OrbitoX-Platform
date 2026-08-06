@@ -34,7 +34,9 @@ async function run() {
   await orbitox.features.setOverride('new-ui', ctx.id, true);
   
   const isUiEnabled = await orbitox.features.isEnabled('new-ui', ctx.id);
+  const allFlags = await orbitox.features.evaluateAll(ctx.id);
   console.log('Is new UI enabled for Acme Corp?', isUiEnabled);
+  console.log('Evaluated all flags for Acme Corp:', allFlags);
 
   // 5. Audit Log
   await orbitox.audit.log({
