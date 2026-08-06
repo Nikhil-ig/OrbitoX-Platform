@@ -88,37 +88,34 @@ flowchart TD
 import { orbitox } from '@orbitox/runtime';
 
 // Starter Plan
-const starterPlan = await orbitox.billing.createPlan({
-  name: 'Starter',
-  description: 'Best for single-location businesses',
-  price: 29,
-  currency: 'USD',
-  interval: 'month',
-  features: ['pos_basic', 'reports_standard'],
-  limits: { maxBranches: 1, maxMonthlyOrders: 1000 },
-});
+const starterPlan = await orbitox.billing.buildPlan('Starter')
+  .description('Best for single-location businesses')
+  .price(29)
+  .interval('month')
+  .features(['pos_basic', 'reports_standard'])
+  .limit('maxBranches', 1)
+  .limit('maxMonthlyOrders', 1000)
+  .publish();
 
 // Pro Plan
-const proPlan = await orbitox.billing.createPlan({
-  name: 'Pro Franchise',
-  description: 'For growing chains and multi-branch operations',
-  price: 99,
-  currency: 'USD',
-  interval: 'month',
-  features: ['pos_basic', 'reports_standard', 'ai_assistant', 'custom_flags', 'api_access'],
-  limits: { maxBranches: 5, maxMonthlyOrders: 10000 },
-});
+const proPlan = await orbitox.billing.buildPlan('Pro Franchise')
+  .description('For growing chains and multi-branch operations')
+  .price(99)
+  .interval('month')
+  .features(['pos_basic', 'reports_standard', 'ai_assistant', 'custom_flags', 'api_access'])
+  .limit('maxBranches', 5)
+  .limit('maxMonthlyOrders', 10000)
+  .publish();
 
 // Enterprise Plan
-const enterprisePlan = await orbitox.billing.createPlan({
-  name: 'Enterprise',
-  description: 'Unlimited scale for franchise empires',
-  price: 499,
-  currency: 'USD',
-  interval: 'month',
-  features: ['pos_basic', 'reports_standard', 'ai_assistant', 'custom_flags', 'api_access', 'custom_workflows', 'dedicated_support'],
-  limits: { maxBranches: -1, maxMonthlyOrders: -1 }, // -1 = unlimited
-});
+const enterprisePlan = await orbitox.billing.buildPlan('Enterprise')
+  .description('Unlimited scale for franchise empires')
+  .price(499)
+  .interval('month')
+  .features(['pos_basic', 'reports_standard', 'ai_assistant', 'custom_flags', 'api_access', 'custom_workflows', 'dedicated_support'])
+  .limit('maxBranches', -1) // -1 = unlimited
+  .limit('maxMonthlyOrders', -1)
+  .publish();
 ```
 
 ### Step 5.2: List Available Plans
@@ -166,6 +163,22 @@ if (!quota.allowed) {
 
 console.log(`Remaining branch slots: ${quota.remaining}`);
 ```
+
+### Step 5.5: Manage Plans (Update and Delete)
+
+```typescript
+// Update Plan Pricing and Limits
+await orbitox.billing.buildPlan('Pro Franchise')
+  .price(129) // Increase price
+  .limit('maxBranches', 10) // Increase limits
+  .update();
+
+// Get Plan Details
+const planDetails = await orbitox.billing.buildPlan('Starter').get();
+console.log('Starter Plan Price:', planDetails.price);
+
+// Delete Plan (Soft delete to preserve existing subscriptions)
+await orbitox.billing.buildPlan('Starter').delete();
 ```
 
 ---

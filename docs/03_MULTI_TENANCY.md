@@ -88,17 +88,15 @@ flowchart TD
 ```typescript
 import { orbitox } from '@orbitox/runtime';
 
-const orgHQ = orbitox.context.create({
-  slug: 'acme-corp',
-  displayName: 'Acme Corporation HQ',
-  type: 'organisation',
-  ownerId: 'exec_john',
-  settings: {
+const orgHQ = await orbitox.tenant('acme-corp', 'Acme Corporation HQ')
+  .type('organisation')
+  .owner('exec_john')
+  .settings({
     currency: 'USD',
     timezone: 'America/New_York',
     country: 'US',
-  },
-});
+  })
+  .create();
 
 console.log('HQ Context ID:', orgHQ.id);
 ```
@@ -106,39 +104,36 @@ console.log('HQ Context ID:', orgHQ.id);
 ### Step 3.2: Create Tenant (Franchisee) Node
 
 ```typescript
-const tenantNY = orbitox.context.create({
-  slug: 'ny-franchise',
-  displayName: 'Acme NY Group',
-  type: 'tenant',
-  parentId: orgHQ.id,   // ← Links to HQ
-  ownerId: 'owner_bob',
-  settings: { region: 'Northeast' },
-});
+const tenantNY = await orbitox.tenant('ny-franchise', 'Acme NY Group')
+  .type('tenant')
+  .parent(orgHQ.id) // ← Links to HQ
+  .owner('owner_bob')
+  .settings({ region: 'Northeast' })
+  .create();
 ```
 
 ### Step 3.3: Create Branch (Local Store) Node
 
 ```typescript
-const branchDowntown = orbitox.context.create({
-  slug: 'downtown-store',
-  displayName: 'Downtown Store #101',
-  type: 'branch',
-  parentId: tenantNY.id,   // ← Links to Tenant
-  ownerId: 'mgr_alice',
-  settings: { operatingHours: '09:00-22:00' },
-});
+const branchDowntown = await orbitox.tenant('downtown-store', 'Downtown Store #101')
+  .type('branch')
+  .parent(tenantNY.id) // ← Links to Tenant
+  .owner('mgr_alice')
+  .settings({ operatingHours: '09:00-22:00' })
+  .create();
 ```
 
 ### Step 3.4: Create Vendor with Mesh Links
 
 ```typescript
-const vendor = orbitox.context.create({
-  slug: 'prime-meats',
-  displayName: 'Prime Meats National Supplier',
-  type: 'vendor',
-  ownerId: 'vendor_admin',
-  relatedContexts: [branchDowntown.id], // Cross-tenant mesh
-});
+const vendor = await orbitox.tenant('prime-meats', 'Prime Meats National Supplier')
+  .type('vendor')
+  .owner('vendor_admin')
+  // For mesh links, you can still use the underlying context facade or extensions
+  .create();
+
+// Add mesh link manually (vendor mesh extension)
+orbitox.context.addMeshLink(vendor.id, branchDowntown.id);
 ```
 
 ### Step 3.5: Query and Traverse the Hierarchy
@@ -152,9 +147,21 @@ const chain = orbitox.context.ancestors(branchDowntown.id);
 const children = orbitox.context.children(tenantNY.id);
 // Returns: [Downtown Store, Midtown Store]
 
-// Look up a context by slug
-const ctx = orbitox.context.get('downtown-store');
+// Look up a context via builder
+const ctx = orbitox.tenant('downtown-store').get();
 console.log('Branch owner:', ctx.ownerId);
+```
+
+### Step 3.6: Manage Contexts (Update and Delete)
+
+```typescript
+// Update settings (deep merged automatically)
+await orbitox.tenant('ny-franchise')
+  .settings({ supportEmail: 'ny-support@acme.com' })
+  .update();
+
+// Delete a context (will cascade delete or fail if protection is enabled)
+orbitox.tenant('downtown-store').delete();
 ```
 
 ---

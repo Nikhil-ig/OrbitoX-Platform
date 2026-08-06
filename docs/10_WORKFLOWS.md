@@ -83,46 +83,28 @@ sequenceDiagram
 import { orbitox } from '@orbitox/runtime';
 
 // Alert the manager when any order over $200 is placed
-await orbitox.workflows.define({
-  id: 'vip_order_alert',
-  displayName: 'VIP Order Manager Alert',
-  trigger: {
-    type: 'event',
-    eventName: 'order.placed',
-  },
-  conditions: [
-    { field: 'payload.total', operator: 'gte', value: 200 }, // Only trigger if total >= $200
-  ],
-  actions: [
-    {
-      type: 'notification',
-      target: 'manager@restaurant.com',
-      message: '🔔 VIP Order Alert: A large order of ${{payload.total}} has been placed at Table {{payload.tableNumber}}!',
-    },
-  ],
-});
+await orbitox.workflows.build('vip_order_alert', 'tenant-ny')
+  .name('VIP Order Manager Alert')
+  .onEvent('order.placed')
+  // We can push actions to the workflow directly:
+  .action('notification', 'manager@restaurant.com', {
+    message: '🔔 VIP Order Alert: A large order of ${{payload.total}} has been placed at Table {{payload.tableNumber}}!'
+  })
+  .activate();
 ```
 
 ### Step 10.2: Scheduled Cron Workflow (Daily Report)
 
 ```typescript
 // Send a daily summary report every morning at 9am
-await orbitox.workflows.define({
-  id: 'daily_summary_report',
-  displayName: 'Daily Revenue Summary Email',
-  trigger: {
-    type: 'schedule',
-    cron: '0 9 * * *', // 9:00 AM every day
-  },
-  actions: [
-    {
-      type: 'email',
-      to: 'owner@restaurant.com',
-      subject: 'Daily Revenue Summary — {{date}}',
-      templateId: 'daily_revenue_summary_template',
-    },
-  ],
-});
+await orbitox.workflows.build('daily_summary_report', 'tenant-ny')
+  .name('Daily Revenue Summary Email')
+  .onSchedule('0 9 * * *') // 9:00 AM every day
+  .action('email', 'owner@restaurant.com', {
+    subject: 'Daily Revenue Summary — {{date}}',
+    templateId: 'daily_revenue_summary_template'
+  })
+  .activate();
 ```
 
 ### Step 10.3: Manually Trigger a Workflow
@@ -145,29 +127,35 @@ await orbitox.workflows.trigger(
 
 ```typescript
 // On order completion: send receipt email AND update external inventory system
-await orbitox.workflows.define({
-  id: 'order_fulfillment_pipeline',
-  displayName: 'Order Fulfillment: Email + Inventory Sync',
-  trigger: {
-    type: 'event',
-    eventName: 'order.completed',
-  },
-  actions: [
-    {
-      type: 'email',
-      to: '{{payload.customerEmail}}',
-      subject: 'Your Order #{{payload.orderId}} is Ready!',
-      body: 'Thank you for your order. Total charged: ${{payload.total}}.',
-    },
-    {
-      type: 'api_call',
-      method: 'POST',
-      url: 'https://inventory.internal/api/stock/decrement',
-      body: { orderId: '{{payload.orderId}}', items: '{{payload.items}}' },
-      headers: { Authorization: 'Bearer {{env.INVENTORY_API_KEY}}' },
-    },
-  ],
-});
+await orbitox.workflows.build('order_fulfillment_pipeline', 'tenant-ny')
+  .name('Order Fulfillment: Email + Inventory Sync')
+  .onEvent('order.completed')
+  .action('email', '{{payload.customerEmail}}', {
+    subject: 'Your Order #{{payload.orderId}} is Ready!',
+    body: 'Thank you for your order. Total charged: ${{payload.total}}.',
+  })
+  .action('api_call', 'https://inventory.internal/api/stock/decrement', {
+    method: 'POST',
+    body: { orderId: '{{payload.orderId}}', items: '{{payload.items}}' },
+    headers: { Authorization: 'Bearer {{env.INVENTORY_API_KEY}}' }
+  })
+  .activate();
+```
+
+### Step 10.5: Manage Workflows (Update and Delete)
+
+```typescript
+// Add a delay step to an existing workflow
+await orbitox.workflows.build('vip_order_alert', 'tenant-ny')
+  .delay(5, 'minutes')
+  .update();
+
+// Get Workflow Definition
+const wf = await orbitox.workflows.build('vip_order_alert', 'tenant-ny').get();
+console.log('Workflow Steps Count:', wf.steps.length);
+
+// Delete Workflow
+await orbitox.workflows.build('vip_order_alert', 'tenant-ny').delete();
 ```
 
 ---

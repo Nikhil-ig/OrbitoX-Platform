@@ -102,9 +102,10 @@ import config from '../orbitox.config';
 
 // This single call:
 // 1. Initializes the ServiceContainer singleton
-// 2. Mounts auto-generated REST API routes for all entities
-// 3. Starts Express on the configured port
-// 4. Exposes /health endpoint
+// 2. Applies orbitox.middleware() for Context/Auth/Audit resolution
+// 3. Mounts auto-generated REST API routes for all entities
+// 4. Starts Express on the configured port
+// 5. Exposes /health endpoint
 createOrbitoXApp(config);
 ```
 
@@ -132,10 +133,12 @@ sequenceDiagram
     participant factory as createOrbitoXApp()
     participant singleton as orbitox Singleton
     participant express as Express Server
+    participant middleware as orbitox.middleware()
     participant router as Auto REST Router
 
     main->>factory: Pass OrbitoXConfig
     factory->>singleton: orbitox.configure({ mode: 'open' })
+    factory->>express: app.use(orbitox.middleware())
     factory->>router: For each entity → mount GET + POST routes
     router->>express: Register /api/:entity endpoints
     factory->>express: Attach /health route

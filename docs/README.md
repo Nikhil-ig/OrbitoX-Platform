@@ -69,26 +69,63 @@ mindmap
 ## ⚡ One-Minute Quick Start
 
 ```typescript
+import express from 'express';
 import { orbitox } from '@orbitox/runtime';
 
-// 1. Configure (one line changes everything)
-orbitox.configure({ mode: 'open' }); // Dev: open, Prod: strict
+const app = express();
 
-// 2. Use clean, powerful, unified APIs
-async function handleOrder(userId: string, tenantId: string, orderData: any) {
-  // 🛡️ Zero-Trust Security Gate
-  await orbitox.security.authorize(userId, 'orders.create', tenantId);
-  // 📋 Immutable Audit Record
-  await orbitox.audit.created('Order', orderData.id, orderData, userId, tenantId);
+// 1. Configure (one line changes everything)
+orbitox.configure({ mode: 'strict' }); 
+
+// 2. Add OrbitoX Middleware (auto-resolves tenants, validates auth, logs audits)
+app.use(orbitox.middleware({ enforceAuth: true }));
+
+// 3. Use Ultra-Easy Builders for complex setup
+const tenant = await orbitox.tenant('acme-corp', 'Acme Corp')
+  .owner('user_123')
+  .subscribe('pro-plan')
+  .enableFeature('ai_assistant')
+  .create();
+
+// 4. Use clean, powerful, unified APIs in your routes
+app.post('/orders', async (req, res) => {
+  const { orbitoxUser, orbitoxContext } = req as any;
+  const orderData = req.body;
+
+  // 🛡️ Zero-Trust Security Gate (RBAC + ABAC + CBAC)
+  await orbitox.security.authorize(orbitoxUser.id, 'orders.create', orbitoxContext.id);
+  
+  // 📋 Immutable Audit Record (auto-logged by middleware, but manual logs also work)
+  await orbitox.audit.created('Order', orderData.id, orderData, orbitoxUser.id, orbitoxContext.id);
+  
   // ⚡ Distributed Event
-  await orbitox.events.emit('order.placed', orderData, tenantId);
-  // 🤖 AI Analysis
-  const risk = await orbitox.ai.classify(
-    `Order total: ${orderData.total}`,
-    ['low-risk', 'medium-risk', 'high-risk']
-  );
-  return risk;
-}
+  await orbitox.events.emit('order.placed', orderData, orbitoxContext.id);
+  
+  res.json({ success: true });
+});
+```
+
+---
+
+## 🏗️ Ultra-Easy Builders (Full CRUD)
+
+OrbitoX includes fluent builder APIs for managing your SaaS entities. All builders support full `get()`, `update()`, and `delete()` operations alongside creation:
+
+```typescript
+// Tenant Builder
+const tenant = await orbitox.tenant('acme').settings({ theme: 'dark' }).update();
+
+// Workflow Builder
+await orbitox.workflows.build('onboarding', tenant.id)
+  .onEvent('client.joined')
+  .action('send-email', 'notifications.email')
+  .activate();
+
+// Plan Builder
+await orbitox.billing.buildPlan('Enterprise').price(999).publish();
+
+// Security Policy Builder
+orbitox.security.policy('refund-limit').maxFieldValue('amount', 500).register();
 ```
 
 ---

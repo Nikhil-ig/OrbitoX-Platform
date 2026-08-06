@@ -159,17 +159,23 @@ renderSidebar(perms);
 
 ```typescript
 // Block refunds exceeding $500 limit and block if account is suspended
-orbitox.security.addAbacPolicy({
-  id: 'refund-limit-and-status',
-  resourceType: 'order',
-  action: 'refund',
-  rule: {
-    "and": [
-      { "==": [{ "var": "user.attributes.status" }, "active"] },
-      { "<=": [{ "var": "request.amount" }, 500] }
-    ]
-  }
-});
+orbitox.security.policy('refund-limit-and-status')
+  .resource('order')
+  .action('refund')
+  .fieldEquals('user.attributes.status', 'active')
+  .maxFieldValue('request.amount', 500)
+  .register();
+
+// Manage policies via CRUD
+const policy = orbitox.security.policy('refund-limit-and-status').get();
+
+// Update existing policy
+orbitox.security.policy('refund-limit-and-status')
+  .maxFieldValue('request.amount', 1000) // increase limit to $1000
+  .update();
+
+// Delete a policy
+orbitox.security.policy('refund-limit-and-status').delete();
 ```
 
 ### Step 4.6: Register a Custom PBAC Evaluator (Programmatic Policy)
@@ -225,6 +231,27 @@ console.log(safeData);
   stripeToken: '***REDACTED***'
 }
 */
+```
+
+### Step 4.9: Instant API Protection with Middleware
+
+```typescript
+import express from 'express';
+import { orbitox } from '@orbitox/runtime';
+
+const app = express();
+
+// Automatically resolve tenant context from headers (x-tenant-id)
+// and securely validate the JWT token against the Tenant's config
+app.use(orbitox.middleware({ enforceAuth: true }));
+
+app.post('/api/orders', async (req, res) => {
+  // context and user are securely attached to req!
+  const { orbitoxContext, orbitoxUser } = req as any;
+  
+  await orbitox.security.authorize(orbitoxUser.id, 'orders.create', orbitoxContext.id);
+  res.json({ status: 'Order created securely' });
+});
 ```
 
 ---
