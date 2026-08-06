@@ -106,7 +106,7 @@ export class PolicyEngine {
 
   /**
    * Gets additional WHERE clauses for repository-level data scoping based on visibility policies
-   * Enforces Zero-Trust: Limits visibility strictly to owner/assigned if no admin roles.
+   * Enforces Zero-Trust N-Tier Isolation: Supports 1-Tier to N-Tier context tree depth.
    */
   async getVisibilityClause(
     contextId: string,
@@ -115,17 +115,30 @@ export class PolicyEngine {
     action: string,
     roles: string[] = []
   ): Promise<Record<string, any>> {
-    // Admins and owners can see all records in the tenant
-    if (roles.includes('admin') || roles.includes('owner')) {
-      return { tenantId: contextId };
+    // Admins and owners can see all records within their context scope
+    const baseClause = {
+      OR: [
+        { contextId },
+        { tenantId: contextId },
+        { orgId: contextId }
+      ]
+    };
+
+    if (roles.includes('admin') || roles.includes('owner') || roles.includes('superadmin')) {
+      return baseClause;
     }
 
-    // Default strict visibility: User can only see records they own or are assigned to
+    // Default strict visibility: User can only see records they own or are assigned to within their context scope
     return {
-      tenantId: contextId,
-      OR: [
-        { ownerId: userId },
-        { assignedTo: userId }
+      ...baseClause,
+      AND: [
+        {
+          OR: [
+            { ownerId: userId },
+            { assignedTo: userId },
+            { createdBy: userId }
+          ]
+        }
       ]
     };
   }

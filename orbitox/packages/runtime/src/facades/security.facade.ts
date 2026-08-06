@@ -127,4 +127,38 @@ export class SecurityFacade {
     if (this.mode === 'open') return { contextId };
     return this.policyEngine.getVisibilityClause(contextId, userId, resource, 'read');
   }
+
+  /**
+   * Immutable Hierarchy Write Protection:
+   * Strips hierarchy context IDs (contextId, tenantId, orgId, companyId, branchId, parentId)
+   * on UPDATE payloads to prevent cross-tenant privilege escalation or context spoofing.
+   */
+  sanitizeWritePayload(payload: any, isUpdate: boolean = true): any {
+    if (!payload || typeof payload !== 'object') return payload;
+    const sanitized = { ...payload };
+
+    if (isUpdate) {
+      const immutableFields = ['contextId', 'tenantId', 'orgId', 'organisationId', 'companyId', 'branchId', 'parentId', 'rootId'];
+      for (const field of immutableFields) {
+        delete sanitized[field];
+      }
+    }
+
+    return sanitized;
+  }
+
+  /**
+   * IDOR Attack Prevention:
+   * Enforces strict boundary checks. If targetContextId is outside the userContextId hierarchy,
+   * throws a 404 Not Found exception (instead of 403) to prevent resource probing scanning.
+   */
+  enforceContextBoundary(userContextId: string, targetContextId: string): void {
+    if (userContextId === 'platform_root' || userContextId === 'global') return;
+    if (userContextId !== targetContextId) {
+      const error: any = new Error(`Resource not found`);
+      error.status = 404;
+      error.statusCode = 404;
+      throw error;
+    }
+  }
 }

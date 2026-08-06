@@ -85,7 +85,15 @@ export function createMiddleware(
 
       req.orbitoxUser = { id: userId };
 
-      // 6. Automated Audit Trail Logging
+      // 6. Dynamic N-Tier Scope Filter for ORM Queries
+      req.orbitoxScopeFilter = await securityFacade.getVisibilityClause(req.orbitoxContext.id, userId, 'entity');
+
+      // 7. Immutable Write Protection (Sanitize mutation bodies)
+      if (['PUT', 'PATCH', 'POST'].includes(req.method) && req.body && typeof req.body === 'object') {
+        req.body = securityFacade.sanitizeWritePayload(req.body, req.method !== 'POST');
+      }
+
+      // 8. Automated Audit Trail Logging
       if (req.method !== 'GET') {
          await auditFacade.log({
            action: `API_${req.method}`,

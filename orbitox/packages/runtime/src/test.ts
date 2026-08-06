@@ -235,6 +235,27 @@ async function run() {
   await strictMw(mockReq3, mockRes3, () => {});
   console.log('Unknown Tenant Blocked with 403:', forbiddenCalled);
 
+  console.log('\n--- Testing Dynamic N-Tier Data Isolation & IDOR Protection ---');
+  // Test 1: Immutable Hierarchy Write Protection
+  const dirtyUpdatePayload = { name: 'Updated Name', tenantId: 'hacked_tenant', orgId: 'hacked_org' };
+  const cleanUpdatePayload = orbitox.security.sanitizeWritePayload(dirtyUpdatePayload, true);
+  const writeProtectionPassed = cleanUpdatePayload.name === 'Updated Name' && !cleanUpdatePayload.tenantId && !cleanUpdatePayload.orgId;
+  console.log('Immutable Write Protection Passed:', writeProtectionPassed);
+
+  // Test 2: IDOR Silent 404 Neutralization
+  let idor404Passed = false;
+  try {
+    orbitox.security.enforceContextBoundary('tenant_123', 'tenant_999');
+  } catch (err: any) {
+    idor404Passed = err.statusCode === 404 || err.status === 404;
+  }
+  console.log('IDOR Attack Neutralized with Silent 404:', idor404Passed);
+
+  // Test 3: Cache Key Namespace Isolation
+  const { buildCacheKey } = require('@orbitox/core');
+  const cacheKey = buildCacheKey('tenant_123', 'rules', 'billing');
+  console.log('Multi-Tier Cache Key Namespace Isolated:', cacheKey === 'context:tenant_123:billing:rules');
+
   console.log('\nAll tests passed successfully!');
 }
 
