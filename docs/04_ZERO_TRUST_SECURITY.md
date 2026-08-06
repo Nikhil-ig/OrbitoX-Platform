@@ -202,6 +202,31 @@ const whereClause = await orbitox.security.getVisibilityClause(
 const orders = await OrderRepository.findAll(whereClause);
 ```
 
+### Step 4.8: PII Data Sanitization
+
+```typescript
+// Automatically mask sensitive PII fields (emails, phones, credit cards, tokens) before logging or returning to client
+const payload = { 
+  customer: 'John Doe', 
+  email: 'john.doe@example.com', 
+  phone: '+1 555-1234',
+  cardNumber: '4111222233334444',
+  stripeToken: 'tok_123456789'
+};
+
+const safeData = orbitox.security.sanitizePii(payload);
+console.log(safeData);
+/* Output:
+{
+  customer: 'John Doe',
+  email: 'j***e@example.com',
+  phone: '+1******1234',
+  cardNumber: '**** **** **** 4444',
+  stripeToken: '***REDACTED***'
+}
+*/
+```
+
 ---
 
 [⬅️ Prev: Multi-Tenancy](./03_MULTI_TENANCY.md) | [Back to Index](./README.md) | [Next: Billing & Subscriptions ➔](./05_BILLING_SUBSCRIPTIONS.md)

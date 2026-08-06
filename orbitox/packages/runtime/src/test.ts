@@ -22,8 +22,13 @@ async function run() {
     console.log('Security check correctly threw:', e.message);
   }
   
-  const allowed = await orbitox.security.check('user_123', 'leads.create', ctx.id);
-  console.log('User allowed to create leads (boolean check)?', allowed);
+  // 4. Security (RBAC/ABAC)
+  const isAllowed = await orbitox.security.check('user_123', 'leads.create', ctx.id);
+  console.log('User allowed to create leads (boolean check)?', isAllowed);
+
+  const payload = { email: 'john.doe@example.com', secret: 'super_secret', phone: '+1234567890' };
+  const sanitized = orbitox.security.sanitizePii(payload);
+  console.log('Sanitized payload:', sanitized);
 
   // 4. Feature flag registration
   await orbitox.features.define({

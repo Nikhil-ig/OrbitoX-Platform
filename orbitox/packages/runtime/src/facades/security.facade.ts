@@ -10,14 +10,23 @@
  *   orbitox.security.addPolicy('ip-restrict', async (check) => { ... });
  */
 
-import { RbacService, PolicyEngine, PolicyDecision, AbacPolicyRule, AbacEvaluator } from '@orbitox/core';
+import { RbacService, PolicyEngine, PolicyDecision, AbacPolicyRule, AbacEvaluator, PiiService } from '@orbitox/core';
 
 export class SecurityFacade {
   constructor(
     private readonly rbac: RbacService,
     private readonly policy: PolicyEngine,
     private readonly mode: 'open' | 'strict',
+    private readonly piiService: PiiService,
   ) {}
+
+  /**
+   * Deeply sanitizes an object by masking PII fields (emails, phones, credit cards, secrets).
+   * Used for logging and displaying data safely.
+   */
+  sanitizePii(data: any): any {
+    return this.piiService.sanitize(data);
+  }
 
   /**
    * Authorize a user. Throws OrbitoXForbiddenError on denial.

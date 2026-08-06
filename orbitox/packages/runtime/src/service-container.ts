@@ -21,6 +21,7 @@ import {
   RbacService,
   EventBusService,
   AIGateway,
+  PiiService,
 } from '@orbitox/core';
 
 export interface OrbitoXConfig {
@@ -63,6 +64,7 @@ export class ServiceContainer {
   readonly rbacService: RbacService;
   readonly eventBusService: EventBusService;
   readonly aiGateway: AIGateway;
+  readonly piiService: PiiService;
   readonly config: Required<OrbitoXConfig>;
 
   constructor(config: OrbitoXConfig = {}) {
@@ -82,6 +84,7 @@ export class ServiceContainer {
     this.capabilityEngine = new CapabilityEngine(this.contextService);
     this.actionRegistry = new ActionRegistry();
     this.aiGateway = new AIGateway(this.capabilityEngine, this.auditService, this.actionRegistry);
+    this.piiService = new PiiService();
 
     // RbacService — in 'open' mode the mock role service returns wildcard '*' permissions
     const roleService = this.buildRoleService();

@@ -96,6 +96,7 @@ class OrbitoXSingleton {
         this.container.rbacService,
         this.container.policyEngine,
         this.container.config.mode,
+        this.container.piiService,
       );
     }
     return this._security;
