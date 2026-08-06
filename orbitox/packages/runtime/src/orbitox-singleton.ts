@@ -225,6 +225,31 @@ class OrbitoXSingleton {
     };
   }
 
+  private registeredPlugins: Map<string, any> = new Map();
+
+  /**
+   * 🔌 Plugin Extension System — Register custom plugins and extensions.
+   * Enables developers to seamlessly customize and extend the `orbitox` platform.
+   * 
+   * @example
+   * orbitox.use({
+   *   id: 'my-custom-analytics',
+   *   install(app) {
+   *     console.log('Plugin installed!');
+   *   }
+   * });
+   */
+  use(plugin: { id: string; name?: string; install: (orbitoxInstance: OrbitoXSingleton) => void }): this {
+    if (this.registeredPlugins.has(plugin.id)) {
+      console.warn(`[OrbitoX Plugin] Plugin '${plugin.id}' is already registered.`);
+      return this;
+    }
+    plugin.install(this);
+    this.registeredPlugins.set(plugin.id, plugin);
+    console.log(`[OrbitoX Plugin] Successfully registered plugin: ${plugin.name || plugin.id}`);
+    return this;
+  }
+
   /**
    * 🔧 Access the raw service container for advanced use cases.
    * Only use if you need something not exposed by the facades.

@@ -64,6 +64,28 @@ async function run() {
   }
   console.log('\n');
 
+  // 9. Billing & Entitlements
+  const plan = await orbitox.billing.createPlan({
+    name: 'Pro',
+    price: 99,
+    features: ['pos_basic', 'ai_assistant'],
+    limits: { maxOrders: 100 }
+  });
+  await orbitox.billing.subscribeContext({ contextId: ctx.id, planId: plan.id });
+  const hasEntitlement = await orbitox.billing.hasEntitlement(ctx.id, 'ai_assistant');
+  const quota = await orbitox.billing.checkQuota(ctx.id, 'maxOrders', 50);
+  console.log('Billing entitlement (ai_assistant):', hasEntitlement);
+  console.log('Billing quota check (50/100):', quota);
+
+  // 10. Plugin Extension API
+  orbitox.use({
+    id: 'analytics-plugin',
+    name: 'Custom Analytics',
+    install(app) {
+      console.log('Installed custom plugin on OrbitoX!');
+    }
+  });
+
   console.log('\nAll tests passed successfully!');
 }
 
