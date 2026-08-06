@@ -59,6 +59,63 @@ export class AuditService {
     // INSERT INTO audit.events (...) VALUES (...)
     
     this.logger.debug(`Audit log created: ${options.action} on ${options.entityType} ${options.entityId}`);
+    this.logs.push({
+      id,
+      action: options.action,
+      entityType: options.entityType,
+      entityId: options.entityId,
+      userId: options.userId,
+      contextId: options.contextId,
+      oldValue: options.oldValue,
+      newValue: options.newValue,
+      reason: options.reason,
+      ipAddress: options.ipAddress,
+      occurredAt,
+      previousHash,
+      rowHash,
+    });
+  }
+
+  private logs: any[] = [];
+
+  query(filter: { contextId?: string; entityType?: string; entityId?: string; userId?: string; action?: string }): any[] {
+    return this.logs.filter(log => {
+      if (filter.contextId && log.contextId !== filter.contextId) return false;
+      if (filter.entityType && log.entityType !== filter.entityType) return false;
+      if (filter.entityId && log.entityId !== filter.entityId) return false;
+      if (filter.userId && log.userId !== filter.userId) return false;
+      if (filter.action && log.action !== filter.action) return false;
+      return true;
+    });
+  }
+
+  verifyChain(): { valid: boolean; totalEntries: number; brokenAtIndex?: number } {
+    let prevHash = '';
+    for (let i = 0; i < this.logs.length; i++) {
+      const log = this.logs[i];
+      if (log.previousHash !== prevHash) {
+        return { valid: false, totalEntries: this.logs.length, brokenAtIndex: i };
+      }
+      const rowContent = JSON.stringify({
+        id: log.id,
+        action: log.action,
+        entityType: log.entityType,
+        entityId: log.entityId,
+        userId: log.userId,
+        contextId: log.contextId,
+        oldValue: log.oldValue,
+        newValue: log.newValue,
+        reason: log.reason,
+        occurredAt: log.occurredAt.toISOString(),
+        previousHash: log.previousHash,
+      });
+      const expectedHash = crypto.createHash('sha256').update(rowContent).digest('hex');
+      if (log.rowHash !== expectedHash) {
+        return { valid: false, totalEntries: this.logs.length, brokenAtIndex: i };
+      }
+      prevHash = log.rowHash;
+    }
+    return { valid: true, totalEntries: this.logs.length };
   }
 
   private computeChangedFields(oldVal?: Record<string, any>, newVal?: Record<string, any>): string[] {

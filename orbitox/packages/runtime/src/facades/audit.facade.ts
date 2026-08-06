@@ -70,4 +70,18 @@ export class AuditFacade {
   async viewed(entityType: string, entityId: string, userId?: string, contextId?: string): Promise<void> {
     await this.log({ action: 'VIEW', entityType, entityId, userId, contextId });
   }
+
+  /**
+   * Search audit trail records by context, entity, user, or action.
+   */
+  async query(filter: { contextId?: string; entityType?: string; entityId?: string; userId?: string; action?: string } = {}): Promise<any[]> {
+    return this.svc.query(filter);
+  }
+
+  /**
+   * Verify SHA-256 cryptographic hash-chain continuity for compliance auditing.
+   */
+  async verifyChain(): Promise<{ valid: boolean; totalEntries: number; brokenAtIndex?: number }> {
+    return this.svc.verifyChain();
+  }
 }

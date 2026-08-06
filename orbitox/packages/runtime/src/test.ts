@@ -48,6 +48,11 @@ async function run() {
   });
   console.log('Audit event logged.');
 
+  const auditRecords = await orbitox.audit.query({ contextId: ctx.id });
+  const chainHealth = await orbitox.audit.verifyChain();
+  console.log('Audit query records count:', auditRecords.length);
+  console.log('Audit hash-chain integrity:', chainHealth);
+
   // 6. Events
   orbitox.events.on('lead.created', async (payload) => {
     console.log('Event Received:', payload);
