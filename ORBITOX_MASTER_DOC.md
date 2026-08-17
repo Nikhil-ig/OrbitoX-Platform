@@ -35,26 +35,42 @@ Building modern SaaS platforms traditionally requires engineering months of repe
 Developers—from beginners ("Noobs") to enterprise architects—simply import one singleton object: `orbitox`.
 
 ```typescript
+import express from 'express';
 import { orbitox } from '@orbitox/runtime';
 
-// 1. Configure the runtime (One line)
+const app = express();
+
+// 1. Configure the runtime (One line changes everything)
 orbitox.configure({ mode: 'strict', redis: { host: 'redis.prod', port: 6379 } });
 
-// 2. Execute business operations securely
-async function handleCustomerOrder(userId, tenantId, orderData) {
-  // 🛡️ Zero-Trust Security Check
-  await orbitox.security.authorize(userId, 'orders.create', tenantId);
+// 2. Add OrbitoX Middleware (auto-resolves subdomains/headers, validates auth, logs audits)
+app.use(orbitox.middleware({ strictDomainProtection: true, enforceAuth: true }));
+
+// 3. Ultra-Easy Builder Setup
+const tenant = await orbitox.tenant('acme-corp', 'Acme Corporation HQ')
+  .owner('exec_john')
+  .subscribe('pro-plan')
+  .enableFeature('ai_assistant')
+  .create();
+
+// 4. Execute business operations securely in route handlers
+app.post('/api/orders', async (req, res) => {
+  const { orbitoxUser, orbitoxContext, orbitoxScopeFilter } = req as any;
+  const orderData = req.body;
+
+  // 🛡️ Zero-Trust Security Check (RBAC + ABAC + CBAC)
+  await orbitox.security.authorize(orbitoxUser.id, 'orders.create', orbitoxContext.id);
   
   // 📝 Immutable Cryptographic Audit
-  await orbitox.audit.created('Order', orderData.id, orderData, userId, tenantId);
+  await orbitox.audit.created('Order', orderData.id, orderData, orbitoxUser.id, orbitoxContext.id);
   
   // ⚡ Async Domain Event
-  await orbitox.events.emit('order.placed', orderData, tenantId);
+  await orbitox.events.emit('order.placed', orderData, orbitoxContext.id);
   
   // 🤖 Multi-Provider AI
-  const analysis = await orbitox.ai.ask('Analyze order for fraud risk', { contextId: tenantId });
-  return analysis;
-}
+  const analysis = await orbitox.ai.ask('Analyze order for fraud risk', { contextId: orbitoxContext.id });
+  res.json({ success: true, analysis });
+});
 ```
 
 ---
@@ -110,9 +126,9 @@ graph TD
 
 ---
 
-## 3. Dual-Layer Zero-Trust Security Model (RBAC + ABAC/PBAC)
+## 3. Dual-Layer Zero-Trust Security & Dynamic N-Tier Data Isolation
 
-OrbitoX enforces security at two distinct gates before business logic executes.
+OrbitoX enforces zero-trust security gates and **Dynamic N-Tier Data Isolation** (supporting 1-Tier, 2-Tier, 3-Tier, 4-Tier, 5-Tier, up to arbitrary N-Tier deep context hierarchies).
 
 ### Security Model Comparison Matrix
 
@@ -120,7 +136,8 @@ OrbitoX enforces security at two distinct gates before business logic executes.
 | :--- | :--- | :--- | :--- | :--- |
 | **Layer 1** | **RBAC** (Role-Based) | `RoleService` | User ID + Context ID -> Active Roles -> Permission Set | Throws `ForbiddenException` ("User lacks role permission") |
 | **Layer 2** | **ABAC / PBAC** (Attribute & Policy) | `PolicyEngine` | User Attributes + Context Attributes + Environmental Metadata -> JSON-Logic AST | Throws `PolicyDenyException` ("Dynamic policy condition unsatisfied") |
-| **Layer 3** | **CBAC** (Context-Boundary) | `ContextService` | Subject Context ID vs Target Object Context ID | Throws `CrossTenantViolationException` ("Context boundary breach") |
+| **Layer 3** | **CBAC & IDOR Defense** (Context-Boundary) | `SecurityFacade` / `ContextService` | Subject Context ID vs Target Object Context ID | Throws Silent `404 Not Found` (Prevents resource probing) |
+| **Layer 4** | **Immutable Write Protection** | `SecurityFacade.sanitizeWritePayload` | Mutation payloads on `PUT` / `PATCH` | Automatically strips immutable context IDs (`contextId`, `tenantId`, `orgId`) |
 
 ### Detailed Evaluation Workflow & Graph
 
@@ -141,89 +158,86 @@ flowchart TD
     FetchAttrs --> EvalJSONLogic[Evaluate JSON-Logic AST Policies]
     EvalJSONLogic --> PolicyResult{All Policies Passed?}
     PolicyResult -->|No| DenyABAC[❌ DENY: Policy Constraint Violation]
-    PolicyResult -->|Yes| Layer3[Layer 3: Context Boundary Check]
+    PolicyResult -->|Yes| Layer3[Layer 3: Dynamic N-Tier CBAC Check]
     
     Layer3 --> CheckGraph{Target Context in User Hierarchy?}
-    CheckGraph -->|No| DenyGraph[❌ DENY: Cross-Tenant Boundary Violation]
+    CheckGraph -->|No| DenyGraph[❌ SILENT 404: Neutralizes IDOR Probing]
     CheckGraph -->|Yes| PassStrict[✅ ALLOW: Full Zero-Trust Passed]
     
     PassOpen --> Exec[Execute Application Logic]
     PassStrict --> Exec
     DenyRBAC --> ThrowErr[Throw Security Exception & Audit Log]
     DenyABAC --> ThrowErr
-    DenyGraph --> ThrowErr
+    DenyGraph --> Throw404[Throw Silent 404 Not Found Exception]
 ```
 
 ### Step-by-Step Security Implementation
 
-#### Step 3.1: Defining Roles and Assigning Permissions (RBAC)
+#### Step 3.1: Defining Policies via Ultra-Easy Policy Builder
 
 ```typescript
-// Roles define broad capability buckets
-const roleManager = {
-  id: 'role_store_manager',
-  name: 'Store Manager',
-  permissions: ['orders.read', 'orders.create', 'orders.refund', 'inventory.update'],
-};
+import { orbitox } from '@orbitox/runtime';
 
-// Assign role to user inside a specific tenant context
-await orbitox.security.assignRole('user_alice', 'role_store_manager', 'tenant_branch_101');
+// Register dynamic ABAC policy with fluent constraints
+orbitox.security.policy('strict-refund-policy')
+  .resource('order')
+  .action('refund')
+  .requireUserAttribute('status', 'active')
+  .maxFieldValue('request.amount', 500)
+  .register();
+
+// Full CRUD for Policies:
+const policy = orbitox.security.policy('strict-refund-policy').get();
+
+// Update Policy limits
+orbitox.security.policy('strict-refund-policy')
+  .maxFieldValue('request.amount', 1000)
+  .update();
+
+// Delete Policy
+orbitox.security.policy('strict-refund-policy').delete();
 ```
 
-#### Step 3.2: Registering Dynamic JSON-Logic ABAC Policies (ABAC/PBAC)
+#### Step 3.2: Dynamic N-Tier Data Scoping (ORM WHERE Clause)
 
 ```typescript
-// Register an ABAC policy requiring user status to be active AND request within business hours
-orbitox.security.registerPolicy({
-  id: 'policy_active_user_operating_hours',
-  name: 'Active Status & Operating Hours Enforcement',
-  targetAction: 'orders.refund',
-  effect: 'ALLOW',
-  condition: {
-    "and": [
-      { "==": [{ "var": "user.attributes.status" }, "active"] },
-      { "==": [{ "var": "tenant.settings.isOperating" }, true] },
-      { ">=": [{ "var": "request.amount" }, 0] },
-      { "<=": [{ "var": "request.amount" }, 500] } // Refund threshold cap
-    ]
-  }
-});
-```
-
-#### Step 3.3: Executing Authorization Checks in Application Code
-
-```typescript
-// Option A: Strict Authorization (Throws exception if denied)
-try {
-  await orbitox.security.authorize('user_alice', 'orders.refund', 'tenant_branch_101', {
-    amount: 150.00,
-    clientIp: '192.168.1.1'
-  });
-  console.log('✅ Refund authorized');
-} catch (error) {
-  console.error('❌ Authorization failed:', error.message);
-}
-
-// Option B: Boolean Check (Non-throwing)
-const canRefund = await orbitox.security.check('user_alice', 'orders.refund', 'tenant_branch_101');
-if (canRefund) {
-  // Render refund button in UI
-}
-
-// Option C: Bulk Authorization Check (For UI navigation rendering)
-const permissionsMap = await orbitox.security.checkMany(
-  'user_alice',
-  ['orders.read', 'orders.create', 'orders.refund', 'settings.manage'],
-  'tenant_branch_101'
+// Generate automatic multi-tier WHERE clause for Prisma/TypeORM/Knex
+const whereClause = await orbitox.security.getVisibilityClause(
+  'tenant_branch_101', 
+  'user_alice', 
+  'orders'
 );
-// Returns: { 'orders.read': true, 'orders.create': true, 'orders.refund': true, 'settings.manage': false }
+// Returns: { OR: [{ contextId: 'tenant_branch_101' }, { tenantId: 'tenant_branch_101' }, { orgId: 'tenant_branch_101' }], AND: [{ OR: [{ ownerId: 'user_alice' }, { assignedTo: 'user_alice' }] }] }
+```
+
+#### Step 3.3: Immutable Hierarchy Write Protection
+
+```typescript
+// Prevents context-spoofing and privilege escalation on updates:
+const cleanPayload = orbitox.security.sanitizeWritePayload(
+  { name: 'Updated Order', tenantId: 'malicious_tenant_id' }, 
+  true // isUpdate
+);
+// Returns: { name: 'Updated Order' } (tenantId automatically stripped!)
+```
+
+#### Step 3.4: IDOR Defense with Silent 404s
+
+```typescript
+// If a user from tenant A tries to access a resource in tenant B:
+try {
+  orbitox.security.enforceContextBoundary('tenant_A', 'tenant_B');
+} catch (err) {
+  // Throws 404 Not Found (NOT 403) to prevent resource ID scanning!
+  console.log(err.status); // 404
+}
 ```
 
 ---
 
-## 4. O2O2B2B Multi-Tenant Context Graph Engine
+## 4. O2O2B2B Multi-Tenant Context Graph & Inter-Branch Mesh Engine
 
-OrbitoX models enterprise organizational structures as a **Context Graph** supporting single-tenant, multi-tenant, and vendor-mesh relationships.
+OrbitoX models enterprise organizational structures as a **Context Graph** supporting single-tenant, multi-tenant, parent-scoped slugs (`org:slug`, `org/slug`), and **Inter-Branch Mesh Collaboration** (for Amazon Fulfillment Centers, Hospital Groups, and Retail Franchise Networks).
 
 ### Context Type Matrix
 
@@ -259,66 +273,94 @@ graph TD
     TenantNY --> BranchUptown
     TenantLA --> BranchLABeach
     
+    BranchDowntown <==>|Inter-Branch Mesh (Stock & Supply)| BranchUptown
     BranchDowntown -.->|Cross-Tenant Mesh Link| VendorSupplies
     BranchUptown -.->|Cross-Tenant Mesh Link| VendorSupplies
 ```
 
-### Step-by-Step Context Hierarchy Setup
+### Step-by-Step Context Hierarchy & Inter-Branch Setup
+
+#### Step 4.1: Fluent Tenant Creation via `TenantBuilder`
 
 ```typescript
 import { orbitox } from '@orbitox/runtime';
 
-// Step 1: Create Organization HQ Node
-const orgHQ = orbitox.context.create({
-  slug: 'acme-corp',
-  displayName: 'Acme Corporation HQ',
-  type: 'organisation',
-  ownerId: 'exec_john',
-  settings: { currency: 'USD', timezone: 'America/New_York', country: 'US' }
-});
+// 1. Create Organization HQ
+const orgHQ = await orbitox.tenant('acme-corp', 'Acme Corporation HQ')
+  .type('organisation')
+  .owner('exec_john')
+  .settings({ currency: 'USD', timezone: 'America/New_York' })
+  .create();
 
-// Step 2: Create Tenant Node under Organization
-const tenantNY = orbitox.context.create({
-  slug: 'ny-franchise',
-  displayName: 'Acme NY Group',
-  type: 'tenant',
-  parentId: orgHQ.id, // Hierarchical link
-  ownerId: 'owner_bob'
-});
+// 2. Create NY Franchise under Acme HQ
+const tenantNY = await orbitox.tenant('ny-franchise', 'Acme NY Group')
+  .type('tenant')
+  .parent(orgHQ.id) // Hierarchical Parent Link
+  .owner('owner_bob')
+  .subscribe('plan_pro')
+  .create();
 
-// Step 3: Create Branch Node under Tenant
-const branchDowntown = orbitox.context.create({
-  slug: 'downtown-store',
-  displayName: 'Downtown Store #101',
-  type: 'branch',
-  parentId: tenantNY.id, // Hierarchical link
-  ownerId: 'mgr_alice'
-});
+// 3. Create Downtown Branch
+const branchDowntown = await orbitox.tenant('downtown-store', 'Downtown Store #101')
+  .type('branch')
+  .parent(tenantNY.id)
+  .owner('mgr_alice')
+  .create();
+```
 
-// Step 4: Create Cross-Linked Vendor Node
-const vendorMeats = orbitox.context.create({
-  slug: 'prime-meats',
-  displayName: 'Prime Meats Vendor',
-  type: 'vendor',
-  ownerId: 'vendor_sales',
-  relatedContexts: [branchDowntown.id] // Cross-tenant mesh linkage
-});
+#### Step 4.2: Full CRUD for Tenants & Contexts
 
-// Step 5: Hierarchy Traversal & Inspection
-const ancestorChain = orbitox.context.ancestors(branchDowntown.id);
-// Returns: [branchDowntown, tenantNY, orgHQ]
+```typescript
+// READ
+const branch = await orbitox.tenant('downtown-store').parent(tenantNY.id).get();
 
-const directChildren = orbitox.context.children(tenantNY.id);
-// Returns: [branchDowntown]
+// UPDATE (Settings deep merged, hierarchy mutation protected)
+await orbitox.tenant('downtown-store')
+  .parent(tenantNY.id)
+  .settings({ operatingHours: '8am - 10pm' })
+  .update();
 
-const activeContext = orbitox.context.get('downtown-store');
+// DELETE
+await orbitox.tenant('downtown-store').parent(tenantNY.id).delete();
+```
+
+#### Step 4.3: Inter-Branch Mesh & Peer Collaboration (Hospital / Amazon Network Flow)
+
+Organizations can grant explicit permissions for sibling branches under the same Org to see stock levels, send supply transfer requests, and communicate securely:
+
+```typescript
+// 1. Link Sibling Branches on creation
+const branchUptown = await orbitox.tenant('uptown-store', 'Uptown Store #102')
+  .type('branch')
+  .parent(tenantNY.id)
+  .linkPeer(branchDowntown.id, ['inventory.read', 'supply.request'])
+  .create();
+
+// 2. Or dynamically link peers:
+orbitox.context.linkPeers(branchDowntown.id, branchUptown.id, [
+  'inventory.read', 
+  'supply.request', 
+  'messages.send'
+]);
+
+// 3. Validate Inter-Branch Access
+const canCheckStock = orbitox.context.canPeerAccess(branchDowntown.id, branchUptown.id, 'inventory.read');
+console.log('Downtown can view Uptown stock?', canCheckStock); // true
+
+// 4. Query Stock across all authorized Peer Branches
+const peerBranches = orbitox.context.getAccessiblePeerContexts(branchDowntown.id, 'inventory.read');
+const peerIds = peerBranches.map(b => b.id);
+
+// Generate multi-branch WHERE clause for repository queries
+const whereClause = await orbitox.security.getPeerVisibilityClause(branchDowntown.id, peerIds, 'user_alice');
+// Result: { OR: [{ contextId: 'branch-ny-101' }, { contextId: 'branch-ny-102' }] }
 ```
 
 ---
 
 ## 5. Billing, Plans & Subscription Engine (`orbitox.billing`)
 
-OrbitoX provides complete multi-tenant billing, plan tiers, usage enforcement, and entitlement lifecycle management out-of-the-box.
+OrbitoX provides complete multi-tenant billing, plan tiers, usage enforcement, and entitlement lifecycle management out-of-the-box via the fluent `PlanBuilder`.
 
 ### Subscription Tier Comparison Matrix
 
@@ -351,46 +393,33 @@ stateDiagram-v2
 
 ### Step-by-Step Billing & Plan Implementation
 
-#### Step 5.1: Defining Subscription Plans
+#### Step 5.1: Defining Subscription Plans with Fluent PlanBuilder
 
 ```typescript
-// Define Starter Tier
-const starterPlan = await orbitox.billing.createPlan({
-  id: 'plan_starter',
-  name: 'Starter Plan',
-  price: 29,
-  currency: 'USD',
-  billingCycle: 'monthly',
-  features: ['pos_basic', 'reports_standard'],
-  limits: { maxBranches: 1, maxMonthlyOrders: 1000 }
-});
+// Define Pro Tier with fluent chain
+const proPlan = await orbitox.billing.buildPlan('pro-plan', 'Pro Franchise Plan')
+  .price(99, 'USD')
+  .interval('monthly')
+  .features(['pos_basic', 'reports_standard', 'ai_assistant', 'custom_flags'])
+  .limit('maxBranches', 5)
+  .limit('maxMonthlyOrders', 10000)
+  .publish();
 
-// Define Pro Tier
-const proPlan = await orbitox.billing.createPlan({
-  id: 'plan_pro',
-  name: 'Pro Franchise Plan',
-  price: 99,
-  currency: 'USD',
-  billingCycle: 'monthly',
-  features: ['pos_basic', 'reports_standard', 'ai_assistant', 'custom_flags'],
-  limits: { maxBranches: 5, maxMonthlyOrders: 10000 }
-});
+// Full CRUD for Plans:
+// READ
+const plan = await orbitox.billing.buildPlan('pro-plan').get();
+
+// UPDATE
+await orbitox.billing.buildPlan('pro-plan')
+  .price(119, 'USD')
+  .limit('maxMonthlyOrders', 15000)
+  .update();
+
+// DELETE (Soft delete)
+await orbitox.billing.buildPlan('pro-plan').delete();
 ```
 
-#### Step 5.2: Subscribing a Context Node to a Plan
-
-```typescript
-// Subscribe Tenant to Pro Plan
-const subscription = await orbitox.billing.subscribeContext({
-  contextId: 'tenant_ny_group',
-  planId: 'plan_pro',
-  paymentMethodId: 'pm_card_visa_4242'
-});
-
-console.log(`Subscribed tenant ${subscription.contextId} to ${subscription.planId}. Status: ${subscription.status}`);
-```
-
-#### Step 5.3: Enforcing Plan Feature Entitlements in Code
+#### Step 5.2: Enforcing Plan Feature Entitlements in Code
 
 ```typescript
 // Check if tenant context has access to a specific feature via billing
@@ -472,24 +501,31 @@ flowchart TD
 
 ## 10. No-Code Workflows & Automation Engine
 
-Define event-driven background tasks declaratively:
+Define event-driven background tasks declaratively using the fluent `WorkflowBuilder`:
 
 ```typescript
-await orbitox.workflows.define({
-  id: 'high_value_order_alert',
-  displayName: 'Notify Manager on VIP Orders',
-  trigger: {
-    type: 'event',
-    eventName: 'order.placed',
-  },
-  actions: [
-    {
-      type: 'notification',
-      target: 'manager@restaurant.com',
-      message: 'VIP Order Received!',
-    },
-  ],
-});
+// 1. Build and activate workflow
+await orbitox.workflows.build('high_value_order_alert', 'Notify Manager on VIP Orders')
+  .onEvent('order.placed')
+  .action({
+    type: 'notification',
+    target: 'manager@restaurant.com',
+    message: 'VIP Order Received!',
+  })
+  .delay(300) // Delay 5 minutes
+  .activate();
+
+// Full CRUD for Workflows:
+// READ
+const flow = await orbitox.workflows.build('high_value_order_alert').get();
+
+// UPDATE
+await orbitox.workflows.build('high_value_order_alert')
+  .displayName('Updated VIP Alert Flow')
+  .update();
+
+// DELETE
+await orbitox.workflows.build('high_value_order_alert').delete();
 ```
 
 ---
@@ -530,16 +566,19 @@ When booted via `createOrbitoXApp(config)`, OrbitoX automatically mounts REST en
 
 ## 12. Facade API Quick Reference Matrix
 
-| Facade | Namespace | Primary Purpose | Key Methods | Return Type |
+| Facade | Namespace / Helper | Primary Purpose | Key Methods | Return Type |
 | :--- | :--- | :--- | :--- | :--- |
-| 🛡️ **Security** | `orbitox.security` | Zero-Trust Authorization | `authorize()`, `check()`, `checkMany()` | `Promise<boolean>` / throws |
-| 🏢 **Context** | `orbitox.context` | Multi-Tenancy Hierarchy | `create()`, `get()`, `ancestors()`, `children()` | `Context` / `Context[]` |
-| 📋 **Audit** | `orbitox.audit` | Hash-Chained Audit Trail | `created()`, `updated()`, `deleted()`, `log()` | `Promise<AuditEvent>` |
+| 🛡️ **Security** | `orbitox.security` | Zero-Trust Authorization & Isolation | `authorize()`, `check()`, `policy()`, `getVisibilityClause()`, `sanitizeWritePayload()`, `enforceContextBoundary()` | `Promise<boolean>` / `PolicyBuilder` / `object` |
+| 🏢 **Context** | `orbitox.context` | Multi-Tenancy & Inter-Branch Mesh | `create()`, `get()`, `ancestors()`, `children()`, `linkPeers()`, `canPeerAccess()`, `getAccessiblePeerContexts()` | `Context` / `Context[]` / `boolean` |
+| 🏗️ **Tenant Builder** | `orbitox.tenant()` | Ultra-Easy Fluent Context CRUD | `parent()`, `owner()`, `settings()`, `subscribe()`, `enableFeature()`, `linkPeer()`, `create()`, `get()`, `update()`, `delete()` | `TenantBuilder` / `Promise<Context>` |
+| 📋 **Audit** | `orbitox.audit` | Hash-Chained Audit Trail | `created()`, `updated()`, `deleted()`, `log()`, `verifyChain()` | `Promise<AuditEvent>` / `IntegrityResult` |
 | ⚡ **Events** | `orbitox.events` | Distributed Event Bus | `emit()`, `on()`, `onAny()` | `Promise<void>` |
 | 🚩 **Features** | `orbitox.features` | Contextual Flag Overrides | `define()`, `isEnabled()`, `setOverride()` | `Promise<boolean>` |
 | 🤖 **AI Gateway**| `orbitox.ai` | Multi-Provider LLMs | `ask()`, `extract()`, `classify()`, `embed()` | `Promise<string>` / `object` |
-| 📦 **Workflows** | `orbitox.workflows` | Automated Trigger Pipeline | `define()`, `trigger()` | `Promise<void>` |
-| 💳 **Billing** | `orbitox.billing` | Plans & Subscriptions | `createPlan()`, `listPlans()`, `hasEntitlement()` | `Promise<Plan[]>` / `boolean` |
+| 📦 **Workflows** | `orbitox.workflows` | Automated Trigger Pipeline | `build()`, `define()`, `trigger()` | `WorkflowBuilder` / `Promise<void>` |
+| 💳 **Billing** | `orbitox.billing` | Plans & Subscriptions | `buildPlan()`, `createPlan()`, `listPlans()`, `hasEntitlement()`, `checkQuota()` | `PlanBuilder` / `Promise<Plan[]>` / `boolean` |
+| 🔌 **Middleware**| `orbitox.middleware()`| Domain & Header Protection | `middleware({ strictDomainProtection: true })` | `Express/Fastify Handler` |
+| 🧩 **Plugins** | `orbitox.use()` | Platform Extension System | `use({ id, name, install })` | `this` (Chainable) |
 
 ---
 

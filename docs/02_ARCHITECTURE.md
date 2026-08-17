@@ -72,17 +72,19 @@ graph LR
 
 ## 📊 Facade API Quick Reference Matrix
 
-| Facade | Namespace | Primary Purpose | Key Methods | Return Type |
+| Facade | Namespace / Helper | Primary Purpose | Key Methods | Return Type |
 | :--- | :--- | :--- | :--- | :--- |
-| 🛡️ **Security** | `orbitox.security` | Zero-Trust Authorization | `authorize()`, `check()`, `checkMany()`, `addAbacPolicy()`, `addPolicy()`, `getVisibilityClause()` | `boolean` / throws |
-| 🏢 **Context** | `orbitox.context` | Multi-Tenancy Graph | `create()`, `get()`, `ancestors()`, `children()` | `Context` / `Context[]` |
-| 📋 **Audit** | `orbitox.audit` | Hash-Chained Audit Trail | `created()`, `updated()`, `deleted()`, `log()` | `Promise<AuditEvent>` |
+| 🛡️ **Security** | `orbitox.security` | Zero-Trust Authorization & Isolation | `authorize()`, `check()`, `policy()`, `getVisibilityClause()`, `sanitizeWritePayload()`, `enforceContextBoundary()` | `Promise<boolean>` / `PolicyBuilder` / `object` |
+| 🏢 **Context** | `orbitox.context` | Multi-Tenancy & Inter-Branch Mesh | `create()`, `get()`, `ancestors()`, `children()`, `linkPeers()`, `canPeerAccess()`, `getAccessiblePeerContexts()` | `Context` / `Context[]` / `boolean` |
+| 🏗️ **Tenant Builder** | `orbitox.tenant()` | Ultra-Easy Fluent Context CRUD | `parent()`, `owner()`, `settings()`, `subscribe()`, `enableFeature()`, `linkPeer()`, `create()`, `get()`, `update()`, `delete()` | `TenantBuilder` / `Promise<Context>` |
+| 📋 **Audit** | `orbitox.audit` | Hash-Chained Audit Trail | `created()`, `updated()`, `deleted()`, `log()`, `verifyChain()` | `Promise<AuditEvent>` / `IntegrityResult` |
 | ⚡ **Events** | `orbitox.events` | Distributed Event Bus | `emit()`, `on()`, `onAny()` | `Promise<void>` |
 | 🚩 **Features** | `orbitox.features` | Contextual Flag Overrides | `define()`, `isEnabled()`, `setOverride()` | `Promise<boolean>` |
 | 🤖 **AI Gateway**| `orbitox.ai` | Multi-Provider LLMs | `ask()`, `extract()`, `classify()`, `embed()` | `Promise<string / object>` |
-| 📦 **Workflows** | `orbitox.workflows` | Automated Trigger Pipeline | `define()`, `trigger()` | `Promise<void>` |
-| 💳 **Billing** | `orbitox.billing` | Plans & Subscriptions | `createPlan()`, `listPlans()`, `subscribeContext()`, `hasEntitlement()`, `checkQuota()` | `Promise<Plan[]>` / `boolean` / `Quota` |
-| 🔌 **Plugins** | `orbitox.use()` | Platform Extension System | `use({ id, name, install })` | `this` (Chainable) |
+| 📦 **Workflows** | `orbitox.workflows` | Automated Trigger Pipeline | `build()`, `define()`, `trigger()` | `WorkflowBuilder` / `Promise<void>` |
+| 💳 **Billing** | `orbitox.billing` | Plans & Subscriptions | `buildPlan()`, `createPlan()`, `listPlans()`, `hasEntitlement()`, `checkQuota()` | `PlanBuilder` / `Promise<Plan[]>` / `boolean` |
+| 🔌 **Middleware**| `orbitox.middleware()`| Domain & Header Protection | `middleware({ strictDomainProtection: true })` | `Express/Fastify Handler` |
+| 🧩 **Plugins** | `orbitox.use()` | Platform Extension System | `use({ id, name, install })` | `this` (Chainable) |
 
 ---
 

@@ -241,17 +241,42 @@ import { orbitox } from '@orbitox/runtime';
 
 const app = express();
 
-// Automatically resolve tenant context from headers (x-tenant-id)
-// and securely validate the JWT token against the Tenant's config
-app.use(orbitox.middleware({ enforceAuth: true }));
+// Automatically resolve tenant context from subdomains / headers (x-tenant-id, x-org-id, Host)
+// reject unknown/inactive tenants with 403, and auto-sanitize mutation payloads:
+app.use(orbitox.middleware({ strictDomainProtection: true, enforceAuth: true }));
 
 app.post('/api/orders', async (req, res) => {
-  // context and user are securely attached to req!
-  const { orbitoxContext, orbitoxUser } = req as any;
+  // context, user, and auto-generated ORM scope filter are securely attached to req!
+  const { orbitoxContext, orbitoxUser, orbitoxScopeFilter } = req as any;
   
   await orbitox.security.authorize(orbitoxUser.id, 'orders.create', orbitoxContext.id);
   res.json({ status: 'Order created securely' });
 });
+```
+
+### Step 4.10: Dynamic N-Tier Data Isolation & IDOR Silent 404 Defense
+
+OrbitoX supports **Dynamic N-Tier Data Isolation** (from 1-Tier up to arbitrary deep N-Tier context hierarchies):
+
+```typescript
+// 1. Immutable Hierarchy Write Protection (Strips spoofed context IDs on updates)
+const cleanUpdate = orbitox.security.sanitizeWritePayload(
+  { name: 'Updated Order', tenantId: 'hacker_tenant_id' }, 
+  true
+);
+console.log(cleanUpdate); // { name: 'Updated Order' }
+
+// 2. IDOR Attack Neutralization (Throws 404 Not Found instead of 403 to prevent resource scanning)
+try {
+  orbitox.security.enforceContextBoundary('tenant_123', 'tenant_999');
+} catch (err: any) {
+  console.log(err.status); // 404
+}
+
+// 3. Isolated Cache Keys
+import { buildCacheKey } from '@orbitox/core';
+const cacheKey = buildCacheKey('tenant_123', 'rules', 'billing');
+console.log(cacheKey); // 'context:tenant_123:billing:rules'
 ```
 
 ---
