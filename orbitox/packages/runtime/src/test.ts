@@ -282,6 +282,89 @@ async function run() {
   orbitox.tenant('hospital-west', '').parent(hospitalOrg.id).delete();
   orbitox.tenant('hospital-net', '').delete();
 
+  console.log('\n--- Testing Advanced Runtime Scaffolder (createOrbitoXApp) ---');
+  const { createOrbitoXApp } = require('./orbitox-app');
+  let appServer: any;
+  try {
+    const { server } = await createOrbitoXApp({
+      app: { name: 'Test API Engine', port: 3001 },
+      entities: [
+        {
+          id: 'product',
+          name: 'Product',
+          fields: [
+            { name: 'title', type: 'text', required: true },
+            { name: 'price', type: 'number', required: true },
+            { name: 'active', type: 'boolean' }
+          ],
+          hooks: {
+            beforeCreate: (payload: any) => {
+              if (payload.price < 0) throw new Error('Price cannot be negative');
+              return payload;
+            },
+            beforeRead: (query: any) => {
+              query.intercepted = true;
+              return query;
+            }
+          }
+        }
+      ]
+    });
+    appServer = server;
+    
+    // Test validation
+    let res = await fetch('http://localhost:3001/api/products', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ title: 'MacBook' })
+    });
+    let data = await res.json() as any;
+    console.log('Validation Error Response:', data.error === 'Validation failed' && data.details.includes("Field 'price' is required"));
+
+    // Test beforeCreate hook (negative price)
+    res = await fetch('http://localhost:3001/api/products', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ title: 'MacBook', price: -100 })
+    });
+    data = await res.json() as any;
+    console.log('beforeCreate Hook Intercepts Invalid Data:', data.error === 'Price cannot be negative');
+
+    // Test Valid Create
+    res = await fetch('http://localhost:3001/api/products', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ title: 'MacBook', price: 1500, active: true })
+    });
+    data = await res.json() as any;
+    console.log('Valid Create Succeeded:', data.message.includes('CREATED') && data.data.title === 'MacBook');
+    const productId = data.data.id;
+
+    // Test Advanced GET (Querying & Hooks)
+    res = await fetch('http://localhost:3001/api/products?status=active&page=2&limit=50&sort=title');
+    data = await res.json() as any;
+    console.log('Advanced GET Parsing & beforeRead Hook:', data.meta.page === 2 && data.meta.sort === 'title' && data.meta.filters.intercepted === true);
+
+    // Test PUT (Full Update)
+    res = await fetch(`http://localhost:3001/api/products/${productId}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ title: 'MacBook Pro', price: 2000 }) // active is missing, technically should fail if active was required, but it's optional
+    });
+    data = await res.json() as any;
+    console.log('PUT Update Succeeded:', data.message.includes('UPDATED') && data.data.title === 'MacBook Pro');
+
+    // Test DELETE
+    res = await fetch(`http://localhost:3001/api/products/${productId}`, { method: 'DELETE' });
+    data = await res.json() as any;
+    console.log('DELETE Succeeded:', data.message.includes('DELETED'));
+
+  } finally {
+    if (appServer) {
+      appServer.close();
+    }
+  }
+
   console.log('\nAll tests passed successfully!');
 }
 

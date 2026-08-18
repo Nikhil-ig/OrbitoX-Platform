@@ -19,6 +19,7 @@ export interface OrbitoXEntity {
   name: string;
   fields: OrbitoXField[];
   permissions?: string[];
+  hooks?: OrbitoXEntityHooks;
 }
 
 export interface OrbitoXField {
@@ -27,4 +28,14 @@ export interface OrbitoXField {
   required?: boolean;
   default?: any;
   options?: string[];
+}
+
+export interface OrbitoXEntityHooks {
+  beforeCreate?: (payload: any, context: any) => Promise<any> | any;
+  afterCreate?: (record: any, context: any) => Promise<void> | void;
+  beforeRead?: (query: any, context: any) => Promise<any> | any;
+  beforeUpdate?: (id: string, payload: any, context: any) => Promise<any> | any;
+  afterUpdate?: (record: any, context: any) => Promise<void> | void;
+  beforeDelete?: (id: string, context: any) => Promise<void> | void;
+  afterDelete?: (id: string, context: any) => Promise<void> | void;
 }

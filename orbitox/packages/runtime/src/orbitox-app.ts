@@ -3,7 +3,7 @@ import { MetadataEngine } from '@orbitox/plugin-engine';
 import { OrbitoXConfig } from './config.types';
 import { orbitox } from './orbitox-singleton';
 
-export async function createOrbitoXApp(config: OrbitoXConfig) {
+export async function createOrbitoXApp(config: OrbitoXConfig): Promise<{ app: any; server: any }> {
   console.log(`🚀 Booting OrbitoX App: ${config.app.name}...`);
 
   // 1. Initialize Engines via Singleton
@@ -47,11 +47,58 @@ export async function createOrbitoXApp(config: OrbitoXConfig) {
     const entityRouter = express.Router();
     const permissionScope = `${entity.id}`;
     
-    // GET ALL
+    // Validation helper
+    const validate = (payload: any, isPartial: boolean = false) => {
+      const errors: string[] = [];
+      for (const field of entity.fields) {
+        if (field.required && !isPartial && payload[field.name] === undefined) {
+          errors.push(`Field '${field.name}' is required`);
+        }
+        if (payload[field.name] !== undefined) {
+          const val = payload[field.name];
+          if (field.type === 'number' && typeof val !== 'number') errors.push(`Field '${field.name}' must be a number`);
+          if (field.type === 'boolean' && typeof val !== 'boolean') errors.push(`Field '${field.name}' must be a boolean`);
+          if (field.type === 'text' && typeof val !== 'string') errors.push(`Field '${field.name}' must be text`);
+          if (field.type === 'enum' && field.options && !field.options.includes(val)) errors.push(`Field '${field.name}' must be one of: ${field.options.join(', ')}`);
+        }
+      }
+      return errors;
+    };
+
+    // GET ALL (Advanced Querying)
     entityRouter.get('/', async (req: any, res: any) => {
       try {
         await orbitox.security.authorize(req.user.id, `${permissionScope}.read`, req.context.id);
-        res.json({ message: `GET all ${entity.name} (OrbitoX Runtime)`, items: [] });
+        
+        let query = { ...req.query };
+        if (entity.hooks?.beforeRead) {
+          query = await entity.hooks.beforeRead(query, req.context) || query;
+        }
+
+        const page = parseInt(query.page || '1', 10);
+        const limit = parseInt(query.limit || '20', 10);
+        const sort = query.sort || '-createdAt';
+        
+        // Remove known pagination/sorting keys from filter
+        delete query.page;
+        delete query.limit;
+        delete query.sort;
+
+        res.json({ 
+          message: `GET all ${entity.name} (OrbitoX Runtime)`, 
+          data: [],
+          meta: { page, limit, sort, filters: query, total: 0 }
+        });
+      } catch (error: any) {
+        res.status(403).json({ error: error.message });
+      }
+    });
+
+    // GET ONE
+    entityRouter.get('/:id', async (req: any, res: any) => {
+      try {
+        await orbitox.security.authorize(req.user.id, `${permissionScope}.read`, req.context.id);
+        res.json({ message: `GET one ${entity.name} (OrbitoX Runtime)`, data: { id: req.params.id } });
       } catch (error: any) {
         res.status(403).json({ error: error.message });
       }
@@ -61,7 +108,103 @@ export async function createOrbitoXApp(config: OrbitoXConfig) {
     entityRouter.post('/', async (req: any, res: any) => {
       try {
         await orbitox.security.authorize(req.user.id, `${permissionScope}.create`, req.context.id);
-        res.status(201).json({ message: `CREATED ${entity.name} (OrbitoX Runtime)`, item: req.body });
+        
+        const errors = validate(req.body);
+        if (errors.length > 0) return res.status(400).json({ error: 'Validation failed', details: errors });
+
+        let payload = req.body;
+        if (entity.hooks?.beforeCreate) {
+          payload = await entity.hooks.beforeCreate(payload, req.context) || payload;
+        }
+
+        const newRecord = { id: `${entity.id}_${Date.now()}`, ...payload };
+        
+        if (entity.hooks?.afterCreate) {
+          await entity.hooks.afterCreate(newRecord, req.context);
+        }
+
+        await orbitox.events.emit(`${entity.id}.created`, { record: newRecord }, req.context.id);
+        await orbitox.audit.created(entity.name, newRecord.id, newRecord, req.user.id, req.context.id);
+
+        res.status(201).json({ message: `CREATED ${entity.name} (OrbitoX Runtime)`, data: newRecord });
+      } catch (error: any) {
+        res.status(403).json({ error: error.message });
+      }
+    });
+
+    // UPDATE
+    entityRouter.put('/:id', async (req: any, res: any) => {
+      try {
+        await orbitox.security.authorize(req.user.id, `${permissionScope}.update`, req.context.id);
+        
+        const errors = validate(req.body);
+        if (errors.length > 0) return res.status(400).json({ error: 'Validation failed', details: errors });
+
+        let payload = req.body;
+        if (entity.hooks?.beforeUpdate) {
+          payload = await entity.hooks.beforeUpdate(req.params.id, payload, req.context) || payload;
+        }
+
+        const updatedRecord = { id: req.params.id, ...payload };
+        
+        if (entity.hooks?.afterUpdate) {
+          await entity.hooks.afterUpdate(updatedRecord, req.context);
+        }
+
+        await orbitox.events.emit(`${entity.id}.updated`, { record: updatedRecord }, req.context.id);
+        await orbitox.audit.updated(entity.name, updatedRecord.id, {}, updatedRecord, req.user.id, req.context.id);
+
+        res.json({ message: `UPDATED ${entity.name} (OrbitoX Runtime)`, data: updatedRecord });
+      } catch (error: any) {
+        res.status(403).json({ error: error.message });
+      }
+    });
+
+    // PATCH
+    entityRouter.patch('/:id', async (req: any, res: any) => {
+      try {
+        await orbitox.security.authorize(req.user.id, `${permissionScope}.update`, req.context.id);
+        
+        const errors = validate(req.body, true);
+        if (errors.length > 0) return res.status(400).json({ error: 'Validation failed', details: errors });
+
+        let payload = req.body;
+        if (entity.hooks?.beforeUpdate) {
+          payload = await entity.hooks.beforeUpdate(req.params.id, payload, req.context) || payload;
+        }
+
+        const updatedRecord = { id: req.params.id, ...payload };
+        
+        if (entity.hooks?.afterUpdate) {
+          await entity.hooks.afterUpdate(updatedRecord, req.context);
+        }
+
+        await orbitox.events.emit(`${entity.id}.updated`, { record: updatedRecord }, req.context.id);
+        await orbitox.audit.updated(entity.name, updatedRecord.id, {}, updatedRecord, req.user.id, req.context.id);
+
+        res.json({ message: `PATCHED ${entity.name} (OrbitoX Runtime)`, data: updatedRecord });
+      } catch (error: any) {
+        res.status(403).json({ error: error.message });
+      }
+    });
+
+    // DELETE
+    entityRouter.delete('/:id', async (req: any, res: any) => {
+      try {
+        await orbitox.security.authorize(req.user.id, `${permissionScope}.delete`, req.context.id);
+        
+        if (entity.hooks?.beforeDelete) {
+          await entity.hooks.beforeDelete(req.params.id, req.context);
+        }
+
+        if (entity.hooks?.afterDelete) {
+          await entity.hooks.afterDelete(req.params.id, req.context);
+        }
+
+        await orbitox.events.emit(`${entity.id}.deleted`, { id: req.params.id }, req.context.id);
+        await orbitox.audit.deleted(entity.name, req.params.id, {}, req.user.id, req.context.id);
+
+        res.json({ message: `DELETED ${entity.name} (OrbitoX Runtime)`, id: req.params.id });
       } catch (error: any) {
         res.status(403).json({ error: error.message });
       }
@@ -81,9 +224,11 @@ export async function createOrbitoXApp(config: OrbitoXConfig) {
 
   // 5. Start Server
   const port = config.app.port || 3000;
-  app.listen(port, () => {
+  const server = app.listen(port, () => {
     console.log(`\n🎉 OrbitoX Runtime is active!`);
     console.log(`   - 🩺 Health: http://localhost:${port}/health`);
     console.log(`   - ⚡ API:    http://localhost:${port}/api`);
   });
+
+  return { app, server };
 }
