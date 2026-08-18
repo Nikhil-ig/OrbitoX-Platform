@@ -653,6 +653,26 @@ app.post('/api/orders', async (req, res) => {
 - [x] **Singleton Service Container Unified**: Single master instance powering all facades.
 - [x] **TypeScript Build Validated**: All core and runtime packages compiling clean.
 - [x] **Runtime App Scaffolder Refactored**: `createOrbitoXApp()` powered directly by `orbitox` singleton.
-- [ ] **Production Security Mode Enabled**: Switch to `orbitox.configure({ mode: 'strict' })`.
-- [ ] **Redis Connection Provided**: Provide production Redis host details for distributed BullMQ queues.
-- [ ] **LLM Provider API Keys Configured**: Set `OPENAI_API_KEY` or `GEMINI_API_KEY` in environment variables.
+- [x] **Production Security Mode Enabled**: Auto-detects `NODE_ENV=production` → defaults to `strict` mode. Override with `orbitox.configure({ mode: 'strict' })`.
+- [x] **Redis Connection Provided**: Auto-reads `REDIS_HOST`, `REDIS_PORT`, and `REDIS_URL` from environment. Fallback to `localhost:6379` in development.
+- [x] **LLM Provider API Keys Configured**: Auto-detects `OPENAI_API_KEY`, `GEMINI_API_KEY`, `GOOGLE_AI_API_KEY`, or `AZURE_OPENAI_API_KEY` from environment. Falls back to stub mode when none set.
+- [x] **Startup Diagnostics**: Logs security mode, Redis target, and AI provider status at boot. Emits `⚠️ WARNING` in production for misconfigured services.
+- [x] **Dynamic N-Tier Data Isolation**: Immutable write protection, IDOR silent 404 defense, and namespace-isolated cache keys.
+- [x] **Inter-Branch Mesh Engine**: Peer collaboration for stock visibility, supply requests, and cross-branch messaging.
+
+### Environment Variables Reference
+
+| Variable | Purpose | Example |
+| :--- | :--- | :--- |
+| `NODE_ENV` | Auto-detect security mode (`production` → `strict`) | `production` |
+| `REDIS_HOST` | Redis server hostname for BullMQ distributed events | `redis.prod.internal` |
+| `REDIS_PORT` | Redis server port | `6379` |
+| `REDIS_URL` | Full Redis URL (alternative to HOST/PORT) | `redis://redis.prod:6379` |
+| `OPENAI_API_KEY` | OpenAI API key for GPT-4o completions | `sk-proj-...` |
+| `OPENAI_MODEL` | Override default OpenAI model | `gpt-4o-mini` |
+| `GEMINI_API_KEY` | Google Gemini API key | `AIza...` |
+| `GOOGLE_AI_API_KEY` | Google AI API key (alias for Gemini) | `AIza...` |
+| `GEMINI_MODEL` | Override default Gemini model | `gemini-1.5-flash` |
+| `AZURE_OPENAI_API_KEY` | Azure OpenAI API key | `abc123...` |
+| `AZURE_OPENAI_MODEL` | Override default Azure model | `gpt-4o` |
+

@@ -210,6 +210,8 @@ class OrbitoXSingleton {
    * ❤️ Health check — platform status.
    */
   async health(): Promise<{ status: string; mode: string; services: Record<string, string> }> {
+    const aiConfig = this.container.config.ai;
+    const redisConfig = this.container.config.redis;
     return {
       status: 'healthy',
       mode: this.container.config.mode,
@@ -217,11 +219,11 @@ class OrbitoXSingleton {
         context: 'ok',
         security: 'ok',
         audit: 'ok',
-        events: 'ok',
+        events: redisConfig.host !== 'localhost' ? `ok (redis: ${redisConfig.host}:${redisConfig.port})` : 'ok (in-memory)',
         features: 'ok',
         workflows: 'ok',
         billing: 'ok',
-        ai: this.container.config.ai.apiKey ? 'ok (live)' : 'ok (stub)',
+        ai: aiConfig.apiKey ? `ok (${aiConfig.provider} live)` : 'ok (stub)',
       },
     };
   }

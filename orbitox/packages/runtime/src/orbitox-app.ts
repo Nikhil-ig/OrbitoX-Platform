@@ -7,7 +7,8 @@ export async function createOrbitoXApp(config: OrbitoXConfig) {
   console.log(`🚀 Booting OrbitoX App: ${config.app.name}...`);
 
   // 1. Initialize Engines via Singleton
-  orbitox.configure({ mode: 'open' }); // Dev mode by default for zero-complexity apps
+  // Mode auto-detects from NODE_ENV: production → strict, otherwise → open
+  orbitox.configure({});
   const metadataEngine = new MetadataEngine();
 
   // 2. Register Metadata from Config
