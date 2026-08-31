@@ -1,7 +1,7 @@
 {
   "name": "@orbitox-io/plugin-engine",
-  "version": "1.3.0",
-  "description": "OrbitoX Plugin Engine — MultiTenantEngine, 1-Line createOrbitoX Bootstrapper, Custom Domain Router, Security, and Plugin Registries",
+  "version": "1.4.0",
+  "description": "OrbitoX Plugin Engine — Smart MultiTenantEngine, In-Memory TTL Caching, Custom Domain Router, Security, and Plugin Registries",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "repository": {

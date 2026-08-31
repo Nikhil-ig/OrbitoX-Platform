@@ -1,13 +1,18 @@
 import { AsyncLocalStorage } from 'async_hooks';
 import { createOrbitoX, OrbitoXApp, OrbitoXPluginDefinition } from '../client';
-import { LicenseEnforcer } from '../security/license-enforcer';
+
+export type DomainStatus = 'ACTIVE' | 'PENDING_DNS' | 'SUSPENDED' | 'EXPIRED';
+export type TenantTier = 'starter' | 'growth' | 'pro' | 'enterprise';
 
 export interface TenantConfig {
   tenantId: string;
   name?: string;
   domain?: string;
   subdomain?: string;
+  tier?: TenantTier;
+  status?: DomainStatus;
   license?: string;
+  features?: string[];
   metadata?: Record<string, any>;
   customPlugins?: OrbitoXPluginDefinition[];
 }
@@ -15,7 +20,7 @@ export interface TenantConfig {
 export interface MultiTenantEngineOptions {
   /**
    * Static domain/subdomain mapping:
-   * e.g. { 'apollo.orbito.com': { tenantId: 'apollo', name: 'Apollo Hospitals' } }
+   * e.g. { 'apollo.orbito.com': { tenantId: 'apollo', name: 'Apollo Hospitals', tier: 'enterprise' } }
    */
   domains?: Record<string, TenantConfig>;
 
@@ -46,6 +51,11 @@ export interface MultiTenantEngineOptions {
   strictSecurity?: boolean;
 
   /**
+   * In-Memory TTL Cache duration in milliseconds (default: 300,000 ms = 5 mins)
+   */
+  cacheTtlMs?: number;
+
+  /**
    * Fallback default tenant config if domain is unknown (e.g. during local testing)
    */
   defaultTenant?: TenantConfig;
@@ -55,6 +65,14 @@ export interface ActiveTenantSession {
   tenant: TenantConfig;
   app: OrbitoXApp;
   domain: string;
+  hasFeature: (featureName: string) => boolean;
+  isTier: (targetTier: TenantTier) => boolean;
+  scopeData: <T extends Record<string, any>>(data: T) => T & { tenantId: string };
+}
+
+interface CacheEntry {
+  config: TenantConfig;
+  expiresAt: number;
 }
 
 // 🛡️ Global AsyncLocalStorage for Zero-Boilerplate Tenant Context Propagation
@@ -68,54 +86,105 @@ export function getActiveTenant(): ActiveTenantSession | undefined {
 }
 
 /**
- * 🪐 MultiTenantEngine — Enterprise Multi-Tenancy & Custom Domain Router
+ * 🪐 MultiTenantEngine — Enterprise Multi-Tenancy, High-Performance TTL Caching & Custom Domain Router
  */
 export class MultiTenantEngine {
   private readonly tenantAppCache = new Map<string, OrbitoXApp>();
+  private readonly domainResolutionCache = new Map<string, CacheEntry>();
+  private readonly cacheTtlMs: number;
 
-  constructor(private readonly options: MultiTenantEngineOptions = {}) {}
+  constructor(private readonly options: MultiTenantEngineOptions = {}) {
+    this.cacheTtlMs = options.cacheTtlMs ?? 5 * 60 * 1000; // Default 5 mins TTL
+  }
 
   /**
-   * Resolves a tenant configuration from a domain/hostname string
+   * Resolves a tenant configuration from a domain/hostname string with High-Speed In-Memory TTL Caching
    */
   public async resolve(hostname: string): Promise<TenantConfig | null> {
     const cleanHost = hostname.split(':')[0]!.toLowerCase().trim();
+    const now = Date.now();
 
-    // 1. Direct match in static domain mapping
-    if (this.options.domains && this.options.domains[cleanHost]) {
-      return { ...this.options.domains[cleanHost]!, domain: cleanHost };
+    // 1. Check in-memory TTL cache (sub-millisecond fast path)
+    const cached = this.domainResolutionCache.get(cleanHost);
+    if (cached && cached.expiresAt > now) {
+      return cached.config;
     }
 
-    // 2. Wildcard root domain check (e.g. 'client.orbito.com' -> 'client')
-    if (this.options.wildcardRootDomain) {
+    let resolved: TenantConfig | null = null;
+
+    // 2. Direct match in static domain mapping
+    if (this.options.domains && this.options.domains[cleanHost]) {
+      resolved = {
+        tier: 'growth',
+        status: 'ACTIVE',
+        ...this.options.domains[cleanHost]!,
+        domain: cleanHost,
+      };
+    }
+
+    // 3. Wildcard root domain check (e.g. 'client.orbito.com' -> 'client')
+    if (!resolved && this.options.wildcardRootDomain) {
       const root = this.options.wildcardRootDomain.toLowerCase();
       if (cleanHost.endsWith(`.${root}`)) {
         const subdomain = cleanHost.slice(0, -(root.length + 1));
         if (subdomain && !subdomain.includes('.')) {
-          return {
+          resolved = {
             tenantId: `tenant_${subdomain}`,
             name: `${subdomain.charAt(0).toUpperCase() + subdomain.slice(1)} Tenant`,
             domain: cleanHost,
             subdomain,
+            tier: 'growth',
+            status: 'ACTIVE',
           };
         }
       }
     }
 
-    // 3. Dynamic async resolver (Database / Redis)
-    if (this.options.resolveTenant) {
+    // 4. Dynamic async resolver (Database / Redis)
+    if (!resolved && this.options.resolveTenant) {
       const dynamicConfig = await this.options.resolveTenant(cleanHost);
       if (dynamicConfig) {
-        return { ...dynamicConfig, domain: cleanHost };
+        resolved = {
+          tier: 'starter',
+          status: 'ACTIVE',
+          ...dynamicConfig,
+          domain: cleanHost,
+        };
       }
     }
 
-    // 4. Default fallback if configured
-    if (this.options.defaultTenant) {
-      return { ...this.options.defaultTenant, domain: cleanHost };
+    // 5. Default fallback if configured
+    if (!resolved && this.options.defaultTenant) {
+      resolved = {
+        tier: 'starter',
+        status: 'ACTIVE',
+        ...this.options.defaultTenant,
+        domain: cleanHost,
+      };
     }
 
-    return null;
+    if (resolved) {
+      // Store in memory TTL cache
+      this.domainResolutionCache.set(cleanHost, {
+        config: resolved,
+        expiresAt: now + this.cacheTtlMs,
+      });
+    }
+
+    return resolved;
+  }
+
+  /**
+   * Clears the domain resolution cache (e.g., when a tenant updates their custom domain)
+   */
+  public invalidateCache(domain?: string): void {
+    if (domain) {
+      const cleanHost = domain.split(':')[0]!.toLowerCase().trim();
+      this.domainResolutionCache.delete(cleanHost);
+    } else {
+      this.domainResolutionCache.clear();
+      this.tenantAppCache.clear();
+    }
   }
 
   /**
@@ -147,6 +216,43 @@ export class MultiTenantEngine {
   }
 
   /**
+   * Builds an active tenant session with feature guards, tier helpers, and data scoping
+   */
+  public createSession(tenant: TenantConfig, app: OrbitoXApp, domain: string): ActiveTenantSession {
+    const sessionTier = tenant.tier || 'growth';
+    const tierRanks: Record<TenantTier, number> = {
+      starter: 1,
+      growth: 2,
+      pro: 3,
+      enterprise: 4,
+    };
+
+    return {
+      tenant,
+      app,
+      domain,
+      hasFeature: (featureName: string) => {
+        if (tenant.features && tenant.features.length > 0) {
+          if (tenant.features.includes('*')) return true;
+          return tenant.features.includes(featureName);
+        }
+        if (app.security.allowedFeatures.includes('*')) return true;
+        return app.security.allowedFeatures.includes(featureName);
+      },
+
+      isTier: (targetTier: TenantTier) => {
+        return (tierRanks[sessionTier] || 0) >= (tierRanks[targetTier] || 0);
+      },
+      scopeData: <T extends Record<string, any>>(data: T): T & { tenantId: string } => {
+        return {
+          ...data,
+          tenantId: tenant.tenantId, // Always enforce tenant isolation
+        };
+      },
+    };
+  }
+
+  /**
    * Runs an asynchronous function inside the execution context of a specific tenant
    */
   public async runWithTenant<T>(hostname: string, callback: (session: ActiveTenantSession) => Promise<T>): Promise<T> {
@@ -155,15 +261,19 @@ export class MultiTenantEngine {
       throw new Error(`MultiTenantEngine: Unauthorized or unmapped custom domain: "${hostname}"`);
     }
 
+    if (tenant.status === 'SUSPENDED') {
+      throw new Error(`MultiTenantEngine: Tenant account "${tenant.name || tenant.tenantId}" is currently SUSPENDED.`);
+    }
+
     const app = await this.getAppForTenant(tenant);
-    const session: ActiveTenantSession = { tenant, app, domain: hostname };
+    const session = this.createSession(tenant, app, hostname);
 
     return tenantStorage.run(session, () => callback(session));
   }
 
   /**
    * ⚡ 1-Line Express / Connect HTTP Middleware
-   * Automatically resolves custom domain & tenant and attaches `req.tenant` and `req.app`
+   * Automatically resolves custom domain & tenant and attaches `req.tenant`, `req.app`, and `req.session`
    */
   public middleware() {
     return async (req: any, res: any, next: any) => {
@@ -177,13 +287,21 @@ export class MultiTenantEngine {
           });
         }
 
+        if (tenant.status === 'SUSPENDED') {
+          return res.status(403).json({
+            error: 'Tenant Account Suspended',
+            message: `Tenant "${tenant.name || tenant.tenantId}" has been suspended. Please contact platform support.`,
+          });
+        }
+
         const app = await this.getAppForTenant(tenant);
-        const session: ActiveTenantSession = { tenant, app, domain: host };
+        const session = this.createSession(tenant, app, host);
 
         // Attach to standard request object
         req.tenant = tenant;
         req.app = app;
         req.orbitox = app;
+        req.tenantSession = session;
 
         // Wrap execution in AsyncLocalStorage so all child async calls have access
         tenantStorage.run(session, () => next());
@@ -195,26 +313,44 @@ export class MultiTenantEngine {
       }
     };
   }
+
+  /**
+   * 🔒 Feature Guard Middleware — Restricts API endpoints to tenants with specific feature entitlements
+   */
+  public requireFeature(featureName: string) {
+    return (req: any, res: any, next: any) => {
+      const session = req.tenantSession || getActiveTenant();
+      if (!session || !session.hasFeature(featureName)) {
+        return res.status(403).json({
+          error: 'Feature Not Entitled',
+          message: `The feature "${featureName}" is not enabled for your current tenant tier.`,
+          feature: featureName,
+        });
+      }
+      next();
+    };
+  }
+
+  /**
+   * 🏆 Tier Guard Middleware — Restricts API endpoints to a minimum tier (e.g. 'pro' or 'enterprise')
+   */
+  public requireTier(minimumTier: TenantTier) {
+    return (req: any, res: any, next: any) => {
+      const session = req.tenantSession || getActiveTenant();
+      if (!session || !session.isTier(minimumTier)) {
+        return res.status(403).json({
+          error: 'Tier Upgrade Required',
+          message: `This endpoint requires the "${minimumTier}" tier or higher. Current tier: "${session?.tenant.tier || 'starter'}".`,
+          requiredTier: minimumTier,
+        });
+      }
+      next();
+    };
+  }
 }
 
 /**
- * 🚀 1-Line Factory for Multi-Tenancy & Custom Domains
- *
- * @example
- * ```typescript
- * import { createMultiTenantEngine } from '@orbitox-io/plugin-engine';
- * import * as crm from '@orbitox-io/crm';
- *
- * const engine = createMultiTenantEngine({
- *   wildcardRootDomain: 'orbito.com',
- *   domains: {
- *     'portal.apollohospitals.com': { tenantId: 'apollo', name: 'Apollo Hospitals' }
- *   },
- *   plugins: [crm]
- * });
- *
- * app.use(engine.middleware());
- * ```
+ * 🚀 1-Line Factory for Smart Multi-Tenancy & Custom Domains
  */
 export function createMultiTenantEngine(options: MultiTenantEngineOptions = {}): MultiTenantEngine {
   return new MultiTenantEngine(options);
