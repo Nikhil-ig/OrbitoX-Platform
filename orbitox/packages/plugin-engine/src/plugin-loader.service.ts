@@ -1,5 +1,5 @@
 import { Injectable, Logger, UnauthorizedException } from '@nestjs/common';
-import { PluginManifest, ORBITOX_PLUGIN_METADATA_KEY, HeadlessPlugin } from '@orbitox/sdk';
+import { PluginManifest, ORBITOX_PLUGIN_METADATA_KEY, HeadlessPlugin } from './metadata/types';
 import { ManifestValidator } from './manifest.validator';
 import { IntegrityVerifier } from './security/integrity-verifier';
 import { PackageSignature } from './security/crypto-signer';

@@ -1,5 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { PluginPageItem } from '@orbitox/sdk';
+import { PluginPageItem } from '../metadata/types';
 
 @Injectable()
 export class PageRegistry {

@@ -1,6 +1,6 @@
 # 🛡️ @orbitox-io/plugin-engine
 
-> **Zero-Trust Security, Cryptographic Signer, Anti-Tamper Verifier, Enterprise Licensing & Plugin Registry Engine for the OrbitoX SaaS Operating System.**
+> **1-Line Bootstrapper, Zero-Trust Security, Cryptographic Signer, Anti-Tamper Verifier, Enterprise Licensing & Plugin Registry Engine for the OrbitoX SaaS Operating System.**
 
 [![npm package](https://img.shields.io/badge/npm-@orbitox--io/plugin--engine-blue?style=flat-square&logo=npm)](https://github.com/OrbitoX-io/OrbitoX-Platform/packages)
 [![Security: Zero-Trust](https://img.shields.io/badge/Security-Zero--Trust%20Sandboxed-success?style=flat-square)](https://github.com/OrbitoX-io/OrbitoX-Platform)
@@ -9,68 +9,64 @@
 ---
 
 ## 📑 Table of Contents
-1. [Overview & Architecture](#-overview--architecture)
-2. [Installation](#-installation)
-3. [Quick Start](#-quick-start)
-4. [Core Security Modules](#-core-security-modules)
-   - [1. Cryptographic Signer & Hasher (`CryptoSigner`)](#1-cryptographic-signer--hasher-cryptosigner)
-   - [2. Anti-Tamper Verifier (`IntegrityVerifier`)](#2-anti-tamper-verifier-integrityverifier)
-   - [3. Enterprise License & Domain Lock (`LicenseEnforcer`)](#3-enterprise-license--domain-lock-licenseenforcer)
-   - [4. Zero-Trust Sandbox Guard (`SandboxGuard`)](#4-zero-trust-sandbox-guard-sandboxguard)
-5. [CLI Tooling Reference](#-cli-tooling-reference)
-6. [Security Best Practices](#-security-best-practices)
+1. [🌟 1-Line Quick Start (Ultra-Easy DX)](#-1-line-quick-start-ultra-easy-dx)
+2. [⚡ 1-Command Developer Setup](#-1-command-developer-setup)
+3. [📦 Installation](#-installation)
+4. [🔐 Core Security & Enterprise Modules](#-core-security--enterprise-modules)
+   - [1. 1-Line Client (`createOrbitoX`)](#1-1-line-client-createorbitox)
+   - [2. Cryptographic Signer & Hasher (`CryptoSigner`)](#2-cryptographic-signer--hasher-cryptosigner)
+   - [3. Anti-Tamper Verifier (`IntegrityVerifier`)](#3-anti-tamper-verifier-integrityverifier)
+   - [4. Enterprise License & Domain Lock (`LicenseEnforcer`)](#4-enterprise-license--domain-lock-licenseenforcer)
+   - [5. Zero-Trust Sandbox Guard (`SandboxGuard`)](#5-zero-trust-sandbox-guard-sandboxguard)
+5. [🛠️ CLI Reference](#-cli-reference)
 
 ---
 
-## 🌟 Overview & Architecture
+## 🌟 1-Line Quick Start (Ultra-Easy DX)
 
-`@orbitox-io/plugin-engine` provides the enterprise security and execution boundary for OrbitoX plugins and packages. It ensures:
+Initialize your entire multi-plugin application in a single line with automatic license enforcement and sandboxing:
 
-- 🔒 **IP Protection**: Plugins run with frozen facades and strictly protected kernel internals.
-- 🛡️ **Tamper Detection**: Every manifest and package file is hashed with SHA-256 and cryptographically signed with Ed25519 or RSA-2048 keys.
-- 🔑 **Cryptographic Licensing**: Built-in RSA licensing engine with domain binding, quota enforcement, and automated expiration checks.
+```javascript
+const { createOrbitoX } = require('@orbitox-io/plugin-engine');
+const crm = require('@orbitox-io/crm');
 
-```mermaid
-flowchart TD
-    subgraph KERNEL ["🔒 OrbitoX Kernel Engine"]
-        SEC["Zero-Trust Security Facade"]
-        DB["Universal DB Adapter"]
-        CTX["Multi-Tenant Context Hierarchy"]
-    end
+async function main() {
+  // 🚀 1-Line Fluent Bootstrapper
+  const app = await createOrbitoX({
+    license: process.env.ORBITOX_LICENSE_KEY, // Auto-verified if provided
+    plugins: [crm]                            // Automatically mounted
+  });
 
-    subgraph ENGINE ["🛡️ @orbitox-io/plugin-engine"]
-        SIGN["CryptoSigner (Ed25519/RSA)"]
-        VERIFY["IntegrityVerifier (SHA-256)"]
-        LIC["LicenseEnforcer (Domain & Quota Lock)"]
-        GUARD["SandboxGuard (Object.freeze Proxy)"]
-    end
+  // Direct, fluent access: app.crm, app.hms, app.security
+  const lead = app.crm.createLead({
+    name: 'Dr. Ramesh Sharma',
+    email: 'sharma@apollo.com',
+    company: 'Apollo Healthcare Network',
+    estimatedValue: 4500000
+  });
 
-    subgraph PLUGINS ["🧩 Third-Party / Modular Plugins"]
-        CRM["@orbitox-io/crm"]
-        HMS["@orbitox-io/hms"]
-        COMM["@orbitox-io/commerce"]
-    end
+  console.log('Lead Created:', lead);
+}
+main();
+```
 
-    PLUGINS -->|Verified via| VERIFY
-    PLUGINS -->|Bound by| LIC
-    PLUGINS -->|Sandboxed via| GUARD
-    GUARD -->|Safe Read-Only Facade| KERNEL
+---
+
+## ⚡ 1-Command Developer Setup
+
+Never configure `.npmrc` manually again. Use the built-in CLI:
+
+```bash
+# 1. Automatic registry auth setup and local key generation
+npx @orbitox/cli setup --token=ghp_yourPersonalAccessTokenHere
+
+# 2. Add and wire any plugin in 1 step
+npx @orbitox/cli add crm
 ```
 
 ---
 
 ## 📦 Installation
-
-Configure your `.npmrc` file with GitHub Packages authentication:
-
-```ini
-# .npmrc
-@orbitox-io:registry=https://npm.pkg.github.com
-//npm.pkg.github.com/:_authToken=${NODE_AUTH_TOKEN}
-always-auth=true
-```
-
-Then install via `npm` or `pnpm`:
 
 ```bash
 # Using npm
@@ -82,35 +78,30 @@ pnpm add @orbitox-io/plugin-engine
 
 ---
 
-## 🚀 Quick Start
+## 🔐 Core Security & Enterprise Modules
 
-```javascript
-const {
-  CryptoSigner,
-  IntegrityVerifier,
-  LicenseEnforcer,
-  SandboxGuard
-} = require('@orbitox-io/plugin-engine/dist/security');
+### 1. 1-Line Client (`createOrbitoX`)
 
-// 1. Generate an Ed25519 / RSA Keypair
-const keypair = CryptoSigner.generateSigningKeyPair('ed25519');
+```typescript
+import { createOrbitoX } from '@orbitox-io/plugin-engine';
+import * as crm from '@orbitox-io/crm';
 
-// 2. Cryptographically Sign a Manifest Payload
-const manifest = { id: 'crm', version: '1.0.0', author: 'OrbitoX' };
-const signature = CryptoSigner.signPayload(manifest, keypair.privateKey);
+const app = await createOrbitoX({
+  license: process.env.ORBITOX_LICENSE_KEY,
+  domain: 'apollo.orbito.com',
+  strictSecurity: true,
+  plugins: [crm]
+});
 
-// 3. Verify Authenticity & Detect Tampering
-const isValid = IntegrityVerifier.verifyPayloadSignature(manifest, signature, keypair.publicKey);
-console.log('Signature Authentic?', isValid); // true
+// Check enterprise entitlements
+if (app.hasFeature('ai_diagnostics')) {
+  console.log('AI Diagnostics Enabled!');
+}
 ```
 
 ---
 
-## 🔐 Core Security Modules
-
-### 1. Cryptographic Signer & Hasher (`CryptoSigner`)
-
-Generates digital signatures and computes SHA-256 file hashes across package distribution trees:
+### 2. Cryptographic Signer & Hasher (`CryptoSigner`)
 
 ```typescript
 import { CryptoSigner } from '@orbitox-io/plugin-engine';
@@ -120,22 +111,16 @@ const { publicKey, privateKey } = CryptoSigner.generateSigningKeyPair('ed25519')
 
 // Sign payload
 const signature = CryptoSigner.signPayload({ pluginId: 'hms', version: '2.0.0' }, privateKey);
-
-// Hash local file
-const fileSha256 = CryptoSigner.calculateFileHash('dist/bundle.js');
 ```
 
 ---
 
-### 2. Anti-Tamper Verifier (`IntegrityVerifier`)
-
-Validates signatures and file checksums before loading plugins to prevent MITM attacks or malware injection:
+### 3. Anti-Tamper Verifier (`IntegrityVerifier`)
 
 ```typescript
 import { IntegrityVerifier } from '@orbitox-io/plugin-engine';
 
 const isValid = IntegrityVerifier.verifyPayloadSignature(payload, signatureHex, publicKeyPem);
-
 if (!isValid) {
   throw new Error('SECURITY ALERT: Tampered plugin payload detected!');
 }
@@ -143,14 +128,12 @@ if (!isValid) {
 
 ---
 
-### 3. Enterprise License & Domain Lock (`LicenseEnforcer`)
-
-Issues and validates RSA-signed license tokens to prevent software piracy and enforce host domain binding:
+### 4. Enterprise License & Domain Lock (`LicenseEnforcer`)
 
 ```typescript
 import { LicenseEnforcer } from '@orbitox-io/plugin-engine';
 
-// 1. Issue signed license token for a client
+// Issue signed enterprise license
 const token = LicenseEnforcer.issueLicenseToken({
   licenseId: 'lic_apollo_100',
   issuedTo: 'Apollo Hospitals',
@@ -162,24 +145,17 @@ const token = LicenseEnforcer.issueLicenseToken({
   tier: 'enterprise'
 }, privateKeyPem);
 
-// 2. Validate license at runtime boot
+// Verify license token at boot
 const check = LicenseEnforcer.verifyLicenseToken(token, publicKeyPem, {
   currentDomain: 'hospital.apollo.com',
   activeTenantsCount: 30,
   requiredFeature: 'ai_diagnostics'
 });
-
-if (!check.valid) {
-  console.error('License Verification Failed:', check.errors);
-  process.exit(1);
-}
 ```
 
 ---
 
-### 4. Zero-Trust Sandbox Guard (`SandboxGuard`)
-
-Freezes facades and creates sandboxed execution proxies that prevent untrusted plugins from accessing kernel memory or private symbols:
+### 5. Zero-Trust Sandbox Guard (`SandboxGuard`)
 
 ```typescript
 import { SandboxGuard } from '@orbitox-io/plugin-engine';
@@ -187,45 +163,28 @@ import { SandboxGuard } from '@orbitox-io/plugin-engine';
 const runtime = {
   security: { authorize: () => true },
   database: { query: () => [] },
-  _privateDbPassword: 'root-password-123'
+  _privateMasterKey: 'secret-123'
 };
 
 // Deeply freeze runtime facades
 SandboxGuard.freezeAllFacades(runtime);
 
-// Create safe proxy restricting access to private properties
+// Safe proxy blocking private symbols
 const safeFacade = SandboxGuard.createSandboxedProxy(runtime, ['security', 'database']);
-
-safeFacade._privateDbPassword; // ❌ Throws Sandbox Security Alert!
 ```
 
 ---
 
-## 🛠️ CLI Tooling Reference
+## 🛠️ CLI Reference
 
-Use the built-in `@orbitox/cli` for automated security operations:
-
-```bash
-# 1. Generate Ed25519 Signing Keys
-node tools/cli/dist/bin.js keygen --type=ed25519 --out=keys/
-
-# 2. Package, Hash & Sign a Plugin
-node tools/cli/dist/bin.js package crm --key=keys/private.pem
-
-# 3. Verify Signature & File Tree Checksums
-node tools/cli/dist/bin.js verify crm --publicKey=keys/public.pem
-
-# 4. Issue a Signed License Token
-node tools/cli/dist/bin.js license issue --to="Customer" --domain="app.domain.com" --key=keys/private.pem
-```
-
----
-
-## 🛡️ Security Best Practices
-
-1. **Never Commit Private Keys**: Store `keys/private.pem` in CI/CD repository secrets (`ORBITOX_RELEASE_PRIVATE_KEY`).
-2. **Strip Source Maps**: Always compile production packages with `tsconfig.prod.json` (`sourceMap: false`).
-3. **Enforce Read-Only Tokens**: Distribute only fine-grained read-only tokens (`read:packages`) to runtime deployment servers.
+| Command | Description |
+| :--- | :--- |
+| `orbitox setup --token=<token>` | Auto-configures `.npmrc` authentication and generates local signing keys. |
+| `orbitox add <plugin>` | Automatically installs and outputs starter boilerplate for a plugin. |
+| `orbitox keygen --type=ed25519` | Generates Ed25519 or RSA-2048 signing keys in `keys/`. |
+| `orbitox package <plugin>` | Builds, strips source maps, hashes file tree, and cryptographically signs plugin bundle. |
+| `orbitox verify <plugin>` | Validates digital signature and SHA-256 manifest integrity. |
+| `orbitox license issue` | Issues an RSA-signed enterprise license token with domain & quota binding. |
 
 ---
 

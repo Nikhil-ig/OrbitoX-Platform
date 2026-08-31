@@ -1,5 +1,5 @@
 import { Injectable, BadRequestException } from '@nestjs/common';
-import { PluginManifest } from '@orbitox/sdk';
+import { PluginManifest } from './metadata/types';
 
 @Injectable()
 export class ManifestValidator {

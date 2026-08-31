@@ -1,5 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { PluginManifest } from '@orbitox/sdk';
+import { PluginManifest } from '../metadata/types';
 
 export interface MarketplaceItem {
   id: string;

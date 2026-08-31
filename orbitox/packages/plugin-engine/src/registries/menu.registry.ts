@@ -1,5 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { PluginMenuItem } from '@orbitox/sdk';
+import { PluginMenuItem } from '../metadata/types';
 
 @Injectable()
 export class MenuRegistry {

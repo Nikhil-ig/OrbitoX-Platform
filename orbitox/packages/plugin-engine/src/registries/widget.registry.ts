@@ -1,5 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { PluginWidgetItem } from '@orbitox/sdk';
+import { PluginWidgetItem } from '../metadata/types';
 
 @Injectable()
 export class WidgetRegistry {

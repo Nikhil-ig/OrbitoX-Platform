@@ -11,8 +11,10 @@ import { commandKeygen } from './commands/keygen';
 import { commandPackage } from './commands/package';
 import { commandVerify } from './commands/verify';
 import { commandLicense } from './commands/license';
+import { commandSetup } from './commands/setup';
+import { commandAdd } from './commands/add';
 
-const VERSION = '3.1.0';
+const VERSION = '3.2.0';
 
 console.log(`OrbitoX Platform CLI v${VERSION}`);
 
@@ -23,6 +25,10 @@ const commandArgs = args.slice(1);
 if (!command || command === 'help' || command === '--help') {
   console.log(`
 Usage: orbitox <command> [options]
+
+Quick Onboarding & Developer Experience:
+  setup [options]         1-Command registry auth setup & keypair generation
+  add <plugin>            1-Step install & scaffold an OrbitoX plugin (e.g. orbitox add crm)
 
 Commands:
   new <plugin-name>       Scaffold a production-ready dual-architecture plugin
@@ -43,14 +49,15 @@ Security & Packaging:
   help                    Show this help message
 
 Examples:
-  orbitox keygen --type=ed25519 --out=keys/
+  orbitox setup --token=ghp_yourTokenHere
+  orbitox add crm
   orbitox package crm --key=keys/private.pem
   orbitox verify crm --publicKey=keys/public.pem
   orbitox license issue --to="Acme Hospital" --domain="acme.orbito.com" --key=keys/private.pem
-  orbitox publish crm --key=keys/private.pem
 `);
   process.exit(0);
 }
+
 
 switch (command) {
   case 'create':
@@ -84,6 +91,14 @@ switch (command) {
 
   case 'doctor':
     commandDoctor();
+    break;
+
+  case 'setup':
+    commandSetup(commandArgs);
+    break;
+
+  case 'add':
+    commandAdd(commandArgs);
     break;
 
   case 'keygen':
