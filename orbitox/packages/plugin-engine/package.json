@@ -1,21 +1,26 @@
 {
-  "name": "@orbitox/plugin-engine",
-  "version": "0.0.0",
-  "private": true,
-  "main": "./src/index.ts",
-  "types": "./src/index.ts",
+  "name": "@orbitox-io/plugin-engine",
+  "version": "1.0.0",
+  "description": "OrbitoX Plugin Engine — Security, Cryptographic Signer, Sandbox Guard, and Plugin Registries",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/OrbitoX-io/OrbitoX-Platform.git",
+    "directory": "packages/plugin-engine"
+  },
+  "publishConfig": {
+    "registry": "https://npm.pkg.github.com"
+  },
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "test": "jest --passWithNoTests"
   },
   "dependencies": {
     "@nestjs/common": "^10.0.0",
-    "@nestjs/core": "^10.0.0",
-    "@orbitox/core": "workspace:*",
-    "@orbitox/sdk": "workspace:*",
-    "@orbitox/types": "workspace:*",
-    "@orbitox/utils": "workspace:*"
+    "@nestjs/core": "^10.0.0"
   },
+
   "devDependencies": {
     "@orbitox/eslint-config": "workspace:*",
     "@orbitox/jest-config": "workspace:*",

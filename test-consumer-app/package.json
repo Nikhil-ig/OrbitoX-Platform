@@ -1,0 +1,13 @@
+{
+  "name": "test-consumer-app",
+  "version": "1.0.0",
+  "description": "Standalone external consumer application testing @orbitox-io packages from GitHub Packages",
+  "main": "src/index.js",
+  "scripts": {
+    "start": "node src/index.js"
+  },
+  "dependencies": {
+    "@orbitox-io/crm": "^1.0.1",
+    "@orbitox-io/plugin-engine": "^1.0.0"
+  }
+}

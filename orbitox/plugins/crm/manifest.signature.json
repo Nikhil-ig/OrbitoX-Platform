@@ -1,7 +1,7 @@
 {
   "algorithm": "sha256WithRSAEncryption",
-  "signature": "c8ff832d7b29b7d9c59de9eab7edc9cb330953afd26b6eaf646b76869a91384e47cee8e27a383e159342bcc660fc0b719990ad68a2fdf1714671a21f2186de00",
-  "signedAt": "2026-08-31T04:27:44.337Z",
+  "signature": "f84a7c931c9831d5c8cf7afc02df2ebcb1b147a9134d9a12e6c850a20c61c54373bcab617093ce6cc87315c079b19e4f0078cd62b6d6400ae2b2d1ca2d2e1801",
+  "signedAt": "2026-08-31T07:32:42.926Z",
   "signerId": "orbitox-official-builder",
   "manifestHash": "49db0263b4e7b073638441e4996f6fdaa33a1bfd08bcc51caa4d38f3c411471f",
   "files": [
@@ -242,8 +242,8 @@
     },
     {
       "path": "package.json",
-      "sha256": "4cb8e086a9cd5e9d1b5231cac5effd30226c282046c4d1d2bb1b1e26a96df5fe",
-      "sizeBytes": 1093
+      "sha256": "33ef90ab08dd3f3e5d9b658831be46b3f1480b6fe0d5f911d15716a2e6ed6a3c",
+      "sizeBytes": 1208
     },
     {
       "path": "src/domain/lead-actions.ts",
