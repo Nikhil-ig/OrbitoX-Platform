@@ -63,6 +63,9 @@ mindmap
 | **10** | [📦 Workflows & Automation](./10_WORKFLOWS.md) | Event Triggers, Background Actions | Workflow Sequence Diagram |
 | **11** | [🛠️ CLI & Scaffolding](./11_CLI_SCAFFOLDING.md) | Templates, Config, Auto-REST | Template Matrix, CLI Pipeline |
 | **12** | [🎯 Production Deployment](./12_PRODUCTION_DEPLOYMENT.md) | Hardening, Redis, AI Keys | Infrastructure Topology, Checklist |
+| **13** | [🏥 Hospital SaaS Blueprint](./13_USECASE_HOSPITAL_SAAS.md) | Clinical N-Tier, Bed State Machine, Peer Mesh | Context Topology, Permission Flow, Bed State Machine |
+| **14** | [🧑‍💻 Hospital Developer Guide](./14_HOSPITAL_SAAS_DEVELOPER_GUIDE.md) | Beginner-to-Pro Tutorial, TypeScript Types, Copy-Paste Server | Mental Model, 8-Step Tutorial, Runnable Code |
+| **15** | [🗄️ Database Architecture & Flow](./15_DATABASE_ARCHITECTURE_AND_FLOW.md) | Multi-Tenant Storage, Read/Write Sequences, Query Translation | Storage Models, Read Flow, Write Flow, Cache Namespaces |
 
 ---
 

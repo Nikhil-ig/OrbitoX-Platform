@@ -1,0 +1,58 @@
+name: Monorepo Security & Vulnerability Audit
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main]
+  schedule:
+    # Run every Monday at 04:00 AM UTC
+    - cron: '0 4 * * 1'
+
+jobs:
+  security-audit:
+    name: Security Auditing & IP Protection Checks
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup PNPM
+        uses: pnpm/action-setup@v3
+        with:
+          version: 9.15.0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'pnpm'
+
+      - name: Install Dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Run PNPM Security Audit
+        run: pnpm audit --prod
+
+      - name: Check for Accidentally Committed Source Maps or Secrets
+        run: |
+          echo "Scanning for accidental source map or private key leaks..."
+          FOUND_MAPS=$(find packages plugins -name "*.map" | wc -l)
+          if [ "$FOUND_MAPS" -gt 0 ]; then
+            echo "⚠️ Found $FOUND_MAPS source map files committed to repository."
+          fi
+          
+          # Check for private key files in repository
+          FOUND_KEYS=$(find . -name "*.pem" -o -name "*.key" -not -path "*/node_modules/*" | wc -l)
+          if [ "$FOUND_KEYS" -gt 0 ]; then
+            echo "❌ CRITICAL SECURITY WARNING: Private key files detected in repo!"
+            find . -name "*.pem" -o -name "*.key" -not -path "*/node_modules/*"
+            exit 1
+          fi
+
+      - name: Run Plugin Engine Security Tests
+        run: |
+          pnpm --filter @orbitox/plugin-engine test

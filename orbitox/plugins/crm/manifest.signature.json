@@ -1,0 +1,289 @@
+{
+  "algorithm": "sha256WithRSAEncryption",
+  "signature": "c8ff832d7b29b7d9c59de9eab7edc9cb330953afd26b6eaf646b76869a91384e47cee8e27a383e159342bcc660fc0b719990ad68a2fdf1714671a21f2186de00",
+  "signedAt": "2026-08-31T04:27:44.337Z",
+  "signerId": "orbitox-official-builder",
+  "manifestHash": "49db0263b4e7b073638441e4996f6fdaa33a1bfd08bcc51caa4d38f3c411471f",
+  "files": [
+    {
+      "path": "backend/dist/crm.module.d.ts",
+      "sha256": "865b556e6ff2b2dd7949ed36503ed2c9200836496789d9b363e2c273dea9d077",
+      "sizeBytes": 192
+    },
+    {
+      "path": "backend/dist/crm.module.d.ts.map",
+      "sha256": "1ba7dc11909e058172b92da47cfe5bf62423c1bc82f94f45edc4b2576ab064eb",
+      "sizeBytes": 234
+    },
+    {
+      "path": "backend/dist/crm.module.js",
+      "sha256": "d4aeac5a35a84281dd8232d16e46f8d202d296a3b343cd0c1c0c905295339f5a",
+      "sizeBytes": 3818
+    },
+    {
+      "path": "backend/dist/crm.module.js.map",
+      "sha256": "b7a7038b352654cc792ce2079efa535417f9f70db70792aad2bdcd15dbf2ae92",
+      "sizeBytes": 448
+    },
+    {
+      "path": "backend/dist/crm.service.d.ts",
+      "sha256": "56e3c93eb3db8d578e300ddfc98646485da2531b70141afdbe82fa20c5cb8ebe",
+      "sizeBytes": 146
+    },
+    {
+      "path": "backend/dist/crm.service.d.ts.map",
+      "sha256": "232eeee2015f87e42f7c7031eaee2658e5fadb20d71d36adfcac3f51a20142fc",
+      "sizeBytes": 220
+    },
+    {
+      "path": "backend/dist/crm.service.js",
+      "sha256": "e13944ec73c62ed21f6b37b78357aace6d4147f683cec7ce7d000fd205666c31",
+      "sizeBytes": 3473
+    },
+    {
+      "path": "backend/dist/crm.service.js.map",
+      "sha256": "502e5c6138c81bb448460e7c73bb5126b26ee16d6d760a36e9e17bbe0575fc33",
+      "sizeBytes": 484
+    },
+    {
+      "path": "backend/dist/index.d.ts",
+      "sha256": "63a1d52a99277ea31b5934348c50b60aa816fb7a1463a0d524664073acee9a1e",
+      "sizeBytes": 96
+    },
+    {
+      "path": "backend/dist/index.d.ts.map",
+      "sha256": "1c05dd28da2e02e8a8e2aaad53a69d454d30dbd74eab97b42853c61276ff65f6",
+      "sizeBytes": 144
+    },
+    {
+      "path": "backend/dist/index.js",
+      "sha256": "29b977f5e95c5c3fd40c80300a1eab20fe1572086da63921e774a4a76e8f6851",
+      "sizeBytes": 887
+    },
+    {
+      "path": "backend/dist/index.js.map",
+      "sha256": "eeec435b8a23cf602f01e4ad05b9140aa69ade78fffc49bfa98576ec6e7d60e3",
+      "sizeBytes": 142
+    },
+    {
+      "path": "backend/package.json",
+      "sha256": "95f699d2458df724b1f0a82a6e5194de7282a58781ec92392b29a89e5da0fa07",
+      "sizeBytes": 414
+    },
+    {
+      "path": "backend/src/crm.module.ts",
+      "sha256": "da807c3366ed2602f0b1aea0b9222b33173d5c10169814f3d485747e725d9d3c",
+      "sizeBytes": 424
+    },
+    {
+      "path": "backend/src/crm.service.ts",
+      "sha256": "4fcfe90b15f0138a76b48394ae05d75321ddb6f83f64f33c4cb0cdbc1edda600",
+      "sizeBytes": 326
+    },
+    {
+      "path": "backend/src/index.ts",
+      "sha256": "a4c4f8946aca0bd05608819663ee51a11b0a0fbde6faa50a06406220ff4c6320",
+      "sizeBytes": 61
+    },
+    {
+      "path": "backend/tsconfig.json",
+      "sha256": "e0eb9a3ec500d6417ea418ae9e8c68e1585b68bfaed3c303183c2a162c5291de",
+      "sizeBytes": 307
+    },
+    {
+      "path": "dist/domain/lead-actions.d.ts",
+      "sha256": "8583bfe97eaca06be9de0291c6fb6538101d91ed876728cac3e43fb68187588a",
+      "sizeBytes": 482
+    },
+    {
+      "path": "dist/domain/lead-actions.d.ts.map",
+      "sha256": "85f669bab4dda60e7526f45188e7dbbb398b51d4732be5ac5599df847c4fd78d",
+      "sizeBytes": 525
+    },
+    {
+      "path": "dist/domain/lead-actions.js",
+      "sha256": "1d27e8e032610d123b165355778d69d1acad0fd4c0cc4abcd59c2b0b0ca7f136",
+      "sizeBytes": 3529
+    },
+    {
+      "path": "dist/domain/lead-actions.js.map",
+      "sha256": "7e25faaee846f827ad6d52ff1fdf751588fe38c8ec537efbf1a7abc951a5837e",
+      "sizeBytes": 3255
+    },
+    {
+      "path": "dist/domain/lead-state-machine.d.ts",
+      "sha256": "11abb2a0fa92a886a4430b77a85e6d3698cc9a1f1b352bcac7019206aff13a5f",
+      "sizeBytes": 485
+    },
+    {
+      "path": "dist/domain/lead-state-machine.d.ts.map",
+      "sha256": "959bb199f5095d712796b126022a4b87af9f551a19ff0f3e3612d9c0cab112f4",
+      "sizeBytes": 549
+    },
+    {
+      "path": "dist/domain/lead-state-machine.js",
+      "sha256": "504b7d310bcc81572bc95102c0fe7e144b40cba4bb46b00a0eac12d51e8ffb5d",
+      "sizeBytes": 1243
+    },
+    {
+      "path": "dist/domain/lead-state-machine.js.map",
+      "sha256": "85ede0d8bdef483a1c93e7c84a9987404678b33c80499a5cba703cb0f1ee136e",
+      "sizeBytes": 1171
+    },
+    {
+      "path": "dist/domain/lead-state-machine.spec.d.ts",
+      "sha256": "cb4db01d47060657efbf21ba5fcfe984c93c1ae232d421898f32359b231209ca",
+      "sizeBytes": 64
+    },
+    {
+      "path": "dist/domain/lead-state-machine.spec.d.ts.map",
+      "sha256": "5595b1c0ca1d8f643c27c07e805e34a132f446d02fc79c774d7c23144071bcb9",
+      "sizeBytes": 150
+    },
+    {
+      "path": "dist/domain/lead-state-machine.spec.js",
+      "sha256": "0f4101557895d42da121c8bf46c9b224def268fc92c62caf24a61a0305722343",
+      "sizeBytes": 1958
+    },
+    {
+      "path": "dist/domain/lead-state-machine.spec.js.map",
+      "sha256": "3277dae84f40a03228ec8dc39f7472f9284f290f0a9f19336b421094ab15732d",
+      "sizeBytes": 1683
+    },
+    {
+      "path": "dist/domain/types.d.ts",
+      "sha256": "e5247a18d5e9185da53614149d17bd43e7b3c0cb836d7a9bb77c79da40c43bae",
+      "sizeBytes": 997
+    },
+    {
+      "path": "dist/domain/types.d.ts.map",
+      "sha256": "e6a1e6eeb9ad3d393a8a5e36c505d6c5822f40aa04a2e3117722da3dbff18d18",
+      "sizeBytes": 1251
+    },
+    {
+      "path": "dist/domain/types.js",
+      "sha256": "b0d2bc4142d0c62d43f996aaeb64f22c4889ac853f8a3765758b505d972d0149",
+      "sizeBytes": 110
+    },
+    {
+      "path": "dist/domain/types.js.map",
+      "sha256": "13f670a038cd2a2fbe8327669ad9a9a17273ce59a0529793f525856608257143",
+      "sizeBytes": 112
+    },
+    {
+      "path": "dist/index.d.ts",
+      "sha256": "c765f0f789503bb3b42c295241137857808ba7ecd972944009ef6073dc4e1e30",
+      "sizeBytes": 184
+    },
+    {
+      "path": "dist/index.d.ts.map",
+      "sha256": "bf6e702a407c7970c302bac5f5e83d36935492657eb942f24acdeb0f3f4333da",
+      "sizeBytes": 194
+    },
+    {
+      "path": "dist/index.js",
+      "sha256": "7129bd47cf7741cc4e0d9188cb1e663e70aa8be735fddb725aa4838ba3b29165",
+      "sizeBytes": 1011
+    },
+    {
+      "path": "dist/index.js.map",
+      "sha256": "65a4cb4e23f48bad8745d3c208babb3b812931b847fbcca25218284727178f9f",
+      "sizeBytes": 168
+    },
+    {
+      "path": "dist/react/index.d.ts",
+      "sha256": "db912af97209a8a3c820c5d7e0462d7cb49c44b6da64a7566de920a5d2d93925",
+      "sizeBytes": 62
+    },
+    {
+      "path": "dist/react/index.d.ts.map",
+      "sha256": "dbd6cbd16384d936782a695422fcd1774bd4e38ccf02a075825bb7f2cd278a37",
+      "sizeBytes": 132
+    },
+    {
+      "path": "dist/react/index.js",
+      "sha256": "b1e1a79fb4acd7b40ea20e8ec4713619facfc1cf068c91f7482a0cb231a13f99",
+      "sizeBytes": 835
+    },
+    {
+      "path": "dist/react/index.js.map",
+      "sha256": "651e5f0bd6e94cfe2a48a9662331144578ea4ea8b06c2ceb0e614a1de2d3345c",
+      "sizeBytes": 138
+    },
+    {
+      "path": "dist/react/use-crm.d.ts",
+      "sha256": "2c2ec049eed303cb336f0d9ba95c3b9c08b45950b9671aba18ab8658611d7701",
+      "sizeBytes": 491
+    },
+    {
+      "path": "dist/react/use-crm.d.ts.map",
+      "sha256": "913eb7425f902277dc66c26a8b365c6eba35516223ea9a7aa12e9d7c8a58b7d0",
+      "sizeBytes": 347
+    },
+    {
+      "path": "dist/react/use-crm.js",
+      "sha256": "688f19da85803d25102ebead7c06ee931f4cc31a36140bc101d2e0f0225e4ae1",
+      "sizeBytes": 2093
+    },
+    {
+      "path": "dist/react/use-crm.js.map",
+      "sha256": "ba80adc6c4a502b579f12273e08cbbdb0f69c5b812907f4d8e9218eef82a0d82",
+      "sizeBytes": 1797
+    },
+    {
+      "path": "jest.config.js",
+      "sha256": "b849a9b19e057e7913fa1fd4f8426c1c3bcd85f0134bfa8323a306b1e1a49c6e",
+      "sizeBytes": 145
+    },
+    {
+      "path": "manifest.json",
+      "sha256": "49db0263b4e7b073638441e4996f6fdaa33a1bfd08bcc51caa4d38f3c411471f",
+      "sizeBytes": 1196
+    },
+    {
+      "path": "package.json",
+      "sha256": "4cb8e086a9cd5e9d1b5231cac5effd30226c282046c4d1d2bb1b1e26a96df5fe",
+      "sizeBytes": 1093
+    },
+    {
+      "path": "src/domain/lead-actions.ts",
+      "sha256": "4da1168c792cdbf050235f3c61b03d85ffce78af7dd0cb7260938bdfa654b979",
+      "sizeBytes": 3124
+    },
+    {
+      "path": "src/domain/lead-state-machine.spec.ts",
+      "sha256": "a9eac3585080be7435d71c0436d019b9e47722996b976b506ce5b77060e4a765",
+      "sizeBytes": 1562
+    },
+    {
+      "path": "src/domain/lead-state-machine.ts",
+      "sha256": "aacfe844e790adf56cc76ce15fe29e5da0706ce1eae408f1ccb980704cd9cdbc",
+      "sizeBytes": 1178
+    },
+    {
+      "path": "src/domain/types.ts",
+      "sha256": "2b2738c8e8acc2bb952599ae6a559c2e410a9165a636d4acda0f3ee561c367b6",
+      "sizeBytes": 906
+    },
+    {
+      "path": "src/index.ts",
+      "sha256": "356701efcea3576211bea640cd7f0bb71248f79585cb102111b2ac661abfe78c",
+      "sizeBytes": 149
+    },
+    {
+      "path": "src/react/index.ts",
+      "sha256": "aaabf1ba895a2b03c7d25b5501e05b0121d31846a2d9aa8ead63147e4bc183a8",
+      "sizeBytes": 27
+    },
+    {
+      "path": "src/react/use-crm.ts",
+      "sha256": "04e94ae05865e536a4d7b504ad4f8fc0a0c0e3b26dc9554f66940a474fb3d05d",
+      "sizeBytes": 1859
+    },
+    {
+      "path": "tsconfig.json",
+      "sha256": "cdb2587b20fc335f032528f843fbcd61cea683073be59cdd3d669e05051c9a88",
+      "sizeBytes": 246
+    }
+  ]
+}

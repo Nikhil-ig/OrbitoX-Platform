@@ -23,7 +23,7 @@ export class PermissionGuard implements CanActivate {
     }
 
     const request = context.switchToHttp().getRequest<Request>();
-    const user = request.user as JwtPayload;
+    const user = (request as any).user as JwtPayload | undefined;
     
     // In Orbitox, ContextInterceptor puts contextId on the request
     const contextId = (request as any).contextId;
@@ -40,8 +40,10 @@ export class PermissionGuard implements CanActivate {
       userId: user.sub,
       contextId: contextId,
       permission: requiredPermission,
-      resourceId: request.params.id as string | undefined,
+      resourceId: typeof request.params?.id === 'string' ? request.params.id : undefined,
     };
+
+
 
     // Note: for deep ABAC checks involving request body (e.g., input data),
     // you might pass request.body as the `entity`.

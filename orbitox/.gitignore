@@ -41,3 +41,10 @@ Thumbs.db
 
 # Docker
 docker-compose.override.yml
+
+# Security & Private Keys (NEVER commit to git)
+keys/
+*.pem
+*.key
+.npmrc
+dist-packages/

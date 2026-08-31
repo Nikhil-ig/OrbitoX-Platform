@@ -1,0 +1,81 @@
+{
+  "id": "hospital-os",
+  "name": "@orbitox/plugin-hospital-os",
+  "version": "2.4.0",
+  "displayName": "Hospital OS — Enterprise Clinical Care & Telemetry",
+  "description": "Enterprise Hospital Management SaaS with real-world IoT telemetry, surge beds, n8n-style clinical workflows, and role-based dashboards.",
+  "category": "healthcare",
+  "author": "OrbitoX Healthcare Engineering",
+  "permissions": [
+    "patient.read",
+    "patient.create",
+    "patient.update",
+    "patient.delete",
+    "medical_record.read",
+    "medical_record.create",
+    "treatment.read",
+    "treatment.create",
+    "treatment.update",
+    "lab_order.read",
+    "lab_order.create",
+    "lab_order.update",
+    "bed.read",
+    "bed.create",
+    "bed.update",
+    "bed.manage_equipment",
+    "staff.read",
+    "staff.manage",
+    "invoice.read",
+    "invoice.manage",
+    "hospital.break_glass",
+    "hospital.telemetry_stream"
+  ],
+  "events": {
+    "emits": [
+      "patient.admitted",
+      "patient.discharged",
+      "patient.transferred",
+      "treatment.ordered",
+      "treatment.dispensed",
+      "treatment.administered",
+      "vitals.alarm.critical",
+      "device.status.offline",
+      "lab.result.critical",
+      "lab.result.completed",
+      "housekeeping.dispatch",
+      "equipment.maintenance.overdue",
+      "staffing.shortage.alert",
+      "security.break_glass"
+    ],
+    "subscribes": [
+      "iot.telemetry.vitals",
+      "iot.device.heartbeat",
+      "billing.payment.settled",
+      "user.shift.change"
+    ]
+  },
+  "menus": [
+    {
+      "id": "hospital-root",
+      "label": "Hospital OS",
+      "icon": "activity",
+      "sortOrder": 100,
+      "children": [
+        { "id": "hospital-dashboard", "label": "Clinical Dashboard", "path": "/hospital/dashboard", "permission": "patient.read" },
+        { "id": "hospital-patients", "label": "Admissions & Patients", "path": "/hospital/patients", "permission": "patient.read" },
+        { "id": "hospital-beds", "label": "Bed & Ward Matrix", "path": "/hospital/beds", "permission": "bed.read" },
+        { "id": "hospital-telemetry", "label": "Live IoT Telemetry", "path": "/hospital/telemetry", "permission": "hospital.telemetry_stream" },
+        { "id": "hospital-pharmacy", "label": "Pharmacy Queue", "path": "/hospital/pharmacy", "permission": "treatment.update" },
+        { "id": "hospital-labs", "label": "Pathology Labs", "path": "/hospital/labs", "permission": "lab_order.read" },
+        { "id": "hospital-billing", "label": "Billing & Invoices", "path": "/hospital/billing", "permission": "invoice.read" }
+      ]
+    }
+  ],
+  "widgets": [
+    { "id": "hospital.vitals.live", "title": "Live Bedside Vitals Panel", "size": "3x2" },
+    { "id": "hospital.bed_occupancy.gauge", "title": "Ward Bed Census", "size": "2x2" },
+    { "id": "hospital.nurse_med_round.list", "title": "Medication Round Queue", "size": "2x3" },
+    { "id": "hospital.pharmacy_dispense.queue", "title": "Pending Dispenses", "size": "2x2" },
+    { "id": "hospital.critical_lab.alert", "title": "Critical Lab Results", "size": "2x1" }
+  ]
+}

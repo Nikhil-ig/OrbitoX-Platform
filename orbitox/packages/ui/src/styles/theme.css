@@ -1,46 +1,165 @@
 :root {
-  --bg-primary: #0b0f19;
-  --bg-secondary: #111827;
-  --bg-glass: rgba(17, 24, 39, 0.75);
-  --border-glass: rgba(255, 255, 255, 0.08);
+  /* ─── Default Surface Hierarchies (Cosmic Obsidian Default) ─── */
+  --ui-bg-root: #07080D;
+  --ui-bg-dock: rgba(10, 12, 18, 0.95);
+  --ui-bg-sidebar: rgba(13, 15, 24, 0.92);
+  --ui-bg-card: rgba(20, 24, 38, 0.75);
+  --ui-bg-card-hover: rgba(26, 32, 50, 0.85);
+  --ui-bg-glass: rgba(13, 15, 24, 0.75);
+  --ui-bg-elevated: rgba(24, 28, 46, 0.85);
+  --ui-bg-input: rgba(0, 0, 0, 0.4);
 
-  --text-primary: #f9fafb;
-  --text-secondary: #9ca3af;
-  --text-muted: #6b7280;
+  /* ─── Border Tokens ─── */
+  --ui-border-subtle: rgba(255, 255, 255, 0.06);
+  --ui-border-default: rgba(255, 255, 255, 0.1);
+  --ui-border-bright: rgba(255, 255, 255, 0.18);
+  --ui-border-glow: rgba(168, 85, 247, 0.35);
+  --ui-border-active: #A855F7;
 
-  --accent-primary: #6366f1;
-  --accent-primary-hover: #4f46e5;
-  --accent-secondary: #3b82f6;
+  /* ─── Typography & Text Hierarchy ─── */
+  --ui-text-primary: #FFFFFF;
+  --ui-text-secondary: #94A3B8;
+  --ui-text-muted: #64748B;
+  --ui-text-dim: #475569;
+  --ui-text-accent: #C084FC;
 
-  --success: #10b981;
-  --warning: #f59e0b;
-  --danger: #ef4444;
+  /* ─── Vibrant Neon & Luxury Accents ─── */
+  --ui-accent-primary: #A855F7;
+  --ui-accent-primary-hover: #9333EA;
+  --ui-accent-secondary: #38BDF8;
+  --ui-accent-glow: rgba(168, 85, 247, 0.45);
+  --ui-accent-gradient: linear-gradient(135deg, #A855F7 0%, #6366F1 100%);
+  --ui-accent-gold: #E5A93C;
+  --ui-accent-gold-glow: rgba(229, 169, 60, 0.45);
 
-  --radius-sm: 6px;
-  --radius-md: 10px;
-  --radius-lg: 16px;
+  /* ─── Functional Semantic Colors ─── */
+  --ui-success: #10B981;
+  --ui-success-bg: rgba(16, 185, 129, 0.15);
+  --ui-warning: #F59E0B;
+  --ui-warning-bg: rgba(245, 158, 11, 0.15);
+  --ui-danger: #EF4444;
+  --ui-danger-bg: rgba(239, 68, 68, 0.15);
+  --ui-info: #3B82F6;
+  --ui-info-bg: rgba(59, 130, 246, 0.15);
 
-  --shadow-glow: 0 0 20px rgba(99, 102, 241, 0.25);
-  --transition-fast: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  /* ─── Border Radii ─── */
+  --ui-radius-xs: 4px;
+  --ui-radius-sm: 8px;
+  --ui-radius-md: 12px;
+  --ui-radius-lg: 18px;
+  --ui-radius-xl: 24px;
+  --ui-radius-full: 9999px;
+
+  /* ─── Elevation & Shadows ─── */
+  --ui-shadow-sm: 0 2px 8px rgba(0, 0, 0, 0.4);
+  --ui-shadow-md: 0 8px 24px rgba(0, 0, 0, 0.6);
+  --ui-shadow-lg: 0 16px 48px rgba(0, 0, 0, 0.85);
+  --ui-shadow-glow: 0 0 25px var(--ui-accent-glow);
+
+  /* ─── Animation Timing ─── */
+  --ui-transition-fast: all 0.15s cubic-bezier(0.4, 0, 0.2, 1);
+  --ui-transition-smooth: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 body {
-  background-color: var(--bg-primary);
-  color: var(--text-primary);
-  font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  background-color: var(--ui-bg-root);
+  color: var(--ui-text-primary);
+  font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Plus Jakarta Sans', 'Inter', sans-serif;
   margin: 0;
   padding: 0;
   -webkit-font-smoothing: antialiased;
+  overflow-x: hidden;
 }
 
-.glass-panel {
-  background: var(--bg-glass);
-  backdrop-filter: blur(12px);
-  border: 1px solid var(--border-glass);
-  border-radius: var(--radius-md);
+/* Custom Scrollbars */
+html, body {
+  scroll-behavior: smooth;
 }
 
-.glow-effect:hover {
-  box-shadow: var(--shadow-glow);
+::-webkit-scrollbar {
+  width: 7px;
+  height: 7px;
+}
+::-webkit-scrollbar-track {
+  background: rgba(10, 12, 20, 0.4);
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.2);
+  border-radius: 999px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.4);
+}
+
+/* Glassmorphism & UI Utilities */
+.glass-dock {
+  background: var(--ui-bg-dock) !important;
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
+  border-right: 1px solid var(--ui-border-default) !important;
+}
+
+.glass-sidebar {
+  background: var(--ui-bg-sidebar) !important;
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border-right: 1px solid var(--ui-border-default) !important;
+}
+
+.glass-card-elevated {
+  background: var(--ui-bg-card);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid var(--ui-border-default);
+  border-radius: var(--ui-radius-lg);
+  box-shadow: var(--ui-shadow-md);
+  transition: var(--ui-transition-smooth);
+}
+
+.glass-card-elevated:hover {
+  background: var(--ui-bg-card-hover);
+  border-color: var(--ui-border-bright);
+  box-shadow: var(--ui-shadow-lg);
   transform: translateY(-2px);
+}
+
+.glass-panel-luxury {
+  background: linear-gradient(135deg, var(--ui-bg-card) 0%, var(--ui-bg-sidebar) 100%);
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
+  border: 1px solid var(--ui-border-default);
+  border-radius: var(--ui-radius-lg);
+  box-shadow: var(--ui-shadow-lg);
+}
+
+.glass-modal-backdrop {
+  background: rgba(4, 5, 8, 0.88);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+}
+
+/* Micro-Animations */
+@keyframes pulseGlow {
+  0%, 100% { opacity: 0.8; transform: scale(1); }
+  50% { opacity: 1; transform: scale(1.05); }
+}
+
+@keyframes radarPing {
+  0% { transform: scale(0.9); opacity: 1; }
+  75%, 100% { transform: scale(2.2); opacity: 0; }
+}
+
+@keyframes shimmerEffect {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+
+.animate-pulse-glow {
+  animation: pulseGlow 3s ease-in-out infinite;
+}
+
+.animate-radar {
+  animation: radarPing 2s cubic-bezier(0, 0, 0.2, 1) infinite;
 }

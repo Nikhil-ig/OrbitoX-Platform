@@ -20,6 +20,7 @@ graph TB
         AIF["🤖 orbitox.ai"]
         WkfF["📦 orbitox.workflows"]
         BilF["💳 orbitox.billing"]
+        DbF["🗄️ orbitox.db"]
     end
 
     subgraph SC ["⚙️ ServiceContainer — Shared Kernel (Singleton Pattern)"]
@@ -75,6 +76,7 @@ graph LR
 | Facade | Namespace / Helper | Primary Purpose | Key Methods | Return Type |
 | :--- | :--- | :--- | :--- | :--- |
 | 🛡️ **Security** | `orbitox.security` | Zero-Trust Authorization & Isolation | `authorize()`, `check()`, `policy()`, `getVisibilityClause()`, `sanitizeWritePayload()`, `enforceContextBoundary()` | `Promise<boolean>` / `PolicyBuilder` / `object` |
+| 🗄️ **Database** | `orbitox.db` | Universal Database Adapter (Prisma, Drizzle, Mongo) | `useAdapter()`, `getAdapter()`, `findMany()`, `findById()`, `create()`, `update()`, `delete()`, `ping()` | `DatabaseQueryResult` / `Promise<T>` / `this` |
 | 🏢 **Context** | `orbitox.context` | Multi-Tenancy & Inter-Branch Mesh | `create()`, `get()`, `ancestors()`, `children()`, `linkPeers()`, `canPeerAccess()`, `getAccessiblePeerContexts()` | `Context` / `Context[]` / `boolean` |
 | 🏗️ **Tenant Builder** | `orbitox.tenant()` | Ultra-Easy Fluent Context CRUD | `parent()`, `owner()`, `settings()`, `subscribe()`, `enableFeature()`, `linkPeer()`, `create()`, `get()`, `update()`, `delete()` | `TenantBuilder` / `Promise<Context>` |
 | 📋 **Audit** | `orbitox.audit` | Hash-Chained Audit Trail | `created()`, `updated()`, `deleted()`, `log()`, `verifyChain()` | `Promise<AuditEvent>` / `IntegrityResult` |

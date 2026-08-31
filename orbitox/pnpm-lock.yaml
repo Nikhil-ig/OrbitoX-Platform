@@ -17,12 +17,18 @@ importers:
 
   apps/web:
     dependencies:
+      '@orbitox/commerce':
+        specifier: workspace:*
+        version: link:../../plugins/commerce
       '@orbitox/plugin-engine':
         specifier: workspace:*
         version: link:../../packages/plugin-engine
       '@orbitox/pos':
         specifier: workspace:*
         version: link:../../plugins/pos
+      '@orbitox/runtime':
+        specifier: workspace:*
+        version: link:../../packages/runtime
       '@orbitox/school':
         specifier: workspace:*
         version: link:../../plugins/school
@@ -426,6 +432,50 @@ importers:
       '@types/node':
         specifier: ^20
         version: 20.19.43
+
+  plugins/commerce:
+    dependencies:
+      '@orbitox/types':
+        specifier: workspace:*
+        version: link:../../packages/types
+      '@orbitox/utils':
+        specifier: workspace:*
+        version: link:../../packages/utils
+    devDependencies:
+      '@types/node':
+        specifier: ^20.0.0
+        version: 20.19.43
+      '@types/react':
+        specifier: ^19.0.0
+        version: 19.2.18
+      react:
+        specifier: ^19.0.0
+        version: 19.2.8
+      typescript:
+        specifier: ^5.0.0
+        version: 5.9.3
+
+  plugins/commerce/backend:
+    dependencies:
+      '@nestjs/common':
+        specifier: ^10.0.0
+        version: 10.4.22(class-transformer@0.5.1)(class-validator@0.14.4)(reflect-metadata@0.2.2)(rxjs@7.8.2)
+      '@orbitox/commerce':
+        specifier: workspace:*
+        version: link:..
+      '@orbitox/core':
+        specifier: workspace:*
+        version: link:../../../packages/core
+      '@orbitox/sdk':
+        specifier: workspace:*
+        version: link:../../../packages/sdk
+    devDependencies:
+      '@orbitox/tsconfig':
+        specifier: workspace:*
+        version: link:../../../packages/config/tsconfig
+      typescript:
+        specifier: ^5.0.0
+        version: 5.9.3
 
   plugins/crm:
     dependencies:

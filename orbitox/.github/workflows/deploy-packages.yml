@@ -1,0 +1,90 @@
+name: Secure Package & Plugin Release Pipeline
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      plugin_name:
+        description: 'Specific plugin to release (or "all")'
+        required: true
+        default: 'all'
+
+jobs:
+  build-sign-and-deploy:
+    name: Build, Sign & Deploy Packages
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - name: Checkout Source Code
+        uses: actions/checkout@v4
+
+      - name: Setup PNPM Package Manager
+        uses: pnpm/action-setup@v3
+        with:
+          version: 9.15.0
+
+      - name: Setup Node.js (v20)
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'pnpm'
+          registry-url: 'https://npm.pkg.github.com'
+          scope: '@orbitox-io'
+
+      - name: Install Dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Run Secret Leak Scan (TruffleHog)
+        uses: trufflesecurity/trufflehog@main
+        with:
+          path: ./
+          base: ${{ github.event.repository.default_branch }}
+          head: HEAD
+          extra_args: --only-verified
+
+      - name: Build Hardened Production Artifacts (Strip Maps & Comments)
+        run: |
+          pnpm turbo run build
+
+      - name: Cryptographically Sign Plugins with Ed25519 Release Key
+        env:
+          ORBITOX_SIGNING_KEY: ${{ secrets.ORBITOX_RELEASE_PRIVATE_KEY }}
+        run: |
+          # Build CLI
+          pnpm --filter @orbitox/cli build
+          
+          # Package & Sign Plugins
+          if [ "${{ github.event.inputs.plugin_name }}" != "" ] && [ "${{ github.event.inputs.plugin_name }}" != "all" ]; then
+            node tools/cli/dist/bin.js package ${{ github.event.inputs.plugin_name }}
+          else
+            for plugin in plugins/*; do
+              if [ -d "$plugin" ] && [ -f "$plugin/manifest.json" ]; then
+                plugin_base=$(basename "$plugin")
+                echo "Signing & Packaging: $plugin_base"
+                node tools/cli/dist/bin.js package "$plugin_base"
+              fi
+            done
+          fi
+
+      - name: Verify Package Signatures & Integrity
+        env:
+          ORBITOX_PUBLIC_KEY: ${{ secrets.ORBITOX_RELEASE_PUBLIC_KEY }}
+        run: |
+          for plugin in plugins/*; do
+            if [ -d "$plugin" ] && [ -f "$plugin/manifest.signature.json" ]; then
+              plugin_base=$(basename "$plugin")
+              echo "Verifying: $plugin_base"
+              node tools/cli/dist/bin.js verify "$plugin_base"
+            fi
+          done
+
+      - name: Publish to Private GitHub Packages Registry
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          pnpm -r publish --access restricted --no-git-checks

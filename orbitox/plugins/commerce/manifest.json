@@ -1,0 +1,96 @@
+{
+  "id": "commerce",
+  "name": "@orbitox/commerce",
+  "version": "1.0.0",
+  "displayName": "OrbitoX Commerce — Multi-Tenant Store & Theme Platform Builder",
+  "description": "Enterprise multi-tenant e-commerce platform builder with configuration-driven theme engine, visual drag-and-drop page builder, component registry, multi-variant products, cart, checkout, payments, and storefront renderer.",
+  "icon": "shopping-bag",
+  "category": "ecommerce",
+  "author": "OrbitoX Platform Team",
+  "permissions": [
+    "commerce.stores.create",
+    "commerce.stores.read",
+    "commerce.stores.update",
+    "commerce.stores.delete",
+    "commerce.themes.read",
+    "commerce.themes.manage",
+    "commerce.pages.create",
+    "commerce.pages.read",
+    "commerce.pages.update",
+    "commerce.pages.publish",
+    "commerce.products.create",
+    "commerce.products.read",
+    "commerce.products.update",
+    "commerce.products.delete",
+    "commerce.inventory.manage",
+    "commerce.orders.create",
+    "commerce.orders.read",
+    "commerce.orders.update",
+    "commerce.customers.read",
+    "commerce.customers.manage",
+    "commerce.media.upload",
+    "commerce.media.read",
+    "commerce.media.delete",
+    "commerce.discounts.manage",
+    "commerce.settings.manage",
+    "commerce.analytics.view"
+  ],
+  "menus": [
+    {
+      "id": "commerce-root",
+      "label": "Commerce Studio",
+      "icon": "shopping-bag",
+      "sortOrder": 300,
+      "children": [
+        { "id": "commerce-dashboard", "label": "Overview", "path": "/commerce", "permission": "commerce.analytics.view" },
+        { "id": "commerce-builder", "label": "Store Builder", "path": "/commerce/store/builder", "permission": "commerce.pages.update" },
+        { "id": "commerce-themes", "label": "Theme Studio", "path": "/commerce/store/theme", "permission": "commerce.themes.manage" },
+        { "id": "commerce-products", "label": "Products & Variants", "path": "/commerce/products", "permission": "commerce.products.read" },
+        { "id": "commerce-categories", "label": "Categories", "path": "/commerce/categories", "permission": "commerce.products.read" },
+        { "id": "commerce-orders", "label": "Orders & Fulfillment", "path": "/commerce/orders", "permission": "commerce.orders.read" },
+        { "id": "commerce-customers", "label": "Customers", "path": "/commerce/customers", "permission": "commerce.customers.read" },
+        { "id": "commerce-media", "label": "Media Assets", "path": "/commerce/media", "permission": "commerce.media.read" },
+        { "id": "commerce-discounts", "label": "Coupons & Discounts", "path": "/commerce/discounts", "permission": "commerce.discounts.manage" },
+        { "id": "commerce-settings", "label": "Store Settings", "path": "/commerce/settings", "permission": "commerce.settings.manage" }
+      ]
+    }
+  ],
+  "pages": [
+    { "id": "commerce-dashboard", "path": "/commerce", "component": "CommerceDashboardPage" },
+    { "id": "commerce-builder", "path": "/commerce/store/builder", "component": "StoreBuilderPage" },
+    { "id": "commerce-themes", "path": "/commerce/store/theme", "component": "ThemeStudioPage" },
+    { "id": "commerce-products", "path": "/commerce/products", "component": "ProductsListPage" },
+    { "id": "commerce-product-edit", "path": "/commerce/products/[id]", "component": "ProductEditorPage" },
+    { "id": "commerce-orders", "path": "/commerce/orders", "component": "OrdersListPage" },
+    { "id": "commerce-media", "path": "/commerce/media", "component": "MediaLibraryPage" }
+  ],
+  "widgets": [
+    { "id": "commerce.sales_today.kpi", "title": "Today's Gross Sales", "size": "1x1" },
+    { "id": "commerce.pending_orders.count", "title": "Pending Fulfillment", "size": "1x1" },
+    { "id": "commerce.top_products.chart", "title": "Top Selling Products", "size": "2x2" }
+  ],
+  "agenticActions": [
+    {
+      "id": "commerce.generateProductDescription",
+      "name": "Generate AI Product Description",
+      "description": "Generates high-converting marketing copy and SEO tags for a product title and features",
+      "handler": "generateProductDescription",
+      "permission": "commerce.products.create",
+      "parameters": {
+        "title": { "type": "string", "description": "Product title", "required": true },
+        "category": { "type": "string", "description": "Product category", "required": false },
+        "tone": { "type": "string", "description": "Tone of voice (e.g. luxury, casual, energetic)", "required": false }
+      }
+    },
+    {
+      "id": "commerce.recommendThemeColors",
+      "name": "Recommend Theme Color Palette",
+      "description": "Recommends harmonious brand color schemes and fonts based on store industry niche",
+      "handler": "recommendThemeColors",
+      "permission": "commerce.themes.manage",
+      "parameters": {
+        "industry": { "type": "string", "description": "Store niche (e.g. fashion, electronics, food)", "required": true }
+      }
+    }
+  ]
+}

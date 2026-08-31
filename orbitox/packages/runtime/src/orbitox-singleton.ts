@@ -37,6 +37,7 @@ import { AIFacade } from './facades/ai.facade';
 import { FeaturesFacade } from './facades/features.facade';
 import { WorkflowsFacade } from './facades/workflows.facade';
 import { BillingFacade } from './facades/billing.facade';
+import { DatabaseFacade } from './facades/database.facade';
 
 class OrbitoXSingleton {
   private container: ServiceContainer = ServiceContainer.shared();
@@ -50,6 +51,7 @@ class OrbitoXSingleton {
   private _features?: FeaturesFacade;
   private _workflows?: WorkflowsFacade;
   private _billing?: BillingFacade;
+  private _db?: DatabaseFacade;
 
   /**
    * Configure the OrbitoX platform. Call once at startup.
@@ -77,10 +79,25 @@ class OrbitoXSingleton {
     this._features = undefined;
     this._workflows = undefined;
     this._billing = undefined;
+    this._db = undefined;
     return this;
   }
 
   // ─── Namespaced Services ───────────────────────────────────────
+
+  /**
+   * 🗄️ Database — Universal Database Adapter Facade (Memory, Prisma, Drizzle, Mongo)
+   * 
+   * @example
+   * await orbitox.db.findMany('patients', { contextId: 'ctx_icu_a' });
+   * orbitox.db.useAdapter(new PrismaDatabaseAdapter(prisma));
+   */
+  get db(): DatabaseFacade {
+    if (!this._db) {
+      this._db = new DatabaseFacade();
+    }
+    return this._db;
+  }
 
   /**
    * 🛡️ Security — Zero-Trust RBAC + ABAC + PBAC

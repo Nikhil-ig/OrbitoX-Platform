@@ -1,11 +1,14 @@
+import { OrbitoXDatabaseAdapter } from './database/types';
+
 export interface OrbitoXConfig {
   app: {
     name: string;
     port?: number;
   };
   database?: {
+    adapter?: OrbitoXDatabaseAdapter;
     url?: string;
-    provider?: 'sqlite' | 'postgresql';
+    provider?: 'sqlite' | 'postgresql' | 'mongodb' | 'mysql' | string;
   };
   auth?: {
     adminEmail?: string;
@@ -24,7 +27,7 @@ export interface OrbitoXEntity {
 
 export interface OrbitoXField {
   name: string;
-  type: 'text' | 'number' | 'boolean' | 'date' | 'enum';
+  type: 'text' | 'number' | 'boolean' | 'date' | 'enum' | 'json' | 'array';
   required?: boolean;
   default?: any;
   options?: string[];

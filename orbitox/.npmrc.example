@@ -1,0 +1,20 @@
+# ==============================================================================
+# OrbitoX Private Registry Configuration Template (.npmrc)
+# ==============================================================================
+# 🛡️ DO NOT COMMIT PRODUCTION AUTH TOKENS TO GIT REPOSITORIES.
+# Copy this file to ~/.npmrc or .npmrc on deployment servers and supply env vars.
+# ==============================================================================
+
+# 1. Scoped Registries for Core & Plugins
+@orbitox-io:registry=https://npm.pkg.github.com
+@orbitox:registry=https://npm.pkg.github.com
+@orbitox-plugins:registry=https://npm.pkg.github.com
+
+# 2. Authentication Token (Injected via CI/CD Secrets or Environment)
+//npm.pkg.github.com/:_authToken=${NODE_AUTH_TOKEN}
+
+# 3. Security Enforcement
+always-auth=true
+audit=true
+fund=false
+save-exact=true

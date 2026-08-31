@@ -8,3 +8,5 @@ export * from './metadata/metadata.engine';
 export * from './registries/menu.registry';
 export * from './registries/page.registry';
 export * from './registries/widget.registry';
+export * from './security';
+

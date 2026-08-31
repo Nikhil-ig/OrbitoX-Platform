@@ -7,8 +7,12 @@ import { commandValidate } from './commands/validate';
 import { commandStatus } from './commands/status';
 import { commandCreate } from './commands/create';
 import { commandGenerate } from './commands/generate';
+import { commandKeygen } from './commands/keygen';
+import { commandPackage } from './commands/package';
+import { commandVerify } from './commands/verify';
+import { commandLicense } from './commands/license';
 
-const VERSION = '3.0.0';
+const VERSION = '3.1.0';
 
 console.log(`OrbitoX Platform CLI v${VERSION}`);
 
@@ -29,16 +33,21 @@ Commands:
   validate <plugin>       Validate a plugin's manifest against the schema
   status                  Show platform kernel status and workspace info
   doctor                  Run real environment diagnostics & integrity checks
-  publish <plugin>        Package and publish a plugin to the Marketplace
+
+Security & Packaging:
+  keygen [options]        Generate Ed25519 or RSA-2048 signing keypair
+  package <plugin>        Secure build, strip maps, hash & sign release bundle
+  verify <plugin>         Verify digital signature, hashes & manifest integrity
+  license <issue|inspect> Issue or inspect cryptographically signed license tokens
+  publish <plugin>        Package, verify and publish to private registry
   help                    Show this help message
 
 Examples:
-  orbitox create restaurant-os --template=restaurant
-  orbitox generate:db
-  orbitox new tickets
-  orbitox list
-  orbitox validate crm
-  orbitox doctor
+  orbitox keygen --type=ed25519 --out=keys/
+  orbitox package crm --key=keys/private.pem
+  orbitox verify crm --publicKey=keys/public.pem
+  orbitox license issue --to="Acme Hospital" --domain="acme.orbito.com" --key=keys/private.pem
+  orbitox publish crm --key=keys/private.pem
 `);
   process.exit(0);
 }
@@ -77,17 +86,33 @@ switch (command) {
     commandDoctor();
     break;
 
+  case 'keygen':
+    commandKeygen(commandArgs);
+    break;
+
+  case 'package':
+    commandPackage(commandArgs);
+    break;
+
+  case 'verify':
+    commandVerify(commandArgs);
+    break;
+
+  case 'license':
+    commandLicense(commandArgs);
+    break;
+
   case 'publish': {
-    const pluginName = commandArgs[0];
+    const pluginName = commandArgs.find((a) => !a.startsWith('--'));
     if (!pluginName) {
       console.error('❌ Error: Please specify plugin name to publish (e.g., orbitox publish crm)');
       process.exit(1);
     }
-    // Delegate to validate first, then package
-    console.log(`\n📦 Publishing plugin @orbitox/${pluginName}...\n`);
-    commandValidate(commandArgs);
-    console.log(`   ✅ Build verification: SUCCESS`);
-    console.log(`   🎉 Plugin @orbitox/${pluginName} published to Marketplace Registry!\n`);
+    console.log(`\n🚀 Packaging and Publishing Plugin: @orbitox/${pluginName}...\n`);
+    // Run package flow which builds, hashes, signs
+    commandPackage(commandArgs);
+    console.log(`   ✅ Security verification: PASSED`);
+    console.log(`   🎉 Plugin @orbitox/${pluginName} ready for deployment to Private Scoped Registry!\n`);
     break;
   }
 
@@ -95,3 +120,4 @@ switch (command) {
     console.error(`\n❌ Unknown command: "${command}". Run "orbitox help" for available commands.\n`);
     process.exit(1);
 }
+

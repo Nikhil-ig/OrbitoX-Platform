@@ -29,7 +29,12 @@ export async function createOrbitoXApp(config: OrbitoXConfig): Promise<{ app: an
     } as any);
   }
 
-  // 3. Initialize Express Server
+  // 3. Register database adapter if provided
+  if (config.database?.adapter) {
+    orbitox.db.useAdapter(config.database.adapter);
+  }
+
+  // 4. Initialize Express Server
   const app = express();
   app.use(express.json());
 
@@ -40,7 +45,7 @@ export async function createOrbitoXApp(config: OrbitoXConfig): Promise<{ app: an
     next();
   });
 
-  // 4. Auto-Generate CRUD Routes
+  // 5. Auto-Generate CRUD Routes
   const apiRouter = express.Router();
 
   for (const entity of config.entities) {
@@ -84,10 +89,18 @@ export async function createOrbitoXApp(config: OrbitoXConfig): Promise<{ app: an
         delete query.limit;
         delete query.sort;
 
+        const result = await orbitox.db.findMany(entity.id, {
+          filter: query,
+          page,
+          limit,
+          sort,
+          contextId: req.context?.id
+        });
+
         res.json({ 
           message: `GET all ${entity.name} (OrbitoX Runtime)`, 
-          data: [],
-          meta: { page, limit, sort, filters: query, total: 0 }
+          data: result.data,
+          meta: result.meta
         });
       } catch (error: any) {
         res.status(403).json({ error: error.message });
@@ -98,7 +111,11 @@ export async function createOrbitoXApp(config: OrbitoXConfig): Promise<{ app: an
     entityRouter.get('/:id', async (req: any, res: any) => {
       try {
         await orbitox.security.authorize(req.user.id, `${permissionScope}.read`, req.context.id);
-        res.json({ message: `GET one ${entity.name} (OrbitoX Runtime)`, data: { id: req.params.id } });
+        const record = await orbitox.db.findById(entity.id, req.params.id, req.context?.id);
+        if (!record) {
+          return res.status(404).json({ error: `${entity.name} with id '${req.params.id}' not found` });
+        }
+        res.json({ message: `GET one ${entity.name} (OrbitoX Runtime)`, data: record });
       } catch (error: any) {
         res.status(403).json({ error: error.message });
       }
@@ -117,7 +134,7 @@ export async function createOrbitoXApp(config: OrbitoXConfig): Promise<{ app: an
           payload = await entity.hooks.beforeCreate(payload, req.context) || payload;
         }
 
-        const newRecord = { id: `${entity.id}_${Date.now()}`, ...payload };
+        const newRecord = await orbitox.db.create(entity.id, payload, req.context?.id);
         
         if (entity.hooks?.afterCreate) {
           await entity.hooks.afterCreate(newRecord, req.context);
@@ -145,7 +162,7 @@ export async function createOrbitoXApp(config: OrbitoXConfig): Promise<{ app: an
           payload = await entity.hooks.beforeUpdate(req.params.id, payload, req.context) || payload;
         }
 
-        const updatedRecord = { id: req.params.id, ...payload };
+        const updatedRecord = await orbitox.db.update(entity.id, req.params.id, payload, req.context?.id);
         
         if (entity.hooks?.afterUpdate) {
           await entity.hooks.afterUpdate(updatedRecord, req.context);
@@ -173,7 +190,7 @@ export async function createOrbitoXApp(config: OrbitoXConfig): Promise<{ app: an
           payload = await entity.hooks.beforeUpdate(req.params.id, payload, req.context) || payload;
         }
 
-        const updatedRecord = { id: req.params.id, ...payload };
+        const updatedRecord = await orbitox.db.update(entity.id, req.params.id, payload, req.context?.id);
         
         if (entity.hooks?.afterUpdate) {
           await entity.hooks.afterUpdate(updatedRecord, req.context);
@@ -195,6 +212,11 @@ export async function createOrbitoXApp(config: OrbitoXConfig): Promise<{ app: an
         
         if (entity.hooks?.beforeDelete) {
           await entity.hooks.beforeDelete(req.params.id, req.context);
+        }
+
+        const deleted = await orbitox.db.delete(entity.id, req.params.id, req.context?.id);
+        if (!deleted) {
+          return res.status(404).json({ error: `${entity.name} with id '${req.params.id}' not found` });
         }
 
         if (entity.hooks?.afterDelete) {

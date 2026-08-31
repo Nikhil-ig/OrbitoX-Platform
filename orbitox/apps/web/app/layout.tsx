@@ -1,5 +1,6 @@
 import React from 'react';
 import '@orbitox/ui/src/styles/theme.css';
+import { ThemeProvider } from '@orbitox/ui';
 
 export const metadata = {
   title: 'OrbitoX Platform OS',
@@ -8,10 +9,16 @@ export const metadata = {
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en">
-      <body style={{ margin: 0, padding: 0, background: 'var(--bg-primary, #0b0f19)', color: 'var(--text-primary, #ffffff)' }}>
-        {children}
+    <html lang="en" suppressHydrationWarning>
+      <body
+        suppressHydrationWarning
+        style={{ margin: 0, padding: 0, background: 'var(--ui-bg-root, #07080D)', color: 'var(--ui-text-primary, #ffffff)' }}
+      >
+        <ThemeProvider initialThemeId="cosmic-obsidian">
+          {children}
+        </ThemeProvider>
       </body>
     </html>
   );
 }
+

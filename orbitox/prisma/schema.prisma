@@ -1,0 +1,435 @@
+// OrbitoX Platform OS - Multi-Tenant E-Commerce Prisma Schema
+// Database Engine: PostgreSQL 16
+// Multi-Tenancy Architecture: Context / Tenant ID Partitioning
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum StoreStatus {
+  DRAFT
+  ACTIVE
+  MAINTENANCE
+  SUSPENDED
+}
+
+enum ProductStatus {
+  DRAFT
+  ACTIVE
+  ARCHIVED
+}
+
+enum OrderStatus {
+  PENDING
+  CONFIRMED
+  PROCESSING
+  SHIPPED
+  DELIVERED
+  CANCELLED
+  REFUNDED
+}
+
+enum PaymentStatus {
+  PENDING
+  AUTHORIZED
+  PAID
+  FAILED
+  REFUNDED
+  PARTIALLY_REFUNDED
+}
+
+enum FulfillmentStatus {
+  UNFULFILLED
+  PARTIALLY_FULFILLED
+  FULFILLED
+  RETURNED
+}
+
+enum DiscountType {
+  PERCENTAGE
+  FIXED_AMOUNT
+  FREE_SHIPPING
+}
+
+// ─────────────────────────────────────────────────────────────
+// 1. STORES & DOMAINS
+// ─────────────────────────────────────────────────────────────
+
+model Store {
+  id               String       @id @default(cuid())
+  contextId        String       // Multi-tenancy link to OrbitoX tenant context
+  slug             String       @unique
+  name             String
+  tagline          String?
+  description      String?
+  logoUrl          String?
+  faviconUrl       String?
+  status           StoreStatus  @default(ACTIVE)
+  primaryDomain    String?      @unique
+  customDomains    String[]     @default([])
+  currentVersion   Int          @default(1)
+  publishedVersion Int          @default(1)
+  activeThemeId    String       @default("aura-luxury-dark")
+  settings         Json         // StoreSettings object: currency, taxes, shipping, social links
+  createdAt        DateTime     @default(now())
+  updatedAt        DateTime     @updatedAt
+
+  themes           StoreTheme[]
+  pages            StorePage[]
+  products         Product[]
+  categories       Category[]
+  collections      Collection[]
+  orders           Order[]
+  customers        Customer[]
+  discounts        StoreDiscount[]
+  media            StoreMedia[]
+
+  @@index([contextId])
+  @@index([slug])
+}
+
+// ─────────────────────────────────────────────────────────────
+// 2. THEMES & DESIGN TOKENS
+// ─────────────────────────────────────────────────────────────
+
+model StoreTheme {
+  id          String   @id @default(cuid())
+  storeId     String
+  presetId    String
+  name        String
+  isDark      Boolean  @default(false)
+  colors      Json     // ThemeColors object: primary, secondary, accent, surface, etc.
+  typography  Json     // ThemeTypography object: headingFont, bodyFont, weights
+  layout      Json     // ThemeLayout: containerMaxWidth, borderRadius
+  buttons     Json     // ThemeButtonStyles
+  customCss   String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  store       Store    @relation(fields: [storeId], references: [id], onDelete: Cascade)
+
+  @@index([storeId])
+}
+
+// ─────────────────────────────────────────────────────────────
+// 3. PAGES & SECTIONS (Configuration-Driven Visual Page Builder)
+// ─────────────────────────────────────────────────────────────
+
+model StorePage {
+  id                String   @id @default(cuid())
+  storeId           String
+  slug              String   // e.g. "/" or "/about"
+  title             String
+  isHome            Boolean  @default(false)
+  isSystem          Boolean  @default(false)
+  publishedVersion  Int      @default(1)
+  draftVersion      Int      @default(1)
+  sectionsDraft     Json     // Array of PageSection objects
+  sectionsPublished Json     // Array of PageSection objects
+  seo               Json     // PageSEO: title, description, keywords, ogImage
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  store             Store    @relation(fields: [storeId], references: [id], onDelete: Cascade)
+
+  @@unique([storeId, slug])
+  @@index([storeId])
+}
+
+// ─────────────────────────────────────────────────────────────
+// 4. PRODUCTS, VARIANTS, CATEGORIES & COLLECTIONS
+// ─────────────────────────────────────────────────────────────
+
+model Category {
+  id           String     @id @default(cuid())
+  storeId      String
+  contextId    String
+  name         String
+  slug         String
+  description  String?
+  imageUrl     String?
+  parentId     String?
+  displayOrder Int        @default(0)
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+
+  store        Store      @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  products     Product[]
+
+  @@unique([storeId, slug])
+  @@index([storeId])
+  @@index([contextId])
+}
+
+model Collection {
+  id           String     @id @default(cuid())
+  storeId      String
+  contextId    String
+  title        String
+  slug         String
+  description  String?
+  imageUrl     String?
+  ruleType     String     @default("manual") // "manual" | "smart"
+  rules        Json?      // Smart collection filtering rules
+  productIds   String[]   @default([])
+  featured     Boolean    @default(false)
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+
+  store        Store      @relation(fields: [storeId], references: [id], onDelete: Cascade)
+
+  @@unique([storeId, slug])
+  @@index([storeId])
+  @@index([contextId])
+}
+
+model Product {
+  id                String         @id @default(cuid())
+  storeId           String
+  contextId         String
+  title             String
+  slug              String
+  description       String
+  shortDescription  String?
+  price             Float
+  compareAtPrice    Float?
+  costPrice         Float?
+  sku               String
+  barcode           String?
+  status            ProductStatus  @default(ACTIVE)
+  categoryId        String?
+  collectionIds     String[]       @default([])
+  tags              String[]       @default([])
+  media             Json           // Array of ProductMediaItem objects
+  hasVariants       Boolean        @default(false)
+  options           Json           // Array of ProductOption objects (Size, Color)
+  trackQuantity     Boolean        @default(true)
+  inventoryQuantity Int            @default(100)
+  isFeatured        Boolean        @default(false)
+  isNewArrival      Boolean        @default(true)
+  rating            Float          @default(5.0)
+  reviewsCount      Int            @default(0)
+  seo               Json           // ProductSEO
+  attributes        Json           // Custom specs/attributes key-value
+  createdAt         DateTime       @default(now())
+  updatedAt         DateTime       @updatedAt
+
+  store             Store          @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  category          Category?      @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  variants          ProductVariant[]
+  reviews           StoreReview[]
+
+  @@unique([storeId, slug])
+  @@index([storeId])
+  @@index([contextId])
+  @@index([categoryId])
+}
+
+model ProductVariant {
+  id                String    @id @default(cuid())
+  productId         String
+  title             String    // e.g. "Black / M"
+  sku               String
+  barcode           String?
+  price             Float
+  compareAtPrice    Float?
+  inventoryQuantity Int       @default(50)
+  imageUrl          String?
+  selectedOptions   Json      // { "Size": "M", "Color": "Black" }
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  product           Product   @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@index([productId])
+  @@index([sku])
+}
+
+// ─────────────────────────────────────────────────────────────
+// 5. CARTS & CHECKOUT
+// ─────────────────────────────────────────────────────────────
+
+model Cart {
+  id              String    @id @default(cuid())
+  storeId         String
+  sessionId       String    // Visitor session ID
+  customerId      String?
+  items           Json      // Array of CartItem objects
+  appliedDiscount Json?     // CartDiscount object
+  totals          Json      // CartTotals object (subtotal, tax, shipping, grandTotal)
+  currency        String    @default("USD")
+  expiresAt       DateTime
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  @@index([storeId, sessionId])
+}
+
+// ─────────────────────────────────────────────────────────────
+// 6. CUSTOMERS & CRM
+// ─────────────────────────────────────────────────────────────
+
+model Customer {
+  id          String    @id @default(cuid())
+  storeId     String
+  contextId   String
+  email       String
+  phone       String?
+  firstName   String
+  lastName    String
+  totalOrders Int       @default(0)
+  totalSpent  Float     @default(0.0)
+  lastOrderAt DateTime?
+  addresses   Json      // Array of Address objects
+  tags        String[]  @default([])
+  notes       String?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  store       Store     @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  orders      Order[]
+
+  @@unique([storeId, email])
+  @@index([storeId])
+  @@index([contextId])
+}
+
+// ─────────────────────────────────────────────────────────────
+// 7. ORDERS & TRANSACTIONS
+// ─────────────────────────────────────────────────────────────
+
+model Order {
+  id                    String             @id @default(cuid())
+  storeId               String
+  contextId             String
+  orderNumber           String             // e.g. "ORD-1001"
+  customerId            String?
+  customerEmail         String
+  customerPhone         String?
+  status                OrderStatus        @default(PENDING)
+  paymentStatus         PaymentStatus      @default(PENDING)
+  fulfillmentStatus     FulfillmentStatus  @default(UNFULFILLED)
+  currency              String             @default("USD")
+  items                 Json               // Array of OrderItem objects
+  subtotal              Float
+  discountAmount        Float              @default(0.0)
+  taxAmount             Float              @default(0.0)
+  shippingAmount        Float              @default(0.0)
+  grandTotal            Float
+  couponCode            String?
+  shippingAddress       Json               // Address object
+  billingAddress        Json               // Address object
+  paymentMethod         String             // "razorpay" | "stripe" | "cod" | "mock"
+  paymentTransactionId  String?
+  shippingMethod        String?
+  trackingNumber        String?
+  carrier               String?
+  customerNotes         String?
+  adminNotes            String?
+  timeline              Json               // Array of OrderTimelineEvent objects
+  createdAt             DateTime           @default(now())
+  updatedAt             DateTime           @updatedAt
+
+  store                 Store              @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  customer              Customer?          @relation(fields: [customerId], references: [id], onDelete: SetNull)
+  transactions          PaymentTransaction[]
+
+  @@unique([storeId, orderNumber])
+  @@index([storeId])
+  @@index([contextId])
+}
+
+model PaymentTransaction {
+  id             String    @id @default(cuid())
+  orderId        String
+  storeId        String
+  provider       String    // "razorpay" | "stripe" | "mock"
+  transactionRef String
+  amount         Float
+  currency       String
+  status         String    // "paid" | "failed"
+  rawResponse    Json?
+  createdAt      DateTime  @default(now())
+
+  order          Order     @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@index([orderId])
+  @@index([storeId])
+}
+
+// ─────────────────────────────────────────────────────────────
+// 8. DISCOUNTS & COUPONS
+// ─────────────────────────────────────────────────────────────
+
+model StoreDiscount {
+  id                String        @id @default(cuid())
+  storeId           String
+  code              String
+  type              DiscountType
+  value             Float
+  minOrderAmount    Float?
+  maxDiscountAmount Float?
+  usageLimit        Int?
+  timesUsed         Int           @default(0)
+  startsAt          DateTime      @default(now())
+  expiresAt         DateTime?
+  active            Boolean       @default(true)
+  createdAt         DateTime      @default(now())
+  updatedAt         DateTime      @updatedAt
+
+  store             Store         @relation(fields: [storeId], references: [id], onDelete: Cascade)
+
+  @@unique([storeId, code])
+  @@index([storeId])
+}
+
+// ─────────────────────────────────────────────────────────────
+// 9. MEDIA ASSETS
+// ─────────────────────────────────────────────────────────────
+
+model StoreMedia {
+  id        String   @id @default(cuid())
+  storeId   String
+  contextId String
+  filename  String
+  url       String
+  mimeType  String
+  sizeBytes Int
+  folder    String   @default("products") // "products" | "banners" | "logos" | "pages"
+  altText   String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  store     Store    @relation(fields: [storeId], references: [id], onDelete: Cascade)
+
+  @@index([storeId])
+  @@index([contextId])
+}
+
+// ─────────────────────────────────────────────────────────────
+// 10. PRODUCT REVIEWS
+// ─────────────────────────────────────────────────────────────
+
+model StoreReview {
+  id                 String   @id @default(cuid())
+  productId          String
+  storeId            String
+  customerName       String
+  customerEmail      String
+  rating             Int      @default(5)
+  title              String?
+  comment            String
+  status             String   @default("approved") // "pending" | "approved" | "rejected"
+  isVerifiedPurchase Boolean  @default(true)
+  createdAt          DateTime @default(now())
+
+  product            Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@index([productId])
+  @@index([storeId])
+}
