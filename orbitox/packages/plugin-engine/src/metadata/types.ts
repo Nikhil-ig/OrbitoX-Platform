@@ -146,3 +146,9 @@ export interface HeadlessPlugin {
 }
 
 export const ORBITOX_PLUGIN_METADATA_KEY = 'ORBITOX_PLUGIN_METADATA';
+
+export function OrbitoXPlugin(manifest: PluginManifest): ClassDecorator {
+  return (target: any) => {
+    Reflect.defineMetadata(ORBITOX_PLUGIN_METADATA_KEY, manifest, target);
+  };
+}

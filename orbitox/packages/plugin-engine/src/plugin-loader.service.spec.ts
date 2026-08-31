@@ -1,6 +1,6 @@
 import { PluginLoaderService } from './plugin-loader.service';
 import { ManifestValidator } from './manifest.validator';
-import { OrbitoXPlugin, PluginManifest } from '@orbitox/sdk';
+import { OrbitoXPlugin, PluginManifest } from './metadata/types';
 
 describe('PluginLoaderService', () => {
   let service: PluginLoaderService;
