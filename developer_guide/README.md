@@ -57,9 +57,11 @@ developer_guide/
 - 🔄 [**Database Flow & Security Guide**](./database/DATABASE_FLOW_AND_SECURITY.md): Visual read/write execution pipelines, discriminator indexing, ORM query interceptors, and IDOR silent-404 defenses.
 
 ### 3. 🪐 Core Engine & Architecture Hub (`/core_engine`)
+- 🌐 [**Multi-Tenancy & Custom Domain Architecture Guide**](./core_engine/MULTI_TENANCY_AND_CUSTOM_DOMAINS.md): In-memory TTL caching, wildcard subdomains, custom domain DNS mapping, and zero-trust tenant data isolation.
 - 📘 [**OrbitoX Core Developer Guide**](./core_engine/ORBITOX_CORE_DEVELOPER_GUIDE.md): Deep-dive on `orbitox` singleton, ServiceContainer, fluent builders (`orbitox.tenant()`), Workflows, and SHA-256 Audit vault.
 - 🔄 [**Request Lifecycle & Security Flow**](./core_engine/REQUEST_LIFECYCLE_FLOW.md): Visual step-by-step flow from inbound HTTP request to database query, audit hashing, and response.
 - 🔐 [**Platform Security & IP Protection Guide**](./core_engine/PLATFORM_SECURITY_AND_IP_PROTECTION.md): Proprietary core protection, private registries, bytecode compilation, and licensing enforcement.
+
 
 ---
 

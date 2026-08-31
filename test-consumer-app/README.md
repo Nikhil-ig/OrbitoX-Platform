@@ -31,6 +31,12 @@ node src/test-suite.js
 npm start
 ```
 
+### 5. Run the Smart Multi-Tenancy & Custom Domain Demo
+```bash
+node src/multi-tenant-demo.js
+```
+
+
 ---
 
 ## 📊 Modules Verified in Test Suite
