@@ -40,7 +40,8 @@ export function renderKdsWorkspace(
   serviceShift = 'Dinner Service',
   staffToken?: string,
   currentSequence = 0,
-  branchId = 'branch_ldh'
+  branchId = 'branch_ldh',
+  staffRole?: string
 ): string {
   // Station categorization
   const stations = [
@@ -80,16 +81,6 @@ export function renderKdsWorkspace(
     allDayCounts.set(t.itemName, existing);
   });
 
-  // Production Ingredients Estimates
-  const productionIngredients = [
-    { name: 'Cottage Cheese (Paneer)', qty: '3.4 kg', note: 'Marinated Kashmiri Tikka' },
-    { name: 'Black Lentils (Urad Dal)', qty: '6.2 kg', note: 'Slow-simmer handi batch' },
-    { name: 'Farmhouse Butter', qty: '2.8 kg', note: 'Naan & Makhani finish' },
-    { name: 'Refined Bread Flour', qty: '8.0 kg', note: 'Clay oven naan batch' },
-    { name: 'Ratnagiri Alphonso Pulp', qty: '2.4 L', note: 'Chilled lassi base' },
-    { name: 'Boneless River Sole', qty: '3.0 kg', note: 'Ajwain spiced tikka' },
-  ];
-
   // Rush Mode detection
   const isRushMode = activeTasks.length >= 4;
 
@@ -110,8 +101,9 @@ export function renderKdsWorkspace(
   <script>
     window.__STAFF_SESSION__ = {
       token: "${staffToken || ''}",
-      role: "CHEF",
-      station: "${activeStation}"
+      role: "${staffToken ? (staffRole || 'CHEF') : ''}",
+      station: "${activeStation}",
+      branchId: "${branchId}"
     };
     window.__STATION_SLA__ = ${JSON.stringify(STATION_SLA_MINUTES)};
   </script>
@@ -496,6 +488,13 @@ export function renderKdsWorkspace(
         <span>ONLINE (Edge Synced)</span>
       </div>
 
+      <!-- Staff Authentication Status & PIN Login -->
+      ${
+        staffToken
+          ? `<span id="kds-auth-badge" style="font-size: 11px; font-weight: 700; color: var(--color-sage); background: rgba(82, 183, 136, 0.15); border: 1px solid rgba(82, 183, 136, 0.3); padding: 4px 8px; border-radius: 4px;">✓ Authenticated</span>`
+          : `<button id="kds-auth-btn" onclick="promptKdsAuth()" class="btn btn-secondary btn-sm" style="font-size: 11px; font-weight: 700; background: rgba(224, 86, 36, 0.15); border-color: var(--color-copper); color: var(--color-copper);">🔐 Enter PIN</button>`
+      }
+
       <span style="color: var(--border-strong);">|</span>
       <span id="kds-clock" style="font-size: 16px; font-weight: 800; font-family: var(--font-mono); color: var(--color-linen);">--:--:--</span>
       <a href="/" class="btn btn-secondary btn-sm" style="font-size: 12px;">← Operations Home</a>
@@ -565,24 +564,16 @@ export function renderKdsWorkspace(
             .join('')}
         </div>
 
-        <!-- Production Ingredients Aggregation -->
+        <!-- Production Ingredients Aggregation Status -->
         <h3 style="font-size: 16px; font-weight: 800; color: var(--color-linen); margin-bottom: 12px; text-transform: uppercase; letter-spacing: 0.04em; display: flex; align-items: center; gap: 8px;">
           ${icon('layers', { size: 16, color: 'var(--color-stone)' })}
           <span>Raw Production Ingredient Demand</span>
         </h3>
-        <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 12px;">
-          ${productionIngredients
-            .map(
-              (ing) => `
-            <div style="background: #11151D; border: 1px solid var(--border-subtle); border-radius: 6px; padding: 12px 14px; display: flex; justify-content: space-between; align-items: center;">
-              <div>
-                <div style="font-weight: 700; color: var(--color-linen); font-size: 13px;">${ing.name}</div>
-                <div style="font-size: 11px; color: var(--color-stone);">${ing.note}</div>
-              </div>
-              <div style="font-family: var(--font-mono); font-size: 16px; font-weight: 800; color: var(--color-sage);">${ing.qty}</div>
-            </div>`
-            )
-            .join('')}
+        <div style="background: #11151D; border: 1px solid var(--border-subtle); border-radius: 6px; padding: 16px 20px;">
+          <div style="display: flex; align-items: center; gap: 10px; color: var(--color-stone); font-size: 13px;">
+            <span style="color: var(--color-amber); font-weight: 700;">⚠ Recipe & BOM Model Not Configured:</span>
+            <span>Live inventory and recipe bill-of-materials breakdown requires inventory/recipe data model integration for active menu items.</span>
+          </div>
         </div>
       </div>`
         : activeStation === 'EXPO'
@@ -974,8 +965,37 @@ export function renderKdsWorkspace(
       return headers;
     }
 
+    // Authenticate KDS Station via Staff PIN
+    async function promptKdsAuth() {
+      const pin = prompt('Enter Staff PIN to authenticate KDS workstation:');
+      if (!pin) return;
+      try {
+        const res = await fetch('/api/restaurant/auth/login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ pin, branchId: window.__STAFF_SESSION__?.branchId || 'branch_ldh' }),
+        });
+        const data = await res.json();
+        if (res.ok && data.data?.token) {
+          window.__STAFF_SESSION__.token = data.data.token;
+          window.__STAFF_SESSION__.role = data.data.role;
+          showKdsToast('Authenticated as ' + data.data.role, 'success');
+          setTimeout(() => location.reload(), 300);
+        } else {
+          showKdsToast(data.message || 'Authentication failed', 'error');
+        }
+      } catch (err) {
+        showKdsToast('Network error during authentication', 'error');
+      }
+    }
+
     // Individual Item Fulfillment
     async function toggleItemFulfill(taskId) {
+      if (!window.__STAFF_SESSION__?.token) {
+        showKdsToast('Staff authentication required. Enter PIN to fulfill items.', 'error');
+        promptKdsAuth();
+        return;
+      }
       const row = document.getElementById('item-row-' + taskId);
       const btn = row ? row.querySelector('.item-check-btn') : null;
       if (row && btn) {
@@ -1001,6 +1021,11 @@ export function renderKdsWorkspace(
 
     // Bump Action with Real REST Mutation
     async function bumpTask(taskId, newStatus) {
+      if (!window.__STAFF_SESSION__?.token) {
+        showKdsToast('Staff authentication required. Enter PIN to bump tickets.', 'error');
+        promptKdsAuth();
+        return;
+      }
       const card = document.getElementById('ticket-' + taskId);
       if (card) {
         card.style.opacity = '0.5';
@@ -1039,6 +1064,11 @@ export function renderKdsWorkspace(
 
     // Recall Task
     async function recallTask(taskId, targetStatus = 'READY') {
+      if (!window.__STAFF_SESSION__?.token) {
+        showKdsToast('Staff authentication required. Enter PIN to recall tickets.', 'error');
+        promptKdsAuth();
+        return;
+      }
       try {
         const res = await fetch('/api/restaurant/kds/recall', {
           method: 'POST',
@@ -1059,6 +1089,11 @@ export function renderKdsWorkspace(
 
     // Expo Order Dispatch with Readiness Gating
     async function dispatchExpoOrder(tableNumber, isPending = false) {
+      if (!window.__STAFF_SESSION__?.token) {
+        showKdsToast('Staff authentication required. Enter PIN to dispatch expo orders.', 'error');
+        promptKdsAuth();
+        return;
+      }
       if (isPending) {
         const confirmForce = confirm(
           'Warning: Table ' + tableNumber + ' has items currently cooking! Force dispatch as manager override?'
@@ -1091,6 +1126,11 @@ export function renderKdsWorkspace(
 
     // Table-level Expo Recall
     async function promptExpoTableRecall() {
+      if (!window.__STAFF_SESSION__?.token) {
+        showKdsToast('Staff authentication required. Enter PIN to recall expo tables.', 'error');
+        promptKdsAuth();
+        return;
+      }
       const tableNumber = prompt('Enter Table Number to recall dispatched tickets:');
       if (!tableNumber) return;
 

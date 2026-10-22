@@ -40,10 +40,13 @@ export function renderOperationsHome(
   const barCount = queuedTasks.filter((t) => t.station === 'BAR').length;
   const expoCount = queuedTasks.filter((t) => t.station === 'EXPO' || t.station === 'DESSERT').length;
 
-  // Real revenue calculated from settled & active tabs in integer paise
-  const totalShiftRevenueMinor =
-    orders.reduce((sum, o) => sum + (o.totalMinor || 0), 0) ||
-    tables.reduce((sum, t) => sum + (t.activeBillMinor || 0), 0);
+  // Authoritative revenue calculation: settled orders (PAID) and active open tabs in integer paise
+  const settledOrders = orders.filter((o) => o.status === 'PAID');
+  const settledRevenueMinor = settledOrders.reduce((sum, o) => sum + (o.totalMinor || 0), 0);
+  const activeOpenTabsMinor = tables
+    .filter((t) => t.status === 'OCCUPIED' || t.status === 'BILL_REQUESTED')
+    .reduce((sum, t) => sum + (t.activeBillMinor || 0), 0);
+  const totalShiftRevenueMinor = settledRevenueMinor;
 
   const totalCapacity = tables.reduce((sum, t) => sum + (t.capacity || 0), 0);
   const totalCovers = tables.reduce(
@@ -56,19 +59,12 @@ export function renderOperationsHome(
   // Active pipeline orders (not cancelled or settled)
   const activeOrders = orders.filter((o) => !['PAID', 'VOIDED', 'CANCELLED', 'COMPED'].includes(o.status));
 
-  // Chronological service timeline derived from actual domain events
-  const timelineEvents =
-    events.length > 0
-      ? events.slice(-6).reverse().map((e) => ({
-          time: new Date(e.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-          title: `${e.tableNumber ? 'Table ' + e.tableNumber + ' · ' : ''}${e.type.replace('.', ' ').toUpperCase()}`,
-          detail: `Produced by ${e.producer || 'System'} (${e.branchId || 'main'})`,
-        }))
-      : [
-          { time: '19:42', title: 'Table T-14 seated', detail: 'Party of 4 seated in Main Dining' },
-          { time: '19:45', title: 'Order submitted for T-14', detail: 'Routed to Tandoor and Curry Line' },
-          { time: '19:48', title: 'Kitchen started cooking', detail: 'Tandoor clay oven fired skewers' },
-        ];
+  // Chronological service timeline derived from actual domain events (empty if no events)
+  const timelineEvents = events.slice(-6).reverse().map((e) => ({
+    time: new Date(e.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+    title: `${e.tableNumber ? 'Table ' + e.tableNumber + ' · ' : ''}${e.type.replace('.', ' ').toUpperCase()}`,
+    detail: `Produced by ${e.producer || 'System'} (${e.branchId || 'main'})`,
+  }));
 
   return `
   <div class="overview-cockpit" style="padding: 24px 28px; max-width: 1440px; margin: 0 auto; width: 100%; box-sizing: border-box; display: flex; flex-direction: column; gap: 24px;">
@@ -124,10 +120,10 @@ export function renderOperationsHome(
           ${icon('credit-card', { size: 14, color: 'var(--color-copper)' })}
         </div>
         <div style="font-size: 24px; font-weight: 800; color: var(--color-copper); margin-top: 6px; font-family: var(--font-mono);">
-          ₹${((totalShiftRevenueMinor || 0) / 100).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+          ₹${((settledRevenueMinor || 0) / 100).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
         </div>
         <div style="font-size: 11px; color: var(--color-stone); margin-top: 4px;">
-          From ${orders.length} orders & ${occupiedTables.length} active tabs
+          Settled: ${settledOrders.length} paid orders · Open tabs: ₹${((activeOpenTabsMinor || 0) / 100).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
         </div>
       </div>
 
@@ -443,16 +439,19 @@ export function renderOperationsHome(
         <span style="font-size: 11px; color: var(--color-stone); font-family: var(--font-mono);">Realtime Event Stream</span>
       </div>
       <div style="display: flex; flex-direction: column; gap: 8px;">
-        ${timelineEvents
-          .map(
-            (ev) => `
-          <div style="display: flex; align-items: baseline; gap: 14px; font-size: 13px; padding-bottom: 8px; border-bottom: 1px solid rgba(255,255,255,0.03);">
-            <span style="font-family: var(--font-mono); font-weight: 700; color: var(--color-copper); width: 50px; font-size: 12px;">${ev.time}</span>
-            <strong style="color: var(--color-linen); width: 240px; font-size: 13px;">${ev.title}</strong>
-            <span style="color: var(--color-stone); font-size: 12px; flex: 1;">${ev.detail}</span>
-          </div>`
-          )
-          .join('')}
+        ${timelineEvents.length > 0
+          ? timelineEvents
+              .map(
+                (ev) => `
+              <div style="display: flex; align-items: baseline; gap: 14px; font-size: 13px; padding-bottom: 8px; border-bottom: 1px solid rgba(255,255,255,0.03);">
+                <span style="font-family: var(--font-mono); font-weight: 700; color: var(--color-copper); width: 50px; font-size: 12px;">${ev.time}</span>
+                <strong style="color: var(--color-linen); width: 240px; font-size: 13px;">${ev.title}</strong>
+                <span style="color: var(--color-stone); font-size: 12px; flex: 1;">${ev.detail}</span>
+              </div>`
+              )
+              .join('')
+          : `<div style="padding: 12px 0; color: var(--color-stone); font-size: 13px; font-style: italic;">No domain events recorded for this shift yet.</div>`
+        }
       </div>
     </div>
 

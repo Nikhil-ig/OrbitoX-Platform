@@ -142,6 +142,7 @@ export interface RequestIdentity {
   sessionId?: string;
   orderId?: string;
   isPrivileged: boolean;
+  rawToken?: string;
   error?: string;
 }
 
@@ -149,12 +150,22 @@ function resolveRequestIdentity(req: http.IncomingMessage): RequestIdentity {
   const authHeader = (req.headers['authorization'] as string) || '';
   const stationToken = (req.headers['x-station-token'] as string) || '';
   const parsedUrl = url.parse(req.url || '', true);
-  const queryToken = (parsedUrl.query.token as string) || (parsedUrl.query.access_token as string) || '';
+  const queryToken = (parsedUrl.query.token as string) || (parsedUrl.query.access_token as string) || (parsedUrl.query.staffToken as string) || '';
+
+  const cookieHeader = (req.headers['cookie'] as string) || '';
+  let cookieToken = '';
+  if (cookieHeader) {
+    const match = cookieHeader.match(/(?:^|;\s*)orb_staff_token=([^;]+)/);
+    if (match) {
+      cookieToken = decodeURIComponent(match[1].trim());
+    }
+  }
+
   const token = authHeader.startsWith('Bearer ')
     ? authHeader.slice(7).trim()
     : authHeader
     ? authHeader.trim()
-    : queryToken;
+    : queryToken || cookieToken;
 
   // 1. Physical Hardware Kitchen Station Token
   if (stationToken) {
@@ -242,6 +253,7 @@ function resolveRequestIdentity(req: http.IncomingMessage): RequestIdentity {
           station: claims.station || 'ALL',
           branchId: claims.branchId,
           isPrivileged: isPriv,
+          rawToken: token,
         };
       }
       return {
@@ -250,6 +262,7 @@ function resolveRequestIdentity(req: http.IncomingMessage): RequestIdentity {
         role: claims.role,
         branchId: claims.branchId,
         isPrivileged: isPriv,
+        rawToken: token,
       };
     }
 
@@ -277,6 +290,7 @@ function resolveRequestIdentity(req: http.IncomingMessage): RequestIdentity {
           station: fixture.station,
           branchId: fixture.branchId,
           isPrivileged: fixture.isPrivileged,
+          rawToken: token,
         };
       }
       return {
@@ -285,6 +299,7 @@ function resolveRequestIdentity(req: http.IncomingMessage): RequestIdentity {
         role: fixture.role,
         branchId: fixture.branchId,
         isPrivileged: fixture.isPrivileged,
+        rawToken: token,
       };
     }
 
@@ -393,12 +408,9 @@ const server = http.createServer(async (req, res) => {
     });
   });
 
-  const defaultStaffToken = issueStaffToken({
-    sub: 'staff_operations_session',
-    name: 'Operations Operator',
-    role: 'MANAGER',
-    branchId: currentBranch.id,
-  });
+  const requestIdentity = resolveRequestIdentity(req);
+  const activeStaffToken = requestIdentity.rawToken;
+  const activeStaffRole = requestIdentity.role || (requestIdentity.type === 'ADMIN' ? 'ADMIN' : undefined);
 
   // CORS Preflight
   if (method === 'OPTIONS') {
@@ -481,6 +493,11 @@ const server = http.createServer(async (req, res) => {
       { staffId: member.id, role: member.role }
     );
 
+    res.setHeader(
+      'Set-Cookie',
+      `orb_staff_token=${encodeURIComponent(token)}; Path=/; HttpOnly; SameSite=Lax; Max-Age=28800`
+    );
+
     sendJson(res, 200, {
       success: true,
       data: {
@@ -492,6 +509,13 @@ const server = http.createServer(async (req, res) => {
         expiresAt: new Date(Date.now() + 8 * 3600 * 1000).toISOString(),
       },
     });
+    return;
+  }
+
+  // --- LOGOUT ENDPOINT ---
+  if (pathname === '/api/restaurant/auth/logout' && method === 'POST') {
+    res.setHeader('Set-Cookie', 'orb_staff_token=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0');
+    sendJson(res, 200, { success: true, message: 'Logged out successfully' });
     return;
   }
 
@@ -4683,10 +4707,10 @@ const server = http.createServer(async (req, res) => {
   // --- 1. OPERATIONS HOME (/) ---
   if (pathname === '/' || pathname === '/overview') {
     const branchTables = store.getTables(currentBranch.id);
-    const branchTasks = store.getKitchenTasks();
+    const branchTasks = store.getKitchenTasks(undefined, currentBranch.id);
     const branchRequests = store.getServiceRequests(currentBranch.id);
-    const branchOrders = store.getOrders();
-    const recentEvents = store.getEvents();
+    const branchOrders = store.getOrders(undefined, undefined, currentBranch.id);
+    const branchEvents = store.getEvents(0, currentBranch.id);
 
     const html = renderShell(
       renderOperationsHome(
@@ -4696,18 +4720,19 @@ const server = http.createServer(async (req, res) => {
         currentBranch.name,
         serviceShift,
         branchOrders,
-        recentEvents
+        branchEvents
       ),
       {
         title: 'Operations Command',
         activeNav: 'overview',
-        restaurantName: 'OrbitoX Bistro',
+        restaurantName: store.getTenantBrand().restaurantName || 'OrbitoX Bistro',
         currentBranchId: currentBranch.id,
         currentFloorId: currentFloor.id,
         currentServiceShift: serviceShift,
         branches,
         floors,
-        staffToken: defaultStaffToken,
+        staffToken: activeStaffToken,
+        staffRole: activeStaffRole,
       }
     );
     sendHtml(res, html);
@@ -4718,20 +4743,21 @@ const server = http.createServer(async (req, res) => {
   if (pathname === '/operations' || pathname === '/operations/floor') {
     const selectedTableId = parsedUrl.query.table ? parseInt(parsedUrl.query.table as string, 10) : undefined;
     const allTables = store.getTables(currentBranch.id);
-    const allOrders = store.getOrders();
+    const allOrders = store.getOrders(undefined, undefined, currentBranch.id);
 
     const html = renderShell(
       renderFloorStudio(allTables, selectedTableId, currentFloor.id, currentBranch.id, floors, allOrders),
       {
         title: 'Spatial Floor Studio',
         activeNav: 'floor',
-        restaurantName: 'OrbitoX Bistro',
+        restaurantName: store.getTenantBrand().restaurantName || 'OrbitoX Bistro',
         currentBranchId: currentBranch.id,
         currentFloorId: currentFloor.id,
         currentServiceShift: serviceShift,
         branches,
         floors,
-        staffToken: defaultStaffToken,
+        staffToken: activeStaffToken,
+        staffRole: activeStaffRole,
       }
     );
     sendHtml(res, html);
@@ -4744,13 +4770,14 @@ const server = http.createServer(async (req, res) => {
     const html = renderShell(renderTablesList(store.getTables(currentBranch.id), currentBranch.id, section), {
       title: 'Tables Fleet',
       activeNav: 'tables',
-      restaurantName: 'OrbitoX Bistro',
+      restaurantName: store.getTenantBrand().restaurantName || 'OrbitoX Bistro',
       currentBranchId: currentBranch.id,
       currentFloorId: currentFloor.id,
       currentServiceShift: serviceShift,
       branches,
       floors,
-      staffToken: defaultStaffToken,
+      staffToken: activeStaffToken,
+      staffRole: activeStaffRole,
     });
     sendHtml(res, html);
     return;
@@ -4768,7 +4795,8 @@ const server = http.createServer(async (req, res) => {
       currentServiceShift: serviceShift,
       branches,
       floors,
-      staffToken: defaultStaffToken,
+      staffToken: activeStaffToken,
+      staffRole: activeStaffRole,
     });
     sendHtml(res, html);
     return;
@@ -4777,21 +4805,30 @@ const server = http.createServer(async (req, res) => {
   // --- 5. HIGH-DENSITY KITCHEN DISPLAY SYSTEM (/kds) ---
   if (pathname === '/kds') {
     const activeStation = ((parsedUrl.query.station || parsedUrl.query.stationId || 'ALL') as string).toUpperCase();
-    const kdsToken = issueStaffToken({
-      sub: `staff_chef_${activeStation.toLowerCase()}`,
-      name: 'KDS Operator',
-      role: 'CHEF',
-      station: activeStation,
-      branchId: currentBranch.id,
-    });
+    
+    // Only pass validated staff identity if requester is authenticated and has kitchen access
+    const isKitchenAuthorized =
+      Boolean(activeStaffToken) &&
+      (requestIdentity.type === 'STATION' ||
+       requestIdentity.role === 'CHEF' ||
+       requestIdentity.role === 'EXPO' ||
+       requestIdentity.role === 'OPERATIONS' ||
+       requestIdentity.role === 'MANAGER' ||
+       requestIdentity.role === 'ADMIN');
+
+    const kdsToken = isKitchenAuthorized ? activeStaffToken : undefined;
+    const kdsRole = isKitchenAuthorized ? (requestIdentity.role || 'CHEF') : undefined;
+
+    const branchTasks = store.getKitchenTasks(undefined, currentBranch.id);
     const html = renderKdsWorkspace(
-      store.getKitchenTasks(),
+      branchTasks,
       activeStation,
       currentBranch.name,
       serviceShift,
       kdsToken,
       store.getLastEventSequence(),
-      currentBranch.id
+      currentBranch.id,
+      kdsRole
     );
     sendHtml(res, html);
     return;
@@ -4810,7 +4847,8 @@ const server = http.createServer(async (req, res) => {
       currentServiceShift: serviceShift,
       branches,
       floors,
-      staffToken: defaultStaffToken,
+      staffToken: activeStaffToken,
+      staffRole: activeStaffRole,
     });
     sendHtml(res, html);
     return;
@@ -4821,13 +4859,14 @@ const server = http.createServer(async (req, res) => {
     const html = renderShell(renderGuestsWorkspace(store.getTables(currentBranch.id), currentBranch.id, store.getGuests()), {
       title: 'Active Guests',
       activeNav: 'guests',
-      restaurantName: 'OrbitoX Bistro',
+      restaurantName: store.getTenantBrand().restaurantName || 'OrbitoX Bistro',
       currentBranchId: currentBranch.id,
       currentFloorId: currentFloor.id,
       currentServiceShift: serviceShift,
       branches,
       floors,
-      staffToken: defaultStaffToken,
+      staffToken: activeStaffToken,
+      staffRole: activeStaffRole,
     });
     sendHtml(res, html);
     return;
@@ -4838,13 +4877,14 @@ const server = http.createServer(async (req, res) => {
     const html = renderShell(renderLocationsWorkspace(branches, currentBranch.id), {
       title: 'Locations & Branches',
       activeNav: 'locations',
-      restaurantName: 'OrbitoX Bistro',
+      restaurantName: store.getTenantBrand().restaurantName || 'OrbitoX Bistro',
       currentBranchId: currentBranch.id,
       currentFloorId: currentFloor.id,
       currentServiceShift: serviceShift,
       branches,
       floors,
-      staffToken: defaultStaffToken,
+      staffToken: activeStaffToken,
+      staffRole: activeStaffRole,
     });
     sendHtml(res, html);
     return;
@@ -4855,13 +4895,14 @@ const server = http.createServer(async (req, res) => {
     const html = renderShell(renderFloorsWorkspace(floors, currentBranch), {
       title: 'Floor Plans & Layouts',
       activeNav: 'floors',
-      restaurantName: 'OrbitoX Bistro',
+      restaurantName: store.getTenantBrand().restaurantName || 'OrbitoX Bistro',
       currentBranchId: currentBranch.id,
       currentFloorId: currentFloor.id,
       currentServiceShift: serviceShift,
       branches,
       floors,
-      staffToken: defaultStaffToken,
+      staffToken: activeStaffToken,
+      staffRole: activeStaffRole,
     });
     sendHtml(res, html);
     return;
@@ -4869,16 +4910,17 @@ const server = http.createServer(async (req, res) => {
 
   // --- 10. SERVICE REPORTS WORKSPACE (/reports) ---
   if (pathname === '/reports') {
-    const html = renderShell(renderReportsWorkspace(store.getOrders(), store.getKitchenTasks(), store.getTables(currentBranch.id)), {
+    const html = renderShell(renderReportsWorkspace(store.getOrders(undefined, undefined, currentBranch.id), store.getKitchenTasks(undefined, currentBranch.id), store.getTables(currentBranch.id)), {
       title: 'Service Analytics',
       activeNav: 'reports',
-      restaurantName: 'OrbitoX Bistro',
+      restaurantName: store.getTenantBrand().restaurantName || 'OrbitoX Bistro',
       currentBranchId: currentBranch.id,
       currentFloorId: currentFloor.id,
       currentServiceShift: serviceShift,
       branches,
       floors,
-      staffToken: defaultStaffToken,
+      staffToken: activeStaffToken,
+      staffRole: activeStaffRole,
     });
     sendHtml(res, html);
     return;
@@ -4895,7 +4937,8 @@ const server = http.createServer(async (req, res) => {
       currentServiceShift: serviceShift,
       branches,
       floors,
-      staffToken: defaultStaffToken,
+      staffToken: activeStaffToken,
+      staffRole: activeStaffRole,
     });
     sendHtml(res, html);
     return;
@@ -4988,12 +5031,6 @@ const server = http.createServer(async (req, res) => {
 
   // --- 14. WHITE-LABEL & DOMAINS (/white-label & /whitelabel) ---
   if (pathname === '/white-label' || pathname === '/whitelabel') {
-    const brandAdminToken = issueStaffToken({
-      sub: 'brand_admin_session',
-      name: 'Brand Administrator',
-      role: 'ADMIN',
-      branchId: '*',
-    });
     const html = renderShell(
       renderWhiteLabelWorkspace(store.getTenantBrand(), branches, currentBranch.id),
       {
@@ -5005,7 +5042,8 @@ const server = http.createServer(async (req, res) => {
         currentServiceShift: serviceShift,
         branches,
         floors,
-        staffToken: brandAdminToken,
+        staffToken: activeStaffToken,
+        staffRole: activeStaffRole,
       }
     );
     sendHtml(res, html);
@@ -5025,7 +5063,8 @@ const server = http.createServer(async (req, res) => {
         currentServiceShift: serviceShift,
         branches,
         floors,
-        staffToken: defaultStaffToken,
+        staffToken: activeStaffToken,
+        staffRole: activeStaffRole,
       }
     );
     sendHtml(res, html);
@@ -5045,7 +5084,8 @@ const server = http.createServer(async (req, res) => {
         currentServiceShift: serviceShift,
         branches,
         floors,
-        staffToken: defaultStaffToken,
+        staffToken: activeStaffToken,
+        staffRole: activeStaffRole,
       }
     );
     sendHtml(res, html);
@@ -5067,7 +5107,8 @@ const server = http.createServer(async (req, res) => {
         currentServiceShift: serviceShift,
         branches,
         floors,
-        staffToken: defaultStaffToken,
+        staffToken: activeStaffToken,
+        staffRole: activeStaffRole,
       }
     );
     sendHtml(res, html);
@@ -5085,7 +5126,8 @@ const server = http.createServer(async (req, res) => {
       currentServiceShift: serviceShift,
       branches,
       floors,
-      staffToken: defaultStaffToken,
+      staffToken: activeStaffToken,
+      staffRole: activeStaffRole,
     });
     sendHtml(res, html);
     return;

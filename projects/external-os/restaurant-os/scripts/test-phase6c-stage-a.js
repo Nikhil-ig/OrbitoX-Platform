@@ -13,6 +13,7 @@
 const assert = require('assert');
 const fs = require('fs');
 const path = require('path');
+const os = require('os');
 const http = require('http');
 
 const {
@@ -185,9 +186,10 @@ async function runStageASuite() {
   // ───────────────────────────────────────────────────────────────────────────
   console.log('\n💳 [SUITE 2] Settlement Transaction & Ghost Event Elimination');
 
-  const testStorePath = path.join(__dirname, '..', 'data', `test-store-stage-a-${Date.now()}.json`);
+  const testStorePath = path.join(os.tmpdir(), `test-store-stage-a-${Date.now()}-${Math.random().toString(36).slice(2)}.json`);
   const isolatedStore = new RestaurantRuntimeStore(testStorePath);
 
+  try {
   // Setup test table
   const testTable = isolatedStore.getTableByNumber('T-14');
   assert(testTable, 'Table 14 must exist in archetype data');
@@ -379,12 +381,14 @@ async function runStageASuite() {
   assert.strictEqual(dupClose.success, true);
   assert.strictEqual(dupClose.isIdempotent, true);
   pass('6C-A12: Duplicate settlement retry is idempotent with zero additional state drift');
-
-  // Clean up test store files
-  try {
-    if (fs.existsSync(testStorePath)) fs.unlinkSync(testStorePath);
-    if (fs.existsSync(`${testStorePath}.bak`)) fs.unlinkSync(`${testStorePath}.bak`);
-  } catch {}
+  } finally {
+    // Clean up test store files
+    try {
+      if (fs.existsSync(testStorePath)) fs.unlinkSync(testStorePath);
+      if (fs.existsSync(`${testStorePath}.bak`)) fs.unlinkSync(`${testStorePath}.bak`);
+      pass('6C-A12-cleanup: Temporary isolated test store cleanly removed from tmp');
+    } catch {}
+  }
 
   // ───────────────────────────────────────────────────────────────────────────
   // PART 3: LIVE RUNTIME SMOKE TEST

@@ -164,17 +164,20 @@ export function renderTablesList(
       <!-- Modal Header -->
       <div style="padding: 16px 20px; border-bottom: 1px solid var(--border-subtle); display: flex; justify-content: space-between; align-items: center;">
         <div>
-          <div style="font-size: 10px; font-weight: 700; color: var(--color-stone); text-transform: uppercase; letter-spacing: 0.05em;">Table QR Code Discovery</div>
+          <div style="font-size: 10px; font-weight: 700; color: var(--color-stone); text-transform: uppercase; letter-spacing: 0.05em;">Table Placard & Diner Access</div>
           <h2 id="modal-table-title" style="font-size: 18px; font-weight: 800; color: var(--color-linen); margin-top: 2px;">Table T-01</h2>
         </div>
         <button onclick="window.tablesFleet.closeQRModal()" class="btn btn-ghost btn-sm" style="font-size: 16px; width: 28px; height: 28px; padding: 0;">✕</button>
       </div>
 
       <!-- Modal Body -->
-      <div style="padding: 24px; display: flex; flex-direction: column; align-items: center; gap: 16px; text-align: center;">
-        <!-- Scannable QR Matrix Canvas / Container -->
+      <div style="padding: 24px; display: flex; flex-direction: column; align-items: center; gap: 14px; text-align: center;">
+        <!-- Table Placard Visual Preview -->
         <div id="modal-qr-container" style="background: #FFFFFF; padding: 16px; border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.3); display: inline-flex; align-items: center; justify-content: center;">
-          <!-- SVG QR Pattern generated dynamically -->
+          <!-- SVG Placard Pattern generated dynamically -->
+        </div>
+        <div style="font-size: 11px; color: var(--color-stone);">
+          Placard visual preview. Note: physical optical camera decoding requires a standards-compliant QR encoder library (e.g. <code>qrcode</code>). Use direct URL below for instant diner access.
         </div>
 
         <div style="width: 100%;">
@@ -614,7 +617,8 @@ export function renderTablesList(
         }
       }
 
-      // Generate a standalone scannable SVG QR Code pattern
+      // Generate a standalone SVG placard pattern
+      // Note: Physical camera decoding requires a standards-compliant Reed-Solomon QR encoder library (e.g. 'qrcode').
       function generateQRSvg(text) {
         // High fidelity pseudo-random deterministic bit-matrix based on hash
         let hash = 0;

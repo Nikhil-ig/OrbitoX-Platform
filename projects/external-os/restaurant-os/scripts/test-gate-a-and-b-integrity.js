@@ -20,8 +20,12 @@ const assert = require('assert');
 const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
+const os = require('os');
+const { spawn } = require('child_process');
 
-const RUNTIME_URL = 'http://localhost:4010';
+let RUNTIME_URL = process.env.TEST_SERVER_URL;
+let serverProcess = null;
+let tempStorePath = null;
 
 async function request(p, options = {}) {
   const url = `${RUNTIME_URL}${p}`;
@@ -54,6 +58,47 @@ async function run() {
   console.log('\n======================================================================');
   console.log('🏛️ RESTAURANTOS 5.3 — GATE A & GATE B CLOSURE AUDIT SUITE');
   console.log('======================================================================\n');
+
+  // If no external test server URL is supplied, spin up an isolated test instance
+  if (!RUNTIME_URL) {
+    const testPort = 4088;
+    tempStorePath = path.join(os.tmpdir(), `restaurant-store-gate-ab-${Date.now()}-${Math.random().toString(36).slice(2)}.json`);
+    const sourceStorePath = path.join(__dirname, '..', 'data', 'restaurant-runtime-store.json');
+    fs.copyFileSync(sourceStorePath, tempStorePath);
+
+    RUNTIME_URL = `http://127.0.0.1:${testPort}`;
+    console.log(`🚀 Spawning isolated test server on ${RUNTIME_URL} with store ${tempStorePath}...`);
+
+    serverProcess = spawn('npx', ['tsx', 'src/server.ts'], {
+      cwd: path.join(__dirname, '..'),
+      env: {
+        ...process.env,
+        PORT: String(testPort),
+        RESTAURANT_STORE_PATH: tempStorePath,
+        NODE_ENV: 'test',
+      },
+      stdio: 'ignore',
+    });
+
+    // Wait for server to become responsive
+    let ready = false;
+    for (let i = 0; i < 40; i++) {
+      try {
+        const res = await fetch(`${RUNTIME_URL}/healthz/live`);
+        if (res.ok) {
+          ready = true;
+          break;
+        }
+      } catch {}
+      await new Promise((r) => setTimeout(r, 250));
+    }
+    if (!ready) {
+      throw new Error(`Isolated test server failed to start on port ${testPort}`);
+    }
+    console.log(`✅ Isolated test server ready on ${RUNTIME_URL}\n`);
+  }
+
+  try {
 
   // Issue real HMAC-SHA256 tokens via authentic PIN authentication
   const ldhAuthRes = await request('/api/restaurant/auth/staff-token', {
@@ -152,11 +197,7 @@ async function run() {
 
   // A.2: Durable idempotency records across restart / reload
   console.log('  💾 Testing durability of idempotency records in persistent store...');
-  const possiblePaths = [
-    path.join(__dirname, '..', 'projects', 'external-os', 'restaurant-os', 'data', 'restaurant-runtime-store.json'),
-    path.join(__dirname, '..', 'data', 'restaurant-runtime-store.json'),
-  ];
-  const storeFilePath = possiblePaths.find((p) => fs.existsSync(p));
+  const storeFilePath = tempStorePath || path.join(__dirname, '..', 'data', 'restaurant-runtime-store.json');
   let diskStoreData = JSON.parse(fs.readFileSync(storeFilePath, 'utf-8'));
   assertPass(
     diskStoreData.idempotencyRecords && diskStoreData.idempotencyRecords[keySimul] !== undefined,
@@ -432,6 +473,17 @@ async function run() {
   console.log('\n======================================================================');
   console.log(`🎉 GATE A & GATE B AUDIT RESULTS: Total ${passCount + failCount} | Passed ${passCount} | Failed ${failCount}`);
   console.log('======================================================================\n');
+  } finally {
+    if (serverProcess) {
+      serverProcess.kill('SIGKILL');
+      console.log('🛑 Isolated test server terminated.');
+    }
+    if (tempStorePath) {
+      if (fs.existsSync(tempStorePath)) fs.unlinkSync(tempStorePath);
+      if (fs.existsSync(`${tempStorePath}.bak`)) fs.unlinkSync(`${tempStorePath}.bak`);
+      assertPass(!fs.existsSync(tempStorePath), 'Temporary isolated store cleanly removed');
+    }
+  }
 }
 
 run().catch((err) => {

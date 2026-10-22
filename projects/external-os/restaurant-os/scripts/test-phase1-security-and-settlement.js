@@ -21,6 +21,14 @@
 const http = require('http');
 const assert = require('assert');
 const crypto = require('crypto');
+const fs = require('fs');
+const path = require('path');
+const os = require('os');
+const { spawn } = require('child_process');
+
+let BASE_URL = process.env.TEST_SERVER_URL || process.env.RESTAURANTOS_URL;
+let serverProcess = null;
+let tempStorePath = null;
 
 let passedTests = 0;
 let totalTests = 0;
@@ -30,9 +38,9 @@ function pass(code, desc) {
   console.log(`  ✅ PASS: [${code}] ${desc}`);
 }
 
-function request(path, options = {}) {
+function request(p, options = {}) {
   return new Promise((resolve, reject) => {
-    const url = new URL(path, 'http://localhost:4010');
+    const url = new URL(p, BASE_URL);
     const bodyStr = options.body ? JSON.stringify(options.body) : null;
     const headers = Object.assign(
       {
@@ -82,6 +90,45 @@ async function runPhase1Suite() {
   console.log('======================================================================');
   console.log('🔐 RESTAURANTOS 5.3 — PHASE 1 SECURITY & SETTLEMENT ACCEPTANCE SUITE');
   console.log('======================================================================\n');
+
+  if (!BASE_URL) {
+    const testPort = 4089;
+    tempStorePath = path.join(os.tmpdir(), `restaurant-store-phase1-${Date.now()}-${Math.random().toString(36).slice(2)}.json`);
+    const sourceStorePath = path.join(__dirname, '..', 'data', 'restaurant-runtime-store.json');
+    fs.copyFileSync(sourceStorePath, tempStorePath);
+
+    BASE_URL = `http://127.0.0.1:${testPort}`;
+    console.log(`🚀 Spawning isolated test server on ${BASE_URL} with store ${tempStorePath}...`);
+
+    serverProcess = spawn('npx', ['tsx', 'src/server.ts'], {
+      cwd: path.join(__dirname, '..'),
+      env: {
+        ...process.env,
+        PORT: String(testPort),
+        RESTAURANT_STORE_PATH: tempStorePath,
+        NODE_ENV: 'test',
+      },
+      stdio: 'ignore',
+    });
+
+    let ready = false;
+    for (let i = 0; i < 40; i++) {
+      try {
+        const res = await request('/healthz/live');
+        if (res.status === 200) {
+          ready = true;
+          break;
+        }
+      } catch {}
+      await new Promise((r) => setTimeout(r, 250));
+    }
+    if (!ready) {
+      throw new Error(`Isolated test server failed to start on port ${testPort}`);
+    }
+    console.log(`✅ Isolated test server ready on ${BASE_URL}\n`);
+  }
+
+  try {
 
   // Obtain authentic cryptographic credentials via server PIN login
   // Manager Token (PIN 8899 -> MANAGER, Ludhiana branch)
@@ -501,6 +548,18 @@ async function runPhase1Suite() {
   console.log('\n======================================================================');
   console.log(`🎉 PHASE 1 TEST SUITE RESULTS: Total ${totalTests} | Passed ${passedTests} | Failed 0`);
   console.log('======================================================================\n');
+  } finally {
+    if (serverProcess) {
+      serverProcess.kill('SIGKILL');
+      console.log('🛑 Isolated test server terminated.');
+    }
+    if (tempStorePath) {
+      if (fs.existsSync(tempStorePath)) fs.unlinkSync(tempStorePath);
+      if (fs.existsSync(`${tempStorePath}.bak`)) fs.unlinkSync(`${tempStorePath}.bak`);
+      assert(!fs.existsSync(tempStorePath), 'Temporary isolated store cleanly removed');
+      console.log('  ✅ Temporary isolated store cleanly removed');
+    }
+  }
 }
 
 runPhase1Suite().catch((err) => {

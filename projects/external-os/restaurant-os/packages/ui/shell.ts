@@ -44,6 +44,7 @@ export interface ShellOptions {
   floors?: FloorRecord[];
   extraHeaderActions?: string;
   staffToken?: string;
+  staffRole?: string;
 }
 
 export function renderShell(contentHtml: string, options: ShellOptions): string {
@@ -137,7 +138,7 @@ export function renderShell(contentHtml: string, options: ShellOptions): string 
   <script>
     window.__STAFF_SESSION__ = {
       token: "${options.staffToken || ''}",
-      role: "OPERATIONS",
+      role: "${options.staffRole || (options.staffToken ? 'OPERATIONS' : '')}",
       branchId: "${currentBranch.id}"
     };
   </script>

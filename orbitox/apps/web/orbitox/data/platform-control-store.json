@@ -136,14 +136,14 @@
         }
       },
       "runtimeSession": {
-        "controlSessionId": "ctrl_sess_mvjrw097_9ffe80fb",
+        "controlSessionId": "ctrl_sess_mvjuxdd5_317307a2",
         "projectId": "project_restaurant_os",
         "slug": "restaurant-os",
         "runtimeUrl": "http://localhost:4010",
         "runtimePort": 4010,
         "status": "HEALTHY",
-        "registeredAt": "2026-10-22T16:46:02.828Z",
-        "lastHeartbeatAt": "2026-10-22T17:02:03.162Z",
+        "registeredAt": "2026-10-22T18:11:05.322Z",
+        "lastHeartbeatAt": "2026-10-22T18:14:33.491Z",
         "activeConfigVersion": 1792687562828,
         "appliedRevision": 30,
         "desiredRevision": 30,
@@ -229,9 +229,9 @@
           "REALTIME_TELEMETRY_V1"
         ],
         "metrics": {
-          "pid": 31950,
-          "uptimeSeconds": 960,
-          "memoryMb": 24
+          "pid": 38978,
+          "uptimeSeconds": 5311,
+          "memoryMb": 23
         }
       }
     },
@@ -6948,6 +6948,1499 @@
     }
   ],
   "audits": [
+    {
+      "id": "aud_1792692694159",
+      "projectId": "project_restaurant_os",
+      "timestamp": "2026-10-22T18:11:34.068Z",
+      "actor": "admin:operations",
+      "action": "FLOOR_LAYOUT_SAVED",
+      "status": "SUCCESS",
+      "details": {
+        "totalTables": 9
+      }
+    },
+    {
+      "id": "aud_1792692692740",
+      "projectId": "project_restaurant_os",
+      "timestamp": "2026-10-22T18:11:32.657Z",
+      "actor": "admin:operations",
+      "action": "FLOOR_LAYOUT_SAVED",
+      "status": "SUCCESS",
+      "details": {
+        "totalTables": 9
+      }
+    },
+    {
+      "id": "aud_1792692667029",
+      "projectId": "project_restaurant_os",
+      "timestamp": "2026-10-22T18:11:06.952Z",
+      "actor": "stf_mgr_ldh_01",
+      "action": "TABLE_SETTLEMENT_SUCCESS",
+      "status": "SUCCESS",
+      "details": {
+        "tableNumber": "T-06",
+        "tableId": 6
+      }
+    },
+    {
+      "id": "aud_1792692666938",
+      "projectId": "project_restaurant_os",
+      "timestamp": "2026-10-22T18:11:06.840Z",
+      "actor": "stf_mgr_ldh_01",
+      "action": "TABLE_SETTLEMENT_ATTEMPT",
+      "status": "SUCCESS",
+      "details": {
+        "tableNumber": "T-06",
+        "tableId": 6,
+        "branchId": "branch_ldh",
+        "method": "UPI"
+      }
+    },
+    {
+      "id": "aud_1792692666833",
+      "projectId": "project_restaurant_os",
+      "timestamp": "2026-10-22T18:11:06.746Z",
+      "actor": "table:T-06",
+      "action": "ORDER_PLACED",
+      "status": "SUCCESS",
+      "details": {
+        "orderId": "ord_1792692666693",
+        "totalMinor": 3675
+      }
+    },
+    {
+      "id": "aud_1792692666688",
+      "projectId": "project_restaurant_os",
+      "timestamp": "2026-10-22T18:11:06.602Z",
+      "actor": "stf_mgr_ldh_01",
+      "action": "TABLE_SETTLEMENT_SUCCESS",
+      "status": "SUCCESS",
+      "details": {
+        "tableNumber": "T-06",
+        "tableId": 6
+      }
+    },
+    {
+      "id": "aud_1792692666587",
+      "projectId": "project_restaurant_os",
+      "timestamp": "2026-10-22T18:11:06.512Z",
+      "actor": "stf_mgr_ldh_01",
+      "action": "TABLE_SETTLEMENT_ATTEMPT",
+      "status": "SUCCESS",
+      "details": {
+        "tableNumber": "T-06",
+        "tableId": 6,
+        "branchId": "branch_ldh",
+        "method": "UPI"
+      }
+    },
+    {
+      "id": "aud_1792692666505",
+      "projectId": "project_restaurant_os",
+      "timestamp": "2026-10-22T18:11:06.432Z",
+      "actor": "table:T-06",
+      "action": "ORDER_PLACED",
+      "status": "SUCCESS",
+      "details": {
+        "orderId": "ord_1792692666391",
+        "totalMinor": 3675
+      }
+    },
+    {
+      "id": "aud_1792692666384",
+      "projectId": "project_restaurant_os",
+      "timestamp": "2026-10-22T18:11:06.303Z",
+      "actor": "stf_mgr_ldh_01",
+      "action": "TABLE_SETTLEMENT_SUCCESS",
+      "status": "SUCCESS",
+      "details": {
+        "tableNumber": "T-05",
+        "tableId": 5
+      }
+    },
+    {
+      "id": "aud_1792692666287",
+      "projectId": "project_restaurant_os",
+      "timestamp": "2026-10-22T18:11:06.202Z",
+      "actor": "stf_mgr_ldh_01",
+      "action": "TABLE_SETTLEMENT_ATTEMPT",
+      "status": "SUCCESS",
+      "details": {
+        "tableNumber": "T-05",
+        "tableId": 5,
+        "branchId": "branch_ldh",
+        "method": "CASH"
+      }
+    },
+    {
+      "id": "aud_1792692666198",
+      "projectId": "project_restaurant_os",
+      "timestamp": "2026-10-22T18:11:06.137Z",
+      "actor": "stf_mgr_ldh_01",
+      "action": "TABLE_SETTLEMENT_ATTEMPT",
+      "status": "SUCCESS",
+      "details": {
+        "tableNumber": "T-05",
+        "tableId": 5,
+        "branchId": "branch_ldh",
+        "requestedAmountMinor": 100,
+        "method": "CASH"
+      }
+    },
+    {
+      "id": "aud_1792692666133",
+      "projectId": "project_restaurant_os",
+      "timestamp": "2026-10-22T18:11:06.047Z",
+      "actor": "table:T-05",
+      "action": "ORDER_PLACED",
+      "status": "SUCCESS",
+      "details": {
+        "orderId": "ord_1792692665988",
+        "totalMinor": 36750
+      }
+    },
+    {
+      "id": "aud_1792692665888",
+      "projectId": "project_restaurant_os",
+      "timestamp": "2026-10-22T18:11:05.806Z",
+      "actor": "stf_mgr_ldh_01",
+      "action": "TABLE_SETTLEMENT_SUCCESS",
+      "status": "SUCCESS",
+      "details": {
+        "tableNumber": "T-06",
+        "tableId": 6
+      }
+    },
+    {
+      "id": "aud_1792692665789",
+      "projectId": "project_restaurant_os",
+      "timestamp": "2026-10-22T18:11:05.720Z",
+      "actor": "stf_mgr_ldh_01",
+      "action": "TABLE_SETTLEMENT_ATTEMPT",
+      "status": "SUCCESS",
+      "details": {
+        "tableNumber": "T-06",
+        "tableId": 6,
+        "branchId": "branch_ldh",
+        "requestedAmountMinor": 47250,
+        "method": "UPI"
+      }
+    },
+    {
+      "id": "aud_1792692665714",
+      "projectId": "project_restaurant_os",
+      "timestamp": "2026-10-22T18:11:05.631Z",
+      "actor": "table:T-06",
+      "action": "ORDER_PLACED",
+      "status": "SUCCESS",
+      "details": {
+        "orderId": "ord_1792692665523",
+        "totalMinor": 47250
+      }
+    },
+    {
+      "id": "aud_1792692665517",
+      "projectId": "project_restaurant_os",
+      "timestamp": "2026-10-22T18:11:05.431Z",
+      "actor": "stf_mgr_ldh_01",
+      "action": "TABLE_SETTLEMENT_SUCCESS",
+      "status": "SUCCESS",
+      "details": {
+        "tableNumber": "T-06",
+        "tableId": 6
+      }
+    },
+    {
+      "id": "aud_1792692665426",
+      "projectId": "project_restaurant_os",
+      "timestamp": "2026-10-22T18:11:05.357Z",
+      "actor": "stf_mgr_ldh_01",
+      "action": "TABLE_SETTLEMENT_ATTEMPT",
+      "status": "SUCCESS",
+      "details": {
+        "tableNumber": "T-06",
+        "tableId": 6,
+        "branchId": "branch_ldh",
+        "method": "CASH"
+      }
+    },
+    {
+      "id": "aud_1792692665322",
+      "projectId": "project_restaurant_os",
+      "timestamp": "2026-10-22T18:11:05.322Z",
+      "actor": "runtime:restaurant-os",
+      "action": "RUNTIME_REGISTERED",
+      "status": "SUCCESS",
+      "details": {
+        "runtimeUrl": "http://localhost:4010",
+        "port": 4010,
+        "appliedRevision": 1
+      }
+    },
+    {
+      "id": "aud_1792692651037",
+      "projectId": "project_restaurant_os",
+      "timestamp": "2026-10-22T18:10:50.968Z",
+      "actor": "stf_mgr_ldh_01",
+      "action": "EXPO_TABLE_RECALLED",
+      "status": "SUCCESS",
+      "details": {
+        "tableNumber": "T-1137",
+        "recalledCount": 2
+      }
+    },
+    {
+      "id": "aud_1792692650939",
+      "projectId": "project_restaurant_os",
+      "timestamp": "2026-10-22T18:10:50.881Z",
+      "actor": "chef:CURRY_LINE",
+      "action": "KDS_BUMP",
+      "status": "SUCCESS",
+      "details": {
+        "taskId": "task_expo_cooking_1792692650717",
+        "status": "READY"
+      }
+    },
+    {
+      "id": "aud_1792692650406",
+      "projectId": "project_restaurant_os",
+      "timestamp": "2026-10-22T18:10:50.295Z",
+      "actor": "stf_mgr_ldh_01",
+      "action": "STAFF_MEMBER_REVOKED",
+      "status": "SUCCESS",
+      "details": {
+        "staffId": "stf_chef_ldh_mvjux1jz"
+      }
+    },
+    {
+      "id": "aud_1792692650269",
+      "projectId": "project_restaurant_os",
+      "timestamp": "2026-10-22T18:10:50.155Z",
+      "actor": "stf_mgr_ldh_01",
+      "action": "STAFF_MEMBER_UPDATED",
+      "status": "SUCCESS",
+      "details": {
+        "staffId": "stf_chef_ldh_mvjux1jz",
+        "updates": {
+          "station": "BAR"
+        }
+      }
+    },
+    {
+      "id": "aud_1792692650121",
+      "projectId": "project_restaurant_os",
+      "timestamp": "2026-10-22T18:10:50.015Z",
+      "actor": "stf_mgr_ldh_01",
+      "action": "STAFF_MEMBER_CREATED",
+      "status": "SUCCESS",
+      "details": {
+        "staffId": "stf_chef_ldh_mvjux1jz",
+        "role": "CHEF",
+        "branchId": "branch_ldh",
+        "station": "CURRY_LINE"
+      }
+    },
+    {
+      "id": "aud_1792692649913",
+      "projectId": "project_restaurant_os",
+      "timestamp": "2026-10-22T18:10:49.835Z",
+      "actor": "chef:TANDOOR",
+      "action": "KDS_BUMP",
+      "status": "SUCCESS",
+      "details": {
+        "taskId": "task_test_tandoor_1792692649606",
+        "status": "BUMPED"
+      }
+    },
+    {
+      "id": "aud_1792692649731",
+      "projectId": "project_restaurant_os",
+      "timestamp": "2026-10-22T18:10:49.664Z",
+      "actor": "chef:TANDOOR",
+      "action": "KDS_BUMP",
+      "status": "SUCCESS",
+      "details": {
+        "taskId": "task_test_tandoor_1792692649606",
+        "status": "IN_PROGRESS"
+      }
+    },
+    {
+      "id": "aud_1792692635041",
+      "projectId": "project_restaurant_os",
+      "timestamp": "2026-10-22T18:10:32.776Z",
+      "actor": "chef:CURRY_LINE",
+      "action": "KDS_BUMP",
+      "status": "SUCCESS",
+      "details": {
+        "taskId": "task_235e495a",
+        "status": "BUMPED"
+      }
+    },
+    {
+      "id": "aud_1792692635041",
+      "projectId": "project_restaurant_os",
+      "timestamp": "2026-10-22T18:10:32.346Z",
+      "actor": "chef:TANDOOR",
+      "action": "KDS_BUMP",
+      "status": "SUCCESS",
+      "details": {
+        "taskId": "task_cb70e086",
+        "status": "BUMPED"
+      }
+    },
+    {
+      "id": "aud_1792692635040",
+      "projectId": "project_restaurant_os",
+      "timestamp": "2026-10-22T18:10:31.919Z",
+      "actor": "chef:CURRY_LINE",
+      "action": "KDS_BUMP",
+      "status": "SUCCESS",
+      "details": {
+        "taskId": "task_235e495a",
+        "status": "READY"
+      }
+    },
+    {
+      "id": "aud_1792692634972",
+      "projectId": "project_restaurant_os",
+      "timestamp": "2026-10-22T18:10:31.493Z",
+      "actor": "chef:TANDOOR",
+      "action": "KDS_BUMP",
+      "status": "SUCCESS",
+      "details": {
+        "taskId": "task_cb70e086",
+        "status": "READY"
+      }
+    },
+    {
+      "id": "aud_1792692631467",
+      "projectId": "project_restaurant_os",
+      "timestamp": "2026-10-22T18:10:31.418Z",
+      "actor": "chef:CURRY_LINE",
+      "action": "KDS_BUMP",
+      "status": "SUCCESS",
+      "details": {
+        "taskId": "task_235e495a",
+        "status": "IN_PROGRESS"
+      }
+    },
+    {
+      "id": "aud_1792692631392",
+      "projectId": "project_restaurant_os",
+      "timestamp": "2026-10-22T18:10:31.334Z",
+      "actor": "chef:TANDOOR",
+      "action": "KDS_BUMP",
+      "status": "SUCCESS",
+      "details": {
+        "taskId": "task_cb70e086",
+        "status": "IN_PROGRESS"
+      }
+    },
+    {
+      "id": "aud_1792692608124",
+      "projectId": "project_restaurant_os",
+      "timestamp": "2026-10-22T18:10:08.064Z",
+      "actor": "stf_mgr_ldh_01",
+      "action": "TABLE_SETTLEMENT_SUCCESS",
+      "status": "SUCCESS",
+      "details": {
+        "tableNumber": "T-02",
+        "tableId": 2,
+        "settlement": {
+          "method": "CASH",
+          "status": "PAID",
+          "amountMinor": 36750,
+          "settledAt": "2026-10-22T18:10:08.055Z",
+          "authorizedBy": "stf_mgr_ldh_01",
+          "verification": "MANUAL_STAFF_RECORDED",
+          "providerConfirmed": false
+        },
+        "closedAt": "2026-10-22T18:10:08.055Z"
+      }
+    },
+    {
+      "id": "aud_1792692608053",
+      "projectId": "project_restaurant_os",
+      "timestamp": "2026-10-22T18:10:08.000Z",
+      "actor": "stf_mgr_ldh_01",
+      "action": "TABLE_SETTLEMENT_ATTEMPT",
+      "status": "SUCCESS",
+      "details": {
+        "tableNumber": "T-02",
+        "tableId": 2,
+        "branchId": "branch_ldh",
+        "method": "CASH"
+      }
+    },
+    {
+      "id": "aud_1792692607997",
+      "projectId": "project_restaurant_os",
+      "timestamp": "2026-10-22T18:10:07.936Z",
+      "actor": "table:T-02",
+      "action": "ORDER_PLACED",
+      "status": "SUCCESS",
+      "details": {
+        "orderId": "ord_1792692607897",
+        "totalMinor": 36750
+      }
+    },
+    {
+      "id": "aud_1792692607831",
+      "projectId": "project_restaurant_os",
+      "timestamp": "2026-10-22T18:10:07.772Z",
+      "actor": "stf_mgr_ldh_01",
+      "action": "TABLE_SETTLEMENT_SUCCESS",
+      "status": "SUCCESS",
+      "details": {
+        "tableNumber": "T-08",
+        "tableId": 8,
+        "settlement": {
+          "method": "UPI",
+          "status": "PAID",
+          "amountMinor": 47250,
+          "settledAt": "2026-10-22T18:10:07.760Z",
+          "authorizedBy": "stf_mgr_ldh_01",
+          "verification": "MANUAL_STAFF_RECORDED",
+          "providerConfirmed": false
+        },
+        "closedAt": "2026-10-22T18:10:07.761Z"
+      }
+    },
+    {
+      "id": "aud_1792692607758",
+      "projectId": "project_restaurant_os",
+      "timestamp": "2026-10-22T18:10:07.708Z",
+      "actor": "stf_mgr_ldh_01",
+      "action": "TABLE_SETTLEMENT_ATTEMPT",
+      "status": "SUCCESS",
+      "details": {
+        "tableNumber": "T-08",
+        "tableId": 8,
+        "branchId": "branch_ldh",
+        "requestedAmountMinor": 47250,
+        "method": "UPI"
+      }
+    },
+    {
+      "id": "aud_1792692607703",
+      "projectId": "project_restaurant_os",
+      "timestamp": "2026-10-22T18:10:07.646Z",
+      "actor": "stf_mgr_ldh_01",
+      "action": "TABLE_SETTLEMENT_ATTEMPT",
+      "status": "SUCCESS",
+      "details": {
+        "tableNumber": "T-08",
+        "tableId": 8,
+        "branchId": "branch_ldh",
+        "requestedAmountMinor": 35000,
+        "method": "UPI"
+      }
+    },
+    {
+      "id": "aud_1792692607643",
+      "projectId": "project_restaurant_os",
+      "timestamp": "2026-10-22T18:10:07.585Z",
+      "actor": "table:T-08",
+      "action": "ORDER_PLACED",
+      "status": "SUCCESS",
+      "details": {
+        "orderId": "ord_1792692607491",
+        "totalMinor": 47250
+      }
+    },
+    {
+      "id": "aud_1792692607317",
+      "projectId": "project_restaurant_os",
+      "timestamp": "2026-10-22T18:10:07.317Z",
+      "actor": "runtime:restaurant-os",
+      "action": "RUNTIME_REGISTERED",
+      "status": "SUCCESS",
+      "details": {
+        "runtimeUrl": "http://localhost:4010",
+        "port": 4010,
+        "appliedRevision": 1
+      }
+    },
+    {
+      "id": "aud_1792692587422",
+      "projectId": "project_restaurant_os",
+      "timestamp": "2026-10-22T18:09:47.365Z",
+      "actor": "admin:operations",
+      "action": "FLOOR_LAYOUT_SAVED",
+      "status": "SUCCESS",
+      "details": {
+        "totalTables": 14
+      }
+    },
+    {
+      "id": "aud_1792692587339",
+      "projectId": "project_restaurant_os",
+      "timestamp": "2026-10-22T18:09:47.285Z",
+      "actor": "admin:operations",
+      "action": "FLOOR_LAYOUT_SAVED",
+      "status": "SUCCESS",
+      "details": {
+        "totalTables": 14
+      }
+    },
+    {
+      "id": "aud_1792692518764",
+      "projectId": "project_restaurant_os",
+      "timestamp": "2026-10-22T18:08:38.764Z",
+      "actor": "runtime:restaurant-os",
+      "action": "RUNTIME_REGISTERED",
+      "status": "SUCCESS",
+      "details": {
+        "runtimeUrl": "http://localhost:4010",
+        "port": 4010,
+        "appliedRevision": 1
+      }
+    },
+    {
+      "id": "aud_1792692491730",
+      "projectId": "project_restaurant_os",
+      "timestamp": "2026-10-22T18:08:11.730Z",
+      "actor": "runtime:restaurant-os",
+      "action": "RUNTIME_REGISTERED",
+      "status": "SUCCESS",
+      "details": {
+        "runtimeUrl": "http://localhost:4010",
+        "port": 4010,
+        "appliedRevision": 1
+      }
+    },
+    {
+      "id": "aud_1792692416322",
+      "projectId": "project_restaurant_os",
+      "timestamp": "2026-10-22T18:06:56.322Z",
+      "actor": "runtime:restaurant-os",
+      "action": "RUNTIME_REGISTERED",
+      "status": "SUCCESS",
+      "details": {
+        "runtimeUrl": "http://localhost:4010",
+        "port": 4010,
+        "appliedRevision": 1
+      }
+    },
+    {
+      "id": "aud_1792692318692",
+      "projectId": "project_restaurant_os",
+      "timestamp": "2026-10-22T18:05:18.635Z",
+      "actor": "stf_mgr_ldh_01",
+      "action": "TABLE_SETTLEMENT_SUCCESS",
+      "status": "SUCCESS",
+      "details": {
+        "tableNumber": "T-02",
+        "tableId": 2,
+        "settlement": {
+          "method": "CASH",
+          "status": "PAID",
+          "amountMinor": 36750,
+          "settledAt": "2026-10-22T18:05:18.624Z",
+          "authorizedBy": "stf_mgr_ldh_01",
+          "verification": "MANUAL_STAFF_RECORDED",
+          "providerConfirmed": false
+        },
+        "closedAt": "2026-10-22T18:05:18.624Z"
+      }
+    },
+    {
+      "id": "aud_1792692318622",
+      "projectId": "project_restaurant_os",
+      "timestamp": "2026-10-22T18:05:18.546Z",
+      "actor": "stf_mgr_ldh_01",
+      "action": "TABLE_SETTLEMENT_ATTEMPT",
+      "status": "SUCCESS",
+      "details": {
+        "tableNumber": "T-02",
+        "tableId": 2,
+        "branchId": "branch_ldh",
+        "method": "CASH"
+      }
+    },
+    {
+      "id": "aud_1792692318541",
+      "projectId": "project_restaurant_os",
+      "timestamp": "2026-10-22T18:05:18.467Z",
+      "actor": "table:T-02",
+      "action": "ORDER_PLACED",
+      "status": "SUCCESS",
+      "details": {
+        "orderId": "ord_1792692318423",
+        "totalMinor": 36750
+      }
+    },
+    {
+      "id": "aud_1792692318352",
+      "projectId": "project_restaurant_os",
+      "timestamp": "2026-10-22T18:05:18.278Z",
+      "actor": "stf_mgr_ldh_01",
+      "action": "TABLE_SETTLEMENT_SUCCESS",
+      "status": "SUCCESS",
+      "details": {
+        "tableNumber": "T-08",
+        "tableId": 8,
+        "settlement": {
+          "method": "UPI",
+          "status": "PAID",
+          "amountMinor": 47250,
+          "settledAt": "2026-10-22T18:05:18.265Z",
+          "authorizedBy": "stf_mgr_ldh_01",
+          "verification": "MANUAL_STAFF_RECORDED",
+          "providerConfirmed": false
+        },
+        "closedAt": "2026-10-22T18:05:18.265Z"
+      }
+    },
+    {
+      "id": "aud_1792692318262",
+      "projectId": "project_restaurant_os",
+      "timestamp": "2026-10-22T18:05:18.177Z",
+      "actor": "stf_mgr_ldh_01",
+      "action": "TABLE_SETTLEMENT_ATTEMPT",
+      "status": "SUCCESS",
+      "details": {
+        "tableNumber": "T-08",
+        "tableId": 8,
+        "branchId": "branch_ldh",
+        "requestedAmountMinor": 47250,
+        "method": "UPI"
+      }
+    },
+    {
+      "id": "aud_1792692318146",
+      "projectId": "project_restaurant_os",
+      "timestamp": "2026-10-22T18:05:18.070Z",
+      "actor": "stf_mgr_ldh_01",
+      "action": "TABLE_SETTLEMENT_ATTEMPT",
+      "status": "SUCCESS",
+      "details": {
+        "tableNumber": "T-08",
+        "tableId": 8,
+        "branchId": "branch_ldh",
+        "requestedAmountMinor": 35000,
+        "method": "UPI"
+      }
+    },
+    {
+      "id": "aud_1792692318065",
+      "projectId": "project_restaurant_os",
+      "timestamp": "2026-10-22T18:05:17.998Z",
+      "actor": "table:T-08",
+      "action": "ORDER_PLACED",
+      "status": "SUCCESS",
+      "details": {
+        "orderId": "ord_1792692317897",
+        "totalMinor": 47250
+      }
+    },
+    {
+      "id": "aud_1792692317569",
+      "projectId": "project_restaurant_os",
+      "timestamp": "2026-10-22T18:05:17.569Z",
+      "actor": "runtime:restaurant-os",
+      "action": "RUNTIME_REGISTERED",
+      "status": "SUCCESS",
+      "details": {
+        "runtimeUrl": "http://localhost:4010",
+        "port": 4010,
+        "appliedRevision": 1
+      }
+    },
+    {
+      "id": "aud_1792692250331",
+      "projectId": "project_restaurant_os",
+      "timestamp": "2026-10-22T18:04:10.253Z",
+      "actor": "stf_mgr_ldh_01",
+      "action": "TABLE_SETTLEMENT_SUCCESS",
+      "status": "SUCCESS",
+      "details": {
+        "tableNumber": "T-06",
+        "tableId": 6
+      }
+    },
+    {
+      "id": "aud_1792692250238",
+      "projectId": "project_restaurant_os",
+      "timestamp": "2026-10-22T18:04:10.176Z",
+      "actor": "stf_mgr_ldh_01",
+      "action": "TABLE_SETTLEMENT_ATTEMPT",
+      "status": "SUCCESS",
+      "details": {
+        "tableNumber": "T-06",
+        "tableId": 6,
+        "branchId": "branch_ldh",
+        "method": "UPI"
+      }
+    },
+    {
+      "id": "aud_1792692250172",
+      "projectId": "project_restaurant_os",
+      "timestamp": "2026-10-22T18:04:10.104Z",
+      "actor": "table:T-06",
+      "action": "ORDER_PLACED",
+      "status": "SUCCESS",
+      "details": {
+        "orderId": "ord_1792692250056",
+        "totalMinor": 3675
+      }
+    },
+    {
+      "id": "aud_1792692250051",
+      "projectId": "project_restaurant_os",
+      "timestamp": "2026-10-22T18:04:09.982Z",
+      "actor": "stf_mgr_ldh_01",
+      "action": "TABLE_SETTLEMENT_SUCCESS",
+      "status": "SUCCESS",
+      "details": {
+        "tableNumber": "T-06",
+        "tableId": 6
+      }
+    },
+    {
+      "id": "aud_1792692249970",
+      "projectId": "project_restaurant_os",
+      "timestamp": "2026-10-22T18:04:09.915Z",
+      "actor": "stf_mgr_ldh_01",
+      "action": "TABLE_SETTLEMENT_ATTEMPT",
+      "status": "SUCCESS",
+      "details": {
+        "tableNumber": "T-06",
+        "tableId": 6,
+        "branchId": "branch_ldh",
+        "method": "UPI"
+      }
+    },
+    {
+      "id": "aud_1792692249911",
+      "projectId": "project_restaurant_os",
+      "timestamp": "2026-10-22T18:04:09.849Z",
+      "actor": "table:T-06",
+      "action": "ORDER_PLACED",
+      "status": "SUCCESS",
+      "details": {
+        "orderId": "ord_1792692249808",
+        "totalMinor": 3675
+      }
+    },
+    {
+      "id": "aud_1792692249803",
+      "projectId": "project_restaurant_os",
+      "timestamp": "2026-10-22T18:04:09.741Z",
+      "actor": "stf_mgr_ldh_01",
+      "action": "TABLE_SETTLEMENT_SUCCESS",
+      "status": "SUCCESS",
+      "details": {
+        "tableNumber": "T-05",
+        "tableId": 5
+      }
+    },
+    {
+      "id": "aud_1792692249708",
+      "projectId": "project_restaurant_os",
+      "timestamp": "2026-10-22T18:04:09.647Z",
+      "actor": "stf_mgr_ldh_01",
+      "action": "TABLE_SETTLEMENT_ATTEMPT",
+      "status": "SUCCESS",
+      "details": {
+        "tableNumber": "T-05",
+        "tableId": 5,
+        "branchId": "branch_ldh",
+        "method": "CASH"
+      }
+    },
+    {
+      "id": "aud_1792692249639",
+      "projectId": "project_restaurant_os",
+      "timestamp": "2026-10-22T18:04:09.551Z",
+      "actor": "stf_mgr_ldh_01",
+      "action": "TABLE_SETTLEMENT_ATTEMPT",
+      "status": "SUCCESS",
+      "details": {
+        "tableNumber": "T-05",
+        "tableId": 5,
+        "branchId": "branch_ldh",
+        "requestedAmountMinor": 100,
+        "method": "CASH"
+      }
+    },
+    {
+      "id": "aud_1792692249547",
+      "projectId": "project_restaurant_os",
+      "timestamp": "2026-10-22T18:04:09.420Z",
+      "actor": "table:T-05",
+      "action": "ORDER_PLACED",
+      "status": "SUCCESS",
+      "details": {
+        "orderId": "ord_1792692249368",
+        "totalMinor": 36750
+      }
+    },
+    {
+      "id": "aud_1792692249283",
+      "projectId": "project_restaurant_os",
+      "timestamp": "2026-10-22T18:04:09.203Z",
+      "actor": "stf_mgr_ldh_01",
+      "action": "TABLE_SETTLEMENT_SUCCESS",
+      "status": "SUCCESS",
+      "details": {
+        "tableNumber": "T-06",
+        "tableId": 6
+      }
+    },
+    {
+      "id": "aud_1792692249186",
+      "projectId": "project_restaurant_os",
+      "timestamp": "2026-10-22T18:04:09.127Z",
+      "actor": "stf_mgr_ldh_01",
+      "action": "TABLE_SETTLEMENT_ATTEMPT",
+      "status": "SUCCESS",
+      "details": {
+        "tableNumber": "T-06",
+        "tableId": 6,
+        "branchId": "branch_ldh",
+        "requestedAmountMinor": 47250,
+        "method": "UPI"
+      }
+    },
+    {
+      "id": "aud_1792692249120",
+      "projectId": "project_restaurant_os",
+      "timestamp": "2026-10-22T18:04:09.049Z",
+      "actor": "table:T-06",
+      "action": "ORDER_PLACED",
+      "status": "SUCCESS",
+      "details": {
+        "orderId": "ord_1792692248947",
+        "totalMinor": 47250
+      }
+    },
+    {
+      "id": "aud_1792692248941",
+      "projectId": "project_restaurant_os",
+      "timestamp": "2026-10-22T18:04:08.873Z",
+      "actor": "stf_mgr_ldh_01",
+      "action": "TABLE_SETTLEMENT_SUCCESS",
+      "status": "SUCCESS",
+      "details": {
+        "tableNumber": "T-06",
+        "tableId": 6
+      }
+    },
+    {
+      "id": "aud_1792692248870",
+      "projectId": "project_restaurant_os",
+      "timestamp": "2026-10-22T18:04:08.792Z",
+      "actor": "stf_mgr_ldh_01",
+      "action": "TABLE_SETTLEMENT_ATTEMPT",
+      "status": "SUCCESS",
+      "details": {
+        "tableNumber": "T-06",
+        "tableId": 6,
+        "branchId": "branch_ldh",
+        "method": "CASH"
+      }
+    },
+    {
+      "id": "aud_1792692248689",
+      "projectId": "project_restaurant_os",
+      "timestamp": "2026-10-22T18:04:08.689Z",
+      "actor": "runtime:restaurant-os",
+      "action": "RUNTIME_REGISTERED",
+      "status": "SUCCESS",
+      "details": {
+        "runtimeUrl": "http://localhost:4010",
+        "port": 4010,
+        "appliedRevision": 1
+      }
+    },
+    {
+      "id": "aud_1792692235927",
+      "projectId": "project_restaurant_os",
+      "timestamp": "2026-10-22T18:03:55.853Z",
+      "actor": "stf_mgr_ldh_01",
+      "action": "TABLE_SETTLEMENT_SUCCESS",
+      "status": "SUCCESS",
+      "details": {
+        "tableNumber": "T-06",
+        "tableId": 6
+      }
+    },
+    {
+      "id": "aud_1792692235835",
+      "projectId": "project_restaurant_os",
+      "timestamp": "2026-10-22T18:03:55.769Z",
+      "actor": "stf_mgr_ldh_01",
+      "action": "TABLE_SETTLEMENT_ATTEMPT",
+      "status": "SUCCESS",
+      "details": {
+        "tableNumber": "T-06",
+        "tableId": 6,
+        "branchId": "branch_ldh",
+        "requestedAmountMinor": 47250,
+        "method": "UPI"
+      }
+    },
+    {
+      "id": "aud_1792692235760",
+      "projectId": "project_restaurant_os",
+      "timestamp": "2026-10-22T18:03:55.695Z",
+      "actor": "table:T-06",
+      "action": "ORDER_PLACED",
+      "status": "SUCCESS",
+      "details": {
+        "orderId": "ord_1792692235588",
+        "totalMinor": 47250
+      }
+    },
+    {
+      "id": "aud_1792692235581",
+      "projectId": "project_restaurant_os",
+      "timestamp": "2026-10-22T18:03:55.513Z",
+      "actor": "stf_mgr_ldh_01",
+      "action": "TABLE_SETTLEMENT_SUCCESS",
+      "status": "SUCCESS",
+      "details": {
+        "tableNumber": "T-06",
+        "tableId": 6
+      }
+    },
+    {
+      "id": "aud_1792692235510",
+      "projectId": "project_restaurant_os",
+      "timestamp": "2026-10-22T18:03:55.428Z",
+      "actor": "stf_mgr_ldh_01",
+      "action": "TABLE_SETTLEMENT_ATTEMPT",
+      "status": "SUCCESS",
+      "details": {
+        "tableNumber": "T-06",
+        "tableId": 6,
+        "branchId": "branch_ldh",
+        "method": "CASH"
+      }
+    },
+    {
+      "id": "aud_1792692235326",
+      "projectId": "project_restaurant_os",
+      "timestamp": "2026-10-22T18:03:55.326Z",
+      "actor": "runtime:restaurant-os",
+      "action": "RUNTIME_REGISTERED",
+      "status": "SUCCESS",
+      "details": {
+        "runtimeUrl": "http://localhost:4010",
+        "port": 4010,
+        "appliedRevision": 1
+      }
+    },
+    {
+      "id": "aud_1792688699640",
+      "projectId": "project_restaurant_os",
+      "timestamp": "2026-10-22T17:04:59.550Z",
+      "actor": "admin:operations",
+      "action": "FLOOR_LAYOUT_SAVED",
+      "status": "SUCCESS",
+      "details": {
+        "totalTables": 9
+      }
+    },
+    {
+      "id": "aud_1792688698282",
+      "projectId": "project_restaurant_os",
+      "timestamp": "2026-10-22T17:04:58.152Z",
+      "actor": "admin:operations",
+      "action": "FLOOR_LAYOUT_SAVED",
+      "status": "SUCCESS",
+      "details": {
+        "totalTables": 9
+      }
+    },
+    {
+      "id": "aud_1792688685432",
+      "projectId": "project_restaurant_os",
+      "timestamp": "2026-10-22T17:04:45.338Z",
+      "actor": "stf_mgr_ldh_01",
+      "action": "TABLE_SETTLEMENT_SUCCESS",
+      "status": "SUCCESS",
+      "details": {
+        "tableNumber": "T-06",
+        "tableId": 6
+      }
+    },
+    {
+      "id": "aud_1792688685320",
+      "projectId": "project_restaurant_os",
+      "timestamp": "2026-10-22T17:04:45.259Z",
+      "actor": "stf_mgr_ldh_01",
+      "action": "TABLE_SETTLEMENT_ATTEMPT",
+      "status": "SUCCESS",
+      "details": {
+        "tableNumber": "T-06",
+        "tableId": 6,
+        "branchId": "branch_ldh",
+        "method": "UPI"
+      }
+    },
+    {
+      "id": "aud_1792688685255",
+      "projectId": "project_restaurant_os",
+      "timestamp": "2026-10-22T17:04:45.177Z",
+      "actor": "table:T-06",
+      "action": "ORDER_PLACED",
+      "status": "SUCCESS",
+      "details": {
+        "orderId": "ord_1792688684830",
+        "totalMinor": 3675
+      }
+    },
+    {
+      "id": "aud_1792688684823",
+      "projectId": "project_restaurant_os",
+      "timestamp": "2026-10-22T17:04:44.761Z",
+      "actor": "stf_mgr_ldh_01",
+      "action": "TABLE_SETTLEMENT_SUCCESS",
+      "status": "SUCCESS",
+      "details": {
+        "tableNumber": "T-06",
+        "tableId": 6
+      }
+    },
+    {
+      "id": "aud_1792688684748",
+      "projectId": "project_restaurant_os",
+      "timestamp": "2026-10-22T17:04:44.697Z",
+      "actor": "stf_mgr_ldh_01",
+      "action": "TABLE_SETTLEMENT_ATTEMPT",
+      "status": "SUCCESS",
+      "details": {
+        "tableNumber": "T-06",
+        "tableId": 6,
+        "branchId": "branch_ldh",
+        "method": "UPI"
+      }
+    },
+    {
+      "id": "aud_1792688684694",
+      "projectId": "project_restaurant_os",
+      "timestamp": "2026-10-22T17:04:44.622Z",
+      "actor": "table:T-06",
+      "action": "ORDER_PLACED",
+      "status": "SUCCESS",
+      "details": {
+        "orderId": "ord_1792688684575",
+        "totalMinor": 3675
+      }
+    },
+    {
+      "id": "aud_1792688684568",
+      "projectId": "project_restaurant_os",
+      "timestamp": "2026-10-22T17:04:44.495Z",
+      "actor": "stf_mgr_ldh_01",
+      "action": "TABLE_SETTLEMENT_SUCCESS",
+      "status": "SUCCESS",
+      "details": {
+        "tableNumber": "T-05",
+        "tableId": 5
+      }
+    },
+    {
+      "id": "aud_1792688684482",
+      "projectId": "project_restaurant_os",
+      "timestamp": "2026-10-22T17:04:44.424Z",
+      "actor": "stf_mgr_ldh_01",
+      "action": "TABLE_SETTLEMENT_ATTEMPT",
+      "status": "SUCCESS",
+      "details": {
+        "tableNumber": "T-05",
+        "tableId": 5,
+        "branchId": "branch_ldh",
+        "method": "CASH"
+      }
+    },
+    {
+      "id": "aud_1792688684418",
+      "projectId": "project_restaurant_os",
+      "timestamp": "2026-10-22T17:04:44.358Z",
+      "actor": "stf_mgr_ldh_01",
+      "action": "TABLE_SETTLEMENT_ATTEMPT",
+      "status": "SUCCESS",
+      "details": {
+        "tableNumber": "T-05",
+        "tableId": 5,
+        "branchId": "branch_ldh",
+        "requestedAmountMinor": 100,
+        "method": "CASH"
+      }
+    },
+    {
+      "id": "aud_1792688684354",
+      "projectId": "project_restaurant_os",
+      "timestamp": "2026-10-22T17:04:44.289Z",
+      "actor": "table:T-05",
+      "action": "ORDER_PLACED",
+      "status": "SUCCESS",
+      "details": {
+        "orderId": "ord_1792688684246",
+        "totalMinor": 36750
+      }
+    },
+    {
+      "id": "aud_1792688684161",
+      "projectId": "project_restaurant_os",
+      "timestamp": "2026-10-22T17:04:44.101Z",
+      "actor": "stf_mgr_ldh_01",
+      "action": "TABLE_SETTLEMENT_SUCCESS",
+      "status": "SUCCESS",
+      "details": {
+        "tableNumber": "T-06",
+        "tableId": 6
+      }
+    },
+    {
+      "id": "aud_1792688684087",
+      "projectId": "project_restaurant_os",
+      "timestamp": "2026-10-22T17:04:44.033Z",
+      "actor": "stf_mgr_ldh_01",
+      "action": "TABLE_SETTLEMENT_ATTEMPT",
+      "status": "SUCCESS",
+      "details": {
+        "tableNumber": "T-06",
+        "tableId": 6,
+        "branchId": "branch_ldh",
+        "requestedAmountMinor": 47250,
+        "method": "UPI"
+      }
+    },
+    {
+      "id": "aud_1792688684028",
+      "projectId": "project_restaurant_os",
+      "timestamp": "2026-10-22T17:04:43.963Z",
+      "actor": "table:T-06",
+      "action": "ORDER_PLACED",
+      "status": "SUCCESS",
+      "details": {
+        "orderId": "ord_1792688683898",
+        "totalMinor": 47250
+      }
+    },
+    {
+      "id": "aud_1792688683894",
+      "projectId": "project_restaurant_os",
+      "timestamp": "2026-10-22T17:04:43.833Z",
+      "actor": "stf_mgr_ldh_01",
+      "action": "TABLE_SETTLEMENT_SUCCESS",
+      "status": "SUCCESS",
+      "details": {
+        "tableNumber": "T-06",
+        "tableId": 6
+      }
+    },
+    {
+      "id": "aud_1792688683832",
+      "projectId": "project_restaurant_os",
+      "timestamp": "2026-10-22T17:04:43.774Z",
+      "actor": "stf_mgr_ldh_01",
+      "action": "TABLE_SETTLEMENT_ATTEMPT",
+      "status": "SUCCESS",
+      "details": {
+        "tableNumber": "T-06",
+        "tableId": 6,
+        "branchId": "branch_ldh",
+        "method": "CASH"
+      }
+    },
+    {
+      "id": "aud_1792688674147",
+      "projectId": "project_restaurant_os",
+      "timestamp": "2026-10-22T17:04:33.495Z",
+      "actor": "stf_mgr_ldh_01",
+      "action": "EXPO_TABLE_RECALLED",
+      "status": "SUCCESS",
+      "details": {
+        "tableNumber": "T-4861",
+        "recalledCount": 2
+      }
+    },
+    {
+      "id": "aud_1792688674017",
+      "projectId": "project_restaurant_os",
+      "timestamp": "2026-10-22T17:04:33.042Z",
+      "actor": "chef:CURRY_LINE",
+      "action": "KDS_BUMP",
+      "status": "SUCCESS",
+      "details": {
+        "taskId": "task_expo_cooking_1792688672923",
+        "status": "READY"
+      }
+    },
+    {
+      "id": "aud_1792688674015",
+      "projectId": "project_restaurant_os",
+      "timestamp": "2026-10-22T17:04:32.411Z",
+      "actor": "stf_mgr_ldh_01",
+      "action": "STAFF_MEMBER_REVOKED",
+      "status": "SUCCESS",
+      "details": {
+        "staffId": "stf_chef_ldh_mvjsjrqv"
+      }
+    },
+    {
+      "id": "aud_1792688674014",
+      "projectId": "project_restaurant_os",
+      "timestamp": "2026-10-22T17:04:31.979Z",
+      "actor": "stf_mgr_ldh_01",
+      "action": "STAFF_MEMBER_UPDATED",
+      "status": "SUCCESS",
+      "details": {
+        "staffId": "stf_chef_ldh_mvjsjrqv",
+        "updates": {
+          "station": "BAR"
+        }
+      }
+    },
+    {
+      "id": "aud_1792688674014",
+      "projectId": "project_restaurant_os",
+      "timestamp": "2026-10-22T17:04:31.543Z",
+      "actor": "stf_mgr_ldh_01",
+      "action": "STAFF_MEMBER_CREATED",
+      "status": "SUCCESS",
+      "details": {
+        "staffId": "stf_chef_ldh_mvjsjrqv",
+        "role": "CHEF",
+        "branchId": "branch_ldh",
+        "station": "CURRY_LINE"
+      }
+    },
+    {
+      "id": "aud_1792688673865",
+      "projectId": "project_restaurant_os",
+      "timestamp": "2026-10-22T17:04:31.044Z",
+      "actor": "chef:TANDOOR",
+      "action": "KDS_BUMP",
+      "status": "SUCCESS",
+      "details": {
+        "taskId": "task_test_tandoor_1792688670461",
+        "status": "BUMPED"
+      }
+    },
+    {
+      "id": "aud_1792688673863",
+      "projectId": "project_restaurant_os",
+      "timestamp": "2026-10-22T17:04:30.538Z",
+      "actor": "chef:TANDOOR",
+      "action": "KDS_BUMP",
+      "status": "SUCCESS",
+      "details": {
+        "taskId": "task_test_tandoor_1792688670461",
+        "status": "IN_PROGRESS"
+      }
+    },
+    {
+      "id": "aud_1792688659464",
+      "projectId": "project_restaurant_os",
+      "timestamp": "2026-10-22T17:04:19.374Z",
+      "actor": "chef:CURRY_LINE",
+      "action": "KDS_BUMP",
+      "status": "SUCCESS",
+      "details": {
+        "taskId": "task_bcfa278c",
+        "status": "BUMPED"
+      }
+    },
+    {
+      "id": "aud_1792688659346",
+      "projectId": "project_restaurant_os",
+      "timestamp": "2026-10-22T17:04:19.282Z",
+      "actor": "chef:TANDOOR",
+      "action": "KDS_BUMP",
+      "status": "SUCCESS",
+      "details": {
+        "taskId": "task_3d13f548",
+        "status": "BUMPED"
+      }
+    },
+    {
+      "id": "aud_1792688659258",
+      "projectId": "project_restaurant_os",
+      "timestamp": "2026-10-22T17:04:19.175Z",
+      "actor": "chef:CURRY_LINE",
+      "action": "KDS_BUMP",
+      "status": "SUCCESS",
+      "details": {
+        "taskId": "task_bcfa278c",
+        "status": "READY"
+      }
+    },
+    {
+      "id": "aud_1792688659154",
+      "projectId": "project_restaurant_os",
+      "timestamp": "2026-10-22T17:04:19.074Z",
+      "actor": "chef:TANDOOR",
+      "action": "KDS_BUMP",
+      "status": "SUCCESS",
+      "details": {
+        "taskId": "task_3d13f548",
+        "status": "READY"
+      }
+    },
+    {
+      "id": "aud_1792688659035",
+      "projectId": "project_restaurant_os",
+      "timestamp": "2026-10-22T17:04:18.953Z",
+      "actor": "chef:CURRY_LINE",
+      "action": "KDS_BUMP",
+      "status": "SUCCESS",
+      "details": {
+        "taskId": "task_bcfa278c",
+        "status": "IN_PROGRESS"
+      }
+    },
+    {
+      "id": "aud_1792688658920",
+      "projectId": "project_restaurant_os",
+      "timestamp": "2026-10-22T17:04:18.829Z",
+      "actor": "chef:TANDOOR",
+      "action": "KDS_BUMP",
+      "status": "SUCCESS",
+      "details": {
+        "taskId": "task_3d13f548",
+        "status": "IN_PROGRESS"
+      }
+    },
+    {
+      "id": "aud_1792688649066",
+      "projectId": "project_restaurant_os",
+      "timestamp": "2026-10-22T17:04:09.007Z",
+      "actor": "stf_mgr_ldh_01",
+      "action": "TABLE_SETTLEMENT_SUCCESS",
+      "status": "SUCCESS",
+      "details": {
+        "tableNumber": "T-02",
+        "tableId": 2,
+        "settlement": {
+          "method": "CASH",
+          "status": "PAID",
+          "amountMinor": 36750,
+          "settledAt": "2026-10-22T17:04:08.998Z",
+          "authorizedBy": "stf_mgr_ldh_01",
+          "verification": "MANUAL_STAFF_RECORDED",
+          "providerConfirmed": false
+        },
+        "closedAt": "2026-10-22T17:04:08.998Z"
+      }
+    },
+    {
+      "id": "aud_1792688648996",
+      "projectId": "project_restaurant_os",
+      "timestamp": "2026-10-22T17:04:08.827Z",
+      "actor": "stf_mgr_ldh_01",
+      "action": "TABLE_SETTLEMENT_ATTEMPT",
+      "status": "SUCCESS",
+      "details": {
+        "tableNumber": "T-02",
+        "tableId": 2,
+        "branchId": "branch_ldh",
+        "method": "CASH"
+      }
+    },
+    {
+      "id": "aud_1792688648824",
+      "projectId": "project_restaurant_os",
+      "timestamp": "2026-10-22T17:04:08.743Z",
+      "actor": "table:T-02",
+      "action": "ORDER_PLACED",
+      "status": "SUCCESS",
+      "details": {
+        "orderId": "ord_1792688648573",
+        "totalMinor": 36750
+      }
+    },
+    {
+      "id": "aud_1792688648351",
+      "projectId": "project_restaurant_os",
+      "timestamp": "2026-10-22T17:04:08.286Z",
+      "actor": "stf_mgr_ldh_01",
+      "action": "TABLE_SETTLEMENT_SUCCESS",
+      "status": "SUCCESS",
+      "details": {
+        "tableNumber": "T-08",
+        "tableId": 8,
+        "settlement": {
+          "method": "UPI",
+          "status": "PAID",
+          "amountMinor": 47250,
+          "settledAt": "2026-10-22T17:04:08.277Z",
+          "authorizedBy": "stf_mgr_ldh_01",
+          "verification": "MANUAL_STAFF_RECORDED",
+          "providerConfirmed": false
+        },
+        "closedAt": "2026-10-22T17:04:08.277Z"
+      }
+    },
+    {
+      "id": "aud_1792688648275",
+      "projectId": "project_restaurant_os",
+      "timestamp": "2026-10-22T17:04:08.138Z",
+      "actor": "stf_mgr_ldh_01",
+      "action": "TABLE_SETTLEMENT_ATTEMPT",
+      "status": "SUCCESS",
+      "details": {
+        "tableNumber": "T-08",
+        "tableId": 8,
+        "branchId": "branch_ldh",
+        "requestedAmountMinor": 47250,
+        "method": "UPI"
+      }
+    },
+    {
+      "id": "aud_1792688648132",
+      "projectId": "project_restaurant_os",
+      "timestamp": "2026-10-22T17:04:08.057Z",
+      "actor": "stf_mgr_ldh_01",
+      "action": "TABLE_SETTLEMENT_ATTEMPT",
+      "status": "SUCCESS",
+      "details": {
+        "tableNumber": "T-08",
+        "tableId": 8,
+        "branchId": "branch_ldh",
+        "requestedAmountMinor": 35000,
+        "method": "UPI"
+      }
+    },
+    {
+      "id": "aud_1792688648054",
+      "projectId": "project_restaurant_os",
+      "timestamp": "2026-10-22T17:04:07.980Z",
+      "actor": "table:T-08",
+      "action": "ORDER_PLACED",
+      "status": "SUCCESS",
+      "details": {
+        "orderId": "ord_1792688647920",
+        "totalMinor": 47250
+      }
+    },
+    {
+      "id": "aud_1792688632328",
+      "projectId": "project_restaurant_os",
+      "timestamp": "2026-10-22T17:03:52.245Z",
+      "actor": "admin:operations",
+      "action": "FLOOR_LAYOUT_SAVED",
+      "status": "SUCCESS",
+      "details": {
+        "totalTables": 14
+      }
+    },
+    {
+      "id": "aud_1792688632207",
+      "projectId": "project_restaurant_os",
+      "timestamp": "2026-10-22T17:03:52.137Z",
+      "actor": "admin:operations",
+      "action": "FLOOR_LAYOUT_SAVED",
+      "status": "SUCCESS",
+      "details": {
+        "totalTables": 14
+      }
+    },
     {
       "id": "aud_1792687636326",
       "projectId": "project_restaurant_os",
@@ -18638,1514 +20131,6 @@
         "taskId": "task_1792592372612_290",
         "status": "BUMPED"
       }
-    },
-    {
-      "id": "aud_1792592373267",
-      "projectId": "project_restaurant_os",
-      "timestamp": "2026-10-21T14:19:33.065Z",
-      "actor": "chef:TANDOOR",
-      "action": "KDS_BUMP",
-      "status": "SUCCESS",
-      "details": {
-        "taskId": "task_1792592372612_290",
-        "status": "READY"
-      }
-    },
-    {
-      "id": "aud_1792592373235",
-      "projectId": "project_restaurant_os",
-      "timestamp": "2026-10-21T14:19:33.064Z",
-      "actor": "chef:TANDOOR",
-      "action": "KDS_BUMP",
-      "status": "SUCCESS",
-      "details": {
-        "taskId": "task_1792592372612_290",
-        "status": "READY"
-      }
-    },
-    {
-      "id": "aud_1792592373043",
-      "projectId": "project_restaurant_os",
-      "timestamp": "2026-10-21T14:19:32.952Z",
-      "actor": "chef:TANDOOR",
-      "action": "KDS_BUMP",
-      "status": "SUCCESS",
-      "details": {
-        "taskId": "task_1792592372612_290",
-        "status": "IN_PROGRESS"
-      }
-    },
-    {
-      "id": "aud_1792592372946",
-      "projectId": "project_restaurant_os",
-      "timestamp": "2026-10-21T14:19:32.796Z",
-      "actor": "chef:TANDOOR",
-      "action": "KDS_BUMP",
-      "status": "SUCCESS",
-      "details": {
-        "taskId": "task_1792592372612_290",
-        "status": "IN_PROGRESS"
-      }
-    },
-    {
-      "id": "aud_1792592372758",
-      "projectId": "project_restaurant_os",
-      "timestamp": "2026-10-21T14:19:32.630Z",
-      "actor": "table:T-05",
-      "action": "ORDER_PLACED",
-      "status": "SUCCESS",
-      "details": {
-        "orderId": "ord_1792592372611",
-        "totalMinor": 113400
-      }
-    },
-    {
-      "id": "aud_1792592366798",
-      "projectId": "project_restaurant_os",
-      "timestamp": "2026-10-21T14:19:26.798Z",
-      "actor": "runtime:restaurant-os",
-      "action": "RUNTIME_REGISTERED",
-      "status": "SUCCESS",
-      "details": {
-        "runtimeUrl": "http://localhost:4010",
-        "port": 4010,
-        "appliedRevision": 1
-      }
-    },
-    {
-      "id": "aud_1792592362084",
-      "projectId": "project_restaurant_os",
-      "timestamp": "2026-10-21T14:19:22.010Z",
-      "actor": "staff:manager",
-      "action": "SESSION_CLOSED",
-      "status": "SUCCESS",
-      "details": {
-        "tableNumber": "T-02",
-        "settlement": {
-          "method": "EMERGENCY_OVERRIDE",
-          "status": "UNSETTLED_OVERRIDE",
-          "amountMinor": 0,
-          "unsettledLiabilityMinor": 36750,
-          "settledAt": "2026-10-21T14:19:22.001Z",
-          "authorizedBy": "staff:manager",
-          "reason": "Walk-out guest liability",
-          "verification": "MANUAL_STAFF_RECORDED",
-          "providerConfirmed": false
-        },
-        "isEmergency": true
-      }
-    },
-    {
-      "id": "aud_1792592361995",
-      "projectId": "project_restaurant_os",
-      "timestamp": "2026-10-21T14:19:21.886Z",
-      "actor": "table:T-02",
-      "action": "ORDER_PLACED",
-      "status": "SUCCESS",
-      "details": {
-        "orderId": "ord_1792592361872",
-        "totalMinor": 36750
-      }
-    },
-    {
-      "id": "aud_1792592361859",
-      "projectId": "project_restaurant_os",
-      "timestamp": "2026-10-21T14:19:21.794Z",
-      "actor": "staff:manager",
-      "action": "SESSION_CLOSED",
-      "status": "SUCCESS",
-      "details": {
-        "tableNumber": "T-05",
-        "settlement": {
-          "method": "EMERGENCY_OVERRIDE",
-          "status": "UNSETTLED_OVERRIDE",
-          "amountMinor": 0,
-          "unsettledLiabilityMinor": 203700,
-          "settledAt": "2026-10-21T14:19:21.785Z",
-          "authorizedBy": "staff:manager",
-          "reason": "Test cleanup",
-          "verification": "MANUAL_STAFF_RECORDED",
-          "providerConfirmed": false
-        },
-        "isEmergency": true
-      }
-    },
-    {
-      "id": "aud_1792592361779",
-      "projectId": "project_restaurant_os",
-      "timestamp": "2026-10-21T14:19:21.684Z",
-      "actor": "table:T-05",
-      "action": "ORDER_PLACED",
-      "status": "SUCCESS",
-      "details": {
-        "orderId": "ord_1792592361674",
-        "totalMinor": 36750
-      }
-    },
-    {
-      "id": "aud_1792592361668",
-      "projectId": "project_restaurant_os",
-      "timestamp": "2026-10-21T14:19:21.551Z",
-      "actor": "table:T-05",
-      "action": "ORDER_PLACED",
-      "status": "SUCCESS",
-      "details": {
-        "orderId": "ord_1792592361533",
-        "totalMinor": 36750
-      }
-    },
-    {
-      "id": "aud_1792592361520",
-      "projectId": "project_restaurant_os",
-      "timestamp": "2026-10-21T14:19:21.462Z",
-      "actor": "staff:manager",
-      "action": "SESSION_CLOSED",
-      "status": "SUCCESS",
-      "details": {
-        "tableNumber": "T-14",
-        "isEmergency": false
-      }
-    },
-    {
-      "id": "aud_1792592361435",
-      "projectId": "project_restaurant_os",
-      "timestamp": "2026-10-21T14:19:21.349Z",
-      "actor": "staff:pos",
-      "action": "SESSION_CLOSED",
-      "status": "SUCCESS",
-      "details": {
-        "tableNumber": "T-14",
-        "settlement": {
-          "method": "UPI",
-          "status": "PAID",
-          "amountMinor": 73500,
-          "settledAt": "2026-10-21T14:19:21.342Z",
-          "authorizedBy": "staff:pos",
-          "verification": "MANUAL_STAFF_RECORDED",
-          "providerConfirmed": false
-        },
-        "isEmergency": false
-      }
-    },
-    {
-      "id": "aud_1792592361325",
-      "projectId": "project_restaurant_os",
-      "timestamp": "2026-10-21T14:19:21.230Z",
-      "actor": "table:T-14",
-      "action": "ORDER_PLACED",
-      "status": "SUCCESS",
-      "details": {
-        "orderId": "ord_1792592361220",
-        "totalMinor": 73500
-      }
-    },
-    {
-      "id": "aud_1792592361205",
-      "projectId": "project_restaurant_os",
-      "timestamp": "2026-10-21T14:19:21.128Z",
-      "actor": "staff:manager",
-      "action": "SESSION_CLOSED",
-      "status": "SUCCESS",
-      "details": {
-        "tableNumber": "T-14",
-        "settlement": {
-          "method": "EMERGENCY_OVERRIDE",
-          "status": "UNSETTLED_OVERRIDE",
-          "amountMinor": 0,
-          "unsettledLiabilityMinor": 76650,
-          "settledAt": "2026-10-21T14:19:21.121Z",
-          "authorizedBy": "staff:manager",
-          "reason": "Pre-test baseline clean",
-          "verification": "MANUAL_STAFF_RECORDED",
-          "providerConfirmed": false
-        },
-        "isEmergency": true
-      }
-    },
-    {
-      "id": "aud_1792592361103",
-      "projectId": "project_restaurant_os",
-      "timestamp": "2026-10-21T14:19:21.032Z",
-      "actor": "stf_mgr_ldh_01",
-      "action": "TABLE_LOCATOR_ROTATED",
-      "status": "SUCCESS",
-      "details": {
-        "tableId": 14,
-        "oldLocator": "7Kp9xQ8m2L",
-        "newLocator": "LOC14_mvi77i2r_cgkd",
-        "reason": "Scheduled security rotation"
-      }
-    },
-    {
-      "id": "aud_1792592348894",
-      "projectId": "project_restaurant_os",
-      "timestamp": "2026-10-21T14:19:08.852Z",
-      "actor": "stf_mgr_ldh_01",
-      "action": "TABLE_SETTLEMENT_SUCCESS",
-      "status": "SUCCESS",
-      "details": {
-        "tableNumber": "T-06",
-        "tableId": 6
-      }
-    },
-    {
-      "id": "aud_1792592348842",
-      "projectId": "project_restaurant_os",
-      "timestamp": "2026-10-21T14:19:08.786Z",
-      "actor": "stf_mgr_ldh_01",
-      "action": "TABLE_SETTLEMENT_ATTEMPT",
-      "status": "SUCCESS",
-      "details": {
-        "tableNumber": "T-06",
-        "tableId": 6,
-        "branchId": "branch_ldh",
-        "method": "UPI"
-      }
-    },
-    {
-      "id": "aud_1792592348782",
-      "projectId": "project_restaurant_os",
-      "timestamp": "2026-10-21T14:19:08.695Z",
-      "actor": "table:T-06",
-      "action": "ORDER_PLACED",
-      "status": "SUCCESS",
-      "details": {
-        "orderId": "ord_1792592348671",
-        "totalMinor": 3675
-      }
-    },
-    {
-      "id": "aud_1792592348668",
-      "projectId": "project_restaurant_os",
-      "timestamp": "2026-10-21T14:19:08.621Z",
-      "actor": "stf_mgr_ldh_01",
-      "action": "TABLE_SETTLEMENT_SUCCESS",
-      "status": "SUCCESS",
-      "details": {
-        "tableNumber": "T-06",
-        "tableId": 6
-      }
-    },
-    {
-      "id": "aud_1792592348612",
-      "projectId": "project_restaurant_os",
-      "timestamp": "2026-10-21T14:19:08.536Z",
-      "actor": "stf_mgr_ldh_01",
-      "action": "TABLE_SETTLEMENT_ATTEMPT",
-      "status": "SUCCESS",
-      "details": {
-        "tableNumber": "T-06",
-        "tableId": 6,
-        "branchId": "branch_ldh",
-        "method": "UPI"
-      }
-    },
-    {
-      "id": "aud_1792592348533",
-      "projectId": "project_restaurant_os",
-      "timestamp": "2026-10-21T14:19:08.444Z",
-      "actor": "table:T-06",
-      "action": "ORDER_PLACED",
-      "status": "SUCCESS",
-      "details": {
-        "orderId": "ord_1792592348425",
-        "totalMinor": 3675
-      }
-    },
-    {
-      "id": "aud_1792592348418",
-      "projectId": "project_restaurant_os",
-      "timestamp": "2026-10-21T14:19:08.370Z",
-      "actor": "stf_mgr_ldh_01",
-      "action": "TABLE_SETTLEMENT_SUCCESS",
-      "status": "SUCCESS",
-      "details": {
-        "tableNumber": "T-05",
-        "tableId": 5
-      }
-    },
-    {
-      "id": "aud_1792592348360",
-      "projectId": "project_restaurant_os",
-      "timestamp": "2026-10-21T14:19:08.303Z",
-      "actor": "stf_mgr_ldh_01",
-      "action": "TABLE_SETTLEMENT_ATTEMPT",
-      "status": "SUCCESS",
-      "details": {
-        "tableNumber": "T-05",
-        "tableId": 5,
-        "branchId": "branch_ldh",
-        "method": "CASH"
-      }
-    },
-    {
-      "id": "aud_1792592348299",
-      "projectId": "project_restaurant_os",
-      "timestamp": "2026-10-21T14:19:08.241Z",
-      "actor": "stf_mgr_ldh_01",
-      "action": "TABLE_SETTLEMENT_ATTEMPT",
-      "status": "SUCCESS",
-      "details": {
-        "tableNumber": "T-05",
-        "tableId": 5,
-        "branchId": "branch_ldh",
-        "requestedAmountMinor": 100,
-        "method": "CASH"
-      }
-    },
-    {
-      "id": "aud_1792592348217",
-      "projectId": "project_restaurant_os",
-      "timestamp": "2026-10-21T14:19:08.128Z",
-      "actor": "table:T-05",
-      "action": "ORDER_PLACED",
-      "status": "SUCCESS",
-      "details": {
-        "orderId": "ord_1792592348108",
-        "totalMinor": 36750
-      }
-    },
-    {
-      "id": "aud_1792592348040",
-      "projectId": "project_restaurant_os",
-      "timestamp": "2026-10-21T14:19:07.962Z",
-      "actor": "stf_mgr_ldh_01",
-      "action": "TABLE_SETTLEMENT_SUCCESS",
-      "status": "SUCCESS",
-      "details": {
-        "tableNumber": "T-06",
-        "tableId": 6
-      }
-    },
-    {
-      "id": "aud_1792592347948",
-      "projectId": "project_restaurant_os",
-      "timestamp": "2026-10-21T14:19:07.886Z",
-      "actor": "stf_mgr_ldh_01",
-      "action": "TABLE_SETTLEMENT_ATTEMPT",
-      "status": "SUCCESS",
-      "details": {
-        "tableNumber": "T-06",
-        "tableId": 6,
-        "branchId": "branch_ldh",
-        "requestedAmountMinor": 47250,
-        "method": "UPI"
-      }
-    },
-    {
-      "id": "aud_1792592347880",
-      "projectId": "project_restaurant_os",
-      "timestamp": "2026-10-21T14:19:07.741Z",
-      "actor": "table:T-06",
-      "action": "ORDER_PLACED",
-      "status": "SUCCESS",
-      "details": {
-        "orderId": "ord_1792592347714",
-        "totalMinor": 47250
-      }
-    },
-    {
-      "id": "aud_1792592347711",
-      "projectId": "project_restaurant_os",
-      "timestamp": "2026-10-21T14:19:07.649Z",
-      "actor": "stf_mgr_ldh_01",
-      "action": "TABLE_SETTLEMENT_SUCCESS",
-      "status": "SUCCESS",
-      "details": {
-        "tableNumber": "T-06",
-        "tableId": 6
-      }
-    },
-    {
-      "id": "aud_1792592347638",
-      "projectId": "project_restaurant_os",
-      "timestamp": "2026-10-21T14:19:07.573Z",
-      "actor": "stf_mgr_ldh_01",
-      "action": "TABLE_SETTLEMENT_ATTEMPT",
-      "status": "SUCCESS",
-      "details": {
-        "tableNumber": "T-06",
-        "tableId": 6,
-        "branchId": "branch_ldh",
-        "method": "CASH"
-      }
-    },
-    {
-      "id": "aud_1792592337180",
-      "projectId": "project_restaurant_os",
-      "timestamp": "2026-10-21T14:18:57.056Z",
-      "actor": "table:T-07",
-      "action": "ORDER_PLACED",
-      "status": "SUCCESS",
-      "details": {
-        "orderId": "ord_1792592337032",
-        "totalMinor": 36750
-      }
-    },
-    {
-      "id": "aud_1792592336997",
-      "projectId": "project_restaurant_os",
-      "timestamp": "2026-10-21T14:18:56.912Z",
-      "actor": "table:T-06",
-      "action": "ORDER_PLACED",
-      "status": "SUCCESS",
-      "details": {
-        "orderId": "ord_1792592336892",
-        "totalMinor": 36750
-      }
-    },
-    {
-      "id": "aud_1792592336879",
-      "projectId": "project_restaurant_os",
-      "timestamp": "2026-10-21T14:18:56.838Z",
-      "actor": "stf_mgr_ldh_01",
-      "action": "TABLE_SETTLEMENT_SUCCESS",
-      "status": "SUCCESS",
-      "details": {
-        "tableNumber": "T-03",
-        "tableId": 3
-      }
-    },
-    {
-      "id": "aud_1792592336837",
-      "projectId": "project_restaurant_os",
-      "timestamp": "2026-10-21T14:18:56.790Z",
-      "actor": "stf_mgr_ldh_01",
-      "action": "TABLE_SETTLEMENT_ATTEMPT",
-      "status": "SUCCESS",
-      "details": {
-        "tableNumber": "T-03",
-        "tableId": 3,
-        "branchId": "branch_ldh",
-        "requestedAmountMinor": 50000,
-        "method": "CASH"
-      }
-    },
-    {
-      "id": "aud_1792592336787",
-      "projectId": "project_restaurant_os",
-      "timestamp": "2026-10-21T14:18:56.717Z",
-      "actor": "stf_mgr_ldh_01",
-      "action": "TABLE_SETTLEMENT_SUCCESS",
-      "status": "SUCCESS",
-      "details": {
-        "tableNumber": "T-03",
-        "tableId": 3
-      }
-    },
-    {
-      "id": "aud_1792592336716",
-      "projectId": "project_restaurant_os",
-      "timestamp": "2026-10-21T14:18:56.661Z",
-      "actor": "stf_mgr_ldh_01",
-      "action": "TABLE_SETTLEMENT_ATTEMPT",
-      "status": "SUCCESS",
-      "details": {
-        "tableNumber": "T-03",
-        "tableId": 3,
-        "branchId": "branch_ldh",
-        "method": "CASH"
-      }
-    },
-    {
-      "id": "aud_1792592336657",
-      "projectId": "project_restaurant_os",
-      "timestamp": "2026-10-21T14:18:56.601Z",
-      "actor": "stf_mgr_ldh_01",
-      "action": "TABLE_SETTLEMENT_ATTEMPT",
-      "status": "SUCCESS",
-      "details": {
-        "tableNumber": "T-04",
-        "tableId": 4,
-        "branchId": "branch_ldh",
-        "method": "COMP"
-      }
-    },
-    {
-      "id": "aud_1792592336595",
-      "projectId": "project_restaurant_os",
-      "timestamp": "2026-10-21T14:18:56.518Z",
-      "actor": "table:T-04",
-      "action": "ORDER_PLACED",
-      "status": "SUCCESS",
-      "details": {
-        "orderId": "ord_1792592336499",
-        "totalMinor": 39900
-      }
-    },
-    {
-      "id": "aud_1792592336488",
-      "projectId": "project_restaurant_os",
-      "timestamp": "2026-10-21T14:18:56.434Z",
-      "actor": "stf_mgr_ldh_01",
-      "action": "TABLE_SETTLEMENT_SUCCESS",
-      "status": "SUCCESS",
-      "details": {
-        "tableNumber": "T-03",
-        "tableId": 3
-      }
-    },
-    {
-      "id": "aud_1792592336420",
-      "projectId": "project_restaurant_os",
-      "timestamp": "2026-10-21T14:18:56.357Z",
-      "actor": "stf_mgr_ldh_01",
-      "action": "TABLE_SETTLEMENT_ATTEMPT",
-      "status": "SUCCESS",
-      "details": {
-        "tableNumber": "T-03",
-        "tableId": 3,
-        "branchId": "branch_ldh",
-        "method": "UPI"
-      }
-    },
-    {
-      "id": "aud_1792592336349",
-      "projectId": "project_restaurant_os",
-      "timestamp": "2026-10-21T14:18:56.277Z",
-      "actor": "table:T-03",
-      "action": "ORDER_PLACED",
-      "status": "SUCCESS",
-      "details": {
-        "orderId": "ord_1792592336251",
-        "totalMinor": 113400
-      }
-    },
-    {
-      "id": "aud_1792592311616",
-      "projectId": "project_restaurant_os",
-      "timestamp": "2026-10-21T14:18:31.566Z",
-      "actor": "stf_mgr_ldh_01",
-      "action": "TABLE_SETTLEMENT_SUCCESS",
-      "status": "SUCCESS",
-      "details": {
-        "tableNumber": "T-02",
-        "tableId": 2,
-        "settlement": {
-          "method": "CASH",
-          "status": "PAID",
-          "amountMinor": 36750,
-          "settledAt": "2026-10-21T14:18:31.555Z",
-          "authorizedBy": "stf_mgr_ldh_01",
-          "verification": "MANUAL_STAFF_RECORDED",
-          "providerConfirmed": false
-        },
-        "closedAt": "2026-10-21T14:18:31.555Z"
-      }
-    },
-    {
-      "id": "aud_1792592311554",
-      "projectId": "project_restaurant_os",
-      "timestamp": "2026-10-21T14:18:31.497Z",
-      "actor": "stf_mgr_ldh_01",
-      "action": "TABLE_SETTLEMENT_ATTEMPT",
-      "status": "SUCCESS",
-      "details": {
-        "tableNumber": "T-02",
-        "tableId": 2,
-        "branchId": "branch_ldh",
-        "method": "CASH"
-      }
-    },
-    {
-      "id": "aud_1792592311493",
-      "projectId": "project_restaurant_os",
-      "timestamp": "2026-10-21T14:18:31.419Z",
-      "actor": "table:T-02",
-      "action": "ORDER_PLACED",
-      "status": "SUCCESS",
-      "details": {
-        "orderId": "ord_1792592311397",
-        "totalMinor": 36750
-      }
-    },
-    {
-      "id": "aud_1792592311351",
-      "projectId": "project_restaurant_os",
-      "timestamp": "2026-10-21T14:18:31.302Z",
-      "actor": "stf_mgr_ldh_01",
-      "action": "TABLE_SETTLEMENT_SUCCESS",
-      "status": "SUCCESS",
-      "details": {
-        "tableNumber": "T-08",
-        "tableId": 8,
-        "settlement": {
-          "method": "UPI",
-          "status": "PAID",
-          "amountMinor": 47250,
-          "settledAt": "2026-10-21T14:18:31.290Z",
-          "authorizedBy": "stf_mgr_ldh_01",
-          "verification": "MANUAL_STAFF_RECORDED",
-          "providerConfirmed": false
-        },
-        "closedAt": "2026-10-21T14:18:31.290Z"
-      }
-    },
-    {
-      "id": "aud_1792592311289",
-      "projectId": "project_restaurant_os",
-      "timestamp": "2026-10-21T14:18:31.245Z",
-      "actor": "stf_mgr_ldh_01",
-      "action": "TABLE_SETTLEMENT_ATTEMPT",
-      "status": "SUCCESS",
-      "details": {
-        "tableNumber": "T-08",
-        "tableId": 8,
-        "branchId": "branch_ldh",
-        "requestedAmountMinor": 47250,
-        "method": "UPI"
-      }
-    },
-    {
-      "id": "aud_1792592311240",
-      "projectId": "project_restaurant_os",
-      "timestamp": "2026-10-21T14:18:31.187Z",
-      "actor": "stf_mgr_ldh_01",
-      "action": "TABLE_SETTLEMENT_ATTEMPT",
-      "status": "SUCCESS",
-      "details": {
-        "tableNumber": "T-08",
-        "tableId": 8,
-        "branchId": "branch_ldh",
-        "requestedAmountMinor": 35000,
-        "method": "UPI"
-      }
-    },
-    {
-      "id": "aud_1792592311181",
-      "projectId": "project_restaurant_os",
-      "timestamp": "2026-10-21T14:18:31.102Z",
-      "actor": "table:T-08",
-      "action": "ORDER_PLACED",
-      "status": "SUCCESS",
-      "details": {
-        "orderId": "ord_1792592311071",
-        "totalMinor": 47250
-      }
-    },
-    {
-      "id": "aud_1792592305326",
-      "projectId": "project_restaurant_os",
-      "timestamp": "2026-10-21T14:18:25.268Z",
-      "actor": "table:T-14",
-      "action": "ORDER_PLACED",
-      "status": "SUCCESS",
-      "details": {
-        "orderId": "ord_1792592305231",
-        "totalMinor": 3675
-      }
-    },
-    {
-      "id": "aud_1792592305225",
-      "projectId": "project_restaurant_os",
-      "timestamp": "2026-10-21T14:18:25.162Z",
-      "actor": "table:T-14",
-      "action": "ORDER_PLACED",
-      "status": "SUCCESS",
-      "details": {
-        "orderId": "ord_1792592305130",
-        "totalMinor": 7350
-      }
-    },
-    {
-      "id": "aud_1792590172929",
-      "projectId": "project_restaurant_os",
-      "timestamp": "2026-10-21T13:42:52.855Z",
-      "actor": "table:T-07",
-      "action": "ORDER_PLACED",
-      "status": "SUCCESS",
-      "details": {
-        "orderId": "ord_1792590172837",
-        "totalMinor": 36750
-      }
-    },
-    {
-      "id": "aud_1792590172808",
-      "projectId": "project_restaurant_os",
-      "timestamp": "2026-10-21T13:42:52.733Z",
-      "actor": "table:T-06",
-      "action": "ORDER_PLACED",
-      "status": "SUCCESS",
-      "details": {
-        "orderId": "ord_1792590172717",
-        "totalMinor": 36750
-      }
-    },
-    {
-      "id": "aud_1792590172704",
-      "projectId": "project_restaurant_os",
-      "timestamp": "2026-10-21T13:42:52.656Z",
-      "actor": "stf_mgr_ldh_01",
-      "action": "TABLE_SETTLEMENT_SUCCESS",
-      "status": "SUCCESS",
-      "details": {
-        "tableNumber": "T-03",
-        "tableId": 3
-      }
-    },
-    {
-      "id": "aud_1792590172655",
-      "projectId": "project_restaurant_os",
-      "timestamp": "2026-10-21T13:42:52.613Z",
-      "actor": "stf_mgr_ldh_01",
-      "action": "TABLE_SETTLEMENT_ATTEMPT",
-      "status": "SUCCESS",
-      "details": {
-        "tableNumber": "T-03",
-        "tableId": 3,
-        "branchId": "branch_ldh",
-        "requestedAmountMinor": 50000,
-        "method": "CASH"
-      }
-    },
-    {
-      "id": "aud_1792590172610",
-      "projectId": "project_restaurant_os",
-      "timestamp": "2026-10-21T13:42:52.560Z",
-      "actor": "stf_mgr_ldh_01",
-      "action": "TABLE_SETTLEMENT_SUCCESS",
-      "status": "SUCCESS",
-      "details": {
-        "tableNumber": "T-03",
-        "tableId": 3
-      }
-    },
-    {
-      "id": "aud_1792590172559",
-      "projectId": "project_restaurant_os",
-      "timestamp": "2026-10-21T13:42:52.514Z",
-      "actor": "stf_mgr_ldh_01",
-      "action": "TABLE_SETTLEMENT_ATTEMPT",
-      "status": "SUCCESS",
-      "details": {
-        "tableNumber": "T-03",
-        "tableId": 3,
-        "branchId": "branch_ldh",
-        "method": "CASH"
-      }
-    },
-    {
-      "id": "aud_1792590172510",
-      "projectId": "project_restaurant_os",
-      "timestamp": "2026-10-21T13:42:52.455Z",
-      "actor": "stf_mgr_ldh_01",
-      "action": "TABLE_SETTLEMENT_ATTEMPT",
-      "status": "SUCCESS",
-      "details": {
-        "tableNumber": "T-04",
-        "tableId": 4,
-        "branchId": "branch_ldh",
-        "method": "COMP"
-      }
-    },
-    {
-      "id": "aud_1792590172452",
-      "projectId": "project_restaurant_os",
-      "timestamp": "2026-10-21T13:42:52.365Z",
-      "actor": "table:T-04",
-      "action": "ORDER_PLACED",
-      "status": "SUCCESS",
-      "details": {
-        "orderId": "ord_1792590172345",
-        "totalMinor": 39900
-      }
-    },
-    {
-      "id": "aud_1792590172332",
-      "projectId": "project_restaurant_os",
-      "timestamp": "2026-10-21T13:42:52.277Z",
-      "actor": "stf_mgr_ldh_01",
-      "action": "TABLE_SETTLEMENT_SUCCESS",
-      "status": "SUCCESS",
-      "details": {
-        "tableNumber": "T-03",
-        "tableId": 3
-      }
-    },
-    {
-      "id": "aud_1792590172263",
-      "projectId": "project_restaurant_os",
-      "timestamp": "2026-10-21T13:42:52.204Z",
-      "actor": "stf_mgr_ldh_01",
-      "action": "TABLE_SETTLEMENT_ATTEMPT",
-      "status": "SUCCESS",
-      "details": {
-        "tableNumber": "T-03",
-        "tableId": 3,
-        "branchId": "branch_ldh",
-        "method": "UPI"
-      }
-    },
-    {
-      "id": "aud_1792590172198",
-      "projectId": "project_restaurant_os",
-      "timestamp": "2026-10-21T13:42:52.114Z",
-      "actor": "table:T-03",
-      "action": "ORDER_PLACED",
-      "status": "SUCCESS",
-      "details": {
-        "orderId": "ord_1792590172091",
-        "totalMinor": 113400
-      }
-    },
-    {
-      "id": "aud_1792590160306",
-      "projectId": "project_restaurant_os",
-      "timestamp": "2026-10-21T13:42:40.258Z",
-      "actor": "stf_mgr_ldh_01",
-      "action": "TABLE_SETTLEMENT_SUCCESS",
-      "status": "SUCCESS",
-      "details": {
-        "tableNumber": "B-02",
-        "tableId": 11
-      }
-    },
-    {
-      "id": "aud_1792590160221",
-      "projectId": "project_restaurant_os",
-      "timestamp": "2026-10-21T13:42:40.177Z",
-      "actor": "stf_mgr_ldh_01",
-      "action": "TABLE_SETTLEMENT_ATTEMPT",
-      "status": "SUCCESS",
-      "details": {
-        "tableNumber": "B-02",
-        "tableId": 11,
-        "branchId": "branch_ldh",
-        "method": "CARD"
-      }
-    },
-    {
-      "id": "aud_1792590160136",
-      "projectId": "project_restaurant_os",
-      "timestamp": "2026-10-21T13:42:40.059Z",
-      "actor": "table:B-02",
-      "action": "ORDER_PLACED",
-      "status": "SUCCESS",
-      "details": {
-        "orderId": "ord_1792590160024",
-        "totalMinor": 76650
-      }
-    },
-    {
-      "id": "aud_1792590160011",
-      "projectId": "project_restaurant_os",
-      "timestamp": "2026-10-21T13:42:39.961Z",
-      "actor": "stf_mgr_ldh_01",
-      "action": "TABLE_SETTLEMENT_SUCCESS",
-      "status": "SUCCESS",
-      "details": {
-        "tableNumber": "B-01",
-        "tableId": 10
-      }
-    },
-    {
-      "id": "aud_1792590159948",
-      "projectId": "project_restaurant_os",
-      "timestamp": "2026-10-21T13:42:39.904Z",
-      "actor": "stf_mgr_ldh_01",
-      "action": "TABLE_SETTLEMENT_ATTEMPT",
-      "status": "SUCCESS",
-      "details": {
-        "tableNumber": "B-01",
-        "tableId": 10,
-        "branchId": "branch_ldh",
-        "method": "UPI"
-      }
-    },
-    {
-      "id": "aud_1792590159900",
-      "projectId": "project_restaurant_os",
-      "timestamp": "2026-10-21T13:42:39.850Z",
-      "actor": "stf_mgr_ldh_01",
-      "action": "TABLE_SETTLEMENT_ATTEMPT",
-      "status": "SUCCESS",
-      "details": {
-        "tableNumber": "B-01",
-        "tableId": 10,
-        "branchId": "branch_ldh",
-        "method": "COMP"
-      }
-    },
-    {
-      "id": "aud_1792590159810",
-      "projectId": "project_restaurant_os",
-      "timestamp": "2026-10-21T13:42:39.741Z",
-      "actor": "table:B-01",
-      "action": "ORDER_PLACED",
-      "status": "SUCCESS",
-      "details": {
-        "orderId": "ord_1792590159721",
-        "totalMinor": 3675
-      }
-    },
-    {
-      "id": "aud_1792590159696",
-      "projectId": "project_restaurant_os",
-      "timestamp": "2026-10-21T13:42:39.619Z",
-      "actor": "table:B-01",
-      "action": "ORDER_PLACED",
-      "status": "SUCCESS",
-      "details": {
-        "orderId": "ord_1792590159602",
-        "totalMinor": 36750
-      }
-    },
-    {
-      "id": "aud_1792590155328",
-      "projectId": "project_restaurant_os",
-      "timestamp": "2026-10-21T13:42:35.270Z",
-      "actor": "table:T-07",
-      "action": "ORDER_PLACED",
-      "status": "SUCCESS",
-      "details": {
-        "orderId": "ord_1792590155244",
-        "totalMinor": 36750
-      }
-    },
-    {
-      "id": "aud_1792590155209",
-      "projectId": "project_restaurant_os",
-      "timestamp": "2026-10-21T13:42:35.066Z",
-      "actor": "table:T-06",
-      "action": "ORDER_PLACED",
-      "status": "SUCCESS",
-      "details": {
-        "orderId": "ord_1792590155045",
-        "totalMinor": 36750
-      }
-    },
-    {
-      "id": "aud_1792590155027",
-      "projectId": "project_restaurant_os",
-      "timestamp": "2026-10-21T13:42:34.987Z",
-      "actor": "stf_mgr_ldh_01",
-      "action": "TABLE_SETTLEMENT_SUCCESS",
-      "status": "SUCCESS",
-      "details": {
-        "tableNumber": "T-03",
-        "tableId": 3
-      }
-    },
-    {
-      "id": "aud_1792590154986",
-      "projectId": "project_restaurant_os",
-      "timestamp": "2026-10-21T13:42:34.936Z",
-      "actor": "stf_mgr_ldh_01",
-      "action": "TABLE_SETTLEMENT_ATTEMPT",
-      "status": "SUCCESS",
-      "details": {
-        "tableNumber": "T-03",
-        "tableId": 3,
-        "branchId": "branch_ldh",
-        "requestedAmountMinor": 50000,
-        "method": "CASH"
-      }
-    },
-    {
-      "id": "aud_1792590154932",
-      "projectId": "project_restaurant_os",
-      "timestamp": "2026-10-21T13:42:34.877Z",
-      "actor": "stf_mgr_ldh_01",
-      "action": "TABLE_SETTLEMENT_SUCCESS",
-      "status": "SUCCESS",
-      "details": {
-        "tableNumber": "T-03",
-        "tableId": 3
-      }
-    },
-    {
-      "id": "aud_1792590154875",
-      "projectId": "project_restaurant_os",
-      "timestamp": "2026-10-21T13:42:34.832Z",
-      "actor": "stf_mgr_ldh_01",
-      "action": "TABLE_SETTLEMENT_ATTEMPT",
-      "status": "SUCCESS",
-      "details": {
-        "tableNumber": "T-03",
-        "tableId": 3,
-        "branchId": "branch_ldh",
-        "method": "CASH"
-      }
-    },
-    {
-      "id": "aud_1792590154828",
-      "projectId": "project_restaurant_os",
-      "timestamp": "2026-10-21T13:42:34.775Z",
-      "actor": "stf_mgr_ldh_01",
-      "action": "TABLE_SETTLEMENT_ATTEMPT",
-      "status": "SUCCESS",
-      "details": {
-        "tableNumber": "T-04",
-        "tableId": 4,
-        "branchId": "branch_ldh",
-        "method": "COMP"
-      }
-    },
-    {
-      "id": "aud_1792590154771",
-      "projectId": "project_restaurant_os",
-      "timestamp": "2026-10-21T13:42:34.686Z",
-      "actor": "table:T-04",
-      "action": "ORDER_PLACED",
-      "status": "SUCCESS",
-      "details": {
-        "orderId": "ord_1792590154665",
-        "totalMinor": 39900
-      }
-    },
-    {
-      "id": "aud_1792590154651",
-      "projectId": "project_restaurant_os",
-      "timestamp": "2026-10-21T13:42:34.603Z",
-      "actor": "stf_mgr_ldh_01",
-      "action": "TABLE_SETTLEMENT_SUCCESS",
-      "status": "SUCCESS",
-      "details": {
-        "tableNumber": "T-03",
-        "tableId": 3
-      }
-    },
-    {
-      "id": "aud_1792590154587",
-      "projectId": "project_restaurant_os",
-      "timestamp": "2026-10-21T13:42:34.503Z",
-      "actor": "stf_mgr_ldh_01",
-      "action": "TABLE_SETTLEMENT_ATTEMPT",
-      "status": "SUCCESS",
-      "details": {
-        "tableNumber": "T-03",
-        "tableId": 3,
-        "branchId": "branch_ldh",
-        "method": "UPI"
-      }
-    },
-    {
-      "id": "aud_1792590154496",
-      "projectId": "project_restaurant_os",
-      "timestamp": "2026-10-21T13:42:34.426Z",
-      "actor": "table:T-03",
-      "action": "ORDER_PLACED",
-      "status": "SUCCESS",
-      "details": {
-        "orderId": "ord_1792590154373",
-        "totalMinor": 113400
-      }
-    },
-    {
-      "id": "aud_1792590146665",
-      "projectId": "project_restaurant_os",
-      "timestamp": "2026-10-21T13:42:26.665Z",
-      "actor": "runtime:restaurant-os",
-      "action": "RUNTIME_REGISTERED",
-      "status": "SUCCESS",
-      "details": {
-        "runtimeUrl": "http://localhost:4010",
-        "port": 4010,
-        "appliedRevision": 1
-      }
-    },
-    {
-      "id": "aud_1792590027675",
-      "projectId": "project_restaurant_os",
-      "timestamp": "2026-10-21T13:40:27.626Z",
-      "actor": "stf_mgr_ldh_01",
-      "action": "TABLE_SETTLEMENT_SUCCESS",
-      "status": "SUCCESS",
-      "details": {
-        "tableNumber": "T-03",
-        "tableId": 3
-      }
-    },
-    {
-      "id": "aud_1792590027625",
-      "projectId": "project_restaurant_os",
-      "timestamp": "2026-10-21T13:40:27.581Z",
-      "actor": "stf_mgr_ldh_01",
-      "action": "TABLE_SETTLEMENT_ATTEMPT",
-      "status": "SUCCESS",
-      "details": {
-        "tableNumber": "T-03",
-        "tableId": 3,
-        "branchId": "branch_ldh",
-        "method": "UPI"
-      }
-    },
-    {
-      "id": "aud_1792589932853",
-      "projectId": "project_restaurant_os",
-      "timestamp": "2026-10-21T13:38:52.797Z",
-      "actor": "stf_mgr_ldh_01",
-      "action": "TABLE_SETTLEMENT_SUCCESS",
-      "status": "SUCCESS",
-      "details": {
-        "tableNumber": "T-03",
-        "tableId": 3
-      }
-    },
-    {
-      "id": "aud_1792589932791",
-      "projectId": "project_restaurant_os",
-      "timestamp": "2026-10-21T13:38:52.722Z",
-      "actor": "stf_mgr_ldh_01",
-      "action": "TABLE_SETTLEMENT_ATTEMPT",
-      "status": "SUCCESS",
-      "details": {
-        "tableNumber": "T-03",
-        "tableId": 3,
-        "branchId": "branch_ldh",
-        "method": "UPI"
-      }
-    },
-    {
-      "id": "aud_1792589932713",
-      "projectId": "project_restaurant_os",
-      "timestamp": "2026-10-21T13:38:52.668Z",
-      "actor": "table:T-03",
-      "action": "ORDER_PLACED",
-      "status": "SUCCESS",
-      "details": {
-        "orderId": "ord_1792589932644",
-        "totalMinor": 113400
-      }
-    },
-    {
-      "id": "aud_1792589928190",
-      "projectId": "project_restaurant_os",
-      "timestamp": "2026-10-21T13:38:48.150Z",
-      "actor": "stf_mgr_ldh_01",
-      "action": "TABLE_SETTLEMENT_SUCCESS",
-      "status": "SUCCESS",
-      "details": {
-        "tableNumber": "B-02",
-        "tableId": 11
-      }
-    },
-    {
-      "id": "aud_1792589928144",
-      "projectId": "project_restaurant_os",
-      "timestamp": "2026-10-21T13:38:48.093Z",
-      "actor": "stf_mgr_ldh_01",
-      "action": "TABLE_SETTLEMENT_ATTEMPT",
-      "status": "SUCCESS",
-      "details": {
-        "tableNumber": "B-02",
-        "tableId": 11,
-        "branchId": "branch_ldh",
-        "method": "CARD"
-      }
-    },
-    {
-      "id": "aud_1792589928038",
-      "projectId": "project_restaurant_os",
-      "timestamp": "2026-10-21T13:38:47.977Z",
-      "actor": "table:B-02",
-      "action": "ORDER_PLACED",
-      "status": "SUCCESS",
-      "details": {
-        "orderId": "ord_1792589927951",
-        "totalMinor": 76650
-      }
-    },
-    {
-      "id": "aud_1792589927941",
-      "projectId": "project_restaurant_os",
-      "timestamp": "2026-10-21T13:38:47.896Z",
-      "actor": "stf_mgr_ldh_01",
-      "action": "TABLE_SETTLEMENT_SUCCESS",
-      "status": "SUCCESS",
-      "details": {
-        "tableNumber": "B-01",
-        "tableId": 10
-      }
-    },
-    {
-      "id": "aud_1792589927891",
-      "projectId": "project_restaurant_os",
-      "timestamp": "2026-10-21T13:38:47.839Z",
-      "actor": "stf_mgr_ldh_01",
-      "action": "TABLE_SETTLEMENT_ATTEMPT",
-      "status": "SUCCESS",
-      "details": {
-        "tableNumber": "B-01",
-        "tableId": 10,
-        "branchId": "branch_ldh",
-        "method": "UPI"
-      }
-    },
-    {
-      "id": "aud_1792589927836",
-      "projectId": "project_restaurant_os",
-      "timestamp": "2026-10-21T13:38:47.793Z",
-      "actor": "stf_mgr_ldh_01",
-      "action": "TABLE_SETTLEMENT_ATTEMPT",
-      "status": "SUCCESS",
-      "details": {
-        "tableNumber": "B-01",
-        "tableId": 10,
-        "branchId": "branch_ldh",
-        "method": "COMP"
-      }
-    },
-    {
-      "id": "aud_1792589927733",
-      "projectId": "project_restaurant_os",
-      "timestamp": "2026-10-21T13:38:47.673Z",
-      "actor": "table:B-01",
-      "action": "ORDER_PLACED",
-      "status": "SUCCESS",
-      "details": {
-        "orderId": "ord_1792589927653",
-        "totalMinor": 3675
-      }
-    },
-    {
-      "id": "aud_1792589927633",
-      "projectId": "project_restaurant_os",
-      "timestamp": "2026-10-21T13:38:47.548Z",
-      "actor": "table:B-01",
-      "action": "ORDER_PLACED",
-      "status": "SUCCESS",
-      "details": {
-        "orderId": "ord_1792589927535",
-        "totalMinor": 36750
-      }
-    },
-    {
-      "id": "aud_1792589912357",
-      "projectId": "project_restaurant_os",
-      "timestamp": "2026-10-21T13:38:32.304Z",
-      "actor": "stf_mgr_ldh_01",
-      "action": "TABLE_SETTLEMENT_SUCCESS",
-      "status": "SUCCESS",
-      "details": {
-        "tableNumber": "B-02",
-        "tableId": 11
-      }
-    },
-    {
-      "id": "aud_1792589912299",
-      "projectId": "project_restaurant_os",
-      "timestamp": "2026-10-21T13:38:32.251Z",
-      "actor": "stf_mgr_ldh_01",
-      "action": "TABLE_SETTLEMENT_ATTEMPT",
-      "status": "SUCCESS",
-      "details": {
-        "tableNumber": "B-02",
-        "tableId": 11,
-        "branchId": "branch_ldh",
-        "method": "CARD"
-      }
-    },
-    {
-      "id": "aud_1792589912219",
-      "projectId": "project_restaurant_os",
-      "timestamp": "2026-10-21T13:38:32.097Z",
-      "actor": "table:B-02",
-      "action": "ORDER_PLACED",
-      "status": "SUCCESS",
-      "details": {
-        "orderId": "ord_1792589912076",
-        "totalMinor": 76650
-      }
-    },
-    {
-      "id": "aud_1792589912067",
-      "projectId": "project_restaurant_os",
-      "timestamp": "2026-10-21T13:38:32.018Z",
-      "actor": "stf_mgr_ldh_01",
-      "action": "TABLE_SETTLEMENT_SUCCESS",
-      "status": "SUCCESS",
-      "details": {
-        "tableNumber": "B-01",
-        "tableId": 10
-      }
-    },
-    {
-      "id": "aud_1792589912014",
-      "projectId": "project_restaurant_os",
-      "timestamp": "2026-10-21T13:38:31.970Z",
-      "actor": "stf_mgr_ldh_01",
-      "action": "TABLE_SETTLEMENT_ATTEMPT",
-      "status": "SUCCESS",
-      "details": {
-        "tableNumber": "B-01",
-        "tableId": 10,
-        "branchId": "branch_ldh",
-        "method": "UPI"
-      }
-    },
-    {
-      "id": "aud_1792589911966",
-      "projectId": "project_restaurant_os",
-      "timestamp": "2026-10-21T13:38:31.924Z",
-      "actor": "stf_mgr_ldh_01",
-      "action": "TABLE_SETTLEMENT_ATTEMPT",
-      "status": "SUCCESS",
-      "details": {
-        "tableNumber": "B-01",
-        "tableId": 10,
-        "branchId": "branch_ldh",
-        "method": "COMP"
-      }
-    },
-    {
-      "id": "aud_1792589911869",
-      "projectId": "project_restaurant_os",
-      "timestamp": "2026-10-21T13:38:31.782Z",
-      "actor": "table:B-01",
-      "action": "ORDER_PLACED",
-      "status": "SUCCESS",
-      "details": {
-        "orderId": "ord_1792589911763",
-        "totalMinor": 3675
-      }
-    },
-    {
-      "id": "aud_1792589911735",
-      "projectId": "project_restaurant_os",
-      "timestamp": "2026-10-21T13:38:31.656Z",
-      "actor": "table:B-01",
-      "action": "ORDER_PLACED",
-      "status": "SUCCESS",
-      "details": {
-        "orderId": "ord_1792589911642",
-        "totalMinor": 36750
-      }
-    },
-    {
-      "id": "aud_1792589879910",
-      "projectId": "project_restaurant_os",
-      "timestamp": "2026-10-21T13:37:53.393Z",
-      "actor": "stf_mgr_ldh_01",
-      "action": "TABLE_SETTLEMENT_ATTEMPT",
-      "status": "SUCCESS",
-      "details": {
-        "tableNumber": "B-02",
-        "tableId": 11,
-        "branchId": "branch_ldh",
-        "method": "CARD"
-      }
-    },
-    {
-      "id": "aud_1792589873334",
-      "projectId": "project_restaurant_os",
-      "timestamp": "2026-10-21T13:37:53.184Z",
-      "actor": "table:B-02",
-      "action": "ORDER_PLACED",
-      "status": "SUCCESS",
-      "details": {
-        "orderId": "ord_1792589873162",
-        "totalMinor": 76650
-      }
-    },
-    {
-      "id": "aud_1792589873151",
-      "projectId": "project_restaurant_os",
-      "timestamp": "2026-10-21T13:37:53.072Z",
-      "actor": "stf_mgr_ldh_01",
-      "action": "TABLE_SETTLEMENT_SUCCESS",
-      "status": "SUCCESS",
-      "details": {
-        "tableNumber": "B-01",
-        "tableId": 10
-      }
-    },
-    {
-      "id": "aud_1792589873067",
-      "projectId": "project_restaurant_os",
-      "timestamp": "2026-10-21T13:37:53.021Z",
-      "actor": "stf_mgr_ldh_01",
-      "action": "TABLE_SETTLEMENT_ATTEMPT",
-      "status": "SUCCESS",
-      "details": {
-        "tableNumber": "B-01",
-        "tableId": 10,
-        "branchId": "branch_ldh",
-        "method": "UPI"
-      }
-    },
-    {
-      "id": "aud_1792589873017",
-      "projectId": "project_restaurant_os",
-      "timestamp": "2026-10-21T13:37:52.961Z",
-      "actor": "stf_mgr_ldh_01",
-      "action": "TABLE_SETTLEMENT_ATTEMPT",
-      "status": "SUCCESS",
-      "details": {
-        "tableNumber": "B-01",
-        "tableId": 10,
-        "branchId": "branch_ldh",
-        "method": "COMP"
-      }
-    },
-    {
-      "id": "aud_1792589872924",
-      "projectId": "project_restaurant_os",
-      "timestamp": "2026-10-21T13:37:52.839Z",
-      "actor": "table:B-01",
-      "action": "ORDER_PLACED",
-      "status": "SUCCESS",
-      "details": {
-        "orderId": "ord_1792589872825",
-        "totalMinor": 3675
-      }
-    },
-    {
-      "id": "aud_1792589872805",
-      "projectId": "project_restaurant_os",
-      "timestamp": "2026-10-21T13:37:52.715Z",
-      "actor": "table:B-01",
-      "action": "ORDER_PLACED",
-      "status": "SUCCESS",
-      "details": {
-        "orderId": "ord_1792589872702",
-        "totalMinor": 36750
-      }
-    },
-    {
-      "id": "aud_1792589868362",
-      "projectId": "project_restaurant_os",
-      "timestamp": "2026-10-21T13:37:48.274Z",
-      "actor": "chef:CURRY_LINE",
-      "action": "KDS_BUMP",
-      "status": "SUCCESS",
-      "details": {
-        "taskId": "task_73606088",
-        "status": "IN_PROGRESS"
-      }
-    },
-    {
-      "id": "aud_1792589856331",
-      "projectId": "project_restaurant_os",
-      "timestamp": "2026-10-21T13:37:36.275Z",
-      "actor": "staff:manager",
-      "action": "SESSION_CLOSED",
-      "status": "SUCCESS",
-      "details": {
-        "tableNumber": "T-14",
-        "isEmergency": false
-      }
-    },
-    {
-      "id": "aud_1792589856243",
-      "projectId": "project_restaurant_os",
-      "timestamp": "2026-10-21T13:37:36.191Z",
-      "actor": "staff:pos",
-      "action": "SESSION_CLOSED",
-      "status": "SUCCESS",
-      "details": {
-        "tableNumber": "T-14",
-        "settlement": {
-          "method": "UPI",
-          "status": "PAID",
-          "amountMinor": 76650,
-          "settledAt": "2026-10-21T13:37:36.188Z",
-          "authorizedBy": "staff:nikhil_lead",
-          "verification": "MANUAL_STAFF_RECORDED",
-          "providerConfirmed": false
-        },
-        "isEmergency": false
-      }
     }
   ],
   "plugins": {
@@ -20333,14 +20318,14 @@
   },
   "sessions": {
     "project_restaurant_os": {
-      "controlSessionId": "ctrl_sess_mvjrw097_9ffe80fb",
+      "controlSessionId": "ctrl_sess_mvjuxdd5_317307a2",
       "projectId": "project_restaurant_os",
       "slug": "restaurant-os",
       "runtimeUrl": "http://localhost:4010",
       "runtimePort": 4010,
       "status": "HEALTHY",
-      "registeredAt": "2026-10-22T16:46:02.828Z",
-      "lastHeartbeatAt": "2026-10-22T17:02:03.162Z",
+      "registeredAt": "2026-10-22T18:11:05.322Z",
+      "lastHeartbeatAt": "2026-10-22T18:14:33.491Z",
       "activeConfigVersion": 1792687562828,
       "appliedRevision": 30,
       "desiredRevision": 30,
@@ -20426,9 +20411,9 @@
         "REALTIME_TELEMETRY_V1"
       ],
       "metrics": {
-        "pid": 31950,
-        "uptimeSeconds": 960,
-        "memoryMb": 24
+        "pid": 38978,
+        "uptimeSeconds": 5311,
+        "memoryMb": 23
       }
     }
   }

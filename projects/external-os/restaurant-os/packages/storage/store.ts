@@ -617,11 +617,19 @@ export class RestaurantRuntimeStore {
     return this.data.menuItems.find((m) => m.id === id);
   }
 
-  public getKitchenTasks(station?: string): KitchenTask[] {
+  public getKitchenTasks(station?: string, branchId?: string): KitchenTask[] {
+    let list = this.data.kitchenTasks;
     if (station && station !== 'ALL') {
-      return this.data.kitchenTasks.filter((t) => t.station === station);
+      list = list.filter((t) => t.station === station);
     }
-    return this.data.kitchenTasks;
+    if (branchId && branchId !== '*') {
+      list = list.filter((t) => {
+        if (t.branchId) return t.branchId === branchId;
+        const tbl = this.getTableByNumber(t.tableNumber);
+        return tbl?.branchId === branchId;
+      });
+    }
+    return list;
   }
 
   public getOrders(tableNumber?: string, sessionId?: string, branchId?: string, status?: string): RestaurantOrder[] {
@@ -675,8 +683,12 @@ export class RestaurantRuntimeStore {
     return this.data.sessions.find((s) => s.sessionId === sessionId);
   }
 
-  public getEvents(sinceSequence = 0): DomainEvent[] {
-    return this.data.events.filter((e) => e.sequence > sinceSequence);
+  public getEvents(sinceSequence = 0, branchId?: string): DomainEvent[] {
+    let list = this.data.events.filter((e) => e.sequence > sinceSequence);
+    if (branchId && branchId !== '*') {
+      list = list.filter((e) => e.branchId === branchId);
+    }
+    return list;
   }
 
   public getOldestEventSequence(): number {
@@ -1406,6 +1418,10 @@ export class RestaurantRuntimeStore {
     const initialLastSeq = this.data.lastEventSequence || 0;
     const idempotencyKey = options?.idempotencyKey;
     const idempotencyExistedBefore = Boolean(idempotencyKey && this.data.idempotencyRecords?.[idempotencyKey]);
+    const previousIdempotencyRecord =
+      idempotencyKey && this.data.idempotencyRecords?.[idempotencyKey]
+        ? JSON.parse(JSON.stringify(this.data.idempotencyRecords[idempotencyKey]))
+        : undefined;
 
     const activeBill = table.activeBillMinor || 0;
     const authorizer = settlement?.authorizedBy || options?.authorizedBy || 'staff:pos';
@@ -1667,11 +1683,31 @@ export class RestaurantRuntimeStore {
       const currentOrdersMap = new Map(ordersSnapshot.map((o: any) => [o.orderId, o]));
       this.data.orders.forEach((o) => {
         if (currentOrdersMap.has(o.orderId)) {
-          Object.assign(o, currentOrdersMap.get(o.orderId));
+          const snap = currentOrdersMap.get(o.orderId) as any;
+          if (snap) {
+            for (const key of Object.keys(o)) {
+              if (!(key in snap)) {
+                delete (o as any)[key];
+              }
+            }
+            Object.assign(o, snap);
+          }
         }
       });
+
+      for (const key of Object.keys(table)) {
+        if (!(key in tableSnapshot)) {
+          delete (table as any)[key];
+        }
+      }
       Object.assign(table, tableSnapshot);
+
       if (sess && sessionSnapshot) {
+        for (const key of Object.keys(sess)) {
+          if (!(key in sessionSnapshot)) {
+            delete (sess as any)[key];
+          }
+        }
         Object.assign(sess, sessionSnapshot);
       }
       this.data.invalidatedCapabilityTokens = invalidatedTokensSnapshot;
@@ -1683,9 +1719,13 @@ export class RestaurantRuntimeStore {
       this.eventSequence = initialSeq;
       this.data.lastEventSequence = initialLastSeq;
 
-      // Rollback staged idempotency record if it didn't exist before
-      if (idempotencyKey && !idempotencyExistedBefore && this.data.idempotencyRecords) {
-        delete this.data.idempotencyRecords[idempotencyKey];
+      // Rollback staged idempotency record
+      if (idempotencyKey && this.data.idempotencyRecords) {
+        if (idempotencyExistedBefore && previousIdempotencyRecord) {
+          this.data.idempotencyRecords[idempotencyKey] = previousIdempotencyRecord;
+        } else {
+          delete this.data.idempotencyRecords[idempotencyKey];
+        }
       }
 
       // NOTICE: Zero eventListeners were called! Zero network frames were emitted!
