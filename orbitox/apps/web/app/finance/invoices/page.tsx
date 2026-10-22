@@ -1,8 +1,9 @@
 'use client';
 
-import React from 'react';
+import React, { useState } from 'react';
 import PlatformLayout from '../../(platform)/layout';
 import { DynamicTable, ColumnDef, Card, Badge, Button } from '@orbitox/ui';
+import { useAdmin } from '../../admin/data/admin-context';
 
 interface InvoiceRow {
   id: string;
@@ -71,6 +72,47 @@ const mockInvoices: InvoiceRow[] = [
 ];
 
 export default function InvoicesPage() {
+  const [invoices, setInvoices] = useState<InvoiceRow[]>(mockInvoices);
+  const { isServiceActive, consumeQuota, recordTenantAction, showToast } = useAdmin();
+
+  const handleCreateInvoice = () => {
+    if (!isServiceActive('finance')) {
+      showToast('Action Denied: Finance & Invoicing engine is currently BLOCKED in Platform Admin.');
+      return;
+    }
+
+    const quotaCheck = consumeQuota({ serviceId: 'finance', actionName: 'INVOICE_ISSUED' });
+    if (!quotaCheck.allowed) {
+      showToast(`Action Blocked: ${quotaCheck.reason}`);
+      return;
+    }
+
+    const newInvoice: InvoiceRow = {
+      id: `inv-${Date.now()}`,
+      invoiceNumber: `INV-${Math.floor(91000 + Math.random() * 9000)}`,
+      customerName: 'Stark Orbital Defense',
+      customerEmail: 'finance@starkorbital.com',
+      subtotal: '$58,000.00',
+      taxAmount: '$10,440.00',
+      totalAmount: '$68,440.00',
+      status: 'ISSUED',
+      dueDate: '2026-10-01',
+    };
+
+    setInvoices((prev) => [newInvoice, ...prev]);
+
+    recordTenantAction({
+      serviceId: 'finance',
+      serviceName: 'Finance & Invoicing Engine',
+      action: 'INVOICE_GENERATED',
+      details: `${newInvoice.invoiceNumber} for ${newInvoice.customerName}`,
+      amount: newInvoice.totalAmount,
+      type: 'receive',
+    });
+
+    showToast(`Invoice ${newInvoice.invoiceNumber} Issued • Synced to Platform Admin`);
+  };
+
   return (
     <PlatformLayout>
       <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
@@ -78,14 +120,14 @@ export default function InvoicesPage() {
           <div>
             <h1 style={{ fontSize: '28px', fontWeight: 800, margin: '0 0 4px 0' }}>Finance & Invoices</h1>
             <p style={{ color: 'var(--text-secondary)', margin: 0 }}>
-              Headless billing engine, general ledger, tax calculation & invoice tracking
+              Headless billing engine, general ledger, tax calculation & invoice tracking • Connected to Platform OS
             </p>
           </div>
-          <Button variant="primary">+ Create Invoice</Button>
+          <Button variant="primary" onClick={handleCreateInvoice}>+ Create Invoice</Button>
         </div>
 
         <Card title="All Invoices">
-          <DynamicTable columns={columns} data={mockInvoices} />
+          <DynamicTable columns={columns} data={invoices} />
         </Card>
       </div>
     </PlatformLayout>

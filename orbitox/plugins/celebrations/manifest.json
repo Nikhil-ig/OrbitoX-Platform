@@ -1,0 +1,97 @@
+{
+  "id": "celebrations",
+  "name": "@orbitox-io/celebrations",
+  "version": "1.0.0",
+  "displayName": "Celebrations",
+  "description": "Digital Invitations & Celebration Experience Engine — create beautiful, interactive, personalized digital invitations for any occasion.",
+  "icon": "sparkles",
+  "category": "experiences",
+  "author": "OrbitoX Platform Team",
+  "permissions": [
+    "celebrations.occasions.create",
+    "celebrations.occasions.read",
+    "celebrations.occasions.update",
+    "celebrations.occasions.delete",
+    "celebrations.themes.create",
+    "celebrations.themes.read",
+    "celebrations.themes.update",
+    "celebrations.themes.delete",
+    "celebrations.experiences.create",
+    "celebrations.experiences.read",
+    "celebrations.experiences.update",
+    "celebrations.experiences.delete",
+    "celebrations.experiences.publish",
+    "celebrations.sections.manage",
+    "celebrations.features.manage",
+    "celebrations.orders.read",
+    "celebrations.orders.manage",
+    "celebrations.analytics.read",
+    "celebrations.admin.full"
+  ],
+  "menus": [
+    {
+      "id": "celebrations-root",
+      "label": "Celebrations",
+      "icon": "sparkles",
+      "sortOrder": 200,
+      "children": [
+        { "id": "celebrations-dashboard", "label": "Dashboard", "path": "/celebrations", "permission": "celebrations.analytics.read" },
+        { "id": "celebrations-occasions", "label": "Occasions", "path": "/celebrations/occasions", "permission": "celebrations.occasions.read" },
+        { "id": "celebrations-themes", "label": "Themes", "path": "/celebrations/themes", "permission": "celebrations.themes.read" },
+        { "id": "celebrations-experiences", "label": "Experiences", "path": "/celebrations/experiences", "permission": "celebrations.experiences.read" },
+        { "id": "celebrations-sections", "label": "Sections", "path": "/celebrations/sections", "permission": "celebrations.sections.manage" },
+        { "id": "celebrations-features", "label": "Features", "path": "/celebrations/features", "permission": "celebrations.features.manage" },
+        { "id": "celebrations-orders", "label": "Orders", "path": "/celebrations/orders", "permission": "celebrations.orders.read" },
+        { "id": "celebrations-analytics", "label": "Analytics", "path": "/celebrations/analytics", "permission": "celebrations.analytics.read" }
+      ]
+    }
+  ],
+  "pages": [
+    { "id": "celebrations-dashboard", "path": "/celebrations", "component": "CelebrationsDashboard" },
+    { "id": "celebrations-occasions", "path": "/celebrations/occasions", "component": "OccasionsListPage" },
+    { "id": "celebrations-themes", "path": "/celebrations/themes", "component": "ThemesListPage" },
+    { "id": "celebrations-experiences", "path": "/celebrations/experiences", "component": "ExperiencesListPage" }
+  ],
+  "widgets": [
+    { "id": "celebrations.total.experiences", "title": "Total Experiences", "size": "1x1" },
+    { "id": "celebrations.active.experiences", "title": "Active Experiences", "size": "1x1" },
+    { "id": "celebrations.total.rsvps", "title": "Total RSVPs", "size": "1x1" },
+    { "id": "celebrations.revenue", "title": "Revenue", "size": "1x1" }
+  ],
+  "agenticActions": [
+    {
+      "id": "celebrations.createExperience",
+      "name": "create_experience",
+      "description": "Creates a new digital invitation experience for a given occasion and theme.",
+      "handler": "ExperienceEngine.createExperience",
+      "permission": "celebrations.experiences.create",
+      "parameters": {
+        "occasionId": { "type": "string", "description": "The occasion ID (e.g., wedding, birthday)", "required": true },
+        "themeId": { "type": "string", "description": "The theme ID to apply", "required": true },
+        "title": { "type": "string", "description": "Experience title", "required": true }
+      }
+    },
+    {
+      "id": "celebrations.publishExperience",
+      "name": "publish_experience",
+      "description": "Publishes a draft experience making it publicly accessible.",
+      "handler": "ExperienceEngine.publishExperience",
+      "permission": "celebrations.experiences.publish",
+      "parameters": {
+        "experienceId": { "type": "string", "description": "The experience ID to publish", "required": true }
+      }
+    },
+    {
+      "id": "celebrations.createOccasion",
+      "name": "create_occasion",
+      "description": "Creates a new occasion type (e.g., Birthday, Festival) from the Admin panel.",
+      "handler": "OccasionEngine.createOccasion",
+      "permission": "celebrations.occasions.create",
+      "parameters": {
+        "name": { "type": "string", "description": "Occasion name", "required": true },
+        "slug": { "type": "string", "description": "URL-safe slug", "required": true },
+        "icon": { "type": "string", "description": "Emoji or icon identifier", "required": true }
+      }
+    }
+  ]
+}

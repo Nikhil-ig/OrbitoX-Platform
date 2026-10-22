@@ -80,3 +80,4 @@ export * from './ai/action.registry';
 export * from './ai/ai.gateway';
 export * from './ai/ai.module';
 export * from './utils/cache-namespace';
+export * from './control-plane';

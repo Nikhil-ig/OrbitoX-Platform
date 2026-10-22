@@ -1,0 +1,798 @@
+{
+  "version": "2.0.0",
+  "project": "RestaurantOS 2.x",
+  "runtimePort": 4010,
+  "controlPlanePort": 3005,
+  "specificationCompliance": "100%",
+  "schema": {
+    "type": "object",
+    "required": ["slices"],
+    "properties": {
+      "slices": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "required": [
+            "id",
+            "name",
+            "owner",
+            "uiRoutes",
+            "apiRoutes",
+            "domainServices",
+            "models",
+            "events",
+            "permissions",
+            "tests"
+          ]
+        }
+      }
+    }
+  },
+  "slices": [
+    {
+      "id": "branch.create_and_switch",
+      "name": "Branch Management & Context Isolation",
+      "owner": "Operations / Multi-Tenancy Engine",
+      "uiRoutes": [
+        "/operations/locations",
+        "/operations/tables",
+        "/operations/floor"
+      ],
+      "apiRoutes": [
+        "GET /api/restaurant/branches",
+        "POST /api/restaurant/branches"
+      ],
+      "domainServices": [
+        "RestaurantRuntimeStore.getBranches()",
+        "RestaurantRuntimeStore.createBranch()"
+      ],
+      "models": [
+        "BranchRecord"
+      ],
+      "events": [
+        "branch.created",
+        "branch.updated"
+      ],
+      "permissions": [
+        "org:admin",
+        "branch:manage"
+      ],
+      "tests": [
+        "scripts/test-restaurantos-vertical-slices.js#Step1",
+        "scripts/test-restaurantos-vertical-slices.js#Step2"
+      ]
+    },
+    {
+      "id": "floor.create_and_switch",
+      "name": "Service Area & Floor Layout Switching",
+      "owner": "Spatial Floor Engine",
+      "uiRoutes": [
+        "/operations/floors",
+        "/operations/floor",
+        "/operations/tables"
+      ],
+      "apiRoutes": [
+        "GET /api/restaurant/floors",
+        "POST /api/restaurant/floors"
+      ],
+      "domainServices": [
+        "RestaurantRuntimeStore.getFloors()",
+        "RestaurantRuntimeStore.createFloor()"
+      ],
+      "models": [
+        "FloorRecord",
+        "FloorLayoutRecord"
+      ],
+      "events": [
+        "floor.created",
+        "floor.updated",
+        "layout.updated"
+      ],
+      "permissions": [
+        "branch:manager",
+        "floor:configure"
+      ],
+      "tests": [
+        "scripts/test-restaurantos-vertical-slices.js#Step3",
+        "scripts/test-restaurantos-vertical-slices.js#Step4"
+      ]
+    },
+    {
+      "id": "table.create",
+      "name": "Table Node Placement",
+      "owner": "Spatial Floor Engine",
+      "uiRoutes": [
+        "/operations/floor",
+        "/operations/tables"
+      ],
+      "apiRoutes": [
+        "POST /api/restaurant/floor/save"
+      ],
+      "domainServices": [
+        "RestaurantRuntimeStore.saveFloorTables()"
+      ],
+      "models": [
+        "TableRecord"
+      ],
+      "events": [
+        "table.created",
+        "floor.updated"
+      ],
+      "permissions": [
+        "floor:edit",
+        "branch:manager"
+      ],
+      "tests": [
+        "scripts/test-restaurantos-vertical-slices.js#Step5"
+      ]
+    },
+    {
+      "id": "table.drag_geometry",
+      "name": "Continuous Table Drag & Position Persistence",
+      "owner": "Spatial Floor Engine",
+      "uiRoutes": [
+        "/operations/floor"
+      ],
+      "apiRoutes": [
+        "POST /api/restaurant/floor/save"
+      ],
+      "domainServices": [
+        "RestaurantRuntimeStore.saveFloorTables()"
+      ],
+      "models": [
+        "TableRecord.x",
+        "TableRecord.y"
+      ],
+      "events": [
+        "table.updated"
+      ],
+      "permissions": [
+        "floor:edit"
+      ],
+      "tests": [
+        "scripts/test-restaurantos-vertical-slices.js#Step6"
+      ]
+    },
+    {
+      "id": "table.resize_geometry",
+      "name": "Table Dimension Resizing & Rotation",
+      "owner": "Spatial Floor Engine",
+      "uiRoutes": [
+        "/operations/floor"
+      ],
+      "apiRoutes": [
+        "POST /api/restaurant/floor/save"
+      ],
+      "domainServices": [
+        "RestaurantRuntimeStore.saveFloorTables()"
+      ],
+      "models": [
+        "TableRecord.width",
+        "TableRecord.height",
+        "TableRecord.rotation"
+      ],
+      "events": [
+        "table.updated"
+      ],
+      "permissions": [
+        "floor:edit"
+      ],
+      "tests": [
+        "scripts/test-restaurantos-vertical-slices.js#Step7"
+      ]
+    },
+    {
+      "id": "table.capacity.edit",
+      "name": "Table Capacity Editing & Automatic Seat Synchronization",
+      "owner": "Seating & Reservation Engine",
+      "uiRoutes": [
+        "/operations/floor",
+        "/operations/tables"
+      ],
+      "apiRoutes": [
+        "PATCH /api/restaurant/tables/:id"
+      ],
+      "domainServices": [
+        "RestaurantRuntimeStore.updateTableCapacity()"
+      ],
+      "models": [
+        "TableRecord.capacity",
+        "SeatRecord[]"
+      ],
+      "events": [
+        "table.updated",
+        "seat.updated"
+      ],
+      "permissions": [
+        "floor:edit",
+        "staff:host"
+      ],
+      "tests": [
+        "scripts/test-restaurantos-vertical-slices.js#Step8"
+      ]
+    },
+    {
+      "id": "seat.crud",
+      "name": "Explicit Seat Addition & Removal",
+      "owner": "Seating Engine",
+      "uiRoutes": [
+        "/operations/floor",
+        "/operations/tables"
+      ],
+      "apiRoutes": [
+        "POST /api/restaurant/tables/:id/seats",
+        "DELETE /api/restaurant/tables/:id/seats/:seatId"
+      ],
+      "domainServices": [
+        "RestaurantRuntimeStore.addSeat()",
+        "RestaurantRuntimeStore.removeSeat()"
+      ],
+      "models": [
+        "SeatRecord"
+      ],
+      "events": [
+        "seat.updated",
+        "table.updated"
+      ],
+      "permissions": [
+        "floor:edit",
+        "staff:host"
+      ],
+      "tests": [
+        "scripts/test-restaurantos-vertical-slices.js#Step9"
+      ]
+    },
+    {
+      "id": "guest.seat_assignment",
+      "name": "Seated Guest Assignment & Preferences",
+      "owner": "Hospitality & Guest Experience",
+      "uiRoutes": [
+        "/guests",
+        "/operations/floor"
+      ],
+      "apiRoutes": [
+        "POST /api/restaurant/seats/:seatId/guest"
+      ],
+      "domainServices": [
+        "RestaurantRuntimeStore.assignGuestToSeat()"
+      ],
+      "models": [
+        "GuestRecord",
+        "SeatRecord.guestId"
+      ],
+      "events": [
+        "guest.joined",
+        "seat.updated"
+      ],
+      "permissions": [
+        "staff:host",
+        "staff:server"
+      ],
+      "tests": [
+        "scripts/test-restaurantos-vertical-slices.js#Step10"
+      ]
+    },
+    {
+      "id": "guest.transfer",
+      "name": "Guest Transfer Between Seats & Tables",
+      "owner": "Hospitality & Guest Experience",
+      "uiRoutes": [
+        "/guests",
+        "/operations/floor"
+      ],
+      "apiRoutes": [
+        "POST /api/restaurant/seats/:seatId/guest"
+      ],
+      "domainServices": [
+        "RestaurantRuntimeStore.assignGuestToSeat()"
+      ],
+      "models": [
+        "GuestRecord",
+        "SeatRecord"
+      ],
+      "events": [
+        "guest.updated",
+        "seat.updated"
+      ],
+      "permissions": [
+        "staff:host",
+        "staff:server"
+      ],
+      "tests": [
+        "scripts/test-restaurantos-vertical-slices.js#Step11"
+      ]
+    },
+    {
+      "id": "table.merge",
+      "name": "Multi-Table Party Merging",
+      "owner": "Operations Engine",
+      "uiRoutes": [
+        "/operations/floor",
+        "/operations/tables"
+      ],
+      "apiRoutes": [
+        "POST /api/restaurant/tables/merge"
+      ],
+      "domainServices": [
+        "RestaurantRuntimeStore.mergeTables()"
+      ],
+      "models": [
+        "TableRecord.mergedWithTableIds",
+        "TableRecord.status"
+      ],
+      "events": [
+        "table.updated",
+        "session.updated"
+      ],
+      "permissions": [
+        "staff:host",
+        "branch:manager"
+      ],
+      "tests": [
+        "scripts/test-restaurantos-vertical-slices.js#Step12"
+      ]
+    },
+    {
+      "id": "table.unmerge",
+      "name": "Multi-Table Party Unmerging",
+      "owner": "Operations Engine",
+      "uiRoutes": [
+        "/operations/floor",
+        "/operations/tables"
+      ],
+      "apiRoutes": [
+        "POST /api/restaurant/tables/unmerge"
+      ],
+      "domainServices": [
+        "RestaurantRuntimeStore.unmergeTable()"
+      ],
+      "models": [
+        "TableRecord.mergedWithTableIds",
+        "TableRecord.status"
+      ],
+      "events": [
+        "table.updated",
+        "session.updated"
+      ],
+      "permissions": [
+        "staff:host",
+        "branch:manager"
+      ],
+      "tests": [
+        "scripts/test-restaurantos-vertical-slices.js#Step13"
+      ]
+    },
+    {
+      "id": "diner.qr_discovery",
+      "name": "Public QR Code Resolution & Context Shielding",
+      "owner": "Diner Experience & Zero-Trust Security",
+      "uiRoutes": [
+        "/dine/:qrLocator"
+      ],
+      "apiRoutes": [
+        "GET /api/restaurant/discover"
+      ],
+      "domainServices": [
+        "resolvePublicDiscoveryContext()"
+      ],
+      "models": [
+        "TableRecord.qrLocator",
+        "DiningSessionRecord"
+      ],
+      "events": [],
+      "permissions": [
+        "public:scanner"
+      ],
+      "tests": [
+        "scripts/test-restaurantos-vertical-slices.js#Step14",
+        "scripts/test-live-restaurant-apis.js#Step1",
+        "scripts/test-live-restaurant-apis.js#Step9"
+      ]
+    },
+    {
+      "id": "diner.session_join",
+      "name": "Guest Capability Minting & Companion Join",
+      "owner": "Diner Experience & Auth",
+      "uiRoutes": [
+        "/dine/:qrLocator"
+      ],
+      "apiRoutes": [
+        "POST /api/restaurant/join"
+      ],
+      "domainServices": [
+        "mintGuestCapability()"
+      ],
+      "models": [
+        "DiningSessionRecord",
+        "GuestCapability"
+      ],
+      "events": [
+        "guest.joined",
+        "session.updated"
+      ],
+      "permissions": [
+        "public:scanner"
+      ],
+      "tests": [
+        "scripts/test-restaurantos-vertical-slices.js#Step14",
+        "scripts/test-live-restaurant-apis.js#Step3",
+        "scripts/test-live-restaurant-apis.js#Step8"
+      ]
+    },
+    {
+      "id": "diner.quote",
+      "name": "Deterministic Pricing & GST Quote Locking",
+      "owner": "Commercial & Pricing Engine",
+      "uiRoutes": [
+        "/dine/:qrLocator"
+      ],
+      "apiRoutes": [
+        "POST /api/restaurant/quote"
+      ],
+      "domainServices": [
+        "calculateDeterministicQuote()"
+      ],
+      "models": [
+        "QuoteRecord",
+        "MoneyMinor"
+      ],
+      "events": [],
+      "permissions": [
+        "guest:order"
+      ],
+      "tests": [
+        "scripts/test-restaurantos-vertical-slices.js#Step15",
+        "scripts/test-live-restaurant-apis.js#Step4"
+      ]
+    },
+    {
+      "id": "diner.order_placement",
+      "name": "Idempotent Order Placement & Dispatch",
+      "owner": "Order Lifecycle Engine",
+      "uiRoutes": [
+        "/dine/:qrLocator"
+      ],
+      "apiRoutes": [
+        "POST /api/restaurant/order"
+      ],
+      "domainServices": [
+        "submitOrderWithIdempotency()",
+        "RestaurantRuntimeStore.createOrder()"
+      ],
+      "models": [
+        "OrderRecord",
+        "KitchenTaskRecord[]"
+      ],
+      "events": [
+        "order.created",
+        "task.created",
+        "table.status_changed"
+      ],
+      "permissions": [
+        "guest:order"
+      ],
+      "tests": [
+        "scripts/test-restaurantos-vertical-slices.js#Step15",
+        "scripts/test-live-restaurant-apis.js#Step5"
+      ]
+    },
+    {
+      "id": "kds.station_routing",
+      "name": "DAG Kitchen Routing & Station Queues",
+      "owner": "Kitchen Display Engine",
+      "uiRoutes": [
+        "/kds",
+        "/kds?station=TANDOOR"
+      ],
+      "apiRoutes": [
+        "GET /api/restaurant/kds"
+      ],
+      "domainServices": [
+        "routeOrderItemsToStations()",
+        "RestaurantRuntimeStore.getKitchenTasks()"
+      ],
+      "models": [
+        "KitchenTaskRecord",
+        "KitchenStation"
+      ],
+      "events": [],
+      "permissions": [
+        "kitchen:cook",
+        "kitchen:chef"
+      ],
+      "tests": [
+        "scripts/test-restaurantos-vertical-slices.js#Step16",
+        "scripts/test-live-restaurant-apis.js#Step6"
+      ]
+    },
+    {
+      "id": "kds.task_bump",
+      "name": "Kitchen Task Progression to IN_PROGRESS",
+      "owner": "Kitchen Display Engine",
+      "uiRoutes": [
+        "/kds"
+      ],
+      "apiRoutes": [
+        "POST /api/restaurant/kds"
+      ],
+      "domainServices": [
+        "RestaurantRuntimeStore.updateKitchenTaskStatus()"
+      ],
+      "models": [
+        "KitchenTaskRecord.status"
+      ],
+      "events": [
+        "task.started",
+        "task.updated",
+        "order.updated"
+      ],
+      "permissions": [
+        "kitchen:cook"
+      ],
+      "tests": [
+        "scripts/test-restaurantos-vertical-slices.js#Step17",
+        "scripts/test-live-restaurant-apis.js#Step7"
+      ]
+    },
+    {
+      "id": "diner.live_course_projection",
+      "name": "Live Customer Journey & Course Projection",
+      "owner": "Customer Experience Engine",
+      "uiRoutes": [
+        "/dine/:qrLocator"
+      ],
+      "apiRoutes": [
+        "GET /api/restaurant/dine/:token/status"
+      ],
+      "domainServices": [
+        "calculateCustomerExperienceProjection()"
+      ],
+      "models": [
+        "CustomerExperienceProjection"
+      ],
+      "events": [
+        "order.updated",
+        "task.started"
+      ],
+      "permissions": [
+        "guest:view"
+      ],
+      "tests": [
+        "scripts/test-restaurantos-vertical-slices.js#Step18"
+      ]
+    },
+    {
+      "id": "kds.item_fulfill",
+      "name": "Kitchen Item-Level Ready Completion",
+      "owner": "Kitchen Display Engine",
+      "uiRoutes": [
+        "/kds"
+      ],
+      "apiRoutes": [
+        "POST /api/restaurant/kds/item-fulfill"
+      ],
+      "domainServices": [
+        "RestaurantRuntimeStore.updateKitchenTaskStatus()"
+      ],
+      "models": [
+        "KitchenTaskRecord.status"
+      ],
+      "events": [
+        "task.ready",
+        "task.updated",
+        "expo.updated"
+      ],
+      "permissions": [
+        "kitchen:cook",
+        "kitchen:expo"
+      ],
+      "tests": [
+        "scripts/test-restaurantos-vertical-slices.js#Step19"
+      ]
+    },
+    {
+      "id": "kds.expo_dispatch",
+      "name": "Expo Group Order Dispatch to Floor Runner",
+      "owner": "Kitchen Display Engine & Food Runner Service",
+      "uiRoutes": [
+        "/kds"
+      ],
+      "apiRoutes": [
+        "POST /api/restaurant/kds/expo-dispatch"
+      ],
+      "domainServices": [
+        "RestaurantRuntimeStore.dispatchExpoOrder()"
+      ],
+      "models": [
+        "OrderRecord.fulfillmentStatus",
+        "TableRecord.status"
+      ],
+      "events": [
+        "expo.updated",
+        "order.updated",
+        "table.status_changed"
+      ],
+      "permissions": [
+        "kitchen:expo",
+        "staff:runner"
+      ],
+      "tests": [
+        "scripts/test-restaurantos-vertical-slices.js#Step20"
+      ]
+    },
+    {
+      "id": "service_request.create",
+      "name": "Diner Hospitality Service Request Placement",
+      "owner": "Hospitality & Service Desk",
+      "uiRoutes": [
+        "/dine/:qrLocator"
+      ],
+      "apiRoutes": [
+        "POST /api/restaurant/service-requests"
+      ],
+      "domainServices": [
+        "RestaurantRuntimeStore.createServiceRequest()"
+      ],
+      "models": [
+        "ServiceRequestRecord"
+      ],
+      "events": [
+        "service_request.created"
+      ],
+      "permissions": [
+        "guest:service"
+      ],
+      "tests": [
+        "scripts/test-restaurantos-vertical-slices.js#Step21"
+      ]
+    },
+    {
+      "id": "service_request.resolve",
+      "name": "Floor Team Attention Queue Resolution",
+      "owner": "Operations Command Workspace",
+      "uiRoutes": [
+        "/",
+        "/operations/tables"
+      ],
+      "apiRoutes": [
+        "POST /api/restaurant/service-requests/:id/resolve"
+      ],
+      "domainServices": [
+        "RestaurantRuntimeStore.resolveServiceRequest()"
+      ],
+      "models": [
+        "ServiceRequestRecord.status",
+        "ServiceRequestRecord.resolvedAt"
+      ],
+      "events": [
+        "service_request.updated"
+      ],
+      "permissions": [
+        "staff:server",
+        "branch:manager"
+      ],
+      "tests": [
+        "scripts/test-restaurantos-vertical-slices.js#Step22"
+      ]
+    },
+    {
+      "id": "diner.bill_request",
+      "name": "Digital Check Presentation & Settlement Request",
+      "owner": "Billing & Cashier Engine",
+      "uiRoutes": [
+        "/dine/:qrLocator"
+      ],
+      "apiRoutes": [
+        "POST /api/restaurant/bill/request"
+      ],
+      "domainServices": [
+        "RestaurantRuntimeStore.requestBill()"
+      ],
+      "models": [
+        "TableRecord.status",
+        "DiningSessionRecord.billRequestedAt"
+      ],
+      "events": [
+        "bill.requested",
+        "table.status_changed"
+      ],
+      "permissions": [
+        "guest:bill"
+      ],
+      "tests": [
+        "scripts/test-restaurantos-vertical-slices.js#Step23"
+      ]
+    },
+    {
+      "id": "session.close_and_settle",
+      "name": "Table Session Settlement & Guest Token Invalidation",
+      "owner": "Operations / Cashier Engine",
+      "uiRoutes": [
+        "/operations/tables",
+        "/operations/floor"
+      ],
+      "apiRoutes": [
+        "POST /api/restaurant/sessions/close"
+      ],
+      "domainServices": [
+        "RestaurantRuntimeStore.closeSession()"
+      ],
+      "models": [
+        "DiningSessionRecord.status",
+        "TableRecord.status"
+      ],
+      "events": [
+        "session.closed",
+        "table.status_changed"
+      ],
+      "permissions": [
+        "staff:cashier",
+        "branch:manager"
+      ],
+      "tests": [
+        "scripts/test-restaurantos-vertical-slices.js#Step24"
+      ]
+    },
+    {
+      "id": "realtime.outbox_stream",
+      "name": "Monotonic Domain Event Outbox & SSE Gateway",
+      "owner": "Realtime Gateway Engine",
+      "uiRoutes": [
+        "/",
+        "/operations/floor",
+        "/operations/tables",
+        "/kds",
+        "/dine/:qrLocator",
+        "/developer/inspector"
+      ],
+      "apiRoutes": [
+        "GET /api/restaurant/events"
+      ],
+      "domainServices": [
+        "RealtimeEventBus.publish()",
+        "RestaurantRuntimeStore.recordEvent()"
+      ],
+      "models": [
+        "DomainEventRecord"
+      ],
+      "events": [
+        "*"
+      ],
+      "permissions": [
+        "internal:runtime"
+      ],
+      "tests": [
+        "scripts/test-restaurantos-vertical-slices.js#Step25"
+      ]
+    },
+    {
+      "id": "developer.runtime_inspector",
+      "name": "Developer Runtime Inspector & Diagnostic Cockpit",
+      "owner": "Platform & Quality Assurance",
+      "uiRoutes": [
+        "/developer/inspector"
+      ],
+      "apiRoutes": [
+        "GET /health",
+        "GET /api/restaurant/branches",
+        "GET /api/restaurant/events"
+      ],
+      "domainServices": [
+        "RestaurantRuntimeStore.inspect()"
+      ],
+      "models": [
+        "RestaurantRuntimeStore"
+      ],
+      "events": [
+        "*"
+      ],
+      "permissions": [
+        "org:admin",
+        "dev:diagnostics"
+      ],
+      "tests": [
+        "scripts/test-restaurantos-vertical-slices.js#Step26"
+      ]
+    }
+  ]
+}

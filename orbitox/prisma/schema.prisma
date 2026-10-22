@@ -433,3 +433,1255 @@ model StoreReview {
   @@index([productId])
   @@index([storeId])
 }
+
+// ─────────────────────────────────────────────────────────────
+// 11. CELEBRATION & DIGITAL INVITATIONS PLATFORM
+// ─────────────────────────────────────────────────────────────
+
+model CelebrationOccasionCategory {
+  id          String   @id @default(cuid())
+  slug        String   @unique
+  name        String
+  description String?
+  icon        String?
+  sortOrder   Int      @default(0)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  occasions   CelebrationOccasion[]
+}
+
+model CelebrationOccasion {
+  id              String   @id @default(cuid())
+  slug            String   @unique
+  name            String
+  categoryId      String?
+  icon            String
+  description     String
+  defaultSections String[]
+  allowedFeatures String[]
+  status          String   @default("PUBLISHED") // "DRAFT" | "PUBLISHED" | "ARCHIVED"
+  sortOrder       Int      @default(0)
+  metadata        Json?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  category        CelebrationOccasionCategory? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  themes          CelebrationTheme[]
+  experiences     CelebrationExperience[]
+
+  @@index([categoryId])
+  @@index([status])
+}
+
+model CelebrationTheme {
+  id                String   @id @default(cuid())
+  slug              String   @unique
+  name              String
+  description       String
+  occasionId        String
+  previewImages     String[]
+  thumbnailUrl      String
+  styleConfig       Json
+  supportedSections String[]
+  tier              String   @default("FREE") // "FREE" | "PRO" | "PREMIUM"
+  isFeatured        Boolean  @default(false)
+  isPopular         Boolean  @default(false)
+  author            String?  @default("OrbitoX Studio")
+  status            String   @default("ACTIVE") // "ACTIVE" | "ARCHIVED"
+  tags              String[]
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  occasion          CelebrationOccasion     @relation(fields: [occasionId], references: [id], onDelete: Cascade)
+  experiences       CelebrationExperience[]
+
+  @@index([occasionId])
+  @@index([tier])
+  @@index([status])
+}
+
+model CelebrationSectionDefinition {
+  id             String   @id @default(cuid())
+  type           String   @unique // e.g. "hero", "countdown", "rsvp", etc.
+  name           String
+  description    String
+  category       String   @default("essential") // "essential" | "media" | "engagement" | "logistics"
+  isPremium      Boolean  @default(false)
+  defaultEnabled Boolean  @default(true)
+  fields         Json
+  defaultConfig  Json
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@index([category])
+}
+
+model CelebrationFeatureDefinition {
+  id          String   @id @default(cuid())
+  key         String   @unique // e.g. "custom_domain", "background_music"
+  name        String
+  description String
+  category    String   @default("core")
+  minTier     String   @default("FREE") // "FREE" | "PRO" | "PREMIUM"
+  isAddon     Boolean  @default(false)
+  priceInr    Int      @default(0)
+  metadata    Json?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([minTier])
+}
+
+model CelebrationExperience {
+  id                 String    @id @default(cuid())
+  tenantId           String
+  title              String
+  slug               String
+  occasionId         String
+  themeId            String
+  status             String    @default("DRAFT") // "DRAFT" | "PREVIEW" | "PUBLISHED" | "ARCHIVED" | "EXPIRED"
+  customDomain       String?   @unique
+  customPath         String?
+  passwordProtection Boolean   @default(false)
+  passwordHash       String?
+  eventDate          DateTime?
+  expiresAt          DateTime?
+  featuresEnabled    String[]
+  styleOverrides     Json?
+  metadata           Json?
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+
+  occasion           CelebrationOccasion            @relation(fields: [occasionId], references: [id], onDelete: Restrict)
+  theme              CelebrationTheme               @relation(fields: [themeId], references: [id], onDelete: Restrict)
+  sections           CelebrationExperienceSection[]
+  guests             CelebrationGuest[]
+  wishes             CelebrationWish[]
+  analytics          CelebrationExperienceAnalytics?
+  orders             CelebrationOrder[]
+  media              CelebrationMedia[]
+
+  @@unique([tenantId, slug])
+  @@index([tenantId])
+  @@index([occasionId])
+  @@index([themeId])
+  @@index([status])
+}
+
+model CelebrationExperienceSection {
+  id           String   @id @default(cuid())
+  experienceId String
+  sectionType  String
+  title        String?
+  subtitle     String?
+  order        Int      @default(0)
+  isEnabled    Boolean  @default(true)
+  config       Json
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  experience   CelebrationExperience @relation(fields: [experienceId], references: [id], onDelete: Cascade)
+
+  @@index([experienceId])
+  @@index([order])
+}
+
+model CelebrationGuest {
+  id                  String   @id @default(cuid())
+  experienceId        String
+  tenantId            String
+  guestName           String
+  email               String?
+  phone               String?
+  attending           String   @default("ATTENDING") // "ATTENDING" | "DECLINED" | "TENTATIVE"
+  partySize           Int      @default(1)
+  dietaryRequirements String?
+  message             String?
+  plusOneName         String?
+  attendedEvents      String[]
+  createdAt           DateTime @default(now())
+
+  experience          CelebrationExperience @relation(fields: [experienceId], references: [id], onDelete: Cascade)
+
+  @@index([experienceId])
+  @@index([tenantId])
+}
+
+model CelebrationWish {
+  id           String   @id @default(cuid())
+  experienceId String
+  tenantId     String
+  guestName    String
+  message      String
+  mediaUrl     String?
+  isApproved   Boolean  @default(true)
+  createdAt    DateTime @default(now())
+
+  experience   CelebrationExperience @relation(fields: [experienceId], references: [id], onDelete: Cascade)
+
+  @@index([experienceId])
+  @@index([tenantId])
+}
+
+model CelebrationExperienceAnalytics {
+  id             String    @id @default(cuid())
+  experienceId   String    @unique
+  tenantId       String
+  totalViews     Int       @default(0)
+  uniqueVisitors Int       @default(0)
+  rsvpCount      Int       @default(0)
+  wishesCount    Int       @default(0)
+  engagementRate Float     @default(0)
+  lastViewedAt   DateTime?
+  updatedAt      DateTime  @updatedAt
+
+  experience     CelebrationExperience @relation(fields: [experienceId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+}
+
+model CelebrationPricingPlan {
+  id                        String   @id @default(cuid())
+  name                      String
+  tier                      String   @unique // "FREE" | "PRO" | "PREMIUM"
+  priceInr                  Int      @default(0)
+  maxGuests                 Int      @default(50)
+  maxPhotos                 Int      @default(15)
+  customDomainAllowed       Boolean  @default(false)
+  passwordProtectionAllowed Boolean  @default(false)
+  musicPlayerAllowed        Boolean  @default(false)
+  analyticsAllowed          Boolean  @default(false)
+  watermarkRemoved          Boolean  @default(false)
+  durationDays              Int      @default(30)
+  features                  String[]
+  isPopular                 Boolean  @default(false)
+  createdAt                 DateTime @default(now())
+  updatedAt                 DateTime @updatedAt
+}
+
+model CelebrationOrder {
+  id                String   @id @default(cuid())
+  tenantId          String
+  experienceId      String?
+  tier              String
+  amountInr         Int
+  taxInr            Int
+  totalInr          Int
+  paymentStatus     String   @default("PENDING") // "PENDING" | "PAID" | "FAILED"
+  paymentProvider   String?  @default("razorpay")
+  providerOrderId   String?
+  providerPaymentId String?
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  experience        CelebrationExperience? @relation(fields: [experienceId], references: [id], onDelete: SetNull)
+
+  @@index([tenantId])
+  @@index([experienceId])
+  @@index([paymentStatus])
+}
+
+model CelebrationMedia {
+  id           String   @id @default(cuid())
+  tenantId     String
+  experienceId String?
+  url          String
+  mimeType     String
+  sizeBytes    Int
+  altText      String?
+  folder       String   @default("gallery")
+  createdAt    DateTime @default(now())
+
+  experience   CelebrationExperience? @relation(fields: [experienceId], references: [id], onDelete: SetNull)
+
+  @@index([tenantId])
+  @@index([experienceId])
+}
+
+// ─────────────────────────────────────────────────────────────
+// 🪐 ORBITOX VISUAL STUDIO 3.0 PERSISTENCE MODELS
+// ─────────────────────────────────────────────────────────────
+
+enum StudioProjectStatus {
+  DRAFT
+  PUBLISHED
+  ARCHIVED
+}
+
+model StudioProject {
+  id               String               @id @default(cuid())
+  contextId        String               // Tenant partitioning link
+  slug             String               @unique
+  name             String
+  description      String?
+  status           StudioProjectStatus  @default(DRAFT)
+  currentVersion   Int                  @default(1)
+  publishedVersion Int                  @default(0)
+  designTokens     Json                 // Color, typography, spacing tokens
+  cmsCollections   Json                 @default("{}")
+  settings         Json                 @default("{}")
+  createdAt        DateTime             @default(now())
+  updatedAt        DateTime             @updatedAt
+
+  pages            StudioPage[]
+  assets           StudioAsset[]
+  snapshots        StudioSnapshot[]
+
+  @@index([contextId])
+  @@index([slug])
+}
+
+model StudioPage {
+  id               String          @id @default(cuid())
+  projectId        String
+  project          StudioProject   @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  name             String
+  route            String
+  order            Int             @default(0)
+  isHome           Boolean         @default(false)
+  seoTitle         String?
+  seoDescription   String?
+  ogImageUrl       String?
+  sections         StudioSection[]
+
+  @@index([projectId])
+}
+
+model StudioSection {
+  id               String       @id @default(cuid())
+  pageId           String
+  page             StudioPage   @relation(fields: [pageId], references: [id], onDelete: Cascade)
+  name             String
+  kind             String       // hero, features, gallery, cta, footer, custom
+  order            Int          @default(0)
+  isLocked         Boolean      @default(false)
+  isHidden         Boolean      @default(false)
+  sceneGraph       Json         // Complete JSON SceneGraph tree
+
+  @@index([pageId])
+}
+
+model StudioAsset {
+  id               String        @id @default(cuid())
+  projectId        String
+  project          StudioProject @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  name             String
+  fileUrl          String
+  mimeType         String
+  sizeBytes        Int
+  width            Int?
+  height           Int?
+  variants         Json          @default("{}") // Responsive srcset WebP URLs
+  usedInNodes      String[]      @default([])
+  createdAt        DateTime      @default(now())
+
+  @@index([projectId])
+}
+
+model StudioSnapshot {
+  id               String        @id @default(cuid())
+  projectId        String
+  project          StudioProject @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  version          Int
+  documentSnapshot Json          // Immutable full project document JSON
+  publishedBy      String?
+  publishedAt      DateTime      @default(now())
+
+  @@index([projectId, version])
+}
+
+// ─────────────────────────────────────────────────────────────
+// 4. RESTAURANT OPERATING SYSTEM (RESTAURANTOS)
+// ─────────────────────────────────────────────────────────────
+
+enum RestaurantTableStatus {
+  AVAILABLE
+  OCCUPIED
+  RESERVED
+  CLEANING
+  OUT_OF_SERVICE
+}
+
+enum DiningSessionStatus {
+  ACTIVE
+  BILL_REQUESTED
+  SETTLING
+  CLOSED
+  ABANDONED
+}
+
+enum DiningJoinPolicy {
+  OPEN_JOIN
+  HOST_APPROVAL
+  STAFF_APPROVAL
+}
+
+enum ParticipantRole {
+  HOST
+  GUEST
+  STAFF
+}
+
+enum JoinRequestStatus {
+  REQUESTED
+  APPROVED
+  REJECTED
+  EXPIRED
+  CANCELLED
+}
+
+enum CommercialState {
+  DRAFT
+  SUBMITTED
+  CONFIRMED
+  REJECTED
+  VOIDED
+}
+
+enum FulfillmentState {
+  UNFULFILLED
+  PREPARING
+  READY_TO_SERVE
+  SERVED
+  CANCELLED
+}
+
+enum OrderPaymentState {
+  UNPAID
+  AUTHORIZED
+  PARTIALLY_PAID
+  PAID
+  REFUNDED
+}
+
+enum KitchenState {
+  NOT_SENT
+  QUEUED
+  IN_PROGRESS
+  EXPEDITED
+  COMPLETED
+}
+
+enum ItemPrepStatus {
+  PENDING
+  PREPARING
+  READY
+  SERVED
+  CANCELLED
+}
+
+enum KitchenStationType {
+  HOT_LINE
+  COLD_LINE
+  TANDOOR
+  BAR
+  DESSERT
+  EXPO
+}
+
+enum PreparationTaskStatus {
+  QUEUED
+  IN_PROGRESS
+  READY
+  DELAYED
+  REOPENED
+  BUMPED
+}
+
+enum PaymentRecordStatus {
+  INITIATED
+  AUTHORIZED
+  SETTLED
+  FAILED
+  REFUNDED
+}
+
+enum OutboxStatus {
+  PENDING
+  DISPATCHED
+  FAILED
+}
+
+model RestaurantLocation {
+  id              String                  @id @default(cuid())
+  tenantId        String
+  companyId       String
+  name            String
+  slug            String
+  timezone        String                  @default("Asia/Kolkata")
+  currency        String                  @default("INR")
+  address         String?
+  phone           String?
+  email           String?
+  operatingHours  Json?
+  isActive        Boolean                 @default(true)
+  createdAt       DateTime                @default(now())
+  updatedAt       DateTime                @updatedAt
+
+  serviceAreas    RestaurantServiceArea[]
+  tables          RestaurantTable[]
+  diningSessions  RestaurantDiningSession[]
+  menus           RestaurantMenu[]
+  catalogItems    RestaurantCatalogItem[]
+  kitchenStations KitchenStation[]
+  orders          RestaurantOrder[]
+
+  @@unique([tenantId, companyId, slug])
+  @@index([tenantId, companyId])
+}
+
+model RestaurantServiceArea {
+  id          String             @id @default(cuid())
+  tenantId    String
+  companyId   String
+  locationId  String
+  name        String
+  code        String
+  floorNumber Int?               @default(1)
+  capacity    Int?
+  isActive    Boolean            @default(true)
+  createdAt   DateTime           @default(now())
+  updatedAt   DateTime           @updatedAt
+
+  location    RestaurantLocation @relation(fields: [locationId], references: [id], onDelete: Cascade)
+  tables      RestaurantTable[]
+
+  @@unique([locationId, code])
+  @@index([tenantId, companyId])
+  @@index([locationId])
+}
+
+model RestaurantTable {
+  id              String                    @id @default(cuid())
+  tenantId        String
+  companyId       String
+  locationId      String
+  serviceAreaId   String
+  tableNumber     String
+  capacity        Int                       @default(4)
+  status          RestaurantTableStatus     @default(AVAILABLE)
+  activeSessionId String?
+  version         Int                       @default(1)
+  createdAt       DateTime                  @default(now())
+  updatedAt       DateTime                  @updatedAt
+
+  location        RestaurantLocation        @relation(fields: [locationId], references: [id], onDelete: Cascade)
+  serviceArea     RestaurantServiceArea     @relation(fields: [serviceAreaId], references: [id], onDelete: Cascade)
+  qrIdentity      RestaurantQRIdentity?
+  diningSessions  RestaurantDiningSession[]
+
+  @@unique([locationId, tableNumber])
+  @@index([tenantId, companyId])
+  @@index([locationId, serviceAreaId])
+  @@index([status])
+}
+
+model RestaurantQRIdentity {
+  id              String          @id @default(cuid())
+  tenantId        String
+  companyId       String
+  locationId      String
+  tableId         String          @unique
+  locator         String          @unique
+  tokenHash       String          @unique
+  redirectUrl     String?
+  securityVersion Int             @default(1)
+  isActive        Boolean         @default(true)
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+
+  table           RestaurantTable @relation(fields: [tableId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, locationId])
+  @@index([locator])
+  @@index([tokenHash])
+}
+
+model RestaurantDiningSession {
+  id                String                  @id @default(cuid())
+  tenantId          String
+  companyId         String
+  locationId        String
+  tableId           String
+  sessionCode       String
+  status            DiningSessionStatus     @default(ACTIVE)
+  joinPolicy        DiningJoinPolicy        @default(OPEN_JOIN)
+  hostParticipantId String?
+  accessEpoch       Int                     @default(1)
+  version           Int                     @default(1)
+  openedAt          DateTime                @default(now())
+  closedAt          DateTime?
+  createdAt         DateTime                @default(now())
+  updatedAt         DateTime                @updatedAt
+
+  location          RestaurantLocation      @relation(fields: [locationId], references: [id], onDelete: Cascade)
+  table             RestaurantTable         @relation(fields: [tableId], references: [id], onDelete: Cascade)
+  participants      SessionParticipant[]
+  joinRequests      SessionJoinRequest[]
+  orders            RestaurantOrder[]
+
+  @@index([tenantId, companyId])
+  @@index([locationId, tableId])
+  @@index([tableId, status])
+  @@index([status])
+}
+
+model SessionParticipant {
+  id                  String                  @id @default(cuid())
+  tenantId            String
+  companyId           String
+  locationId          String
+  diningSessionId     String
+  role                ParticipantRole         @default(GUEST)
+  displayName         String
+  avatarUrl           String?
+  capabilityTokenHash String
+  joinedAt            DateTime                @default(now())
+  leftAt              DateTime?
+  isActive            Boolean                 @default(true)
+  createdAt           DateTime                @default(now())
+  updatedAt           DateTime                @updatedAt
+
+  diningSession       RestaurantDiningSession @relation(fields: [diningSessionId], references: [id], onDelete: Cascade)
+  orders              RestaurantOrder[]
+
+  @@index([tenantId, locationId])
+  @@index([diningSessionId, isActive])
+  @@index([capabilityTokenHash])
+}
+
+model SessionJoinRequest {
+  id               String                  @id @default(cuid())
+  tenantId         String
+  companyId        String
+  locationId       String
+  diningSessionId  String
+  displayName      String
+  status           JoinRequestStatus       @default(REQUESTED)
+  requestTokenHash String                  @unique
+  decidedBy        String?
+  decidedAt        DateTime?
+  expiresAt        DateTime
+  createdAt        DateTime                @default(now())
+  updatedAt        DateTime                @updatedAt
+
+  diningSession    RestaurantDiningSession @relation(fields: [diningSessionId], references: [id], onDelete: Cascade)
+
+  @@index([diningSessionId, status])
+  @@index([tenantId, locationId])
+}
+
+model RestaurantMenu {
+  id          String                  @id @default(cuid())
+  tenantId    String
+  companyId   String
+  locationId  String
+  name        String
+  version     Int                     @default(1)
+  channel     String                  @default("DINE_IN")
+  isPublished Boolean                 @default(false)
+  schedule    Json?
+  createdAt   DateTime                @default(now())
+  updatedAt   DateTime                @updatedAt
+
+  location    RestaurantLocation      @relation(fields: [locationId], references: [id], onDelete: Cascade)
+  items       RestaurantCatalogItem[]
+
+  @@unique([locationId, name, version])
+  @@index([tenantId, locationId, isPublished])
+}
+
+model RestaurantCatalogItem {
+  id                         String                    @id @default(cuid())
+  tenantId                   String
+  companyId                  String
+  locationId                 String
+  menuId                     String?
+  name                       String
+  description                String?
+  sku                        String?
+  basePriceMinor             BigInt
+  currency                   String                    @default("INR")
+  category                   String
+  imageUrl                   String?
+  allergens                  String[]                  @default([])
+  dietaryFlags               String[]                  @default([])
+  isAvailable                Boolean                   @default(true)
+  maxDailyQuantity           Int?
+  preparationDurationMinutes Int                       @default(10)
+  stationRouting             String                    @default("KITCHEN")
+  version                    Int                       @default(1)
+  createdAt                  DateTime                  @default(now())
+  updatedAt                  DateTime                  @updatedAt
+
+  location                   RestaurantLocation        @relation(fields: [locationId], references: [id], onDelete: Cascade)
+  menu                       RestaurantMenu?           @relation(fields: [menuId], references: [id], onDelete: SetNull)
+  modifierGroups             RestaurantModifierGroup[]
+  orderItems                 RestaurantOrderItem[]
+
+  @@index([tenantId, locationId, category])
+  @@index([locationId, isAvailable])
+  @@index([menuId])
+}
+
+model RestaurantModifierGroup {
+  id            String                @id @default(cuid())
+  tenantId      String
+  companyId     String
+  itemId        String
+  name          String
+  minSelections Int                   @default(0)
+  maxSelections Int                   @default(1)
+  isRequired    Boolean               @default(false)
+  createdAt     DateTime              @default(now())
+  updatedAt     DateTime              @updatedAt
+
+  item          RestaurantCatalogItem @relation(fields: [itemId], references: [id], onDelete: Cascade)
+  modifiers     RestaurantModifier[]
+
+  @@index([itemId])
+}
+
+model RestaurantModifier {
+  id              String                  @id @default(cuid())
+  tenantId        String
+  companyId       String
+  groupId         String
+  name            String
+  priceDeltaMinor BigInt                  @default(0)
+  isDefault       Boolean                 @default(false)
+  isAvailable     Boolean                 @default(true)
+  createdAt       DateTime                @default(now())
+  updatedAt       DateTime                @updatedAt
+
+  group           RestaurantModifierGroup @relation(fields: [groupId], references: [id], onDelete: Cascade)
+
+  @@index([groupId])
+}
+
+model RestaurantRecipeBOM {
+  id               String   @id @default(cuid())
+  tenantId         String
+  companyId        String
+  itemId           String
+  ingredientId     String
+  quantityRequired Float
+  unit             String
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  @@unique([itemId, ingredientId])
+  @@index([tenantId, companyId])
+  @@index([ingredientId])
+}
+
+model RestaurantInventoryStock {
+  id               String   @id @default(cuid())
+  tenantId         String
+  companyId        String
+  locationId       String
+  ingredientId     String
+  name             String
+  onHandQuantity   Float
+  reservedQuantity Float    @default(0)
+  unit             String
+  safetyThreshold  Float    @default(5.0)
+  version          Int      @default(1)
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  @@unique([locationId, ingredientId])
+  @@index([tenantId, locationId])
+}
+
+model RestaurantPricingQuote {
+  id              String   @id @default(cuid())
+  tenantId        String
+  companyId       String
+  locationId      String
+  sessionId       String
+  inputHash       String
+  resultHash      String
+  subtotalMinor   BigInt
+  taxMinor        BigInt
+  serviceFeeMinor BigInt   @default(0)
+  discountMinor   BigInt   @default(0)
+  totalMinor      BigInt
+  currency        String   @default("INR")
+  breakdown       Json
+  expiresAt       DateTime
+  isRedeemed      Boolean  @default(false)
+  createdAt       DateTime @default(now())
+
+  @@index([tenantId, sessionId])
+  @@index([inputHash, resultHash])
+  @@index([expiresAt, isRedeemed])
+}
+
+model RestaurantOrder {
+  id                  String                  @id @default(cuid())
+  tenantId            String
+  companyId           String
+  locationId          String
+  sessionId           String
+  participantId       String
+  orderNumber         String
+  commercialState     CommercialState         @default(SUBMITTED)
+  fulfillmentState    FulfillmentState        @default(UNFULFILLED)
+  paymentState        OrderPaymentState       @default(UNPAID)
+  kitchenState        KitchenState            @default(QUEUED)
+  quoteId             String?
+  idempotencyKey      String?                 @unique
+  totalMinor          BigInt
+  currency            String                  @default("INR")
+  specialInstructions String?
+  version             Int                     @default(1)
+  createdAt           DateTime                @default(now())
+  updatedAt           DateTime                @updatedAt
+
+  location            RestaurantLocation      @relation(fields: [locationId], references: [id], onDelete: Cascade)
+  diningSession       RestaurantDiningSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  participant         SessionParticipant      @relation(fields: [participantId], references: [id], onDelete: Cascade)
+  items               RestaurantOrderItem[]
+
+  @@index([tenantId, companyId])
+  @@index([locationId, sessionId])
+  @@index([sessionId, createdAt])
+  @@index([commercialState, fulfillmentState])
+}
+
+model RestaurantOrderItem {
+  id                String                @id @default(cuid())
+  tenantId          String
+  companyId         String
+  locationId        String
+  orderId           String
+  itemId            String
+  name              String
+  quantity          Int                   @default(1)
+  unitPriceMinor    BigInt
+  totalMinor        BigInt
+  selectedModifiers Json                  @default("[]")
+  preparationStatus ItemPrepStatus        @default(PENDING)
+  version           Int                   @default(1)
+  createdAt         DateTime              @default(now())
+  updatedAt         DateTime              @updatedAt
+
+  order             RestaurantOrder       @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  catalogItem       RestaurantCatalogItem @relation(fields: [itemId], references: [id], onDelete: Restrict)
+
+  @@index([orderId, preparationStatus])
+  @@index([itemId])
+}
+
+model KitchenStation {
+  id                    String                   @id @default(cuid())
+  tenantId              String
+  companyId             String
+  locationId            String
+  name                  String
+  stationType           KitchenStationType       @default(HOT_LINE)
+  displayOrder          Int                      @default(0)
+  isActive              Boolean                  @default(true)
+  maxConcurrentCapacity Int                      @default(10)
+  createdAt             DateTime                 @default(now())
+  updatedAt             DateTime                 @updatedAt
+
+  location              RestaurantLocation       @relation(fields: [locationId], references: [id], onDelete: Cascade)
+  tasks                 KitchenPreparationTask[]
+
+  @@unique([locationId, name])
+  @@index([tenantId, locationId, isActive])
+}
+
+model KitchenPreparationTask {
+  id                       String                @id @default(cuid())
+  tenantId                 String
+  companyId                String
+  locationId               String
+  orderId                  String
+  orderItemId              String
+  stationId                String
+  status                   PreparationTaskStatus @default(QUEUED)
+  targetServeAt            DateTime
+  fireAt                   DateTime
+  estimatedDurationMinutes Int                   @default(10)
+  startedAt                DateTime?
+  completedAt              DateTime?
+  bumpedBy                 String?
+  dependencies             Json?
+  version                  Int                   @default(1)
+  createdAt                DateTime              @default(now())
+  updatedAt                DateTime              @updatedAt
+
+  station                  KitchenStation        @relation(fields: [stationId], references: [id], onDelete: Cascade)
+
+  @@index([stationId, status, fireAt])
+  @@index([orderId])
+  @@index([tenantId, locationId])
+}
+
+model RestaurantPaymentRecord {
+  id                   String              @id @default(cuid())
+  tenantId             String
+  companyId            String
+  locationId           String
+  sessionId            String
+  orderId              String?
+  participantId        String?
+  paymentGateway       String
+  gatewayTransactionId String?
+  amountMinor          BigInt
+  currency             String              @default("INR")
+  status               PaymentRecordStatus @default(INITIATED)
+  metadata             Json?
+  createdAt            DateTime            @default(now())
+  updatedAt            DateTime            @updatedAt
+
+  @@index([tenantId, locationId])
+  @@index([sessionId, status])
+  @@index([gatewayTransactionId])
+}
+
+model PlatformIdempotencyRecord {
+  id             String   @id @default(cuid())
+  tenantId       String
+  key            String
+  scope          String
+  requestHash    String
+  responseStatus Int
+  responseBody   Json
+  expiresAt      DateTime
+  createdAt      DateTime @default(now())
+
+  @@unique([tenantId, key, scope])
+  @@index([expiresAt])
+}
+
+model PlatformOutboxMessage {
+  id            String       @id @default(cuid())
+  tenantId      String
+  eventType     String
+  aggregateType String
+  aggregateId   String
+  payload       Json
+  status        OutboxStatus @default(PENDING)
+  retryCount    Int          @default(0)
+  lastError     String?
+  createdAt     DateTime     @default(now())
+  dispatchedAt  DateTime?
+
+  @@index([status, createdAt])
+  @@index([tenantId, aggregateType, aggregateId])
+}
+
+// ─────────────────────────────────────────────────────────────
+// 10. PLATFORM CONTROL CENTER: MULTI-TENANT OS & SECURITY GOVERNANCE
+// ─────────────────────────────────────────────────────────────
+
+enum PlatformProjectStatus {
+  PROVISIONING
+  ACTIVE
+  DEGRADED
+  SUSPENDED
+  ARCHIVED
+  DEPROVISIONING
+}
+
+enum EnvironmentTier {
+  DEVELOPMENT
+  STAGING
+  PRODUCTION
+  SANDBOX
+  DISASTER_RECOVERY
+}
+
+enum KeyLifecycleState {
+  PRE_ACTIVE
+  ACTIVE
+  SUSPENDED
+  EXPIRED
+  COMPROMISED
+  REVOKED
+  DESTROYED
+}
+
+enum PlatformRiskLevel {
+  LOW
+  MEDIUM
+  HIGH
+  CRITICAL
+}
+
+enum CredentialHealthState {
+  HEALTHY
+  EXPIRING_SOON
+  EXPIRED
+  FAILED_VALIDATION
+  ROTATION_PENDING
+}
+
+enum PackageStatusState {
+  ACTIVE
+  UPGRADING
+  SUSPENDED
+  SECURITY_BLOCKED
+}
+
+enum DomainDnsStatus {
+  PENDING_DNS
+  VERIFIED
+  FAILED
+}
+
+enum TlsCertStatus {
+  PENDING
+  ISSUED
+  RENEWING
+  FAILED
+}
+
+model PlatformOrganization {
+  id              String            @id @default(cuid())
+  slug            String            @unique
+  name            String
+  billingEmail    String
+  complianceTier  String            @default("STANDARD")
+  status          String            @default("ACTIVE")
+  createdAt       DateTime          @default(now())
+  updatedAt       DateTime          @updatedAt
+
+  projects        PlatformProject[]
+
+  @@index([slug])
+}
+
+model PlatformProject {
+  id              String                @id @default(cuid())
+  slug            String                @unique
+  name            String
+  organizationId  String
+  businessModel   String                // O2O2B2B2C, HEALTHCARE_NETWORK, D2C, B2B_SAAS
+  planTier        String                // starter, growth, pro, enterprise, hyperscale
+  status          PlatformProjectStatus @default(ACTIVE)
+  technicalLead   String
+  contactEmail    String
+  createdAt       DateTime              @default(now())
+  updatedAt       DateTime              @updatedAt
+
+  organization    PlatformOrganization  @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  environments    ProjectEnvironment[]
+
+  @@index([organizationId])
+  @@index([slug])
+  @@index([status])
+}
+
+model ProjectEnvironment {
+  id                    String                      @id @default(cuid())
+  projectId             String
+  slug                  String                      // development, staging, production
+  name                  String                      // "Production Main", "Staging QA"
+  type                  EnvironmentTier             @default(DEVELOPMENT)
+  isProduction          Boolean                     @default(false)
+  status                String                      @default("ACTIVE") // ACTIVE, FROZEN, DECOMMISSIONED
+  description           String?
+  requireMtls           Boolean                     @default(false)
+  strictIpAllowlist     Boolean                     @default(false)
+  enforceFourEyes       Boolean                     @default(false)
+  createdAt             DateTime                    @default(now())
+  updatedAt             DateTime                    @updatedAt
+
+  project               PlatformProject             @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  apiKeys               PlatformApiKey[]
+  credentials           PlatformCredential[]
+  packageInstallations  PackageInstallation[]
+  domains               ProjectDomain[]
+  quotaPolicy           EnvironmentQuotaPolicy?
+  rateLimitPolicy       EnvironmentRateLimitPolicy?
+
+  @@unique([projectId, slug])
+  @@index([projectId])
+  @@index([type])
+}
+
+model PlatformApiKey {
+  id                  String             @id @default(cuid())
+  keyId               String             @unique // Public correlation handle: key_live_01j7x4
+  name                String
+  environmentId       String
+  keyType             String             @default("PROJECT_SCOPED") // PLATFORM_ROOT, PROJECT_SCOPED, SERVICE_MACHINE
+  keyPrefix           String             // orb_live_proj_
+  secretFingerprint   String             // SHA-256(rawSecret).hex (display only)
+  authVerifier        String             // HMAC-SHA-256(pepper, rawSecret).hex (auth check)
+  maskedDisplay       String             // orb_live_••••••••0zE
+  status              KeyLifecycleState  @default(ACTIVE)
+  capabilities        String[]           // Typed: ["restaurant.orders.read", "restaurant.orders.create"]
+  ipAllowlist         String[]           @default([])
+  rateLimitPerMin     Int                @default(1200)
+  tenantScope         String[]           @default([])
+  
+  riskScore           Int                @default(15) // 0 to 100
+  riskLevel           PlatformRiskLevel  @default(LOW)
+  riskFactors         Json               @default("[]") // Array of { code, weight, message }
+
+  issuedAt            DateTime           @default(now())
+  activatedAt         DateTime           @default(now())
+  expiresAt           DateTime?
+  lastUsedAt          DateTime?
+  lastUsedIp          String?
+  lastUsedRegion      String?
+  
+  compromisedAt       DateTime?
+  revokedAt           DateTime?
+  revokeReason        String?
+  createdBy           String
+  version             Int                @default(1)
+
+  environment         ProjectEnvironment @relation(fields: [environmentId], references: [id], onDelete: Cascade)
+
+  @@index([environmentId])
+  @@index([authVerifier])
+  @@index([secretFingerprint])
+  @@index([status])
+  @@index([riskLevel])
+}
+
+model PlatformCredential {
+  id                    String                @id @default(cuid())
+  name                  String                // "Stripe Production Live", "AWS S3 Cold Storage"
+  provider              String                // stripe, aws_s3, meta, twilio, redis, postgres
+  environmentId         String
+  
+  // Envelope Encryption Fields
+  envelopeVersion       Int                   @default(1)
+  kekIdentifier         String                // kms:us-east-1:orbitox-master-kek-v2
+  encryptedDek          String                // Encrypted Data Encryption Key (DEK)
+  dekIv                 String                @default("") // Base64 IV used for DEK encryption
+  dekTag                String                @default("") // Base64 AuthTag for DEK encryption
+  initializationVector  String                // 96-bit Base64 IV
+  authenticationTag     String                // 128-bit Base64 GCM Auth Tag
+  encryptedCiphertext   String                // AES-256-GCM Encrypted Secret Payload
+  
+  secretFingerprint     String                // SHA-256(plaintext).hex
+  maskedDisplay         String                // sk_live_••••••••9F2A
+  health                CredentialHealthState @default(HEALTHY)
+  lastRotatedAt         DateTime              @default(now())
+  nextRotationDueAt     DateTime
+  lastValidatedAt       DateTime?
+  validationError       String?
+  ownerEmail            String
+  
+  createdAt             DateTime              @default(now())
+  updatedAt             DateTime              @updatedAt
+
+  environment           ProjectEnvironment    @relation(fields: [environmentId], references: [id], onDelete: Cascade)
+
+  @@index([environmentId])
+  @@index([provider])
+  @@index([health])
+}
+
+model PlatformPackage {
+  id                    String                @id @default(cuid())
+  packageId             String                @unique // @orbitox/restaurant
+  name                  String
+  category              String
+  publisher             String
+  currentStableVersion  String
+  signingPublicKeyPem   String
+  isCore                Boolean               @default(false)
+  createdAt             DateTime              @default(now())
+  updatedAt             DateTime              @updatedAt
+
+  versions              PackageVersion[]
+  installations         PackageInstallation[]
+
+  @@index([packageId])
+}
+
+model PackageVersion {
+  id                    String                @id @default(cuid())
+  packageId             String
+  version               String
+  tarballSha256         String
+  manifestHash          String
+  signerId              String
+  signature             String
+  minPlatformVersion    String
+  releaseNotes          String?
+  releasedAt            DateTime              @default(now())
+
+  package               PlatformPackage       @relation(fields: [packageId], references: [id], onDelete: Cascade)
+  installations         PackageInstallation[]
+
+  @@unique([packageId, version])
+  @@index([packageId])
+}
+
+model PackageInstallation {
+  id                    String             @id @default(cuid())
+  environmentId         String
+  packageId             String
+  installedVersionId    String
+  status                PackageStatusState @default(ACTIVE)
+  configOverrides       Json               @default("{}")
+  installedAt           DateTime           @default(now())
+  updatedAt             DateTime           @updatedAt
+
+  environment           ProjectEnvironment @relation(fields: [environmentId], references: [id], onDelete: Cascade)
+  package               PlatformPackage    @relation(fields: [packageId], references: [id], onDelete: Cascade)
+  version               PackageVersion     @relation(fields: [installedVersionId], references: [id])
+
+  @@unique([environmentId, packageId])
+  @@index([environmentId])
+  @@index([packageId])
+}
+
+model ProjectDomain {
+  id                    String             @id @default(cuid())
+  environmentId         String
+  domainName            String             @unique
+  isApex                Boolean            @default(false)
+  verificationStatus    DomainDnsStatus    @default(PENDING_DNS)
+  cnameTarget           String
+  tlsCertificateStatus  TlsCertStatus      @default(PENDING)
+  sslExpiresAt          DateTime?
+  strictLicenseToken    String?
+  edgeLatencyMs         Int                @default(0)
+  createdAt             DateTime           @default(now())
+  verifiedAt            DateTime?
+
+  environment           ProjectEnvironment @relation(fields: [environmentId], references: [id], onDelete: Cascade)
+
+  @@index([environmentId])
+  @@index([domainName])
+}
+
+model EnvironmentQuotaPolicy {
+  id                      String             @id @default(cuid())
+  environmentId           String             @unique
+  monthlyCallLimit        BigInt             @default(1000000)
+  monthlyCallsUsed        BigInt             @default(0)
+  storageQuotaGb          Float              @default(50.0)
+  storageUsedGb           Float              @default(0.0)
+  warningThreshold        Int                @default(80)
+  projectedExhaustionDays Float?
+  updatedAt               DateTime           @updatedAt
+
+  environment             ProjectEnvironment @relation(fields: [environmentId], references: [id], onDelete: Cascade)
+}
+
+model EnvironmentRateLimitPolicy {
+  id                     String             @id @default(cuid())
+  environmentId          String             @unique
+  requestsPerMinute      Int                @default(1200)
+  requestsPerSecondBurst Int                @default(100)
+  slidingWindowType      String             @default("HYBRID_REDIS_RAM")
+  updatedAt              DateTime           @updatedAt
+
+  environment            ProjectEnvironment @relation(fields: [environmentId], references: [id], onDelete: Cascade)
+}
+
+

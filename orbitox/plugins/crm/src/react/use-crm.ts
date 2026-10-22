@@ -1,3 +1,5 @@
+'use client';
+
 import { useState, useCallback } from 'react';
 import { Lead, LeadStatus, CreateLeadPayload, LeadFilter } from '../domain/types';
 import { HeadlessCrmService } from '../domain/lead-actions';

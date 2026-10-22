@@ -4,10 +4,15 @@
  */
 export interface JwtPayload {
     sub: string;
-    email: string;
-    jti: string;
     iat: number;
     exp: number;
+    jti: string;
+    ctx: string;
+    tid: string;
+    oid: string;
+    scp: string[];
+    mfa: boolean;
+    ips: string;
 }
 export interface SessionInfo {
     sessionId: string;

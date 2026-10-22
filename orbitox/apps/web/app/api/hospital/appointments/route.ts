@@ -1,35 +1,32 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { ORBITOX_BACKEND_URL } from '../_init';
+import { safeProxyOrFallback } from '../_init';
+import { hospitalStore } from '../_store';
 
 export async function GET(req: NextRequest) {
-  try {
-    const contextId = req.headers.get('x-context-id') || '';
-    const res = await fetch(`${ORBITOX_BACKEND_URL}/api/hospital/appointments`, {
-      headers: contextId ? { 'x-context-id': contextId } : {},
-      cache: 'no-store'
-    });
-    const data = await res.json();
-    return NextResponse.json(data);
-  } catch (err: any) {
-    return NextResponse.json({ success: false, error: err.message }, { status: 502 });
-  }
+  const contextId = req.headers.get('x-context-id') || '';
+  return safeProxyOrFallback(
+    req,
+    '/api/hospital/appointments',
+    () => hospitalStore.getAppointments(),
+    {
+      headers: contextId ? { 'x-context-id': contextId } : undefined,
+    }
+  );
 }
 
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
-    const contextId = req.headers.get('x-context-id') || '';
-    const res = await fetch(`${ORBITOX_BACKEND_URL}/api/hospital/appointments`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        ...(contextId ? { 'x-context-id': contextId } : {})
-      },
-      body: JSON.stringify(body)
-    });
-    const data = await res.json();
-    return NextResponse.json(data, { status: res.status });
+    return safeProxyOrFallback(
+      req,
+      '/api/hospital/appointments',
+      () => hospitalStore.addAppointment(body),
+      {
+        method: 'POST',
+        body,
+      }
+    );
   } catch (err: any) {
-    return NextResponse.json({ success: false, error: err.message }, { status: 502 });
+    return NextResponse.json({ success: false, error: err.message }, { status: 400 });
   }
 }

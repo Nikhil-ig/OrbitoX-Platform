@@ -1,0 +1,7 @@
+{
+  "name": "@orbitox-restaurant/web",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Frontend product UI for Diner Mobile PWA, KDS, and Spatial Floor Canvas",
+  "main": "index.ts"
+}

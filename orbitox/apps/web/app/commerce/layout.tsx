@@ -7,6 +7,7 @@ import { useCommerceStores } from '@orbitox/commerce';
 import { useTheme } from '@orbitox/ui';
 import { CommandPalette } from '@/components/commerce/command-palette';
 import { PlatformThemeCustomizerModal } from '@/components/commerce/platform-theme-customizer-modal';
+import { PlatformGovernanceDock } from '../components/platform-governance-dock';
 import {
   IconBrandLogo,
   IconSettings,
@@ -50,6 +51,18 @@ export default function CommerceAdminLayout({ children }: { children: React.Reac
   const currentSlug = activeStore?.slug || 'punjabi-jutti';
 
   const dockApps = [
+    {
+      id: 'admin',
+      icon: (
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#FF7A1A" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <circle cx="12" cy="12" r="3" fill="#FF7A1A" />
+          <ellipse cx="12" cy="12" rx="9" ry="4" transform="rotate(-30 12 12)" />
+          <ellipse cx="12" cy="12" rx="9" ry="4" transform="rotate(30 12 12)" />
+        </svg>
+      ),
+      label: 'OrbitoX Admin OS',
+      path: '/admin',
+    },
     { id: 'commerce', icon: <IconShoppingBag size={18} />, label: 'Commerce OS', path: '/commerce' },
     {
       id: 'hms',
@@ -555,6 +568,9 @@ export default function CommerceAdminLayout({ children }: { children: React.Reac
           position: 'relative',
         }}
       >
+        <div style={{ padding: '16px 24px 0 24px' }}>
+          <PlatformGovernanceDock serviceId="commerce" tenantId="aura-luxury" />
+        </div>
         {children}
       </main>
 

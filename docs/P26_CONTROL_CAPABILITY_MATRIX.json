@@ -1,0 +1,401 @@
+{
+  "$schema": "https://orbitox.io/schemas/control-capability-matrix-v1.json",
+  "version": "1.0.0",
+  "generatedAt": "2026-10-04T16:00:00Z",
+  "system": "OrbitoX Studio Zero — Universal Ingestion & Creative Interaction Engine",
+  "capabilities": {
+    "importAdapters": [
+      {
+        "id": "figma_adapter",
+        "name": "Figma Universal Adapter",
+        "supportedInputs": [
+          "figma_rest_api",
+          "figma_plugin_bridge",
+          "dot_fig_binary"
+        ],
+        "fidelityTarget": "95-98%",
+        "autoLayoutMapping": "flex_stack",
+        "vectorConversion": "native_svg_path",
+        "componentSets": true,
+        "tokenExtraction": [
+          "colors",
+          "typography",
+          "spacing",
+          "radii"
+        ],
+        "status": "verified"
+      },
+      {
+        "id": "adobe_xd_adapter",
+        "name": "Adobe XD Archive Adapter",
+        "supportedInputs": [
+          "dot_xd_zip_package"
+        ],
+        "fidelityTarget": "90-95%",
+        "autoLayoutMapping": "inferred_flex_rows_columns",
+        "vectorConversion": "native_svg_path",
+        "componentSets": true,
+        "tokenExtraction": [
+          "colors",
+          "gradients",
+          "typography"
+        ],
+        "status": "verified"
+      },
+      {
+        "id": "canva_adapter",
+        "name": "Canva Ingestion & De-Flattening Adapter",
+        "supportedInputs": [
+          "canva_html_export",
+          "canva_connect_api"
+        ],
+        "fidelityTarget": "88-92%",
+        "autoLayoutMapping": "inferred_flex_flow",
+        "vectorConversion": "svg_clipping_mask_extraction",
+        "componentSets": false,
+        "tokenExtraction": [
+          "colors",
+          "typography"
+        ],
+        "status": "planned"
+      },
+      {
+        "id": "shopify_adapter",
+        "name": "Shopify OS 2.0 Theme Adapter",
+        "supportedInputs": [
+          "shopify_theme_zip"
+        ],
+        "fidelityTarget": "96-99%",
+        "autoLayoutMapping": "section_block_hierarchy",
+        "vectorConversion": "inline_svg_snippets",
+        "componentSets": true,
+        "tokenExtraction": [
+          "settings_data_json",
+          "liquid_schema"
+        ],
+        "status": "verified"
+      },
+      {
+        "id": "wordpress_adapter",
+        "name": "WordPress FSE & Block Theme Adapter",
+        "supportedInputs": [
+          "wp_block_theme_zip",
+          "gutenberg_block_html"
+        ],
+        "fidelityTarget": "94-98%",
+        "autoLayoutMapping": "wp_columns_group_flex",
+        "vectorConversion": "svg_icons",
+        "componentSets": true,
+        "tokenExtraction": [
+          "theme_json_palette",
+          "typography"
+        ],
+        "status": "verified"
+      },
+      {
+        "id": "url_crawler_adapter",
+        "name": "Live Website URL Adapter",
+        "supportedInputs": [
+          "live_website_url",
+          "prerendered_html"
+        ],
+        "fidelityTarget": "92-96%",
+        "autoLayoutMapping": "landmark_and_flex_deconstruction",
+        "vectorConversion": "svg_and_canvas",
+        "componentSets": false,
+        "tokenExtraction": [
+          "css_variables",
+          "font_families"
+        ],
+        "status": "verified"
+      },
+      {
+        "id": "wix_adapter",
+        "name": "Wix Site & URL Adapter",
+        "supportedInputs": [
+          "wix_live_url",
+          "wix_exported_html"
+        ],
+        "fidelityTarget": "85-90%",
+        "autoLayoutMapping": "strip_column_mesh_deconstruction",
+        "vectorConversion": "svg_elements",
+        "componentSets": false,
+        "tokenExtraction": [
+          "computed_styles_quantization"
+        ],
+        "status": "planned"
+      },
+      {
+        "id": "code_adapter",
+        "name": "HTML5, CSS, React, Next.js, Vue, Svelte Adapter",
+        "supportedInputs": [
+          "html_css_zip",
+          "jsx_tsx_files",
+          "vue_sfc",
+          "svelte_sfc"
+        ],
+        "fidelityTarget": "95-99%",
+        "autoLayoutMapping": "direct_css_flex_grid_and_tailwind",
+        "vectorConversion": "native_svg_and_canvas",
+        "componentSets": true,
+        "tokenExtraction": [
+          "tailwind_config",
+          "css_variables"
+        ],
+        "status": "verified"
+      }
+    ],
+    "contextMenus": [
+      {
+        "context": "canvas_background",
+        "targetElement": "artboard_backdrop",
+        "status": "verified",
+        "actions": [
+          {
+            "action": "PASTE",
+            "shortcut": "⌘V",
+            "command": "SG_PASTE_NODES"
+          },
+          {
+            "action": "PASTE_HERE",
+            "shortcut": "⌥⇧⌘V",
+            "command": "SG_PASTE_AT_COORDINATES"
+          },
+          {
+            "action": "SELECT_ALL",
+            "shortcut": "⌘A",
+            "command": "SELECT_ALL_NODES"
+          },
+          {
+            "action": "ADD_SECTION",
+            "shortcut": "A",
+            "command": "INSERT_SECTION"
+          },
+          {
+            "action": "ZOOM_FIT",
+            "shortcut": "⌘0",
+            "command": "SET_ZOOM_FIT"
+          },
+          {
+            "action": "ZOOM_SELECTION",
+            "shortcut": "⌘2",
+            "command": "SET_ZOOM_SELECTION"
+          },
+          {
+            "action": "TOGGLE_GUIDES",
+            "shortcut": "",
+            "command": "TOGGLE_SMART_GUIDES"
+          },
+          {
+            "action": "TOGGLE_RULERS",
+            "shortcut": "⇧R",
+            "command": "TOGGLE_RULERS"
+          }
+        ]
+      },
+      {
+        "context": "scene_graph_node",
+        "targetElement": "canvas_node_or_layer_item",
+        "status": "verified",
+        "actions": [
+          {
+            "action": "CUT",
+            "shortcut": "⌘X",
+            "command": "SG_CUT_NODES"
+          },
+          {
+            "action": "COPY",
+            "shortcut": "⌘C",
+            "command": "SG_COPY_NODES"
+          },
+          {
+            "action": "COPY_AS_CODE",
+            "shortcut": "",
+            "submenu": [
+              "REACT_JSX",
+              "HTML_CSS",
+              "SVG",
+              "JSON_AST"
+            ]
+          },
+          {
+            "action": "PASTE",
+            "shortcut": "⌘V",
+            "command": "SG_PASTE_NODES"
+          },
+          {
+            "action": "PASTE_TO_REPLACE",
+            "shortcut": "⌥⌘V",
+            "command": "SG_PASTE_REPLACE"
+          },
+          {
+            "action": "DUPLICATE",
+            "shortcut": "⌘D",
+            "command": "SG_DUPLICATE_NODE"
+          },
+          {
+            "action": "DELETE",
+            "shortcut": "⌫",
+            "command": "SG_DELETE_NODE"
+          },
+          {
+            "action": "SELECT_LAYER",
+            "shortcut": "",
+            "submenu": "DYNAMIC_ANCESTOR_CHILD_STACK"
+          },
+          {
+            "action": "WRAP_FRAME",
+            "shortcut": "⌥⌘G",
+            "command": "SG_WRAP_NODES"
+          },
+          {
+            "action": "GROUP",
+            "shortcut": "⌘G",
+            "command": "SG_GROUP_NODES"
+          },
+          {
+            "action": "CREATE_COMPONENT",
+            "shortcut": "⌥⌘K",
+            "command": "SG_CREATE_COMPONENT"
+          },
+          {
+            "action": "CONVERT_TO_SECTION",
+            "shortcut": "",
+            "command": "CONVERT_NODE_TO_SECTION"
+          },
+          {
+            "action": "BRING_TO_FRONT",
+            "shortcut": "]",
+            "command": "SG_REORDER_NODE_FRONT"
+          },
+          {
+            "action": "BRING_FORWARD",
+            "shortcut": "⌘]",
+            "command": "SG_REORDER_NODE_UP"
+          },
+          {
+            "action": "SEND_BACKWARD",
+            "shortcut": "⌘[",
+            "command": "SG_REORDER_NODE_DOWN"
+          },
+          {
+            "action": "SEND_TO_BACK",
+            "shortcut": "[",
+            "command": "SG_REORDER_NODE_BACK"
+          },
+          {
+            "action": "COPY_STYLES",
+            "shortcut": "⌥⌘C",
+            "command": "COPY_NODE_STYLES"
+          },
+          {
+            "action": "PASTE_STYLES",
+            "shortcut": "⌥⌘V",
+            "command": "PASTE_NODE_STYLES"
+          },
+          {
+            "action": "LOCK_UNLOCK",
+            "shortcut": "⌘L",
+            "command": "SG_LOCK_NODE"
+          },
+          {
+            "action": "HIDE_SHOW",
+            "shortcut": "⌘⇧H",
+            "command": "SG_HIDE_NODE"
+          },
+          {
+            "action": "RENAME",
+            "shortcut": "⏎",
+            "command": "RENAME_NODE"
+          }
+        ]
+      },
+      {
+        "context": "multi_selection",
+        "targetElement": "multiple_selected_nodes",
+        "status": "verified",
+        "actions": [
+          {
+            "action": "GROUP",
+            "shortcut": "⌘G",
+            "command": "SG_GROUP_NODES"
+          },
+          {
+            "action": "WRAP_AUTO_LAYOUT",
+            "shortcut": "⌥⇧A",
+            "command": "SG_WRAP_AUTO_LAYOUT"
+          },
+          {
+            "action": "ALIGN_LEFT",
+            "shortcut": "⌥A",
+            "command": "SG_ALIGN_NODES_LEFT"
+          },
+          {
+            "action": "ALIGN_CENTER",
+            "shortcut": "⌥H",
+            "command": "SG_ALIGN_NODES_CENTER"
+          },
+          {
+            "action": "ALIGN_RIGHT",
+            "shortcut": "⌥D",
+            "command": "SG_ALIGN_NODES_RIGHT"
+          },
+          {
+            "action": "ALIGN_TOP",
+            "shortcut": "⌥W",
+            "command": "SG_ALIGN_NODES_TOP"
+          },
+          {
+            "action": "ALIGN_MIDDLE",
+            "shortcut": "⌥V",
+            "command": "SG_ALIGN_NODES_MIDDLE"
+          },
+          {
+            "action": "ALIGN_BOTTOM",
+            "shortcut": "⌥S",
+            "command": "SG_ALIGN_NODES_BOTTOM"
+          },
+          {
+            "action": "DISTRIBUTE_HORIZONTAL",
+            "shortcut": "⌃⌥H",
+            "command": "SG_DISTRIBUTE_NODES_H"
+          },
+          {
+            "action": "DISTRIBUTE_VERTICAL",
+            "shortcut": "⌃⌥V",
+            "command": "SG_DISTRIBUTE_NODES_V"
+          },
+          {
+            "action": "DELETE_ALL",
+            "shortcut": "⌫",
+            "command": "SG_MULTI_DELETE"
+          }
+        ]
+      }
+    ],
+    "clipboardCapabilities": {
+      "supportedMimeTypes": [
+        "application/vnd.orbitox.scenegraph+json",
+        "text/html",
+        "image/svg+xml",
+        "text/plain",
+        "image/png"
+      ],
+      "pasteSpecialModes": [
+        "paste_standard",
+        "paste_at_cursor",
+        "paste_to_replace",
+        "paste_into_selection",
+        "paste_styles_only",
+        "paste_as_plain_text"
+      ],
+      "copyAsCodeTargets": [
+        "react_jsx_tailwind",
+        "html5_css3_scoped",
+        "svg_vector",
+        "scenegraph_ast_json"
+      ],
+      "status": "verified"
+    }
+  }
+}

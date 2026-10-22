@@ -1,0 +1,2077 @@
+{
+  "version": 2,
+  "lastUpdated": "2026-10-09T14:44:43.792Z",
+  "revisions": 2,
+  "branches": [
+    {
+      "id": "branch_ldh",
+      "name": "Ludhiana Main",
+      "code": "LDH-HQ",
+      "address": "54 Model Town, Mall Road",
+      "city": "Ludhiana",
+      "timezone": "Asia/Kolkata",
+      "currency": "INR",
+      "status": "OPERATIONAL",
+      "serviceAreasCount": 4,
+      "activeTablesCount": 28
+    },
+    {
+      "id": "branch_chd",
+      "name": "Chandigarh Sector 17",
+      "code": "CHD-S17",
+      "address": "SCO 88-89, Sector 17-C",
+      "city": "Chandigarh",
+      "timezone": "Asia/Kolkata",
+      "currency": "INR",
+      "status": "OPERATIONAL",
+      "serviceAreasCount": 3,
+      "activeTablesCount": 22
+    },
+    {
+      "id": "branch_del",
+      "name": "Delhi Connaught Place",
+      "code": "DEL-CP",
+      "address": "Radial Road 4, Inner Circle",
+      "city": "New Delhi",
+      "timezone": "Asia/Kolkata",
+      "currency": "INR",
+      "status": "OPERATIONAL",
+      "serviceAreasCount": 3,
+      "activeTablesCount": 34
+    }
+  ],
+  "floors": [
+    {
+      "id": "floor_courtyard",
+      "branchId": "branch_ldh",
+      "name": "Main Courtyard",
+      "type": "Dining",
+      "capacity": 84,
+      "activeLayout": "Dinner Layout",
+      "status": "ACTIVE",
+      "tableIds": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        14
+      ],
+      "serviceLayouts": [
+        {
+          "id": "lay_dinner",
+          "name": "Dinner Layout",
+          "description": "Standard high-cover table configuration",
+          "tableCount": 9
+        },
+        {
+          "id": "lay_lunch",
+          "name": "Lunch Rush",
+          "description": "Fast turn 2-top and 4-top layout",
+          "tableCount": 12
+        },
+        {
+          "id": "lay_event",
+          "name": "Private Event / Reception",
+          "description": "Open cocktail & dance floor arrangement",
+          "tableCount": 5
+        }
+      ]
+    },
+    {
+      "id": "floor_bar",
+      "branchId": "branch_ldh",
+      "name": "Bar Lounge",
+      "type": "Bar",
+      "capacity": 24,
+      "activeLayout": "Evening Cocktails",
+      "status": "ACTIVE",
+      "tableIds": [
+        10,
+        11
+      ],
+      "serviceLayouts": [
+        {
+          "id": "lay_bar_eve",
+          "name": "Evening Cocktails",
+          "description": "High-top seating and mixology views",
+          "tableCount": 2
+        },
+        {
+          "id": "lay_bar_day",
+          "name": "Daytime Lounge",
+          "description": "Casual cafe seating",
+          "tableCount": 3
+        }
+      ]
+    },
+    {
+      "id": "floor_private",
+      "branchId": "branch_ldh",
+      "name": "Private Dining",
+      "type": "Private",
+      "capacity": 16,
+      "activeLayout": "Gala Dinner",
+      "status": "ACTIVE",
+      "tableIds": [
+        9
+      ],
+      "serviceLayouts": [
+        {
+          "id": "lay_pdr_gala",
+          "name": "Gala Dinner",
+          "description": "Long royal banquet table configuration",
+          "tableCount": 1
+        },
+        {
+          "id": "lay_pdr_conf",
+          "name": "Executive Meeting",
+          "description": "Boardroom conference presentation setup",
+          "tableCount": 1
+        }
+      ]
+    },
+    {
+      "id": "floor_rooftop",
+      "branchId": "branch_ldh",
+      "name": "Rooftop Terrace",
+      "type": "Outdoor",
+      "capacity": 36,
+      "activeLayout": "Open Sky",
+      "status": "ACTIVE",
+      "tableIds": [
+        15,
+        16
+      ],
+      "serviceLayouts": [
+        {
+          "id": "lay_roof_sky",
+          "name": "Open Sky",
+          "description": "Canopy lounge and starlight seating",
+          "tableCount": 2
+        },
+        {
+          "id": "lay_roof_bbq",
+          "name": "Live Grille & Barbecue",
+          "description": "Chef station buffer and casual high tables",
+          "tableCount": 4
+        }
+      ]
+    },
+    {
+      "id": "floor_chd_dining",
+      "branchId": "branch_chd",
+      "name": "Main Dining Hall",
+      "type": "Dining",
+      "capacity": 60,
+      "activeLayout": "Standard",
+      "status": "ACTIVE",
+      "tableIds": [
+        21,
+        22,
+        23,
+        24
+      ],
+      "serviceLayouts": [
+        {
+          "id": "lay_chd_std",
+          "name": "Standard Layout",
+          "description": "Sector 17 family dining setup",
+          "tableCount": 4
+        }
+      ]
+    },
+    {
+      "id": "floor_chd_patio",
+      "branchId": "branch_chd",
+      "name": "Garden Patio",
+      "type": "Outdoor",
+      "capacity": 30,
+      "activeLayout": "Afternoon High Tea",
+      "status": "ACTIVE",
+      "tableIds": [
+        25,
+        26
+      ],
+      "serviceLayouts": [
+        {
+          "id": "lay_chd_tea",
+          "name": "Afternoon High Tea",
+          "description": "Garden parasol seating",
+          "tableCount": 2
+        }
+      ]
+    },
+    {
+      "id": "floor_del_atrium",
+      "branchId": "branch_del",
+      "name": "Heritage Atrium",
+      "type": "Dining",
+      "capacity": 96,
+      "activeLayout": "Heritage Seating",
+      "status": "ACTIVE",
+      "tableIds": [
+        31,
+        32,
+        33
+      ],
+      "serviceLayouts": [
+        {
+          "id": "lay_del_her",
+          "name": "Heritage Seating",
+          "description": "Grand colonial pillars layout",
+          "tableCount": 3
+        }
+      ]
+    },
+    {
+      "id": "floor_del_lounge",
+      "branchId": "branch_del",
+      "name": "Colonial Lounge",
+      "type": "Bar",
+      "capacity": 40,
+      "activeLayout": "Bar Service",
+      "status": "ACTIVE",
+      "tableIds": [
+        34,
+        35
+      ],
+      "serviceLayouts": [
+        {
+          "id": "lay_del_lounge",
+          "name": "Bar Service",
+          "description": "Velvet booth lounge seating",
+          "tableCount": 2
+        }
+      ]
+    }
+  ],
+  "tables": [
+    {
+      "id": 1,
+      "number": "T-01",
+      "capacity": 2,
+      "status": "AVAILABLE",
+      "x": 60,
+      "y": 50,
+      "width": 80,
+      "height": 80,
+      "rotation": 0,
+      "shape": "circle",
+      "section": "Main Courtyard",
+      "floorId": "floor_courtyard",
+      "branchId": "branch_ldh",
+      "locator": "8Kl2aB1q9P",
+      "serverName": "Aman",
+      "turnTimeMinutes": 0,
+      "seats": [
+        {
+          "id": "seat_1_1",
+          "seatNumber": 1,
+          "label": "S1",
+          "isOccupied": false
+        },
+        {
+          "id": "seat_1_2",
+          "seatNumber": 2,
+          "label": "S2",
+          "isOccupied": false
+        }
+      ],
+      "activeBillMinor": 0
+    },
+    {
+      "id": 2,
+      "number": "T-02",
+      "capacity": 2,
+      "status": "OCCUPIED",
+      "x": 180,
+      "y": 50,
+      "width": 80,
+      "height": 80,
+      "rotation": 0,
+      "shape": "circle",
+      "section": "Main Courtyard",
+      "floorId": "floor_courtyard",
+      "branchId": "branch_ldh",
+      "locator": "3Mn8vC4w1R",
+      "activeSessionId": "sess_02",
+      "activeBillMinor": 0,
+      "serverName": "Simran",
+      "turnTimeMinutes": 28,
+      "seats": [
+        {
+          "id": "seat_2_1",
+          "seatNumber": 1,
+          "label": "S1",
+          "guestId": "g_2_1",
+          "guestName": "Karan",
+          "isOccupied": true
+        },
+        {
+          "id": "seat_2_2",
+          "seatNumber": 2,
+          "label": "S2",
+          "guestId": "g_2_2",
+          "guestName": "Neha",
+          "isOccupied": true
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "number": "T-03",
+      "capacity": 4,
+      "status": "OCCUPIED",
+      "x": 300,
+      "y": 50,
+      "width": 90,
+      "height": 90,
+      "rotation": 0,
+      "shape": "rectangle",
+      "section": "Main Courtyard",
+      "floorId": "floor_courtyard",
+      "branchId": "branch_ldh",
+      "locator": "9Qz1xC7v2B",
+      "activeSessionId": "sess_03",
+      "activeBillMinor": 0,
+      "serverName": "Aman",
+      "turnTimeMinutes": 35,
+      "seats": [
+        {
+          "id": "seat_3_1",
+          "seatNumber": 1,
+          "label": "S1",
+          "guestId": "g_3_1",
+          "guestName": "Harpreet",
+          "isOccupied": true
+        },
+        {
+          "id": "seat_3_2",
+          "seatNumber": 2,
+          "label": "S2",
+          "guestId": "g_3_2",
+          "guestName": "Jaspreet",
+          "isOccupied": true
+        },
+        {
+          "id": "seat_3_3",
+          "seatNumber": 3,
+          "label": "S3",
+          "isOccupied": false
+        },
+        {
+          "id": "seat_3_4",
+          "seatNumber": 4,
+          "label": "S4",
+          "isOccupied": false
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "number": "T-04",
+      "capacity": 4,
+      "status": "AVAILABLE",
+      "x": 430,
+      "y": 50,
+      "width": 90,
+      "height": 90,
+      "rotation": 0,
+      "shape": "rectangle",
+      "section": "Main Courtyard",
+      "floorId": "floor_courtyard",
+      "branchId": "branch_ldh",
+      "locator": "5Vb9yU3i8O",
+      "serverName": "Vikram",
+      "turnTimeMinutes": 0,
+      "seats": [
+        {
+          "id": "seat_4_1",
+          "seatNumber": 1,
+          "label": "S1",
+          "isOccupied": false
+        },
+        {
+          "id": "seat_4_2",
+          "seatNumber": 2,
+          "label": "S2",
+          "isOccupied": false
+        },
+        {
+          "id": "seat_4_3",
+          "seatNumber": 3,
+          "label": "S3",
+          "isOccupied": false
+        },
+        {
+          "id": "seat_4_4",
+          "seatNumber": 4,
+          "label": "S4",
+          "isOccupied": false
+        }
+      ],
+      "activeBillMinor": 0
+    },
+    {
+      "id": 5,
+      "number": "T-05",
+      "capacity": 6,
+      "status": "BILL_REQUESTED",
+      "x": 60,
+      "y": 170,
+      "width": 120,
+      "height": 80,
+      "rotation": 0,
+      "shape": "rectangle",
+      "section": "Main Courtyard",
+      "floorId": "floor_courtyard",
+      "branchId": "branch_ldh",
+      "locator": "2We4rT8y1U",
+      "activeSessionId": "sess_05",
+      "activeBillMinor": 130200,
+      "serverName": "Simran",
+      "turnTimeMinutes": 52,
+      "seats": [
+        {
+          "id": "seat_5_1",
+          "seatNumber": 1,
+          "label": "S1",
+          "guestId": "g_5_1",
+          "guestName": "Rajesh",
+          "isOccupied": true
+        },
+        {
+          "id": "seat_5_2",
+          "seatNumber": 2,
+          "label": "S2",
+          "guestId": "g_5_2",
+          "guestName": "Sunita",
+          "isOccupied": true
+        },
+        {
+          "id": "seat_5_3",
+          "seatNumber": 3,
+          "label": "S3",
+          "guestId": "g_5_3",
+          "guestName": "Ananya",
+          "isOccupied": true
+        },
+        {
+          "id": "seat_5_4",
+          "seatNumber": 4,
+          "label": "S4",
+          "guestId": "g_5_4",
+          "guestName": "Rohan",
+          "isOccupied": true
+        },
+        {
+          "id": "seat_5_5",
+          "seatNumber": 5,
+          "label": "S5",
+          "isOccupied": false
+        },
+        {
+          "id": "seat_5_6",
+          "seatNumber": 6,
+          "label": "S6",
+          "isOccupied": false
+        }
+      ]
+    },
+    {
+      "id": 6,
+      "number": "T-06",
+      "capacity": 4,
+      "status": "AVAILABLE",
+      "x": 220,
+      "y": 170,
+      "width": 90,
+      "height": 90,
+      "rotation": 0,
+      "shape": "rectangle",
+      "section": "Main Courtyard",
+      "floorId": "floor_courtyard",
+      "branchId": "branch_ldh",
+      "locator": "6Yu7iO2p4A",
+      "serverName": "Vikram",
+      "turnTimeMinutes": 0,
+      "seats": [
+        {
+          "id": "seat_6_1",
+          "seatNumber": 1,
+          "label": "S1",
+          "isOccupied": false
+        },
+        {
+          "id": "seat_6_2",
+          "seatNumber": 2,
+          "label": "S2",
+          "isOccupied": false
+        },
+        {
+          "id": "seat_6_3",
+          "seatNumber": 3,
+          "label": "S3",
+          "isOccupied": false
+        },
+        {
+          "id": "seat_6_4",
+          "seatNumber": 4,
+          "label": "S4",
+          "isOccupied": false
+        }
+      ],
+      "activeBillMinor": 0
+    },
+    {
+      "id": 7,
+      "number": "T-07",
+      "capacity": 4,
+      "status": "OCCUPIED",
+      "x": 350,
+      "y": 170,
+      "width": 90,
+      "height": 90,
+      "rotation": 0,
+      "shape": "rectangle",
+      "section": "Main Courtyard",
+      "floorId": "floor_courtyard",
+      "branchId": "branch_ldh",
+      "locator": "1Sd3fG5h7J",
+      "activeSessionId": "sess_07",
+      "activeBillMinor": 0,
+      "serverName": "Aman",
+      "turnTimeMinutes": 44,
+      "seats": [
+        {
+          "id": "seat_7_1",
+          "seatNumber": 1,
+          "label": "S1",
+          "guestId": "g_7_1",
+          "guestName": "Priya",
+          "isOccupied": true
+        },
+        {
+          "id": "seat_7_2",
+          "seatNumber": 2,
+          "label": "S2",
+          "guestId": "g_7_2",
+          "guestName": "Amit",
+          "isOccupied": true
+        },
+        {
+          "id": "seat_7_3",
+          "seatNumber": 3,
+          "label": "S3",
+          "isOccupied": false
+        },
+        {
+          "id": "seat_7_4",
+          "seatNumber": 4,
+          "label": "S4",
+          "isOccupied": false
+        }
+      ]
+    },
+    {
+      "id": 8,
+      "number": "T-08",
+      "capacity": 2,
+      "status": "AVAILABLE",
+      "x": 480,
+      "y": 170,
+      "width": 80,
+      "height": 80,
+      "rotation": 0,
+      "shape": "circle",
+      "section": "Main Courtyard",
+      "floorId": "floor_courtyard",
+      "branchId": "branch_ldh",
+      "locator": "4Kl6zX8c0V",
+      "serverName": "Aman",
+      "turnTimeMinutes": 0,
+      "seats": [
+        {
+          "id": "seat_8_1",
+          "seatNumber": 1,
+          "label": "S1",
+          "isOccupied": false
+        },
+        {
+          "id": "seat_8_2",
+          "seatNumber": 2,
+          "label": "S2",
+          "isOccupied": false
+        }
+      ],
+      "activeBillMinor": 0
+    },
+    {
+      "id": 9,
+      "number": "T-09",
+      "capacity": 8,
+      "status": "RESERVED",
+      "x": 60,
+      "y": 290,
+      "width": 150,
+      "height": 90,
+      "rotation": 0,
+      "shape": "rectangle",
+      "section": "Private Dining",
+      "floorId": "floor_private",
+      "branchId": "branch_ldh",
+      "locator": "7Jk5mN3b1Q",
+      "serverName": "Simran",
+      "turnTimeMinutes": 0,
+      "seats": [
+        {
+          "id": "seat_9_1",
+          "seatNumber": 1,
+          "label": "S1",
+          "isOccupied": false
+        },
+        {
+          "id": "seat_9_2",
+          "seatNumber": 2,
+          "label": "S2",
+          "isOccupied": false
+        },
+        {
+          "id": "seat_9_3",
+          "seatNumber": 3,
+          "label": "S3",
+          "isOccupied": false
+        },
+        {
+          "id": "seat_9_4",
+          "seatNumber": 4,
+          "label": "S4",
+          "isOccupied": false
+        },
+        {
+          "id": "seat_9_5",
+          "seatNumber": 5,
+          "label": "S5",
+          "isOccupied": false
+        },
+        {
+          "id": "seat_9_6",
+          "seatNumber": 6,
+          "label": "S6",
+          "isOccupied": false
+        },
+        {
+          "id": "seat_9_7",
+          "seatNumber": 7,
+          "label": "S7",
+          "isOccupied": false
+        },
+        {
+          "id": "seat_9_8",
+          "seatNumber": 8,
+          "label": "S8",
+          "isOccupied": false
+        }
+      ],
+      "activeBillMinor": 0
+    },
+    {
+      "id": 10,
+      "number": "B-01",
+      "capacity": 2,
+      "status": "AVAILABLE",
+      "x": 250,
+      "y": 290,
+      "width": 80,
+      "height": 80,
+      "rotation": 0,
+      "shape": "circle",
+      "section": "Bar Lounge",
+      "floorId": "floor_bar",
+      "branchId": "branch_ldh",
+      "locator": "8Po0iU2y4T",
+      "serverName": "Tanya (Bar)",
+      "turnTimeMinutes": 0,
+      "seats": [
+        {
+          "id": "seat_10_1",
+          "seatNumber": 1,
+          "label": "S1",
+          "isOccupied": false
+        },
+        {
+          "id": "seat_10_2",
+          "seatNumber": 2,
+          "label": "S2",
+          "isOccupied": false
+        }
+      ],
+      "activeBillMinor": 0
+    },
+    {
+      "id": 11,
+      "number": "B-02",
+      "capacity": 2,
+      "status": "OCCUPIED",
+      "x": 370,
+      "y": 290,
+      "width": 80,
+      "height": 80,
+      "rotation": 0,
+      "shape": "circle",
+      "section": "Bar Lounge",
+      "floorId": "floor_bar",
+      "branchId": "branch_ldh",
+      "locator": "2Wq9eR7t5Y",
+      "activeSessionId": "sess_11",
+      "activeBillMinor": 0,
+      "serverName": "Tanya (Bar)",
+      "turnTimeMinutes": 19,
+      "seats": [
+        {
+          "id": "seat_11_1",
+          "seatNumber": 1,
+          "label": "S1",
+          "guestId": "g_11_1",
+          "guestName": "Dev",
+          "isOccupied": true
+        },
+        {
+          "id": "seat_11_2",
+          "seatNumber": 2,
+          "label": "S2",
+          "isOccupied": false
+        }
+      ]
+    },
+    {
+      "id": 14,
+      "number": "T-14",
+      "capacity": 4,
+      "status": "OCCUPIED",
+      "x": 490,
+      "y": 290,
+      "width": 90,
+      "height": 90,
+      "rotation": 0,
+      "shape": "rectangle",
+      "section": "Main Courtyard",
+      "floorId": "floor_courtyard",
+      "branchId": "branch_ldh",
+      "locator": "7Kp9xQ8m2L",
+      "activeSessionId": "sess_14",
+      "activeBillMinor": 76650,
+      "serverName": "Aman",
+      "turnTimeMinutes": 42,
+      "seats": [
+        {
+          "id": "seat_14_1",
+          "seatNumber": 1,
+          "label": "S1",
+          "guestId": "g_14_1",
+          "guestName": "Nikhil (Host)",
+          "isOccupied": true
+        },
+        {
+          "id": "seat_14_2",
+          "seatNumber": 2,
+          "label": "S2",
+          "guestId": "g_14_2",
+          "guestName": "Rahul",
+          "isOccupied": true
+        },
+        {
+          "id": "seat_14_3",
+          "seatNumber": 3,
+          "label": "S3",
+          "isOccupied": false
+        },
+        {
+          "id": "seat_14_4",
+          "seatNumber": 4,
+          "label": "S4",
+          "isOccupied": false
+        }
+      ]
+    },
+    {
+      "id": 15,
+      "number": "R-01",
+      "capacity": 4,
+      "status": "AVAILABLE",
+      "x": 100,
+      "y": 100,
+      "width": 90,
+      "height": 90,
+      "rotation": 0,
+      "shape": "circle",
+      "section": "Rooftop Terrace",
+      "floorId": "floor_rooftop",
+      "branchId": "branch_ldh",
+      "locator": "4Rk8xM2q1P",
+      "serverName": "Gurpreet",
+      "turnTimeMinutes": 0,
+      "seats": [
+        {
+          "id": "seat_15_1",
+          "seatNumber": 1,
+          "label": "S1",
+          "isOccupied": false
+        },
+        {
+          "id": "seat_15_2",
+          "seatNumber": 2,
+          "label": "S2",
+          "isOccupied": false
+        },
+        {
+          "id": "seat_15_3",
+          "seatNumber": 3,
+          "label": "S3",
+          "isOccupied": false
+        },
+        {
+          "id": "seat_15_4",
+          "seatNumber": 4,
+          "label": "S4",
+          "isOccupied": false
+        }
+      ],
+      "activeBillMinor": 0
+    },
+    {
+      "id": 16,
+      "number": "R-02",
+      "capacity": 6,
+      "status": "AVAILABLE",
+      "x": 240,
+      "y": 100,
+      "width": 120,
+      "height": 80,
+      "rotation": 0,
+      "shape": "rectangle",
+      "section": "Rooftop Terrace",
+      "floorId": "floor_rooftop",
+      "branchId": "branch_ldh",
+      "locator": "9Lp3vN7w4K",
+      "serverName": "Gurpreet",
+      "turnTimeMinutes": 0,
+      "seats": [
+        {
+          "id": "seat_16_1",
+          "seatNumber": 1,
+          "label": "S1",
+          "isOccupied": false
+        },
+        {
+          "id": "seat_16_2",
+          "seatNumber": 2,
+          "label": "S2",
+          "isOccupied": false
+        },
+        {
+          "id": "seat_16_3",
+          "seatNumber": 3,
+          "label": "S3",
+          "isOccupied": false
+        },
+        {
+          "id": "seat_16_4",
+          "seatNumber": 4,
+          "label": "S4",
+          "isOccupied": false
+        },
+        {
+          "id": "seat_16_5",
+          "seatNumber": 5,
+          "label": "S5",
+          "isOccupied": false
+        },
+        {
+          "id": "seat_16_6",
+          "seatNumber": 6,
+          "label": "S6",
+          "isOccupied": false
+        }
+      ],
+      "activeBillMinor": 0
+    },
+    {
+      "id": 21,
+      "number": "T-21",
+      "capacity": 4,
+      "status": "OCCUPIED",
+      "x": 80,
+      "y": 80,
+      "width": 90,
+      "height": 90,
+      "rotation": 0,
+      "shape": "rectangle",
+      "section": "Main Dining Hall",
+      "floorId": "floor_chd_dining",
+      "branchId": "branch_chd",
+      "locator": "9Chd1a4K2P",
+      "activeSessionId": "sess_chd_21",
+      "activeBillMinor": 0,
+      "serverName": "Harjit",
+      "turnTimeMinutes": 32,
+      "seats": [
+        {
+          "id": "seat_21_1",
+          "seatNumber": 1,
+          "label": "S1",
+          "guestId": "g_chd_1",
+          "guestName": "Gurman (Host)",
+          "isOccupied": true
+        },
+        {
+          "id": "seat_21_2",
+          "seatNumber": 2,
+          "label": "S2",
+          "guestId": "g_chd_2",
+          "guestName": "Simrat",
+          "isOccupied": true
+        },
+        {
+          "id": "seat_21_3",
+          "seatNumber": 3,
+          "label": "S3",
+          "isOccupied": false
+        },
+        {
+          "id": "seat_21_4",
+          "seatNumber": 4,
+          "label": "S4",
+          "isOccupied": false
+        }
+      ]
+    },
+    {
+      "id": 22,
+      "number": "T-22",
+      "capacity": 4,
+      "status": "AVAILABLE",
+      "x": 220,
+      "y": 80,
+      "width": 90,
+      "height": 90,
+      "rotation": 0,
+      "shape": "rectangle",
+      "section": "Main Dining Hall",
+      "floorId": "floor_chd_dining",
+      "branchId": "branch_chd",
+      "locator": "8Chd2b5L3Q",
+      "serverName": "Harjit",
+      "turnTimeMinutes": 0,
+      "seats": [
+        {
+          "id": "seat_22_1",
+          "seatNumber": 1,
+          "label": "S1",
+          "isOccupied": false
+        },
+        {
+          "id": "seat_22_2",
+          "seatNumber": 2,
+          "label": "S2",
+          "isOccupied": false
+        },
+        {
+          "id": "seat_22_3",
+          "seatNumber": 3,
+          "label": "S3",
+          "isOccupied": false
+        },
+        {
+          "id": "seat_22_4",
+          "seatNumber": 4,
+          "label": "S4",
+          "isOccupied": false
+        }
+      ],
+      "activeBillMinor": 0
+    },
+    {
+      "id": 23,
+      "number": "T-23",
+      "capacity": 6,
+      "status": "BILL_REQUESTED",
+      "x": 360,
+      "y": 80,
+      "width": 120,
+      "height": 80,
+      "rotation": 0,
+      "shape": "rectangle",
+      "section": "Main Dining Hall",
+      "floorId": "floor_chd_dining",
+      "branchId": "branch_chd",
+      "locator": "7Chd3c6M4R",
+      "activeSessionId": "sess_chd_23",
+      "activeBillMinor": 0,
+      "serverName": "Manpreet",
+      "turnTimeMinutes": 56,
+      "seats": [
+        {
+          "id": "seat_23_1",
+          "seatNumber": 1,
+          "label": "S1",
+          "isOccupied": false
+        },
+        {
+          "id": "seat_23_2",
+          "seatNumber": 2,
+          "label": "S2",
+          "isOccupied": false
+        },
+        {
+          "id": "seat_23_3",
+          "seatNumber": 3,
+          "label": "S3",
+          "isOccupied": false
+        },
+        {
+          "id": "seat_23_4",
+          "seatNumber": 4,
+          "label": "S4",
+          "isOccupied": false
+        },
+        {
+          "id": "seat_23_5",
+          "seatNumber": 5,
+          "label": "S5",
+          "isOccupied": false
+        },
+        {
+          "id": "seat_23_6",
+          "seatNumber": 6,
+          "label": "S6",
+          "isOccupied": false
+        }
+      ]
+    },
+    {
+      "id": 24,
+      "number": "T-24",
+      "capacity": 2,
+      "status": "AVAILABLE",
+      "x": 520,
+      "y": 80,
+      "width": 80,
+      "height": 80,
+      "rotation": 0,
+      "shape": "circle",
+      "section": "Main Dining Hall",
+      "floorId": "floor_chd_dining",
+      "branchId": "branch_chd",
+      "locator": "6Chd4d7N5S",
+      "serverName": "Manpreet",
+      "turnTimeMinutes": 0,
+      "seats": [
+        {
+          "id": "seat_24_1",
+          "seatNumber": 1,
+          "label": "S1",
+          "isOccupied": false
+        },
+        {
+          "id": "seat_24_2",
+          "seatNumber": 2,
+          "label": "S2",
+          "isOccupied": false
+        }
+      ],
+      "activeBillMinor": 0
+    },
+    {
+      "id": 25,
+      "number": "P-01",
+      "capacity": 4,
+      "status": "OCCUPIED",
+      "x": 100,
+      "y": 120,
+      "width": 90,
+      "height": 90,
+      "rotation": 0,
+      "shape": "circle",
+      "section": "Garden Patio",
+      "floorId": "floor_chd_patio",
+      "branchId": "branch_chd",
+      "locator": "5Chd5e8O6T",
+      "activeSessionId": "sess_chd_25",
+      "activeBillMinor": 0,
+      "serverName": "Gagan",
+      "turnTimeMinutes": 20,
+      "seats": [
+        {
+          "id": "seat_25_1",
+          "seatNumber": 1,
+          "label": "S1",
+          "isOccupied": false
+        },
+        {
+          "id": "seat_25_2",
+          "seatNumber": 2,
+          "label": "S2",
+          "isOccupied": false
+        },
+        {
+          "id": "seat_25_3",
+          "seatNumber": 3,
+          "label": "S3",
+          "isOccupied": false
+        },
+        {
+          "id": "seat_25_4",
+          "seatNumber": 4,
+          "label": "S4",
+          "isOccupied": false
+        }
+      ]
+    },
+    {
+      "id": 26,
+      "number": "P-02",
+      "capacity": 4,
+      "status": "AVAILABLE",
+      "x": 260,
+      "y": 120,
+      "width": 90,
+      "height": 90,
+      "rotation": 0,
+      "shape": "circle",
+      "section": "Garden Patio",
+      "floorId": "floor_chd_patio",
+      "branchId": "branch_chd",
+      "locator": "4Chd6f9P7U",
+      "serverName": "Gagan",
+      "turnTimeMinutes": 0,
+      "seats": [
+        {
+          "id": "seat_26_1",
+          "seatNumber": 1,
+          "label": "S1",
+          "isOccupied": false
+        },
+        {
+          "id": "seat_26_2",
+          "seatNumber": 2,
+          "label": "S2",
+          "isOccupied": false
+        },
+        {
+          "id": "seat_26_3",
+          "seatNumber": 3,
+          "label": "S3",
+          "isOccupied": false
+        },
+        {
+          "id": "seat_26_4",
+          "seatNumber": 4,
+          "label": "S4",
+          "isOccupied": false
+        }
+      ],
+      "activeBillMinor": 0
+    },
+    {
+      "id": 31,
+      "number": "D-01",
+      "capacity": 6,
+      "status": "OCCUPIED",
+      "x": 80,
+      "y": 80,
+      "width": 120,
+      "height": 80,
+      "rotation": 0,
+      "shape": "rectangle",
+      "section": "Heritage Atrium",
+      "floorId": "floor_del_atrium",
+      "branchId": "branch_del",
+      "locator": "3Del1a0Q8V",
+      "activeSessionId": "sess_del_31",
+      "activeBillMinor": 0,
+      "serverName": "Rohit",
+      "turnTimeMinutes": 48,
+      "seats": [
+        {
+          "id": "seat_31_1",
+          "seatNumber": 1,
+          "label": "S1",
+          "guestId": "g_del_1",
+          "guestName": "Varun (Host)",
+          "isOccupied": true
+        },
+        {
+          "id": "seat_31_2",
+          "seatNumber": 2,
+          "label": "S2",
+          "guestId": "g_del_2",
+          "guestName": "Rhea",
+          "isOccupied": true
+        },
+        {
+          "id": "seat_31_3",
+          "seatNumber": 3,
+          "label": "S3",
+          "isOccupied": false
+        },
+        {
+          "id": "seat_31_4",
+          "seatNumber": 4,
+          "label": "S4",
+          "isOccupied": false
+        },
+        {
+          "id": "seat_31_5",
+          "seatNumber": 5,
+          "label": "S5",
+          "isOccupied": false
+        },
+        {
+          "id": "seat_31_6",
+          "seatNumber": 6,
+          "label": "S6",
+          "isOccupied": false
+        }
+      ]
+    },
+    {
+      "id": 32,
+      "number": "D-02",
+      "capacity": 4,
+      "status": "AVAILABLE",
+      "x": 240,
+      "y": 80,
+      "width": 90,
+      "height": 90,
+      "rotation": 0,
+      "shape": "rectangle",
+      "section": "Heritage Atrium",
+      "floorId": "floor_del_atrium",
+      "branchId": "branch_del",
+      "locator": "2Del2b1R9W",
+      "serverName": "Rohit",
+      "turnTimeMinutes": 0,
+      "seats": [
+        {
+          "id": "seat_32_1",
+          "seatNumber": 1,
+          "label": "S1",
+          "isOccupied": false
+        },
+        {
+          "id": "seat_32_2",
+          "seatNumber": 2,
+          "label": "S2",
+          "isOccupied": false
+        },
+        {
+          "id": "seat_32_3",
+          "seatNumber": 3,
+          "label": "S3",
+          "isOccupied": false
+        },
+        {
+          "id": "seat_32_4",
+          "seatNumber": 4,
+          "label": "S4",
+          "isOccupied": false
+        }
+      ],
+      "activeBillMinor": 0
+    },
+    {
+      "id": 33,
+      "number": "D-03",
+      "capacity": 8,
+      "status": "RESERVED",
+      "x": 400,
+      "y": 80,
+      "width": 150,
+      "height": 90,
+      "rotation": 0,
+      "shape": "rectangle",
+      "section": "Heritage Atrium",
+      "floorId": "floor_del_atrium",
+      "branchId": "branch_del",
+      "locator": "1Del3c2S0X",
+      "serverName": "Ananya",
+      "turnTimeMinutes": 0,
+      "seats": [
+        {
+          "id": "seat_33_1",
+          "seatNumber": 1,
+          "label": "S1",
+          "isOccupied": false
+        },
+        {
+          "id": "seat_33_2",
+          "seatNumber": 2,
+          "label": "S2",
+          "isOccupied": false
+        },
+        {
+          "id": "seat_33_3",
+          "seatNumber": 3,
+          "label": "S3",
+          "isOccupied": false
+        },
+        {
+          "id": "seat_33_4",
+          "seatNumber": 4,
+          "label": "S4",
+          "isOccupied": false
+        },
+        {
+          "id": "seat_33_5",
+          "seatNumber": 5,
+          "label": "S5",
+          "isOccupied": false
+        },
+        {
+          "id": "seat_33_6",
+          "seatNumber": 6,
+          "label": "S6",
+          "isOccupied": false
+        },
+        {
+          "id": "seat_33_7",
+          "seatNumber": 7,
+          "label": "S7",
+          "isOccupied": false
+        },
+        {
+          "id": "seat_33_8",
+          "seatNumber": 8,
+          "label": "S8",
+          "isOccupied": false
+        }
+      ],
+      "activeBillMinor": 0
+    },
+    {
+      "id": 34,
+      "number": "L-01",
+      "capacity": 2,
+      "status": "OCCUPIED",
+      "x": 120,
+      "y": 120,
+      "width": 80,
+      "height": 80,
+      "rotation": 0,
+      "shape": "circle",
+      "section": "Colonial Lounge",
+      "floorId": "floor_del_lounge",
+      "branchId": "branch_del",
+      "locator": "9Del4d3T1Y",
+      "activeSessionId": "sess_del_34",
+      "activeBillMinor": 0,
+      "serverName": "Kabir (Bar)",
+      "turnTimeMinutes": 25,
+      "seats": [
+        {
+          "id": "seat_34_1",
+          "seatNumber": 1,
+          "label": "S1",
+          "isOccupied": false
+        },
+        {
+          "id": "seat_34_2",
+          "seatNumber": 2,
+          "label": "S2",
+          "isOccupied": false
+        }
+      ]
+    },
+    {
+      "id": 35,
+      "number": "L-02",
+      "capacity": 4,
+      "status": "AVAILABLE",
+      "x": 280,
+      "y": 120,
+      "width": 90,
+      "height": 90,
+      "rotation": 0,
+      "shape": "circle",
+      "section": "Colonial Lounge",
+      "floorId": "floor_del_lounge",
+      "branchId": "branch_del",
+      "locator": "8Del5e4U2Z",
+      "serverName": "Kabir (Bar)",
+      "turnTimeMinutes": 0,
+      "seats": [
+        {
+          "id": "seat_35_1",
+          "seatNumber": 1,
+          "label": "S1",
+          "isOccupied": false
+        },
+        {
+          "id": "seat_35_2",
+          "seatNumber": 2,
+          "label": "S2",
+          "isOccupied": false
+        },
+        {
+          "id": "seat_35_3",
+          "seatNumber": 3,
+          "label": "S3",
+          "isOccupied": false
+        },
+        {
+          "id": "seat_35_4",
+          "seatNumber": 4,
+          "label": "S4",
+          "isOccupied": false
+        }
+      ],
+      "activeBillMinor": 0
+    }
+  ],
+  "orders": [
+    {
+      "orderId": "ord_101",
+      "tableNumber": "T-14",
+      "sessionId": "sess_14",
+      "status": "CONFIRMED",
+      "items": [
+        {
+          "id": "item_paneer_tikka",
+          "name": "Paneer Tikka Charcoal Grilled",
+          "quantity": 1,
+          "unitPriceMinor": 35000,
+          "station": "TANDOOR",
+          "guestName": "Nikhil (Host)",
+          "seatLabel": "S1"
+        },
+        {
+          "id": "item_dal_makhani",
+          "name": "Dal Makhani Slow-Simmered (24 hrs)",
+          "quantity": 1,
+          "unitPriceMinor": 38000,
+          "station": "CURRY_LINE",
+          "seatLabel": "Shared"
+        }
+      ],
+      "subtotalMinor": 73000,
+      "taxMinor": 3650,
+      "totalMinor": 76650,
+      "currency": "INR",
+      "createdAt": "19:42"
+    },
+    {
+      "orderId": "ord_102",
+      "tableNumber": "T-05",
+      "sessionId": "sess_05",
+      "status": "SERVED",
+      "items": [
+        {
+          "id": "item_fish_tikka",
+          "name": "Amritsari Fish Tikka",
+          "quantity": 2,
+          "unitPriceMinor": 48000,
+          "station": "TANDOOR",
+          "guestName": "Rajesh",
+          "seatLabel": "S1"
+        },
+        {
+          "id": "item_mango_lassi",
+          "name": "Alphonso Mango Lassi",
+          "quantity": 2,
+          "unitPriceMinor": 14000,
+          "station": "BAR",
+          "seatLabel": "S2"
+        }
+      ],
+      "subtotalMinor": 124000,
+      "taxMinor": 6200,
+      "totalMinor": 130200,
+      "currency": "INR",
+      "createdAt": "19:15"
+    }
+  ],
+  "kitchenTasks": [
+    {
+      "id": "task_101",
+      "orderId": "ord_demo_1",
+      "tableNumber": "T-14",
+      "seatNumber": "S1",
+      "guestName": "Nikhil",
+      "itemName": "Paneer Tikka Charcoal Grilled",
+      "quantity": 1,
+      "station": "TANDOOR",
+      "status": "QUEUED",
+      "fireAt": "19:48",
+      "targetServeAt": "20:00",
+      "elapsedMinutes": 4,
+      "slaMinutes": 12,
+      "modifiers": [
+        "Medium Spice"
+      ],
+      "course": "FIRST_COURSE"
+    },
+    {
+      "id": "task_102",
+      "orderId": "ord_demo_1",
+      "tableNumber": "T-14",
+      "seatNumber": "S1",
+      "guestName": "Nikhil",
+      "itemName": "Dal Makhani Slow-Simmered (24 hrs)",
+      "quantity": 1,
+      "station": "CURRY_LINE",
+      "status": "IN_PROGRESS",
+      "fireAt": "19:46",
+      "targetServeAt": "20:00",
+      "elapsedMinutes": 6,
+      "slaMinutes": 14,
+      "modifiers": [],
+      "course": "MAIN_COURSE"
+    },
+    {
+      "id": "task_103",
+      "orderId": "ord_demo_2",
+      "tableNumber": "T-03",
+      "seatNumber": "S2",
+      "guestName": "Jaspreet",
+      "itemName": "Alphonso Mango Lassi",
+      "quantity": 2,
+      "station": "BAR",
+      "status": "READY",
+      "fireAt": "19:35",
+      "targetServeAt": "19:40",
+      "elapsedMinutes": 8,
+      "slaMinutes": 5,
+      "modifiers": [],
+      "course": "DRINKS"
+    },
+    {
+      "id": "task_104",
+      "orderId": "ord_demo_3",
+      "tableNumber": "T-07",
+      "seatNumber": "S1",
+      "guestName": "Priya",
+      "itemName": "Murgh Makhani (Old Delhi Style)",
+      "quantity": 1,
+      "station": "CURRY_LINE",
+      "status": "QUEUED",
+      "fireAt": "19:50",
+      "targetServeAt": "20:05",
+      "elapsedMinutes": 2,
+      "slaMinutes": 15,
+      "modifiers": [
+        "Extra Butter"
+      ],
+      "course": "MAIN_COURSE"
+    }
+  ],
+  "serviceRequests": [
+    {
+      "id": "req_01",
+      "tableNumber": "T-14",
+      "branchId": "branch_ldh",
+      "floorId": "floor_courtyard",
+      "type": "WATER",
+      "status": "PENDING",
+      "requestedAt": "19:51",
+      "note": "Chilled water carafe requested"
+    },
+    {
+      "id": "req_02",
+      "tableNumber": "T-05",
+      "branchId": "branch_ldh",
+      "floorId": "floor_courtyard",
+      "type": "BILL",
+      "status": "PENDING",
+      "requestedAt": "19:48",
+      "note": "Digital bill payment & split check"
+    },
+    {
+      "id": "req_03",
+      "tableNumber": "T-02",
+      "branchId": "branch_ldh",
+      "floorId": "floor_courtyard",
+      "type": "CALL_SERVER",
+      "status": "ACKNOWLEDGED",
+      "requestedAt": "19:40",
+      "note": "Question regarding Amritsari Fish Tikka allergens"
+    }
+  ],
+  "menuItems": [
+    {
+      "id": "item_paneer_tikka",
+      "name": "Paneer Tikka Charcoal Grilled",
+      "description": "Cottage cheese marinated in Kashmiri chili, hung curd, and roasted gram flour.",
+      "basePriceMinor": 35000,
+      "formattedPrice": "₹350.00",
+      "category": "Starters",
+      "station": "TANDOOR",
+      "prepDurationMinutes": 12,
+      "allergens": [
+        "DAIRY"
+      ],
+      "dietaryFlags": [
+        "VEG"
+      ],
+      "isPopular": true,
+      "isSignature": true,
+      "story": "Skewered on seasoned iron rods, seared at 450°C over charcoal embers.",
+      "pairingSuggestions": [
+        "item_garlic_naan",
+        "item_mango_lassi"
+      ]
+    },
+    {
+      "id": "item_fish_tikka",
+      "name": "Amritsari Fish Tikka",
+      "description": "River sole chunks rubbed with ajwain carom seeds, yellow chili, and mustard oil.",
+      "basePriceMinor": 48000,
+      "formattedPrice": "₹480.00",
+      "category": "Starters",
+      "station": "TANDOOR",
+      "prepDurationMinutes": 14,
+      "allergens": [
+        "FISH"
+      ],
+      "dietaryFlags": [
+        "NON_VEG"
+      ],
+      "isPopular": true,
+      "story": "Fresh river sole steeped in coarse cold-pressed mustard oil.",
+      "pairingSuggestions": [
+        "item_butter_naan"
+      ]
+    },
+    {
+      "id": "item_dal_makhani",
+      "name": "Dal Makhani Slow-Simmered (24 hrs)",
+      "description": "Black lentils slow cooked overnight on charcoal embers with churned butter.",
+      "basePriceMinor": 38000,
+      "formattedPrice": "₹380.00",
+      "category": "Mains",
+      "station": "CURRY_LINE",
+      "prepDurationMinutes": 14,
+      "allergens": [
+        "DAIRY"
+      ],
+      "dietaryFlags": [
+        "VEG"
+      ],
+      "isPopular": true,
+      "isSignature": true,
+      "story": "24 hours in heavy brass handis over dying embers.",
+      "pairingSuggestions": [
+        "item_butter_naan",
+        "item_jeera_rice"
+      ]
+    },
+    {
+      "id": "item_butter_chicken",
+      "name": "Murgh Makhani (Old Delhi Style)",
+      "description": "Smoked chicken tikka simmered in velvet tomato, fenugreek, and honey sauce.",
+      "basePriceMinor": 49000,
+      "formattedPrice": "₹490.00",
+      "category": "Mains",
+      "station": "CURRY_LINE",
+      "prepDurationMinutes": 15,
+      "allergens": [
+        "DAIRY"
+      ],
+      "dietaryFlags": [
+        "NON_VEG"
+      ],
+      "isPopular": true,
+      "story": "Old Delhi recipe using sun-ripened tomatoes and wild blossom honey.",
+      "pairingSuggestions": [
+        "item_butter_naan"
+      ]
+    },
+    {
+      "id": "item_butter_naan",
+      "name": "Crisp Butter Naan",
+      "description": "Tandoor-baked refined flour bread brushed with salted farmhouse butter.",
+      "basePriceMinor": 7000,
+      "formattedPrice": "₹70.00",
+      "category": "Breads",
+      "station": "TANDOOR",
+      "prepDurationMinutes": 5,
+      "allergens": [
+        "DAIRY",
+        "WHEAT"
+      ],
+      "dietaryFlags": [
+        "VEG"
+      ],
+      "isPopular": true
+    },
+    {
+      "id": "item_garlic_naan",
+      "name": "Roasted Garlic Butter Naan",
+      "description": "Topped with roasted minced garlic, fresh coriander, and nigella seeds.",
+      "basePriceMinor": 9000,
+      "formattedPrice": "₹90.00",
+      "category": "Breads",
+      "station": "TANDOOR",
+      "prepDurationMinutes": 6,
+      "allergens": [
+        "DAIRY",
+        "WHEAT"
+      ],
+      "dietaryFlags": [
+        "VEG"
+      ],
+      "isPopular": true
+    },
+    {
+      "id": "item_mango_lassi",
+      "name": "Alphonso Mango Lassi",
+      "description": "Chilled artisanal yogurt whipped with Ratnagiri Alphonso mango pulp.",
+      "basePriceMinor": 14000,
+      "formattedPrice": "₹140.00",
+      "category": "Beverages",
+      "station": "BAR",
+      "prepDurationMinutes": 3,
+      "allergens": [
+        "DAIRY"
+      ],
+      "dietaryFlags": [
+        "VEG"
+      ],
+      "isPopular": true
+    },
+    {
+      "id": "item_gulab_jamun",
+      "name": "Warm Gulab Jamun with Rabri",
+      "description": "Fried milk dumplings soaked in saffron-cardamom syrup with lachha rabri.",
+      "basePriceMinor": 19000,
+      "formattedPrice": "₹190.00",
+      "category": "Desserts",
+      "station": "DESSERT",
+      "prepDurationMinutes": 2,
+      "allergens": [
+        "DAIRY",
+        "NUTS"
+      ],
+      "dietaryFlags": [
+        "VEG"
+      ],
+      "isSignature": true
+    }
+  ],
+  "guests": [
+    {
+      "id": "g_2_1",
+      "name": "Karan",
+      "tableNumber": "T-02",
+      "seatId": "seat_2_1",
+      "seatLabel": "S1",
+      "role": "COMPANION",
+      "joinTime": "19:40",
+      "preferences": {
+        "diet": "Standard",
+        "spice": "Medium",
+        "allergens": []
+      },
+      "orderIds": [],
+      "totalSpendMinor": 49000
+    },
+    {
+      "id": "g_2_2",
+      "name": "Neha",
+      "tableNumber": "T-02",
+      "seatId": "seat_2_2",
+      "seatLabel": "S2",
+      "role": "COMPANION",
+      "joinTime": "19:40",
+      "preferences": {
+        "diet": "Standard",
+        "spice": "Medium",
+        "allergens": []
+      },
+      "orderIds": [],
+      "totalSpendMinor": 49000
+    },
+    {
+      "id": "g_3_1",
+      "name": "Harpreet",
+      "tableNumber": "T-03",
+      "seatId": "seat_3_1",
+      "seatLabel": "S1",
+      "role": "COMPANION",
+      "joinTime": "19:40",
+      "preferences": {
+        "diet": "Standard",
+        "spice": "Medium",
+        "allergens": []
+      },
+      "orderIds": [],
+      "totalSpendMinor": 28000
+    },
+    {
+      "id": "g_3_2",
+      "name": "Jaspreet",
+      "tableNumber": "T-03",
+      "seatId": "seat_3_2",
+      "seatLabel": "S2",
+      "role": "COMPANION",
+      "joinTime": "19:40",
+      "preferences": {
+        "diet": "Standard",
+        "spice": "Medium",
+        "allergens": []
+      },
+      "orderIds": [],
+      "totalSpendMinor": 28000
+    },
+    {
+      "id": "g_5_1",
+      "name": "Rajesh",
+      "tableNumber": "T-05",
+      "seatId": "seat_5_1",
+      "seatLabel": "S1",
+      "role": "COMPANION",
+      "joinTime": "19:40",
+      "preferences": {
+        "diet": "Standard",
+        "spice": "Medium",
+        "allergens": []
+      },
+      "orderIds": [],
+      "totalSpendMinor": 135000
+    },
+    {
+      "id": "g_5_2",
+      "name": "Sunita",
+      "tableNumber": "T-05",
+      "seatId": "seat_5_2",
+      "seatLabel": "S2",
+      "role": "COMPANION",
+      "joinTime": "19:40",
+      "preferences": {
+        "diet": "Standard",
+        "spice": "Medium",
+        "allergens": []
+      },
+      "orderIds": [],
+      "totalSpendMinor": 135000
+    },
+    {
+      "id": "g_5_3",
+      "name": "Ananya",
+      "tableNumber": "T-05",
+      "seatId": "seat_5_3",
+      "seatLabel": "S3",
+      "role": "COMPANION",
+      "joinTime": "19:40",
+      "preferences": {
+        "diet": "Standard",
+        "spice": "Medium",
+        "allergens": []
+      },
+      "orderIds": [],
+      "totalSpendMinor": 135000
+    },
+    {
+      "id": "g_5_4",
+      "name": "Rohan",
+      "tableNumber": "T-05",
+      "seatId": "seat_5_4",
+      "seatLabel": "S4",
+      "role": "COMPANION",
+      "joinTime": "19:40",
+      "preferences": {
+        "diet": "Standard",
+        "spice": "Medium",
+        "allergens": []
+      },
+      "orderIds": [],
+      "totalSpendMinor": 135000
+    },
+    {
+      "id": "g_7_1",
+      "name": "Priya",
+      "tableNumber": "T-07",
+      "seatId": "seat_7_1",
+      "seatLabel": "S1",
+      "role": "COMPANION",
+      "joinTime": "19:40",
+      "preferences": {
+        "diet": "Standard",
+        "spice": "Medium",
+        "allergens": []
+      },
+      "orderIds": [],
+      "totalSpendMinor": 76000
+    },
+    {
+      "id": "g_7_2",
+      "name": "Amit",
+      "tableNumber": "T-07",
+      "seatId": "seat_7_2",
+      "seatLabel": "S2",
+      "role": "COMPANION",
+      "joinTime": "19:40",
+      "preferences": {
+        "diet": "Standard",
+        "spice": "Medium",
+        "allergens": []
+      },
+      "orderIds": [],
+      "totalSpendMinor": 76000
+    },
+    {
+      "id": "g_11_1",
+      "name": "Dev",
+      "tableNumber": "B-02",
+      "seatId": "seat_11_1",
+      "seatLabel": "S1",
+      "role": "COMPANION",
+      "joinTime": "19:40",
+      "preferences": {
+        "diet": "Standard",
+        "spice": "Medium",
+        "allergens": []
+      },
+      "orderIds": [],
+      "totalSpendMinor": 42000
+    },
+    {
+      "id": "g_14_1",
+      "name": "Nikhil (Host)",
+      "tableNumber": "T-14",
+      "seatId": "seat_14_1",
+      "seatLabel": "S1",
+      "role": "HOST",
+      "joinTime": "19:40",
+      "preferences": {
+        "diet": "Vegetarian",
+        "spice": "Medium",
+        "allergens": [
+          "Nuts"
+        ],
+        "notes": "Birthday celebration dinner"
+      },
+      "orderIds": [
+        "ord_101"
+      ],
+      "totalSpendMinor": 76650
+    },
+    {
+      "id": "g_14_2",
+      "name": "Rahul",
+      "tableNumber": "T-14",
+      "seatId": "seat_14_2",
+      "seatLabel": "S2",
+      "role": "COMPANION",
+      "joinTime": "19:40",
+      "preferences": {
+        "diet": "Standard",
+        "spice": "Medium",
+        "allergens": []
+      },
+      "orderIds": [
+        "ord_101"
+      ],
+      "totalSpendMinor": 76650
+    },
+    {
+      "id": "g_chd_1",
+      "name": "Gurman (Host)",
+      "tableNumber": "T-21",
+      "seatId": "seat_21_1",
+      "seatLabel": "S1",
+      "role": "HOST",
+      "joinTime": "19:40",
+      "preferences": {
+        "diet": "Standard",
+        "spice": "Medium",
+        "allergens": []
+      },
+      "orderIds": [],
+      "totalSpendMinor": 48000
+    },
+    {
+      "id": "g_chd_2",
+      "name": "Simrat",
+      "tableNumber": "T-21",
+      "seatId": "seat_21_2",
+      "seatLabel": "S2",
+      "role": "COMPANION",
+      "joinTime": "19:40",
+      "preferences": {
+        "diet": "Standard",
+        "spice": "Medium",
+        "allergens": []
+      },
+      "orderIds": [],
+      "totalSpendMinor": 48000
+    },
+    {
+      "id": "g_del_1",
+      "name": "Varun (Host)",
+      "tableNumber": "D-01",
+      "seatId": "seat_31_1",
+      "seatLabel": "S1",
+      "role": "HOST",
+      "joinTime": "19:40",
+      "preferences": {
+        "diet": "Standard",
+        "spice": "Medium",
+        "allergens": []
+      },
+      "orderIds": [],
+      "totalSpendMinor": 112000
+    },
+    {
+      "id": "g_del_2",
+      "name": "Rhea",
+      "tableNumber": "D-01",
+      "seatId": "seat_31_2",
+      "seatLabel": "S2",
+      "role": "COMPANION",
+      "joinTime": "19:40",
+      "preferences": {
+        "diet": "Standard",
+        "spice": "Medium",
+        "allergens": []
+      },
+      "orderIds": [],
+      "totalSpendMinor": 112000
+    }
+  ],
+  "sessions": [
+    {
+      "sessionId": "sess_14",
+      "tableNumber": "T-14",
+      "branchId": "branch_ldh",
+      "floorId": "floor_courtyard",
+      "hostName": "Nikhil (Host)",
+      "status": "ACTIVE",
+      "openedAt": "19:15",
+      "guestCapabilityTokens": [
+        "cap_test_host_14",
+        "cap_test_companion_14"
+      ]
+    },
+    {
+      "sessionId": "sess_05",
+      "tableNumber": "T-05",
+      "branchId": "branch_ldh",
+      "floorId": "floor_courtyard",
+      "hostName": "Rajesh",
+      "status": "ACTIVE",
+      "openedAt": "18:50",
+      "guestCapabilityTokens": [
+        "cap_test_05"
+      ]
+    }
+  ],
+  "events": [],
+  "invalidatedCapabilityTokens": [],
+  "revokedStaffTokens": [],
+  "revokedStaffTokenJtis": []
+}

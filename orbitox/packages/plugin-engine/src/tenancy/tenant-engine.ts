@@ -59,6 +59,24 @@ export interface MultiTenantEngineOptions {
    * Fallback default tenant config if domain is unknown (e.g. during local testing)
    */
   defaultTenant?: TenantConfig;
+
+  /**
+   * Dual-engine cluster mode:
+   * - 'standalone': Single node, zero external dependencies, in-memory local invalidation
+   * - 'distributed': Multi-server cluster mesh, broadcasts invalidations across Redis pub/sub
+   * - 'auto': Auto-detects Redis presence or CLUSTER_MODE env var
+   */
+  clusterMode?: 'standalone' | 'distributed' | 'auto';
+
+  /**
+   * Optional cluster invalidation publisher (e.g., Redis Pub/Sub client)
+   */
+  broadcastInvalidation?: (domain?: string) => Promise<void> | void;
+
+  /**
+   * Optional cluster invalidation subscriber hook
+   */
+  listenInvalidation?: (handler: (domain?: string) => void) => void;
 }
 
 export interface ActiveTenantSession {
@@ -87,14 +105,37 @@ export function getActiveTenant(): ActiveTenantSession | undefined {
 
 /**
  * 🪐 MultiTenantEngine — Enterprise Multi-Tenancy, High-Performance TTL Caching & Custom Domain Router
+ * Supports BOTH Single-Server (Standalone) and Multi-Server (Clustered Mesh) topologies.
  */
 export class MultiTenantEngine {
   private readonly tenantAppCache = new Map<string, OrbitoXApp>();
   private readonly domainResolutionCache = new Map<string, CacheEntry>();
   private readonly cacheTtlMs: number;
+  public readonly clusterMode: 'standalone' | 'distributed';
 
   constructor(private readonly options: MultiTenantEngineOptions = {}) {
     this.cacheTtlMs = options.cacheTtlMs ?? 5 * 60 * 1000; // Default 5 mins TTL
+
+    const isDistributed =
+      options.clusterMode === 'distributed' ||
+      (options.clusterMode !== 'standalone' &&
+        (typeof process !== 'undefined' &&
+          (process.env?.CLUSTER_MODE === 'distributed' ||
+            process.env?.ORBITOX_DEPLOYMENT_MODE === 'distributed' ||
+            Boolean(process.env?.REDIS_URL))));
+
+    this.clusterMode = isDistributed ? 'distributed' : 'standalone';
+
+    // Hook up cluster-wide invalidation subscriber if provided
+    if (options.listenInvalidation) {
+      try {
+        options.listenInvalidation((domain?: string) => {
+          this.invalidateLocalCache(domain);
+        });
+      } catch (err) {
+        console.warn('[OrbitoX MultiTenantEngine] Failed to bind cluster listener, continuing in local mode:', err);
+      }
+    }
   }
 
   /**
@@ -175,9 +216,9 @@ export class MultiTenantEngine {
   }
 
   /**
-   * Clears the domain resolution cache (e.g., when a tenant updates their custom domain)
+   * Invalidates local V8 cache only without triggering remote pub/sub broadcast
    */
-  public invalidateCache(domain?: string): void {
+  public invalidateLocalCache(domain?: string): void {
     if (domain) {
       const cleanHost = domain.split(':')[0]!.toLowerCase().trim();
       this.domainResolutionCache.delete(cleanHost);
@@ -185,6 +226,38 @@ export class MultiTenantEngine {
       this.domainResolutionCache.clear();
       this.tenantAppCache.clear();
     }
+  }
+
+  /**
+   * Clears the domain resolution cache and broadcasts invalidation across the cluster if in distributed mode
+   */
+  public async invalidateCache(domain?: string): Promise<void> {
+    this.invalidateLocalCache(domain);
+
+    if (this.clusterMode === 'distributed' && this.options.broadcastInvalidation) {
+      try {
+        await this.options.broadcastInvalidation(domain);
+      } catch (err) {
+        console.warn('[OrbitoX MultiTenantEngine] Cluster invalidation broadcast failed, fallback to local TTL:', err);
+      }
+    }
+  }
+
+  /**
+   * Returns current engine cluster metrics and cached tenant counts
+   */
+  public getClusterStatus() {
+    return {
+      mode: this.clusterMode,
+      isDistributed: this.clusterMode === 'distributed',
+      cachedDomainsCount: this.domainResolutionCache.size,
+      cachedAppsCount: this.tenantAppCache.size,
+      cacheTtlMs: this.cacheTtlMs,
+      invalidationProtocol:
+        this.clusterMode === 'distributed'
+          ? 'Redis Pub/Sub (orbitox:cache:invalidation)'
+          : 'Local V8 Memory',
+    };
   }
 
   /**

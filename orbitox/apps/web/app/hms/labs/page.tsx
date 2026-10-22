@@ -424,7 +424,7 @@ export default function PathologyLabsPage() {
                           </div>
                         ) : (
                           <span style={{ padding: '4px 10px', borderRadius: '10px', fontSize: '11px', fontWeight: 700, background: '#eff6ff', color: '#2563eb' }}>
-                            ⏳ SPECIMEN IN QUEUE
+                            SPECIMEN IN QUEUE
                           </span>
                         )}
                       </td>

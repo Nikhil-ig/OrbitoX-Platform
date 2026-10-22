@@ -12,15 +12,18 @@
   "dependencies": {
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
-    "next": "15.0.3",
+    "next": "^15.5.25",
     "@orbitox/ui": "workspace:*",
     "@orbitox/sdk": "workspace:*",
     "@orbitox/types": "workspace:*",
     "@orbitox/runtime": "workspace:*",
-    "@orbitox/plugin-engine": "workspace:*",
+    "@orbitox-io/plugin-engine": "workspace:*",
+    "@orbitox/core": "workspace:*",
     "@orbitox/commerce": "workspace:*",
     "@orbitox/school": "workspace:*",
-    "@orbitox/pos": "workspace:*"
+    "@orbitox/pos": "workspace:*",
+    "@orbitox/external-project-engine": "workspace:*",
+    "@orbitox/external-runtime-sdk": "workspace:*"
   },
   "devDependencies": {
     "@types/node": "^20",

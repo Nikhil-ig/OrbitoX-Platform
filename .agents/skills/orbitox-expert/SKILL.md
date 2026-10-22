@@ -30,6 +30,7 @@ description: >-
 14. [💼 CRM Domain Core & State Machine (`@orbitox-io/crm`)](#14--crm-domain-core--state-machine-orbitox-iocrm)
 15. [🛠️ Platform CLI Complete Reference (`@orbitox/cli`)](#15-️-platform-cli-complete-reference-orbitoxcli)
 16. [🚨 Production Checklist & Error Handling Catalog](#16--production-checklist--error-handling-catalog)
+17. [🪐 Client Projects & O2O2B2B2C Ecosystem Engine](#17--client-projects--o2o2b2b2c-ecosystem-engine)
 
 ---
 
@@ -619,6 +620,67 @@ export function LeadPipelineComponent() {
 | `Invalid CRM Lead State Transition: Cannot move lead from X to Y` | Illegal state transition attempted (e.g. `NEW` ➔ `WON` directly) | Follow valid lifecycle sequence: `NEW` ➔ `CONTACTED` ➔ `QUALIFIED` ➔ `PROPOSAL_SENT` ➔ `WON`. |
 | `License cryptographic signature is invalid or forged` | License token was tampered with or verified with wrong public key | Re-issue license token using matching private key. |
 | `Domain lock violation: License is only valid for "X"` | License domain does not match host domain | Deploy on designated domain or issue wildcard license (`allowedDomain: '*'`). |
+
+---
+
+## 17. 🪐 Client Projects & O2O2B2B2C Ecosystem Engine
+
+### Identity & Purpose:
+Allows external businesses, partners, and developers to build on top of OrbitoX without writing backend engines from scratch. Supports complex multi-tier business models (`O2O2B2B2C`, `B2B2C`, `D2C`, `HEALTHCARE_NETWORK`, `FRANCHISE_RETAIL`).
+
+### Key Capabilities:
+1. **Zero-Code Microservice Packages**:
+   - 9 core packages (`@orbitox/restaurant`, `@orbitox/pos`, `@orbitox/commerce`, `@orbitox/crm`, `@orbitox/finance`, `@orbitox/inventory`, `@orbitox/hms`, `@orbitox/hrms`, `@orbitox/school`).
+   - Clients assemble packages into their project with checkboxes.
+
+2. **Instant Developer Integration Kit (4 Patterns)**:
+   - **Pattern 1: 1-Line Client Bootstrapper (`createOrbitoX`)**:
+     ```typescript
+     import { createOrbitoX } from '@orbitox-io/plugin-engine';
+     import restaurant from '@orbitox-io/restaurant';
+     import pos from '@orbitox-io/pos';
+     import commerce from '@orbitox-io/commerce';
+
+     const app = await createOrbitoX({
+       license: 'orb_live_omni_7f9c2d1b4e8a',
+       domain: 'api.clientpartner.com',
+       plugins: [restaurant, pos, commerce],
+     });
+     ```
+   - **Pattern 2: Live Edge Gateway cURL**:
+     ```bash
+     curl -X GET "http://localhost:3005/api/v1/restaurant/orders" \
+       -H "x-api-key: orb_live_..." \
+       -H "x-tenant-id: omnideliver"
+     ```
+   - **Pattern 3: Node.js Multi-Tenant Express Middleware**:
+     ```javascript
+     const engine = createMultiTenantEngine({ ... });
+     app.use(engine.middleware()); // 1-line middleware injects req.tenant & req.app
+     ```
+   - **Pattern 4: Headless React 19 Hooks**:
+     ```tsx
+     import { useLeads } from '@orbitox-io/crm/react';
+     import { useCommerceCart } from '@orbitox-io/commerce/react';
+     ```
+   - **Live Gateway Test Runner**: Interactive workbench in the Project Cockpit that runs real HTTP requests, returning live `HTTP 200 OK`, latency, `Anti-Tamper: VERIFIED`, and parsed JSON.
+
+3. **Dynamic Plan Tiers & Resource Sliders**:
+   - Plan presets: `starter` (100K calls), `growth` (1M calls), `pro` (5M calls), `enterprise` (25M calls), `hyperscale` (100M calls).
+   - Live sliders for Monthly API Quotas, Sliding-Window Rate Limits (req/min), and Encrypted Storage (GB/TB).
+   - Instant edge gateway updates with zero downtime.
+
+4. **Zero-Trust Gateway Enforcement (`withApiGuard`)**:
+   - `HTTP 403 PLUGIN_NOT_ENTITLED`: If project calls an un-subscribed package.
+   - `HTTP 429 TENANT_QUOTA_EXCEEDED`: If monthly call count reaches allocated quota.
+   - `HTTP 403 PROJECT_SUSPENDED`: If project status is suspended by admin.
+
+5. **REST API Management Endpoints**:
+   - `GET /api/v1/admin/projects`: List all client projects with aggregate KPIs.
+   - `POST /api/v1/admin/projects`: Provision project, assign plan & quotas, issue initial API key.
+   - `GET /api/v1/admin/projects/:id`: Single project details and keys.
+   - `PATCH /api/v1/admin/projects/:id`: Update plan, quotas, rate limits, packages, or status.
+   - `DELETE /api/v1/admin/projects/:id`: Deprovision project.
 
 ---
 

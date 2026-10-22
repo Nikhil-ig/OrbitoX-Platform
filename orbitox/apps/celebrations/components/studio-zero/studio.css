@@ -1,0 +1,175 @@
+/* ================================================================
+   🪐 ORBITOX STUDIO 3.0 — CORE CSS SYSTEM & UTILITY TOKENS
+   Neutral Studio Chrome & Component Layout Pipeline
+   ================================================================ */
+
+:root {
+  --sz-chrome-bg: #0C0D10;
+  --sz-panel-bg: #16181D;
+  --sz-panel-header: #181A20;
+  --sz-border: rgba(255, 255, 255, 0.08);
+  --sz-border-hover: rgba(255, 255, 255, 0.16);
+  --sz-accent: #3B82F6;
+  --sz-accent-hover: #2563EB;
+  --sz-accent-soft: rgba(59, 130, 246, 0.15);
+  --sz-text-primary: #F3F4F6;
+  --sz-text-secondary: #9CA3AF;
+  --sz-text-muted: #6B7280;
+}
+
+/* ── 1. CORE FLEXBOX & GRID UTILITIES ── */
+.flex { display: flex !important; }
+.inline-flex { display: inline-flex !important; }
+.flex-col { flex-direction: column !important; }
+.flex-row { flex-direction: row !important; }
+.flex-1 { flex: 1 1 0% !important; }
+.items-center { align-items: center !important; }
+.items-start { align-items: flex-start !important; }
+.items-end { align-items: flex-end !important; }
+.justify-center { justify-content: center !important; }
+.justify-between { justify-content: space-between !important; }
+.justify-start { justify-content: flex-start !important; }
+.justify-end { justify-content: flex-end !important; }
+.gap-1 { gap: 4px !important; }
+.gap-1\.5, .gap-1\\.5 { gap: 6px !important; }
+.gap-2 { gap: 8px !important; }
+.gap-3 { gap: 12px !important; }
+.gap-4 { gap: 16px !important; }
+.gap-6 { gap: 24px !important; }
+
+/* ── 2. BOX SIZING & DISPLAY ── */
+.w-full { width: 100% !important; }
+.h-full { height: 100% !important; }
+.w-auto { width: auto !important; }
+.h-auto { height: auto !important; }
+.w-3 { width: 12px !important; }
+.h-3 { height: 12px !important; }
+.w-3\.5, .w-3\\.5 { width: 14px !important; }
+.h-3\.5, .h-3\\.5 { height: 14px !important; }
+.w-4 { width: 16px !important; }
+.h-4 { height: 16px !important; }
+.min-w-0 { min-width: 0px !important; }
+.min-w-\[70px\], .min-w-\\[70px\\] { min-width: 70px !important; }
+.max-w-\[260px\], .max-w-\\[260px\\] { max-width: 260px !important; }
+.max-w-xl { max-width: 36rem !important; }
+.max-w-2xl { max-width: 42rem !important; }
+.relative { position: relative !important; }
+.absolute { position: absolute !important; }
+.overflow-hidden { overflow: hidden !important; }
+.select-none { user-select: none !important; -webkit-user-select: none !important; }
+
+/* ── 3. PADDING & MARGINS ── */
+.p-0\.5, .p-0\\.5 { padding: 2px !important; }
+.p-1 { padding: 4px !important; }
+.p-1\.5, .p-1\\.5 { padding: 6px !important; }
+.p-2 { padding: 8px !important; }
+.p-3 { padding: 12px !important; }
+.p-4 { padding: 16px !important; }
+.p-6 { padding: 24px !important; }
+.px-1\.5, .px-1\\.5 { padding-left: 6px !important; padding-right: 6px !important; }
+.px-2 { padding-left: 8px !important; padding-right: 8px !important; }
+.px-3 { padding-left: 12px !important; padding-right: 12px !important; }
+.px-4 { padding-left: 16px !important; padding-right: 16px !important; }
+.px-6 { padding-left: 24px !important; padding-right: 24px !important; }
+.py-0\.5, .py-0\\.5 { padding-top: 2px !important; padding-bottom: 2px !important; }
+.py-1 { padding-top: 4px !important; padding-bottom: 4px !important; }
+.py-1\.5, .py-1\\.5 { padding-top: 6px !important; padding-bottom: 6px !important; }
+.py-2 { padding-top: 8px !important; padding-bottom: 8px !important; }
+.py-3 { padding-top: 12px !important; padding-bottom: 12px !important; }
+.m-0 { margin: 0px !important; }
+.mb-1 { margin-bottom: 4px !important; }
+.mb-2 { margin-bottom: 8px !important; }
+.mx-2 { margin-left: 8px !important; margin-right: 8px !important; }
+.pb-2 { margin-bottom: 8px !important; }
+
+/* ── 4. BORDERS & ROUNDING ── */
+.rounded { border-radius: 4px !important; }
+.rounded-md { border-radius: 6px !important; }
+.rounded-lg { border-radius: 8px !important; }
+.rounded-xl { border-radius: 12px !important; }
+.rounded-full { border-radius: 9999px !important; }
+.border { border-width: 1px !important; border-style: solid !important; }
+.border-b { border-bottom-width: 1px !important; border-bottom-style: solid !important; }
+.border-dashed { border-style: dashed !important; }
+.border-slate-800 { border-color: rgba(255, 255, 255, 0.08) !important; }
+.border-slate-700 { border-color: rgba(255, 255, 255, 0.14) !important; }
+.border-amber-500\/50, .border-amber-500\\\/50 { border-color: rgba(245, 158, 11, 0.5) !important; }
+.border-amber-500\/30, .border-amber-500\\\/30 { border-color: rgba(245, 158, 11, 0.3) !important; }
+.border-sky-500\/50, .border-sky-500\\\/50 { border-color: rgba(14, 165, 233, 0.5) !important; }
+
+/* ── 5. BACKGROUNDS & COLORS ── */
+.bg-slate-900 { background-color: #16181D !important; }
+.bg-slate-900\/90, .bg-slate-900\\\/90 { background-color: rgba(22, 24, 29, 0.95) !important; }
+.bg-slate-950 { background-color: #0E1015 !important; }
+.bg-slate-950\/80, .bg-slate-950\\\/80 { background-color: rgba(14, 16, 21, 0.85) !important; }
+.bg-slate-800 { background-color: #1F2229 !important; }
+.bg-indigo-600 { background-color: #3B82F6 !important; }
+.bg-amber-500\/5, .bg-amber-500\\\/5 { background-color: rgba(245, 158, 11, 0.05) !important; }
+.bg-amber-500\/10, .bg-amber-500\\\/10 { background-color: rgba(245, 158, 11, 0.1) !important; }
+.bg-amber-500\/20, .bg-amber-500\\\/20 { background-color: rgba(245, 158, 11, 0.2) !important; }
+.bg-amber-500\/30, .bg-amber-500\\\/30 { background-color: rgba(245, 158, 11, 0.3) !important; }
+.bg-sky-500\/5, .bg-sky-500\\\/5 { background-color: rgba(14, 165, 233, 0.05) !important; }
+.bg-sky-500\/20, .bg-sky-500\\\/20 { background-color: rgba(14, 165, 233, 0.2) !important; }
+.bg-sky-500\/30, .bg-sky-500\\\/30 { background-color: rgba(14, 165, 233, 0.3) !important; }
+
+.text-white { color: #FFFFFF !important; }
+.text-slate-200 { color: #E5E7EB !important; }
+.text-slate-300 { color: #D1D5DB !important; }
+.text-slate-400 { color: #9CA3AF !important; }
+.text-amber-300 { color: #FCD34D !important; }
+.text-amber-500, .text-amber-500\/80, .text-amber-500\\\/80 { color: #F59E0B !important; }
+.text-sky-300 { color: #7DD3FC !important; }
+.text-sky-400, .text-sky-400\/80, .text-sky-400\\\/80 { color: #38BDF8 !important; }
+.text-indigo-400 { color: #60A5FA !important; }
+
+/* ── 6. TYPOGRAPHY ── */
+.font-mono { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace !important; }
+.font-medium { font-weight: 500 !important; }
+.font-semibold { font-weight: 600 !important; }
+.font-bold { font-weight: 700 !important; }
+.uppercase { text-transform: uppercase !important; }
+.tracking-wider { letter-spacing: 0.05em !important; }
+.tracking-tight { letter-spacing: -0.025em !important; }
+.text-\[9px\], .text-\\[9px\\] { font-size: 9px !important; }
+.text-\[10px\], .text-\\[10px\\] { font-size: 10px !important; }
+.text-\[11px\], .text-\\[11px\\] { font-size: 11px !important; }
+.text-xs { font-size: 12px !important; }
+.text-sm { font-size: 14px !important; }
+.text-base { font-size: 16px !important; }
+
+/* ── 7. CURSORS & INTERACTIONS ── */
+.cursor-pointer { cursor: pointer !important; }
+.cursor-ew-resize { cursor: ew-resize !important; }
+.cursor-ns-resize { cursor: ns-resize !important; }
+.cursor-move { cursor: move !important; }
+.transition-colors { transition: background-color 0.15s ease, border-color 0.15s ease, color 0.15s ease !important; }
+
+/* ── 8. GRID & EXTENDED UTILITIES ── */
+.grid { display: grid !important; }
+.grid-cols-2 { grid-template-columns: repeat(2, minmax(0, 1fr)) !important; }
+.grid-cols-3 { grid-template-columns: repeat(3, minmax(0, 1fr)) !important; }
+.grid-cols-4 { grid-template-columns: repeat(4, minmax(0, 1fr)) !important; }
+.grid-cols-5 { grid-template-columns: repeat(5, minmax(0, 1fr)) !important; }
+
+/* ── 9. EMERALD TOKENS (Corner Radius & Accent) ── */
+.bg-emerald-600\/30, .bg-emerald-600\\\/30 { background-color: rgba(16, 185, 129, 0.3) !important; }
+.bg-emerald-500\/20, .bg-emerald-500\\\/20 { background-color: rgba(16, 185, 129, 0.2) !important; }
+.bg-indigo-600\/30, .bg-indigo-600\\\/30 { background-color: rgba(59, 130, 246, 0.3) !important; }
+.border-emerald-500\/40, .border-emerald-500\\\/40 { border-color: rgba(16, 185, 129, 0.4) !important; }
+.border-emerald-500\/50, .border-emerald-500\\\/50 { border-color: rgba(16, 185, 129, 0.5) !important; }
+.border-emerald-500\/60, .border-emerald-500\\\/60 { border-color: rgba(16, 185, 129, 0.6) !important; }
+.text-emerald-300 { color: #6EE7B7 !important; }
+.text-emerald-400 { color: #34D399 !important; }
+.text-emerald-400\/80, .text-emerald-400\\\/80 { color: rgba(52, 211, 153, 0.8) !important; }
+
+/* ── 10. POSITIONING & SIZING EXTENSIONS ── */
+.top-1 { top: 4px !important; }
+.left-1 { left: 4px !important; }
+.right-1 { right: 4px !important; }
+.bottom-1 { bottom: 4px !important; }
+.left-2 { left: 8px !important; }
+.top-2 { top: 8px !important; }
+.h-24 { height: 96px !important; }
+.h-16 { height: 64px !important; }
+.h-12 { height: 48px !important; }
+.w-full { width: 100% !important; }

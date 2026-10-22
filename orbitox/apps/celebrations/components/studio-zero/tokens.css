@@ -1,0 +1,84 @@
+/* 🪐 ORBITOX VISUAL STUDIO ZERO — NEUTRAL GRAPHITE DESIGN TOKENS */
+/* Critical Rule: Editor Chrome must NEVER be recolored by document themes! */
+
+.orbitox-studio-zero {
+  /* Surface Tiers — Modern Neutral Graphite / Zinc / Slate */
+  --sz-bg-app: #0c0d10;
+  --sz-bg-chrome: #121317;
+  --sz-bg-panel: #16181d;
+  --sz-bg-subtle: #1c1e25;
+  --sz-bg-card: #21242d;
+  --sz-bg-card-hover: #292d37;
+  --sz-bg-active: #323743;
+  --sz-bg-canvas: #0e0f13;
+
+  /* Borders — Refined, Subtle, Crisp */
+  --sz-border-subtle: rgba(255, 255, 255, 0.08);
+  --sz-border-medium: rgba(255, 255, 255, 0.14);
+  --sz-border-strong: rgba(255, 255, 255, 0.22);
+  --sz-border-focus: #3b82f6;
+
+  /* Accent Colors — Clean Neutral Electric Blue / Indigo */
+  --sz-accent-primary: #3b82f6;
+  --sz-accent-hover: #2563eb;
+  --sz-accent-soft: rgba(59, 130, 246, 0.14);
+  --sz-accent-glow: rgba(59, 130, 246, 0.35);
+
+  /* Typography Hierarchy — Crisp Neutral Whites and Cool Greys */
+  --sz-text-primary: #f3f4f6;
+  --sz-text-secondary: #9ca3af;
+  --sz-text-muted: #6b7280;
+  --sz-text-dim: #4b5563;
+
+  /* Status Colors */
+  --sz-status-success: #10b981;
+  --sz-status-warning: #f59e0b;
+  --sz-status-danger: #ef4444;
+
+  /* Sizing and Radii */
+  --sz-radius-xs: 4px;
+  --sz-radius-sm: 6px;
+  --sz-radius-md: 8px;
+  --sz-radius-lg: 12px;
+  --sz-radius-pill: 9999px;
+
+  /* Shadows */
+  --sz-shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.3);
+  --sz-shadow-md: 0 4px 12px rgba(0, 0, 0, 0.4);
+  --sz-shadow-lg: 0 12px 32px rgba(0, 0, 0, 0.6);
+  --sz-shadow-glow: 0 0 20px rgba(59, 130, 246, 0.25);
+
+  /* Font */
+  --sz-font-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  --sz-font-mono: 'JetBrains Mono', 'Fira Code', monospace;
+
+  font-family: var(--sz-font-sans);
+  color: var(--sz-text-primary);
+  background: var(--sz-bg-app);
+  box-sizing: border-box;
+}
+
+.orbitox-studio-zero *,
+.orbitox-studio-zero *::before,
+.orbitox-studio-zero *::after {
+  box-sizing: border-box;
+}
+
+/* Custom Scrollbars for studio panels */
+.sz-custom-scrollbar::-webkit-scrollbar {
+  width: 5px;
+  height: 5px;
+}
+
+.sz-custom-scrollbar::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.sz-custom-scrollbar::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.12);
+  border-radius: 9999px;
+}
+
+.sz-custom-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.25);
+}

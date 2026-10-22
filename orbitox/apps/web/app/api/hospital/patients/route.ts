@@ -1,16 +1,35 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { ORBITOX_BACKEND_URL } from '../_init';
+import { safeProxyOrFallback } from '../_init';
+import { hospitalStore } from '../_store';
 
 export async function GET(req: NextRequest) {
+  const contextId = req.headers.get('x-context-id') || '';
+  return safeProxyOrFallback(
+    req,
+    '/api/hospital/patients',
+    () => hospitalStore.getPatients(),
+    {
+      headers: contextId ? { 'x-context-id': contextId } : undefined,
+    }
+  );
+}
+
+export async function POST(req: NextRequest) {
   try {
-    const contextId = req.headers.get('x-context-id') || '';
-    const res = await fetch(`${ORBITOX_BACKEND_URL}/api/hospital/patients`, {
-      headers: contextId ? { 'x-context-id': contextId } : {},
-      cache: 'no-store'
-    });
-    const data = await res.json();
-    return NextResponse.json(data);
+    const body = await req.json();
+    return safeProxyOrFallback(
+      req,
+      '/api/hospital/patients',
+      () => hospitalStore.addPatient(body),
+      {
+        method: 'POST',
+        body,
+      }
+    );
   } catch (err: any) {
-    return NextResponse.json({ success: false, error: err.message }, { status: 502 });
+    return NextResponse.json(
+      { success: false, error: err.message || 'Invalid request body' },
+      { status: 400 }
+    );
   }
 }

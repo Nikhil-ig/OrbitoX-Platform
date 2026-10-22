@@ -4,4 +4,7 @@ const baseConfig = require('@orbitox/jest-config');
 module.exports = {
   ...baseConfig,
   rootDir: '.',
+  moduleNameMapper: {
+    '^@nestjs/common$': '<rootDir>/src/__mocks__/nestjs-common.js',
+  },
 };

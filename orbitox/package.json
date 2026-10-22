@@ -6,6 +6,7 @@
   "scripts": {
     "build": "turbo run build",
     "dev": "turbo run dev",
+    "dev:celebrations": "pnpm --filter celebrations dev",
     "test": "turbo run test",
     "test:integration": "turbo run test:integration",
     "lint": "turbo run lint",
@@ -17,11 +18,15 @@
     "keygen": "node tools/cli/dist/bin.js keygen",
     "package:plugins": "turbo run build && node tools/cli/dist/bin.js package crm",
     "verify:plugins": "node tools/cli/dist/bin.js verify crm",
+    "switch:standalone": "node scripts/cliSwitch.js --target=standalone",
+    "switch:cluster": "node scripts/cliSwitch.js --target=distributed",
+    "snapshot:export": "node scripts/cliSwitch.js --export-snapshot",
+    "snapshot:status": "node scripts/cliSwitch.js --status",
     "format": "prettier --write \"**/*.{ts,tsx,js,jsx,json,md}\"",
     "format:check": "prettier --check \"**/*.{ts,tsx,js,jsx,json,md}\""
   },
   "devDependencies": {
-    "turbo": "^2.5.0",
+    "turbo": "^2.10.12",
     "prettier": "^3.5.0"
   },
   "engines": {

@@ -1,0 +1,67 @@
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+model Table {
+  id        Int      @id @default(autoincrement())
+  number    String   @unique
+  capacity  Int
+  status    String   @default("AVAILABLE") // AVAILABLE, OCCUPIED, BILL_REQUESTED, RESERVED
+  x         Int
+  y         Int
+  width     Int      @default(80)
+  height    Int      @default(80)
+  shape     String   @default("rectangle")
+  section   String   @default("Main Courtyard")
+  locator   String   @unique
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  orders    Order[]
+}
+
+model Order {
+  id              String      @id @default(cuid())
+  tableNumber     String
+  table           Table       @relation(fields: [tableNumber], references: [number])
+  sessionId       String
+  status          String      @default("CONFIRMED") // CONFIRMED, IN_PREPARATION, SERVED, PAID
+  subtotalMinor   Int
+  taxMinor        Int
+  totalMinor      Int
+  currency        String      @default("INR")
+  idempotencyKey  String?     @unique
+  createdAt       DateTime    @default(now())
+  updatedAt       DateTime    @updatedAt
+  items           OrderItem[]
+  tasks           KitchenTask[]
+}
+
+model OrderItem {
+  id             String @id @default(cuid())
+  orderId        String
+  order          Order  @relation(fields: [orderId], references: [id])
+  menuItemId     String
+  name           String
+  quantity       Int
+  unitPriceMinor Int
+  station        String
+}
+
+model KitchenTask {
+  id            String   @id @default(cuid())
+  orderId       String
+  order         Order    @relation(fields: [orderId], references: [id])
+  tableNumber   String
+  itemName      String
+  quantity      Int
+  station       String   // TANDOOR, CURRY_LINE, BAR, EXPO, DESSERT
+  status        String   @default("QUEUED") // QUEUED, IN_PROGRESS, READY, BUMPED, VOIDED
+  fireAt        String
+  targetServeAt String
+  createdAt     DateTime @default(now())
+}

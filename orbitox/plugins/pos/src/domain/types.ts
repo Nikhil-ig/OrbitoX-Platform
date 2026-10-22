@@ -1,3 +1,16 @@
+/**
+ * 📦 OrbitoX RestaurantOS - Unified Domain Types & Invariant Exports
+ */
+
+export * from './money';
+export * from './qr-trust';
+export * from './catalog';
+export * from './pricing-quote';
+export * from './order-state-machines';
+export * from './kitchen-dag';
+export * from './idempotency-outbox';
+
+// Backwards-compatibility aliases for legacy stub callers
 export type OrderStatus = 'OPEN' | 'PENDING_PAYMENT' | 'PAID' | 'FULFILLED' | 'VOIDED';
 export type PaymentMethod = 'CASH' | 'CARD' | 'UPI' | 'CREDIT';
 

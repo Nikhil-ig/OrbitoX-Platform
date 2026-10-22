@@ -1,18 +1,18 @@
 'use client';
 
 import React, { useState } from 'react';
-import PlatformLayout from '../../(platform)/layout';
-import { DynamicMarketplace, MarketplaceItemUI, Button } from '@orbitox/ui';
+import { DynamicMarketplace, MarketplaceItemUI } from '@orbitox/ui';
+import { PackageIcon, PlusIcon } from '../components/icons';
 
 const initialItems: MarketplaceItemUI[] = [
   {
     id: 'crm',
     packageName: '@orbitox/crm',
-    displayName: 'CRM — Leads & Customers',
-    description: 'Headless sales pipeline, lead scoring, deal conversion, and customer management.',
+    displayName: 'CRM — Leads & Pipeline Automation',
+    description: 'Headless sales pipeline, lead scoring, deal conversion, and zero-leak customer intelligence.',
     category: 'sales',
     author: 'OrbitoX Platform Team',
-    latestVersion: '1.0.0',
+    latestVersion: '1.0.1',
     rating: 4.9,
     installs: 1420,
     installed: true,
@@ -32,7 +32,7 @@ const initialItems: MarketplaceItemUI[] = [
   {
     id: 'hrms',
     packageName: '@orbitox/hrms',
-    displayName: 'HRMS — Employee Management',
+    displayName: 'HRMS — Workforce Management Suite',
     description: 'Headless employee profiles, onboarding workflows, leave tracking, and department organization.',
     category: 'hr',
     author: 'OrbitoX Platform Team',
@@ -44,11 +44,11 @@ const initialItems: MarketplaceItemUI[] = [
   {
     id: 'hms',
     packageName: '@orbitox/hms',
-    displayName: 'HMS — Healthcare & Patient Care',
-    description: 'Patient medical records, MRN generator, triage flow state machines, and appointments.',
+    displayName: 'HMS — Healthcare & Patient Clinical EMR',
+    description: 'Patient medical records, MRN generator, triage flow state machines, and ward matrices.',
     category: 'healthcare',
-    author: 'OrbitoX Platform Team',
-    latestVersion: '1.0.0',
+    author: 'OrbitoX Clinical Labs',
+    latestVersion: '2.4.0',
     rating: 4.9,
     installs: 410,
     installed: true,
@@ -77,18 +77,71 @@ export default function MarketplacePage() {
   };
 
   return (
-    <PlatformLayout>
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '28px' }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <div>
-            <h1 style={{ fontSize: '28px', fontWeight: 800, margin: '0 0 4px 0' }}>Plugin Marketplace</h1>
-            <p style={{ color: 'var(--text-secondary)', margin: 0 }}>Discover, install, upgrade, and manage tenant capabilities</p>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '28px' }}>
+      <div
+        className="squircle-card"
+        style={{
+          padding: '28px 32px',
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          flexWrap: 'wrap',
+          gap: '20px',
+        }}
+      >
+        <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
+          <div
+            style={{
+              width: '46px',
+              height: '46px',
+              borderRadius: '14px',
+              background: 'rgba(88, 101, 242, 0.18)',
+              border: '1px solid rgba(88, 101, 242, 0.35)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              color: '#5865F2',
+            }}
+          >
+            <PackageIcon size={24} />
           </div>
-          <Button variant="outline">+ Publish Plugin</Button>
+          <div>
+            <h1 style={{ fontSize: '26px', fontWeight: 900, margin: 0, letterSpacing: '-0.5px', color: '#FFFFFF' }}>
+              Plugin Marketplace
+            </h1>
+            <p style={{ color: '#A3AED0', fontSize: '13.5px', margin: '4px 0 0 0' }}>
+              Discover, install, upgrade, and cryptographically verify tenant microservice capabilities
+            </p>
+          </div>
         </div>
 
+        <button
+          type="button"
+          className="pill-interactive pill-interactive-orange"
+          style={{
+            padding: '12px 22px',
+            fontSize: '13px',
+            cursor: 'pointer',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '8px',
+          }}
+        >
+          <PlusIcon size={14} />
+          <span>Publish Plugin</span>
+        </button>
+      </div>
+
+      <div
+        className="squircle-card"
+        style={{
+          padding: '28px',
+          background: '#13172B',
+          border: '1px solid rgba(255, 255, 255, 0.07)',
+        }}
+      >
         <DynamicMarketplace items={items} onInstall={handleInstall} />
       </div>
-    </PlatformLayout>
+    </div>
   );
 }

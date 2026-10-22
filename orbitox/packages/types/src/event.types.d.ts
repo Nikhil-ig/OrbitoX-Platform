@@ -13,13 +13,22 @@ export interface EventMetadata {
     userId: string | null;
     sourcePlugin: string;
 }
-/**
- * Standard shape for all events in the system.
- */
 export interface PlatformEvent<T = Record<string, unknown>> {
+    id: string;
     name: string;
+    version: string;
+    schemaVersion: number;
+    contextId: string;
+    tenantId?: string;
+    organisationId?: string;
+    correlationId: string;
+    causationId?: string;
+    requestId?: string;
+    source: string;
+    userId?: string;
     payload: T;
-    meta: EventMetadata;
+    occurredAt: Date;
+    publishedAt: Date;
 }
 /**
  * Subscription definition for an event handler.

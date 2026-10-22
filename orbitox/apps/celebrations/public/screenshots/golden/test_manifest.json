@@ -1,0 +1,55 @@
+{
+  "suite": "P11 Visual Truth & Golden Screenshot Suite",
+  "timestamp": "2026-09-29T09:25:25.184Z",
+  "tests": [
+    {
+      "name": "Guest View Graph-Native Render Truth",
+      "pass": false,
+      "details": {
+        "hasSoulsGraph": true,
+        "hasConstellationGraph": true,
+        "hasCountdownGraph": false,
+        "p1BoxInitial": {
+          "x": 156.00784301757812,
+          "y": -2240.616943359375,
+          "width": 327.17181396484375,
+          "height": 419.95263671875
+        }
+      }
+    },
+    {
+      "name": "Multi-Viewport Responsive Matrix",
+      "pass": true
+    },
+    {
+      "name": "Template Studio Canvas Render Truth",
+      "pass": true
+    },
+    {
+      "name": "Required Freedom Test (Move, Resize, Rotate, Overlap, Z-Index, Add Text)",
+      "pass": true,
+      "details": {
+        "bannerText": "E T E R N A L • U N I O N",
+        "p1BoxInitial": {
+          "x": 156.00784301757812,
+          "y": -2240.616943359375,
+          "width": 327.17181396484375,
+          "height": 419.95263671875
+        },
+        "p1BoxMutated": {
+          "x": 227.89923095703125,
+          "y": 1545.0465087890625,
+          "width": 408.2015380859375,
+          "height": 515.0008544921875
+        },
+        "p2BoxMutated": {
+          "x": 459.0557861328125,
+          "y": 1608.5369873046875,
+          "width": 445.888427734375,
+          "height": 548.0196533203125
+        },
+        "isOverlapping": true
+      }
+    }
+  ]
+}

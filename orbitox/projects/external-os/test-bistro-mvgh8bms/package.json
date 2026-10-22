@@ -1,0 +1,14 @@
+{
+  "name": "@orbitox-os/test-bistro-mvgh8bms",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Independent runtime product for Franchise Bistro Test OS",
+  "scripts": {
+    "dev": "tsx src/server.ts",
+    "start": "node dist/server.js",
+    "build": "tsc"
+  },
+  "dependencies": {
+    "@orbitox/external-runtime-sdk": "workspace:*"
+  }
+}

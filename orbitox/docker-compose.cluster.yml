@@ -1,0 +1,149 @@
+version: '3.8'
+
+# 🪐 OrbitoX Multi-Server High-Availability Clustered Mesh
+# Ideal for: Enterprise SaaS, Multi-Region Scale, High-Concurrency Networks (> 100k req/s)
+# Features: Nginx Least-Conn Ingress, 3 Stateless Node Replicas, Redis Pub/Sub Bus, PgBouncer Pooler
+
+services:
+  ingress:
+    image: nginx:1.25-alpine
+    container_name: orbitox_cluster_ingress
+    restart: always
+    ports:
+      - '80:80'
+      - '443:443'
+    volumes:
+      - ./infra/docker/nginx.conf:/etc/nginx/nginx.conf:ro
+    depends_on:
+      - app-node-1
+      - app-node-2
+      - app-node-3
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:80/healthz"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  app-node-1:
+    build:
+      context: .
+      dockerfile: ./apps/web/Dockerfile
+    container_name: orbitox_node_us_east
+    restart: always
+    environment:
+      - NODE_ENV=production
+      - CLUSTER_MODE=distributed
+      - ORBITOX_DEPLOYMENT_MODE=distributed
+      - NODE_ID=node-us-east-1a
+      - PORT=3000
+      - REDIS_URL=redis://:redispass123@redis:6379
+      - DATABASE_URL=postgresql://orbitox_admin:password123@pgbouncer:6432/orbitox
+    volumes:
+      - ./snapshots:/app/snapshots
+    depends_on:
+      redis:
+        condition: service_healthy
+      pgbouncer:
+        condition: service_healthy
+
+  app-node-2:
+    build:
+      context: .
+      dockerfile: ./apps/web/Dockerfile
+    container_name: orbitox_node_us_west
+    restart: always
+    environment:
+      - NODE_ENV=production
+      - CLUSTER_MODE=distributed
+      - ORBITOX_DEPLOYMENT_MODE=distributed
+      - NODE_ID=node-us-west-2b
+      - PORT=3000
+      - REDIS_URL=redis://:redispass123@redis:6379
+      - DATABASE_URL=postgresql://orbitox_admin:password123@pgbouncer:6432/orbitox
+    depends_on:
+      redis:
+        condition: service_healthy
+      pgbouncer:
+        condition: service_healthy
+
+  app-node-3:
+    build:
+      context: .
+      dockerfile: ./apps/web/Dockerfile
+    container_name: orbitox_node_eu_central
+    restart: always
+    environment:
+      - NODE_ENV=production
+      - CLUSTER_MODE=distributed
+      - ORBITOX_DEPLOYMENT_MODE=distributed
+      - NODE_ID=node-eu-central-1
+      - PORT=3000
+      - REDIS_URL=redis://:redispass123@redis:6379
+      - DATABASE_URL=postgresql://orbitox_admin:password123@pgbouncer:6432/orbitox
+    depends_on:
+      redis:
+        condition: service_healthy
+      pgbouncer:
+        condition: service_healthy
+
+  redis:
+    image: redis:7-alpine
+    container_name: orbitox_cluster_redis
+    restart: always
+    command: redis-server --requirepass redispass123 --appendonly yes
+    ports:
+      - '6379:6379'
+    volumes:
+      - redis_cluster_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "redispass123", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  pgbouncer:
+    image: edoburu/pgbouncer:latest
+    container_name: orbitox_cluster_pgbouncer
+    restart: always
+    environment:
+      - DB_USER=orbitox_admin
+      - DB_PASSWORD=password123
+      - DB_HOST=postgres
+      - DB_PORT=5432
+      - DB_NAME=orbitox
+      - POOL_MODE=transaction
+      - MAX_CLIENT_CONN=10000
+      - DEFAULT_POOL_SIZE=50
+    ports:
+      - '6432:6432'
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "pg_isready", "-h", "localhost", "-p", "6432", "-U", "orbitox_admin"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  postgres:
+    image: postgres:16-alpine
+    container_name: orbitox_cluster_postgres
+    restart: always
+    environment:
+      POSTGRES_USER: orbitox_admin
+      POSTGRES_PASSWORD: password123
+      POSTGRES_DB: orbitox
+    ports:
+      - '5432:5432'
+    volumes:
+      - postgres_cluster_data:/var/lib/postgresql/data
+      - ./infra/docker/init-scripts:/docker-entrypoint-initdb.d
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U orbitox_admin -d orbitox"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  postgres_cluster_data:
+  redis_cluster_data:

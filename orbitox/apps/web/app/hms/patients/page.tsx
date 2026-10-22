@@ -2354,7 +2354,7 @@ ${soapModalPatient.clinicalNotes || ''}`.trim();
                             background: isCritical ? '#ef4444' : isCompleted ? '#10b981' : '#f59e0b',
                             color: '#ffffff'
                           }}>
-                            {isCritical ? '🚨 CRITICAL' : isCompleted ? '✓ VERIFIED' : '⏳ PENDING'}
+                            {isCritical ? 'CRITICAL' : isCompleted ? 'VERIFIED' : 'PENDING'}
                           </span>
                         </div>
                       );

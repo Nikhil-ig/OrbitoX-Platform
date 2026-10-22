@@ -215,7 +215,7 @@ export default function FinancialBillingPage() {
             ${financialStats.outstandingDue.toLocaleString()}
           </div>
           <div style={{ fontSize: '11px', color: financialStats.outstandingDue > 0 ? '#b45309' : '#64748b', fontWeight: 600, marginTop: '2px' }}>
-            {financialStats.outstandingDue > 0 ? '⏳ Awaiting Co-Pay Clearance' : '✓ Zero Balance'}
+            {financialStats.outstandingDue > 0 ? 'Awaiting Co-Pay Clearance' : 'Zero Balance'}
           </div>
         </div>
 

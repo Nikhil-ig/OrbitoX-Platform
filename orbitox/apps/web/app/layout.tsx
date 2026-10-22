@@ -1,6 +1,6 @@
 import React from 'react';
 import '@orbitox/ui/src/styles/theme.css';
-import { ThemeProvider } from '@orbitox/ui';
+import { GlobalProviders } from './providers';
 
 export const metadata = {
   title: 'OrbitoX Platform OS',
@@ -14,9 +14,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         suppressHydrationWarning
         style={{ margin: 0, padding: 0, background: 'var(--ui-bg-root, #07080D)', color: 'var(--ui-text-primary, #ffffff)' }}
       >
-        <ThemeProvider initialThemeId="cosmic-obsidian">
+        <GlobalProviders>
           {children}
-        </ThemeProvider>
+        </GlobalProviders>
       </body>
     </html>
   );

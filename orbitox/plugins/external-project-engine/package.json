@@ -1,0 +1,20 @@
+{
+  "name": "@orbitox/external-project-engine",
+  "version": "1.0.0",
+  "private": true,
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "scripts": {
+    "build": "tsc -p tsconfig.json"
+  },
+  "dependencies": {
+    "@orbitox/core": "workspace:*",
+    "@orbitox/external-runtime-sdk": "workspace:*",
+    "@orbitox/types": "workspace:*"
+  },
+  "devDependencies": {
+    "@orbitox/tsconfig": "workspace:*",
+    "@types/node": "^20.0.0",
+    "typescript": "^5.0.0"
+  }
+}

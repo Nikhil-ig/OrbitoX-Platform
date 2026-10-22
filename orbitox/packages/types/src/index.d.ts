@@ -6,4 +6,5 @@ export * from './api.types';
 export * from './auth.types';
 export * from './rbac.types';
 export * from './billing.types';
+export * from './platform.types';
 //# sourceMappingURL=index.d.ts.map

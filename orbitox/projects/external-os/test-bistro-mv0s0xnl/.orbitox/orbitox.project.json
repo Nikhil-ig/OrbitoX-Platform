@@ -1,0 +1,120 @@
+{
+  "projectId": "project_test_bistro_mv0s0xnl",
+  "slug": "test-bistro-mv0s0xnl",
+  "name": "Franchise Bistro Test OS",
+  "type": "restaurant-os",
+  "version": "1.0.0",
+  "runtime": {
+    "type": "standalone",
+    "entrypoint": "src/server.ts",
+    "defaultPort": 4055,
+    "healthEndpoint": "/health"
+  },
+  "enabledPlugins": [
+    "@orbitox/pos"
+  ],
+  "enabledFeatures": [
+    "dine_qr",
+    "realtime_kds"
+  ],
+  "apis": [
+    {
+      "name": "restaurant.quote",
+      "route": "/api/restaurant/quote",
+      "method": "POST",
+      "version": "v1.0.0",
+      "requiresAuth": false,
+      "scopes": [
+        "pos.quote"
+      ],
+      "rateLimitPerMin": 300,
+      "description": "Deterministic pricing quote"
+    },
+    {
+      "name": "restaurant.orders",
+      "route": "/api/restaurant/orders",
+      "method": "POST",
+      "version": "v1.0.0",
+      "requiresAuth": true,
+      "scopes": [
+        "pos.orders.write"
+      ],
+      "rateLimitPerMin": 120,
+      "description": "Idempotent order submission"
+    },
+    {
+      "name": "restaurant.kds",
+      "route": "/api/restaurant/kds",
+      "method": "GET",
+      "version": "v1.0.0",
+      "requiresAuth": true,
+      "scopes": [
+        "kitchen.read"
+      ],
+      "rateLimitPerMin": 600,
+      "description": "Kitchen station queue stream"
+    },
+    {
+      "name": "restaurant.menu",
+      "route": "/api/restaurant/menu",
+      "method": "GET",
+      "version": "v1.0.0",
+      "requiresAuth": false,
+      "scopes": [
+        "diner.public"
+      ],
+      "rateLimitPerMin": 1000,
+      "description": "Public menu catalog"
+    },
+    {
+      "name": "restaurant.sessions",
+      "route": "/api/restaurant/sessions/join",
+      "method": "POST",
+      "version": "v1.0.0",
+      "requiresAuth": false,
+      "scopes": [
+        "diner.join"
+      ],
+      "rateLimitPerMin": 200,
+      "description": "Diner session join"
+    },
+    {
+      "name": "restaurant.tables",
+      "route": "/api/restaurant/qr/:locator",
+      "method": "GET",
+      "version": "v1.0.0",
+      "requiresAuth": false,
+      "scopes": [
+        "diner.public"
+      ],
+      "rateLimitPerMin": 1200,
+      "description": "Table discovery"
+    }
+  ],
+  "planReferences": [
+    "plan_restaurant_growth"
+  ],
+  "environmentMetadata": {
+    "defaultEnvironment": "production",
+    "supportedEnvironments": [
+      "development",
+      "staging",
+      "production"
+    ]
+  },
+  "platformController": {
+    "controlPlaneUrl": "http://localhost:3005",
+    "syncIntervalSeconds": 10,
+    "requireSignedConfig": true
+  },
+  "capabilities": [
+    "CONTROL_BRIDGE_V1",
+    "SIGNED_CONFIG_V1",
+    "CENTRAL_QUOTES_V1",
+    "REALTIME_TELEMETRY_V1"
+  ],
+  "customMetadata": {
+    "businessModel": "O2O2B2B2C",
+    "generatedAt": "2026-10-09T09:42:15.468Z"
+  }
+}

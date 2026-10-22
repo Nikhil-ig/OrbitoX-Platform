@@ -1,0 +1,15 @@
+{
+  "name": "restaurant-os",
+  "version": "1.0.0",
+  "description": "OrbitoX RestaurantOS Independent Runtime Product",
+  "main": "src/server.ts",
+  "scripts": {
+    "dev": "npx -y tsx src/server.ts",
+    "start": "npx -y tsx src/server.ts"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "playwright": "^1.64.0",
+    "typescript": "^5.0.0"
+  }
+}

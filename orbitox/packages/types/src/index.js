@@ -22,4 +22,5 @@ __exportStar(require("./api.types"), exports);
 __exportStar(require("./auth.types"), exports);
 __exportStar(require("./rbac.types"), exports);
 __exportStar(require("./billing.types"), exports);
+__exportStar(require("./platform.types"), exports);
 //# sourceMappingURL=index.js.map

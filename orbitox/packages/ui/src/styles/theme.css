@@ -1,36 +1,51 @@
 :root {
-  /* ─── Default Surface Hierarchies (Cosmic Obsidian Default) ─── */
-  --ui-bg-root: #07080D;
-  --ui-bg-dock: rgba(10, 12, 18, 0.95);
-  --ui-bg-sidebar: rgba(13, 15, 24, 0.92);
-  --ui-bg-card: rgba(20, 24, 38, 0.75);
-  --ui-bg-card-hover: rgba(26, 32, 50, 0.85);
-  --ui-bg-glass: rgba(13, 15, 24, 0.75);
-  --ui-bg-elevated: rgba(24, 28, 46, 0.85);
-  --ui-bg-input: rgba(0, 0, 0, 0.4);
+  /* ─── Surface Hierarchies (Luxury Cosmic Velvet & Borderless Depth) ─── */
+  --ui-bg-root: #0A0D18;
+  --ui-bg-canvas: #0A0D18;
+  --ui-bg-dock: rgba(10, 13, 24, 0.96);
+  --ui-bg-sidebar: rgba(11, 14, 26, 0.95);
+  --ui-bg-card: #13172B;
+  --ui-bg-card-hover: #181E38;
+  --ui-bg-squircle: #13172B;
+  --ui-bg-squircle-hover: #181E38;
+  --ui-bg-subcard: #1B213D;
+  --ui-bg-glass: rgba(19, 23, 43, 0.88);
+  --ui-bg-elevated: #1B213D;
+  --ui-bg-input: #0C0F1E;
 
-  /* ─── Border Tokens ─── */
-  --ui-border-subtle: rgba(255, 255, 255, 0.06);
-  --ui-border-default: rgba(255, 255, 255, 0.1);
-  --ui-border-bright: rgba(255, 255, 255, 0.18);
-  --ui-border-glow: rgba(168, 85, 247, 0.35);
-  --ui-border-active: #A855F7;
+  /* ─── Border Tokens (Ultra-Subtle & Borderless Feel) ─── */
+  --ui-border-subtle: rgba(255, 255, 255, 0.035);
+  --ui-border-default: rgba(255, 255, 255, 0.06);
+  --ui-border-bright: rgba(255, 255, 255, 0.12);
+  --ui-border-glow: rgba(88, 101, 242, 0.4);
+  --ui-border-active: #5865F2;
 
-  /* ─── Typography & Text Hierarchy ─── */
+  /* ─── Typography & Text Hierarchy (Luminous Contrast Inspired by Ref 1) ─── */
   --ui-text-primary: #FFFFFF;
-  --ui-text-secondary: #94A3B8;
-  --ui-text-muted: #64748B;
-  --ui-text-dim: #475569;
-  --ui-text-accent: #C084FC;
+  --ui-text-secondary: #A3AED0;
+  --ui-text-muted: #7B87A8;
+  --ui-text-dim: #546182;
+  --ui-text-accent: #818CF8;
 
-  /* ─── Vibrant Neon & Luxury Accents ─── */
-  --ui-accent-primary: #A855F7;
-  --ui-accent-primary-hover: #9333EA;
-  --ui-accent-secondary: #38BDF8;
-  --ui-accent-glow: rgba(168, 85, 247, 0.45);
-  --ui-accent-gradient: linear-gradient(135deg, #A855F7 0%, #6366F1 100%);
-  --ui-accent-gold: #E5A93C;
-  --ui-accent-gold-glow: rgba(229, 169, 60, 0.45);
+  /* ─── Vibrant Dual-Accent Palette (Ref 1: Neon Orange & Electric Indigo) ─── */
+  --ui-accent-neon-orange: #FF7A1A;
+  --ui-accent-neon-orange-hover: #FB923C;
+  --ui-accent-neon-orange-glow: rgba(255, 122, 26, 0.45);
+  --ui-accent-neon-indigo: #5865F2;
+  --ui-accent-neon-blue: #5865F2;
+  --ui-accent-neon-purple: #8B5CF6;
+  --ui-accent-neon-indigo-glow: rgba(88, 101, 242, 0.45);
+  --ui-accent-neon-cyan: #38BDF8;
+  --ui-accent-neon-emerald: #10B981;
+
+  --ui-accent-primary: #5865F2;
+  --ui-accent-primary-hover: #4752C4;
+  --ui-accent-secondary: #FF7A1A;
+  --ui-accent-glow: rgba(88, 101, 242, 0.45);
+  --ui-accent-gradient: linear-gradient(135deg, #5865F2 0%, #7C3AED 100%);
+  --ui-accent-orange-gradient: linear-gradient(135deg, #FF7A1A 0%, #FF9533 100%);
+  --ui-accent-gold: #F59E0B;
+  --ui-accent-gold-glow: rgba(245, 158, 11, 0.45);
 
   /* ─── Functional Semantic Colors ─── */
   --ui-success: #10B981;
@@ -39,22 +54,27 @@
   --ui-warning-bg: rgba(245, 158, 11, 0.15);
   --ui-danger: #EF4444;
   --ui-danger-bg: rgba(239, 68, 68, 0.15);
-  --ui-info: #3B82F6;
-  --ui-info-bg: rgba(59, 130, 246, 0.15);
+  --ui-info: #38BDF8;
+  --ui-info-bg: rgba(56, 189, 248, 0.15);
 
-  /* ─── Border Radii ─── */
-  --ui-radius-xs: 4px;
-  --ui-radius-sm: 8px;
-  --ui-radius-md: 12px;
-  --ui-radius-lg: 18px;
-  --ui-radius-xl: 24px;
+  /* ─── Border Radii (Smooth Squircles & Pills) ─── */
+  --ui-radius-xs: 8px;
+  --ui-radius-sm: 12px;
+  --ui-radius-md: 16px;
+  --ui-radius-lg: 22px;
+  --ui-radius-xl: 28px;
+  --ui-radius-squircle: 28px;
+  --ui-radius-squircle-lg: 34px;
   --ui-radius-full: 9999px;
 
   /* ─── Elevation & Shadows ─── */
-  --ui-shadow-sm: 0 2px 8px rgba(0, 0, 0, 0.4);
-  --ui-shadow-md: 0 8px 24px rgba(0, 0, 0, 0.6);
-  --ui-shadow-lg: 0 16px 48px rgba(0, 0, 0, 0.85);
+  --ui-shadow-sm: 0 4px 12px rgba(0, 0, 0, 0.35);
+  --ui-shadow-md: 0 10px 28px rgba(0, 0, 0, 0.5);
+  --ui-shadow-lg: 0 20px 48px rgba(0, 0, 0, 0.7);
   --ui-shadow-glow: 0 0 25px var(--ui-accent-glow);
+  --ui-shadow-glow-indigo: 0 0 30px rgba(88, 101, 242, 0.3);
+  --ui-shadow-glow-orange: 0 0 30px rgba(255, 122, 26, 0.35);
+  --ui-shadow-squircle: 0 20px 45px -10px rgba(0, 0, 0, 0.65), 0 2px 6px rgba(0, 0, 0, 0.4);
 
   /* ─── Animation Timing ─── */
   --ui-transition-fast: all 0.15s cubic-bezier(0.4, 0, 0.2, 1);
@@ -63,6 +83,11 @@
 
 body {
   background-color: var(--ui-bg-root);
+  background-image: 
+    radial-gradient(circle at 15% 0%, rgba(88, 101, 242, 0.12) 0%, transparent 45%),
+    radial-gradient(circle at 85% 15%, rgba(255, 122, 26, 0.08) 0%, transparent 40%),
+    radial-gradient(circle at 50% 100%, rgba(139, 92, 246, 0.07) 0%, transparent 50%);
+  background-attachment: fixed;
   color: var(--ui-text-primary);
   font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Plus Jakarta Sans', 'Inter', sans-serif;
   margin: 0;
@@ -162,4 +187,106 @@ html, body {
 
 .animate-radar {
   animation: radarPing 2s cubic-bezier(0, 0, 0.2, 1) infinite;
+}
+
+/* ─── Midnight Slate Squircle Cards (Ref: Borderless Depth) ─── */
+.squircle-card {
+  background: var(--ui-bg-squircle);
+  backdrop-filter: blur(28px);
+  -webkit-backdrop-filter: blur(28px);
+  border: 1px solid rgba(255, 255, 255, 0.04);
+  border-radius: var(--ui-radius-squircle);
+  box-shadow: var(--ui-shadow-squircle);
+  transition: var(--ui-transition-smooth);
+  position: relative;
+  overflow: hidden;
+}
+
+.squircle-card:hover {
+  background: var(--ui-bg-squircle-hover);
+  border-color: rgba(255, 255, 255, 0.08);
+  transform: translateY(-2px);
+  box-shadow: 0 24px 50px -10px rgba(0, 0, 0, 0.75), 0 0 20px rgba(88, 101, 242, 0.1);
+}
+
+.squircle-card-orange:hover {
+  border-color: rgba(255, 122, 26, 0.25);
+  box-shadow: 0 24px 50px -10px rgba(0, 0, 0, 0.75), 0 0 24px rgba(255, 122, 26, 0.15);
+}
+
+.squircle-card-indigo:hover {
+  border-color: rgba(88, 101, 242, 0.25);
+  box-shadow: 0 24px 50px -10px rgba(0, 0, 0, 0.75), 0 0 24px rgba(88, 101, 242, 0.18);
+}
+
+/* ─── Pill Badges & Buttons ─── */
+.pill-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 12px;
+  border-radius: var(--ui-radius-full);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.3px;
+  transition: var(--ui-transition-fast);
+}
+
+.pill-interactive {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 8px 18px;
+  border-radius: var(--ui-radius-full);
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  border: 1px solid var(--ui-border-default);
+  background: rgba(255, 255, 255, 0.05);
+  color: #FFFFFF;
+  transition: var(--ui-transition-smooth);
+}
+
+.pill-interactive:hover {
+  background: rgba(255, 255, 255, 0.1);
+  border-color: var(--ui-border-bright);
+  transform: translateY(-1px);
+}
+
+.pill-interactive-primary {
+  background: var(--ui-accent-gradient);
+  border: none;
+  box-shadow: 0 4px 16px rgba(99, 102, 241, 0.35);
+}
+
+.pill-interactive-primary:hover {
+  box-shadow: 0 6px 22px rgba(99, 102, 241, 0.5);
+  transform: translateY(-1px);
+}
+
+.pill-interactive-orange {
+  background: var(--ui-accent-orange-gradient);
+  border: none;
+  color: #FFFFFF;
+  box-shadow: 0 4px 16px rgba(255, 122, 26, 0.35);
+}
+
+.pill-interactive-orange:hover {
+  box-shadow: 0 6px 22px rgba(255, 122, 26, 0.5);
+  transform: translateY(-1px);
+}
+
+/* ─── Ambient Cosmic Background ─── */
+.cosmic-canvas-glow {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 600px;
+  background: radial-gradient(ellipse 70% 50% at 50% -10%, rgba(99, 102, 241, 0.15), transparent 70%),
+              radial-gradient(circle at 90% 20%, rgba(255, 122, 26, 0.07), transparent 40%),
+              radial-gradient(circle at 10% 40%, rgba(139, 92, 246, 0.06), transparent 50%);
+  pointer-events: none;
+  z-index: 0;
 }

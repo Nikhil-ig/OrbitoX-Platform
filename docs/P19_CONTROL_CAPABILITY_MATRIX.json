@@ -1,0 +1,329 @@
+{
+  "version": "2.0.0",
+  "project": "OrbitoX P19 Composer Core 2.0",
+  "auditedAt": "2026-10-01T22:03:00+05:30",
+  "summary": {
+    "totalControls": 35,
+    "wired": 35,
+    "partial": 0,
+    "mock": 0,
+    "missing": 0
+  },
+  "controls": [
+    {
+      "id": "topbar_viewport_switcher",
+      "component": "StudioTopBar",
+      "category": "Canvas Control",
+      "action": "Switch device breakpoint (desktop/tablet/mobile)",
+      "dispatchedCommand": "SET_DEVICE",
+      "status": "WIRED",
+      "auditNotes": "Directly updates state.ui.viewport and adjusts canvas wrapper width."
+    },
+    {
+      "id": "topbar_undo_redo",
+      "component": "StudioTopBar",
+      "category": "History",
+      "action": "Undo / Redo state mutation",
+      "dispatchedCommand": "UNDO / REDO",
+      "status": "WIRED",
+      "auditNotes": "Pops/pushes past/future snapshots in store and re-resolves schema."
+    },
+    {
+      "id": "topbar_preview_modal",
+      "component": "StudioTopBar",
+      "category": "Modal",
+      "action": "Open Live Preview modal",
+      "dispatchedCommand": "Local state setIsPreviewOpen(true)",
+      "status": "WIRED",
+      "auditNotes": "Renders StudioPreviewModal with live schema scenes and design tokens."
+    },
+    {
+      "id": "topbar_publish_modal",
+      "component": "StudioTopBar",
+      "category": "Modal",
+      "action": "Open Publish modal",
+      "dispatchedCommand": "Local state setIsPublishOpen(true)",
+      "status": "WIRED",
+      "auditNotes": "Triggers saveImmediate() and opens edge publishing modal."
+    },
+    {
+      "id": "canvas_node_select",
+      "component": "CanvasWorkspace",
+      "category": "Direct Manipulation",
+      "action": "Click node in canvas",
+      "dispatchedCommand": "SELECT_NODE",
+      "status": "WIRED",
+      "auditNotes": "Selects target node and updates right properties panel."
+    },
+    {
+      "id": "canvas_node_transform",
+      "component": "CanvasWorkspace",
+      "category": "Direct Manipulation",
+      "action": "Drag move / resize node bounding box",
+      "dispatchedCommand": "SG_UPDATE_GEOMETRY",
+      "status": "WIRED",
+      "auditNotes": "Updates geometry coordinates and re-renders UnifiedSceneRenderer."
+    },
+    {
+      "id": "canvas_add_section_inline",
+      "component": "CanvasWorkspace",
+      "category": "Composition",
+      "action": "Click + button between sections",
+      "dispatchedCommand": "INSERT_SECTION",
+      "status": "WIRED",
+      "auditNotes": "Inserts section at specified position and syncs draft.scenes + activePage.sectionIds."
+    },
+    {
+      "id": "canvas_move_section_arrows",
+      "component": "CanvasWorkspace",
+      "category": "Composition",
+      "action": "Click Move Up / Move Down on section header",
+      "dispatchedCommand": "MOVE_SECTION",
+      "status": "WIRED",
+      "auditNotes": "Swaps order in both draft.scenes and activePage.sectionIds."
+    },
+    {
+      "id": "canvas_section_drag_and_drop",
+      "component": "CanvasWorkspace",
+      "category": "Composition",
+      "action": "Drag section handle to reorder",
+      "dispatchedCommand": "MOVE_SECTION",
+      "status": "WIRED",
+      "auditNotes": "HTML5 draggable handle with orbitox_section_id payload, dropping on sections or affordances calls MOVE_SECTION."
+    },
+    {
+      "id": "canvas_duplicate_section",
+      "component": "CanvasWorkspace",
+      "category": "Composition",
+      "action": "Click duplicate section button",
+      "dispatchedCommand": "DUPLICATE_SECTION",
+      "status": "WIRED",
+      "auditNotes": "Clones scene graph with fresh IDs and inserts below current section."
+    },
+    {
+      "id": "canvas_delete_section",
+      "component": "CanvasWorkspace",
+      "category": "Composition",
+      "action": "Click delete section button",
+      "dispatchedCommand": "DELETE_SECTION",
+      "status": "WIRED",
+      "auditNotes": "Removes from draft.scenes and activePage.sectionIds, guarding against deleting last section."
+    },
+    {
+      "id": "library_insert_primitive_node",
+      "component": "LibraryDrawer",
+      "category": "Composition",
+      "action": "Click Heading / Paragraph / Button / Frame in drawer",
+      "dispatchedCommand": "SG_CREATE_NODE",
+      "status": "WIRED",
+      "auditNotes": "Resolved dynamically via store.getState().ui.selection.sceneId with activePageSections fallback."
+    },
+    {
+      "id": "template_browser_replace_project",
+      "component": "TemplateBrowserModal",
+      "category": "Template",
+      "action": "Select template and click Apply Template",
+      "dispatchedCommand": "REPLACE_PROJECT",
+      "status": "WIRED",
+      "auditNotes": "Replaces full schema draft through mutateDraft so undo works."
+    },
+    {
+      "id": "template_browser_add_section_only",
+      "component": "TemplateBrowserModal",
+      "category": "Template",
+      "action": "Click Add Section Only from template card",
+      "dispatchedCommand": "ADD_TEMPLATE_SECTION",
+      "status": "WIRED",
+      "auditNotes": "Fixed in P19 to deduplicate section ID and sync with activePage.sectionIds."
+    },
+    {
+      "id": "pages_create_page",
+      "component": "PagesPanel",
+      "category": "Pages",
+      "action": "Click + New Page",
+      "dispatchedCommand": "CREATE_PAGE",
+      "status": "WIRED",
+      "auditNotes": "Creates new TemplatePageDefinition in draft.pages."
+    },
+    {
+      "id": "pages_switch_page",
+      "component": "PagesPanel",
+      "category": "Pages",
+      "action": "Click page item to switch active page",
+      "dispatchedCommand": "SWITCH_PAGE",
+      "status": "WIRED",
+      "auditNotes": "Canvas strictly renders activePage.sectionIds without leaking foreign scenes."
+    },
+    {
+      "id": "styles_apply_theme",
+      "component": "StylesPanel",
+      "category": "Design Tokens",
+      "action": "Select color palette or typography preset",
+      "dispatchedCommand": "APPLY_THEME",
+      "status": "WIRED",
+      "auditNotes": "Deep-merges tokens into draft.designTokens."
+    },
+    {
+      "id": "assets_upload_file",
+      "component": "AssetsPanel",
+      "category": "Assets",
+      "action": "Upload local media file",
+      "dispatchedCommand": "CREATE_ASSET",
+      "status": "WIRED",
+      "auditNotes": "FileUploadService reads file as DataURL, tracks in-memory, and dispatches CREATE_ASSET."
+    },
+    {
+      "id": "inspector_section_name",
+      "component": "PropertiesPanel",
+      "category": "Inspector (Section)",
+      "action": "Edit section name text input",
+      "dispatchedCommand": "UPDATE_SCENE",
+      "status": "WIRED",
+      "auditNotes": "Updates activeScene.name in schema."
+    },
+    {
+      "id": "inspector_section_nav_label",
+      "component": "PropertiesPanel",
+      "category": "Inspector (Section)",
+      "action": "Edit navigation anchor / title input",
+      "dispatchedCommand": "UPDATE_SCENE",
+      "status": "WIRED",
+      "auditNotes": "Updates activeScene.navigationLabel."
+    },
+    {
+      "id": "inspector_section_transition",
+      "component": "PropertiesPanel",
+      "category": "Inspector (Section)",
+      "action": "Select page transition preset",
+      "dispatchedCommand": "UPDATE_SCENE",
+      "status": "WIRED",
+      "auditNotes": "Wired to activeScene.transitionToNext.type via onUpdateScene."
+    },
+    {
+      "id": "inspector_node_name",
+      "component": "PropertiesPanel",
+      "category": "Inspector (Node)",
+      "action": "Edit layer name text input",
+      "dispatchedCommand": "SG_UPDATE_NODE_PROPERTY",
+      "status": "WIRED",
+      "auditNotes": "Updates node.name."
+    },
+    {
+      "id": "inspector_quick_actions",
+      "component": "PropertiesPanel",
+      "category": "Inspector (Node)",
+      "action": "Click Lock / Hide / Duplicate / Delete",
+      "dispatchedCommand": "SG_LOCK_NODE / SG_HIDE_NODE / SG_DUPLICATE_NODE / SG_DELETE_NODE",
+      "status": "WIRED",
+      "auditNotes": "Fully wired to store dispatch."
+    },
+    {
+      "id": "inspector_text_content",
+      "component": "PropertiesPanel",
+      "category": "Inspector (Text)",
+      "action": "Edit textarea text content",
+      "dispatchedCommand": "SG_UPDATE_NODE_PROPERTY",
+      "status": "WIRED",
+      "auditNotes": "Updates node.textContent and re-renders immediately."
+    },
+    {
+      "id": "inspector_image_source",
+      "component": "PropertiesPanel",
+      "category": "Inspector (Image)",
+      "action": "Edit image URL input or upload local file",
+      "dispatchedCommand": "SG_UPDATE_NODE_PROPERTY",
+      "status": "WIRED",
+      "auditNotes": "Updates node.smartProps.url, node.src, and supports direct file upload."
+    },
+    {
+      "id": "inspector_image_object_fit",
+      "component": "PropertiesPanel",
+      "category": "Inspector (Image)",
+      "action": "Select cover / contain / fill",
+      "dispatchedCommand": "SG_UPDATE_STYLE",
+      "status": "WIRED",
+      "auditNotes": "Updates style.objectFit."
+    },
+    {
+      "id": "inspector_button_label",
+      "component": "PropertiesPanel",
+      "category": "Inspector (Button)",
+      "action": "Edit button label input",
+      "dispatchedCommand": "SG_UPDATE_NODE_PROPERTY",
+      "status": "WIRED",
+      "auditNotes": "Updates node.textContent."
+    },
+    {
+      "id": "inspector_button_destination_link",
+      "component": "PropertiesPanel",
+      "category": "Inspector (Button)",
+      "action": "Edit destination link input",
+      "dispatchedCommand": "SG_UPDATE_NODE_PROPERTY",
+      "status": "WIRED",
+      "auditNotes": "Updates node.smartProps.href and node.interactions[0].onClick.url."
+    },
+    {
+      "id": "inspector_dimensions_w_h",
+      "component": "PropertiesPanel",
+      "category": "Inspector (Geometry)",
+      "action": "Edit W and H inputs",
+      "dispatchedCommand": "SG_UPDATE_GEOMETRY",
+      "status": "WIRED",
+      "auditNotes": "Updates geometry.width and geometry.height."
+    },
+    {
+      "id": "inspector_layout_direction",
+      "component": "PropertiesPanel",
+      "category": "Inspector (Layout)",
+      "action": "Select Row / Column / Grid",
+      "dispatchedCommand": "SG_UPDATE_NODE_PROPERTY",
+      "status": "WIRED",
+      "auditNotes": "Updates layoutConfig.direction."
+    },
+    {
+      "id": "inspector_typography_all",
+      "component": "PropertiesPanel",
+      "category": "Inspector (Design)",
+      "action": "Font Family, Size, Weight, Text Align",
+      "dispatchedCommand": "SG_UPDATE_STYLE",
+      "status": "WIRED",
+      "auditNotes": "Updates style.typography properties."
+    },
+    {
+      "id": "inspector_box_model_padding",
+      "component": "PropertiesPanel",
+      "category": "Inspector (Design)",
+      "action": "Padding X and Padding Y inputs",
+      "dispatchedCommand": "SG_UPDATE_STYLE",
+      "status": "WIRED",
+      "auditNotes": "Updates style.paddingX, style.paddingY, and style.padding."
+    },
+    {
+      "id": "inspector_corner_radius",
+      "component": "PropertiesPanel",
+      "category": "Inspector (Design)",
+      "action": "Corner radius slider (linked) and 4-corner inputs (unlinked)",
+      "dispatchedCommand": "SG_UPDATE_STYLE",
+      "status": "WIRED",
+      "auditNotes": "Linked slider updates borderRadius.all; unlinked inputs update tl/tr/br/bl."
+    },
+    {
+      "id": "inspector_opacity",
+      "component": "PropertiesPanel",
+      "category": "Inspector (Design)",
+      "action": "Opacity range slider",
+      "dispatchedCommand": "SG_UPDATE_GEOMETRY",
+      "status": "WIRED",
+      "auditNotes": "Updates geometry.opacity between 0 and 1."
+    },
+    {
+      "id": "inspector_behavior_tabs",
+      "component": "PropertiesPanel",
+      "category": "Inspector (Behavior & Advanced)",
+      "action": "Parallax Plane, Motion Preset, Hover Micro-animation, Variable Binding, Semantic Tag",
+      "dispatchedCommand": "SG_UPDATE_NODE_PROPERTY",
+      "status": "WIRED",
+      "auditNotes": "Fully wired to smartProps, motion, and binding configurations."
+    }
+  ]
+}

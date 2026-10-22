@@ -1,0 +1,51 @@
+{
+  "name": "@orbitox-io/celebrations",
+  "version": "1.0.0",
+  "description": "Headless Digital Invitations & Celebration Experience Engine — occasion-agnostic, configuration-driven platform for creating beautiful digital invitations and celebration experiences.",
+  "main": "./dist/index.js",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/OrbitoX-io/OrbitoX-Platform.git",
+    "directory": "plugins/celebrations"
+  },
+  "publishConfig": {
+    "registry": "https://npm.pkg.github.com"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "require": "./dist/index.js",
+      "default": "./dist/index.js"
+    },
+    "./react": {
+      "types": "./dist/react/use-celebrations.d.ts",
+      "import": "./dist/react/use-celebrations.js",
+      "require": "./dist/react/use-celebrations.js",
+      "default": "./dist/react/use-celebrations.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc --build",
+    "clean": "rm -rf dist",
+    "test": "jest --passWithNoTests"
+  },
+  "dependencies": {
+    "@orbitox-io/crm": "workspace:*"
+  },
+  "peerDependencies": {
+    "react": "^18.0.0 || ^19.0.0"
+  },
+  "devDependencies": {
+    "@orbitox/jest-config": "workspace:*",
+    "@types/jest": "^29.0.0",
+    "@types/node": "^20.0.0",
+    "@types/react": "^19.0.0",
+    "jest": "^29.0.0",
+    "ts-jest": "^29.0.0",
+    "react": "^19.0.0",
+    "typescript": "^5.0.0"
+  }
+}

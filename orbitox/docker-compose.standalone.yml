@@ -1,0 +1,55 @@
+version: '3.8'
+
+# 🪐 OrbitoX Standalone Single-Server Topology (Zero-Dependency)
+# Ideal for: Startups, Development, Self-Hosted Appliances, Low-Cost VMs (< $20/mo)
+# External Dependencies: 0 (Direct PostgreSQL, In-Memory V8 Sliding Window, Embedded Event Bus)
+
+services:
+  app:
+    build:
+      context: .
+      dockerfile: ./apps/web/Dockerfile
+    container_name: orbitox_standalone_node
+    restart: always
+    environment:
+      - NODE_ENV=production
+      - CLUSTER_MODE=standalone
+      - ORBITOX_DEPLOYMENT_MODE=standalone
+      - NODE_ID=node-standalone-01
+      - PORT=3000
+      - DATABASE_URL=postgresql://orbitox_admin:password123@postgres:5432/orbitox?sslmode=disable
+      # Note: No REDIS_URL required; in-memory caching and sliding window rate limiting active
+    ports:
+      - '3000:3000'
+    volumes:
+      - ./snapshots:/app/snapshots
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/api/v1/system/cluster"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  postgres:
+    image: postgres:16-alpine
+    container_name: orbitox_standalone_postgres
+    restart: always
+    environment:
+      POSTGRES_USER: orbitox_admin
+      POSTGRES_PASSWORD: password123
+      POSTGRES_DB: orbitox
+    ports:
+      - '5432:5432'
+    volumes:
+      - postgres_standalone_data:/var/lib/postgresql/data
+      - ./infra/docker/init-scripts:/docker-entrypoint-initdb.d
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U orbitox_admin -d orbitox"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  postgres_standalone_data:

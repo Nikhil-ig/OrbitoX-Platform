@@ -1,0 +1,1806 @@
+/**
+ * 🪐 RestaurantOS 4.1 — Master Storefront Presentation Engine
+ * ─────────────────────────────────────────────────────────────────────────────
+ * Six brand-new, structurally autonomous customer storefront experiences:
+ *
+ * 1. ATELIER ÉTOILE NOIR (Fine Dining Editorial Tasting Progression)
+ *    • 50/50 Asymmetric Viewport Split (Fixed left editorial canvas, right scrollable tasting chapters)
+ *    • Circular plate photo modules, sommelier wine pairing notes, tasting course movements
+ *    • Slide-over Sommelier Cellar Folio drawer
+ *
+ * 2. FJORD & FORM BOTANICAL (Nordic Minimal Specimen Ledger)
+ *    • Full-Width Architectural Botanical Specimen Ledger (Zero cards!)
+ *    • Precision hairline tabular rows with lot codes, origin coordinates, and inline unrolling specs
+ *    • Minimalist bottom receipt status dock
+ *
+ * 3. ROASTERY 1984 VITRINE (Artisan Café & Bakery Counter)
+ *    • Micro-lot roastery showcase with sensory aroma spectrum dials
+ *    • 3-Column tactile product vitrine grid with mounted [- 1 +] quantity steppers on card faces
+ *    • Floating tactile capsule pill
+ *
+ * 4. NEON YOKOCHO NIGHT ALLEY (Tokyo Contemporary Street Food)
+ *    • Live night market street heat 128 BPM marquee & late-night rush tracker
+ *    • Dual-stall parallel market lanes (Stall 01: Skewers vs Stall 02: Wok Fire & Bao)
+ *    • High-contrast ticket cards with flame spice meters and rapid + BUMP triggers
+ *    • Bottom late-night street order bag
+ *
+ * 5. OSTERIA RUSTICA CONVIVIAL (Tuscan Family Feasting & Hearth)
+ *    • Centered classic Italian editorial reading column
+ *    • Volcanic wood-fired hearth narrative & "Tavola Grande" family feast combo builder (-15% savings)
+ *    • Framed cards with DOP seals, traditional course progression, leather folio presenter
+ *
+ * 6. SHOKUNIN RAMEN & ROBATA (Hinoki Woodcraft Izakaya)
+ *    • Vertical timber plank navigation rail with Japanese kanji banner (職人魂 · 極上出汁)
+ *    • Interactive 4-step ramen bowl customizer checklist (Broth, Noodle, Tare, Toppings)
+ *    • Slat-style cedar plank cards with 18-hour broth timer badges, bento check tray
+ *
+ * Authoritative Catalog & Modifier Contract:
+ * • Zero synthetic metadata tags.
+ * • Strict item.modifierGroups data bindings with server SHA-256 pricing quote verification.
+ * • Pure SVG vector Lucide-grade iconography throughout.
+ */
+
+import {
+  MenuItem,
+  TableFloorRecord,
+  RestaurantOrder,
+  KitchenTask,
+  TenantBrandConfig,
+  MarketplaceTemplate,
+} from '../../domain';
+import { BASE_STYLE_SHEET } from '../styles';
+import { icon } from '../icons';
+
+export function renderDinerPwa(
+  table: TableFloorRecord,
+  menu: MenuItem[],
+  branchName = 'Ludhiana Main',
+  orders: RestaurantOrder[] = [],
+  tasks: KitchenTask[] = [],
+  brand?: TenantBrandConfig,
+  template?: MarketplaceTemplate
+): string {
+  const brandName = brand?.restaurantName || 'OrbitoX Bistro';
+  const brandTagline = brand?.tagline || 'Farm-to-fork North Indian gastronomy, crafted over live charcoal embers.';
+  const tmplTokens = template?.defaultTokens;
+  const primaryColor = brand?.primaryColor || tmplTokens?.primaryColor || '#C86B3C';
+  const secondaryColor = brand?.secondaryColor || tmplTokens?.secondaryColor || '#D99A45';
+  const bgColor = tmplTokens?.backgroundColor || '#080A0D';
+  const surfaceColor = tmplTokens?.surfaceColor || '#12161E';
+  const textColor = tmplTokens?.textColor || '#F5F0E6';
+  const mutedColor = tmplTokens?.mutedColor || '#8C857B';
+  const fontHeading = template?.fontHeading || tmplTokens?.fontFamilyHeading || 'system-ui, sans-serif';
+  const fontBody = template?.fontBody || tmplTokens?.fontFamilyBody || 'system-ui, sans-serif';
+  const customCss = brand?.customCss || '';
+  const isLight = bgColor === '#F7F5F0' || bgColor === '#FDFBF7' || bgColor === '#FBF8F2';
+
+  const rawTemplateId = template?.id || brand?.activeTemplateId || 'tmpl_haute_gastronomy';
+  const activeTemplateId = normalizeTemplateId(rawTemplateId);
+
+  // Active cooking tasks
+  const inProgressTask = tasks.find((t) => t.status === 'IN_PROGRESS' || t.status === 'QUEUED');
+  const hasActiveOrder = orders.length > 0 || tasks.length > 0;
+
+  // Render template-specific composition
+  let storefrontHtml = '';
+  if (activeTemplateId === 'tmpl_nordic_minimal') {
+    storefrontHtml = renderFjordFormComposition(menu, brandName, brandTagline, branchName, table);
+  } else if (activeTemplateId === 'tmpl_artisan_coffee') {
+    storefrontHtml = renderRoastery1984Composition(menu, brandName, brandTagline, branchName, table);
+  } else if (activeTemplateId === 'tmpl_neon_street') {
+    storefrontHtml = renderNeonYokochoComposition(menu, brandName, brandTagline, branchName, table);
+  } else if (activeTemplateId === 'tmpl_trattoria_bella') {
+    storefrontHtml = renderOsteriaRusticaComposition(menu, brandName, brandTagline, branchName, table);
+  } else if (activeTemplateId === 'tmpl_tokyo_izakaya') {
+    storefrontHtml = renderShokuninRamenComposition(menu, brandName, brandTagline, branchName, table);
+  } else {
+    storefrontHtml = renderAtelierEtoileComposition(menu, brandName, brandTagline, branchName, table);
+  }
+
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <title>${brandName} · Table ${table.number}</title>
+  <style>
+    ${BASE_STYLE_SHEET}
+
+    :root {
+      --color-copper: ${primaryColor};
+      --color-sage: ${secondaryColor};
+      --diner-bg: ${bgColor};
+      --theme-bg: ${bgColor};
+      --theme-surface: ${surfaceColor};
+      --theme-text: ${textColor};
+      --theme-muted: ${mutedColor};
+      --theme-primary: ${primaryColor};
+      --theme-secondary: ${secondaryColor};
+      --theme-border: ${isLight ? 'rgba(0, 0, 0, 0.08)' : 'rgba(255, 255, 255, 0.08)'};
+      --diner-font-heading: ${fontHeading};
+      --diner-font-body: ${fontBody};
+      --font-mono: "JetBrains Mono", "SF Mono", monospace;
+    }
+
+    ${customCss}
+
+    * { box-sizing: border-box; }
+
+    body {
+      background: var(--theme-bg, #080A0D);
+      color: var(--theme-text, #F5F0E6);
+      font-family: var(--diner-font-body, system-ui, sans-serif);
+      margin: 0;
+      padding: 0;
+      min-height: 100vh;
+      overflow-x: hidden;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    /* Common Global Elements & Utilities */
+    .cat-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 6px 14px;
+      border-radius: 999px;
+      font-size: 12px;
+      font-weight: 700;
+      text-decoration: none;
+      transition: all 140ms ease;
+    }
+
+    /* Seating Gate Modal */
+    .seating-gate {
+      position: fixed;
+      inset: 0;
+      background: rgba(8, 10, 13, 0.98);
+      backdrop-filter: blur(20px);
+      z-index: 300;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      padding: 28px 24px;
+      text-align: center;
+      overflow-y: auto;
+    }
+    .gate-input {
+      width: 100%;
+      max-width: 380px;
+      background: #12161E;
+      border: 1px solid var(--theme-border);
+      border-radius: 8px;
+      padding: 14px 16px;
+      color: #FFF;
+      font-size: 16px;
+      text-align: center;
+      margin: 14px auto;
+      outline: none;
+      display: block;
+    }
+    .mood-chip {
+      padding: 7px 12px;
+      background: #12161E;
+      border: 1px solid var(--theme-border);
+      border-radius: 999px;
+      color: var(--theme-muted);
+      font-size: 12px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 120ms ease;
+    }
+    .mood-chip.selected {
+      background: rgba(197, 160, 89, 0.18);
+      color: var(--theme-primary);
+      border-color: var(--theme-primary);
+      font-weight: 700;
+    }
+
+    /* Modals & Overlays */
+    .sheet-overlay {
+      position: fixed;
+      inset: 0;
+      background: rgba(0, 0, 0, 0.75);
+      backdrop-filter: blur(10px);
+      z-index: 200;
+      display: none;
+      align-items: flex-end;
+      justify-content: center;
+    }
+    .sheet-overlay.open {
+      display: flex;
+    }
+    .sheet-content {
+      background: ${surfaceColor};
+      border: 1px solid var(--theme-border);
+      border-radius: 20px 20px 0 0;
+      width: 100%;
+      max-width: 520px;
+      max-height: 88vh;
+      overflow-y: auto;
+      padding: 24px 22px;
+      box-shadow: 0 -12px 48px rgba(0, 0, 0, 0.8);
+      color: var(--theme-text);
+    }
+
+    /* Service FAB */
+    .service-request-fab {
+      position: fixed;
+      bottom: 84px;
+      right: 20px;
+      background: #161B24;
+      border: 1px solid var(--theme-border);
+      border-radius: 999px;
+      padding: 10px 18px;
+      color: var(--theme-text);
+      font-size: 12px;
+      font-weight: 700;
+      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.6);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      cursor: pointer;
+      z-index: 45;
+      transition: all 140ms ease;
+    }
+    .service-request-fab:hover {
+      background: #202633;
+      border-color: var(--theme-primary);
+    }
+
+    /* Status Capsule */
+    .live-activity-capsule {
+      position: fixed;
+      top: 14px;
+      right: 20px;
+      background: rgba(18, 22, 30, 0.95);
+      backdrop-filter: blur(12px);
+      border: 1px solid var(--theme-primary);
+      border-radius: 999px;
+      padding: 8px 16px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      cursor: pointer;
+      z-index: 48;
+      box-shadow: 0 4px 20px rgba(0,0,0,0.5);
+    }
+
+    /* Modifier Option Buttons */
+    .mod-btn {
+      padding: 9px 14px;
+      border-radius: 8px;
+      font-size: 12px;
+      font-weight: 700;
+      cursor: pointer;
+      border: 1px solid var(--theme-border);
+      background: ${isLight ? '#F0ECE4' : 'rgba(255,255,255,0.06)'};
+      color: var(--theme-text);
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      transition: all 120ms ease;
+    }
+    .mod-btn.btn-primary {
+      background: var(--theme-primary);
+      color: #FFF;
+      border-color: var(--theme-primary);
+    }
+
+    /* ═════════════════════════════════════════════════════════════════════════ */
+    /* TEMPLATE 1: ATELIER ÉTOILE NOIR (50/50 Asymmetric Split & Tasting Sequence) */
+    /* ═════════════════════════════════════════════════════════════════════════ */
+    .storefront-atelier-shell {
+      width: 100%;
+      min-height: 100vh;
+      display: flex;
+    }
+
+    @media (min-width: 1024px) {
+      .storefront-atelier-shell {
+        height: 100vh;
+        overflow: hidden;
+      }
+      .atelier-left-viewport {
+        width: 48%;
+        height: 100%;
+        position: relative;
+        overflow-y: auto;
+        background: #080A0D;
+        border-right: 1px solid rgba(197, 160, 89, 0.2);
+        padding: 40px;
+        display: flex;
+        flex-direction: column;
+        justify-content: space-between;
+      }
+      .atelier-right-viewport {
+        width: 52%;
+        height: 100%;
+        overflow-y: auto;
+        background: #0B0E14;
+        padding: 40px 48px 120px;
+      }
+    }
+
+    @media (max-width: 1023px) {
+      .storefront-atelier-shell {
+        flex-direction: column;
+      }
+      .atelier-left-viewport {
+        width: 100%;
+        padding: 28px 20px;
+        background: #080A0D;
+        border-bottom: 1px solid rgba(197, 160, 89, 0.2);
+      }
+      .atelier-right-viewport {
+        width: 100%;
+        padding: 24px 20px 100px;
+        background: #0B0E14;
+      }
+    }
+
+    .plate-thumb-circular {
+      width: 96px;
+      height: 96px;
+      border-radius: 50%;
+      object-fit: cover;
+      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.6);
+      border: 1px solid rgba(197, 160, 89, 0.35);
+      flex-shrink: 0;
+    }
+
+    /* ═════════════════════════════════════════════════════════════════════════ */
+    /* TEMPLATE 2: FJORD & FORM (Nordic Minimal Specimen Ledger)                 */
+    /* ═════════════════════════════════════════════════════════════════════════ */
+    .storefront-fjord-shell {
+      width: 100%;
+      max-width: 1320px;
+      margin: 0 auto;
+      padding: 32px 24px 100px;
+      min-height: 100vh;
+      background: #F7F5F0;
+      color: #121314;
+    }
+
+    .fjord-ledger-row {
+      display: flex;
+      flex-direction: column;
+      border-bottom: 1px solid rgba(0, 0, 0, 0.1);
+      padding: 16px 8px;
+      cursor: pointer;
+      transition: background 140ms ease;
+    }
+    .fjord-ledger-row:hover {
+      background: rgba(0, 0, 0, 0.02);
+    }
+    .fjord-ledger-main {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+    }
+    .fjord-spec-unroll {
+      display: none;
+      padding: 14px 12px;
+      margin-top: 12px;
+      background: #FFFFFF;
+      border: 1px solid rgba(0, 0, 0, 0.08);
+      border-radius: 6px;
+      font-size: 13px;
+      color: #475569;
+    }
+    .fjord-spec-unroll.open {
+      display: block;
+    }
+
+    .fjord-receipt-dock {
+      position: fixed;
+      bottom: 0;
+      left: 0;
+      right: 0;
+      background: #121314;
+      color: #F7F5F0;
+      padding: 14px 24px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      z-index: 50;
+      box-shadow: 0 -4px 20px rgba(0, 0, 0, 0.15);
+    }
+
+    /* ═════════════════════════════════════════════════════════════════════════ */
+    /* TEMPLATE 3: ROASTERY 1984 (Artisan Café Vitrine Counter)                  */
+    /* ═════════════════════════════════════════════════════════════════════════ */
+    .storefront-roastery-shell {
+      width: 100%;
+      max-width: 1280px;
+      margin: 0 auto;
+      padding: 24px 20px 100px;
+      background: #FDFBF7;
+      color: #241D17;
+      min-height: 100vh;
+    }
+
+    .roastery-vitrine-grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 24px;
+      margin-top: 24px;
+    }
+    @media (max-width: 1023px) {
+      .roastery-vitrine-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 18px;
+      }
+    }
+    @media (max-width: 640px) {
+      .roastery-vitrine-grid {
+        grid-template-columns: 1fr;
+        gap: 16px;
+      }
+    }
+
+    .roastery-card {
+      background: #FFFFFF;
+      border: 1px solid rgba(168, 75, 46, 0.2);
+      border-radius: 16px;
+      overflow: hidden;
+      box-shadow: 0 4px 18px rgba(0, 0, 0, 0.04);
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      padding: 16px;
+      transition: transform 140ms ease;
+    }
+    .roastery-card:hover {
+      transform: translateY(-2px);
+    }
+
+    .roastery-floating-capsule {
+      position: fixed;
+      bottom: 20px;
+      left: 50%;
+      transform: translateX(-50%);
+      width: calc(100% - 36px);
+      max-width: 440px;
+      background: #241D17;
+      color: #FFF;
+      border-radius: 999px;
+      padding: 14px 22px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      box-shadow: 0 12px 36px rgba(0, 0, 0, 0.25);
+      cursor: pointer;
+      z-index: 50;
+      transition: transform 140ms ease;
+    }
+
+    /* ═════════════════════════════════════════════════════════════════════════ */
+    /* TEMPLATE 4: NEON YOKOCHO (Tokyo Dual Stall Lanes)                         */
+    /* ═════════════════════════════════════════════════════════════════════════ */
+    .storefront-neon-shell {
+      width: 100%;
+      max-width: 1400px;
+      margin: 0 auto;
+      padding: 24px 20px 100px;
+      background: #07090E;
+      color: #FFFFFF;
+      min-height: 100vh;
+    }
+
+    .neon-lanes-container {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 28px;
+      margin-top: 24px;
+    }
+    @media (max-width: 860px) {
+      .neon-lanes-container {
+        grid-template-columns: 1fr;
+        gap: 24px;
+      }
+    }
+
+    .neon-ticket-card {
+      background: #0F131D;
+      border: 1px solid rgba(0, 242, 254, 0.35);
+      border-radius: 12px;
+      padding: 14px 16px;
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      box-shadow: 0 4px 18px rgba(0, 0, 0, 0.6);
+      cursor: pointer;
+      transition: all 140ms ease;
+    }
+    .neon-ticket-card:hover {
+      border-color: #00F2FE;
+    }
+
+    .neon-street-bag {
+      position: fixed;
+      bottom: 20px;
+      left: 50%;
+      transform: translateX(-50%);
+      width: calc(100% - 36px);
+      max-width: 440px;
+      background: linear-gradient(90deg, #00F2FE 0%, #FE0979 100%);
+      color: #000;
+      border-radius: 999px;
+      padding: 14px 22px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      box-shadow: 0 8px 30px rgba(0, 242, 254, 0.4);
+      cursor: pointer;
+      z-index: 50;
+      font-weight: 800;
+    }
+
+    /* ═════════════════════════════════════════════════════════════════════════ */
+    /* TEMPLATE 5: OSTERIA RUSTICA (Centered Tuscan Editorial Column)            */
+    /* ═════════════════════════════════════════════════════════════════════════ */
+    .storefront-osteria-shell {
+      width: 100%;
+      max-width: 1080px;
+      margin: 0 auto;
+      padding: 32px 24px 100px;
+      background: #FBF8F2;
+      color: #241D17;
+      min-height: 100vh;
+    }
+
+    .osteria-framed-card {
+      background: #FFFFFF;
+      border: 1px solid rgba(140, 56, 32, 0.25);
+      border-radius: 12px;
+      padding: 20px;
+      display: flex;
+      gap: 20px;
+      box-shadow: 0 6px 20px rgba(0, 0, 0, 0.04);
+      cursor: pointer;
+      margin-bottom: 16px;
+    }
+
+    /* ═════════════════════════════════════════════════════════════════════════ */
+    /* TEMPLATE 6: SHOKUNIN RAMEN (Hinoki Cedar Woodcraft & Customizer)          */
+    /* ═════════════════════════════════════════════════════════════════════════ */
+    .storefront-shokunin-shell {
+      width: 100%;
+      max-width: 1360px;
+      margin: 0 auto;
+      padding: 28px 24px 100px;
+      background: #1E1915;
+      color: #F7F4EB;
+      min-height: 100vh;
+    }
+
+    .shokunin-slat-card {
+      background: #26201B;
+      border: 1px solid rgba(211, 56, 28, 0.3);
+      border-radius: 8px;
+      padding: 16px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 16px;
+      cursor: pointer;
+      margin-bottom: 12px;
+    }
+
+    /* Floating Cart Pill (Universal Fallback for templates without custom docks) */
+    .floating-cart {
+      position: fixed;
+      bottom: 20px;
+      left: 50%;
+      transform: translateX(-50%);
+      width: calc(100% - 36px);
+      max-width: 440px;
+      background: var(--theme-primary, #C86B3C);
+      color: #FFF;
+      border-radius: 999px;
+      padding: 14px 22px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      box-shadow: 0 10px 30px rgba(0, 0, 0, 0.6);
+      cursor: pointer;
+      z-index: 50;
+      transition: transform 160ms cubic-bezier(0.16, 1, 0.3, 1);
+    }
+  </style>
+</head>
+<body>
+  <!-- 1. Seating Gate Modal -->
+  <div id="seating-gate" class="seating-gate">
+    <div style="font-family: var(--diner-font-heading); font-size: 32px; font-weight: 500; color: #FFF;">${brandName}</div>
+    <div style="font-size: 13px; color: var(--theme-primary); text-transform: uppercase; letter-spacing: 0.1em; margin-top: 4px;">
+      ${branchName} · Table ${table.number}
+    </div>
+
+    <div style="margin: 24px 0 8px; font-size: 14px; color: var(--theme-muted);">
+      Welcome. What should we call you this service?
+    </div>
+    <input type="text" id="guest-name-input" class="gate-input" placeholder="Your Name or Table Host" value="Guest" />
+
+    <div style="margin: 16px 0 20px;">
+      <div style="font-size: 12px; color: var(--theme-muted); margin-bottom: 8px;">Dining Preference:</div>
+      <div style="display: flex; gap: 8px; justify-content: center; flex-wrap: wrap;">
+        <span class="mood-chip selected" onclick="selectMood(this, 'Chef Curated')">Chef Curated</span>
+        <span class="mood-chip" onclick="selectMood(this, 'Quick Tasting')">Quick Tasting</span>
+        <span class="mood-chip" onclick="selectMood(this, 'Convivial Feast')">Convivial Feast</span>
+      </div>
+    </div>
+
+    <button class="btn btn-primary" style="padding: 14px 28px; font-size: 15px; margin: 0 auto;" onclick="confirmSeating()">
+      Enter Storefront Experience →
+    </button>
+  </div>
+
+  <!-- 2. Dynamic Template-Specific Customer Storefront -->
+  ${storefrontHtml}
+
+  <!-- 3. Service Request Action FAB -->
+  <button class="service-request-fab" onclick="openServiceRequestSheet()">
+    <span style="display:inline-flex;align-items:center;">${icon('bell', { size: 14 })}</span>
+    <span>Call Service</span>
+  </button>
+
+  <!-- 4. Dynamic Order Telemetry Capsule -->
+  ${
+    hasActiveOrder
+      ? `
+  <div class="live-activity-capsule" onclick="openStatusSheet()">
+    <div style="display: flex; flex-direction: column;">
+      <span style="font-size: 11px; font-weight: 800; color: #FFF;">${inProgressTask ? inProgressTask.itemName + ' · Cooking' : 'Kitchen Active'}</span>
+      <span style="font-size: 10px; color: var(--theme-primary); font-family: var(--font-mono);">${inProgressTask ? 'ETA ~' + inProgressTask.slaMinutes + ' min' : 'Table Active'}</span>
+    </div>
+    <span style="display:inline-flex;align-items:center;">${icon('chevron-right', { size: 12, color: 'var(--theme-primary)' })}</span>
+  </div>`
+      : ''
+  }
+
+  <!-- 5. Item Customization Sheet (Strictly binds to item.modifierGroups) -->
+  <div id="item-sheet" class="sheet-overlay" onclick="if(event.target === this) closeItemSheet()">
+    <div class="sheet-content">
+      <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 12px;">
+        <h3 id="sheet-item-title" style="font-size: 20px; font-weight: 800; margin: 0;">Item Customizer</h3>
+        <button class="btn btn-ghost btn-sm" onclick="closeItemSheet()">${icon('x', { size: 16 })}</button>
+      </div>
+      <div id="sheet-item-story" style="font-style: italic; font-size: 13px; color: var(--theme-primary); margin-bottom: 8px;"></div>
+      <div id="sheet-item-desc" style="font-size: 13px; color: var(--theme-muted); line-height: 1.5; margin-bottom: 16px;"></div>
+
+      <div id="sheet-modifiers-container"></div>
+
+      <button id="sheet-add-btn" class="btn btn-primary" style="width: 100%; padding: 14px; font-size: 15px; margin-top: 14px;" onclick="confirmSheetAdd()">
+        Add to Order
+      </button>
+    </div>
+  </div>
+
+  <!-- Floating Cart Pill (Universal Order Folio Bar) -->
+  <div id="floating-cart-pill" class="floating-cart-pill floating-cart" onclick="openCartSheet()" style="display: none; position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%); z-index: 80; background: var(--theme-primary, #6366F1); color: #FFF; padding: 12px 24px; border-radius: 9999px; box-shadow: 0 10px 30px rgba(0,0,0,0.5); cursor: pointer; align-items: center; gap: 12px; font-weight: 700; font-size: 14px;">
+    <span style="display:flex;align-items:center;">${icon('cart', { size: 18 })}</span>
+    <span id="cart-pill-count">0 Items</span>
+    <span style="opacity: 0.6;">·</span>
+    <span>View Order</span>
+  </div>
+
+  <!-- 6. Cart Drawer / Sheet -->
+  <div id="cart-sheet" class="sheet-overlay" onclick="if(event.target === this) closeCartSheet()">
+    <div class="sheet-content">
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
+        <h3 style="font-size: 18px; font-weight: 800; margin: 0;">Table ${table.number} Order Folio</h3>
+        <button class="btn btn-ghost btn-sm" onclick="closeCartSheet()">${icon('x', { size: 16 })}</button>
+      </div>
+
+      <div id="cart-items-list" style="display: flex; flex-direction: column; gap: 10px; margin-bottom: 20px;"></div>
+
+      <div style="background: ${isLight ? 'rgba(0,0,0,0.03)' : '#080A0E'}; border: 1px solid var(--theme-border); border-radius: 10px; padding: 14px; margin-bottom: 20px;">
+        <div style="display: flex; justify-content: space-between; font-size: 13px; margin-bottom: 6px;">
+          <span style="color: var(--theme-muted);">Subtotal</span>
+          <span id="quote-subtotal" style="font-family: var(--font-mono);">₹0.00</span>
+        </div>
+        <div style="display: flex; justify-content: space-between; font-size: 13px; margin-bottom: 6px;">
+          <span style="color: var(--theme-muted);">5% GST</span>
+          <span id="quote-tax" style="font-family: var(--font-mono);">₹0.00</span>
+        </div>
+        <div style="display: flex; justify-content: space-between; font-size: 15px; font-weight: 800; border-top: 1px solid var(--theme-border); padding-top: 8px;">
+          <span>Total Payable</span>
+          <span id="quote-total" style="font-family: var(--font-mono); color: var(--theme-primary);">₹0.00</span>
+        </div>
+      </div>
+
+      <button class="btn btn-primary" style="width: 100%; padding: 14px; font-size: 15px; display: flex; align-items: center; justify-content: center; gap: 8px;" onclick="submitKitchenOrder()">
+        <span>Send Order to Kitchen</span>
+        <span style="display:inline-flex;align-items:center;">${icon('kitchen', { size: 15 })}</span>
+      </button>
+    </div>
+  </div>
+
+  <!-- 7. Kitchen Cooking Telemetry Sheet -->
+  <div id="status-sheet" class="sheet-overlay" onclick="if(event.target === this) closeStatusSheet()">
+    <div class="sheet-content">
+      <div style="text-align: center; margin-bottom: 18px;">
+        <span class="badge badge-sage">Active Service</span>
+        <h3 style="font-size: 22px; font-weight: 800; margin-top: 6px;">Kitchen Progress</h3>
+        <p style="font-size: 12px; color: var(--theme-muted); margin-top: 4px;">Synchronized preparation for Table ${table.number}</p>
+      </div>
+
+      <div style="background: ${isLight ? 'rgba(0,0,0,0.03)' : '#080A0E'}; border-radius: 10px; padding: 16px; margin-bottom: 20px;">
+        ${
+          tasks.length === 0
+            ? `<div style="text-align: center; color: var(--theme-muted); font-size: 13px; padding: 14px 0;">No kitchen orders currently in preparation for Table ${table.number}.</div>`
+            : tasks
+                .map(
+                  (t) => `
+          <div style="display: flex; align-items: flex-start; gap: 12px; padding: 10px 0; border-bottom: 1px solid var(--theme-border);">
+            <div style="width: 10px; height: 10px; border-radius: 50%; background: ${t.status === 'BUMPED' ? 'var(--color-sage)' : 'var(--theme-primary)'}; margin-top: 4px;"></div>
+            <div>
+              <div style="font-weight: 700; color: ${t.status === 'BUMPED' ? 'var(--color-sage)' : 'var(--theme-text)'};">
+                ${t.quantity}× ${t.itemName} · ${t.status === 'BUMPED' ? 'Served' : t.status === 'READY' ? 'Ready for Table' : 'Cooking on Line'}
+              </div>
+              <div style="font-size: 12px; color: var(--theme-muted);">${t.station}${t.modifiers.length > 0 ? ' · ' + t.modifiers.join(', ') : ''}</div>
+            </div>
+          </div>`
+                )
+                .join('')
+        }
+      </div>
+
+      <button class="btn btn-secondary" style="width: 100%; padding: 12px;" onclick="closeStatusSheet()">
+        Back to Menu
+      </button>
+    </div>
+  </div>
+
+  <!-- 8. Service Call Sheet -->
+  <div id="service-sheet" class="sheet-overlay" onclick="if(event.target === this) closeServiceRequestSheet()">
+    <div class="sheet-content">
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
+        <h3 style="font-size: 18px; font-weight: 800; margin: 0;">How can we assist you?</h3>
+        <button class="btn btn-ghost btn-sm" onclick="closeServiceRequestSheet()">${icon('x', { size: 16 })}</button>
+      </div>
+
+      <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 18px;">
+        <button class="btn btn-secondary" style="padding: 12px; justify-content: flex-start; gap: 8px;" onclick="sendServiceRequest('WATER', 'Water carafe')">
+          ${icon('coffee', { size: 14 })} <span>Chilled Water</span>
+        </button>
+        <button class="btn btn-secondary" style="padding: 12px; justify-content: flex-start; gap: 8px;" onclick="sendServiceRequest('CUTLERY', 'Cutlery set')">
+          ${icon('utensils', { size: 14 })} <span>Fresh Cutlery</span>
+        </button>
+        <button class="btn btn-secondary" style="padding: 12px; justify-content: flex-start; gap: 8px;" onclick="sendServiceRequest('NAPKINS', 'Extra napkins')">
+          ${icon('file-text', { size: 14 })} <span>Napkins</span>
+        </button>
+        <button class="btn btn-secondary" style="padding: 12px; justify-content: flex-start; gap: 8px;" onclick="sendServiceRequest('CALL_SERVER', 'Call server')">
+          ${icon('bell', { size: 14 })} <span>Call Server</span>
+        </button>
+        <button class="btn btn-secondary" style="padding: 12px; justify-content: flex-start; gap: 8px;" onclick="sendServiceRequest('MORE_TIME', 'More time')">
+          ${icon('clock', { size: 14 })} <span>More Time</span>
+        </button>
+        <button class="btn btn-primary" style="padding: 12px; justify-content: flex-start; gap: 8px;" onclick="sendServiceRequest('BILL', 'Check / Bill requested')">
+          ${icon('credit-card', { size: 14 })} <span>Request Bill</span>
+        </button>
+      </div>
+
+      <div id="service-req-feedback" style="display: none; background: rgba(93, 154, 122, 0.15); border: 1px solid var(--color-sage); border-radius: 8px; padding: 12px; text-align: center; color: var(--color-sage); font-weight: 700; font-size: 13px;">
+        Request sent to staff! Someone will be with you shortly.
+      </div>
+    </div>
+  </div>
+
+  <!-- Client State & JavaScript -->
+  <script>
+    const isLight = ${isLight};
+    const menuData = ${JSON.stringify(menu)};
+    const tableLocator = '${table.locator}';
+    let cart = [];
+    let selectedItemId = null;
+    let currentSelectedModifiers = [];
+    let currentGuestName = 'Guest';
+    let currentCapabilityToken = sessionStorage.getItem('diner_cap_' + '${table.locator}') || '';
+
+    if (currentCapabilityToken) {
+      const gate = document.getElementById('seating-gate');
+      if (gate) gate.style.display = 'none';
+    }
+
+    function selectMood(el, mood) {
+      document.querySelectorAll('.mood-chip').forEach(c => c.classList.remove('selected'));
+      el.classList.add('selected');
+    }
+
+    async function confirmSeating() {
+      const name = document.getElementById('guest-name-input').value.trim();
+      currentGuestName = name || 'Guest';
+      try {
+        const res = await fetch('/api/restaurant/sessions/join', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ locator: tableLocator, name: currentGuestName }),
+        });
+        const json = await res.json();
+        if (json.success && json.data.capabilityToken) {
+          currentCapabilityToken = json.data.capabilityToken;
+          sessionStorage.setItem('diner_cap_' + tableLocator, currentCapabilityToken);
+        }
+      } catch (err) {}
+      const gate = document.getElementById('seating-gate');
+      if (gate) gate.style.display = 'none';
+    }
+
+    // Quick add to cart for dishes with default modifier choices
+    function quickAddToCart(itemId) {
+      const food = menuData.find(m => m.id === itemId);
+      if (!food) return;
+
+      // Select default modifiers
+      const defaultMods = [];
+      const defaultModIds = [];
+      let deltaMinor = 0;
+      if (food.modifierGroups) {
+        food.modifierGroups.forEach(g => {
+          const defOpt = g.options.find(o => o.isDefault) || g.options[0];
+          if (defOpt) {
+            defaultMods.push(defOpt.name);
+            defaultModIds.push(defOpt.id);
+            deltaMinor += (defOpt.priceDeltaMinor || 0);
+          }
+        });
+      }
+
+      cart.push({
+        id: itemId,
+        quantity: 1,
+        modifier: defaultMods.join(' · '),
+        selectedModifierIds: defaultModIds,
+        modifierPriceDeltaMinor: deltaMinor
+      });
+
+      renderCartPill();
+      recalculateQuote();
+      updateQtyDisplay(itemId);
+    }
+
+    // Tactile Stepper for Roastery 1984
+    function stepItemQuantity(itemId, step) {
+      const food = menuData.find(m => m.id === itemId);
+      if (!food) return;
+
+      if (step > 0) {
+        quickAddToCart(itemId);
+      } else {
+        const idx = cart.findIndex(it => it.id === itemId);
+        if (idx >= 0) {
+          cart.splice(idx, 1);
+          renderCartPill();
+          recalculateQuote();
+          updateQtyDisplay(itemId);
+        }
+      }
+    }
+
+    function updateQtyDisplay(itemId) {
+      const count = cart.filter(it => it.id === itemId).length;
+      const el = document.getElementById('qty-' + itemId);
+      if (el) el.textContent = count;
+    }
+
+    // Item customizer sheet - strictly bound to item.modifierGroups
+    function openItemSheet(itemId) {
+      const pill = document.getElementById('floating-cart-pill');
+      if (pill) pill.style.display = 'none';
+      selectedItemId = itemId;
+      const item = menuData.find(i => i.id === itemId);
+      if (!item) return;
+
+      document.getElementById('sheet-item-title').textContent = item.name;
+      document.getElementById('sheet-item-desc').textContent = item.description;
+      const storyEl = document.getElementById('sheet-item-story');
+      if (storyEl) storyEl.textContent = item.story || (item.category + ' · ' + (item.prepDurationMinutes ? item.prepDurationMinutes + 'm prep' : 'Fresh'));
+
+      currentSelectedModifiers = [];
+      const modContainer = document.getElementById('sheet-modifiers-container');
+      if (modContainer) {
+        if (item.modifierGroups && item.modifierGroups.length > 0) {
+          modContainer.innerHTML = item.modifierGroups.map(grp => {
+            // Auto pre-select defaults
+            grp.options.forEach(opt => {
+              if (opt.isDefault) {
+                currentSelectedModifiers.push({
+                  groupId: grp.id,
+                  optionId: opt.id,
+                  name: opt.name,
+                  priceDeltaMinor: opt.priceDeltaMinor || 0
+                });
+              }
+            });
+
+            return '<div style="margin-bottom: 16px;">' +
+              '<div style="font-size: 12px; font-weight: 800; text-transform: uppercase; margin-bottom: 8px;">' + grp.name + '</div>' +
+              '<div style="display: flex; gap: 8px; flex-wrap: wrap;">' +
+                grp.options.map(opt => {
+                  const isSel = currentSelectedModifiers.some(m => m.groupId === grp.id && m.optionId === opt.id);
+                  const priceStr = opt.priceDeltaMinor ? ' (+' + (opt.formattedPriceDelta || ('₹' + (opt.priceDeltaMinor/100).toFixed(2))) + ')' : '';
+                  return '<button class="mod-btn ' + (isSel ? 'btn-primary' : 'btn-secondary') + '" ' +
+                    'data-grp-id="' + grp.id + '" data-opt-id="' + opt.id + '" data-name="' + opt.name + '" ' +
+                    'data-delta="' + (opt.priceDeltaMinor || 0) + '" data-max="' + grp.maxSelections + '" ' +
+                    'onclick="onModBtnClick(this)">' +
+                    opt.name + priceStr +
+                  '</button>';
+                }).join('') +
+              '</div>' +
+            '</div>';
+          }).join('');
+        } else {
+          modContainer.innerHTML = '<div style="font-size: 13px; color: var(--theme-muted); margin-bottom: 14px;">Crafted to authentic house standard with zero modifications required.</div>';
+        }
+      }
+
+      updateSheetButtonPrice();
+      document.getElementById('item-sheet').classList.add('open');
+    }
+    window.openItemSheet = openItemSheet;
+
+    function onModBtnClick(btn) {
+      const grpId = btn.getAttribute('data-grp-id');
+      const optId = btn.getAttribute('data-opt-id');
+      const optName = btn.getAttribute('data-name');
+      const delta = Number(btn.getAttribute('data-delta') || 0);
+      const max = Number(btn.getAttribute('data-max') || 1);
+
+      if (max === 1) {
+        currentSelectedModifiers = currentSelectedModifiers.filter(m => m.groupId !== grpId);
+        currentSelectedModifiers.push({ groupId: grpId, optionId: optId, name: optName, priceDeltaMinor: delta });
+      } else {
+        const idx = currentSelectedModifiers.findIndex(m => m.groupId === grpId && m.optionId === optId);
+        if (idx >= 0) {
+          currentSelectedModifiers.splice(idx, 1);
+        } else {
+          currentSelectedModifiers.push({ groupId: grpId, optionId: optId, name: optName, priceDeltaMinor: delta });
+        }
+      }
+
+      const buttons = document.querySelectorAll('.mod-btn[data-grp-id="' + grpId + '"]');
+      buttons.forEach(b => {
+        const bOptId = b.getAttribute('data-opt-id');
+        const isSel = currentSelectedModifiers.some(m => m.groupId === grpId && m.optionId === bOptId);
+        if (isSel) {
+          b.classList.remove('btn-secondary');
+          b.classList.add('btn-primary');
+        } else {
+          b.classList.remove('btn-primary');
+          b.classList.add('btn-secondary');
+        }
+      });
+
+      updateSheetButtonPrice();
+    }
+
+    function updateSheetButtonPrice() {
+      const item = menuData.find(i => i.id === selectedItemId);
+      if (!item) return;
+      let totalMinor = item.basePriceMinor;
+      currentSelectedModifiers.forEach(m => { totalMinor += m.priceDeltaMinor; });
+      const addBtn = document.getElementById('sheet-add-btn');
+      if (addBtn) {
+        addBtn.textContent = 'Add to Order · ₹' + (totalMinor / 100).toFixed(2);
+      }
+    }
+
+    function closeItemSheet() {
+      document.getElementById('item-sheet').classList.remove('open');
+      renderCartPill();
+    }
+
+    function confirmSheetAdd() {
+      if (selectedItemId) {
+        const modLabel = currentSelectedModifiers.map(m => m.name).join(' · ');
+        const modIds = currentSelectedModifiers.map(m => m.optionId);
+        const modDelta = currentSelectedModifiers.reduce((acc, m) => acc + m.priceDeltaMinor, 0);
+
+        cart.push({
+          id: selectedItemId,
+          quantity: 1,
+          modifier: modLabel,
+          selectedModifierIds: modIds,
+          modifierPriceDeltaMinor: modDelta
+        });
+
+        renderCartPill();
+        recalculateQuote();
+        updateQtyDisplay(selectedItemId);
+        closeItemSheet();
+      }
+    }
+
+    function toggleFjordSpec(itemId) {
+      const el = document.getElementById('spec-' + itemId);
+      if (el) el.classList.toggle('open');
+    }
+    window.toggleFjordSpec = toggleFjordSpec;
+
+    function openCartSheet() {
+      const pill = document.getElementById('floating-cart-pill');
+      if (pill) pill.style.display = 'none';
+      const list = document.getElementById('cart-items-list');
+      if (cart.length === 0) {
+        list.innerHTML = '<div style="text-align: center; color: var(--theme-muted); padding: 24px 0; font-size: 13px;">Your order folio is currently empty.<br/>Select courses from the menu to build your table check.</div>';
+      } else {
+        list.innerHTML = cart.map((it, idx) => {
+          const food = menuData.find(m => m.id === it.id);
+          const name = food ? food.name : 'Selected Course';
+          const price = food ? food.formattedPrice : '₹350.00';
+          return '<div style="display: flex; justify-content: space-between; align-items: center; background: ' + (isLight ? '#F0ECE4' : '#141822') + '; padding: 12px 14px; border-radius: 8px;">' +
+            '<div><div style="font-weight: 700;">' + name + '</div>' +
+            (it.modifier ? '<div style="font-size: 11px; color: var(--theme-primary); margin-top: 2px;">' + it.modifier + '</div>' : '') +
+            '</div>' +
+            '<div style="display: flex; align-items: center; gap: 12px;">' +
+              '<span style="font-weight: 800; font-family: var(--font-mono);">' + price + '</span>' +
+              '<button class="btn btn-ghost btn-sm" onclick="removeItem(' + idx + ')" style="padding: 4px; font-size: 14px; line-height: 1;">&times;</button>' +
+            '</div>' +
+          '</div>';
+        }).join('');
+      }
+      document.getElementById('cart-sheet').classList.add('open');
+    }
+    window.openCartSheet = openCartSheet;
+
+    function closeCartSheet() {
+      document.getElementById('cart-sheet').classList.remove('open');
+      renderCartPill();
+    }
+
+    function removeItem(idx) {
+      const it = cart[idx];
+      cart.splice(idx, 1);
+      renderCartPill();
+      recalculateQuote();
+      if (it) updateQtyDisplay(it.id);
+      openCartSheet();
+    }
+
+    async function recalculateQuote() {
+      try {
+        const res = await fetch('/api/restaurant/quote', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ items: cart }),
+        });
+        const json = await res.json();
+        if (json.success && json.data.breakdown) {
+          const sub = json.data.breakdown.subtotalFormatted;
+          const tax = json.data.breakdown.taxFormatted;
+          const tot = json.data.breakdown.totalFormatted;
+
+          const qSub = document.getElementById('quote-subtotal'); if (qSub) qSub.textContent = sub;
+          const qTax = document.getElementById('quote-tax'); if (qTax) qTax.textContent = tax;
+          const qTot = document.getElementById('quote-total'); if (qTot) qTot.textContent = tot;
+
+          // Update template-specific pill elements
+          const pillTot = document.getElementById('cart-pill-total'); if (pillTot) pillTot.textContent = tot;
+          const fjordSub = document.getElementById('fjord-dock-total'); if (fjordSub) fjordSub.textContent = tot;
+          const roasteryTot = document.getElementById('roastery-capsule-total'); if (roasteryTot) roasteryTot.textContent = tot;
+          const neonTot = document.getElementById('neon-bag-total'); if (neonTot) neonTot.textContent = tot;
+        }
+      } catch (err) {}
+    }
+
+    function renderCartPill() {
+      const count = cart.length;
+      const countEls = document.querySelectorAll('.cart-count, #fjord-dock-count, #roastery-capsule-count, #neon-bag-count');
+      countEls.forEach(el => { el.textContent = count; });
+
+      const pillCount = document.getElementById('cart-pill-count');
+      if (pillCount) {
+        pillCount.textContent = count === 1 ? '1 Item' : count + ' Items';
+      }
+
+      const universalPill = document.getElementById('floating-cart-pill');
+      if (universalPill) {
+        universalPill.style.display = count > 0 ? 'flex' : 'none';
+      }
+    }
+
+    async function submitKitchenOrder() {
+      if (cart.length === 0) return;
+      try {
+        const res = await fetch('/api/restaurant/orders', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            ...(currentCapabilityToken ? {
+              'x-guest-capability': currentCapabilityToken,
+              'Authorization': 'Bearer ' + currentCapabilityToken
+            } : {})
+          },
+          body: JSON.stringify({
+            locator: tableLocator,
+            tableNumber: '${table.number}',
+            guestName: currentGuestName,
+            items: cart.map(it => ({
+              id: it.id,
+              quantity: it.quantity,
+              modifier: it.modifier,
+              selectedModifierIds: it.selectedModifierIds
+            }))
+          })
+        });
+        const json = await res.json();
+        if (json.success) {
+          cart = [];
+          renderCartPill();
+          closeCartSheet();
+          openStatusSheet();
+        } else {
+          alert('Could not submit order: ' + (json.error || 'Please re-authenticate seating'));
+        }
+      } catch (err) {
+        alert('Communication error submitting kitchen order.');
+      }
+    }
+
+    function openStatusSheet() { document.getElementById('status-sheet').classList.add('open'); }
+    function closeStatusSheet() { document.getElementById('status-sheet').classList.remove('open'); }
+    function openServiceRequestSheet() { document.getElementById('service-sheet').classList.add('open'); }
+    function closeServiceRequestSheet() { document.getElementById('service-sheet').classList.remove('open'); }
+
+    async function sendServiceRequest(type, note) {
+      try {
+        await fetch('/api/restaurant/service-requests', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            ...(currentCapabilityToken ? { 'x-guest-capability': currentCapabilityToken } : {})
+          },
+          body: JSON.stringify({ locator: tableLocator, type, note })
+        });
+        const fb = document.getElementById('service-req-feedback');
+        if (fb) {
+          fb.style.display = 'block';
+          setTimeout(() => { fb.style.display = 'none'; closeServiceRequestSheet(); }, 2000);
+        }
+      } catch (err) {}
+    }
+  </script>
+</body>
+</html>`;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// TEMPLATE 1: ATELIER ÉTOILE NOIR (50/50 Asymmetric Split & Tasting Sequence)
+// ─────────────────────────────────────────────────────────────────────────────
+function renderAtelierEtoileComposition(
+  menu: MenuItem[],
+  brandName: string,
+  brandTagline: string,
+  branchName: string,
+  table: TableFloorRecord
+): string {
+  const movements = [
+    { title: 'Movement I · Amuse & Cold Starters', category: 'Starters', wine: '2021 Blanc de Blancs Brut Nature' },
+    { title: 'Movement II · Wood-Fired Hearth & Tandoor', category: 'Breads', wine: '2019 Sula Dindori Reserve Viognier' },
+    { title: 'Movement III · Royal Curries & Heritage Mains', category: 'Mains', wine: '2018 Domaine Barolo Riserva' },
+    { title: 'Movement IV · Grand Finale & Sommelier Digestifs', category: 'Desserts', wine: 'Tawny Port 20-Year Aged' },
+  ];
+
+  return `
+  <div class="storefront-atelier-shell tasting-timeline atelier-editorial-viewport-split">
+    <!-- Left Viewport: 50% Fixed Editorial Visual Canvas on Desktop -->
+    <aside class="atelier-left-viewport atelier-editorial-sidebar">
+      <div class="atelier-brand-lockup">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px;">
+          <span class="atelier-brand-title" style="font-family: var(--diner-font-heading); font-size: 24px; font-weight: 700; color: #FFF; letter-spacing: 0.04em;">${brandName}</span>
+          <span class="atelier-table-badge" style="font-size: 11px; font-family: var(--font-mono); color: var(--theme-primary); border: 1px solid var(--theme-primary); padding: 4px 10px; border-radius: 999px; text-transform: uppercase;">Table ${table.number}</span>
+        </div>
+
+        <div class="atelier-hearth-canvas" style="position: relative; border-radius: 14px; overflow: hidden; margin-bottom: 24px; border: 1px solid rgba(197, 160, 89, 0.25);">
+          <img src="https://images.unsplash.com/photo-1544025162-d76694265947?w=1200&auto=format&fit=crop&q=85" alt="Chef Hearth Canvas" style="width: 100%; height: 320px; object-fit: cover; display: block;" />
+          <div style="position: absolute; inset: 0; background: linear-gradient(180deg, transparent 40%, rgba(8, 10, 13, 0.95) 100%);"></div>
+          <div class="atelier-hearth-details" style="position: absolute; bottom: 18px; left: 20px; right: 20px;">
+            <div class="atelier-edition-label" style="font-size: 10px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.16em; color: var(--theme-primary);">Autumn 2026 Tasting Edition</div>
+            <div class="atelier-edition-subtitle" style="font-family: var(--diner-font-heading); font-size: 22px; font-weight: 600; color: #FFF; margin-top: 4px;">Heritage Charcoal & Sal Wood Embers</div>
+          </div>
+        </div>
+
+        <!-- Chef Manifesto Quote -->
+        <blockquote class="atelier-manifesto-quote" style="background: rgba(18, 22, 30, 0.85); border-left: 2px solid var(--theme-primary); padding: 16px; border-radius: 0 10px 10px 0; margin-bottom: 24px; margin-left: 0; margin-right: 0;">
+          <div class="atelier-quote-body" style="font-size: 13px; font-style: italic; color: #F5F0E6; line-height: 1.5;">
+            "Our black dal simmers undisturbed for 24 continuous hours over dying sal wood coals. True flavor cannot be rushed."
+          </div>
+          <div class="atelier-chef-attribution" style="font-size: 11px; color: var(--theme-primary); font-weight: 800; text-transform: uppercase; margin-top: 6px; letter-spacing: 0.08em;">
+            — Executive Chef Curator
+          </div>
+        </blockquote>
+      </div>
+
+      <!-- Sommelier Cellar Folio Status Panel -->
+      <div class="atelier-sommelier-card" style="background: #11151D; border: 1px solid rgba(197, 160, 89, 0.2); border-radius: 12px; padding: 18px;">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+          <span class="atelier-cellar-heading" style="font-size: 11px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.1em; color: var(--theme-primary);">Sommelier Cellar Status</span>
+          <span class="atelier-cellar-status" style="font-size: 11px; font-family: var(--font-mono); color: #38BDF8;">Cellar Ready</span>
+        </div>
+        <div class="atelier-cellar-note" style="font-size: 12px; color: var(--theme-muted); line-height: 1.4; margin-bottom: 14px;">
+          Courses are synchronized with wine pairings prepared directly at your table.
+        </div>
+        <div class="atelier-cellar-actions" style="display: flex; gap: 10px;">
+          <button onclick="openServiceRequestSheet()" class="atelier-sommelier-btn btn btn-secondary btn-sm" style="flex: 1; justify-content: center;">Call Sommelier</button>
+          <button onclick="openCartSheet()" class="atelier-folio-btn btn btn-primary btn-sm" style="flex: 1; justify-content: center;">View Cellar Folio (<span class="cart-count">0</span>)</button>
+        </div>
+      </div>
+    </aside>
+
+    <!-- Right Viewport: Chronological Tasting Progression Timeline -->
+    <main class="atelier-right-viewport atelier-tasting-feed">
+      <div class="atelier-chrono-header" style="margin-bottom: 32px;">
+        <span class="atelier-chrono-eyebrow" style="font-size: 10px; font-family: var(--font-mono); color: var(--theme-primary); text-transform: uppercase; letter-spacing: 0.12em;">Chronological Tasting Progression</span>
+        <h1 class="atelier-timeline-title" style="font-family: var(--diner-font-heading); font-size: 32px; font-weight: 700; color: #FFF; margin: 4px 0 10px; letter-spacing: -0.01em;">The Four Acts of Hospitality</h1>
+        <p class="atelier-timeline-tagline" style="font-size: 13px; color: var(--theme-muted); line-height: 1.5; margin: 0;">${brandTagline}</p>
+      </div>
+
+      <div class="atelier-movements-container" style="display: flex; flex-direction: column; gap: 36px;">
+        ${movements
+          .map((m, idx) => {
+            const items = menu.filter((i) => i.category === m.category);
+            if (items.length === 0) return '';
+            return `
+          <section id="act-${idx + 1}" class="atelier-movement-section" style="display: flex; flex-direction: column; gap: 16px;">
+            <div class="atelier-act-header" style="display: flex; justify-content: space-between; align-items: baseline; border-bottom: 1px solid rgba(197, 160, 89, 0.2); padding-bottom: 8px;">
+              <h2 class="atelier-act-title" style="font-family: var(--diner-font-heading); font-size: 20px; font-weight: 700; color: #FFF; margin: 0;">${m.title}</h2>
+              <span class="atelier-act-pill cat-pill" style="font-size: 10px; font-family: var(--font-mono); color: var(--theme-primary); background: rgba(197, 160, 89, 0.12);">Act 0${idx + 1}</span>
+            </div>
+            <div class="atelier-sommelier-pairing-banner" style="font-size: 12px; color: var(--theme-primary); display: flex; align-items: center; gap: 6px;">
+              <span style="display:inline-flex;align-items:center;">${icon('sparkles', { size: 13 })}</span>
+              <span class="atelier-wine-pairing-text">Sommelier Pairing: ${m.wine}</span>
+            </div>
+
+            <div class="atelier-movement-items" style="display: flex; flex-direction: column; gap: 14px;">
+              ${items
+                .map(
+                  (item) => `
+                <div class="atelier-course-card food-card product-card menu-item" onclick="openItemSheet('${item.id}')" style="background: #11151E; border: 1px solid rgba(197, 160, 89, 0.2); border-radius: 14px; padding: 18px; display: flex; gap: 18px; align-items: center; cursor: pointer; transition: all 140ms ease;">
+                  <img src="${getItemThumbnail(item.id)}" alt="${item.name}" class="plate-thumb-circular atelier-plate-visual" />
+                  <div class="atelier-dish-info" style="flex: 1; display: flex; flex-direction: column; justify-content: space-between;">
+                    <div>
+                      <div class="atelier-dish-name" style="font-family: var(--diner-font-heading); font-size: 18px; font-weight: 700; color: #FFF;">${item.name}</div>
+                      <div class="atelier-dish-story" style="font-size: 12px; color: var(--theme-muted); line-height: 1.45; margin-top: 4px;">${item.description}</div>
+                    </div>
+                    <div class="atelier-dish-pricing-row" style="display: flex; justify-content: space-between; align-items: center; margin-top: 12px;">
+                      <span class="atelier-dish-price" style="font-family: var(--font-mono); font-weight: 800; font-size: 15px; color: var(--theme-primary);">${item.formattedPrice}</span>
+                      <button class="atelier-flight-add-btn add-btn" onclick="event.stopPropagation(); quickAddToCart('${item.id}')" style="padding: 7px 16px; font-size: 12px; font-weight: 700; background: var(--theme-primary); color: #080A0D; border: none; border-radius: 8px; cursor: pointer;">
+                        + Add Course Dish
+                      </button>
+                    </div>
+                  </div>
+                </div>`
+                )
+                .join('')}
+            </div>
+          </section>`;
+          })
+          .join('')}
+      </div>
+    </main>
+  </div>`;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// TEMPLATE 2: FJORD & FORM (Nordic Minimal Specimen Ledger)
+// ─────────────────────────────────────────────────────────────────────────────
+function renderFjordFormComposition(
+  menu: MenuItem[],
+  brandName: string,
+  brandTagline: string,
+  branchName: string,
+  table: TableFloorRecord
+): string {
+  const starters = menu.filter((i) => i.category === 'Starters');
+  const mains = menu.filter((i) => i.category === 'Mains' || i.category === 'Breads');
+  const infusions = menu.filter((i) => i.category === 'Beverages' || i.category === 'Desserts');
+
+  return `
+  <div class="storefront-fjord-shell nord-spec-table fjord-archival-ledger">
+    <!-- Botanical Archival Ledger Header -->
+    <header class="fjord-archival-header" style="border-bottom: 2px solid #121314; padding-bottom: 20px; margin-bottom: 28px;">
+      <div class="fjord-harvest-metadata-bar" style="display: flex; justify-content: space-between; align-items: center; font-family: var(--font-mono); font-size: 11px; text-transform: uppercase; letter-spacing: 0.08em; color: #64748B; margin-bottom: 12px;">
+        <span class="fjord-harvest-season">Harvest Season · October Rotation</span>
+        <span class="fjord-origin-stamp">Origin 30°54'N 75°51'E · Table ${table.number}</span>
+      </div>
+      <h1 class="fjord-ledger-title" style="font-size: 32px; font-weight: 900; letter-spacing: -0.03em; margin: 0 0 6px; color: #121314;">Pure Form. Honest Botanicals.</h1>
+      <p class="fjord-ledger-manifesto" style="font-size: 13px; color: #475569; margin: 0; max-width: 680px; line-height: 1.5;">${brandTagline}</p>
+    </header>
+
+    <!-- Botanical Specimen Sections -->
+    <main class="fjord-botanical-ledger-feed" style="display: flex; flex-direction: column; gap: 36px;">
+      <!-- Section 1 -->
+      <section class="fjord-botanical-section">
+        <div class="fjord-section-eyebrow" style="font-size: 11px; font-weight: 900; text-transform: uppercase; letter-spacing: 0.12em; color: #2D5A43; border-bottom: 1px solid #121314; padding-bottom: 6px; margin-bottom: 8px;">
+          01 / Foraged Harvest Plates & Botanicals
+        </div>
+        <div class="fjord-specimen-table">
+          ${starters.map((item, idx) => renderFjordRow(item, `08${idx + 1}`)).join('')}
+        </div>
+      </section>
+
+      <!-- Section 2 -->
+      <section class="fjord-botanical-section">
+        <div class="fjord-section-eyebrow" style="font-size: 11px; font-weight: 900; text-transform: uppercase; letter-spacing: 0.12em; color: #2D5A43; border-bottom: 1px solid #121314; padding-bottom: 6px; margin-bottom: 8px;">
+          02 / Fermented Sourdough & Hearth Provisions
+        </div>
+        <div class="fjord-specimen-table">
+          ${mains.map((item, idx) => renderFjordRow(item, `09${idx + 1}`)).join('')}
+        </div>
+      </section>
+
+      <!-- Section 3 -->
+      <section class="fjord-botanical-section">
+        <div class="fjord-section-eyebrow" style="font-size: 11px; font-weight: 900; text-transform: uppercase; letter-spacing: 0.12em; color: #2D5A43; border-bottom: 1px solid #121314; padding-bottom: 6px; margin-bottom: 8px;">
+          03 / Cold Extraction Infusions & Botanical Elixirs
+        </div>
+        <div class="fjord-specimen-table">
+          ${infusions.map((item, idx) => renderFjordRow(item, `10${idx + 1}`)).join('')}
+        </div>
+      </section>
+    </main>
+
+    <!-- Fjord Minimalist Bottom Receipt Dock -->
+    <footer class="fjord-receipt-dock fjord-minimalist-dock">
+      <div class="fjord-dock-meta" style="display: flex; align-items: center; gap: 16px;">
+        <span class="fjord-dock-count-badge" style="font-family: var(--font-mono); font-size: 13px; font-weight: 700;">
+          <span id="fjord-dock-count">0</span> Lot Selected
+        </span>
+        <span class="fjord-dock-tax-note" style="font-size: 11px; color: #94A3B8;">5% GST Applicable</span>
+      </div>
+      <div class="fjord-dock-checkout-group" style="display: flex; align-items: center; gap: 14px;">
+        <span id="fjord-dock-total" class="fjord-dock-total-price" style="font-family: var(--font-mono); font-size: 15px; font-weight: 800;">₹0.00</span>
+        <button onclick="openCartSheet()" class="fjord-dispatch-order-btn btn btn-primary btn-sm" style="background: #FFF; color: #121314; font-weight: 800; border: none; padding: 8px 18px; border-radius: 4px;">
+          Dispatch Order →
+        </button>
+      </div>
+    </footer>
+  </div>`;
+}
+
+function renderFjordRow(item: MenuItem, lotCode: string): string {
+  const allergenStr = item.allergens && item.allergens.length > 0 ? item.allergens.join(', ') : 'None';
+  return `
+  <div class="fjord-ledger-row fjord-specimen-lot-row product-card menu-item" onclick="toggleFjordSpec('${item.id}')">
+    <div class="fjord-ledger-main fjord-specimen-main-cells">
+      <div style="display: flex; align-items: baseline; gap: 14px; flex: 1;">
+        <span class="fjord-lot-id-cell" style="font-family: var(--font-mono); font-size: 11px; color: #64748B; font-weight: 700;">#${lotCode}</span>
+        <div class="fjord-specimen-meta" style="flex: 1;">
+          <div style="display: flex; align-items: center; gap: 8px;">
+            <span class="fjord-specimen-name" style="font-size: 15px; font-weight: 800; color: #121314;">${item.name}</span>
+            <span class="fjord-estate-badge" style="font-size: 9px; font-family: var(--font-mono); background: #E8F0EC; color: #2D5A43; padding: 2px 6px; border-radius: 3px; font-weight: 800;">ESTATE LOT</span>
+          </div>
+          <div class="fjord-botanical-desc" style="font-size: 12px; color: #64748B; margin-top: 2px;">${item.description}</div>
+        </div>
+      </div>
+      <div class="fjord-price-cell" style="display: flex; align-items: center; gap: 14px;">
+        <span class="fjord-specimen-price" style="font-family: var(--font-mono); font-size: 14px; font-weight: 800; color: #121314;">${item.formattedPrice}</span>
+        <button class="fjord-select-btn add-btn" onclick="event.stopPropagation(); quickAddToCart('${item.id}')" style="background: #121314; color: #FFF; border: none; padding: 7px 14px; border-radius: 4px; font-size: 11px; font-weight: 800; cursor: pointer;">
+          + Select
+        </button>
+      </div>
+    </div>
+
+    <!-- Inline Unrolling Spec Drawer (No Popup!) -->
+    <div id="spec-${item.id}" class="fjord-spec-unroll fjord-inline-spec-drawer" onclick="event.stopPropagation();">
+      <div class="fjord-provenance-header" style="display: flex; justify-content: space-between; border-bottom: 1px solid rgba(0,0,0,0.06); padding-bottom: 6px; margin-bottom: 8px;">
+        <span class="fjord-provenance-heading" style="font-weight: 800; color: #121314;">Provenance & Preparation</span>
+        <span class="fjord-allergen-tag" style="font-family: var(--font-mono); font-size: 11px;">Allergens: ${allergenStr}</span>
+      </div>
+      <div class="fjord-provenance-text" style="line-height: 1.45; font-size: 12px; color: #334155;">
+        ${item.story || item.description}
+      </div>
+      ${
+        item.modifierGroups && item.modifierGroups.length > 0
+          ? `
+      <div class="fjord-spec-drawer-footer" style="margin-top: 10px; padding-top: 8px; border-top: 1px solid rgba(0,0,0,0.06); display: flex; justify-content: space-between; align-items: center;">
+        <span class="fjord-specs-indicator" style="font-size: 11px; font-weight: 700; color: #2D5A43;">Available Specifications: ${item.modifierGroups[0].name}</span>
+        <button class="fjord-config-specs-action" onclick="openItemSheet('${item.id}')" style="background: none; border: 1px solid #121314; padding: 4px 10px; font-size: 11px; font-weight: 700; cursor: pointer; border-radius: 3px;">
+          Configure Specs →
+        </button>
+      </div>`
+          : ''
+      }
+    </div>
+  </div>`;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// TEMPLATE 3: ROASTERY 1984 (Artisan Café Vitrine Counter)
+// ─────────────────────────────────────────────────────────────────────────────
+function renderRoastery1984Composition(
+  menu: MenuItem[],
+  brandName: string,
+  brandTagline: string,
+  branchName: string,
+  table: TableFloorRecord
+): string {
+  return `
+  <div class="storefront-roastery-shell tactile-card-grid roastery-vitrine-canvas">
+    <!-- Micro-Lot Roastery Showcase Hero -->
+    <header class="roastery-vitrine-header" style="border-bottom: 1px solid rgba(200, 107, 60, 0.25); padding-bottom: 24px; margin-bottom: 24px;">
+      <div class="roastery-bake-strip" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+        <span class="roastery-counter-label" style="font-size: 11px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.12em; color: var(--theme-primary);">Micro-Lot Roastery & Vitrine Counter</span>
+        <span class="roastery-single-origin-tag cat-pill" style="background: rgba(200, 107, 60, 0.15); color: var(--theme-primary); font-size: 10px;">Single Origin 2026</span>
+      </div>
+      <h1 class="roastery-vitrine-title" style="font-family: var(--diner-font-heading); font-size: 32px; font-weight: 800; color: #241D17; margin: 0 0 6px;">Craft Pours & Fresh Oven Bakes</h1>
+      <p class="roastery-vitrine-story" style="font-size: 13px; color: #786C60; margin: 0 0 16px; line-height: 1.45;">${brandTagline}</p>
+
+      <!-- Aroma Spectrum Dials -->
+      <div class="roastery-aroma-spectrum-bar" style="display: flex; gap: 8px; overflow-x: auto; padding-bottom: 4px;">
+        <span class="roastery-aroma-dial cat-pill" style="background: #FFF; border: 1px solid rgba(200, 107, 60, 0.3); color: var(--theme-primary);">Jasmine Florals</span>
+        <span class="roastery-aroma-dial cat-pill" style="background: #FFF; border: 1px solid rgba(200, 107, 60, 0.3); color: var(--theme-primary);">Wild Bergamot</span>
+        <span class="roastery-aroma-dial cat-pill" style="background: #FFF; border: 1px solid rgba(200, 107, 60, 0.3); color: var(--theme-primary);">Raw Honey</span>
+        <span class="roastery-aroma-dial cat-pill" style="background: #FFF; border: 1px solid rgba(200, 107, 60, 0.3); color: var(--theme-primary);">Toasted Hazelnut</span>
+      </div>
+    </header>
+
+    <!-- 3-Column Tactile Vitrine Grid with Mounted [- 1 +] Steppers -->
+    <main class="roastery-vitrine-grid roastery-shelf-layout">
+      ${menu
+        .map(
+          (item) => `
+        <div class="roastery-card roastery-shelf-card product-card menu-item" onclick="openItemSheet('${item.id}')">
+          <div>
+            <div class="roastery-media-container" style="position: relative; border-radius: 12px; overflow: hidden; height: 160px; margin-bottom: 12px; background: #000;">
+              <img src="${getItemThumbnail(item.id)}" alt="${item.name}" style="width: 100%; height: 100%; object-fit: cover;" />
+              <span class="roastery-category-tag" style="position: absolute; top: 10px; left: 10px; background: rgba(0,0,0,0.6); backdrop-filter: blur(4px); color: #FFF; font-size: 10px; font-weight: 700; padding: 3px 8px; border-radius: 999px;">
+                ${item.category}
+              </span>
+            </div>
+            <div class="roastery-product-title" style="font-family: var(--diner-font-heading); font-size: 18px; font-weight: 800; color: #241D17;">${item.name}</div>
+            <div class="roastery-flavor-notes" style="font-size: 12px; color: #786C60; line-height: 1.4; margin-top: 4px;">${item.description}</div>
+          </div>
+
+          <div class="roastery-card-stepper-row" style="display: flex; justify-content: space-between; align-items: center; margin-top: 16px; padding-top: 12px; border-top: 1px solid rgba(0,0,0,0.06);">
+            <span class="roastery-lot-price" style="font-family: var(--font-mono); font-size: 16px; font-weight: 800; color: var(--theme-primary);">${item.formattedPrice}</span>
+
+            <!-- Mounted [- 1 +] Stepper Directly on Card Face -->
+            <div class="roastery-stepper-capsule" style="display: flex; align-items: center; background: rgba(0,0,0,0.05); border: 1px solid rgba(0,0,0,0.1); border-radius: 999px; padding: 2px 4px;" onclick="event.stopPropagation();">
+              <button class="roastery-stepper-decrement" onclick="stepItemQuantity('${item.id}', -1)" style="width: 32px; height: 32px; border-radius: 50%; border: none; background: transparent; font-weight: 800; font-size: 15px; cursor: pointer; color: #241D17;">−</button>
+              <span id="qty-${item.id}" class="roastery-stepper-qty" style="min-width: 26px; text-align: center; font-weight: 800; font-size: 13px; font-family: var(--font-mono); color: #241D17;">0</span>
+              <button class="roastery-stepper-increment add-btn" onclick="stepItemQuantity('${item.id}', 1)" style="width: 32px; height: 32px; border-radius: 50%; border: none; background: var(--theme-primary); color: #FFF; font-weight: 800; font-size: 15px; cursor: pointer;">+</button>
+            </div>
+          </div>
+        </div>`
+        )
+        .join('')}
+    </main>
+
+    <!-- Floating Tactile Capsule Pill -->
+    <div class="roastery-floating-capsule roastery-counter-capsule" onclick="openCartSheet()">
+      <div class="roastery-capsule-meta" style="display: flex; align-items: center; gap: 8px;">
+        <span style="display:inline-flex;align-items:center;">${icon('coffee', { size: 16, color: '#FFF' })}</span>
+        <span style="font-size: 13px; font-weight: 700;"><span id="roastery-capsule-count">0</span> Items in Vitrine Order</span>
+      </div>
+      <div style="display: flex; align-items: center; gap: 10px;">
+        <span id="roastery-capsule-total" class="roastery-capsule-total-price" style="font-family: var(--font-mono); font-weight: 800; font-size: 15px;">₹0.00</span>
+        <span class="roastery-capsule-cta" style="font-size: 12px; font-weight: 700;">View Order →</span>
+      </div>
+    </div>
+  </div>`;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// TEMPLATE 4: NEON YOKOCHO (Tokyo Dual Stall Lanes)
+// ─────────────────────────────────────────────────────────────────────────────
+function renderNeonYokochoComposition(
+  menu: MenuItem[],
+  brandName: string,
+  brandTagline: string,
+  branchName: string,
+  table: TableFloorRecord
+): string {
+  const stallA = menu.filter((i) => i.category === 'Starters');
+  const stallB = menu.filter((i) => i.category !== 'Starters');
+
+  return `
+  <div class="storefront-neon-shell cyber-izakaya-lanes neon-market-alley-matrix">
+    <!-- High-Energy Street Marquee -->
+    <header class="neon-alley-header" style="border-bottom: 2px solid #00F2FE; padding-bottom: 20px; margin-bottom: 24px;">
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+        <span class="neon-heat-ticker-bar cat-pill" style="background: #FE0979; color: #FFF; font-size: 10px; font-weight: 900; letter-spacing: 0.12em; display: inline-flex; align-items: center; gap: 4px;">
+          STREET HEAT 128 BPM ${icon('flame', { size: 11, strokeWidth: 2.5 })}
+        </span>
+        <span class="neon-late-night-clock" style="font-family: var(--font-mono); font-size: 11px; color: #00F2FE;">OPEN TIL 02:00 AM · TABLE ${table.number}</span>
+      </div>
+      <h1 class="neon-market-title" style="font-family: var(--diner-font-heading); font-size: 34px; font-weight: 900; letter-spacing: -0.02em; margin: 0; text-transform: uppercase;">
+        Tokyo Night Market // 東京夜市
+      </h1>
+      <p class="neon-alley-tagline" style="font-size: 13px; color: #A78BFA; margin: 4px 0 0; line-height: 1.4;">${brandTagline}</p>
+    </header>
+
+    <!-- Parallel Dual-Stall Market Lanes -->
+    <main class="neon-lanes-container neon-dual-market-grid">
+      <!-- Stall 01 -->
+      <section class="neon-stall-column neon-stall-skewers-lane">
+        <div class="neon-stall-heading-pill" style="font-size: 13px; font-weight: 900; text-transform: uppercase; letter-spacing: 0.1em; color: #00F2FE; margin-bottom: 14px; display: flex; align-items: center; gap: 8px;">
+          <span style="display:inline-flex;align-items:center;">${icon('flame', { size: 16, color: '#00F2FE' })}</span>
+          <span>Stall 01: Bincho-tan Charcoal Skewers</span>
+        </div>
+        <div class="neon-stall-ticket-feed" style="display: flex; flex-direction: column; gap: 14px;">
+          ${stallA.map((item) => renderNeonCard(item, '#00F2FE')).join('')}
+        </div>
+      </section>
+
+      <!-- Stall 02 -->
+      <section class="neon-stall-column neon-stall-wok-lane">
+        <div class="neon-stall-heading-pill" style="font-size: 13px; font-weight: 900; text-transform: uppercase; letter-spacing: 0.1em; color: #FE0979; margin-bottom: 14px; display: flex; align-items: center; gap: 8px;">
+          <span style="display:inline-flex;align-items:center;">${icon('utensils', { size: 16, color: '#FE0979' })}</span>
+          <span>Stall 02: Wok Fire, Smashed Bao & Cold Pours</span>
+        </div>
+        <div class="neon-stall-ticket-feed" style="display: flex; flex-direction: column; gap: 14px;">
+          ${stallB.map((item) => renderNeonCard(item, '#FE0979')).join('')}
+        </div>
+      </section>
+    </main>
+
+    <!-- Bottom Late-Night Street Order Bag -->
+    <div class="neon-street-bag neon-cyber-dock" onclick="openCartSheet()">
+      <div class="neon-bag-meta-info" style="display: flex; align-items: center; gap: 8px;">
+        <span style="display:inline-flex;align-items:center;">${icon('zap', { size: 16, color: '#000' })}</span>
+        <span><span id="neon-bag-count" class="neon-bag-item-count">0</span> Street Bites in Bag</span>
+      </div>
+      <div style="display: flex; align-items: center; gap: 10px;">
+        <span id="neon-bag-total" class="neon-bag-total-price" style="font-family: var(--font-mono); font-size: 15px;">₹0.00</span>
+        <span class="neon-bag-checkout-cta">RAPID CHECKOUT →</span>
+      </div>
+    </div>
+  </div>`;
+}
+
+function renderNeonCard(item: MenuItem, accentHex: string): string {
+  return `
+  <div class="neon-ticket-card neon-cyber-ticket-module product-card menu-item" onclick="openItemSheet('${item.id}')" style="border-color: ${accentHex}55;">
+    <img src="${getItemThumbnail(item.id)}" alt="${item.name}" class="neon-dish-thumbnail" style="width: 72px; height: 72px; border-radius: 8px; object-fit: cover; flex-shrink: 0; border: 1px solid ${accentHex}88;" />
+    <div class="neon-dish-meta-body" style="flex: 1;">
+      <div class="neon-dish-title" style="font-size: 16px; font-weight: 800; color: #FFF;">${item.name}</div>
+      <div class="neon-dish-notes" style="font-size: 11px; color: #94A3B8; margin-top: 2px;">${item.description}</div>
+      <div style="margin-top: 6px;">
+        <span class="neon-spice-flame-meter" style="font-size: 9px; font-weight: 900; color: ${accentHex}; background: ${accentHex}22; padding: 2px 6px; border-radius: 4px;">FIRE 3X SPICE</span>
+      </div>
+    </div>
+    <div class="neon-card-action-bar" style="display: flex; flex-direction: column; align-items: flex-end; gap: 8px;">
+      <span class="neon-cyber-price" style="font-family: var(--font-mono); font-weight: 900; font-size: 15px; color: ${accentHex};">${item.formattedPrice}</span>
+      <button class="neon-rapid-bump-btn add-btn" onclick="event.stopPropagation(); quickAddToCart('${item.id}')" style="padding: 7px 14px; font-size: 11px; font-weight: 900; background: ${accentHex}; color: #000; border: none; border-radius: 6px; cursor: pointer; display: flex; align-items: center; gap: 4px;">
+        <span>BUMP</span>
+        <span style="display:inline-flex;align-items:center;">${icon('zap', { size: 11, color: '#000' })}</span>
+      </button>
+    </div>
+  </div>`;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// TEMPLATE 5: OSTERIA RUSTICA (Centered Tuscan Editorial Column)
+// ─────────────────────────────────────────────────────────────────────────────
+function renderOsteriaRusticaComposition(
+  menu: MenuItem[],
+  brandName: string,
+  brandTagline: string,
+  branchName: string,
+  table: TableFloorRecord
+): string {
+  const antipasti = menu.filter((i) => i.category === 'Starters' || i.category === 'Breads');
+  const secondi = menu.filter((i) => i.category === 'Mains' || i.category === 'Desserts' || i.category === 'Beverages');
+
+  return `
+  <div class="storefront-osteria-shell feasting-combo-builder osteria-tuscan-editorial-canvas">
+    <!-- Centered Wood-Fired Hearth Story Masthead -->
+    <header class="osteria-convivial-header" style="text-align: center; border-bottom: 1px solid rgba(140, 56, 32, 0.2); padding-bottom: 28px; margin-bottom: 28px;">
+      <div class="osteria-heritage-subtitle" style="font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.14em; color: var(--theme-secondary); margin-bottom: 8px;">
+        Forno a Legna & Pasta Fatta a Mano dal 1974
+      </div>
+      <h1 class="osteria-editorial-title" style="font-family: var(--diner-font-heading); font-size: 36px; font-weight: 700; color: #241D17; margin: 0 0 8px;">
+        Osteria Rustica Convivial
+      </h1>
+      <p class="osteria-hearth-story-text" style="font-size: 13px; color: #7C6F62; max-width: 600px; margin: 0 auto 18px; line-height: 1.5;">${brandTagline}</p>
+
+      <!-- Tavola Grande Family Feast Combo Builder Callout -->
+      <div class="osteria-tavola-feast-box osteria-family-combo-builder" style="background: rgba(140, 56, 32, 0.08); border: 1px solid var(--theme-primary); border-radius: 12px; padding: 16px 20px; max-width: 640px; margin: 0 auto; text-align: left;">
+        <div class="osteria-feast-title" style="font-size: 14px; font-weight: 800; color: var(--theme-primary);">Tavola Grande: Family Sharing Feast (-15%)</div>
+        <div class="osteria-feast-savings-note" style="font-size: 12px; color: #7C6F62; margin-top: 4px;">
+          Choose any 2 Pizzas + 2 Pastas + Chianti Carafe with bundled convivial savings.
+        </div>
+      </div>
+    </header>
+
+    <!-- Traditional Italian Course Progression -->
+    <main class="osteria-course-feed osteria-centered-column">
+      <section class="osteria-course-section" style="margin-bottom: 32px;">
+        <h2 class="osteria-course-name" style="font-family: var(--diner-font-heading); font-size: 22px; font-weight: 700; color: #241D17; border-bottom: 1px solid rgba(140, 56, 32, 0.2); padding-bottom: 8px; margin-bottom: 16px;">
+          Antipasti Rustici & Focaccia
+        </h2>
+        <div class="osteria-plates-grid">
+          ${antipasti.map((item) => renderOsteriaCard(item)).join('')}
+        </div>
+      </section>
+
+      <section class="osteria-course-section">
+        <h2 class="osteria-course-name" style="font-family: var(--diner-font-heading); font-size: 22px; font-weight: 700; color: #241D17; border-bottom: 1px solid rgba(140, 56, 32, 0.2); padding-bottom: 8px; margin-bottom: 16px;">
+          Primi Piatti & Secondi al Forno
+        </h2>
+        <div class="osteria-plates-grid">
+          ${secondi.map((item) => renderOsteriaCard(item)).join('')}
+        </div>
+      </section>
+    </main>
+
+    <!-- Floating Bill Presenter Capsule -->
+    <div class="osteria-floating-bill floating-cart" onclick="openCartSheet()">
+      <div class="osteria-bill-table-meta" style="font-size: 13px; font-weight: 700;">Il Conto del Tavolo (${table.number})</div>
+      <div style="display: flex; align-items: center; gap: 10px;">
+        <span id="cart-pill-total" class="osteria-bill-total-price" style="font-family: var(--font-mono); font-weight: 800;">₹0.00</span>
+        <span class="osteria-bill-cta" style="font-size: 12px;">Visualizza Conto →</span>
+      </div>
+    </div>
+  </div>`;
+}
+
+function renderOsteriaCard(item: MenuItem): string {
+  return `
+  <div class="osteria-framed-card osteria-heritage-plate product-card menu-item" onclick="openItemSheet('${item.id}')">
+    <img src="${getItemThumbnail(item.id)}" alt="${item.name}" class="osteria-plate-thumb" style="width: 88px; height: 88px; border-radius: 8px; object-fit: cover; flex-shrink: 0;" />
+    <div class="osteria-plate-details" style="flex: 1; display: flex; flex-direction: column; justify-content: space-between;">
+      <div>
+        <div class="osteria-dish-header" style="display: flex; justify-content: space-between; align-items: flex-start;">
+          <span class="osteria-dish-title" style="font-family: var(--diner-font-heading); font-size: 17px; font-weight: 700; color: #241D17;">${item.name}</span>
+          <span class="osteria-dop-seal" style="font-size: 9px; font-weight: 800; color: var(--theme-secondary); background: rgba(61, 74, 57, 0.1); padding: 2px 6px; border-radius: 4px;">DOP CERTIFIED</span>
+        </div>
+        <div class="osteria-dish-provenance" style="font-size: 12px; color: #7C6F62; line-height: 1.4; margin-top: 4px;">${item.description}</div>
+      </div>
+      <div class="osteria-card-pricing-row" style="display: flex; justify-content: space-between; align-items: center; margin-top: 10px;">
+        <span class="osteria-dish-price" style="font-family: var(--font-mono); font-size: 15px; font-weight: 800; color: var(--theme-primary);">${item.formattedPrice}</span>
+        <button class="osteria-order-plate-btn add-btn" onclick="event.stopPropagation(); quickAddToCart('${item.id}')" style="background: var(--theme-primary); color: #FFF; border: none; padding: 7px 16px; border-radius: 6px; font-size: 12px; font-weight: 700; cursor: pointer;">
+          + Ordina
+        </button>
+      </div>
+    </div>
+  </div>`;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// TEMPLATE 6: SHOKUNIN RAMEN (Hinoki Woodcraft & Broth Builder)
+// ─────────────────────────────────────────────────────────────────────────────
+function renderShokuninRamenComposition(
+  menu: MenuItem[],
+  brandName: string,
+  brandTagline: string,
+  branchName: string,
+  table: TableFloorRecord
+): string {
+  const ramenStarters = menu.filter((i) => i.category === 'Starters');
+  const ramenMains = menu.filter((i) => i.category !== 'Starters');
+
+  return `
+  <div class="storefront-shokunin-shell kanji-banner shokunin-cedar-craft-canvas">
+    <!-- Shokunin Manifesto Header with Kanji Banner -->
+    <header class="shokunin-cedar-crest-header" style="border-bottom: 2px solid var(--theme-primary); padding-bottom: 24px; margin-bottom: 28px;">
+      <div class="shokunin-kanji-crest-box" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+        <span class="shokunin-kanji-calligraphy" style="font-size: 22px; font-weight: 900; letter-spacing: 0.18em; color: var(--theme-primary);">職人魂 · 極上出汁</span>
+        <span class="shokunin-timer-clock" style="font-family: var(--font-mono); font-size: 11px; color: #9E9285;">KANSUI 32% · SIMMERED 18 HOURS</span>
+      </div>
+      <h1 class="shokunin-shop-title" style="font-family: var(--diner-font-heading); font-size: 32px; font-weight: 700; color: #F7F4EB; margin: 4px 0 6px;">
+        Shokunin Ramen & Robata Bar
+      </h1>
+      <p class="shokunin-craftsman-tagline" style="font-size: 13px; color: #9E9285; margin: 0 0 18px; line-height: 1.45;">${brandTagline}</p>
+
+      <!-- Step-by-Step Ramen Customizer Flow -->
+      <div class="shokunin-bowl-builder-card" style="background: #26201B; border: 1px solid rgba(211, 56, 28, 0.4); border-radius: 8px; padding: 14px 18px;">
+        <div class="shokunin-builder-step-label" style="font-size: 11px; font-weight: 800; text-transform: uppercase; color: var(--theme-primary); letter-spacing: 0.1em; margin-bottom: 6px;">
+          Craft Your Ramen Bowl Order (Step-by-Step)
+        </div>
+        <div class="shokunin-step-checklist-row" style="display: flex; justify-content: space-between; font-size: 12px; color: #F7F4EB;">
+          <span class="shokunin-step-item">1. Broth: Kotteri Rich</span>
+          <span class="shokunin-step-item">2. Noodles: Katame Firm</span>
+          <span class="shokunin-step-item">3. Tare: Shoyu Aged Soy</span>
+        </div>
+      </div>
+    </header>
+
+    <!-- Cedar Board Menu -->
+    <main class="shokunin-cedar-menu-feed">
+      <section class="shokunin-timber-section" style="margin-bottom: 32px;">
+        <div class="shokunin-section-header-tag" style="font-size: 12px; font-weight: 800; text-transform: uppercase; color: var(--theme-secondary); letter-spacing: 0.1em; border-bottom: 1px solid rgba(16, 185, 129, 0.3); padding-bottom: 4px; margin-bottom: 12px;">
+          Izakaya Otsumami & Yakitori Skewers
+        </div>
+        <div class="shokunin-slat-cards-list">
+          ${ramenStarters.map((item) => renderShokuninCard(item)).join('')}
+        </div>
+      </section>
+
+      <section class="shokunin-timber-section">
+        <div class="shokunin-section-header-tag" style="font-size: 12px; font-weight: 800; text-transform: uppercase; color: var(--theme-secondary); letter-spacing: 0.1em; border-bottom: 1px solid rgba(16, 185, 129, 0.3); padding-bottom: 4px; margin-bottom: 12px;">
+          Signature Shokunin Ramen Bowls
+        </div>
+        <div class="shokunin-slat-cards-list">
+          ${ramenMains.map((item) => renderShokuninCard(item)).join('')}
+        </div>
+      </section>
+    </main>
+
+    <!-- Bento Tray Floating Check -->
+    <div class="shokunin-floating-bento floating-cart" style="background: #26201B; border: 1px solid var(--theme-primary);" onclick="openCartSheet()">
+      <div class="shokunin-bento-table-note" style="font-size: 13px; font-weight: 700; color: #F7F4EB;">伝票 · Table ${table.number} Bento Order</div>
+      <div style="display: flex; align-items: center; gap: 10px;">
+        <span id="cart-pill-total" class="shokunin-bento-total-price" style="font-family: var(--font-mono); font-weight: 800; color: var(--theme-primary);">₹0.00</span>
+        <span class="shokunin-bento-cta" style="font-size: 12px; color: #F7F4EB;">注文 →</span>
+      </div>
+    </div>
+  </div>`;
+}
+
+function renderShokuninCard(item: MenuItem): string {
+  return `
+  <div class="shokunin-slat-card shokunin-cedar-plate product-card menu-item" onclick="openItemSheet('${item.id}')">
+    <img src="${getItemThumbnail(item.id)}" alt="${item.name}" class="shokunin-dish-thumb" style="width: 72px; height: 72px; border-radius: 6px; object-fit: cover; flex-shrink: 0;" />
+    <div class="shokunin-slat-info" style="flex: 1; padding: 0 10px;">
+      <div class="shokunin-dish-header" style="display: flex; align-items: center; gap: 8px;">
+        <span class="shokunin-dish-name" style="font-size: 16px; font-weight: 700; color: #F7F4EB;">${item.name}</span>
+        <span class="shokunin-simmer-hours-badge" style="font-size: 9px; font-weight: 700; color: var(--theme-secondary); background: rgba(16, 185, 129, 0.15); padding: 2px 6px; border-radius: 3px;">18H DASHI</span>
+      </div>
+      <div class="shokunin-dish-desc" style="font-size: 12px; color: #9E9285; margin-top: 2px;">${item.description}</div>
+    </div>
+    <div class="shokunin-slat-action-bar" style="display: flex; flex-direction: column; align-items: flex-end; gap: 8px;">
+      <span class="shokunin-slat-price" style="font-family: var(--font-mono); font-weight: 800; font-size: 15px; color: var(--theme-primary);">${item.formattedPrice}</span>
+      <button class="shokunin-select-dish-btn add-btn" onclick="event.stopPropagation(); quickAddToCart('${item.id}')" style="background: var(--theme-primary); color: #FFF; border: none; padding: 6px 14px; border-radius: 4px; font-size: 11px; font-weight: 800; cursor: pointer;">
+        + Order Bowl
+      </button>
+    </div>
+  </div>`;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// HELPERS
+// ─────────────────────────────────────────────────────────────────────────────
+function normalizeTemplateId(id: string): string {
+  const map: Record<string, string> = {
+    tmpl_haute_gastronomy: 'tmpl_haute_gastronomy',
+    tmpl_atelier_etoile_4_1: 'tmpl_haute_gastronomy',
+    'haute-gastronomy': 'tmpl_haute_gastronomy',
+    'atelier-etoile': 'tmpl_haute_gastronomy',
+
+    tmpl_nordic_minimal: 'tmpl_nordic_minimal',
+    tmpl_fjord_form_4_1: 'tmpl_nordic_minimal',
+    'nordic-minimal': 'tmpl_nordic_minimal',
+    'fjord-form': 'tmpl_nordic_minimal',
+
+    tmpl_artisan_coffee: 'tmpl_artisan_coffee',
+    tmpl_roastery_1984_4_1: 'tmpl_artisan_coffee',
+    'artisan-coffee': 'tmpl_artisan_coffee',
+    'roastery-1984': 'tmpl_artisan_coffee',
+
+    tmpl_neon_street: 'tmpl_neon_street',
+    tmpl_neon_yokocho_4_1: 'tmpl_neon_street',
+    'neon-street': 'tmpl_neon_street',
+    'neon-yokocho': 'tmpl_neon_street',
+
+    tmpl_trattoria_bella: 'tmpl_trattoria_bella',
+    tmpl_osteria_rustica_4_1: 'tmpl_trattoria_bella',
+    'trattoria-bella': 'tmpl_trattoria_bella',
+    'osteria-rustica': 'tmpl_trattoria_bella',
+
+    tmpl_tokyo_izakaya: 'tmpl_tokyo_izakaya',
+    tmpl_shokunin_ramen_4_1: 'tmpl_tokyo_izakaya',
+    'tokyo-izakaya': 'tmpl_tokyo_izakaya',
+    'shokunin-ramen': 'tmpl_tokyo_izakaya',
+  };
+  return map[id] || 'tmpl_haute_gastronomy';
+}
+
+function getItemThumbnail(itemId: string): string {
+  const images: Record<string, string> = {
+    item_paneer_tikka: 'https://images.unsplash.com/photo-1567188040759-fb8a883dc6d8?w=800&auto=format&fit=crop&q=85',
+    item_fish_tikka: 'https://images.unsplash.com/photo-1534422298391-e4f8c172dddb?w=800&auto=format&fit=crop&q=85',
+    item_dal_makhani: 'https://images.unsplash.com/photo-1585937421612-70a008356fbe?w=800&auto=format&fit=crop&q=85',
+    item_butter_chicken: 'https://images.unsplash.com/photo-1603894584373-5ac82b2ae398?w=800&auto=format&fit=crop&q=85',
+    item_butter_naan: 'https://images.unsplash.com/photo-1626074353765-517a681e40be?w=800&auto=format&fit=crop&q=85',
+    item_garlic_naan: 'https://images.unsplash.com/photo-1601050690597-df0568f70950?w=800&auto=format&fit=crop&q=85',
+    item_mango_lassi: 'https://images.unsplash.com/photo-1546173159-315724a31696?w=800&auto=format&fit=crop&q=85',
+    item_gulab_jamun: 'https://images.unsplash.com/photo-1589301760014-d929f3979dbc?w=800&auto=format&fit=crop&q=85',
+  };
+  return images[itemId] || 'https://images.unsplash.com/photo-1505253758473-96b7015fcd40?w=800&auto=format&fit=crop&q=85';
+}

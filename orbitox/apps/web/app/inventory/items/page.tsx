@@ -1,8 +1,9 @@
 'use client';
 
-import React from 'react';
+import React, { useState } from 'react';
 import PlatformLayout from '../../(platform)/layout';
 import { DynamicTable, ColumnDef, Card, Badge, Button } from '@orbitox/ui';
+import { useAdmin } from '../../admin/data/admin-context';
 
 interface InventoryRow {
   id: string;
@@ -66,6 +67,46 @@ const mockItems: InventoryRow[] = [
 ];
 
 export default function InventoryItemsPage() {
+  const [items, setItems] = useState<InventoryRow[]>(mockItems);
+  const { isServiceActive, consumeQuota, recordTenantAction, showToast } = useAdmin();
+
+  const handleAddProduct = () => {
+    if (!isServiceActive('inventory')) {
+      showToast('Action Denied: Inventory microservice is currently BLOCKED in Platform Admin.');
+      return;
+    }
+
+    const quotaCheck = consumeQuota({ serviceId: 'inventory', actionName: 'PRODUCT_ADDED' });
+    if (!quotaCheck.allowed) {
+      showToast(`Action Blocked: ${quotaCheck.reason}`);
+      return;
+    }
+
+    const newRow: InventoryRow = {
+      id: `inv-${Date.now()}`,
+      sku: `SRV-AI-${Math.floor(100 + Math.random() * 900)}`,
+      name: 'NVIDIA H100 Tensor Core GPU Node',
+      category: 'Server Hardware',
+      quantity: 12,
+      unitPrice: '$32,500.00',
+      status: 'IN_STOCK',
+      warehouseLocation: 'Bay 4, Rack C',
+    };
+
+    setItems((prev) => [newRow, ...prev]);
+
+    recordTenantAction({
+      serviceId: 'inventory',
+      serviceName: 'Inventory & Stock Logistics',
+      action: 'STOCK_RESTOCKED',
+      details: 'Added NVIDIA H100 GPU Node (Qty: 12)',
+      amount: '$390,000',
+      type: 'receive',
+    });
+
+    showToast('Inventory SKU Added • Synced to Platform Admin');
+  };
+
   return (
     <PlatformLayout>
       <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
@@ -73,14 +114,14 @@ export default function InventoryItemsPage() {
           <div>
             <h1 style={{ fontSize: '28px', fontWeight: 800, margin: '0 0 4px 0' }}>Inventory & Stock Logistics</h1>
             <p style={{ color: 'var(--text-secondary)', margin: 0 }}>
-              Multi-warehouse stock levels, SKU tracking, reorder velocity & AI demand forecasting
+              Multi-warehouse stock levels, SKU tracking, reorder velocity & AI demand forecasting • Connected to Platform OS
             </p>
           </div>
-          <Button variant="primary">+ Add Product</Button>
+          <Button variant="primary" onClick={handleAddProduct}>+ Add Product</Button>
         </div>
 
         <Card title="Warehouse Product Stock">
-          <DynamicTable columns={columns} data={mockItems} />
+          <DynamicTable columns={columns} data={items} />
         </Card>
       </div>
     </PlatformLayout>

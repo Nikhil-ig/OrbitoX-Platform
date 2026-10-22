@@ -1,7 +1,9 @@
 'use client';
 
 import React from 'react';
+import { usePathname } from 'next/navigation';
 import { DynamicSidebar, MenuItem, ThemeProvider, useTheme, Button, DynamicCopilot } from '@orbitox/ui';
+import { PlatformGovernanceDock } from '../components/platform-governance-dock';
 
 const sampleMenuItems: MenuItem[] = [
   {
@@ -26,6 +28,20 @@ const sampleMenuItems: MenuItem[] = [
       { id: 'hms-patients', label: 'Inpatient Registry', path: '/hms/patients' },
       { id: 'hms-telemetry', label: 'IoT Vitals Monitor', path: '/hms/telemetry' },
       { id: 'hms-pharmacy', label: 'Pharmacy Queue', path: '/hms/pharmacy' },
+    ],
+  },
+  {
+    id: 'admin-root',
+    label: '🪐 Admin Console (God-Mode)',
+    children: [
+      { id: 'admin-overview', label: '📊 Control Dashboard', path: '/admin' },
+      { id: 'admin-services', label: '🔌 All 9 Services', path: '/admin/services' },
+      { id: 'admin-business', label: '🌐 Business Verticals', path: '/admin/business' },
+      { id: 'admin-hospitals', label: '🏥 Hospital Network', path: '/admin/business/hospitals' },
+      { id: 'admin-ecommerce', label: '🛍️ E-Commerce Stores', path: '/admin/business/ecommerce' },
+      { id: 'admin-keys', label: '🔑 API Key Generator', path: '/admin/api-keys' },
+      { id: 'admin-quotas', label: '📈 Platform Quotas', path: '/admin/quotas' },
+      { id: 'admin-system', label: '🛡️ System & Crypto', path: '/admin/system' },
     ],
   },
   { id: 'automations', label: 'Automations (n8n)', path: '/automations' },
@@ -167,6 +183,14 @@ function TopUtilityBar() {
 }
 
 function PlatformLayoutInner({ children }: { children: React.ReactNode }) {
+  const pathname = usePathname();
+
+  let activeServiceId: string | undefined;
+  if (pathname?.includes('/crm')) activeServiceId = 'crm';
+  else if (pathname?.includes('/inventory')) activeServiceId = 'inventory';
+  else if (pathname?.includes('/finance')) activeServiceId = 'finance';
+  else if (pathname?.includes('/hrms')) activeServiceId = 'hrms';
+
   return (
     <div style={{ display: 'flex', minHeight: '100vh', backgroundColor: 'var(--bg-primary)', color: 'var(--text-primary)' }}>
       <DynamicSidebar
@@ -177,6 +201,9 @@ function PlatformLayoutInner({ children }: { children: React.ReactNode }) {
       />
       <main style={{ flex: 1, padding: '24px 32px', overflowY: 'auto', position: 'relative', display: 'flex', flexDirection: 'column' }}>
         <TopUtilityBar />
+        {activeServiceId && (
+          <PlatformGovernanceDock serviceId={activeServiceId} />
+        )}
         <div style={{ flex: 1 }}>
           {children}
         </div>

@@ -4,6 +4,8 @@ import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useStaffAuth, StaffProfile } from '../context/StaffAuthContext';
+import { PlatformGovernanceDock } from '../../components/platform-governance-dock';
+import { useAdmin } from '../../admin/data/admin-context';
 
 interface HospitalNavLayoutProps {
   children: React.ReactNode;
@@ -597,6 +599,32 @@ export default function HospitalNavLayout({
           top: '24px'
         }}
       >
+        {/* Top OrbitoX Platform Back Link */}
+        <Link
+          href="/admin"
+          style={{
+            width: '42px',
+            height: '42px',
+            borderRadius: '14px',
+            background: 'rgba(255, 255, 255, 0.06)',
+            border: '1px solid rgba(255, 255, 255, 0.12)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            textDecoration: 'none',
+            color: '#FF7A1A',
+            boxShadow: '0 4px 14px rgba(0, 0, 0, 0.3)',
+            transition: 'all 0.2s ease',
+          }}
+          title="Return to OrbitoX Platform Admin OS"
+        >
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#FF7A1A" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <circle cx="12" cy="12" r="3" fill="#FF7A1A" />
+            <ellipse cx="12" cy="12" rx="9" ry="4" transform="rotate(-30 12 12)" />
+            <ellipse cx="12" cy="12" rx="9" ry="4" transform="rotate(30 12 12)" />
+          </svg>
+        </Link>
+
         {/* Top App Logo Pill with Medical Wave */}
         <Link
           href="/hms"
@@ -1230,6 +1258,7 @@ export default function HospitalNavLayout({
         </header>
 
         {/* Child Page Content */}
+        <PlatformGovernanceDock serviceId="hms" tenantId="st-jude" />
         {children}
       </main>
 

@@ -1,0 +1,5131 @@
+{
+  "version": 2,
+  "lastUpdated": "2026-10-11T13:03:18.091Z",
+  "revisions": 164,
+  "branches": [
+    {
+      "id": "branch_ldh",
+      "name": "Ludhiana Main",
+      "code": "LDH-HQ",
+      "address": "54 Model Town, Mall Road",
+      "city": "Ludhiana",
+      "timezone": "Asia/Kolkata",
+      "currency": "INR",
+      "status": "OPERATIONAL",
+      "serviceAreasCount": 4,
+      "activeTablesCount": 28
+    },
+    {
+      "id": "branch_chd",
+      "name": "Chandigarh Sector 17",
+      "code": "CHD-S17",
+      "address": "SCO 88-89, Sector 17-C",
+      "city": "Chandigarh",
+      "timezone": "Asia/Kolkata",
+      "currency": "INR",
+      "status": "OPERATIONAL",
+      "serviceAreasCount": 3,
+      "activeTablesCount": 22
+    },
+    {
+      "id": "branch_del",
+      "name": "Delhi Connaught Place",
+      "code": "DEL-CP",
+      "address": "Radial Road 4, Inner Circle",
+      "city": "New Delhi",
+      "timezone": "Asia/Kolkata",
+      "currency": "INR",
+      "status": "OPERATIONAL",
+      "serviceAreasCount": 3,
+      "activeTablesCount": 34
+    }
+  ],
+  "floors": [
+    {
+      "id": "floor_courtyard",
+      "branchId": "branch_ldh",
+      "name": "Main Courtyard",
+      "type": "Dining",
+      "capacity": 84,
+      "activeLayout": "Dinner Layout",
+      "status": "ACTIVE",
+      "tableIds": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        14
+      ],
+      "serviceLayouts": [
+        {
+          "id": "lay_dinner",
+          "name": "Dinner Layout",
+          "description": "Standard high-cover table configuration",
+          "tableCount": 9
+        },
+        {
+          "id": "lay_lunch",
+          "name": "Lunch Rush",
+          "description": "Fast turn 2-top and 4-top layout",
+          "tableCount": 12
+        },
+        {
+          "id": "lay_event",
+          "name": "Private Event / Reception",
+          "description": "Open cocktail & dance floor arrangement",
+          "tableCount": 5
+        }
+      ]
+    },
+    {
+      "id": "floor_bar",
+      "branchId": "branch_ldh",
+      "name": "Bar Lounge",
+      "type": "Bar",
+      "capacity": 24,
+      "activeLayout": "Evening Cocktails",
+      "status": "ACTIVE",
+      "tableIds": [
+        10,
+        11
+      ],
+      "serviceLayouts": [
+        {
+          "id": "lay_bar_eve",
+          "name": "Evening Cocktails",
+          "description": "High-top seating and mixology views",
+          "tableCount": 2
+        },
+        {
+          "id": "lay_bar_day",
+          "name": "Daytime Lounge",
+          "description": "Casual cafe seating",
+          "tableCount": 3
+        }
+      ]
+    },
+    {
+      "id": "floor_private",
+      "branchId": "branch_ldh",
+      "name": "Private Dining",
+      "type": "Private",
+      "capacity": 16,
+      "activeLayout": "Gala Dinner",
+      "status": "ACTIVE",
+      "tableIds": [
+        9
+      ],
+      "serviceLayouts": [
+        {
+          "id": "lay_pdr_gala",
+          "name": "Gala Dinner",
+          "description": "Long royal banquet table configuration",
+          "tableCount": 1
+        },
+        {
+          "id": "lay_pdr_conf",
+          "name": "Executive Meeting",
+          "description": "Boardroom conference presentation setup",
+          "tableCount": 1
+        }
+      ]
+    },
+    {
+      "id": "floor_rooftop",
+      "branchId": "branch_ldh",
+      "name": "Rooftop Terrace",
+      "type": "Outdoor",
+      "capacity": 36,
+      "activeLayout": "Open Sky",
+      "status": "ACTIVE",
+      "tableIds": [
+        15,
+        16
+      ],
+      "serviceLayouts": [
+        {
+          "id": "lay_roof_sky",
+          "name": "Open Sky",
+          "description": "Canopy lounge and starlight seating",
+          "tableCount": 2
+        },
+        {
+          "id": "lay_roof_bbq",
+          "name": "Live Grille & Barbecue",
+          "description": "Chef station buffer and casual high tables",
+          "tableCount": 4
+        }
+      ]
+    },
+    {
+      "id": "floor_chd_dining",
+      "branchId": "branch_chd",
+      "name": "Main Dining Hall",
+      "type": "Dining",
+      "capacity": 60,
+      "activeLayout": "Standard",
+      "status": "ACTIVE",
+      "tableIds": [
+        21,
+        22,
+        23,
+        24
+      ],
+      "serviceLayouts": [
+        {
+          "id": "lay_chd_std",
+          "name": "Standard Layout",
+          "description": "Sector 17 family dining setup",
+          "tableCount": 4
+        }
+      ]
+    },
+    {
+      "id": "floor_chd_patio",
+      "branchId": "branch_chd",
+      "name": "Garden Patio",
+      "type": "Outdoor",
+      "capacity": 30,
+      "activeLayout": "Afternoon High Tea",
+      "status": "ACTIVE",
+      "tableIds": [
+        25,
+        26
+      ],
+      "serviceLayouts": [
+        {
+          "id": "lay_chd_tea",
+          "name": "Afternoon High Tea",
+          "description": "Garden parasol seating",
+          "tableCount": 2
+        }
+      ]
+    },
+    {
+      "id": "floor_del_atrium",
+      "branchId": "branch_del",
+      "name": "Heritage Atrium",
+      "type": "Dining",
+      "capacity": 96,
+      "activeLayout": "Heritage Seating",
+      "status": "ACTIVE",
+      "tableIds": [
+        31,
+        32,
+        33
+      ],
+      "serviceLayouts": [
+        {
+          "id": "lay_del_her",
+          "name": "Heritage Seating",
+          "description": "Grand colonial pillars layout",
+          "tableCount": 3
+        }
+      ]
+    },
+    {
+      "id": "floor_del_lounge",
+      "branchId": "branch_del",
+      "name": "Colonial Lounge",
+      "type": "Bar",
+      "capacity": 40,
+      "activeLayout": "Bar Service",
+      "status": "ACTIVE",
+      "tableIds": [
+        34,
+        35
+      ],
+      "serviceLayouts": [
+        {
+          "id": "lay_del_lounge",
+          "name": "Bar Service",
+          "description": "Velvet booth lounge seating",
+          "tableCount": 2
+        }
+      ]
+    }
+  ],
+  "tables": [
+    {
+      "id": 1,
+      "number": "T-01",
+      "capacity": 2,
+      "status": "AVAILABLE",
+      "x": 60,
+      "y": 50,
+      "width": 80,
+      "height": 80,
+      "rotation": 0,
+      "shape": "circle",
+      "section": "Main Courtyard",
+      "floorId": "floor_courtyard",
+      "branchId": "branch_ldh",
+      "locator": "8Kl2aB1q9P",
+      "serverName": "Aman",
+      "turnTimeMinutes": 0,
+      "seats": [
+        {
+          "id": "seat_1_1",
+          "seatNumber": 1,
+          "label": "S1",
+          "isOccupied": false
+        },
+        {
+          "id": "seat_1_2",
+          "seatNumber": 2,
+          "label": "S2",
+          "isOccupied": false
+        }
+      ],
+      "activeBillMinor": 0
+    },
+    {
+      "id": 2,
+      "number": "T-02",
+      "capacity": 2,
+      "status": "OCCUPIED",
+      "x": 180,
+      "y": 50,
+      "width": 80,
+      "height": 80,
+      "rotation": 0,
+      "shape": "circle",
+      "section": "Main Courtyard",
+      "floorId": "floor_courtyard",
+      "branchId": "branch_ldh",
+      "locator": "3Mn8vC4w1R",
+      "activeSessionId": "sess_02",
+      "activeBillMinor": 0,
+      "serverName": "Simran",
+      "turnTimeMinutes": 28,
+      "seats": [
+        {
+          "id": "seat_2_1",
+          "seatNumber": 1,
+          "label": "S1",
+          "guestId": "g_2_1",
+          "guestName": "Karan",
+          "isOccupied": true
+        },
+        {
+          "id": "seat_2_2",
+          "seatNumber": 2,
+          "label": "S2",
+          "guestId": "g_2_2",
+          "guestName": "Neha",
+          "isOccupied": true
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "number": "T-03",
+      "capacity": 4,
+      "status": "OCCUPIED",
+      "x": 300,
+      "y": 50,
+      "width": 90,
+      "height": 90,
+      "rotation": 0,
+      "shape": "rectangle",
+      "section": "Main Courtyard",
+      "floorId": "floor_courtyard",
+      "branchId": "branch_ldh",
+      "locator": "9Qz1xC7v2B",
+      "activeSessionId": "sess_03",
+      "activeBillMinor": 0,
+      "serverName": "Aman",
+      "turnTimeMinutes": 35,
+      "seats": [
+        {
+          "id": "seat_3_1",
+          "seatNumber": 1,
+          "label": "S1",
+          "guestId": "g_3_1",
+          "guestName": "Harpreet",
+          "isOccupied": true
+        },
+        {
+          "id": "seat_3_2",
+          "seatNumber": 2,
+          "label": "S2",
+          "guestId": "g_3_2",
+          "guestName": "Jaspreet",
+          "isOccupied": true
+        },
+        {
+          "id": "seat_3_3",
+          "seatNumber": 3,
+          "label": "S3",
+          "isOccupied": false
+        },
+        {
+          "id": "seat_3_4",
+          "seatNumber": 4,
+          "label": "S4",
+          "isOccupied": false
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "number": "T-04",
+      "capacity": 4,
+      "status": "AVAILABLE",
+      "x": 430,
+      "y": 50,
+      "width": 90,
+      "height": 90,
+      "rotation": 0,
+      "shape": "rectangle",
+      "section": "Main Courtyard",
+      "floorId": "floor_courtyard",
+      "branchId": "branch_ldh",
+      "locator": "5Vb9yU3i8O",
+      "serverName": "Vikram",
+      "turnTimeMinutes": 0,
+      "seats": [
+        {
+          "id": "seat_4_1",
+          "seatNumber": 1,
+          "label": "S1",
+          "isOccupied": false
+        },
+        {
+          "id": "seat_4_2",
+          "seatNumber": 2,
+          "label": "S2",
+          "isOccupied": false
+        },
+        {
+          "id": "seat_4_3",
+          "seatNumber": 3,
+          "label": "S3",
+          "isOccupied": false
+        },
+        {
+          "id": "seat_4_4",
+          "seatNumber": 4,
+          "label": "S4",
+          "isOccupied": false
+        }
+      ],
+      "activeBillMinor": 0
+    },
+    {
+      "id": 5,
+      "number": "T-05",
+      "capacity": 6,
+      "status": "BILL_REQUESTED",
+      "x": 60,
+      "y": 170,
+      "width": 120,
+      "height": 80,
+      "rotation": 0,
+      "shape": "rectangle",
+      "section": "Main Courtyard",
+      "floorId": "floor_courtyard",
+      "branchId": "branch_ldh",
+      "locator": "2We4rT8y1U",
+      "activeSessionId": "sess_05",
+      "activeBillMinor": 130200,
+      "serverName": "Simran",
+      "turnTimeMinutes": 52,
+      "seats": [
+        {
+          "id": "seat_5_1",
+          "seatNumber": 1,
+          "label": "S1",
+          "guestId": "g_5_1",
+          "guestName": "Rajesh",
+          "isOccupied": true
+        },
+        {
+          "id": "seat_5_2",
+          "seatNumber": 2,
+          "label": "S2",
+          "guestId": "g_5_2",
+          "guestName": "Sunita",
+          "isOccupied": true
+        },
+        {
+          "id": "seat_5_3",
+          "seatNumber": 3,
+          "label": "S3",
+          "guestId": "g_5_3",
+          "guestName": "Ananya",
+          "isOccupied": true
+        },
+        {
+          "id": "seat_5_4",
+          "seatNumber": 4,
+          "label": "S4",
+          "guestId": "g_5_4",
+          "guestName": "Rohan",
+          "isOccupied": true
+        },
+        {
+          "id": "seat_5_5",
+          "seatNumber": 5,
+          "label": "S5",
+          "isOccupied": false
+        },
+        {
+          "id": "seat_5_6",
+          "seatNumber": 6,
+          "label": "S6",
+          "isOccupied": false
+        }
+      ]
+    },
+    {
+      "id": 6,
+      "number": "T-06",
+      "capacity": 4,
+      "status": "AVAILABLE",
+      "x": 220,
+      "y": 170,
+      "width": 90,
+      "height": 90,
+      "rotation": 0,
+      "shape": "rectangle",
+      "section": "Main Courtyard",
+      "floorId": "floor_courtyard",
+      "branchId": "branch_ldh",
+      "locator": "6Yu7iO2p4A",
+      "serverName": "Vikram",
+      "turnTimeMinutes": 0,
+      "seats": [
+        {
+          "id": "seat_6_1",
+          "seatNumber": 1,
+          "label": "S1",
+          "isOccupied": false
+        },
+        {
+          "id": "seat_6_2",
+          "seatNumber": 2,
+          "label": "S2",
+          "isOccupied": false
+        },
+        {
+          "id": "seat_6_3",
+          "seatNumber": 3,
+          "label": "S3",
+          "isOccupied": false
+        },
+        {
+          "id": "seat_6_4",
+          "seatNumber": 4,
+          "label": "S4",
+          "isOccupied": false
+        }
+      ],
+      "activeBillMinor": 0
+    },
+    {
+      "id": 7,
+      "number": "T-07",
+      "capacity": 4,
+      "status": "OCCUPIED",
+      "x": 350,
+      "y": 170,
+      "width": 90,
+      "height": 90,
+      "rotation": 0,
+      "shape": "rectangle",
+      "section": "Main Courtyard",
+      "floorId": "floor_courtyard",
+      "branchId": "branch_ldh",
+      "locator": "1Sd3fG5h7J",
+      "activeSessionId": "sess_07",
+      "activeBillMinor": 0,
+      "serverName": "Aman",
+      "turnTimeMinutes": 44,
+      "seats": [
+        {
+          "id": "seat_7_1",
+          "seatNumber": 1,
+          "label": "S1",
+          "guestId": "g_7_1",
+          "guestName": "Priya",
+          "isOccupied": true
+        },
+        {
+          "id": "seat_7_2",
+          "seatNumber": 2,
+          "label": "S2",
+          "guestId": "g_7_2",
+          "guestName": "Amit",
+          "isOccupied": true
+        },
+        {
+          "id": "seat_7_3",
+          "seatNumber": 3,
+          "label": "S3",
+          "isOccupied": false
+        },
+        {
+          "id": "seat_7_4",
+          "seatNumber": 4,
+          "label": "S4",
+          "isOccupied": false
+        }
+      ]
+    },
+    {
+      "id": 8,
+      "number": "T-08",
+      "capacity": 2,
+      "status": "AVAILABLE",
+      "x": 480,
+      "y": 170,
+      "width": 80,
+      "height": 80,
+      "rotation": 0,
+      "shape": "circle",
+      "section": "Main Courtyard",
+      "floorId": "floor_courtyard",
+      "branchId": "branch_ldh",
+      "locator": "4Kl6zX8c0V",
+      "serverName": "Aman",
+      "turnTimeMinutes": 0,
+      "seats": [
+        {
+          "id": "seat_8_1",
+          "seatNumber": 1,
+          "label": "S1",
+          "isOccupied": false
+        },
+        {
+          "id": "seat_8_2",
+          "seatNumber": 2,
+          "label": "S2",
+          "isOccupied": false
+        }
+      ],
+      "activeBillMinor": 0
+    },
+    {
+      "id": 9,
+      "number": "T-09",
+      "capacity": 8,
+      "status": "RESERVED",
+      "x": 60,
+      "y": 290,
+      "width": 150,
+      "height": 90,
+      "rotation": 0,
+      "shape": "rectangle",
+      "section": "Private Dining",
+      "floorId": "floor_private",
+      "branchId": "branch_ldh",
+      "locator": "7Jk5mN3b1Q",
+      "serverName": "Simran",
+      "turnTimeMinutes": 0,
+      "seats": [
+        {
+          "id": "seat_9_1",
+          "seatNumber": 1,
+          "label": "S1",
+          "isOccupied": false
+        },
+        {
+          "id": "seat_9_2",
+          "seatNumber": 2,
+          "label": "S2",
+          "isOccupied": false
+        },
+        {
+          "id": "seat_9_3",
+          "seatNumber": 3,
+          "label": "S3",
+          "isOccupied": false
+        },
+        {
+          "id": "seat_9_4",
+          "seatNumber": 4,
+          "label": "S4",
+          "isOccupied": false
+        },
+        {
+          "id": "seat_9_5",
+          "seatNumber": 5,
+          "label": "S5",
+          "isOccupied": false
+        },
+        {
+          "id": "seat_9_6",
+          "seatNumber": 6,
+          "label": "S6",
+          "isOccupied": false
+        },
+        {
+          "id": "seat_9_7",
+          "seatNumber": 7,
+          "label": "S7",
+          "isOccupied": false
+        },
+        {
+          "id": "seat_9_8",
+          "seatNumber": 8,
+          "label": "S8",
+          "isOccupied": false
+        }
+      ],
+      "activeBillMinor": 0
+    },
+    {
+      "id": 10,
+      "number": "B-01",
+      "capacity": 2,
+      "status": "AVAILABLE",
+      "x": 250,
+      "y": 290,
+      "width": 80,
+      "height": 80,
+      "rotation": 0,
+      "shape": "circle",
+      "section": "Bar Lounge",
+      "floorId": "floor_bar",
+      "branchId": "branch_ldh",
+      "locator": "8Po0iU2y4T",
+      "serverName": "Tanya (Bar)",
+      "turnTimeMinutes": 0,
+      "seats": [
+        {
+          "id": "seat_10_1",
+          "seatNumber": 1,
+          "label": "S1",
+          "isOccupied": false
+        },
+        {
+          "id": "seat_10_2",
+          "seatNumber": 2,
+          "label": "S2",
+          "isOccupied": false
+        }
+      ],
+      "activeBillMinor": 0
+    },
+    {
+      "id": 11,
+      "number": "B-02",
+      "capacity": 2,
+      "status": "OCCUPIED",
+      "x": 370,
+      "y": 290,
+      "width": 80,
+      "height": 80,
+      "rotation": 0,
+      "shape": "circle",
+      "section": "Bar Lounge",
+      "floorId": "floor_bar",
+      "branchId": "branch_ldh",
+      "locator": "2Wq9eR7t5Y",
+      "activeSessionId": "sess_11",
+      "activeBillMinor": 0,
+      "serverName": "Tanya (Bar)",
+      "turnTimeMinutes": 19,
+      "seats": [
+        {
+          "id": "seat_11_1",
+          "seatNumber": 1,
+          "label": "S1",
+          "guestId": "g_11_1",
+          "guestName": "Dev",
+          "isOccupied": true
+        },
+        {
+          "id": "seat_11_2",
+          "seatNumber": 2,
+          "label": "S2",
+          "isOccupied": false
+        }
+      ]
+    },
+    {
+      "id": 14,
+      "number": "T-14",
+      "capacity": 4,
+      "status": "OCCUPIED",
+      "x": 490,
+      "y": 290,
+      "width": 90,
+      "height": 90,
+      "rotation": 0,
+      "shape": "rectangle",
+      "section": "Main Courtyard",
+      "floorId": "floor_courtyard",
+      "branchId": "branch_ldh",
+      "locator": "7Kp9xQ8m2L",
+      "activeBillMinor": 0,
+      "serverName": "Aman",
+      "turnTimeMinutes": 0,
+      "seats": [
+        {
+          "id": "seat_14_1",
+          "seatNumber": 1,
+          "label": "S1",
+          "isOccupied": true,
+          "guestName": "Guest",
+          "guestId": "guest_seat_14_1"
+        },
+        {
+          "id": "seat_14_2",
+          "seatNumber": 2,
+          "label": "S2",
+          "isOccupied": false
+        },
+        {
+          "id": "seat_14_3",
+          "seatNumber": 3,
+          "label": "S3",
+          "isOccupied": false
+        },
+        {
+          "id": "seat_14_4",
+          "seatNumber": 4,
+          "label": "S4",
+          "isOccupied": false
+        }
+      ],
+      "activeSessionId": "sess_mv3t5gd6"
+    },
+    {
+      "id": 15,
+      "number": "R-01",
+      "capacity": 4,
+      "status": "AVAILABLE",
+      "x": 100,
+      "y": 100,
+      "width": 90,
+      "height": 90,
+      "rotation": 0,
+      "shape": "circle",
+      "section": "Rooftop Terrace",
+      "floorId": "floor_rooftop",
+      "branchId": "branch_ldh",
+      "locator": "4Rk8xM2q1P",
+      "serverName": "Gurpreet",
+      "turnTimeMinutes": 0,
+      "seats": [
+        {
+          "id": "seat_15_1",
+          "seatNumber": 1,
+          "label": "S1",
+          "isOccupied": false
+        },
+        {
+          "id": "seat_15_2",
+          "seatNumber": 2,
+          "label": "S2",
+          "isOccupied": false
+        },
+        {
+          "id": "seat_15_3",
+          "seatNumber": 3,
+          "label": "S3",
+          "isOccupied": false
+        },
+        {
+          "id": "seat_15_4",
+          "seatNumber": 4,
+          "label": "S4",
+          "isOccupied": false
+        }
+      ],
+      "activeBillMinor": 0
+    },
+    {
+      "id": 16,
+      "number": "R-02",
+      "capacity": 6,
+      "status": "AVAILABLE",
+      "x": 240,
+      "y": 100,
+      "width": 120,
+      "height": 80,
+      "rotation": 0,
+      "shape": "rectangle",
+      "section": "Rooftop Terrace",
+      "floorId": "floor_rooftop",
+      "branchId": "branch_ldh",
+      "locator": "9Lp3vN7w4K",
+      "serverName": "Gurpreet",
+      "turnTimeMinutes": 0,
+      "seats": [
+        {
+          "id": "seat_16_1",
+          "seatNumber": 1,
+          "label": "S1",
+          "isOccupied": false
+        },
+        {
+          "id": "seat_16_2",
+          "seatNumber": 2,
+          "label": "S2",
+          "isOccupied": false
+        },
+        {
+          "id": "seat_16_3",
+          "seatNumber": 3,
+          "label": "S3",
+          "isOccupied": false
+        },
+        {
+          "id": "seat_16_4",
+          "seatNumber": 4,
+          "label": "S4",
+          "isOccupied": false
+        },
+        {
+          "id": "seat_16_5",
+          "seatNumber": 5,
+          "label": "S5",
+          "isOccupied": false
+        },
+        {
+          "id": "seat_16_6",
+          "seatNumber": 6,
+          "label": "S6",
+          "isOccupied": false
+        }
+      ],
+      "activeBillMinor": 0
+    },
+    {
+      "id": 21,
+      "number": "T-21",
+      "capacity": 4,
+      "status": "OCCUPIED",
+      "x": 80,
+      "y": 80,
+      "width": 90,
+      "height": 90,
+      "rotation": 0,
+      "shape": "rectangle",
+      "section": "Main Dining Hall",
+      "floorId": "floor_chd_dining",
+      "branchId": "branch_chd",
+      "locator": "9Chd1a4K2P",
+      "activeSessionId": "sess_chd_21",
+      "activeBillMinor": 0,
+      "serverName": "Harjit",
+      "turnTimeMinutes": 32,
+      "seats": [
+        {
+          "id": "seat_21_1",
+          "seatNumber": 1,
+          "label": "S1",
+          "guestId": "g_chd_1",
+          "guestName": "Gurman (Host)",
+          "isOccupied": true
+        },
+        {
+          "id": "seat_21_2",
+          "seatNumber": 2,
+          "label": "S2",
+          "guestId": "g_chd_2",
+          "guestName": "Simrat",
+          "isOccupied": true
+        },
+        {
+          "id": "seat_21_3",
+          "seatNumber": 3,
+          "label": "S3",
+          "isOccupied": false
+        },
+        {
+          "id": "seat_21_4",
+          "seatNumber": 4,
+          "label": "S4",
+          "isOccupied": false
+        }
+      ]
+    },
+    {
+      "id": 22,
+      "number": "T-22",
+      "capacity": 4,
+      "status": "AVAILABLE",
+      "x": 220,
+      "y": 80,
+      "width": 90,
+      "height": 90,
+      "rotation": 0,
+      "shape": "rectangle",
+      "section": "Main Dining Hall",
+      "floorId": "floor_chd_dining",
+      "branchId": "branch_chd",
+      "locator": "8Chd2b5L3Q",
+      "serverName": "Harjit",
+      "turnTimeMinutes": 0,
+      "seats": [
+        {
+          "id": "seat_22_1",
+          "seatNumber": 1,
+          "label": "S1",
+          "isOccupied": false
+        },
+        {
+          "id": "seat_22_2",
+          "seatNumber": 2,
+          "label": "S2",
+          "isOccupied": false
+        },
+        {
+          "id": "seat_22_3",
+          "seatNumber": 3,
+          "label": "S3",
+          "isOccupied": false
+        },
+        {
+          "id": "seat_22_4",
+          "seatNumber": 4,
+          "label": "S4",
+          "isOccupied": false
+        }
+      ],
+      "activeBillMinor": 0
+    },
+    {
+      "id": 23,
+      "number": "T-23",
+      "capacity": 6,
+      "status": "BILL_REQUESTED",
+      "x": 360,
+      "y": 80,
+      "width": 120,
+      "height": 80,
+      "rotation": 0,
+      "shape": "rectangle",
+      "section": "Main Dining Hall",
+      "floorId": "floor_chd_dining",
+      "branchId": "branch_chd",
+      "locator": "7Chd3c6M4R",
+      "activeSessionId": "sess_chd_23",
+      "activeBillMinor": 0,
+      "serverName": "Manpreet",
+      "turnTimeMinutes": 56,
+      "seats": [
+        {
+          "id": "seat_23_1",
+          "seatNumber": 1,
+          "label": "S1",
+          "isOccupied": false
+        },
+        {
+          "id": "seat_23_2",
+          "seatNumber": 2,
+          "label": "S2",
+          "isOccupied": false
+        },
+        {
+          "id": "seat_23_3",
+          "seatNumber": 3,
+          "label": "S3",
+          "isOccupied": false
+        },
+        {
+          "id": "seat_23_4",
+          "seatNumber": 4,
+          "label": "S4",
+          "isOccupied": false
+        },
+        {
+          "id": "seat_23_5",
+          "seatNumber": 5,
+          "label": "S5",
+          "isOccupied": false
+        },
+        {
+          "id": "seat_23_6",
+          "seatNumber": 6,
+          "label": "S6",
+          "isOccupied": false
+        }
+      ]
+    },
+    {
+      "id": 24,
+      "number": "T-24",
+      "capacity": 2,
+      "status": "AVAILABLE",
+      "x": 520,
+      "y": 80,
+      "width": 80,
+      "height": 80,
+      "rotation": 0,
+      "shape": "circle",
+      "section": "Main Dining Hall",
+      "floorId": "floor_chd_dining",
+      "branchId": "branch_chd",
+      "locator": "6Chd4d7N5S",
+      "serverName": "Manpreet",
+      "turnTimeMinutes": 0,
+      "seats": [
+        {
+          "id": "seat_24_1",
+          "seatNumber": 1,
+          "label": "S1",
+          "isOccupied": false
+        },
+        {
+          "id": "seat_24_2",
+          "seatNumber": 2,
+          "label": "S2",
+          "isOccupied": false
+        }
+      ],
+      "activeBillMinor": 0
+    },
+    {
+      "id": 25,
+      "number": "P-01",
+      "capacity": 4,
+      "status": "OCCUPIED",
+      "x": 100,
+      "y": 120,
+      "width": 90,
+      "height": 90,
+      "rotation": 0,
+      "shape": "circle",
+      "section": "Garden Patio",
+      "floorId": "floor_chd_patio",
+      "branchId": "branch_chd",
+      "locator": "5Chd5e8O6T",
+      "activeSessionId": "sess_chd_25",
+      "activeBillMinor": 0,
+      "serverName": "Gagan",
+      "turnTimeMinutes": 20,
+      "seats": [
+        {
+          "id": "seat_25_1",
+          "seatNumber": 1,
+          "label": "S1",
+          "isOccupied": false
+        },
+        {
+          "id": "seat_25_2",
+          "seatNumber": 2,
+          "label": "S2",
+          "isOccupied": false
+        },
+        {
+          "id": "seat_25_3",
+          "seatNumber": 3,
+          "label": "S3",
+          "isOccupied": false
+        },
+        {
+          "id": "seat_25_4",
+          "seatNumber": 4,
+          "label": "S4",
+          "isOccupied": false
+        }
+      ]
+    },
+    {
+      "id": 26,
+      "number": "P-02",
+      "capacity": 4,
+      "status": "AVAILABLE",
+      "x": 260,
+      "y": 120,
+      "width": 90,
+      "height": 90,
+      "rotation": 0,
+      "shape": "circle",
+      "section": "Garden Patio",
+      "floorId": "floor_chd_patio",
+      "branchId": "branch_chd",
+      "locator": "4Chd6f9P7U",
+      "serverName": "Gagan",
+      "turnTimeMinutes": 0,
+      "seats": [
+        {
+          "id": "seat_26_1",
+          "seatNumber": 1,
+          "label": "S1",
+          "isOccupied": false
+        },
+        {
+          "id": "seat_26_2",
+          "seatNumber": 2,
+          "label": "S2",
+          "isOccupied": false
+        },
+        {
+          "id": "seat_26_3",
+          "seatNumber": 3,
+          "label": "S3",
+          "isOccupied": false
+        },
+        {
+          "id": "seat_26_4",
+          "seatNumber": 4,
+          "label": "S4",
+          "isOccupied": false
+        }
+      ],
+      "activeBillMinor": 0
+    },
+    {
+      "id": 31,
+      "number": "D-01",
+      "capacity": 6,
+      "status": "OCCUPIED",
+      "x": 80,
+      "y": 80,
+      "width": 120,
+      "height": 80,
+      "rotation": 0,
+      "shape": "rectangle",
+      "section": "Heritage Atrium",
+      "floorId": "floor_del_atrium",
+      "branchId": "branch_del",
+      "locator": "3Del1a0Q8V",
+      "activeSessionId": "sess_del_31",
+      "activeBillMinor": 0,
+      "serverName": "Rohit",
+      "turnTimeMinutes": 48,
+      "seats": [
+        {
+          "id": "seat_31_1",
+          "seatNumber": 1,
+          "label": "S1",
+          "guestId": "g_del_1",
+          "guestName": "Varun (Host)",
+          "isOccupied": true
+        },
+        {
+          "id": "seat_31_2",
+          "seatNumber": 2,
+          "label": "S2",
+          "guestId": "g_del_2",
+          "guestName": "Rhea",
+          "isOccupied": true
+        },
+        {
+          "id": "seat_31_3",
+          "seatNumber": 3,
+          "label": "S3",
+          "isOccupied": false
+        },
+        {
+          "id": "seat_31_4",
+          "seatNumber": 4,
+          "label": "S4",
+          "isOccupied": false
+        },
+        {
+          "id": "seat_31_5",
+          "seatNumber": 5,
+          "label": "S5",
+          "isOccupied": false
+        },
+        {
+          "id": "seat_31_6",
+          "seatNumber": 6,
+          "label": "S6",
+          "isOccupied": false
+        }
+      ]
+    },
+    {
+      "id": 32,
+      "number": "D-02",
+      "capacity": 4,
+      "status": "AVAILABLE",
+      "x": 240,
+      "y": 80,
+      "width": 90,
+      "height": 90,
+      "rotation": 0,
+      "shape": "rectangle",
+      "section": "Heritage Atrium",
+      "floorId": "floor_del_atrium",
+      "branchId": "branch_del",
+      "locator": "2Del2b1R9W",
+      "serverName": "Rohit",
+      "turnTimeMinutes": 0,
+      "seats": [
+        {
+          "id": "seat_32_1",
+          "seatNumber": 1,
+          "label": "S1",
+          "isOccupied": false
+        },
+        {
+          "id": "seat_32_2",
+          "seatNumber": 2,
+          "label": "S2",
+          "isOccupied": false
+        },
+        {
+          "id": "seat_32_3",
+          "seatNumber": 3,
+          "label": "S3",
+          "isOccupied": false
+        },
+        {
+          "id": "seat_32_4",
+          "seatNumber": 4,
+          "label": "S4",
+          "isOccupied": false
+        }
+      ],
+      "activeBillMinor": 0
+    },
+    {
+      "id": 33,
+      "number": "D-03",
+      "capacity": 8,
+      "status": "RESERVED",
+      "x": 400,
+      "y": 80,
+      "width": 150,
+      "height": 90,
+      "rotation": 0,
+      "shape": "rectangle",
+      "section": "Heritage Atrium",
+      "floorId": "floor_del_atrium",
+      "branchId": "branch_del",
+      "locator": "1Del3c2S0X",
+      "serverName": "Ananya",
+      "turnTimeMinutes": 0,
+      "seats": [
+        {
+          "id": "seat_33_1",
+          "seatNumber": 1,
+          "label": "S1",
+          "isOccupied": false
+        },
+        {
+          "id": "seat_33_2",
+          "seatNumber": 2,
+          "label": "S2",
+          "isOccupied": false
+        },
+        {
+          "id": "seat_33_3",
+          "seatNumber": 3,
+          "label": "S3",
+          "isOccupied": false
+        },
+        {
+          "id": "seat_33_4",
+          "seatNumber": 4,
+          "label": "S4",
+          "isOccupied": false
+        },
+        {
+          "id": "seat_33_5",
+          "seatNumber": 5,
+          "label": "S5",
+          "isOccupied": false
+        },
+        {
+          "id": "seat_33_6",
+          "seatNumber": 6,
+          "label": "S6",
+          "isOccupied": false
+        },
+        {
+          "id": "seat_33_7",
+          "seatNumber": 7,
+          "label": "S7",
+          "isOccupied": false
+        },
+        {
+          "id": "seat_33_8",
+          "seatNumber": 8,
+          "label": "S8",
+          "isOccupied": false
+        }
+      ],
+      "activeBillMinor": 0
+    },
+    {
+      "id": 34,
+      "number": "L-01",
+      "capacity": 2,
+      "status": "OCCUPIED",
+      "x": 120,
+      "y": 120,
+      "width": 80,
+      "height": 80,
+      "rotation": 0,
+      "shape": "circle",
+      "section": "Colonial Lounge",
+      "floorId": "floor_del_lounge",
+      "branchId": "branch_del",
+      "locator": "9Del4d3T1Y",
+      "activeSessionId": "sess_del_34",
+      "activeBillMinor": 0,
+      "serverName": "Kabir (Bar)",
+      "turnTimeMinutes": 25,
+      "seats": [
+        {
+          "id": "seat_34_1",
+          "seatNumber": 1,
+          "label": "S1",
+          "isOccupied": false
+        },
+        {
+          "id": "seat_34_2",
+          "seatNumber": 2,
+          "label": "S2",
+          "isOccupied": false
+        }
+      ]
+    },
+    {
+      "id": 35,
+      "number": "L-02",
+      "capacity": 4,
+      "status": "AVAILABLE",
+      "x": 280,
+      "y": 120,
+      "width": 90,
+      "height": 90,
+      "rotation": 0,
+      "shape": "circle",
+      "section": "Colonial Lounge",
+      "floorId": "floor_del_lounge",
+      "branchId": "branch_del",
+      "locator": "8Del5e4U2Z",
+      "serverName": "Kabir (Bar)",
+      "turnTimeMinutes": 0,
+      "seats": [
+        {
+          "id": "seat_35_1",
+          "seatNumber": 1,
+          "label": "S1",
+          "isOccupied": false
+        },
+        {
+          "id": "seat_35_2",
+          "seatNumber": 2,
+          "label": "S2",
+          "isOccupied": false
+        },
+        {
+          "id": "seat_35_3",
+          "seatNumber": 3,
+          "label": "S3",
+          "isOccupied": false
+        },
+        {
+          "id": "seat_35_4",
+          "seatNumber": 4,
+          "label": "S4",
+          "isOccupied": false
+        }
+      ],
+      "activeBillMinor": 0
+    }
+  ],
+  "orders": [
+    {
+      "orderId": "ord_1791715806758",
+      "tableNumber": "T-14",
+      "sessionId": "sess_mv3pbwgp",
+      "guestName": "Guest",
+      "status": "PAID",
+      "items": [
+        {
+          "id": "item_paneer_tikka",
+          "name": "Paneer Tikka Charcoal Grilled",
+          "quantity": 1,
+          "unitPriceMinor": 35000,
+          "station": "TANDOOR",
+          "guestName": "Guest"
+        },
+        {
+          "id": "item_dal_makhani",
+          "name": "Dal Makhani Slow-Simmered (24 hrs)",
+          "quantity": 1,
+          "unitPriceMinor": 38000,
+          "station": "CURRY_LINE",
+          "guestName": "Guest"
+        }
+      ],
+      "subtotalMinor": 73000,
+      "taxMinor": 3650,
+      "totalMinor": 76650,
+      "currency": "INR",
+      "createdAt": "04:20 PM"
+    },
+    {
+      "orderId": "ord_101",
+      "tableNumber": "T-14",
+      "sessionId": "sess_14",
+      "status": "UNSETTLED_OVERRIDE",
+      "items": [
+        {
+          "id": "item_paneer_tikka",
+          "name": "Paneer Tikka Charcoal Grilled",
+          "quantity": 1,
+          "unitPriceMinor": 35000,
+          "station": "TANDOOR",
+          "guestName": "Nikhil (Host)",
+          "seatLabel": "S1"
+        },
+        {
+          "id": "item_dal_makhani",
+          "name": "Dal Makhani Slow-Simmered (24 hrs)",
+          "quantity": 1,
+          "unitPriceMinor": 38000,
+          "station": "CURRY_LINE",
+          "seatLabel": "Shared"
+        }
+      ],
+      "subtotalMinor": 73000,
+      "taxMinor": 3650,
+      "totalMinor": 76650,
+      "currency": "INR",
+      "createdAt": "19:42"
+    },
+    {
+      "orderId": "ord_102",
+      "tableNumber": "T-05",
+      "sessionId": "sess_05",
+      "status": "SERVED",
+      "items": [
+        {
+          "id": "item_fish_tikka",
+          "name": "Amritsari Fish Tikka",
+          "quantity": 2,
+          "unitPriceMinor": 48000,
+          "station": "TANDOOR",
+          "guestName": "Rajesh",
+          "seatLabel": "S1"
+        },
+        {
+          "id": "item_mango_lassi",
+          "name": "Alphonso Mango Lassi",
+          "quantity": 2,
+          "unitPriceMinor": 14000,
+          "station": "BAR",
+          "seatLabel": "S2"
+        }
+      ],
+      "subtotalMinor": 124000,
+      "taxMinor": 6200,
+      "totalMinor": 130200,
+      "currency": "INR",
+      "createdAt": "19:15"
+    }
+  ],
+  "kitchenTasks": [
+    {
+      "id": "task_1791715806763_447",
+      "orderId": "ord_1791715806758",
+      "tableNumber": "T-14",
+      "itemName": "Dal Makhani Slow-Simmered (24 hrs)",
+      "quantity": 1,
+      "station": "CURRY_LINE",
+      "status": "QUEUED",
+      "fireAt": "04:20 PM",
+      "targetServeAt": "04:35 PM",
+      "elapsedMinutes": 0,
+      "slaMinutes": 14,
+      "modifiers": [],
+      "guestName": "Guest"
+    },
+    {
+      "id": "task_1791715806758_359",
+      "orderId": "ord_1791715806758",
+      "tableNumber": "T-14",
+      "itemName": "Paneer Tikka Charcoal Grilled",
+      "quantity": 1,
+      "station": "TANDOOR",
+      "status": "QUEUED",
+      "fireAt": "04:20 PM",
+      "targetServeAt": "04:35 PM",
+      "elapsedMinutes": 0,
+      "slaMinutes": 12,
+      "modifiers": [],
+      "guestName": "Guest"
+    },
+    {
+      "id": "task_101",
+      "orderId": "ord_demo_1",
+      "tableNumber": "T-14",
+      "seatNumber": "S1",
+      "guestName": "Nikhil",
+      "itemName": "Paneer Tikka Charcoal Grilled",
+      "quantity": 1,
+      "station": "TANDOOR",
+      "status": "QUEUED",
+      "fireAt": "19:48",
+      "targetServeAt": "20:00",
+      "elapsedMinutes": 4,
+      "slaMinutes": 12,
+      "modifiers": [
+        "Medium Spice"
+      ],
+      "course": "FIRST_COURSE"
+    },
+    {
+      "id": "task_102",
+      "orderId": "ord_demo_1",
+      "tableNumber": "T-14",
+      "seatNumber": "S1",
+      "guestName": "Nikhil",
+      "itemName": "Dal Makhani Slow-Simmered (24 hrs)",
+      "quantity": 1,
+      "station": "CURRY_LINE",
+      "status": "IN_PROGRESS",
+      "fireAt": "19:46",
+      "targetServeAt": "20:00",
+      "elapsedMinutes": 6,
+      "slaMinutes": 14,
+      "modifiers": [],
+      "course": "MAIN_COURSE"
+    },
+    {
+      "id": "task_103",
+      "orderId": "ord_demo_2",
+      "tableNumber": "T-03",
+      "seatNumber": "S2",
+      "guestName": "Jaspreet",
+      "itemName": "Alphonso Mango Lassi",
+      "quantity": 2,
+      "station": "BAR",
+      "status": "READY",
+      "fireAt": "19:35",
+      "targetServeAt": "19:40",
+      "elapsedMinutes": 8,
+      "slaMinutes": 5,
+      "modifiers": [],
+      "course": "DRINKS"
+    },
+    {
+      "id": "task_104",
+      "orderId": "ord_demo_3",
+      "tableNumber": "T-07",
+      "seatNumber": "S1",
+      "guestName": "Priya",
+      "itemName": "Murgh Makhani (Old Delhi Style)",
+      "quantity": 1,
+      "station": "CURRY_LINE",
+      "status": "QUEUED",
+      "fireAt": "19:50",
+      "targetServeAt": "20:05",
+      "elapsedMinutes": 2,
+      "slaMinutes": 15,
+      "modifiers": [
+        "Extra Butter"
+      ],
+      "course": "MAIN_COURSE"
+    }
+  ],
+  "serviceRequests": [
+    {
+      "id": "req_01",
+      "tableNumber": "T-14",
+      "branchId": "branch_ldh",
+      "floorId": "floor_courtyard",
+      "type": "WATER",
+      "status": "PENDING",
+      "requestedAt": "19:51",
+      "note": "Chilled water carafe requested"
+    },
+    {
+      "id": "req_02",
+      "tableNumber": "T-05",
+      "branchId": "branch_ldh",
+      "floorId": "floor_courtyard",
+      "type": "BILL",
+      "status": "PENDING",
+      "requestedAt": "19:48",
+      "note": "Digital bill payment & split check"
+    },
+    {
+      "id": "req_03",
+      "tableNumber": "T-02",
+      "branchId": "branch_ldh",
+      "floorId": "floor_courtyard",
+      "type": "CALL_SERVER",
+      "status": "ACKNOWLEDGED",
+      "requestedAt": "19:40",
+      "note": "Question regarding Amritsari Fish Tikka allergens"
+    }
+  ],
+  "menuItems": [
+    {
+      "id": "item_paneer_tikka",
+      "name": "Paneer Tikka Charcoal Grilled",
+      "description": "Cottage cheese marinated in Kashmiri chili, hung curd, and roasted gram flour.",
+      "basePriceMinor": 35000,
+      "formattedPrice": "₹350.00",
+      "category": "Starters",
+      "station": "TANDOOR",
+      "prepDurationMinutes": 12,
+      "allergens": [
+        "DAIRY"
+      ],
+      "dietaryFlags": [
+        "VEG"
+      ],
+      "isPopular": true,
+      "isSignature": true,
+      "story": "Skewered on seasoned iron rods, seared at 450°C over charcoal embers.",
+      "pairingSuggestions": [
+        "item_garlic_naan",
+        "item_mango_lassi"
+      ],
+      "imageUrl": "https://images.unsplash.com/photo-1567188040759-fb8a883dc6d8?w=800&auto=format&fit=crop&q=80",
+      "modifierGroups": [
+        {
+          "id": "mod_paneer_spice",
+          "name": "Spice Profile",
+          "description": "Select your preferred tandoori heat level",
+          "minSelections": 1,
+          "maxSelections": 1,
+          "options": [
+            {
+              "id": "m_mild",
+              "name": "Mild Herb Infusion",
+              "priceDeltaMinor": 0,
+              "isDefault": false
+            },
+            {
+              "id": "m_medium",
+              "name": "Classic Kashmiri Spiced (Medium)",
+              "priceDeltaMinor": 0,
+              "isDefault": true
+            },
+            {
+              "id": "m_hot",
+              "name": "Fiery Angara Embers (Extra Spicy)",
+              "priceDeltaMinor": 2000,
+              "formattedPriceDelta": "+₹20.00"
+            }
+          ]
+        },
+        {
+          "id": "mod_paneer_accompaniment",
+          "name": "Chutney & Accompaniments",
+          "description": "House-made traditional accompaniments",
+          "minSelections": 0,
+          "maxSelections": 2,
+          "options": [
+            {
+              "id": "m_mint_chutney",
+              "name": "Pudina Mint Coriander Chutney",
+              "priceDeltaMinor": 0,
+              "isDefault": true
+            },
+            {
+              "id": "m_sirka_pyaz",
+              "name": "Pickled Sirka Pearl Onions",
+              "priceDeltaMinor": 2000,
+              "formattedPriceDelta": "+₹20.00"
+            },
+            {
+              "id": "m_smoked_butter",
+              "name": "Smoked Charcoal Butter Glaze",
+              "priceDeltaMinor": 3000,
+              "formattedPriceDelta": "+₹30.00"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "item_fish_tikka",
+      "name": "Amritsari Fish Tikka",
+      "description": "River sole chunks rubbed with ajwain carom seeds, yellow chili, and mustard oil.",
+      "basePriceMinor": 48000,
+      "formattedPrice": "₹480.00",
+      "category": "Starters",
+      "station": "TANDOOR",
+      "prepDurationMinutes": 14,
+      "allergens": [
+        "FISH"
+      ],
+      "dietaryFlags": [
+        "NON_VEG"
+      ],
+      "isPopular": true,
+      "story": "Fresh river sole steeped in coarse cold-pressed mustard oil.",
+      "pairingSuggestions": [
+        "item_butter_naan"
+      ],
+      "imageUrl": "https://images.unsplash.com/photo-1534422298391-e4f8c172dddb?w=800&auto=format&fit=crop&q=80",
+      "modifierGroups": [
+        {
+          "id": "mod_fish_prep",
+          "name": "Preparation Style",
+          "description": "Choose your desired hearth crust",
+          "minSelections": 1,
+          "maxSelections": 1,
+          "options": [
+            {
+              "id": "m_charred_tandoor",
+              "name": "Tandoori Charred Embers",
+              "priceDeltaMinor": 0,
+              "isDefault": true
+            },
+            {
+              "id": "m_amritsari_crust",
+              "name": "Crispy Amritsari Fried Crust",
+              "priceDeltaMinor": 3000,
+              "formattedPriceDelta": "+₹30.00"
+            }
+          ]
+        },
+        {
+          "id": "mod_fish_citrus",
+          "name": "Citrus & Dip Accents",
+          "minSelections": 0,
+          "maxSelections": 1,
+          "options": [
+            {
+              "id": "m_kaffir_lime",
+              "name": "Kaffir Lime Tartar Dip",
+              "priceDeltaMinor": 0,
+              "isDefault": true
+            },
+            {
+              "id": "m_mooli_laccha",
+              "name": "Radish Mooli Laccha with Chaat Masala",
+              "priceDeltaMinor": 2000,
+              "formattedPriceDelta": "+₹20.00"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "item_dal_makhani",
+      "name": "Dal Makhani Slow-Simmered (24 hrs)",
+      "description": "Black lentils slow cooked overnight on charcoal embers with churned butter.",
+      "basePriceMinor": 38000,
+      "formattedPrice": "₹380.00",
+      "category": "Mains",
+      "station": "CURRY_LINE",
+      "prepDurationMinutes": 14,
+      "allergens": [
+        "DAIRY"
+      ],
+      "dietaryFlags": [
+        "VEG"
+      ],
+      "isPopular": true,
+      "isSignature": true,
+      "story": "24 hours in heavy brass handis over dying embers.",
+      "pairingSuggestions": [
+        "item_butter_naan",
+        "item_jeera_rice"
+      ],
+      "imageUrl": "https://images.unsplash.com/photo-1585937421612-70a008356fbe?w=800&auto=format&fit=crop&q=80",
+      "modifierGroups": [
+        {
+          "id": "mod_dal_richness",
+          "name": "Gravy Richness",
+          "description": "Artisanal dairy finish",
+          "minSelections": 1,
+          "maxSelections": 1,
+          "options": [
+            {
+              "id": "m_classic_butter",
+              "name": "Classic Velvet Butter (Traditional)",
+              "priceDeltaMinor": 0,
+              "isDefault": true
+            },
+            {
+              "id": "m_double_makhan",
+              "name": "Double White Farmhouse Makhan",
+              "priceDeltaMinor": 4000,
+              "formattedPriceDelta": "+₹40.00"
+            }
+          ]
+        },
+        {
+          "id": "mod_dal_sides",
+          "name": "Side Accompaniment",
+          "minSelections": 0,
+          "maxSelections": 1,
+          "options": [
+            {
+              "id": "m_burani_raita",
+              "name": "Burani Garlic Raita Cup",
+              "priceDeltaMinor": 5000,
+              "formattedPriceDelta": "+₹50.00"
+            },
+            {
+              "id": "m_kachumber",
+              "name": "Crisp Kachumber Salad Bowl",
+              "priceDeltaMinor": 3000,
+              "formattedPriceDelta": "+₹30.00"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "item_butter_chicken",
+      "name": "Murgh Makhani (Old Delhi Style)",
+      "description": "Smoked chicken tikka simmered in velvet tomato, fenugreek, and honey sauce.",
+      "basePriceMinor": 49000,
+      "formattedPrice": "₹490.00",
+      "category": "Mains",
+      "station": "CURRY_LINE",
+      "prepDurationMinutes": 15,
+      "allergens": [
+        "DAIRY"
+      ],
+      "dietaryFlags": [
+        "NON_VEG"
+      ],
+      "isPopular": true,
+      "story": "Old Delhi recipe using sun-ripened tomatoes and wild blossom honey.",
+      "pairingSuggestions": [
+        "item_butter_naan"
+      ],
+      "imageUrl": "https://images.unsplash.com/photo-1603894584373-5ac82b2ae398?w=800&auto=format&fit=crop&q=80",
+      "modifierGroups": [
+        {
+          "id": "mod_chicken_finish",
+          "name": "Sauce Finish",
+          "minSelections": 1,
+          "maxSelections": 1,
+          "options": [
+            {
+              "id": "m_delhi_velvet",
+              "name": "Old Delhi Velvet (Traditional)",
+              "priceDeltaMinor": 0,
+              "isDefault": true
+            },
+            {
+              "id": "m_extra_smoked_cream",
+              "name": "Extra Smoked Honey & Clotted Cream",
+              "priceDeltaMinor": 4000,
+              "formattedPriceDelta": "+₹40.00"
+            }
+          ]
+        },
+        {
+          "id": "mod_chicken_sides",
+          "name": "Fresh Garnish",
+          "minSelections": 0,
+          "maxSelections": 1,
+          "options": [
+            {
+              "id": "m_laccha_pyaz",
+              "name": "Crisp Laccha Onion & Green Chili",
+              "priceDeltaMinor": 2000,
+              "formattedPriceDelta": "+₹20.00"
+            },
+            {
+              "id": "m_garlic_raita",
+              "name": "Burani Roasted Garlic Raita",
+              "priceDeltaMinor": 5000,
+              "formattedPriceDelta": "+₹50.00"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "item_butter_naan",
+      "name": "Crisp Butter Naan",
+      "description": "Tandoor-baked refined flour bread brushed with salted farmhouse butter.",
+      "basePriceMinor": 7000,
+      "formattedPrice": "₹70.00",
+      "category": "Breads",
+      "station": "TANDOOR",
+      "prepDurationMinutes": 5,
+      "allergens": [
+        "DAIRY",
+        "WHEAT"
+      ],
+      "dietaryFlags": [
+        "VEG"
+      ],
+      "isPopular": true,
+      "imageUrl": "https://images.unsplash.com/photo-1626074353765-517a681e40be?w=800&auto=format&fit=crop&q=80",
+      "modifierGroups": [
+        {
+          "id": "mod_naan_finish",
+          "name": "Butter Glaze",
+          "minSelections": 1,
+          "maxSelections": 1,
+          "options": [
+            {
+              "id": "m_farm_butter",
+              "name": "Salted Farmhouse Butter",
+              "priceDeltaMinor": 0,
+              "isDefault": true
+            },
+            {
+              "id": "m_desi_ghee",
+              "name": "Pure Desi Ghee Brushed",
+              "priceDeltaMinor": 1500,
+              "formattedPriceDelta": "+₹15.00"
+            },
+            {
+              "id": "m_olive_herb",
+              "name": "Extra Virgin Olive Oil & Herb",
+              "priceDeltaMinor": 2000,
+              "formattedPriceDelta": "+₹20.00"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "item_garlic_naan",
+      "name": "Roasted Garlic Butter Naan",
+      "description": "Topped with roasted minced garlic, fresh coriander, and nigella seeds.",
+      "basePriceMinor": 9000,
+      "formattedPrice": "₹90.00",
+      "category": "Breads",
+      "station": "TANDOOR",
+      "prepDurationMinutes": 6,
+      "allergens": [
+        "DAIRY",
+        "WHEAT"
+      ],
+      "dietaryFlags": [
+        "VEG"
+      ],
+      "isPopular": true,
+      "imageUrl": "https://images.unsplash.com/photo-1601050690597-df0568f70950?w=800&auto=format&fit=crop&q=80",
+      "modifierGroups": [
+        {
+          "id": "mod_garlic_style",
+          "name": "Garlic Intensity",
+          "minSelections": 1,
+          "maxSelections": 1,
+          "options": [
+            {
+              "id": "m_garlic_roasted",
+              "name": "Golden Roasted Garlic & Nigella (Standard)",
+              "priceDeltaMinor": 0,
+              "isDefault": true
+            },
+            {
+              "id": "m_garlic_crisp",
+              "name": "Extra Charred Garlic & Fresh Coriander",
+              "priceDeltaMinor": 1500,
+              "formattedPriceDelta": "+₹15.00"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "item_mango_lassi",
+      "name": "Alphonso Mango Lassi",
+      "description": "Chilled artisanal yogurt whipped with Ratnagiri Alphonso mango pulp.",
+      "basePriceMinor": 14000,
+      "formattedPrice": "₹140.00",
+      "category": "Beverages",
+      "station": "BAR",
+      "prepDurationMinutes": 3,
+      "allergens": [
+        "DAIRY"
+      ],
+      "dietaryFlags": [
+        "VEG"
+      ],
+      "isPopular": true,
+      "imageUrl": "https://images.unsplash.com/photo-1546173159-315724a31696?w=800&auto=format&fit=crop&q=80",
+      "modifierGroups": [
+        {
+          "id": "mod_lassi_sweetness",
+          "name": "Sweetness & Base",
+          "minSelections": 1,
+          "maxSelections": 1,
+          "options": [
+            {
+              "id": "m_lassi_std",
+              "name": "Artisan Raw Sugar (Standard)",
+              "priceDeltaMinor": 0,
+              "isDefault": true
+            },
+            {
+              "id": "m_lassi_honey",
+              "name": "Wild Blossom Honey (Low Glycemic)",
+              "priceDeltaMinor": 2000,
+              "formattedPriceDelta": "+₹20.00"
+            }
+          ]
+        },
+        {
+          "id": "mod_lassi_toppings",
+          "name": "Artisanal Garnishes",
+          "minSelections": 0,
+          "maxSelections": 2,
+          "options": [
+            {
+              "id": "m_saffron_pista",
+              "name": "Kashmiri Saffron & Iranian Pistachio Slivers",
+              "priceDeltaMinor": 3000,
+              "formattedPriceDelta": "+₹30.00"
+            },
+            {
+              "id": "m_basil_seed",
+              "name": "Sweet Basil Seed Bloom (Sabja)",
+              "priceDeltaMinor": 1500,
+              "formattedPriceDelta": "+₹15.00"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "item_gulab_jamun",
+      "name": "Warm Gulab Jamun with Rabri",
+      "description": "Fried milk dumplings soaked in saffron-cardamom syrup with lachha rabri.",
+      "basePriceMinor": 19000,
+      "formattedPrice": "₹190.00",
+      "category": "Desserts",
+      "station": "DESSERT",
+      "prepDurationMinutes": 2,
+      "allergens": [
+        "DAIRY",
+        "NUTS"
+      ],
+      "dietaryFlags": [
+        "VEG"
+      ],
+      "isSignature": true,
+      "imageUrl": "https://images.unsplash.com/photo-1589301760014-d929f3979dbc?w=800&auto=format&fit=crop&q=80",
+      "modifierGroups": [
+        {
+          "id": "mod_jamun_temp",
+          "name": "Serving Temperature",
+          "minSelections": 1,
+          "maxSelections": 1,
+          "options": [
+            {
+              "id": "m_jamun_steaming",
+              "name": "Steaming Hot with Chilled Rabri (Classic)",
+              "priceDeltaMinor": 0,
+              "isDefault": true
+            },
+            {
+              "id": "m_jamun_warm_only",
+              "name": "Warm Confection Only (No Rabri)",
+              "priceDeltaMinor": 0,
+              "isDefault": false
+            }
+          ]
+        },
+        {
+          "id": "mod_jamun_luxury",
+          "name": "Royal Accents",
+          "minSelections": 0,
+          "maxSelections": 1,
+          "options": [
+            {
+              "id": "m_silver_leaf",
+              "name": "Edible Pure Silver Vark & Crushed Almonds",
+              "priceDeltaMinor": 3000,
+              "formattedPriceDelta": "+₹30.00"
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "guests": [
+    {
+      "id": "g_2_1",
+      "name": "Karan",
+      "tableNumber": "T-02",
+      "seatId": "seat_2_1",
+      "seatLabel": "S1",
+      "role": "COMPANION",
+      "joinTime": "19:40",
+      "preferences": {
+        "diet": "Standard",
+        "spice": "Medium",
+        "allergens": []
+      },
+      "orderIds": [],
+      "totalSpendMinor": 49000
+    },
+    {
+      "id": "g_2_2",
+      "name": "Neha",
+      "tableNumber": "T-02",
+      "seatId": "seat_2_2",
+      "seatLabel": "S2",
+      "role": "COMPANION",
+      "joinTime": "19:40",
+      "preferences": {
+        "diet": "Standard",
+        "spice": "Medium",
+        "allergens": []
+      },
+      "orderIds": [],
+      "totalSpendMinor": 49000
+    },
+    {
+      "id": "g_3_1",
+      "name": "Harpreet",
+      "tableNumber": "T-03",
+      "seatId": "seat_3_1",
+      "seatLabel": "S1",
+      "role": "COMPANION",
+      "joinTime": "19:40",
+      "preferences": {
+        "diet": "Standard",
+        "spice": "Medium",
+        "allergens": []
+      },
+      "orderIds": [],
+      "totalSpendMinor": 28000
+    },
+    {
+      "id": "g_3_2",
+      "name": "Jaspreet",
+      "tableNumber": "T-03",
+      "seatId": "seat_3_2",
+      "seatLabel": "S2",
+      "role": "COMPANION",
+      "joinTime": "19:40",
+      "preferences": {
+        "diet": "Standard",
+        "spice": "Medium",
+        "allergens": []
+      },
+      "orderIds": [],
+      "totalSpendMinor": 28000
+    },
+    {
+      "id": "g_5_1",
+      "name": "Rajesh",
+      "tableNumber": "T-05",
+      "seatId": "seat_5_1",
+      "seatLabel": "S1",
+      "role": "COMPANION",
+      "joinTime": "19:40",
+      "preferences": {
+        "diet": "Standard",
+        "spice": "Medium",
+        "allergens": []
+      },
+      "orderIds": [],
+      "totalSpendMinor": 135000
+    },
+    {
+      "id": "g_5_2",
+      "name": "Sunita",
+      "tableNumber": "T-05",
+      "seatId": "seat_5_2",
+      "seatLabel": "S2",
+      "role": "COMPANION",
+      "joinTime": "19:40",
+      "preferences": {
+        "diet": "Standard",
+        "spice": "Medium",
+        "allergens": []
+      },
+      "orderIds": [],
+      "totalSpendMinor": 135000
+    },
+    {
+      "id": "g_5_3",
+      "name": "Ananya",
+      "tableNumber": "T-05",
+      "seatId": "seat_5_3",
+      "seatLabel": "S3",
+      "role": "COMPANION",
+      "joinTime": "19:40",
+      "preferences": {
+        "diet": "Standard",
+        "spice": "Medium",
+        "allergens": []
+      },
+      "orderIds": [],
+      "totalSpendMinor": 135000
+    },
+    {
+      "id": "g_5_4",
+      "name": "Rohan",
+      "tableNumber": "T-05",
+      "seatId": "seat_5_4",
+      "seatLabel": "S4",
+      "role": "COMPANION",
+      "joinTime": "19:40",
+      "preferences": {
+        "diet": "Standard",
+        "spice": "Medium",
+        "allergens": []
+      },
+      "orderIds": [],
+      "totalSpendMinor": 135000
+    },
+    {
+      "id": "g_7_1",
+      "name": "Priya",
+      "tableNumber": "T-07",
+      "seatId": "seat_7_1",
+      "seatLabel": "S1",
+      "role": "COMPANION",
+      "joinTime": "19:40",
+      "preferences": {
+        "diet": "Standard",
+        "spice": "Medium",
+        "allergens": []
+      },
+      "orderIds": [],
+      "totalSpendMinor": 76000
+    },
+    {
+      "id": "g_7_2",
+      "name": "Amit",
+      "tableNumber": "T-07",
+      "seatId": "seat_7_2",
+      "seatLabel": "S2",
+      "role": "COMPANION",
+      "joinTime": "19:40",
+      "preferences": {
+        "diet": "Standard",
+        "spice": "Medium",
+        "allergens": []
+      },
+      "orderIds": [],
+      "totalSpendMinor": 76000
+    },
+    {
+      "id": "g_11_1",
+      "name": "Dev",
+      "tableNumber": "B-02",
+      "seatId": "seat_11_1",
+      "seatLabel": "S1",
+      "role": "COMPANION",
+      "joinTime": "19:40",
+      "preferences": {
+        "diet": "Standard",
+        "spice": "Medium",
+        "allergens": []
+      },
+      "orderIds": [],
+      "totalSpendMinor": 42000
+    },
+    {
+      "id": "g_14_1",
+      "name": "Nikhil (Host)",
+      "tableNumber": "T-14",
+      "seatId": "seat_14_1",
+      "seatLabel": "S1",
+      "role": "HOST",
+      "joinTime": "19:40",
+      "preferences": {
+        "diet": "Vegetarian",
+        "spice": "Medium",
+        "allergens": [
+          "Nuts"
+        ],
+        "notes": "Birthday celebration dinner"
+      },
+      "orderIds": [
+        "ord_101"
+      ],
+      "totalSpendMinor": 76650
+    },
+    {
+      "id": "g_14_2",
+      "name": "Rahul",
+      "tableNumber": "T-14",
+      "seatId": "seat_14_2",
+      "seatLabel": "S2",
+      "role": "COMPANION",
+      "joinTime": "19:40",
+      "preferences": {
+        "diet": "Standard",
+        "spice": "Medium",
+        "allergens": []
+      },
+      "orderIds": [
+        "ord_101"
+      ],
+      "totalSpendMinor": 76650
+    },
+    {
+      "id": "g_chd_1",
+      "name": "Gurman (Host)",
+      "tableNumber": "T-21",
+      "seatId": "seat_21_1",
+      "seatLabel": "S1",
+      "role": "HOST",
+      "joinTime": "19:40",
+      "preferences": {
+        "diet": "Standard",
+        "spice": "Medium",
+        "allergens": []
+      },
+      "orderIds": [],
+      "totalSpendMinor": 48000
+    },
+    {
+      "id": "g_chd_2",
+      "name": "Simrat",
+      "tableNumber": "T-21",
+      "seatId": "seat_21_2",
+      "seatLabel": "S2",
+      "role": "COMPANION",
+      "joinTime": "19:40",
+      "preferences": {
+        "diet": "Standard",
+        "spice": "Medium",
+        "allergens": []
+      },
+      "orderIds": [],
+      "totalSpendMinor": 48000
+    },
+    {
+      "id": "g_del_1",
+      "name": "Varun (Host)",
+      "tableNumber": "D-01",
+      "seatId": "seat_31_1",
+      "seatLabel": "S1",
+      "role": "HOST",
+      "joinTime": "19:40",
+      "preferences": {
+        "diet": "Standard",
+        "spice": "Medium",
+        "allergens": []
+      },
+      "orderIds": [],
+      "totalSpendMinor": 112000
+    },
+    {
+      "id": "g_del_2",
+      "name": "Rhea",
+      "tableNumber": "D-01",
+      "seatId": "seat_31_2",
+      "seatLabel": "S2",
+      "role": "COMPANION",
+      "joinTime": "19:40",
+      "preferences": {
+        "diet": "Standard",
+        "spice": "Medium",
+        "allergens": []
+      },
+      "orderIds": [],
+      "totalSpendMinor": 112000
+    },
+    {
+      "id": "guest_seat_14_1",
+      "name": "Guest",
+      "tableNumber": "T-14",
+      "seatId": "seat_14_1",
+      "seatLabel": "S1",
+      "role": "HOST",
+      "joinTime": "04:20 PM",
+      "preferences": {
+        "diet": "Standard",
+        "spice": "Medium"
+      },
+      "orderIds": [],
+      "totalSpendMinor": 0
+    }
+  ],
+  "sessions": [
+    {
+      "sessionId": "sess_14",
+      "tableNumber": "T-14",
+      "branchId": "branch_ldh",
+      "floorId": "floor_courtyard",
+      "hostName": "Nikhil (Host)",
+      "status": "CLOSED",
+      "openedAt": "19:15",
+      "guestCapabilityTokens": [
+        "cap_test_host_14",
+        "cap_test_companion_14"
+      ],
+      "closedAt": "2026-10-11T10:50:06.668Z",
+      "settlement": {
+        "method": "EMERGENCY_OVERRIDE",
+        "status": "UNSETTLED_OVERRIDE",
+        "amountMinor": 0,
+        "unsettledLiabilityMinor": 76650,
+        "settledAt": "2026-10-11T10:50:06.668Z",
+        "authorizedBy": "staff:manager",
+        "reason": "Pre-test clean table baseline"
+      }
+    },
+    {
+      "sessionId": "sess_05",
+      "tableNumber": "T-05",
+      "branchId": "branch_ldh",
+      "floorId": "floor_courtyard",
+      "hostName": "Rajesh",
+      "status": "ACTIVE",
+      "openedAt": "18:50",
+      "guestCapabilityTokens": [
+        "cap_test_05"
+      ]
+    },
+    {
+      "sessionId": "sess_mv3pbwgp",
+      "tableNumber": "T-14",
+      "branchId": "branch_ldh",
+      "floorId": "floor_courtyard",
+      "hostName": "Aarav Sharma",
+      "status": "CLOSED",
+      "openedAt": "2026-10-11T10:50:06.745Z",
+      "expiresAt": "2026-10-11T14:50:06.745Z",
+      "guestCapabilityTokens": [
+        "cap_d4586fe1c33ec8ad54a066b5466cab7b"
+      ],
+      "closedAt": "2026-10-11T10:50:06.941Z",
+      "settlement": {
+        "method": "UPI",
+        "status": "PAID",
+        "amountMinor": 76650,
+        "settledAt": "2026-10-11T10:50:06.941Z",
+        "authorizedBy": "staff:nikhil_lead"
+      }
+    },
+    {
+      "sessionId": "sess_mv3pbwo6",
+      "tableNumber": "T-14",
+      "branchId": "branch_ldh",
+      "floorId": "floor_courtyard",
+      "hostName": "Vikram Malhotra",
+      "status": "CLOSED",
+      "openedAt": "2026-10-11T10:50:07.014Z",
+      "expiresAt": "2026-10-11T14:50:07.014Z",
+      "guestCapabilityTokens": [
+        "cap_4047f15c40ec9e47db37a58a5e7b60b8"
+      ],
+      "closedAt": "2026-10-11T10:50:07.029Z"
+    },
+    {
+      "sessionId": "sess_mv3t5gd6",
+      "tableNumber": "T-14",
+      "branchId": "branch_ldh",
+      "floorId": "floor_courtyard",
+      "hostName": "Guest",
+      "status": "ACTIVE",
+      "openedAt": "2026-10-11T12:37:04.410Z",
+      "expiresAt": "2026-10-11T16:37:04.410Z",
+      "guestCapabilityTokens": [
+        "cap_aac4add0249126d81d16b9656d50e55e",
+        "cap_002eec9d8af6011287a7bbcbd91e8af8",
+        "cap_534d621b73344d67d9d708f1ddd8d4fe",
+        "cap_545bbfc32b427bad7ecaecaba2de8c65",
+        "cap_a8d87db021232da27e69abfc00583e92",
+        "cap_00cb2d2d40828d320280da814e0823e4",
+        "cap_3305b36023dd323149a78267379d484e",
+        "cap_74a988529a191fb712850399a2d06cd8",
+        "cap_06e9d39ae735986816307ba859967dd4",
+        "cap_6c23bdde5e419c413aa995c4cec348eb",
+        "cap_1d52c2564d037db80b053ae5a5ec5eb7",
+        "cap_9d0143c1215e3f9ae99161c9570dbf8a",
+        "cap_97e334b138fd0fc8734eec9092d7bfb3",
+        "cap_cff86f8bba4851e5929a4f6afd905fbf",
+        "cap_f7784027085517c73260bbe374a2c8d4",
+        "cap_94ccf93de56118d27e76d32e768a46bd",
+        "cap_bd5de6c3a643495954c967f6299ed729",
+        "cap_936fef56dc29cf1615d9970d69552a68",
+        "cap_f51810e1d66a136bc274b7bdc6fc4ec6",
+        "cap_175bda3ac54992803856242dede2489a",
+        "cap_8eafcb7b07f82d2fcdcf7e1a35046630",
+        "cap_8ebe1afa02f0b747e4d08dabf20670c4",
+        "cap_26e5e6f4f3808ee49e20defa792dfcae",
+        "cap_2d57c18727dc7366cebf6ba6f5b50b8d",
+        "cap_77b13ba943de48f274f05e58e5133de3",
+        "cap_9e42f56f1df1480ad2afe30eb9dcb83c",
+        "cap_0a4e8d24b798693e058438081717e7b1",
+        "cap_04ca0e0678948666468adc4abdf56579",
+        "cap_114b66c0e134a1898a0ae960f2433dbb",
+        "cap_0c9b977306cd1a8f86ef04a9647ccc32",
+        "cap_6038fbd8fb1dd95052364a787bcc7298",
+        "cap_0931e526f62c5762d22550919a114aa4",
+        "cap_321857a8ee2b5768474ed590deca604e",
+        "cap_3afd8fdf1ac863a2ca7a65687c1551a2",
+        "cap_162c55ee17509f3cb08916e064bc36a7",
+        "cap_bdc5876caa28a56aa7fce3b3005efed7",
+        "cap_d5b329c47a8d889fdeb9048742518d1f",
+        "cap_1c5c0011d35f0d44f1defc83d3061369",
+        "cap_cc199e6e5bfb7aec3a839a0a77355eb0",
+        "cap_ae2bb4408586bbb4b9b76a66cb6508ab",
+        "cap_a7766876a95558ba8c0bb4281f68e2ce",
+        "cap_32fac9f1df06bae10eab8c636853344a",
+        "cap_d38d5a08fff4868d1676fad0c5d22b40",
+        "cap_2b6b2394a94d9756e805fc54cf088171",
+        "cap_56817e85db45f4d8880dc585120e8d26",
+        "cap_e4545a88a25ede6b93e88867e3753ca1",
+        "cap_8ed6b96229738c63c79044d15c219071",
+        "cap_431ce67bf045a17162ced5cdb8fce325",
+        "cap_0d6810a2d0c09ab9824a7cd8c1729387",
+        "cap_51332b268d8e18c757fba08b12473c5e",
+        "cap_cb77bb852897981494ced9813345dd19",
+        "cap_323c087717570eb457b0651f117bcc44",
+        "cap_5e11111a299b8d386e15c0837875fbdd",
+        "cap_40b4d38fbb610cc0e864f0722f6d1ca0",
+        "cap_c809c46a181f0da7931983b5777fcfae"
+      ]
+    }
+  ],
+  "events": [
+    {
+      "id": "evt_1791715806668_9570",
+      "sequence": 1,
+      "type": "session.emergency_closed",
+      "timestamp": "2026-10-11T10:50:06.668Z",
+      "producer": "store:session-service",
+      "branchId": "branch_ldh",
+      "floorId": "floor_courtyard",
+      "tableNumber": "T-14",
+      "payload": {
+        "tableNumber": "T-14",
+        "settlement": {
+          "method": "EMERGENCY_OVERRIDE",
+          "status": "UNSETTLED_OVERRIDE",
+          "amountMinor": 0,
+          "unsettledLiabilityMinor": 76650,
+          "settledAt": "2026-10-11T10:50:06.668Z",
+          "authorizedBy": "staff:manager",
+          "reason": "Pre-test clean table baseline"
+        },
+        "closedAt": "2026-10-11T10:50:06.668Z",
+        "unsettledLiabilityMinor": 76650
+      }
+    },
+    {
+      "id": "evt_1791715806745_6181",
+      "sequence": 2,
+      "type": "session.joined",
+      "timestamp": "2026-10-11T10:50:06.745Z",
+      "producer": "store:session-service",
+      "branchId": "branch_ldh",
+      "floorId": "floor_courtyard",
+      "tableNumber": "T-14",
+      "payload": {
+        "sessionId": "sess_mv3pbwgp",
+        "tableNumber": "T-14",
+        "hostName": "Aarav Sharma",
+        "capabilityToken": "cap_d4586fe1c33ec8ad54a066b5466cab7b"
+      }
+    },
+    {
+      "id": "evt_1791715806749_8149",
+      "sequence": 3,
+      "type": "guest.joined",
+      "timestamp": "2026-10-11T10:50:06.749Z",
+      "producer": "store:guest-service",
+      "branchId": "branch_ldh",
+      "floorId": "floor_courtyard",
+      "tableNumber": "T-14",
+      "payload": {
+        "guest": {
+          "id": "guest_seat_14_1",
+          "name": "Vikram Malhotra",
+          "tableNumber": "T-14",
+          "seatId": "seat_14_1",
+          "seatLabel": "S1",
+          "role": "HOST",
+          "joinTime": "04:20 PM",
+          "preferences": {
+            "diet": "Standard",
+            "spice": "Medium"
+          },
+          "orderIds": [],
+          "totalSpendMinor": 0
+        },
+        "seat": {
+          "id": "seat_14_1",
+          "seatNumber": 1,
+          "label": "S1",
+          "isOccupied": false
+        }
+      }
+    },
+    {
+      "id": "evt_1791715806758_9433",
+      "sequence": 4,
+      "type": "task.created",
+      "timestamp": "2026-10-11T10:50:06.758Z",
+      "producer": "store:kitchen-service",
+      "branchId": "branch_ldh",
+      "floorId": "floor_courtyard",
+      "tableNumber": "T-14",
+      "payload": {
+        "id": "task_1791715806758_359",
+        "orderId": "ord_1791715806758",
+        "tableNumber": "T-14",
+        "itemName": "Paneer Tikka Charcoal Grilled",
+        "quantity": 1,
+        "station": "TANDOOR",
+        "status": "QUEUED",
+        "fireAt": "04:20 PM",
+        "targetServeAt": "04:35 PM",
+        "elapsedMinutes": 0,
+        "slaMinutes": 12,
+        "modifiers": [],
+        "guestName": "Guest"
+      }
+    },
+    {
+      "id": "evt_1791715806763_4989",
+      "sequence": 5,
+      "type": "task.created",
+      "timestamp": "2026-10-11T10:50:06.763Z",
+      "producer": "store:kitchen-service",
+      "branchId": "branch_ldh",
+      "floorId": "floor_courtyard",
+      "tableNumber": "T-14",
+      "payload": {
+        "id": "task_1791715806763_447",
+        "orderId": "ord_1791715806758",
+        "tableNumber": "T-14",
+        "itemName": "Dal Makhani Slow-Simmered (24 hrs)",
+        "quantity": 1,
+        "station": "CURRY_LINE",
+        "status": "QUEUED",
+        "fireAt": "04:20 PM",
+        "targetServeAt": "04:35 PM",
+        "elapsedMinutes": 0,
+        "slaMinutes": 14,
+        "modifiers": [],
+        "guestName": "Guest"
+      }
+    },
+    {
+      "id": "evt_1791715806768_7009",
+      "sequence": 6,
+      "type": "order.created",
+      "timestamp": "2026-10-11T10:50:06.768Z",
+      "producer": "store:order-service",
+      "branchId": "branch_ldh",
+      "floorId": "floor_courtyard",
+      "tableNumber": "T-14",
+      "payload": {
+        "orderId": "ord_1791715806758",
+        "tableNumber": "T-14",
+        "sessionId": "sess_mv3pbwgp",
+        "guestName": "Guest",
+        "status": "PAID",
+        "items": [
+          {
+            "id": "item_paneer_tikka",
+            "name": "Paneer Tikka Charcoal Grilled",
+            "quantity": 1,
+            "unitPriceMinor": 35000,
+            "station": "TANDOOR",
+            "guestName": "Guest"
+          },
+          {
+            "id": "item_dal_makhani",
+            "name": "Dal Makhani Slow-Simmered (24 hrs)",
+            "quantity": 1,
+            "unitPriceMinor": 38000,
+            "station": "CURRY_LINE",
+            "guestName": "Guest"
+          }
+        ],
+        "subtotalMinor": 73000,
+        "taxMinor": 3650,
+        "totalMinor": 76650,
+        "currency": "INR",
+        "createdAt": "04:20 PM"
+      }
+    },
+    {
+      "id": "evt_1791715806941_4338",
+      "sequence": 7,
+      "type": "session.closed",
+      "timestamp": "2026-10-11T10:50:06.941Z",
+      "producer": "store:session-service",
+      "branchId": "branch_ldh",
+      "floorId": "floor_courtyard",
+      "tableNumber": "T-14",
+      "payload": {
+        "tableNumber": "T-14",
+        "settlement": {
+          "method": "UPI",
+          "status": "PAID",
+          "amountMinor": 76650,
+          "settledAt": "2026-10-11T10:50:06.941Z",
+          "authorizedBy": "staff:nikhil_lead"
+        },
+        "closedAt": "2026-10-11T10:50:06.941Z",
+        "unsettledLiabilityMinor": 0
+      }
+    },
+    {
+      "id": "evt_1791715807014_7226",
+      "sequence": 8,
+      "type": "session.joined",
+      "timestamp": "2026-10-11T10:50:07.014Z",
+      "producer": "store:session-service",
+      "branchId": "branch_ldh",
+      "floorId": "floor_courtyard",
+      "tableNumber": "T-14",
+      "payload": {
+        "sessionId": "sess_mv3pbwo6",
+        "tableNumber": "T-14",
+        "hostName": "Vikram Malhotra",
+        "capabilityToken": "cap_4047f15c40ec9e47db37a58a5e7b60b8"
+      }
+    },
+    {
+      "id": "evt_1791715807019_9605",
+      "sequence": 9,
+      "type": "guest.joined",
+      "timestamp": "2026-10-11T10:50:07.019Z",
+      "producer": "store:guest-service",
+      "branchId": "branch_ldh",
+      "floorId": "floor_courtyard",
+      "tableNumber": "T-14",
+      "payload": {
+        "guest": {
+          "id": "guest_seat_14_1",
+          "name": "Vikram Malhotra",
+          "tableNumber": "T-14",
+          "seatId": "seat_14_1",
+          "seatLabel": "S1",
+          "role": "HOST",
+          "joinTime": "04:20 PM",
+          "preferences": {
+            "diet": "Standard",
+            "spice": "Medium"
+          },
+          "orderIds": [],
+          "totalSpendMinor": 0
+        },
+        "seat": {
+          "id": "seat_14_1",
+          "seatNumber": 1,
+          "label": "S1",
+          "isOccupied": false
+        }
+      }
+    },
+    {
+      "id": "evt_1791715807029_9019",
+      "sequence": 10,
+      "type": "session.closed",
+      "timestamp": "2026-10-11T10:50:07.029Z",
+      "producer": "store:session-service",
+      "branchId": "branch_ldh",
+      "floorId": "floor_courtyard",
+      "tableNumber": "T-14",
+      "payload": {
+        "tableNumber": "T-14",
+        "closedAt": "2026-10-11T10:50:07.029Z",
+        "unsettledLiabilityMinor": 0
+      }
+    },
+    {
+      "id": "evt_1791715811927_7241",
+      "sequence": 11,
+      "type": "TEMPLATE_INSTALLED",
+      "timestamp": "2026-10-11T10:50:11.927Z",
+      "producer": "marketplace-engine",
+      "branchId": "*",
+      "payload": {
+        "templateId": "tmpl_neon_street",
+        "templateName": "Neon Yokocho Night Alley",
+        "installedBy": "Staff"
+      }
+    },
+    {
+      "id": "evt_1791715811943_148",
+      "sequence": 12,
+      "type": "STUDIO_DRAFT_SAVED",
+      "timestamp": "2026-10-11T10:50:11.943Z",
+      "producer": "visual-studio",
+      "branchId": "*",
+      "payload": {
+        "savedBy": "Author",
+        "sectionsCount": 2
+      }
+    },
+    {
+      "id": "evt_1791715811951_5302",
+      "sequence": 13,
+      "type": "STUDIO_PUBLISHED",
+      "timestamp": "2026-10-11T10:50:11.951Z",
+      "producer": "visual-studio",
+      "branchId": "*",
+      "payload": {
+        "version": 4,
+        "revisionId": "rev_v4_1791715811951",
+        "publishedBy": "Launch Tokyo Night Street Food Theme",
+        "summary": "Published via Brand Studio"
+      }
+    },
+    {
+      "id": "evt_1791715811960_8582",
+      "sequence": 14,
+      "type": "STUDIO_REVISION_RESTORED",
+      "timestamp": "2026-10-11T10:50:11.960Z",
+      "producer": "visual-studio",
+      "branchId": "*",
+      "payload": {
+        "restoredBy": "Admin",
+        "revisionId": "rev_v4_1791715811951",
+        "targetVersion": 4
+      }
+    },
+    {
+      "id": "evt_1791715811967_6484",
+      "sequence": 15,
+      "type": "BRAND_CONFIG_UPDATED",
+      "timestamp": "2026-10-11T10:50:11.967Z",
+      "producer": "white-label-engine",
+      "branchId": "*",
+      "payload": {
+        "updatedBy": "Admin",
+        "restaurantName": "The Starlight Brasserie",
+        "customDomain": "order.starlightbrasserie.com",
+        "domainStatus": "ACTIVE"
+      }
+    },
+    {
+      "id": "evt_1791715811976_6918",
+      "sequence": 16,
+      "type": "BRAND_CONFIG_UPDATED",
+      "timestamp": "2026-10-11T10:50:11.976Z",
+      "producer": "white-label-engine",
+      "branchId": "*",
+      "payload": {
+        "updatedBy": "Admin",
+        "restaurantName": "The Starlight Brasserie",
+        "customDomain": "order.starlightbrasserie.com",
+        "domainStatus": "VERIFIED"
+      }
+    },
+    {
+      "id": "evt_1791715811990_4484",
+      "sequence": 17,
+      "type": "SUPPORT_TICKET_CREATED",
+      "timestamp": "2026-10-11T10:50:11.990Z",
+      "producer": "support-desk",
+      "branchId": "branch_ldh",
+      "payload": {
+        "ticketId": "tkt_1791715811990",
+        "ticketNumber": "ORB-8503",
+        "category": "HARDWARE_KDS",
+        "severity": "HIGH",
+        "subject": "KDS Touchscreen Disconnect in Tandoor Section"
+      }
+    },
+    {
+      "id": "evt_1791715811997_8572",
+      "sequence": 18,
+      "type": "SUPPORT_TICKET_REPLIED",
+      "timestamp": "2026-10-11T10:50:11.997Z",
+      "producer": "support-desk",
+      "branchId": "branch_ldh",
+      "payload": {
+        "ticketId": "tkt_1791715811990",
+        "sender": "RESTAURANT_STAFF",
+        "authorName": "Chef Harpreet"
+      }
+    },
+    {
+      "id": "evt_1791715812005_2768",
+      "sequence": 19,
+      "type": "SUPPORT_TICKET_STATUS_CHANGED",
+      "timestamp": "2026-10-11T10:50:12.005Z",
+      "producer": "support-desk",
+      "branchId": "branch_ldh",
+      "payload": {
+        "ticketId": "tkt_1791715811990",
+        "status": "INVESTIGATING",
+        "updatedBy": "Staff"
+      }
+    },
+    {
+      "id": "evt_1791715812012_3867",
+      "sequence": 20,
+      "type": "MENU_ITEM_CREATED",
+      "timestamp": "2026-10-11T10:50:12.012Z",
+      "producer": "catalog-service",
+      "branchId": "*",
+      "payload": {
+        "itemId": "item_charcoal_saffron_lobster_mv3pc0j0",
+        "name": "Charcoal Saffron Lobster",
+        "basePriceMinor": 85000,
+        "station": "TANDOOR"
+      }
+    },
+    {
+      "id": "evt_1791715812021_902",
+      "sequence": 21,
+      "type": "MENU_ITEM_UPDATED",
+      "timestamp": "2026-10-11T10:50:12.021Z",
+      "producer": "catalog-service",
+      "branchId": "*",
+      "payload": {
+        "itemId": "item_charcoal_saffron_lobster_mv3pc0j0",
+        "updates": {
+          "basePriceMinor": 92000,
+          "formattedPrice": "₹920.00",
+          "station": "CURRY_LINE"
+        }
+      }
+    },
+    {
+      "id": "evt_1791715812028_9031",
+      "sequence": 22,
+      "type": "MENU_ITEM_DELETED",
+      "timestamp": "2026-10-11T10:50:12.028Z",
+      "producer": "catalog-service",
+      "branchId": "*",
+      "payload": {
+        "itemId": "item_charcoal_saffron_lobster_mv3pc0j0"
+      }
+    },
+    {
+      "id": "evt_1791715815955_2341",
+      "sequence": 23,
+      "type": "BRAND_CONFIG_UPDATED",
+      "timestamp": "2026-10-11T10:50:15.955Z",
+      "producer": "white-label-engine",
+      "branchId": "*",
+      "payload": {
+        "updatedBy": "Admin",
+        "restaurantName": "OrbitoX Bistro & Bar",
+        "customDomain": "order.starlightbrasserie.com",
+        "domainStatus": "VERIFIED"
+      }
+    },
+    {
+      "id": "evt_1791716873879_8296",
+      "sequence": 24,
+      "type": "TEMPLATE_INSTALLED",
+      "timestamp": "2026-10-11T11:07:53.879Z",
+      "producer": "marketplace-engine",
+      "branchId": "*",
+      "payload": {
+        "templateId": "tmpl_haute_gastronomy",
+        "templateName": "Atelier Étoile Noir",
+        "installedBy": "Staff"
+      }
+    },
+    {
+      "id": "evt_1791722224411_7278",
+      "sequence": 25,
+      "type": "session.joined",
+      "timestamp": "2026-10-11T12:37:04.411Z",
+      "producer": "store:session-service",
+      "branchId": "branch_ldh",
+      "floorId": "floor_courtyard",
+      "tableNumber": "T-14",
+      "payload": {
+        "sessionId": "sess_mv3t5gd6",
+        "tableNumber": "T-14",
+        "hostName": "Guest",
+        "capabilityToken": "cap_aac4add0249126d81d16b9656d50e55e"
+      }
+    },
+    {
+      "id": "evt_1791722224449_8789",
+      "sequence": 26,
+      "type": "guest.joined",
+      "timestamp": "2026-10-11T12:37:04.449Z",
+      "producer": "store:guest-service",
+      "branchId": "branch_ldh",
+      "floorId": "floor_courtyard",
+      "tableNumber": "T-14",
+      "payload": {
+        "guest": {
+          "id": "guest_seat_14_1",
+          "name": "Guest",
+          "tableNumber": "T-14",
+          "seatId": "seat_14_1",
+          "seatLabel": "S1",
+          "role": "HOST",
+          "joinTime": "04:20 PM",
+          "preferences": {
+            "diet": "Standard",
+            "spice": "Medium"
+          },
+          "orderIds": [],
+          "totalSpendMinor": 0
+        },
+        "seat": {
+          "id": "seat_14_1",
+          "seatNumber": 1,
+          "label": "S1",
+          "isOccupied": true,
+          "guestName": "Guest",
+          "guestId": "guest_seat_14_1"
+        }
+      }
+    },
+    {
+      "id": "evt_1791722227209_8981",
+      "sequence": 27,
+      "type": "session.joined",
+      "timestamp": "2026-10-11T12:37:07.209Z",
+      "producer": "store:session-service",
+      "branchId": "branch_ldh",
+      "floorId": "floor_courtyard",
+      "tableNumber": "T-14",
+      "payload": {
+        "sessionId": "sess_mv3t5gd6",
+        "tableNumber": "T-14",
+        "hostName": "Guest",
+        "capabilityToken": "cap_002eec9d8af6011287a7bbcbd91e8af8"
+      }
+    },
+    {
+      "id": "evt_1791722230068_6633",
+      "sequence": 28,
+      "type": "session.joined",
+      "timestamp": "2026-10-11T12:37:10.068Z",
+      "producer": "store:session-service",
+      "branchId": "branch_ldh",
+      "floorId": "floor_courtyard",
+      "tableNumber": "T-14",
+      "payload": {
+        "sessionId": "sess_mv3t5gd6",
+        "tableNumber": "T-14",
+        "hostName": "Guest",
+        "capabilityToken": "cap_534d621b73344d67d9d708f1ddd8d4fe"
+      }
+    },
+    {
+      "id": "evt_1791722234360_897",
+      "sequence": 29,
+      "type": "session.joined",
+      "timestamp": "2026-10-11T12:37:14.362Z",
+      "producer": "store:session-service",
+      "branchId": "branch_ldh",
+      "floorId": "floor_courtyard",
+      "tableNumber": "T-14",
+      "payload": {
+        "sessionId": "sess_mv3t5gd6",
+        "tableNumber": "T-14",
+        "hostName": "Guest",
+        "capabilityToken": "cap_545bbfc32b427bad7ecaecaba2de8c65"
+      }
+    },
+    {
+      "id": "evt_1791722236959_1152",
+      "sequence": 30,
+      "type": "session.joined",
+      "timestamp": "2026-10-11T12:37:16.959Z",
+      "producer": "store:session-service",
+      "branchId": "branch_ldh",
+      "floorId": "floor_courtyard",
+      "tableNumber": "T-14",
+      "payload": {
+        "sessionId": "sess_mv3t5gd6",
+        "tableNumber": "T-14",
+        "hostName": "Guest",
+        "capabilityToken": "cap_a8d87db021232da27e69abfc00583e92"
+      }
+    },
+    {
+      "id": "evt_1791722239856_1012",
+      "sequence": 31,
+      "type": "session.joined",
+      "timestamp": "2026-10-11T12:37:19.856Z",
+      "producer": "store:session-service",
+      "branchId": "branch_ldh",
+      "floorId": "floor_courtyard",
+      "tableNumber": "T-14",
+      "payload": {
+        "sessionId": "sess_mv3t5gd6",
+        "tableNumber": "T-14",
+        "hostName": "Guest",
+        "capabilityToken": "cap_00cb2d2d40828d320280da814e0823e4"
+      }
+    },
+    {
+      "id": "evt_1791722243028_7315",
+      "sequence": 32,
+      "type": "session.joined",
+      "timestamp": "2026-10-11T12:37:23.028Z",
+      "producer": "store:session-service",
+      "branchId": "branch_ldh",
+      "floorId": "floor_courtyard",
+      "tableNumber": "T-14",
+      "payload": {
+        "sessionId": "sess_mv3t5gd6",
+        "tableNumber": "T-14",
+        "hostName": "Guest",
+        "capabilityToken": "cap_3305b36023dd323149a78267379d484e"
+      }
+    },
+    {
+      "id": "evt_1791722246013_3755",
+      "sequence": 33,
+      "type": "session.joined",
+      "timestamp": "2026-10-11T12:37:26.013Z",
+      "producer": "store:session-service",
+      "branchId": "branch_ldh",
+      "floorId": "floor_courtyard",
+      "tableNumber": "T-14",
+      "payload": {
+        "sessionId": "sess_mv3t5gd6",
+        "tableNumber": "T-14",
+        "hostName": "Guest",
+        "capabilityToken": "cap_74a988529a191fb712850399a2d06cd8"
+      }
+    },
+    {
+      "id": "evt_1791722249265_7639",
+      "sequence": 34,
+      "type": "session.joined",
+      "timestamp": "2026-10-11T12:37:29.267Z",
+      "producer": "store:session-service",
+      "branchId": "branch_ldh",
+      "floorId": "floor_courtyard",
+      "tableNumber": "T-14",
+      "payload": {
+        "sessionId": "sess_mv3t5gd6",
+        "tableNumber": "T-14",
+        "hostName": "Guest",
+        "capabilityToken": "cap_06e9d39ae735986816307ba859967dd4"
+      }
+    },
+    {
+      "id": "evt_1791722257881_776",
+      "sequence": 35,
+      "type": "session.joined",
+      "timestamp": "2026-10-11T12:37:37.881Z",
+      "producer": "store:session-service",
+      "branchId": "branch_ldh",
+      "floorId": "floor_courtyard",
+      "tableNumber": "T-14",
+      "payload": {
+        "sessionId": "sess_mv3t5gd6",
+        "tableNumber": "T-14",
+        "hostName": "Guest",
+        "capabilityToken": "cap_6c23bdde5e419c413aa995c4cec348eb"
+      }
+    },
+    {
+      "id": "evt_1791722260987_1212",
+      "sequence": 36,
+      "type": "session.joined",
+      "timestamp": "2026-10-11T12:37:40.987Z",
+      "producer": "store:session-service",
+      "branchId": "branch_ldh",
+      "floorId": "floor_courtyard",
+      "tableNumber": "T-14",
+      "payload": {
+        "sessionId": "sess_mv3t5gd6",
+        "tableNumber": "T-14",
+        "hostName": "Guest",
+        "capabilityToken": "cap_1d52c2564d037db80b053ae5a5ec5eb7"
+      }
+    },
+    {
+      "id": "evt_1791722264402_7285",
+      "sequence": 37,
+      "type": "session.joined",
+      "timestamp": "2026-10-11T12:37:44.402Z",
+      "producer": "store:session-service",
+      "branchId": "branch_ldh",
+      "floorId": "floor_courtyard",
+      "tableNumber": "T-14",
+      "payload": {
+        "sessionId": "sess_mv3t5gd6",
+        "tableNumber": "T-14",
+        "hostName": "Guest",
+        "capabilityToken": "cap_9d0143c1215e3f9ae99161c9570dbf8a"
+      }
+    },
+    {
+      "id": "evt_1791722267893_2203",
+      "sequence": 38,
+      "type": "session.joined",
+      "timestamp": "2026-10-11T12:37:47.894Z",
+      "producer": "store:session-service",
+      "branchId": "branch_ldh",
+      "floorId": "floor_courtyard",
+      "tableNumber": "T-14",
+      "payload": {
+        "sessionId": "sess_mv3t5gd6",
+        "tableNumber": "T-14",
+        "hostName": "Guest",
+        "capabilityToken": "cap_97e334b138fd0fc8734eec9092d7bfb3"
+      }
+    },
+    {
+      "id": "evt_1791722272270_9201",
+      "sequence": 39,
+      "type": "session.joined",
+      "timestamp": "2026-10-11T12:37:52.270Z",
+      "producer": "store:session-service",
+      "branchId": "branch_ldh",
+      "floorId": "floor_courtyard",
+      "tableNumber": "T-14",
+      "payload": {
+        "sessionId": "sess_mv3t5gd6",
+        "tableNumber": "T-14",
+        "hostName": "Guest",
+        "capabilityToken": "cap_cff86f8bba4851e5929a4f6afd905fbf"
+      }
+    },
+    {
+      "id": "evt_1791722276549_5200",
+      "sequence": 40,
+      "type": "session.joined",
+      "timestamp": "2026-10-11T12:37:56.549Z",
+      "producer": "store:session-service",
+      "branchId": "branch_ldh",
+      "floorId": "floor_courtyard",
+      "tableNumber": "T-14",
+      "payload": {
+        "sessionId": "sess_mv3t5gd6",
+        "tableNumber": "T-14",
+        "hostName": "Guest",
+        "capabilityToken": "cap_f7784027085517c73260bbe374a2c8d4"
+      }
+    },
+    {
+      "id": "evt_1791722281346_8482",
+      "sequence": 41,
+      "type": "session.joined",
+      "timestamp": "2026-10-11T12:38:01.346Z",
+      "producer": "store:session-service",
+      "branchId": "branch_ldh",
+      "floorId": "floor_courtyard",
+      "tableNumber": "T-14",
+      "payload": {
+        "sessionId": "sess_mv3t5gd6",
+        "tableNumber": "T-14",
+        "hostName": "Guest",
+        "capabilityToken": "cap_94ccf93de56118d27e76d32e768a46bd"
+      }
+    },
+    {
+      "id": "evt_1791722286494_581",
+      "sequence": 42,
+      "type": "session.joined",
+      "timestamp": "2026-10-11T12:38:06.494Z",
+      "producer": "store:session-service",
+      "branchId": "branch_ldh",
+      "floorId": "floor_courtyard",
+      "tableNumber": "T-14",
+      "payload": {
+        "sessionId": "sess_mv3t5gd6",
+        "tableNumber": "T-14",
+        "hostName": "Guest",
+        "capabilityToken": "cap_bd5de6c3a643495954c967f6299ed729"
+      }
+    },
+    {
+      "id": "evt_1791722294477_2051",
+      "sequence": 43,
+      "type": "session.joined",
+      "timestamp": "2026-10-11T12:38:14.477Z",
+      "producer": "store:session-service",
+      "branchId": "branch_ldh",
+      "floorId": "floor_courtyard",
+      "tableNumber": "T-14",
+      "payload": {
+        "sessionId": "sess_mv3t5gd6",
+        "tableNumber": "T-14",
+        "hostName": "Guest",
+        "capabilityToken": "cap_936fef56dc29cf1615d9970d69552a68"
+      }
+    },
+    {
+      "id": "evt_1791722488169_4172",
+      "sequence": 44,
+      "type": "session.joined",
+      "timestamp": "2026-10-11T12:41:28.169Z",
+      "producer": "store:session-service",
+      "branchId": "branch_ldh",
+      "floorId": "floor_courtyard",
+      "tableNumber": "T-14",
+      "payload": {
+        "sessionId": "sess_mv3t5gd6",
+        "tableNumber": "T-14",
+        "hostName": "Guest",
+        "capabilityToken": "cap_f51810e1d66a136bc274b7bdc6fc4ec6"
+      }
+    },
+    {
+      "id": "evt_1791722490920_7030",
+      "sequence": 45,
+      "type": "session.joined",
+      "timestamp": "2026-10-11T12:41:30.920Z",
+      "producer": "store:session-service",
+      "branchId": "branch_ldh",
+      "floorId": "floor_courtyard",
+      "tableNumber": "T-14",
+      "payload": {
+        "sessionId": "sess_mv3t5gd6",
+        "tableNumber": "T-14",
+        "hostName": "Guest",
+        "capabilityToken": "cap_175bda3ac54992803856242dede2489a"
+      }
+    },
+    {
+      "id": "evt_1791722493966_4267",
+      "sequence": 46,
+      "type": "session.joined",
+      "timestamp": "2026-10-11T12:41:33.966Z",
+      "producer": "store:session-service",
+      "branchId": "branch_ldh",
+      "floorId": "floor_courtyard",
+      "tableNumber": "T-14",
+      "payload": {
+        "sessionId": "sess_mv3t5gd6",
+        "tableNumber": "T-14",
+        "hostName": "Guest",
+        "capabilityToken": "cap_8eafcb7b07f82d2fcdcf7e1a35046630"
+      }
+    },
+    {
+      "id": "evt_1791722496803_5854",
+      "sequence": 47,
+      "type": "session.joined",
+      "timestamp": "2026-10-11T12:41:36.803Z",
+      "producer": "store:session-service",
+      "branchId": "branch_ldh",
+      "floorId": "floor_courtyard",
+      "tableNumber": "T-14",
+      "payload": {
+        "sessionId": "sess_mv3t5gd6",
+        "tableNumber": "T-14",
+        "hostName": "Guest",
+        "capabilityToken": "cap_8ebe1afa02f0b747e4d08dabf20670c4"
+      }
+    },
+    {
+      "id": "evt_1791722500200_1960",
+      "sequence": 48,
+      "type": "session.joined",
+      "timestamp": "2026-10-11T12:41:40.200Z",
+      "producer": "store:session-service",
+      "branchId": "branch_ldh",
+      "floorId": "floor_courtyard",
+      "tableNumber": "T-14",
+      "payload": {
+        "sessionId": "sess_mv3t5gd6",
+        "tableNumber": "T-14",
+        "hostName": "Guest",
+        "capabilityToken": "cap_26e5e6f4f3808ee49e20defa792dfcae"
+      }
+    },
+    {
+      "id": "evt_1791722503737_189",
+      "sequence": 49,
+      "type": "session.joined",
+      "timestamp": "2026-10-11T12:41:43.737Z",
+      "producer": "store:session-service",
+      "branchId": "branch_ldh",
+      "floorId": "floor_courtyard",
+      "tableNumber": "T-14",
+      "payload": {
+        "sessionId": "sess_mv3t5gd6",
+        "tableNumber": "T-14",
+        "hostName": "Guest",
+        "capabilityToken": "cap_2d57c18727dc7366cebf6ba6f5b50b8d"
+      }
+    },
+    {
+      "id": "evt_1791722506591_5029",
+      "sequence": 50,
+      "type": "session.joined",
+      "timestamp": "2026-10-11T12:41:46.591Z",
+      "producer": "store:session-service",
+      "branchId": "branch_ldh",
+      "floorId": "floor_courtyard",
+      "tableNumber": "T-14",
+      "payload": {
+        "sessionId": "sess_mv3t5gd6",
+        "tableNumber": "T-14",
+        "hostName": "Guest",
+        "capabilityToken": "cap_77b13ba943de48f274f05e58e5133de3"
+      }
+    },
+    {
+      "id": "evt_1791722510275_4695",
+      "sequence": 51,
+      "type": "session.joined",
+      "timestamp": "2026-10-11T12:41:50.275Z",
+      "producer": "store:session-service",
+      "branchId": "branch_ldh",
+      "floorId": "floor_courtyard",
+      "tableNumber": "T-14",
+      "payload": {
+        "sessionId": "sess_mv3t5gd6",
+        "tableNumber": "T-14",
+        "hostName": "Guest",
+        "capabilityToken": "cap_9e42f56f1df1480ad2afe30eb9dcb83c"
+      }
+    },
+    {
+      "id": "evt_1791722514600_2089",
+      "sequence": 52,
+      "type": "session.joined",
+      "timestamp": "2026-10-11T12:41:54.600Z",
+      "producer": "store:session-service",
+      "branchId": "branch_ldh",
+      "floorId": "floor_courtyard",
+      "tableNumber": "T-14",
+      "payload": {
+        "sessionId": "sess_mv3t5gd6",
+        "tableNumber": "T-14",
+        "hostName": "Guest",
+        "capabilityToken": "cap_0a4e8d24b798693e058438081717e7b1"
+      }
+    },
+    {
+      "id": "evt_1791722521853_8098",
+      "sequence": 53,
+      "type": "session.joined",
+      "timestamp": "2026-10-11T12:42:01.853Z",
+      "producer": "store:session-service",
+      "branchId": "branch_ldh",
+      "floorId": "floor_courtyard",
+      "tableNumber": "T-14",
+      "payload": {
+        "sessionId": "sess_mv3t5gd6",
+        "tableNumber": "T-14",
+        "hostName": "Guest",
+        "capabilityToken": "cap_04ca0e0678948666468adc4abdf56579"
+      }
+    },
+    {
+      "id": "evt_1791722524912_5038",
+      "sequence": 54,
+      "type": "session.joined",
+      "timestamp": "2026-10-11T12:42:04.912Z",
+      "producer": "store:session-service",
+      "branchId": "branch_ldh",
+      "floorId": "floor_courtyard",
+      "tableNumber": "T-14",
+      "payload": {
+        "sessionId": "sess_mv3t5gd6",
+        "tableNumber": "T-14",
+        "hostName": "Guest",
+        "capabilityToken": "cap_114b66c0e134a1898a0ae960f2433dbb"
+      }
+    },
+    {
+      "id": "evt_1791722528048_5937",
+      "sequence": 55,
+      "type": "session.joined",
+      "timestamp": "2026-10-11T12:42:08.048Z",
+      "producer": "store:session-service",
+      "branchId": "branch_ldh",
+      "floorId": "floor_courtyard",
+      "tableNumber": "T-14",
+      "payload": {
+        "sessionId": "sess_mv3t5gd6",
+        "tableNumber": "T-14",
+        "hostName": "Guest",
+        "capabilityToken": "cap_0c9b977306cd1a8f86ef04a9647ccc32"
+      }
+    },
+    {
+      "id": "evt_1791722532585_5514",
+      "sequence": 56,
+      "type": "session.joined",
+      "timestamp": "2026-10-11T12:42:12.585Z",
+      "producer": "store:session-service",
+      "branchId": "branch_ldh",
+      "floorId": "floor_courtyard",
+      "tableNumber": "T-14",
+      "payload": {
+        "sessionId": "sess_mv3t5gd6",
+        "tableNumber": "T-14",
+        "hostName": "Guest",
+        "capabilityToken": "cap_6038fbd8fb1dd95052364a787bcc7298"
+      }
+    },
+    {
+      "id": "evt_1791722536082_2661",
+      "sequence": 57,
+      "type": "session.joined",
+      "timestamp": "2026-10-11T12:42:16.082Z",
+      "producer": "store:session-service",
+      "branchId": "branch_ldh",
+      "floorId": "floor_courtyard",
+      "tableNumber": "T-14",
+      "payload": {
+        "sessionId": "sess_mv3t5gd6",
+        "tableNumber": "T-14",
+        "hostName": "Guest",
+        "capabilityToken": "cap_0931e526f62c5762d22550919a114aa4"
+      }
+    },
+    {
+      "id": "evt_1791722540152_2733",
+      "sequence": 58,
+      "type": "session.joined",
+      "timestamp": "2026-10-11T12:42:20.152Z",
+      "producer": "store:session-service",
+      "branchId": "branch_ldh",
+      "floorId": "floor_courtyard",
+      "tableNumber": "T-14",
+      "payload": {
+        "sessionId": "sess_mv3t5gd6",
+        "tableNumber": "T-14",
+        "hostName": "Guest",
+        "capabilityToken": "cap_321857a8ee2b5768474ed590deca604e"
+      }
+    },
+    {
+      "id": "evt_1791722543764_877",
+      "sequence": 59,
+      "type": "session.joined",
+      "timestamp": "2026-10-11T12:42:23.764Z",
+      "producer": "store:session-service",
+      "branchId": "branch_ldh",
+      "floorId": "floor_courtyard",
+      "tableNumber": "T-14",
+      "payload": {
+        "sessionId": "sess_mv3t5gd6",
+        "tableNumber": "T-14",
+        "hostName": "Guest",
+        "capabilityToken": "cap_3afd8fdf1ac863a2ca7a65687c1551a2"
+      }
+    },
+    {
+      "id": "evt_1791722547267_6015",
+      "sequence": 60,
+      "type": "session.joined",
+      "timestamp": "2026-10-11T12:42:27.267Z",
+      "producer": "store:session-service",
+      "branchId": "branch_ldh",
+      "floorId": "floor_courtyard",
+      "tableNumber": "T-14",
+      "payload": {
+        "sessionId": "sess_mv3t5gd6",
+        "tableNumber": "T-14",
+        "hostName": "Guest",
+        "capabilityToken": "cap_162c55ee17509f3cb08916e064bc36a7"
+      }
+    },
+    {
+      "id": "evt_1791722550807_4767",
+      "sequence": 61,
+      "type": "session.joined",
+      "timestamp": "2026-10-11T12:42:30.807Z",
+      "producer": "store:session-service",
+      "branchId": "branch_ldh",
+      "floorId": "floor_courtyard",
+      "tableNumber": "T-14",
+      "payload": {
+        "sessionId": "sess_mv3t5gd6",
+        "tableNumber": "T-14",
+        "hostName": "Guest",
+        "capabilityToken": "cap_bdc5876caa28a56aa7fce3b3005efed7"
+      }
+    },
+    {
+      "id": "evt_1791723169098_9747",
+      "sequence": 62,
+      "type": "session.joined",
+      "timestamp": "2026-10-11T12:52:49.098Z",
+      "producer": "store:session-service",
+      "branchId": "branch_ldh",
+      "floorId": "floor_courtyard",
+      "tableNumber": "T-14",
+      "payload": {
+        "sessionId": "sess_mv3t5gd6",
+        "tableNumber": "T-14",
+        "hostName": "Guest",
+        "capabilityToken": "cap_d5b329c47a8d889fdeb9048742518d1f"
+      }
+    },
+    {
+      "id": "evt_1791723173019_3934",
+      "sequence": 63,
+      "type": "session.joined",
+      "timestamp": "2026-10-11T12:52:53.019Z",
+      "producer": "store:session-service",
+      "branchId": "branch_ldh",
+      "floorId": "floor_courtyard",
+      "tableNumber": "T-14",
+      "payload": {
+        "sessionId": "sess_mv3t5gd6",
+        "tableNumber": "T-14",
+        "hostName": "Guest",
+        "capabilityToken": "cap_1c5c0011d35f0d44f1defc83d3061369"
+      }
+    },
+    {
+      "id": "evt_1791723177176_1668",
+      "sequence": 64,
+      "type": "session.joined",
+      "timestamp": "2026-10-11T12:52:57.176Z",
+      "producer": "store:session-service",
+      "branchId": "branch_ldh",
+      "floorId": "floor_courtyard",
+      "tableNumber": "T-14",
+      "payload": {
+        "sessionId": "sess_mv3t5gd6",
+        "tableNumber": "T-14",
+        "hostName": "Guest",
+        "capabilityToken": "cap_cc199e6e5bfb7aec3a839a0a77355eb0"
+      }
+    },
+    {
+      "id": "evt_1791723181307_9743",
+      "sequence": 65,
+      "type": "session.joined",
+      "timestamp": "2026-10-11T12:53:01.307Z",
+      "producer": "store:session-service",
+      "branchId": "branch_ldh",
+      "floorId": "floor_courtyard",
+      "tableNumber": "T-14",
+      "payload": {
+        "sessionId": "sess_mv3t5gd6",
+        "tableNumber": "T-14",
+        "hostName": "Guest",
+        "capabilityToken": "cap_ae2bb4408586bbb4b9b76a66cb6508ab"
+      }
+    },
+    {
+      "id": "evt_1791723185038_523",
+      "sequence": 66,
+      "type": "session.joined",
+      "timestamp": "2026-10-11T12:53:05.038Z",
+      "producer": "store:session-service",
+      "branchId": "branch_ldh",
+      "floorId": "floor_courtyard",
+      "tableNumber": "T-14",
+      "payload": {
+        "sessionId": "sess_mv3t5gd6",
+        "tableNumber": "T-14",
+        "hostName": "Guest",
+        "capabilityToken": "cap_a7766876a95558ba8c0bb4281f68e2ce"
+      }
+    },
+    {
+      "id": "evt_1791723189083_8200",
+      "sequence": 67,
+      "type": "session.joined",
+      "timestamp": "2026-10-11T12:53:09.083Z",
+      "producer": "store:session-service",
+      "branchId": "branch_ldh",
+      "floorId": "floor_courtyard",
+      "tableNumber": "T-14",
+      "payload": {
+        "sessionId": "sess_mv3t5gd6",
+        "tableNumber": "T-14",
+        "hostName": "Guest",
+        "capabilityToken": "cap_32fac9f1df06bae10eab8c636853344a"
+      }
+    },
+    {
+      "id": "evt_1791723194922_79",
+      "sequence": 68,
+      "type": "session.joined",
+      "timestamp": "2026-10-11T12:53:14.922Z",
+      "producer": "store:session-service",
+      "branchId": "branch_ldh",
+      "floorId": "floor_courtyard",
+      "tableNumber": "T-14",
+      "payload": {
+        "sessionId": "sess_mv3t5gd6",
+        "tableNumber": "T-14",
+        "hostName": "Guest",
+        "capabilityToken": "cap_d38d5a08fff4868d1676fad0c5d22b40"
+      }
+    },
+    {
+      "id": "evt_1791723198352_7136",
+      "sequence": 69,
+      "type": "session.joined",
+      "timestamp": "2026-10-11T12:53:18.352Z",
+      "producer": "store:session-service",
+      "branchId": "branch_ldh",
+      "floorId": "floor_courtyard",
+      "tableNumber": "T-14",
+      "payload": {
+        "sessionId": "sess_mv3t5gd6",
+        "tableNumber": "T-14",
+        "hostName": "Guest",
+        "capabilityToken": "cap_2b6b2394a94d9756e805fc54cf088171"
+      }
+    },
+    {
+      "id": "evt_1791723202901_6521",
+      "sequence": 70,
+      "type": "session.joined",
+      "timestamp": "2026-10-11T12:53:22.901Z",
+      "producer": "store:session-service",
+      "branchId": "branch_ldh",
+      "floorId": "floor_courtyard",
+      "tableNumber": "T-14",
+      "payload": {
+        "sessionId": "sess_mv3t5gd6",
+        "tableNumber": "T-14",
+        "hostName": "Guest",
+        "capabilityToken": "cap_56817e85db45f4d8880dc585120e8d26"
+      }
+    },
+    {
+      "id": "evt_1791723208083_7544",
+      "sequence": 71,
+      "type": "session.joined",
+      "timestamp": "2026-10-11T12:53:28.083Z",
+      "producer": "store:session-service",
+      "branchId": "branch_ldh",
+      "floorId": "floor_courtyard",
+      "tableNumber": "T-14",
+      "payload": {
+        "sessionId": "sess_mv3t5gd6",
+        "tableNumber": "T-14",
+        "hostName": "Guest",
+        "capabilityToken": "cap_e4545a88a25ede6b93e88867e3753ca1"
+      }
+    },
+    {
+      "id": "evt_1791723212645_7853",
+      "sequence": 72,
+      "type": "session.joined",
+      "timestamp": "2026-10-11T12:53:32.645Z",
+      "producer": "store:session-service",
+      "branchId": "branch_ldh",
+      "floorId": "floor_courtyard",
+      "tableNumber": "T-14",
+      "payload": {
+        "sessionId": "sess_mv3t5gd6",
+        "tableNumber": "T-14",
+        "hostName": "Guest",
+        "capabilityToken": "cap_8ed6b96229738c63c79044d15c219071"
+      }
+    },
+    {
+      "id": "evt_1791723216768_6881",
+      "sequence": 73,
+      "type": "session.joined",
+      "timestamp": "2026-10-11T12:53:36.768Z",
+      "producer": "store:session-service",
+      "branchId": "branch_ldh",
+      "floorId": "floor_courtyard",
+      "tableNumber": "T-14",
+      "payload": {
+        "sessionId": "sess_mv3t5gd6",
+        "tableNumber": "T-14",
+        "hostName": "Guest",
+        "capabilityToken": "cap_431ce67bf045a17162ced5cdb8fce325"
+      }
+    },
+    {
+      "id": "evt_1791723220991_877",
+      "sequence": 74,
+      "type": "session.joined",
+      "timestamp": "2026-10-11T12:53:40.991Z",
+      "producer": "store:session-service",
+      "branchId": "branch_ldh",
+      "floorId": "floor_courtyard",
+      "tableNumber": "T-14",
+      "payload": {
+        "sessionId": "sess_mv3t5gd6",
+        "tableNumber": "T-14",
+        "hostName": "Guest",
+        "capabilityToken": "cap_0d6810a2d0c09ab9824a7cd8c1729387"
+      }
+    },
+    {
+      "id": "evt_1791723225732_9273",
+      "sequence": 75,
+      "type": "session.joined",
+      "timestamp": "2026-10-11T12:53:45.732Z",
+      "producer": "store:session-service",
+      "branchId": "branch_ldh",
+      "floorId": "floor_courtyard",
+      "tableNumber": "T-14",
+      "payload": {
+        "sessionId": "sess_mv3t5gd6",
+        "tableNumber": "T-14",
+        "hostName": "Guest",
+        "capabilityToken": "cap_51332b268d8e18c757fba08b12473c5e"
+      }
+    },
+    {
+      "id": "evt_1791723231586_8693",
+      "sequence": 76,
+      "type": "session.joined",
+      "timestamp": "2026-10-11T12:53:51.586Z",
+      "producer": "store:session-service",
+      "branchId": "branch_ldh",
+      "floorId": "floor_courtyard",
+      "tableNumber": "T-14",
+      "payload": {
+        "sessionId": "sess_mv3t5gd6",
+        "tableNumber": "T-14",
+        "hostName": "Guest",
+        "capabilityToken": "cap_cb77bb852897981494ced9813345dd19"
+      }
+    },
+    {
+      "id": "evt_1791723235667_5387",
+      "sequence": 77,
+      "type": "session.joined",
+      "timestamp": "2026-10-11T12:53:55.667Z",
+      "producer": "store:session-service",
+      "branchId": "branch_ldh",
+      "floorId": "floor_courtyard",
+      "tableNumber": "T-14",
+      "payload": {
+        "sessionId": "sess_mv3t5gd6",
+        "tableNumber": "T-14",
+        "hostName": "Guest",
+        "capabilityToken": "cap_323c087717570eb457b0651f117bcc44"
+      }
+    },
+    {
+      "id": "evt_1791723239753_4027",
+      "sequence": 78,
+      "type": "session.joined",
+      "timestamp": "2026-10-11T12:53:59.753Z",
+      "producer": "store:session-service",
+      "branchId": "branch_ldh",
+      "floorId": "floor_courtyard",
+      "tableNumber": "T-14",
+      "payload": {
+        "sessionId": "sess_mv3t5gd6",
+        "tableNumber": "T-14",
+        "hostName": "Guest",
+        "capabilityToken": "cap_5e11111a299b8d386e15c0837875fbdd"
+      }
+    },
+    {
+      "id": "evt_1791723243445_6629",
+      "sequence": 79,
+      "type": "session.joined",
+      "timestamp": "2026-10-11T12:54:03.445Z",
+      "producer": "store:session-service",
+      "branchId": "branch_ldh",
+      "floorId": "floor_courtyard",
+      "tableNumber": "T-14",
+      "payload": {
+        "sessionId": "sess_mv3t5gd6",
+        "tableNumber": "T-14",
+        "hostName": "Guest",
+        "capabilityToken": "cap_40b4d38fbb610cc0e864f0722f6d1ca0"
+      }
+    },
+    {
+      "id": "evt_1791723750817_3539",
+      "sequence": 80,
+      "type": "session.joined",
+      "timestamp": "2026-10-11T13:02:30.818Z",
+      "producer": "store:session-service",
+      "branchId": "branch_ldh",
+      "floorId": "floor_courtyard",
+      "tableNumber": "T-14",
+      "payload": {
+        "sessionId": "sess_mv3t5gd6",
+        "tableNumber": "T-14",
+        "hostName": "Guest",
+        "capabilityToken": "cap_c809c46a181f0da7931983b5777fcfae"
+      }
+    },
+    {
+      "id": "evt_1791723798082_5480",
+      "sequence": 81,
+      "type": "TEMPLATE_INSTALLED",
+      "timestamp": "2026-10-11T13:03:18.083Z",
+      "producer": "marketplace-engine",
+      "branchId": "*",
+      "payload": {
+        "templateId": "tmpl_nordic_minimal",
+        "templateName": "Fjord & Form Botanical",
+        "installedBy": "Staff"
+      }
+    }
+  ],
+  "invalidatedCapabilityTokens": [
+    "cap_test_host_14",
+    "cap_test_companion_14",
+    "cap_d4586fe1c33ec8ad54a066b5466cab7b",
+    "cap_4047f15c40ec9e47db37a58a5e7b60b8"
+  ],
+  "revokedStaffTokens": [
+    "orb_stf.eyJzdWIiOiJzdGZfbWdyX2xkaF8wMSIsIm5hbWUiOiJTdWtod2luZGVyIFNhbmRodSIsInJvbGUiOiJNQU5BR0VSIiwiYnJhbmNoSWQiOiJicmFuY2hfbGRoIiwicGVybWlzc2lvbnMiOlsiKiJdLCJpYXQiOjE3OTE1NTcwNzUsImV4cCI6MTc5MTU4NTg3NSwianRpIjoianRpXzE3OTE1NTcwNzU3ODVfNThhZGQ3YTgxYmIxMzQ5MiJ9.VFAtlhqLL83R5E0QP7BjBiFuDk4xGVWB0zsGlKXrZvs",
+    "orb_stf.eyJzdWIiOiJzdGZfbWdyX2xkaF8wMSIsIm5hbWUiOiJTdWtod2luZGVyIFNhbmRodSIsInJvbGUiOiJNQU5BR0VSIiwiYnJhbmNoSWQiOiJicmFuY2hfbGRoIiwicGVybWlzc2lvbnMiOlsiKiJdLCJpYXQiOjE3OTE1NTcxNTUsImV4cCI6MTc5MTU4NTk1NSwianRpIjoianRpXzE3OTE1NTcxNTU1MzNfYmU2MjBkMjExMmYyNGVkMiJ9.cpZ3MVVkMshQxFzwPLa8hpcL2-kzhIogT1Dci0wSClQ",
+    "orb_stf.eyJzdWIiOiJzdGZfb3BzX2xkaF8wMSIsIm5hbWUiOiJBbWFucHJlZXQgS2F1ciIsInJvbGUiOiJPUEVSQVRJT05TIiwiYnJhbmNoSWQiOiJicmFuY2hfbGRoIiwicGVybWlzc2lvbnMiOlsiU0VSVklDRV9SRVFVRVNUX1JFU09MVkUiLCJUQUJMRV9VUERBVEUiLCJMQVlPVVRfTVVUQVRFIiwiTUVSR0VfVEFCTEVTIiwiU0VBVF9NQU5BR0UiXSwiaWF0IjoxNzkxNTU3MzIzLCJleHAiOjE3OTE1ODYxMjMsImp0aSI6Imp0aV8xNzkxNTU3MzIzOTY3Xzg1OWQ4YTNiOWZhMWFlODIifQ.vpJ9YcJ6pNajoQ2acUlk5KqROcZAMrpfCHuN03q16_I",
+    "orb_stf.eyJzdWIiOiJzdGZfb3BzX2xkaF8wMSIsIm5hbWUiOiJBbWFucHJlZXQgS2F1ciIsInJvbGUiOiJPUEVSQVRJT05TIiwiYnJhbmNoSWQiOiJicmFuY2hfbGRoIiwicGVybWlzc2lvbnMiOlsiU0VSVklDRV9SRVFVRVNUX1JFU09MVkUiLCJUQUJMRV9VUERBVEUiLCJMQVlPVVRfTVVUQVRFIiwiTUVSR0VfVEFCTEVTIiwiU0VBVF9NQU5BR0UiXSwiaWF0IjoxNzkxNTU3Mzk1LCJleHAiOjE3OTE1ODYxOTUsImp0aSI6Imp0aV8xNzkxNTU3Mzk1ODg3X2Y0NmE1YmRlNThhNDdlZDQifQ.NQg_8Bvg4aR0gvK2LJXb_ns3KQcTYZm6sudNChgGkyI",
+    "orb_stf.eyJzdWIiOiJzdGZfb3BzX2xkaF8wMSIsIm5hbWUiOiJBbWFucHJlZXQgS2F1ciIsInJvbGUiOiJPUEVSQVRJT05TIiwiYnJhbmNoSWQiOiJicmFuY2hfbGRoIiwicGVybWlzc2lvbnMiOlsiU0VSVklDRV9SRVFVRVNUX1JFU09MVkUiLCJUQUJMRV9VUERBVEUiLCJMQVlPVVRfTVVUQVRFIiwiTUVSR0VfVEFCTEVTIiwiU0VBVF9NQU5BR0UiXSwiaWF0IjoxNzkxNTU3NDczLCJleHAiOjE3OTE1ODYyNzMsImp0aSI6Imp0aV8xNzkxNTU3NDczOTc3Xzc3MzhjZDVjNjUyM2Y0MGYifQ.eWLsZ_Zq65SWUL7iaXM_QjnlX70lImKW8--aORcARHM",
+    "orb_stf.eyJzdWIiOiJzdGZfb3BzX2xkaF8wMSIsIm5hbWUiOiJBbWFucHJlZXQgS2F1ciIsInJvbGUiOiJPUEVSQVRJT05TIiwiYnJhbmNoSWQiOiJicmFuY2hfbGRoIiwicGVybWlzc2lvbnMiOlsiU0VSVklDRV9SRVFVRVNUX1JFU09MVkUiLCJUQUJMRV9VUERBVEUiLCJMQVlPVVRfTVVUQVRFIiwiTUVSR0VfVEFCTEVTIiwiU0VBVF9NQU5BR0UiXSwiaWF0IjoxNzkxNTU3NTI4LCJleHAiOjE3OTE1ODYzMjgsImp0aSI6Imp0aV8xNzkxNTU3NTI4ODA0X2NjYTM4YjhmN2ViMmZmOTEifQ.NUOxYO2X2neQZSsIyr5_vZtZc2jhfBzfxU0ebQaaJ0I",
+    "orb_stf.eyJzdWIiOiJzdGZfbWdyX2xkaF8wMSIsIm5hbWUiOiJTdWtod2luZGVyIFNhbmRodSIsInJvbGUiOiJNQU5BR0VSIiwiYnJhbmNoSWQiOiJicmFuY2hfbGRoIiwicGVybWlzc2lvbnMiOlsiKiJdLCJpYXQiOjE3OTE1NTc1NTMsImV4cCI6MTc5MTU4NjM1MywianRpIjoianRpXzE3OTE1NTc1NTM1MzdfNTRlYWVkZTJjM2VjMTZjZCJ9.erocJLq3TAgVh5wHRhW7oqMwbCtsKijDXWZpdD9FtYk",
+    "orb_stf.eyJzdWIiOiJzdGZfbWdyX2xkaF8wMSIsIm5hbWUiOiJTdWtod2luZGVyIFNhbmRodSIsInJvbGUiOiJNQU5BR0VSIiwiYnJhbmNoSWQiOiJicmFuY2hfbGRoIiwicGVybWlzc2lvbnMiOlsiKiJdLCJpYXQiOjE3OTE1NTc3MjMsImV4cCI6MTc5MTU4NjUyMywianRpIjoianRpXzE3OTE1NTc3MjM5MDdfNjYxYWYzNDM1ZmRjNzM1NCJ9.i67UObDuTo4B3Nr12kad5hEKXtDVJRzBHrOcN7mtNcc",
+    "orb_stf.eyJzdWIiOiJzdGZfb3BzX2xkaF8wMSIsIm5hbWUiOiJBbWFucHJlZXQgS2F1ciIsInJvbGUiOiJPUEVSQVRJT05TIiwiYnJhbmNoSWQiOiJicmFuY2hfbGRoIiwicGVybWlzc2lvbnMiOlsiU0VSVklDRV9SRVFVRVNUX1JFU09MVkUiLCJUQUJMRV9VUERBVEUiLCJMQVlPVVRfTVVUQVRFIiwiTUVSR0VfVEFCTEVTIiwiU0VBVF9NQU5BR0UiXSwiaWF0IjoxNzkxNTU3NzM2LCJleHAiOjE3OTE1ODY1MzYsImp0aSI6Imp0aV8xNzkxNTU3NzM2NjM4X2VmNDk1ODk0YzMwYjkwM2QifQ.KKSHiGLDckgE5lLEftSjYTu89_r25sfQSpVQGr5f6GE",
+    "orb_stf.eyJzdWIiOiJzdGZfb3BzX2xkaF8wMSIsIm5hbWUiOiJBbWFucHJlZXQgS2F1ciIsInJvbGUiOiJPUEVSQVRJT05TIiwiYnJhbmNoSWQiOiJicmFuY2hfbGRoIiwicGVybWlzc2lvbnMiOlsiU0VSVklDRV9SRVFVRVNUX1JFU09MVkUiLCJUQUJMRV9VUERBVEUiLCJMQVlPVVRfTVVUQVRFIiwiTUVSR0VfVEFCTEVTIiwiU0VBVF9NQU5BR0UiXSwiaWF0IjoxNzkxNTY0MTkwLCJleHAiOjE3OTE1OTI5OTAsImp0aSI6Imp0aV8xNzkxNTY0MTkwNzY1XzVlMjg1NTg3YzcyOTA5MjMifQ.FqF6ca4tDJrPGxisAjpv5bGoNrYsR7qVIO24dwlnn_4",
+    "orb_stf.eyJzdWIiOiJzdGZfbWdyX2xkaF8wMSIsIm5hbWUiOiJTdWtod2luZGVyIFNhbmRodSIsInJvbGUiOiJNQU5BR0VSIiwiYnJhbmNoSWQiOiJicmFuY2hfbGRoIiwicGVybWlzc2lvbnMiOlsiKiJdLCJpYXQiOjE3OTE1NjQyMDgsImV4cCI6MTc5MTU5MzAwOCwianRpIjoianRpXzE3OTE1NjQyMDgxNTVfYWIyNDczNTNlY2M3NDgyMSJ9.YtUjekin1JFMJfrwgyBWy7DjGt611GQK0_P3qHGhUkI",
+    "orb_stf.eyJzdWIiOiJzdGZfb3BzX2xkaF8wMSIsIm5hbWUiOiJBbWFucHJlZXQgS2F1ciIsInJvbGUiOiJPUEVSQVRJT05TIiwiYnJhbmNoSWQiOiJicmFuY2hfbGRoIiwicGVybWlzc2lvbnMiOlsiU0VSVklDRV9SRVFVRVNUX1JFU09MVkUiLCJUQUJMRV9VUERBVEUiLCJMQVlPVVRfTVVUQVRFIiwiTUVSR0VfVEFCTEVTIiwiU0VBVF9NQU5BR0UiXSwiaWF0IjoxNzkxNTY0OTU1LCJleHAiOjE3OTE1OTM3NTUsImp0aSI6Imp0aV8xNzkxNTY0OTU1Njk4X2RhNmIyZGE2ZDAwMTYwYjUifQ.ZDFQdH4C1ZYNE6CJxaKtY-Y_NN3nu4qUs14bnumtNRo",
+    "orb_stf.eyJzdWIiOiJzdGZfb3BzX2xkaF8wMSIsIm5hbWUiOiJBbWFucHJlZXQgS2F1ciIsInJvbGUiOiJPUEVSQVRJT05TIiwiYnJhbmNoSWQiOiJicmFuY2hfbGRoIiwicGVybWlzc2lvbnMiOlsiU0VSVklDRV9SRVFVRVNUX1JFU09MVkUiLCJUQUJMRV9VUERBVEUiLCJMQVlPVVRfTVVUQVRFIiwiTUVSR0VfVEFCTEVTIiwiU0VBVF9NQU5BR0UiXSwiaWF0IjoxNzkxNTY1OTM5LCJleHAiOjE3OTE1OTQ3MzksImp0aSI6Imp0aV8xNzkxNTY1OTM5MzU5XzVhZDU5MDFmZDFhOGM2ZTUifQ.nA30vG5wD69EEFDZy1EZ-LVxHoAqqk7X6iQMXnbU1PI",
+    "orb_stf.eyJzdWIiOiJzdGZfbWdyX2xkaF8wMSIsIm5hbWUiOiJTdWtod2luZGVyIFNhbmRodSIsInJvbGUiOiJNQU5BR0VSIiwiYnJhbmNoSWQiOiJicmFuY2hfbGRoIiwicGVybWlzc2lvbnMiOlsiKiJdLCJpYXQiOjE3OTE1NjU5NTIsImV4cCI6MTc5MTU5NDc1MiwianRpIjoianRpXzE3OTE1NjU5NTI3MzZfNTBiZGU3NmRkYjMzOGMwNSJ9.63rkUFJIpultEGqiv1-g5B3K9sKwMydE9Sn6G4JjHp4",
+    "orb_stf.eyJzdWIiOiJzdGZfb3BzX2xkaF8wMSIsIm5hbWUiOiJBbWFucHJlZXQgS2F1ciIsInJvbGUiOiJPUEVSQVRJT05TIiwiYnJhbmNoSWQiOiJicmFuY2hfbGRoIiwicGVybWlzc2lvbnMiOlsiU0VSVklDRV9SRVFVRVNUX1JFU09MVkUiLCJUQUJMRV9VUERBVEUiLCJMQVlPVVRfTVVUQVRFIiwiTUVSR0VfVEFCTEVTIiwiU0VBVF9NQU5BR0UiXSwiaWF0IjoxNzkxNTY1OTU4LCJleHAiOjE3OTE1OTQ3NTgsImp0aSI6Imp0aV8xNzkxNTY1OTU4NjMzX2Y5ZDE5ZWRmMWFmMmQ2NmEifQ.3En0TFZfbpVVAjypqYV9TymrpfzEuAedM4sGkxUbOyU",
+    "orb_stf.eyJzdWIiOiJzdGZfbWdyX2xkaF8wMSIsIm5hbWUiOiJTdWtod2luZGVyIFNhbmRodSIsInJvbGUiOiJNQU5BR0VSIiwiYnJhbmNoSWQiOiJicmFuY2hfbGRoIiwicGVybWlzc2lvbnMiOlsiKiJdLCJpYXQiOjE3OTE1NjU5NzEsImV4cCI6MTc5MTU5NDc3MSwianRpIjoianRpXzE3OTE1NjU5NzE4NTlfZDY3YmU2OGZhNGE5NmFmNiJ9.VWSkCpZJH1yaOKh6gaeHixYImxISJbvyb2v2s1gDJG4",
+    "orb_stf.eyJzdWIiOiJzdGZfbWdyX2xkaF8wMSIsIm5hbWUiOiJTdWtod2luZGVyIFNhbmRodSIsInJvbGUiOiJNQU5BR0VSIiwiYnJhbmNoSWQiOiJicmFuY2hfbGRoIiwicGVybWlzc2lvbnMiOlsiKiJdLCJpYXQiOjE3OTE1NjYxMTcsImV4cCI6MTc5MTU5NDkxNywianRpIjoianRpXzE3OTE1NjYxMTczODZfMDNhNTFkZjVkOWRiYjhjOSJ9.MserPSheHuE4wn6VqrIxH1DKxnc6CxOBe2lLHm6_2FI",
+    "orb_stf.eyJzdWIiOiJzdGZfb3BzX2xkaF8wMSIsIm5hbWUiOiJBbWFucHJlZXQgS2F1ciIsInJvbGUiOiJPUEVSQVRJT05TIiwiYnJhbmNoSWQiOiJicmFuY2hfbGRoIiwicGVybWlzc2lvbnMiOlsiU0VSVklDRV9SRVFVRVNUX1JFU09MVkUiLCJUQUJMRV9VUERBVEUiLCJMQVlPVVRfTVVUQVRFIiwiTUVSR0VfVEFCTEVTIiwiU0VBVF9NQU5BR0UiXSwiaWF0IjoxNzkxNTY2MTM4LCJleHAiOjE3OTE1OTQ5MzgsImp0aSI6Imp0aV8xNzkxNTY2MTM4MDc2X2JhNWM1YTU5NGI1YjEyZDQifQ.-JcoFzIE1bs-jaj6ufRy8-zwP5z8YalFoLP6J0d_Z8w",
+    "orb_stf.eyJzdWIiOiJzdGZfb3BzX2xkaF8wMSIsIm5hbWUiOiJBbWFucHJlZXQgS2F1ciIsInJvbGUiOiJPUEVSQVRJT05TIiwiYnJhbmNoSWQiOiJicmFuY2hfbGRoIiwicGVybWlzc2lvbnMiOlsiU0VSVklDRV9SRVFVRVNUX1JFU09MVkUiLCJUQUJMRV9VUERBVEUiLCJMQVlPVVRfTVVUQVRFIiwiTUVSR0VfVEFCTEVTIiwiU0VBVF9NQU5BR0UiXSwiaWF0IjoxNzkxNTY2Mzk4LCJleHAiOjE3OTE1OTUxOTgsImp0aSI6Imp0aV8xNzkxNTY2Mzk4MTQwX2Y1ZmQ0ZTFhMzVkNWM2YWUifQ.cOisdjdsL3HvTxYwLrL38i29aRqPOmXL9s48GaR4rzc",
+    "orb_stf.eyJzdWIiOiJzdGZfb3BzX2xkaF8wMSIsIm5hbWUiOiJBbWFucHJlZXQgS2F1ciIsInJvbGUiOiJPUEVSQVRJT05TIiwiYnJhbmNoSWQiOiJicmFuY2hfbGRoIiwicGVybWlzc2lvbnMiOlsiU0VSVklDRV9SRVFVRVNUX1JFU09MVkUiLCJUQUJMRV9VUERBVEUiLCJMQVlPVVRfTVVUQVRFIiwiTUVSR0VfVEFCTEVTIiwiU0VBVF9NQU5BR0UiXSwiaWF0IjoxNzkxNTY2NDU3LCJleHAiOjE3OTE1OTUyNTcsImp0aSI6Imp0aV8xNzkxNTY2NDU3OTM1XzdhMzE5NTBmNWY2MjM4YWEifQ.g85cJ8aMrhk6dLtA4U9K27Meq--cfruurS_3OJowSn4",
+    "orb_stf.eyJzdWIiOiJzdGZfbWdyX2xkaF8wMSIsIm5hbWUiOiJTdWtod2luZGVyIFNhbmRodSIsInJvbGUiOiJNQU5BR0VSIiwiYnJhbmNoSWQiOiJicmFuY2hfbGRoIiwicGVybWlzc2lvbnMiOlsiKiJdLCJpYXQiOjE3OTE1NjY1NTksImV4cCI6MTc5MTU5NTM1OSwianRpIjoianRpXzE3OTE1NjY1NTk3ODdfNTk1M2M0ZjAxM2ExY2RkNyJ9.ZFcxpoFpQiItwKlB55jAm9oygd9YQ4K7b-EE388eV-g",
+    "orb_stf.eyJzdWIiOiJzdGZfb3BzX2xkaF8wMSIsIm5hbWUiOiJBbWFucHJlZXQgS2F1ciIsInJvbGUiOiJPUEVSQVRJT05TIiwiYnJhbmNoSWQiOiJicmFuY2hfbGRoIiwicGVybWlzc2lvbnMiOlsiU0VSVklDRV9SRVFVRVNUX1JFU09MVkUiLCJUQUJMRV9VUERBVEUiLCJMQVlPVVRfTVVUQVRFIiwiTUVSR0VfVEFCTEVTIiwiU0VBVF9NQU5BR0UiXSwiaWF0IjoxNzkxNTY2NTY5LCJleHAiOjE3OTE1OTUzNjksImp0aSI6Imp0aV8xNzkxNTY2NTY5NjM0XzNkZTIzYzQ4YjVjMmZmYzcifQ.CO0bx3E3uBBovbZBYazAeLs8NHup0bCQM723Uz1TNYI",
+    "orb_stf.eyJzdWIiOiJzdGZfbWdyX2xkaF8wMSIsIm5hbWUiOiJTdWtod2luZGVyIFNhbmRodSIsInJvbGUiOiJNQU5BR0VSIiwiYnJhbmNoSWQiOiJicmFuY2hfbGRoIiwicGVybWlzc2lvbnMiOlsiKiJdLCJpYXQiOjE3OTE2MzcyMzAsImV4cCI6MTc5MTY2NjAzMCwianRpIjoianRpXzE3OTE2MzcyMzA2MTFfMzQ5Nzc2OTg1MTM5ZTYwMSJ9.L57yKsFr5K_i5Tz7n0iMR1ukYKDC1gpSKLY5pe-izss",
+    "orb_stf.eyJzdWIiOiJzdGZfb3BzX2xkaF8wMSIsIm5hbWUiOiJBbWFucHJlZXQgS2F1ciIsInJvbGUiOiJPUEVSQVRJT05TIiwiYnJhbmNoSWQiOiJicmFuY2hfbGRoIiwicGVybWlzc2lvbnMiOlsiU0VSVklDRV9SRVFVRVNUX1JFU09MVkUiLCJUQUJMRV9VUERBVEUiLCJMQVlPVVRfTVVUQVRFIiwiTUVSR0VfVEFCTEVTIiwiU0VBVF9NQU5BR0UiXSwiaWF0IjoxNzkxNjM3MjM5LCJleHAiOjE3OTE2NjYwMzksImp0aSI6Imp0aV8xNzkxNjM3MjM5MjQ4XzA3ODdjZTBhZWQ5NzlhYWMifQ.TI-QfWv2pbCluYxhO8wQf3W1UCLvh5q8KsX4PMuRr0A",
+    "orb_stf.eyJzdWIiOiJzdGZfb3BzX2xkaF8wMSIsIm5hbWUiOiJBbWFucHJlZXQgS2F1ciIsInJvbGUiOiJPUEVSQVRJT05TIiwiYnJhbmNoSWQiOiJicmFuY2hfbGRoIiwicGVybWlzc2lvbnMiOlsiU0VSVklDRV9SRVFVRVNUX1JFU09MVkUiLCJUQUJMRV9VUERBVEUiLCJMQVlPVVRfTVVUQVRFIiwiTUVSR0VfVEFCTEVTIiwiU0VBVF9NQU5BR0UiXSwiaWF0IjoxNzkxNjM5MzMwLCJleHAiOjE3OTE2NjgxMzAsImp0aSI6Imp0aV8xNzkxNjM5MzMwMTIzXzcxNzI1MjQyYmJhMWIyN2MifQ.71NGyLRQIFfZd_sSlLkpoqfy6ATkVuCbiHo3f84AaNA",
+    "orb_stf.eyJzdWIiOiJzdGZfbWdyX2xkaF8wMSIsIm5hbWUiOiJTdWtod2luZGVyIFNhbmRodSIsInJvbGUiOiJNQU5BR0VSIiwiYnJhbmNoSWQiOiJicmFuY2hfbGRoIiwicGVybWlzc2lvbnMiOlsiKiJdLCJpYXQiOjE3OTE2MzkzNDAsImV4cCI6MTc5MTY2ODE0MCwianRpIjoianRpXzE3OTE2MzkzNDA3ODFfOWY0Y2I5YzA1NzFiMmUxYyJ9.pHn6n08KTPLDmFZOVrcJ1BfdeViIiOxH249lKHUZOJQ"
+  ],
+  "revokedStaffTokenJtis": [
+    "jti_1791557075785_58add7a81bb13492",
+    "jti_1791557155533_be620d2112f24ed2",
+    "jti_1791557323967_859d8a3b9fa1ae82",
+    "jti_1791557395887_f46a5bde58a47ed4",
+    "jti_1791557473977_7738cd5c6523f40f",
+    "jti_1791557528804_cca38b8f7eb2ff91",
+    "jti_1791557553537_54eaede2c3ec16cd",
+    "jti_1791557723907_661af3435fdc7354",
+    "jti_1791557736638_ef495894c30b903d",
+    "jti_1791564190765_5e285587c7290923",
+    "jti_1791564208155_ab247353ecc74821",
+    "jti_1791564955698_da6b2da6d00160b5",
+    "jti_1791565939359_5ad5901fd1a8c6e5",
+    "jti_1791565952736_50bde76ddb338c05",
+    "jti_1791565958633_f9d19edf1af2d66a",
+    "jti_1791565971859_d67be68fa4a96af6",
+    "jti_1791566117386_03a51df5d9dbb8c9",
+    "jti_1791566138076_ba5c5a594b5b12d4",
+    "jti_1791566398140_f5fd4e1a35d5c6ae",
+    "jti_1791566457935_7a31950f5f6238aa",
+    "jti_1791566559787_5953c4f013a1cdd7",
+    "jti_1791566569634_3de23c48b5c2ffc7",
+    "jti_1791637230611_349776985139e601",
+    "jti_1791637239248_0787ce0aed979aac",
+    "jti_1791639330123_71725242bba1b27c",
+    "jti_1791639340781_9f4cb9c0571b2e1c"
+  ],
+  "templates": [
+    {
+      "id": "tmpl_haute_gastronomy",
+      "slug": "haute-gastronomy",
+      "name": "Atelier Étoile Noir",
+      "category": "Haute Gastronomy",
+      "description": "50/50 Asymmetric editorial tasting progression with sommelier cellar folio and poetic course narratives.",
+      "tagline": "50/50 Asymmetric Editorial Tasting Progression & Sommelier Cellar Folio",
+      "version": "4.1.0",
+      "author": "OrbitoX Atelier Studio",
+      "tierRequired": "pro",
+      "priceLabel": "Included in Pro",
+      "accentColor": "#C5A059",
+      "fontHeading": "\"Cormorant Garamond\", Georgia, serif",
+      "fontBody": "\"Inter\", -apple-system, sans-serif",
+      "previewThumbnail": "https://images.unsplash.com/photo-1544025162-d76694265947?w=600&auto=format&fit=crop&q=80",
+      "previewHero": "https://images.unsplash.com/photo-1544025162-d76694265947?w=1600&auto=format&fit=crop&q=85",
+      "supportedComponents": [
+        "split_editorial_canvas",
+        "tasting_timeline",
+        "circular_plate_modules",
+        "sommelier_cellar_folio",
+        "chef_manifesto"
+      ],
+      "composition": {
+        "pageArchitecture": "split-asymmetric",
+        "heroArchitecture": "split-asymmetric",
+        "menuLayoutPattern": "course-progression-timeline",
+        "cardComposition": "editorial-sommelier",
+        "navigationPattern": "story-anchor-strip",
+        "cartPresentation": "sommelier-drawer",
+        "responsiveRules": {
+          "desktopColumns": 2,
+          "tabletColumns": 1,
+          "mobileColumns": 1,
+          "layoutBehavior": "asymmetric-split-with-course-timeline"
+        },
+        "componentTree": [
+          {
+            "id": "haute-hero",
+            "type": "HeroSplitAsymmetric",
+            "name": "50/50 Asymmetric Visual Canvas",
+            "layout": "split-asymmetric",
+            "props": {
+              "showManifesto": true,
+              "elevation": "inset"
+            }
+          },
+          {
+            "id": "haute-story",
+            "type": "ChefManifestoSection",
+            "name": "Sal Wood Coals Philosophy",
+            "layout": "editorial-timeline",
+            "props": {
+              "quoteAuthor": "Executive Chef",
+              "quoteRole": "Curator"
+            }
+          },
+          {
+            "id": "haute-tasting",
+            "type": "TastingCourseTimeline",
+            "name": "Chronological Movement Progression",
+            "layout": "editorial-timeline",
+            "props": {
+              "courses": [
+                "Movement I: Amuse & Starters",
+                "Movement II: Charcoal Hearth",
+                "Movement III: Royal Mains",
+                "Movement IV: Grand Finale"
+              ]
+            },
+            "children": [
+              {
+                "id": "haute-course-1",
+                "type": "CourseGroup",
+                "name": "Movement I: Amuse & Starters",
+                "layout": "dense-stack",
+                "props": {
+                  "winePairing": "2021 Blanc de Blancs Brut Nature"
+                }
+              },
+              {
+                "id": "haute-course-2",
+                "type": "CourseGroup",
+                "name": "Movement II: Wood-Fired Hearth",
+                "layout": "dense-stack",
+                "props": {
+                  "winePairing": "2019 Sula Dindori Reserve Viognier"
+                }
+              },
+              {
+                "id": "haute-course-3",
+                "type": "CourseGroup",
+                "name": "Movement III: Royal Curries",
+                "layout": "dense-stack",
+                "props": {
+                  "winePairing": "2018 Domaine Barolo Riserva"
+                }
+              },
+              {
+                "id": "haute-course-4",
+                "type": "CourseGroup",
+                "name": "Movement IV: Desserts & Elixirs",
+                "layout": "dense-stack",
+                "props": {
+                  "winePairing": "Tawny Port 20-Year Aged"
+                }
+              }
+            ]
+          },
+          {
+            "id": "haute-cellar",
+            "type": "SommelierPairingDrawer",
+            "name": "Sommelier Cellar Folio",
+            "layout": "flex-col",
+            "props": {
+              "defaultExpanded": false
+            }
+          }
+        ]
+      },
+      "defaultTokens": {
+        "primaryColor": "#C5A059",
+        "secondaryColor": "#C86B3C",
+        "backgroundColor": "#080A0D",
+        "surfaceColor": "#12161E",
+        "textColor": "#F5F0E6",
+        "mutedColor": "#8C857B",
+        "fontFamilyHeading": "\"Cormorant Garamond\", Georgia, serif",
+        "fontFamilyBody": "\"Inter\", sans-serif",
+        "borderRadius": "8px",
+        "cardStyle": "asymmetric-editorial",
+        "heroHeight": "100vh"
+      },
+      "defaultSections": [
+        {
+          "id": "sec_hero_noir",
+          "type": "hero",
+          "title": "Culinary Narrative & Charcoal Embers",
+          "subtitle": "50/50 Asymmetric editorial tasting progression with sommelier cellar folio.",
+          "imageUrl": "https://images.unsplash.com/photo-1544025162-d76694265947?w=1200&auto=format&fit=crop&q=80",
+          "ctaText": "Experience Tasting Movements",
+          "ctaLink": "#menu",
+          "visible": true,
+          "order": 1
+        },
+        {
+          "id": "sec_featured_noir",
+          "type": "featured_dishes",
+          "title": "Chef Curated Tasting Movements",
+          "subtitle": "Chronological progression across smoke, brass, and generational spice formulation.",
+          "visible": true,
+          "order": 2
+        },
+        {
+          "id": "sec_story_noir",
+          "type": "story",
+          "title": "The Sal Wood Coals Philosophy",
+          "subtitle": "24-hour slow simmer undisturbed over sal wood coals.",
+          "content": "Founded on ancestral tandoor techniques, OrbitoX Bistro bridges centuries-old royal culinary recipes with contemporary operational mastery.",
+          "imageUrl": "https://images.unsplash.com/photo-1555396273-367ea4eb4db5?w=1000&auto=format&fit=crop&q=80",
+          "visible": true,
+          "order": 3
+        },
+        {
+          "id": "sec_hours_noir",
+          "type": "hours_contact",
+          "title": "Cellar & Evening Seating",
+          "subtitle": "Dinner service 19:00 - 23:30. Sommelier pairings prepared table-side.",
+          "visible": true,
+          "order": 4
+        }
+      ]
+    },
+    {
+      "id": "tmpl_nordic_minimal",
+      "slug": "nordic-minimal",
+      "name": "Fjord & Form Botanical",
+      "category": "Modern Minimal",
+      "description": "Scandinavian architectural botanical specimen ledger. High negative space, zero traditional card boxes, precision hairline lot rows with inline unrolling spec sheets.",
+      "tagline": "Scandinavian Architectural Botanical Ledger & Farm-to-Table Spec Sheet",
+      "version": "4.1.0",
+      "author": "Copenhagen Botanical Atelier",
+      "tierRequired": "starter",
+      "priceLabel": "Free",
+      "accentColor": "#2D5A43",
+      "fontHeading": "\"Inter\", -apple-system, sans-serif",
+      "fontBody": "\"Inter\", -apple-system, sans-serif",
+      "previewThumbnail": "https://images.unsplash.com/photo-1517248135467-4c7edcad34c4?w=600&auto=format&fit=crop&q=80",
+      "previewHero": "https://images.unsplash.com/photo-1517248135467-4c7edcad34c4?w=1600&auto=format&fit=crop&q=85",
+      "supportedComponents": [
+        "botanical_ledger",
+        "hairline_lot_rows",
+        "inline_unrolling_specs",
+        "minimal_receipt_dock"
+      ],
+      "composition": {
+        "pageArchitecture": "horizontal-ledger",
+        "heroArchitecture": "minimal-harvest-header",
+        "menuLayoutPattern": "two-column-harvest-sheet",
+        "cardComposition": "mono-clean-spec",
+        "navigationPattern": "monochrome-top-rail",
+        "cartPresentation": "minimal-bottom-bar",
+        "responsiveRules": {
+          "desktopColumns": 2,
+          "tabletColumns": 2,
+          "mobileColumns": 1,
+          "layoutBehavior": "two-column-tabular-spec-sheet"
+        },
+        "componentTree": [
+          {
+            "id": "nord-header",
+            "type": "HarvestSeasonalHeader",
+            "name": "Botanical Origin Header",
+            "layout": "flex-row",
+            "props": {
+              "showForagedDate": true,
+              "daylightIndicator": true
+            }
+          },
+          {
+            "id": "nord-sheet",
+            "type": "TabularSpecSheet",
+            "name": "Hairline Botanical Specimen Rows",
+            "layout": "grid-2",
+            "props": {
+              "showEstateOrigin": true,
+              "showDietaryBadges": true
+            },
+            "children": [
+              {
+                "id": "nord-col-botanicals",
+                "type": "BotanicalCategory",
+                "name": "01 / Foraged Harvest Botanicals",
+                "layout": "dense-stack"
+              },
+              {
+                "id": "nord-col-bakery",
+                "type": "BakeryCategory",
+                "name": "02 / Sourdough & Hearth Provisions",
+                "layout": "dense-stack"
+              }
+            ]
+          },
+          {
+            "id": "nord-footer",
+            "type": "MinimalServiceBar",
+            "name": "Monochrome Receipt Status Dock",
+            "layout": "flex-row",
+            "props": {
+              "quietTypography": true
+            }
+          }
+        ]
+      },
+      "defaultTokens": {
+        "primaryColor": "#121314",
+        "secondaryColor": "#2D5A43",
+        "backgroundColor": "#F7F5F0",
+        "surfaceColor": "#FFFFFF",
+        "textColor": "#121314",
+        "mutedColor": "#64748B",
+        "fontFamilyHeading": "\"Inter\", sans-serif",
+        "fontFamilyBody": "\"Inter\", sans-serif",
+        "borderRadius": "4px",
+        "cardStyle": "horizontal-ledger",
+        "heroHeight": "320px"
+      },
+      "defaultSections": [
+        {
+          "id": "sec_hero_minimal",
+          "type": "hero",
+          "title": "Pure Form. Honest Botanicals.",
+          "subtitle": "Scandinavian architectural simplicity with hairline provenance specimen ledger.",
+          "imageUrl": "https://images.unsplash.com/photo-1517248135467-4c7edcad34c4?w=1200&auto=format&fit=crop&q=80",
+          "ctaText": "View Today’s Harvest",
+          "ctaLink": "#menu",
+          "visible": true,
+          "order": 1
+        },
+        {
+          "id": "sec_featured_minimal",
+          "type": "featured_dishes",
+          "title": "Current Botanical Harvest Ledger",
+          "subtitle": "Foraged daily by estate cultivators and hearth specialists.",
+          "visible": true,
+          "order": 2
+        },
+        {
+          "id": "sec_hours_minimal",
+          "type": "hours_contact",
+          "title": "Harvest Times & Origin Coordinates",
+          "subtitle": "Origin 30°54'N 75°51'E · Lunch 12:00 - 15:00 · Dinner 18:30 - 22:30",
+          "visible": true,
+          "order": 3
+        }
+      ]
+    },
+    {
+      "id": "tmpl_artisan_coffee",
+      "slug": "artisan-coffee",
+      "name": "Roastery 1984 Vitrine",
+      "category": "Cafe & Artisan Coffee",
+      "description": "Specialty roastery vitrine counter with aroma tasting dials, generous product photography, and tactile [- 1 +] quantity steppers mounted directly on card faces.",
+      "tagline": "Tactile Counter Ordering with Direct Card-Mounted [- 1 +] Steppers",
+      "version": "4.1.0",
+      "author": "Roastworks Collective",
+      "tierRequired": "growth",
+      "priceLabel": "Included in Growth",
+      "accentColor": "#C86B3C",
+      "fontHeading": "\"Space Grotesk\", sans-serif",
+      "fontBody": "\"Outfit\", sans-serif",
+      "previewThumbnail": "https://images.unsplash.com/photo-1501339847302-ac426a4a7cbb?w=600&auto=format&fit=crop&q=80",
+      "previewHero": "https://images.unsplash.com/photo-1501339847302-ac426a4a7cbb?w=1600&auto=format&fit=crop&q=85",
+      "supportedComponents": [
+        "roastery_vitrine_carousel",
+        "aroma_spectrum_dials",
+        "card_face_stepper",
+        "tactile_capsule_pill"
+      ],
+      "composition": {
+        "pageArchitecture": "tactile-vitrine-grid",
+        "heroArchitecture": "warm-carousel-showcase",
+        "menuLayoutPattern": "tactile-card-grid",
+        "cardComposition": "tactile-stepper",
+        "navigationPattern": "category-pill-bar",
+        "cartPresentation": "tactile-floating-capsule",
+        "responsiveRules": {
+          "desktopColumns": 3,
+          "tabletColumns": 2,
+          "mobileColumns": 1,
+          "layoutBehavior": "tactile-cards-with-direct-steppers"
+        },
+        "componentTree": [
+          {
+            "id": "cafe-hero",
+            "type": "RoasterVitrineHero",
+            "name": "Micro-Lot Roastery Showcase",
+            "layout": "flex-row",
+            "props": {
+              "showRoastProfile": true,
+              "origin": "Ratnagiri Estate Micro-Lot"
+            }
+          },
+          {
+            "id": "cafe-notes",
+            "type": "AromaSpectrumBar",
+            "name": "Cupping Notes Spectrum",
+            "layout": "flex-row",
+            "props": {
+              "notes": [
+                "Jasmine Florals",
+                "Wild Bergamot",
+                "Raw Honey",
+                "Toasted Hazelnut"
+              ]
+            }
+          },
+          {
+            "id": "cafe-grid",
+            "type": "TactileProductGrid",
+            "name": "Tactile Vitrine Grid with Mounted [- 1 +] Steppers",
+            "layout": "grid-3",
+            "props": {
+              "directStepper": true,
+              "customizableMilk": true,
+              "customizableShots": true
+            },
+            "children": [
+              {
+                "id": "cafe-card-espresso",
+                "type": "TactileFoodCard",
+                "name": "Espresso Bar Card",
+                "layout": "flex-col"
+              },
+              {
+                "id": "cafe-card-brew",
+                "type": "TactileFoodCard",
+                "name": "Slow Manual Brews",
+                "layout": "flex-col"
+              },
+              {
+                "id": "cafe-card-bakery",
+                "type": "TactileFoodCard",
+                "name": "Laminated Pastries",
+                "layout": "flex-col"
+              }
+            ]
+          }
+        ]
+      },
+      "defaultTokens": {
+        "primaryColor": "#C86B3C",
+        "secondaryColor": "#8C532B",
+        "backgroundColor": "#FDFBF7",
+        "surfaceColor": "#FFFFFF",
+        "textColor": "#241D17",
+        "mutedColor": "#786C60",
+        "fontFamilyHeading": "\"Space Grotesk\", sans-serif",
+        "fontFamilyBody": "\"Outfit\", sans-serif",
+        "borderRadius": "16px",
+        "cardStyle": "tactile-vitrine",
+        "heroHeight": "420px"
+      },
+      "defaultSections": [
+        {
+          "id": "sec_hero_cafe",
+          "type": "hero",
+          "title": "Micro-Lot Roastery & Slow Vitrine Counter",
+          "subtitle": "Roasted in-house daily. Paired with laminated sourdough pastries and tactile card steppers.",
+          "imageUrl": "https://images.unsplash.com/photo-1501339847302-ac426a4a7cbb?w=1200&auto=format&fit=crop&q=80",
+          "ctaText": "Browse Morning Brews",
+          "ctaLink": "#menu",
+          "visible": true,
+          "order": 1
+        },
+        {
+          "id": "sec_featured_cafe",
+          "type": "featured_dishes",
+          "title": "Fresh From the Hearth & Barista Bar",
+          "subtitle": "Small-batch creations made before dawn with mounted [- 1 +] quantity controls.",
+          "visible": true,
+          "order": 2
+        },
+        {
+          "id": "sec_hours_cafe",
+          "type": "hours_contact",
+          "title": "Roastery Extraction Hours",
+          "subtitle": "Daily 07:00 - 20:00 · Wifi & specialty coffee flights available",
+          "visible": true,
+          "order": 3
+        }
+      ]
+    },
+    {
+      "id": "tmpl_neon_street",
+      "slug": "neon-street",
+      "name": "Neon Yokocho Night Alley",
+      "category": "Neon Street Food",
+      "description": "High-energy Tokyo night market alley. Parallel dual-stall market lanes (Skewers vs Wok & Bao), live night market heat BPM ticker, flame meters, and instant + BUMP triggers.",
+      "tagline": "High-BPM Parallel Dual-Stall Market Lanes & Rapid-Tap BUMP Triggers",
+      "version": "4.1.0",
+      "author": "Shibuya Underground Labs",
+      "tierRequired": "pro",
+      "priceLabel": "Included in Pro",
+      "accentColor": "#00F2FE",
+      "fontHeading": "\"Syne\", \"Cabinet Grotesk\", sans-serif",
+      "fontBody": "\"Space Grotesk\", sans-serif",
+      "previewThumbnail": "https://images.unsplash.com/photo-1555396273-367ea4eb4db5?w=600&auto=format&fit=crop&q=80",
+      "previewHero": "https://images.unsplash.com/photo-1555396273-367ea4eb4db5?w=1600&auto=format&fit=crop&q=85",
+      "supportedComponents": [
+        "bpm_heat_ticker",
+        "dual_stall_matrix",
+        "flame_spice_meters",
+        "rapid_bump_triggers",
+        "street_order_bag"
+      ],
+      "composition": {
+        "pageArchitecture": "dual-lane-market",
+        "heroArchitecture": "neon-banner-dual",
+        "menuLayoutPattern": "dual-stall-bump-lanes",
+        "cardComposition": "cyber-neon-bump",
+        "navigationPattern": "neon-sticky-matrix",
+        "cartPresentation": "neon-slide-sheet",
+        "responsiveRules": {
+          "desktopColumns": 2,
+          "tabletColumns": 2,
+          "mobileColumns": 1,
+          "layoutBehavior": "dense-dual-stall-bump-matrix"
+        },
+        "componentTree": [
+          {
+            "id": "neon-banner",
+            "type": "CyberStreetBanner",
+            "name": "Night Market Marquee & 128 BPM Ticker",
+            "layout": "flex-row",
+            "props": {
+              "strobeAccents": true,
+              "bpmTicker": 128
+            }
+          },
+          {
+            "id": "neon-matrix",
+            "type": "DualStallMatrix",
+            "name": "Dual Stall Matrix (Skewers vs Smashed Bao)",
+            "layout": "grid-2",
+            "props": {
+              "rapidAddBump": true,
+              "spiceLevelIndicator": true
+            },
+            "children": [
+              {
+                "id": "stall-yakitori",
+                "type": "StreetStallLane",
+                "name": "Stall 01: Bincho-tan Charcoal Skewers",
+                "layout": "dense-stack"
+              },
+              {
+                "id": "stall-bao",
+                "type": "StreetStallLane",
+                "name": "Stall 02: Wok Fire & Smashed Bao",
+                "layout": "dense-stack"
+              }
+            ]
+          },
+          {
+            "id": "neon-dj",
+            "type": "LateNightSessionBanner",
+            "name": "Live DJ Resident Schedule & Late Pour Bar",
+            "layout": "flex-col",
+            "props": {
+              "barOpenUntil": "02:00 AM"
+            }
+          }
+        ]
+      },
+      "defaultTokens": {
+        "primaryColor": "#00F2FE",
+        "secondaryColor": "#FE0979",
+        "backgroundColor": "#07090E",
+        "surfaceColor": "#0F131D",
+        "textColor": "#FFFFFF",
+        "mutedColor": "#7E8B9B",
+        "fontFamilyHeading": "\"Syne\", sans-serif",
+        "fontFamilyBody": "\"Space Grotesk\", sans-serif",
+        "borderRadius": "10px",
+        "cardStyle": "high-contrast-ticket",
+        "heroHeight": "360px"
+      },
+      "defaultSections": [
+        {
+          "id": "sec_hero_neon",
+          "type": "hero",
+          "title": "Tokyo Night Market // 東京夜市",
+          "subtitle": "Crispy charcoal yakitori, smashed bao burgers, and late-night izakaya bites served at 128 BPM.",
+          "imageUrl": "https://images.unsplash.com/photo-1555396273-367ea4eb4db5?w=1200&auto=format&fit=crop&q=80",
+          "ctaText": "Order Street Bites",
+          "ctaLink": "#menu",
+          "visible": true,
+          "order": 1
+        },
+        {
+          "id": "sec_featured_neon",
+          "type": "featured_dishes",
+          "title": "Dual Stall Rush Menu (Skewers & Bao)",
+          "subtitle": "Direct from the open fire pit to your table with instant + BUMP triggers.",
+          "visible": true,
+          "order": 2
+        },
+        {
+          "id": "sec_hours_neon",
+          "type": "hours_contact",
+          "title": "Late Night Nightclub Shift",
+          "subtitle": "Open till 02:00 AM Thursday to Sunday with resident DJ set",
+          "visible": true,
+          "order": 3
+        }
+      ]
+    },
+    {
+      "id": "tmpl_trattoria_bella",
+      "slug": "trattoria-bella",
+      "name": "Osteria Rustica Convivial",
+      "category": "Trattoria & Italian",
+      "description": "Convivial Tuscan family feasting. Centered editorial column, classic Italian course progression, Tavola Grande family sharing combo builder (-15% bundle savings), and DOP seals.",
+      "tagline": "Centered Tuscan Hearth Narrative & Tavola Grande Family Feasting Combos",
+      "version": "4.1.0",
+      "author": "Firenze Heritage Guild",
+      "tierRequired": "growth",
+      "priceLabel": "Included in Growth",
+      "accentColor": "#8C3820",
+      "fontHeading": "\"Playfair Display\", Georgia, serif",
+      "fontBody": "\"Alegreya\", serif",
+      "previewThumbnail": "https://images.unsplash.com/photo-1513104890138-7c749659a591?w=600&auto=format&fit=crop&q=80",
+      "previewHero": "https://images.unsplash.com/photo-1513104890138-7c749659a591?w=1600&auto=format&fit=crop&q=85",
+      "supportedComponents": [
+        "woodfired_hearth_story",
+        "tavola_grande_combo_builder",
+        "framed_dop_cards",
+        "leather_folio_presenter"
+      ],
+      "composition": {
+        "pageArchitecture": "centered-editorial",
+        "heroArchitecture": "woodfired-hearth-story",
+        "menuLayoutPattern": "family-combo-story",
+        "cardComposition": "trattoria-story-card",
+        "navigationPattern": "floating-dock",
+        "cartPresentation": "rustic-table-order-sheet",
+        "responsiveRules": {
+          "desktopColumns": 2,
+          "tabletColumns": 1,
+          "mobileColumns": 1,
+          "layoutBehavior": "story-first-family-sharing-builder"
+        },
+        "componentTree": [
+          {
+            "id": "trattoria-story",
+            "type": "HearthStorytellingSection",
+            "name": "72-Hour Fermented Dough & Volcanic Oven",
+            "layout": "split-asymmetric",
+            "props": {
+              "ovenTempCelsius": 480,
+              "flourType": "Caputo 00"
+            }
+          },
+          {
+            "id": "trattoria-feast",
+            "type": "FamilyFeastBuilder",
+            "name": "Tavola Grande: Family Sharing Feast Combo (-15%)",
+            "layout": "flex-col",
+            "props": {
+              "discountPercent": 15
+            }
+          },
+          {
+            "id": "trattoria-menu",
+            "type": "RusticDishListing",
+            "name": "Pizzeria & Pasta Fresca Showcase",
+            "layout": "grid-2",
+            "children": [
+              {
+                "id": "trattoria-pizza",
+                "type": "PizzaCategoryWithCrustSelector",
+                "name": "Le Pizze al Forno",
+                "layout": "dense-stack"
+              },
+              {
+                "id": "trattoria-pasta",
+                "type": "PastaCategoryWithShapeSelector",
+                "name": "La Pasta Fatta a Mano",
+                "layout": "dense-stack"
+              }
+            ]
+          }
+        ]
+      },
+      "defaultTokens": {
+        "primaryColor": "#8C3820",
+        "secondaryColor": "#3D4A39",
+        "backgroundColor": "#FBF8F2",
+        "surfaceColor": "#FFFFFF",
+        "textColor": "#241D17",
+        "mutedColor": "#7C6F62",
+        "fontFamilyHeading": "\"Playfair Display\", Georgia, serif",
+        "fontFamilyBody": "\"Alegreya\", Georgia, serif",
+        "borderRadius": "12px",
+        "cardStyle": "framed-rustic",
+        "heroHeight": "460px"
+      },
+      "defaultSections": [
+        {
+          "id": "sec_hero_trattoria",
+          "type": "hero",
+          "title": "Forno a Legna & Pasta Fresca dal 1974",
+          "subtitle": "Fermented 72-hour dough baked at 480°C in volcanic stone ovens with San Marzano tomatoes.",
+          "imageUrl": "https://images.unsplash.com/photo-1513104890138-7c749659a591?w=1200&auto=format&fit=crop&q=80",
+          "ctaText": "Explore Pizzas & Pastas",
+          "ctaLink": "#menu",
+          "visible": true,
+          "order": 1
+        },
+        {
+          "id": "sec_featured_trattoria",
+          "type": "featured_dishes",
+          "title": "Tavola Grande & Specialità della Casa",
+          "subtitle": "Imported burrata, guanciale di Amatrice, and family sharing bundles.",
+          "visible": true,
+          "order": 2
+        },
+        {
+          "id": "sec_hours_trattoria",
+          "type": "hours_contact",
+          "title": "Orari del Pranzo e della Cena",
+          "subtitle": "Pranzo 12:30 - 15:30 · Cena 19:00 - 23:30 con servizio al tavolo",
+          "visible": true,
+          "order": 3
+        }
+      ]
+    },
+    {
+      "id": "tmpl_tokyo_izakaya",
+      "slug": "tokyo-izakaya",
+      "name": "Shokunin Ramen & Robata",
+      "category": "Asian & Ramen",
+      "description": "Disciplined Japanese craftsmanship (*Shokunin*). Vertical timber plank navigation rail with kanji crest, 4-step ramen customizer (Broth, Noodle, Tare, Toppings), and 18h dashi timer badges.",
+      "tagline": "Hinoki Timber Plank Rhythm & Step-by-Step Ramen Customizer Flow",
+      "version": "4.1.0",
+      "author": "Ginza Craft Collective",
+      "tierRequired": "pro",
+      "priceLabel": "Included in Pro",
+      "accentColor": "#D3381C",
+      "fontHeading": "\"Noto Serif JP\", serif",
+      "fontBody": "\"DM Sans\", sans-serif",
+      "previewThumbnail": "https://images.unsplash.com/photo-1569718212165-3a8278d5f624?w=600&auto=format&fit=crop&q=80",
+      "previewHero": "https://images.unsplash.com/photo-1569718212165-3a8278d5f624?w=1600&auto=format&fit=crop&q=85",
+      "supportedComponents": [
+        "vertical_timber_rail",
+        "kanji_crest_banner",
+        "ramen_step_customizer",
+        "cedar_slat_cards",
+        "bento_tray_check"
+      ],
+      "composition": {
+        "pageArchitecture": "timber-plank-board",
+        "heroArchitecture": "vertical-scroll-manifesto",
+        "menuLayoutPattern": "vertical-broth-checklist",
+        "cardComposition": "shokunin-woodcut",
+        "navigationPattern": "vertical-zen-tabs",
+        "cartPresentation": "zen-order-tray",
+        "responsiveRules": {
+          "desktopColumns": 3,
+          "tabletColumns": 2,
+          "mobileColumns": 1,
+          "layoutBehavior": "vertical-kanji-rhythm-with-broth-builder"
+        },
+        "componentTree": [
+          {
+            "id": "shokunin-manifesto",
+            "type": "ShokuninRamenManifesto",
+            "name": "18-Hour Tonkotsu & Kansui Noodle Philosophy",
+            "layout": "flex-col",
+            "props": {
+              "brothSimmerHours": 18,
+              "noodleHydrationPercent": 32
+            }
+          },
+          {
+            "id": "ramen-checklist-sheet",
+            "type": "CustomBowlChecklist",
+            "name": "Craft Your Ramen Bowl (Broth, Noodle, Tare, Toppings)",
+            "layout": "flex-col",
+            "props": {
+              "brothOptions": [
+                "Kotteri (Rich/Full Oil)",
+                "Assari (Light Dashi)"
+              ],
+              "noodleOptions": [
+                "Katame (Firm)",
+                "Futsuu (Standard)",
+                "Yawarakame (Soft)"
+              ]
+            }
+          },
+          {
+            "id": "ramen-board",
+            "type": "WoodenBoardMenuGrid",
+            "name": "Cedar Menu Board (Signature Bowls & Robata Grill)",
+            "layout": "grid-3",
+            "children": [
+              {
+                "id": "board-ramen",
+                "type": "RamenItemTile",
+                "name": "Tonkotsu, Miso & Shoyu Bowls",
+                "layout": "dense-stack"
+              },
+              {
+                "id": "board-robata",
+                "type": "RobataTile",
+                "name": "Bincho-tan Charcoal Skewers",
+                "layout": "dense-stack"
+              },
+              {
+                "id": "board-sake",
+                "type": "SakeFlightTile",
+                "name": "Junmai Daiginjo Flights",
+                "layout": "dense-stack"
+              }
+            ]
+          }
+        ]
+      },
+      "defaultTokens": {
+        "primaryColor": "#D3381C",
+        "secondaryColor": "#10B981",
+        "backgroundColor": "#1E1915",
+        "surfaceColor": "#26201B",
+        "textColor": "#F7F4EB",
+        "mutedColor": "#9E9285",
+        "fontFamilyHeading": "\"Noto Serif JP\", serif",
+        "fontFamilyBody": "\"DM Sans\", sans-serif",
+        "borderRadius": "6px",
+        "cardStyle": "cedar-slat",
+        "heroHeight": "400px"
+      },
+      "defaultSections": [
+        {
+          "id": "sec_hero_ramen",
+          "type": "hero",
+          "title": "職人魂 · 極上出汁 (18-Hour Simmered Dashi)",
+          "subtitle": "Simmered overnight with umami dashi, springy alkaline noodles, and flame-torched chashu.",
+          "imageUrl": "https://images.unsplash.com/photo-1569718212165-3a8278d5f624?w=1200&auto=format&fit=crop&q=80",
+          "ctaText": "Customize Your Bowl",
+          "ctaLink": "#menu",
+          "visible": true,
+          "order": 1
+        },
+        {
+          "id": "sec_featured_ramen",
+          "type": "featured_dishes",
+          "title": "Signature Bowls & Bincho-tan Robata Grill",
+          "subtitle": "Crafted with precision by seasoned ramen shokunin with step-by-step customizer.",
+          "visible": true,
+          "order": 2
+        },
+        {
+          "id": "sec_hours_ramen",
+          "type": "hours_contact",
+          "title": "Izakaya Hours & Table Bell Service",
+          "subtitle": "Open daily 11:30 - 23:00 without afternoon closure",
+          "visible": true,
+          "order": 3
+        }
+      ]
+    }
+  ],
+  "tenantBrand": {
+    "restaurantName": "OrbitoX Bistro & Bar",
+    "tagline": "Modern Hospitality & Charcoal Embers",
+    "logoUrl": "https://assets.orbitox.io/logos/orbitox-bistro-gold.svg",
+    "faviconUrl": "/favicon.ico",
+    "appIconUrl": "https://assets.orbitox.io/icons/app-icon-192.png",
+    "primaryColor": "#121314",
+    "secondaryColor": "#2D5A43",
+    "accentColor": "#2D5A43",
+    "surfaceColor": "#FFFFFF",
+    "textColor": "#121314",
+    "fontFamilyHeading": "\"Inter\", -apple-system, sans-serif",
+    "fontFamilyBody": "\"Inter\", -apple-system, sans-serif",
+    "activeTemplateId": "tmpl_nordic_minimal",
+    "subdomain": "starlight.orbitox.io",
+    "customDomain": "order.starlightbrasserie.com",
+    "domainStatus": "VERIFIED",
+    "sslStatus": "ACTIVE",
+    "customCss": "/* Tenant custom overrides */\n.brand-badge { letter-spacing: 0.1em; }",
+    "socialLinks": {
+      "instagram": "https://instagram.com/orbitoxbistro",
+      "twitter": "https://twitter.com/orbitoxbistro",
+      "facebook": "https://facebook.com/orbitoxbistro",
+      "mapsUrl": "https://maps.google.com/?q=OrbitoX+Bistro"
+    },
+    "seo": {
+      "title": "OrbitoX Bistro & Bar — Luxury Charcoal Dining & Table Ordering",
+      "description": "Experience artisan Indian tandoor, sommelier pairings, and contactless table ordering powered by RestaurantOS 3.0.",
+      "ogImage": "https://images.unsplash.com/photo-1544025162-d76694265947?w=1200&auto=format&fit=crop&q=80"
+    },
+    "locale": "en-IN",
+    "currency": "INR",
+    "currencySymbol": "₹",
+    "timezone": "Asia/Kolkata",
+    "branchOverrides": {
+      "branch_chd": {
+        "restaurantName": "OrbitoX Bistro · Chandigarh Sector 17",
+        "primaryColor": "#4A8BB2",
+        "tagline": "Patio & Garden Gastronomy",
+        "subdomain": "chd.orbitox.live"
+      },
+      "branch_del": {
+        "restaurantName": "OrbitoX Bistro · Connaught Place Delhi",
+        "primaryColor": "#D99A45",
+        "tagline": "Colonial Verandah & Craft Cocktails",
+        "subdomain": "delhi.orbitox.live"
+      }
+    },
+    "updatedAt": "2026-10-11T13:03:18.082Z"
+  },
+  "templateDraft": {
+    "templateId": "tmpl_nordic_minimal",
+    "version": 4,
+    "draftSections": [
+      {
+        "id": "sec_hero_minimal",
+        "type": "hero",
+        "title": "Pure Form. Honest Botanicals.",
+        "subtitle": "Scandinavian architectural simplicity with hairline provenance specimen ledger.",
+        "imageUrl": "https://images.unsplash.com/photo-1517248135467-4c7edcad34c4?w=1200&auto=format&fit=crop&q=80",
+        "ctaText": "View Today’s Harvest",
+        "ctaLink": "#menu",
+        "visible": true,
+        "order": 1
+      },
+      {
+        "id": "sec_featured_minimal",
+        "type": "featured_dishes",
+        "title": "Current Botanical Harvest Ledger",
+        "subtitle": "Foraged daily by estate cultivators and hearth specialists.",
+        "visible": true,
+        "order": 2
+      },
+      {
+        "id": "sec_hours_minimal",
+        "type": "hours_contact",
+        "title": "Harvest Times & Origin Coordinates",
+        "subtitle": "Origin 30°54'N 75°51'E · Lunch 12:00 - 15:00 · Dinner 18:30 - 22:30",
+        "visible": true,
+        "order": 3
+      }
+    ],
+    "draftTokens": {
+      "primaryColor": "#121314",
+      "secondaryColor": "#2D5A43",
+      "backgroundColor": "#F7F5F0",
+      "surfaceColor": "#FFFFFF",
+      "textColor": "#121314",
+      "mutedColor": "#64748B",
+      "fontFamilyHeading": "\"Inter\", sans-serif",
+      "fontFamilyBody": "\"Inter\", sans-serif",
+      "borderRadius": "4px",
+      "cardStyle": "horizontal-ledger",
+      "heroHeight": "320px"
+    },
+    "publishedSections": [
+      {
+        "id": "sec_hero_neon",
+        "type": "hero",
+        "title": "Neon Nights & Wagyu Robata",
+        "subtitle": "Charcoal skewers and Japanese highballs",
+        "visible": true,
+        "settings": {
+          "textAlign": "center",
+          "overlayOpacity": 0.5
+        }
+      },
+      {
+        "id": "sec_menu_neon",
+        "type": "menu_preview",
+        "title": "Robata Specials",
+        "subtitle": "Direct from the binchotan embers",
+        "visible": true,
+        "settings": {}
+      }
+    ],
+    "publishedTokens": {
+      "primaryColor": "#FF2A85",
+      "fontHeading": "Space Grotesk"
+    },
+    "lastSavedAt": "2026-10-11T13:03:18.082Z",
+    "lastPublishedAt": "2026-10-11T10:50:11.951Z",
+    "revisions": [
+      {
+        "revisionId": "rev_v4_1791715811951",
+        "version": 4,
+        "publishedAt": "2026-10-11T10:50:11.951Z",
+        "publishedBy": "Launch Tokyo Night Street Food Theme",
+        "sections": [
+          {
+            "id": "sec_hero_neon",
+            "type": "hero",
+            "title": "Neon Nights & Wagyu Robata",
+            "subtitle": "Charcoal skewers and Japanese highballs",
+            "visible": true,
+            "settings": {
+              "textAlign": "center",
+              "overlayOpacity": 0.5
+            }
+          },
+          {
+            "id": "sec_menu_neon",
+            "type": "menu_preview",
+            "title": "Robata Specials",
+            "subtitle": "Direct from the binchotan embers",
+            "visible": true,
+            "settings": {}
+          }
+        ],
+        "tokens": {
+          "primaryColor": "#FF2A85",
+          "fontHeading": "Space Grotesk"
+        },
+        "summary": "Published via Brand Studio"
+      },
+      {
+        "revisionId": "rev_v3_initial",
+        "version": 3,
+        "publishedAt": "2026-10-11T10:47:40.736Z",
+        "publishedBy": "Sukhwinder Sandhu (Manager)",
+        "sections": [
+          {
+            "id": "sec_hero_noir",
+            "type": "hero",
+            "title": "Culinary Narrative & Charcoal Embers",
+            "subtitle": "50/50 Asymmetric editorial tasting progression with sommelier cellar folio.",
+            "imageUrl": "https://images.unsplash.com/photo-1544025162-d76694265947?w=1200&auto=format&fit=crop&q=80",
+            "ctaText": "Experience Tasting Movements",
+            "ctaLink": "#menu",
+            "visible": true,
+            "order": 1
+          },
+          {
+            "id": "sec_featured_noir",
+            "type": "featured_dishes",
+            "title": "Chef Curated Tasting Movements",
+            "subtitle": "Chronological progression across smoke, brass, and generational spice formulation.",
+            "visible": true,
+            "order": 2
+          },
+          {
+            "id": "sec_story_noir",
+            "type": "story",
+            "title": "The Sal Wood Coals Philosophy",
+            "subtitle": "24-hour slow simmer undisturbed over sal wood coals.",
+            "content": "Founded on ancestral tandoor techniques, OrbitoX Bistro bridges centuries-old royal culinary recipes with contemporary operational mastery.",
+            "imageUrl": "https://images.unsplash.com/photo-1555396273-367ea4eb4db5?w=1000&auto=format&fit=crop&q=80",
+            "visible": true,
+            "order": 3
+          },
+          {
+            "id": "sec_hours_noir",
+            "type": "hours_contact",
+            "title": "Cellar & Evening Seating",
+            "subtitle": "Dinner service 19:00 - 23:30. Sommelier pairings prepared table-side.",
+            "visible": true,
+            "order": 4
+          }
+        ],
+        "tokens": {
+          "primaryColor": "#C5A059",
+          "secondaryColor": "#C86B3C",
+          "backgroundColor": "#080A0D",
+          "surfaceColor": "#12161E",
+          "textColor": "#F5F0E6",
+          "mutedColor": "#8C857B",
+          "fontFamilyHeading": "\"Cormorant Garamond\", Georgia, serif",
+          "fontFamilyBody": "\"Inter\", sans-serif",
+          "borderRadius": "8px",
+          "cardStyle": "asymmetric-editorial",
+          "heroHeight": "100vh"
+        },
+        "summary": "Production publication of Haute Gastronomy Noir theme for Autumn 2026."
+      }
+    ]
+  },
+  "supportTickets": [
+    {
+      "id": "tkt_1791715811990",
+      "ticketNumber": "ORB-8503",
+      "branchId": "branch_ldh",
+      "branchName": "Ludhiana Main",
+      "staffId": "staff_mgr_ldh",
+      "staffName": "Chef Harpreet",
+      "category": "HARDWARE_KDS",
+      "severity": "HIGH",
+      "subject": "KDS Touchscreen Disconnect in Tandoor Section",
+      "description": "Tandoor touch display froze during peak dinner service. Reconnecting wifi.",
+      "status": "INVESTIGATING",
+      "assignedTo": "OrbitoX Customer Support",
+      "createdAt": "2026-10-11T10:50:11.990Z",
+      "updatedAt": "2026-10-11T10:50:12.005Z",
+      "messages": [
+        {
+          "id": "msg_1791715811990_1",
+          "sender": "RESTAURANT_STAFF",
+          "authorName": "Chef Harpreet",
+          "text": "Tandoor touch display froze during peak dinner service. Reconnecting wifi.",
+          "timestamp": "2026-10-11T10:50:11.990Z"
+        },
+        {
+          "id": "msg_1791715811997",
+          "sender": "RESTAURANT_STAFF",
+          "authorName": "Chef Harpreet",
+          "text": "Rebooted station hardware, reconnecting via Ethernet bridge now.",
+          "timestamp": "2026-10-11T10:50:11.997Z"
+        }
+      ]
+    },
+    {
+      "id": "tkt_101",
+      "ticketNumber": "ORB-8492",
+      "branchId": "branch_ldh",
+      "branchName": "Ludhiana Main",
+      "staffId": "stf_mgr_ldh_01",
+      "staffName": "Sukhwinder Sandhu",
+      "category": "HARDWARE_KDS",
+      "severity": "MEDIUM",
+      "subject": "Kitchen bump-bar Bluetooth disconnect on Curry Line terminal",
+      "description": "The physical bump bar disconnected during peak rush yesterday. Requesting hardware troubleshooting steps or pairing re-initialization guide.",
+      "status": "INVESTIGATING",
+      "assignedTo": "OrbitoX Technical Support (Level 2)",
+      "createdAt": "2026-10-10T20:47:40.736Z",
+      "updatedAt": "2026-10-11T08:47:40.736Z",
+      "messages": [
+        {
+          "id": "msg_101_1",
+          "sender": "RESTAURANT_STAFF",
+          "authorName": "Sukhwinder Sandhu",
+          "text": "The Curry Line bump bar showed flashing amber LED around 20:30 PM. We had to use on-screen touch bump instead.",
+          "timestamp": "2026-10-10T20:47:40.736Z"
+        },
+        {
+          "id": "msg_101_2",
+          "sender": "ORBITOX_SUPPORT",
+          "authorName": "Aarav at OrbitoX Support",
+          "text": "Hello Sukhwinder! We inspected the station logs. Firmware v2.1 had a power-saving timeout trigger. We pushed a diagnostic patch to your runtime.",
+          "timestamp": "2026-10-11T08:47:40.736Z"
+        }
+      ]
+    },
+    {
+      "id": "tkt_102",
+      "ticketNumber": "ORB-8510",
+      "branchId": "branch_chd",
+      "branchName": "Chandigarh Sector 17",
+      "staffId": "stf_mgr_chd_01",
+      "staffName": "Karan Kapoor",
+      "category": "DOMAIN_SETUP",
+      "severity": "LOW",
+      "subject": "Requesting assistance configuring custom CNAME for dine.sector17bistro.com",
+      "description": "We pointed CNAME to ingress.orbitox.io but SSL provisioning shows PENDING_DNS in White-Label settings.",
+      "status": "OPEN",
+      "assignedTo": "Cloud Infrastructure Team",
+      "createdAt": "2026-10-11T05:47:40.736Z",
+      "updatedAt": "2026-10-11T05:47:40.736Z",
+      "messages": [
+        {
+          "id": "msg_102_1",
+          "sender": "RESTAURANT_STAFF",
+          "authorName": "Karan Kapoor",
+          "text": "DNS TTL was set to 3600s with GoDaddy. Waiting for global propagation.",
+          "timestamp": "2026-10-11T05:47:40.736Z"
+        }
+      ]
+    }
+  ],
+  "lastEventSequence": 81
+}

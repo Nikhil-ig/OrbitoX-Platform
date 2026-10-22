@@ -12,9 +12,13 @@
 
 ---
 
-## The 5-Tier Universal Hierarchy
+## The Dual-Hierarchy Foundation: Universal Governance vs. Vertical Operational Domains
 
-Every system instantiated from this template relies on the following 5-tier context stack (`SuperAdmin` → `Organisation` → `Tenant` → `Company` → `Consumer`):
+Every system instantiated from this template relies on the **OrbitoX Dual-Hierarchy Model**. Rather than forcing vertical operational realities into rigid abstract tiers, OrbitoX cleanly separates **Universal Platform Governance** from **Vertical Operational Domains** and **Customer Identity Progression**:
+
+1. **OrbitoX Universal Governance Stack** (`SuperAdmin` → `Organisation` → `Tenant` → `Company`): Provides SOC2-ready data isolation, billing, license enforcement, global RBAC, and subscription entitlements.
+2. **Vertical Operational Domain Hierarchy** (`Company` → `Location/Outlet` → `Service Area` → `Table/Device` → `Session` → `Tasks`): Allows specific verticals (such as RestaurantOS, HospitalOS, RetailOS) to model their physical and operational realities natively without breaking platform contracts.
+3. **Customer Identity Hierarchy** (`Consumer` → `Guest Session` → `Customer Profile` → `Loyalty Account` → `Lifetime History`): Enables frictionless anonymous entry (e.g., QR scanning) that progressively ascends into first-party CRM relationships.
 
 ```mermaid
 flowchart TB
@@ -22,35 +26,43 @@ flowchart TB
     classDef org fill:#0369a1,color:#fff,stroke:#0284c7,rx:10
     classDef tenant fill:#0f766e,color:#fff,stroke:#0d9488,rx:10
     classDef company fill:#b45309,color:#fff,stroke:#d97706,rx:10
+    classDef domain fill:#047857,color:#fff,stroke:#065f46,rx:8
     classDef consumer fill:#be185d,color:#fff,stroke:#db2777,rx:10
 
-    SA["🛡️ SUPER ADMIN (Tier 0)\nPlatform Owner · Global Monetization · Ecosystem Registry"]:::superAdmin
-
-    subgraph ORG_BOX ["🏢 ORGANISATIONS (Tier 1)"]
-        ORG1["Organisation A\nHolding Group / Master Franchise"]:::org
-        ORG2["Organisation B\nGlobal Reseller Network"]:::org
+    subgraph GOV_STACK ["🏛️ UNIVERSAL GOVERNANCE STACK"]
+        SA["🛡️ SUPER ADMIN (Tier 0)\nPlatform Owner · Global Monetization · Ecosystem Registry"]:::superAdmin
+        ORG["🏢 ORGANISATIONS (Tier 1)\nHolding Group · Master Franchise · Reseller Network"]:::org
+        TEN["🏪 TENANTS (Tier 2)\nRegional Franchise · Independent Operating Division"]:::tenant
+        COMP["🏭 COMPANIES (Tier 3 — Brand Entity)\nRestaurant Brand · Merchant · B2B Client"]:::company
     end
 
-    subgraph TEN_BOX ["🏪 TENANTS (Tier 2)"]
-        TEN1["Tenant 1A\nRegional Franchise"]:::tenant
-        TEN2["Tenant 1B\nLocal Division"]:::tenant
+    subgraph RESTAURANT_DOMAIN ["🍳 VERTICAL OPERATIONAL TOPOLOGY (e.g., RestaurantOS)"]
+        LOC["📍 LOCATION / OUTLET\nLudhiana · Chandigarh · Delhi · Dubai"]:::domain
+        AREA["🪑 SERVICE AREA / FLOOR\nMain Dining · Terrace · Bar · Private Lounge"]:::domain
+        TBL["🏷️ TABLE / WORKSTATION / POS\nTable 14 · Bar Stool 03 · Kiosk 01"]:::domain
+        SESS["⏱️ TABLE SESSION / TAB\nOpen Session · Guest Group · Consolidated Bill"]:::domain
+        ORDS["📦 ORDERS & PREP TASKS\nCurry Station · Tandoor · Bar · Expo KDS"]:::domain
     end
 
-    subgraph COMP_BOX ["🏭 COMPANIES (Tier 3 — B2B Clients)"]
-        COMP1["Company X\nDirect Client"]:::company
-        COMP2["Company Y\nCorporate Account"]:::company
+    subgraph CONSUMER_LADDER ["👤 CUSTOMER IDENTITY PROGRESSION"]
+        ANON["📱 ANONYMOUS GUEST (QR Scan Entry)"]:::consumer
+        GUEST["👋 IDENTIFIED GUEST (Phone / Table Context)"]:::consumer
+        CRM["💎 CUSTOMER PROFILE (First-Party CRM)"]:::consumer
+        LOYAL["⭐ LOYALTY MEMBER (Points & Personalization)"]:::consumer
     end
 
-    subgraph USER_BOX ["👤 CONSUMERS (Tier 4 — End Users)"]
-        C1["Consumer A"]:::consumer
-        C2["Consumer B"]:::consumer
-    end
+    SA --> ORG
+    ORG --> TEN
+    TEN --> COMP
 
-    SA --> ORG1 & ORG2
-    ORG1 --> TEN1 & TEN2
-    TEN1 --> COMP1 & COMP2
-    COMP1 --> C1
-    COMP2 --> C2
+    COMP ==> LOC
+    LOC --> AREA
+    AREA --> TBL
+    TBL --> SESS
+    SESS --> ORDS
+
+    ANON --> GUEST --> CRM --> LOYAL
+    SESS -.-> GUEST
 ```
 
 ---
@@ -62,7 +74,9 @@ flowchart TB
 |---|---|
 | [01_Business_Requirements](01_Business/01_Business_Requirements.md) | Multi-tier business goals, role hierarchy tables & permission matrices |
 | [02_Flows_and_Lifecycles](01_Business/02_Flows_and_Lifecycles.md) | 9 complete sequence flows: request routing, rule engine, dunning, onboarding |
-| [03_Paid_Feature_Gating](02_Product/01_Paid_Feature_Gating_and_Monetization.md) | **[NEW]** Paywalls, 7-day trial timers, plan feature matrices, monetization |
+| [01_Paid_Feature_Gating](02_Product/01_Paid_Feature_Gating_and_Monetization.md) | Paywalls, 7-day trial timers, plan feature matrices, monetization |
+| [02_RestaurantOS_Master_Blueprint](02_Product/02_RestaurantOS_Master_Blueprint.md) | **[NEW]** OrbitoX RestaurantOS Master Architecture & Commerce Operations Blueprint |
+| [03_RestaurantOS_QR_Trust_and_Guest_Privacy](02_Product/03_RestaurantOS_QR_Trust_and_Guest_Privacy.md) | **[NEW v2.2]** QR Trust, Dining Session Membership & Guest Privacy Contract |
 
 ### 03 — Architecture Specs
 | Document | Description |

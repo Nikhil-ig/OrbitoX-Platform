@@ -1,5 +1,5 @@
 import express from 'express';
-import { MetadataEngine } from '@orbitox/plugin-engine';
+import { MetadataEngine } from '@orbitox-io/plugin-engine';
 import { OrbitoXConfig } from './config.types';
 import { orbitox } from './orbitox-singleton';
 

@@ -2,6 +2,7 @@ import { LicenseEnforcer, LicenseValidationOptions, LicensePayload } from './sec
 import { IntegrityVerifier } from './security/integrity-verifier';
 import { SandboxGuard } from './security/sandbox-guard';
 import { PackageSignature } from './security/crypto-signer';
+import { ModeSwitcherService, OrbitoXSnapshotPayload, SwitchResult, DrainStatus } from './modeSwitcher';
 
 export interface OrbitoXPluginDefinition {
   id?: string;
@@ -10,6 +11,17 @@ export interface OrbitoXPluginDefinition {
   manifest?: any;
   service?: any;
   [key: string]: any;
+}
+
+export type OrbitoXClusterMode = 'standalone' | 'distributed';
+
+export interface ClusterStatus {
+  mode: OrbitoXClusterMode;
+  isClustered: boolean;
+  nodeId: string;
+  eventBus: 'memory' | 'redis';
+  rateLimiter: 'memory' | 'distributed_redis';
+  isDraining?: boolean;
 }
 
 export interface CreateOrbitoXOptions {
@@ -47,6 +59,24 @@ export interface CreateOrbitoXOptions {
    * Custom context identifier (e.g., 'tenant_123' or 'org_hq')
    */
   contextId?: string;
+
+  /**
+   * Dual-engine cluster mode:
+   * - 'standalone': Single-server, zero external dependencies, in-memory rate limiting & event bus
+   * - 'distributed': Multi-server cluster mesh, Redis Pub/Sub invalidation, distributed sliding window
+   * - 'auto' (default): Auto-detects Redis presence or CLUSTER_MODE env var
+   */
+  clusterMode?: 'standalone' | 'distributed' | 'auto';
+
+  /**
+   * Node identifier for distributed telemetry and tracing
+   */
+  nodeId?: string;
+
+  /**
+   * Optional custom mode switcher service instance
+   */
+  modeSwitcher?: ModeSwitcherService;
 }
 
 export interface SecurityContext {
@@ -58,11 +88,59 @@ export interface SecurityContext {
 
 export class OrbitoXApp {
   public readonly security: SecurityContext;
+  public readonly cluster: Readonly<ClusterStatus>;
+  public readonly modeSwitcher: ModeSwitcherService;
   public readonly plugins: Map<string, any> = new Map();
   [key: string]: any;
 
-  constructor(securityContext: SecurityContext) {
+  constructor(
+    securityContext: SecurityContext,
+    clusterStatus?: ClusterStatus,
+    modeSwitcher?: ModeSwitcherService
+  ) {
     this.security = Object.freeze(securityContext);
+    this.cluster = Object.freeze(
+      clusterStatus || {
+        mode: 'standalone',
+        isClustered: false,
+        nodeId: 'node_standalone',
+        eventBus: 'memory',
+        rateLimiter: 'memory',
+      }
+    );
+    this.modeSwitcher = modeSwitcher || ModeSwitcherService.getInstance();
+  }
+
+  /**
+   * Enters graceful drain mode to finish in-flight requests before switching
+   */
+  public async enterDrainMode(timeoutMs = 5000): Promise<boolean> {
+    this.modeSwitcher.drainController.startDrain();
+    return this.modeSwitcher.drainController.waitForDrain(timeoutMs);
+  }
+
+  /**
+   * Exports a cryptographically sealed state snapshot
+   */
+  public exportSnapshot(stateData: any = {}, options?: { sign?: boolean; privateKeyPem?: string }): OrbitoXSnapshotPayload {
+    return this.modeSwitcher.exportSnapshot(
+      this.cluster.mode,
+      this.cluster.mode === 'distributed' ? 'standalone' : 'distributed',
+      this.cluster.nodeId,
+      stateData,
+      options
+    );
+  }
+
+  /**
+   * Ingests and verifies a state snapshot
+   */
+  public importSnapshot(
+    snapshot: OrbitoXSnapshotPayload,
+    applyFn: (data: any) => void,
+    options?: { publicKeyPem?: string; verifySignature?: boolean }
+  ) {
+    return this.modeSwitcher.importSnapshot(snapshot, applyFn, options);
   }
 
   /**
@@ -175,8 +253,9 @@ export async function createOrbitoX(options: CreateOrbitoXOptions = {}): Promise
     plugins = [],
     strictSecurity = false,
     contextId = 'ctx_default',
+    clusterMode = 'auto',
+    nodeId: customNodeId,
   } = options;
-
 
   let isVerified = false;
   let licensePayload: LicensePayload | undefined;
@@ -206,20 +285,47 @@ export async function createOrbitoX(options: CreateOrbitoXOptions = {}): Promise
     throw new Error('OrbitoX Security Error: Strict security enabled but no valid ORBITOX_LICENSE_KEY provided.');
   }
 
-  // 2. Instantiate Application Runtime
-  const app = new OrbitoXApp({
-    isVerified,
-    license: licensePayload,
-    allowedFeatures,
-    tenantId: contextId,
+  // 2. Resolve Dual-Engine Cluster Mode (Standalone vs Distributed)
+  const isDistributed =
+    clusterMode === 'distributed' ||
+    (clusterMode === 'auto' &&
+      (typeof process !== 'undefined' &&
+        (process.env?.CLUSTER_MODE === 'distributed' ||
+          process.env?.ORBITOX_DEPLOYMENT_MODE === 'distributed' ||
+          Boolean(process.env?.REDIS_URL))));
+
+  const resolvedMode: OrbitoXClusterMode = isDistributed ? 'distributed' : 'standalone';
+  const resolvedNodeId =
+    customNodeId ||
+    (typeof process !== 'undefined' ? process.env?.NODE_ID : undefined) ||
+    (isDistributed ? 'node_mesh_01' : 'node_standalone');
+
+  const clusterStatus: ClusterStatus = Object.freeze({
+    mode: resolvedMode,
+    isClustered: isDistributed,
+    nodeId: resolvedNodeId,
+    eventBus: isDistributed ? 'redis' : 'memory',
+    rateLimiter: isDistributed ? 'distributed_redis' : 'memory',
   });
 
-  // 3. Register and bind all plugins
+  // 3. Instantiate Application Runtime
+  const app = new OrbitoXApp(
+    {
+      isVerified,
+      license: licensePayload,
+      allowedFeatures,
+      tenantId: contextId,
+    },
+    clusterStatus,
+    options.modeSwitcher
+  );
+
+  // 4. Register and bind all plugins
   for (const plugin of plugins) {
     app.registerPlugin(plugin);
   }
 
-  // 4. Freeze core security context
+  // 5. Freeze core security context
   SandboxGuard.assertFrozenFacade(app.security, 'SecurityContext');
 
   return app;

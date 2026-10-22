@@ -1,0 +1,7 @@
+{
+  "name": "@orbitox-restaurant/api",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Backend API handlers for restaurant.quote, restaurant.orders, restaurant.kds",
+  "main": "index.ts"
+}

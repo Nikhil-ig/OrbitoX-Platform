@@ -66,6 +66,9 @@ mindmap
 | **13** | [🏥 Hospital SaaS Blueprint](./13_USECASE_HOSPITAL_SAAS.md) | Clinical N-Tier, Bed State Machine, Peer Mesh | Context Topology, Permission Flow, Bed State Machine |
 | **14** | [🧑‍💻 Hospital Developer Guide](./14_HOSPITAL_SAAS_DEVELOPER_GUIDE.md) | Beginner-to-Pro Tutorial, TypeScript Types, Copy-Paste Server | Mental Model, 8-Step Tutorial, Runnable Code |
 | **15** | [🗄️ Database Architecture & Flow](./15_DATABASE_ARCHITECTURE_AND_FLOW.md) | Multi-Tenant Storage, Read/Write Sequences, Query Translation | Storage Models, Read Flow, Write Flow, Cache Namespaces |
+| **16** | [🪐 Client Projects & O2O2B2B2C Ecosystem](./16_CLIENT_PROJECTS_AND_O2O2B2B2C_ECOSYSTEM.md) | Zero-Code Plugins, Instant API Keys, Dynamic Quotas, O2O2B2B2C | Ecosystem Flowchart, Gateway Enforcement, Multi-Lang SDKs |
+| **17** | [🌐 Dual-Engine: Single & Multi-Server Architecture](./17_MULTI_SERVER_DISTRIBUTED_ARCHITECTURE_AND_CLIENT_PROVISIONING.md) | Dual-Engine Standalone & Clustered Mesh, Redis Pub/Sub, PgBouncer, Client Provisioning | Dual Topology Diagrams, Invalidation Sequence, Single vs Multi Matrix, Fallback Specs |
+| **18** | [🔄 Easy Switch & State Transfer (Standalone Guide)](./18_EASY_SWITCH_AND_STATE_TRANSFER_STANDALONE_GUIDE.md) | 1-Click / 1-Command Seamless Scale Down to Standalone Single Node, Zero Data Loss State Transfer | State Extraction Sequence, SHA-256 Snapshot Schema, 5-Phase Traffic Drain Stepper, CLI Integration |
 
 ---
 

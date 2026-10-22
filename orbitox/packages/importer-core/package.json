@@ -1,0 +1,37 @@
+{
+  "name": "@orbitox-io/importer-core",
+  "version": "1.0.0",
+  "description": "OrbitoX Universal Import Engine — Canonical Import IR, Adapters, Semantic Inference, and SceneGraph Compiler",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/OrbitoX-io/OrbitoX-Platform.git",
+    "directory": "packages/importer-core"
+  },
+  "publishConfig": {
+    "registry": "https://npm.pkg.github.com"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "build:prod": "tsc -p tsconfig.prod.json",
+    "test": "jest --passWithNoTests",
+    "type-check": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@orbitox/types": "workspace:*"
+  },
+  "devDependencies": {
+    "@orbitox/eslint-config": "workspace:*",
+    "@orbitox/jest-config": "workspace:*",
+    "@orbitox/tsconfig": "workspace:*",
+    "@types/jest": "^29.5.14",
+    "@types/node": "^20.0.0",
+    "jest": "^29.7.0",
+    "ts-jest": "^29.1.0",
+    "typescript": "^5.0.0"
+  },
+  "files": [
+    "dist"
+  ]
+}
