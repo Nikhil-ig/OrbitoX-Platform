@@ -2,6 +2,7 @@ import { S3Client, PutObjectCommand, GetObjectCommand, DeleteObjectCommand } fro
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { StorageProvider } from '../storage.service';
 import { Injectable } from '@nestjs/common';
+import { requireSecret } from '@orbitox/config';
 
 @Injectable()
 export class S3Adapter implements StorageProvider {
@@ -12,8 +13,8 @@ export class S3Adapter implements StorageProvider {
     this.s3 = new S3Client({
       region: process.env.AWS_REGION || 'us-east-1',
       credentials: {
-        accessKeyId: process.env.AWS_ACCESS_KEY_ID || 'mock',
-        secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY || 'mock',
+        accessKeyId: process.env.AWS_ACCESS_KEY_ID || 'ORBITOX_STORAGE_KEY',
+        secretAccessKey: requireSecret('AWS_SECRET_ACCESS_KEY', { minBytes: 16 }),
       },
     });
     this.bucket = process.env.S3_BUCKET_NAME || 'orbitox-storage';

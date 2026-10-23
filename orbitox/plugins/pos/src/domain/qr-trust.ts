@@ -9,6 +9,7 @@
  */
 
 import * as crypto from 'crypto';
+import { requireSecret } from '@orbitox/config';
 
 export type DiningSessionStatus = 'ACTIVE' | 'BILL_REQUESTED' | 'SETTLING' | 'CLOSED' | 'ABANDONED';
 export type DiningJoinPolicy = 'OPEN_JOIN' | 'HOST_APPROVAL' | 'STAFF_APPROVAL';
@@ -110,7 +111,9 @@ export interface SanitizedParticipantProjection {
 }
 
 export class QRTrustEngine {
-  private static readonly SECRET_KEY = process.env.ORBITOX_GUEST_SECRET || 'orbitox_default_secure_hmac_secret_key_2026';
+  private static getSecretKey(): string {
+    return requireSecret('ORBITOX_GUEST_SECRET', { minBytes: 32 });
+  }
 
   /**
    * Hashes an arbitrary token string using SHA-256 for secure DB lookups.
@@ -163,7 +166,7 @@ export class QRTrustEngine {
     };
     const encodedPayload = Buffer.from(JSON.stringify(fullPayload)).toString('base64url');
     const signature = crypto
-      .createHmac('sha256', this.SECRET_KEY)
+      .createHmac('sha256', this.getSecretKey())
       .update(encodedPayload)
       .digest('base64url');
 
@@ -186,11 +189,14 @@ export class QRTrustEngine {
     const encodedPayload = parts[0];
     const signature = parts[1];
     const expectedSignature = crypto
-      .createHmac('sha256', this.SECRET_KEY)
+      .createHmac('sha256', this.getSecretKey())
       .update(encodedPayload)
       .digest('base64url');
 
-    if (signature !== expectedSignature) {
+    const sigBuf = Buffer.from(signature);
+    const expectedBuf = Buffer.from(expectedSignature);
+
+    if (sigBuf.length !== expectedBuf.length || !crypto.timingSafeEqual(sigBuf, expectedBuf)) {
       throw new Error('Cryptographic signature verification failed');
     }
 

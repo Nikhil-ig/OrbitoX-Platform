@@ -149,6 +149,12 @@ importers:
         specifier: ^5
         version: 5.9.3
 
+  packages/config:
+    devDependencies:
+      '@types/node':
+        specifier: ^20
+        version: 20.19.43
+
   packages/config/eslint:
     dependencies:
       '@typescript-eslint/eslint-plugin':
@@ -198,6 +204,9 @@ importers:
       '@nestjs/passport':
         specifier: ^12.0.0
         version: 12.0.0(@nestjs/common@12.0.1(class-transformer@0.5.1)(class-validator@0.14.4)(reflect-metadata@0.2.2)(rxjs@7.8.2))(passport@0.7.0)
+      '@orbitox/config':
+        specifier: workspace:*
+        version: link:../config
       '@orbitox/sdk':
         specifier: workspace:*
         version: link:../sdk
@@ -678,6 +687,9 @@ importers:
 
   plugins/external-project-engine:
     dependencies:
+      '@orbitox/config':
+        specifier: workspace:*
+        version: link:../../packages/config
       '@orbitox/core':
         specifier: workspace:*
         version: link:../../packages/core
@@ -880,6 +892,9 @@ importers:
 
   plugins/pos:
     dependencies:
+      '@orbitox/config':
+        specifier: workspace:*
+        version: link:../../packages/config
       '@orbitox/core':
         specifier: workspace:*
         version: link:../../packages/core

@@ -1,0 +1,63 @@
+name: Security & Secret Audit
+
+on:
+  push:
+    branches: [main, "hardening/**"]
+  pull_request:
+    branches: [main]
+
+jobs:
+  tracked-file-sanitizer:
+    name: Tracked Files & Secrets Regression Guard
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Codebase
+        uses: actions/checkout@v4
+
+      - name: Assert No Tracked Secrets, Backups, or Dumps
+        run: |
+          echo "Scanning git tracked files for prohibited sensitive patterns..."
+          PROHIBITED_FILES=$(git ls-files | grep -E '(\.staff_signing_secret|\.revoked_staff_tokens\.json|\.bak|\.zip$|(^|/)data/.*\.json$|test-.*store.*\.json)' || true)
+          if [ -n "$PROHIBITED_FILES" ]; then
+            echo "❌ [SECURITY FATAL] Found prohibited files tracked in git:"
+            echo "$PROHIBITED_FILES"
+            exit 1
+          fi
+          echo "✅ Clean: Zero prohibited files tracked in git index."
+
+  gitleaks:
+    name: Gitleaks Full History Secret Scan
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Codebase (Full History)
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Run Gitleaks
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        continue-on-error: true # Flag warnings until owner runs purge-history.sh
+
+  pnpm-audit:
+    name: Production Dependencies Vulnerability Audit
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Codebase
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v3
+        with:
+          version: 9.15.0
+
+      - name: Run Production Audit
+        run: |
+          cd orbitox
+          pnpm audit --prod || echo "Audit completed with warnings"

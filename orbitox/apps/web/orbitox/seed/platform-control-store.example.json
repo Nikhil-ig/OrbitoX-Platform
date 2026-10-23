@@ -20296,7 +20296,7 @@
           "RUNTIME_PORT": "4010"
         },
         "secrets": {
-          "CONTROL_PLANE_SECRET": "orbitox_platform_control_secret_2026"
+          "CONTROL_PLANE_SECRET": "EXAMPLE_REDACTED_SECRET"
         }
       },
       {
@@ -20310,7 +20310,7 @@
           "CLUSTER_REGION": "ap-south-1"
         },
         "secrets": {
-          "CONTROL_PLANE_SECRET": "orbitox_platform_control_secret_2026"
+          "CONTROL_PLANE_SECRET": "EXAMPLE_REDACTED_SECRET"
         },
         "lastDeployedAt": "2026-10-08T18:00:00.000Z"
       }

@@ -1,4 +1,5 @@
 import * as crypto from 'crypto';
+import { requireSecret } from '@orbitox/config';
 import {
   SignedRuntimeConfiguration,
   ConfigurationRevision,
@@ -21,7 +22,9 @@ import { PersistentControlStore } from './control-store.service';
 export class RuntimeControllerService {
   private static store: PersistentControlStore = PersistentControlStore.getInstance();
   private store: PersistentControlStore = PersistentControlStore.getInstance();
-  private static secretSigningKey = 'orbitox_platform_control_secret_2026';
+  private static getSecretSigningKey(): string {
+    return requireSecret('ORBITOX_CONTROL_PLANE_SECRET', { minBytes: 32 });
+  }
   private static initialized = false;
 
   constructor() {
@@ -228,7 +231,7 @@ export class RuntimeControllerService {
           url: 'http://localhost:4010',
           status: 'ONLINE',
           variables: { NODE_ENV: 'development', RUNTIME_PORT: '4010' },
-          secrets: { CONTROL_PLANE_SECRET: 'orbitox_platform_control_secret_2026' },
+          secrets: { CONTROL_PLANE_SECRET: crypto.randomBytes(32).toString('hex') },
         },
         {
           id: 'env_prod',
@@ -237,7 +240,7 @@ export class RuntimeControllerService {
           url: 'https://restaurant.orbitox.io',
           status: 'ONLINE',
           variables: { NODE_ENV: 'production', CLUSTER_REGION: 'ap-south-1' },
-          secrets: { CONTROL_PLANE_SECRET: 'orbitox_platform_control_secret_2026' },
+          secrets: { CONTROL_PLANE_SECRET: crypto.randomBytes(32).toString('hex') },
           lastDeployedAt: '2026-10-08T18:00:00.000Z',
         },
       ];
@@ -663,7 +666,7 @@ export class RuntimeControllerService {
     const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
 
     const payloadToSign = `${projectId}:${configVersion}:${revisionNumber}:${issuedAt}:${JSON.stringify(state)}`;
-    const signature = crypto.createHmac('sha256', RuntimeControllerService.secretSigningKey).update(payloadToSign).digest('hex');
+    const signature = crypto.createHmac('sha256', RuntimeControllerService.getSecretSigningKey()).update(payloadToSign).digest('hex');
 
     return {
       configVersion,

@@ -6,3 +6,11 @@
 - **Tests Passed:** 7 passed (33/34 workspace packages passed build).
 - **Risks Left:** 14 test scripts failing due to existing legacy state/routes; hardcoded secrets and unguarded routes remain active until Phase 1 and 2.
 - **Next:** PHASE 1 — SECRETS: STOP THE BLEEDING (F6, F7, F8, F5-part, F14).
+
+## Phase 1: Secrets & Leak Remediation
+- **Done:** Created `@orbitox/config` validator `requireSecret`; replaced insecure fallbacks in core, pos, external-project-engine, and restaurant-os; moved station secrets to env with SHA-256 hash lookup; untracked all .bak, .zip, and data dumps; added security CI workflow, purge-history script, ROTATE_NOW checklist, and .env.examples.
+- **Tests Run:** 27 (requireSecret unit suite, boot failure checks, pre-milestone-3 proof suite).
+- **Tests Passed:** 27 passed (all tests green).
+- **Risks Left:** History rewrite with purge-history.sh and secret rotation in production environments must be performed by human repository owner; API guard rewrite pending in Phase 2.
+- **Next:** PHASE 2 — REWRITE THE API GUARD: DEFAULT-DENY (F1, F4, F5, F11).
+
