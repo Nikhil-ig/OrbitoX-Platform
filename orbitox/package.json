@@ -26,12 +26,18 @@
     "format:check": "prettier --check \"**/*.{ts,tsx,js,jsx,json,md}\""
   },
   "devDependencies": {
+    "prettier": "^3.5.0",
     "turbo": "^2.10.12",
-    "prettier": "^3.5.0"
+    "typescript": "~5.9.3"
   },
   "engines": {
     "node": ">=20.0.0",
     "pnpm": ">=9.0.0"
   },
-  "packageManager": "pnpm@9.15.0"
+  "packageManager": "pnpm@9.15.0",
+  "pnpm": {
+    "overrides": {
+      "typescript": "~5.9.3"
+    }
+  }
 }
