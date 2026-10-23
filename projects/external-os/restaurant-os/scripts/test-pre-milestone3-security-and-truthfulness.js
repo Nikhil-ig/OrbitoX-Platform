@@ -137,18 +137,19 @@ async function runProofSuite() {
     pass('1.4: Anonymous POST /api/restaurant/kds/recall fails closed with HTTP 401 UNAUTHENTICATED');
 
     // 1.5: Authenticated Chef PIN Login allows station mutations
+    // 1.5: Authenticated Chef Token Login allows station mutations via explicit API token contract
     // PIN 5566 = CHEF at TANDOOR station in branch_ldh
-    const chefLoginRes = await request('/api/restaurant/auth/login', {
+    const chefLoginRes = await request('/api/restaurant/auth/token', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ pin: '5566', branchId: 'branch_ldh' }),
     });
-    assert.strictEqual(chefLoginRes.status, 200, 'Chef login succeeded');
+    assert.strictEqual(chefLoginRes.status, 200, 'Chef API login succeeded');
     const chefToken = chefLoginRes.json?.data?.token;
     assert.ok(chefToken && chefToken.startsWith('orb_stf.'), 'Valid HMAC token issued');
     assert.strictEqual(chefLoginRes.json?.data?.role, 'CHEF');
     assert.strictEqual(chefLoginRes.json?.data?.station, 'TANDOOR');
-    pass('1.5: Authenticated Chef PIN 5566 issues valid scoped CHEF credentials');
+    pass('1.5: Authenticated Chef PIN 5566 issues valid scoped CHEF credentials via API token contract');
 
     // 1.6: Authenticated Chef accesses GET /kds -> HTML reflects authenticated session but strictly omits token
     const authKdsRes = await request('/kds?station=TANDOOR', {
@@ -189,7 +190,7 @@ async function runProofSuite() {
     }
     pass('2.1: All operational shell pages render unauthenticated session and omit token in HTML');
 
-    // 2.2: Login sets HttpOnly Lax Cookie and authorizes shell page
+    // 2.2: Browser login sets HttpOnly Lax Cookie and strictly withholds raw token in JSON
     const mgrLoginRes = await request('/api/restaurant/auth/login', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -199,8 +200,11 @@ async function runProofSuite() {
     assert.ok(setCookie && setCookie.includes('orb_staff_token='), 'Login sets orb_staff_token cookie');
     assert.ok(setCookie.includes('HttpOnly'), 'Cookie has HttpOnly flag');
     assert.ok(setCookie.includes('SameSite=Lax'), 'Cookie has SameSite=Lax');
+    assert.strictEqual(mgrLoginRes.json?.data?.token, undefined, 'Browser login JSON body strictly withholds raw token');
+    assert.strictEqual(mgrLoginRes.json?.data?.role, 'MANAGER', 'Browser login returns verified role metadata');
+    assert.strictEqual(mgrLoginRes.json?.data?.branchId, 'branch_ldh', 'Browser login returns authorized branchId metadata');
     const cookieToken = setCookie.match(/orb_staff_token=([^;]+)/)[1];
-    pass('2.2: POST /api/restaurant/auth/login sets HttpOnly, SameSite=Lax session cookie');
+    pass('2.2: POST /api/restaurant/auth/login sets HttpOnly session cookie without leaking token in JSON body');
 
     // 2.3: Shell page accessed with cookie receives authenticated session without serialized token
     const cookieShellRes = await request('/operations/tables', {
@@ -226,7 +230,7 @@ async function runProofSuite() {
     assert.ok(cookieMutationRes.status === 200 || cookieMutationRes.status === 404, 'Cookie-authenticated mutation authorized by server');
     pass('2.4: Cookie-authenticated browser requests with matching Origin succeed');
 
-    // 2.5: CSRF Protection rejects unauthorized cross-origin mutation
+    // 2.5: CSRF Protection strictly fails closed: rejects cross-origin, missing origin, and malformed origin
     const csrfAttackRes = await request('/api/restaurant/kds/bump', {
       method: 'POST',
       headers: {
@@ -238,7 +242,43 @@ async function runProofSuite() {
     });
     assert.strictEqual(csrfAttackRes.status, 403, 'Cross-origin mutation rejected with 403');
     assert.strictEqual(csrfAttackRes.json?.code, 'CSRF_REJECTED', 'CSRF rejection code returned');
-    pass('2.5: CSRF protection policy strictly rejects cross-origin cookie-authenticated mutations');
+
+    const csrfMissingOriginRes = await request('/api/restaurant/kds/bump', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Cookie: `orb_staff_token=${cookieToken}`,
+      },
+      body: JSON.stringify({ taskId: 'task_tandoor_01', newStatus: 'IN_PROGRESS' }),
+    });
+    assert.strictEqual(csrfMissingOriginRes.status, 403, 'Missing origin rejected with 403');
+    assert.strictEqual(csrfMissingOriginRes.json?.code, 'CSRF_REJECTED');
+
+    const csrfMalformedOriginRes = await request('/api/restaurant/kds/bump', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Cookie: `orb_staff_token=${cookieToken}`,
+        Origin: 'not-a-valid-url',
+      },
+      body: JSON.stringify({ taskId: 'task_tandoor_01', newStatus: 'IN_PROGRESS' }),
+    });
+    assert.strictEqual(csrfMalformedOriginRes.status, 403, 'Malformed origin rejected with 403');
+    assert.strictEqual(csrfMalformedOriginRes.json?.code, 'CSRF_REJECTED');
+
+    const csrfSecFetchRes = await request('/api/restaurant/kds/bump', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Cookie: `orb_staff_token=${cookieToken}`,
+        Origin: BASE_URL,
+        'Sec-Fetch-Site': 'cross-site',
+      },
+      body: JSON.stringify({ taskId: 'task_tandoor_01', newStatus: 'IN_PROGRESS' }),
+    });
+    assert.strictEqual(csrfSecFetchRes.status, 403, 'cross-site Sec-Fetch-Site rejected with 403');
+    assert.strictEqual(csrfSecFetchRes.json?.code, 'CSRF_REJECTED');
+    pass('2.5: CSRF protection policy strictly fails closed against cross-origin, missing, and malformed origins');
 
     // 2.6: Logout clears cookie AND invalidates credential server-side
     const logoutRes = await request('/api/restaurant/auth/logout', {
@@ -265,8 +305,8 @@ async function runProofSuite() {
     assert.ok(postLogoutRes.json?.code === 'REVOKED_TOKEN' || postLogoutRes.json?.code === 'INVALID_CREDENTIAL', 'Rejected as revoked/invalid token');
     pass('2.6: POST /api/restaurant/auth/logout clears cookie and durably revokes token server-side');
 
-    // 2.7: Legitimate Bearer API clients continue to work without cookies
-    const apiLoginRes = await request('/api/restaurant/auth/login', {
+    // 2.7: Legitimate Bearer API clients continue to work without cookies via explicit API contract
+    const apiLoginRes = await request('/api/restaurant/auth/token', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ pin: '0000', branchId: '*' }),
@@ -305,6 +345,57 @@ async function runProofSuite() {
     });
     assert.strictEqual(tamperedRes.status, 401, 'Tampered token rejected with 401');
     pass('2.8: Wrong-branch, tampered, and unauthorized requests fail closed');
+
+    // 2.9: Query string staff tokens are strictly rejected
+    const queryStaffRes = await request(`/api/restaurant/kds/bump?token=${chefToken}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ taskId: 'task_tandoor_01', newStatus: 'IN_PROGRESS' }),
+    });
+    assert.strictEqual(queryStaffRes.status, 401, 'Query parameter staff token rejected with 401');
+    assert.strictEqual(queryStaffRes.json?.code, 'UNAUTHENTICATED');
+    pass('2.9: Query-string staff tokens are strictly rejected from authorizing protected mutations');
+
+    // 2.10: Production mode credential quarantine & station rotation validation
+    const origEnv = process.env.NODE_ENV;
+    const origStationEnv = process.env.RESTAURANT_STATION_SECRETS;
+    try {
+      process.env.NODE_ENV = 'production';
+      const secMod = require('../packages/domain/security');
+
+      // 1. Production rejects dev fixture PINs (8899, 5566, etc.)
+      const prodPinRes = secMod.authenticateStaffByPin('8899', { branchId: 'branch_ldh' });
+      assert.strictEqual(prodPinRes.success, false, 'Production mode rejects default dev fixture PINs');
+
+      // 2. Production station secrets fail closed when unconfigured
+      delete process.env.RESTAURANT_STATION_SECRETS;
+      const unconfiguredStations = secMod.getRegisteredStationSecrets();
+      assert.strictEqual(Object.keys(unconfiguredStations).length, 0, 'Production station secrets are empty when unconfigured');
+
+      // 3. Runtime configuration via RESTAURANT_STATION_SECRETS succeeds
+      process.env.RESTAURANT_STATION_SECRETS = JSON.stringify({
+        'sec_rot_prod_9918': { station: 'TANDOOR', branchId: 'branch_ldh', isPrivileged: false }
+      });
+      const configuredStations = secMod.getRegisteredStationSecrets();
+      assert.ok(configuredStations['sec_rot_prod_9918'], 'Configured production station secret recognized');
+
+      // 4. Rotating secret terminates prior secret
+      process.env.RESTAURANT_STATION_SECRETS = JSON.stringify({
+        'sec_rot_prod_new_0029': { station: 'TANDOOR', branchId: 'branch_ldh', isPrivileged: false }
+      });
+      const rotatedStations = secMod.getRegisteredStationSecrets();
+      assert.strictEqual(rotatedStations['sec_rot_prod_9918'], undefined, 'Rotated previous secret is invalid');
+      assert.ok(rotatedStations['sec_rot_prod_new_0029'], 'New rotated secret is valid');
+
+      pass('2.10: Production mode strictly rejects dev credentials, fails closed on unconfigured stations, and supports safe rotation');
+    } finally {
+      process.env.NODE_ENV = origEnv;
+      if (origStationEnv) {
+        process.env.RESTAURANT_STATION_SECRETS = origStationEnv;
+      } else {
+        delete process.env.RESTAURANT_STATION_SECRETS;
+      }
+    }
 
     // ─────────────────────────────────────────────────────────────────────────
     // 3. STORAGE ROLLBACK DEFECT CORRECTION (PHASE 6C VERIFICATION)

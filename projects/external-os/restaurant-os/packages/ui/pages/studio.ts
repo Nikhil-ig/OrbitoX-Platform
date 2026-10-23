@@ -242,7 +242,9 @@ export function renderVisualStudio(
 
   <script>
     // Studio Runtime State
-    let studioData = ${JSON.stringify(draftData)};
+    let studioData = ${JSON.stringify(draftData || {})};
+    if (!studioData.draftSections) studioData.draftSections = [];
+    if (!studioData.draftTokens) studioData.draftTokens = {};
     let activeTemplate = ${JSON.stringify(template)};
     let brandConfig = ${JSON.stringify(brandConfig)};
     let menuItems = ${JSON.stringify(menuItems)};

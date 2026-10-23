@@ -31,6 +31,9 @@ import {
   DEFAULT_SERVICE_REQUESTS,
   generateSeats,
   loadPersistedStaffRevocations,
+  loadPersistedStaffMembers,
+  registerStaffPersistenceCallback,
+  StaffDirectoryMember,
   revokeStaffToken as revokeStaffTokenInSecurity,
   revokeStaffMemberTokens,
   isStaffTokenRevoked,
@@ -136,6 +139,7 @@ export interface RestaurantRuntimeStoreData {
   revokedStaffTokens?: string[];
   revokedStaffTokenJtis?: string[];
   revokedStaffIds?: string[];
+  staffMembers?: StaffDirectoryMember[];
   lastEventSequence?: number;
   templates?: MarketplaceTemplate[];
   tenantBrand?: TenantBrandConfig;
@@ -203,7 +207,7 @@ export class RestaurantRuntimeStore {
         if (!this.data.tenantBrand) {
           this.data.tenantBrand = JSON.parse(JSON.stringify(DEFAULT_BRAND_CONFIG));
         }
-        if (!this.data.templateDraft) {
+        if (!this.data.templateDraft || !this.data.templateDraft.draftSections) {
           this.data.templateDraft = JSON.parse(JSON.stringify(DEFAULT_TEMPLATE_DRAFT));
         }
         if (!this.data.supportTickets || this.data.supportTickets.length === 0) {
@@ -252,6 +256,14 @@ export class RestaurantRuntimeStore {
           this.data.revokedStaffTokenJtis || [],
           this.data.revokedStaffIds || []
         );
+
+        if (!this.data.staffMembers) {
+          this.data.staffMembers = [];
+        }
+        loadPersistedStaffMembers(this.data.staffMembers);
+        registerStaffPersistenceCallback((member) => {
+          this.saveStaffMember(member);
+        });
 
         // Preserve sequence numbers across restarts to guarantee monotonic continuity
         if (this.data.events && this.data.events.length > 0) {
@@ -461,6 +473,35 @@ export class RestaurantRuntimeStore {
     this.flushSync();
     revokeStaffMemberTokens(staffId);
     return true;
+  }
+
+  public getStaffMembers(): StaffDirectoryMember[] {
+    return this.data.staffMembers || [];
+  }
+
+  public saveStaffMember(member: StaffDirectoryMember): void {
+    if (!this.data.staffMembers) {
+      this.data.staffMembers = [];
+    }
+    const idx = this.data.staffMembers.findIndex((m) => m.id === member.id);
+    if (idx >= 0) {
+      this.data.staffMembers[idx] = member;
+    } else {
+      this.data.staffMembers.push(member);
+    }
+    this.flushSync();
+  }
+
+  public updateStaffMemberInStore(
+    id: string,
+    updates: Partial<StaffDirectoryMember>
+  ): StaffDirectoryMember | null {
+    if (!this.data.staffMembers) return null;
+    const member = this.data.staffMembers.find((m) => m.id === id);
+    if (!member) return null;
+    Object.assign(member, updates);
+    this.flushSync();
+    return member;
   }
 
   private flushSync(): void {

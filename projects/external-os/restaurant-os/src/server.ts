@@ -148,37 +148,80 @@ export interface RequestIdentity {
 }
 
 function isSameOriginRequest(req: http.IncomingMessage): boolean {
-  const origin = (req.headers['origin'] as string) || '';
-  const host = (req.headers['host'] as string) || '';
-  if (origin) {
+  // 1. Determine expected host from configuration or validated Host header
+  let expectedHost = '';
+  const configuredOrigin = process.env.RESTAURANTOS_ORIGIN || process.env.PUBLIC_ORIGIN;
+  if (configuredOrigin) {
     try {
-      const parsedOrigin = new URL(origin);
-      return parsedOrigin.host.toLowerCase() === host.toLowerCase();
-    } catch {
+      expectedHost = new URL(configuredOrigin).host.toLowerCase();
+    } catch {}
+  }
+
+  if (!expectedHost) {
+    const rawHost = (req.headers['host'] as string) || '';
+    // Validate host format: alphanumeric, dashes, dots, optional port (no CRLF or injection)
+    if (/^[a-zA-Z0-9.-]+(:[0-9]+)?$/.test(rawHost)) {
+      expectedHost = rawHost.toLowerCase();
+    } else {
+      // Malformed or missing host header: fail closed
       return false;
     }
   }
-  const referer = (req.headers['referer'] as string) || '';
-  if (referer) {
-    try {
-      const parsedReferer = new URL(referer);
-      return parsedReferer.host.toLowerCase() === host.toLowerCase();
-    } catch {
-      return false;
-    }
-  }
+
+  // 2. Reject explicit cross-site fetch indicator
   const secFetchSite = (req.headers['sec-fetch-site'] as string) || '';
   if (secFetchSite === 'cross-site') {
     return false;
   }
-  return true;
+
+  // 3. Extract Origin and Referer evidence
+  const origin = (req.headers['origin'] as string) || '';
+  const referer = (req.headers['referer'] as string) || '';
+
+  // Fail closed: cookie mutations MUST have verified origin or referer evidence
+  if (!origin && !referer) {
+    return false;
+  }
+
+  let originMatches = false;
+  let refererMatches = false;
+
+  if (origin) {
+    try {
+      const parsedOrigin = new URL(origin);
+      if (parsedOrigin.host.toLowerCase() === expectedHost) {
+        originMatches = true;
+      } else {
+        return false;
+      }
+    } catch {
+      return false;
+    }
+  }
+
+  if (referer) {
+    try {
+      const parsedReferer = new URL(referer);
+      if (parsedReferer.host.toLowerCase() === expectedHost) {
+        refererMatches = true;
+      } else {
+        return false;
+      }
+    } catch {
+      return false;
+    }
+  }
+
+  return (origin ? originMatches : true) && (referer ? refererMatches : true);
 }
 
 function resolveRequestIdentity(req: http.IncomingMessage): RequestIdentity {
   const authHeader = (req.headers['authorization'] as string) || '';
   const stationToken = (req.headers['x-station-token'] as string) || '';
   const parsedUrl = url.parse(req.url || '', true);
-  const queryToken = (parsedUrl.query.token as string) || (parsedUrl.query.access_token as string) || (parsedUrl.query.staffToken as string) || '';
+
+  // Narrow query tokens for DINER capability only (staff tokens are strictly forbidden in query params)
+  const queryCapToken = (parsedUrl.query.capToken as string) || (parsedUrl.query.token as string) || '';
 
   const cookieHeader = (req.headers['cookie'] as string) || '';
   let cookieToken = '';
@@ -203,12 +246,13 @@ function resolveRequestIdentity(req: http.IncomingMessage): RequestIdentity {
   } else if (bearerToken) {
     token = bearerToken;
     authSource = 'BEARER';
-  } else if (queryToken) {
-    token = queryToken;
-    authSource = 'BEARER';
   } else if (cookieToken) {
     token = cookieToken;
     authSource = 'COOKIE';
+  } else if (queryCapToken && queryCapToken.startsWith('cap_')) {
+    // Narrow exception for QR-scanned diner dining session capability tokens
+    token = queryCapToken;
+    authSource = 'BEARER';
   }
 
   const resolve = (): RequestIdentity => {
@@ -496,7 +540,7 @@ const server = http.createServer(async (req, res) => {
   }
 
   // --- AUTHENTICATION & CREDENTIAL MANAGEMENT ---
-  if ((pathname === '/api/restaurant/auth/staff-token' || pathname === '/api/restaurant/auth/login' || pathname === '/api/restaurant/auth/staff') && method === 'POST') {
+  if ((pathname === '/api/restaurant/auth/staff-token' || pathname === '/api/restaurant/auth/token' || pathname === '/api/restaurant/auth/api-token' || pathname === '/api/restaurant/auth/login' || pathname === '/api/restaurant/auth/staff') && method === 'POST') {
     const body = await parseBody(req);
     const pin = body.pin || '';
     const requestedBranchId = body.branchId || currentBranch.id;
@@ -556,17 +600,121 @@ const server = http.createServer(async (req, res) => {
       { staffId: member.id, role: member.role }
     );
 
-    const isHttps = Boolean((req.socket as any)?.encrypted || req.headers['x-forwarded-proto'] === 'https');
-    const secureFlag = isHttps ? '; Secure' : '';
-    res.setHeader(
-      'Set-Cookie',
-      `orb_staff_token=${encodeURIComponent(token)}; Path=/; HttpOnly; SameSite=Lax${secureFlag}; Max-Age=28800`
+    const isExplicitApiFlow =
+      pathname === '/api/restaurant/auth/token' ||
+      pathname === '/api/restaurant/auth/staff-token' ||
+      pathname === '/api/restaurant/auth/api-token' ||
+      body.flow === 'token' ||
+      body.flow === 'bearer' ||
+      parsedUrl.query.flow === 'token' ||
+      parsedUrl.query.flow === 'bearer';
+
+    if (!isExplicitApiFlow) {
+      // BROWSER SESSION LOGIN:
+      // Sets HttpOnly cookie, returns ONLY non-secret metadata (NO raw token in JSON)
+      const isHttps = Boolean((req.socket as any)?.encrypted || req.headers['x-forwarded-proto'] === 'https');
+      const secureFlag = isHttps ? '; Secure' : '';
+      res.setHeader(
+        'Set-Cookie',
+        `orb_staff_token=${encodeURIComponent(token)}; Path=/; HttpOnly; SameSite=Lax${secureFlag}; Max-Age=28800`
+      );
+
+      sendJson(res, 200, {
+        success: true,
+        data: {
+          staffId: member.id,
+          name: member.name,
+          role: member.role,
+          station: member.station,
+          branchId: member.branchId,
+          expiresInSeconds: 8 * 3600,
+          expiresAt: new Date(Date.now() + 8 * 3600 * 1000).toISOString(),
+        },
+      });
+      return;
+    } else {
+      // EXPLICIT MACHINE / API AUTHENTICATION CONTRACT
+      sendJson(res, 200, {
+        success: true,
+        data: {
+          token,
+          tokenType: 'Bearer',
+          staffId: member.id,
+          name: member.name,
+          role: member.role,
+          station: member.station,
+          branchId: member.branchId,
+          expiresInSeconds: 8 * 3600,
+          expiresAt: new Date(Date.now() + 8 * 3600 * 1000).toISOString(),
+        },
+      });
+      return;
+    }
+  }
+
+  // --- DEDICATED MACHINE / API TOKEN ENDPOINT ---
+  if (
+    (pathname === '/api/restaurant/auth/token' || pathname === '/api/restaurant/auth/api-token') &&
+    method === 'POST'
+  ) {
+    const body = await parseBody(req);
+    const clientIp = (req.headers['x-forwarded-for'] as string) || req.socket.remoteAddress || '127.0.0.1';
+    const requestedBranchId = body.branchId;
+
+    const authResult = authenticateStaffByPin(body.pin, {
+      branchId: requestedBranchId,
+      staffId: body.staffId,
+      clientIp,
+    });
+
+    if (authResult.isLocked) {
+      sendJson(res, 429, {
+        error: 'ACCOUNT_LOCKED',
+        code: 'TOO_MANY_FAILED_ATTEMPTS',
+        message: authResult.error || 'Account locked due to consecutive failed attempts.',
+      });
+      return;
+    }
+
+    if (!authResult.success || !authResult.member) {
+      store.appendEvent(
+        'STAFF_AUTH_FAILED',
+        'auth-gateway',
+        requestedBranchId || '*',
+        { clientIp, staffId: body.staffId, reason: authResult.error }
+      );
+      sendJson(res, 401, {
+        error: 'INVALID_CREDENTIALS',
+        code: 'INVALID_CREDENTIALS',
+        message: 'Invalid staff authentication PIN or credential.',
+      });
+      return;
+    }
+
+    const member = authResult.member;
+    const token = issueStaffToken({
+      sub: member.id,
+      name: member.name,
+      role: member.role,
+      branchId: member.branchId,
+      station: member.station,
+    });
+
+    store.appendEvent(
+      'STAFF_TOKEN_ISSUED',
+      'auth-gateway',
+      member.branchId,
+      { staffId: member.id, role: member.role, type: 'API_BEARER' }
     );
 
+    // Explicit API endpoint: does NOT set an HttpOnly session cookie, returns Bearer token in JSON
     sendJson(res, 200, {
       success: true,
       data: {
         token,
+        tokenType: 'Bearer',
+        staffId: member.id,
+        name: member.name,
         role: member.role,
         station: member.station,
         branchId: member.branchId,

@@ -201,13 +201,22 @@ function hashPin(pin: string, salt: string): string {
 /**
  * Server-Authoritative Staff Directory with Salted Hashes.
  * Staff roles and branch affiliations are strictly derived from these records.
+ *
+ * In production mode:
+ * - Default static fixture accounts are STRICTLY QUARANTINED and never loaded.
+ * - Staff accounts must be dynamically provisioned and loaded from persistent store.
+ * - Default PINs (8899, 1122, 5566, 0000, etc.) are rejected in production.
+ *
+ * Rotation / Invalidation Policy:
+ * - To rotate a PIN: managers or administrators invoke PATCH /api/restaurant/staff/:id with { pin: '<new_pin>' }.
+ * - To invalidate a staff credential: POST /api/restaurant/staff/:id/revoke immediately terminates active sessions.
  */
 const SALT_LUDHIANA = 'salt_ldh_8392_sec';
 const SALT_CHANDIGARH = 'salt_chd_4910_sec';
 const SALT_DELHI = 'salt_del_7214_sec';
 const SALT_ADMIN = 'salt_adm_9918_sec';
 
-export const STAFF_DIRECTORY: StaffDirectoryMember[] = [
+export const DEV_TEST_STAFF_FIXTURES: StaffDirectoryMember[] = [
   {
     id: 'stf_mgr_ldh_01',
     name: 'Sukhwinder Sandhu',
@@ -274,6 +283,32 @@ export const STAFF_DIRECTORY: StaffDirectoryMember[] = [
   },
 ];
 
+// In production, STAFF_DIRECTORY starts empty and is populated strictly from persisted/provisioned store records.
+export const STAFF_DIRECTORY: StaffDirectoryMember[] =
+  process.env.NODE_ENV === 'production' ? [] : [...DEV_TEST_STAFF_FIXTURES];
+
+type StaffPersistenceCallback = (member: StaffDirectoryMember) => void;
+let staffPersistenceCallback: StaffPersistenceCallback | null = null;
+
+export function registerStaffPersistenceCallback(cb: StaffPersistenceCallback): void {
+  staffPersistenceCallback = cb;
+}
+
+/**
+ * Hydrates dynamically provisioned staff members from persistent storage.
+ */
+export function loadPersistedStaffMembers(members: StaffDirectoryMember[]): void {
+  if (!Array.isArray(members)) return;
+  for (const m of members) {
+    const existingIdx = STAFF_DIRECTORY.findIndex((x) => x.id === m.id);
+    if (existingIdx >= 0) {
+      STAFF_DIRECTORY[existingIdx] = m;
+    } else {
+      STAFF_DIRECTORY.push(m);
+    }
+  }
+}
+
 /**
  * Returns a sanitized view of the staff directory with PIN hashes and salts stripped.
  */
@@ -319,6 +354,13 @@ export function createStaffMember(data: {
     permissions: data.permissions,
   };
   STAFF_DIRECTORY.push(member);
+  if (staffPersistenceCallback) {
+    try {
+      staffPersistenceCallback(member);
+    } catch (e) {
+      console.error('Failed to execute staff persistence callback:', e);
+    }
+  }
   const { salt: _s, pinHash: _p, ...safe } = member;
   return safe;
 }
@@ -350,6 +392,13 @@ export function updateStaffMember(
     const salt = `salt_${member.branchId}_${crypto.randomBytes(8).toString('hex')}`;
     member.salt = salt;
     member.pinHash = hashPin(updates.pin, salt);
+  }
+  if (staffPersistenceCallback) {
+    try {
+      staffPersistenceCallback(member);
+    } catch (e) {
+      console.error('Failed to execute staff persistence callback on update:', e);
+    }
   }
   const { salt: _s, pinHash: _p, ...safe } = member;
   return safe;
@@ -386,6 +435,7 @@ export function resetStaffLockout(key?: string): void {
 /**
  * Authenticates a staff PIN against the server-authoritative staff directory.
  * Enforces rate-limiting (5 failures -> 15 min lock) and timing-safe equality.
+ * In production mode, rejects hardcoded development fixtures and requires provisioned records.
  */
 export function authenticateStaffByPin(
   pin: string,
@@ -415,6 +465,14 @@ export function authenticateStaffByPin(
 
   if (!pin || typeof pin !== 'string') {
     return { success: false, error: 'MISSING_PIN' };
+  }
+
+  // In production mode, strictly fail closed if no authoritative staff accounts are provisioned
+  if (process.env.NODE_ENV === 'production' && STAFF_DIRECTORY.length === 0) {
+    return {
+      success: false,
+      error: 'NO_ACTIVE_STAFF_ACCOUNTS: Production mode requires authoritatively provisioned staff credentials.',
+    };
   }
 
   // Find candidate members
@@ -626,11 +684,7 @@ export function loadPersistedStaffRevocations(tokens: string[], jtis: string[], 
   if (Array.isArray(staffIds)) staffIds.forEach((s) => revokedStaffIds.add(s));
 }
 
-/**
- * Pre-registered cryptographic secrets for physical hardware kitchen stations.
- * Any unauthenticated station token header matching none of these is rejected in production.
- */
-export const REGISTERED_STATION_SECRETS: Record<
+export const DEV_TEST_STATION_SECRETS: Record<
   string,
   { station: string; branchId: string; isPrivileged: boolean }
 > = {
@@ -639,6 +693,67 @@ export const REGISTERED_STATION_SECRETS: Record<
   'stn_sec_expo_ldh_77z5': { station: 'EXPO', branchId: 'branch_ldh', isPrivileged: true },
   'stn_sec_beverage_ldh_66w4': { station: 'BEVERAGE', branchId: 'branch_ldh', isPrivileged: false },
 };
+
+/**
+ * Resolves registered physical hardware kitchen station secrets.
+ *
+ * Security & Environment Rules:
+ * - In production mode, station credentials MUST come from validated runtime configuration (RESTAURANT_STATION_SECRETS).
+ * - Hardcoded source secrets and dev test fixtures are strictly forbidden in production.
+ * - If no station secrets are configured in production, station authentication fails closed.
+ *
+ * Safe Rotation Process:
+ * - Generate a new high-entropy random token (e.g. crypto.randomBytes(24).toString('hex')).
+ * - Update RESTAURANT_STATION_SECRETS environment variable with the new secret mapping.
+ * - Terminate active connections and update terminal hardware settings.
+ */
+export function getRegisteredStationSecrets(): Record<
+  string,
+  { station: string; branchId: string; isPrivileged: boolean }
+> {
+  const configuredSecrets: Record<string, { station: string; branchId: string; isPrivileged: boolean }> = {};
+
+  const envSecrets = process.env.RESTAURANT_STATION_SECRETS;
+  if (envSecrets) {
+    try {
+      const parsed = JSON.parse(envSecrets);
+      if (typeof parsed === 'object' && parsed !== null) {
+        Object.assign(configuredSecrets, parsed);
+      }
+    } catch {
+      const pairs = envSecrets.split(',');
+      for (const pair of pairs) {
+        const [sec, stn, br, priv] = pair.trim().split(':');
+        if (sec && stn && br) {
+          configuredSecrets[sec] = { station: stn, branchId: br, isPrivileged: priv === 'true' };
+        }
+      }
+    }
+  }
+
+  if (process.env.NODE_ENV === 'production') {
+    return configuredSecrets;
+  }
+
+  return {
+    ...DEV_TEST_STATION_SECRETS,
+    ...configuredSecrets,
+  };
+}
+
+export const REGISTERED_STATION_SECRETS: Record<
+  string,
+  { station: string; branchId: string; isPrivileged: boolean }
+> = new Proxy(DEV_TEST_STATION_SECRETS, {
+  get(target, prop: string) {
+    const secrets = getRegisteredStationSecrets();
+    return (secrets as any)[prop];
+  },
+  has(target, prop: string) {
+    const secrets = getRegisteredStationSecrets();
+    return prop in secrets;
+  },
+});
 
 /**
  * Development & Test Fixtures ONLY (Strictly disabled and forbidden in production mode).

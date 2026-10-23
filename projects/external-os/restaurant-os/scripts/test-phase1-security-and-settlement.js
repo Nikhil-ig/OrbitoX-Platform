@@ -132,7 +132,7 @@ async function runPhase1Suite() {
 
   // Obtain authentic cryptographic credentials via server PIN login
   // Manager Token (PIN 8899 -> MANAGER, Ludhiana branch)
-  const mgrLogin = await request('/api/restaurant/auth/login', {
+  const mgrLogin = await request('/api/restaurant/auth/token', {
     method: 'POST',
     body: { pin: '8899', branchId: 'branch_ldh' },
   });
@@ -141,7 +141,7 @@ async function runPhase1Suite() {
   assert(managerToken.startsWith('orb_stf.'), 'Valid HMAC staff token format');
 
   // Operations Token (PIN 1122 -> OPERATIONS, Ludhiana branch)
-  const opsLogin = await request('/api/restaurant/auth/login', {
+  const opsLogin = await request('/api/restaurant/auth/token', {
     method: 'POST',
     body: { pin: '1122', branchId: 'branch_ldh' },
   });
@@ -177,7 +177,7 @@ async function runPhase1Suite() {
   pass('1.2', 'POST /api/restaurant/menu/items with tampered signature rejected with HTTP 401 INVALID_CREDENTIAL');
 
   // 1.3: Revoked staff token immediately rejected with 401
-  const disposableLogin = await request('/api/restaurant/auth/login', {
+  const disposableLogin = await request('/api/restaurant/auth/token', {
     method: 'POST',
     body: { pin: '8899', branchId: 'branch_ldh' },
   });

@@ -71,12 +71,12 @@ let STAFF_HEADERS = {
 };
 
 async function authenticateStaff() {
-  const loginRes = await makeRequest('POST', '/api/restaurant/auth/login', {}, { pin: '8899', branchId: 'branch_ldh' });
+  const loginRes = await makeRequest('POST', '/api/restaurant/auth/token', {}, { pin: '8899', branchId: 'branch_ldh' });
   if (loginRes.status === 200 && loginRes.json && loginRes.json.data && loginRes.json.data.token) {
     STAFF_HEADERS.Authorization = 'Bearer ' + loginRes.json.data.token;
     console.log('  🔑 Obtained authentic cryptographic manager token');
   } else {
-    throw new Error('Failed to obtain staff token via /api/restaurant/auth/login');
+    throw new Error('Failed to obtain staff token via /api/restaurant/auth/token');
   }
 }
 
