@@ -61,11 +61,10 @@ Afterwards:
 
 These are known and need their own work. They are listed so nothing is assumed safe:
 
-- The legacy admin API layer (`apps/web/app/api/v1/_lib/api-guard.ts`) still runs on sample
-  data and its guard does not enforce authentication. The control plane is now protected at
-  the edge by `middleware.ts`, which covers `/admin`, `/platform` and the management APIs.
-  Other demo surfaces (`/hms`, `/hrms`, `/crm`, `/finance`, `/commerce`, `/store`) are
-  not behind the admin token.
+- [x] **Remaining demo surfaces locked down (RESOLVED)**: All demo and plugin surfaces
+  (`/hms`, `/hrms`, `/crm`, `/finance`, `/commerce`, `/store`, and their `/api/v1/*` endpoints)
+  are now protected at the edge by `middleware.ts`, requiring the admin token like `/admin`
+  and `/platform`. Anonymous callers receive 401; authenticated admin callers receive 200.
 - [x] **Per-project runtime keys (RESOLVED)**: On initial `REGISTER` with the shared bootstrap
   `ORBITOX_RUNTIME_TOKEN`, the control plane generates and returns a scoped `orb_proj_*` key,
   persisting only its SHA-256 hash. Registered projects must present their own scoped key for

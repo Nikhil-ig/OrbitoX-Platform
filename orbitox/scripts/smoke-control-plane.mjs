@@ -50,7 +50,11 @@ console.log('Public surface');
 await expectStatus('GET /api/health is public', 200, '/api/health');
 
 console.log('\nAdmin surface rejects anonymous callers');
-for (const path of ['/platform', '/platform/fleet', '/platform/connect', '/platform/settings', '/admin', '/api/v1/fleet', '/api/v1/overview', '/api/v1/system/settings', '/api/v1/system/cluster']) {
+for (const path of [
+  '/platform', '/platform/fleet', '/platform/connect', '/platform/settings', '/admin',
+  '/api/v1/fleet', '/api/v1/overview', '/api/v1/system/settings', '/api/v1/system/cluster',
+  '/hms', '/hrms', '/crm', '/finance', '/commerce', '/store'
+]) {
   await expectStatus(`GET ${path} -> 401`, 401, path);
 }
 await expectStatus('POST /api/v1/projects/factory -> 401', 401, '/api/v1/projects/factory', { method: 'POST', headers: json, body: '{}' });
@@ -66,6 +70,11 @@ await expectStatus('GET /platform with Bearer', 200, '/platform', { headers: bea
 await expectStatus('GET /platform/fleet with Bearer', 200, '/platform/fleet', { headers: bearer(ADMIN) });
 await expectStatus('GET /platform/connect with Bearer', 200, '/platform/connect', { headers: bearer(ADMIN) });
 await expectStatus('GET /platform/settings with Bearer', 200, '/platform/settings', { headers: bearer(ADMIN) });
+
+console.log('\nProtected demo surfaces work with admin Bearer');
+for (const path of ['/hms', '/hrms', '/crm', '/finance', '/commerce', '/store']) {
+  await expectStatus(`GET ${path} with Bearer -> 200`, 200, path, { headers: bearer(ADMIN) });
+}
 
 console.log('\nRuntime token cannot escalate to admin');
 await expectStatus('runtime token on /api/v1/fleet -> 401', 401, '/api/v1/fleet', { headers: bearer(RUNTIME) });
