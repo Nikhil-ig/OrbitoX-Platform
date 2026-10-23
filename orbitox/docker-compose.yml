@@ -2,7 +2,7 @@
 #
 #   cp .env.example .env        # then fill in the secrets (openssl rand -hex 32)
 #   docker compose up -d --build
-#   open http://localhost:3005/admin
+#   open http://localhost:3005/platform/fleet   (login: any username, ORBITOX_ADMIN_TOKEN as password)
 #
 # The control plane stores its state (projects, API keys, audit log) in the
 # `orbitox_data` volume. Postgres and Redis are OPTIONAL and only start when you
@@ -20,6 +20,8 @@ services:
     environment:
       NODE_ENV: production
       ORBITOX_DATA_DIR: /data
+      ORBITOX_ADMIN_TOKEN: ${ORBITOX_ADMIN_TOKEN:?set ORBITOX_ADMIN_TOKEN in .env (openssl rand -hex 32)}
+      ORBITOX_RUNTIME_TOKEN: ${ORBITOX_RUNTIME_TOKEN:?set ORBITOX_RUNTIME_TOKEN in .env (openssl rand -hex 32)}
       ORBITOX_CONTROL_SECRET: ${ORBITOX_CONTROL_SECRET:?set ORBITOX_CONTROL_SECRET in .env (openssl rand -hex 32)}
       ORBITOX_GUEST_SECRET: ${ORBITOX_GUEST_SECRET:?set ORBITOX_GUEST_SECRET in .env (openssl rand -hex 32)}
       JWT_PRIVATE_KEY: ${JWT_PRIVATE_KEY:-}
@@ -28,7 +30,7 @@ services:
     volumes:
       - orbitox_data:/data
     healthcheck:
-      test: ["CMD", "curl", "-fsS", "http://localhost:3005/api/v1/system/cluster"]
+      test: ["CMD", "curl", "-fsS", "http://localhost:3005/api/health"]
       interval: 15s
       timeout: 5s
       start_period: 20s

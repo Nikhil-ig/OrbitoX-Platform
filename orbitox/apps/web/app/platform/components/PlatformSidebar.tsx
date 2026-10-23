@@ -23,6 +23,7 @@ const navSections: NavSection[] = [
     title: 'OVERVIEW',
     items: [
       { id: 'overview', label: 'Overview', href: '/platform' },
+      { id: 'fleet', label: 'Fleet', href: '/platform/fleet' },
     ],
   },
   {

@@ -20,6 +20,20 @@ import {
 } from '../types';
 import { PersistentControlStore } from './control-store.service';
 
+/** Registration problem with an HTTP-style status the API layer can return as-is. */
+export class RuntimeRegistrationError extends Error {
+  constructor(
+    public readonly code: 'INVALID_PAYLOAD' | 'REGISTRATION_NOT_ALLOWED',
+    message: string,
+    public readonly status: 400 | 403,
+  ) {
+    super(message);
+    this.name = 'RuntimeRegistrationError';
+  }
+}
+
+const ID_PATTERN = /^[a-zA-Z0-9][a-zA-Z0-9_-]{2,63}$/;
+
 export class RuntimeControllerService {
   private static store: PersistentControlStore = PersistentControlStore.getInstance();
   private store: PersistentControlStore = PersistentControlStore.getInstance();
@@ -79,8 +93,13 @@ export class RuntimeControllerService {
     if (this.initialized) return;
     this.initialized = true;
 
+    // Demo data is for local development only. Production starts empty: real projects
+    // appear when they register. Set ORBITOX_SEED_DEMO=true to force it on (or =false to force it off).
+    const seedFlag = process.env.ORBITOX_SEED_DEMO?.trim().toLowerCase();
+    const seedDemo = seedFlag ? seedFlag === 'true' : process.env.NODE_ENV !== 'production';
+
     const existingProject = this.store.getProject('project_restaurant_os');
-    if (!existingProject) {
+    if (seedDemo && !existingProject) {
       // Seed default restaurant-os external project
       const restaurantProject: ExternalProjectRecord = {
         id: 'project_restaurant_os',
@@ -477,12 +496,74 @@ export class RuntimeControllerService {
     return { added, modified, removed, summary };
   }
 
+  /**
+   * Creates the project record for a runtime that registers for the first time.
+   * Whether the caller is allowed to do this is decided at the API edge (runtime token);
+   * here we validate the identity fields so garbage can never be stored.
+   */
+  private autoRegisterProject(payload: RuntimeRegistrationPayload): ExternalProjectRecord {
+    if (!ID_PATTERN.test(payload.projectId ?? '')) {
+      throw new RuntimeRegistrationError('INVALID_PAYLOAD', 'projectId must be 3-64 characters: letters, digits, "-" or "_".', 400);
+    }
+    if (!ID_PATTERN.test(payload.slug ?? '')) {
+      throw new RuntimeRegistrationError('INVALID_PAYLOAD', 'slug must be 3-64 characters: letters, digits, "-" or "_".', 400);
+    }
+    const name = (payload.name ?? payload.slug).toString().trim().slice(0, 120) || payload.slug;
+    const now = new Date().toISOString();
+
+    const record: ExternalProjectRecord = {
+      id: payload.projectId,
+      slug: payload.slug,
+      name,
+      manifest: {
+        projectId: payload.projectId,
+        slug: payload.slug,
+        name,
+        type: (payload.projectType as ExternalProjectRecord['manifest']['type']) ?? 'custom-os',
+        version: payload.version || '0.0.0',
+        runtime: { type: 'standalone', entrypoint: '', defaultPort: payload.runtimePort, healthEndpoint: '/health' },
+        enabledPlugins: [],
+        enabledFeatures: [],
+        apis: payload.declaredApis ?? [],
+        planReferences: [],
+        environmentMetadata: { defaultEnvironment: 'local', supportedEnvironments: ['local'] },
+        platformController: { controlPlaneUrl: '', syncIntervalSeconds: 15, requireSignedConfig: false },
+        capabilities: payload.capabilities ?? [],
+      },
+      status: 'CONNECTED',
+      localPath: '',
+      activeRevisionNumber: 1,
+      desiredRevisionNumber: 1,
+      syncStatus: 'IN_SYNC',
+      createdAt: now,
+      updatedAt: now,
+    };
+    this.store.saveProject(record);
+    this.recordAudit({
+      id: `aud_${Date.now()}_${crypto.randomBytes(3).toString('hex')}`,
+      projectId: record.id,
+      timestamp: now,
+      actor: `runtime:${record.slug}`,
+      action: 'PROJECT_AUTO_REGISTERED',
+      status: 'SUCCESS',
+      details: { runtimeUrl: payload.runtimeUrl, version: payload.version },
+    });
+    return record;
+  }
+
   // --- Handshake & Telemetry ---
   public handleRegistration(payload: RuntimeRegistrationPayload): RuntimeRegistrationResponse {
     RuntimeControllerService.initialize();
     const controlSessionId = `ctrl_sess_${Date.now().toString(36)}_${crypto.randomBytes(4).toString('hex')}`;
 
-    const proj = this.store.getProject(payload.projectId);
+    let proj = this.store.getProject(payload.projectId);
+
+    // A runtime we have never seen: register it as a tracked project, instead of
+    // pretending success while leaving it invisible to the control plane.
+    if (!proj) {
+      proj = this.autoRegisterProject(payload);
+    }
+
     const desiredRev = proj?.desiredRevisionNumber || 1;
     const appliedRev = payload.appliedRevision || desiredRev;
 

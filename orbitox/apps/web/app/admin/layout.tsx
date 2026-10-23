@@ -6,6 +6,7 @@ import { AdminProvider } from './data/admin-context';
 import { AdminSidebar } from './components/admin-sidebar';
 import { ApiKeyModal } from './components/api-key-modal';
 import { CommandPalette } from './components/command-palette';
+import { DemoBanner } from './components/demo-banner';
 
 import { KeyIcon, SearchIcon } from './components/icons';
 
@@ -259,6 +260,7 @@ function AdminLayoutInner({ children }: { children: React.ReactNode }) {
             zIndex: 1,
           }}
         >
+          <DemoBanner />
           {children}
         </main>
       </div>

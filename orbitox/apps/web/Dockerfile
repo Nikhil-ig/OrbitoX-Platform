@@ -38,5 +38,5 @@ USER orbitox
 VOLUME ["/data"]
 EXPOSE 3005
 HEALTHCHECK --interval=15s --timeout=5s --start-period=20s --retries=3 \
-  CMD curl -fsS http://localhost:3005/api/v1/system/cluster || exit 1
+  CMD curl -fsS http://localhost:3005/api/health || exit 1
 CMD ["node", "apps/web/server.js"]

@@ -11,7 +11,7 @@ export async function register() {
 
   const problems: string[] = [];
 
-  for (const name of ['ORBITOX_CONTROL_SECRET', 'ORBITOX_GUEST_SECRET']) {
+  for (const name of ['ORBITOX_ADMIN_TOKEN', 'ORBITOX_RUNTIME_TOKEN', 'ORBITOX_CONTROL_SECRET', 'ORBITOX_GUEST_SECRET']) {
     const value = process.env[name]?.trim();
     if (!value) problems.push(`${name} is not set`);
     else if (value.length < 32) problems.push(`${name} must be at least 32 characters`);

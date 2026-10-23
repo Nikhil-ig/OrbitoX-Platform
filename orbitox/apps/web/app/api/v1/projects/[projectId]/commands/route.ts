@@ -33,6 +33,13 @@ export async function POST(
     const { action = 'ISSUE', commandAction, parameters = {}, commandId, result, error } = body;
 
     if (action === 'ISSUE') {
+      // Only administrators may issue commands; runtimes may only report completion.
+      if (req.headers.get('x-orbitox-principal') !== 'admin') {
+        return NextResponse.json(
+          { success: false, error: { code: 'FORBIDDEN', message: 'Only an administrator can issue commands.' } },
+          { status: 403 },
+        );
+      }
       if (!commandAction) {
         return NextResponse.json({ error: 'Missing commandAction' }, { status: 400 });
       }

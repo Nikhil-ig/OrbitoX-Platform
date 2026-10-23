@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { externalProjectEngine } from '@orbitox/external-project-engine';
+import { externalProjectEngine, RuntimeRegistrationError } from '@orbitox/external-project-engine';
 
 export async function POST(
   req: NextRequest,
@@ -65,6 +65,9 @@ export async function POST(
 
     return NextResponse.json({ error: `Unknown bridge action: ${action}` }, { status: 400 });
   } catch (err: any) {
+    if (err instanceof RuntimeRegistrationError) {
+      return NextResponse.json({ success: false, error: { code: err.code, message: err.message } }, { status: err.status });
+    }
     return NextResponse.json({ error: err.message }, { status: 500 });
   }
 }
