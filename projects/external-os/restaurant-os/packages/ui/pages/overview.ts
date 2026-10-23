@@ -465,7 +465,8 @@ export function renderOperationsHome(
         if (token) headers['Authorization'] = 'Bearer ' + token;
         const res = await fetch('/api/restaurant/service-requests/' + reqId + '/resolve', {
           method: 'POST',
-          headers: headers
+          headers: headers,
+          credentials: 'same-origin'
         });
         if (res.ok) {
           window.location.reload();

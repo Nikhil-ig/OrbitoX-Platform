@@ -12,8 +12,10 @@
  */
 
 const http = require('http');
+const { startIsolatedServer } = require('./test-harness');
 
-const BASE_URL = 'http://localhost:4010';
+let BASE_URL = process.env.TEST_SERVER_URL;
+let harness = null;
 
 function request(options, body) {
   return new Promise((resolve, reject) => {
@@ -64,8 +66,14 @@ async function getStaffToken(pin = '0000', branchId = '*') {
 
 async function runTests() {
   console.log('🧪 Starting Phase 4 Live Order Tracking & Realtime State Test Suite...\n');
+  if (!BASE_URL) {
+    harness = await startIsolatedServer({ prefix: 'phase4-track', port: 4085 });
+    BASE_URL = harness.url;
+  }
   let passed = 0;
   let failed = 0;
+
+  try {
 
   function assert(condition, testName, details = '') {
     if (condition) {
@@ -234,10 +242,11 @@ async function runTests() {
   assert(trackCancelled.data.statusLabel === 'Order Cancelled', 'Tracking label displays "Order Cancelled"');
 
   // 9. Realtime SSE Connection Verification
+  const targetUrl = new URL(BASE_URL);
   const sseTest = await new Promise((resolve) => {
     const req = http.request({
-      hostname: 'localhost',
-      port: 4010,
+      hostname: targetUrl.hostname,
+      port: targetUrl.port,
       path: `/api/restaurant/events?branchId=branch_chd&orderId=${orderId}`,
       method: 'GET',
       headers: { Accept: 'text/event-stream' },
@@ -255,6 +264,11 @@ async function runTests() {
   console.log(`\n📊 Live Tracking Test Suite Results: ${passed} Passed, ${failed} Failed`);
   if (failed > 0) {
     process.exit(1);
+  }
+  } finally {
+    if (harness) {
+      await harness.stop();
+    }
   }
 }
 

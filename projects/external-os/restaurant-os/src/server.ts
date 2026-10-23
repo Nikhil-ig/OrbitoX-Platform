@@ -143,7 +143,35 @@ export interface RequestIdentity {
   orderId?: string;
   isPrivileged: boolean;
   rawToken?: string;
+  authSource?: 'BEARER' | 'COOKIE' | 'STATION' | 'ANONYMOUS';
   error?: string;
+}
+
+function isSameOriginRequest(req: http.IncomingMessage): boolean {
+  const origin = (req.headers['origin'] as string) || '';
+  const host = (req.headers['host'] as string) || '';
+  if (origin) {
+    try {
+      const parsedOrigin = new URL(origin);
+      return parsedOrigin.host.toLowerCase() === host.toLowerCase();
+    } catch {
+      return false;
+    }
+  }
+  const referer = (req.headers['referer'] as string) || '';
+  if (referer) {
+    try {
+      const parsedReferer = new URL(referer);
+      return parsedReferer.host.toLowerCase() === host.toLowerCase();
+    } catch {
+      return false;
+    }
+  }
+  const secFetchSite = (req.headers['sec-fetch-site'] as string) || '';
+  if (secFetchSite === 'cross-site') {
+    return false;
+  }
+  return true;
 }
 
 function resolveRequestIdentity(req: http.IncomingMessage): RequestIdentity {
@@ -161,11 +189,29 @@ function resolveRequestIdentity(req: http.IncomingMessage): RequestIdentity {
     }
   }
 
-  const token = authHeader.startsWith('Bearer ')
+  const bearerToken = authHeader.startsWith('Bearer ')
     ? authHeader.slice(7).trim()
     : authHeader
     ? authHeader.trim()
-    : queryToken || cookieToken;
+    : '';
+
+  let token = '';
+  let authSource: 'BEARER' | 'COOKIE' | 'STATION' | 'ANONYMOUS' = 'ANONYMOUS';
+
+  if (stationToken) {
+    authSource = 'STATION';
+  } else if (bearerToken) {
+    token = bearerToken;
+    authSource = 'BEARER';
+  } else if (queryToken) {
+    token = queryToken;
+    authSource = 'BEARER';
+  } else if (cookieToken) {
+    token = cookieToken;
+    authSource = 'COOKIE';
+  }
+
+  const resolve = (): RequestIdentity => {
 
   // 1. Physical Hardware Kitchen Station Token
   if (stationToken) {
@@ -353,11 +399,16 @@ function resolveRequestIdentity(req: http.IncomingMessage): RequestIdentity {
     }
   }
 
-  return {
-    type: 'ANONYMOUS',
-    id: 'anon:guest',
-    isPrivileged: false,
+    return {
+      type: 'ANONYMOUS',
+      id: 'anon:guest',
+      isPrivileged: false,
+    };
   };
+
+  const identity = resolve();
+  identity.authSource = authSource;
+  return identity;
 }
 
 const server = http.createServer(async (req, res) => {
@@ -411,6 +462,18 @@ const server = http.createServer(async (req, res) => {
   const requestIdentity = resolveRequestIdentity(req);
   const activeStaffToken = requestIdentity.rawToken;
   const activeStaffRole = requestIdentity.role || (requestIdentity.type === 'ADMIN' ? 'ADMIN' : undefined);
+
+  // CSRF Protection Policy for Cookie-Authenticated Mutations
+  if (['POST', 'PUT', 'DELETE', 'PATCH'].includes(method) && requestIdentity.authSource === 'COOKIE') {
+    if (!isSameOriginRequest(req)) {
+      sendJson(res, 403, {
+        error: 'CSRF_REJECTED',
+        code: 'CSRF_REJECTED',
+        message: 'Cross-origin mutation rejected by CSRF protection policy.',
+      });
+      return;
+    }
+  }
 
   // CORS Preflight
   if (method === 'OPTIONS') {
@@ -493,9 +556,11 @@ const server = http.createServer(async (req, res) => {
       { staffId: member.id, role: member.role }
     );
 
+    const isHttps = Boolean((req.socket as any)?.encrypted || req.headers['x-forwarded-proto'] === 'https');
+    const secureFlag = isHttps ? '; Secure' : '';
     res.setHeader(
       'Set-Cookie',
-      `orb_staff_token=${encodeURIComponent(token)}; Path=/; HttpOnly; SameSite=Lax; Max-Age=28800`
+      `orb_staff_token=${encodeURIComponent(token)}; Path=/; HttpOnly; SameSite=Lax${secureFlag}; Max-Age=28800`
     );
 
     sendJson(res, 200, {
@@ -514,7 +579,26 @@ const server = http.createServer(async (req, res) => {
 
   // --- LOGOUT ENDPOINT ---
   if (pathname === '/api/restaurant/auth/logout' && method === 'POST') {
-    res.setHeader('Set-Cookie', 'orb_staff_token=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0');
+    const isHttps = Boolean((req.socket as any)?.encrypted || req.headers['x-forwarded-proto'] === 'https');
+    const secureFlag = isHttps ? '; Secure' : '';
+    res.setHeader('Set-Cookie', `orb_staff_token=; Path=/; HttpOnly; SameSite=Lax${secureFlag}; Max-Age=0`);
+
+    const tokenToRevoke = requestIdentity.rawToken;
+    if (tokenToRevoke) {
+      if (tokenToRevoke.startsWith('cap_')) {
+        store.revokeCapabilityToken(tokenToRevoke);
+        eventBus.disconnectClientsForToken(tokenToRevoke);
+      } else {
+        store.revokeStaffToken(tokenToRevoke);
+        eventBus.disconnectClientsForToken(tokenToRevoke);
+      }
+      store.appendEvent(
+        'STAFF_SESSION_TERMINATED',
+        'auth-gateway',
+        requestIdentity.branchId || '*',
+        { staffId: requestIdentity.id, reason: 'LOGOUT' }
+      );
+    }
     sendJson(res, 200, { success: true, message: 'Logged out successfully' });
     return;
   }
@@ -4731,8 +4815,7 @@ const server = http.createServer(async (req, res) => {
         currentServiceShift: serviceShift,
         branches,
         floors,
-        staffToken: activeStaffToken,
-        staffRole: activeStaffRole,
+          staffRole: activeStaffRole,
       }
     );
     sendHtml(res, html);
@@ -4756,8 +4839,7 @@ const server = http.createServer(async (req, res) => {
         currentServiceShift: serviceShift,
         branches,
         floors,
-        staffToken: activeStaffToken,
-        staffRole: activeStaffRole,
+          staffRole: activeStaffRole,
       }
     );
     sendHtml(res, html);
@@ -4776,7 +4858,6 @@ const server = http.createServer(async (req, res) => {
       currentServiceShift: serviceShift,
       branches,
       floors,
-      staffToken: activeStaffToken,
       staffRole: activeStaffRole,
     });
     sendHtml(res, html);
@@ -4795,7 +4876,6 @@ const server = http.createServer(async (req, res) => {
       currentServiceShift: serviceShift,
       branches,
       floors,
-      staffToken: activeStaffToken,
       staffRole: activeStaffRole,
     });
     sendHtml(res, html);
@@ -4816,7 +4896,6 @@ const server = http.createServer(async (req, res) => {
        requestIdentity.role === 'MANAGER' ||
        requestIdentity.role === 'ADMIN');
 
-    const kdsToken = isKitchenAuthorized ? activeStaffToken : undefined;
     const kdsRole = isKitchenAuthorized ? (requestIdentity.role || 'CHEF') : undefined;
 
     const branchTasks = store.getKitchenTasks(undefined, currentBranch.id);
@@ -4825,10 +4904,11 @@ const server = http.createServer(async (req, res) => {
       activeStation,
       currentBranch.name,
       serviceShift,
-      kdsToken,
+      undefined,
       store.getLastEventSequence(),
       currentBranch.id,
-      kdsRole
+      kdsRole,
+      isKitchenAuthorized
     );
     sendHtml(res, html);
     return;
@@ -4847,7 +4927,6 @@ const server = http.createServer(async (req, res) => {
       currentServiceShift: serviceShift,
       branches,
       floors,
-      staffToken: activeStaffToken,
       staffRole: activeStaffRole,
     });
     sendHtml(res, html);
@@ -4865,7 +4944,6 @@ const server = http.createServer(async (req, res) => {
       currentServiceShift: serviceShift,
       branches,
       floors,
-      staffToken: activeStaffToken,
       staffRole: activeStaffRole,
     });
     sendHtml(res, html);
@@ -4883,7 +4961,6 @@ const server = http.createServer(async (req, res) => {
       currentServiceShift: serviceShift,
       branches,
       floors,
-      staffToken: activeStaffToken,
       staffRole: activeStaffRole,
     });
     sendHtml(res, html);
@@ -4901,7 +4978,6 @@ const server = http.createServer(async (req, res) => {
       currentServiceShift: serviceShift,
       branches,
       floors,
-      staffToken: activeStaffToken,
       staffRole: activeStaffRole,
     });
     sendHtml(res, html);
@@ -4919,7 +4995,6 @@ const server = http.createServer(async (req, res) => {
       currentServiceShift: serviceShift,
       branches,
       floors,
-      staffToken: activeStaffToken,
       staffRole: activeStaffRole,
     });
     sendHtml(res, html);
@@ -4937,7 +5012,6 @@ const server = http.createServer(async (req, res) => {
       currentServiceShift: serviceShift,
       branches,
       floors,
-      staffToken: activeStaffToken,
       staffRole: activeStaffRole,
     });
     sendHtml(res, html);
@@ -5042,8 +5116,7 @@ const server = http.createServer(async (req, res) => {
         currentServiceShift: serviceShift,
         branches,
         floors,
-        staffToken: activeStaffToken,
-        staffRole: activeStaffRole,
+          staffRole: activeStaffRole,
       }
     );
     sendHtml(res, html);
@@ -5063,8 +5136,7 @@ const server = http.createServer(async (req, res) => {
         currentServiceShift: serviceShift,
         branches,
         floors,
-        staffToken: activeStaffToken,
-        staffRole: activeStaffRole,
+          staffRole: activeStaffRole,
       }
     );
     sendHtml(res, html);
@@ -5084,8 +5156,7 @@ const server = http.createServer(async (req, res) => {
         currentServiceShift: serviceShift,
         branches,
         floors,
-        staffToken: activeStaffToken,
-        staffRole: activeStaffRole,
+          staffRole: activeStaffRole,
       }
     );
     sendHtml(res, html);
@@ -5107,8 +5178,7 @@ const server = http.createServer(async (req, res) => {
         currentServiceShift: serviceShift,
         branches,
         floors,
-        staffToken: activeStaffToken,
-        staffRole: activeStaffRole,
+          staffRole: activeStaffRole,
       }
     );
     sendHtml(res, html);
@@ -5126,7 +5196,6 @@ const server = http.createServer(async (req, res) => {
       currentServiceShift: serviceShift,
       branches,
       floors,
-      staffToken: activeStaffToken,
       staffRole: activeStaffRole,
     });
     sendHtml(res, html);

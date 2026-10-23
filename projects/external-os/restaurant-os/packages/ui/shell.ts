@@ -137,8 +137,8 @@ export function renderShell(contentHtml: string, options: ShellOptions): string 
   <title>${options.title ? `${options.title} · ` : ''}${restaurantName} — RestaurantOS</title>
   <script>
     window.__STAFF_SESSION__ = {
-      token: "${options.staffToken || ''}",
-      role: "${options.staffRole || (options.staffToken ? 'OPERATIONS' : '')}",
+      isAuthenticated: ${Boolean(options.staffRole)},
+      role: "${options.staffRole || ''}",
       branchId: "${currentBranch.id}"
     };
   </script>

@@ -312,12 +312,12 @@ export function renderStaffWorkspace(
       if (!pin) return;
 
       try {
+        const headers = { 'Content-Type': 'application/json' };
+        if (window.__STAFF_SESSION__?.token) headers['Authorization'] = 'Bearer ' + window.__STAFF_SESSION__.token;
         const res = await fetch('/api/restaurant/staff', {
           method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': 'Bearer ' + (window.__STAFF_SESSION__?.token || '')
-          },
+          headers,
+          credentials: 'same-origin',
           body: JSON.stringify({
             name,
             role,
@@ -341,12 +341,12 @@ export function renderStaffWorkspace(
     async function promptRevokeMember(staffId) {
       if (confirm('Revoke all active credentials for staff member ' + staffId + '?')) {
         try {
+          const headers = { 'Content-Type': 'application/json' };
+          if (window.__STAFF_SESSION__?.token) headers['Authorization'] = 'Bearer ' + window.__STAFF_SESSION__.token;
           const res = await fetch('/api/restaurant/staff/' + encodeURIComponent(staffId) + '/revoke', {
             method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              'Authorization': 'Bearer ' + (window.__STAFF_SESSION__?.token || '')
-            }
+            headers,
+            credentials: 'same-origin'
           });
           const json = await res.json();
           if (res.ok) {

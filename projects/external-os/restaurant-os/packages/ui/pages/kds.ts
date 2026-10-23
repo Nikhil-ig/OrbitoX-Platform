@@ -41,7 +41,8 @@ export function renderKdsWorkspace(
   staffToken?: string,
   currentSequence = 0,
   branchId = 'branch_ldh',
-  staffRole?: string
+  staffRole?: string,
+  isAuthenticated?: boolean
 ): string {
   // Station categorization
   const stations = [
@@ -92,6 +93,8 @@ export function renderKdsWorkspace(
     tableOrdersMap.set(t.tableNumber, list);
   });
 
+  const isAuthed = Boolean(isAuthenticated || staffRole || staffToken);
+
   return `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -100,8 +103,8 @@ export function renderKdsWorkspace(
   <title>KDS Kitchen Instrument · ${branchName}</title>
   <script>
     window.__STAFF_SESSION__ = {
-      token: "${staffToken || ''}",
-      role: "${staffToken ? (staffRole || 'CHEF') : ''}",
+      isAuthenticated: ${isAuthed},
+      role: "${isAuthed ? (staffRole || 'CHEF') : ''}",
       station: "${activeStation}",
       branchId: "${branchId}"
     };
@@ -490,7 +493,7 @@ export function renderKdsWorkspace(
 
       <!-- Staff Authentication Status & PIN Login -->
       ${
-        staffToken
+        isAuthed
           ? `<span id="kds-auth-badge" style="font-size: 11px; font-weight: 700; color: var(--color-sage); background: rgba(82, 183, 136, 0.15); border: 1px solid rgba(82, 183, 136, 0.3); padding: 4px 8px; border-radius: 4px;">✓ Authenticated</span>`
           : `<button id="kds-auth-btn" onclick="promptKdsAuth()" class="btn btn-secondary btn-sm" style="font-size: 11px; font-weight: 700; background: rgba(224, 86, 36, 0.15); border-color: var(--color-copper); color: var(--color-copper);">🔐 Enter PIN</button>`
       }
@@ -959,10 +962,7 @@ export function renderKdsWorkspace(
 
     // Headers helper
     function getKdsHeaders() {
-      const headers = { 'Content-Type': 'application/json' };
-      const token = window.__STAFF_SESSION__?.token;
-      if (token) headers['Authorization'] = 'Bearer ' + token;
-      return headers;
+      return { 'Content-Type': 'application/json' };
     }
 
     // Authenticate KDS Station via Staff PIN
@@ -973,11 +973,12 @@ export function renderKdsWorkspace(
         const res = await fetch('/api/restaurant/auth/login', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
+          credentials: 'same-origin',
           body: JSON.stringify({ pin, branchId: window.__STAFF_SESSION__?.branchId || 'branch_ldh' }),
         });
         const data = await res.json();
-        if (res.ok && data.data?.token) {
-          window.__STAFF_SESSION__.token = data.data.token;
+        if (res.ok && data.data?.role) {
+          window.__STAFF_SESSION__.isAuthenticated = true;
           window.__STAFF_SESSION__.role = data.data.role;
           showKdsToast('Authenticated as ' + data.data.role, 'success');
           setTimeout(() => location.reload(), 300);
@@ -991,7 +992,7 @@ export function renderKdsWorkspace(
 
     // Individual Item Fulfillment
     async function toggleItemFulfill(taskId) {
-      if (!window.__STAFF_SESSION__?.token) {
+      if (!window.__STAFF_SESSION__?.isAuthenticated && !window.__STAFF_SESSION__?.role) {
         showKdsToast('Staff authentication required. Enter PIN to fulfill items.', 'error');
         promptKdsAuth();
         return;
@@ -1006,6 +1007,7 @@ export function renderKdsWorkspace(
         const res = await fetch('/api/restaurant/kds/item-fulfill', {
           method: 'POST',
           headers: getKdsHeaders(),
+          credentials: 'same-origin',
           body: JSON.stringify({ taskId }),
         });
         const json = await res.json();
@@ -1021,7 +1023,7 @@ export function renderKdsWorkspace(
 
     // Bump Action with Real REST Mutation
     async function bumpTask(taskId, newStatus) {
-      if (!window.__STAFF_SESSION__?.token) {
+      if (!window.__STAFF_SESSION__?.isAuthenticated && !window.__STAFF_SESSION__?.role) {
         showKdsToast('Staff authentication required. Enter PIN to bump tickets.', 'error');
         promptKdsAuth();
         return;
@@ -1036,6 +1038,7 @@ export function renderKdsWorkspace(
         const res = await fetch('/api/restaurant/kds/bump', {
           method: 'POST',
           headers: getKdsHeaders(),
+          credentials: 'same-origin',
           body: JSON.stringify({ taskId, newStatus, bumpedBy: 'Chef' }),
         });
         const json = await res.json();
@@ -1064,7 +1067,7 @@ export function renderKdsWorkspace(
 
     // Recall Task
     async function recallTask(taskId, targetStatus = 'READY') {
-      if (!window.__STAFF_SESSION__?.token) {
+      if (!window.__STAFF_SESSION__?.isAuthenticated && !window.__STAFF_SESSION__?.role) {
         showKdsToast('Staff authentication required. Enter PIN to recall tickets.', 'error');
         promptKdsAuth();
         return;
@@ -1073,6 +1076,7 @@ export function renderKdsWorkspace(
         const res = await fetch('/api/restaurant/kds/recall', {
           method: 'POST',
           headers: getKdsHeaders(),
+          credentials: 'same-origin',
           body: JSON.stringify({ taskId, targetStatus }),
         });
         const json = await res.json();
@@ -1089,7 +1093,7 @@ export function renderKdsWorkspace(
 
     // Expo Order Dispatch with Readiness Gating
     async function dispatchExpoOrder(tableNumber, isPending = false) {
-      if (!window.__STAFF_SESSION__?.token) {
+      if (!window.__STAFF_SESSION__?.isAuthenticated && !window.__STAFF_SESSION__?.role) {
         showKdsToast('Staff authentication required. Enter PIN to dispatch expo orders.', 'error');
         promptKdsAuth();
         return;
@@ -1105,6 +1109,7 @@ export function renderKdsWorkspace(
         const res = await fetch('/api/restaurant/kds/expo-dispatch', {
           method: 'POST',
           headers: getKdsHeaders(),
+          credentials: 'same-origin',
           body: JSON.stringify({ tableNumber, force: isPending }),
         });
         const json = await res.json();
@@ -1126,7 +1131,7 @@ export function renderKdsWorkspace(
 
     // Table-level Expo Recall
     async function promptExpoTableRecall() {
-      if (!window.__STAFF_SESSION__?.token) {
+      if (!window.__STAFF_SESSION__?.isAuthenticated && !window.__STAFF_SESSION__?.role) {
         showKdsToast('Staff authentication required. Enter PIN to recall expo tables.', 'error');
         promptKdsAuth();
         return;
@@ -1138,6 +1143,7 @@ export function renderKdsWorkspace(
         const res = await fetch('/api/restaurant/kds/expo-recall', {
           method: 'POST',
           headers: getKdsHeaders(),
+          credentials: 'same-origin',
           body: JSON.stringify({ tableNumber }),
         });
         const json = await res.json();

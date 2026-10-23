@@ -527,8 +527,8 @@ export function renderWhiteLabelWorkspace(
     }
 
     function getAuthHeaders() {
-      const token = (window.__STAFF_SESSION__ && window.__STAFF_SESSION__.token) || localStorage.getItem('staff_token') || 'staff:manager';
       const headers = { 'Content-Type': 'application/json' };
+      const token = (window.__STAFF_SESSION__ && window.__STAFF_SESSION__.token) || localStorage.getItem('staff_token');
       if (token) headers['Authorization'] = 'Bearer ' + token;
       return headers;
     }
@@ -635,6 +635,7 @@ export function renderWhiteLabelWorkspace(
         const res = await fetch('/api/restaurant/branding/branch-overrides', {
           method: 'POST',
           headers: getAuthHeaders(),
+          credentials: 'same-origin',
           body: JSON.stringify(payload)
         });
         const data = await res.json();
@@ -666,6 +667,7 @@ export function renderWhiteLabelWorkspace(
         const res = await fetch('/api/restaurant/branding/branch-overrides/' + encodeURIComponent(activeBranchId), {
           method: 'DELETE',
           headers: getAuthHeaders(),
+          credentials: 'same-origin',
         });
         const data = await res.json();
         if (res.ok && data.success) {

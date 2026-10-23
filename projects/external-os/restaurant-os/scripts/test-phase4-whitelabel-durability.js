@@ -13,9 +13,11 @@
 const http = require('http');
 const fs = require('fs');
 const path = require('path');
+const { startIsolatedServer } = require('./test-harness');
 
-const BASE_URL = 'http://localhost:4010';
-const STORE_PATH = path.resolve(__dirname, '../data/restaurant-runtime-store.json');
+let BASE_URL = process.env.TEST_SERVER_URL;
+let STORE_PATH = null;
+let harness = null;
 
 function request(options, body) {
   return new Promise((resolve, reject) => {
@@ -66,8 +68,17 @@ async function getStaffToken(pin, branchId) {
 
 async function runTests() {
   console.log('🧪 Starting Phase 4 White-Label Durability & Inheritance Test Suite...\n');
+  if (!BASE_URL) {
+    harness = await startIsolatedServer({ prefix: 'phase4-wl', port: 4086 });
+    BASE_URL = harness.url;
+    STORE_PATH = harness.storePath;
+  } else {
+    STORE_PATH = path.resolve(__dirname, '../data/restaurant-runtime-store.json');
+  }
   let passed = 0;
   let failed = 0;
+
+  try {
 
   function assert(condition, testName, details = '') {
     if (condition) {
@@ -205,6 +216,11 @@ async function runTests() {
   console.log(`\n📊 White-Label Durability Test Suite Results: ${passed} Passed, ${failed} Failed`);
   if (failed > 0) {
     process.exit(1);
+  }
+  } finally {
+    if (harness) {
+      await harness.stop();
+    }
   }
 }
 

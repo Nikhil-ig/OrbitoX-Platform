@@ -948,6 +948,7 @@ export function renderFloorStudio(
         const res = await fetch('/api/restaurant/floor/save?branch=' + encodeURIComponent('${currentBranchId}') + '&floor=' + encodeURIComponent('${activeFloor.id}'), {
           method: 'POST',
           headers: getStaffHeaders(),
+          credentials: 'same-origin',
           body: JSON.stringify({
             tables: tablesData,
             branchId: '${currentBranchId}',

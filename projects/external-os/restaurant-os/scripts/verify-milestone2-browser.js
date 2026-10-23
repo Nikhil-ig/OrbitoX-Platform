@@ -16,11 +16,18 @@
 
 const { chromium } = require('playwright');
 const assert = require('assert');
+const { startIsolatedServer } = require('./test-harness');
 
-const BASE_URL = process.env.RESTAURANTOS_URL || 'http://localhost:4010';
+let BASE_URL = process.env.TEST_SERVER_URL;
+let harness = null;
 
 async function runBrowserVerification() {
   console.log('🌐 Starting Milestone 2 Playwright Interactive Verification...\n');
+
+  if (!BASE_URL) {
+    harness = await startIsolatedServer({ prefix: 'm2-browser', port: 4081 });
+    BASE_URL = harness.url;
+  }
 
   let browser;
   try {
@@ -36,6 +43,11 @@ async function runBrowserVerification() {
     const context = await browser.newContext({
       viewport: { width: 1440, height: 900 },
       hasTouch: true,
+    });
+
+    // Authenticate manager session via HttpOnly cookie in Playwright browser context
+    await context.request.post(`${BASE_URL}/api/restaurant/auth/login`, {
+      data: { pin: '8899', branchId: 'branch_ldh' },
     });
     const page = await context.newPage();
 
@@ -353,7 +365,8 @@ async function runBrowserVerification() {
 
     console.log('\n🏆 ALL MILESTONE 2 PLAYWRIGHT INTERACTIVE VERIFICATIONS PASSED SUCCESSFULLY!');
   } finally {
-    await browser.close();
+    if (browser) await browser.close();
+    if (harness) await harness.stop();
   }
 }
 

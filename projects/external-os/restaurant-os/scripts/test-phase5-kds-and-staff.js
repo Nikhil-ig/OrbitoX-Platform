@@ -11,8 +11,10 @@
 
 const http = require('http');
 const assert = require('assert');
+const { startIsolatedServer } = require('./test-harness');
 
-const BASE_URL = 'http://localhost:4010';
+let BASE_URL = process.env.TEST_SERVER_URL;
+let harness = null;
 
 let totalTests = 0;
 let passedTests = 0;
@@ -69,6 +71,13 @@ async function run() {
   console.log('\n======================================================================');
   console.log('🪐 RESTAURANTOS PHASE 5 — KDS & STAFF ACCEPTANCE SUITE');
   console.log('======================================================================\n');
+
+  if (!BASE_URL) {
+    harness = await startIsolatedServer({ prefix: 'phase5-kds', port: 4083 });
+    BASE_URL = harness.url;
+  }
+
+  try {
 
   // --- Step 0: Obtain staff tokens for testing ---
   console.log('🔑 Provisioning test identities...');
@@ -550,6 +559,11 @@ async function run() {
 
   if (failedTests > 0) {
     process.exit(1);
+  }
+  } finally {
+    if (harness) {
+      await harness.stop();
+    }
   }
 }
 

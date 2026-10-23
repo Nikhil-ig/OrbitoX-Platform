@@ -7,8 +7,10 @@
 
 const assert = require('assert');
 const http = require('http');
+const { startIsolatedServer } = require('./test-harness');
 
-const BASE_URL = process.env.RESTAURANTOS_URL || 'http://localhost:4010';
+let BASE_URL = process.env.TEST_SERVER_URL;
+let harness = null;
 
 let totalChecks = 0;
 let passedChecks = 0;
@@ -80,6 +82,10 @@ async function authenticateStaff() {
 
 async function runMilestone2CoreTests() {
   console.log('🧪 Starting Milestone 2 Core Integration Tests...\n');
+  if (!BASE_URL) {
+    harness = await startIsolatedServer({ prefix: 'm2-core', port: 4082 });
+    BASE_URL = harness.url;
+  }
   await authenticateStaff();
 
   try {
@@ -264,6 +270,10 @@ async function runMilestone2CoreTests() {
   } catch (err) {
     console.error('\n💥 Milestone 2 Core Integration Tests failed:', err);
     process.exit(1);
+  } finally {
+    if (harness) {
+      await harness.stop();
+    }
   }
 }
 

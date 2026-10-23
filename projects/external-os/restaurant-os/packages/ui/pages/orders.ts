@@ -280,12 +280,13 @@ export function renderOrdersWorkspace(
 
       function getStaffHeaders() {
         const token = (window.__STAFF_SESSION__ && window.__STAFF_SESSION__.token) || '';
-        return {
+        const headers = {
           'Content-Type': 'application/json',
-          'Authorization': 'Bearer ' + token,
           'X-Staff-Role': (window.__STAFF_SESSION__ && window.__STAFF_SESSION__.role) || 'OPERATIONS',
           'X-Branch-Id': currentBranchId
         };
+        if (token) headers['Authorization'] = 'Bearer ' + token;
+        return headers;
       }
 
       function showToast(message, type) {

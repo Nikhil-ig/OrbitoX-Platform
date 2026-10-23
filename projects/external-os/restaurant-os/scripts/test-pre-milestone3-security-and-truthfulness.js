@@ -102,10 +102,11 @@ async function runProofSuite() {
     const anonKdsRes = await request('/kds');
     assert.strictEqual(anonKdsRes.status, 200, 'KDS page loads for kiosk view');
     assert.ok(anonKdsRes.text.includes('window.__STAFF_SESSION__'), 'Shell sets session object');
-    assert.ok(anonKdsRes.text.includes('token: ""'), 'Anonymous KDS has empty token');
+    assert.ok(anonKdsRes.text.includes('isAuthenticated: false'), 'Anonymous KDS has isAuthenticated: false');
     assert.ok(anonKdsRes.text.includes('role: ""'), 'Anonymous KDS has empty role');
-    assert.ok(!anonKdsRes.text.includes('staff_chef_'), 'Anonymous KDS must NEVER mint staff_chef identity');
-    pass('1.1: Anonymous GET /kds grants NO privileged staff credentials');
+    assert.ok(!anonKdsRes.text.includes('orb_stf.'), 'Anonymous KDS must NEVER contain staff token');
+    assert.ok(!anonKdsRes.text.includes('token:'), 'Anonymous KDS does NOT declare token field in HTML');
+    pass('1.1: Anonymous GET /kds grants NO privileged staff credentials and omits token');
 
     // 1.2: Anonymous mutation attempts must fail closed with 401 UNAUTHENTICATED
     const anonBump = await request('/api/restaurant/kds/bump', {
@@ -149,20 +150,21 @@ async function runProofSuite() {
     assert.strictEqual(chefLoginRes.json?.data?.station, 'TANDOOR');
     pass('1.5: Authenticated Chef PIN 5566 issues valid scoped CHEF credentials');
 
-    // 1.6: Authenticated Chef passes token to GET /kds -> HTML reflects authenticated session
+    // 1.6: Authenticated Chef accesses GET /kds -> HTML reflects authenticated session but strictly omits token
     const authKdsRes = await request('/kds?station=TANDOOR', {
       headers: { Authorization: `Bearer ${chefToken}` },
     });
     assert.strictEqual(authKdsRes.status, 200);
-    assert.ok(authKdsRes.text.includes(`token: "${chefToken}"`), 'Rendered HTML contains authenticated chef token');
+    assert.ok(authKdsRes.text.includes('isAuthenticated: true'), 'Rendered HTML contains isAuthenticated: true');
     assert.ok(authKdsRes.text.includes('role: "CHEF"'), 'Rendered HTML contains CHEF role');
     assert.ok(authKdsRes.text.includes('✓ Authenticated'), 'Header renders authenticated badge');
-    pass('1.6: Authenticated staff GET /kds embeds verified credential and status badge');
+    assert.ok(!authKdsRes.text.includes(chefToken), 'Rendered HTML strictly does NOT serialize raw chef token');
+    pass('1.6: Authenticated staff GET /kds reflects verified session without leaking token in HTML');
 
     // ─────────────────────────────────────────────────────────────────────────
-    // 2. OPERATIONAL SHELL SESSION BINDING & ZERO PRIVILEGE ESCALATION
+    // 2. OPERATIONAL SHELL SESSION BINDING, COOKIE AUTH & CSRF DEFENSE
     // ─────────────────────────────────────────────────────────────────────────
-    console.log('\n🔒 [TEST 2] Operational Shell Session Wiring & Zero Privilege Escalation');
+    console.log('\n🔒 [TEST 2] Operational Shell Session Wiring, Cookie Auth & CSRF Defense');
 
     const operationalPages = [
       '/',
@@ -179,12 +181,13 @@ async function runProofSuite() {
       const pageRes = await request(pagePath);
       assert.strictEqual(pageRes.status, 200, `${pagePath} loads cleanly`);
       assert.ok(pageRes.text.includes('window.__STAFF_SESSION__ = {'), `${pagePath} declares __STAFF_SESSION__`);
-      assert.ok(pageRes.text.includes('token: ""'), `${pagePath} anonymous token must be empty string`);
+      assert.ok(pageRes.text.includes('isAuthenticated: false'), `${pagePath} anonymous isAuthenticated must be false`);
       assert.ok(pageRes.text.includes('role: ""'), `${pagePath} anonymous role must be empty string`);
+      assert.ok(!pageRes.text.includes('token:'), `${pagePath} must NOT serialize token field`);
       assert.ok(!pageRes.text.includes('staff_operations_session'), `${pagePath} must NOT contain defaultStaffToken`);
       assert.ok(!pageRes.text.includes('brand_admin_session'), `${pagePath} must NOT contain brandAdminToken`);
     }
-    pass('2.1: All operational shell pages render empty window.__STAFF_SESSION__ when unauthenticated');
+    pass('2.1: All operational shell pages render unauthenticated session and omit token in HTML');
 
     // 2.2: Login sets HttpOnly Lax Cookie and authorizes shell page
     const mgrLoginRes = await request('/api/restaurant/auth/login', {
@@ -194,24 +197,114 @@ async function runProofSuite() {
     });
     const setCookie = mgrLoginRes.headers.get('set-cookie');
     assert.ok(setCookie && setCookie.includes('orb_staff_token='), 'Login sets orb_staff_token cookie');
+    assert.ok(setCookie.includes('HttpOnly'), 'Cookie has HttpOnly flag');
+    assert.ok(setCookie.includes('SameSite=Lax'), 'Cookie has SameSite=Lax');
     const cookieToken = setCookie.match(/orb_staff_token=([^;]+)/)[1];
-    pass('2.2: POST /api/restaurant/auth/login returns Set-Cookie header');
+    pass('2.2: POST /api/restaurant/auth/login sets HttpOnly, SameSite=Lax session cookie');
 
-    // 2.3: Shell page accessed with cookie receives authenticated session
+    // 2.3: Shell page accessed with cookie receives authenticated session without serialized token
     const cookieShellRes = await request('/operations/tables', {
       headers: { Cookie: `orb_staff_token=${cookieToken}` },
     });
     assert.strictEqual(cookieShellRes.status, 200);
-    assert.ok(cookieShellRes.text.includes(`token: "${decodeURIComponent(cookieToken)}"`), 'Cookie hydrates __STAFF_SESSION__.token');
+    assert.ok(cookieShellRes.text.includes('isAuthenticated: true'), 'Cookie sets isAuthenticated: true');
     assert.ok(cookieShellRes.text.includes('role: "MANAGER"'), 'Cookie hydrates __STAFF_SESSION__.role as MANAGER');
-    pass('2.3: Cookie authenticates operational shell pages with verified MANAGER role');
+    assert.ok(!cookieShellRes.text.includes(decodeURIComponent(cookieToken)), 'Rendered HTML strictly does NOT contain raw staff token');
+    pass('2.3: Cookie authenticates operational shell pages with MANAGER role without token leakage');
 
-    // 2.4: Logout clears cookie
-    const logoutRes = await request('/api/restaurant/auth/logout', { method: 'POST' });
+    // 2.4: Valid authenticated browser request with cookie and same-origin succeeds
+    const cookieMutationRes = await request('/api/restaurant/kds/recall', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Cookie: `orb_staff_token=${cookieToken}`,
+        Origin: BASE_URL,
+      },
+      body: JSON.stringify({ taskId: 'task_tandoor_01', targetStatus: 'READY' }),
+    });
+    // Task might be in any valid state, but authentication itself must not be rejected with 401 or 403
+    assert.ok(cookieMutationRes.status === 200 || cookieMutationRes.status === 404, 'Cookie-authenticated mutation authorized by server');
+    pass('2.4: Cookie-authenticated browser requests with matching Origin succeed');
+
+    // 2.5: CSRF Protection rejects unauthorized cross-origin mutation
+    const csrfAttackRes = await request('/api/restaurant/kds/bump', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Cookie: `orb_staff_token=${cookieToken}`,
+        Origin: 'https://evil-attacker.com',
+      },
+      body: JSON.stringify({ taskId: 'task_tandoor_01', newStatus: 'IN_PROGRESS' }),
+    });
+    assert.strictEqual(csrfAttackRes.status, 403, 'Cross-origin mutation rejected with 403');
+    assert.strictEqual(csrfAttackRes.json?.code, 'CSRF_REJECTED', 'CSRF rejection code returned');
+    pass('2.5: CSRF protection policy strictly rejects cross-origin cookie-authenticated mutations');
+
+    // 2.6: Logout clears cookie AND invalidates credential server-side
+    const logoutRes = await request('/api/restaurant/auth/logout', {
+      method: 'POST',
+      headers: {
+        Cookie: `orb_staff_token=${cookieToken}`,
+        Origin: BASE_URL,
+      },
+    });
     assert.strictEqual(logoutRes.status, 200);
     const logoutCookie = logoutRes.headers.get('set-cookie');
     assert.ok(logoutCookie && logoutCookie.includes('Max-Age=0'), 'Logout clears cookie with Max-Age=0');
-    pass('2.4: POST /api/restaurant/auth/logout clears orb_staff_token cookie');
+
+    // Now try to use the logged-out token via Authorization header
+    const postLogoutRes = await request('/api/restaurant/kds/bump', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${decodeURIComponent(cookieToken)}`,
+      },
+      body: JSON.stringify({ taskId: 'task_tandoor_01', newStatus: 'IN_PROGRESS' }),
+    });
+    assert.strictEqual(postLogoutRes.status, 401, 'Revoked token rejected with 401');
+    assert.ok(postLogoutRes.json?.code === 'REVOKED_TOKEN' || postLogoutRes.json?.code === 'INVALID_CREDENTIAL', 'Rejected as revoked/invalid token');
+    pass('2.6: POST /api/restaurant/auth/logout clears cookie and durably revokes token server-side');
+
+    // 2.7: Legitimate Bearer API clients continue to work without cookies
+    const apiLoginRes = await request('/api/restaurant/auth/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ pin: '0000', branchId: '*' }),
+    });
+    const apiBearerToken = apiLoginRes.json?.data?.token;
+    assert.ok(apiBearerToken, 'API client obtains Bearer token');
+    const apiReqRes = await request('/api/restaurant/kds/recall', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${apiBearerToken}`,
+      },
+      body: JSON.stringify({ taskId: 'non_existent_task', targetStatus: 'READY' }),
+    });
+    assert.ok(apiReqRes.status === 404 || apiReqRes.status === 200, 'Bearer client authorized without cookie');
+    pass('2.7: Legitimate Bearer API clients without cookies or Origin continue to work normally');
+
+    // 2.8: Wrong branch, tampered tokens, and unauthorized roles fail closed
+    const crossBranchRes = await request('/api/restaurant/branding/branch-overrides', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${chefToken}`,
+      },
+      body: JSON.stringify({ branchId: 'branch_chd', restaurantName: 'Hacked Brand' }),
+    });
+    assert.strictEqual(crossBranchRes.status, 403, 'Unauthorized chef role rejected from brand mutation');
+
+    const tamperedRes = await request('/api/restaurant/kds/bump', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: 'Bearer orb_stf.fake_payload.fake_signature',
+      },
+      body: JSON.stringify({ taskId: 'task_tandoor_01', newStatus: 'IN_PROGRESS' }),
+    });
+    assert.strictEqual(tamperedRes.status, 401, 'Tampered token rejected with 401');
+    pass('2.8: Wrong-branch, tampered, and unauthorized requests fail closed');
 
     // ─────────────────────────────────────────────────────────────────────────
     // 3. STORAGE ROLLBACK DEFECT CORRECTION (PHASE 6C VERIFICATION)

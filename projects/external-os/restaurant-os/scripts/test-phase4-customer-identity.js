@@ -11,8 +11,10 @@
  */
 
 const http = require('http');
+const { startIsolatedServer } = require('./test-harness');
 
-const BASE_URL = 'http://localhost:4010';
+let BASE_URL = process.env.TEST_SERVER_URL;
+let harness = null;
 
 function request(options, body) {
   return new Promise((resolve, reject) => {
@@ -52,8 +54,14 @@ function request(options, body) {
 
 async function runTests() {
   console.log('🧪 Starting Phase 4 Customer Identity & Privacy Test Suite...\n');
+  if (!BASE_URL) {
+    harness = await startIsolatedServer({ prefix: 'phase4-id', port: 4084 });
+    BASE_URL = harness.url;
+  }
   let passed = 0;
   let failed = 0;
+
+  try {
 
   function assert(condition, testName, details = '') {
     if (condition) {
@@ -197,6 +205,11 @@ async function runTests() {
   console.log(`\n📊 Customer Identity Test Suite Results: ${passed} Passed, ${failed} Failed`);
   if (failed > 0) {
     process.exit(1);
+  }
+  } finally {
+    if (harness) {
+      await harness.stop();
+    }
   }
 }
 
