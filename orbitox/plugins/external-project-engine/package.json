@@ -8,6 +8,7 @@
     "build": "tsc -p tsconfig.json"
   },
   "dependencies": {
+    "@orbitox/config": "workspace:*",
     "@orbitox/core": "workspace:*",
     "@orbitox/external-runtime-sdk": "workspace:*",
     "@orbitox/types": "workspace:*"

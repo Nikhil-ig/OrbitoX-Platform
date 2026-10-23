@@ -7,7 +7,7 @@ export const POST = withApiGuard(
   {
     serviceId: 'platform',
     serviceName: 'Platform ChangeSet Engine',
-    allowPublic: true,
+    requiredScopes: ['platform.changesets.read'],
   },
   async (req: NextRequest, ctx: ApiRequestContext) => {
     try {

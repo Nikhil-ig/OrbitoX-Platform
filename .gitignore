@@ -33,3 +33,14 @@ Thumbs.db
 npm-debug.log*
 pnpm-debug.log*
 coverage/
+
+# Data, Runtime stores, Secrets, Backups, and Dumps (NEVER commit)
+data/
+**/data/*.json
+**/.staff_signing_secret
+**/.revoked_staff_tokens.json
+*.bak
+*.bak_*
+*.zip
+test-results/
+**/test-*store*.json

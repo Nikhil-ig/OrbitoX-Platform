@@ -9,6 +9,7 @@
     "clean": "rm -rf dist"
   },
   "dependencies": {
+    "@orbitox/config": "workspace:*",
     "@orbitox/core": "workspace:*",
     "@orbitox/sdk": "workspace:*",
     "@orbitox/types": "workspace:*"

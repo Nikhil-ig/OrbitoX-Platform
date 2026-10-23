@@ -7,7 +7,7 @@ export const GET = withApiGuard(
   {
     serviceId: 'platform',
     serviceName: 'Platform Blueprint Service',
-    allowPublic: true,
+    requiredScopes: ['platform.blueprints.read'],
   },
   async (_req: NextRequest, ctx: ApiRequestContext) => {
     const list = blueprint.listBlueprints();
@@ -27,7 +27,7 @@ export const POST = withApiGuard(
   {
     serviceId: 'platform',
     serviceName: 'Platform Blueprint Service',
-    allowPublic: true,
+    requiredScopes: ['platform.blueprints.read'],
   },
   async (req: NextRequest, ctx: ApiRequestContext) => {
     try {

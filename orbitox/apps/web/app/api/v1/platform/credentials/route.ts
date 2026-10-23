@@ -8,7 +8,7 @@ export const GET = withApiGuard(
   {
     serviceId: 'platform',
     serviceName: 'Platform Vault Service',
-    allowPublic: true,
+    requiredScopes: ['platform.credentials.read'],
   },
   async (req: NextRequest, ctx: ApiRequestContext) => {
     PlatformRepository.initialize();

@@ -1,3 +1,4 @@
+import { requireSecret } from '@orbitox/config';
 import { Module, Global } from '@nestjs/common';
 import { JwtModule } from '@nestjs/jwt';
 import { PassportModule } from '@nestjs/passport';
@@ -40,22 +41,22 @@ const redisProvider = {
     JwtModule.registerAsync({
       inject: [SecretsService],
       useFactory: async (secretsService: SecretsService) => {
-        // Fallbacks for local development
-        let privateKey = process.env.JWT_PRIVATE_KEY || 'default_secret';
-        let publicKey = process.env.JWT_PUBLIC_KEY || 'default_secret';
+        let privateKey: string;
+        let publicKey: string;
         
         try {
           privateKey = await secretsService.get('auth/jwt/private_key');
           publicKey = await secretsService.get('auth/jwt/public_key');
         } catch (e) {
-          // Ignore error and use fallbacks
+          privateKey = requireSecret('JWT_PRIVATE_KEY', { minBytes: 32 });
+          publicKey = requireSecret('JWT_PUBLIC_KEY', { minBytes: 32 });
         }
 
         return {
           privateKey,
           publicKey,
           signOptions: { 
-            algorithm: publicKey === 'default_secret' ? 'HS256' : 'RS256',
+            algorithm: 'RS256',
           },
         };
       },

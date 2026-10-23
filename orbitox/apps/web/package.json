@@ -18,6 +18,7 @@
     "@orbitox/types": "workspace:*",
     "@orbitox/runtime": "workspace:*",
     "@orbitox-io/plugin-engine": "workspace:*",
+    "@orbitox/config": "workspace:*",
     "@orbitox/core": "workspace:*",
     "@orbitox/commerce": "workspace:*",
     "@orbitox/school": "workspace:*",

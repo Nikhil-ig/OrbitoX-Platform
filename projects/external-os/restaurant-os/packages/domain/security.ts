@@ -66,66 +66,44 @@ const revokedStaffIds = new Set<string>();
 // Rate-limiting tracker for PIN verification: identifier -> { count, lockedUntil }
 const pinAttemptTracker = new Map<string, { count: number; lockedUntil?: number }>();
 
-/**
- * Resolves or generates a machine signing secret stored in data/.staff_signing_secret
- * with 0600 file permissions to ensure restart continuity across service reboots.
- */
-function resolvePersistentMachineSecret(): string {
-  const dataDir = process.env.RESTAURANT_STORE_PATH
-    ? path.dirname(process.env.RESTAURANT_STORE_PATH)
-    : path.join(__dirname, '..', '..', 'data');
-
-  if (!fs.existsSync(dataDir)) {
-    try {
-      fs.mkdirSync(dataDir, { recursive: true });
-    } catch (e) {
-      // Non-fatal
-    }
-  }
-
-  const secretFile = path.join(dataDir, '.staff_signing_secret');
-  if (fs.existsSync(secretFile)) {
-    try {
-      const stored = fs.readFileSync(secretFile, 'utf8').trim();
-      if (stored.length >= 32) return stored;
-    } catch (e) {
-      // Non-fatal
-    }
-  }
-
-  const freshSecret = crypto.randomBytes(32).toString('hex');
-  try {
-    fs.writeFileSync(secretFile, freshSecret, { mode: 0o600, encoding: 'utf8' });
-  } catch (e) {
-    // Non-fatal
-  }
-  return freshSecret;
-}
+let ephemeralStaffSecret: string | null = null;
 
 /**
  * Resolves the server-authoritative secret for signing and verifying staff credentials.
- * In production mode, fails safe if a cryptographically weak or default key is detected.
+ * In non-dev environments, STAFF_SIGNING_SECRET must be configured with >=32 chars.
+ * In development/test mode, generates an in-memory random secret per process.
+ * Never reads or writes data/.staff_signing_secret to disk.
  */
 export function getStaffAuthSecret(): string {
-  const envSecret = process.env.STAFF_AUTH_SECRET || process.env.STAFF_JWT_SECRET || process.env.JWT_SECRET;
-  if (process.env.NODE_ENV === 'production') {
-    if (
-      !envSecret ||
-      envSecret.length < 32 ||
-      envSecret.includes('default_key') ||
-      envSecret.includes('test_only') ||
-      envSecret === 'orbitox_hospitality_staff_vault_secret_key_v2_2026_test_only_0123456789abcdef'
-    ) {
-      throw new Error(
-        '🚨 [SECURITY FATAL] STAFF_AUTH_SECRET (or STAFF_JWT_SECRET / JWT_SECRET) must be configured with at least 32 cryptographically strong characters in production mode.'
-      );
+  const envSecret =
+    process.env.STAFF_SIGNING_SECRET ||
+    process.env.STAFF_AUTH_SECRET ||
+    process.env.STAFF_JWT_SECRET ||
+    process.env.JWT_SECRET;
+
+  const isDev = process.env.NODE_ENV === 'development' || process.env.NODE_ENV === 'test';
+  const allowDev = isDev || process.env.ALLOW_DEV_SECRETS === '1';
+
+  if (
+    !envSecret ||
+    envSecret.length < 32 ||
+    envSecret.includes('default_key') ||
+    envSecret.includes('test_only') ||
+    envSecret.includes('orbitox_hospitality_staff_vault_secret_key')
+  ) {
+    if (allowDev) {
+      if (!ephemeralStaffSecret) {
+        ephemeralStaffSecret = crypto.randomBytes(32).toString('hex');
+        console.warn('⚠️ [SECURITY WARNING] Using ephemeral in-memory STAFF_SIGNING_SECRET for development/test mode.');
+      }
+      return ephemeralStaffSecret;
     }
-    return envSecret;
+    throw new Error(
+      '🚨 [SECURITY FATAL] STAFF_SIGNING_SECRET (or STAFF_AUTH_SECRET / STAFF_JWT_SECRET / JWT_SECRET) must be configured with at least 32 cryptographically strong characters in non-development mode.'
+    );
   }
-  if (envSecret && envSecret.length >= 16) {
-    return envSecret;
-  }
-  return resolvePersistentMachineSecret();
+
+  return envSecret;
 }
 
 /**
@@ -684,74 +662,113 @@ export function loadPersistedStaffRevocations(tokens: string[], jtis: string[], 
   if (Array.isArray(staffIds)) staffIds.forEach((s) => revokedStaffIds.add(s));
 }
 
-export const DEV_TEST_STATION_SECRETS: Record<
-  string,
-  { station: string; branchId: string; isPrivileged: boolean }
-> = {
-  'stn_sec_tandoor_ldh_99x7': { station: 'TANDOOR', branchId: 'branch_ldh', isPrivileged: false },
-  'stn_sec_curry_ldh_88y6': { station: 'CURRY_LINE', branchId: 'branch_ldh', isPrivileged: false },
-  'stn_sec_expo_ldh_77z5': { station: 'EXPO', branchId: 'branch_ldh', isPrivileged: true },
-  'stn_sec_beverage_ldh_66w4': { station: 'BEVERAGE', branchId: 'branch_ldh', isPrivileged: false },
-};
+export interface StationMetadata {
+  station: string;
+  branchId: string;
+  isPrivileged: boolean;
+}
 
-/**
- * Resolves registered physical hardware kitchen station secrets.
- *
- * Security & Environment Rules:
- * - In production mode, station credentials MUST come from validated runtime configuration (RESTAURANT_STATION_SECRETS).
- * - Hardcoded source secrets and dev test fixtures are strictly forbidden in production.
- * - If no station secrets are configured in production, station authentication fails closed.
- *
- * Safe Rotation Process:
- * - Generate a new high-entropy random token (e.g. crypto.randomBytes(24).toString('hex')).
- * - Update RESTAURANT_STATION_SECRETS environment variable with the new secret mapping.
- * - Terminate active connections and update terminal hardware settings.
- */
-export function getRegisteredStationSecrets(): Record<
-  string,
-  { station: string; branchId: string; isPrivileged: boolean }
-> {
-  const configuredSecrets: Record<string, { station: string; branchId: string; isPrivileged: boolean }> = {};
+// In-memory store holding ONLY SHA-256 hashes of configured station secrets
+const stationSecretsHashStore = new Map<string, StationMetadata>();
+let lastStationEnvSnapshot = '';
 
-  const envSecrets = process.env.RESTAURANT_STATION_SECRETS;
-  if (envSecrets) {
+function syncStationSecretsFromConfig(): void {
+  const currentEnv = process.env.RESTAURANT_STATION_SECRETS || '';
+  const currentMode = process.env.NODE_ENV || 'development';
+  const snapshotKey = `${currentMode}::${currentEnv}`;
+  if (snapshotKey === lastStationEnvSnapshot && stationSecretsHashStore.size > 0) {
+    return;
+  }
+  lastStationEnvSnapshot = snapshotKey;
+  stationSecretsHashStore.clear();
+
+  let rawMap: Record<string, StationMetadata> = {};
+
+  if (currentEnv) {
     try {
-      const parsed = JSON.parse(envSecrets);
+      const parsed = JSON.parse(currentEnv);
       if (typeof parsed === 'object' && parsed !== null) {
-        Object.assign(configuredSecrets, parsed);
+        Object.assign(rawMap, parsed);
       }
     } catch {
-      const pairs = envSecrets.split(',');
+      const pairs = currentEnv.split(',');
       for (const pair of pairs) {
         const [sec, stn, br, priv] = pair.trim().split(':');
         if (sec && stn && br) {
-          configuredSecrets[sec] = { station: stn, branchId: br, isPrivileged: priv === 'true' };
+          rawMap[sec] = { station: stn, branchId: br, isPrivileged: priv === 'true' };
         }
       }
     }
+  } else if (process.env.NODE_ENV !== 'production') {
+    // In development / test mode only, load dev fixtures (hashed immediately, never stored raw)
+    rawMap = {
+      'stn_sec_tandoor_ldh_99x7': { station: 'TANDOOR', branchId: 'branch_ldh', isPrivileged: false },
+      'stn_sec_curry_ldh_88y6': { station: 'CURRY_LINE', branchId: 'branch_ldh', isPrivileged: false },
+      'stn_sec_expo_ldh_77z5': { station: 'EXPO', branchId: 'branch_ldh', isPrivileged: true },
+      'stn_sec_beverage_ldh_66w4': { station: 'BEVERAGE', branchId: 'branch_ldh', isPrivileged: false },
+    };
   }
 
-  if (process.env.NODE_ENV === 'production') {
-    return configuredSecrets;
+  for (const [rawSecret, meta] of Object.entries(rawMap)) {
+    const hash = crypto.createHash('sha256').update(rawSecret).digest('hex');
+    stationSecretsHashStore.set(hash, meta);
   }
+}
 
-  return {
-    ...DEV_TEST_STATION_SECRETS,
-    ...configuredSecrets,
-  };
+// Initial sync
+syncStationSecretsFromConfig();
+
+/**
+ * Constant-time verification of candidate station secret against stored SHA-256 hashes.
+ */
+export function lookupRegisteredStation(token: string): StationMetadata | undefined {
+  if (!token || typeof token !== 'string') return undefined;
+  syncStationSecretsFromConfig();
+
+  const candidateHash = crypto.createHash('sha256').update(token).digest();
+
+  for (const [storedHashHex, meta] of stationSecretsHashStore.entries()) {
+    const storedBuf = Buffer.from(storedHashHex, 'hex');
+    if (storedBuf.length === candidateHash.length && crypto.timingSafeEqual(storedBuf, candidateHash)) {
+      return meta;
+    }
+  }
+  return undefined;
+}
+
+export function getRegisteredStationSecrets(): Record<string, StationMetadata> {
+  syncStationSecretsFromConfig();
+  return new Proxy({} as Record<string, StationMetadata>, {
+    get(target, prop: string) {
+      return lookupRegisteredStation(prop);
+    },
+    has(target, prop: string) {
+      return !!lookupRegisteredStation(prop);
+    },
+    ownKeys() {
+      if (process.env.NODE_ENV === 'production' && !process.env.RESTAURANT_STATION_SECRETS) {
+        return [];
+      }
+      return Array.from(stationSecretsHashStore.keys());
+    },
+    getOwnPropertyDescriptor(target, prop) {
+      return {
+        enumerable: true,
+        configurable: true,
+      };
+    },
+  });
 }
 
 export const REGISTERED_STATION_SECRETS: Record<
   string,
-  { station: string; branchId: string; isPrivileged: boolean }
-> = new Proxy(DEV_TEST_STATION_SECRETS, {
+  StationMetadata
+> = new Proxy({}, {
   get(target, prop: string) {
-    const secrets = getRegisteredStationSecrets();
-    return (secrets as any)[prop];
+    return lookupRegisteredStation(prop);
   },
   has(target, prop: string) {
-    const secrets = getRegisteredStationSecrets();
-    return prop in secrets;
+    return !!lookupRegisteredStation(prop);
   },
 });
 

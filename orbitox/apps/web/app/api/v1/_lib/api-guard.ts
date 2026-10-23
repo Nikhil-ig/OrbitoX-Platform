@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import * as crypto from 'crypto';
 import {
   ApiGuardOptions,
   ApiRequestContext,
@@ -17,6 +18,18 @@ import {
   hasCapability,
 } from '@orbitox-io/plugin-engine';
 import { PlatformApiKeyRecord } from '@orbitox/types';
+import {
+  setDrainChecker,
+  setRequestTracker,
+  listApiKeys,
+  getApiKey,
+  registerApiKey,
+  rotateKey,
+  revokeKey,
+} from './guard';
+
+export * from './guard';
+export { withApiGuard } from './guard';
 
 // Ensure PlatformRepository defaults are seeded
 if (typeof PlatformRepository !== 'undefined' && typeof PlatformRepository.initialize === 'function') {
@@ -245,22 +258,27 @@ export class PlatformApiState {
     return true;
   }
 
-  static getApiKeys() {
+  static getApiKeys(): any[] {
+    const fromRegistry = listApiKeys();
+    if (fromRegistry.length > 0) {
+      return fromRegistry;
+    }
     return this.apiKeys;
   }
 
-  static findApiKey(keyOrPrefix: string) {
-    if (!keyOrPrefix) return null;
-    const direct = this.apiKeys.find(
-      (k) =>
-        k.id === keyOrPrefix ||
-        k.rawKey === keyOrPrefix ||
-        k.keyPrefix === keyOrPrefix ||
-        k.maskedKey === keyOrPrefix
-    );
-    if (direct) return direct;
-    const repoKey = PlatformRepository.getApiKey(keyOrPrefix) || PlatformRepository.findKeyByRawSecret(keyOrPrefix);
-    return repoKey || null;
+  static findApiKey(keyId: string): any {
+    if (!keyId) return null;
+    const fromRegistry = getApiKey(keyId);
+    if (fromRegistry) {
+      const { authVerifier, ...safe } = fromRegistry;
+      return safe;
+    }
+    const direct = this.apiKeys.find((k) => k.id === keyId || (k as any).keyId === keyId);
+    if (direct) {
+      const { authVerifier, ...safe } = direct as any;
+      return safe;
+    }
+    return null;
   }
 
   static addApiKey(key: any) {
@@ -269,14 +287,18 @@ export class PlatformApiState {
   }
 
   static rotateApiKey(keyId: string) {
+    const rotated = rotateKey(keyId);
+    if (rotated) {
+      return rotated.record;
+    }
     const idx = this.apiKeys.findIndex((k) => k.id === keyId);
     if (idx !== -1) {
       const old = this.apiKeys[idx]!;
+      const entropy = crypto.randomBytes(4).toString('hex');
       const newKey: any = {
         ...old,
         id: `key-${Date.now()}`,
-        maskedKey: `orb_live_********************${Math.floor(1000 + Math.random() * 9000)}`,
-        rawKey: `orb_live_rot_${Math.random().toString(36).slice(2, 10)}`,
+        maskedKey: `orb_live_••••••••••••••••••••${entropy}`,
         createdAt: 'Just now',
         lastUsedAt: 'Never',
       };
@@ -287,6 +309,7 @@ export class PlatformApiState {
   }
 
   static revokeApiKey(keyId: string) {
+    revokeKey(keyId);
     const key = this.apiKeys.find((k) => k.id === keyId);
     if (key) {
       key.status = 'revoked';
@@ -547,596 +570,9 @@ export class PlatformApiState {
   }
 }
 
-export function withApiGuard<T = any>(
-  options: ApiGuardOptions,
-  handler: (req: NextRequest, ctx: ApiRequestContext) => Promise<NextResponse<ApiResponse<T>> | Response>
-) {
-  return async (req: NextRequest): Promise<Response> => {
-    const startTime = performance.now();
-    const requestId = `req_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
-
-    // Drain Gate: reject incoming traffic if draining, unless it's a system management request
-    if (PlatformApiState.isDrainActive() && options.serviceId !== 'system') {
-      return NextResponse.json<ApiResponse>(
-        {
-          success: false,
-          error: {
-            code: 'SYSTEM_DRAIN_MODE',
-            message: 'Traffic drain in progress: System is transitioning architecture mode. Please retry in 2 seconds.',
-          },
-          meta: {
-            tenantId: 'system',
-            serviceId: options.serviceId || 'unknown',
-            latencyMs: 1,
-            timestamp: new Date().toISOString(),
-            requestId,
-          },
-        },
-        {
-          status: 503,
-          headers: {
-            'Retry-After': '2',
-            'x-orbitox-drain-mode': 'active',
-          },
-        }
-      );
-    }
-
-    PlatformApiState.trackRequest();
-
-    // 1. Client Identity & Headers
-    const clientIp =
-      req.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ||
-      req.headers.get('x-real-ip') ||
-      '127.0.0.1';
-    const userAgent = req.headers.get('user-agent') || 'Unknown';
-
-    // 2. Extract Auth Key
-    const authHeader = req.headers.get('authorization') || '';
-    const bearerToken = authHeader.startsWith('Bearer ') ? authHeader.substring(7).trim() : '';
-    const rawApiKey =
-      req.headers.get('x-api-key') ||
-      bearerToken ||
-      req.nextUrl.searchParams.get('apiKey') ||
-      '';
-
-    // 3. Extract Tenant ID requested by client
-    const urlTenant = req.nextUrl.searchParams.get('tenantId');
-    const headerTenant =
-      req.headers.get('x-tenant-id') ||
-      req.headers.get('x-context-id') ||
-      '';
-    const hostTenant = req.nextUrl.hostname.split('.')[0];
-    const clientRequestedTenant = urlTenant || headerTenant || (hostTenant && hostTenant !== 'localhost' ? hostTenant : '');
-
-    const serviceId = options.serviceId || 'system';
-
-    // 4. Authenticate API Key if present
-    let matchedKey: any = null;
-    let isPlatformKeyRecord = false;
-
-    if (rawApiKey) {
-      // Primary: Cryptographic constant-time HMAC-SHA256 verifier lookup in PlatformRepository
-      const repoKey = PlatformRepository.findKeyByRawSecret(rawApiKey);
-      if (repoKey) {
-        matchedKey = repoKey;
-        isPlatformKeyRecord = true;
-      } else {
-        // Fallback: Legacy in-memory key lookup
-        matchedKey = PlatformApiState.findApiKey(rawApiKey);
-        if (!matchedKey) {
-          matchedKey = PlatformApiState.getApiKeys().find(
-            (k) => rawApiKey.startsWith(k.keyPrefix)
-          );
-        }
-      }
-    }
-
-    // 5. Enforce Authentication Gate
-    if (options.requireAuth) {
-      if (!rawApiKey) {
-        return NextResponse.json<ApiResponse>(
-          {
-            success: false,
-            error: {
-              code: 'UNAUTHORIZED',
-              message: 'Authentication required. Provide an API key via x-api-key or Authorization: Bearer <key>.',
-            },
-            meta: {
-              latencyMs: Math.round(performance.now() - startTime),
-              timestamp: new Date().toISOString(),
-              requestId,
-            },
-          },
-          { status: 401 }
-        );
-      }
-
-      if (!matchedKey) {
-        const latencyMs = Math.round(performance.now() - startTime);
-        PlatformApiState.recordTelemetry({
-          tenantId: clientRequestedTenant || 'unknown',
-          facade: 'SecurityFacade',
-          level: 'SECURITY',
-          message: `[API 401] Invalid or unrecognized API key secret provided.`,
-        });
-        return NextResponse.json<ApiResponse>(
-          {
-            success: false,
-            error: {
-              code: 'INVALID_CREDENTIALS',
-              message: 'The provided API key could not be verified against the platform keystore.',
-            },
-            meta: {
-              latencyMs,
-              timestamp: new Date().toISOString(),
-              requestId,
-            },
-          },
-          { status: 401 }
-        );
-      }
-
-      const keyStatus = (matchedKey.status || '').toLowerCase();
-      if (keyStatus !== 'active') {
-        const latencyMs = Math.round(performance.now() - startTime);
-        return NextResponse.json<ApiResponse>(
-          {
-            success: false,
-            error: {
-              code: 'KEY_DISABLED',
-              message: `The provided API key is currently ${matchedKey.status.toUpperCase()}.`,
-              details: { keyId: matchedKey.id || matchedKey.keyId, status: matchedKey.status },
-            },
-            meta: {
-              latencyMs,
-              timestamp: new Date().toISOString(),
-              requestId,
-            },
-          },
-          { status: 403 }
-        );
-      }
-
-      // 5.1 IP Allowlist Gate
-      if (matchedKey.ipAllowlist && matchedKey.ipAllowlist.length > 0) {
-        if (!isIpAllowed(clientIp, matchedKey.ipAllowlist)) {
-          const latencyMs = Math.round(performance.now() - startTime);
-          PlatformApiState.recordTelemetry({
-            tenantId: clientRequestedTenant || 'security',
-            facade: 'SecurityFacade',
-            level: 'SECURITY',
-            message: `[API 403] IP allowlist violation for key [${matchedKey.id || matchedKey.keyId}]: client IP [${clientIp}] blocked.`,
-          });
-          return NextResponse.json<ApiResponse>(
-            {
-              success: false,
-              error: {
-                code: 'IP_FORBIDDEN',
-                message: `Client IP address [${clientIp}] is not in the authorized IP allowlist for this API key.`,
-                details: { clientIp, allowlist: matchedKey.ipAllowlist },
-              },
-              meta: {
-                latencyMs,
-                timestamp: new Date().toISOString(),
-                requestId,
-              },
-            },
-            { status: 403 }
-          );
-        }
-      }
-    }
-
-    // 6. Trusted Multi-Tenant Resolution & Anti-Spoofing
-    // If authenticated, derive or validate tenant scope strictly from key metadata
-    let tenantId = 'default';
-    let project: any = null;
-
-    if (matchedKey) {
-      const allowedTenantScope: string[] = matchedKey.tenantScope || [];
-      const projectId = matchedKey.projectId;
-      project = isPlatformKeyRecord
-        ? (projectId ? PlatformRepository.getProject(projectId) : null)
-        : (PlatformApiState.findProjectByApiKey(rawApiKey) || (projectId ? PlatformApiState.getProject(projectId) : null));
-
-      if (clientRequestedTenant) {
-        const isPermitted =
-          allowedTenantScope.length === 0 ||
-          allowedTenantScope.includes('*') ||
-          allowedTenantScope.includes(clientRequestedTenant) ||
-          (project && (project.slug === clientRequestedTenant || project.id === clientRequestedTenant));
-
-        if (!isPermitted) {
-          const latencyMs = Math.round(performance.now() - startTime);
-          PlatformApiState.recordTelemetry({
-            tenantId: clientRequestedTenant,
-            facade: 'SecurityFacade',
-            level: 'SECURITY',
-            message: `[API 403] Tenant spoofing attempt detected! Key [${matchedKey.id || matchedKey.keyId}] attempted unauthorized tenant access to [${clientRequestedTenant}].`,
-          });
-
-          return NextResponse.json<ApiResponse>(
-            {
-              success: false,
-              error: {
-                code: 'TENANT_SCOPE_VIOLATION',
-                message: `Client requested tenant [${clientRequestedTenant}], but this API key is scoped only to [${allowedTenantScope.join(', ')}].`,
-                details: {
-                  requestedTenant: clientRequestedTenant,
-                  authorizedScope: allowedTenantScope,
-                },
-              },
-              meta: {
-                tenantId: clientRequestedTenant,
-                serviceId,
-                latencyMs,
-                timestamp: new Date().toISOString(),
-                requestId,
-              },
-            },
-            {
-              status: 403,
-              headers: {
-                'x-orbitox-tenant-scope': 'VIOLATION',
-              },
-            }
-          );
-        }
-        tenantId = clientRequestedTenant;
-      } else {
-        // Derive tenant automatically from key scope or project slug
-        if (allowedTenantScope.length > 0 && !allowedTenantScope.includes('*') && allowedTenantScope[0]) {
-          tenantId = allowedTenantScope[0];
-        } else if (project) {
-          tenantId = project.slug || project.id;
-        } else {
-          tenantId = 'default';
-        }
-      }
-    } else {
-      tenantId = clientRequestedTenant || 'default';
-      project =
-        PlatformApiState.getProject(tenantId) ||
-        PlatformApiState.getProjects().find((p) => p.slug === tenantId || p.id === tenantId);
-    }
-
-    // 7. Check Required Scopes / Capabilities using typed grammar
-    if (options.requiredScopes && options.requiredScopes.length > 0 && matchedKey) {
-      const grantedCapabilities: string[] = matchedKey.capabilities || matchedKey.scopes || [];
-      const hasAllCapabilities = options.requiredScopes.every((reqScope) =>
-        hasCapability(grantedCapabilities, reqScope)
-      );
-
-      if (!hasAllCapabilities) {
-        const latencyMs = Math.round(performance.now() - startTime);
-        return NextResponse.json<ApiResponse>(
-          {
-            success: false,
-            error: {
-              code: 'INSUFFICIENT_SCOPES',
-              message: `This operation requires the following capabilities: ${options.requiredScopes.join(', ')}`,
-              details: { required: options.requiredScopes, granted: grantedCapabilities },
-            },
-            meta: {
-              latencyMs,
-              timestamp: new Date().toISOString(),
-              requestId,
-            },
-          },
-          { status: 403 }
-        );
-      }
-    }
-
-    // 8. Verify Project Suspension Gate
-    if (project && project.status === 'suspended') {
-      const latencyMs = Math.round(performance.now() - startTime);
-      PlatformApiState.recordTelemetry({
-        tenantId,
-        facade: 'SecurityFacade',
-        level: 'SECURITY',
-        message: `[API 403] Blocked request for suspended project [${project.name}] (ID: ${project.id})`,
-      });
-
-      return NextResponse.json<ApiResponse>(
-        {
-          success: false,
-          error: {
-            code: 'PROJECT_SUSPENDED',
-            message: `Client project [${project.name}] has been suspended by Platform Administration.`,
-            details: { projectId: project.id, status: project.status },
-          },
-          meta: {
-            tenantId,
-            serviceId,
-            latencyMs,
-            timestamp: new Date().toISOString(),
-            requestId,
-          },
-        },
-        {
-          status: 403,
-          headers: {
-            'x-orbitox-latency-ms': latencyMs.toString(),
-            'x-orbitox-anti-tamper': 'VERIFIED',
-            'x-orbitox-project-status': 'suspended',
-          },
-        }
-      );
-    }
-
-    // 8.1. Verify Plugin Package Entitlement Gate
-    if (
-      project &&
-      project.enabledServices &&
-      project.enabledServices.length > 0 &&
-      serviceId !== 'system' &&
-      serviceId !== 'admin'
-    ) {
-      if (!project.enabledServices.includes(serviceId)) {
-        const latencyMs = Math.round(performance.now() - startTime);
-        PlatformApiState.recordTelemetry({
-          tenantId,
-          facade: 'SecurityFacade',
-          level: 'WARN',
-          message: `[API 403] Project [${project.name}] attempted to access unentitled package [@orbitox/${serviceId}].`,
-        });
-
-        return NextResponse.json<ApiResponse>(
-          {
-            success: false,
-            error: {
-              code: 'PLUGIN_NOT_ENTITLED',
-              message: `Your project [${project.name}] is not subscribed to package [@orbitox/${serviceId}]. Enable this plugin package in your Project Settings or upgrade your plan.`,
-              details: {
-                projectId: project.id,
-                requestedService: serviceId,
-                subscribedPackages: project.enabledServices,
-              },
-            },
-            meta: {
-              tenantId,
-              serviceId,
-              latencyMs,
-              timestamp: new Date().toISOString(),
-              requestId,
-            },
-          },
-          {
-            status: 403,
-            headers: {
-              'x-orbitox-latency-ms': latencyMs.toString(),
-              'x-orbitox-anti-tamper': 'VERIFIED',
-              'x-orbitox-entitlement': 'denied',
-            },
-          }
-        );
-      }
-    }
-
-    // 8.2. Verify Tenant Monthly API Call Quota Gate
-    if (project && project.apiCallQuota && project.monthlyApiCalls >= project.apiCallQuota) {
-      const latencyMs = Math.round(performance.now() - startTime);
-      return NextResponse.json<ApiResponse>(
-        {
-          success: false,
-          error: {
-            code: 'TENANT_QUOTA_EXCEEDED',
-            message: `Monthly API call quota of ${project.apiCallQuota.toLocaleString()} calls for project [${project.name}] has been exceeded. Upgrade plan in Platform Admin.`,
-            details: {
-              projectId: project.id,
-              consumed: project.monthlyApiCalls,
-              limit: project.apiCallQuota,
-            },
-          },
-          meta: {
-            tenantId,
-            serviceId,
-            latencyMs,
-            timestamp: new Date().toISOString(),
-            requestId,
-          },
-        },
-        {
-          status: 429,
-          headers: {
-            'x-orbitox-latency-ms': latencyMs.toString(),
-            'x-orbitox-quota-exceeded': 'true',
-            'retry-after': '86400',
-          },
-        }
-      );
-    }
-
-    // 8.3. Verify Microservice Status Gate
-    if (options.serviceId && options.serviceId !== 'system' && options.serviceId !== 'admin') {
-      const srv = PlatformApiState.getService(options.serviceId);
-      if (srv && srv.status === 'blocked') {
-        const latencyMs = Math.round(performance.now() - startTime);
-        PlatformApiState.recordTelemetry({
-          tenantId,
-          facade: 'SecurityFacade',
-          level: 'SECURITY',
-          message: `[API 403] Blocked request to microservice [${options.serviceName || options.serviceId}]: Service is set to BLOCKED in Platform Admin.`,
-        });
-
-        return NextResponse.json<ApiResponse>(
-          {
-            success: false,
-            error: {
-              code: 'SERVICE_SUSPENDED',
-              message: `The microservice [${options.serviceName || options.serviceId}] has been disabled by Platform Administration.`,
-              details: { serviceId: options.serviceId, status: 'blocked' },
-            },
-            meta: {
-              tenantId,
-              serviceId: options.serviceId,
-              latencyMs,
-              timestamp: new Date().toISOString(),
-              requestId,
-            },
-          },
-          {
-            status: 403,
-            headers: {
-              'x-orbitox-latency-ms': latencyMs.toString(),
-              'x-orbitox-anti-tamper': 'VERIFIED',
-              'x-orbitox-service-status': 'blocked',
-            },
-          }
-        );
-      }
-    }
-
-    // 6. Sliding Window Rate Limiting (Dual-Engine: In-Memory / Distributed with Graceful Fallback)
-    const clusterMode = PlatformApiState.getClusterMode();
-    const rateLimit = project?.rateLimitPerMin || matchedKey?.rateLimitPerMin || options.rateLimitPerMin || 1200;
-    const rateLimitKey = `${clusterMode}:${project?.id || matchedKey?.id || `${clientIp}:${serviceId}`}`;
-    const now = Date.now();
-    const windowMs = 60 * 1000;
-
-    let bucket = rateLimitMap.get(rateLimitKey);
-    if (!bucket || now > bucket.resetAt) {
-      bucket = { count: 1, resetAt: now + windowMs };
-      rateLimitMap.set(rateLimitKey, bucket);
-    } else {
-      bucket.count += 1;
-    }
-
-    const remaining = Math.max(0, rateLimit - bucket.count);
-    const resetSeconds = Math.ceil((bucket.resetAt - now) / 1000);
-
-    if (bucket.count > rateLimit) {
-      const latencyMs = Math.round(performance.now() - startTime);
-      return NextResponse.json<ApiResponse>(
-        {
-          success: false,
-          error: {
-            code: 'RATE_LIMIT_EXCEEDED',
-            message: `Rate limit of ${rateLimit} requests per minute exceeded. Retry in ${resetSeconds}s.`,
-            details: { limit: rateLimit, remaining: 0, resetInSeconds: resetSeconds },
-          },
-          meta: {
-            tenantId,
-            serviceId,
-            latencyMs,
-            timestamp: new Date().toISOString(),
-            requestId,
-          },
-        },
-        {
-          status: 429,
-          headers: {
-            'x-ratelimit-limit': rateLimit.toString(),
-            'x-ratelimit-remaining': '0',
-            'x-ratelimit-reset': resetSeconds.toString(),
-            'retry-after': resetSeconds.toString(),
-            'x-orbitox-latency-ms': latencyMs.toString(),
-            'x-orbitox-cluster-mode': clusterMode,
-            'x-orbitox-cluster-node': PlatformApiState.getClusterNodeId(),
-            'x-orbitox-failover-capable': 'true',
-          },
-        }
-      );
-    }
-
-    // 7. Context Preparation
-    const context: ApiRequestContext = {
-      tenantId,
-      serviceId,
-      apiKey: rawApiKey,
-      keyPrefix: matchedKey?.keyPrefix,
-      environment: matchedKey?.environment || 'production',
-      scopes: matchedKey?.scopes || ['*'],
-      capabilities: matchedKey?.capabilities || matchedKey?.scopes || ['*'],
-      projectId: project?.id,
-      environmentId: matchedKey?.environmentId,
-      clientIp,
-      userAgent,
-      requestId,
-      startTime,
-    };
-
-    // 8. Execute Handler with Latency & Anti-Tamper Envelope
-    try {
-      const response = await handler(req, context);
-      const latencyMs = Math.max(1, Math.round(performance.now() - startTime));
-
-      // Record key usage and platform environment quota
-      if (matchedKey && isPlatformKeyRecord) {
-        PlatformRepository.recordKeyUsage(matchedKey.id, clientIp);
-        if (matchedKey.environmentId) {
-          PlatformRepository.recordCall(matchedKey.environmentId);
-        }
-      }
-
-      // Record call against project quota
-      if (project) {
-        PlatformApiState.recordProjectCall(project.id);
-      }
-
-      // Clone or wrap response to inject standard headers
-      const resHeaders = new Headers(response.headers);
-      resHeaders.set('x-orbitox-latency-ms', latencyMs.toString());
-      resHeaders.set('x-orbitox-tenant-id', tenantId);
-      resHeaders.set('x-orbitox-service-id', serviceId);
-      resHeaders.set('x-orbitox-anti-tamper', 'VERIFIED');
-      resHeaders.set('x-orbitox-cluster-mode', clusterMode);
-      resHeaders.set('x-orbitox-cluster-node', PlatformApiState.getClusterNodeId());
-      resHeaders.set('x-orbitox-failover-capable', 'true');
-      resHeaders.set('x-ratelimit-limit', rateLimit.toString());
-      resHeaders.set('x-ratelimit-remaining', remaining.toString());
-      resHeaders.set('x-ratelimit-reset', resetSeconds.toString());
-      resHeaders.set('x-request-id', requestId);
-
-      if (project) {
-        resHeaders.set('x-orbitox-project-id', project.id);
-        resHeaders.set('x-orbitox-plan', project.plan);
-        resHeaders.set('x-orbitox-business-model', project.businessModel);
-      }
-
-      if (response instanceof NextResponse) {
-        for (const [k, v] of Array.from(resHeaders.entries())) {
-          response.headers.set(k, v);
-        }
-        return response;
-      }
-
-      return new Response(response.body, {
-        status: response.status,
-        statusText: response.statusText,
-        headers: resHeaders,
-      });
-    } catch (err: any) {
-      const latencyMs = Math.max(1, Math.round(performance.now() - startTime));
-      console.error(`[OrbitoX API Error] ${req.method} ${req.nextUrl.pathname}:`, err);
-
-      return NextResponse.json<ApiResponse>(
-        {
-          success: false,
-          error: {
-            code: 'INTERNAL_SERVER_ERROR',
-            message: err.message || 'An unexpected error occurred processing your request.',
-          },
-          meta: {
-            tenantId,
-            serviceId,
-            latencyMs,
-            timestamp: new Date().toISOString(),
-            requestId,
-          },
-        },
-        {
-          status: 500,
-          headers: {
-            'x-orbitox-latency-ms': latencyMs.toString(),
-            'x-orbitox-anti-tamper': 'VERIFIED',
-          },
-        }
-      );
-    } finally {
-      PlatformApiState.untrackRequest();
-    }
-  };
-}
+// Register drain & telemetry hooks with modular guard
+setDrainChecker(() => PlatformApiState.isDrainActive());
+setRequestTracker({
+  track: () => PlatformApiState.trackRequest(),
+  untrack: () => PlatformApiState.untrackRequest(),
+});
