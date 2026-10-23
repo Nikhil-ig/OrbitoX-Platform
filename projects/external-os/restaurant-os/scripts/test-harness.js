@@ -339,6 +339,7 @@ async function startIsolatedServer(options = {}) {
       PORT: String(port),
       RESTAURANT_STORE_PATH: storePath,
       NODE_ENV: 'test',
+      RESTAURANTOS_ENABLE_TEST_ROUTES: 'true',
     },
     stdio: 'ignore',
   });
