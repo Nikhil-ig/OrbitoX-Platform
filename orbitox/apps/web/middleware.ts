@@ -25,6 +25,8 @@ export const config = {
     '/api/v1/admin/:path*',
     '/api/v1/platform/:path*',
     '/api/v1/fleet/:path*',
+    '/api/v1/overview',
+    '/api/v1/overview/:path*',
     '/api/v1/system/:path*',
     '/api/v1/projects/:path*',
   ],

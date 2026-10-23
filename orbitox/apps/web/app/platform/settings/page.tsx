@@ -1,135 +1,258 @@
 'use client';
 
-import React, { useState } from 'react';
-import { usePlatform } from '../components/PlatformContext';
-import { tokens } from '../components/tokens';
+import React, { useEffect, useState } from 'react';
+import Link from 'next/link';
+import styles from './settings.module.css';
+
+interface SecretItem {
+  key: string;
+  label: string;
+  description: string;
+  configured: boolean;
+  scope: string;
+  required: boolean;
+}
+
+interface PlatformSettingsData {
+  secrets: SecretItem[];
+  platform: {
+    dataDir: string;
+    version: string;
+    nodeEnv: string;
+    nodeVersion: string;
+    uptimeSeconds: number;
+    docsUrl: string;
+  };
+}
+
+function formatUptime(seconds: number): string {
+  const h = Math.floor(seconds / 3600);
+  const m = Math.floor((seconds % 3600) / 60);
+  const s = seconds % 60;
+  return `${h}h ${m}m ${s}s`;
+}
 
 export default function PlatformSettingsPage() {
-  const { clusterMode, toggleClusterMode, operator } = usePlatform();
-  const [rateLimitPolicy, setRateLimitPolicy] = useState('10000');
-  const [replayWindowSeconds, setReplayWindowSeconds] = useState('300');
-  const [saved, setSaved] = useState(false);
+  const [data, setData] = useState<PlatformSettingsData | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
-  const handleSave = (e: React.FormEvent) => {
-    e.preventDefault();
-    setSaved(true);
-    setTimeout(() => setSaved(false), 2000);
-  };
+  useEffect(() => {
+    fetch('/api/v1/system/settings', { cache: 'no-store' })
+      .then((res) => {
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        return res.json();
+      })
+      .then((body) => {
+        if (body.success && body.data) {
+          setData(body.data);
+        } else {
+          throw new Error(body.error?.message ?? 'Invalid response');
+        }
+      })
+      .catch((err) => setError(err.message))
+      .finally(() => setLoading(false));
+  }, []);
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '28px', maxWidth: '780px' }}>
-      {/* Header */}
-      <div>
-        <h1 style={{ fontSize: tokens.typography.size.xxl, fontWeight: tokens.typography.weight.bold, color: tokens.colors.text.primary, margin: 0, letterSpacing: '-0.02em' }}>
-          Platform Settings
-        </h1>
-        <p style={{ fontSize: tokens.typography.size.base, color: tokens.colors.text.secondary, margin: '4px 0 0 0' }}>
-          Root mesh configuration, operator access, and global rate limit policies.
+    <div className={styles.page}>
+      <header className={styles.header}>
+        <h1 className={styles.title}>Settings & Configuration</h1>
+        <p className={styles.subtitle}>
+          Control plane secrets audit, persistence status, and token rotation procedures.
         </p>
-      </div>
+      </header>
 
-      {saved && (
-        <div style={{ padding: '10px 14px', borderRadius: tokens.radius.sm, backgroundColor: tokens.colors.status.healthySubtle, border: `1px solid ${tokens.colors.status.healthy}`, color: tokens.colors.status.healthy, fontSize: tokens.typography.size.base }}>
-          Settings saved successfully.
+      {error && <div className={styles.notice} style={{ color: 'var(--ui-danger)' }}>{error}</div>}
+
+      {/* Section 1: Secrets & Security Audit */}
+      <section className={styles.card} aria-labelledby="secrets-heading">
+        <div className={styles.cardHeader}>
+          <h2 id="secrets-heading" className={styles.cardTitle}>Core Security & Secrets</h2>
         </div>
-      )}
 
-      {/* Cluster Mode */}
-      <div style={{ backgroundColor: tokens.colors.bg.surface, border: `1px solid ${tokens.colors.border.subtle}`, borderRadius: tokens.radius.md, padding: '20px' }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <div>
-            <div style={{ fontSize: tokens.typography.size.base, fontWeight: tokens.typography.weight.medium, color: tokens.colors.text.primary }}>
-              Cluster Deployment Topology
+        <div className={styles.notice}>
+          <strong>🔒 Zero-Exposure Verification:</strong> Secret values are strictly confidential.
+          The control plane only verifies whether each variable is configured with valid cryptographic strength. Values are never exposed via UI or API.
+        </div>
+
+        <div className={styles.tableWrap}>
+          <table className={styles.table}>
+            <thead>
+              <tr>
+                <th scope="col">Variable</th>
+                <th scope="col">Scope</th>
+                <th scope="col">Requirement</th>
+                <th scope="col">Status</th>
+              </tr>
+            </thead>
+            <tbody>
+              {loading && !data ? (
+                <tr>
+                  <td colSpan={4} style={{ textAlign: 'center', padding: '24px', color: 'var(--ui-text-muted)' }}>
+                    Auditing configured secrets…
+                  </td>
+                </tr>
+              ) : (
+                data?.secrets.map((sec) => (
+                  <tr key={sec.key}>
+                    <td data-label="Variable">
+                      <span className={styles.mono}>{sec.key}</span>
+                      <div style={{ fontSize: '11px', color: 'var(--ui-text-muted)', marginTop: '2px' }}>
+                        {sec.description}
+                      </div>
+                    </td>
+                    <td data-label="Scope">{sec.scope}</td>
+                    <td data-label="Requirement">
+                      <span style={{ fontSize: '12px', color: sec.required ? 'var(--ui-text-primary)' : 'var(--ui-text-muted)' }}>
+                        {sec.required ? 'Required in Prod' : 'Optional'}
+                      </span>
+                    </td>
+                    <td data-label="Status">
+                      {sec.configured ? (
+                        <span className={`${styles.tag} ${styles.tagConfigured}`}>
+                          <span className={`${styles.dot} ${styles.dotOnline}`} />
+                          Configured
+                        </span>
+                      ) : sec.required ? (
+                        <span className={`${styles.tag} ${styles.tagMissing}`}>
+                          <span className={`${styles.dot} ${styles.dotOffline}`} />
+                          Missing
+                        </span>
+                      ) : (
+                        <span className={`${styles.tag} ${styles.tagOptional}`}>
+                          <span className={`${styles.dot} ${styles.dotNeutral}`} />
+                          Not Set
+                        </span>
+                      )}
+                    </td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      {/* Section 2: Platform Environment & Storage */}
+      <section className={styles.card} aria-labelledby="platform-heading">
+        <div className={styles.cardHeader}>
+          <h2 id="platform-heading" className={styles.cardTitle}>Platform Runtime & Storage</h2>
+        </div>
+
+        <div className={styles.grid2}>
+          <div className={styles.infoList}>
+            <div className={styles.infoRow}>
+              <span className={styles.infoLabel}>State Storage Directory</span>
+              <span className={`${styles.infoVal} ${styles.mono}`}>{data?.platform.dataDir ?? '—'}</span>
             </div>
-            <div style={{ fontSize: tokens.typography.size.xs, color: tokens.colors.text.secondary, marginTop: '2px' }}>
-              Current mode: <span style={{ color: tokens.colors.accent.brand, textTransform: 'capitalize' }}>{clusterMode}</span>
+            <div className={styles.infoRow}>
+              <span className={styles.infoLabel}>Control Plane Version</span>
+              <span className={styles.infoVal}>v{data?.platform.version ?? '1.0.0'}</span>
+            </div>
+            <div className={styles.infoRow}>
+              <span className={styles.infoLabel}>Node Environment</span>
+              <span className={styles.infoVal} style={{ textTransform: 'capitalize' }}>
+                {data?.platform.nodeEnv ?? 'development'}
+              </span>
             </div>
           </div>
-          <button
-            onClick={toggleClusterMode}
-            style={{
-              padding: '6px 12px',
-              borderRadius: tokens.radius.sm,
-              backgroundColor: tokens.colors.bg.surfaceHover,
-              border: `1px solid ${tokens.colors.border.default}`,
-              color: tokens.colors.text.primary,
-              fontSize: tokens.typography.size.xs,
-              cursor: 'pointer',
-            }}
+
+          <div className={styles.infoList}>
+            <div className={styles.infoRow}>
+              <span className={styles.infoLabel}>Node.js Engine</span>
+              <span className={`${styles.infoVal} ${styles.mono}`}>{data?.platform.nodeVersion ?? process.version}</span>
+            </div>
+            <div className={styles.infoRow}>
+              <span className={styles.infoLabel}>Process Uptime</span>
+              <span className={styles.infoVal}>{data ? formatUptime(data.platform.uptimeSeconds) : '—'}</span>
+            </div>
+            <div className={styles.infoRow}>
+              <span className={styles.infoLabel}>Data Persistence Engine</span>
+              <span className={styles.infoVal}>PersistentControlStore (File-Backed JSON)</span>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* Section 3: Token Rotation Instructions */}
+      <section className={styles.card} aria-labelledby="rotation-heading">
+        <div className={styles.cardHeader}>
+          <h2 id="rotation-heading" className={styles.cardTitle}>Token Rotation Procedures</h2>
+        </div>
+
+        <div className={styles.notice}>
+          To maintain zero disruption while rotating secrets, follow these steps sequentially:
+        </div>
+
+        <ol className={styles.stepList}>
+          <li>
+            <strong>Generate a fresh 32-byte secret:</strong>
+            <pre className={styles.codeBox}>openssl rand -hex 32</pre>
+          </li>
+          <li>
+            <strong>Rotating <code>ORBITOX_ADMIN_TOKEN</code>:</strong>
+            <div>Update <code>ORBITOX_ADMIN_TOKEN</code> in your environment / volume and restart the control plane server. You will be prompted to re-authenticate with the new password.</div>
+          </li>
+          <li>
+            <strong>Rotating <code>ORBITOX_RUNTIME_TOKEN</code> (Client apps):</strong>
+            <div>
+              1. Update <code>ORBITOX_RUNTIME_TOKEN</code> in your deployment secrets.<br />
+              2. Update your connected client apps with the new token.<br />
+              3. The client SDK will register with the updated credential on its next heartbeat.
+            </div>
+          </li>
+        </ol>
+      </section>
+
+      {/* Section 4: Documentation & Architecture Guides */}
+      <section className={styles.card} aria-labelledby="docs-heading">
+        <div className={styles.cardHeader}>
+          <h2 id="docs-heading" className={styles.cardTitle}>Architecture & Documentation</h2>
+        </div>
+
+        <div className={styles.linkGrid}>
+          <a
+            href="https://github.com/Nikhil-ig/OrbitoX-Platform/blob/main/README.md"
+            target="_blank"
+            rel="noopener noreferrer"
+            className={styles.linkCard}
           >
-            Toggle to {clusterMode === 'standalone' ? 'Distributed' : 'Standalone'}
-          </button>
-        </div>
-      </div>
+            <span className={styles.linkTitle}>Platform README ↗</span>
+            <span className={styles.linkDesc}>Quick start, core architecture, and commands.</span>
+          </a>
 
-      {/* Global Policies Form */}
-      <form onSubmit={handleSave} style={{ backgroundColor: tokens.colors.bg.surface, border: `1px solid ${tokens.colors.border.subtle}`, borderRadius: tokens.radius.md, padding: '20px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
-        <div style={{ fontSize: tokens.typography.size.base, fontWeight: tokens.typography.weight.medium, color: tokens.colors.text.primary }}>
-          Perimeter Policies
-        </div>
-
-        <div>
-          <label style={{ display: 'block', fontSize: tokens.typography.size.xs, color: tokens.colors.text.secondary, marginBottom: '4px' }}>
-            Default Key Rate Limit (requests / min)
-          </label>
-          <input
-            type="number"
-            value={rateLimitPolicy}
-            onChange={(e) => setRateLimitPolicy(e.target.value)}
-            style={{
-              width: '100%',
-              padding: '8px 10px',
-              backgroundColor: tokens.colors.bg.input,
-              border: `1px solid ${tokens.colors.border.default}`,
-              borderRadius: tokens.radius.sm,
-              color: tokens.colors.text.primary,
-              fontSize: tokens.typography.size.base,
-              fontFamily: tokens.typography.fontFamily.mono,
-              outline: 'none',
-            }}
-          />
-        </div>
-
-        <div>
-          <label style={{ display: 'block', fontSize: tokens.typography.size.xs, color: tokens.colors.text.secondary, marginBottom: '4px' }}>
-            Replay Attack Clock Drift Tolerance (seconds)
-          </label>
-          <input
-            type="number"
-            value={replayWindowSeconds}
-            onChange={(e) => setReplayWindowSeconds(e.target.value)}
-            style={{
-              width: '100%',
-              padding: '8px 10px',
-              backgroundColor: tokens.colors.bg.input,
-              border: `1px solid ${tokens.colors.border.default}`,
-              borderRadius: tokens.radius.sm,
-              color: tokens.colors.text.primary,
-              fontSize: tokens.typography.size.base,
-              fontFamily: tokens.typography.fontFamily.mono,
-              outline: 'none',
-            }}
-          />
-        </div>
-
-        <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '8px' }}>
-          <button
-            type="submit"
-            style={{
-              padding: '7px 14px',
-              borderRadius: tokens.radius.sm,
-              backgroundColor: tokens.colors.text.primary,
-              color: tokens.colors.text.inverted,
-              fontWeight: tokens.typography.weight.semibold,
-              fontSize: tokens.typography.size.base,
-              border: 'none',
-              cursor: 'pointer',
-            }}
+          <a
+            href="https://github.com/Nikhil-ig/OrbitoX-Platform/blob/main/docs/02_ARCHITECTURE.md"
+            target="_blank"
+            rel="noopener noreferrer"
+            className={styles.linkCard}
           >
-            Save Settings
-          </button>
+            <span className={styles.linkTitle}>Architecture Guide ↗</span>
+            <span className={styles.linkDesc}>Singletons, ServiceContainer, and Facades.</span>
+          </a>
+
+          <a
+            href="https://github.com/Nikhil-ig/OrbitoX-Platform/blob/main/docs/SECURITY_CLEANUP.md"
+            target="_blank"
+            rel="noopener noreferrer"
+            className={styles.linkCard}
+          >
+            <span className={styles.linkTitle}>Security Cleanup ↗</span>
+            <span className={styles.linkDesc}>History purging, key rotation checklist.</span>
+          </a>
+
+          <a
+            href="https://github.com/Nikhil-ig/OrbitoX-Platform/blob/main/docs/12_PRODUCTION_DEPLOYMENT.md"
+            target="_blank"
+            rel="noopener noreferrer"
+            className={styles.linkCard}
+          >
+            <span className={styles.linkTitle}>Production Deployment ↗</span>
+            <span className={styles.linkDesc}>Docker compose, Redis, and health checks.</span>
+          </a>
         </div>
-      </form>
+      </section>
     </div>
   );
 }

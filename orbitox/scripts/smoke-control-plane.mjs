@@ -50,7 +50,7 @@ console.log('Public surface');
 await expectStatus('GET /api/health is public', 200, '/api/health');
 
 console.log('\nAdmin surface rejects anonymous callers');
-for (const path of ['/platform/fleet', '/admin', '/api/v1/fleet', '/api/v1/system/cluster']) {
+for (const path of ['/platform', '/platform/fleet', '/platform/connect', '/platform/settings', '/admin', '/api/v1/fleet', '/api/v1/overview', '/api/v1/system/settings', '/api/v1/system/cluster']) {
   await expectStatus(`GET ${path} -> 401`, 401, path);
 }
 await expectStatus('POST /api/v1/projects/factory -> 401', 401, '/api/v1/projects/factory', { method: 'POST', headers: json, body: '{}' });
@@ -60,7 +60,12 @@ await expectStatus('GET /api/v1/fleet with Bearer', 200, '/api/v1/fleet', { head
 await expectStatus('GET /api/v1/fleet with Basic', 200, '/api/v1/fleet', {
   headers: { Authorization: `Basic ${Buffer.from(`admin:${ADMIN}`).toString('base64')}` },
 });
+await expectStatus('GET /api/v1/overview with Bearer', 200, '/api/v1/overview', { headers: bearer(ADMIN) });
+await expectStatus('GET /api/v1/system/settings with Bearer', 200, '/api/v1/system/settings', { headers: bearer(ADMIN) });
+await expectStatus('GET /platform with Bearer', 200, '/platform', { headers: bearer(ADMIN) });
 await expectStatus('GET /platform/fleet with Bearer', 200, '/platform/fleet', { headers: bearer(ADMIN) });
+await expectStatus('GET /platform/connect with Bearer', 200, '/platform/connect', { headers: bearer(ADMIN) });
+await expectStatus('GET /platform/settings with Bearer', 200, '/platform/settings', { headers: bearer(ADMIN) });
 
 console.log('\nRuntime token cannot escalate to admin');
 await expectStatus('runtime token on /api/v1/fleet -> 401', 401, '/api/v1/fleet', { headers: bearer(RUNTIME) });
@@ -131,6 +136,10 @@ try {
   entry = await fleetEntry();
   check('last command is visible in the fleet', entry?.commands?.last?.action === 'run_health_check');
   check('activity is recorded in the audit trail', !!entry?.lastActivity, 'no lastActivity');
+
+  await expectStatus('GET /api/v1/projects/{id} -> 200', 200, `/api/v1/projects/${projectId}`, { headers: bearer(ADMIN) });
+  await expectStatus('GET /api/v1/projects/{id}/activity -> 200', 200, `/api/v1/projects/${projectId}/activity`, { headers: bearer(ADMIN) });
+  await expectStatus('GET /platform/projects/{id} with Bearer -> 200', 200, `/platform/projects/${projectId}`, { headers: bearer(ADMIN) });
 } catch (err) {
   check('SDK lifecycle ran without errors', false, err instanceof Error ? err.message : String(err));
 } finally {

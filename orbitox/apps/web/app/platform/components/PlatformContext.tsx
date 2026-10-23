@@ -27,6 +27,9 @@ export interface PlatformContextState {
   closeInspector: () => void;
   isCommandPaletteOpen: boolean;
   setCommandPaletteOpen: (open: boolean) => void;
+  mobileSidebarOpen: boolean;
+  setMobileSidebarOpen: (open: boolean) => void;
+  toggleMobileSidebar: () => void;
   refreshTrigger: number;
   triggerRefresh: () => void;
 }
@@ -40,7 +43,10 @@ export function PlatformProvider({ children }: { children: React.ReactNode }) {
   const [clusterMode, setClusterMode] = useState<'standalone' | 'distributed'>('standalone');
   const [inspectorTarget, setInspectorTarget] = useState<InspectorTarget | null>(null);
   const [isCommandPaletteOpen, setCommandPaletteOpen] = useState(false);
+  const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
   const [refreshTrigger, setRefreshTrigger] = useState(0);
+
+  const toggleMobileSidebar = () => setMobileSidebarOpen((prev) => !prev);
 
   const operator = {
     name: 'Platform SuperAdmin',
@@ -105,6 +111,9 @@ export function PlatformProvider({ children }: { children: React.ReactNode }) {
         closeInspector,
         isCommandPaletteOpen,
         setCommandPaletteOpen,
+        mobileSidebarOpen,
+        setMobileSidebarOpen,
+        toggleMobileSidebar,
         refreshTrigger,
         triggerRefresh,
       }}
