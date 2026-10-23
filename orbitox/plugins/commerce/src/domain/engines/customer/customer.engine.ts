@@ -83,7 +83,7 @@ export class CustomerEngine {
 
     if (!customer) {
       customer = {
-        id: payload.id || `cust_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+        id: payload.id || `cust_${globalThis.crypto.randomUUID()}`,
         storeId,
         tenantId: payload.tenantId || 'tenant_aura_corp',
         email: cleanEmail,
@@ -132,7 +132,7 @@ export class CustomerEngine {
 
     if (!customer) {
       customer = {
-        id: `cust_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+        id: `cust_${globalThis.crypto.randomUUID()}`,
         storeId,
         tenantId,
         email: cleanEmail,

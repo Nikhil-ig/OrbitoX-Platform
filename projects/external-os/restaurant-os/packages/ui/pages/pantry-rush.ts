@@ -751,7 +751,7 @@ export function renderPantryRushPage(
       checkoutBtn.innerText = 'DISPATCHING TO DARK STORE...';
 
       const pref = document.getElementById('pr-sub-preference').value;
-      const idempotencyKey = 'idemp_gro_' + Math.random().toString(36).substring(2, 12);
+      const idempotencyKey = 'idemp_gro_' + (window.crypto?.randomUUID ? window.crypto.randomUUID() : (Date.now().toString(36) + '_' + Array.from(window.crypto.getRandomValues(new Uint8Array(6)), b => b.toString(16).padStart(2, '0')).join('')));
 
       try {
         const res = await fetch('/api/commerce/grocery/orders', {

@@ -2358,7 +2358,7 @@ export function renderCraveAtlasPage(
         if (window.crypto && typeof window.crypto.randomUUID === 'function') {
           pendingOrderAttemptKey = 'idemp_' + window.crypto.randomUUID();
         } else {
-          pendingOrderAttemptKey = 'idemp_' + Date.now().toString(36) + '_' + Math.random().toString(36).substring(2, 10);
+          pendingOrderAttemptKey = 'idemp_' + Date.now().toString(36) + '_' + Array.from(window.crypto.getRandomValues(new Uint8Array(6)), b => b.toString(16).padStart(2, '0')).join('');
         }
       }
       return pendingOrderAttemptKey;

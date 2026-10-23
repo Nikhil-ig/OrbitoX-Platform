@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import * as crypto from 'crypto';
 import { withApiGuard, PlatformApiState } from '../../_lib/api-guard';
 
 let restaurantOrders = [
@@ -30,7 +31,7 @@ export const POST = withApiGuard(
     try {
       const body = await req.json();
       const newOrder = {
-        id: `TKT-${Math.floor(100 + Math.random() * 900)}`,
+        id: `TKT-${crypto.randomInt(100, 1000)}`,
         table: body.table || 'Takeout',
         items: body.items || ['Chef Special'],
         total: Number(body.total) || 45,

@@ -121,7 +121,7 @@ export class MediaEngine {
 
   uploadMedia(storeId: string, tenantId: string, payload: MediaUploadPayload): StoreMediaItem {
     const now = new Date().toISOString();
-    const mediaId = `media_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
+    const mediaId = `media_${globalThis.crypto.randomUUID()}`;
 
     const url = payload.dataBase64
       ? payload.dataBase64
@@ -159,7 +159,7 @@ export class MediaEngine {
     }
   ): StoreMediaItem {
     const now = new Date().toISOString();
-    const mediaId = `media_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
+    const mediaId = `media_${globalThis.crypto.randomUUID()}`;
     const filename = payload.filename || `asset_${Date.now()}.jpg`;
 
     const item: StoreMediaItem = {

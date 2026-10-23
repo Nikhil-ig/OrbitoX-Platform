@@ -125,7 +125,7 @@ export class QrSessionService {
 
     const sessionId = `sess_${crypto.randomUUID()}`;
     const hostParticipantId = `part_${crypto.randomUUID()}`;
-    const sessionCode = `S-${Math.floor(1000 + Math.random() * 9000)}`;
+    const sessionCode = `S-${crypto.randomInt(1000, 10000)}`;
 
     const session: DiningSession = {
       id: sessionId,

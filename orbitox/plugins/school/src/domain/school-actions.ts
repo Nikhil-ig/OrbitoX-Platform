@@ -1,3 +1,4 @@
+import * as crypto from 'crypto';
 import { EventBusService } from '@orbitox/core';
 import { EnrollStudentPayload, EnrollmentStatus, Student } from './types';
 import { SchoolStateMachine } from './school-state-machine';
@@ -11,8 +12,8 @@ export class HeadlessSchoolService {
 
   async apply(payload: EnrollStudentPayload, contextId: string): Promise<Student> {
     const student: Student = {
-      id: `student_${Date.now()}`,
-      studentId: `STU-${Math.floor(Math.random() * 10000)}`,
+      id: `student_${crypto.randomUUID()}`,
+      studentId: `STU-${crypto.randomInt(1000, 10000)}`,
       ...payload,
       status: 'APPLIED',
       createdAt: new Date().toISOString(),

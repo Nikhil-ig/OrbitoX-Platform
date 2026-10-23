@@ -161,7 +161,7 @@ export class AutomationEngine {
   createWorkflow(storeId: string, payload: Omit<AutomationWorkflow, 'id' | 'storeId' | 'timesTriggered' | 'createdAt' | 'updatedAt'>): AutomationWorkflow {
     const now = new Date().toISOString();
     const workflow: AutomationWorkflow = {
-      id: `flow_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+      id: `flow_${globalThis.crypto.randomUUID()}`,
       storeId,
       timesTriggered: 0,
       createdAt: now,
@@ -226,7 +226,7 @@ export class AutomationEngine {
         flow.lastTriggeredAt = new Date().toISOString();
 
         const log: AutomationExecutionLog = {
-          id: `log_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+          id: `log_${globalThis.crypto.randomUUID()}`,
           workflowId: flow.id,
           workflowName: flow.name,
           storeId,

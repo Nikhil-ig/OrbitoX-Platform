@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import * as crypto from 'crypto';
 import { withApiGuard, PlatformApiState } from '../../_lib/api-guard';
 
 export const GET = withApiGuard(
@@ -60,12 +61,12 @@ export const POST = withApiGuard(
       }
 
       const prefix = `orb_${environment === 'production' ? 'live' : 'test'}_`;
-      const randomSecret = Math.random().toString(36).substring(2, 14) + Math.random().toString(36).substring(2, 14);
+      const randomSecret = crypto.randomBytes(16).toString('hex');
       const rawKey = `${prefix}${randomSecret}`;
       const maskedKey = `${prefix}********************${randomSecret.slice(-4)}`;
 
       const newKey = {
-        id: `key-${Date.now()}`,
+        id: `key-${crypto.randomUUID()}`,
         name,
         keyPrefix: prefix,
         maskedKey,

@@ -1696,7 +1696,7 @@ const server = http.createServer(async (req, res) => {
 
       // Route each item to Kitchen Task Queue in Persistent Store
       const newTask: KitchenTask = {
-        id: `task_${Date.now()}_${Math.floor(Math.random() * 1000)}`,
+        id: `task_${crypto.randomUUID()}`,
         orderId,
         tableNumber,
         branchId: body.branchId || targetTableRecord?.branchId || currentBranch.id,
@@ -3281,7 +3281,7 @@ const server = http.createServer(async (req, res) => {
         return;
       }
       const floorRecord = {
-        id: body.id || `floor_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+        id: body.id || `floor_${crypto.randomUUID()}`,
         name: body.name || 'New Service Area',
         branchId: body.branchId || currentBranch.id,
         section: body.section || 'MAIN',

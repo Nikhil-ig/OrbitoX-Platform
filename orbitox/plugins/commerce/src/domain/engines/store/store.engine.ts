@@ -59,7 +59,7 @@ export class StoreEngine {
     const now = new Date().toISOString();
 
     const newStore: Store = {
-      id: `store_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
+      id: `store_${globalThis.crypto.randomUUID()}`,
       tenantId,
       slug: cleanSlug,
       name: payload.name.trim(),

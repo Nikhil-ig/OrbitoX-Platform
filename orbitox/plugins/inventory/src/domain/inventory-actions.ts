@@ -1,3 +1,4 @@
+import * as crypto from 'crypto';
 import { InventoryItem, CreateInventoryItemPayload, StockAdjustmentPayload, InventoryFilter } from './types';
 import { InventoryStateMachine } from './inventory-state-machine';
 
@@ -19,7 +20,7 @@ export class HeadlessInventoryService {
     const status = InventoryStateMachine.deriveStockStatus(payload.quantity, payload.minReorderLevel);
 
     const newItem: InventoryItem = {
-      id: `inv_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
+      id: `inv_${crypto.randomUUID()}`,
       sku: payload.sku.trim().toUpperCase(),
       name: payload.name.trim(),
       category: payload.category.trim(),

@@ -522,7 +522,7 @@ export class PlatformRepository {
     );
 
     const record: PackageInstallationRecord = {
-      id: existingIdx !== -1 ? this.packageInstallations[existingIdx]!.id : `inst_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+      id: existingIdx !== -1 ? this.packageInstallations[existingIdx]!.id : `inst_${crypto.randomUUID()}`,
       environmentId,
       packageId,
       installedVersionId: versionId,

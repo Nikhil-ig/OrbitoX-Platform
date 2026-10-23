@@ -1,3 +1,4 @@
+import * as crypto from 'crypto';
 import { Lead, LeadStatus, CreateLeadPayload, LeadFilter } from './types';
 import { LeadStateMachine } from './lead-state-machine';
 
@@ -19,7 +20,7 @@ export class HeadlessCrmService {
     const calculatedScore = LeadStateMachine.calculateLeadScore(payload);
 
     const newLead: Lead = {
-      id: `lead_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
+      id: `lead_${crypto.randomUUID()}`,
       name: payload.name.trim(),
       email: payload.email.trim(),
       company: payload.company?.trim(),

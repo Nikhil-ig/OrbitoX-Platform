@@ -126,7 +126,7 @@ export class PageBuilderEngine {
     }
 
     const newPage: StorePage = {
-      id: `page_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
+      id: `page_${globalThis.crypto.randomUUID()}`,
       storeId,
       slug: cleanSlug,
       title: payload.title.trim(),
@@ -284,11 +284,11 @@ export class PageBuilderEngine {
 
     const now = new Date().toISOString();
     const copyTitle = newTitle || `${source.title} (Copy)`;
-    const copySlug = newSlug || `${source.slug}-copy-${Math.random().toString(36).substring(2, 5)}`;
+    const copySlug = newSlug || `${source.slug}-copy-${globalThis.crypto.randomUUID().slice(0, 6)}`;
 
     const newPage: StorePage = {
       ...JSON.parse(JSON.stringify(source)),
-      id: `page_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
+      id: `page_${globalThis.crypto.randomUUID()}`,
       title: copyTitle,
       slug: copySlug.startsWith('/') ? copySlug : `/${copySlug}`,
       isHome: false,

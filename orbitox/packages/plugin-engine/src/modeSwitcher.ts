@@ -192,7 +192,7 @@ export class ModeSwitcherService {
     };
 
     const checksum = this.computeChecksum(payloadData);
-    const snapshotId = `snap_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
+    const snapshotId = `snap_${Date.now()}_${crypto.randomUUID()}`;
 
     let signature: string | undefined;
     if (options?.sign && options.privateKeyPem) {

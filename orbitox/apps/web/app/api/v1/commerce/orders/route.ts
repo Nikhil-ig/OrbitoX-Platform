@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import * as crypto from 'crypto';
 import { withApiGuard, PlatformApiState } from '../../_lib/api-guard';
 
 let orders = [
@@ -54,7 +55,7 @@ export const POST = withApiGuard(
     try {
       const body = await req.json();
       const newOrder = {
-        id: `ORD-${Math.floor(1000 + Math.random() * 9000)}`,
+        id: `ORD-${crypto.randomInt(1000, 10000)}`,
         customer: body.customer || 'Guest Customer',
         email: body.email || 'customer@example.com',
         total: Number(body.total) || 120,

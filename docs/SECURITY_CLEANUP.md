@@ -81,6 +81,13 @@ These are known and need their own work. They are listed so nothing is assumed s
   `127.0.0.0/8`, link-local/cloud metadata `169.254.0.0/16`, multicast/reserved, and IPv6 loopback/ULA/link-local/mapped),
   pre-flight DNS lookup, and manual redirect hop tracking with cap (max 3). Verified by 11 unit tests in
   `safe-logic.test.ts`.
-- `Math.random()` is still used for IDs and rotated API keys in several API routes.
+- [x] **Secure ID and key generation (RESOLVED)**:
+  Replaced all insecure `Math.random()` invocations across API route handlers (`apps/web/app/api`),
+  core packages (`@orbitox/core`, `@orbitox-io/plugin-engine`, `@orbitox/runtime`), plugins
+  (`commerce`, `pos`, `crm`, `hrms`, `hms`, `finance`, `school`, `inventory`), and external runtimes
+  (`restaurant-os`). Rotated API keys, tokens, sessions, and credentials now use cryptographically secure
+  `crypto.randomBytes()`; unique identifiers utilize standard UUIDv4 via `crypto.randomUUID()`;
+  and integer codes/numbers use `crypto.randomInt()`.
 - RestaurantOS: `Access-Control-Allow-Origin: *`, `?token=` in query strings, and test
   endpoints gated only by `NODE_ENV`.
+

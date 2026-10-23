@@ -1,3 +1,4 @@
+import * as crypto from 'crypto';
 import { OrbitoXDatabaseAdapter, DatabaseQueryOptions, DatabaseQueryResult } from './types';
 
 /**
@@ -85,7 +86,7 @@ export class MemoryDatabaseAdapter implements OrbitoXDatabaseAdapter {
 
   async create<T = any>(entity: string, data: Partial<T>, contextId?: string): Promise<T> {
     const entityStore = this.getEntityStore(entity);
-    const id = (data as any).id || `${entity}_${Date.now()}_${Math.floor(Math.random() * 1000)}`;
+    const id = (data as any).id || `${entity}_${crypto.randomUUID()}`;
     
     const record = {
       id,

@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import * as crypto from 'crypto';
 import { withApiGuard } from '@/app/api/v1/_lib/api-guard';
 import { ApiResponse, ApiRequestContext } from '@/app/api/v1/_lib/api-types';
 import { auditService } from '@/app/api/v1/_lib/platform-governance';
@@ -204,7 +205,7 @@ export const POST = withApiGuard(
       }
 
       const isBlocked = simulateFailure === true;
-      const latencyMs = Math.floor(Math.random() * 8) + 4;
+      const latencyMs = crypto.randomInt(4, 12);
 
       // Filter and sanitize output (simulate PII and secret redaction)
       const simulatedOutput = isBlocked

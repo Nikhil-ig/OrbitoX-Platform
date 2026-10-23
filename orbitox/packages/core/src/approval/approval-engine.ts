@@ -1,3 +1,5 @@
+import * as crypto from 'crypto';
+
 export type ApprovalStatus = 'PENDING' | 'APPROVED' | 'REJECTED' | 'ESCALATED';
 
 export interface ApprovalRequest {
@@ -65,7 +67,7 @@ export class ApprovalEngine {
     }));
 
     const request: ApprovalRequest = {
-      id: `app_req_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
+      id: `app_req_${crypto.randomUUID()}`,
       contextId,
       entityType,
       entityId,

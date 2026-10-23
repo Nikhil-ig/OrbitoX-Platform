@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import * as crypto from 'crypto';
 import { withApiGuard, PlatformApiState } from '../../_lib/api-guard';
 import { ClientProject, PLAN_TIER_PRESETS } from '@/app/admin/data/mock-data';
 
@@ -84,12 +85,10 @@ export const POST = withApiGuard(
       const projectId = `proj-${slug || Date.now()}`;
 
       // Generate initial API key for project
-      const randomHex = Array.from({ length: 24 }, () =>
-        Math.floor(Math.random() * 16).toString(16)
-      ).join('');
+      const randomHex = crypto.randomBytes(12).toString('hex');
       const keyPrefix = `orb_live_${slug.slice(0, 8)}_`;
       const fullKey = `${keyPrefix}${randomHex}`;
-      const keyId = `key-${Date.now()}`;
+      const keyId = `key-${crypto.randomUUID()}`;
 
       const newKey: any = {
         id: keyId,

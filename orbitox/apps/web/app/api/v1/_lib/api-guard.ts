@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import * as crypto from 'crypto';
 import {
   ApiGuardOptions,
   ApiRequestContext,
@@ -272,11 +273,12 @@ export class PlatformApiState {
     const idx = this.apiKeys.findIndex((k) => k.id === keyId);
     if (idx !== -1) {
       const old = this.apiKeys[idx]!;
+      const rawSecret = crypto.randomBytes(16).toString('hex');
       const newKey: any = {
         ...old,
-        id: `key-${Date.now()}`,
-        maskedKey: `orb_live_********************${Math.floor(1000 + Math.random() * 9000)}`,
-        rawKey: `orb_live_rot_${Math.random().toString(36).slice(2, 10)}`,
+        id: `key-${crypto.randomUUID()}`,
+        maskedKey: `orb_live_********************${rawSecret.slice(-4)}`,
+        rawKey: `orb_live_rot_${rawSecret}`,
         createdAt: 'Just now',
         lastUsedAt: 'Never',
       };
@@ -387,7 +389,7 @@ export class PlatformApiState {
     const snapshot = {
       metadata: {
         version: '1.0.0',
-        snapshotId: `snap_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+        snapshotId: `snap_${Date.now()}_${crypto.randomUUID()}`,
         createdAt: new Date().toISOString(),
         sourceMode: this.clusterMode,
         targetMode: targetMode || (this.clusterMode === 'distributed' ? 'standalone' : 'distributed'),
@@ -534,7 +536,7 @@ export class PlatformApiState {
 
   static recordTelemetry(entry: any) {
     const log = {
-      id: `log-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+      id: `log-${crypto.randomUUID()}`,
       timestamp: new Date().toLocaleTimeString('en-US', { hour12: false }),
       ...entry,
     };
@@ -553,7 +555,7 @@ export function withApiGuard<T = any>(
 ) {
   return async (req: NextRequest): Promise<Response> => {
     const startTime = performance.now();
-    const requestId = `req_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+    const requestId = `req_${crypto.randomUUID()}`;
 
     // Drain Gate: reject incoming traffic if draining, unless it's a system management request
     if (PlatformApiState.isDrainActive() && options.serviceId !== 'system') {
