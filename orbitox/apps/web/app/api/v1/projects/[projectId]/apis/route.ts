@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { externalProjectEngine } from '@orbitox/external-project-engine';
+import { authorizeProjectRequest } from '../../_lib/project-guard';
 
 export async function GET(
   req: NextRequest,
@@ -8,6 +9,10 @@ export async function GET(
   try {
     const resolvedParams = await params;
     const projectId = resolvedParams.projectId;
+
+    const authError = authorizeProjectRequest(req, projectId, 'GET');
+    if (authError) return authError;
+
     const apis = externalProjectEngine.apiRegistry.listApis(projectId);
 
     return NextResponse.json({
@@ -28,6 +33,10 @@ export async function POST(
   try {
     const resolvedParams = await params;
     const projectId = resolvedParams.projectId;
+
+    const authError = authorizeProjectRequest(req, projectId, 'POST');
+    if (authError) return authError;
+
     const body = await req.json();
 
     const entry = externalProjectEngine.apiRegistry.registerApi(
@@ -58,6 +67,10 @@ export async function PUT(
   try {
     const resolvedParams = await params;
     const projectId = resolvedParams.projectId;
+
+    const authError = authorizeProjectRequest(req, projectId, 'PUT');
+    if (authError) return authError;
+
     const body = await req.json();
 
     const updated = externalProjectEngine.apiRegistry.updateApi(projectId, body.name, body.updates);

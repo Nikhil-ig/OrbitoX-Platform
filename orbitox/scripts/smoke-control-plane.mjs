@@ -112,6 +112,47 @@ const fleetEntry = async () => {
 try {
   const reg = await client.registerRuntime();
   check('runtime registers with runtime token', reg.success === true);
+  check('registration returns a project-scoped key', typeof reg.projectKey === 'string' && reg.projectKey.startsWith('orb_proj_'));
+  const projectKeyA = reg.projectKey;
+
+  console.log('\nPer-project runtime keys');
+  await expectStatus("project A's own key works on its bridge route -> 200", 200, `/api/v1/projects/${projectId}/bridge`, { headers: bearer(projectKeyA) });
+  await expectStatus("project A's own key works on its commands route -> 200", 200, `/api/v1/projects/${projectId}/commands`, { headers: bearer(projectKeyA) });
+
+  const suffixB = randomBytes(3).toString('hex');
+  const projectIdB = `smoke_b_${suffixB}`;
+  const regBRes = await fetch(`${BASE}/api/v1/projects/${projectIdB}/bridge`, {
+    method: 'POST',
+    headers: { ...json, ...bearer(RUNTIME) },
+    body: JSON.stringify({
+      action: 'REGISTER',
+      payload: {
+        slug: `smoke-b-${suffixB}`,
+        name: `Smoke Project B ${suffixB}`,
+        type: 'custom-os',
+        version: '1.0.0',
+        runtimeUrl: 'http://localhost:4998',
+        runtimePort: 4998,
+        declaredApis: [],
+        capabilities: [],
+      },
+    }),
+  });
+  const regB = await regBRes.json();
+  const projectKeyB = regB.projectKey;
+  check('second project registers and receives distinct project key', typeof projectKeyB === 'string' && projectKeyB !== projectKeyA);
+
+  await expectStatus("project B key rejected on project A's bridge -> 401", 401, `/api/v1/projects/${projectId}/bridge`, { headers: bearer(projectKeyB) });
+  await expectStatus("project B key rejected on project A's commands -> 401", 401, `/api/v1/projects/${projectId}/commands`, { headers: bearer(projectKeyB) });
+
+  await expectStatus("shared runtime token rejected on already-registered project's bridge -> 401", 401, `/api/v1/projects/${projectId}/bridge`, { headers: bearer(RUNTIME) });
+  await expectStatus("shared runtime token rejected on already-registered project's commands -> 401", 401, `/api/v1/projects/${projectId}/commands`, { headers: bearer(RUNTIME) });
+  await expectStatus("shared runtime token rejected on already-registered project's re-registration -> 401", 401, `/api/v1/projects/${projectId}/bridge`, {
+    method: 'POST',
+    headers: { ...json, ...bearer(RUNTIME) },
+    body: JSON.stringify({ action: 'REGISTER', payload: { slug: manifest.slug } }),
+  });
+
   let entry = await fleetEntry();
   check('new project appears in the fleet', !!entry);
   check('fleet shows it ONLINE', entry?.connection === 'ONLINE', `got ${entry?.connection}`);

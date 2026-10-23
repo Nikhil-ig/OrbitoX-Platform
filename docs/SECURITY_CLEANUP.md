@@ -66,8 +66,11 @@ These are known and need their own work. They are listed so nothing is assumed s
   the edge by `middleware.ts`, which covers `/admin`, `/platform` and the management APIs.
   Other demo surfaces (`/hms`, `/hrms`, `/crm`, `/finance`, `/commerce`, `/store`) are
   not behind the admin token.
-- The runtime token is shared by all projects. A per-project key would stop one compromised
-  runtime from acting as another.
+- [x] **Per-project runtime keys (RESOLVED)**: On initial `REGISTER` with the shared bootstrap
+  `ORBITOX_RUNTIME_TOKEN`, the control plane generates and returns a scoped `orb_proj_*` key,
+  persisting only its SHA-256 hash. Registered projects must present their own scoped key for
+  subsequent bridge, heartbeat, configuration, and command operations; cross-project key usage
+  and shared token reuse are rejected with 401.
 - Tenant-authored expressions run through `new Function` in the commerce plugin
   (`section-logic.engine.ts`, `flow.engine.ts`), and URL fetchers have no SSRF protection.
 - `Math.random()` is still used for IDs and rotated API keys in several API routes.

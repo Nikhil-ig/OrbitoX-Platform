@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { externalProjectEngine, RuntimeRegistrationError } from '@orbitox/external-project-engine';
+import { authorizeProjectRequest } from '../../_lib/project-guard';
 
 export async function POST(
   req: NextRequest,
@@ -11,6 +12,9 @@ export async function POST(
     const body = await req.json();
 
     const { action, payload } = body;
+
+    const authError = authorizeProjectRequest(req, projectId, action);
+    if (authError) return authError;
 
     if (action === 'REGISTER') {
       const response = externalProjectEngine.runtimeController.handleRegistration({
@@ -79,6 +83,9 @@ export async function GET(
   try {
     const resolvedParams = await params;
     const projectId = resolvedParams.projectId;
+
+    const authError = authorizeProjectRequest(req, projectId, 'GET');
+    if (authError) return authError;
 
     const signedConfig = externalProjectEngine.runtimeController.generateSignedConfiguration(projectId);
     return NextResponse.json(signedConfig);

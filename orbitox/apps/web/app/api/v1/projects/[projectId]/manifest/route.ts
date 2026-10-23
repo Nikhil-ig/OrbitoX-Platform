@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { externalProjectEngine } from '@orbitox/external-project-engine';
+import { authorizeProjectRequest } from '../../_lib/project-guard';
 import * as fs from 'fs';
 import * as path from 'path';
 
@@ -10,6 +11,10 @@ export async function GET(
   try {
     const resolvedParams = await params;
     const projectId = resolvedParams.projectId;
+
+    const authError = authorizeProjectRequest(req, projectId, 'GET');
+    if (authError) return authError;
+
     const project = externalProjectEngine.runtimeController.getProject(projectId);
 
     if (!project) {
@@ -36,6 +41,10 @@ export async function PUT(
   try {
     const resolvedParams = await params;
     const projectId = resolvedParams.projectId;
+
+    const authError = authorizeProjectRequest(req, projectId, 'PUT');
+    if (authError) return authError;
+
     const body = await req.json();
 
     const project = externalProjectEngine.runtimeController.getProject(projectId);

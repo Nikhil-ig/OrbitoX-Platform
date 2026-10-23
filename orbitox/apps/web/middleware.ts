@@ -87,9 +87,12 @@ function deny(req: NextRequest, status: 401 | 403 | 503, message: string): NextR
   return new NextResponse(message, { status, headers: { ...headers, 'Content-Type': 'text/plain; charset=utf-8' } });
 }
 
-function allow(req: NextRequest, principal: Principal): NextResponse {
+function allow(req: NextRequest, principal: Principal, credential?: string | null): NextResponse {
   const headers = new Headers(req.headers);
   headers.set('x-orbitox-principal', principal); // overwrites anything the client sent
+  if (credential) {
+    headers.set('x-orbitox-credential', credential);
+  }
   return NextResponse.next({ request: { headers } });
 }
 
@@ -107,10 +110,14 @@ export async function middleware(req: NextRequest) {
 
   const presented = extractCredential(req);
   if (presented) {
-    if (adminToken && (await safeEqual(presented, adminToken))) return allow(req, 'admin');
-    if (endpoint && runtimeToken && (await safeEqual(presented, runtimeToken))) {
-      if (RUNTIME_RULES[endpoint]!.has(req.method)) return allow(req, 'runtime');
-      return deny(req, 403, `Runtime token cannot ${req.method} /${endpoint}.`);
+    if (adminToken && (await safeEqual(presented, adminToken))) return allow(req, 'admin', presented);
+    if (endpoint) {
+      const isProjectKey = presented.startsWith('orb_proj_');
+      const isSharedToken = Boolean(runtimeToken && (await safeEqual(presented, runtimeToken)));
+      if (isProjectKey || isSharedToken) {
+        if (RUNTIME_RULES[endpoint]!.has(req.method)) return allow(req, 'runtime', presented);
+        return deny(req, 403, `Runtime token cannot ${req.method} /${endpoint}.`);
+      }
     }
   }
 

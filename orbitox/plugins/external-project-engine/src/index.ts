@@ -9,6 +9,7 @@ export * from './services/project-factory.service';
 export * from './services/api-registry.service';
 export * from './services/central-quote.service';
 export * from './services/runtime-controller.service';
+export * from './services/project-keys';
 export * from './services/fleet-snapshot';
 export * from './services/fleet.service';
 export * from './repositories';

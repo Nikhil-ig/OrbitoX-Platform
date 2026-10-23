@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { externalProjectEngine } from '@orbitox/external-project-engine';
+import { authorizeProjectRequest } from '../../_lib/project-guard';
 
 export async function GET(
   req: NextRequest,
@@ -8,6 +9,10 @@ export async function GET(
   try {
     const resolvedParams = await params;
     const projectId = resolvedParams.projectId;
+
+    const authError = authorizeProjectRequest(req, projectId, 'POLL_COMMANDS');
+    if (authError) return authError;
+
     const statusFilter = req.nextUrl.searchParams.get('status');
 
     let commands = externalProjectEngine.runtimeController.getCommands(projectId);
@@ -51,6 +56,9 @@ export async function POST(
       );
       return NextResponse.json({ success: true, command: cmd });
     }
+
+    const authError = authorizeProjectRequest(req, projectId, action);
+    if (authError) return authError;
 
     if (action === 'COMPLETE') {
       if (!commandId) {

@@ -11,7 +11,7 @@ import {
   RuntimeAuditReport,
   OrbitoxProjectManifest,
 } from '@orbitox/external-runtime-sdk';
-import {
+import type {
   RuntimeSessionRecord,
   ProjectAuditEntry,
   ExternalProjectRecord,
@@ -22,15 +22,32 @@ import { PersistentControlStore } from './control-store.service';
 
 /** Registration problem with an HTTP-style status the API layer can return as-is. */
 export class RuntimeRegistrationError extends Error {
+  public readonly code: 'INVALID_PAYLOAD' | 'REGISTRATION_NOT_ALLOWED';
+  public readonly status: 400 | 403;
+
   constructor(
-    public readonly code: 'INVALID_PAYLOAD' | 'REGISTRATION_NOT_ALLOWED',
+    code: 'INVALID_PAYLOAD' | 'REGISTRATION_NOT_ALLOWED',
     message: string,
-    public readonly status: 400 | 403,
+    status: 400 | 403,
   ) {
     super(message);
     this.name = 'RuntimeRegistrationError';
+    this.code = code;
+    this.status = status;
   }
 }
+
+import {
+  generateProjectKey,
+  hashProjectKey,
+  verifyProjectKey as verifyKeyHelper,
+  evaluateProjectAccess,
+  safeTimingEqual,
+  ProjectAccessParams,
+  ProjectAccessResult,
+} from './project-keys';
+
+export type { ProjectAccessParams, ProjectAccessResult };
 
 const ID_PATTERN = /^[a-zA-Z0-9][a-zA-Z0-9_-]{2,63}$/;
 
@@ -591,7 +608,12 @@ export class RuntimeControllerService {
 
     this.store.saveSession(session);
 
+    let newlyIssuedKey: string | undefined;
     if (proj) {
+      if (!proj.projectKeyHash) {
+        newlyIssuedKey = generateProjectKey();
+        proj.projectKeyHash = hashProjectKey(newlyIssuedKey);
+      }
       proj.status = 'CONNECTED';
       proj.activeRevisionNumber = appliedRev;
       proj.syncStatus = session.syncStatus;
@@ -618,6 +640,7 @@ export class RuntimeControllerService {
       signedConfig,
       desiredRevision: desiredRev,
       platformTime: new Date().toISOString(),
+      ...(newlyIssuedKey ? { projectKey: newlyIssuedKey } : {}),
     };
   }
 
@@ -820,4 +843,22 @@ export class RuntimeControllerService {
       desiredState: state.customConfig || {},
     };
   }
+
+  public verifyProjectKey(projectId: string, presentedKey: string): boolean {
+    if (!presentedKey || typeof presentedKey !== 'string') return false;
+    const proj = this.store.getProject(projectId);
+    if (!proj || !proj.projectKeyHash) return false;
+    return verifyKeyHelper(presentedKey, proj.projectKeyHash);
+  }
+
+  public verifyProjectAccess(params: ProjectAccessParams): ProjectAccessResult {
+    RuntimeControllerService.initialize();
+    const proj = this.store.getProject(params.projectId);
+    return evaluateProjectAccess({
+      ...params,
+      projectKeyHash: proj?.projectKeyHash,
+    });
+  }
 }
+
+
