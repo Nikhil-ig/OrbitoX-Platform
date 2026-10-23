@@ -7,7 +7,7 @@ export const GET = withApiGuard(
   {
     serviceId: 'platform',
     serviceName: 'Platform Plugin Registry',
-    allowPublic: true,
+    requiredScopes: ['platform.plugins.read'],
   },
   async (_req: NextRequest, ctx: ApiRequestContext) => {
     const plugins = pluginRegistry.listInstalledPlugins();
@@ -27,7 +27,7 @@ export const POST = withApiGuard(
   {
     serviceId: 'platform',
     serviceName: 'Platform Plugin Registry',
-    allowPublic: true,
+    requiredScopes: ['platform.plugins.read'],
   },
   async (req: NextRequest, ctx: ApiRequestContext) => {
     try {

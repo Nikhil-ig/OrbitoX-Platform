@@ -93,6 +93,9 @@ importers:
       '@orbitox/commerce':
         specifier: workspace:*
         version: link:../../plugins/commerce
+      '@orbitox/config':
+        specifier: workspace:*
+        version: link:../../packages/config
       '@orbitox/core':
         specifier: workspace:*
         version: link:../../packages/core

@@ -7,7 +7,7 @@ export const GET = withApiGuard(
   {
     serviceId: 'platform',
     serviceName: 'Platform Effective Plan Service',
-    allowPublic: true,
+    requiredScopes: ['platform.projects.read'],
   },
   async (req: NextRequest, ctx: ApiRequestContext) => {
     const url = new URL(req.url);

@@ -14,3 +14,11 @@
 - **Risks Left:** History rewrite with purge-history.sh and secret rotation in production environments must be performed by human repository owner; API guard rewrite pending in Phase 2.
 - **Next:** PHASE 2 — REWRITE THE API GUARD: DEFAULT-DENY (F1, F4, F5, F11).
 
+## Phase 2: Default-Deny API Guard & Cryptographic Authentication
+- **Done:** Rewrote API Guard into modular components (`authenticate`, `authorize`, `tenant`, `rate-limit`, `errors`, `index`); enforced default-deny and header-only credentials; eliminated seeded keys and `rawKey` fields; implemented constant-time HMAC-SHA256 authentication against server pepper; enforced tenant anti-spoofing and scope validation; secured 15 former public `platform/*` routes (F11); added edge middleware defense, bootstrap-root-key CLI, and PUBLIC_ROUTES.md.
+- **Tests Run:** 31 (26 guard regression & timing tests, 5 requireSecret unit tests, plus Next.js production web build).
+- **Tests Passed:** 31 passed (100% test pass rate; Next.js full static page build 139/139 passed).
+- **Risks Left:** All 75 route endpoints need static scanning and explicit per-route scope definitions in Phase 3; snapshot import/export hardening pending in Phase 3.
+- **Next:** PHASE 3 — GUARD EVERY ROUTE; CLOSE THE SNAPSHOT HOLE (F2, F3).
+
+

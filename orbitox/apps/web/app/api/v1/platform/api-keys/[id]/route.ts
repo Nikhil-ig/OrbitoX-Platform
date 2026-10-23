@@ -8,7 +8,7 @@ export const GET = withApiGuard(
   {
     serviceId: 'platform',
     serviceName: 'Platform Keys Service',
-    allowPublic: true,
+    requiredScopes: ['platform.keys.read'],
   },
   async (req: NextRequest, ctx: ApiRequestContext) => {
     PlatformRepository.initialize();

@@ -1,7 +1,13 @@
 import { NextResponse } from 'next/server';
+import { withApiGuard } from '../_lib/guard';
 
-export async function GET() {
-  const openApiDoc = {
+export const GET = withApiGuard(
+  {
+    public: true,
+    serviceId: 'openapi',
+  },
+  async () => {
+    const openApiDoc = {
     openapi: '3.1.0',
     info: {
       title: 'OrbitoX SaaS Operating System Unified REST API',
@@ -168,10 +174,11 @@ export async function GET() {
     },
   };
 
-  return NextResponse.json(openApiDoc, {
-    headers: {
-      'content-type': 'application/json; charset=utf-8',
-      'cache-control': 'public, max-age=3600',
-    },
-  });
-}
+    return NextResponse.json(openApiDoc, {
+      headers: {
+        'content-type': 'application/json; charset=utf-8',
+        'cache-control': 'public, max-age=3600',
+      },
+    });
+  }
+);

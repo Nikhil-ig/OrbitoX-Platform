@@ -12,16 +12,16 @@ export const GET = withApiGuard(
     const environment = searchParams.get('environment');
     const status = searchParams.get('status');
 
-    let keys = PlatformApiState.getApiKeys();
+    let keys: any[] = PlatformApiState.getApiKeys();
 
     if (serviceId && serviceId !== 'all') {
-      keys = keys.filter((k) => k.serviceId === serviceId || k.serviceId === 'all');
+      keys = keys.filter((k: any) => k.serviceId === serviceId || k.serviceId === 'all');
     }
     if (environment && environment !== 'all') {
-      keys = keys.filter((k) => k.environment === environment);
+      keys = keys.filter((k: any) => k.environment === environment);
     }
     if (status && status !== 'all') {
-      keys = keys.filter((k) => k.status === status);
+      keys = keys.filter((k: any) => k.status === status);
     }
 
     return NextResponse.json({
@@ -50,6 +50,7 @@ export const POST = withApiGuard(
         environment = 'production',
         scopes = ['read', 'write'],
         rateLimitPerMin = 1200,
+        isRoot,
       } = body;
 
       if (!name || !serviceId) {
@@ -59,42 +60,48 @@ export const POST = withApiGuard(
         );
       }
 
-      const prefix = `orb_${environment === 'production' ? 'live' : 'test'}_`;
-      const randomSecret = Math.random().toString(36).substring(2, 14) + Math.random().toString(36).substring(2, 14);
-      const rawKey = `${prefix}${randomSecret}`;
-      const maskedKey = `${prefix}********************${randomSecret.slice(-4)}`;
+      // Root keys cannot be created through the API
+      if (isRoot || scopes.includes('*')) {
+        return NextResponse.json(
+          {
+            success: false,
+            error: {
+              code: 'FORBIDDEN',
+              message: 'Root keys with wildcard (*) scopes cannot be created through the API. Use bootstrap-root-key script.',
+            },
+          },
+          { status: 403 }
+        );
+      }
 
-      const newKey = {
-        id: `key-${Date.now()}`,
+      const { createNewApiKey } = await import('../../_lib/guard');
+      const { rawKey, record } = createNewApiKey({
         name,
-        keyPrefix: prefix,
-        maskedKey,
+        environment,
+        scopes,
+        tenantScope: providerId ? [providerId] : undefined,
+        rateLimitPerMin,
+      });
+
+      const responsePayload = {
+        ...record,
         rawKey,
         serviceId,
         serviceName: serviceName || serviceId,
         providerId,
         providerName,
-        environment,
-        scopes,
-        createdAt: 'Just now',
-        lastUsedAt: 'Never',
-        status: 'active',
-        rateLimitPerMin,
-        requestsLast30Days: 0,
       };
-
-      PlatformApiState.addApiKey(newKey);
 
       PlatformApiState.recordTelemetry({
         tenantId: providerId,
         facade: 'SecurityFacade',
         level: 'SECURITY',
-        message: `Issued new Ed25519-compatible API Key [${name}] for service [${serviceId}] (${environment}).`,
+        message: `Issued new cryptographic API Key [${name}] for service [${serviceId}] (${environment}).`,
       });
 
       return NextResponse.json({
         success: true,
-        data: newKey,
+        data: responsePayload,
         message: 'API Key generated successfully. Save the rawKey securely as it will not be displayed again.',
       });
     } catch (err: any) {
