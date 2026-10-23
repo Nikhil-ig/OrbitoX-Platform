@@ -1,3 +1,4 @@
+import { randomBytes } from 'crypto';
 import { Module, Global } from '@nestjs/common';
 import { JwtModule } from '@nestjs/jwt';
 import { PassportModule } from '@nestjs/passport';
@@ -40,22 +41,34 @@ const redisProvider = {
     JwtModule.registerAsync({
       inject: [SecretsService],
       useFactory: async (secretsService: SecretsService) => {
-        // Fallbacks for local development
-        let privateKey = process.env.JWT_PRIVATE_KEY || 'default_secret';
-        let publicKey = process.env.JWT_PUBLIC_KEY || 'default_secret';
-        
+        const isProduction = process.env.NODE_ENV === 'production';
+        let privateKey: string | undefined = process.env.JWT_PRIVATE_KEY;
+        let publicKey: string | undefined = process.env.JWT_PUBLIC_KEY;
+
         try {
           privateKey = await secretsService.get('auth/jwt/private_key');
           publicKey = await secretsService.get('auth/jwt/public_key');
         } catch (e) {
-          // Ignore error and use fallbacks
+          // Secrets provider unavailable: fall back to the environment variables above.
+        }
+
+        let algorithm: 'RS256' | 'HS256' = 'RS256';
+        if (!privateKey || !publicKey) {
+          if (isProduction) {
+            throw new Error('JWT_PRIVATE_KEY and JWT_PUBLIC_KEY are required in production.');
+          }
+          // Development only: random per-process HMAC key, so tokens reset on restart.
+          const devSecret = randomBytes(32).toString('hex');
+          privateKey = devSecret;
+          publicKey = devSecret;
+          algorithm = 'HS256';
         }
 
         return {
           privateKey,
           publicKey,
           signOptions: { 
-            algorithm: publicKey === 'default_secret' ? 'HS256' : 'RS256',
+            algorithm,
           },
         };
       },

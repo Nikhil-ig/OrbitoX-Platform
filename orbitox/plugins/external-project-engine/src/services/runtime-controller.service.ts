@@ -1,4 +1,6 @@
 import * as crypto from 'crypto';
+import * as fs from 'fs';
+import * as path from 'path';
 import {
   SignedRuntimeConfiguration,
   ConfigurationRevision,
@@ -21,7 +23,52 @@ import { PersistentControlStore } from './control-store.service';
 export class RuntimeControllerService {
   private static store: PersistentControlStore = PersistentControlStore.getInstance();
   private store: PersistentControlStore = PersistentControlStore.getInstance();
-  private static secretSigningKey = 'orbitox_platform_control_secret_2026';
+  private static cachedSigningKey: string | null = null;
+
+  /**
+   * HMAC key that signs every config/command sent to client runtimes.
+   * - Set ORBITOX_CONTROL_SECRET (min 32 chars) in every real deployment.
+   * - Production refuses to start signing without it.
+   * - In development a random key is generated once and kept (0600) next to the
+   *   control-plane data, so restarts keep working without a hardcoded secret.
+   */
+  private static get secretSigningKey(): string {
+    if (this.cachedSigningKey) return this.cachedSigningKey;
+
+    const isProduction = process.env.NODE_ENV === 'production';
+    const fromEnv = process.env.ORBITOX_CONTROL_SECRET?.trim();
+
+    if (fromEnv) {
+      if (isProduction && fromEnv.length < 32) {
+        throw new Error('ORBITOX_CONTROL_SECRET must be at least 32 characters in production.');
+      }
+      this.cachedSigningKey = fromEnv;
+      return fromEnv;
+    }
+
+    if (isProduction) {
+      throw new Error('ORBITOX_CONTROL_SECRET is required in production. Generate one with: openssl rand -hex 32');
+    }
+
+    const keyFile = path.join(this.store.getDataDir(), '.control_secret');
+    try {
+      if (fs.existsSync(keyFile)) {
+        const existing = fs.readFileSync(keyFile, 'utf-8').trim();
+        if (existing.length >= 32) {
+          this.cachedSigningKey = existing;
+          return existing;
+        }
+      }
+      const generated = crypto.randomBytes(32).toString('hex');
+      fs.writeFileSync(keyFile, generated, { encoding: 'utf-8', mode: 0o600 });
+      this.cachedSigningKey = generated;
+      return generated;
+    } catch {
+      // Read-only disk in dev: fall back to a per-process key.
+      this.cachedSigningKey = crypto.randomBytes(32).toString('hex');
+      return this.cachedSigningKey;
+    }
+  }
   private static initialized = false;
 
   constructor() {
@@ -228,7 +275,7 @@ export class RuntimeControllerService {
           url: 'http://localhost:4010',
           status: 'ONLINE',
           variables: { NODE_ENV: 'development', RUNTIME_PORT: '4010' },
-          secrets: { CONTROL_PLANE_SECRET: 'orbitox_platform_control_secret_2026' },
+          secrets: { CONTROL_PLANE_SECRET: '<managed:ORBITOX_CONTROL_SECRET>' },
         },
         {
           id: 'env_prod',
@@ -237,7 +284,7 @@ export class RuntimeControllerService {
           url: 'https://restaurant.orbitox.io',
           status: 'ONLINE',
           variables: { NODE_ENV: 'production', CLUSTER_REGION: 'ap-south-1' },
-          secrets: { CONTROL_PLANE_SECRET: 'orbitox_platform_control_secret_2026' },
+          secrets: { CONTROL_PLANE_SECRET: '<managed:ORBITOX_CONTROL_SECRET>' },
           lastDeployedAt: '2026-10-08T18:00:00.000Z',
         },
       ];

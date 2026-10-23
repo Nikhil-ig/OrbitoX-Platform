@@ -1,4 +1,3 @@
-version: '3.8'
 
 # 🪐 OrbitoX Multi-Server High-Availability Clustered Mesh
 # Ideal for: Enterprise SaaS, Multi-Region Scale, High-Concurrency Networks (> 100k req/s)
@@ -37,7 +36,7 @@ services:
       - NODE_ID=node-us-east-1a
       - PORT=3000
       - REDIS_URL=redis://:redispass123@redis:6379
-      - DATABASE_URL=postgresql://orbitox_admin:password123@pgbouncer:6432/orbitox
+      - DATABASE_URL=postgresql://orbitox_admin:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}@pgbouncer:6432/orbitox
     volumes:
       - ./snapshots:/app/snapshots
     depends_on:
@@ -59,7 +58,7 @@ services:
       - NODE_ID=node-us-west-2b
       - PORT=3000
       - REDIS_URL=redis://:redispass123@redis:6379
-      - DATABASE_URL=postgresql://orbitox_admin:password123@pgbouncer:6432/orbitox
+      - DATABASE_URL=postgresql://orbitox_admin:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}@pgbouncer:6432/orbitox
     depends_on:
       redis:
         condition: service_healthy
@@ -79,7 +78,7 @@ services:
       - NODE_ID=node-eu-central-1
       - PORT=3000
       - REDIS_URL=redis://:redispass123@redis:6379
-      - DATABASE_URL=postgresql://orbitox_admin:password123@pgbouncer:6432/orbitox
+      - DATABASE_URL=postgresql://orbitox_admin:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}@pgbouncer:6432/orbitox
     depends_on:
       redis:
         condition: service_healthy
@@ -107,7 +106,7 @@ services:
     restart: always
     environment:
       - DB_USER=orbitox_admin
-      - DB_PASSWORD=password123
+      - DB_PASSWORD=${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
       - DB_HOST=postgres
       - DB_PORT=5432
       - DB_NAME=orbitox
@@ -131,7 +130,7 @@ services:
     restart: always
     environment:
       POSTGRES_USER: orbitox_admin
-      POSTGRES_PASSWORD: password123
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
       POSTGRES_DB: orbitox
     ports:
       - '5432:5432'
