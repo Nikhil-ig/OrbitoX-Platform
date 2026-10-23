@@ -70,8 +70,17 @@ These are known and need their own work. They are listed so nothing is assumed s
   persisting only its SHA-256 hash. Registered projects must present their own scoped key for
   subsequent bridge, heartbeat, configuration, and command operations; cross-project key usage
   and shared token reuse are rejected with 401.
-- Tenant-authored expressions run through `new Function` in the commerce plugin
-  (`section-logic.engine.ts`, `flow.engine.ts`), and URL fetchers have no SSRF protection.
+- [x] **Safe expression evaluator and SSRF protection (RESOLVED)**:
+  Replaced all usage of `new Function` in the commerce plugin (`section-logic.engine.ts`, `flow.engine.ts`)
+  with `evaluateSafeExpression` and `validateSafeExpression`, powered by an AST recursive-descent parser
+  and tree-walk evaluator (`safe-expression.ts`). It enforces strict operator whitelisting, explicit
+  rejection of dangerous identifiers/properties (`process`, `require`, `eval`, `Function`, `constructor`,
+  `__proto__`, etc.), recursion depth limits (30), and step count limits (1000). URL fetchers are
+  guarded with `safeFetch` (`safe-fetch.ts`) featuring SSRF protection: protocol whitelist (`http:`, `https:`),
+  strict IP address blocking (private IPv4 `10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`, loopback
+  `127.0.0.0/8`, link-local/cloud metadata `169.254.0.0/16`, multicast/reserved, and IPv6 loopback/ULA/link-local/mapped),
+  pre-flight DNS lookup, and manual redirect hop tracking with cap (max 3). Verified by 11 unit tests in
+  `safe-logic.test.ts`.
 - `Math.random()` is still used for IDs and rotated API keys in several API routes.
 - RestaurantOS: `Access-Control-Allow-Origin: *`, `?token=` in query strings, and test
   endpoints gated only by `NODE_ENV`.

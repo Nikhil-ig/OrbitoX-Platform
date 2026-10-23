@@ -9,6 +9,7 @@ import {
   LogicEvaluationExplanation,
 } from '../../types/logic.types';
 import { PageSection } from '../../types/component.types';
+import { evaluateSafeExpression, validateSafeExpression } from './safe-expression';
 
 export interface LogicConditionPreset {
   id: string;
@@ -71,30 +72,14 @@ export class SectionLogicEngine {
         if (!expr) {
           return { isValid: false, error: 'Custom expression code cannot be empty.' };
         }
-        try {
-          // Test compile the function syntax
-          new Function('context', `
-            const {
-              cartSubtotal = 0,
-              cartItemCount = 0,
-              customerSegment = 'all',
-              isLoggedIn = false,
-              customerTotalSpent = 0,
-              deviceType = 'desktop',
-              currency = 'USD',
-              countryCode = 'US',
-              utmCampaign = '',
-              now = new Date(),
-            } = context || {};
-            return Boolean(${expr});
-          `);
-          return { isValid: true };
-        } catch (err: any) {
+        const validation = validateSafeExpression(expr);
+        if (!validation.isValid) {
           return {
             isValid: false,
-            error: `Syntax error in expression: ${err.message}`,
+            error: `Syntax error in expression: ${validation.error}`,
           };
         }
+        return { isValid: true };
       }
 
       case 'cart_subtotal': {
@@ -213,24 +198,23 @@ export class SectionLogicEngine {
           }
 
           try {
-            const evalFn = new Function('context', `
-              const {
-                cartSubtotal = 0,
-                cartItemCount = 0,
-                customerSegment = 'all',
-                isLoggedIn = false,
-                customerTotalSpent = 0,
-                deviceType = 'desktop',
-                currency = 'USD',
-                countryCode = 'US',
-                utmCampaign = '',
-                now = new Date(),
-                customParams = {}
-              } = context || {};
-              return Boolean(${expr});
-            `);
+            const scope = {
+              cartSubtotal: 0,
+              cartItemCount: 0,
+              customerSegment: 'all',
+              isLoggedIn: false,
+              customerTotalSpent: 0,
+              deviceType: 'desktop',
+              currency: 'USD',
+              countryCode: 'US',
+              utmCampaign: '',
+              now: new Date(),
+              customParams: {},
+              ...(ctx || {}),
+              context: ctx || {},
+            };
 
-            const result = Boolean(evalFn(ctx));
+            const result = Boolean(evaluateSafeExpression(expr, scope));
             return {
               passed: result,
               reason: result
