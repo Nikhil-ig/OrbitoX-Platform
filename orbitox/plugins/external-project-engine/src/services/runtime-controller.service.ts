@@ -1,4 +1,6 @@
 import * as crypto from 'crypto';
+import * as fs from 'fs';
+import * as path from 'path';
 import {
   SignedRuntimeConfiguration,
   ConfigurationRevision,
@@ -18,10 +20,69 @@ import {
 } from '../types';
 import { PersistentControlStore } from './control-store.service';
 
+/** Registration problem with an HTTP-style status the API layer can return as-is. */
+export class RuntimeRegistrationError extends Error {
+  constructor(
+    public readonly code: 'INVALID_PAYLOAD' | 'REGISTRATION_NOT_ALLOWED',
+    message: string,
+    public readonly status: 400 | 403,
+  ) {
+    super(message);
+    this.name = 'RuntimeRegistrationError';
+  }
+}
+
+const ID_PATTERN = /^[a-zA-Z0-9][a-zA-Z0-9_-]{2,63}$/;
+
 export class RuntimeControllerService {
   private static store: PersistentControlStore = PersistentControlStore.getInstance();
   private store: PersistentControlStore = PersistentControlStore.getInstance();
-  private static secretSigningKey = 'orbitox_platform_control_secret_2026';
+  private static cachedSigningKey: string | null = null;
+
+  /**
+   * HMAC key that signs every config/command sent to client runtimes.
+   * - Set ORBITOX_CONTROL_SECRET (min 32 chars) in every real deployment.
+   * - Production refuses to start signing without it.
+   * - In development a random key is generated once and kept (0600) next to the
+   *   control-plane data, so restarts keep working without a hardcoded secret.
+   */
+  private static get secretSigningKey(): string {
+    if (this.cachedSigningKey) return this.cachedSigningKey;
+
+    const isProduction = process.env.NODE_ENV === 'production';
+    const fromEnv = process.env.ORBITOX_CONTROL_SECRET?.trim();
+
+    if (fromEnv) {
+      if (isProduction && fromEnv.length < 32) {
+        throw new Error('ORBITOX_CONTROL_SECRET must be at least 32 characters in production.');
+      }
+      this.cachedSigningKey = fromEnv;
+      return fromEnv;
+    }
+
+    if (isProduction) {
+      throw new Error('ORBITOX_CONTROL_SECRET is required in production. Generate one with: openssl rand -hex 32');
+    }
+
+    const keyFile = path.join(this.store.getDataDir(), '.control_secret');
+    try {
+      if (fs.existsSync(keyFile)) {
+        const existing = fs.readFileSync(keyFile, 'utf-8').trim();
+        if (existing.length >= 32) {
+          this.cachedSigningKey = existing;
+          return existing;
+        }
+      }
+      const generated = crypto.randomBytes(32).toString('hex');
+      fs.writeFileSync(keyFile, generated, { encoding: 'utf-8', mode: 0o600 });
+      this.cachedSigningKey = generated;
+      return generated;
+    } catch {
+      // Read-only disk in dev: fall back to a per-process key.
+      this.cachedSigningKey = crypto.randomBytes(32).toString('hex');
+      return this.cachedSigningKey;
+    }
+  }
   private static initialized = false;
 
   constructor() {
@@ -32,8 +93,13 @@ export class RuntimeControllerService {
     if (this.initialized) return;
     this.initialized = true;
 
+    // Demo data is for local development only. Production starts empty: real projects
+    // appear when they register. Set ORBITOX_SEED_DEMO=true to force it on (or =false to force it off).
+    const seedFlag = process.env.ORBITOX_SEED_DEMO?.trim().toLowerCase();
+    const seedDemo = seedFlag ? seedFlag === 'true' : process.env.NODE_ENV !== 'production';
+
     const existingProject = this.store.getProject('project_restaurant_os');
-    if (!existingProject) {
+    if (seedDemo && !existingProject) {
       // Seed default restaurant-os external project
       const restaurantProject: ExternalProjectRecord = {
         id: 'project_restaurant_os',
@@ -228,7 +294,7 @@ export class RuntimeControllerService {
           url: 'http://localhost:4010',
           status: 'ONLINE',
           variables: { NODE_ENV: 'development', RUNTIME_PORT: '4010' },
-          secrets: { CONTROL_PLANE_SECRET: 'orbitox_platform_control_secret_2026' },
+          secrets: { CONTROL_PLANE_SECRET: '<managed:ORBITOX_CONTROL_SECRET>' },
         },
         {
           id: 'env_prod',
@@ -237,7 +303,7 @@ export class RuntimeControllerService {
           url: 'https://restaurant.orbitox.io',
           status: 'ONLINE',
           variables: { NODE_ENV: 'production', CLUSTER_REGION: 'ap-south-1' },
-          secrets: { CONTROL_PLANE_SECRET: 'orbitox_platform_control_secret_2026' },
+          secrets: { CONTROL_PLANE_SECRET: '<managed:ORBITOX_CONTROL_SECRET>' },
           lastDeployedAt: '2026-10-08T18:00:00.000Z',
         },
       ];
@@ -430,12 +496,74 @@ export class RuntimeControllerService {
     return { added, modified, removed, summary };
   }
 
+  /**
+   * Creates the project record for a runtime that registers for the first time.
+   * Whether the caller is allowed to do this is decided at the API edge (runtime token);
+   * here we validate the identity fields so garbage can never be stored.
+   */
+  private autoRegisterProject(payload: RuntimeRegistrationPayload): ExternalProjectRecord {
+    if (!ID_PATTERN.test(payload.projectId ?? '')) {
+      throw new RuntimeRegistrationError('INVALID_PAYLOAD', 'projectId must be 3-64 characters: letters, digits, "-" or "_".', 400);
+    }
+    if (!ID_PATTERN.test(payload.slug ?? '')) {
+      throw new RuntimeRegistrationError('INVALID_PAYLOAD', 'slug must be 3-64 characters: letters, digits, "-" or "_".', 400);
+    }
+    const name = (payload.name ?? payload.slug).toString().trim().slice(0, 120) || payload.slug;
+    const now = new Date().toISOString();
+
+    const record: ExternalProjectRecord = {
+      id: payload.projectId,
+      slug: payload.slug,
+      name,
+      manifest: {
+        projectId: payload.projectId,
+        slug: payload.slug,
+        name,
+        type: (payload.projectType as ExternalProjectRecord['manifest']['type']) ?? 'custom-os',
+        version: payload.version || '0.0.0',
+        runtime: { type: 'standalone', entrypoint: '', defaultPort: payload.runtimePort, healthEndpoint: '/health' },
+        enabledPlugins: [],
+        enabledFeatures: [],
+        apis: payload.declaredApis ?? [],
+        planReferences: [],
+        environmentMetadata: { defaultEnvironment: 'local', supportedEnvironments: ['local'] },
+        platformController: { controlPlaneUrl: '', syncIntervalSeconds: 15, requireSignedConfig: false },
+        capabilities: payload.capabilities ?? [],
+      },
+      status: 'CONNECTED',
+      localPath: '',
+      activeRevisionNumber: 1,
+      desiredRevisionNumber: 1,
+      syncStatus: 'IN_SYNC',
+      createdAt: now,
+      updatedAt: now,
+    };
+    this.store.saveProject(record);
+    this.recordAudit({
+      id: `aud_${Date.now()}_${crypto.randomBytes(3).toString('hex')}`,
+      projectId: record.id,
+      timestamp: now,
+      actor: `runtime:${record.slug}`,
+      action: 'PROJECT_AUTO_REGISTERED',
+      status: 'SUCCESS',
+      details: { runtimeUrl: payload.runtimeUrl, version: payload.version },
+    });
+    return record;
+  }
+
   // --- Handshake & Telemetry ---
   public handleRegistration(payload: RuntimeRegistrationPayload): RuntimeRegistrationResponse {
     RuntimeControllerService.initialize();
     const controlSessionId = `ctrl_sess_${Date.now().toString(36)}_${crypto.randomBytes(4).toString('hex')}`;
 
-    const proj = this.store.getProject(payload.projectId);
+    let proj = this.store.getProject(payload.projectId);
+
+    // A runtime we have never seen: register it as a tracked project, instead of
+    // pretending success while leaving it invisible to the control plane.
+    if (!proj) {
+      proj = this.autoRegisterProject(payload);
+    }
+
     const desiredRev = proj?.desiredRevisionNumber || 1;
     const appliedRev = payload.appliedRevision || desiredRev;
 

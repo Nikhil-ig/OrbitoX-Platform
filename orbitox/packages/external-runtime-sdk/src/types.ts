@@ -99,6 +99,10 @@ export interface SignedRuntimeConfiguration {
 export interface RuntimeRegistrationPayload {
   projectId: string;
   slug: string;
+  /** Human-readable name shown in the control plane; defaults to the slug. */
+  name?: string;
+  /** Project type from the manifest (e.g. 'restaurant-os', 'custom-os'). */
+  projectType?: string;
   runtimeUrl: string;
   runtimePort: number;
   version: string;

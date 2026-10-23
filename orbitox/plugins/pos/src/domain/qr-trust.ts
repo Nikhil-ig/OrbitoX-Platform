@@ -110,7 +110,26 @@ export interface SanitizedParticipantProjection {
 }
 
 export class QRTrustEngine {
-  private static readonly SECRET_KEY = process.env.ORBITOX_GUEST_SECRET || 'orbitox_default_secure_hmac_secret_key_2026';
+  private static cachedSecret: string | null = null;
+
+  /**
+   * HMAC key for guest/QR tokens. Set ORBITOX_GUEST_SECRET (min 32 chars) in every
+   * real deployment; production refuses to run without it. In development a random
+   * per-process key is used, so dev QR sessions reset when the server restarts.
+   */
+  private static get SECRET_KEY(): string {
+    if (this.cachedSecret) return this.cachedSecret;
+    const fromEnv = process.env.ORBITOX_GUEST_SECRET?.trim();
+    const isProduction = process.env.NODE_ENV === 'production';
+    if (fromEnv && (!isProduction || fromEnv.length >= 32)) {
+      this.cachedSecret = fromEnv;
+    } else if (isProduction) {
+      throw new Error('ORBITOX_GUEST_SECRET (min 32 chars) is required in production. Generate one with: openssl rand -hex 32');
+    } else {
+      this.cachedSecret = crypto.randomBytes(32).toString('hex');
+    }
+    return this.cachedSecret;
+  }
 
   /**
    * Hashes an arbitrary token string using SHA-256 for secure DB lookups.

@@ -81,6 +81,97 @@
   --ui-transition-smooth: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
+:root[data-theme="light"],
+[data-theme="light"] {
+  /* ─── Surface Hierarchies (Calm, Dense Light Palette) ─── */
+  --ui-bg-root: #F8FAFC;
+  --ui-bg-canvas: #F8FAFC;
+  --ui-bg-dock: rgba(255, 255, 255, 0.96);
+  --ui-bg-sidebar: #FFFFFF;
+  --ui-bg-card: #FFFFFF;
+  --ui-bg-card-hover: #F1F5F9;
+  --ui-bg-squircle: #FFFFFF;
+  --ui-bg-squircle-hover: #F1F5F9;
+  --ui-bg-subcard: #F8FAFC;
+  --ui-bg-glass: rgba(255, 255, 255, 0.92);
+  --ui-bg-elevated: #F1F5F9;
+  --ui-bg-input: #FFFFFF;
+
+  /* ─── Border Tokens ─── */
+  --ui-border-subtle: rgba(15, 23, 42, 0.05);
+  --ui-border-default: rgba(15, 23, 42, 0.1);
+  --ui-border-bright: rgba(15, 23, 42, 0.18);
+  --ui-border-glow: rgba(79, 70, 229, 0.25);
+  --ui-border-active: #4F46E5;
+
+  /* ─── Typography & Text Hierarchy (4.5:1+ contrast) ─── */
+  --ui-text-primary: #0F172A;
+  --ui-text-secondary: #334155;
+  --ui-text-muted: #64748B;
+  --ui-text-dim: #94A3B8;
+  --ui-text-accent: #4F46E5;
+
+  /* ─── Accents ─── */
+  --ui-accent-neon-orange: #EA580C;
+  --ui-accent-neon-orange-hover: #C2410C;
+  --ui-accent-neon-orange-glow: rgba(234, 88, 12, 0.25);
+  --ui-accent-neon-indigo: #4F46E5;
+  --ui-accent-neon-blue: #4F46E5;
+  --ui-accent-neon-purple: #7C3AED;
+  --ui-accent-neon-indigo-glow: rgba(79, 70, 229, 0.25);
+  --ui-accent-neon-cyan: #0284C7;
+  --ui-accent-neon-emerald: #059669;
+
+  --ui-accent-primary: #4F46E5;
+  --ui-accent-primary-hover: #4338CA;
+  --ui-accent-secondary: #EA580C;
+  --ui-accent-glow: rgba(79, 70, 229, 0.25);
+  --ui-accent-gradient: linear-gradient(135deg, #4F46E5 0%, #6366F1 100%);
+  --ui-accent-orange-gradient: linear-gradient(135deg, #EA580C 0%, #F97316 100%);
+  --ui-accent-gold: #D97706;
+  --ui-accent-gold-glow: rgba(217, 119, 6, 0.25);
+
+  /* ─── Functional Semantic Colors ─── */
+  --ui-success: #059669;
+  --ui-success-bg: rgba(5, 150, 105, 0.12);
+  --ui-warning: #D97706;
+  --ui-warning-bg: rgba(217, 119, 6, 0.12);
+  --ui-danger: #DC2626;
+  --ui-danger-bg: rgba(220, 38, 38, 0.12);
+  --ui-info: #0284C7;
+  --ui-info-bg: rgba(2, 132, 199, 0.12);
+
+  /* ─── Elevation & Shadows ─── */
+  --ui-shadow-sm: 0 1px 3px rgba(15, 23, 42, 0.08);
+  --ui-shadow-md: 0 4px 14px rgba(15, 23, 42, 0.08);
+  --ui-shadow-lg: 0 10px 28px rgba(15, 23, 42, 0.12);
+  --ui-shadow-glow: 0 0 20px rgba(79, 70, 229, 0.15);
+  --ui-shadow-glow-indigo: 0 0 20px rgba(79, 70, 229, 0.15);
+  --ui-shadow-glow-orange: 0 0 20px rgba(234, 88, 12, 0.15);
+  --ui-shadow-squircle: 0 4px 16px rgba(15, 23, 42, 0.06), 0 1px 3px rgba(15, 23, 42, 0.04);
+}
+
+[data-theme="light"] body {
+  background-color: var(--ui-bg-root);
+  background-image: 
+    radial-gradient(circle at 15% 0%, rgba(79, 70, 229, 0.04) 0%, transparent 45%),
+    radial-gradient(circle at 85% 15%, rgba(234, 88, 12, 0.03) 0%, transparent 40%),
+    radial-gradient(circle at 50% 100%, rgba(124, 58, 237, 0.03) 0%, transparent 50%);
+  color: var(--ui-text-primary);
+}
+
+[data-theme="light"] ::-webkit-scrollbar-track {
+  background: rgba(241, 245, 249, 0.8);
+}
+
+[data-theme="light"] ::-webkit-scrollbar-thumb {
+  background: rgba(15, 23, 42, 0.18);
+}
+
+[data-theme="light"] ::-webkit-scrollbar-thumb:hover {
+  background: rgba(15, 23, 42, 0.32);
+}
+
 body {
   background-color: var(--ui-bg-root);
   background-image: 

@@ -33,3 +33,34 @@ Thumbs.db
 npm-debug.log*
 pnpm-debug.log*
 coverage/
+
+# ---- Secrets & keys (never commit) ----
+*.pem
+*.key
+.npmrc
+.staff_signing_secret
+.revoked_staff_tokens.json
+keys/
+
+# ---- Runtime state & scratch data (regenerated at runtime) ----
+/data/
+**/data/keystore.json
+**/data/*runtime-store*.json
+**/data/test-*.json
+**/data/phase*-audit/
+orbitox/apps/web/orbitox/data/
+packages/storage/test_*.json
+
+# ---- Backups, archives, generated artifacts ----
+*.bak
+*.bak_*
+*.zip
+*.tar
+*.tar.gz
+*.map
+*.d.ts.map
+**/test-results/
+**/playwright-report/
+.turbo/
+.gemini/
+**/.tempmediaStorage/

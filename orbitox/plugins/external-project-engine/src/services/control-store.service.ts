@@ -50,6 +50,13 @@ export class PersistentControlStore {
       }
     }
 
+    // An explicit ORBITOX_DATA_DIR always wins, so containers and production
+    // hosts can keep control-plane state on a persistent volume.
+    const configuredDir = process.env.ORBITOX_DATA_DIR?.trim();
+    if (configuredDir) {
+      dataDir = path.resolve(configuredDir);
+    }
+
     if (!fs.existsSync(dataDir)) {
       try {
         fs.mkdirSync(dataDir, { recursive: true });
@@ -62,6 +69,11 @@ export class PersistentControlStore {
 
     this.filePath = path.join(dataDir, 'platform-control-store.json');
     this.data = this.loadOrCreateDefault();
+  }
+
+  /** Directory holding the control-plane state files. */
+  public getDataDir(): string {
+    return path.dirname(this.filePath);
   }
 
   public static getInstance(): PersistentControlStore {

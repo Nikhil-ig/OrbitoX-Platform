@@ -1,37 +1,76 @@
-version: '3.8'
+# OrbitoX control plane - run everything with:
+#
+#   cp .env.example .env        # then fill in the secrets (openssl rand -hex 32)
+#   docker compose up -d --build
+#   open http://localhost:3005/platform/fleet   (login: any username, ORBITOX_ADMIN_TOKEN as password)
+#
+# The control plane stores its state (projects, API keys, audit log) in the
+# `orbitox_data` volume. Postgres and Redis are OPTIONAL and only start when you
+# enable their profiles:  docker compose --profile db --profile cache up -d
 
 services:
-  postgres:
-    image: postgres:16-alpine
-    container_name: orbitox_postgres
-    environment:
-      POSTGRES_USER: orbitox_admin
-      POSTGRES_PASSWORD: password123
-      POSTGRES_DB: orbitox
+  control-plane:
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+    image: orbitox/control-plane:latest
+    restart: unless-stopped
     ports:
-      - '5432:5432'
+      - "${PORT:-3005}:3005"
+    environment:
+      NODE_ENV: production
+      ORBITOX_DATA_DIR: /data
+      ORBITOX_ADMIN_TOKEN: ${ORBITOX_ADMIN_TOKEN:?set ORBITOX_ADMIN_TOKEN in .env (openssl rand -hex 32)}
+      ORBITOX_RUNTIME_TOKEN: ${ORBITOX_RUNTIME_TOKEN:?set ORBITOX_RUNTIME_TOKEN in .env (openssl rand -hex 32)}
+      ORBITOX_CONTROL_SECRET: ${ORBITOX_CONTROL_SECRET:?set ORBITOX_CONTROL_SECRET in .env (openssl rand -hex 32)}
+      ORBITOX_GUEST_SECRET: ${ORBITOX_GUEST_SECRET:?set ORBITOX_GUEST_SECRET in .env (openssl rand -hex 32)}
+      JWT_PRIVATE_KEY: ${JWT_PRIVATE_KEY:-}
+      JWT_PUBLIC_KEY: ${JWT_PUBLIC_KEY:-}
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+    volumes:
+      - orbitox_data:/data
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:3005/api/health"]
+      interval: 15s
+      timeout: 5s
+      start_period: 20s
+      retries: 3
+
+  postgres:
+    profiles: ["db"]
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-orbitox}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-}   # required when the "db" profile is enabled
+      POSTGRES_DB: ${POSTGRES_DB:-orbitox}
+    # Bound to localhost only; never expose the database publicly.
+    ports:
+      - "127.0.0.1:5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
-      - ./infra/docker/init-scripts:/docker-entrypoint-initdb.d
+      - ./infra/docker/init-scripts:/docker-entrypoint-initdb.d:ro
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U orbitox_admin -d orbitox"]
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
       interval: 5s
       timeout: 5s
-      retries: 5
+      retries: 10
 
   redis:
+    profiles: ["cache"]
     image: redis:7-alpine
-    container_name: orbitox_redis
+    restart: unless-stopped
     ports:
-      - '6379:6379'
+      - "127.0.0.1:6379:6379"
     volumes:
       - redis_data:/data
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 5s
       timeout: 5s
-      retries: 5
+      retries: 10
 
 volumes:
+  orbitox_data:
   postgres_data:
   redis_data:

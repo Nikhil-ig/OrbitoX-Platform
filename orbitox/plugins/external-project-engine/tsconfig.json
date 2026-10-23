@@ -6,9 +6,20 @@
     "composite": true,
     "declaration": true,
     "declarationMap": true,
-    "lib": ["es2022", "dom"],
-    "types": ["node"]
+    "lib": [
+      "es2022",
+      "dom"
+    ],
+    "types": [
+      "node"
+    ]
   },
-  "include": ["src/**/*"],
-  "exclude": ["node_modules", "dist"]
+  "include": [
+    "src/**/*"
+  ],
+  "exclude": [
+    "node_modules",
+    "dist",
+    "**/*.test.ts"
+  ]
 }

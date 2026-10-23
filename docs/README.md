@@ -5,6 +5,20 @@
 
 ---
 
+## 📍 Start here
+
+| I want to... | Read |
+|---|---|
+| Run OrbitoX and connect my first project | [Root README](../README.md) |
+| Understand the architecture | [02_ARCHITECTURE.md](02_ARCHITECTURE.md) |
+| Deploy to production | [12_PRODUCTION_DEPLOYMENT.md](12_PRODUCTION_DEPLOYMENT.md) |
+| Onboard client projects, plans and quotas | [CLIENT_PROJECTS_AND_ECOSYSTEM_GUIDE.md](CLIENT_PROJECTS_AND_ECOSYSTEM_GUIDE.md) |
+| Rotate secrets and clean git history | [SECURITY_CLEANUP.md](SECURITY_CLEANUP.md) |
+| Read the full spec | [ORBITOX_MASTER_DOC.md](ORBITOX_MASTER_DOC.md), [ORBITOX_MASTER_ARCHITECTURE_AND_API_SPECIFICATION.md](ORBITOX_MASTER_ARCHITECTURE_AND_API_SPECIFICATION.md) |
+| Browse old plans and acceptance reports | [archive/](archive/) |
+
+---
+
 ## 🧠 Platform Ecosystem Mindmap
 
 ```mermaid

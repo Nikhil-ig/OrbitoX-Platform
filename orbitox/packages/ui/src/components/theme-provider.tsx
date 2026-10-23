@@ -231,9 +231,14 @@ export const PLATFORM_THEMES: PlatformTheme[] = [
   },
 ];
 
+export type ThemeMode = 'dark' | 'light';
+
 interface ThemeContextType {
   currentTheme: PlatformTheme;
   allThemes: PlatformTheme[];
+  themeMode: ThemeMode;
+  toggleThemeMode: () => void;
+  setThemeMode: (mode: ThemeMode) => void;
   setThemeById: (themeId: string) => void;
   setCustomAccent: (colorHex: string) => void;
 }
@@ -241,6 +246,9 @@ interface ThemeContextType {
 const ThemeContext = createContext<ThemeContextType>({
   currentTheme: PLATFORM_THEMES[0]!,
   allThemes: PLATFORM_THEMES,
+  themeMode: 'dark',
+  toggleThemeMode: () => {},
+  setThemeMode: () => {},
   setThemeById: () => {},
   setCustomAccent: () => {},
 });
@@ -248,6 +256,7 @@ const ThemeContext = createContext<ThemeContextType>({
 export const useTheme = () => useContext(ThemeContext);
 
 const STORAGE_KEY = 'orbitox_platform_theme_id';
+const THEME_MODE_KEY = 'orbitox-theme';
 
 export function ThemeProvider({
   children,
@@ -257,16 +266,29 @@ export function ThemeProvider({
   initialThemeId?: string;
 }) {
   const [activeThemeId, setActiveThemeId] = useState<string>(initialThemeId);
+  const [themeMode, setThemeModeState] = useState<ThemeMode>('dark');
   const [customAccent, setCustomAccentState] = useState<string | null>(null);
 
-  // Hydrate from localStorage on client mount
+  // Hydrate from localStorage on client mount (respects prefers-color-scheme)
   useEffect(() => {
     if (typeof window === 'undefined') return;
 
     try {
-      const saved = window.localStorage.getItem(STORAGE_KEY);
-      if (saved && PLATFORM_THEMES.some((t) => t.id === saved)) {
-        setActiveThemeId(saved);
+      const savedMode = window.localStorage.getItem(THEME_MODE_KEY);
+      if (savedMode === 'light' || savedMode === 'dark') {
+        setThemeModeState(savedMode);
+        document.documentElement.setAttribute('data-theme', savedMode);
+      } else if (window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches) {
+        setThemeModeState('light');
+        document.documentElement.setAttribute('data-theme', 'light');
+      } else {
+        setThemeModeState('dark');
+        document.documentElement.setAttribute('data-theme', 'dark');
+      }
+
+      const savedTheme = window.localStorage.getItem(STORAGE_KEY);
+      if (savedTheme && PLATFORM_THEMES.some((t) => t.id === savedTheme)) {
+        setActiveThemeId(savedTheme);
       }
     } catch {}
 
@@ -277,10 +299,33 @@ export function ThemeProvider({
         if (event.data?.themeId) {
           setActiveThemeId(event.data.themeId);
         }
+        if (event.data?.mode) {
+          setThemeModeState(event.data.mode);
+          document.documentElement.setAttribute('data-theme', event.data.mode);
+        }
       };
       return () => channel.close();
     }
   }, []);
+
+  const setThemeMode = useCallback((mode: ThemeMode) => {
+    setThemeModeState(mode);
+    try {
+      window.localStorage.setItem(THEME_MODE_KEY, mode);
+      if (typeof BroadcastChannel !== 'undefined') {
+        const channel = new BroadcastChannel('orbitox_theme_sync');
+        channel.postMessage({ mode });
+        channel.close();
+      }
+    } catch {}
+    if (typeof document !== 'undefined') {
+      document.documentElement.setAttribute('data-theme', mode);
+    }
+  }, []);
+
+  const toggleThemeMode = useCallback(() => {
+    setThemeMode(themeMode === 'dark' ? 'light' : 'dark');
+  }, [themeMode, setThemeMode]);
 
   const currentTheme = useMemo(() => {
     const found = PLATFORM_THEMES.find((t) => t.id === activeThemeId) || PLATFORM_THEMES[0]!;
@@ -317,11 +362,14 @@ export function ThemeProvider({
     setCustomAccentState(colorHex);
   }, []);
 
-  // Compile CSS variables string
+  // Compile CSS variables string (only when in dark mode or when custom accent is set)
   const cssVariables = useMemo(() => {
+    if (themeMode === 'light') {
+      return '';
+    }
     const c = currentTheme.colors;
     return `
-      :root {
+      :root:not([data-theme="light"]), [data-theme="dark"] {
         --ui-bg-root: ${c.bgRoot};
         --ui-bg-dock: ${c.bgDock};
         --ui-bg-sidebar: ${c.bgSidebar};
@@ -345,18 +393,21 @@ export function ThemeProvider({
         --ui-accent-gradient: ${c.accentGradient};
       }
     `;
-  }, [currentTheme]);
+  }, [currentTheme, themeMode]);
 
   return (
     <ThemeContext.Provider
       value={{
         currentTheme,
         allThemes: PLATFORM_THEMES,
+        themeMode,
+        toggleThemeMode,
+        setThemeMode,
         setThemeById,
         setCustomAccent,
       }}
     >
-      <style dangerouslySetInnerHTML={{ __html: cssVariables }} />
+      {cssVariables ? <style dangerouslySetInnerHTML={{ __html: cssVariables }} /> : null}
       {children}
     </ThemeContext.Provider>
   );

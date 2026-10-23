@@ -1,0 +1,373 @@
+.page {
+  display: flex;
+  flex-direction: column;
+  gap: 28px;
+  max-width: 1280px;
+}
+
+.header {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.title {
+  margin: 0;
+  font-size: 24px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  color: var(--ui-text-primary);
+}
+
+.subtitle {
+  margin: 4px 0 0;
+  font-size: 14px;
+  color: var(--ui-text-secondary);
+}
+
+.actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.metaText {
+  font-size: 12px;
+  color: var(--ui-text-muted);
+}
+
+.btn {
+  appearance: none;
+  cursor: pointer;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  padding: 8px 14px;
+  border-radius: 8px;
+  color: var(--ui-text-primary);
+  background: var(--ui-bg-elevated);
+  border: 1px solid var(--ui-border-default);
+  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  transition: background 0.15s, border-color 0.15s;
+}
+
+.btn:hover {
+  background: var(--ui-bg-card-hover);
+  border-color: var(--ui-border-bright);
+}
+
+.btn:focus-visible {
+  outline: 2px solid var(--ui-border-active);
+  outline-offset: 2px;
+}
+
+.btnPrimary {
+  background: var(--ui-accent-primary);
+  border-color: var(--ui-accent-primary);
+  color: #FFFFFF;
+}
+
+.btnPrimary:hover {
+  background: var(--ui-accent-primary-hover);
+  border-color: var(--ui-accent-primary-hover);
+}
+
+/* ── Summary cards grid ────────────────────────────────────────── */
+.cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+  gap: 14px;
+}
+
+.card {
+  background: var(--ui-bg-card);
+  border: 1px solid var(--ui-border-default);
+  border-radius: 12px;
+  padding: 16px 18px;
+  text-align: left;
+  text-decoration: none;
+  color: inherit;
+  display: flex;
+  flex-direction: column;
+  transition: border-color 0.15s, background 0.15s, transform 0.1s;
+}
+
+.card:hover {
+  background: var(--ui-bg-card-hover);
+  border-color: var(--ui-border-bright);
+  transform: translateY(-1px);
+}
+
+.card:focus-visible {
+  outline: 2px solid var(--ui-border-active);
+  outline-offset: 2px;
+}
+
+.cardHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.cardLabel {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--ui-text-muted);
+}
+
+.cardValue {
+  margin-top: 8px;
+  font-size: 32px;
+  font-weight: 700;
+  line-height: 1;
+  color: var(--ui-text-primary);
+  font-variant-numeric: tabular-nums;
+}
+
+.good { color: var(--ui-success); }
+.warn { color: var(--ui-warning); }
+.bad { color: var(--ui-danger); }
+
+/* ── Section Blocks ────────────────────────────────────────────── */
+.section {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.sectionHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.sectionTitle {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--ui-text-primary);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.tableWrap {
+  background: var(--ui-bg-card);
+  border: 1px solid var(--ui-border-default);
+  border-radius: 12px;
+  overflow-x: auto;
+}
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.table th {
+  text-align: left;
+  padding: 12px 16px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--ui-text-muted);
+  border-bottom: 1px solid var(--ui-border-default);
+  white-space: nowrap;
+}
+
+.table td {
+  padding: 13px 16px;
+  border-bottom: 1px solid var(--ui-border-subtle);
+  vertical-align: middle;
+  color: var(--ui-text-secondary);
+}
+
+.table tbody tr:last-child td {
+  border-bottom: none;
+}
+
+.table tbody tr:hover {
+  background-color: var(--ui-bg-card-hover);
+}
+
+.projectLink {
+  color: var(--ui-text-primary);
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.projectLink:hover {
+  text-decoration: underline;
+  color: var(--ui-accent-primary);
+}
+
+.slug {
+  display: block;
+  font-size: 11px;
+  color: var(--ui-text-muted);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  margin-top: 2px;
+}
+
+.num {
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.dim {
+  color: var(--ui-text-dim);
+}
+
+/* ── Status Pills & Badges ─────────────────────────────────────── */
+.pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 9px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.pillOnline { background: var(--ui-success-bg); color: var(--ui-success); }
+.pillStale { background: var(--ui-warning-bg); color: var(--ui-warning); }
+.pillOffline { background: var(--ui-danger-bg); color: var(--ui-danger); }
+.pillNever { background: var(--ui-info-bg); color: var(--ui-info); }
+
+.dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  display: inline-block;
+  flex-shrink: 0;
+}
+
+.dotOnline { background: var(--ui-success); }
+.dotStale { background: var(--ui-warning); }
+.dotOffline { background: var(--ui-danger); }
+.dotNever { background: var(--ui-info); }
+
+.tag {
+  font-size: 11px;
+  font-weight: 600;
+  padding: 2px 7px;
+  border-radius: 5px;
+  background: var(--ui-bg-elevated);
+  border: 1px solid var(--ui-border-default);
+  color: var(--ui-text-secondary);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+.tagDanger {
+  background: var(--ui-danger-bg);
+  border-color: var(--ui-danger);
+  color: var(--ui-danger);
+}
+
+.tagWarning {
+  background: var(--ui-warning-bg);
+  border-color: var(--ui-warning);
+  color: var(--ui-warning);
+}
+
+.tagSuccess {
+  background: var(--ui-success-bg);
+  border-color: var(--ui-success);
+  color: var(--ui-success);
+}
+
+/* ── Empty states ──────────────────────────────────────────────── */
+.emptyCard {
+  background: var(--ui-bg-card);
+  border: 1px solid var(--ui-border-default);
+  border-radius: 12px;
+  padding: 32px 24px;
+  text-align: center;
+  color: var(--ui-text-muted);
+}
+
+.emptyTitle {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--ui-text-primary);
+  margin: 0 0 4px;
+}
+
+.emptyDesc {
+  font-size: 13px;
+  margin: 0;
+}
+
+.skeletonBox {
+  padding: 20px;
+  display: grid;
+  gap: 12px;
+}
+
+.skeleton {
+  height: 16px;
+  border-radius: 6px;
+  background: var(--ui-bg-elevated);
+  animation: pulse 1.3s ease-in-out infinite;
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 0.4; }
+  50% { opacity: 0.9; }
+}
+
+/* ── Mobile Card Transformations ───────────────────────────────── */
+@media (max-width: 768px) {
+  .tableWrap {
+    background: transparent;
+    border: none;
+    overflow-x: visible;
+  }
+
+  .table, .table tbody, .table tr, .table td, .table th {
+    display: block;
+  }
+
+  .table thead {
+    display: none;
+  }
+
+  .table tbody {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+
+  .table tbody tr {
+    background: var(--ui-bg-card);
+    border: 1px solid var(--ui-border-default);
+    border-radius: 12px;
+    padding: 14px 16px;
+  }
+
+  .table td {
+    padding: 6px 0;
+    border-bottom: none;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+
+  .table td::before {
+    content: attr(data-label);
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: uppercase;
+    color: var(--ui-text-muted);
+  }
+}

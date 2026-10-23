@@ -93,6 +93,8 @@ export class ControlClient {
     const payload: RuntimeRegistrationPayload = {
       projectId: this.manifest.projectId,
       slug: this.manifest.slug,
+      name: this.manifest.name,
+      projectType: this.manifest.type,
       runtimeUrl: `http://localhost:${this.runtimePort}`,
       runtimePort: this.runtimePort,
       version: this.manifest.version,

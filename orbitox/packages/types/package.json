@@ -10,7 +10,10 @@
     "type-check": "tsc --noEmit"
   },
   "devDependencies": {
-    "@types/node": "^20"
+    "@types/node": "^20",
+    "typescript": "~5.9.3"
   },
-  "files": ["dist"]
+  "files": [
+    "dist"
+  ]
 }

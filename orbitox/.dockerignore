@@ -1,0 +1,15 @@
+**/node_modules
+**/.next
+**/dist
+**/.turbo
+**/*.tsbuildinfo
+.env
+.env.*
+!.env.example
+**/data
+.orbitox-data
+snapshots
+apps/celebrations
+**/test-results
+**/*.log
+.git
