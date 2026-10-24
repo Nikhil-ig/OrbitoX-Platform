@@ -90,7 +90,13 @@ export interface RestaurantRepository {
 
   getSessions(): Promise<DiningSessionRecord[]>;
   getSession(sessionId: string): Promise<DiningSessionRecord | undefined>;
-  createOrJoinSession(tableNumber: string, hostName: string, branchId?: string, floorId?: string): Promise<DiningSessionRecord>;
+  createOrJoinSession(
+    tableNumber: string,
+    hostName: string,
+    branchId?: string,
+    floorId?: string,
+    capabilityToken?: string
+  ): Promise<DiningSessionRecord>;
   closeSession(tableNumber: string, settlement?: any, force?: boolean, options?: any): Promise<SessionCloseResult>;
   settleTableSession(tableId: string | number, settlement: any, options?: any): Promise<any>;
   isCapabilityValid(token: string): Promise<boolean>;
@@ -928,7 +934,7 @@ export class PostgresRestaurantRepository implements RestaurantRepository {
     const authorizedBy = typeof optionsOrReason === 'object' ? optionsOrReason?.authorizedBy : undefined;
     const event = await withTenantRlsTransaction(this.prisma, this.tenantId, async (tx: any) => {
       const order = await tx.restaurantOrder.findFirst({
-        where: { OR: [{ id: orderId }, { orderId }], tenantId: this.tenantId },
+        where: { id: orderId, tenantId: this.tenantId },
       });
       if (!order) return null;
 
@@ -982,7 +988,8 @@ export class PostgresRestaurantRepository implements RestaurantRepository {
     tableNumber: string,
     hostName: string,
     branchId = 'main',
-    floorId = 'ground'
+    floorId = 'ground',
+    capabilityToken?: string
   ): Promise<DiningSessionRecord> {
     return withTenantRlsTransaction(this.prisma, this.tenantId, async (tx: any) => {
       // Find active session for table
@@ -994,13 +1001,25 @@ export class PostgresRestaurantRepository implements RestaurantRepository {
         },
       });
 
+      const crypto = await import('crypto');
+      const token = capabilityToken || `cap_${crypto.randomBytes(16).toString('hex')}`;
+
       if (existing) {
+        const currentTokens = Array.isArray(existing.guestCapabilityTokens)
+          ? (existing.guestCapabilityTokens as string[])
+          : [];
+        if (!currentTokens.includes(token)) {
+          const updatedTokens = [...currentTokens, token];
+          const updated = await tx.diningSession.update({
+            where: { id: existing.id },
+            data: { guestCapabilityTokens: updatedTokens },
+          });
+          return this.mapSessionRecord(updated);
+        }
         return this.mapSessionRecord(existing);
       }
 
       const sessionId = `sess_${Date.now().toString(36)}_${Math.random().toString(36).substring(2, 6)}`;
-      const crypto = await import('crypto');
-      const capabilityToken = `orb_cap_${crypto.randomBytes(16).toString('hex')}`;
 
       const created = await tx.diningSession.create({
         data: {
@@ -1011,7 +1030,7 @@ export class PostgresRestaurantRepository implements RestaurantRepository {
           floorId,
           hostName,
           status: 'ACTIVE',
-          guestCapabilityTokens: [capabilityToken],
+          guestCapabilityTokens: [token],
         },
       });
 
@@ -1099,15 +1118,16 @@ export class PostgresRestaurantRepository implements RestaurantRepository {
 
   async isCapabilityValid(token: string): Promise<boolean> {
     return withTenantRlsTransaction(this.prisma, this.tenantId, async (tx: any) => {
-      const session = await tx.diningSession.findFirst({
+      const sessions = await tx.diningSession.findMany({
         where: {
           tenantId: this.tenantId,
           status: 'ACTIVE',
         },
       });
-      if (!session || !session.guestCapabilityTokens) return false;
-      const tokens = session.guestCapabilityTokens as string[];
-      return Array.isArray(tokens) && tokens.includes(token);
+      return sessions.some((s: any) => {
+        const tokens = s.guestCapabilityTokens as string[];
+        return Array.isArray(tokens) && tokens.includes(token);
+      });
     });
   }
 
@@ -1657,10 +1677,22 @@ export class PostgresRestaurantRepository implements RestaurantRepository {
 
   async saveSupportTicket(ticket: any): Promise<void> {
     return withTenantRlsTransaction(this.prisma, this.tenantId, async (tx: any) => {
+      const title = ticket.title || ticket.subject || 'Support Ticket';
+      const initialMessages = Array.isArray(ticket.messages) && ticket.messages.length > 0
+        ? ticket.messages
+        : ticket.initialMessage
+        ? [{
+            id: `msg_${Date.now()}`,
+            sender: ticket.staffName || 'Staff',
+            text: ticket.initialMessage,
+            timestamp: new Date().toISOString(),
+          }]
+        : [];
+
       await tx.supportTicket.upsert({
         where: { id: ticket.id },
         update: {
-          title: ticket.title,
+          title,
           status: ticket.status,
           priority: ticket.priority,
           category: ticket.category,
@@ -1670,11 +1702,11 @@ export class PostgresRestaurantRepository implements RestaurantRepository {
           id: ticket.id,
           tenantId: this.tenantId,
           branchId: ticket.branchId || null,
-          title: ticket.title,
+          title,
           status: ticket.status || 'OPEN',
           priority: ticket.priority || 'MEDIUM',
           category: ticket.category || 'GENERAL',
-          messages: ticket.messages || [],
+          messages: initialMessages,
         },
       });
     });
@@ -2357,7 +2389,7 @@ export class PostgresRestaurantRepository implements RestaurantRepository {
   ): Promise<{ success: boolean; order?: RestaurantOrder; error?: string; code?: string }> {
     return withTenantRlsTransaction(this.prisma, this.tenantId, async (tx: any) => {
       const orderRecord = await tx.restaurantOrder.findFirst({
-        where: { OR: [{ id: orderId }, { orderId }], tenantId: this.tenantId },
+        where: { id: orderId, tenantId: this.tenantId },
       });
       if (!orderRecord) {
         return { success: false, error: `Order ${orderId} not found`, code: 'ORDER_NOT_FOUND' };
@@ -2374,7 +2406,7 @@ export class PostgresRestaurantRepository implements RestaurantRepository {
         data: { status: 'CANCELLED' },
       });
       await tx.kitchenTask.updateMany({
-        where: { orderId: orderRecord.orderId, tenantId: this.tenantId },
+        where: { orderId: orderRecord.id, tenantId: this.tenantId },
         data: { status: 'CANCELLED' },
       });
       const order = this.mapOrderRecord(orderRecord);
@@ -2704,8 +2736,14 @@ export class JsonRestaurantRepository implements RestaurantRepository {
 
   async getSessions() { return this.store.getSessions(); }
   async getSession(sessionId: string) { return this.store.getSession(sessionId); }
-  async createOrJoinSession(tableNumber: string, hostName: string, branchId?: string, floorId?: string) {
-    return this.store.createOrJoinSession(tableNumber, hostName, branchId, floorId);
+  async createOrJoinSession(
+    tableNumber: string,
+    hostName: string,
+    branchId?: string,
+    floorId?: string,
+    capabilityToken?: string
+  ) {
+    return this.store.createOrJoinSession(tableNumber, hostName, branchId, floorId, capabilityToken);
   }
   async closeSession(tableNumber: string, settlement?: any, force?: boolean, options?: any) {
     return this.store.closeSession(tableNumber, settlement, force, options);

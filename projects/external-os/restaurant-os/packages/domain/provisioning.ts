@@ -11,6 +11,7 @@ import { PrismaClient } from '@prisma/client';
 import { getCleanStarterTemplate, StarterTemplate } from './templates';
 import { generateSeats, SeatRecord } from './index';
 import { hashStaffSecretSync, hashPin, issueStaffToken } from './security';
+import { withTenantRlsTransaction } from './tenancy';
 
 export const RESERVED_SLUGS = new Set([
   'www',
@@ -213,8 +214,8 @@ export class TenantProvisioningService {
     const ownerStaffId = `staff_${cleanSlug}_owner`;
     const branchCode = `${cleanSlug.replace(/[^a-z0-9]/g, '').slice(0, 3).toUpperCase()}-01`;
 
-    // 4. Execute atomic transaction
-    const result = await this.prisma.$transaction(async (tx) => {
+    // 4. Execute atomic transaction within tenant RLS scope
+    const result = await withTenantRlsTransaction(this.prisma, tenantId, async (tx: any) => {
       // 4a. Tenant entity
       const restaurantName = (input.restaurantName || (input as any).name || cleanSlug).trim();
       const tenant = await tx.tenant.create({

@@ -1387,10 +1387,24 @@ export class RestaurantRuntimeStore {
   public createOrJoinSession(
     tableNumber: string,
     hostName: string,
-    capabilityToken: string,
-    branchId = 'branch_ldh',
-    floorId = 'floor_courtyard'
+    arg3?: string,
+    arg4?: string,
+    arg5?: string
   ): DiningSessionRecord {
+    let branchId = 'main';
+    let floorId = 'ground';
+    let capabilityToken = `cap_${crypto.randomBytes(16).toString('hex')}`;
+
+    if (arg3 && (arg3.startsWith('cap_') || arg3.startsWith('orb_cap_'))) {
+      capabilityToken = arg3;
+      if (arg4) branchId = arg4;
+      if (arg5) floorId = arg5;
+    } else {
+      if (arg3) branchId = arg3;
+      if (arg4) floorId = arg4;
+      if (arg5) capabilityToken = arg5;
+    }
+
     let sess = this.data.sessions.find((s) => s.tableNumber === tableNumber && s.status === 'ACTIVE');
     if (!sess) {
       sess = {

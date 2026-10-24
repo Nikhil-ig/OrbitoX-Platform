@@ -2016,7 +2016,8 @@ export async function handleRequest(req: http.IncomingMessage, res: http.ServerR
       tableNum,
       hostName,
       targetTbl.branchId || currentBranch.id,
-      targetTbl.floorId || currentFloor.id
+      targetTbl.floorId || currentFloor.id,
+      capabilityToken
     );
 
     const s1 = targetTbl.seats?.find((s) => s.seatNumber === 1);
@@ -2501,7 +2502,7 @@ export async function handleRequest(req: http.IncomingMessage, res: http.ServerR
       }
     }
 
-    const orderId = `ord_${Date.now()}`;
+    const orderId = (body.orderId && typeof body.orderId === 'string') ? body.orderId : `ord_${Date.now()}`;
     if (!body.tableNumber && !body.tableId) {
       sendJson(res, 400, {
         error: 'TABLE_REQUIRED',
@@ -2932,7 +2933,8 @@ export async function handleRequest(req: http.IncomingMessage, res: http.ServerR
     (pathname === '/api/restaurant/payments/create-order' ||
       pathname === '/api/commerce/payments/create-session' ||
       pathname === '/api/commerce/razorpay/create-order' ||
-      pathname === '/api/restaurant/checkout/razorpay/order') &&
+      pathname === '/api/restaurant/checkout/razorpay/order' ||
+      pathname === '/api/restaurant/checkout/razorpay/create-order') &&
     method === 'POST'
   ) {
     const body = await parseBody(req);
@@ -4245,7 +4247,7 @@ export async function handleRequest(req: http.IncomingMessage, res: http.ServerR
   }
 
   // 12. Floor Tables List
-  if (pathname === '/api/restaurant/floor' && method === 'GET') {
+  if ((pathname === '/api/restaurant/floor' || pathname === '/api/restaurant/tables') && method === 'GET') {
     const bId = (parsedUrl.query.branchId as string) || currentBranch.id;
     const fId = (parsedUrl.query.floorId as string) || undefined;
     const tables = await repo.getTables(bId, fId);
@@ -5619,7 +5621,8 @@ export async function handleRequest(req: http.IncomingMessage, res: http.ServerR
       return;
     }
     const body = await parseBody(req);
-    if (!body.subject || !body.initialMessage) {
+    const initialMessage = body.initialMessage || body.description || body.message || body.subject;
+    if (!body.subject || !initialMessage) {
       sendJson(res, 400, { success: false, error: 'Missing subject or initialMessage' });
       return;
     }
@@ -5632,8 +5635,8 @@ export async function handleRequest(req: http.IncomingMessage, res: http.ServerR
         category: body.category || 'URGENT_INCIDENT',
         severity: body.severity || 'MEDIUM',
         subject: body.subject,
-        description: body.description || body.initialMessage || body.subject,
-        initialMessage: body.initialMessage,
+        description: body.description || initialMessage || body.subject,
+        initialMessage,
       });
       sendJson(res, 201, { success: true, data: ticket });
     } catch (err: any) {
