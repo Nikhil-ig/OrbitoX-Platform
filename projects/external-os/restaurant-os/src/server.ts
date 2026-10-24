@@ -117,8 +117,14 @@ try {
   process.exit(1);
 }
 
+let totalRequests = 0;
+const statusCounts = new Map<number, number>();
+const methodCounts = new Map<string, number>();
+let totalDomainEvents = 0;
+
 // Automatically broadcast all domain events emitted by the authoritative store
 store.onEvent((event) => {
+  totalDomainEvents++;
   eventBus.broadcast(event);
 });
 
@@ -577,14 +583,121 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
-  // Health and liveness probes (bypass tenant context)
-  if (pathname === '/health' || pathname === '/healthz' || pathname.startsWith('/healthz/')) {
+  res.on('finish', () => {
+    totalRequests++;
+    statusCounts.set(res.statusCode, (statusCounts.get(res.statusCode) || 0) + 1);
+    methodCounts.set(method, (methodCounts.get(method) || 0) + 1);
+  });
+
+  // Readiness check: verifies PostgreSQL and runtime services
+  if ((pathname === '/healthz/ready' || pathname === '/ready') && method === 'GET') {
+    try {
+      if (postgresStore?.prisma) {
+        await postgresStore.prisma.$queryRawUnsafe('SELECT 1');
+      }
+      sendJson(res, 200, {
+        status: 'ready',
+        checks: {
+          database: 'UP',
+          store: 'UP',
+          eventBus: 'UP',
+        },
+        uptime: process.uptime(),
+        timestamp: new Date().toISOString(),
+      });
+    } catch (err: any) {
+      sendJson(res, 503, {
+        status: 'not_ready',
+        checks: {
+          database: 'DOWN',
+          error: err.message,
+        },
+        uptime: process.uptime(),
+        timestamp: new Date().toISOString(),
+      });
+    }
+    return;
+  }
+
+  // Liveness and basic health probes
+  if (pathname === '/health' || pathname === '/healthz') {
     sendJson(res, 200, {
       status: 'healthy',
       service: 'restaurant-os',
       uptime: process.uptime(),
       timestamp: new Date().toISOString(),
     });
+    return;
+  }
+
+  // Metrics endpoint (Prometheus format or JSON)
+  if ((pathname === '/metrics' || pathname === '/internal/metrics') && method === 'GET') {
+    if (pathname === '/internal/metrics' && !verifyPlatformAuth(req)) {
+      sendJson(res, 401, {
+        error: 'UNAUTHORIZED',
+        message: 'Platform service credentials required for internal metrics.',
+      });
+      return;
+    }
+    const memory = process.memoryUsage();
+    let activeTenantsCount = 1;
+    try {
+      if (postgresStore?.prisma) {
+        activeTenantsCount = await postgresStore.prisma.tenant.count({ where: { status: 'active' } });
+      }
+    } catch (e) {}
+
+    const isJson = req.headers.accept?.includes('application/json') || parsedUrl.query.format === 'json';
+    if (isJson) {
+      sendJson(res, 200, {
+        uptimeSeconds: Math.floor(process.uptime()),
+        memory: {
+          heapUsedBytes: memory.heapUsed,
+          heapTotalBytes: memory.heapTotal,
+          rssBytes: memory.rss,
+        },
+        traffic: {
+          totalRequests,
+          statusCounts: Object.fromEntries(statusCounts.entries()),
+          methodCounts: Object.fromEntries(methodCounts.entries()),
+        },
+        fleet: {
+          activeTenantsCount,
+          domainEventsEmitted: totalDomainEvents,
+        },
+      });
+      return;
+    }
+
+    const lines = [
+      '# HELP restaurantos_process_uptime_seconds Process uptime in seconds.',
+      '# TYPE restaurantos_process_uptime_seconds gauge',
+      `restaurantos_process_uptime_seconds ${Math.floor(process.uptime())}`,
+      '# HELP restaurantos_memory_heap_used_bytes Process memory heap used in bytes.',
+      '# TYPE restaurantos_memory_heap_used_bytes gauge',
+      `restaurantos_memory_heap_used_bytes ${memory.heapUsed}`,
+      '# HELP restaurantos_memory_heap_total_bytes Process memory heap total in bytes.',
+      '# TYPE restaurantos_memory_heap_total_bytes gauge',
+      `restaurantos_memory_heap_total_bytes ${memory.heapTotal}`,
+      '# HELP restaurantos_memory_rss_bytes Process resident set size in bytes.',
+      '# TYPE restaurantos_memory_rss_bytes gauge',
+      `restaurantos_memory_rss_bytes ${memory.rss}`,
+      '# HELP restaurantos_active_tenants_total Total active tenants in fleet.',
+      '# TYPE restaurantos_active_tenants_total gauge',
+      `restaurantos_active_tenants_total ${activeTenantsCount}`,
+      '# HELP restaurantos_http_requests_total Total HTTP requests served.',
+      '# TYPE restaurantos_http_requests_total counter',
+      `restaurantos_http_requests_total ${totalRequests}`,
+      '# HELP restaurantos_domain_events_total Total domain events broadcasted.',
+      '# TYPE restaurantos_domain_events_total counter',
+      `restaurantos_domain_events_total ${totalDomainEvents}`,
+    ];
+    for (const [code, count] of statusCounts.entries()) {
+      lines.push(`restaurantos_http_requests_by_status{status="${code}"} ${count}`);
+    }
+
+    res.writeHead(200, { 'Content-Type': 'text/plain; version=0.0.4; charset=utf-8' });
+    res.end(lines.join('\n') + '\n');
     return;
   }
 
@@ -712,6 +825,7 @@ const server = http.createServer(async (req, res) => {
       level: res.statusCode >= 500 ? 'error' : res.statusCode >= 400 ? 'warn' : 'info',
       message: `${method} ${pathname} ${res.statusCode} (${durationMs}ms)`,
       requestId,
+      tenantId: tenantContext.tenantId,
       method,
       pathname,
       status: res.statusCode,

@@ -19,6 +19,7 @@ export interface StructuredLogEntry {
   level: LogLevel;
   message: string;
   requestId?: string;
+  tenantId?: string;
   method?: string;
   pathname?: string;
   status?: number;
@@ -214,6 +215,7 @@ class StructuredLogger {
       level: entry.level,
       message: entry.message,
       requestId: entry.requestId,
+      tenantId: entry.tenantId,
       method: entry.method,
       pathname: entry.pathname,
       status: entry.status,
