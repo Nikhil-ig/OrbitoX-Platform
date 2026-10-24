@@ -19,6 +19,7 @@ import type {
   EnvironmentRecord,
 } from '../types';
 import { PersistentControlStore } from './control-store.service';
+import { PersistentUsageStore } from './usage-store.service';
 
 /** Registration problem with an HTTP-style status the API layer can return as-is. */
 export class RuntimeRegistrationError extends Error {
@@ -177,8 +178,8 @@ export class RuntimeControllerService {
           mcp_copilot: true,
         },
         entitlements: {
-          tables: { limit: 50, used: 12, enforced: true },
-          monthlyOrders: { limit: 15000, used: 2420, enforced: true },
+          tables: { limit: 50, used: 0, enforced: true },
+          monthlyOrders: { limit: 15000, used: 0, enforced: true },
         },
         apiPolicies: {
           'restaurant.quote': { rateLimit: 300, allowedScopes: ['pos.quote', 'diner.public'] },
@@ -826,10 +827,7 @@ export class RuntimeControllerService {
       projectId,
       environment: 'production',
       features: state.features || { dine_qr: true, dag_prep_scheduler: true, companion_join: true, realtime_kds: true },
-      entitlements: state.entitlements || {
-        tables: { limit: 50, used: 12, enforced: true },
-        monthlyOrders: { limit: 15000, used: 2420, enforced: true },
-      },
+      entitlements: this.resolveLiveEntitlements(projectId, state),
       apiPolicies: state.apiPolicies || {
         'restaurant.quote': { rateLimit: 300, allowedScopes: ['pos.quote', 'diner.public'] },
         'restaurant.orders': { rateLimit: 120, allowedScopes: ['pos.orders.write', 'diner.order'] },
@@ -842,6 +840,39 @@ export class RuntimeControllerService {
       ],
       desiredState: state.customConfig || {},
     };
+  }
+
+  private resolveLiveEntitlements(
+    projectId: string,
+    state: any
+  ): Record<string, { limit: number; used: number; enforced: boolean }> {
+    const usageStore = PersistentUsageStore.getInstance();
+    const usageRecords = usageStore.getProjectUsage(projectId);
+    const overrides = state.entitlements || {};
+
+    const defaultLimits: Record<string, { limit: number; enforced: boolean }> = {
+      tables: { limit: 50, enforced: true },
+      monthlyOrders: { limit: 15000, enforced: true },
+      kdsScreens: { limit: 5, enforced: true },
+      api_calls: { limit: 100000, enforced: true },
+    };
+
+    const allKeys = new Set<string>([
+      ...Object.keys(defaultLimits),
+      ...Object.keys(overrides),
+      ...Object.keys(usageRecords),
+    ]);
+
+    const result: Record<string, { limit: number; used: number; enforced: boolean }> = {};
+    for (const key of allKeys) {
+      const override = overrides[key];
+      const fallback = defaultLimits[key];
+      const limit = typeof override?.limit === 'number' ? override.limit : (fallback?.limit ?? Infinity);
+      const enforced = typeof override?.enforced === 'boolean' ? override.enforced : (fallback?.enforced ?? false);
+      const used = usageRecords[key]?.count ?? 0;
+      result[key] = { limit, used, enforced };
+    }
+    return result;
   }
 
   public verifyProjectKey(projectId: string, presentedKey: string): boolean {

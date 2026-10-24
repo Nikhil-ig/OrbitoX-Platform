@@ -12,6 +12,8 @@ export * from './services/runtime-controller.service';
 export * from './services/project-keys';
 export * from './services/fleet-snapshot';
 export * from './services/fleet.service';
+export * from './services/usage-store.service';
+export * from './services/usage-tracking.service';
 export * from './repositories';
 
 import { ProjectFactoryService } from './services/project-factory.service';
@@ -19,6 +21,8 @@ import { ApiRegistryService } from './services/api-registry.service';
 import { CentralQuoteService } from './services/central-quote.service';
 import { RuntimeControllerService } from './services/runtime-controller.service';
 import { FleetService } from './services/fleet.service';
+import { PersistentUsageStore } from './services/usage-store.service';
+import { UsageTrackingService } from './services/usage-tracking.service';
 import { platformRepositories, PlatformRepositories } from './repositories';
 
 export class ExternalProjectEngine {
@@ -27,6 +31,8 @@ export class ExternalProjectEngine {
   public readonly quoteService: CentralQuoteService;
   public readonly runtimeController: RuntimeControllerService;
   public readonly fleet: FleetService;
+  public readonly usageStore: PersistentUsageStore;
+  public readonly usageTracking: UsageTrackingService;
   public readonly repositories: PlatformRepositories;
 
   constructor() {
@@ -34,6 +40,8 @@ export class ExternalProjectEngine {
     this.runtimeController = new RuntimeControllerService();
     this.fleet = new FleetService();
     this.quoteService = new CentralQuoteService();
+    this.usageStore = PersistentUsageStore.getInstance();
+    this.usageTracking = new UsageTrackingService(this.usageStore, this.quoteService, this.runtimeController);
     this.factory = new ProjectFactoryService(this.apiRegistry, this.runtimeController);
     this.repositories = platformRepositories;
   }

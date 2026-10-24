@@ -26,9 +26,10 @@ export class CentralQuoteService {
         billingInterval: 'monthly',
         features: ['dine_qr', 'basic_menu', 'single_kds'],
         limits: {
-          tables: { key: 'tables', name: 'Max Seating Tables', limit: 15, enforced: true, unit: 'tables' },
-          monthlyOrders: { key: 'monthlyOrders', name: 'Monthly Orders', limit: 3000, enforced: true, unit: 'orders' },
-          kdsScreens: { key: 'kdsScreens', name: 'KDS Screens', limit: 1, enforced: true, unit: 'screens' },
+          tables: { key: 'tables', name: 'Max Seating Tables', limit: 15, enforced: true, unit: 'tables', window: 'never' },
+          monthlyOrders: { key: 'monthlyOrders', name: 'Monthly Orders', limit: 3000, enforced: true, unit: 'orders', window: 'monthly' },
+          kdsScreens: { key: 'kdsScreens', name: 'KDS Screens', limit: 1, enforced: true, unit: 'screens', window: 'never' },
+          api_calls: { key: 'api_calls', name: 'API Calls', limit: 10000, enforced: true, unit: 'calls', window: 'monthly' },
         },
         addons: [
           { id: 'addon_sms_alerts', name: 'SMS Diner Notifications', priceMinor: '99000', currency: 'INR', description: '5,000 automated SMS order updates' },
@@ -44,9 +45,10 @@ export class CentralQuoteService {
         billingInterval: 'monthly',
         features: ['dine_qr', 'dag_prep_scheduler', 'multi_station_kds', 'companion_join', 'mcp_copilot'],
         limits: {
-          tables: { key: 'tables', name: 'Max Seating Tables', limit: 50, enforced: true, unit: 'tables' },
-          monthlyOrders: { key: 'monthlyOrders', name: 'Monthly Orders', limit: 15000, enforced: true, unit: 'orders' },
-          kdsScreens: { key: 'kdsScreens', name: 'KDS Screens', limit: 5, enforced: true, unit: 'screens' },
+          tables: { key: 'tables', name: 'Max Seating Tables', limit: 50, enforced: true, unit: 'tables', window: 'never' },
+          monthlyOrders: { key: 'monthlyOrders', name: 'Monthly Orders', limit: 15000, enforced: true, unit: 'orders', window: 'monthly' },
+          kdsScreens: { key: 'kdsScreens', name: 'KDS Screens', limit: 5, enforced: true, unit: 'screens', window: 'never' },
+          api_calls: { key: 'api_calls', name: 'API Calls', limit: 100000, enforced: true, unit: 'calls', window: 'monthly' },
         },
         addons: [
           { id: 'addon_sommelier_ai', name: 'Sommelier AI MCP Agent', priceMinor: '299000', currency: 'INR', description: 'Autonomous wine & beverage pairing suggestions' },
@@ -62,9 +64,10 @@ export class CentralQuoteService {
         billingInterval: 'monthly',
         features: ['all_features', 'franchise_royalty_split', 'unlimited_kds', 'custom_domains', 'sla_99_99'],
         limits: {
-          tables: { key: 'tables', name: 'Max Seating Tables', limit: 500, enforced: false, unit: 'tables' },
-          monthlyOrders: { key: 'monthlyOrders', name: 'Monthly Orders', limit: 250000, enforced: false, unit: 'orders' },
-          kdsScreens: { key: 'kdsScreens', name: 'KDS Screens', limit: 50, enforced: false, unit: 'screens' },
+          tables: { key: 'tables', name: 'Max Seating Tables', limit: 500, enforced: false, unit: 'tables', window: 'never' },
+          monthlyOrders: { key: 'monthlyOrders', name: 'Monthly Orders', limit: 250000, enforced: false, unit: 'orders', window: 'monthly' },
+          kdsScreens: { key: 'kdsScreens', name: 'KDS Screens', limit: 50, enforced: false, unit: 'screens', window: 'never' },
+          api_calls: { key: 'api_calls', name: 'API Calls', limit: 1000000, enforced: false, unit: 'calls', window: 'monthly' },
         },
         addons: [],
       },
