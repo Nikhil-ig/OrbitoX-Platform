@@ -1800,6 +1800,7 @@ export interface TenantBrandConfig {
   restaurantName: string;
   tagline: string;
   logoUrl: string;
+  heroBannerUrl?: string;
   faviconUrl: string;
   appIconUrl: string;
   primaryColor: string;
@@ -3202,3 +3203,7 @@ export * from './css-security';
 export * from './logger';
 export * from './tenancy';
 export * from './invoicing';
+export * from './templates';
+export * from './provisioning';
+export * from './domains';
+export * from './owner-self-service';

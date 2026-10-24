@@ -18,10 +18,13 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as http from 'http';
 
+export type StaffRole = 'OWNER' | 'ADMIN' | 'MANAGER' | 'OPERATIONS' | 'POS' | 'SERVER' | 'CHEF';
+
 export interface StaffClaims {
   sub: string;
   name?: string;
-  role: 'MANAGER' | 'OPERATIONS' | 'POS' | 'CHEF' | 'ADMIN';
+  role: StaffRole;
+  tenantId?: string;
   branchId: string;
   station?: string;
   permissions: string[];
@@ -40,18 +43,19 @@ export interface TokenVerificationResult {
     | 'TOKEN_EXPIRED'
     | 'TOKEN_REVOKED'
     | 'FUTURE_ISSUED_TOKEN'
-    | 'INVALID_SECRET';
+    | 'INVALID_SECRET'
+    | 'TENANT_MISMATCH';
 }
 
 export interface StaffDirectoryMember {
   id: string;
   name: string;
-  role: 'MANAGER' | 'OPERATIONS' | 'POS' | 'CHEF' | 'ADMIN';
+  role: StaffRole;
   branchId: string;
   station?: string;
   salt: string;
   pinHash: string;
-  status: 'ACTIVE' | 'SUSPENDED';
+  status: 'ACTIVE' | 'SUSPENDED' | 'PENDING_INVITE';
   permissions?: string[];
 }
 
@@ -195,7 +199,7 @@ loadDurableRevocations();
 /**
  * Helper to compute salted PIN hash.
  */
-function hashPin(pin: string, salt: string): string {
+export function hashPin(pin: string, salt: string): string {
   return crypto.createHmac('sha256', salt).update(`pin_salt_${pin}`).digest('hex');
 }
 
@@ -520,13 +524,31 @@ export function authenticateStaffByPin(
 }
 
 /**
+ * Derives a cryptographically separated signing secret for a specific tenant using HKDF.
+ * Guarantees that even if one tenant's secret or token is compromised, other tenants remain secure.
+ */
+export function deriveTenantSigningSecret(tenantId: string, masterSecret?: string): string {
+  const master = masterSecret || getStaffAuthSecret();
+  const derived = crypto.hkdfSync(
+    'sha256',
+    Buffer.from(master, 'utf8'),
+    Buffer.from(tenantId, 'utf8'),
+    Buffer.from('restaurantos-tenant-jwt-signing', 'utf8'),
+    32
+  );
+  return Buffer.from(derived).toString('hex');
+}
+
+/**
  * Issues a cryptographically signed staff token with HMAC-SHA256 signature.
+ * When tenantId is specified, the token is signed with an HKDF-derived per-tenant secret.
  */
 export function issueStaffToken(
   options: {
     sub: string;
     name?: string;
-    role: 'MANAGER' | 'OPERATIONS' | 'POS' | 'CHEF' | 'ADMIN';
+    role: StaffRole;
+    tenantId?: string;
     branchId?: string;
     station?: string;
     permissions?: string[];
@@ -534,12 +556,21 @@ export function issueStaffToken(
   },
   secret?: string
 ): string {
-  const signingSecret = secret || getStaffAuthSecret();
+  let signingSecret: string;
+  if (secret) {
+    signingSecret = secret;
+  } else if (options.tenantId) {
+    signingSecret = deriveTenantSigningSecret(options.tenantId);
+  } else {
+    signingSecret = getStaffAuthSecret();
+  }
+
   const now = Math.floor(Date.now() / 1000);
   const ttl = options.expiresInSeconds ?? 8 * 60 * 60; // Default 8 hours
   const jti = `jti_${Date.now()}_${crypto.randomBytes(8).toString('hex')}`;
 
   const defaultPermissions: Record<string, string[]> = {
+    OWNER: ['*'],
     ADMIN: ['*'],
     MANAGER: ['*'],
     OPERATIONS: [
@@ -550,6 +581,7 @@ export function issueStaffToken(
       'SEAT_MANAGE',
     ],
     POS: ['SESSION_CLOSE', 'BILL_SETTLEMENT', 'ORDER_CREATE', 'FINANCE_READ'],
+    SERVER: ['ORDER_CREATE', 'SERVICE_REQUEST_RESOLVE', 'TABLE_UPDATE', 'BILL_SETTLEMENT'],
     CHEF: ['KDS_BUMP', 'ITEM_FULFILL', 'RECALL', 'EXPO_DISPATCH'],
   };
 
@@ -557,6 +589,7 @@ export function issueStaffToken(
     sub: options.sub,
     name: options.name,
     role: options.role,
+    tenantId: options.tenantId,
     branchId: options.branchId || '*',
     station: options.station,
     permissions: options.permissions || defaultPermissions[options.role] || [],
@@ -577,8 +610,12 @@ export function issueStaffToken(
 /**
  * Validates a staff token: checks prefix, timing-safe HMAC-SHA256 signature, expiry,
  * future issuance, and restart-durable revocation.
+ * Supports per-tenant HKDF key derivation via expectedTenantId.
  */
-export function verifyStaffToken(token: string, secret?: string): TokenVerificationResult {
+export function verifyStaffToken(
+  token: string,
+  secretOrOptions?: string | { secret?: string; expectedTenantId?: string }
+): TokenVerificationResult {
   if (!token || typeof token !== 'string') {
     return { valid: false, error: 'INVALID_FORMAT' };
   }
@@ -595,7 +632,24 @@ export function verifyStaffToken(token: string, secret?: string): TokenVerificat
     return { valid: false, error: 'TOKEN_REVOKED' };
   }
 
-  const verificationSecret = secret || getStaffAuthSecret();
+  let verificationSecret: string;
+  let expectedTenantId: string | undefined;
+
+  if (typeof secretOrOptions === 'string') {
+    verificationSecret = secretOrOptions;
+  } else if (secretOrOptions && typeof secretOrOptions === 'object') {
+    expectedTenantId = secretOrOptions.expectedTenantId;
+    if (secretOrOptions.secret) {
+      verificationSecret = secretOrOptions.secret;
+    } else if (expectedTenantId) {
+      verificationSecret = deriveTenantSigningSecret(expectedTenantId);
+    } else {
+      verificationSecret = getStaffAuthSecret();
+    }
+  } else {
+    verificationSecret = getStaffAuthSecret();
+  }
+
   const expectedSig = crypto
     .createHmac('sha256', verificationSecret)
     .update(`${TOKEN_PREFIX}.${payloadBase64}`)
@@ -634,6 +688,11 @@ export function verifyStaffToken(token: string, secret?: string): TokenVerificat
   // 4. Check token expiration
   if (claims.exp && claims.exp < now) {
     return { valid: false, error: 'TOKEN_EXPIRED', claims };
+  }
+
+  // 5. Enforce tenant host scoping
+  if (expectedTenantId && claims.tenantId && claims.tenantId !== expectedTenantId) {
+    return { valid: false, error: 'TENANT_MISMATCH', claims };
   }
 
   return { valid: true, claims };

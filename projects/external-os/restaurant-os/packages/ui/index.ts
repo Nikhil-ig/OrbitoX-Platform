@@ -29,3 +29,4 @@ export * from './pages/staff';
 export * from './pages/crave-atlas';
 export * from './pages/swift-bite';
 export * from './pages/pantry-rush';
+export * from './pages/invite';

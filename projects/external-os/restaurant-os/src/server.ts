@@ -12,6 +12,8 @@
 import * as http from 'http';
 import * as url from 'url';
 import * as crypto from 'crypto';
+import * as fs from 'fs';
+import * as path from 'path';
 import {
   MenuItem,
   KitchenTask,
@@ -44,6 +46,14 @@ import {
   resolveTenantFromRequest,
   withTenantContext,
   getActiveTenant,
+  renderTenantNotFoundPage,
+  TenantProvisioningService,
+  CustomDomainService,
+  OwnerSelfService,
+  OnboardingStepKey,
+  verifyPlatformAuth,
+  validateTenantSlug,
+  generateSeats,
 } from '../packages/domain';
 import {
   buildGSTInvoice,
@@ -78,6 +88,8 @@ import {
   renderCraveAtlasPage,
   renderSwiftBitePage,
   renderPantryRushPage,
+  renderOwnerInvitePage,
+  renderSuspendedTenantPage,
 } from '../packages/ui';
 
 const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 4010;
@@ -93,6 +105,10 @@ try {
   console.warn('[Storage] PostgresRestaurantStore deferred:', err.message);
 }
 
+const provisioningService = new TenantProvisioningService(postgresStore ? postgresStore.prisma : undefined);
+const customDomainService = new CustomDomainService(postgresStore ? postgresStore.prisma : undefined);
+const ownerSelfService = new OwnerSelfService(postgresStore ? postgresStore.prisma : undefined);
+
 // Startup security signing secret verification
 try {
   getStaffAuthSecret();
@@ -101,8 +117,14 @@ try {
   process.exit(1);
 }
 
+let totalRequests = 0;
+const statusCounts = new Map<number, number>();
+const methodCounts = new Map<string, number>();
+let totalDomainEvents = 0;
+
 // Automatically broadcast all domain events emitted by the authoritative store
 store.onEvent((event) => {
+  totalDomainEvents++;
   eventBus.broadcast(event);
 });
 
@@ -130,16 +152,73 @@ function parseBody(req: http.IncomingMessage): Promise<any> {
   });
 }
 
+function parseBuffer(req: http.IncomingMessage): Promise<Buffer> {
+  return new Promise((resolve, reject) => {
+    const chunks: Buffer[] = [];
+    req.on('data', (chunk) => {
+      chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+    });
+    req.on('end', () => {
+      resolve(Buffer.concat(chunks));
+    });
+    req.on('error', reject);
+  });
+}
+
+async function extractImageBuffer(req: http.IncomingMessage): Promise<{ buffer: Buffer; filename: string }> {
+  const contentType = (req.headers['content-type'] || '').toLowerCase();
+
+  if (contentType.includes('application/json')) {
+    const body = await parseBody(req);
+    const dataStr = body.image || body.data || body.file || '';
+    if (!dataStr) {
+      throw new Error('MISSING_IMAGE_DATA: JSON payload must contain base64 string in image, data, or file field.');
+    }
+    const cleanBase64 = dataStr.replace(/^data:[a-zA-Z0-9/+-]+;base64,/, '');
+    const buffer = Buffer.from(cleanBase64, 'base64');
+    return { buffer, filename: body.filename || 'upload.png' };
+  }
+
+  const raw = await parseBuffer(req);
+  if (contentType.includes('multipart/form-data')) {
+    const boundaryMatch = contentType.match(/boundary=([^;]+)/i);
+    const boundary = boundaryMatch ? boundaryMatch[1].trim().replace(/^"|"$/g, '') : null;
+    if (boundary) {
+      const boundaryDelimiter = `--${boundary}`;
+      const str = raw.toString('binary');
+      const startIdx = str.indexOf(boundaryDelimiter);
+      if (startIdx !== -1) {
+        const headerEnd = str.indexOf('\r\n\r\n', startIdx);
+        if (headerEnd !== -1) {
+          const headersText = str.slice(startIdx, headerEnd);
+          const nextBoundary = str.indexOf(boundaryDelimiter, headerEnd + 4);
+          const endIdx = nextBoundary !== -1 ? nextBoundary - 2 : str.length;
+          const fileBinary = str.slice(headerEnd + 4, endIdx);
+          const buffer = Buffer.from(fileBinary, 'binary');
+          const fnMatch = headersText.match(/filename="([^"]+)"/i);
+          const filename = fnMatch ? fnMatch[1] : 'upload.png';
+          return { buffer, filename };
+        }
+      }
+    }
+  }
+
+  return { buffer: raw, filename: 'upload.png' };
+}
+
 function sendJson(res: http.ServerResponse, statusCode: number, data: any) {
   const allowedOrigin = resolveAllowedOrigin(res.req);
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
     'Access-Control-Allow-Methods': 'GET, POST, PUT, PATCH, DELETE, OPTIONS',
     'Access-Control-Allow-Headers': 'Content-Type, Authorization, x-idempotency-key, x-session-id, x-order-token, x-request-id, x-correlation-id, x-station-token, x-tenant-id, x-razorpay-signature, x-razorpay-event-id',
-    'Access-Control-Expose-Headers': 'x-request-id',
+    'Access-Control-Expose-Headers': 'x-request-id, x-quota-warning',
     'Referrer-Policy': 'strict-origin-when-cross-origin',
     'X-Content-Type-Options': 'nosniff',
   };
+  if (res.hasHeader('x-quota-warning')) {
+    headers['x-quota-warning'] = String(res.getHeader('x-quota-warning'));
+  }
   if (allowedOrigin) {
     headers['Access-Control-Allow-Origin'] = allowedOrigin;
     headers['Vary'] = 'Origin';
@@ -149,7 +228,7 @@ function sendJson(res: http.ServerResponse, statusCode: number, data: any) {
   res.end(JSON.stringify(data));
 }
 
-function sendHtml(res: http.ServerResponse, html: string) {
+function sendHtml(res: http.ServerResponse, html: string, statusCode: number = 200) {
   const allowedOrigin = resolveAllowedOrigin(res.req);
   const headers: Record<string, string> = {
     'Content-Type': 'text/html; charset=utf-8',
@@ -160,7 +239,7 @@ function sendHtml(res: http.ServerResponse, html: string) {
     headers['Access-Control-Allow-Origin'] = allowedOrigin;
     headers['Vary'] = 'Origin';
   }
-  res.writeHead(200, headers);
+  res.writeHead(statusCode, headers);
   res.end(html);
 }
 
@@ -247,7 +326,7 @@ function isSameOriginRequest(req: http.IncomingMessage): boolean {
   return (origin ? originMatches : true) && (referer ? refererMatches : true);
 }
 
-function resolveRequestIdentity(req: http.IncomingMessage): RequestIdentity {
+function resolveRequestIdentity(req: http.IncomingMessage, expectedTenantId?: string): RequestIdentity {
   const authHeader = (req.headers['authorization'] as string) || '';
   const stationToken = (req.headers['x-station-token'] as string) || '';
   const parsedUrl = url.parse(req.url || '', true);
@@ -356,7 +435,13 @@ function resolveRequestIdentity(req: http.IncomingMessage): RequestIdentity {
 
     // 2b. Cryptographically Signed Staff Token (orb_stf....)
     if (token.startsWith('orb_stf.')) {
-      const verification = verifyStaffToken(token);
+      const activeTenant = getActiveTenant();
+      const targetTenantId =
+        expectedTenantId ||
+        (activeTenant?.tenantId && activeTenant.tenantId !== 'PLATFORM_SUPERUSER'
+          ? activeTenant.tenantId
+          : undefined);
+      const verification = verifyStaffToken(token, { expectedTenantId: targetTenantId });
       if (!verification.valid) {
         return {
           type: 'INVALID_CREDENTIAL',
@@ -487,15 +572,7 @@ function resolveRequestIdentity(req: http.IncomingMessage): RequestIdentity {
   return identity;
 }
 
-const server = http.createServer((req, res) => {
-  const tenantContext = resolveTenantFromRequest(req);
-  res.setHeader('x-tenant-id', tenantContext.tenantId);
-  return withTenantContext(tenantContext, async () => {
-    const startHrTime = process.hrtime.bigint();
-    const rawReqId = req.headers['x-request-id'] || req.headers['x-correlation-id'];
-    const requestId = validateOrGenerateRequestId(rawReqId);
-    res.setHeader('x-request-id', requestId);
-
+const server = http.createServer(async (req, res) => {
   const parsedUrl = url.parse(req.url || '', true);
   const pathname = parsedUrl.pathname || '/';
   const method = req.method || 'GET';
@@ -505,6 +582,224 @@ const server = http.createServer((req, res) => {
     res.end();
     return;
   }
+
+  res.on('finish', () => {
+    totalRequests++;
+    statusCounts.set(res.statusCode, (statusCounts.get(res.statusCode) || 0) + 1);
+    methodCounts.set(method, (methodCounts.get(method) || 0) + 1);
+  });
+
+  // Readiness check: verifies PostgreSQL and runtime services
+  if ((pathname === '/healthz/ready' || pathname === '/ready') && method === 'GET') {
+    try {
+      if (postgresStore?.prisma) {
+        await postgresStore.prisma.$queryRawUnsafe('SELECT 1');
+      }
+      sendJson(res, 200, {
+        status: 'ready',
+        checks: {
+          database: 'UP',
+          store: 'UP',
+          eventBus: 'UP',
+        },
+        uptime: process.uptime(),
+        timestamp: new Date().toISOString(),
+      });
+    } catch (err: any) {
+      sendJson(res, 503, {
+        status: 'not_ready',
+        checks: {
+          database: 'DOWN',
+          error: err.message,
+        },
+        uptime: process.uptime(),
+        timestamp: new Date().toISOString(),
+      });
+    }
+    return;
+  }
+
+  // Liveness and basic health probes
+  if (pathname === '/health' || pathname === '/healthz') {
+    sendJson(res, 200, {
+      status: 'healthy',
+      service: 'restaurant-os',
+      uptime: process.uptime(),
+      timestamp: new Date().toISOString(),
+    });
+    return;
+  }
+
+  // Metrics endpoint (Prometheus format or JSON)
+  if ((pathname === '/metrics' || pathname === '/internal/metrics') && method === 'GET') {
+    if (pathname === '/internal/metrics' && !verifyPlatformAuth(req)) {
+      sendJson(res, 401, {
+        error: 'UNAUTHORIZED',
+        message: 'Platform service credentials required for internal metrics.',
+      });
+      return;
+    }
+    const memory = process.memoryUsage();
+    let activeTenantsCount = 1;
+    try {
+      if (postgresStore?.prisma) {
+        activeTenantsCount = await postgresStore.prisma.tenant.count({ where: { status: 'active' } });
+      }
+    } catch (e) {}
+
+    const isJson = req.headers.accept?.includes('application/json') || parsedUrl.query.format === 'json';
+    if (isJson) {
+      sendJson(res, 200, {
+        uptimeSeconds: Math.floor(process.uptime()),
+        memory: {
+          heapUsedBytes: memory.heapUsed,
+          heapTotalBytes: memory.heapTotal,
+          rssBytes: memory.rss,
+        },
+        traffic: {
+          totalRequests,
+          statusCounts: Object.fromEntries(statusCounts.entries()),
+          methodCounts: Object.fromEntries(methodCounts.entries()),
+        },
+        fleet: {
+          activeTenantsCount,
+          domainEventsEmitted: totalDomainEvents,
+        },
+      });
+      return;
+    }
+
+    const lines = [
+      '# HELP restaurantos_process_uptime_seconds Process uptime in seconds.',
+      '# TYPE restaurantos_process_uptime_seconds gauge',
+      `restaurantos_process_uptime_seconds ${Math.floor(process.uptime())}`,
+      '# HELP restaurantos_memory_heap_used_bytes Process memory heap used in bytes.',
+      '# TYPE restaurantos_memory_heap_used_bytes gauge',
+      `restaurantos_memory_heap_used_bytes ${memory.heapUsed}`,
+      '# HELP restaurantos_memory_heap_total_bytes Process memory heap total in bytes.',
+      '# TYPE restaurantos_memory_heap_total_bytes gauge',
+      `restaurantos_memory_heap_total_bytes ${memory.heapTotal}`,
+      '# HELP restaurantos_memory_rss_bytes Process resident set size in bytes.',
+      '# TYPE restaurantos_memory_rss_bytes gauge',
+      `restaurantos_memory_rss_bytes ${memory.rss}`,
+      '# HELP restaurantos_active_tenants_total Total active tenants in fleet.',
+      '# TYPE restaurantos_active_tenants_total gauge',
+      `restaurantos_active_tenants_total ${activeTenantsCount}`,
+      '# HELP restaurantos_http_requests_total Total HTTP requests served.',
+      '# TYPE restaurantos_http_requests_total counter',
+      `restaurantos_http_requests_total ${totalRequests}`,
+      '# HELP restaurantos_domain_events_total Total domain events broadcasted.',
+      '# TYPE restaurantos_domain_events_total counter',
+      `restaurantos_domain_events_total ${totalDomainEvents}`,
+    ];
+    for (const [code, count] of statusCounts.entries()) {
+      lines.push(`restaurantos_http_requests_by_status{status="${code}"} ${count}`);
+    }
+
+    res.writeHead(200, { 'Content-Type': 'text/plain; version=0.0.4; charset=utf-8' });
+    res.end(lines.join('\n') + '\n');
+    return;
+  }
+
+  // Static Tenant Uploads Serving (with strict path-traversal protection and security headers)
+  if (pathname.startsWith('/uploads/') && method === 'GET') {
+    const safeUploadsRoot = path.resolve(
+      process.env.RESTAURANT_STORE_PATH
+        ? path.join(path.dirname(process.env.RESTAURANT_STORE_PATH), 'uploads')
+        : path.join(process.cwd(), 'data', 'uploads')
+    );
+    const relativeSubpath = pathname.replace(/^\/uploads\/?/, '');
+    const targetPath = path.resolve(safeUploadsRoot, relativeSubpath);
+
+    if (!targetPath.startsWith(safeUploadsRoot) || !fs.existsSync(targetPath) || fs.statSync(targetPath).isDirectory()) {
+      sendJson(res, 404, { error: 'NOT_FOUND', code: 'ASSET_NOT_FOUND', message: 'Requested upload asset not found.' });
+      return;
+    }
+
+    const ext = path.extname(targetPath).toLowerCase();
+    const mimeMap: Record<string, string> = {
+      '.png': 'image/png',
+      '.jpg': 'image/jpeg',
+      '.jpeg': 'image/jpeg',
+      '.webp': 'image/webp',
+      '.svg': 'image/svg+xml',
+    };
+    const contentType = mimeMap[ext] || 'application/octet-stream';
+
+    res.writeHead(200, {
+      'Content-Type': contentType,
+      'X-Content-Type-Options': 'nosniff',
+      'Cache-Control': 'public, max-age=86400, immutable',
+    });
+    fs.createReadStream(targetPath).pipe(res);
+    return;
+  }
+
+  // Platform internal management endpoints (require platform auth token, bypass public host resolution)
+  if (pathname.startsWith('/internal/')) {
+    // Caddy On-Demand TLS Ask gatekeeper: Called by reverse proxy to authorize automated SSL issuance
+    if (pathname === '/internal/tls/ask' && method === 'GET') {
+      const askDomain = (parsedUrl.query.domain as string) || '';
+      const allowed = await customDomainService.isDomainAllowedForTls(askDomain);
+      if (allowed) {
+        res.writeHead(200, { 'Content-Type': 'text/plain' });
+        res.end('OK');
+      } else {
+        res.writeHead(403, { 'Content-Type': 'text/plain' });
+        res.end('FORBIDDEN: Domain not permitted for TLS');
+      }
+      return;
+    }
+
+    if (!verifyPlatformAuth(req)) {
+      sendJson(res, 401, {
+        error: 'UNAUTHORIZED',
+        message: 'Platform service credentials required (RESTAURANTOS_PLATFORM_TOKEN >= 32 chars).',
+      });
+      return;
+    }
+  }
+
+  // Authoritative host-based tenant resolution
+  let tenantContext = await resolveTenantFromRequest(req, postgresStore?.prisma);
+  if (!tenantContext) {
+    if (pathname.startsWith('/internal/')) {
+      tenantContext = {
+        tenantId: 'PLATFORM_SUPERUSER',
+        tenantSlug: 'platform',
+        tenantName: 'Platform Superuser',
+        orbitoxProjectId: 'platform',
+        status: 'active',
+      };
+    } else if (pathname === '/accept-invite' || pathname === '/api/restaurant/auth/accept-invite') {
+      tenantContext = {
+        tenantId: 'PENDING_INVITE',
+        tenantSlug: 'invite',
+        tenantName: 'Pending Restaurant',
+        status: 'trial',
+      };
+    } else {
+      const rawHost = (req.headers.host || '').split(':')[0].trim();
+      const acceptHeader = (req.headers.accept || '').toLowerCase();
+      if (acceptHeader.includes('text/html')) {
+        sendHtml(res, renderTenantNotFoundPage(rawHost || 'unknown'), 404);
+      } else {
+        sendJson(res, 404, {
+          error: 'NOT_FOUND',
+          code: 'TENANT_NOT_FOUND',
+          message: `No restaurant tenant configured for host: ${rawHost || 'unknown'}`,
+        });
+      }
+      return;
+    }
+  }
+
+  res.setHeader('x-tenant-id', tenantContext.tenantId);
+  return withTenantContext(tenantContext, async () => {
+    const startHrTime = process.hrtime.bigint();
+    const rawReqId = req.headers['x-request-id'] || req.headers['x-correlation-id'];
+    const requestId = validateOrGenerateRequestId(rawReqId);
+    res.setHeader('x-request-id', requestId);
 
   // Context Hierarchy Validation
   const context = validateAndResolveContext(
@@ -530,6 +825,7 @@ const server = http.createServer((req, res) => {
       level: res.statusCode >= 500 ? 'error' : res.statusCode >= 400 ? 'warn' : 'info',
       message: `${method} ${pathname} ${res.statusCode} (${durationMs}ms)`,
       requestId,
+      tenantId: tenantContext.tenantId,
       method,
       pathname,
       status: res.statusCode,
@@ -538,7 +834,7 @@ const server = http.createServer((req, res) => {
     });
   });
 
-  const requestIdentity = resolveRequestIdentity(req);
+  const requestIdentity = resolveRequestIdentity(req, tenantContext.tenantId);
   const activeStaffToken = requestIdentity.rawToken;
   const activeStaffRole = requestIdentity.role || (requestIdentity.type === 'ADMIN' ? 'ADMIN' : undefined);
 
@@ -597,6 +893,164 @@ const server = http.createServer((req, res) => {
     store.addKitchenTask(body);
     sendJson(res, 200, { success: true, task: body });
     return;
+  }
+
+  // --- TENANT SUSPENSION ENFORCEMENT ---
+  if (postgresStore && !pathname.startsWith('/internal/')) {
+    const currentTenant = await postgresStore.getTenant(tenantContext.tenantId);
+    if (currentTenant?.status === 'suspended') {
+      if (['POST', 'PUT', 'PATCH', 'DELETE'].includes(method)) {
+        sendJson(res, 403, {
+          error: 'TENANT_SUSPENDED',
+          code: 'TENANT_SUSPENDED',
+          message: 'This restaurant account is temporarily suspended. Writes are disabled.',
+        });
+        return;
+      }
+      if (method === 'GET' && (pathname === '/' || pathname.startsWith('/dine') || pathname.startsWith('/kds') || pathname.startsWith('/swift-bite') || pathname.startsWith('/crave-atlas') || pathname.startsWith('/operations'))) {
+        sendHtml(res, renderSuspendedTenantPage(currentTenant.name));
+        return;
+      }
+    }
+  }
+
+  // --- OWNER INVITE ACCEPTANCE FLOW ---
+  if (pathname === '/accept-invite' && method === 'GET') {
+    const token = (parsedUrl.query.token as string) || '';
+    sendHtml(res, renderOwnerInvitePage(token, tenantContext.tenantName));
+    return;
+  }
+
+  if (pathname === '/api/restaurant/auth/accept-invite' && method === 'POST') {
+    try {
+      const body = await parseBody(req);
+      const acceptRes = await provisioningService.acceptOwnerInvite({
+        token: body.token,
+        pin: body.pin,
+        ownerName: body.name,
+      });
+      sendJson(res, 200, acceptRes);
+    } catch (err: any) {
+      sendJson(res, 400, { error: 'INVITE_ACCEPTANCE_FAILED', message: err.message });
+    }
+    return;
+  }
+
+  // --- PLATFORM INTERNAL TENANT PROVISIONING & LIFECYCLE ---
+  if (pathname.startsWith('/internal/tenants')) {
+    if (!verifyPlatformAuth(req)) {
+      sendJson(res, 401, {
+        error: 'UNAUTHORIZED',
+        message: 'Platform service credentials required (RESTAURANTOS_PLATFORM_TOKEN >= 32 chars).',
+      });
+      return;
+    }
+
+    if (pathname === '/internal/tenants' && method === 'POST') {
+      try {
+        const body = await parseBody(req);
+        const idemKey = (req.headers['x-idempotency-key'] as string) || body.idempotencyKey;
+        const result = await provisioningService.provisionTenant({
+          ...body,
+          idempotencyKey: idemKey,
+        });
+        sendJson(res, 201, result);
+      } catch (err: any) {
+        const status = err.message.includes('already taken') ? 409 : 400;
+        sendJson(res, status, { error: 'PROVISIONING_FAILED', message: err.message });
+      }
+      return;
+    }
+
+    if (pathname === '/internal/tenants' && method === 'GET') {
+      try {
+        const page = parsedUrl.query.page ? parseInt(parsedUrl.query.page as string, 10) : 1;
+        const limit = parsedUrl.query.limit ? parseInt(parsedUrl.query.limit as string, 10) : 20;
+        const search = (parsedUrl.query.search as string) || undefined;
+        const status = (parsedUrl.query.status as string) || undefined;
+        const list = await provisioningService.listTenants({ page, limit, search, status });
+        sendJson(res, 200, list);
+      } catch (err: any) {
+        sendJson(res, 500, { error: 'INTERNAL_ERROR', message: err.message });
+      }
+      return;
+    }
+
+    const exportMatch = /^\/internal\/tenants\/([^/]+)\/export$/.exec(pathname);
+    if (exportMatch && method === 'GET') {
+      const tenantId = exportMatch[1];
+      try {
+        const data = await provisioningService.exportTenantData(tenantId);
+        sendJson(res, 200, data);
+      } catch (err: any) {
+        sendJson(res, 404, { error: 'NOT_FOUND', message: err.message });
+      }
+      return;
+    }
+
+    const suspendMatch = /^\/internal\/tenants\/([^/]+)\/suspend$/.exec(pathname);
+    if (suspendMatch && method === 'POST') {
+      const tenantId = suspendMatch[1];
+      try {
+        const updated = await provisioningService.suspendTenant(tenantId);
+        sendJson(res, 200, { success: true, tenant: updated });
+      } catch (err: any) {
+        sendJson(res, 400, { error: 'SUSPEND_FAILED', message: err.message });
+      }
+      return;
+    }
+
+    const resumeMatch = /^\/internal\/tenants\/([^/]+)\/resume$/.exec(pathname);
+    if (resumeMatch && method === 'POST') {
+      const tenantId = resumeMatch[1];
+      try {
+        const updated = await provisioningService.resumeTenant(tenantId);
+        sendJson(res, 200, { success: true, tenant: updated });
+      } catch (err: any) {
+        sendJson(res, 400, { error: 'RESUME_FAILED', message: err.message });
+      }
+      return;
+    }
+
+    const cancelMatch = /^\/internal\/tenants\/([^/]+)\/cancel$/.exec(pathname);
+    if (cancelMatch && method === 'POST') {
+      const tenantId = cancelMatch[1];
+      try {
+        const updated = await provisioningService.cancelTenant(tenantId);
+        sendJson(res, 200, { success: true, tenant: updated });
+      } catch (err: any) {
+        sendJson(res, 400, { error: 'CANCEL_FAILED', message: err.message });
+      }
+      return;
+    }
+
+    const detailMatch = /^\/internal\/tenants\/([^/]+)$/.exec(pathname);
+    if (detailMatch && method === 'GET') {
+      const tenantId = detailMatch[1];
+      try {
+        const tenant = await provisioningService.getTenantDetails(tenantId);
+        if (!tenant) {
+          sendJson(res, 404, { error: 'TENANT_NOT_FOUND', message: `Tenant ${tenantId} not found` });
+          return;
+        }
+        sendJson(res, 200, tenant);
+      } catch (err: any) {
+        sendJson(res, 500, { error: 'INTERNAL_ERROR', message: err.message });
+      }
+      return;
+    }
+
+    if (detailMatch && method === 'PATCH') {
+      const tenantId = detailMatch[1];
+      try {
+        const body = await parseBody(req);
+        const updated = await provisioningService.updateTenant(tenantId, body);
+        sendJson(res, 200, { success: true, tenant: updated });
+      } catch (err: any) {
+        sendJson(res, 400, { error: 'UPDATE_FAILED', message: err.message });
+      }
+      return;
+    }
   }
 
   // --- AUTHENTICATION & CREDENTIAL MANAGEMENT ---
@@ -1702,6 +2156,26 @@ const server = http.createServer((req, res) => {
 
     const orderId = `ord_${Date.now()}`;
     const tableNumber = body.tableNumber || 'T-14';
+
+    // Authoritative Plan Limits & Quota Enforcement
+    try {
+      const quotaCheck = await ownerSelfService.checkPlanLimits(tenantContext.tenantId, 'ORDERS');
+      if (!quotaCheck.allowed) {
+        sendJson(res, 403, {
+          error: 'PLAN_LIMIT_EXCEEDED',
+          code: 'PLAN_LIMIT_EXCEEDED',
+          message: quotaCheck.error || 'Monthly order limit reached for your subscription plan.',
+          quota: quotaCheck,
+        });
+        return;
+      }
+      if (quotaCheck.warning) {
+        res.setHeader('x-quota-warning', `${quotaCheck.percentage}%`);
+      }
+    } catch (quotaErr: any) {
+      // Allow fallback if running in-memory without database
+    }
+
     const normIdTable = (identity.tableNumber || '').replace(/^T-/, '');
     const normOrderTable = (tableNumber || '').replace(/^T-/, '');
 
@@ -3474,6 +3948,68 @@ const server = http.createServer((req, res) => {
     return;
   }
 
+  // 14c. Table Creation with Quota Enforcement (POST /api/restaurant/tables)
+  if (pathname === '/api/restaurant/tables' && method === 'POST') {
+    if (requestIdentity.type === 'INVALID_CREDENTIAL' || requestIdentity.type === 'REVOKED_CAPABILITY') {
+      sendJson(res, 401, { error: requestIdentity.type, code: requestIdentity.type, message: 'Invalid or revoked credential.' });
+      return;
+    }
+    if (requestIdentity.type === 'ANONYMOUS' || requestIdentity.type === 'DINER' || !requestIdentity.isPrivileged) {
+      sendJson(res, 403, { error: 'FORBIDDEN', message: 'Table creation requires Manager or Admin privileges.' });
+      return;
+    }
+
+    try {
+      const quotaCheck = await ownerSelfService.checkPlanLimits(tenantContext.tenantId, 'TABLES');
+      if (!quotaCheck.allowed) {
+        sendJson(res, 403, {
+          error: 'PLAN_LIMIT_EXCEEDED',
+          code: 'PLAN_LIMIT_EXCEEDED',
+          message: quotaCheck.error || 'Table limit exceeded for current plan tier.',
+          quota: quotaCheck,
+        });
+        return;
+      }
+      if (quotaCheck.warning) {
+        res.setHeader('x-quota-warning', `${quotaCheck.percentage}%`);
+      }
+
+      const body = await parseBody(req);
+      const allTables = store.getTables();
+      const nextId = body.id ? (typeof body.id === 'number' ? body.id : parseInt(body.id, 10)) : Math.max(0, ...allTables.map((t) => t.id)) + 1;
+      const tableNumber = body.number || `T-${nextId < 10 ? '0' + nextId : nextId}`;
+      const capacity = Number(body.capacity) || 4;
+
+      const newTable: TableFloorRecord = {
+        id: nextId,
+        number: tableNumber,
+        capacity,
+        status: 'AVAILABLE',
+        x: body.x || 100,
+        y: body.y || 100,
+        width: body.width || 90,
+        height: body.height || 90,
+        shape: body.shape || 'rectangle',
+        section: body.section || 'Main',
+        floorId: body.floorId || currentFloor?.id || 'fl_main',
+        branchId: body.branchId || currentBranch?.id || 'branch_main',
+        locator: crypto.randomBytes(6).toString('base64url'),
+        seats: generateSeats(capacity, nextId),
+      };
+
+      store.saveFloorTables([newTable]);
+      if (postgresStore) {
+        await postgresStore.saveTable(newTable, tenantContext.tenantId);
+      }
+      await ownerSelfService.updateOnboardingStep(tenantContext.tenantId, 'TABLES_REVIEWED', true);
+
+      sendJson(res, 201, { success: true, table: newTable });
+    } catch (err: any) {
+      sendJson(res, 400, { success: false, error: err.message });
+    }
+    return;
+  }
+
   if (pathname.startsWith('/api/restaurant/tables/') && method === 'PATCH') {
     const identity = resolveRequestIdentity(req);
     if (identity.type === 'INVALID_CREDENTIAL') {
@@ -4405,8 +4941,46 @@ const server = http.createServer((req, res) => {
     return;
   }
 
-  if ((pathname === '/api/restaurant/branding/verify-domain' || pathname === '/api/restaurant/settings/domains/verify') && method === 'POST') {
-    const identity = resolveRequestIdentity(req);
+  // 28b. Custom Domains Management & DNS Verification
+  if (pathname === '/api/restaurant/domains' && method === 'GET') {
+    const identity = resolveRequestIdentity(req, tenantContext.tenantId);
+    if (!identity.isPrivileged) {
+      sendJson(res, 403, { error: 'FORBIDDEN', message: 'Viewing custom domains requires Manager or Admin privileges.' });
+      return;
+    }
+    try {
+      const list = await customDomainService.listCustomDomains(tenantContext.tenantId);
+      sendJson(res, 200, { success: true, data: list });
+    } catch (err: any) {
+      sendJson(res, 400, { success: false, error: err.message });
+    }
+    return;
+  }
+
+  if (pathname === '/api/restaurant/domains' && method === 'POST') {
+    const identity = resolveRequestIdentity(req, tenantContext.tenantId);
+    if (!identity.isPrivileged) {
+      sendJson(res, 403, { error: 'FORBIDDEN', message: 'Adding custom domains requires Manager or Admin privileges.' });
+      return;
+    }
+    const body = await parseBody(req);
+    try {
+      const challenge = await customDomainService.addCustomDomain(tenantContext.tenantId, body.domain);
+      sendJson(res, 201, { success: true, data: challenge });
+    } catch (err: any) {
+      const isCollision = err.message.includes('DOMAIN_ALREADY_CLAIMED');
+      sendJson(res, isCollision ? 409 : 400, { success: false, error: err.message });
+    }
+    return;
+  }
+
+  if (
+    (pathname === '/api/restaurant/domains/verify' ||
+      pathname === '/api/restaurant/branding/verify-domain' ||
+      pathname === '/api/restaurant/settings/domains/verify') &&
+    method === 'POST'
+  ) {
+    const identity = resolveRequestIdentity(req, tenantContext.tenantId);
     if (identity.type === 'INVALID_CREDENTIAL' || identity.type === 'REVOKED_CAPABILITY') {
       sendJson(res, 401, { error: identity.type, code: identity.type, message: 'Invalid or revoked credential.' });
       return;
@@ -4425,26 +4999,189 @@ const server = http.createServer((req, res) => {
       sendJson(res, 400, { success: false, error: 'INVALID_DOMAIN', message: 'Domain must be a fully qualified domain name.' });
       return;
     }
-    const updated = store.updateTenantBrand({
-      customDomain: domain,
-      domainStatus: 'VERIFIED',
-      sslStatus: 'ACTIVE',
-    });
-    sendJson(res, 200, {
-      success: true,
-      data: updated,
-      message: `Domain ${domain} successfully verified with SSL provisioned.`,
-    });
+    try {
+      const verifyRes = await customDomainService.verifyCustomDomain(tenantContext.tenantId, domain);
+      if (verifyRes.verified) {
+        store.updateTenantBrand({
+          customDomain: domain,
+          domainStatus: 'VERIFIED',
+          sslStatus: 'ACTIVE',
+        });
+        sendJson(res, 200, {
+          success: true,
+          data: verifyRes,
+          message: `Domain ${domain} successfully verified with SSL provisioned.`,
+        });
+      } else {
+        sendJson(res, 400, {
+          success: false,
+          data: verifyRes,
+          error: verifyRes.error || 'DNS TXT verification failed.',
+        });
+      }
+    } catch (err: any) {
+      sendJson(res, 400, { success: false, error: err.message });
+    }
+    return;
+  }
+
+  if (pathname.startsWith('/api/restaurant/domains/') && method === 'DELETE') {
+    const identity = resolveRequestIdentity(req, tenantContext.tenantId);
+    if (!identity.isPrivileged) {
+      sendJson(res, 403, { error: 'FORBIDDEN', message: 'Removing custom domains requires Manager or Admin privileges.' });
+      return;
+    }
+    const targetDomain = decodeURIComponent(pathname.replace('/api/restaurant/domains/', '')).trim();
+    try {
+      const deleteRes = await customDomainService.removeCustomDomain(tenantContext.tenantId, targetDomain);
+      sendJson(res, 200, deleteRes);
+    } catch (err: any) {
+      sendJson(res, 400, { success: false, error: err.message });
+    }
+    return;
+  }
+
+  // 28c. Owner Self-Service Onboarding, Secure Image Uploads & Encrypted Gateway Credentials
+  if (pathname === '/api/restaurant/onboarding' && method === 'GET') {
+    try {
+      const state = await ownerSelfService.getOnboardingState(tenantContext.tenantId);
+      sendJson(res, 200, { success: true, onboarding: state });
+    } catch (err: any) {
+      sendJson(res, 500, { success: false, error: 'ONBOARDING_FETCH_FAILED', message: err.message });
+    }
+    return;
+  }
+
+  if (pathname === '/api/restaurant/onboarding/step' && method === 'POST') {
+    if (requestIdentity.type === 'INVALID_CREDENTIAL' || requestIdentity.type === 'REVOKED_CAPABILITY') {
+      sendJson(res, 401, { error: requestIdentity.type, code: requestIdentity.type, message: 'Invalid or revoked credential.' });
+      return;
+    }
+    if (requestIdentity.type === 'ANONYMOUS' || requestIdentity.type === 'DINER') {
+      sendJson(res, 403, { error: 'FORBIDDEN', message: 'Staff credentials required to update onboarding checklist.' });
+      return;
+    }
+    const body = await parseBody(req);
+    if (!body.step) {
+      sendJson(res, 400, { success: false, error: 'MISSING_STEP', message: 'Field "step" is required.' });
+      return;
+    }
+    try {
+      const state = await ownerSelfService.updateOnboardingStep(
+        tenantContext.tenantId,
+        body.step as OnboardingStepKey,
+        body.completed !== false
+      );
+      sendJson(res, 200, { success: true, onboarding: state });
+    } catch (err: any) {
+      sendJson(res, 400, { success: false, error: err.message });
+    }
+    return;
+  }
+
+  if (
+    (pathname === '/api/restaurant/uploads/logo' || pathname === '/api/restaurant/uploads/hero') &&
+    method === 'POST'
+  ) {
+    if (requestIdentity.type === 'INVALID_CREDENTIAL' || requestIdentity.type === 'REVOKED_CAPABILITY') {
+      sendJson(res, 401, { error: requestIdentity.type, code: requestIdentity.type, message: 'Invalid or revoked credential.' });
+      return;
+    }
+    if (requestIdentity.type === 'ANONYMOUS' || requestIdentity.type === 'DINER' || !requestIdentity.isPrivileged) {
+      sendJson(res, 403, { error: 'FORBIDDEN', message: 'Manager or Admin privileges required to upload branding assets.' });
+      return;
+    }
+    const kind = pathname.endsWith('/logo') ? 'logo' : 'hero';
+    try {
+      const { buffer } = await extractImageBuffer(req);
+      const saved = await ownerSelfService.saveTenantImage(tenantContext.tenantId, buffer, kind);
+      if (kind === 'logo') {
+        store.updateTenantBrand({ logoUrl: saved.url });
+      } else {
+        store.updateTenantBrand({ heroBannerUrl: saved.url });
+      }
+      sendJson(res, 200, { success: true, data: saved });
+    } catch (err: any) {
+      const isSecurity = err.message.includes('SECURITY_VIOLATION');
+      const isFormat = err.message.includes('UNSUPPORTED_IMAGE_FORMAT');
+      const isLarge = err.message.includes('IMAGE_TOO_LARGE');
+      const statusCode = (isSecurity || isFormat || isLarge) ? 400 : 500;
+      sendJson(res, statusCode, {
+        success: false,
+        error: isSecurity ? 'SECURITY_VIOLATION' : (isFormat ? 'UNSUPPORTED_IMAGE_FORMAT' : (isLarge ? 'IMAGE_TOO_LARGE' : 'UPLOAD_FAILED')),
+        message: err.message,
+      });
+    }
+    return;
+  }
+
+  if (pathname === '/api/restaurant/payments/config' && method === 'GET') {
+    if (requestIdentity.type === 'INVALID_CREDENTIAL' || requestIdentity.type === 'REVOKED_CAPABILITY') {
+      sendJson(res, 401, { error: requestIdentity.type, code: requestIdentity.type, message: 'Invalid or revoked credential.' });
+      return;
+    }
+    if (requestIdentity.type === 'ANONYMOUS' || requestIdentity.type === 'DINER') {
+      sendJson(res, 403, { error: 'FORBIDDEN', message: 'Staff credentials required to view payment configuration.' });
+      return;
+    }
+    const unmasked = parsedUrl.query.unmasked === 'true' && requestIdentity.isPrivileged;
+    try {
+      const paymentConfig = await ownerSelfService.getPaymentConfig(tenantContext.tenantId, unmasked);
+      sendJson(res, 200, { success: true, paymentConfig });
+    } catch (err: any) {
+      sendJson(res, 500, { success: false, error: 'PAYMENT_CONFIG_FAILED', message: err.message });
+    }
+    return;
+  }
+
+  if (pathname === '/api/restaurant/payments/config' && method === 'POST') {
+    if (requestIdentity.type === 'INVALID_CREDENTIAL' || requestIdentity.type === 'REVOKED_CAPABILITY') {
+      sendJson(res, 401, { error: requestIdentity.type, code: requestIdentity.type, message: 'Invalid or revoked credential.' });
+      return;
+    }
+    if (requestIdentity.type === 'ANONYMOUS' || requestIdentity.type === 'DINER' || !requestIdentity.isPrivileged) {
+      sendJson(res, 403, { error: 'FORBIDDEN', message: 'Manager or Admin privileges required to configure payment gateway.' });
+      return;
+    }
+    const body = await parseBody(req);
+    try {
+      const result = await ownerSelfService.savePaymentConfig(tenantContext.tenantId, {
+        keyId: body.keyId,
+        keySecret: body.keySecret,
+        webhookSecret: body.webhookSecret,
+        gstin: body.gstin,
+        legalEntityName: body.legalEntityName,
+      });
+      sendJson(res, 200, result);
+    } catch (err: any) {
+      sendJson(res, 400, { success: false, error: 'PAYMENT_CONFIG_FAILED', message: err.message });
+    }
     return;
   }
 
   // 29. Customer Support Desk & Cases
   if (pathname === '/api/restaurant/support/tickets' && method === 'GET') {
+    if (requestIdentity.type === 'INVALID_CREDENTIAL' || requestIdentity.type === 'REVOKED_CAPABILITY') {
+      sendJson(res, 401, { error: requestIdentity.type, code: requestIdentity.type, message: 'Invalid or revoked credential.' });
+      return;
+    }
+    if (requestIdentity.type !== 'STAFF' && requestIdentity.type !== 'ADMIN') {
+      sendJson(res, 401, { error: 'AUTHENTICATION_REQUIRED', code: 'AUTHENTICATION_REQUIRED', message: 'Staff or manager authentication required to view support tickets.' });
+      return;
+    }
     sendJson(res, 200, { success: true, data: store.getSupportTickets() });
     return;
   }
 
   if (pathname === '/api/restaurant/support/tickets' && method === 'POST') {
+    if (requestIdentity.type === 'INVALID_CREDENTIAL' || requestIdentity.type === 'REVOKED_CAPABILITY') {
+      sendJson(res, 401, { error: requestIdentity.type, code: requestIdentity.type, message: 'Invalid or revoked credential.' });
+      return;
+    }
+    if (requestIdentity.type !== 'STAFF' && requestIdentity.type !== 'ADMIN') {
+      sendJson(res, 401, { error: 'AUTHENTICATION_REQUIRED', code: 'AUTHENTICATION_REQUIRED', message: 'Staff or manager authentication required to create support tickets.' });
+      return;
+    }
     const body = await parseBody(req);
     if (!body.subject || !body.initialMessage) {
       sendJson(res, 400, { success: false, error: 'Missing subject or initialMessage' });
