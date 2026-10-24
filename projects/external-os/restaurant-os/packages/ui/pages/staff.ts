@@ -9,14 +9,15 @@
  * - Zero emojis: Lucide vector iconography throughout.
  */
 
-import { STAFF_DIRECTORY, StaffDirectoryMember, BranchRecord } from '../../domain';
+import { StaffDirectoryMember, BranchRecord } from '../../domain';
 import { icon } from '../icons';
 
 export function renderStaffWorkspace(
   branches: BranchRecord[],
-  selectedBranchId = 'branch_ldh'
+  selectedBranchId = 'branch_ldh',
+  staffMembers: StaffDirectoryMember[] = []
 ): string {
-  const staff = STAFF_DIRECTORY;
+  const staff = staffMembers;
 
   const permissionsMatrix = [
     { name: 'Create Table Orders', key: 'orders.write', owner: true, manager: true, server: true, chef: false, expo: false },

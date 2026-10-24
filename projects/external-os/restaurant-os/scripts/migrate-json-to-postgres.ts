@@ -18,7 +18,6 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { PrismaClient } from '@prisma/client';
 import { PostgresRestaurantStore } from '../packages/storage/postgres-store';
-import { DEV_TEST_STAFF_FIXTURES } from '../packages/domain/security';
 
 interface MigrationSummary {
   tenant: { id: string; name: string; slug: string };
@@ -101,8 +100,8 @@ export async function runMigration(options?: {
   const idempotencyMap = data.idempotencyRecords || {};
   const idempotencyKeys = Object.keys(idempotencyMap);
 
-  // Staff directory: combine persisted revocations with dev/pilot staff fixtures
-  const staffMembers = DEV_TEST_STAFF_FIXTURES || [];
+  // Staff directory: read persisted staff members from JSON store
+  const staffMembers = Array.isArray(data.staffMembers) ? data.staffMembers : [];
   const revokedJtis = Array.isArray(data.revokedStaffTokenJtis)
     ? data.revokedStaffTokenJtis
     : Array.isArray(data.revokedStaffTokens)

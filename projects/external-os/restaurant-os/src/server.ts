@@ -35,6 +35,14 @@ import {
   createStaffMember,
   updateStaffMember,
   resetStaffLockout,
+  hashStaffSecretSync,
+  verifyStaffSecret,
+  resolveClientIp,
+  checkStaffLockout,
+  recordFailedStaffAttempt,
+  recordSuccessfulStaffAttempt,
+  issueDeviceToken,
+  verifyDeviceToken,
   REGISTERED_STATION_SECRETS,
   resolveAllowedOrigin,
   DEV_TEST_STAFF_TOKENS,
@@ -110,6 +118,7 @@ const razorpayAdapter = new RazorpayPaymentGatewayAdapter();
 let postgresStore: PostgresRestaurantStore | null = null;
 try {
   postgresStore = new PostgresRestaurantStore();
+  (globalThis as any).__restaurantos_prisma = postgresStore.prisma;
 } catch (err: any) {
   console.warn('[Storage] PostgresRestaurantStore deferred:', err.message);
 }
@@ -465,7 +474,37 @@ async function resolveRequestIdentity(
         };
       }
       const claims = verification.claims!;
-      const isPriv = claims.role === 'MANAGER' || claims.role === 'ADMIN' || claims.role === 'POS';
+
+      // Check tenant-scoped revocation in database
+      if (targetTenantId) {
+        try {
+          const tenantRepo = getTenantRepository(targetTenantId, postgresStore?.prisma, eventBus);
+          const isRevoked = await tenantRepo.isStaffTokenRevoked(claims.jti);
+          if (isRevoked) {
+            return {
+              type: 'INVALID_CREDENTIAL',
+              id: token,
+              isPrivileged: false,
+              error: 'TOKEN_REVOKED',
+            };
+          }
+          if (claims.sub) {
+            const member = await tenantRepo.getStaffMember(claims.sub);
+            if (member && member.status === 'REVOKED') {
+              return {
+                type: 'INVALID_CREDENTIAL',
+                id: token,
+                isPrivileged: false,
+                error: 'TOKEN_REVOKED',
+              };
+            }
+          }
+        } catch {
+          // Fall through to in-memory check
+        }
+      }
+
+      const isPriv = claims.role === 'OWNER' || claims.role === 'MANAGER' || claims.role === 'ADMIN' || claims.role === 'POS';
       if (claims.role === 'CHEF') {
         return {
           type: 'STATION',
@@ -478,7 +517,7 @@ async function resolveRequestIdentity(
         };
       }
       return {
-        type: claims.role === 'MANAGER' || claims.role === 'ADMIN' ? 'ADMIN' : 'STAFF',
+        type: claims.role === 'OWNER' || claims.role === 'MANAGER' || claims.role === 'ADMIN' ? 'ADMIN' : 'STAFF',
         id: claims.sub,
         role: claims.role,
         branchId: claims.branchId,
@@ -586,7 +625,7 @@ async function resolveRequestIdentity(
   return identity;
 }
 
-const server = http.createServer(async (req, res) => {
+export async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse): Promise<void> {
   const parsedUrl = url.parse(req.url || '', true);
   const pathname = parsedUrl.pathname || '/';
   const method = req.method || 'GET';
@@ -939,10 +978,12 @@ const server = http.createServer(async (req, res) => {
   if (pathname === '/api/restaurant/auth/accept-invite' && method === 'POST') {
     try {
       const body = await parseBody(req);
+      const secret = (body.secret || body.password || body.pin || '').toString().trim();
       const acceptRes = await provisioningService.acceptOwnerInvite({
         token: body.token,
-        pin: body.pin,
-        ownerName: body.name,
+        pin: secret,
+        secret,
+        ownerName: body.name || body.ownerName,
       });
       sendJson(res, 200, acceptRes);
     } catch (err: any) {
@@ -1068,66 +1109,208 @@ const server = http.createServer(async (req, res) => {
     }
   }
 
-  // --- AUTHENTICATION & CREDENTIAL MANAGEMENT ---
-  if ((pathname === '/api/restaurant/auth/staff-token' || pathname === '/api/restaurant/auth/token' || pathname === '/api/restaurant/auth/api-token' || pathname === '/api/restaurant/auth/login' || pathname === '/api/restaurant/auth/staff') && method === 'POST') {
+  // --- AUTHENTICATION & CREDENTIAL MANAGEMENT (TENANT-SCOPED) ---
+  if (
+    (pathname === '/api/restaurant/auth/staff-token' ||
+      pathname === '/api/restaurant/auth/token' ||
+      pathname === '/api/restaurant/auth/api-token' ||
+      pathname === '/api/restaurant/auth/login' ||
+      pathname === '/api/restaurant/auth/staff') &&
+    method === 'POST'
+  ) {
     const body = await parseBody(req);
-    const pin = body.pin || '';
-    const requestedBranchId = body.branchId || currentBranch.id;
-    const clientIp = (req.headers['x-forwarded-for'] as string) || req.socket.remoteAddress || '127.0.0.1';
+    const clientIp = resolveClientIp(req);
+    const tenantId = tenantContext.tenantId;
 
-    // Authenticate PIN against server-authoritative staff directory with brute-force lockout
-    const authResult = authenticateStaffByPin(pin, {
-      branchId: requestedBranchId,
-      staffId: body.staffId,
-      clientIp,
-    });
+    // Staff identifier extraction: staffId, email, phone, or identifier
+    const identifier = (
+      body.identifier ||
+      body.staffId ||
+      body.username ||
+      body.email ||
+      body.phone ||
+      ''
+    ).toString().trim();
 
-    if (authResult.isLocked) {
-      await repo.appendEvent(
-        'STAFF_AUTH_LOCKED',
-        'auth-gateway',
-        requestedBranchId,
-        { clientIp, staffId: body.staffId }
-      );
+    // Secret extraction: secret, password, or pin
+    const secret = (
+      body.secret !== undefined
+        ? body.secret
+        : body.password !== undefined
+        ? body.password
+        : body.pin !== undefined
+        ? body.pin
+        : ''
+    ).toString().trim();
+
+    // Item 1 requirement: "Do not search all staff by PIN alone."
+    if (!identifier) {
+      sendJson(res, 400, {
+        error: 'IDENTIFIER_REQUIRED',
+        code: 'IDENTIFIER_REQUIRED',
+        message: 'Staff identifier (staffId, email, or phone) is required. Global PIN search is disabled.',
+      });
+      return;
+    }
+
+    if (!secret) {
+      sendJson(res, 400, {
+        error: 'SECRET_REQUIRED',
+        code: 'SECRET_REQUIRED',
+        message: 'Staff secret or password is required.',
+      });
+      return;
+    }
+
+    // 1. Check lockout before searching
+    const lockout = checkStaffLockout(tenantId, identifier, clientIp);
+    if (lockout.isLocked) {
+      await repo.appendEvent('STAFF_AUTH_LOCKED', 'auth-gateway', currentBranch?.id || '*', {
+        clientIp,
+        identifier,
+      });
       sendJson(res, 429, {
         error: 'TOO_MANY_FAILED_ATTEMPTS',
         code: 'TOO_MANY_FAILED_ATTEMPTS',
-        message: authResult.error || 'Too many failed PIN attempts. Account temporarily locked.',
+        message: lockout.error || 'Too many failed login attempts. Account temporarily locked.',
       });
       return;
     }
 
-    if (!authResult.success || !authResult.member) {
-      await repo.appendEvent(
-        'STAFF_AUTH_FAILED',
-        'auth-gateway',
-        requestedBranchId,
-        { clientIp, staffId: body.staffId, reason: authResult.error }
-      );
+    // 2. Look up staff strictly within tenant repository
+    const member = await repo.getStaffMemberByIdentifier(identifier);
+    if (!member) {
+      const fail = recordFailedStaffAttempt(tenantId, identifier, clientIp);
+      await repo.appendEvent('STAFF_AUTH_FAILED', 'auth-gateway', currentBranch?.id || '*', {
+        clientIp,
+        identifier,
+        reason: 'STAFF_NOT_FOUND',
+      });
+      if (fail.isLocked) {
+        sendJson(res, 429, {
+          error: 'TOO_MANY_FAILED_ATTEMPTS',
+          code: 'TOO_MANY_FAILED_ATTEMPTS',
+          message: fail.error,
+        });
+        return;
+      }
       sendJson(res, 401, {
         error: 'INVALID_CREDENTIALS',
         code: 'INVALID_CREDENTIALS',
-        message: 'Invalid staff authentication PIN or credential.',
+        message: 'Invalid staff identifier or secret.',
       });
       return;
     }
 
-    // Role and branch are derived authoritatively from server directory record
-    const member = authResult.member;
+    // 3. Status check
+    if (member.status !== 'ACTIVE') {
+      sendJson(res, 401, {
+        error: 'ACCOUNT_REVOKED',
+        code: 'ACCOUNT_REVOKED',
+        message: 'Staff account has been revoked or suspended.',
+      });
+      return;
+    }
+
+    // 4. Role & Secret strength enforcement
+    const isHighPrivilege = member.role === 'OWNER' || member.role === 'ADMIN' || member.role === 'MANAGER';
+    if (isHighPrivilege) {
+      // Owner/Manager require a stronger secret (>= 8 chars password or PIN + second factor)
+      if (secret.length < 8) {
+        const secondFactor =
+          body.secondFactor ||
+          body.mfaCode ||
+          body.totp ||
+          body.deviceToken ||
+          (req.headers['x-second-factor'] as string) ||
+          (req.headers['x-device-token'] as string);
+        if (!secondFactor) {
+          sendJson(res, 400, {
+            error: 'STRONG_SECRET_REQUIRED',
+            code: 'STRONG_SECRET_REQUIRED',
+            message:
+              'Owner and Manager roles require a password of at least 8 characters or a PIN paired with a verified second factor.',
+          });
+          return;
+        }
+      }
+    } else {
+      // Floor / kitchen roles (SERVER, OPERATIONS, POS, CHEF)
+      // "floor/kitchen roles may keep short PINs only when the device is enrolled to the tenant and branch (device token), not from the open internet."
+      if (secret.length < 8) {
+        const deviceToken = body.deviceToken || (req.headers['x-device-token'] as string);
+        if (!deviceToken) {
+          sendJson(res, 403, {
+            error: 'DEVICE_ENROLLMENT_REQUIRED',
+            code: 'DEVICE_ENROLLMENT_REQUIRED',
+            message:
+              'Short PIN login for floor and kitchen roles requires an enrolled device token.',
+          });
+          return;
+        }
+        const verifyDev = verifyDeviceToken(deviceToken, tenantId, member.branchId);
+        if (!verifyDev.valid) {
+          sendJson(res, 403, {
+            error: 'INVALID_DEVICE_TOKEN',
+            code: 'INVALID_DEVICE_TOKEN',
+            message: `Invalid device token for tenant/branch: ${verifyDev.error}`,
+          });
+          return;
+        }
+      }
+    }
+
+    // 5. Cryptographic secret verification (scrypt slow hash with timing-safe comparison)
+    const verification = verifyStaffSecret(secret, member.pinHash, member.salt);
+    if (!verification.valid) {
+      const fail = recordFailedStaffAttempt(tenantId, member.id, clientIp);
+      await repo.appendEvent('STAFF_AUTH_FAILED', 'auth-gateway', member.branchId, {
+        clientIp,
+        staffId: member.id,
+        reason: 'SECRET_MISMATCH',
+      });
+      if (fail.isLocked) {
+        sendJson(res, 429, {
+          error: 'TOO_MANY_FAILED_ATTEMPTS',
+          code: 'TOO_MANY_FAILED_ATTEMPTS',
+          message: fail.error,
+        });
+        return;
+      }
+      sendJson(res, 401, {
+        error: 'INVALID_CREDENTIALS',
+        code: 'INVALID_CREDENTIALS',
+        message: 'Invalid staff authentication secret.',
+      });
+      return;
+    }
+
+    // 6. Reset failed counter on success
+    recordSuccessfulStaffAttempt(tenantId, member.id, clientIp);
+
+    // 7. Transparent migration path: re-hash on login if using legacy hash
+    if (verification.needsRehash) {
+      const updatedHash = hashStaffSecretSync(secret, member.salt);
+      await repo.updateStaffMemberSecret(member.id, updatedHash, member.salt);
+    }
+
+    // 8. Issue strictly tenant-bound staff token
     const token = issueStaffToken({
       sub: member.id,
       name: member.name,
       role: member.role,
+      tenantId: tenantContext.tenantId, // STRICTLY BOUND
       branchId: member.branchId,
       station: member.station,
+      permissions: member.permissions as string[] | undefined,
+      expiresInSeconds: 3600, // Short expiry (1 hour)
     });
 
-    await repo.appendEvent(
-      'STAFF_TOKEN_ISSUED',
-      'auth-gateway',
-      member.branchId,
-      { staffId: member.id, role: member.role }
-    );
+    await repo.appendEvent('STAFF_TOKEN_ISSUED', 'auth-gateway', member.branchId, {
+      staffId: member.id,
+      role: member.role,
+      tenantId: tenantContext.tenantId,
+    });
 
     const isExplicitApiFlow =
       pathname === '/api/restaurant/auth/token' ||
@@ -1139,13 +1322,11 @@ const server = http.createServer(async (req, res) => {
       parsedUrl.query.flow === 'bearer';
 
     if (!isExplicitApiFlow) {
-      // BROWSER SESSION LOGIN:
-      // Sets HttpOnly cookie, returns ONLY non-secret metadata (NO raw token in JSON)
       const isHttps = Boolean((req.socket as any)?.encrypted || req.headers['x-forwarded-proto'] === 'https');
       const secureFlag = isHttps ? '; Secure' : '';
       res.setHeader(
         'Set-Cookie',
-        `orb_staff_token=${encodeURIComponent(token)}; Path=/; HttpOnly; SameSite=Lax${secureFlag}; Max-Age=28800`
+        `orb_staff_token=${encodeURIComponent(token)}; Path=/; HttpOnly; SameSite=Lax${secureFlag}; Max-Age=3600`
       );
 
       sendJson(res, 200, {
@@ -1156,13 +1337,13 @@ const server = http.createServer(async (req, res) => {
           role: member.role,
           station: member.station,
           branchId: member.branchId,
-          expiresInSeconds: 8 * 3600,
-          expiresAt: new Date(Date.now() + 8 * 3600 * 1000).toISOString(),
+          tenantId: tenantContext.tenantId,
+          expiresInSeconds: 3600,
+          expiresAt: new Date(Date.now() + 3600 * 1000).toISOString(),
         },
       });
       return;
     } else {
-      // EXPLICIT MACHINE / API AUTHENTICATION CONTRACT
       sendJson(res, 200, {
         success: true,
         data: {
@@ -1173,82 +1354,44 @@ const server = http.createServer(async (req, res) => {
           role: member.role,
           station: member.station,
           branchId: member.branchId,
-          expiresInSeconds: 8 * 3600,
-          expiresAt: new Date(Date.now() + 8 * 3600 * 1000).toISOString(),
+          tenantId: tenantContext.tenantId,
+          expiresInSeconds: 3600,
+          expiresAt: new Date(Date.now() + 3600 * 1000).toISOString(),
         },
       });
       return;
     }
   }
 
-  // --- DEDICATED MACHINE / API TOKEN ENDPOINT ---
-  if (
-    (pathname === '/api/restaurant/auth/token' || pathname === '/api/restaurant/auth/api-token') &&
-    method === 'POST'
-  ) {
+  // --- DEVICE ENROLLMENT ENDPOINT ---
+  if (pathname === '/api/restaurant/auth/device-enroll' && method === 'POST') {
+    const identity = requestIdentity;
+    if (
+      identity.type !== 'ADMIN' &&
+      identity.role !== 'MANAGER' &&
+      identity.role !== 'OWNER' &&
+      !verifyPlatformAuth(req)
+    ) {
+      sendJson(res, 403, {
+        error: 'FORBIDDEN',
+        message: 'Manager or Owner credentials required to enroll physical devices.',
+      });
+      return;
+    }
     const body = await parseBody(req);
-    const clientIp = (req.headers['x-forwarded-for'] as string) || req.socket.remoteAddress || '127.0.0.1';
-    const requestedBranchId = body.branchId;
-
-    const authResult = authenticateStaffByPin(body.pin, {
-      branchId: requestedBranchId,
-      staffId: body.staffId,
-      clientIp,
+    const targetBranch = body.branchId || identity.branchId || currentBranch?.id || '*';
+    const deviceToken = issueDeviceToken({
+      tenantId: tenantContext.tenantId,
+      branchId: targetBranch,
+      deviceId: body.deviceId,
     });
-
-    if (authResult.isLocked) {
-      sendJson(res, 429, {
-        error: 'ACCOUNT_LOCKED',
-        code: 'TOO_MANY_FAILED_ATTEMPTS',
-        message: authResult.error || 'Account locked due to consecutive failed attempts.',
-      });
-      return;
-    }
-
-    if (!authResult.success || !authResult.member) {
-      await repo.appendEvent(
-        'STAFF_AUTH_FAILED',
-        'auth-gateway',
-        requestedBranchId || '*',
-        { clientIp, staffId: body.staffId, reason: authResult.error }
-      );
-      sendJson(res, 401, {
-        error: 'INVALID_CREDENTIALS',
-        code: 'INVALID_CREDENTIALS',
-        message: 'Invalid staff authentication PIN or credential.',
-      });
-      return;
-    }
-
-    const member = authResult.member;
-    const token = issueStaffToken({
-      sub: member.id,
-      name: member.name,
-      role: member.role,
-      branchId: member.branchId,
-      station: member.station,
-    });
-
-    await repo.appendEvent(
-      'STAFF_TOKEN_ISSUED',
-      'auth-gateway',
-      member.branchId,
-      { staffId: member.id, role: member.role, type: 'API_BEARER' }
-    );
-
-    // Explicit API endpoint: does NOT set an HttpOnly session cookie, returns Bearer token in JSON
     sendJson(res, 200, {
       success: true,
       data: {
-        token,
-        tokenType: 'Bearer',
-        staffId: member.id,
-        name: member.name,
-        role: member.role,
-        station: member.station,
-        branchId: member.branchId,
-        expiresInSeconds: 8 * 3600,
-        expiresAt: new Date(Date.now() + 8 * 3600 * 1000).toISOString(),
+        deviceToken,
+        tenantId: tenantContext.tenantId,
+        branchId: targetBranch,
+        deviceId: body.deviceId,
       },
     });
     return;
@@ -1339,7 +1482,10 @@ const server = http.createServer(async (req, res) => {
     }
 
     const queryBranch = (parsedUrl.query.branchId as string) || (identity.branchId !== '*' ? identity.branchId : undefined);
-    const staffList = getPublicStaffList(queryBranch);
+    const members = await repo.getStaffMembers();
+    const staffList = members
+      .filter((m) => !queryBranch || queryBranch === '*' || m.branchId === '*' || m.branchId === queryBranch)
+      .map(({ salt, pinHash, ...safe }) => safe);
     sendJson(res, 200, { success: true, data: staffList });
     return;
   }
@@ -1360,7 +1506,7 @@ const server = http.createServer(async (req, res) => {
       return;
     }
 
-    if (identity.role !== 'MANAGER' && identity.role !== 'ADMIN' && identity.type !== 'ADMIN') {
+    if (identity.role !== 'MANAGER' && identity.role !== 'ADMIN' && identity.role !== 'OWNER' && identity.type !== 'ADMIN') {
       sendJson(res, 403, {
         error: 'FORBIDDEN',
         code: 'FORBIDDEN',
@@ -1382,43 +1528,51 @@ const server = http.createServer(async (req, res) => {
       return;
     }
 
-    // Privilege escalation check: only ADMIN can assign ADMIN role
-    if (body.role === 'ADMIN' && identity.role !== 'ADMIN') {
+    // Privilege escalation check: only ADMIN/OWNER can assign ADMIN role
+    if (body.role === 'ADMIN' && identity.role !== 'ADMIN' && identity.role !== 'OWNER') {
       sendJson(res, 403, {
         error: 'PRIVILEGE_ESCALATION',
         code: 'PRIVILEGE_ESCALATION',
-        message: 'Only platform administrators can provision the ADMIN role.',
+        message: 'Only platform administrators or owners can provision the ADMIN role.',
       });
       return;
     }
 
-    if (!body.name || !body.pin || !body.role) {
+    if (!body.name || (!body.pin && !body.secret) || !body.role) {
       sendJson(res, 400, {
         error: 'VALIDATION_ERROR',
         code: 'VALIDATION_ERROR',
-        message: 'Name, role, and PIN are required.',
+        message: 'Name, role, and PIN/secret are required.',
       });
       return;
     }
 
     try {
-      const created = createStaffMember({
-        name: body.name,
+      const id = `stf_${body.role.toLowerCase()}_${targetBranchId.replace('branch_', '')}_${Date.now().toString(36)}`;
+      const salt = `salt_${targetBranchId}_${crypto.randomBytes(8).toString('hex')}`;
+      const pinHash = hashStaffSecretSync(body.secret || body.pin, salt);
+      const member = {
+        id,
+        name: body.name.trim(),
         role: body.role,
         branchId: targetBranchId,
         station: body.station,
-        pin: body.pin,
+        salt,
+        pinHash,
+        status: 'ACTIVE' as const,
         permissions: body.permissions,
-      });
+      };
+      await repo.saveStaffMember(member);
 
       await runtimeController.emitAudit('STAFF_MEMBER_CREATED', identity.id, {
-        staffId: created.id,
-        role: created.role,
-        branchId: created.branchId,
-        station: created.station,
+        staffId: member.id,
+        role: member.role,
+        branchId: member.branchId,
+        station: member.station,
       });
 
-      sendJson(res, 201, { success: true, data: created });
+      const { salt: _s, pinHash: _p, ...safe } = member;
+      sendJson(res, 201, { success: true, data: safe });
       return;
     } catch (err: any) {
       sendJson(res, 400, { error: 'VALIDATION_ERROR', message: err.message });
@@ -1442,13 +1596,13 @@ const server = http.createServer(async (req, res) => {
       return;
     }
 
-    if (identity.role !== 'MANAGER' && identity.role !== 'ADMIN' && identity.type !== 'ADMIN') {
+    if (identity.role !== 'MANAGER' && identity.role !== 'ADMIN' && identity.role !== 'OWNER' && identity.type !== 'ADMIN') {
       sendJson(res, 403, { error: 'FORBIDDEN', code: 'FORBIDDEN', message: 'Manager credentials required.' });
       return;
     }
 
     const staffId = pathname.split('/')[4];
-    const targetMember = getStaffMember(staffId);
+    const targetMember = await repo.getStaffMember(staffId);
     if (!targetMember) {
       sendJson(res, 404, { error: 'STAFF_NOT_FOUND', code: 'STAFF_NOT_FOUND', message: `Staff member ${staffId} not found.` });
       return;
@@ -1466,22 +1620,34 @@ const server = http.createServer(async (req, res) => {
 
     const body = await parseBody(req);
     // Privilege escalation guard
-    if (body.role === 'ADMIN' && identity.role !== 'ADMIN') {
+    if (body.role === 'ADMIN' && identity.role !== 'ADMIN' && identity.role !== 'OWNER') {
       sendJson(res, 403, {
         error: 'PRIVILEGE_ESCALATION',
         code: 'PRIVILEGE_ESCALATION',
-        message: 'Only platform administrators can grant the ADMIN role.',
+        message: 'Only platform administrators or owners can grant the ADMIN role.',
       });
       return;
     }
 
-    const updated = updateStaffMember(staffId, body);
+    if (body.name !== undefined) targetMember.name = body.name.trim();
+    if (body.role !== undefined) targetMember.role = body.role;
+    if (body.branchId !== undefined) targetMember.branchId = body.branchId;
+    if (body.station !== undefined) targetMember.station = body.station;
+    if (body.status !== undefined) targetMember.status = body.status;
+    if (body.permissions !== undefined) targetMember.permissions = body.permissions;
+    if (body.pin || body.secret) {
+      targetMember.salt = `salt_${targetMember.branchId}_${crypto.randomBytes(8).toString('hex')}`;
+      targetMember.pinHash = hashStaffSecretSync(body.secret || body.pin, targetMember.salt);
+    }
+
+    await repo.saveStaffMember(targetMember);
     await runtimeController.emitAudit('STAFF_MEMBER_UPDATED', identity.id, {
       staffId,
       updates: { role: body.role, station: body.station, branchId: body.branchId, status: body.status },
     });
 
-    sendJson(res, 200, { success: true, data: updated });
+    const { salt: _s, pinHash: _p, ...safe } = targetMember;
+    sendJson(res, 200, { success: true, data: safe });
     return;
   }
 
@@ -1498,7 +1664,7 @@ const server = http.createServer(async (req, res) => {
     }
 
     const staffId = pathname.split('/')[4];
-    const targetMember = getStaffMember(staffId);
+    const targetMember = await repo.getStaffMember(staffId);
     if (!targetMember) {
       sendJson(res, 404, { error: 'STAFF_NOT_FOUND', code: 'STAFF_NOT_FOUND', message: `Staff member ${staffId} not found.` });
       return;
@@ -6516,7 +6682,8 @@ const server = http.createServer(async (req, res) => {
   // --- 10b. STAFF & SECURITY WORKSPACE (/staff, /operations/staff) ---
   if (pathname === '/staff' || pathname === '/operations/staff') {
     const tenantBrand = await repo.getTenantBrand();
-    const html = renderShell(renderStaffWorkspace(branches, currentBranch.id), {
+    const staffMembers = await repo.getStaffMembers();
+    const html = renderShell(renderStaffWorkspace(branches, currentBranch.id, staffMembers), {
       title: 'Staff Directory & RBAC Security',
       activeNav: 'staff',
       restaurantName: tenantBrand.restaurantName,
@@ -6656,8 +6823,9 @@ const server = http.createServer(async (req, res) => {
   // --- 15. STAFF DIRECTORY & SECURITY (/staff) ---
   if (pathname === '/staff') {
     const tenantBrand = await repo.getTenantBrand();
+    const staffMembers = await repo.getStaffMembers();
     const html = renderShell(
-      renderStaffWorkspace(branches, currentBranch.id),
+      renderStaffWorkspace(branches, currentBranch.id, staffMembers),
       {
         title: 'Staff Directory & RBAC Security',
         activeNav: 'staff',
@@ -6801,13 +6969,16 @@ const server = http.createServer(async (req, res) => {
   // 404
   sendJson(res, 404, { error: `Route not found: ${pathname}` });
   });
-});
+}
+
+export const server = http.createServer(handleRequest);
 
 if (process.env.NODE_ENV === 'production' && process.env.ALLOW_DANGEROUS_RESET === 'true') {
   console.error('🚨 [SECURITY FATAL] Dangerous reset flags cannot be enabled in production mode! Halting startup.');
   process.exit(1);
 }
 
+if (process.env.RESTAURANTOS_DISABLE_AUTOLISTEN !== 'true') {
 server.listen(PORT, async () => {
   if (postgresStore?.prisma) {
     try {
@@ -6844,3 +7015,4 @@ server.listen(PORT, async () => {
 
   await runtimeController.start();
 });
+}

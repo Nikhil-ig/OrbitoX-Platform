@@ -506,6 +506,30 @@ export class RestaurantRuntimeStore {
     return member;
   }
 
+  public getStaffMemberByIdentifier(identifier: string): StaffDirectoryMember | undefined {
+    const list = this.getStaffMembers();
+    const trimmed = identifier.trim().toLowerCase();
+    return list.find((m) => {
+      if (m.id.toLowerCase() === trimmed) return true;
+      if (m.name.toLowerCase() === trimmed) return true;
+      const perms = m.permissions as any;
+      if (perms && typeof perms === 'object') {
+        if (perms.email && String(perms.email).toLowerCase() === trimmed) return true;
+        if (perms.phone && String(perms.phone) === trimmed) return true;
+      }
+      return false;
+    });
+  }
+
+  public updateStaffMemberSecret(id: string, hash: string, salt: string): void {
+    const member = this.getStaffMembers().find((m) => m.id === id);
+    if (member) {
+      member.pinHash = hash;
+      member.salt = salt;
+      this.flushSync();
+    }
+  }
+
   private flushSync(): void {
     const uniqueSuffix = `${Date.now()}_${process.pid}_${crypto.randomBytes(8).toString('hex')}`;
     const tmpPath = `${this.filePath}.tmp.${uniqueSuffix}`;

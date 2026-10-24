@@ -24,7 +24,7 @@ export interface StaffClaims {
   sub: string;
   name?: string;
   role: StaffRole;
-  tenantId?: string;
+  tenantId: string;
   branchId: string;
   station?: string;
   permissions: string[];
@@ -55,7 +55,7 @@ export interface StaffDirectoryMember {
   station?: string;
   salt: string;
   pinHash: string;
-  status: 'ACTIVE' | 'SUSPENDED' | 'PENDING_INVITE';
+  status: 'ACTIVE' | 'SUSPENDED' | 'PENDING_INVITE' | 'REVOKED';
   permissions?: string[];
 }
 
@@ -68,8 +68,13 @@ const revokedStaffTokenJtis = new Set<string>();
 const revokedStaffTokens = new Set<string>();
 const revokedStaffIds = new Set<string>();
 
-// Rate-limiting tracker for PIN verification: identifier -> { count, lockedUntil }
-const pinAttemptTracker = new Map<string, { count: number; lockedUntil?: number }>();
+// Rate-limiting and brute-force lockout tracker:
+// Keys: `staff:${tenantId}:${staffId}` and `ip:${tenantId}:${clientIp}`
+interface AttemptRecord {
+  count: number;
+  lockedUntil?: number;
+}
+const authAttemptTracker = new Map<string, AttemptRecord>();
 
 /**
  * Resolves or generates a machine signing secret stored in data/.staff_signing_secret
@@ -197,100 +202,180 @@ export function persistDurableRevocations(): void {
 loadDurableRevocations();
 
 /**
- * Helper to compute salted PIN hash.
+ * Slow cryptographic staff secret hashing using scrypt with per-user salt.
+ * Resistant to GPU/ASIC brute force attacks.
  */
-export function hashPin(pin: string, salt: string): string {
+export function hashStaffSecretSync(secret: string, salt: string): string {
+  const hash = crypto.scryptSync(secret, salt, 32, { N: 16384, r: 8, p: 1 });
+  return `scrypt:${hash.toString('hex')}`;
+}
+
+/**
+ * Legacy HMAC-SHA256 PIN hashing (kept for migration / backwards compatibility).
+ */
+export function hashLegacyPin(pin: string, salt: string): string {
   return crypto.createHmac('sha256', salt).update(`pin_salt_${pin}`).digest('hex');
 }
 
 /**
- * Server-Authoritative Staff Directory with Salted Hashes.
- * Staff roles and branch affiliations are strictly derived from these records.
- *
- * In production mode:
- * - Default static fixture accounts are STRICTLY QUARANTINED and never loaded.
- * - Staff accounts must be dynamically provisioned and loaded from persistent store.
- * - Default PINs (8899, 1122, 5566, 0000, etc.) are rejected in production.
- *
- * Rotation / Invalidation Policy:
- * - To rotate a PIN: managers or administrators invoke PATCH /api/restaurant/staff/:id with { pin: '<new_pin>' }.
- * - To invalidate a staff credential: POST /api/restaurant/staff/:id/revoke immediately terminates active sessions.
+ * Primary PIN/secret hashing function — uses slow scrypt.
  */
-const SALT_LUDHIANA = 'salt_ldh_8392_sec';
-const SALT_CHANDIGARH = 'salt_chd_4910_sec';
-const SALT_DELHI = 'salt_del_7214_sec';
-const SALT_ADMIN = 'salt_adm_9918_sec';
+export function hashPin(pin: string, salt: string): string {
+  return hashStaffSecretSync(pin, salt);
+}
 
-export const DEV_TEST_STAFF_FIXTURES: StaffDirectoryMember[] = [
-  {
-    id: 'stf_mgr_ldh_01',
-    name: 'Sukhwinder Sandhu',
-    role: 'MANAGER',
-    branchId: 'branch_ldh',
-    salt: SALT_LUDHIANA,
-    pinHash: hashPin('8899', SALT_LUDHIANA),
-    status: 'ACTIVE',
-  },
-  {
-    id: 'stf_ops_ldh_01',
-    name: 'Amanpreet Kaur',
-    role: 'OPERATIONS',
-    branchId: 'branch_ldh',
-    salt: SALT_LUDHIANA,
-    pinHash: hashPin('1122', SALT_LUDHIANA),
-    status: 'ACTIVE',
-  },
-  {
-    id: 'stf_pos_ldh_01',
-    name: 'Rohan Verma',
-    role: 'POS',
-    branchId: 'branch_ldh',
-    salt: SALT_LUDHIANA,
-    pinHash: hashPin('3344', SALT_LUDHIANA),
-    status: 'ACTIVE',
-  },
-  {
-    id: 'stf_chef_ldh_01',
-    name: 'Master Chef Baljit',
-    role: 'CHEF',
-    branchId: 'branch_ldh',
-    station: 'TANDOOR',
-    salt: SALT_LUDHIANA,
-    pinHash: hashPin('5566', SALT_LUDHIANA),
-    status: 'ACTIVE',
-  },
-  {
-    id: 'stf_mgr_chd_01',
-    name: 'Karan Kapoor',
-    role: 'MANAGER',
-    branchId: 'branch_chd',
-    salt: SALT_CHANDIGARH,
-    pinHash: hashPin('9900', SALT_CHANDIGARH),
-    status: 'ACTIVE',
-  },
-  {
-    id: 'stf_mgr_del_01',
-    name: 'Rajesh Mehra',
-    role: 'MANAGER',
-    branchId: 'branch_del',
-    salt: SALT_DELHI,
-    pinHash: hashPin('7788', SALT_DELHI),
-    status: 'ACTIVE',
-  },
-  {
-    id: 'stf_admin_01',
-    name: 'Head of Culinary Operations',
-    role: 'ADMIN',
-    branchId: '*',
-    salt: SALT_ADMIN,
-    pinHash: hashPin('0000', SALT_ADMIN),
-    status: 'ACTIVE',
-  },
-];
+/**
+ * Verifies candidate secret against stored hash.
+ * Supports transparent upgrade from legacy HMAC-SHA256 to slow scrypt.
+ */
+export function verifyStaffSecret(
+  candidateSecret: string,
+  storedHash: string,
+  salt: string
+): { valid: boolean; needsRehash: boolean } {
+  if (!candidateSecret || !storedHash || !salt) {
+    return { valid: false, needsRehash: false };
+  }
 
-// In production, STAFF_DIRECTORY starts empty and is populated strictly from persisted/provisioned store records.
-export const STAFF_DIRECTORY: StaffDirectoryMember[] =
-  process.env.NODE_ENV === 'production' ? [] : [...DEV_TEST_STAFF_FIXTURES];
+  // Modern slow scrypt hash
+  if (storedHash.startsWith('scrypt:')) {
+    const candidate = hashStaffSecretSync(candidateSecret, salt);
+    const candidateBuf = Buffer.from(candidate);
+    const storedBuf = Buffer.from(storedHash);
+    if (candidateBuf.length === storedBuf.length && crypto.timingSafeEqual(candidateBuf, storedBuf)) {
+      return { valid: true, needsRehash: false };
+    }
+    return { valid: false, needsRehash: false };
+  }
+
+  // Legacy HMAC-SHA256 hash path -> signals re-hash required on successful verification
+  try {
+    const legacyCandidate = hashLegacyPin(candidateSecret, salt);
+    const candidateBuf = Buffer.from(legacyCandidate, 'hex');
+    const storedBuf = Buffer.from(storedHash, 'hex');
+    if (candidateBuf.length === storedBuf.length && crypto.timingSafeEqual(candidateBuf, storedBuf)) {
+      return { valid: true, needsRehash: true };
+    }
+  } catch {
+    // Non-hex or malformed
+  }
+
+  return { valid: false, needsRehash: false };
+}
+
+/**
+ * Resolves the real client IP. Only honors x-forwarded-for if the direct peer
+ * socket address matches a configured trusted proxy in TRUSTED_PROXIES.
+ */
+export function resolveClientIp(req: http.IncomingMessage): string {
+  const socketIp = req.socket?.remoteAddress || '127.0.0.1';
+  const trustedProxiesEnv = process.env.TRUSTED_PROXIES;
+  if (!trustedProxiesEnv) {
+    // No trusted proxy configured -> Ignore x-forwarded-for to prevent attacker-controlled header spoofing
+    return socketIp;
+  }
+  const trustedList = trustedProxiesEnv.split(',').map((p) => p.trim()).filter(Boolean);
+  const isTrusted = trustedList.some((t) => {
+    if (t === '*' || t === socketIp) return true;
+    if (
+      t === '127.0.0.1' &&
+      (socketIp === '127.0.0.1' || socketIp === '::ffff:127.0.0.1' || socketIp === '::1')
+    ) {
+      return true;
+    }
+    return false;
+  });
+
+  if (!isTrusted) {
+    return socketIp;
+  }
+
+  const forwarded = req.headers['x-forwarded-for'];
+  if (typeof forwarded === 'string' && forwarded.trim()) {
+    const parts = forwarded.split(',').map((p) => p.trim()).filter(Boolean);
+    return parts[0] || socketIp;
+  }
+  return socketIp;
+}
+
+/**
+ * Device enrollment token claims and signing.
+ * Allows floor/kitchen staff short PINs only on verified enrolled devices.
+ */
+export interface DeviceTokenClaims {
+  tenantId: string;
+  branchId: string;
+  deviceId: string;
+  enrolledAt: number;
+}
+
+export function issueDeviceToken(options: {
+  tenantId: string;
+  branchId: string;
+  deviceId?: string;
+}): string {
+  if (!options.tenantId) throw new Error('tenantId is required to issue device token');
+  const deviceId = options.deviceId || `dev_${crypto.randomBytes(8).toString('hex')}`;
+  const claims: DeviceTokenClaims = {
+    tenantId: options.tenantId,
+    branchId: options.branchId || '*',
+    deviceId,
+    enrolledAt: Math.floor(Date.now() / 1000),
+  };
+  const payloadBase64 = Buffer.from(JSON.stringify(claims), 'utf8').toString('base64url');
+  const secret = deriveTenantSigningSecret(options.tenantId);
+  const signature = crypto
+    .createHmac('sha256', secret)
+    .update(`orb_dev.${payloadBase64}`)
+    .digest('base64url');
+  return `orb_dev.${payloadBase64}.${signature}`;
+}
+
+export function verifyDeviceToken(
+  token: string,
+  expectedTenantId: string,
+  expectedBranchId?: string
+): { valid: boolean; claims?: DeviceTokenClaims; error?: string } {
+  if (!token || typeof token !== 'string') return { valid: false, error: 'INVALID_TOKEN' };
+  const parts = token.split('.');
+  if (parts.length !== 3 || parts[0] !== 'orb_dev') return { valid: false, error: 'INVALID_FORMAT' };
+  const [, payloadBase64, providedSig] = parts;
+  const secret = deriveTenantSigningSecret(expectedTenantId);
+  const expectedSig = crypto
+    .createHmac('sha256', secret)
+    .update(`orb_dev.${payloadBase64}`)
+    .digest('base64url');
+  const pBuf = Buffer.from(providedSig);
+  const eBuf = Buffer.from(expectedSig);
+  if (pBuf.length !== eBuf.length || !crypto.timingSafeEqual(pBuf, eBuf)) {
+    return { valid: false, error: 'INVALID_SIGNATURE' };
+  }
+  let claims: DeviceTokenClaims;
+  try {
+    claims = JSON.parse(Buffer.from(payloadBase64, 'base64url').toString('utf8'));
+  } catch {
+    return { valid: false, error: 'MALFORMED_PAYLOAD' };
+  }
+  if (claims.tenantId !== expectedTenantId) {
+    return { valid: false, error: 'TENANT_MISMATCH' };
+  }
+  if (
+    expectedBranchId &&
+    expectedBranchId !== '*' &&
+    claims.branchId !== '*' &&
+    claims.branchId !== expectedBranchId
+  ) {
+    return { valid: false, error: 'BRANCH_MISMATCH' };
+  }
+  return { valid: true, claims };
+}
+
+/**
+ * DEV_TEST_STAFF_FIXTURES removed from runtime path.
+ * Seeding occurs authoritatively through provisioning scripts.
+ */
+export const DEV_TEST_STAFF_FIXTURES: StaffDirectoryMember[] = [];
+export const STAFF_DIRECTORY: StaffDirectoryMember[] = [];
 
 type StaffPersistenceCallback = (member: StaffDirectoryMember) => void;
 let staffPersistenceCallback: StaffPersistenceCallback | null = null;
@@ -299,9 +384,6 @@ export function registerStaffPersistenceCallback(cb: StaffPersistenceCallback): 
   staffPersistenceCallback = cb;
 }
 
-/**
- * Hydrates dynamically provisioned staff members from persistent storage.
- */
 export function loadPersistedStaffMembers(members: StaffDirectoryMember[]): void {
   if (!Array.isArray(members)) return;
   for (const m of members) {
@@ -314,25 +396,16 @@ export function loadPersistedStaffMembers(members: StaffDirectoryMember[]): void
   }
 }
 
-/**
- * Returns a sanitized view of the staff directory with PIN hashes and salts stripped.
- */
 export function getPublicStaffList(branchId?: string): SanitizedStaffMember[] {
   return STAFF_DIRECTORY
     .filter((m) => !branchId || branchId === '*' || m.branchId === '*' || m.branchId === branchId)
     .map(({ salt, pinHash, ...safe }) => safe);
 }
 
-/**
- * Looks up a staff member by ID (internal use).
- */
 export function getStaffMember(id: string): StaffDirectoryMember | undefined {
   return STAFF_DIRECTORY.find((m) => m.id === id);
 }
 
-/**
- * Creates and registers a new staff member with salted SHA-256 PIN hash.
- */
 export function createStaffMember(data: {
   name: string;
   role: 'MANAGER' | 'OPERATIONS' | 'POS' | 'CHEF' | 'ADMIN';
@@ -370,9 +443,6 @@ export function createStaffMember(data: {
   return safe;
 }
 
-/**
- * Authoritatively updates staff assignment, station permissions, status, or PIN.
- */
 export function updateStaffMember(
   id: string,
   updates: Partial<{
@@ -409,9 +479,6 @@ export function updateStaffMember(
   return safe;
 }
 
-/**
- * Revokes all tokens associated with a staff member's ID.
- */
 export function revokeStaffMemberTokens(staffId: string): boolean {
   if (!staffId) return false;
   revokedStaffIds.add(staffId);
@@ -419,11 +486,93 @@ export function revokeStaffMemberTokens(staffId: string): boolean {
   return true;
 }
 
-/**
- * Checks if a staff member's credentials have been revoked.
- */
 export function isStaffMemberRevoked(staffId: string): boolean {
   return revokedStaffIds.has(staffId);
+}
+
+/**
+ * Checks lockout for a staff account and client IP within a tenant.
+ */
+export function checkStaffLockout(
+  tenantId: string,
+  staffId: string,
+  clientIp: string
+): { isLocked: boolean; error?: string; remainingSeconds?: number } {
+  const now = Date.now();
+  const staffKey = `staff:${tenantId}:${staffId}`;
+  const staffRec = authAttemptTracker.get(staffKey);
+  if (staffRec?.lockedUntil && staffRec.lockedUntil > now) {
+    const remainingSeconds = Math.ceil((staffRec.lockedUntil - now) / 1000);
+    return {
+      isLocked: true,
+      remainingSeconds,
+      error: `Staff account locked due to too many failed attempts. Try again in ${remainingSeconds}s.`,
+    };
+  }
+
+  const ipKey = `ip:${tenantId}:${clientIp}`;
+  const ipRec = authAttemptTracker.get(ipKey);
+  if (ipRec?.lockedUntil && ipRec.lockedUntil > now) {
+    const remainingSeconds = Math.ceil((ipRec.lockedUntil - now) / 1000);
+    return {
+      isLocked: true,
+      remainingSeconds,
+      error: `Client IP temporarily throttled due to excessive failed attempts. Try again in ${remainingSeconds}s.`,
+    };
+  }
+
+  return { isLocked: false };
+}
+
+/**
+ * Records failed authentication attempt.
+ * 5 consecutive failed attempts lock that specific staff member for 15 minutes.
+ */
+export function recordFailedStaffAttempt(
+  tenantId: string,
+  staffId: string,
+  clientIp: string
+): { isLocked: boolean; error?: string; remainingSeconds?: number } {
+  const now = Date.now();
+  const staffKey = `staff:${tenantId}:${staffId}`;
+  const staffRec = authAttemptTracker.get(staffKey) || { count: 0 };
+  staffRec.count += 1;
+  let isLocked = false;
+  let remainingSeconds = 0;
+  if (staffRec.count >= 5) {
+    staffRec.lockedUntil = now + 15 * 60 * 1000;
+    isLocked = true;
+    remainingSeconds = 15 * 60;
+  }
+  authAttemptTracker.set(staffKey, staffRec);
+
+  const ipKey = `ip:${tenantId}:${clientIp}`;
+  const ipRec = authAttemptTracker.get(ipKey) || { count: 0 };
+  ipRec.count += 1;
+  if (ipRec.count >= 20) {
+    ipRec.lockedUntil = now + 15 * 60 * 1000;
+  }
+  authAttemptTracker.set(ipKey, ipRec);
+
+  if (isLocked) {
+    return {
+      isLocked: true,
+      remainingSeconds,
+      error: `Account locked due to 5 consecutive failed attempts. Try again in ${remainingSeconds}s.`,
+    };
+  }
+  return { isLocked: false };
+}
+
+/**
+ * Resets failed counter on successful staff login.
+ */
+export function recordSuccessfulStaffAttempt(
+  tenantId: string,
+  staffId: string,
+  clientIp: string
+): void {
+  authAttemptTracker.delete(`staff:${tenantId}:${staffId}`);
 }
 
 /**
@@ -431,16 +580,14 @@ export function isStaffMemberRevoked(staffId: string): boolean {
  */
 export function resetStaffLockout(key?: string): void {
   if (key) {
-    pinAttemptTracker.delete(key);
+    authAttemptTracker.delete(key);
   } else {
-    pinAttemptTracker.clear();
+    authAttemptTracker.clear();
   }
 }
 
 /**
- * Authenticates a staff PIN against the server-authoritative staff directory.
- * Enforces rate-limiting (5 failures -> 15 min lock) and timing-safe equality.
- * In production mode, rejects hardcoded development fixtures and requires provisioned records.
+ * Authenticates a staff PIN against directory (internal/legacy fallback).
  */
 export function authenticateStaffByPin(
   pin: string,
@@ -448,6 +595,7 @@ export function authenticateStaffByPin(
     branchId?: string;
     staffId?: string;
     clientIp?: string;
+    tenantId?: string;
   }
 ): {
   success: boolean;
@@ -455,72 +603,44 @@ export function authenticateStaffByPin(
   error?: string;
   isLocked?: boolean;
 } {
-  const rateLimitKey = options?.clientIp || options?.staffId || 'global_auth_ip';
-  const tracker = pinAttemptTracker.get(rateLimitKey);
-  const now = Date.now();
+  const tid = options?.tenantId || 'global';
+  const sid = options?.staffId || 'unidentified';
+  const ip = options?.clientIp || '127.0.0.1';
 
-  if (tracker && tracker.lockedUntil && tracker.lockedUntil > now) {
-    const remainingSeconds = Math.ceil((tracker.lockedUntil - now) / 1000);
-    return {
-      success: false,
-      error: `TOO_MANY_FAILED_ATTEMPTS: Account locked. Try again in ${remainingSeconds}s.`,
-      isLocked: true,
-    };
+  const lockout = checkStaffLockout(tid, sid, ip);
+  if (lockout.isLocked) {
+    return { success: false, error: lockout.error, isLocked: true };
   }
 
   if (!pin || typeof pin !== 'string') {
     return { success: false, error: 'MISSING_PIN' };
   }
 
-  // In production mode, strictly fail closed if no authoritative staff accounts are provisioned
-  if (process.env.NODE_ENV === 'production' && STAFF_DIRECTORY.length === 0) {
-    return {
-      success: false,
-      error: 'NO_ACTIVE_STAFF_ACCOUNTS: Production mode requires authoritatively provisioned staff credentials.',
-    };
-  }
-
-  // Find candidate members
   let candidates = STAFF_DIRECTORY.filter((m) => m.status === 'ACTIVE');
   if (options?.staffId) {
     candidates = candidates.filter((m) => m.id === options.staffId);
   }
 
   let matchedMember: StaffDirectoryMember | undefined;
-
   for (const candidate of candidates) {
-    const candidateHash = hashPin(pin, candidate.salt);
-    const candidateBuf = Buffer.from(candidateHash, 'hex');
-    const expectedBuf = Buffer.from(candidate.pinHash, 'hex');
-
-    if (candidateBuf.length === expectedBuf.length && crypto.timingSafeEqual(candidateBuf, expectedBuf)) {
+    const verified = verifyStaffSecret(pin, candidate.pinHash, candidate.salt);
+    if (verified.valid) {
       matchedMember = candidate;
       break;
     }
   }
 
   if (matchedMember) {
-    // Reset failed counter on success
-    pinAttemptTracker.delete(rateLimitKey);
+    recordSuccessfulStaffAttempt(tid, matchedMember.id, ip);
     return { success: true, member: matchedMember };
   }
 
-  // Record failed attempt
-  const currentAttempts = (tracker?.count || 0) + 1;
-  if (currentAttempts >= 5) {
-    pinAttemptTracker.set(rateLimitKey, {
-      count: currentAttempts,
-      lockedUntil: now + 15 * 60 * 1000, // 15-minute lockout
-    });
-    return {
-      success: false,
-      error: 'TOO_MANY_FAILED_ATTEMPTS: Account locked due to 5 consecutive failed PIN attempts.',
-      isLocked: true,
-    };
-  } else {
-    pinAttemptTracker.set(rateLimitKey, { count: currentAttempts });
-    return { success: false, error: 'INVALID_CREDENTIALS', isLocked: false };
-  }
+  const fail = recordFailedStaffAttempt(tid, sid, ip);
+  return {
+    success: false,
+    error: fail.isLocked ? fail.error : 'INVALID_CREDENTIALS',
+    isLocked: fail.isLocked,
+  };
 }
 
 /**
@@ -548,7 +668,7 @@ export function issueStaffToken(
     sub: string;
     name?: string;
     role: StaffRole;
-    tenantId?: string;
+    tenantId: string;
     branchId?: string;
     station?: string;
     permissions?: string[];
@@ -556,17 +676,13 @@ export function issueStaffToken(
   },
   secret?: string
 ): string {
-  let signingSecret: string;
-  if (secret) {
-    signingSecret = secret;
-  } else if (options.tenantId) {
-    signingSecret = deriveTenantSigningSecret(options.tenantId);
-  } else {
-    signingSecret = getStaffAuthSecret();
+  if (!options.tenantId) {
+    throw new Error('tenantId is strictly required to issue staff tokens.');
   }
 
+  const signingSecret = secret || deriveTenantSigningSecret(options.tenantId);
   const now = Math.floor(Date.now() / 1000);
-  const ttl = options.expiresInSeconds ?? 8 * 60 * 60; // Default 8 hours
+  const ttl = options.expiresInSeconds ?? 60 * 60; // Default 1 hour short expiry
   const jti = `jti_${Date.now()}_${crypto.randomBytes(8).toString('hex')}`;
 
   const defaultPermissions: Record<string, string[]> = {
@@ -690,9 +806,11 @@ export function verifyStaffToken(
     return { valid: false, error: 'TOKEN_EXPIRED', claims };
   }
 
-  // 5. Enforce tenant host scoping
-  if (expectedTenantId && claims.tenantId && claims.tenantId !== expectedTenantId) {
-    return { valid: false, error: 'TENANT_MISMATCH', claims };
+  // 5. Enforce tenant host scoping strictly: token MUST have tenantId AND match expectedTenantId
+  if (expectedTenantId) {
+    if (!claims.tenantId || claims.tenantId !== expectedTenantId) {
+      return { valid: false, error: 'TENANT_MISMATCH', claims };
+    }
   }
 
   return { valid: true, claims };

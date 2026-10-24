@@ -104,7 +104,9 @@ export interface RestaurantRepository {
   // Staff & Directory
   getStaffMembers(): Promise<StaffDirectoryMember[]>;
   getStaffMember(id: string): Promise<StaffDirectoryMember | undefined>;
+  getStaffMemberByIdentifier(identifier: string): Promise<StaffDirectoryMember | undefined>;
   saveStaffMember(member: StaffDirectoryMember): Promise<void>;
+  updateStaffMemberSecret(id: string, hash: string, salt: string): Promise<void>;
   revokeStaffMember(staffId: string): Promise<boolean>;
   isStaffTokenRevoked(jti: string): Promise<boolean>;
   revokeStaffToken(token: string, reason?: string): Promise<boolean>;
@@ -1328,6 +1330,48 @@ export class PostgresRestaurantRepository implements RestaurantRepository {
     });
   }
 
+  async getStaffMemberByIdentifier(identifier: string): Promise<StaffDirectoryMember | undefined> {
+    return withTenantRlsTransaction(this.prisma, this.tenantId, async (tx: any) => {
+      const trimmed = identifier.trim();
+      let r = await tx.staffMember.findFirst({
+        where: { id: trimmed, tenantId: this.tenantId },
+      });
+      if (!r) {
+        r = await tx.staffMember.findFirst({
+          where: {
+            tenantId: this.tenantId,
+            name: { equals: trimmed, mode: 'insensitive' },
+          },
+        });
+      }
+      if (!r) {
+        const records = await tx.staffMember.findMany({
+          where: { tenantId: this.tenantId },
+        });
+        r = records.find((m: any) => {
+          const perms = m.permissions as any;
+          if (perms && typeof perms === 'object') {
+            if (perms.email && String(perms.email).toLowerCase() === trimmed.toLowerCase()) return true;
+            if (perms.phone && String(perms.phone) === trimmed) return true;
+          }
+          return false;
+        });
+      }
+      if (!r) return undefined;
+      return {
+        id: r.id,
+        name: r.name,
+        role: r.role,
+        branchId: r.branchId,
+        station: r.station || undefined,
+        status: r.status,
+        salt: r.salt,
+        pinHash: r.pinHash,
+        permissions: r.permissions || undefined,
+      };
+    });
+  }
+
   async saveStaffMember(member: StaffDirectoryMember): Promise<void> {
     return withTenantRlsTransaction(this.prisma, this.tenantId, async (tx: any) => {
       await tx.staffMember.upsert({
@@ -1354,6 +1398,15 @@ export class PostgresRestaurantRepository implements RestaurantRepository {
           pinHash: member.pinHash,
           permissions: member.permissions,
         },
+      });
+    });
+  }
+
+  async updateStaffMemberSecret(id: string, hash: string, salt: string): Promise<void> {
+    return withTenantRlsTransaction(this.prisma, this.tenantId, async (tx: any) => {
+      await tx.staffMember.updateMany({
+        where: { id, tenantId: this.tenantId },
+        data: { pinHash: hash, salt },
       });
     });
   }
@@ -2658,7 +2711,9 @@ export class JsonRestaurantRepository implements RestaurantRepository {
 
   async getStaffMembers() { return this.store.getStaffMembers(); }
   async getStaffMember(id: string) { return this.store.getStaffMembers().find((s) => s.id === id); }
+  async getStaffMemberByIdentifier(identifier: string) { return this.store.getStaffMemberByIdentifier(identifier); }
   async saveStaffMember(member: StaffDirectoryMember) { this.store.saveStaffMember(member); }
+  async updateStaffMemberSecret(id: string, hash: string, salt: string) { this.store.updateStaffMemberSecret(id, hash, salt); }
   async revokeStaffMember(staffId: string) { return this.store.revokeStaffMember(staffId); }
   async isStaffTokenRevoked(jti: string): Promise<boolean> {
     const { isStaffTokenRevoked } = await import('../domain/security');
@@ -2777,15 +2832,14 @@ const repositoryCache = new Map<string, RestaurantRepository>();
  * Factory function: obtains the authoritative repository bound to the active tenant context.
  */
 export function getTenantRepository(
-  context: ActiveTenantContext,
+  context: ActiveTenantContext | string,
   prismaClient?: PrismaClient,
   eventBusClient: RealtimeEventBus = defaultEventBus
 ): RestaurantRepository {
-  if (!context || !context.tenantId) {
+  const tenantId = typeof context === 'string' ? context : context?.tenantId;
+  if (!tenantId) {
     throw new Error('FAIL_CLOSED: Cannot obtain repository without an active tenant context.');
   }
-
-  const tenantId = context.tenantId;
 
   // JSON driver guard
   if (process.env.STORAGE_DRIVER === 'json') {
@@ -2798,13 +2852,14 @@ export function getTenantRepository(
     return repositoryCache.get(tenantId)!;
   }
 
-  if (!prismaClient) {
+  const prisma = prismaClient || (globalThis as any).__restaurantos_prisma;
+  if (!prisma) {
     throw new Error('FAIL_CLOSED: PostgreSQL PrismaClient is required for tenant repository in production.');
   }
 
   // Postgres repository instances are lightweight wrappers around (prisma, tenantId, eventBus)
   if (!repositoryCache.has(tenantId)) {
-    repositoryCache.set(tenantId, new PostgresRestaurantRepository(prismaClient, tenantId, eventBusClient));
+    repositoryCache.set(tenantId, new PostgresRestaurantRepository(prisma, tenantId, eventBusClient));
   }
   return repositoryCache.get(tenantId)!;
 }
