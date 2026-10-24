@@ -42,6 +42,7 @@ const ATTENTION_META: Record<FleetAttention, { label: string; tone: string }> = 
   OUT_OF_SYNC: { label: 'Out of sync', tone: styles.tagWarning! },
   STALE: { label: 'Late heartbeat', tone: styles.tagWarning! },
   NEVER_CONNECTED: { label: 'Never connected', tone: styles.tag! },
+  USAGE_LIMIT_EXCEEDED: { label: 'Quota exceeded', tone: styles.tagDanger! },
 };
 
 function formatAgo(timestamp: string | null | undefined): string {
