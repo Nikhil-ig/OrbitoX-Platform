@@ -181,15 +181,15 @@ async function runSafeTenancyAndRlsTestSuite() {
       'PostgreSQL RLS returns 0 rows when tenant Beta queries tenant Alpha data'
     );
 
-    // D: PLATFORM_SUPERUSER bypasses RLS
+    // D: PLATFORM_SUPERUSER no longer bypasses RLS (PR #7 verified rule)
     const platformRows = await withTenantRlsTransaction(prisma, 'PLATFORM_SUPERUSER', async (tx: any) => {
       return await tx.tableFloor.findMany({
         where: { tenantId: tenantAlpha.tenantId },
       });
     });
     assert(
-      platformRows.length === tenantAlpha.tableCount,
-      'RLS with app.tenant_id = PLATFORM_SUPERUSER successfully accesses tenant data'
+      platformRows.length === 0,
+      'PostgreSQL RLS blocks PLATFORM_SUPERUSER bypass (returns 0 rows)'
     );
   } catch (err: any) {
     console.error('⚠️ PostgreSQL RLS check error:', err.message);

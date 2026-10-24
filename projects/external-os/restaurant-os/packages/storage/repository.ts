@@ -80,6 +80,7 @@ export interface RestaurantRepository {
   // Operations: Orders, Sessions, Guests
   getOrders(tableNumber?: string, sessionId?: string, branchId?: string, status?: string): Promise<RestaurantOrder[]>;
   getOrder(orderId: string): Promise<RestaurantOrder | undefined>;
+  getOrderByOrderToken(orderToken: string): Promise<RestaurantOrder | undefined>;
   addOrder(order: RestaurantOrder): Promise<void>;
   updateOrderStatus(
     orderId: string,
@@ -852,6 +853,15 @@ export class PostgresRestaurantRepository implements RestaurantRepository {
     return withTenantRlsTransaction(this.prisma, this.tenantId, async (tx: any) => {
       const r = await tx.restaurantOrder.findFirst({
         where: { id: orderId, tenantId: this.tenantId },
+      });
+      return r ? this.mapOrderRecord(r) : undefined;
+    });
+  }
+
+  async getOrderByOrderToken(orderToken: string): Promise<RestaurantOrder | undefined> {
+    return withTenantRlsTransaction(this.prisma, this.tenantId, async (tx: any) => {
+      const r = await tx.restaurantOrder.findFirst({
+        where: { orderToken, tenantId: this.tenantId },
       });
       return r ? this.mapOrderRecord(r) : undefined;
     });
@@ -2677,6 +2687,10 @@ export class JsonRestaurantRepository implements RestaurantRepository {
     return this.store.getOrders(tableNumber, sessionId, branchId, status);
   }
   async getOrder(orderId: string) { return this.store.getOrder(orderId); }
+  async getOrderByOrderToken(orderToken: string) {
+    const orders = this.store.getRawData().orders || [];
+    return orders.find((o: any) => o.orderToken === orderToken);
+  }
   async addOrder(order: RestaurantOrder): Promise<void> { this.store.addOrder(order); }
   async updateOrderStatus(
     orderId: string,
@@ -2826,8 +2840,6 @@ export class JsonRestaurantRepository implements RestaurantRepository {
   async getRawData() { return this.store.getRawData(); }
 }
 
-const repositoryCache = new Map<string, RestaurantRepository>();
-
 /**
  * Factory function: obtains the authoritative repository bound to the active tenant context.
  */
@@ -2846,10 +2858,7 @@ export function getTenantRepository(
     if (process.env.NODE_ENV === 'production') {
       throw new Error('CRITICAL_SECURITY_VIOLATION: STORAGE_DRIVER=json is prohibited in production mode.');
     }
-    if (!repositoryCache.has(tenantId)) {
-      repositoryCache.set(tenantId, new JsonRestaurantRepository(tenantId));
-    }
-    return repositoryCache.get(tenantId)!;
+    return new JsonRestaurantRepository(tenantId);
   }
 
   const prisma = prismaClient || (globalThis as any).__restaurantos_prisma;
@@ -2857,9 +2866,6 @@ export function getTenantRepository(
     throw new Error('FAIL_CLOSED: PostgreSQL PrismaClient is required for tenant repository in production.');
   }
 
-  // Postgres repository instances are lightweight wrappers around (prisma, tenantId, eventBus)
-  if (!repositoryCache.has(tenantId)) {
-    repositoryCache.set(tenantId, new PostgresRestaurantRepository(prisma, tenantId, eventBusClient));
-  }
-  return repositoryCache.get(tenantId)!;
+  // Postgres repository instances are lightweight stateless wrappers around (prisma, tenantId, eventBus)
+  return new PostgresRestaurantRepository(prisma, tenantId, eventBusClient);
 }

@@ -110,7 +110,8 @@ if (process.env.STORAGE_DRIVER === 'json' && process.env.NODE_ENV === 'productio
   process.exit(1);
 }
 
-const store = new RestaurantRuntimeStore();
+const store: RestaurantRuntimeStore | null =
+  process.env.STORAGE_DRIVER === 'json' ? new RestaurantRuntimeStore() : null;
 const eventBus = new RealtimeEventBus();
 const runtimeController = restaurantControlBridge;
 const razorpayAdapter = new RazorpayPaymentGatewayAdapter();
@@ -140,14 +141,15 @@ const statusCounts = new Map<number, number>();
 const methodCounts = new Map<string, number>();
 let totalDomainEvents = 0;
 
-// Automatically broadcast all domain events emitted by the authoritative store
-store.onEvent((event) => {
-  totalDomainEvents++;
-  eventBus.broadcast(event);
-});
+// Automatically broadcast all domain events emitted by the authoritative store (when in JSON mode)
+if (store) {
+  store.onEvent((event) => {
+    totalDomainEvents++;
+    eventBus.broadcast(event);
+  });
+}
 
-const idempotencyRecords = new Map<string, any>();
-const orderTokens = new Map<string, string>();
+// In-flight operation locks (strictly scoped by tenant to prevent cross-tenant collisions)
 const activeSettlementLocks = new Set<string>();
 const activeDispatchLocks = new Set<string>();
 
@@ -578,15 +580,14 @@ async function resolveRequestIdentity(
 
     // 2f. Order Tracking Capability Tokens
     if (token.startsWith('ordtok_')) {
-      for (const [oId, t] of orderTokens.entries()) {
-        if (t === token) {
-          return {
-            type: 'ORDER_TRACKER',
-            id: token,
-            orderId: oId,
-            isPrivileged: false,
-          };
-        }
+      const order = await repo.getOrderByOrderToken(token);
+      if (order) {
+        return {
+          type: 'ORDER_TRACKER',
+          id: token,
+          orderId: order.orderId,
+          isPrivileged: false,
+        };
       }
     }
 
@@ -601,15 +602,14 @@ async function resolveRequestIdentity(
 
   const orderTokenQuery = (parsedUrl.query.orderToken as string) || '';
   if (orderTokenQuery && orderTokenQuery.startsWith('ordtok_')) {
-    for (const [oId, t] of orderTokens.entries()) {
-      if (t === orderTokenQuery) {
-        return {
-          type: 'ORDER_TRACKER',
-          id: orderTokenQuery,
-          orderId: oId,
-          isPrivileged: false,
-        };
-      }
+    const order = await repo.getOrderByOrderToken(orderTokenQuery);
+    if (order) {
+      return {
+        type: 'ORDER_TRACKER',
+        id: orderTokenQuery,
+        orderId: order.orderId,
+        isPrivileged: false,
+      };
     }
   }
 
@@ -1727,7 +1727,7 @@ export async function handleRequest(req: http.IncomingMessage, res: http.ServerR
   // 2. Readiness Probe (/healthz/ready): verifies operational dependencies required for serving traffic
   if (pathname === '/healthz/ready' && method === 'GET') {
     const lagMetrics = eventLoopMonitor.getMetrics();
-    const isStoreWritable = typeof (store as any).checkWritable === 'function' ? (store as any).checkWritable() : true;
+    const isStoreWritable = store && typeof (store as any).checkWritable === 'function' ? (store as any).checkWritable() : true;
     const isSecurityReady = typeof isStaffTokenRevoked === 'function';
 
     const checks: Record<string, string> = {
@@ -2109,7 +2109,7 @@ export async function handleRequest(req: http.IncomingMessage, res: http.ServerR
 
     const idempotencyKey = (req.headers['x-idempotency-key'] as string) || body.idempotencyKey;
     if (idempotencyKey) {
-      const existingIdempotent = (await repo.getIdempotencyRecord(idempotencyKey)) || idempotencyRecords.get(idempotencyKey);
+      const existingIdempotent = await repo.getIdempotencyRecord(idempotencyKey);
       if (existingIdempotent) {
         const isPayloadMatch =
           existingIdempotent.tableNumber === targetTable.number &&
@@ -2133,8 +2133,8 @@ export async function handleRequest(req: http.IncomingMessage, res: http.ServerR
       }
     }
 
-    const lockKey = `table_settle_${targetTable.id}`;
-    const idempLockKey = idempotencyKey ? `idemp_${idempotencyKey}` : undefined;
+    const lockKey = `table_settle_${tenantContext.tenantId}_${targetTable.id}`;
+    const idempLockKey = idempotencyKey ? `idemp_${tenantContext.tenantId}_${idempotencyKey}` : undefined;
 
     if (activeSettlementLocks.has(lockKey) || (idempLockKey && activeSettlementLocks.has(idempLockKey))) {
       sendJson(res, 409, {
@@ -2230,7 +2230,6 @@ export async function handleRequest(req: http.IncomingMessage, res: http.ServerR
       };
 
       if (idempotencyKey) {
-        idempotencyRecords.set(idempotencyKey, responsePayload);
         await repo.saveIdempotencyRecord(idempotencyKey, responsePayload);
       }
 
@@ -2332,9 +2331,9 @@ export async function handleRequest(req: http.IncomingMessage, res: http.ServerR
     const idempotencyKey = (req.headers['x-idempotency-key'] as string) || `idem_${Date.now()}`;
     const payloadHash = crypto.createHash('sha256').update(JSON.stringify(body)).digest('hex');
 
-    if (idempotencyRecords.has(idempotencyKey)) {
-      const cached = idempotencyRecords.get(idempotencyKey);
-      if (cached && cached.payloadHash && cached.payloadHash !== payloadHash) {
+    const cached = await repo.getIdempotencyRecord(idempotencyKey);
+    if (cached) {
+      if (cached.payloadHash && cached.payloadHash !== payloadHash) {
         sendJson(res, 409, {
           error: 'IDEMPOTENCY_CONFLICT',
           code: 'IDEMPOTENCY_CONFLICT',
@@ -2558,9 +2557,8 @@ export async function handleRequest(req: http.IncomingMessage, res: http.ServerR
       },
     };
 
-    idempotencyRecords.set(idempotencyKey, { payloadHash, response });
     if (idempotencyKey) {
-      await repo.saveIdempotencyRecord(idempotencyKey, response);
+      await repo.saveIdempotencyRecord(idempotencyKey, { payloadHash, response });
     }
     await runtimeController.emitAudit('ORDER_PLACED', `table:${newOrder.tableNumber}`, { orderId, totalMinor });
     await runtimeController.reportOrderProcessed(orderId, totalMinor);
@@ -2838,7 +2836,7 @@ export async function handleRequest(req: http.IncomingMessage, res: http.ServerR
 
     // Server-recomputed amounts: Never trust client-passed amountMinor
     const amountMinor = order.totalMinor;
-    const tableNumber = order.tableNumber || body.tableNumber || 'T-14';
+    const tableNumber = order.tableNumber || body.tableNumber || '';
 
     try {
       const result = await razorpayAdapter.createOrder({
@@ -2928,9 +2926,12 @@ export async function handleRequest(req: http.IncomingMessage, res: http.ServerR
       body.id ||
       (body.payload?.payment?.entity?.id ? `evt_${body.payload.payment.entity.id}` : null);
 
-    if (eventId && idempotencyRecords.has(eventId)) {
-      sendJson(res, 200, { success: true, status: 'idempotent_duplicate', eventId });
-      return;
+    if (eventId) {
+      const existingEvt = await repo.getIdempotencyRecord(eventId);
+      if (existingEvt) {
+        sendJson(res, 200, { success: true, status: 'idempotent_duplicate', eventId });
+        return;
+      }
     }
 
     const eventType = body.event || 'payment.captured';
@@ -2965,7 +2966,7 @@ export async function handleRequest(req: http.IncomingMessage, res: http.ServerR
       }
 
       const amountMinor = paymentEntity.amount || existingSession?.amountMinor || 0;
-      const tableNumber = notes.tableNumber || existingSession?.tableNumber || 'T-14';
+      const tableNumber = notes.tableNumber || existingSession?.tableNumber || '';
 
       if (postgresStore && razorpayOrderId) {
         try {
@@ -3018,6 +3019,7 @@ export async function handleRequest(req: http.IncomingMessage, res: http.ServerR
               producer: 'api:payment-service',
               branchId: order.branchId || currentBranch?.id || 'branch_main',
               tableNumber: order.tableNumber,
+              tenantId: tid,
               payload: invoiceRecord,
             });
           }
@@ -3034,6 +3036,7 @@ export async function handleRequest(req: http.IncomingMessage, res: http.ServerR
         producer: 'api:payment-service',
         branchId: order?.branchId || currentBranch?.id || 'branch_main',
         tableNumber,
+        tenantId: tid,
         payload: {
           razorpayPaymentId,
           razorpayOrderId,
@@ -3051,7 +3054,7 @@ export async function handleRequest(req: http.IncomingMessage, res: http.ServerR
       });
 
       if (eventId) {
-        idempotencyRecords.set(eventId, { status: 'captured', razorpayPaymentId, targetOrderId });
+        await repo.saveIdempotencyRecord(eventId, { status: 'captured', razorpayPaymentId, targetOrderId });
       }
 
       sendJson(res, 200, {
@@ -3071,7 +3074,7 @@ export async function handleRequest(req: http.IncomingMessage, res: http.ServerR
             {
               id: razorpayOrderId,
               orderId: orderId || `ord_${Date.now()}`,
-              tableNumber: notes.tableNumber || 'T-14',
+              tableNumber: notes.tableNumber || '',
               amountMinor: paymentEntity.amount || 0,
               status: 'failed',
               razorpayPaymentId,
@@ -3087,7 +3090,7 @@ export async function handleRequest(req: http.IncomingMessage, res: http.ServerR
       });
 
       if (eventId) {
-        idempotencyRecords.set(eventId, { status: 'failed', razorpayPaymentId });
+        await repo.saveIdempotencyRecord(eventId, { status: 'failed', razorpayPaymentId });
       }
 
       sendJson(res, 200, { success: true, status: 'failed', razorpayPaymentId });
@@ -3095,7 +3098,7 @@ export async function handleRequest(req: http.IncomingMessage, res: http.ServerR
     }
 
     if (eventId) {
-      idempotencyRecords.set(eventId, { received: true, eventType });
+      await repo.saveIdempotencyRecord(eventId, { received: true, eventType });
     }
     sendJson(res, 200, { success: true, received: true, event: eventType });
     return;
@@ -3475,7 +3478,7 @@ export async function handleRequest(req: http.IncomingMessage, res: http.ServerR
     };
     const payloadHash = crypto.createHash('sha256').update(JSON.stringify(canonicalObj)).digest('hex');
 
-    const existing = (await repo.getIdempotencyRecord(idempotencyKey)) || idempotencyRecords.get(idempotencyKey);
+    const existing = await repo.getIdempotencyRecord(idempotencyKey);
     if (existing) {
       if (
         existing.operation !== operation ||
@@ -3620,7 +3623,6 @@ export async function handleRequest(req: http.IncomingMessage, res: http.ServerR
         payloadHash: idempCheck.payloadHash,
         response: responsePayload,
       };
-      idempotencyRecords.set(idempotencyKey, record);
       await repo.saveIdempotencyRecord(idempotencyKey, record);
     }
 
@@ -3633,6 +3635,7 @@ export async function handleRequest(req: http.IncomingMessage, res: http.ServerR
         producer: result.task.orderId || result.task.id,
         branchId: taskBranch,
         tableNumber: result.task.tableNumber,
+        tenantId: tenantContext.tenantId,
         payload: {
           taskId: result.task.id,
           orderId: result.task.orderId,
@@ -3732,7 +3735,6 @@ export async function handleRequest(req: http.IncomingMessage, res: http.ServerR
         payloadHash: idempCheck.payloadHash,
         response: responsePayload,
       };
-      idempotencyRecords.set(idempotencyKey, record);
       await repo.saveIdempotencyRecord(idempotencyKey, record);
     }
 
@@ -3825,7 +3827,6 @@ export async function handleRequest(req: http.IncomingMessage, res: http.ServerR
         payloadHash: idempCheck.payloadHash,
         response: responsePayload,
       };
-      idempotencyRecords.set(idempotencyKey, record);
       await repo.saveIdempotencyRecord(idempotencyKey, record);
     }
 
@@ -3907,7 +3908,7 @@ export async function handleRequest(req: http.IncomingMessage, res: http.ServerR
     }
 
     // 3. Mutex Lock Check for Concurrent Dispatches
-    const lockKey = `dispatch:${tableNumber}:${targetBranch || '*'}`;
+    const lockKey = `dispatch:${tenantContext.tenantId}:${tableNumber}:${targetBranch || '*'}`;
     if (activeDispatchLocks.has(lockKey)) {
       sendJson(res, 409, {
         error: 'DISPATCH_IN_PROGRESS',
@@ -3934,7 +3935,6 @@ export async function handleRequest(req: http.IncomingMessage, res: http.ServerR
             payloadHash: idempCheck.payloadHash,
             response: alreadyPayload,
           };
-          idempotencyRecords.set(idempotencyKey, record);
           await repo.saveIdempotencyRecord(idempotencyKey, record);
         }
         sendJson(res, 200, alreadyPayload);
@@ -4015,7 +4015,6 @@ export async function handleRequest(req: http.IncomingMessage, res: http.ServerR
           payloadHash: idempCheck.payloadHash,
           response: responsePayload,
         };
-        idempotencyRecords.set(idempotencyKey, record);
         await repo.saveIdempotencyRecord(idempotencyKey, record);
       }
 
@@ -4120,6 +4119,7 @@ export async function handleRequest(req: http.IncomingMessage, res: http.ServerR
         timestamp: new Date().toISOString(),
         producer: 'api:floor-save',
         branchId: currentBranch.id,
+        tenantId: tenantContext.tenantId,
         payload: { totalTables: body.tables.length },
       });
       await runtimeController.emitAudit('FLOOR_LAYOUT_SAVED', 'admin:operations', { totalTables: body.tables.length });
@@ -4301,6 +4301,7 @@ export async function handleRequest(req: http.IncomingMessage, res: http.ServerR
       producer: 'api:table-patch',
       branchId: currentBranch.id,
       tableNumber: updatedTable.number,
+      tenantId: tenantContext.tenantId,
       payload: updatedTable,
     });
 
@@ -4417,6 +4418,7 @@ export async function handleRequest(req: http.IncomingMessage, res: http.ServerR
       producer: 'api:table-security',
       branchId: currentBranch.id,
       tableNumber: result.table?.number,
+      tenantId: tenantContext.tenantId,
       payload: result,
     });
     sendJson(res, 200, {
@@ -4470,6 +4472,7 @@ export async function handleRequest(req: http.IncomingMessage, res: http.ServerR
       timestamp: new Date().toISOString(),
       producer: 'api:guest-assign',
       branchId: currentBranch.id,
+      tenantId: tenantContext.tenantId,
       payload: result,
     });
 
@@ -4506,6 +4509,7 @@ export async function handleRequest(req: http.IncomingMessage, res: http.ServerR
         timestamp: new Date().toISOString(),
         producer: 'api:branch-save',
         branchId: saved.id,
+        tenantId: tenantContext.tenantId,
         payload: saved,
       });
       sendJson(res, 200, { success: true, data: saved });
@@ -4642,6 +4646,7 @@ export async function handleRequest(req: http.IncomingMessage, res: http.ServerR
       timestamp: new Date().toISOString(),
       producer: 'api:table-merge',
       branchId: currentBranch.id,
+      tenantId: tenantContext.tenantId,
       payload: body,
     });
     sendJson(res, 200, { success: true, message: 'Tables merged successfully' });
@@ -4677,6 +4682,7 @@ export async function handleRequest(req: http.IncomingMessage, res: http.ServerR
       timestamp: new Date().toISOString(),
       producer: 'api:table-unmerge',
       branchId: currentBranch.id,
+      tenantId: tenantContext.tenantId,
       payload: body,
     });
     sendJson(res, 200, { success: true, message: 'Table unmerged successfully' });
@@ -4801,6 +4807,7 @@ export async function handleRequest(req: http.IncomingMessage, res: http.ServerR
       producer: 'api:service-resolve',
       branchId: currentBranch.id,
       tableNumber: resolved?.tableNumber || sReq.tableNumber,
+      tenantId: tenantContext.tenantId,
       payload: resolved,
     });
     sendJson(res, 200, { success: true, data: resolved });
@@ -5831,7 +5838,7 @@ export async function handleRequest(req: http.IncomingMessage, res: http.ServerR
   if (pathname.startsWith('/api/commerce/orders/') && method === 'GET') {
     const orderId = pathname.replace('/api/commerce/orders/', '');
     const order = await repo.getOrder(orderId);
-    const cachedRecord = idempotencyRecords.get(orderId);
+    const cachedRecord = await repo.getIdempotencyRecord(orderId);
     const cached = cachedRecord?.response || cachedRecord;
     if (!order && !cached) {
       sendJson(res, 404, { success: false, error: 'NOT_FOUND', message: `Order ${orderId} not found.` });
@@ -5846,7 +5853,7 @@ export async function handleRequest(req: http.IncomingMessage, res: http.ServerR
 
     const identity = requestIdentity;
     const isStaff = identity.type === 'STAFF' || identity.type === 'ADMIN' || identity.type === 'STATION';
-    const expectedToken = orderTokens.get(orderId) || order?.orderToken || cached?.orderToken;
+    const expectedToken = order?.orderToken || cached?.orderToken;
 
     // If an invalid tracking token is explicitly provided, reject with 403
     if (reqToken && expectedToken && reqToken !== expectedToken && !isStaff) {
@@ -5942,7 +5949,7 @@ export async function handleRequest(req: http.IncomingMessage, res: http.ServerR
   if (pathname.startsWith('/api/commerce/orders/') && pathname.endsWith('/cancel') && method === 'POST') {
     const orderId = pathname.replace('/api/commerce/orders/', '').replace('/cancel', '');
     const order = await repo.getOrder(orderId);
-    const cachedRecord = idempotencyRecords.get(orderId);
+    const cachedRecord = await repo.getIdempotencyRecord(orderId);
     const cached = cachedRecord?.response || cachedRecord;
     if (!order && !cached) {
       sendJson(res, 404, { success: false, error: 'NOT_FOUND', message: `Order ${orderId} not found.` });
@@ -5957,7 +5964,7 @@ export async function handleRequest(req: http.IncomingMessage, res: http.ServerR
 
     const identity = requestIdentity;
     const isStaff = identity.type === 'STAFF' || identity.type === 'ADMIN' || identity.type === 'STATION';
-    const expectedToken = orderTokens.get(orderId) || order?.orderToken || cached?.orderToken;
+    const expectedToken = order?.orderToken || cached?.orderToken;
 
     const isAuthorized = isStaff || (expectedToken && reqToken === expectedToken);
     if (!isAuthorized) {
@@ -6006,6 +6013,7 @@ export async function handleRequest(req: http.IncomingMessage, res: http.ServerR
       timestamp: new Date().toISOString(),
       producer: orderId,
       branchId: orderBranchId,
+      tenantId: tenantContext.tenantId,
       payload: { orderId, reason, status: 'CANCELLED' },
     });
 
@@ -6024,8 +6032,8 @@ export async function handleRequest(req: http.IncomingMessage, res: http.ServerR
     const idempotencyKey = (req.headers['x-idempotency-key'] as string) || body.idempotencyKey;
     const payloadHash = crypto.createHash('sha256').update(JSON.stringify(body)).digest('hex');
 
-    if (idempotencyKey && idempotencyRecords.has(idempotencyKey)) {
-      const cached = idempotencyRecords.get(idempotencyKey);
+    const cached = idempotencyKey ? await repo.getIdempotencyRecord(idempotencyKey) : null;
+    if (cached) {
       const replayData = cached?.response || cached;
       const cachedItemIds = new Set((replayData?.items || []).map((i: any) => i.id));
       const incomingItems = Array.isArray(body.items) ? body.items : [];
@@ -6182,7 +6190,6 @@ export async function handleRequest(req: http.IncomingMessage, res: http.ServerR
     const totalMinor = subtotalMinor + deliveryFeeMinor + taxMinor;
     const orderId = 'ord_mkt_' + crypto.randomUUID().slice(0, 8);
     const orderToken = 'ordtok_' + crypto.randomBytes(24).toString('hex');
-    orderTokens.set(orderId, orderToken);
     const tableNum = body.tableNumber || (fulfillmentMethod === 'pickup' ? 'Takeaway' : 'Delivery');
 
     const orderPayload = {
@@ -6194,7 +6201,7 @@ export async function handleRequest(req: http.IncomingMessage, res: http.ServerR
       branchId: targetBranch.id,
       branchName: targetBranch.name,
       fulfillmentMethod,
-      restaurantId: 'tenant_orbitox_bistro',
+      restaurantId: tenantContext.tenantId,
       quote: {
         subtotalMinor,
         taxMinor,
@@ -6214,9 +6221,9 @@ export async function handleRequest(req: http.IncomingMessage, res: http.ServerR
     };
 
     if (idempotencyKey) {
-      idempotencyRecords.set(idempotencyKey, { payloadHash, response: orderPayload });
+      await repo.saveIdempotencyRecord(idempotencyKey, { payloadHash, response: orderPayload });
     }
-    idempotencyRecords.set(orderId, { payloadHash, response: orderPayload });
+    await repo.saveIdempotencyRecord(orderId, { payloadHash, response: orderPayload });
 
     // 5. Create and Persist Restaurant Order in Domain Store with Correct Branch Scoping
     const restaurantOrder: RestaurantOrder = {
@@ -6226,6 +6233,7 @@ export async function handleRequest(req: http.IncomingMessage, res: http.ServerR
       sessionId: body.sessionId || `sess_${orderId}`,
       guestName: rawCustomerName,
       status: 'CONFIRMED',
+      orderToken,
       items: validatedOrderItems.map((it) => ({
         id: it.id,
         name: it.name,
@@ -6270,6 +6278,7 @@ export async function handleRequest(req: http.IncomingMessage, res: http.ServerR
         producer: orderId,
         branchId: targetBranch.id,
         tableNumber: tableNum,
+        tenantId: tenantContext.tenantId,
         payload: { orderId, task },
       });
     }
@@ -6287,6 +6296,7 @@ export async function handleRequest(req: http.IncomingMessage, res: http.ServerR
       timestamp: new Date().toISOString(),
       producer: orderId,
       branchId: targetBranch.id,
+      tenantId: tenantContext.tenantId,
       tableNumber: tableNum,
       payload: orderPayload,
     });
@@ -6300,9 +6310,9 @@ export async function handleRequest(req: http.IncomingMessage, res: http.ServerR
     const idempotencyKey = (req.headers['x-idempotency-key'] as string) || body.idempotencyKey;
     const payloadHash = crypto.createHash('sha256').update(JSON.stringify(body)).digest('hex');
 
-    if (idempotencyKey && idempotencyRecords.has(idempotencyKey)) {
-      const cached = idempotencyRecords.get(idempotencyKey);
-      if (cached && cached.payloadHash && cached.payloadHash !== payloadHash) {
+    const cached = idempotencyKey ? await repo.getIdempotencyRecord(idempotencyKey) : null;
+    if (cached) {
+      if (cached.payloadHash && cached.payloadHash !== payloadHash) {
         sendJson(res, 409, {
           success: false,
           error: 'IDEMPOTENCY_CONFLICT',
@@ -6405,7 +6415,7 @@ export async function handleRequest(req: http.IncomingMessage, res: http.ServerR
     };
 
     if (idempotencyKey) {
-      idempotencyRecords.set(idempotencyKey, { payloadHash, response: groceryOrderPayload });
+      await repo.saveIdempotencyRecord(idempotencyKey, { payloadHash, response: groceryOrderPayload });
     }
 
     await repo.appendEvent(

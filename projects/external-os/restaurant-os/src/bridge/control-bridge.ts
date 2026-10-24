@@ -129,8 +129,11 @@ export class RestaurantControlBridge {
         if (this.receivedCommands.length > 50) this.receivedCommands.pop();
 
         if (cmd.action === 'rotate_qr_locator') {
+          if (!cmd.parameters?.table) {
+            return { success: false, error: 'TABLE_REQUIRED' };
+          }
           const newLocator = crypto.randomBytes(4).toString('hex').toUpperCase();
-          return { success: true, result: { table: cmd.parameters?.table || 'T-14', newLocator } };
+          return { success: true, result: { table: cmd.parameters.table, newLocator } };
         }
         if (cmd.action === 'run_health_check') {
           return {
