@@ -1,23 +1,25 @@
 /**
  * ⚡ RestaurantOS 2.x — Realtime Event Bus & SSE Gateway
  * ─────────────────────────────────────────────────────────────────────────────
- * Broadcasts canonical domain events to all connected clients (Operations, Floor,
- * KDS, Diner Mobile PWA) in real-time via Server-Sent Events (SSE).
+ * Broadcasts canonical domain events to connected clients in real-time via SSE.
  *
- * Invariants:
- * 1. Monotonic ordering: events carry strictly sequential IDs.
- * 2. Replay on reconnect: reads Last-Event-ID or ?lastEventId to replay missed events.
- * 3. Scoped routing: filters events by branchId/sessionId/tableNumber to prevent cross-context leaks.
+ * Multi-Tenant Guarantees:
+ * 1. Strict Tenant Partitioning: Connected SSE streams are keyed by tenantId.
+ *    A KDS screen on restaurant A will NEVER receive restaurant B's events.
+ * 2. Monotonic ordering: events carry strictly sequential IDs.
+ * 3. Scoped routing: filters events by branchId/sessionId/tableNumber.
  * 4. Active heartbeat: 15s ping frames keep proxies and mobile websockets alive.
- * 5. Instant termination: active streams are terminated immediately upon token revocation or session closure.
+ * 5. Instant termination: active streams terminated on token revocation or session closure.
  */
 
 import * as http from 'http';
 import * as url from 'url';
-import { DomainEvent, RestaurantRuntimeStore } from '../storage';
+import { DomainEvent } from '../storage';
 import { resolveAllowedOrigin } from './security';
+import { tryGetActiveTenant } from './tenancy';
 
 export interface ClientScope {
+  tenantId?: string;
   branchId?: string;
   floorId?: string;
   tableNumber?: string;
@@ -26,13 +28,15 @@ export interface ClientScope {
 }
 
 export interface ClientConnectionInfo {
+  tenantId: string;
   scope: ClientScope;
   identity?: any;
   token?: string;
 }
 
 export class RealtimeEventBus {
-  private clients: Map<http.ServerResponse, ClientConnectionInfo> = new Map();
+  // Keyed by tenantId -> Map of active client responses
+  private tenantClients: Map<string, Map<http.ServerResponse, ClientConnectionInfo>> = new Map();
   private pingInterval: NodeJS.Timeout | null = null;
 
   constructor() {
@@ -42,15 +46,24 @@ export class RealtimeEventBus {
   public registerClient(
     req: http.IncomingMessage,
     res: http.ServerResponse,
-    store?: RestaurantRuntimeStore,
-    identity?: any
+    store?: any,
+    identity?: any,
+    explicitTenantId?: string
   ): void {
+    const tenantId = explicitTenantId || tryGetActiveTenant()?.tenantId;
+    if (!tenantId) {
+      res.writeHead(400, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: 'TENANT_REQUIRED', message: 'SSE stream requires an active tenant context.' }));
+      return;
+    }
+
     const allowedOrigin = resolveAllowedOrigin(req);
     const sseHeaders: Record<string, string> = {
       'Content-Type': 'text/event-stream',
       'Cache-Control': 'no-cache, no-transform',
       'Connection': 'keep-alive',
       'X-Accel-Buffering': 'no',
+      'x-tenant-id': tenantId,
     };
     if (allowedOrigin) {
       sseHeaders['Access-Control-Allow-Origin'] = allowedOrigin;
@@ -60,6 +73,7 @@ export class RealtimeEventBus {
 
     const parsed = url.parse(req.url || '', true);
     const scope: ClientScope = {
+      tenantId,
       branchId: (parsed.query.branchId as string) || undefined,
       floorId: (parsed.query.floorId as string) || undefined,
       tableNumber: (parsed.query.tableNumber as string) || undefined,
@@ -85,57 +99,86 @@ export class RealtimeEventBus {
     const token = identity?.id || (parsed.query.orderToken as string) || '';
 
     const connInfo: ClientConnectionInfo = {
+      tenantId,
       scope,
       identity,
       token,
     };
 
-    res.write(`: connected at ${new Date().toISOString()} [client_scope:${JSON.stringify(scope)}]\n\n`);
-    this.clients.set(res, connInfo);
+    res.write(`: connected at ${new Date().toISOString()} [tenant:${tenantId}] [client_scope:${JSON.stringify(scope)}]\n\n`);
 
-    // Event replay for missed events upon reconnect
+    if (!this.tenantClients.has(tenantId)) {
+      this.tenantClients.set(tenantId, new Map());
+    }
+    const clientMap = this.tenantClients.get(tenantId)!;
+    clientMap.set(res, connInfo);
+
+    // Event replay for missed events upon reconnect (if store/repo provides historical replay)
     const lastEventIdHeader = req.headers['last-event-id'] || parsed.query.lastEventId;
-    if (lastEventIdHeader && store) {
+    if (lastEventIdHeader && store && typeof store.getEvents === 'function') {
       const sinceSeq = parseInt(lastEventIdHeader as string, 10);
       if (!isNaN(sinceSeq) && sinceSeq >= 0) {
-        const oldestSeq = store.getOldestEventSequence();
-        // If client's cursor is older than oldest retained event, gapless replay is impossible
-        if (sinceSeq < oldestSeq - 1 && oldestSeq > 1) {
-          const resyncData = JSON.stringify({
-            code: 'RESYNC_REQUIRED',
-            message: `Requested sequence ${sinceSeq} is older than retained history window (oldest sequence available: ${oldestSeq}). Full state resynchronization required.`,
-            oldestAvailableSequence: oldestSeq,
-            requestedSequence: sinceSeq,
-            stateSnapshotUrl: '/api/restaurant/state',
-          });
-          res.write(`event: resync_required\ndata: ${resyncData}\n\n`);
-        } else {
-          const missedEvents = store.getEvents(sinceSeq);
-          for (const evt of missedEvents) {
-            if (this.isEventEligibleForClient(evt, connInfo)) {
-              const data = JSON.stringify(evt);
-              res.write(`event: ${evt.type}\nid: ${evt.sequence}\ndata: ${data}\n\n`);
+        Promise.resolve(typeof store.getOldestEventSequence === 'function' ? store.getOldestEventSequence() : 0)
+          .then(async (oldestSeq) => {
+            if (sinceSeq < oldestSeq - 1 && oldestSeq > 1) {
+              const resyncData = JSON.stringify({
+                code: 'RESYNC_REQUIRED',
+                message: `Requested sequence ${sinceSeq} is older than retained history window (oldest sequence available: ${oldestSeq}). Full state resynchronization required.`,
+                oldestAvailableSequence: oldestSeq,
+                requestedSequence: sinceSeq,
+                stateSnapshotUrl: '/api/restaurant/state',
+              });
+              res.write(`event: resync_required\ndata: ${resyncData}\n\n`);
+            } else {
+              const missedEvents = await store.getEvents(sinceSeq);
+              if (Array.isArray(missedEvents)) {
+                for (const evt of missedEvents) {
+                  if (this.isEventEligibleForClient(evt, connInfo)) {
+                    const data = JSON.stringify(evt);
+                    res.write(`event: ${evt.type}\nid: ${evt.sequence}\ndata: ${data}\n\n`);
+                  }
+                }
+              }
             }
-          }
-        }
+          })
+          .catch((replayErr) => {
+            console.error('[EventBus] Error replaying events for client:', replayErr);
+          });
       }
     }
 
     res.on('close', () => {
-      this.clients.delete(res);
+      const map = this.tenantClients.get(tenantId);
+      if (map) {
+        map.delete(res);
+        if (map.size === 0) {
+          this.tenantClients.delete(tenantId);
+        }
+      }
     });
   }
 
   public broadcast(event: DomainEvent): void {
+    const eventTenantId = event.tenantId || (event.payload && event.payload.tenantId);
+    if (!eventTenantId) {
+      // Fail closed: Do NOT broadcast events without an identifiable tenantId
+      return;
+    }
+
+    const clientMap = this.tenantClients.get(eventTenantId);
+    if (!clientMap || clientMap.size === 0) {
+      return;
+    }
+
     const data = JSON.stringify(event);
     const message = `event: ${event.type}\nid: ${event.sequence}\ndata: ${data}\n\n`;
 
-    for (const [client, info] of this.clients.entries()) {
+    for (const [client, info] of clientMap.entries()) {
       if (this.isEventEligibleForClient(event, info)) {
         try {
           client.write(message);
         } catch (err) {
-          this.clients.delete(client);
+          clientMap.delete(client);
         }
       }
     }
@@ -144,17 +187,24 @@ export class RealtimeEventBus {
   /**
    * Terminate active SSE connections holding a revoked credential token.
    */
-  public disconnectClientsForToken(token: string): number {
+  public disconnectClientsForToken(token: string, tenantId?: string): number {
     if (!token) return 0;
     let count = 0;
-    for (const [client, info] of this.clients.entries()) {
-      if (info.token === token || info.identity?.id === token) {
-        try {
-          client.write(`event: token_revoked\ndata: {"error":"TOKEN_REVOKED"}\n\n`);
-          client.end();
-        } catch (err) {}
-        this.clients.delete(client);
-        count++;
+
+    const mapsToSearch = tenantId && this.tenantClients.has(tenantId)
+      ? [this.tenantClients.get(tenantId)!]
+      : Array.from(this.tenantClients.values());
+
+    for (const clientMap of mapsToSearch) {
+      for (const [client, info] of clientMap.entries()) {
+        if (info.token === token || info.identity?.id === token) {
+          try {
+            client.write(`event: token_revoked\ndata: {"error":"TOKEN_REVOKED"}\n\n`);
+            client.end();
+          } catch (err) {}
+          clientMap.delete(client);
+          count++;
+        }
       }
     }
     return count;
@@ -163,30 +213,61 @@ export class RealtimeEventBus {
   /**
    * Terminate active SSE connections for a closed dining session.
    */
-  public disconnectClientsForSession(sessionId: string): number {
+  public disconnectClientsForSession(sessionId: string, tenantId?: string): number {
     if (!sessionId) return 0;
     let count = 0;
-    for (const [client, info] of this.clients.entries()) {
-      if (info.scope.sessionId === sessionId || info.identity?.sessionId === sessionId) {
-        try {
-          client.write(`event: session_closed\ndata: {"status":"CLOSED"}\n\n`);
-          client.end();
-        } catch (err) {}
-        this.clients.delete(client);
-        count++;
+
+    const mapsToSearch = tenantId && this.tenantClients.has(tenantId)
+      ? [this.tenantClients.get(tenantId)!]
+      : Array.from(this.tenantClients.values());
+
+    for (const clientMap of mapsToSearch) {
+      for (const [client, info] of clientMap.entries()) {
+        if (info.scope.sessionId === sessionId || info.identity?.sessionId === sessionId) {
+          try {
+            client.write(`event: session_closed\ndata: {"status":"CLOSED"}\n\n`);
+            client.end();
+          } catch (err) {}
+          clientMap.delete(client);
+          count++;
+        }
       }
     }
     return count;
+  }
+
+  public getActiveClientCount(tenantId?: string): number {
+    if (tenantId) {
+      return this.tenantClients.get(tenantId)?.size ?? 0;
+    }
+    let total = 0;
+    for (const map of this.tenantClients.values()) {
+      total += map.size;
+    }
+    return total;
+  }
+
+  public getConnectedClientsCount(tenantId?: string): number {
+    return this.getActiveClientCount(tenantId);
   }
 
   private isEventEligibleForClient(event: DomainEvent, info: ClientConnectionInfo): boolean {
     const scope = info.scope;
     const identity = info.identity;
 
+    // Strict Tenant Boundary Gate
+    const eventTenantId = event.tenantId || (event.payload && event.payload.tenantId);
+    if (eventTenantId !== info.tenantId) {
+      return false;
+    }
+
     // 0. Order tracker client strictly filtered to their order
     if (identity && identity.type === 'ORDER_TRACKER') {
       const allowedOrderId = identity.orderId;
-      const evtOrderId = event.payload?.orderId || (event.payload?.task && event.payload.task.orderId) || (event.producer === allowedOrderId ? allowedOrderId : undefined);
+      const evtOrderId =
+        event.payload?.orderId ||
+        (event.payload?.task && event.payload.task.orderId) ||
+        (event.producer === allowedOrderId ? allowedOrderId : undefined);
       if (!evtOrderId || evtOrderId !== allowedOrderId) {
         return false;
       }
@@ -195,15 +276,12 @@ export class RealtimeEventBus {
 
     // 1. If client is a DINER, strictly enforce session, table, and hide internal operational events
     if (identity && identity.type === 'DINER') {
-      // Must match branch
       if (event.branchId && scope.branchId && event.branchId !== scope.branchId) {
         return false;
       }
-      // Must match table
       if (!event.tableNumber || event.tableNumber !== scope.tableNumber) {
         return false;
       }
-      // If event payload has sessionId, it must match diner's session
       if (event.payload && event.payload.sessionId && scope.sessionId) {
         if (event.payload.sessionId !== scope.sessionId) {
           return false;
@@ -219,60 +297,71 @@ export class RealtimeEventBus {
           return false;
         }
       }
+      return true;
     }
 
-    // 3. Station branch & role filtering
+    // 3. Station filtering
     if (identity && identity.type === 'STATION') {
       if (identity.branchId && event.branchId && event.branchId !== identity.branchId) {
         return false;
       }
-    }
-
-    // 4. Client requested specific branch query
-    if (scope.branchId && event.branchId && event.branchId !== scope.branchId) {
-      return false;
-    }
-
-    // 5. Client requested specific table query
-    if (scope.tableNumber && event.tableNumber && event.tableNumber !== scope.tableNumber) {
-      return false;
-    }
-
-    // 6. Client requested specific orderId query
-    if (scope.orderId) {
-      const evtOrderId = event.payload?.orderId || (event.payload?.task && event.payload.task.orderId);
-      if (evtOrderId && evtOrderId !== scope.orderId) {
-        return false;
+      if (identity.station && identity.station !== 'ALL') {
+        const taskStation = event.payload?.station || (event.payload?.task && event.payload.task.station);
+        if (taskStation && taskStation !== identity.station) {
+          return false;
+        }
       }
+      return true;
+    }
+
+    // 4. Default: filter by branch/floor/table if client specified them in query params
+    if (scope.branchId && event.branchId && scope.branchId !== event.branchId) {
+      return false;
+    }
+    if (scope.floorId && event.floorId && scope.floorId !== event.floorId) {
+      return false;
+    }
+    if (scope.tableNumber && event.tableNumber && scope.tableNumber !== event.tableNumber) {
+      return false;
     }
 
     return true;
   }
 
-  public getConnectedClientsCount(): number {
-    return this.clients.size;
-  }
-
   private startHeartbeat(): void {
     if (this.pingInterval) clearInterval(this.pingInterval);
     this.pingInterval = setInterval(() => {
-      for (const client of this.clients.keys()) {
-        try {
-          client.write(`: ping ${Date.now()}\n\n`);
-        } catch (err) {
-          this.clients.delete(client);
+      const pingFrame = `: ping at ${new Date().toISOString()}\n\n`;
+      for (const clientMap of this.tenantClients.values()) {
+        for (const [client] of clientMap.entries()) {
+          try {
+            client.write(pingFrame);
+          } catch (err) {
+            clientMap.delete(client);
+          }
         }
       }
     }, 15000);
+    if (this.pingInterval.unref) {
+      this.pingInterval.unref();
+    }
   }
 
-  public destroy(): void {
-    if (this.pingInterval) clearInterval(this.pingInterval);
-    for (const client of this.clients.keys()) {
-      try {
-        client.end();
-      } catch (err) {}
+  public stop(): void {
+    if (this.pingInterval) {
+      clearInterval(this.pingInterval);
+      this.pingInterval = null;
     }
-    this.clients.clear();
+    for (const clientMap of this.tenantClients.values()) {
+      for (const [client] of clientMap.entries()) {
+        try {
+          client.end();
+        } catch (e) {}
+      }
+      clientMap.clear();
+    }
+    this.tenantClients.clear();
   }
 }
+
+export const eventBus = new RealtimeEventBus();

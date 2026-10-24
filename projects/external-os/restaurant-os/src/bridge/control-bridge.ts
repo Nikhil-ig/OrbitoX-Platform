@@ -28,7 +28,7 @@ import {
   SignedRuntimeConfiguration,
   ControlCommand,
 } from '@orbitox/external-runtime-sdk';
-import { DEFAULT_PILOT_TENANT, ActiveTenantContext } from '../../packages/domain/tenancy';
+import { tryGetActiveTenant, ActiveTenantContext } from '../../packages/domain/tenancy';
 
 export class RestaurantControlBridge {
   public client: ControlClient;
@@ -46,7 +46,7 @@ export class RestaurantControlBridge {
     runtimePort?: number;
     tenantContext?: ActiveTenantContext;
   }) {
-    const tenant = options?.tenantContext || DEFAULT_PILOT_TENANT;
+    const tenant = options?.tenantContext || tryGetActiveTenant();
     const candidates = [
       path.resolve(__dirname, '../../orbitox.project.json'),
       path.resolve(process.cwd(), 'orbitox.project.json'),
@@ -62,8 +62,8 @@ export class RestaurantControlBridge {
       }
     }
 
-    const projectId = process.env.ORBITOX_PROJECT_ID || tenant.orbitoxProjectId || 'restaurant-os-pilot';
-    const slug = process.env.ORBITOX_PROJECT_SLUG || tenant.tenantSlug || 'restaurant-os-pilot';
+    const projectId = process.env.ORBITOX_PROJECT_ID || tenant?.orbitoxProjectId || 'restaurant-os-fleet';
+    const slug = process.env.ORBITOX_PROJECT_SLUG || tenant?.tenantSlug || 'restaurant-os-fleet';
     const port = options?.runtimePort || (process.env.PORT ? parseInt(process.env.PORT, 10) : 4010);
     const controlPlaneUrl =
       options?.controlPlaneUrl ||

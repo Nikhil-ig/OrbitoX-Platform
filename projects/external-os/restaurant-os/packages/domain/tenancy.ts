@@ -22,25 +22,28 @@ export interface ActiveTenantContext {
   tenantName: string;
   orbitoxProjectId?: string;
   status?: string;
+  isPlatform?: boolean;
 }
-
-export const DEFAULT_PILOT_TENANT: ActiveTenantContext = {
-  tenantId: 'tenant_pilot_bistro',
-  tenantSlug: 'bistro-pilot',
-  tenantName: 'Orbitox Bistro Pilot',
-  orbitoxProjectId: 'restaurant-os-pilot',
-  status: 'active',
-};
 
 const tenantStorage = new AsyncLocalStorage<ActiveTenantContext>();
 
 /**
  * Returns the currently active tenant context from AsyncLocalStorage.
+ * Strictly throws if called without an active tenant context (Fail-Closed).
  */
 export function getActiveTenant(): ActiveTenantContext {
   const store = tenantStorage.getStore();
-  if (store) return store;
-  return DEFAULT_PILOT_TENANT;
+  if (!store) {
+    throw new Error('FAIL_CLOSED: No active tenant context in execution scope.');
+  }
+  return store;
+}
+
+/**
+ * Safe inspection of active tenant context without throwing.
+ */
+export function tryGetActiveTenant(): ActiveTenantContext | undefined {
+  return tenantStorage.getStore();
 }
 
 /**
@@ -109,7 +112,10 @@ export async function resolveTenantFromRequest(
     const customHeader = req.headers['x-tenant-id'] || req.headers['x-orbitox-tenant'];
     if (typeof customHeader === 'string' && customHeader.trim()) {
       const tid = customHeader.trim();
-      const dbTenant = await prisma.tenant.findUnique({ where: { id: tid } }).catch(() => null);
+      const actualId = tid.startsWith('tenant_') ? tid : `tenant_${tid}`;
+      const dbTenant = await prisma.tenant.findFirst({
+        where: { OR: [{ id: tid }, { id: actualId }, { slug: tid }] },
+      }).catch(() => null);
       if (dbTenant) {
         return {
           tenantId: dbTenant.id,
@@ -119,13 +125,8 @@ export async function resolveTenantFromRequest(
           status: dbTenant.status,
         };
       }
-      return {
-        tenantId: tid,
-        tenantSlug: tid.replace(/^tenant_/, ''),
-        tenantName: `Platform Tenant ${tid}`,
-        orbitoxProjectId: `restaurant-os-${tid.replace(/^tenant_/, '')}`,
-        status: 'active',
-      };
+      // Fail closed: Named tenant does not exist in database
+      return null;
     }
 
     const reqUrl = req.url || '/';
@@ -133,7 +134,9 @@ export async function resolveTenantFromRequest(
     if (queryMatch && queryMatch[1]) {
       const tid = decodeURIComponent(queryMatch[1]).trim();
       const actualId = tid.startsWith('tenant_') ? tid : `tenant_${tid}`;
-      const dbTenant = await prisma.tenant.findUnique({ where: { id: actualId } }).catch(() => null);
+      const dbTenant = await prisma.tenant.findFirst({
+        where: { OR: [{ id: tid }, { id: actualId }, { slug: tid }] },
+      }).catch(() => null);
       if (dbTenant) {
         return {
           tenantId: dbTenant.id,
@@ -143,22 +146,18 @@ export async function resolveTenantFromRequest(
           status: dbTenant.status,
         };
       }
-      return {
-        tenantId: actualId,
-        tenantSlug: actualId.replace(/^tenant_/, ''),
-        tenantName: `Platform Tenant ${actualId}`,
-        orbitoxProjectId: `restaurant-os-${actualId.replace(/^tenant_/, '')}`,
-        status: 'active',
-      };
+      // Fail closed: Named tenant does not exist in database
+      return null;
     }
 
     // Authenticated platform service request without target tenant parameter
     return {
-      tenantId: 'PLATFORM_SUPERUSER',
+      tenantId: 'platform_fleet',
       tenantSlug: 'platform',
-      tenantName: 'Platform Superuser',
+      tenantName: 'Platform Fleet Operations',
       orbitoxProjectId: 'platform',
       status: 'active',
+      isPlatform: true,
     };
   }
 
@@ -278,12 +277,13 @@ export async function withTenantRlsTransaction<T>(
   tenantId: string,
   fn: (tx: PrismaClient) => Promise<T>
 ): Promise<T> {
+  if (!tenantId || typeof tenantId !== 'string' || !tenantId.trim()) {
+    throw new Error('FAIL_CLOSED: withTenantRlsTransaction requires a valid non-empty tenantId.');
+  }
   return await prisma.$transaction(async (tx: any) => {
-    try {
-      await tx.$executeRawUnsafe(`SET LOCAL ROLE restaurantos_app;`);
-    } catch {
-      // Role might not exist in isolated mock environments
-    }
+    // Fail-Closed: Strictly switch to application role with NOSUPERUSER NOBYPASSRLS.
+    // Throws immediately if role does not exist or switch fails.
+    await tx.$executeRawUnsafe(`SET LOCAL ROLE restaurantos_app;`);
     const safeTenantId = tenantId.replace(/'/g, "''");
     await tx.$executeRawUnsafe(`SET LOCAL app.tenant_id = '${safeTenantId}';`);
     return await fn(tx);

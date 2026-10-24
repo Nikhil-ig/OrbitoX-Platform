@@ -128,7 +128,7 @@ export interface BuildInvoiceParams {
  */
 export function buildGSTInvoice(params: BuildInvoiceParams): InvoiceRecord {
   const tid = params.tenantId || getActiveTenant().tenantId;
-  const gstin = params.gstin || process.env.RESTAURANT_GSTIN || DEFAULT_PILOT_GSTIN;
+  const gstin = params.gstin || process.env.RESTAURANT_GSTIN || 'UNREGISTERED';
   const date = params.date || new Date();
   const { fiscalYear, code } = computeFiscalYear(date);
   const invoiceNumber = formatInvoiceNumber(code, params.sequenceNumber);

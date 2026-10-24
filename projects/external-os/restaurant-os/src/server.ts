@@ -46,6 +46,7 @@ import {
   resolveTenantFromRequest,
   withTenantContext,
   getActiveTenant,
+  tryGetActiveTenant,
   renderTenantNotFoundPage,
   TenantProvisioningService,
   CustomDomainService,
@@ -54,13 +55,14 @@ import {
   verifyPlatformAuth,
   validateTenantSlug,
   generateSeats,
+  runDatabaseSecuritySelfCheck,
 } from '../packages/domain';
 import {
   buildGSTInvoice,
   computeFiscalYear,
   SAC_RESTAURANT_SERVICES,
 } from '../packages/domain/invoicing';
-import { RestaurantRuntimeStore, DomainEvent } from '../packages/storage';
+import { RestaurantRuntimeStore, DomainEvent, getTenantRepository, RestaurantRepository } from '../packages/storage';
 import { PostgresRestaurantStore } from '../packages/storage/postgres-store';
 import { RealtimeEventBus } from '../packages/domain/event-bus';
 import { RestaurantControlBridge, restaurantControlBridge } from './bridge';
@@ -93,6 +95,13 @@ import {
 } from '../packages/ui';
 
 const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 4010;
+
+// Production storage driver guard: file-backed JSON store is strictly prohibited in production
+if (process.env.STORAGE_DRIVER === 'json' && process.env.NODE_ENV === 'production') {
+  console.error('🚨 [CRITICAL_SECURITY_VIOLATION] STORAGE_DRIVER=json is strictly prohibited in production mode! Halting startup.');
+  process.exit(1);
+}
+
 const store = new RestaurantRuntimeStore();
 const eventBus = new RealtimeEventBus();
 const runtimeController = restaurantControlBridge;
@@ -326,7 +335,11 @@ function isSameOriginRequest(req: http.IncomingMessage): boolean {
   return (origin ? originMatches : true) && (referer ? refererMatches : true);
 }
 
-function resolveRequestIdentity(req: http.IncomingMessage, expectedTenantId?: string): RequestIdentity {
+async function resolveRequestIdentity(
+  req: http.IncomingMessage,
+  expectedTenantId?: string,
+  repo?: RestaurantRepository
+): Promise<RequestIdentity> {
   const authHeader = (req.headers['authorization'] as string) || '';
   const stationToken = (req.headers['x-station-token'] as string) || '';
   const parsedUrl = url.parse(req.url || '', true);
@@ -366,7 +379,7 @@ function resolveRequestIdentity(req: http.IncomingMessage, expectedTenantId?: st
     authSource = 'BEARER';
   }
 
-  const resolve = (): RequestIdentity => {
+  const resolve = async (): Promise<RequestIdentity> => {
 
   // 1. Physical Hardware Kitchen Station Token
   if (stationToken) {
@@ -405,7 +418,7 @@ function resolveRequestIdentity(req: http.IncomingMessage, expectedTenantId?: st
   if (token) {
     // 2a. Guest Capability Token (cap_...)
     if (token.startsWith('cap_')) {
-      const isValid = store.isCapabilityValid(token);
+      const isValid = repo ? await repo.isCapabilityValid(token) : false;
       if (!isValid) {
         return {
           type: 'REVOKED_CAPABILITY',
@@ -413,7 +426,8 @@ function resolveRequestIdentity(req: http.IncomingMessage, expectedTenantId?: st
           isPrivileged: false,
         };
       }
-      const session = store.getSessions().find(
+      const sessions = repo ? await repo.getSessions() : [];
+      const session = sessions.find(
         (s) => s.status === 'ACTIVE' && s.guestCapabilityTokens?.includes(token)
       );
       if (!session) {
@@ -435,10 +449,10 @@ function resolveRequestIdentity(req: http.IncomingMessage, expectedTenantId?: st
 
     // 2b. Cryptographically Signed Staff Token (orb_stf....)
     if (token.startsWith('orb_stf.')) {
-      const activeTenant = getActiveTenant();
+      const activeTenant = tryGetActiveTenant();
       const targetTenantId =
         expectedTenantId ||
-        (activeTenant?.tenantId && activeTenant.tenantId !== 'PLATFORM_SUPERUSER'
+        (activeTenant?.tenantId && !activeTenant.isPlatform
           ? activeTenant.tenantId
           : undefined);
       const verification = verifyStaffToken(token, { expectedTenantId: targetTenantId });
@@ -567,7 +581,7 @@ function resolveRequestIdentity(req: http.IncomingMessage, expectedTenantId?: st
     };
   };
 
-  const identity = resolve();
+  const identity = await resolve();
   identity.authSource = authSource;
   return identity;
 }
@@ -796,24 +810,25 @@ const server = http.createServer(async (req, res) => {
 
   res.setHeader('x-tenant-id', tenantContext.tenantId);
   return withTenantContext(tenantContext, async () => {
+    const repo = getTenantRepository(tenantContext, postgresStore?.prisma, eventBus);
     const startHrTime = process.hrtime.bigint();
     const rawReqId = req.headers['x-request-id'] || req.headers['x-correlation-id'];
     const requestId = validateOrGenerateRequestId(rawReqId);
     res.setHeader('x-request-id', requestId);
 
   // Context Hierarchy Validation
+  const branches = await repo.getBranches();
+  const floors = await repo.getFloors();
   const context = validateAndResolveContext(
-    store.getBranches(),
-    store.getFloors(),
+    branches,
+    floors,
     parsedUrl.query.branch as string,
     parsedUrl.query.floor as string,
     (parsedUrl.query.service || parsedUrl.query.shift) as string
   );
 
-  const branches = store.getBranches();
-  const currentBranch = store.getBranch(context.branchId) || branches[0];
-  const floors = store.getFloors();
-  const currentFloor = store.getFloor(context.floorId) || floors[0];
+  const currentBranch = (await repo.getBranch(context.branchId)) || branches[0];
+  const currentFloor = (await repo.getFloor(context.floorId)) || floors[0];
   const serviceShift = context.serviceName;
 
   res.on('finish', () => {
@@ -834,7 +849,7 @@ const server = http.createServer(async (req, res) => {
     });
   });
 
-  const requestIdentity = resolveRequestIdentity(req, tenantContext.tenantId);
+  const requestIdentity = await resolveRequestIdentity(req, tenantContext.tenantId, repo);
   const activeStaffToken = requestIdentity.rawToken;
   const activeStaffRole = requestIdentity.role || (requestIdentity.type === 'ADMIN' ? 'ADMIN' : undefined);
 
@@ -890,7 +905,7 @@ const server = http.createServer(async (req, res) => {
   // Dev/Test helper endpoint for injecting tasks in test environments
   if (process.env.NODE_ENV !== 'production' && pathname === '/api/test/inject-task' && method === 'POST') {
     const body = await parseBody(req);
-    store.addKitchenTask(body);
+    await repo.addKitchenTask(body);
     sendJson(res, 200, { success: true, task: body });
     return;
   }
@@ -1068,7 +1083,7 @@ const server = http.createServer(async (req, res) => {
     });
 
     if (authResult.isLocked) {
-      store.appendEvent(
+      await repo.appendEvent(
         'STAFF_AUTH_LOCKED',
         'auth-gateway',
         requestedBranchId,
@@ -1083,7 +1098,7 @@ const server = http.createServer(async (req, res) => {
     }
 
     if (!authResult.success || !authResult.member) {
-      store.appendEvent(
+      await repo.appendEvent(
         'STAFF_AUTH_FAILED',
         'auth-gateway',
         requestedBranchId,
@@ -1107,7 +1122,7 @@ const server = http.createServer(async (req, res) => {
       station: member.station,
     });
 
-    store.appendEvent(
+    await repo.appendEvent(
       'STAFF_TOKEN_ISSUED',
       'auth-gateway',
       member.branchId,
@@ -1191,7 +1206,7 @@ const server = http.createServer(async (req, res) => {
     }
 
     if (!authResult.success || !authResult.member) {
-      store.appendEvent(
+      await repo.appendEvent(
         'STAFF_AUTH_FAILED',
         'auth-gateway',
         requestedBranchId || '*',
@@ -1214,7 +1229,7 @@ const server = http.createServer(async (req, res) => {
       station: member.station,
     });
 
-    store.appendEvent(
+    await repo.appendEvent(
       'STAFF_TOKEN_ISSUED',
       'auth-gateway',
       member.branchId,
@@ -1248,13 +1263,13 @@ const server = http.createServer(async (req, res) => {
     const tokenToRevoke = requestIdentity.rawToken;
     if (tokenToRevoke) {
       if (tokenToRevoke.startsWith('cap_')) {
-        store.revokeCapabilityToken(tokenToRevoke);
+        await repo.revokeCapabilityToken(tokenToRevoke);
         eventBus.disconnectClientsForToken(tokenToRevoke);
       } else {
-        store.revokeStaffToken(tokenToRevoke);
+        await repo.revokeStaffToken(tokenToRevoke);
         eventBus.disconnectClientsForToken(tokenToRevoke);
       }
-      store.appendEvent(
+      await repo.appendEvent(
         'STAFF_SESSION_TERMINATED',
         'auth-gateway',
         requestIdentity.branchId || '*',
@@ -1266,7 +1281,7 @@ const server = http.createServer(async (req, res) => {
   }
 
   if (pathname === '/api/restaurant/auth/revoke' && method === 'POST') {
-    const identity = resolveRequestIdentity(req);
+    const identity = requestIdentity;
     const body = await parseBody(req);
     const targetToken = body.token || '';
 
@@ -1287,14 +1302,14 @@ const server = http.createServer(async (req, res) => {
     }
 
     if (targetToken.startsWith('cap_')) {
-      store.revokeCapabilityToken(targetToken);
+      await repo.revokeCapabilityToken(targetToken);
       eventBus.disconnectClientsForToken(targetToken);
     } else {
-      store.revokeStaffToken(targetToken);
+      await repo.revokeStaffToken(targetToken);
       eventBus.disconnectClientsForToken(targetToken);
     }
 
-    store.appendEvent(
+    await repo.appendEvent(
       'SECURITY_TOKEN_REVOKED',
       'auth-gateway',
       identity.branchId || '*',
@@ -1308,7 +1323,7 @@ const server = http.createServer(async (req, res) => {
   // --- STAFF MANAGEMENT API ---
   // List staff directory (PIN hashes & salts stripped)
   if (pathname === '/api/restaurant/staff' && method === 'GET') {
-    const identity = resolveRequestIdentity(req);
+    const identity = requestIdentity;
     if (
       identity.type === 'ANONYMOUS' ||
       identity.type === 'DINER' ||
@@ -1331,7 +1346,7 @@ const server = http.createServer(async (req, res) => {
 
   // Create staff member
   if (pathname === '/api/restaurant/staff' && method === 'POST') {
-    const identity = resolveRequestIdentity(req);
+    const identity = requestIdentity;
     if (
       identity.type === 'ANONYMOUS' ||
       identity.type === 'INVALID_CREDENTIAL' ||
@@ -1417,7 +1432,7 @@ const server = http.createServer(async (req, res) => {
     !pathname.endsWith('/revoke') &&
     (method === 'PATCH' || method === 'PUT')
   ) {
-    const identity = resolveRequestIdentity(req);
+    const identity = requestIdentity;
     if (
       identity.type === 'ANONYMOUS' ||
       identity.type === 'INVALID_CREDENTIAL' ||
@@ -1472,7 +1487,7 @@ const server = http.createServer(async (req, res) => {
 
   // Revoke staff member tokens by staff ID
   if (pathname.startsWith('/api/restaurant/staff/') && pathname.endsWith('/revoke') && method === 'POST') {
-    const identity = resolveRequestIdentity(req);
+    const identity = requestIdentity;
     if (
       identity.type === 'ANONYMOUS' ||
       identity.type === 'INVALID_CREDENTIAL' ||
@@ -1509,7 +1524,7 @@ const server = http.createServer(async (req, res) => {
       return;
     }
 
-    store.revokeStaffMember(staffId);
+    await repo.revokeStaffMember(staffId);
     await runtimeController.emitAudit('STAFF_MEMBER_REVOKED', identity.id, { staffId });
 
     sendJson(res, 200, {
@@ -1521,7 +1536,7 @@ const server = http.createServer(async (req, res) => {
 
   // Reset PIN lockout tracker
   if (pathname === '/api/restaurant/staff/reset-lockout' && method === 'POST') {
-    const identity = resolveRequestIdentity(req);
+    const identity = requestIdentity;
     if (!identity.isPrivileged) {
       sendJson(res, 403, { error: 'FORBIDDEN', message: 'Manager privileges required to reset lockouts.' });
       return;
@@ -1572,10 +1587,13 @@ const server = http.createServer(async (req, res) => {
 
   // 3. Event Cursor State Inspection (/api/restaurant/events/cursor) (Phase 6B)
   if (pathname === '/api/restaurant/events/cursor' && method === 'GET') {
+    const events = await repo.getEvents();
+    const lastSeq = events.length > 0 ? (events[events.length - 1].sequence || events.length) : 0;
+    const oldestSeq = events.length > 0 ? (events[0].sequence || 1) : 0;
     sendJson(res, 200, {
-      currentSequence: store.getLastEventSequence(),
-      oldestSequence: store.getOldestEventSequence(),
-      retainedEventsCount: store.getEvents().length,
+      currentSequence: lastSeq,
+      oldestSequence: oldestSeq,
+      retainedEventsCount: events.length,
       branchId: currentBranch.id,
       timestamp: new Date().toISOString(),
     });
@@ -1585,6 +1603,8 @@ const server = http.createServer(async (req, res) => {
   // --- HEALTH & STATUS ---
   if (pathname === '/health') {
     const config = runtimeController.getActiveConfig();
+    const tables = await repo.getTables();
+    const events = await repo.getEvents();
     sendJson(res, 200, {
       status: 'HEALTHY',
       service: 'restaurant-os-runtime',
@@ -1596,9 +1616,9 @@ const server = http.createServer(async (req, res) => {
       appliedRevision: runtimeController.getAppliedRevision(),
       configVersion: config?.configVersion || 1,
       features: config?.features || {},
-      storeRevision: store.getRevisions(),
-      totalTables: store.getTables().length,
-      outboxEventsCount: store.getEvents().length,
+      storeRevision: 1,
+      totalTables: tables.length,
+      outboxEventsCount: events.length,
       timestamp: new Date().toISOString(),
     });
     return;
@@ -1606,7 +1626,7 @@ const server = http.createServer(async (req, res) => {
 
   // --- REALTIME SERVER-SENT EVENTS (SSE) STREAM ---
   if (pathname === '/api/restaurant/events') {
-    const identity = resolveRequestIdentity(req);
+    const identity = requestIdentity;
     if (identity.type === 'REVOKED_CAPABILITY' || identity.type === 'INVALID_CREDENTIAL') {
       sendJson(res, 401, {
         error: 'REVOKED_CAPABILITY',
@@ -1623,7 +1643,7 @@ const server = http.createServer(async (req, res) => {
       });
       return;
     }
-    eventBus.registerClient(req, res, store, identity);
+    eventBus.registerClient(req, res, repo, identity);
     return;
   }
 
@@ -1632,7 +1652,16 @@ const server = http.createServer(async (req, res) => {
   // 1. Table QR Discovery
   if (pathname.startsWith('/api/restaurant/qr/')) {
     const locator = pathname.replace('/api/restaurant/qr/', '');
-    const table = store.getTableByLocator(locator) || store.getTable(14) || store.getTables()[0];
+    const table = await repo.getTableByLocator(locator);
+    if (!table) {
+      sendJson(res, 404, {
+        error: 'TABLE_NOT_FOUND',
+        code: 'TABLE_NOT_FOUND',
+        message: `No table found for locator: ${locator}`,
+      });
+      return;
+    }
+    const tenantBrand = await repo.getTenantBrand();
     sendJson(res, 200, {
       success: true,
       data: {
@@ -1642,7 +1671,7 @@ const server = http.createServer(async (req, res) => {
         status: table.status,
         locator: table.locator,
         section: table.section,
-        restaurantName: 'OrbitoX Bistro',
+        restaurantName: tenantBrand?.restaurantName || tenantContext.tenantName || 'OrbitoX Restaurant',
         activeSession: {
           sessionId: table.activeSessionId || `sess_${locator.slice(0, 4)}`,
           hostName: 'Guest Host',
@@ -1655,9 +1684,10 @@ const server = http.createServer(async (req, res) => {
 
   // 2. Public Culinary Menu Catalog
   if (pathname === '/api/restaurant/menu') {
+    const items = await repo.getMenuItems();
     sendJson(res, 200, {
       success: true,
-      data: store.getMenuItems(),
+      data: items,
     });
     return;
   }
@@ -1665,27 +1695,43 @@ const server = http.createServer(async (req, res) => {
   // 3. Seating Session Join
   if (pathname === '/api/restaurant/sessions/join' && method === 'POST') {
     const body = await parseBody(req);
-    const targetTbl = (body.locator ? store.getTableByLocator(body.locator) : null) ||
-                      store.getTableByNumber(body.tableNumber) ||
-                      store.getTableByNumber(`T-${body.tableNumber}`) ||
-                      store.getTable(14);
-    const tableNum = targetTbl ? targetTbl.number : (body.tableNumber || 'T-14');
+    let targetTbl: TableFloorRecord | undefined;
+    if (body.locator) {
+      targetTbl = await repo.getTableByLocator(body.locator);
+    }
+    if (!targetTbl && body.tableNumber) {
+      targetTbl = await repo.getTableByNumber(body.tableNumber);
+    }
+    if (!targetTbl && body.tableNumber) {
+      targetTbl = await repo.getTableByNumber(`T-${body.tableNumber}`);
+    }
+    if (!targetTbl && body.tableId) {
+      targetTbl = await repo.getTable(body.tableId);
+    }
+
+    if (!targetTbl) {
+      sendJson(res, 404, {
+        error: 'TABLE_NOT_FOUND',
+        code: 'TABLE_NOT_FOUND',
+        message: `Table not found for provided locator/number: ${body.locator || body.tableNumber || body.tableId}`,
+      });
+      return;
+    }
+
+    const tableNum = targetTbl.number;
     const capabilityToken = `cap_${crypto.randomBytes(16).toString('hex')}`;
     const hostName = body.guestName || body.name || 'Primary Host';
 
-    const session = store.createOrJoinSession(
+    const session = await repo.createOrJoinSession(
       tableNum,
       hostName,
-      capabilityToken,
-      targetTbl?.branchId || currentBranch.id,
-      targetTbl?.floorId || currentFloor.id
+      targetTbl.branchId || currentBranch.id,
+      targetTbl.floorId || currentFloor.id
     );
 
-    if (targetTbl) {
-      const s1 = targetTbl.seats?.find((s) => s.seatNumber === 1);
-      if (s1 && !s1.guestName) {
-        store.assignGuestToSeat(s1.id, hostName);
-      }
+    const s1 = targetTbl.seats?.find((s) => s.seatNumber === 1);
+    if (s1 && !s1.guestName) {
+      await repo.assignGuestToSeat(s1.id, hostName);
     }
 
     sendJson(res, 200, {
@@ -1703,7 +1749,7 @@ const server = http.createServer(async (req, res) => {
 
   // 4. Session Close
   if (pathname === '/api/restaurant/sessions/close' && method === 'POST') {
-    const identity = resolveRequestIdentity(req);
+    const identity = requestIdentity;
     if (identity.type === 'REVOKED_CAPABILITY') {
       sendJson(res, 401, {
         error: 'REVOKED_CAPABILITY',
@@ -1714,8 +1760,24 @@ const server = http.createServer(async (req, res) => {
     }
 
     const body = await parseBody(req);
-    const tableNum =
-      body.tableNumber || (body.tableId ? store.getTable(body.tableId)?.number : undefined) || 'T-14';
+    let targetTbl: TableFloorRecord | undefined;
+    if (body.tableNumber) {
+      targetTbl = await repo.getTableByNumber(body.tableNumber);
+    }
+    if (!targetTbl && body.tableId) {
+      targetTbl = await repo.getTable(body.tableId);
+    }
+
+    if (!targetTbl) {
+      sendJson(res, 404, {
+        error: 'TABLE_NOT_FOUND',
+        code: 'TABLE_NOT_FOUND',
+        message: `Table not found for session closure: ${body.tableNumber || body.tableId || 'unspecified'}`,
+      });
+      return;
+    }
+
+    const tableNum = targetTbl.number;
 
     if (identity.type === 'DINER' && identity.tableNumber && identity.tableNumber !== tableNum) {
       sendJson(res, 403, {
@@ -1756,16 +1818,15 @@ const server = http.createServer(async (req, res) => {
     // Authorizer is strictly the authenticated identity, never an unverified string from request body!
     const authorizer = identity.isPrivileged ? identity.id : (identity.type === 'STAFF' ? identity.id : 'staff:pos');
 
-    const targetTableRecord = store.getTableByNumber(tableNum);
-    if (targetTableRecord && identity.branchId && identity.branchId !== '*' && targetTableRecord.branchId !== identity.branchId) {
+    if (identity.branchId && identity.branchId !== '*' && targetTbl.branchId !== identity.branchId) {
       sendJson(res, 403, {
-        error: `Credential for branch ${identity.branchId} cannot close session for table in branch ${targetTableRecord.branchId}`,
+        error: `Credential for branch ${identity.branchId} cannot close session for table in branch ${targetTbl.branchId}`,
         code: 'BRANCH_MISMATCH',
       });
       return;
     }
 
-    const result = store.closeSession(tableNum, settlement, force, {
+    const result = await repo.closeSession(tableNum, settlement, force, {
       expectedRevision: body.expectedRevision,
       authorizedBy: authorizer,
       reason: body.reason,
@@ -1808,7 +1869,7 @@ const server = http.createServer(async (req, res) => {
     (pathname === '/api/restaurant/tables/settle' && method === 'POST');
 
   if (isTableSettle) {
-    const identity = resolveRequestIdentity(req);
+    const identity = requestIdentity;
     if (identity.type === 'INVALID_CREDENTIAL') {
       sendJson(res, 401, {
         error: 'INVALID_CREDENTIAL',
@@ -1860,8 +1921,8 @@ const server = http.createServer(async (req, res) => {
 
     const targetTable =
       typeof tableParam === 'number'
-        ? store.getTable(tableParam)
-        : store.getTableByNumber(String(tableParam));
+        ? await repo.getTable(tableParam)
+        : await repo.getTableByNumber(String(tableParam));
 
     if (!targetTable) {
       sendJson(res, 404, {
@@ -1882,7 +1943,7 @@ const server = http.createServer(async (req, res) => {
 
     const idempotencyKey = (req.headers['x-idempotency-key'] as string) || body.idempotencyKey;
     if (idempotencyKey) {
-      const existingIdempotent = store.getIdempotencyRecord(idempotencyKey) || idempotencyRecords.get(idempotencyKey);
+      const existingIdempotent = (await repo.getIdempotencyRecord(idempotencyKey)) || idempotencyRecords.get(idempotencyKey);
       if (existingIdempotent) {
         const isPayloadMatch =
           existingIdempotent.tableNumber === targetTable.number &&
@@ -1945,7 +2006,7 @@ const server = http.createServer(async (req, res) => {
         settledAt: new Date().toISOString(),
       };
 
-      const result = store.settleTableSession(targetTable.id, settlementPayload, {
+      const result = await repo.settleTableSession(targetTable.id, settlementPayload, {
         expectedRevision: body.expectedRevision,
         authorizedBy: authorizer,
         reason: body.reason,
@@ -2004,9 +2065,7 @@ const server = http.createServer(async (req, res) => {
 
       if (idempotencyKey) {
         idempotencyRecords.set(idempotencyKey, responsePayload);
-        if (!store.getIdempotencyRecord(idempotencyKey)?.table) {
-          store.saveIdempotencyRecord(idempotencyKey, responsePayload);
-        }
+        await repo.saveIdempotencyRecord(idempotencyKey, responsePayload);
       }
 
       sendJson(res, 200, {
@@ -2028,7 +2087,7 @@ const server = http.createServer(async (req, res) => {
     const body = await parseBody(req);
     const items = body.items || body.cartItems || [];
     let subtotalMinor = 0;
-    const menuItems = store.getMenuItems();
+    const menuItems = await repo.getMenuItems();
 
     for (const item of items) {
       const found = menuItems.find((m) => m.id === (item.id || item.itemId));
@@ -2076,9 +2135,8 @@ const server = http.createServer(async (req, res) => {
   }
 
   // 6. Idempotent Order Submission
-  // 6. Idempotent Order Submission
   if (pathname === '/api/restaurant/orders' && method === 'POST') {
-    const identity = resolveRequestIdentity(req);
+    const identity = requestIdentity;
     if (identity.type === 'INVALID_CREDENTIAL') {
       sendJson(res, 401, {
         error: 'INVALID_CREDENTIAL',
@@ -2132,7 +2190,7 @@ const server = http.createServer(async (req, res) => {
       return;
     }
 
-    const menuItems = store.getMenuItems();
+    const menuItems = await repo.getMenuItems();
     for (const it of items) {
       const q = it.quantity !== undefined ? it.quantity : 1;
       if (!Number.isInteger(q) || q < 1 || q > 50) {
@@ -2155,7 +2213,26 @@ const server = http.createServer(async (req, res) => {
     }
 
     const orderId = `ord_${Date.now()}`;
-    const tableNumber = body.tableNumber || 'T-14';
+    if (!body.tableNumber && !body.tableId) {
+      sendJson(res, 400, {
+        error: 'TABLE_REQUIRED',
+        code: 'TABLE_REQUIRED',
+        message: 'tableNumber is required to place an order.',
+      });
+      return;
+    }
+    const targetTableRecord = body.tableNumber
+      ? await repo.getTableByNumber(body.tableNumber)
+      : await repo.getTable(body.tableId);
+    if (!targetTableRecord) {
+      sendJson(res, 404, {
+        error: 'TABLE_NOT_FOUND',
+        code: 'TABLE_NOT_FOUND',
+        message: `Table ${body.tableNumber || body.tableId} does not exist in this restaurant.`,
+      });
+      return;
+    }
+    const tableNumber = targetTableRecord.number;
 
     // Authoritative Plan Limits & Quota Enforcement
     try {
@@ -2188,7 +2265,7 @@ const server = http.createServer(async (req, res) => {
         });
         return;
       }
-      const activeTable = store.getTableByNumber(tableNumber);
+      const activeTable = targetTableRecord;
       if (activeTable && activeTable.activeSessionId && identity.sessionId && activeTable.activeSessionId !== identity.sessionId) {
         sendJson(res, 403, {
           error: 'SESSION_MISMATCH',
@@ -2199,8 +2276,7 @@ const server = http.createServer(async (req, res) => {
       }
     }
 
-    const targetTableRecord = store.getTableByNumber(tableNumber);
-    if (targetTableRecord && identity.branchId && identity.branchId !== '*' && targetTableRecord.branchId !== identity.branchId) {
+    if (identity.branchId && identity.branchId !== '*' && targetTableRecord.branchId !== identity.branchId) {
       sendJson(res, 403, {
         error: 'BRANCH_MISMATCH',
         code: 'BRANCH_MISMATCH',
@@ -2245,15 +2321,16 @@ const server = http.createServer(async (req, res) => {
         modifiers: it.modifiers || (it.modifier ? [it.modifier] : []),
         guestName: body.guestName || 'Guest',
       };
-      store.addKitchenTask(newTask);
+      await repo.addKitchenTask(newTask);
       eventBus.broadcast({
         id: `evt_${Date.now()}`,
-        sequence: store.getEvents().length,
+        sequence: (await repo.getEvents()).length,
         type: 'task.created',
         timestamp: new Date().toISOString(),
         producer: 'api:order-service',
         branchId: body.branchId || currentBranch.id,
         tableNumber,
+        tenantId: tenantContext.tenantId,
         payload: newTask,
       });
     }
@@ -2290,15 +2367,16 @@ const server = http.createServer(async (req, res) => {
       createdAt: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
     };
 
-    store.addOrder(newOrder);
+    await repo.addOrder(newOrder);
     eventBus.broadcast({
       id: `evt_${Date.now()}`,
-      sequence: store.getEvents().length,
+      sequence: (await repo.getEvents()).length,
       type: 'order.created',
       timestamp: new Date().toISOString(),
       producer: 'api:order-service',
       branchId: body.branchId || currentBranch.id,
       tableNumber,
+      tenantId: tenantContext.tenantId,
       payload: newOrder,
     });
 
@@ -2315,6 +2393,9 @@ const server = http.createServer(async (req, res) => {
     };
 
     idempotencyRecords.set(idempotencyKey, { payloadHash, response });
+    if (idempotencyKey) {
+      await repo.saveIdempotencyRecord(idempotencyKey, response);
+    }
     await runtimeController.emitAudit('ORDER_PLACED', `table:${newOrder.tableNumber}`, { orderId, totalMinor });
     await runtimeController.reportOrderProcessed(orderId, totalMinor);
 
@@ -2324,7 +2405,7 @@ const server = http.createServer(async (req, res) => {
 
   // 6b. Orders Query Endpoint
   if (pathname === '/api/restaurant/orders' && method === 'GET') {
-    const identity = resolveRequestIdentity(req);
+    const identity = requestIdentity;
     if (identity.type === 'INVALID_CREDENTIAL') {
       sendJson(res, 401, { error: 'INVALID_CREDENTIAL', code: 'INVALID_CREDENTIAL' });
       return;
@@ -2341,7 +2422,7 @@ const server = http.createServer(async (req, res) => {
     const statusFilter = (parsedUrl.query.status as string) || 'ALL';
     const searchQuery = ((parsedUrl.query.search || parsedUrl.query.q || '') as string).toLowerCase().trim();
 
-    let orders = store.getOrders(tableFilter, sessionFilter, branchFilter, statusFilter);
+    let orders = await repo.getOrders(tableFilter, sessionFilter, branchFilter, statusFilter);
 
     if (identity.type === 'DINER') {
       // Diner is strictly scoped to their own session
@@ -2381,15 +2462,15 @@ const server = http.createServer(async (req, res) => {
     !pathname.endsWith('/cancel') &&
     method === 'GET'
   ) {
-    const identity = resolveRequestIdentity(req);
+    const identity = requestIdentity;
     const orderId = pathname.replace('/api/restaurant/orders/', '');
-    const order = store.getOrder(orderId);
+    const order = await repo.getOrder(orderId);
     if (!order) {
       sendJson(res, 404, { success: false, error: `Order ${orderId} not found`, code: 'ORDER_NOT_FOUND' });
       return;
     }
 
-    const targetTable = store.getTableByNumber(order.tableNumber);
+    const targetTable = await repo.getTableByNumber(order.tableNumber);
     const orderBranch = order.branchId || targetTable?.branchId;
     if (
       identity.branchId &&
@@ -2405,7 +2486,7 @@ const server = http.createServer(async (req, res) => {
       return;
     }
 
-    const tasks = store.getKitchenTasks().filter((t) => t.orderId === order.orderId);
+    const tasks = (await repo.getKitchenTasks()).filter((t) => t.orderId === order.orderId);
     sendJson(res, 200, { success: true, data: order, tasks });
     return;
   }
@@ -2416,7 +2497,7 @@ const server = http.createServer(async (req, res) => {
     (pathname.endsWith('/status') || method === 'PATCH') &&
     !pathname.endsWith('/cancel')
   ) {
-    const identity = resolveRequestIdentity(req);
+    const identity = requestIdentity;
     if (identity.type === 'INVALID_CREDENTIAL' || identity.type === 'REVOKED_CAPABILITY') {
       sendJson(res, 401, { error: identity.type, code: identity.type });
       return;
@@ -2431,13 +2512,13 @@ const server = http.createServer(async (req, res) => {
     }
 
     const orderId = pathname.replace('/api/restaurant/orders/', '').replace('/status', '');
-    const order = store.getOrder(orderId);
+    const order = await repo.getOrder(orderId);
     if (!order) {
       sendJson(res, 404, { success: false, error: `Order ${orderId} not found`, code: 'ORDER_NOT_FOUND' });
       return;
     }
 
-    const targetTable = store.getTableByNumber(order.tableNumber);
+    const targetTable = await repo.getTableByNumber(order.tableNumber);
     const orderBranch = order.branchId || targetTable?.branchId;
     if (
       identity.branchId &&
@@ -2473,24 +2554,20 @@ const server = http.createServer(async (req, res) => {
       return;
     }
 
-    const result = store.updateOrderStatus(orderId, newStatus, {
-      authorizedBy: identity.id,
-      reason: body.reason,
-    });
-
-    if (!result.success) {
-      const statusCode = result.code === 'ORDER_NOT_FOUND' ? 404 : 400;
-      sendJson(res, statusCode, { success: false, error: result.error, code: result.code });
+    const success = await repo.updateOrderStatus(orderId, newStatus);
+    if (!success) {
+      sendJson(res, 400, { success: false, error: 'Failed to update order status', code: 'UPDATE_FAILED' });
       return;
     }
 
-    sendJson(res, 200, { success: true, data: result.order });
+    const updatedOrder = await repo.getOrder(orderId);
+    sendJson(res, 200, { success: true, data: updatedOrder });
     return;
   }
 
   // 6e. Order Cancellation (POST /api/restaurant/orders/:id/cancel)
   if (pathname.startsWith('/api/restaurant/orders/') && pathname.endsWith('/cancel') && method === 'POST') {
-    const identity = resolveRequestIdentity(req);
+    const identity = requestIdentity;
     if (identity.type === 'INVALID_CREDENTIAL' || identity.type === 'REVOKED_CAPABILITY') {
       sendJson(res, 401, { error: identity.type, code: identity.type });
       return;
@@ -2505,13 +2582,13 @@ const server = http.createServer(async (req, res) => {
     }
 
     const orderId = pathname.replace('/api/restaurant/orders/', '').replace('/cancel', '');
-    const order = store.getOrder(orderId);
+    const order = await repo.getOrder(orderId);
     if (!order) {
       sendJson(res, 404, { success: false, error: `Order ${orderId} not found`, code: 'ORDER_NOT_FOUND' });
       return;
     }
 
-    const targetTable = store.getTableByNumber(order.tableNumber);
+    const targetTable = await repo.getTableByNumber(order.tableNumber);
     const orderBranch = order.branchId || targetTable?.branchId;
     if (
       identity.branchId &&
@@ -2551,7 +2628,7 @@ const server = http.createServer(async (req, res) => {
       return;
     }
 
-    const result = store.cancelOrder(orderId, reason, identity.id);
+    const result = await repo.cancelOrder(orderId, reason);
     if (!result.success) {
       const statusCode = result.code === 'ORDER_NOT_FOUND' ? 404 : 400;
       sendJson(res, statusCode, { success: false, error: result.error, code: result.code });
@@ -2582,12 +2659,7 @@ const server = http.createServer(async (req, res) => {
     const tenant = getActiveTenant();
     const tid = tenant.tenantId;
 
-    let order = store.getOrder(orderId);
-    if (!order && postgresStore) {
-      try {
-        order = await postgresStore.getOrder(orderId, tid);
-      } catch {}
-    }
+    let order = await repo.getOrder(orderId);
 
     if (!order) {
       sendJson(res, 404, {
@@ -2748,36 +2820,37 @@ const server = http.createServer(async (req, res) => {
         }
       }
 
-      // Update Order and Table in memory store
+      // Update Order and Table via repository
       const targetOrderId = orderId || existingSession?.orderId;
-      let order = targetOrderId ? store.getOrder(targetOrderId) : null;
+      let order = targetOrderId ? await repo.getOrder(targetOrderId) : null;
       if (order) {
         order.status = 'PAID';
         (order as any).paymentMethod = 'RAZORPAY';
         (order as any).paymentStatus = 'PAID';
+        await repo.updateOrderStatus(order.orderId, 'PAID', 'Order paid via Razorpay');
       }
 
       // Automatically generate statutory Indian GST Tax Invoice
       let invoiceRecord = null;
-      if (order && postgresStore) {
+      if (order) {
         try {
-          invoiceRecord = await postgresStore.getInvoiceByOrderId(order.orderId, tid);
+          invoiceRecord = await repo.getInvoiceByOrderId(order.orderId);
           if (!invoiceRecord) {
             const { fiscalYear } = computeFiscalYear();
-            const seq = await postgresStore.getNextInvoiceSequence(fiscalYear, tid);
+            const seq = await repo.getNextInvoiceSequence(fiscalYear);
             invoiceRecord = buildGSTInvoice({
               order,
               sequenceNumber: seq,
               tenantId: tid,
             });
-            await postgresStore.saveInvoice(invoiceRecord, tid);
+            await repo.saveInvoice(invoiceRecord);
             eventBus.broadcast({
               id: `evt_${Date.now()}`,
-              sequence: store.getEvents().length,
+              sequence: (await repo.getEvents()).length,
               type: 'invoice.generated',
               timestamp: new Date().toISOString(),
               producer: 'api:payment-service',
-              branchId: order.branchId || currentBranch?.id || 'branch_pilot_main',
+              branchId: order.branchId || currentBranch?.id || 'branch_main',
               tableNumber: order.tableNumber,
               payload: invoiceRecord,
             });
@@ -2789,11 +2862,11 @@ const server = http.createServer(async (req, res) => {
 
       eventBus.broadcast({
         id: `evt_${Date.now()}`,
-        sequence: store.getEvents().length,
+        sequence: (await repo.getEvents()).length,
         type: 'payment.captured',
         timestamp: new Date().toISOString(),
         producer: 'api:payment-service',
-        branchId: order?.branchId || currentBranch?.id || 'branch_pilot_main',
+        branchId: order?.branchId || currentBranch?.id || 'branch_main',
         tableNumber,
         payload: {
           razorpayPaymentId,
@@ -2951,31 +3024,21 @@ const server = http.createServer(async (req, res) => {
     }
 
     const tid = getActiveTenant().tenantId;
-    if (!postgresStore) {
-      sendJson(res, 503, { error: 'POSTGRES_STORE_UNAVAILABLE', message: 'PostgreSQL storage required' });
-      return;
-    }
 
-    const existing = await postgresStore.getInvoiceByOrderId(orderId, tid);
+    const existing = await repo.getInvoiceByOrderId(orderId);
     if (existing) {
       sendJson(res, 200, { success: true, message: 'Invoice already exists', data: existing });
       return;
     }
 
-    let order = store.getOrder(orderId);
-    if (!order) {
-      try {
-        order = await postgresStore.getOrder(orderId, tid);
-      } catch {}
-    }
-
+    let order = await repo.getOrder(orderId);
     if (!order) {
       sendJson(res, 404, { error: 'ORDER_NOT_FOUND', message: `Order ${orderId} not found` });
       return;
     }
 
     const { fiscalYear } = computeFiscalYear();
-    const seq = await postgresStore.getNextInvoiceSequence(fiscalYear, tid);
+    const seq = await repo.getNextInvoiceSequence(fiscalYear);
     const invoiceRecord = buildGSTInvoice({
       order,
       sequenceNumber: seq,
@@ -2986,14 +3049,14 @@ const server = http.createServer(async (req, res) => {
       customerGstin: body.customerGstin,
     });
 
-    await postgresStore.saveInvoice(invoiceRecord, tid);
+    await repo.saveInvoice(invoiceRecord);
     sendJson(res, 201, { success: true, data: invoiceRecord });
     return;
   }
 
   // 6g. Level 4 Refund Governance Endpoint
   if (pathname === '/api/restaurant/payments/refund' && method === 'POST') {
-    const identity = resolveRequestIdentity(req);
+    const identity = requestIdentity;
     const body = await parseBody(req);
     const staffRole = identity.role || body.staffRole;
     const isPinVerified = identity.isPrivileged || Boolean(body.staffPinVerified);
@@ -3031,7 +3094,8 @@ const server = http.createServer(async (req, res) => {
   // 7. Kitchen Display System Stream / List
   if ((pathname === '/api/restaurant/kds' || pathname === '/api/restaurant/kds/tasks') && method === 'GET') {
     const stationFilter = (parsedUrl.query.station || parsedUrl.query.stationId) as string;
-    const tasks = store.getKitchenTasks(stationFilter);
+    const branchFilter = (parsedUrl.query.branchId as string) || (requestIdentity.isPrivileged ? undefined : requestIdentity.branchId);
+    const tasks = await repo.getKitchenTasks(stationFilter, branchFilter);
     sendJson(res, 200, {
       success: true,
       data: tasks,
@@ -3172,8 +3236,9 @@ const server = http.createServer(async (req, res) => {
     error?: string;
   }
 
-  const resolveTaskAuthoritativeBranch = (task: any): TaskBranchResolution => {
-    const registeredBranches = store.getBranches().map((b) => b.id);
+  const resolveTaskAuthoritativeBranch = async (task: any): Promise<TaskBranchResolution> => {
+    const branches = await repo.getBranches();
+    const registeredBranches = branches.map((b) => b.id);
 
     // 1. Direct task.branchId validation
     if (task.branchId && typeof task.branchId === 'string' && task.branchId.trim().length > 0) {
@@ -3199,7 +3264,7 @@ const server = http.createServer(async (req, res) => {
 
     // 2. Controlled migration from authoritative linked order
     if (task.orderId) {
-      const linkedOrder = store.getOrder(task.orderId);
+      const linkedOrder = await repo.getOrder(task.orderId);
       if (linkedOrder && linkedOrder.branchId && registeredBranches.includes(linkedOrder.branchId)) {
         task.branchId = linkedOrder.branchId;
         return { branchId: linkedOrder.branchId, quarantined: false };
@@ -3208,7 +3273,7 @@ const server = http.createServer(async (req, res) => {
 
     // 3. Controlled migration from authoritative linked table session
     if (task.sessionId) {
-      const linkedSession = store.getSession(task.sessionId);
+      const linkedSession = await repo.getSession(task.sessionId);
       if (linkedSession && linkedSession.branchId && registeredBranches.includes(linkedSession.branchId)) {
         task.branchId = linkedSession.branchId;
         return { branchId: linkedSession.branchId, quarantined: false };
@@ -3225,13 +3290,13 @@ const server = http.createServer(async (req, res) => {
   };
 
   // --- KDS Mutation Idempotency Helper ---
-  const checkKdsIdempotency = (
+  const checkKdsIdempotency = async (
     idempotencyKey: string | undefined,
     operation: string,
     targetId: string,
     targetBranchId: string | null | undefined,
     payload: any
-  ): { hasConflict: boolean; isReplay: boolean; cachedResponse?: any; payloadHash: string } => {
+  ): Promise<{ hasConflict: boolean; isReplay: boolean; cachedResponse?: any; payloadHash: string }> => {
     if (!idempotencyKey) {
       return { hasConflict: false, isReplay: false, payloadHash: '' };
     }
@@ -3244,7 +3309,7 @@ const server = http.createServer(async (req, res) => {
     };
     const payloadHash = crypto.createHash('sha256').update(JSON.stringify(canonicalObj)).digest('hex');
 
-    const existing = store.getIdempotencyRecord(idempotencyKey) || idempotencyRecords.get(idempotencyKey);
+    const existing = (await repo.getIdempotencyRecord(idempotencyKey)) || idempotencyRecords.get(idempotencyKey);
     if (existing) {
       if (
         existing.operation !== operation ||
@@ -3256,7 +3321,7 @@ const server = http.createServer(async (req, res) => {
       return {
         hasConflict: false,
         isReplay: true,
-        cachedResponse: existing.response,
+        cachedResponse: existing.responseBody || existing.response,
         payloadHash,
       };
     }
@@ -3270,7 +3335,7 @@ const server = http.createServer(async (req, res) => {
       (pathname.startsWith('/api/restaurant/kds/tasks/') && pathname.endsWith('/bump'))) &&
     method === 'POST'
   ) {
-    const identity = resolveRequestIdentity(req);
+    const identity = requestIdentity;
     const body = await parseBody(req);
     const taskId = body.taskId || (pathname.startsWith('/api/restaurant/kds/tasks/') ? pathname.split('/')[5] : undefined);
     const nextStatus = body.newStatus || body.status;
@@ -3288,14 +3353,15 @@ const server = http.createServer(async (req, res) => {
       return;
     }
 
-    const task = store.getKitchenTasks().find((t) => t.id === taskId);
+    const allTasks = await repo.getKitchenTasks();
+    const task = allTasks.find((t) => t.id === taskId);
     if (!task) {
       sendJson(res, 404, { error: `Task ${taskId} not found`, code: 'TASK_NOT_FOUND' });
       return;
     }
 
     // Branch Resolution & Quarantine
-    const taskBranchRes = resolveTaskAuthoritativeBranch(task);
+    const taskBranchRes = await resolveTaskAuthoritativeBranch(task);
     if (taskBranchRes.quarantined && identity.branchId !== '*') {
       sendJson(res, 403, {
         error: taskBranchRes.error,
@@ -3332,7 +3398,7 @@ const server = http.createServer(async (req, res) => {
     }
 
     // 3. Idempotency Check
-    const idempCheck = checkKdsIdempotency(idempotencyKey, 'kds.bump', taskId, taskBranch, {
+    const idempCheck = await checkKdsIdempotency(idempotencyKey, 'kds.bump', taskId, taskBranch, {
       nextStatus,
       station: requestedStation,
     });
@@ -3353,7 +3419,7 @@ const server = http.createServer(async (req, res) => {
       return;
     }
 
-    const result = store.updateKitchenTaskStatus(taskId, nextStatus, {
+    const result = await repo.updateKitchenTaskStatus(taskId, nextStatus, {
       station: requestedStation,
       expectedRevision: body.expectedRevision,
     });
@@ -3389,13 +3455,13 @@ const server = http.createServer(async (req, res) => {
         response: responsePayload,
       };
       idempotencyRecords.set(idempotencyKey, record);
-      store.saveIdempotencyRecord(idempotencyKey, record);
+      await repo.saveIdempotencyRecord(idempotencyKey, record);
     }
 
     if (result.task) {
       eventBus.broadcast({
         id: `evt_${Date.now()}`,
-        sequence: store.getEvents().length,
+        sequence: (await repo.getEvents()).length,
         type: `task.${result.task.status.toLowerCase()}`,
         timestamp: new Date().toISOString(),
         producer: result.task.orderId || result.task.id,
@@ -3421,7 +3487,7 @@ const server = http.createServer(async (req, res) => {
       (pathname.startsWith('/api/restaurant/kds/tasks/') && pathname.endsWith('/fulfill-item'))) &&
     method === 'POST'
   ) {
-    const identity = resolveRequestIdentity(req);
+    const identity = requestIdentity;
     const body = await parseBody(req);
     const taskId = body.taskId || (pathname.startsWith('/api/restaurant/kds/tasks/') ? pathname.split('/')[5] : undefined);
     const idempotencyKey = (req.headers['x-idempotency-key'] as string) || body.idempotencyKey;
@@ -3438,14 +3504,15 @@ const server = http.createServer(async (req, res) => {
       return;
     }
 
-    const task = store.getKitchenTasks().find((t) => t.id === taskId);
+    const allTasks = await repo.getKitchenTasks();
+    const task = allTasks.find((t) => t.id === taskId);
     if (!task) {
       sendJson(res, 404, { error: `Task ${taskId} not found`, code: 'TASK_NOT_FOUND' });
       return;
     }
 
     // Branch Resolution & Quarantine
-    const taskBranchRes = resolveTaskAuthoritativeBranch(task);
+    const taskBranchRes = await resolveTaskAuthoritativeBranch(task);
     if (taskBranchRes.quarantined && identity.branchId !== '*') {
       sendJson(res, 403, {
         error: taskBranchRes.error,
@@ -3463,7 +3530,7 @@ const server = http.createServer(async (req, res) => {
     }
 
     // 3. Idempotency Check
-    const idempCheck = checkKdsIdempotency(idempotencyKey, 'kds.fulfill-item', taskId, taskBranch, {
+    const idempCheck = await checkKdsIdempotency(idempotencyKey, 'kds.fulfill-item', taskId, taskBranch, {
       targetCount: body.targetCount,
     });
     if (idempCheck.hasConflict) {
@@ -3483,7 +3550,7 @@ const server = http.createServer(async (req, res) => {
       return;
     }
 
-    const result = store.fulfillTaskItem(taskId, body.targetCount);
+    const result = await repo.fulfillTaskItem(taskId, body.targetCount);
     if (!result.success) {
       const status = result.code === 'TASK_NOT_FOUND' ? 404 : 400;
       sendJson(res, status, { error: result.error, code: result.code });
@@ -3500,7 +3567,7 @@ const server = http.createServer(async (req, res) => {
         response: responsePayload,
       };
       idempotencyRecords.set(idempotencyKey, record);
-      store.saveIdempotencyRecord(idempotencyKey, record);
+      await repo.saveIdempotencyRecord(idempotencyKey, record);
     }
 
     sendJson(res, 200, responsePayload);
@@ -3513,7 +3580,7 @@ const server = http.createServer(async (req, res) => {
       (pathname.startsWith('/api/restaurant/kds/tasks/') && pathname.endsWith('/recall'))) &&
     method === 'POST'
   ) {
-    const identity = resolveRequestIdentity(req);
+    const identity = requestIdentity;
     const body = await parseBody(req);
     const taskId = body.taskId || (pathname.startsWith('/api/restaurant/kds/tasks/') ? pathname.split('/')[5] : undefined);
     const idempotencyKey = (req.headers['x-idempotency-key'] as string) || body.idempotencyKey;
@@ -3530,14 +3597,15 @@ const server = http.createServer(async (req, res) => {
       return;
     }
 
-    const task = store.getKitchenTasks().find((t) => t.id === taskId);
+    const allTasks = await repo.getKitchenTasks();
+    const task = allTasks.find((t) => t.id === taskId);
     if (!task) {
       sendJson(res, 404, { error: `Task ${taskId} not found`, code: 'TASK_NOT_FOUND' });
       return;
     }
 
     // Branch Resolution & Quarantine
-    const taskBranchRes = resolveTaskAuthoritativeBranch(task);
+    const taskBranchRes = await resolveTaskAuthoritativeBranch(task);
     if (taskBranchRes.quarantined && identity.branchId !== '*') {
       sendJson(res, 403, {
         error: taskBranchRes.error,
@@ -3555,7 +3623,7 @@ const server = http.createServer(async (req, res) => {
     }
 
     // 3. Idempotency Check
-    const idempCheck = checkKdsIdempotency(idempotencyKey, 'kds.recall', taskId, taskBranch, {
+    const idempCheck = await checkKdsIdempotency(idempotencyKey, 'kds.recall', taskId, taskBranch, {
       targetStatus: body.targetStatus,
     });
     if (idempCheck.hasConflict) {
@@ -3575,7 +3643,7 @@ const server = http.createServer(async (req, res) => {
       return;
     }
 
-    const result = store.recallTask(taskId, body.targetStatus);
+    const result = await repo.recallTask(taskId, body.targetStatus);
     if (!result.success) {
       const status = result.code === 'TASK_NOT_FOUND' ? 404 : 400;
       sendJson(res, status, { error: result.error, code: result.code });
@@ -3592,7 +3660,7 @@ const server = http.createServer(async (req, res) => {
         response: responsePayload,
       };
       idempotencyRecords.set(idempotencyKey, record);
-      store.saveIdempotencyRecord(idempotencyKey, record);
+      await repo.saveIdempotencyRecord(idempotencyKey, record);
     }
 
     sendJson(res, 200, responsePayload);
@@ -3601,7 +3669,7 @@ const server = http.createServer(async (req, res) => {
 
   // 11. KDS Expo Dispatch (All tasks for table marked BUMPED / Table SERVED)
   if ((pathname === '/api/restaurant/kds/expo-dispatch' || (pathname.startsWith('/api/restaurant/kds/tasks/') && pathname.endsWith('/dispatch'))) && method === 'POST') {
-    const identity = resolveRequestIdentity(req);
+    const identity = requestIdentity;
     const authCheck = authorizeKdsRequest(identity, undefined, undefined, true);
     if (!authCheck.authorized) {
       sendJson(res, authCheck.statusCode!, { error: authCheck.error, code: authCheck.code });
@@ -3617,22 +3685,24 @@ const server = http.createServer(async (req, res) => {
       return;
     }
 
-    const tasks = store.getKitchenTasks().filter((t) => t.tableNumber === tableNumber);
+    const allTasks = await repo.getKitchenTasks();
+    const tasks = allTasks.filter((t) => t.tableNumber === tableNumber);
     if (tasks.length === 0) {
       sendJson(res, 400, { error: `No kitchen tasks found for table ${tableNumber}`, code: 'TASKS_NOT_FOUND' });
       return;
     }
 
-    const tbl = store.getTableByNumber(tableNumber);
+    const tbl = await repo.getTableByNumber(tableNumber);
     let targetBranch: string | null = null;
     for (const t of tasks) {
-      const tRes = resolveTaskAuthoritativeBranch(t);
+      const tRes = await resolveTaskAuthoritativeBranch(t);
       if (!tRes.quarantined && tRes.branchId) {
         targetBranch = tRes.branchId;
         break;
       }
     }
-    if (!targetBranch && tbl && tbl.branchId && store.getBranches().some((b) => b.id === tbl.branchId)) {
+    const currentBranches = await repo.getBranches();
+    if (!targetBranch && tbl && tbl.branchId && currentBranches.some((b) => b.id === tbl.branchId)) {
       targetBranch = tbl.branchId;
     }
     if (!targetBranch && identity.branchId !== '*') {
@@ -3643,14 +3713,14 @@ const server = http.createServer(async (req, res) => {
       return;
     }
 
-    const scopeCheck = authorizeKdsRequest(identity, targetBranch || undefined, undefined, true);
+    const scopeCheck =  authorizeKdsRequest(identity, targetBranch || undefined, undefined, true);
     if (!scopeCheck.authorized) {
       sendJson(res, scopeCheck.statusCode!, { error: scopeCheck.error, code: scopeCheck.code });
       return;
     }
 
     // Idempotency Check
-    const idempCheck = checkKdsIdempotency(idempotencyKey, 'kds.expo-dispatch', tableNumber, targetBranch, {
+    const idempCheck = await checkKdsIdempotency(idempotencyKey, 'kds.expo-dispatch', tableNumber, targetBranch, {
       tableNumber,
     });
     if (idempCheck.hasConflict) {
@@ -3699,7 +3769,7 @@ const server = http.createServer(async (req, res) => {
             response: alreadyPayload,
           };
           idempotencyRecords.set(idempotencyKey, record);
-          store.saveIdempotencyRecord(idempotencyKey, record);
+          await repo.saveIdempotencyRecord(idempotencyKey, record);
         }
         sendJson(res, 200, alreadyPayload);
         return;
@@ -3741,26 +3811,23 @@ const server = http.createServer(async (req, res) => {
         });
       }
 
-      unbumped.forEach((t) => {
-        t.status = 'BUMPED';
-        t.fulfilledItemCount = t.quantity;
-      });
-
-      if (tbl) tbl.status = 'OCCUPIED';
+      for (const t of unbumped) {
+        await repo.updateKitchenTaskStatus(t.id, 'BUMPED');
+      }
 
       // Advance linked order status to SERVED when all tasks are dispatched
       const orderIds = Array.from(new Set(tasks.map((t) => t.orderId).filter(Boolean)));
       for (const ordId of orderIds) {
-        const ord = store.getOrder(ordId);
+        const ord = await repo.getOrder(ordId);
         if (ord && ord.status !== 'CANCELLED') {
-          const ordTasks = store.getKitchenTasks().filter((t) => t.orderId === ordId);
+          const ordTasks = (await repo.getKitchenTasks()).filter((t) => t.orderId === ordId);
           if (ordTasks.every((t) => t.status === 'BUMPED')) {
-            ord.status = 'SERVED';
+            await repo.updateOrderStatus(ordId, 'SERVED');
           }
         }
       }
 
-      const evt = store.appendEvent(
+      await repo.appendEvent(
         'expo.dispatched',
         'api:expo-pass',
         targetBranch || tbl?.branchId || currentBranch.id,
@@ -3783,7 +3850,7 @@ const server = http.createServer(async (req, res) => {
           response: responsePayload,
         };
         idempotencyRecords.set(idempotencyKey, record);
-        store.saveIdempotencyRecord(idempotencyKey, record);
+        await repo.saveIdempotencyRecord(idempotencyKey, record);
       }
 
       sendJson(res, 200, responsePayload);
@@ -3795,7 +3862,7 @@ const server = http.createServer(async (req, res) => {
 
   // 11b. KDS Expo Table Recall
   if (pathname === '/api/restaurant/kds/expo-recall' && method === 'POST') {
-    const identity = resolveRequestIdentity(req);
+    const identity = requestIdentity;
     const authCheck = authorizeKdsRequest(identity, undefined, undefined, true);
     if (!authCheck.authorized) {
       sendJson(res, authCheck.statusCode!, { error: authCheck.error, code: authCheck.code });
@@ -3809,16 +3876,17 @@ const server = http.createServer(async (req, res) => {
       return;
     }
 
-    const tasks = store.getKitchenTasks().filter((t) => t.tableNumber === tableNumber);
+    const allTasks = await repo.getKitchenTasks();
+    const tasks = allTasks.filter((t) => t.tableNumber === tableNumber);
     const bumpedTasks = tasks.filter((t) => t.status === 'BUMPED');
     if (bumpedTasks.length === 0) {
       sendJson(res, 400, { error: `No bumped tasks to recall for table ${tableNumber}`, code: 'NO_BUMPED_TASKS' });
       return;
     }
 
-    bumpedTasks.forEach((t) => {
-      t.status = 'READY';
-    });
+    for (const t of bumpedTasks) {
+      await repo.updateKitchenTaskStatus(t.id, 'READY');
+    }
 
     await runtimeController.emitAudit('EXPO_TABLE_RECALLED', identity.id, {
       tableNumber,
@@ -3837,7 +3905,7 @@ const server = http.createServer(async (req, res) => {
   if (pathname === '/api/restaurant/floor' && method === 'GET') {
     const bId = (parsedUrl.query.branchId as string) || currentBranch.id;
     const fId = (parsedUrl.query.floorId as string) || undefined;
-    const tables = store.getTables(bId, fId);
+    const tables = await repo.getTables(bId, fId);
     sendJson(res, 200, {
       success: true,
       tables,
@@ -3849,7 +3917,7 @@ const server = http.createServer(async (req, res) => {
   // Invariant: Single table payload updates ONLY that table in place!
   // Multi-table payload updates ONLY tables for the target floor/branch!
   if (pathname === '/api/restaurant/floor/save' && method === 'POST') {
-    const identity = resolveRequestIdentity(req);
+    const identity = requestIdentity;
     if (identity.type === 'INVALID_CREDENTIAL' || identity.type === 'REVOKED_CAPABILITY') {
       sendJson(res, 401, { error: 'Invalid or revoked credential', code: identity.type });
       return;
@@ -3869,7 +3937,7 @@ const server = http.createServer(async (req, res) => {
 
     const body = await parseBody(req);
     if (Array.isArray(body.tables)) {
-      const saveResult = store.saveFloorTables(body.tables, currentBranch.id, currentFloor.id, {
+      const saveResult = await repo.saveFloorTables(body.tables, currentBranch.id, currentFloor.id, {
         expectedRevision: body.expectedRevision,
       });
       if (!saveResult.success) {
@@ -3881,7 +3949,7 @@ const server = http.createServer(async (req, res) => {
       }
       eventBus.broadcast({
         id: `evt_${Date.now()}`,
-        sequence: store.getEvents().length,
+        sequence: (await repo.getEvents()).length,
         type: 'table.updated',
         timestamp: new Date().toISOString(),
         producer: 'api:floor-save',
@@ -3900,13 +3968,13 @@ const server = http.createServer(async (req, res) => {
   if (pathname.startsWith('/api/restaurant/tables/') && pathname.endsWith('/bill') && method === 'GET') {
     const rawId = pathname.replace('/api/restaurant/tables/', '').replace('/bill', '');
     const tableId = /^\d+$/.test(rawId) ? parseInt(rawId, 10) : rawId;
-    const targetTable = typeof tableId === 'number' ? store.getTable(tableId) : store.getTableByNumber(tableId);
+    const targetTable = typeof tableId === 'number' ? await repo.getTable(tableId) : await repo.getTableByNumber(tableId);
     if (!targetTable) {
       sendJson(res, 404, { success: false, error: `Table ${tableId} not found`, code: 'TABLE_NOT_FOUND' });
       return;
     }
 
-    const identity = resolveRequestIdentity(req);
+    const identity = requestIdentity;
     if (
       identity.branchId &&
       identity.branchId !== '*' &&
@@ -3921,7 +3989,7 @@ const server = http.createServer(async (req, res) => {
       return;
     }
 
-    const billData = store.getTableBill(targetTable.id);
+    const billData = await repo.getTableBill(targetTable.id);
     sendJson(res, 200, { success: true, ...billData });
     return;
   }
@@ -3938,12 +4006,12 @@ const server = http.createServer(async (req, res) => {
     const parts = pathname.split('/');
     const rawId = parts[parts.length - 1];
     const tableId = /^\d+$/.test(rawId) ? parseInt(rawId, 10) : rawId;
-    const table = typeof tableId === 'number' ? store.getTable(tableId) : store.getTableByNumber(tableId);
+    const table = typeof tableId === 'number' ? await repo.getTable(tableId) : await repo.getTableByNumber(tableId);
     if (!table) {
       sendJson(res, 404, { error: 'Table not found' });
       return;
     }
-    const bill = store.getTableBill(table.id);
+    const bill = await repo.getTableBill(table.id);
     sendJson(res, 200, { success: true, table, bill });
     return;
   }
@@ -3975,7 +4043,7 @@ const server = http.createServer(async (req, res) => {
       }
 
       const body = await parseBody(req);
-      const allTables = store.getTables();
+      const allTables = await repo.getTables();
       const nextId = body.id ? (typeof body.id === 'number' ? body.id : parseInt(body.id, 10)) : Math.max(0, ...allTables.map((t) => t.id)) + 1;
       const tableNumber = body.number || `T-${nextId < 10 ? '0' + nextId : nextId}`;
       const capacity = Number(body.capacity) || 4;
@@ -3997,10 +4065,7 @@ const server = http.createServer(async (req, res) => {
         seats: generateSeats(capacity, nextId),
       };
 
-      store.saveFloorTables([newTable]);
-      if (postgresStore) {
-        await postgresStore.saveTable(newTable, tenantContext.tenantId);
-      }
+      await repo.saveFloorTables([newTable]);
       await ownerSelfService.updateOnboardingStep(tenantContext.tenantId, 'TABLES_REVIEWED', true);
 
       sendJson(res, 201, { success: true, table: newTable });
@@ -4011,7 +4076,7 @@ const server = http.createServer(async (req, res) => {
   }
 
   if (pathname.startsWith('/api/restaurant/tables/') && method === 'PATCH') {
-    const identity = resolveRequestIdentity(req);
+    const identity = requestIdentity;
     if (identity.type === 'INVALID_CREDENTIAL') {
       sendJson(res, 401, { error: 'Invalid credential', code: 'INVALID_CREDENTIAL' });
       return;
@@ -4031,7 +4096,7 @@ const server = http.createServer(async (req, res) => {
 
     const parts = pathname.split('/');
     const tableId = parseInt(parts[parts.length - 1], 10);
-    const existingTable = store.getTable(tableId);
+    const existingTable = await repo.getTable(tableId);
     if (!existingTable) {
       sendJson(res, 404, { error: 'Table not found' });
       return;
@@ -4047,13 +4112,13 @@ const server = http.createServer(async (req, res) => {
 
     let updatedTable: TableFloorRecord | undefined;
     if (body.capacity) {
-      updatedTable = store.updateTableCapacity(tableId, parseInt(body.capacity, 10));
+      updatedTable = await repo.updateTableCapacity(tableId, parseInt(body.capacity, 10));
     } else {
-      updatedTable = store.getTable(tableId);
+      updatedTable = await repo.getTable(tableId);
       if (updatedTable) {
         if (body.status) updatedTable.status = body.status;
         if (body.serverName) updatedTable.serverName = body.serverName;
-        store.saveFloorTables([updatedTable]);
+        await repo.saveFloorTables([updatedTable]);
       }
     }
 
@@ -4064,7 +4129,7 @@ const server = http.createServer(async (req, res) => {
 
     eventBus.broadcast({
       id: `evt_${Date.now()}`,
-      sequence: store.getEvents().length,
+      sequence: (await repo.getEvents()).length,
       type: 'table.updated',
       timestamp: new Date().toISOString(),
       producer: 'api:table-patch',
@@ -4079,7 +4144,7 @@ const server = http.createServer(async (req, res) => {
 
   // 15. Seat Management (POST /api/restaurant/tables/:id/seats & DELETE /api/restaurant/tables/:id/seats/:seatId)
   if (pathname.startsWith('/api/restaurant/tables/') && pathname.includes('/seats')) {
-    const identity = resolveRequestIdentity(req);
+    const identity = requestIdentity;
     if (identity.type === 'INVALID_CREDENTIAL' || identity.type === 'REVOKED_CAPABILITY') {
       sendJson(res, 401, { error: identity.type, code: identity.type, message: 'Invalid or revoked credential.' });
       return;
@@ -4098,7 +4163,7 @@ const server = http.createServer(async (req, res) => {
 
     if (method === 'POST') {
       const body = await parseBody(req);
-      const newSeat = store.addSeatToTable(tableId, body.label);
+      const newSeat = await repo.addSeatToTable(tableId, body.label);
       if (!newSeat) {
         sendJson(res, 404, { error: 'Table not found' });
         return;
@@ -4109,7 +4174,7 @@ const server = http.createServer(async (req, res) => {
 
     if (method === 'DELETE') {
       const seatId = parts[6];
-      const ok = store.removeSeatFromTable(tableId, seatId);
+      const ok = await repo.removeSeatFromTable(tableId, seatId);
       sendJson(res, ok ? 200 : 404, { success: ok });
       return;
     }
@@ -4117,7 +4182,7 @@ const server = http.createServer(async (req, res) => {
 
   // Table Deletion (DELETE /api/restaurant/tables/:id)
   if (pathname.startsWith('/api/restaurant/tables/') && !pathname.includes('/seats') && method === 'DELETE') {
-    const identity = resolveRequestIdentity(req);
+    const identity = requestIdentity;
     if (!identity.isPrivileged) {
       sendJson(res, (identity.type === 'ANONYMOUS' || identity.type === 'INVALID_CREDENTIAL' || identity.type === 'REVOKED_CAPABILITY') ? 401 : 403, {
         error: 'FORBIDDEN',
@@ -4128,7 +4193,7 @@ const server = http.createServer(async (req, res) => {
     }
     const parts = pathname.split('/');
     const tableId = parseInt(parts[parts.length - 1], 10);
-    const table = store.getTable(tableId);
+    const table = await repo.getTable(tableId);
     if (!table) {
       sendJson(res, 404, { error: 'Table not found', deletedTableId: tableId });
       return;
@@ -4140,7 +4205,7 @@ const server = http.createServer(async (req, res) => {
       });
       return;
     }
-    const ok = store.deleteTable(tableId);
+    const ok = await repo.deleteTable(tableId);
     sendJson(res, ok ? 200 : 404, { success: ok, deletedTableId: tableId });
     return;
   }
@@ -4149,7 +4214,7 @@ const server = http.createServer(async (req, res) => {
   if (pathname.startsWith('/api/restaurant/tables/') && pathname.endsWith('/rotate-locator') && method === 'POST') {
     const parts = pathname.split('/');
     const tableId = parseInt(parts[4], 10);
-    const identity = resolveRequestIdentity(req);
+    const identity = requestIdentity;
     if (!identity.isPrivileged) {
       sendJson(res, (identity.type === 'ANONYMOUS' || identity.type === 'INVALID_CREDENTIAL') ? 401 : 403, {
         error: 'FORBIDDEN',
@@ -4158,7 +4223,7 @@ const server = http.createServer(async (req, res) => {
       });
       return;
     }
-    const targetTable = store.getTable(tableId);
+    const targetTable = await repo.getTable(tableId);
     if (targetTable && identity.branchId && identity.branchId !== '*' && targetTable.branchId !== identity.branchId) {
       sendJson(res, 403, {
         error: `Credential for branch ${identity.branchId} cannot rotate table in branch ${targetTable.branchId}`,
@@ -4167,7 +4232,7 @@ const server = http.createServer(async (req, res) => {
       return;
     }
     const body = await parseBody(req);
-    const result = store.rotateTableLocator(tableId, identity.id, body.reason);
+    const result = await repo.rotateTableLocator(tableId, identity.id, body.reason);
     if (!result.success) {
       sendJson(res, 404, { error: result.error, code: 'TABLE_NOT_FOUND' });
       return;
@@ -4180,7 +4245,7 @@ const server = http.createServer(async (req, res) => {
     });
     eventBus.broadcast({
       id: `evt_${Date.now()}`,
-      sequence: store.getEvents().length,
+      sequence: (await repo.getEvents()).length,
       type: 'table.locator_rotated',
       timestamp: new Date().toISOString(),
       producer: 'api:table-security',
@@ -4206,14 +4271,14 @@ const server = http.createServer(async (req, res) => {
       });
       return;
     }
-    store.resetToArchetypes();
+    await repo.resetToArchetypes();
     sendJson(res, 200, { success: true, message: 'Store reset to canonical archetypes' });
     return;
   }
 
   // 16. Assign Seated Guest (POST /api/restaurant/seats/:seatId/guest)
   if (pathname.startsWith('/api/restaurant/seats/') && pathname.endsWith('/guest') && method === 'POST') {
-    const identity = resolveRequestIdentity(req);
+    const identity = requestIdentity;
     if (identity.type === 'INVALID_CREDENTIAL' || identity.type === 'REVOKED_CAPABILITY') {
       sendJson(res, 401, { error: identity.type, code: identity.type, message: 'Invalid or revoked credential.' });
       return;
@@ -4226,7 +4291,7 @@ const server = http.createServer(async (req, res) => {
     const seatId = parts[4];
     const body = await parseBody(req);
 
-    const result = store.assignGuestToSeat(seatId, body.name, body.preferences);
+    const result = await repo.assignGuestToSeat(seatId, body.name, body.preferences);
     if (!result) {
       sendJson(res, 404, { error: 'Seat not found' });
       return;
@@ -4234,7 +4299,7 @@ const server = http.createServer(async (req, res) => {
 
     eventBus.broadcast({
       id: `evt_${Date.now()}`,
-      sequence: store.getEvents().length,
+      sequence: (await repo.getEvents()).length,
       type: 'guest.joined',
       timestamp: new Date().toISOString(),
       producer: 'api:guest-assign',
@@ -4249,11 +4314,11 @@ const server = http.createServer(async (req, res) => {
   // 17. Branches API
   if (pathname === '/api/restaurant/branches') {
     if (method === 'GET') {
-      sendJson(res, 200, { success: true, data: store.getBranches() });
+      sendJson(res, 200, { success: true, data: await repo.getBranches() });
       return;
     }
     if (method === 'POST') {
-      const identity = resolveRequestIdentity(req);
+      const identity = requestIdentity;
       if (identity.type === 'INVALID_CREDENTIAL' || identity.type === 'REVOKED_CAPABILITY') {
         sendJson(res, 401, { error: identity.type, code: identity.type, message: 'Invalid or revoked credential.' });
         return;
@@ -4267,10 +4332,10 @@ const server = http.createServer(async (req, res) => {
         return;
       }
       const body = await parseBody(req);
-      const saved = store.saveBranch(body);
+      const saved = await repo.saveBranch(body);
       eventBus.broadcast({
         id: `evt_${Date.now()}`,
-        sequence: store.getEvents().length,
+        sequence: (await repo.getEvents()).length,
         type: 'branch.updated',
         timestamp: new Date().toISOString(),
         producer: 'api:branch-save',
@@ -4283,7 +4348,7 @@ const server = http.createServer(async (req, res) => {
   }
 
   if (pathname.startsWith('/api/restaurant/branches/') && method === 'DELETE') {
-    const identity = resolveRequestIdentity(req);
+    const identity = requestIdentity;
     if (identity.type === 'INVALID_CREDENTIAL' || identity.type === 'REVOKED_CAPABILITY') {
       sendJson(res, 401, { error: identity.type, code: identity.type, message: 'Invalid or revoked credential.' });
       return;
@@ -4297,7 +4362,7 @@ const server = http.createServer(async (req, res) => {
       return;
     }
     const branchId = pathname.replace('/api/restaurant/branches/', '');
-    const ok = store.deleteBranch(branchId);
+    const ok = await repo.deleteBranch(branchId);
     sendJson(res, ok ? 200 : 404, { success: ok, deletedBranchId: branchId });
     return;
   }
@@ -4306,12 +4371,12 @@ const server = http.createServer(async (req, res) => {
   if (pathname === '/api/restaurant/floors') {
     if (method === 'GET') {
       const bFilter = parsedUrl.query.branchId as string;
-      const result = store.getFloors(bFilter);
+      const result = await repo.getFloors(bFilter);
       sendJson(res, 200, { success: true, data: result });
       return;
     }
     if (method === 'POST') {
-      const identity = resolveRequestIdentity(req);
+      const identity = requestIdentity;
       if (identity.type === 'INVALID_CREDENTIAL' || identity.type === 'REVOKED_CAPABILITY') {
         sendJson(res, 401, { error: identity.type, code: identity.type, message: 'Invalid or revoked credential.' });
         return;
@@ -4326,19 +4391,19 @@ const server = http.createServer(async (req, res) => {
       }
       const body = await parseBody(req);
       if (body.action === 'SWITCH_LAYOUT') {
-        const f = store.getFloor(body.floorId);
+        const f = await repo.getFloor(body.floorId);
         if (f) {
           f.activeLayout = body.layoutName;
-          store.saveFloor(f);
+          await repo.saveFloor(f);
         }
         sendJson(res, 200, { success: true, floor: f });
         return;
       }
       if (body.action === 'RENAME') {
-        const f = store.getFloor(body.floorId);
+        const f = await repo.getFloor(body.floorId);
         if (f) {
           f.name = body.name;
-          store.saveFloor(f);
+          await repo.saveFloor(f);
         }
         sendJson(res, 200, { success: true, floor: f });
         return;
@@ -4356,14 +4421,14 @@ const server = http.createServer(async (req, res) => {
         status: body.status || 'ACTIVE',
         ...body,
       };
-      const saved = store.saveFloor(floorRecord);
+      const saved = await repo.saveFloor(floorRecord);
       sendJson(res, 200, { success: true, data: saved });
       return;
     }
   }
 
   if (pathname.startsWith('/api/restaurant/floors/') && method === 'DELETE') {
-    const identity = resolveRequestIdentity(req);
+    const identity = requestIdentity;
     if (identity.type === 'INVALID_CREDENTIAL' || identity.type === 'REVOKED_CAPABILITY') {
       sendJson(res, 401, { error: identity.type, code: identity.type, message: 'Invalid or revoked credential.' });
       return;
@@ -4377,14 +4442,14 @@ const server = http.createServer(async (req, res) => {
       return;
     }
     const floorId = pathname.replace('/api/restaurant/floors/', '');
-    const ok = store.deleteFloor(floorId);
+    const ok = await repo.deleteFloor(floorId);
     sendJson(res, ok ? 200 : 404, { success: ok, deletedFloorId: floorId });
     return;
   }
 
   // 19. Table Merging API
   if (pathname === '/api/restaurant/tables/merge' && method === 'POST') {
-    const identity = resolveRequestIdentity(req);
+    const identity = requestIdentity;
     if (identity.type === 'INVALID_CREDENTIAL') {
       sendJson(res, 401, { error: 'Invalid credential', code: 'INVALID_CREDENTIAL' });
       return;
@@ -4399,14 +4464,14 @@ const server = http.createServer(async (req, res) => {
     }
 
     const body = await parseBody(req);
-    const ok = store.mergeTables(body.tableId1, body.tableId2);
+    const ok = await repo.mergeTables(body.tableId1, body.tableId2);
     if (!ok) {
       sendJson(res, 404, { error: 'One or both tables not found' });
       return;
     }
     eventBus.broadcast({
       id: `evt_${Date.now()}`,
-      sequence: store.getEvents().length,
+      sequence: (await repo.getEvents()).length,
       type: 'table.merged',
       timestamp: new Date().toISOString(),
       producer: 'api:table-merge',
@@ -4419,7 +4484,7 @@ const server = http.createServer(async (req, res) => {
 
   // 20. Table Unmerging API
   if (pathname === '/api/restaurant/tables/unmerge' && method === 'POST') {
-    const identity = resolveRequestIdentity(req);
+    const identity = requestIdentity;
     if (identity.type === 'INVALID_CREDENTIAL') {
       sendJson(res, 401, { error: 'Invalid credential', code: 'INVALID_CREDENTIAL' });
       return;
@@ -4434,14 +4499,14 @@ const server = http.createServer(async (req, res) => {
     }
 
     const body = await parseBody(req);
-    const ok = store.unmergeTables(body.tableId);
+    const ok = await repo.unmergeTables(body.tableId);
     if (!ok) {
       sendJson(res, 404, { error: 'Table not found' });
       return;
     }
     eventBus.broadcast({
       id: `evt_${Date.now()}`,
-      sequence: store.getEvents().length,
+      sequence: (await repo.getEvents()).length,
       type: 'table.unmerged',
       timestamp: new Date().toISOString(),
       producer: 'api:table-unmerge',
@@ -4455,11 +4520,11 @@ const server = http.createServer(async (req, res) => {
   // 21. Service Requests API
   if (pathname === '/api/restaurant/service-requests') {
     if (method === 'GET') {
-      sendJson(res, 200, { success: true, data: store.getServiceRequests(currentBranch.id) });
+      sendJson(res, 200, { success: true, data: await repo.getServiceRequests(currentBranch.id) });
       return;
     }
     if (method === 'POST') {
-      const identity = resolveRequestIdentity(req);
+      const identity = requestIdentity;
       if (identity.type === 'INVALID_CREDENTIAL') {
         sendJson(res, 401, { error: 'INVALID_CREDENTIAL', code: 'INVALID_CREDENTIAL' });
         return;
@@ -4474,7 +4539,11 @@ const server = http.createServer(async (req, res) => {
       }
 
       const body = await parseBody(req);
-      const tableNumber = body.tableNumber || 'T-14';
+      const tableNumber = body.tableNumber;
+      if (!tableNumber) {
+        sendJson(res, 400, { error: 'TABLE_REQUIRED', code: 'TABLE_REQUIRED', message: 'Table number is required.' });
+        return;
+      }
 
       if (identity.type === 'DINER' && identity.tableNumber) {
         const normIdTable = (identity.tableNumber || '').replace(/^T-/, '');
@@ -4499,11 +4568,14 @@ const server = http.createServer(async (req, res) => {
         requestedAt: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
         note: body.note,
       };
-      store.addServiceRequest(newReq);
+      await repo.addServiceRequest(newReq);
 
       if (body.type === 'BILL') {
-        const t = store.getTableByNumber(newReq.tableNumber);
-        if (t) t.status = 'BILL_REQUESTED';
+        const t = await repo.getTableByNumber(newReq.tableNumber);
+        if (t) {
+          t.status = 'BILL_REQUESTED';
+          await repo.saveFloorTables([t]);
+        }
       }
 
       sendJson(res, 201, { success: true, data: newReq });
@@ -4513,7 +4585,7 @@ const server = http.createServer(async (req, res) => {
 
   // 22. Resolve Service Request
   if (pathname.startsWith('/api/restaurant/service-requests/') && pathname.endsWith('/resolve') && method === 'POST') {
-    const identity = resolveRequestIdentity(req);
+    const identity = requestIdentity;
     if (identity.type === 'INVALID_CREDENTIAL' || identity.type === 'ANONYMOUS') {
       sendJson(res, 401, {
         error: 'UNAUTHENTICATED',
@@ -4540,12 +4612,13 @@ const server = http.createServer(async (req, res) => {
     }
     const parts = pathname.split('/');
     const reqId = parts[4];
-    const sReq = store.getServiceRequests().find((r) => r.id === reqId);
+    const sReqs = await repo.getServiceRequests();
+    const sReq = sReqs.find((r) => r.id === reqId);
     if (!sReq) {
       sendJson(res, 404, { error: 'Request not found' });
       return;
     }
-    const targetTbl = store.getTableByNumber(sReq.tableNumber);
+    const targetTbl = await repo.getTableByNumber(sReq.tableNumber);
     if (targetTbl && identity.branchId && identity.branchId !== '*' && targetTbl.branchId !== identity.branchId) {
       sendJson(res, 403, {
         error: `Credential for branch ${identity.branchId} cannot resolve request in branch ${targetTbl.branchId}`,
@@ -4553,15 +4626,15 @@ const server = http.createServer(async (req, res) => {
       });
       return;
     }
-    const resolved = store.resolveServiceRequest(reqId);
+    const resolved = await repo.resolveServiceRequest(reqId);
     eventBus.broadcast({
       id: `evt_${Date.now()}`,
-      sequence: store.getEvents().length,
+      sequence: (await repo.getEvents()).length,
       type: 'service_request.resolved',
       timestamp: new Date().toISOString(),
       producer: 'api:service-resolve',
       branchId: currentBranch.id,
-      tableNumber: resolved.tableNumber,
+      tableNumber: resolved?.tableNumber || sReq.tableNumber,
       payload: resolved,
     });
     sendJson(res, 200, { success: true, data: resolved });
@@ -4578,14 +4651,14 @@ const server = http.createServer(async (req, res) => {
       });
       return;
     }
-    store.reseed();
+    await repo.reseed();
     sendJson(res, 200, { success: true, message: 'Runtime store reseeded successfully' });
     return;
   }
 
   // 24. Full State Inspection Dump
   if (pathname === '/api/restaurant/state' && method === 'GET') {
-    const identity = resolveRequestIdentity(req);
+    const identity = requestIdentity;
     if (identity.type === 'INVALID_CREDENTIAL' || identity.type === 'REVOKED_CAPABILITY') {
       sendJson(res, 401, {
         error: identity.type === 'REVOKED_CAPABILITY' ? 'REVOKED_CAPABILITY' : (identity.error || 'INVALID_CREDENTIAL'),
@@ -4602,13 +4675,21 @@ const server = http.createServer(async (req, res) => {
       });
       return;
     }
-    sendJson(res, 200, store.getRawData());
+    const [tables, menu, orders, tasks, sreqs, brand] = await Promise.all([
+      repo.getTables(),
+      repo.getMenuItems(true),
+      repo.getOrders(),
+      repo.getKitchenTasks(),
+      repo.getServiceRequests(),
+      repo.getTenantBrand(),
+    ]);
+    sendJson(res, 200, { tables, menu, orders, tasks, sreqs, brand });
     return;
   }
 
   // 25. Authoritative Financial Ledger Reconciliation
   if (pathname === '/api/restaurant/finance/reconciliation' && method === 'GET') {
-    const identity = resolveRequestIdentity(req);
+    const identity = requestIdentity;
     if (identity.type === 'INVALID_CREDENTIAL' || identity.type === 'REVOKED_CAPABILITY') {
       sendJson(res, 401, { error: 'INVALID_CREDENTIAL', code: identity.type });
       return;
@@ -4622,7 +4703,7 @@ const server = http.createServer(async (req, res) => {
       return;
     }
     const branchFilter = (parsedUrl.query.branchId as string) || undefined;
-    const report = store.reconcileFinancialLedger(branchFilter);
+    const report = await repo.reconcileFinancialLedger(branchFilter);
     sendJson(res, 200, {
       success: true,
       data: report,
@@ -4634,7 +4715,7 @@ const server = http.createServer(async (req, res) => {
 
   // 26. Template Marketplace Discovery & Installation
   if (pathname === '/api/restaurant/templates' && method === 'GET') {
-    sendJson(res, 200, { success: true, data: store.getTemplates() });
+    sendJson(res, 200, { success: true, data: await repo.getTemplates() });
     return;
   }
 
@@ -4643,7 +4724,7 @@ const server = http.createServer(async (req, res) => {
       (pathname.startsWith('/api/restaurant/templates/') && pathname.endsWith('/install'))) &&
     method === 'POST'
   ) {
-    const identity = resolveRequestIdentity(req);
+    const identity = requestIdentity;
     if (identity.type === 'INVALID_CREDENTIAL' || identity.type === 'REVOKED_CAPABILITY') {
       sendJson(res, 401, { error: identity.type, code: identity.type, message: 'Invalid or revoked credential.' });
       return;
@@ -4659,7 +4740,7 @@ const server = http.createServer(async (req, res) => {
     const body = pathname === '/api/restaurant/templates/install' ? await parseBody(req) : {};
     const templateId = body.templateId || pathname.replace('/api/restaurant/templates/', '').replace('/install', '');
     try {
-      const result = store.installTemplate(templateId);
+      const result = await repo.installTemplate(templateId);
       sendJson(res, 200, { success: true, ...result });
     } catch (err: any) {
       sendJson(res, 400, { success: false, error: err.message });
@@ -4669,12 +4750,12 @@ const server = http.createServer(async (req, res) => {
 
   // 27. Visual Brand Studio Draft, Publish & Revisions
   if (pathname === '/api/restaurant/studio/draft' && method === 'GET') {
-    sendJson(res, 200, { success: true, data: store.getTemplateDraft() });
+    sendJson(res, 200, { success: true, data: await repo.getTemplateDraft() });
     return;
   }
 
   if (pathname === '/api/restaurant/studio/draft' && method === 'POST') {
-    const identity = resolveRequestIdentity(req);
+    const identity = requestIdentity;
     if (identity.type === 'INVALID_CREDENTIAL' || identity.type === 'REVOKED_CAPABILITY') {
       sendJson(res, 401, { error: identity.type, code: identity.type, message: 'Invalid or revoked credential.' });
       return;
@@ -4689,7 +4770,7 @@ const server = http.createServer(async (req, res) => {
     }
     const body = await parseBody(req);
     try {
-      const draft = store.saveTemplateDraft({
+      const draft = await repo.saveTemplateDraft({
         draftSections: body.sections || body.draftSections,
         draftTokens: body.customTokens || body.draftTokens,
       });
@@ -4701,7 +4782,7 @@ const server = http.createServer(async (req, res) => {
   }
 
   if (pathname === '/api/restaurant/studio/publish' && method === 'POST') {
-    const identity = resolveRequestIdentity(req);
+    const identity = requestIdentity;
     if (identity.type === 'INVALID_CREDENTIAL' || identity.type === 'REVOKED_CAPABILITY') {
       sendJson(res, 401, { error: identity.type, code: identity.type, message: 'Invalid or revoked credential.' });
       return;
@@ -4716,7 +4797,7 @@ const server = http.createServer(async (req, res) => {
     }
     const body = await parseBody(req);
     try {
-      const pub = store.publishTemplateDraft(body.changeNotes);
+      const pub = await repo.publishTemplateDraft(body.changeNotes);
       sendJson(res, 200, { success: true, data: pub });
     } catch (err: any) {
       sendJson(res, 400, { success: false, error: err.message });
@@ -4725,7 +4806,7 @@ const server = http.createServer(async (req, res) => {
   }
 
   if (pathname.startsWith('/api/restaurant/studio/revisions/') && pathname.endsWith('/restore') && method === 'POST') {
-    const identity = resolveRequestIdentity(req);
+    const identity = requestIdentity;
     if (identity.type === 'INVALID_CREDENTIAL' || identity.type === 'REVOKED_CAPABILITY') {
       sendJson(res, 401, { error: identity.type, code: identity.type, message: 'Invalid or revoked credential.' });
       return;
@@ -4740,7 +4821,7 @@ const server = http.createServer(async (req, res) => {
     }
     const revisionId = pathname.replace('/api/restaurant/studio/revisions/', '').replace('/restore', '');
     try {
-      const restored = store.restoreTemplateRevision(revisionId);
+      const restored = await repo.restoreTemplateRevision(revisionId);
       sendJson(res, 200, { success: true, data: restored });
     } catch (err: any) {
       sendJson(res, 400, { success: false, error: err.message });
@@ -4751,7 +4832,7 @@ const server = http.createServer(async (req, res) => {
   // 28. Tenant Branding & Custom Domain Verification
   if ((pathname === '/api/restaurant/branding' || pathname === '/api/restaurant/settings/whitelabel') && method === 'GET') {
     const reqBranchId = (parsedUrl.query.branchId as string) || (parsedUrl.query.branch as string);
-    sendJson(res, 200, { success: true, data: store.getTenantBrand(reqBranchId) });
+    sendJson(res, 200, { success: true, data: await repo.getTenantBrand(reqBranchId) });
     return;
   }
 
@@ -4762,14 +4843,14 @@ const server = http.createServer(async (req, res) => {
       sendJson(res, 400, { success: false, error: 'BRANCH_REQUIRED', message: 'branchId query parameter is required.' });
       return;
     }
-    const branch = store.getBranch(targetBranchId);
+    const branch = await repo.getBranch(targetBranchId);
     if (!branch) {
       sendJson(res, 404, { success: false, error: 'BRANCH_NOT_FOUND', message: `Branch ${targetBranchId} does not exist.` });
       return;
     }
-    const baseBrand = store.getTenantBrand();
-    const branchOverride = store.getBranchBrandOverride(targetBranchId);
-    const effectiveBrand = store.getTenantBrand(targetBranchId);
+    const baseBrand = await repo.getTenantBrand();
+    const branchOverride = await repo.getBranchBrandOverride(targetBranchId);
+    const effectiveBrand = await repo.getTenantBrand(targetBranchId);
     sendJson(res, 200, {
       success: true,
       branchId: targetBranchId,
@@ -4782,7 +4863,7 @@ const server = http.createServer(async (req, res) => {
   }
 
   if (pathname === '/api/restaurant/branding/branch-overrides' && method === 'POST') {
-    const identity = resolveRequestIdentity(req);
+    const identity = requestIdentity;
     if (identity.type === 'INVALID_CREDENTIAL' || identity.type === 'REVOKED_CAPABILITY') {
       sendJson(res, 401, { error: identity.type, code: identity.type, message: 'Invalid or revoked credential.' });
       return;
@@ -4811,7 +4892,7 @@ const server = http.createServer(async (req, res) => {
       });
       return;
     }
-    const branch = store.getBranch(targetBranchId);
+    const branch = await repo.getBranch(targetBranchId);
     if (!branch) {
       sendJson(res, 404, { success: false, error: 'BRANCH_NOT_FOUND', message: `Branch ${targetBranchId} does not exist.` });
       return;
@@ -4852,11 +4933,11 @@ const server = http.createServer(async (req, res) => {
       allowedOverrides.customDomain = String(body.customDomain).trim();
     }
 
-    const effective = store.updateBranchBrandOverride(targetBranchId, allowedOverrides, identity.id || 'Manager');
+    const effective = await repo.updateBranchBrandOverride(targetBranchId, allowedOverrides, identity.id || 'Manager');
     sendJson(res, 200, {
       success: true,
       branchId: targetBranchId,
-      override: store.getBranchBrandOverride(targetBranchId),
+      override: await repo.getBranchBrandOverride(targetBranchId),
       effective,
       message: `Branch-specific overrides for ${branch.name} saved durably.`,
     });
@@ -4864,7 +4945,7 @@ const server = http.createServer(async (req, res) => {
   }
 
   if (pathname.startsWith('/api/restaurant/branding/branch-overrides/') && method === 'DELETE') {
-    const identity = resolveRequestIdentity(req);
+    const identity = requestIdentity;
     if (identity.type === 'INVALID_CREDENTIAL' || identity.type === 'REVOKED_CAPABILITY') {
       sendJson(res, 401, { error: identity.type, code: identity.type, message: 'Invalid or revoked credential.' });
       return;
@@ -4887,12 +4968,12 @@ const server = http.createServer(async (req, res) => {
       });
       return;
     }
-    const branch = store.getBranch(targetBranchId);
+    const branch = await repo.getBranch(targetBranchId);
     if (!branch) {
       sendJson(res, 404, { success: false, error: 'BRANCH_NOT_FOUND', message: `Branch ${targetBranchId} does not exist.` });
       return;
     }
-    const effective = store.updateBranchBrandOverride(targetBranchId, null, identity.id || 'Manager');
+    const effective = await repo.updateBranchBrandOverride(targetBranchId, null, identity.id || 'Manager');
     sendJson(res, 200, {
       success: true,
       branchId: targetBranchId,
@@ -4904,7 +4985,7 @@ const server = http.createServer(async (req, res) => {
   }
 
   if ((pathname === '/api/restaurant/branding' || pathname === '/api/restaurant/settings/whitelabel') && method === 'POST') {
-    const identity = resolveRequestIdentity(req);
+    const identity = requestIdentity;
     if (identity.type === 'INVALID_CREDENTIAL' || identity.type === 'REVOKED_CAPABILITY') {
       sendJson(res, 401, { error: identity.type, code: identity.type, message: 'Invalid or revoked credential.' });
       return;
@@ -4933,7 +5014,7 @@ const server = http.createServer(async (req, res) => {
       body.customCss = cssCheck.sanitizedCss;
     }
     try {
-      const updated = store.updateTenantBrand(body);
+      const updated = await repo.updateTenantBrand(body);
       sendJson(res, 200, { success: true, data: updated });
     } catch (err: any) {
       sendJson(res, 400, { success: false, error: err.message });
@@ -4943,7 +5024,7 @@ const server = http.createServer(async (req, res) => {
 
   // 28b. Custom Domains Management & DNS Verification
   if (pathname === '/api/restaurant/domains' && method === 'GET') {
-    const identity = resolveRequestIdentity(req, tenantContext.tenantId);
+    const identity = requestIdentity;
     if (!identity.isPrivileged) {
       sendJson(res, 403, { error: 'FORBIDDEN', message: 'Viewing custom domains requires Manager or Admin privileges.' });
       return;
@@ -4958,7 +5039,7 @@ const server = http.createServer(async (req, res) => {
   }
 
   if (pathname === '/api/restaurant/domains' && method === 'POST') {
-    const identity = resolveRequestIdentity(req, tenantContext.tenantId);
+    const identity = requestIdentity;
     if (!identity.isPrivileged) {
       sendJson(res, 403, { error: 'FORBIDDEN', message: 'Adding custom domains requires Manager or Admin privileges.' });
       return;
@@ -4980,7 +5061,7 @@ const server = http.createServer(async (req, res) => {
       pathname === '/api/restaurant/settings/domains/verify') &&
     method === 'POST'
   ) {
-    const identity = resolveRequestIdentity(req, tenantContext.tenantId);
+    const identity = requestIdentity;
     if (identity.type === 'INVALID_CREDENTIAL' || identity.type === 'REVOKED_CAPABILITY') {
       sendJson(res, 401, { error: identity.type, code: identity.type, message: 'Invalid or revoked credential.' });
       return;
@@ -4994,7 +5075,8 @@ const server = http.createServer(async (req, res) => {
       return;
     }
     const body = await parseBody(req);
-    const domain = body.domain || store.getTenantBrand().customDomain;
+    const brand = await repo.getTenantBrand();
+    const domain = body.domain || brand.customDomain;
     if (!domain || !domain.includes('.')) {
       sendJson(res, 400, { success: false, error: 'INVALID_DOMAIN', message: 'Domain must be a fully qualified domain name.' });
       return;
@@ -5002,7 +5084,7 @@ const server = http.createServer(async (req, res) => {
     try {
       const verifyRes = await customDomainService.verifyCustomDomain(tenantContext.tenantId, domain);
       if (verifyRes.verified) {
-        store.updateTenantBrand({
+        await repo.updateTenantBrand({
           customDomain: domain,
           domainStatus: 'VERIFIED',
           sslStatus: 'ACTIVE',
@@ -5026,7 +5108,7 @@ const server = http.createServer(async (req, res) => {
   }
 
   if (pathname.startsWith('/api/restaurant/domains/') && method === 'DELETE') {
-    const identity = resolveRequestIdentity(req, tenantContext.tenantId);
+    const identity = requestIdentity;
     if (!identity.isPrivileged) {
       sendJson(res, 403, { error: 'FORBIDDEN', message: 'Removing custom domains requires Manager or Admin privileges.' });
       return;
@@ -5096,9 +5178,9 @@ const server = http.createServer(async (req, res) => {
       const { buffer } = await extractImageBuffer(req);
       const saved = await ownerSelfService.saveTenantImage(tenantContext.tenantId, buffer, kind);
       if (kind === 'logo') {
-        store.updateTenantBrand({ logoUrl: saved.url });
+        await repo.updateTenantBrand({ logoUrl: saved.url });
       } else {
-        store.updateTenantBrand({ heroBannerUrl: saved.url });
+        await repo.updateTenantBrand({ heroBannerUrl: saved.url });
       }
       sendJson(res, 200, { success: true, data: saved });
     } catch (err: any) {
@@ -5169,7 +5251,7 @@ const server = http.createServer(async (req, res) => {
       sendJson(res, 401, { error: 'AUTHENTICATION_REQUIRED', code: 'AUTHENTICATION_REQUIRED', message: 'Staff or manager authentication required to view support tickets.' });
       return;
     }
-    sendJson(res, 200, { success: true, data: store.getSupportTickets() });
+    sendJson(res, 200, { success: true, data: await repo.getSupportTickets() });
     return;
   }
 
@@ -5188,7 +5270,7 @@ const server = http.createServer(async (req, res) => {
       return;
     }
     try {
-      const ticket = store.createSupportTicket({
+      const ticket = await repo.createSupportTicket({
         branchId: body.branchId || currentBranch.id,
         branchName: body.branchName || currentBranch.name,
         staffId: body.staffId || 'staff_mgr_ldh',
@@ -5214,13 +5296,13 @@ const server = http.createServer(async (req, res) => {
       return;
     }
     try {
-      const success = store.addSupportTicketMessage(ticketId, {
+      const success = await repo.addSupportTicketMessage(ticketId, {
         text: body.body || body.text,
         sender: body.senderRole === 'ORBITOX_SUPPORT' ? 'ORBITOX_SUPPORT' : 'RESTAURANT_STAFF',
         authorName: body.senderName || body.authorName || 'Staff Member',
         attachments: body.attachmentUrl ? [body.attachmentUrl] : undefined,
       });
-      const ticket = store.getSupportTicketById(ticketId);
+      const ticket = await repo.getSupportTicketById(ticketId);
       sendJson(res, 200, { success, data: ticket });
     } catch (err: any) {
       sendJson(res, 400, { success: false, error: err.message });
@@ -5229,7 +5311,7 @@ const server = http.createServer(async (req, res) => {
   }
 
   if (pathname.startsWith('/api/restaurant/support/tickets/') && pathname.endsWith('/status') && method === 'POST') {
-    const identity = resolveRequestIdentity(req);
+    const identity = requestIdentity;
     if (identity.type === 'INVALID_CREDENTIAL' || identity.type === 'REVOKED_CAPABILITY') {
       sendJson(res, 401, { error: identity.type, code: identity.type, message: 'Invalid or revoked credential.' });
       return;
@@ -5241,8 +5323,8 @@ const server = http.createServer(async (req, res) => {
     const ticketId = pathname.replace('/api/restaurant/support/tickets/', '').replace('/status', '');
     const body = await parseBody(req);
     try {
-      const ok = store.updateSupportTicketStatus(ticketId, body.status);
-      const ticket = store.getSupportTicketById(ticketId);
+      const ok = await repo.updateSupportTicketStatus(ticketId, body.status);
+      const ticket = await repo.getSupportTicketById(ticketId);
       sendJson(res, 200, { success: ok, data: ticket });
     } catch (err: any) {
       sendJson(res, 400, { success: false, error: err.message });
@@ -5252,7 +5334,7 @@ const server = http.createServer(async (req, res) => {
 
   // 30. Menu Catalog Management (Create, Edit, Delete)
   if (pathname === '/api/restaurant/menu/items' && method === 'POST') {
-    const identity = resolveRequestIdentity(req);
+    const identity = requestIdentity;
     if (identity.type === 'INVALID_CREDENTIAL' || identity.type === 'REVOKED_CAPABILITY') {
       sendJson(res, 401, { error: identity.type, code: identity.type, message: 'Invalid or revoked credential.' });
       return;
@@ -5267,7 +5349,7 @@ const server = http.createServer(async (req, res) => {
     }
     const body = await parseBody(req);
     try {
-      const newItem = store.createMenuItem(body);
+      const newItem = await repo.createMenuItem(body);
       sendJson(res, 201, { success: true, data: newItem });
     } catch (err: any) {
       sendJson(res, 400, { success: false, error: err.message });
@@ -5276,7 +5358,7 @@ const server = http.createServer(async (req, res) => {
   }
 
   if (pathname.startsWith('/api/restaurant/menu/items/') && method === 'PATCH') {
-    const identity = resolveRequestIdentity(req);
+    const identity = requestIdentity;
     if (identity.type === 'INVALID_CREDENTIAL' || identity.type === 'REVOKED_CAPABILITY') {
       sendJson(res, 401, { error: identity.type, code: identity.type, message: 'Invalid or revoked credential.' });
       return;
@@ -5292,7 +5374,7 @@ const server = http.createServer(async (req, res) => {
     const itemId = pathname.replace('/api/restaurant/menu/items/', '');
     const body = await parseBody(req);
     try {
-      const updated = store.updateMenuItem(itemId, body);
+      const updated = await repo.updateMenuItem(itemId, body);
       sendJson(res, 200, { success: true, data: updated });
     } catch (err: any) {
       sendJson(res, 400, { success: false, error: err.message });
@@ -5301,7 +5383,7 @@ const server = http.createServer(async (req, res) => {
   }
 
   if (pathname.startsWith('/api/restaurant/menu/items/') && method === 'DELETE') {
-    const identity = resolveRequestIdentity(req);
+    const identity = requestIdentity;
     if (identity.type === 'INVALID_CREDENTIAL' || identity.type === 'REVOKED_CAPABILITY') {
       sendJson(res, 401, { error: identity.type, code: identity.type, message: 'Invalid or revoked credential.' });
       return;
@@ -5316,7 +5398,7 @@ const server = http.createServer(async (req, res) => {
     }
     const itemId = pathname.replace('/api/restaurant/menu/items/', '');
     try {
-      store.deleteMenuItem(itemId);
+      await repo.deleteMenuItem(itemId);
       sendJson(res, 200, { success: true, message: `Item ${itemId} deleted` });
     } catch (err: any) {
       sendJson(res, 400, { success: false, error: err.message });
@@ -5329,7 +5411,7 @@ const server = http.createServer(async (req, res) => {
     const urlObj = new URL(req.url || '', `http://${req.headers.host || 'localhost'}`);
     const includeArchived = urlObj.searchParams.get('includeArchived') === 'true';
     const cat = urlObj.searchParams.get('category');
-    let items = store.getMenuItems(includeArchived);
+    let items = await repo.getMenuItems(includeArchived);
     if (cat && cat !== 'ALL') {
       items = items.filter((i) => i.category.toLowerCase() === cat.toLowerCase() || i.categoryId === cat);
     }
@@ -5339,7 +5421,7 @@ const server = http.createServer(async (req, res) => {
 
   if (pathname.startsWith('/api/restaurant/menu/items/') && method === 'GET') {
     const itemId = pathname.replace('/api/restaurant/menu/items/', '');
-    const item = store.getMenuItem(itemId);
+    const item = await repo.getMenuItem(itemId);
     if (!item) {
       sendJson(res, 404, { success: false, error: 'NOT_FOUND', message: `Item ${itemId} not found` });
       return;
@@ -5352,8 +5434,8 @@ const server = http.createServer(async (req, res) => {
   if (pathname === '/api/restaurant/menu/categories' && method === 'GET') {
     const urlObj = new URL(req.url || '', `http://${req.headers.host || 'localhost'}`);
     const includeArchived = urlObj.searchParams.get('includeArchived') === 'true';
-    const categories = store.getCategories(includeArchived);
-    const allItems = store.getMenuItems(true);
+    const categories = await repo.getCategories(includeArchived);
+    const allItems = await repo.getMenuItems(true);
     const enriched = categories.map((c) => ({
       ...c,
       itemCount: allItems.filter((i) => !i.isArchived && (i.category === c.name || i.categoryId === c.id)).length,
@@ -5363,7 +5445,7 @@ const server = http.createServer(async (req, res) => {
   }
 
   if (pathname === '/api/restaurant/menu/categories' && method === 'POST') {
-    const identity = resolveRequestIdentity(req);
+    const identity = requestIdentity;
     if (identity.type === 'INVALID_CREDENTIAL' || identity.type === 'REVOKED_CAPABILITY') {
       sendJson(res, 401, { error: identity.type, code: identity.type, message: 'Invalid or revoked credential.' });
       return;
@@ -5378,7 +5460,7 @@ const server = http.createServer(async (req, res) => {
     }
     const body = await parseBody(req);
     try {
-      const newCat = store.createCategory(body);
+      const newCat = await repo.createCategory(body);
       sendJson(res, 201, { success: true, data: newCat });
     } catch (err: any) {
       sendJson(res, 400, { success: false, error: err.message });
@@ -5387,7 +5469,7 @@ const server = http.createServer(async (req, res) => {
   }
 
   if (pathname === '/api/restaurant/menu/categories/reorder' && method === 'POST') {
-    const identity = resolveRequestIdentity(req);
+    const identity = requestIdentity;
     if (identity.type === 'INVALID_CREDENTIAL' || identity.type === 'REVOKED_CAPABILITY') {
       sendJson(res, 401, { error: identity.type, code: identity.type, message: 'Invalid or revoked credential.' });
       return;
@@ -5406,7 +5488,7 @@ const server = http.createServer(async (req, res) => {
       return;
     }
     try {
-      const reordered = store.reorderCategories(body.orderedIds);
+      const reordered = await repo.reorderCategories(body.orderedIds);
       sendJson(res, 200, { success: true, data: reordered });
     } catch (err: any) {
       sendJson(res, 400, { success: false, error: err.message });
@@ -5415,7 +5497,7 @@ const server = http.createServer(async (req, res) => {
   }
 
   if (pathname.startsWith('/api/restaurant/menu/categories/') && method === 'PATCH') {
-    const identity = resolveRequestIdentity(req);
+    const identity = requestIdentity;
     if (identity.type === 'INVALID_CREDENTIAL' || identity.type === 'REVOKED_CAPABILITY') {
       sendJson(res, 401, { error: identity.type, code: identity.type, message: 'Invalid or revoked credential.' });
       return;
@@ -5431,7 +5513,7 @@ const server = http.createServer(async (req, res) => {
     const catId = pathname.replace('/api/restaurant/menu/categories/', '');
     const body = await parseBody(req);
     try {
-      const updated = store.updateCategory(catId, body);
+      const updated = await repo.updateCategory(catId, body);
       if (!updated) {
         sendJson(res, 404, { success: false, error: 'NOT_FOUND', message: `Category ${catId} not found` });
         return;
@@ -5444,7 +5526,7 @@ const server = http.createServer(async (req, res) => {
   }
 
   if (pathname.startsWith('/api/restaurant/menu/categories/') && method === 'DELETE') {
-    const identity = resolveRequestIdentity(req);
+    const identity = requestIdentity;
     if (identity.type === 'INVALID_CREDENTIAL' || identity.type === 'REVOKED_CAPABILITY') {
       sendJson(res, 401, { error: identity.type, code: identity.type, message: 'Invalid or revoked credential.' });
       return;
@@ -5461,7 +5543,7 @@ const server = http.createServer(async (req, res) => {
     const urlObj = new URL(req.url || '', `http://${req.headers.host || 'localhost'}`);
     const reassignTo = urlObj.searchParams.get('reassignTo') || undefined;
     try {
-      const result = store.archiveCategory(catId, reassignTo);
+      const result = await repo.archiveCategory(catId, reassignTo);
       if (!result.success) {
         sendJson(res, 422, { success: false, error: 'CATEGORY_ARCHIVE_FAILED', message: result.error });
         return;
@@ -5476,19 +5558,19 @@ const server = http.createServer(async (req, res) => {
   // 30b. Branch Menu Resolution & Overrides
   if (pathname.startsWith('/api/restaurant/branches/') && pathname.endsWith('/menu') && method === 'GET') {
     const bId = pathname.replace('/api/restaurant/branches/', '').replace('/menu', '');
-    const branch = store.getBranch(bId);
+    const branch = await repo.getBranch(bId);
     if (!branch) {
       sendJson(res, 404, { success: false, error: 'BRANCH_NOT_FOUND', message: `Branch ${bId} not found.` });
       return;
     }
-    const resolvedMenu = store.getResolvedMenuForBranch(bId);
+    const resolvedMenu = await repo.getResolvedMenuForBranch(bId);
     sendJson(res, 200, { success: true, branchId: bId, branchName: branch.name, count: resolvedMenu.length, data: resolvedMenu });
     return;
   }
 
   if (pathname.startsWith('/api/restaurant/branches/') && method === 'GET') {
     const bId = pathname.replace('/api/restaurant/branches/', '');
-    const branch = store.getBranch(bId);
+    const branch = await repo.getBranch(bId);
     if (!branch) {
       sendJson(res, 404, { success: false, error: 'BRANCH_NOT_FOUND', message: `Branch ${bId} not found.` });
       return;
@@ -5499,12 +5581,12 @@ const server = http.createServer(async (req, res) => {
 
   if ((pathname === '/api/restaurant/menu/branch-overrides' || pathname === '/api/restaurant/menu/branch-override') && method === 'GET') {
     const bId = parsedUrl.query.branchId as string | undefined;
-    sendJson(res, 200, { success: true, data: store.getBranchMenuOverrides(bId) });
+    sendJson(res, 200, { success: true, data: await repo.getBranchMenuOverrides(bId) });
     return;
   }
 
   if ((pathname === '/api/restaurant/menu/branch-overrides' || pathname === '/api/restaurant/menu/branch-override') && method === 'POST') {
-    const identity = resolveRequestIdentity(req);
+    const identity = requestIdentity;
     if (identity.type === 'INVALID_CREDENTIAL' || identity.type === 'REVOKED_CAPABILITY') {
       sendJson(res, 401, { error: identity.type, code: identity.type, message: 'Invalid or revoked credential.' });
       return;
@@ -5529,7 +5611,7 @@ const server = http.createServer(async (req, res) => {
       });
       return;
     }
-    const saved = store.setBranchMenuOverride(body);
+    const saved = await repo.setBranchMenuOverride(body);
     sendJson(res, 200, { success: true, data: saved });
     return;
   }
@@ -5537,7 +5619,7 @@ const server = http.createServer(async (req, res) => {
   // 30c. Resolved Branch Menu Commerce Endpoint
   if (pathname === '/api/commerce/menu' && method === 'GET') {
     const branchId = (parsedUrl.query.branch as string) || currentBranch.id;
-    const resolvedMenu = store.getResolvedMenuForBranch(branchId);
+    const resolvedMenu = await repo.getResolvedMenuForBranch(branchId);
     sendJson(res, 200, { success: true, branchId, count: resolvedMenu.length, data: resolvedMenu });
     return;
   }
@@ -5545,14 +5627,14 @@ const server = http.createServer(async (req, res) => {
   // 31. Multi-Experience Commerce Marketplace & Quick-Commerce APIs
   if (pathname === '/api/commerce/restaurants' && method === 'GET') {
     res.setHeader('X-API-Deprecation', 'single-brand-migration; use /api/commerce/menu instead');
-    const partners = store.getRestaurantPartners();
+    const partners = await repo.getRestaurantPartners();
     sendJson(res, 200, { success: true, count: partners.length, data: partners });
     return;
   }
 
   if (pathname.startsWith('/api/commerce/restaurants/') && method === 'GET') {
     const partnerId = pathname.replace('/api/commerce/restaurants/', '');
-    const partner = store.getRestaurantPartnerById(partnerId);
+    const partner = await repo.getRestaurantPartnerById(partnerId);
     if (!partner) {
       sendJson(res, 404, { success: false, error: 'NOT_FOUND', message: `Restaurant partner ${partnerId} not found.` });
       return;
@@ -5563,14 +5645,14 @@ const server = http.createServer(async (req, res) => {
 
   if ((pathname === '/api/commerce/grocery/skus' || pathname === '/api/commerce/grocery/catalog') && method === 'GET') {
     const categoryFilter = parsedUrl.query.category as string | undefined;
-    const skus = store.getGrocerySkus(categoryFilter);
+    const skus = await repo.getGrocerySkus(categoryFilter);
     sendJson(res, 200, { success: true, count: skus.length, data: skus });
     return;
   }
 
   if (pathname.startsWith('/api/commerce/grocery/skus/') && method === 'GET') {
     const skuId = pathname.replace('/api/commerce/grocery/skus/', '');
-    const sku = store.getGrocerySkuById(skuId);
+    const sku = await repo.getGrocerySkuById(skuId);
     if (!sku) {
       sendJson(res, 404, { success: false, error: 'NOT_FOUND', message: `Grocery SKU ${skuId} not found.` });
       return;
@@ -5582,7 +5664,7 @@ const server = http.createServer(async (req, res) => {
   // 31b. Order Status Tracking API (High-entropy token validation & PII redaction)
   if (pathname.startsWith('/api/commerce/orders/') && method === 'GET') {
     const orderId = pathname.replace('/api/commerce/orders/', '');
-    const order = store.getOrders().find((o) => o.orderId === orderId);
+    const order = await repo.getOrder(orderId);
     const cachedRecord = idempotencyRecords.get(orderId);
     const cached = cachedRecord?.response || cachedRecord;
     if (!order && !cached) {
@@ -5596,7 +5678,7 @@ const server = http.createServer(async (req, res) => {
     const queryToken = (parsedUrl.query.orderToken as string) || '';
     const reqToken = headerToken || queryToken;
 
-    const identity = resolveRequestIdentity(req);
+    const identity = requestIdentity;
     const isStaff = identity.type === 'STAFF' || identity.type === 'ADMIN' || identity.type === 'STATION';
     const expectedToken = orderTokens.get(orderId) || order?.orderToken || cached?.orderToken;
 
@@ -5610,7 +5692,7 @@ const server = http.createServer(async (req, res) => {
       return;
     }
 
-    const tasks = store.getKitchenTasks().filter((t) => t.orderId === orderId);
+    const tasks = (await repo.getKitchenTasks()).filter((t) => t.orderId === orderId);
     let liveStatus = 'CONFIRMED';
     let statusLabel = 'Order Confirmed & Sent to Kitchen';
 
@@ -5649,7 +5731,7 @@ const server = http.createServer(async (req, res) => {
         };
 
     const orderBranchId = targetOrder.branchId || targetOrder.branch || currentBranch.id;
-    const orderBranch = store.getBranch(orderBranchId) || currentBranch;
+    const orderBranch = (await repo.getBranch(orderBranchId)) || currentBranch;
     const targetBranchMeta = {
       id: orderBranch.id,
       name: orderBranch.name,
@@ -5693,7 +5775,7 @@ const server = http.createServer(async (req, res) => {
   // Commerce Order Cancellation
   if (pathname.startsWith('/api/commerce/orders/') && pathname.endsWith('/cancel') && method === 'POST') {
     const orderId = pathname.replace('/api/commerce/orders/', '').replace('/cancel', '');
-    const order = store.getOrder(orderId);
+    const order = await repo.getOrder(orderId);
     const cachedRecord = idempotencyRecords.get(orderId);
     const cached = cachedRecord?.response || cachedRecord;
     if (!order && !cached) {
@@ -5707,7 +5789,7 @@ const server = http.createServer(async (req, res) => {
     const queryToken = (parsedUrl.query.orderToken as string) || '';
     const reqToken = headerToken || queryToken;
 
-    const identity = resolveRequestIdentity(req);
+    const identity = requestIdentity;
     const isStaff = identity.type === 'STAFF' || identity.type === 'ADMIN' || identity.type === 'STATION';
     const expectedToken = orderTokens.get(orderId) || order?.orderToken || cached?.orderToken;
 
@@ -5722,7 +5804,7 @@ const server = http.createServer(async (req, res) => {
       return;
     }
 
-    const tasks = store.getKitchenTasks().filter((t) => t.orderId === orderId);
+    const tasks = (await repo.getKitchenTasks()).filter((t) => t.orderId === orderId);
     const alreadyStarted = tasks.some((t) => t.status === 'IN_PROGRESS' || t.status === 'READY' || t.status === 'BUMPED');
     if (alreadyStarted && !isStaff) {
       sendJson(res, 400, {
@@ -5738,7 +5820,7 @@ const server = http.createServer(async (req, res) => {
     const reason = body.reason || 'Customer requested cancellation';
 
     if (order) {
-      store.cancelOrder(orderId, reason, isStaff ? identity.id : 'customer');
+      await repo.cancelOrder(orderId, reason, isStaff ? identity.id : 'customer');
     }
     if (cached) {
       cached.status = 'CANCELLED';
@@ -5753,7 +5835,7 @@ const server = http.createServer(async (req, res) => {
     const orderBranchId = order?.branchId || cached?.branchId || currentBranch.id;
     eventBus.broadcast({
       id: `evt_${Date.now()}`,
-      sequence: store.getEvents().length,
+      sequence: (await repo.getEvents()).length,
       type: 'order.cancelled',
       timestamp: new Date().toISOString(),
       producer: orderId,
@@ -5812,7 +5894,7 @@ const server = http.createServer(async (req, res) => {
 
     // 1. Validate Target Branch
     const targetBranchId = body.branchId || currentBranch.id;
-    const targetBranch = store.getBranch(targetBranchId);
+    const targetBranch = await repo.getBranch(targetBranchId);
     if (!targetBranch) {
       sendJson(res, 400, {
         success: false,
@@ -5873,7 +5955,7 @@ const server = http.createServer(async (req, res) => {
     }
 
     // 3. Validate Items & Availability against Branch-Resolved Menu
-    const resolvedMenu = store.getResolvedMenuForBranch(targetBranch.id);
+    const resolvedMenu = await repo.getResolvedMenuForBranch(targetBranch.id);
     let subtotalMinor = 0;
     const validatedOrderItems: Array<{
       id: string;
@@ -5992,7 +6074,7 @@ const server = http.createServer(async (req, res) => {
       customer: orderPayload.customer,
       createdAt: new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false }),
     };
-    store.addOrder(restaurantOrder);
+    await repo.addOrder(restaurantOrder);
 
     // 6. Spawn Kitchen Tasks for each item routed to target branch KDS stations
     for (const it of restaurantOrder.items) {
@@ -6013,10 +6095,10 @@ const server = http.createServer(async (req, res) => {
         slaMinutes: resolvedItem?.prepDurationMinutes || 18,
         modifiers: [],
       };
-      store.addKitchenTask(task);
+      await repo.addKitchenTask(task);
       eventBus.broadcast({
         id: `evt_${Date.now()}`,
-        sequence: store.getEvents().length,
+        sequence: (await repo.getEvents()).length,
         type: 'task.created',
         timestamp: new Date().toISOString(),
         producer: orderId,
@@ -6026,7 +6108,7 @@ const server = http.createServer(async (req, res) => {
       });
     }
 
-    store.appendEvent(
+    await repo.appendEvent(
       'COMMERCE_ORDER_CREATED',
       orderId,
       targetBranch.id,
@@ -6034,7 +6116,7 @@ const server = http.createServer(async (req, res) => {
     );
     eventBus.broadcast({
       id: `evt_${Date.now()}`,
-      sequence: store.getEvents().length,
+      sequence: (await repo.getEvents()).length,
       type: 'order.created',
       timestamp: new Date().toISOString(),
       producer: orderId,
@@ -6079,18 +6161,19 @@ const server = http.createServer(async (req, res) => {
     const orderItems: any[] = [];
 
     for (const item of items) {
-      const sku = store.getGrocerySkuById(item.skuId);
+      const sku = await repo.getGrocerySkuById(item.skuId);
       if (!sku) {
         sendJson(res, 404, { success: false, error: 'SKU_NOT_FOUND', message: `Product SKU ${item.skuId} was not found in catalog.` });
         return;
       }
       const qty = Math.max(1, parseInt(item.quantity, 10) || 1);
-      if (sku.stockQuantity < qty) {
+      const stockAvailable = typeof sku.stockQuantity === 'number' ? sku.stockQuantity : (sku.stockOnHand || 0);
+      if (stockAvailable < qty) {
         sendJson(res, 400, {
           success: false,
           error: 'INSUFFICIENT_STOCK',
-          message: `${sku.name} only has ${sku.stockQuantity} units available in local dark store inventory. Requested: ${qty}`,
-          availableStock: sku.stockQuantity,
+          message: `${sku.name} only has ${stockAvailable} units available in local dark store inventory. Requested: ${qty}`,
+          availableStock: stockAvailable,
           skuId: item.skuId,
         });
         return;
@@ -6108,7 +6191,7 @@ const server = http.createServer(async (req, res) => {
     }
 
     // 2. Authoritative Atomic Stock Transaction (all-or-nothing rollback guard)
-    const stockTx = store.transactGroceryStock(orderItems.map((it) => ({ skuId: it.skuId, quantity: it.quantity })));
+    const stockTx = await repo.transactGroceryStock(orderItems.map((it) => ({ skuId: it.skuId, quantity: it.quantity })));
     if (!stockTx.success) {
       sendJson(res, 400, {
         success: false,
@@ -6159,7 +6242,7 @@ const server = http.createServer(async (req, res) => {
       idempotencyRecords.set(idempotencyKey, { payloadHash, response: groceryOrderPayload });
     }
 
-    store.appendEvent(
+    await repo.appendEvent(
       'GROCERY_ORDER_PLACED',
       orderId,
       currentBranch.id,
@@ -6202,11 +6285,12 @@ const server = http.createServer(async (req, res) => {
 
   // --- 1. OPERATIONS HOME (/) ---
   if (pathname === '/' || pathname === '/overview') {
-    const branchTables = store.getTables(currentBranch.id);
-    const branchTasks = store.getKitchenTasks(undefined, currentBranch.id);
-    const branchRequests = store.getServiceRequests(currentBranch.id);
-    const branchOrders = store.getOrders(undefined, undefined, currentBranch.id);
-    const branchEvents = store.getEvents(0, currentBranch.id);
+    const branchTables = await repo.getTables(currentBranch.id);
+    const branchTasks = await repo.getKitchenTasks(undefined, currentBranch.id);
+    const branchRequests = await repo.getServiceRequests(currentBranch.id);
+    const branchOrders = await repo.getOrders(undefined, undefined, currentBranch.id);
+    const branchEvents = await repo.getEvents(0, currentBranch.id);
+    const tenantBrand = await repo.getTenantBrand();
 
     const html = renderShell(
       renderOperationsHome(
@@ -6221,13 +6305,13 @@ const server = http.createServer(async (req, res) => {
       {
         title: 'Operations Command',
         activeNav: 'overview',
-        restaurantName: store.getTenantBrand().restaurantName || 'OrbitoX Bistro',
+        restaurantName: tenantBrand.restaurantName || 'OrbitoX Bistro',
         currentBranchId: currentBranch.id,
         currentFloorId: currentFloor.id,
         currentServiceShift: serviceShift,
         branches,
         floors,
-          staffRole: activeStaffRole,
+        staffRole: activeStaffRole,
       }
     );
     sendHtml(res, html);
@@ -6237,21 +6321,22 @@ const server = http.createServer(async (req, res) => {
   // --- 2. SPATIAL FLOOR STUDIO (/operations or /operations/floor) ---
   if (pathname === '/operations' || pathname === '/operations/floor') {
     const selectedTableId = parsedUrl.query.table ? parseInt(parsedUrl.query.table as string, 10) : undefined;
-    const allTables = store.getTables(currentBranch.id);
-    const allOrders = store.getOrders(undefined, undefined, currentBranch.id);
+    const allTables = await repo.getTables(currentBranch.id);
+    const allOrders = await repo.getOrders(undefined, undefined, currentBranch.id);
+    const tenantBrand = await repo.getTenantBrand();
 
     const html = renderShell(
       renderFloorStudio(allTables, selectedTableId, currentFloor.id, currentBranch.id, floors, allOrders),
       {
         title: 'Spatial Floor Studio',
         activeNav: 'floor',
-        restaurantName: store.getTenantBrand().restaurantName || 'OrbitoX Bistro',
+        restaurantName: tenantBrand.restaurantName || 'OrbitoX Bistro',
         currentBranchId: currentBranch.id,
         currentFloorId: currentFloor.id,
         currentServiceShift: serviceShift,
         branches,
         floors,
-          staffRole: activeStaffRole,
+        staffRole: activeStaffRole,
       }
     );
     sendHtml(res, html);
@@ -6261,10 +6346,12 @@ const server = http.createServer(async (req, res) => {
   // --- 3. TABLES WORKSPACE (/operations/tables) ---
   if (pathname === '/operations/tables') {
     const section = (parsedUrl.query.section as string) || 'ALL';
-    const html = renderShell(renderTablesList(store.getTables(currentBranch.id), currentBranch.id, section), {
+    const tables = await repo.getTables(currentBranch.id);
+    const tenantBrand = await repo.getTenantBrand();
+    const html = renderShell(renderTablesList(tables, currentBranch.id, section), {
       title: 'Tables Fleet',
       activeNav: 'tables',
-      restaurantName: store.getTenantBrand().restaurantName || 'OrbitoX Bistro',
+      restaurantName: tenantBrand.restaurantName || 'OrbitoX Bistro',
       currentBranchId: currentBranch.id,
       currentFloorId: currentFloor.id,
       currentServiceShift: serviceShift,
@@ -6278,11 +6365,12 @@ const server = http.createServer(async (req, res) => {
 
   // --- 4. ORDERS WORKSPACE (/operations/orders & /orders) ---
   if (pathname === '/operations/orders' || pathname === '/orders') {
-    const branchOrders = store.getOrders(undefined, undefined, currentBranch.id);
+    const branchOrders = await repo.getOrders(undefined, undefined, currentBranch.id);
+    const tenantBrand = await repo.getTenantBrand();
     const html = renderShell(renderOrdersWorkspace(branchOrders, branches, currentBranch.id), {
       title: 'Service Orders',
       activeNav: 'orders',
-      restaurantName: store.getTenantBrand().restaurantName,
+      restaurantName: tenantBrand.restaurantName,
       currentBranchId: currentBranch.id,
       currentFloorId: currentFloor.id,
       currentServiceShift: serviceShift,
@@ -6310,14 +6398,15 @@ const server = http.createServer(async (req, res) => {
 
     const kdsRole = isKitchenAuthorized ? (requestIdentity.role || 'CHEF') : undefined;
 
-    const branchTasks = store.getKitchenTasks(undefined, currentBranch.id);
+    const branchTasks = await repo.getKitchenTasks(undefined, currentBranch.id);
+    const lastSeq = await repo.getLastEventSequence();
     const html = renderKdsWorkspace(
       branchTasks,
       activeStation,
       currentBranch.name,
       serviceShift,
       undefined,
-      store.getLastEventSequence(),
+      lastSeq,
       currentBranch.id,
       kdsRole,
       isKitchenAuthorized
@@ -6328,12 +6417,14 @@ const server = http.createServer(async (req, res) => {
 
   // --- 6. MENU CATALOG WORKSPACE (/menu) ---
   if (pathname === '/menu') {
-    const branchOverrides = store.getBranchMenuOverrides();
-    const categories = store.getCategories(true);
-    const html = renderShell(renderMenuWorkspace(store.getMenuItems(true), branches, currentBranch.id, branchOverrides, categories), {
+    const branchOverrides = await repo.getBranchMenuOverrides();
+    const categories = await repo.getCategories(true);
+    const menuItems = await repo.getMenuItems(true);
+    const tenantBrand = await repo.getTenantBrand();
+    const html = renderShell(renderMenuWorkspace(menuItems, branches, currentBranch.id, branchOverrides, categories), {
       title: 'Menu Catalog',
       activeNav: 'menu',
-      restaurantName: store.getTenantBrand().restaurantName,
+      restaurantName: tenantBrand.restaurantName,
       currentBranchId: currentBranch.id,
       currentFloorId: currentFloor.id,
       currentServiceShift: serviceShift,
@@ -6347,10 +6438,13 @@ const server = http.createServer(async (req, res) => {
 
   // --- 7. GUESTS WORKSPACE (/guests) ---
   if (pathname === '/guests') {
-    const html = renderShell(renderGuestsWorkspace(store.getTables(currentBranch.id), currentBranch.id, store.getGuests()), {
+    const branchTables = await repo.getTables(currentBranch.id);
+    const guests = await repo.getGuests();
+    const tenantBrand = await repo.getTenantBrand();
+    const html = renderShell(renderGuestsWorkspace(branchTables, currentBranch.id, guests), {
       title: 'Active Guests',
       activeNav: 'guests',
-      restaurantName: store.getTenantBrand().restaurantName || 'OrbitoX Bistro',
+      restaurantName: tenantBrand.restaurantName || 'OrbitoX Bistro',
       currentBranchId: currentBranch.id,
       currentFloorId: currentFloor.id,
       currentServiceShift: serviceShift,
@@ -6364,10 +6458,11 @@ const server = http.createServer(async (req, res) => {
 
   // --- 8. LOCATIONS WORKSPACE (/operations/locations) ---
   if (pathname === '/operations/locations') {
+    const tenantBrand = await repo.getTenantBrand();
     const html = renderShell(renderLocationsWorkspace(branches, currentBranch.id), {
       title: 'Locations & Branches',
       activeNav: 'locations',
-      restaurantName: store.getTenantBrand().restaurantName || 'OrbitoX Bistro',
+      restaurantName: tenantBrand.restaurantName || 'OrbitoX Bistro',
       currentBranchId: currentBranch.id,
       currentFloorId: currentFloor.id,
       currentServiceShift: serviceShift,
@@ -6381,10 +6476,11 @@ const server = http.createServer(async (req, res) => {
 
   // --- 9. FLOORS WORKSPACE (/operations/floors) ---
   if (pathname === '/operations/floors') {
+    const tenantBrand = await repo.getTenantBrand();
     const html = renderShell(renderFloorsWorkspace(floors, currentBranch), {
       title: 'Floor Plans & Layouts',
       activeNav: 'floors',
-      restaurantName: store.getTenantBrand().restaurantName || 'OrbitoX Bistro',
+      restaurantName: tenantBrand.restaurantName || 'OrbitoX Bistro',
       currentBranchId: currentBranch.id,
       currentFloorId: currentFloor.id,
       currentServiceShift: serviceShift,
@@ -6398,10 +6494,14 @@ const server = http.createServer(async (req, res) => {
 
   // --- 10. SERVICE REPORTS WORKSPACE (/reports) ---
   if (pathname === '/reports') {
-    const html = renderShell(renderReportsWorkspace(store.getOrders(undefined, undefined, currentBranch.id), store.getKitchenTasks(undefined, currentBranch.id), store.getTables(currentBranch.id)), {
+    const orders = await repo.getOrders(undefined, undefined, currentBranch.id);
+    const tasks = await repo.getKitchenTasks(undefined, currentBranch.id);
+    const tables = await repo.getTables(currentBranch.id);
+    const tenantBrand = await repo.getTenantBrand();
+    const html = renderShell(renderReportsWorkspace(orders, tasks, tables), {
       title: 'Service Analytics',
       activeNav: 'reports',
-      restaurantName: store.getTenantBrand().restaurantName || 'OrbitoX Bistro',
+      restaurantName: tenantBrand.restaurantName || 'OrbitoX Bistro',
       currentBranchId: currentBranch.id,
       currentFloorId: currentFloor.id,
       currentServiceShift: serviceShift,
@@ -6415,10 +6515,11 @@ const server = http.createServer(async (req, res) => {
 
   // --- 10b. STAFF & SECURITY WORKSPACE (/staff, /operations/staff) ---
   if (pathname === '/staff' || pathname === '/operations/staff') {
+    const tenantBrand = await repo.getTenantBrand();
     const html = renderShell(renderStaffWorkspace(branches, currentBranch.id), {
       title: 'Staff Directory & RBAC Security',
       activeNav: 'staff',
-      restaurantName: store.getTenantBrand().restaurantName,
+      restaurantName: tenantBrand.restaurantName,
       currentBranchId: currentBranch.id,
       currentFloorId: currentFloor.id,
       currentServiceShift: serviceShift,
@@ -6432,31 +6533,45 @@ const server = http.createServer(async (req, res) => {
 
   // --- 11. DINER MOBILE PWA (/dine/:locator) ---
   if (pathname.startsWith('/dine/')) {
-    const locator = pathname.split('/')[2] || '7Kp9xQ8m2L';
-    const currentTable = store.getTableByLocator(locator) || store.getTable(14) || store.getTables()[0];
+    const locator = pathname.split('/')[2];
+    if (!locator) {
+      sendJson(res, 404, { error: 'NOT_FOUND', message: 'Table locator required' });
+      return;
+    }
+    const currentTable = await repo.getTableByLocator(locator);
+    if (!currentTable) {
+      sendHtml(res, renderTenantNotFoundPage(`Table locator "${locator}"`), 404);
+      return;
+    }
+    const allOrders = await repo.getOrders();
     const tableOrders = currentTable.activeSessionId
-      ? store.getOrders().filter((o) => o.tableNumber === currentTable.number && o.sessionId === currentTable.activeSessionId)
+      ? allOrders.filter((o) => o.tableNumber === currentTable.number && o.sessionId === currentTable.activeSessionId)
       : [];
+    const allTasks = await repo.getKitchenTasks();
     const tableTasks = currentTable.activeSessionId
-      ? store.getKitchenTasks().filter((t) => t.tableNumber === currentTable.number && tableOrders.some((o) => o.orderId === t.orderId))
+      ? allTasks.filter((t) => t.tableNumber === currentTable.number && tableOrders.some((o) => o.orderId === t.orderId))
       : [];
-    const tableBranch = store.getBranch(currentTable.branchId);
+    const tableBranch = await repo.getBranch(currentTable.branchId);
     const branchName = tableBranch ? tableBranch.name : currentBranch.name;
-    const tenantBrand = store.getTenantBrand();
+    const tenantBrand = await repo.getTenantBrand();
     const queryTmplId = (parsedUrl.query.templateId || parsedUrl.query.template) as string | undefined;
-    const activeTemplate = (queryTmplId ? store.getTemplateById(queryTmplId) : undefined) || store.getTemplateById(tenantBrand.activeTemplateId);
+    const activeTemplate = (queryTmplId ? await repo.getTemplateById(queryTmplId) : undefined) || (tenantBrand?.activeTemplateId ? await repo.getTemplateById(tenantBrand.activeTemplateId) : undefined);
     const effectiveBrand = queryTmplId && activeTemplate ? { ...tenantBrand, activeTemplateId: activeTemplate.id } : tenantBrand;
-    const html = renderDinerPwa(currentTable, store.getMenuItems(), branchName, tableOrders, tableTasks, effectiveBrand, activeTemplate);
+    const menuItems = await repo.getMenuItems();
+    const html = renderDinerPwa(currentTable, menuItems, branchName, tableOrders, tableTasks, effectiveBrand, activeTemplate);
     sendHtml(res, html);
     return;
   }
 
   // --- 12. TEMPLATE MARKETPLACE (/marketplace) ---
   if (pathname === '/marketplace') {
+    const templates = await repo.getTemplates();
+    const tenantBrand = await repo.getTenantBrand();
+    const menuItems = await repo.getMenuItems();
     const html = renderMarketplaceWorkspace(
-      store.getTemplates(),
-      store.getTenantBrand(),
-      store.getMenuItems(),
+      templates,
+      tenantBrand,
+      menuItems,
       currentBranch.id,
       branches
     );
@@ -6467,9 +6582,9 @@ const server = http.createServer(async (req, res) => {
   // --- 12a. CRAVEATLAS SINGLE-BRAND RESTAURANT WEBSITE (/apps/crave-atlas) ---
   if (pathname === '/apps/crave-atlas') {
     const branchParam = parsedUrl.query.branch as string | undefined;
-    const targetBranch = branchParam ? (store.getBranch(branchParam) || currentBranch) : currentBranch;
-    const resolvedMenu = store.getResolvedMenuForBranch(targetBranch.id);
-    const tenantBrand = store.getTenantBrand();
+    const targetBranch = branchParam ? ((await repo.getBranch(branchParam)) || currentBranch) : currentBranch;
+    const resolvedMenu = await repo.getResolvedMenuForBranch(targetBranch.id);
+    const tenantBrand = await repo.getTenantBrand();
     const html = renderCraveAtlasPage(branches, targetBranch, resolvedMenu, tenantBrand);
     sendHtml(res, html);
     return;
@@ -6478,11 +6593,12 @@ const server = http.createServer(async (req, res) => {
   // --- 12b. SWIFTBITE SPEED-FIRST FOOD ORDERING (/apps/swift-bite) ---
   if (pathname === '/apps/swift-bite') {
     const branchParam = parsedUrl.query.branch as string | undefined;
-    const targetBranch = branchParam ? (store.getBranch(branchParam) || currentBranch) : currentBranch;
-    const resolvedMenu = store.getResolvedMenuForBranch(targetBranch.id);
-    const tenantBrand = store.getTenantBrand();
+    const targetBranch = branchParam ? ((await repo.getBranch(branchParam)) || currentBranch) : currentBranch;
+    const resolvedMenu = await repo.getResolvedMenuForBranch(targetBranch.id);
+    const tenantBrand = await repo.getTenantBrand();
     const tableNumber = (parsedUrl.query.table || '1') as string;
-    const html = renderSwiftBitePage(branches, targetBranch, resolvedMenu, tenantBrand, tableNumber, store.getOrders());
+    const orders = await repo.getOrders();
+    const html = renderSwiftBitePage(branches, targetBranch, resolvedMenu, tenantBrand, tableNumber, orders);
     sendHtml(res, html);
     return;
   }
@@ -6490,9 +6606,9 @@ const server = http.createServer(async (req, res) => {
   // --- 12c. PANTRYRUSH QUICK-COMMERCE GROCERY (/apps/pantry-rush) ---
   if (pathname === '/apps/pantry-rush') {
     const branchParam = parsedUrl.query.branch as string | undefined;
-    const targetBranch = branchParam ? (store.getBranch(branchParam) || currentBranch) : currentBranch;
-    const skus = store.getGrocerySkus();
-    const tenantBrand = store.getTenantBrand();
+    const targetBranch = branchParam ? ((await repo.getBranch(branchParam)) || currentBranch) : currentBranch;
+    const skus = await repo.getGrocerySkus();
+    const tenantBrand = await repo.getTenantBrand();
     const pincode = (parsedUrl.query.pincode || '141001') as string;
     const html = renderPantryRushPage(skus, tenantBrand, branches, targetBranch, pincode);
     sendHtml(res, html);
@@ -6501,14 +6617,15 @@ const server = http.createServer(async (req, res) => {
 
   // --- 13. VISUAL BRAND STUDIO & EDITOR (/studio) ---
   if (pathname === '/studio') {
-    const activeBrand = store.getTenantBrand();
-    const activeTemplate = store.getTemplateById(activeBrand.activeTemplateId) || store.getTemplates()[0];
-    const draft = store.getTemplateDraft();
+    const activeBrand = await repo.getTenantBrand();
+    const activeTemplate = (activeBrand?.activeTemplateId ? await repo.getTemplateById(activeBrand.activeTemplateId) : undefined) || (await repo.getTemplates())[0];
+    const draft = await repo.getTemplateDraft();
+    const menuItems = await repo.getMenuItems();
     const html = renderVisualStudio(
       activeTemplate,
       draft,
       activeBrand,
-      store.getMenuItems(),
+      menuItems,
       currentBranch.id
     );
     sendHtml(res, html);
@@ -6517,18 +6634,19 @@ const server = http.createServer(async (req, res) => {
 
   // --- 14. WHITE-LABEL & DOMAINS (/white-label & /whitelabel) ---
   if (pathname === '/white-label' || pathname === '/whitelabel') {
+    const tenantBrand = await repo.getTenantBrand();
     const html = renderShell(
-      renderWhiteLabelWorkspace(store.getTenantBrand(), branches, currentBranch.id),
+      renderWhiteLabelWorkspace(tenantBrand, branches, currentBranch.id),
       {
         title: 'White-Label & Domains',
         activeNav: 'whitelabel',
-        restaurantName: store.getTenantBrand().restaurantName,
+        restaurantName: tenantBrand.restaurantName,
         currentBranchId: currentBranch.id,
         currentFloorId: currentFloor.id,
         currentServiceShift: serviceShift,
         branches,
         floors,
-          staffRole: activeStaffRole,
+        staffRole: activeStaffRole,
       }
     );
     sendHtml(res, html);
@@ -6537,18 +6655,19 @@ const server = http.createServer(async (req, res) => {
 
   // --- 15. STAFF DIRECTORY & SECURITY (/staff) ---
   if (pathname === '/staff') {
+    const tenantBrand = await repo.getTenantBrand();
     const html = renderShell(
       renderStaffWorkspace(branches, currentBranch.id),
       {
         title: 'Staff Directory & RBAC Security',
         activeNav: 'staff',
-        restaurantName: store.getTenantBrand().restaurantName,
+        restaurantName: tenantBrand.restaurantName,
         currentBranchId: currentBranch.id,
         currentFloorId: currentFloor.id,
         currentServiceShift: serviceShift,
         branches,
         floors,
-          staffRole: activeStaffRole,
+        staffRole: activeStaffRole,
       }
     );
     sendHtml(res, html);
@@ -6557,18 +6676,20 @@ const server = http.createServer(async (req, res) => {
 
   // --- 16. CUSTOMER SUPPORT DESK (/support) ---
   if (pathname === '/support') {
+    const tickets = await repo.getSupportTickets();
+    const tenantBrand = await repo.getTenantBrand();
     const html = renderShell(
-      renderSupportWorkspace(store.getSupportTickets(), branches, currentBranch.id),
+      renderSupportWorkspace(tickets, branches, currentBranch.id),
       {
         title: 'Customer Support Desk',
         activeNav: 'support',
-        restaurantName: store.getTenantBrand().restaurantName,
+        restaurantName: tenantBrand.restaurantName,
         currentBranchId: currentBranch.id,
         currentFloorId: currentFloor.id,
         currentServiceShift: serviceShift,
         branches,
         floors,
-          staffRole: activeStaffRole,
+        staffRole: activeStaffRole,
       }
     );
     sendHtml(res, html);
@@ -6577,20 +6698,23 @@ const server = http.createServer(async (req, res) => {
 
   // --- 11b. TEMPLATE COMPOSITION INSPECTOR (/developer/templates) ---
   if (pathname === '/developer/templates') {
-    const selected = (parsedUrl.query.selected as string) || store.getTenantBrand().activeTemplateId || 'tmpl_haute_gastronomy';
+    const tenantBrand = await repo.getTenantBrand();
+    const selected = (parsedUrl.query.selected as string) || tenantBrand.activeTemplateId || 'tmpl_haute_gastronomy';
     const compare = (parsedUrl.query.compare as string) || 'tmpl_artisan_coffee';
+    const templates = await repo.getTemplates();
+    const menuItems = await repo.getMenuItems();
     const html = renderShell(
-      renderTemplateCompositionInspector(store.getTemplates(), selected, compare, store.getMenuItems()),
+      renderTemplateCompositionInspector(templates, selected, compare, menuItems),
       {
         title: 'Template Composition Inspector',
         activeNav: 'marketplace',
-        restaurantName: store.getTenantBrand().restaurantName,
+        restaurantName: tenantBrand.restaurantName,
         currentBranchId: currentBranch.id,
         currentFloorId: currentFloor.id,
         currentServiceShift: serviceShift,
         branches,
         floors,
-          staffRole: activeStaffRole,
+        staffRole: activeStaffRole,
       }
     );
     sendHtml(res, html);
@@ -6599,10 +6723,12 @@ const server = http.createServer(async (req, res) => {
 
   // --- 12. DEVELOPER RUNTIME INSPECTOR (/developer/inspector) ---
   if (pathname === '/developer/inspector') {
-    const html = renderShell(renderDeveloperInspector(context, store.getRawData()), {
+    const rawData = await repo.getRawData();
+    const tenantBrand = await repo.getTenantBrand();
+    const html = renderShell(renderDeveloperInspector(context, rawData), {
       title: 'Runtime Inspector',
       activeNav: 'overview',
-      restaurantName: 'OrbitoX Bistro',
+      restaurantName: tenantBrand.restaurantName || 'OrbitoX Bistro',
       currentBranchId: currentBranch.id,
       currentFloorId: currentFloor.id,
       currentServiceShift: serviceShift,
@@ -6617,6 +6743,11 @@ const server = http.createServer(async (req, res) => {
   // --- 13. DEVELOPER & DIAGNOSTICS (/developer/diagnostics) ---
   if (pathname === '/developer/diagnostics') {
     const config = runtimeController.getActiveConfig();
+    const revisions = await repo.getRevisions();
+    const events = await repo.getEvents();
+    const storageEngine = process.env.STORAGE_DRIVER === 'postgres'
+      ? 'PostgreSQL 16 with Row-Level Security (RLS) (Non-superuser role: restaurantos_app)'
+      : 'Atomic File-Backed JSON (data/restaurant-runtime-store.json)';
     const html = `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -6644,9 +6775,9 @@ const server = http.createServer(async (req, res) => {
   <div class="panel">
     <div><span class="key">RUNTIME_PORT:</span> <span class="val">4010</span></div>
     <div><span class="key">PROCESS_PID:</span> <span class="val">${process.pid}</span></div>
-    <div><span class="key">STORAGE_ENGINE:</span> <span class="val">Atomic File-Backed JSON (data/restaurant-runtime-store.json)</span></div>
-    <div><span class="key">STORAGE_REVISION:</span> <span class="val">${store.getRevisions()}</span></div>
-    <div><span class="key">OUTBOX_EVENTS:</span> <span class="val">${store.getEvents().length}</span></div>
+    <div><span class="key">STORAGE_ENGINE:</span> <span class="val">${storageEngine}</span></div>
+    <div><span class="key">STORAGE_REVISION:</span> <span class="val">${revisions}</span></div>
+    <div><span class="key">OUTBOX_EVENTS:</span> <span class="val">${events.length}</span></div>
     <div><span class="key">SSE_CLIENTS_CONNECTED:</span> <span class="val">${eventBus.getConnectedClientsCount()}</span></div>
     <div><span class="key">PROCESS_UPTIME:</span> <span class="val">${Math.floor(process.uptime())}s</span></div>
     <div><span class="key">MEMORY_HEAP_MB:</span> <span class="val">${Math.round(process.memoryUsage().heapUsed / 1024 / 1024)} MB</span></div>
@@ -6678,6 +6809,26 @@ if (process.env.NODE_ENV === 'production' && process.env.ALLOW_DANGEROUS_RESET =
 }
 
 server.listen(PORT, async () => {
+  if (postgresStore?.prisma) {
+    try {
+      console.log('🔒 Executing Database Security Self-Check (RLS & non-superuser role enforcement)...');
+      const checkResult = await runDatabaseSecuritySelfCheck(postgresStore.prisma, {
+        isProduction: process.env.NODE_ENV === 'production',
+      });
+      if (!checkResult.ok && process.env.NODE_ENV === 'production') {
+        console.error('🚨 [DATABASE SECURITY FAILED] RLS self-check failed in production! Halting startup.', checkResult.errors);
+        process.exit(1);
+      }
+    } catch (checkErr: any) {
+      if (process.env.NODE_ENV === 'production') {
+        console.error('🚨 [DATABASE SECURITY FATAL] Error running security self-check:', checkErr.message);
+        process.exit(1);
+      } else {
+        console.warn('⚠️ [Storage] Database security self-check deferred in non-prod:', checkErr.message);
+      }
+    }
+  }
+
   console.log(`\n🍷 =========================================================`);
   console.log(`🍷  RestaurantOS 2.x (Hospitality Runtime Plane) Active`);
   console.log(`🍷  Operations Command: http://localhost:${PORT}/`);

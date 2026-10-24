@@ -66,6 +66,7 @@ export interface DomainEvent<T = any> {
   branchId: string;
   floorId?: string;
   tableNumber?: string;
+  tenantId?: string;
   payload: T;
 }
 
