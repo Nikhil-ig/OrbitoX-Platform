@@ -1,0 +1,51 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: restaurant-os-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: restaurantos
+      POSTGRES_PASSWORD: restaurantos_pilot_secret
+      POSTGRES_DB: restaurant_os
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U restaurantos -d restaurant_os"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  restaurant-os:
+    build:
+      context: ../../
+      dockerfile: projects/external-os/restaurant-os/Dockerfile
+    container_name: restaurant-os-runtime
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - "4010:4010"
+    environment:
+      PORT: "4010"
+      NODE_ENV: "production"
+      DATABASE_URL: "postgresql://restaurantos:restaurantos_pilot_secret@postgres:5432/restaurant_os?schema=public"
+      RESTAURANT_GSTIN: "27AAPFU0939F1ZV"
+      RAZORPAY_KEY_ID: "${RAZORPAY_KEY_ID:-rzp_test_pilot_bistro}"
+      RAZORPAY_KEY_SECRET: "${RAZORPAY_KEY_SECRET:-rzp_test_secret_pilot_bistro}"
+      RAZORPAY_WEBHOOK_SECRET: "${RAZORPAY_WEBHOOK_SECRET:-rzp_test_webhook_pilot}"
+      STAFF_AUTH_SECRET: "${STAFF_AUTH_SECRET:-pilot_bistro_staff_secret_998877}"
+      ORBITOX_CONTROL_PLANE_URL: "${ORBITOX_CONTROL_PLANE_URL:-http://host.docker.internal:3005}"
+      ORBITOX_RUNTIME_TOKEN: "${ORBITOX_RUNTIME_TOKEN:-pilot-runtime-token}"
+      ORBITOX_PROJECT_ID: "restaurant-os-pilot"
+      DEFAULT_TENANT_ID: "tenant_pilot_bistro"
+    volumes:
+      - restaurantos_data:/app/data
+
+volumes:
+  postgres_data:
+    driver: local
+  restaurantos_data:
+    driver: local

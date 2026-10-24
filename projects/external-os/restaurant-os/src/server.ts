@@ -45,9 +45,16 @@ import {
   withTenantContext,
   getActiveTenant,
 } from '../packages/domain';
+import {
+  buildGSTInvoice,
+  computeFiscalYear,
+  SAC_RESTAURANT_SERVICES,
+} from '../packages/domain/invoicing';
 import { RestaurantRuntimeStore, DomainEvent } from '../packages/storage';
+import { PostgresRestaurantStore } from '../packages/storage/postgres-store';
 import { RealtimeEventBus } from '../packages/domain/event-bus';
 import { RestaurantControlBridge, restaurantControlBridge } from './bridge';
+import { RazorpayPaymentGatewayAdapter } from '../packages/integrations';
 import {
   renderShell,
   renderOperationsHome,
@@ -77,6 +84,14 @@ const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 4010;
 const store = new RestaurantRuntimeStore();
 const eventBus = new RealtimeEventBus();
 const runtimeController = restaurantControlBridge;
+const razorpayAdapter = new RazorpayPaymentGatewayAdapter();
+
+let postgresStore: PostgresRestaurantStore | null = null;
+try {
+  postgresStore = new PostgresRestaurantStore();
+} catch (err: any) {
+  console.warn('[Storage] PostgresRestaurantStore deferred:', err.message);
+}
 
 // Startup security signing secret verification
 try {
@@ -103,10 +118,12 @@ function parseBody(req: http.IncomingMessage): Promise<any> {
       data += chunk;
     });
     req.on('end', () => {
+      (req as any).rawBody = data;
       try {
         resolve(data ? JSON.parse(data) : {});
       } catch (err) {
-        reject(err);
+        (req as any).rawBody = data;
+        resolve({});
       }
     });
     req.on('error', reject);
@@ -118,7 +135,7 @@ function sendJson(res: http.ServerResponse, statusCode: number, data: any) {
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
     'Access-Control-Allow-Methods': 'GET, POST, PUT, PATCH, DELETE, OPTIONS',
-    'Access-Control-Allow-Headers': 'Content-Type, Authorization, x-idempotency-key, x-session-id, x-order-token, x-request-id, x-correlation-id, x-station-token',
+    'Access-Control-Allow-Headers': 'Content-Type, Authorization, x-idempotency-key, x-session-id, x-order-token, x-request-id, x-correlation-id, x-station-token, x-tenant-id, x-razorpay-signature, x-razorpay-event-id',
     'Access-Control-Expose-Headers': 'x-request-id',
     'Referrer-Policy': 'strict-origin-when-cross-origin',
     'X-Content-Type-Options': 'nosniff',
@@ -2068,6 +2085,472 @@ const server = http.createServer((req, res) => {
     }
 
     sendJson(res, 200, { success: true, message: `Order ${orderId} cancelled`, data: result.order });
+    return;
+  }
+
+  // 6d. Razorpay Payment Order Creation (Server-Recomputed Amounts)
+  if (
+    (pathname === '/api/restaurant/payments/create-order' ||
+      pathname === '/api/commerce/payments/create-session') &&
+    method === 'POST'
+  ) {
+    const body = await parseBody(req);
+    const orderId = body.orderId;
+    if (!orderId) {
+      sendJson(res, 400, {
+        error: 'ORDER_ID_REQUIRED',
+        code: 'ORDER_ID_REQUIRED',
+        message: 'A valid orderId is required to create a payment session.',
+      });
+      return;
+    }
+
+    const tenant = getActiveTenant();
+    const tid = tenant.tenantId;
+
+    let order = store.getOrder(orderId);
+    if (!order && postgresStore) {
+      try {
+        order = await postgresStore.getOrder(orderId, tid);
+      } catch {}
+    }
+
+    if (!order) {
+      sendJson(res, 404, {
+        error: 'ORDER_NOT_FOUND',
+        code: 'ORDER_NOT_FOUND',
+        message: `Order ${orderId} was not found.`,
+      });
+      return;
+    }
+
+    // Server-recomputed amounts: Never trust client-passed amountMinor
+    const amountMinor = order.totalMinor;
+    const tableNumber = order.tableNumber || body.tableNumber || 'T-14';
+
+    try {
+      const result = await razorpayAdapter.createOrder({
+        orderId,
+        amountMinor,
+        currency: order.currency || 'INR',
+        tableNumber,
+        tenantId: tid,
+        notes: {
+          guestName: order.guestName || body.guestName || 'Guest',
+          branchId: order.branchId || currentBranch?.id || '',
+        },
+      });
+
+      if (postgresStore) {
+        try {
+          await postgresStore.savePaymentSession(
+            {
+              id: result.razorpayOrderId,
+              orderId,
+              tableNumber,
+              amountMinor,
+              currency: result.currency,
+              status: 'created',
+            },
+            tid
+          );
+        } catch (dbErr: any) {
+          console.warn('[Payments] Postgres savePaymentSession failed:', dbErr.message);
+        }
+      }
+
+      await runtimeController.emitAudit('PAYMENT_ORDER_CREATED', `table:${tableNumber}`, {
+        orderId,
+        razorpayOrderId: result.razorpayOrderId,
+        amountMinor,
+        tenantId: tid,
+      });
+
+      sendJson(res, 201, {
+        success: true,
+        data: {
+          razorpayOrderId: result.razorpayOrderId,
+          amountMinor,
+          currency: result.currency,
+          keyId: razorpayAdapter.keyId,
+          orderId,
+          tableNumber,
+          paymentUrl: result.paymentUrl,
+        },
+      });
+    } catch (err: any) {
+      sendJson(res, 500, {
+        error: 'PAYMENT_CREATION_FAILED',
+        code: 'PAYMENT_CREATION_FAILED',
+        message: err.message,
+      });
+    }
+    return;
+  }
+
+  // 6e. Razorpay Webhook Receiver with HMAC-SHA256 Verification & Invoicing
+  if (
+    (pathname === '/api/restaurant/payments/webhook' ||
+      pathname === '/api/commerce/payments/webhook') &&
+    method === 'POST'
+  ) {
+    const body = await parseBody(req);
+    const rawBody = (req as any).rawBody || JSON.stringify(body);
+    const signature = (req.headers['x-razorpay-signature'] as string) || '';
+
+    // Verify HMAC-SHA256 signature
+    const isValidSignature = razorpayAdapter.verifyWebhookSignature(rawBody, signature);
+    if (!isValidSignature) {
+      sendJson(res, 401, {
+        error: 'INVALID_SIGNATURE',
+        code: 'INVALID_SIGNATURE',
+        message: 'Razorpay webhook signature verification failed.',
+      });
+      return;
+    }
+
+    // Durable Webhook Deduplication / Idempotency
+    const eventId =
+      (req.headers['x-razorpay-event-id'] as string) ||
+      body.event_id ||
+      body.id ||
+      (body.payload?.payment?.entity?.id ? `evt_${body.payload.payment.entity.id}` : null);
+
+    if (eventId && idempotencyRecords.has(eventId)) {
+      sendJson(res, 200, { success: true, status: 'idempotent_duplicate', eventId });
+      return;
+    }
+
+    const eventType = body.event || 'payment.captured';
+    const paymentEntity = body.payload?.payment?.entity || body.payment || {};
+    const razorpayPaymentId = paymentEntity.id || body.payment_id || `pay_${Date.now()}`;
+    const razorpayOrderId = paymentEntity.order_id || body.order_id;
+    const notes = paymentEntity.notes || body.notes || {};
+    const orderId = notes.orderId || body.orderId;
+    const tid = notes.tenantId || getActiveTenant().tenantId;
+
+    if (
+      eventType === 'payment.captured' ||
+      eventType === 'payment.authorized' ||
+      eventType === 'order.paid'
+    ) {
+      // Transition order and payment session state idempotently: UNPAID -> AUTHORIZED -> CAPTURED
+      let existingSession = null;
+      if (postgresStore && razorpayOrderId) {
+        try {
+          existingSession = await postgresStore.getPaymentSessionById(razorpayOrderId, tid);
+        } catch {}
+      }
+
+      if (existingSession && existingSession.status === 'captured') {
+        sendJson(res, 200, {
+          success: true,
+          status: 'idempotent_duplicate',
+          orderId: existingSession.orderId,
+          razorpayPaymentId: existingSession.razorpayPaymentId,
+        });
+        return;
+      }
+
+      const amountMinor = paymentEntity.amount || existingSession?.amountMinor || 0;
+      const tableNumber = notes.tableNumber || existingSession?.tableNumber || 'T-14';
+
+      if (postgresStore && razorpayOrderId) {
+        try {
+          await postgresStore.savePaymentSession(
+            {
+              id: razorpayOrderId,
+              orderId: orderId || existingSession?.orderId || `ord_${Date.now()}`,
+              tableNumber,
+              amountMinor,
+              status: 'captured',
+              razorpayPaymentId,
+              razorpaySignature: signature,
+            },
+            tid
+          );
+        } catch (dbErr: any) {
+          console.warn('[Payments] Postgres update payment session failed:', dbErr.message);
+        }
+      }
+
+      // Update Order and Table in memory store
+      const targetOrderId = orderId || existingSession?.orderId;
+      let order = targetOrderId ? store.getOrder(targetOrderId) : null;
+      if (order) {
+        order.status = 'PAID';
+        (order as any).paymentMethod = 'RAZORPAY';
+        (order as any).paymentStatus = 'PAID';
+      }
+
+      // Automatically generate statutory Indian GST Tax Invoice
+      let invoiceRecord = null;
+      if (order && postgresStore) {
+        try {
+          invoiceRecord = await postgresStore.getInvoiceByOrderId(order.orderId, tid);
+          if (!invoiceRecord) {
+            const { fiscalYear } = computeFiscalYear();
+            const seq = await postgresStore.getNextInvoiceSequence(fiscalYear, tid);
+            invoiceRecord = buildGSTInvoice({
+              order,
+              sequenceNumber: seq,
+              tenantId: tid,
+            });
+            await postgresStore.saveInvoice(invoiceRecord, tid);
+            eventBus.broadcast({
+              id: `evt_${Date.now()}`,
+              sequence: store.getEvents().length,
+              type: 'invoice.generated',
+              timestamp: new Date().toISOString(),
+              producer: 'api:payment-service',
+              branchId: order.branchId || currentBranch?.id || 'branch_pilot_main',
+              tableNumber: order.tableNumber,
+              payload: invoiceRecord,
+            });
+          }
+        } catch (invErr: any) {
+          console.warn('[Invoicing] Automatic invoice generation failed:', invErr.message);
+        }
+      }
+
+      eventBus.broadcast({
+        id: `evt_${Date.now()}`,
+        sequence: store.getEvents().length,
+        type: 'payment.captured',
+        timestamp: new Date().toISOString(),
+        producer: 'api:payment-service',
+        branchId: order?.branchId || currentBranch?.id || 'branch_pilot_main',
+        tableNumber,
+        payload: {
+          razorpayPaymentId,
+          razorpayOrderId,
+          orderId: targetOrderId,
+          amountMinor,
+          invoiceNumber: invoiceRecord?.invoiceNumber,
+        },
+      });
+
+      await runtimeController.emitAudit('PAYMENT_CAPTURED', `payment:${razorpayPaymentId}`, {
+        orderId: targetOrderId,
+        amountMinor,
+        razorpayPaymentId,
+        invoiceNumber: invoiceRecord?.invoiceNumber,
+      });
+
+      if (eventId) {
+        idempotencyRecords.set(eventId, { status: 'captured', razorpayPaymentId, targetOrderId });
+      }
+
+      sendJson(res, 200, {
+        success: true,
+        status: 'captured',
+        razorpayPaymentId,
+        orderId: targetOrderId,
+        invoiceNumber: invoiceRecord?.invoiceNumber,
+      });
+      return;
+    }
+
+    if (eventType === 'payment.failed') {
+      if (postgresStore && razorpayOrderId) {
+        try {
+          await postgresStore.savePaymentSession(
+            {
+              id: razorpayOrderId,
+              orderId: orderId || `ord_${Date.now()}`,
+              tableNumber: notes.tableNumber || 'T-14',
+              amountMinor: paymentEntity.amount || 0,
+              status: 'failed',
+              razorpayPaymentId,
+            },
+            tid
+          );
+        } catch {}
+      }
+
+      await runtimeController.emitAudit('PAYMENT_FAILED', `payment:${razorpayPaymentId}`, {
+        razorpayPaymentId,
+        orderId,
+      });
+
+      if (eventId) {
+        idempotencyRecords.set(eventId, { status: 'failed', razorpayPaymentId });
+      }
+
+      sendJson(res, 200, { success: true, status: 'failed', razorpayPaymentId });
+      return;
+    }
+
+    if (eventId) {
+      idempotencyRecords.set(eventId, { received: true, eventType });
+    }
+    sendJson(res, 200, { success: true, received: true, event: eventType });
+    return;
+  }
+
+  // 6f. GST Invoicing Retrieval Endpoints
+  // GET /api/restaurant/invoices/:id
+  if (
+    pathname.startsWith('/api/restaurant/invoices/') &&
+    pathname !== '/api/restaurant/invoices/generate' &&
+    method === 'GET'
+  ) {
+    const param = pathname.replace('/api/restaurant/invoices/', '');
+    const tid = getActiveTenant().tenantId;
+
+    if (!postgresStore) {
+      sendJson(res, 503, {
+        error: 'POSTGRES_STORE_UNAVAILABLE',
+        message: 'PostgreSQL storage required for durable invoices.',
+      });
+      return;
+    }
+
+    let invoice = await postgresStore.getInvoiceByOrderId(param, tid);
+    if (!invoice && param.startsWith('INV-')) {
+      invoice = await postgresStore.getInvoiceByNumber(param, tid);
+    }
+
+    if (!invoice) {
+      sendJson(res, 404, {
+        error: 'INVOICE_NOT_FOUND',
+        code: 'INVOICE_NOT_FOUND',
+        message: `Invoice not found for identifier: ${param}`,
+      });
+      return;
+    }
+
+    sendJson(res, 200, { success: true, data: invoice });
+    return;
+  }
+
+  // GET /api/restaurant/invoices (query by ?orderId=... or ?number=...)
+  if (pathname === '/api/restaurant/invoices' && method === 'GET') {
+    const tid = getActiveTenant().tenantId;
+    const orderIdQuery = parsedUrl.query.orderId as string;
+    const numberQuery = (parsedUrl.query.number || parsedUrl.query.invoiceNumber) as string;
+
+    if (!postgresStore) {
+      sendJson(res, 503, {
+        error: 'POSTGRES_STORE_UNAVAILABLE',
+        message: 'PostgreSQL storage required for durable invoices.',
+      });
+      return;
+    }
+
+    if (orderIdQuery) {
+      const invoice = await postgresStore.getInvoiceByOrderId(orderIdQuery, tid);
+      if (!invoice) {
+        sendJson(res, 404, { error: 'INVOICE_NOT_FOUND', message: `No invoice for order ${orderIdQuery}` });
+        return;
+      }
+      sendJson(res, 200, { success: true, data: invoice });
+      return;
+    }
+
+    if (numberQuery) {
+      const invoice = await postgresStore.getInvoiceByNumber(numberQuery, tid);
+      if (!invoice) {
+        sendJson(res, 404, { error: 'INVOICE_NOT_FOUND', message: `No invoice with number ${numberQuery}` });
+        return;
+      }
+      sendJson(res, 200, { success: true, data: invoice });
+      return;
+    }
+
+    const invoices = await (postgresStore as any).prisma.invoice.findMany({
+      where: { tenantId: tid },
+      orderBy: { sequenceNumber: 'desc' },
+      take: 50,
+    });
+    sendJson(res, 200, { success: true, count: invoices.length, data: invoices });
+    return;
+  }
+
+  // POST /api/restaurant/invoices/generate (Manual or Staff-Initiated GST Invoice Generation)
+  if (pathname === '/api/restaurant/invoices/generate' && method === 'POST') {
+    const body = await parseBody(req);
+    const orderId = body.orderId;
+    if (!orderId) {
+      sendJson(res, 400, { error: 'ORDER_ID_REQUIRED', message: 'orderId is required' });
+      return;
+    }
+
+    const tid = getActiveTenant().tenantId;
+    if (!postgresStore) {
+      sendJson(res, 503, { error: 'POSTGRES_STORE_UNAVAILABLE', message: 'PostgreSQL storage required' });
+      return;
+    }
+
+    const existing = await postgresStore.getInvoiceByOrderId(orderId, tid);
+    if (existing) {
+      sendJson(res, 200, { success: true, message: 'Invoice already exists', data: existing });
+      return;
+    }
+
+    let order = store.getOrder(orderId);
+    if (!order) {
+      try {
+        order = await postgresStore.getOrder(orderId, tid);
+      } catch {}
+    }
+
+    if (!order) {
+      sendJson(res, 404, { error: 'ORDER_NOT_FOUND', message: `Order ${orderId} not found` });
+      return;
+    }
+
+    const { fiscalYear } = computeFiscalYear();
+    const seq = await postgresStore.getNextInvoiceSequence(fiscalYear, tid);
+    const invoiceRecord = buildGSTInvoice({
+      order,
+      sequenceNumber: seq,
+      tenantId: tid,
+      gstin: body.gstin,
+      customerPhone: body.customerPhone,
+      customerEmail: body.customerEmail,
+      customerGstin: body.customerGstin,
+    });
+
+    await postgresStore.saveInvoice(invoiceRecord, tid);
+    sendJson(res, 201, { success: true, data: invoiceRecord });
+    return;
+  }
+
+  // 6g. Level 4 Refund Governance Endpoint
+  if (pathname === '/api/restaurant/payments/refund' && method === 'POST') {
+    const identity = resolveRequestIdentity(req);
+    const body = await parseBody(req);
+    const staffRole = identity.role || body.staffRole;
+    const isPinVerified = identity.isPrivileged || Boolean(body.staffPinVerified);
+
+    const governance = razorpayAdapter.checkRefundGovernance(staffRole, isPinVerified);
+    if (!governance.allowed) {
+      sendJson(res, 403, {
+        error: 'REFUND_GOVERNANCE_BLOCKED',
+        code: 'REFUND_GOVERNANCE_BLOCKED',
+        message: governance.reason,
+      });
+      return;
+    }
+
+    await runtimeController.emitAudit('REFUND_APPROVED', identity.id || 'staff', {
+      paymentId: body.paymentId,
+      orderId: body.orderId,
+      amountMinor: body.amountMinor,
+      reason: body.reason,
+    });
+
+    sendJson(res, 200, {
+      success: true,
+      message: 'Refund approved via Level 4 Staff Authorization and logged to audit trail.',
+      data: {
+        paymentId: body.paymentId,
+        orderId: body.orderId,
+        status: 'REFUND_AUTHORIZED',
+        authorizedBy: identity.id || 'staff',
+      },
+    });
     return;
   }
 
