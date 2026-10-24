@@ -115,7 +115,18 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ projec
   const [project, setProject] = useState<ProjectDetailData | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState<'overview' | 'commands' | 'activity' | 'config'>('overview');
+  const [activeTab, setActiveTab] = useState<'overview' | 'commands' | 'activity' | 'config' | 'billing'>('overview');
+
+  // Billing state
+  const [billingPlans, setBillingPlans] = useState<any[]>([]);
+  const [currentPlanRefs, setCurrentPlanRefs] = useState<string[]>([]);
+  const [entitlements, setEntitlements] = useState<Record<string, { limit: number; used: number; enforced: boolean }>>({});
+  const [selectedQuotePlan, setSelectedQuotePlan] = useState<string>('plan_restaurant_growth');
+  const [selectedAddons, setSelectedAddons] = useState<string[]>([]);
+  const [customDiscount, setCustomDiscount] = useState<number>(0);
+  const [computedQuote, setComputedQuote] = useState<any | null>(null);
+  const [computingQuote, setComputingQuote] = useState(false);
+  const [quoteError, setQuoteError] = useState<string | null>(null);
 
   // Commands state
   const [commands, setCommands] = useState<CommandItem[]>([]);
@@ -178,15 +189,38 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ projec
     } catch {}
   }, [projectId]);
 
+  const loadBilling = useCallback(async () => {
+    try {
+      const [plansRes, entRes] = await Promise.all([
+        fetch(`/api/v1/projects/${projectId}/plans`, { cache: 'no-store' }),
+        fetch(`/api/v1/projects/${projectId}/entitlements`, { cache: 'no-store' }),
+      ]);
+      const plansData = await plansRes.json();
+      if (plansData.success) {
+        setBillingPlans(plansData.availablePlans || []);
+        setCurrentPlanRefs(plansData.currentPlanReferences || []);
+        if (plansData.availablePlans?.length > 0) {
+          setSelectedQuotePlan((prev) => prev || plansData.availablePlans[0].id);
+        }
+      }
+      const entData = await entRes.json();
+      if (entData.success && entData.entitlements) {
+        setEntitlements(entData.entitlements);
+      }
+    } catch {}
+  }, [projectId]);
+
   useEffect(() => {
     void loadProject();
     void loadCommands();
     void loadActivity(activityPage);
+    void loadBilling();
 
     const tick = () => {
       if (document.visibilityState === 'visible') {
         void loadProject();
         void loadCommands();
+        void loadBilling();
       }
     };
     const id = window.setInterval(tick, 5000);
@@ -196,7 +230,40 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ projec
       document.removeEventListener('visibilitychange', tick);
       abortRef.current?.abort();
     };
-  }, [loadProject, loadCommands, loadActivity, activityPage]);
+  }, [loadProject, loadCommands, loadActivity, loadBilling, activityPage]);
+
+  const handleComputeQuote = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setComputingQuote(true);
+    setQuoteError(null);
+    try {
+      const res = await fetch(`/api/v1/projects/${projectId}/quotes/compute`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          planId: selectedQuotePlan,
+          addons: selectedAddons,
+          customDiscountPercent: Number(customDiscount) || 0,
+        }),
+      });
+      const data = await res.json();
+      if (data.success && data.quote) {
+        setComputedQuote(data.quote);
+      } else {
+        setQuoteError(data.error || 'Failed to compute quote');
+      }
+    } catch (e: any) {
+      setQuoteError(e.message);
+    } finally {
+      setComputingQuote(false);
+    }
+  };
+
+  const handleToggleAddon = (addonId: string) => {
+    setSelectedAddons((prev) =>
+      prev.includes(addonId) ? prev.filter((id) => id !== addonId) : [...prev, addonId]
+    );
+  };
 
   // Command execution
   const handleIssueCommand = async (commandAction: string, parameters = {}) => {
@@ -360,6 +427,15 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ projec
           onClick={() => setActiveTab('config')}
         >
           Config & Manifest
+        </button>
+        <button
+          type="button"
+          role="tab"
+          aria-selected={activeTab === 'billing'}
+          className={`${styles.tabBtn} ${activeTab === 'billing' ? styles.tabBtnActive : ''}`}
+          onClick={() => setActiveTab('billing')}
+        >
+          Billing & Quotas
         </button>
       </div>
 
@@ -695,6 +771,218 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ projec
           <pre className={styles.codeBox}>
             {JSON.stringify(project.manifest, null, 2)}
           </pre>
+        </div>
+      )}
+
+      {/* Tab 5: Billing & Quotas */}
+      {activeTab === 'billing' && (
+        <div className={styles.billingLayout}>
+          {/* Column 1: Plan & Usage */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+            {/* Current Active Plan Card */}
+            <div className={styles.planOverviewCard}>
+              <div className={styles.cardTitle}>Current Plan</div>
+              {(() => {
+                const activePlan = billingPlans.find((p) => currentPlanRefs.includes(p.id)) || billingPlans[0];
+                if (!activePlan) {
+                  return <div style={{ color: 'var(--ui-text-muted)', fontSize: '13px' }}>No plan assigned.</div>;
+                }
+                const formattedPrice = (Number(activePlan.basePriceMinor) / 100).toLocaleString('en-IN', {
+                  style: 'currency',
+                  currency: activePlan.currency || 'INR',
+                  maximumFractionDigits: 0,
+                });
+                return (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
+                      <h3 style={{ margin: 0, fontSize: '18px', color: 'var(--ui-text-primary)' }}>{activePlan.name}</h3>
+                      <span className={`${styles.tag} ${styles.tagSuccess}`} style={{ textTransform: 'capitalize' }}>
+                        {activePlan.tier} tier
+                      </span>
+                    </div>
+                    <div style={{ fontSize: '22px', fontWeight: 700, color: 'var(--ui-text-primary)' }}>
+                      {formattedPrice}{' '}
+                      <span style={{ fontSize: '13px', fontWeight: 400, color: 'var(--ui-text-muted)' }}>
+                        / {activePlan.billingInterval}
+                      </span>
+                    </div>
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+                      {activePlan.features?.map((f: string) => (
+                        <span key={f} className={`${styles.tag} ${styles.tagNeutral}`}>
+                          ✓ {f}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                );
+              })()}
+            </div>
+
+            {/* Live Usage & Entitlements Card */}
+            <div className={styles.planOverviewCard}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <div className={styles.cardTitle}>Live Usage & Quotas</div>
+                <span style={{ fontSize: '11px', color: 'var(--ui-text-muted)' }}>Auto-refreshed (5s)</span>
+              </div>
+              {Object.keys(entitlements).length === 0 ? (
+                <div style={{ color: 'var(--ui-text-muted)', fontSize: '13px' }}>No quota counters active.</div>
+              ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                  {Object.entries(entitlements).map(([key, ent]) => {
+                    const pct = ent.limit > 0 ? Math.min(100, Math.round((ent.used / ent.limit) * 100)) : 0;
+                    const isExceeded = ent.used >= ent.limit && ent.enforced;
+                    return (
+                      <div key={key} className={styles.quotaItem}>
+                        <div className={styles.quotaHeader}>
+                          <div className={styles.quotaKey}>
+                            <span className={styles.mono}>{key}</span>
+                            <span
+                              className={`${styles.tag} ${
+                                ent.enforced
+                                  ? isExceeded
+                                    ? styles.tagDanger
+                                    : styles.tagWarning
+                                  : styles.tagNeutral
+                              }`}
+                            >
+                              {ent.enforced ? (isExceeded ? 'Limit Exceeded' : 'Enforced') : 'Soft Limit'}
+                            </span>
+                          </div>
+                          <span className={styles.quotaNumbers}>
+                            <strong>{ent.used.toLocaleString()}</strong> / {ent.limit.toLocaleString()} ({pct}%)
+                          </span>
+                        </div>
+                        <div className={styles.progressBarTrack}>
+                          <div
+                            className={`${styles.progressBarFill} ${
+                              isExceeded ? styles.progressBarFillExceeded : ''
+                            }`}
+                            style={{ width: `${pct}%` }}
+                          />
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Column 2: Compute a Quote Form */}
+          <div className={styles.quoteForm}>
+            <div className={styles.cardTitle}>Compute a Quote</div>
+            <div style={{ fontSize: '13px', color: 'var(--ui-text-secondary)', lineHeight: 1.4 }}>
+              Simulate pricing, add-ons, and customized enterprise discounts for this project using the live quote engine.
+            </div>
+
+            <form onSubmit={handleComputeQuote} style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+              <div className={styles.formGroup}>
+                <label className={styles.formLabel}>Target Plan</label>
+                <select
+                  className={styles.formSelect}
+                  value={selectedQuotePlan}
+                  onChange={(e) => {
+                    setSelectedQuotePlan(e.target.value);
+                    setSelectedAddons([]);
+                  }}
+                >
+                  {billingPlans.map((p) => (
+                    <option key={p.id} value={p.id}>
+                      {p.name} ({p.tier}) — ₹{(Number(p.basePriceMinor) / 100).toLocaleString('en-IN')}/mo
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Addons for selected plan */}
+              {(() => {
+                const currentSelected = billingPlans.find((p) => p.id === selectedQuotePlan);
+                if (!currentSelected?.addons || currentSelected.addons.length === 0) return null;
+                return (
+                  <div className={styles.formGroup}>
+                    <label className={styles.formLabel}>Available Add-ons</label>
+                    <div className={styles.checkboxList}>
+                      {currentSelected.addons.map((addon: any) => (
+                        <label key={addon.id} className={styles.checkboxLabel}>
+                          <input
+                            type="checkbox"
+                            checked={selectedAddons.includes(addon.id)}
+                            onChange={() => handleToggleAddon(addon.id)}
+                          />
+                          <span>
+                            {addon.name} (+₹{(Number(addon.priceMinor) / 100).toLocaleString('en-IN')})
+                          </span>
+                        </label>
+                      ))}
+                    </div>
+                  </div>
+                );
+              })()}
+
+              <div className={styles.formGroup}>
+                <label className={styles.formLabel}>Custom Discount (%)</label>
+                <input
+                  type="number"
+                  min="0"
+                  max="100"
+                  className={styles.formInput}
+                  value={customDiscount}
+                  onChange={(e) => setCustomDiscount(Math.max(0, Math.min(100, Number(e.target.value))))}
+                />
+              </div>
+
+              <button
+                type="submit"
+                className={styles.btn}
+                style={{ alignSelf: 'flex-start', marginTop: '4px' }}
+                disabled={computingQuote}
+              >
+                {computingQuote ? 'Computing…' : 'Compute Live Quote'}
+              </button>
+
+              {quoteError && (
+                <div className={`${styles.tag} ${styles.tagDanger}`} style={{ padding: '8px 12px' }}>
+                  {quoteError}
+                </div>
+              )}
+
+              {computedQuote && (
+                <div className={styles.quoteResultCard}>
+                  <div style={{ fontWeight: 600, color: 'var(--ui-text-primary)', marginBottom: '4px' }}>
+                    Quote Calculation: {computedQuote.quoteId}
+                  </div>
+                  <div className={styles.quoteRow}>
+                    <span style={{ color: 'var(--ui-text-muted)' }}>Base Subscription</span>
+                    <span>₹{(Number(computedQuote.baseAmountMinor) / 100).toLocaleString('en-IN')}</span>
+                  </div>
+                  {Number(computedQuote.addonsAmountMinor) > 0 && (
+                    <div className={styles.quoteRow}>
+                      <span style={{ color: 'var(--ui-text-muted)' }}>Selected Add-ons</span>
+                      <span>₹{(Number(computedQuote.addonsAmountMinor) / 100).toLocaleString('en-IN')}</span>
+                    </div>
+                  )}
+                  {Number(computedQuote.discountMinor) > 0 && (
+                    <div className={styles.quoteRow}>
+                      <span style={{ color: 'var(--ui-text-muted)' }}>Discount</span>
+                      <span style={{ color: 'var(--ui-success, #22c55e)' }}>
+                        -₹{(Number(computedQuote.discountMinor) / 100).toLocaleString('en-IN')}
+                      </span>
+                    </div>
+                  )}
+                  <div className={styles.quoteRow}>
+                    <span style={{ color: 'var(--ui-text-muted)' }}>GST / Tax (18%)</span>
+                    <span>₹{(Number(computedQuote.taxMinor) / 100).toLocaleString('en-IN')}</span>
+                  </div>
+                  <div className={styles.quoteTotalRow}>
+                    <span>Estimated Total</span>
+                    <span>
+                      ₹{(Number(computedQuote.totalMinor) / 100).toLocaleString('en-IN')} / mo
+                    </span>
+                  </div>
+                </div>
+              )}
+            </form>
+          </div>
         </div>
       )}
 

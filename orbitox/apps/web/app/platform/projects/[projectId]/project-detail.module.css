@@ -375,3 +375,153 @@
     color: var(--ui-text-muted);
   }
 }
+
+/* Billing Tab Styles */
+.billingLayout {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 20px;
+}
+
+@media (max-width: 900px) {
+  .billingLayout {
+    grid-template-columns: 1fr;
+  }
+}
+
+.planOverviewCard {
+  background: var(--ui-bg-elevated);
+  border: 1px solid var(--ui-border-default);
+  border-radius: 12px;
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.quotaItem {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 12px;
+  background: var(--ui-bg-surface, rgba(0, 0, 0, 0.2));
+  border-radius: 8px;
+  border: 1px solid var(--ui-border-subtle, rgba(255, 255, 255, 0.05));
+}
+
+.quotaHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 13px;
+}
+
+.quotaKey {
+  font-weight: 600;
+  color: var(--ui-text-primary);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.quotaNumbers {
+  font-size: 12px;
+  color: var(--ui-text-secondary);
+}
+
+.progressBarTrack {
+  height: 8px;
+  width: 100%;
+  background: var(--ui-bg-card, rgba(255, 255, 255, 0.1));
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.progressBarFill {
+  height: 100%;
+  background: var(--ui-accent-primary, #6366f1);
+  border-radius: 4px;
+  transition: width 0.3s ease;
+}
+
+.progressBarFillExceeded {
+  background: #ef4444;
+}
+
+.quoteForm {
+  background: var(--ui-bg-elevated);
+  border: 1px solid var(--ui-border-default);
+  border-radius: 12px;
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.formGroup {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.formLabel {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--ui-text-secondary);
+}
+
+.formSelect, .formInput {
+  appearance: none;
+  font: inherit;
+  font-size: 13px;
+  padding: 8px 12px;
+  border-radius: 6px;
+  border: 1px solid var(--ui-border-default);
+  background: var(--ui-bg-surface, #0f172a);
+  color: var(--ui-text-primary);
+}
+
+.checkboxList {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.checkboxLabel {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--ui-text-primary);
+  cursor: pointer;
+}
+
+.quoteResultCard {
+  margin-top: 12px;
+  padding: 16px;
+  border-radius: 8px;
+  background: var(--ui-bg-surface, rgba(0, 0, 0, 0.3));
+  border: 1px solid var(--ui-border-active, #4f46e5);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  font-size: 13px;
+}
+
+.quoteRow {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.quoteTotalRow {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 15px;
+  font-weight: 700;
+  padding-top: 8px;
+  border-top: 1px solid var(--ui-border-default);
+  color: var(--ui-text-primary);
+}
+

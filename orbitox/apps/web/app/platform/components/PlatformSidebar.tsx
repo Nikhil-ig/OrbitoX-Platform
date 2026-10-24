@@ -25,6 +25,7 @@ const navSections: NavSection[] = [
     items: [
       { id: 'overview', label: 'Overview', href: '/platform' },
       { id: 'fleet', label: 'Fleet', href: '/platform/fleet' },
+      { id: 'plans', label: 'Plans & Catalog', href: '/platform/plans' },
       { id: 'connect', label: 'Connect Project', href: '/platform/connect' },
     ],
   },
