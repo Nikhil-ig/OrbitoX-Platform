@@ -52,6 +52,10 @@ const RUNTIME_RULES: Record<string, ReadonlySet<string>> = {
   commands: new Set(['GET', 'POST']), // POST is further restricted to COMPLETE in the route
   features: new Set(['GET']),
   manifest: new Set(['GET', 'PUT']),
+  plans: new Set(['GET']),
+  quotes: new Set(['POST']),
+  entitlements: new Set(['GET']),
+  usage: new Set(['POST']),
 };
 
 const encoder = new TextEncoder();
@@ -109,7 +113,7 @@ function allow(req: NextRequest, principal: Principal, credential?: string | nul
 
 /** If this path is a runtime-facing endpoint, returns its name (e.g. "bridge"). */
 function runtimeEndpoint(pathname: string): string | null {
-  const m = /^\/api\/v1\/projects\/[^/]+\/([a-z]+)\/?$/.exec(pathname);
+  const m = /^\/api\/v1\/projects\/[^/]+\/([a-z]+)(\/.*)?$/.exec(pathname);
   return m && m[1] && m[1] in RUNTIME_RULES ? m[1] : null;
 }
 

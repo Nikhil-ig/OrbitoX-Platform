@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { externalProjectEngine } from '@orbitox/external-project-engine';
+import { authorizeProjectRequest } from '../../_lib/project-guard';
 
 export async function GET(
   req: NextRequest,
@@ -8,6 +9,10 @@ export async function GET(
   try {
     const resolvedParams = await params;
     const projectId = resolvedParams.projectId;
+
+    const authError = authorizeProjectRequest(req, projectId, 'GET');
+    if (authError) return authError;
+
     const plans = externalProjectEngine.quoteService.listPlans();
     const project = externalProjectEngine.runtimeController.getProject(projectId);
 
@@ -29,6 +34,24 @@ export async function PUT(
   try {
     const resolvedParams = await params;
     const projectId = resolvedParams.projectId;
+
+    const authError = authorizeProjectRequest(req, projectId, 'PUT');
+    if (authError) return authError;
+
+    const principal = req.headers.get('x-orbitox-principal');
+    if (principal !== 'admin') {
+      return NextResponse.json(
+        {
+          success: false,
+          error: {
+            code: 'FORBIDDEN',
+            message: 'Admin privileges required to update project plans.',
+          },
+        },
+        { status: 403 }
+      );
+    }
+
     const body = await req.json();
 
     const project = externalProjectEngine.runtimeController.getProject(projectId);

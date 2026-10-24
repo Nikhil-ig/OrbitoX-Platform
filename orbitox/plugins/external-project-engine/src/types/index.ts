@@ -44,12 +44,30 @@ export interface ApiRegistryEntry extends ApiRegistrationMeta {
   totalInvocations: number;
 }
 
+export type UsageWindow = 'daily' | 'monthly' | 'never';
+
+export interface UsageCounterRecord {
+  count: number;
+  window: UsageWindow;
+  lastResetAt: string;
+  updatedAt: string;
+}
+
+export interface ResolvedEntitlement {
+  limit: number;
+  used: number;
+  enforced: boolean;
+  unit?: string;
+  window?: UsageWindow;
+}
+
 export interface PlanLimitDefinition {
   key: string;
   name: string;
   limit: number;
   enforced: boolean;
   unit: string;
+  window?: UsageWindow;
 }
 
 export interface PlanAddonDefinition {

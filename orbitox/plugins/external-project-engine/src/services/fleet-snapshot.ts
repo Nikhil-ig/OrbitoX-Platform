@@ -22,7 +22,7 @@ export const STALE_WINDOW_MS = 5 * 60_000;
 export type FleetConnection = 'ONLINE' | 'STALE' | 'OFFLINE' | 'NEVER_CONNECTED';
 
 /** Highest-priority issue first; a project can have several. */
-export type FleetAttention = 'OFFLINE' | 'STALE' | 'OUT_OF_SYNC' | 'FAILED_COMMAND' | 'NEVER_CONNECTED';
+export type FleetAttention = 'OFFLINE' | 'STALE' | 'OUT_OF_SYNC' | 'FAILED_COMMAND' | 'NEVER_CONNECTED' | 'USAGE_LIMIT_EXCEEDED';
 
 export interface FleetProject {
   id: string;
@@ -86,7 +86,7 @@ export interface FleetQuery {
   attentionOnly?: boolean;
 }
 
-const ATTENTION_ORDER: FleetAttention[] = ['OFFLINE', 'NEVER_CONNECTED', 'STALE', 'OUT_OF_SYNC', 'FAILED_COMMAND'];
+const ATTENTION_ORDER: FleetAttention[] = ['OFFLINE', 'NEVER_CONNECTED', 'STALE', 'USAGE_LIMIT_EXCEEDED', 'OUT_OF_SYNC', 'FAILED_COMMAND'];
 
 function ts(value: string | undefined | null): number {
   if (!value) return 0;
@@ -141,6 +141,17 @@ export function buildFleetSnapshot(input: FleetInput, nowMs: number = Date.now()
     if (connection === 'STALE') attention.push('STALE');
     if (syncStatus === 'OUT_OF_SYNC' || desired > applied) attention.push('OUT_OF_SYNC');
     if (failed > 0) attention.push('FAILED_COMMAND');
+
+    const exceededAudit = input.audits.find((a) => a.projectId === p.id && a.action === 'USAGE_LIMIT_EXCEEDED');
+    if (exceededAudit) {
+      const resetAudit = input.audits.find(
+        (a) => a.projectId === p.id && a.action === 'USAGE_COUNTER_RESET' && ts(a.timestamp) > ts(exceededAudit.timestamp)
+      );
+      if (!resetAudit) {
+        attention.push('USAGE_LIMIT_EXCEEDED');
+      }
+    }
+
     attention.sort((a, b) => ATTENTION_ORDER.indexOf(a) - ATTENTION_ORDER.indexOf(b));
 
     return {

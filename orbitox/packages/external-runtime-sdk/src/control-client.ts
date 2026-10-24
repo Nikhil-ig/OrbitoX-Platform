@@ -20,6 +20,7 @@ import {
   ConfigurationClient,
   FeatureClient,
   EntitlementClient,
+  BillingClient,
   ApiRegistryClient,
   RuntimeClient,
   HealthClient,
@@ -47,6 +48,7 @@ export class ControlClient {
   public readonly config: ConfigurationClient;
   public readonly features: FeatureClient;
   public readonly entitlements: EntitlementClient;
+  public readonly billing: BillingClient;
   public readonly apis: ApiRegistryClient;
   public readonly runtime: RuntimeClient;
   public readonly health: HealthClient;
@@ -81,6 +83,7 @@ export class ControlClient {
     this.config = new ConfigurationClient(this.clientConfig);
     this.features = new FeatureClient(this.clientConfig);
     this.entitlements = new EntitlementClient(this.clientConfig);
+    this.billing = new BillingClient(this.clientConfig);
     this.apis = new ApiRegistryClient(this.clientConfig);
     this.runtime = new RuntimeClient(this.clientConfig);
     this.health = new HealthClient(this.clientConfig);
@@ -143,9 +146,20 @@ export class ControlClient {
       }
     }
 
+    try {
+      await this.entitlements.fetchEntitlements();
+    } catch {}
+
     this.startHeartbeat();
     this.startCommandPolling();
     return data;
+  }
+
+  /**
+   * Synchronize entitlements with the latest quotas and live usage
+   */
+  async syncEntitlements(): Promise<Record<string, { limit: number; used: number; enforced: boolean }>> {
+    return this.entitlements.fetchEntitlements();
   }
 
   /**
@@ -177,6 +191,10 @@ export class ControlClient {
 
     this.features.setFeatures(signedConfig.features);
     this.entitlements.setEntitlements(signedConfig.entitlements);
+
+    try {
+      await this.entitlements.fetchEntitlements();
+    } catch {}
 
     if (this.onConfigUpdated) {
       this.onConfigUpdated(signedConfig);
