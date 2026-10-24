@@ -134,12 +134,98 @@ export class EntitlementClient {
     this.entitlements = { ...entitlements };
   }
 
-  check(key: string, currentUsage: number): { allowed: boolean; remaining: number; enforced: boolean } {
+  getEntitlements(): Record<string, { limit: number; used: number; enforced: boolean }> {
+    return { ...this.entitlements };
+  }
+
+  check(key: string, currentUsage?: number): { allowed: boolean; remaining: number; enforced: boolean } {
     const def = this.entitlements[key];
     if (!def) return { allowed: true, remaining: Infinity, enforced: false };
-    const remaining = Math.max(0, def.limit - currentUsage);
-    const allowed = !def.enforced || currentUsage < def.limit;
+    const usage = currentUsage !== undefined ? currentUsage : def.used;
+    const remaining = Math.max(0, def.limit - usage);
+    const allowed = !def.enforced || usage < def.limit;
     return { allowed, remaining, enforced: def.enforced };
+  }
+
+  async fetchEntitlements(): Promise<Record<string, { limit: number; used: number; enforced: boolean }>> {
+    const res = await fetch(`${this.config.controlPlaneUrl}/api/v1/projects/${this.config.projectId}/entitlements`, {
+      headers: {
+        'Content-Type': 'application/json',
+        ...(this.config.apiKey ? { Authorization: `Bearer ${this.config.apiKey}` } : {}),
+      },
+    });
+    if (!res.ok) throw new Error(`Failed to fetch entitlements: ${res.statusText}`);
+    const data = await res.json();
+    this.entitlements = data.entitlements || data || {};
+    return this.entitlements;
+  }
+
+  async reportUsage(
+    key: string,
+    amount = 1
+  ): Promise<{ allowed: boolean; remaining: number; used: number; limit: number }> {
+    const res = await fetch(`${this.config.controlPlaneUrl}/api/v1/projects/${this.config.projectId}/usage`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(this.config.apiKey ? { Authorization: `Bearer ${this.config.apiKey}` } : {}),
+      },
+      body: JSON.stringify({ key, amount }),
+    });
+    if (!res.ok) throw new Error(`Failed to report usage: ${res.statusText}`);
+    const data = await res.json();
+    const limit = data.limit ?? Infinity;
+    const used = data.used ?? 0;
+    const enforced = Boolean(data.enforced);
+    const allowed = Boolean(data.allowed);
+
+    this.entitlements[key] = { limit, used, enforced };
+    const remaining = Math.max(0, limit - used);
+    return { allowed, remaining, used, limit };
+  }
+}
+
+export interface QuoteComputeInput {
+  planId?: string;
+  addons?: string[];
+  items?: Array<{
+    id: string;
+    quantity: number;
+    unitPriceMinor?: string;
+  }>;
+  customDiscountPercent?: number;
+}
+
+export class BillingClient {
+  constructor(private config: ClientConfig) {}
+
+  async getPlan(): Promise<{ currentPlanReferences: string[]; availablePlans: any[] }> {
+    const res = await fetch(`${this.config.controlPlaneUrl}/api/v1/projects/${this.config.projectId}/plans`, {
+      headers: {
+        'Content-Type': 'application/json',
+        ...(this.config.apiKey ? { Authorization: `Bearer ${this.config.apiKey}` } : {}),
+      },
+    });
+    if (!res.ok) throw new Error(`Failed to fetch plans: ${res.statusText}`);
+    const data = await res.json();
+    return {
+      currentPlanReferences: data.currentPlanReferences || [],
+      availablePlans: data.availablePlans || [],
+    };
+  }
+
+  async computeQuote(input: QuoteComputeInput): Promise<CentralQuoteResponse> {
+    const res = await fetch(`${this.config.controlPlaneUrl}/api/v1/projects/${this.config.projectId}/quotes/compute`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(this.config.apiKey ? { Authorization: `Bearer ${this.config.apiKey}` } : {}),
+      },
+      body: JSON.stringify(input),
+    });
+    if (!res.ok) throw new Error(`Failed to compute quote: ${res.statusText}`);
+    const data = await res.json();
+    return data.quote;
   }
 }
 
