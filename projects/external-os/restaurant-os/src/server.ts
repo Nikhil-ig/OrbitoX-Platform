@@ -41,10 +41,13 @@ import {
   validateOrGenerateRequestId,
   logger,
   eventLoopMonitor,
+  resolveTenantFromRequest,
+  withTenantContext,
+  getActiveTenant,
 } from '../packages/domain';
 import { RestaurantRuntimeStore, DomainEvent } from '../packages/storage';
 import { RealtimeEventBus } from '../packages/domain/event-bus';
-import { RestaurantRuntimeController } from '../packages/runtime';
+import { RestaurantControlBridge, restaurantControlBridge } from './bridge';
 import {
   renderShell,
   renderOperationsHome,
@@ -73,7 +76,7 @@ import {
 const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 4010;
 const store = new RestaurantRuntimeStore();
 const eventBus = new RealtimeEventBus();
-const runtimeController = new RestaurantRuntimeController();
+const runtimeController = restaurantControlBridge;
 
 // Startup security signing secret verification
 try {
@@ -467,11 +470,14 @@ function resolveRequestIdentity(req: http.IncomingMessage): RequestIdentity {
   return identity;
 }
 
-const server = http.createServer(async (req, res) => {
-  const startHrTime = process.hrtime.bigint();
-  const rawReqId = req.headers['x-request-id'] || req.headers['x-correlation-id'];
-  const requestId = validateOrGenerateRequestId(rawReqId);
-  res.setHeader('x-request-id', requestId);
+const server = http.createServer((req, res) => {
+  const tenantContext = resolveTenantFromRequest(req);
+  res.setHeader('x-tenant-id', tenantContext.tenantId);
+  return withTenantContext(tenantContext, async () => {
+    const startHrTime = process.hrtime.bigint();
+    const rawReqId = req.headers['x-request-id'] || req.headers['x-correlation-id'];
+    const requestId = validateOrGenerateRequestId(rawReqId);
+    res.setHeader('x-request-id', requestId);
 
   const parsedUrl = url.parse(req.url || '', true);
   const pathname = parsedUrl.pathname || '/';
@@ -1819,6 +1825,7 @@ const server = http.createServer(async (req, res) => {
 
     idempotencyRecords.set(idempotencyKey, { payloadHash, response });
     await runtimeController.emitAudit('ORDER_PLACED', `table:${newOrder.tableNumber}`, { orderId, totalMinor });
+    await runtimeController.reportOrderProcessed(orderId, totalMinor);
 
     sendJson(res, 201, response);
     return;
@@ -5442,6 +5449,7 @@ const server = http.createServer(async (req, res) => {
 
   // 404
   sendJson(res, 404, { error: `Route not found: ${pathname}` });
+  });
 });
 
 if (process.env.NODE_ENV === 'production' && process.env.ALLOW_DANGEROUS_RESET === 'true') {

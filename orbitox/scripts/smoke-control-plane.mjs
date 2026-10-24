@@ -275,6 +275,45 @@ try {
   await expectStatus('GET /api/v1/projects/{id} -> 200', 200, `/api/v1/projects/${projectId}`, { headers: bearer(ADMIN) });
   await expectStatus('GET /api/v1/projects/{id}/activity -> 200', 200, `/api/v1/projects/${projectId}/activity`, { headers: bearer(ADMIN) });
   await expectStatus('GET /platform/projects/{id} with Bearer -> 200', 200, `/platform/projects/${projectId}`, { headers: bearer(ADMIN) });
+
+  console.log('\nRestaurantOS Pilot Registration & Fleet Smoke Check');
+  const restaurantManifest = {
+    projectId: 'restaurant-os-pilot',
+    slug: 'restaurant-os-pilot',
+    name: 'RestaurantOS Pilot (Bistro & Bar)',
+    type: 'restaurant-os',
+    version: '1.0.0',
+    runtime: { type: 'standalone', entrypoint: 'src/server.ts', defaultPort: 4010, healthEndpoint: '/health' },
+    enabledPlugins: ['@orbitox/pos'],
+    enabledFeatures: ['dine_qr', 'dag_prep_scheduler', 'companion_join', 'realtime_kds', 'mcp_copilot', 'gst_invoicing', 'razorpay_gateway'],
+    planReferences: ['plan_restaurant_growth'],
+    environmentMetadata: { defaultEnvironment: 'production', supportedEnvironments: ['development', 'staging', 'production'] },
+    platformController: { controlPlaneUrl: BASE, syncIntervalSeconds: 10, requireSignedConfig: false },
+    capabilities: ['REALTIME_TELEMETRY_V1', 'REMOTE_COMMANDS_V1'],
+  };
+
+  const restaurantClient = new ControlClient({
+    manifest: restaurantManifest,
+    controlPlaneUrl: BASE,
+    apiKey: RUNTIME,
+    runtimePort: 4010,
+    onCommandReceived: async (cmd) => ({ success: true, result: { executed: cmd.action } }),
+  });
+
+  try {
+    const rReg = await restaurantClient.registerRuntime();
+    check('RestaurantOS registers with OrbitoX control plane', rReg.success === true);
+    await restaurantClient.sendHeartbeat();
+
+    // Query fleet for restaurant-os-pilot
+    const rFleetRes = await fetch(`${BASE}/api/v1/fleet?q=restaurant-os-pilot`, { headers: bearer(ADMIN) });
+    const rFleetBody = await rFleetRes.json();
+    const rEntry = rFleetBody.data?.projects?.find((p) => p.id === 'restaurant-os-pilot');
+    check('RestaurantOS pilot appears in fleet', !!rEntry);
+    check('RestaurantOS pilot shows ONLINE in fleet', rEntry?.connection === 'ONLINE', `got ${rEntry?.connection}`);
+  } finally {
+    restaurantClient.stop();
+  }
 } catch (err) {
   check('SDK lifecycle ran without errors', false, err instanceof Error ? err.message : String(err));
 } finally {
