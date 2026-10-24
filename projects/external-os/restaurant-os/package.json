@@ -10,6 +10,12 @@
   "devDependencies": {
     "@types/node": "^20.0.0",
     "playwright": "^1.64.0",
+    "prisma": "^6.4.1",
+    "tsx": "^4.23.15",
     "typescript": "^5.0.0"
+  },
+  "dependencies": {
+    "@orbitox/external-runtime-sdk": "link:../../../orbitox/packages/external-runtime-sdk",
+    "@prisma/client": "^6.4.1"
   }
 }

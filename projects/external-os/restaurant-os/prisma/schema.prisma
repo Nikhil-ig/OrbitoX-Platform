@@ -7,61 +7,459 @@ generator client {
   provider = "prisma-client-js"
 }
 
-model Table {
-  id        Int      @id @default(autoincrement())
-  number    String   @unique
-  capacity  Int
-  status    String   @default("AVAILABLE") // AVAILABLE, OCCUPIED, BILL_REQUESTED, RESERVED
-  x         Int
-  y         Int
-  width     Int      @default(80)
-  height    Int      @default(80)
-  shape     String   @default("rectangle")
-  section   String   @default("Main Courtyard")
-  locator   String   @unique
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-  orders    Order[]
+// ─────────────────────────────────────────────────────────────
+// 1. TENANT ENTITY (MULTI-TENANCY ROOT)
+// ─────────────────────────────────────────────────────────────
+
+model Tenant {
+  id               String   @id // e.g. "tenant_pilot_bistro"
+  name             String   // e.g. "Orbitox Bistro Pilot"
+  slug             String   @unique // e.g. "bistro-pilot"
+  status           String   @default("active") // "trial", "active", "suspended"
+  orbitoxProjectId String?  // e.g. "restaurant-os-pilot"
+  currency         String   @default("INR")
+  timezone         String   @default("Asia/Kolkata")
+  gstin            String?  // Indian GST identification number (e.g. 03AAAAA0000A1Z5)
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  branches         Branch[]
+  floors           Floor[]
+  tables           TableFloor[]
+  categories       MenuCategory[]
+  menuItems        MenuItem[]
+  menuOverrides    BranchMenuOverride[]
+  orders           RestaurantOrder[]
+  kitchenTasks     KitchenTask[]
+  serviceRequests  ServiceRequest[]
+  diningSessions   DiningSession[]
+  guests           Guest[]
+  staffMembers     StaffMember[]
+  revocations      StaffTokenRevocation[]
+  brandConfig      TenantBrandConfig?
+  supportTickets   SupportTicket[]
+  domainEvents     DomainEvent[]
+  idempotency      IdempotencyRecord[]
+  invoices         Invoice[]
+  paymentSessions  RazorpayPaymentSession[]
 }
 
-model Order {
-  id              String      @id @default(cuid())
-  tableNumber     String
-  table           Table       @relation(fields: [tableNumber], references: [number])
-  sessionId       String
-  status          String      @default("CONFIRMED") // CONFIRMED, IN_PREPARATION, SERVED, PAID
-  subtotalMinor   Int
-  taxMinor        Int
-  totalMinor      Int
-  currency        String      @default("INR")
-  idempotencyKey  String?     @unique
-  createdAt       DateTime    @default(now())
-  updatedAt       DateTime    @updatedAt
-  items           OrderItem[]
-  tasks           KitchenTask[]
+// ─────────────────────────────────────────────────────────────
+// 2. SPATIAL & INFRASTRUCTURE MODELS
+// ─────────────────────────────────────────────────────────────
+
+model Branch {
+  id                 String   @id // e.g. "branch_ldh"
+  tenantId           String
+  name               String
+  code               String
+  address            String
+  city               String
+  timezone           String   @default("Asia/Kolkata")
+  currency           String   @default("INR")
+  status             String   @default("OPERATIONAL")
+  serviceAreasCount  Int      @default(0)
+  activeTablesCount  Int      @default(0)
+  openingHours       Json?
+  phone              String?
+  email              String?
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  tenant             Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, code])
+  @@index([tenantId])
 }
 
-model OrderItem {
-  id             String @id @default(cuid())
-  orderId        String
-  order          Order  @relation(fields: [orderId], references: [id])
-  menuItemId     String
+model Floor {
+  id             String   @id // e.g. "fl_courtyard"
+  tenantId       String
+  branchId       String
   name           String
-  quantity       Int
-  unitPriceMinor Int
-  station        String
+  type           String   @default("Dining")
+  capacity       Int      @default(0)
+  activeLayout   String   @default("default")
+  status         String   @default("ACTIVE")
+  tableIds       Json?
+  serviceLayouts Json?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  tenant         Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@index([tenantId, branchId])
+}
+
+model TableFloor {
+  id                 String   @id // e.g. "tbl_1"
+  tenantId           String
+  numericId          Int?
+  number             String
+  capacity           Int
+  minimumSeats       Int?
+  status             String   @default("AVAILABLE")
+  x                  Int      @default(0)
+  y                  Int      @default(0)
+  width              Int      @default(80)
+  height             Int      @default(80)
+  rotation           Int      @default(0)
+  shape              String   @default("rectangle")
+  section            String   @default("Main Courtyard")
+  floorId            String
+  branchId           String
+  locator            String
+  seats              Json?
+  activeSessionId    String?
+  activeBillMinor    Int?
+  serverName         String?
+  turnTimeMinutes    Int?
+  mergedWithTableIds Json?
+  mergedPartyLabel   String?
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  tenant             Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, locator])
+  @@unique([tenantId, branchId, number])
+  @@index([tenantId])
+  @@index([tenantId, floorId])
+}
+
+// ─────────────────────────────────────────────────────────────
+// 3. MENU & CATALOG MODELS
+// ─────────────────────────────────────────────────────────────
+
+model MenuCategory {
+  id           String   @id // e.g. "cat_starters"
+  tenantId     String
+  name         String
+  description  String?
+  displayOrder Int      @default(0)
+  isArchived   Boolean  @default(false)
+  color        String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  tenant       Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, name])
+  @@index([tenantId])
+}
+
+model MenuItem {
+  id                  String   @id // e.g. "item_butter_chicken"
+  tenantId            String
+  name                String
+  description         String
+  basePriceMinor      Int
+  formattedPrice      String
+  category            String
+  categoryId          String?
+  station             String   // TANDOOR, CURRY_LINE, BAR, EXPO, DESSERT
+  prepDurationMinutes Int      @default(10)
+  allergens           Json?
+  dietaryFlags        Json?
+  story               String?
+  pairingSuggestions  Json?
+  isPopular           Boolean  @default(false)
+  isSignature         Boolean  @default(false)
+  isArchived          Boolean  @default(false)
+  modifierGroups      Json?
+  imageUrl            String?
+  hsnCode             String?  @default("996331") // Indian SAC code for restaurant catering & food services
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  tenant              Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@index([tenantId, category])
+}
+
+model BranchMenuOverride {
+  id                     String   @id @default(cuid()) // e.g. "ovr_item_butter_chicken_del"
+  tenantId               String
+  itemId                 String
+  branchId               String
+  isAvailable            Boolean  @default(true)
+  priceOverrideMinor     Int?
+  formattedPriceOverride String?
+  customPrepMinutes      Int?
+  createdAt              DateTime @default(now())
+  updatedAt              DateTime @updatedAt
+
+  tenant                 Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, branchId, itemId])
+  @@index([tenantId])
+}
+
+// ─────────────────────────────────────────────────────────────
+// 4. ORDERS, SESSIONS & KITCHEN OPERATIONS
+// ─────────────────────────────────────────────────────────────
+
+model RestaurantOrder {
+  id                String   @id // e.g. "ord_101"
+  tenantId          String
+  tableNumber       String
+  sessionId         String
+  branchId          String?
+  guestName         String?
+  status            String   @default("CONFIRMED") // PENDING, CONFIRMED, IN_PREPARATION, SERVED, PAID, VOIDED, CANCELLED
+  items             Json
+  subtotalMinor     Int
+  taxMinor          Int
+  totalMinor        Int
+  currency          String   @default("INR")
+  customer          Json?
+  orderToken        String?
+  idempotencyKey    String?
+  paymentStatus     String   @default("UNPAID") // UNPAID, AUTHORIZED, CAPTURED, REFUNDED
+  paymentSessionId  String?
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  tenant            Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@index([tenantId, sessionId])
+  @@index([tenantId, status])
 }
 
 model KitchenTask {
-  id            String   @id @default(cuid())
-  orderId       String
-  order         Order    @relation(fields: [orderId], references: [id])
-  tableNumber   String
-  itemName      String
-  quantity      Int
-  station       String   // TANDOOR, CURRY_LINE, BAR, EXPO, DESSERT
-  status        String   @default("QUEUED") // QUEUED, IN_PROGRESS, READY, BUMPED, VOIDED
-  fireAt        String
-  targetServeAt String
-  createdAt     DateTime @default(now())
+  id                 String   @id // e.g. "task_201"
+  tenantId           String
+  orderId            String
+  tableNumber        String
+  branchId           String?
+  seatNumber         String?
+  guestName          String?
+  itemName           String
+  quantity           Int
+  station            String
+  status             String   @default("QUEUED") // QUEUED, IN_PROGRESS, READY, BUMPED, VOIDED, CANCELLED
+  fireAt             String?
+  targetServeAt      String?
+  elapsedMinutes     Int      @default(0)
+  slaMinutes         Int      @default(0)
+  modifiers          Json?
+  course             String?
+  fulfilledItemCount Int      @default(0)
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  tenant             Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@index([tenantId, orderId])
+  @@index([tenantId, status])
+  @@index([tenantId, station])
+}
+
+model ServiceRequest {
+  id          String   @id // e.g. "sr_301"
+  tenantId    String
+  tableNumber String
+  branchId    String
+  floorId     String
+  type        String   // WATER, CUTLERY, NAPKINS, CALL_SERVER, BILL, DIETARY, MORE_TIME
+  status      String   @default("PENDING") // PENDING, ACKNOWLEDGED, RESOLVED
+  requestedAt DateTime @default(now())
+  note        String?
+
+  tenant      Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@index([tenantId, status])
+}
+
+model DiningSession {
+  id                    String    @id // e.g. "sess_401"
+  tenantId              String
+  tableNumber           String
+  branchId              String
+  floorId               String
+  hostName              String
+  status                String    @default("ACTIVE") // ACTIVE, CLOSED
+  openedAt              DateTime  @default(now())
+  expiresAt             DateTime?
+  closedAt              DateTime?
+  guestCapabilityTokens Json?
+  settlement            Json?
+
+  tenant                Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@index([tenantId, tableNumber])
+  @@index([tenantId, status])
+}
+
+model Guest {
+  id              String   @id // e.g. "gst_501"
+  tenantId        String
+  name            String
+  tableNumber     String
+  seatId          String?
+  seatLabel       String?
+  role            String   @default("WALK_IN")
+  joinTime        DateTime @default(now())
+  preferences     Json?
+  orderIds        Json?
+  totalSpendMinor Int      @default(0)
+
+  tenant          Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@index([tenantId, tableNumber])
+}
+
+// ─────────────────────────────────────────────────────────────
+// 5. SECURITY & STAFF DIRECTORY
+// ─────────────────────────────────────────────────────────────
+
+model StaffMember {
+  id          String   @id // e.g. "stf_601"
+  tenantId    String
+  name        String
+  role        String   // MANAGER, OPERATIONS, POS, CHEF, ADMIN
+  branchId    String
+  station     String?
+  salt        String
+  pinHash     String
+  status      String   @default("ACTIVE")
+  permissions Json?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  tenant      Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@index([tenantId, branchId])
+}
+
+model StaffTokenRevocation {
+  id        String   @id @default(cuid())
+  tenantId  String
+  tokenJti  String
+  revokedAt DateTime @default(now())
+  reason    String?
+
+  tenant    Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, tokenJti])
+  @@index([tenantId])
+}
+
+// ─────────────────────────────────────────────────────────────
+// 6. BRAND, SUPPORT, EVENTS & IDEMPOTENCY
+// ─────────────────────────────────────────────────────────────
+
+model TenantBrandConfig {
+  id        String   @id @default(cuid())
+  tenantId  String   @unique
+  config    Json
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  tenant    Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+}
+
+model SupportTicket {
+  id        String   @id // e.g. "ticket_701"
+  tenantId  String
+  branchId  String?
+  title     String
+  status    String
+  priority  String
+  category  String
+  messages  Json
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  tenant    Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+}
+
+model DomainEvent {
+  id          String   @id @default(cuid())
+  tenantId    String
+  sequence    Int
+  type        String
+  timestamp   DateTime @default(now())
+  producer    String
+  branchId    String
+  floorId     String?
+  tableNumber String?
+  payload     Json
+
+  tenant      Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@index([tenantId, sequence])
+}
+
+model IdempotencyRecord {
+  key       String
+  tenantId  String
+  result    Json
+  createdAt DateTime @default(now())
+  expiresAt DateTime
+
+  tenant    Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@id([tenantId, key])
+  @@index([tenantId])
+}
+
+// ─────────────────────────────────────────────────────────────
+// 7. COMPLIANT INVOICING & PAYMENTS (PHASE 2 READY)
+// ─────────────────────────────────────────────────────────────
+
+model Invoice {
+  id             String   @id @default(cuid())
+  tenantId       String
+  orderId        String
+  invoiceNumber  String   // e.g. "INV-202627-000001"
+  fiscalYear     String   // e.g. "2026-2027"
+  sequenceNumber Int
+  gstin          String
+  subtotalMinor  Int
+  taxMinor       Int
+  totalMinor     Int
+  currency       String   @default("INR")
+  itemBreakdown  Json
+  taxBreakdown   Json
+  customer       Json?
+  createdAt      DateTime @default(now())
+
+  tenant         Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, invoiceNumber])
+  @@unique([tenantId, orderId])
+  @@index([tenantId])
+  @@index([tenantId, fiscalYear])
+}
+
+model RazorpayPaymentSession {
+  id                String   @id // razorpay order id: "order_..."
+  tenantId          String
+  orderId           String
+  tableNumber       String
+  amountMinor       Int
+  currency          String   @default("INR")
+  status            String   @default("created") // created, authorized, captured, failed, refunded
+  razorpayPaymentId String?
+  razorpaySignature String?
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  tenant            Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, orderId])
+  @@index([tenantId])
+  @@index([tenantId, id])
 }
