@@ -101,6 +101,11 @@ export function renderDinerPwa(
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
   <title>${brandName} · Table ${table.number}</title>
+  <link rel="icon" href="${brand?.faviconUrl || brand?.logoUrl || '/favicon.ico'}">
+  <meta name="theme-color" content="${primaryColor}">
+  <meta property="og:title" content="${brandName} · Table ${table.number}">
+  <meta property="og:description" content="${brandTagline}">
+  <link rel="manifest" href="/manifest.json">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,600;0,700;1,400&family=Outfit:wght@400;500;600;700;800;900&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">

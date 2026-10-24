@@ -198,3 +198,276 @@ export function buildGSTInvoice(params: BuildInvoiceParams): InvoiceRecord {
     createdAt: date.toISOString(),
   };
 }
+
+/**
+ * Renders a statutory Indian GST Tax Invoice HTML document for print / PDF output.
+ * Fully compliant with SAC 996331, composite 5% GST (2.5% CGST + 2.5% SGST).
+ */
+export function renderPrintableInvoiceHtml(
+  invoice: InvoiceRecord,
+  brand?: any,
+  branch?: any
+): string {
+  const restaurantName = brand?.restaurantName || 'OrbitoX Bistro';
+  const legalEntityName = brand?.legalEntityName || restaurantName;
+  const gstin = invoice.gstin || brand?.gstin || '27AAPFU0939F1ZV';
+  const branchAddress = branch?.address ? `${branch.address}, ${branch?.city || ''}` : (brand?.address || 'Main Promenade, Sector 14');
+  const currencySymbol = invoice.currency === 'INR' ? '₹' : (invoice.currency || '₹');
+
+  const items = invoice.itemBreakdown || [];
+  const tax = invoice.taxBreakdown || {
+    sacCode: SAC_RESTAURANT_SERVICES,
+    sacDescription: SAC_DESCRIPTION,
+    cgstRate: '2.5%',
+    cgstMinor: Math.round(invoice.taxMinor / 2),
+    sgstRate: '2.5%',
+    sgstMinor: Math.round(invoice.taxMinor / 2),
+    totalTaxMinor: invoice.taxMinor,
+  };
+
+  const invoiceDate = invoice.createdAt ? new Date(invoice.createdAt).toLocaleString('en-IN', {
+    dateStyle: 'medium',
+    timeStyle: 'short',
+    timeZone: 'Asia/Kolkata',
+  }) : new Date().toLocaleString('en-IN');
+
+  const itemsHtml = items.map((item, idx) => `
+    <tr>
+      <td style="padding: 10px 12px; border-bottom: 1px solid #E5E7EB; text-align: center; color: #6B7280; font-size: 13px;">${idx + 1}</td>
+      <td style="padding: 10px 12px; border-bottom: 1px solid #E5E7EB; font-weight: 600; color: #111827; font-size: 14px;">${item.name}</td>
+      <td style="padding: 10px 12px; border-bottom: 1px solid #E5E7EB; text-align: center; font-family: monospace; color: #4B5563; font-size: 13px;">${item.sacCode || SAC_RESTAURANT_SERVICES}</td>
+      <td style="padding: 10px 12px; border-bottom: 1px solid #E5E7EB; text-align: center; font-weight: 600; color: #111827; font-size: 14px;">${item.quantity}</td>
+      <td style="padding: 10px 12px; border-bottom: 1px solid #E5E7EB; text-align: right; color: #374151; font-size: 14px;">${currencySymbol}${(item.unitPriceMinor / 100).toFixed(2)}</td>
+      <td style="padding: 10px 12px; border-bottom: 1px solid #E5E7EB; text-align: right; font-weight: 700; color: #111827; font-size: 14px;">${currencySymbol}${(item.totalMinor / 100).toFixed(2)}</td>
+    </tr>
+  `).join('');
+
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Tax Invoice · ${invoice.invoiceNumber}</title>
+  <style>
+    @page {
+      size: A4 portrait;
+      margin: 15mm;
+    }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      color: #1F2937;
+      background: #F9FAFB;
+      margin: 0;
+      padding: 32px 16px;
+    }
+    .invoice-card {
+      max-width: 800px;
+      margin: 0 auto;
+      background: #FFFFFF;
+      border: 1px solid #E5E7EB;
+      border-radius: 12px;
+      padding: 40px;
+      box-shadow: 0 4px 16px rgba(0,0,0,0.06);
+    }
+    .header-table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-bottom: 28px;
+    }
+    .meta-box {
+      background: #F3F4F6;
+      border-radius: 8px;
+      padding: 14px 18px;
+      margin-bottom: 24px;
+      display: flex;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      gap: 12px;
+    }
+    .meta-item {
+      font-size: 13px;
+    }
+    .meta-label {
+      color: #6B7280;
+      text-transform: uppercase;
+      font-size: 10px;
+      font-weight: 700;
+      letter-spacing: 0.05em;
+    }
+    .meta-value {
+      color: #111827;
+      font-weight: 700;
+      margin-top: 2px;
+    }
+    table.data-table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-bottom: 24px;
+    }
+    table.data-table th {
+      background: #F8FAFC;
+      padding: 10px 12px;
+      border-bottom: 2px solid #E2E8F0;
+      font-size: 11px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: #475569;
+    }
+    .totals-area {
+      display: flex;
+      justify-content: flex-end;
+      margin-top: 16px;
+    }
+    .totals-table {
+      width: 320px;
+      border-collapse: collapse;
+    }
+    .totals-table td {
+      padding: 6px 10px;
+      font-size: 14px;
+    }
+    .totals-table tr.grand-total td {
+      border-top: 2px solid #111827;
+      font-size: 16px;
+      font-weight: 800;
+      color: #111827;
+      padding-top: 10px;
+    }
+    .compliance-footer {
+      margin-top: 40px;
+      padding-top: 20px;
+      border-top: 1px dashed #D1D5DB;
+      font-size: 12px;
+      color: #6B7280;
+      text-align: center;
+      line-height: 1.6;
+    }
+    .no-print-bar {
+      max-width: 800px;
+      margin: 0 auto 20px auto;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .btn-print {
+      background: #C86B3C;
+      color: #FFFFFF;
+      border: none;
+      padding: 10px 20px;
+      font-size: 14px;
+      font-weight: 700;
+      border-radius: 8px;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .btn-print:hover {
+      background: #A85428;
+    }
+    @media print {
+      body {
+        background: #FFFFFF;
+        padding: 0;
+      }
+      .invoice-card {
+        border: none;
+        box-shadow: none;
+        padding: 0;
+      }
+      .no-print-bar {
+        display: none !important;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="no-print-bar">
+    <a href="/operations/orders" style="color: #6B7280; text-decoration: none; font-size: 14px; font-weight: 600;">← Back to Operations</a>
+    <button class="btn-print" onclick="window.print()">🖨️ Print Tax Invoice</button>
+  </div>
+
+  <div class="invoice-card">
+    <table class="header-table">
+      <tr>
+        <td style="vertical-align: top;">
+          ${brand?.logoUrl ? `<img src="${brand.logoUrl}" alt="${restaurantName}" style="max-height: 48px; margin-bottom: 8px; display: block;" />` : ''}
+          <h1 style="margin: 0; font-size: 24px; font-weight: 800; color: #111827;">${restaurantName}</h1>
+          <div style="font-size: 13px; color: #4B5563; margin-top: 4px;">${legalEntityName}</div>
+          <div style="font-size: 13px; color: #6B7280; margin-top: 2px;">${branchAddress}</div>
+          <div style="font-size: 13px; font-weight: 700; color: #1F2937; margin-top: 6px;">GSTIN: <span style="font-family: monospace;">${gstin}</span></div>
+        </td>
+        <td style="vertical-align: top; text-align: right;">
+          <div style="font-size: 20px; font-weight: 800; color: #C86B3C; letter-spacing: 0.05em;">TAX INVOICE</div>
+          <div style="font-size: 15px; font-weight: 700; color: #111827; margin-top: 6px; font-family: monospace;">${invoice.invoiceNumber}</div>
+          <div style="font-size: 12px; color: #6B7280; margin-top: 4px;">Date: ${invoiceDate}</div>
+          <div style="font-size: 12px; color: #6B7280;">FY: ${invoice.fiscalYear || '2026-2027'}</div>
+        </td>
+      </tr>
+    </table>
+
+    <div class="meta-box">
+      <div class="meta-item">
+        <div class="meta-label">Billed To</div>
+        <div class="meta-value">${invoice.customer?.name || 'Walk-in Diner'}</div>
+      </div>
+      <div class="meta-item">
+        <div class="meta-label">Table / Counter</div>
+        <div class="meta-value">${invoice.customer?.tableNumber || 'Takeaway'}</div>
+      </div>
+      <div class="meta-item">
+        <div class="meta-label">Order Ref</div>
+        <div class="meta-value" style="font-family: monospace;">${invoice.orderId}</div>
+      </div>
+      ${invoice.customer?.customerGstin ? `
+      <div class="meta-item">
+        <div class="meta-label">Customer GSTIN</div>
+        <div class="meta-value" style="font-family: monospace;">${invoice.customer.customerGstin}</div>
+      </div>` : ''}
+    </div>
+
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th style="text-align: center; width: 40px;">#</th>
+          <th style="text-align: left;">Item Description</th>
+          <th style="text-align: center; width: 80px;">SAC</th>
+          <th style="text-align: center; width: 60px;">Qty</th>
+          <th style="text-align: right; width: 90px;">Rate</th>
+          <th style="text-align: right; width: 100px;">Amount</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${itemsHtml}
+      </tbody>
+    </table>
+
+    <div class="totals-area">
+      <table class="totals-table">
+        <tr>
+          <td style="color: #4B5563;">Taxable Value</td>
+          <td style="text-align: right; font-weight: 600;">${currencySymbol}${(invoice.subtotalMinor / 100).toFixed(2)}</td>
+        </tr>
+        <tr>
+          <td style="color: #4B5563;">CGST @ ${tax.cgstRate || '2.5%'}</td>
+          <td style="text-align: right; font-weight: 600;">${currencySymbol}${(tax.cgstMinor / 100).toFixed(2)}</td>
+        </tr>
+        <tr>
+          <td style="color: #4B5563;">SGST @ ${tax.sgstRate || '2.5%'}</td>
+          <td style="text-align: right; font-weight: 600;">${currencySymbol}${(tax.sgstMinor / 100).toFixed(2)}</td>
+        </tr>
+        <tr class="grand-total">
+          <td>Grand Total</td>
+          <td style="text-align: right;">${currencySymbol}${(invoice.totalMinor / 100).toFixed(2)}</td>
+        </tr>
+      </table>
+    </div>
+
+    <div class="compliance-footer">
+      <div>Tax Category: SAC 996331 — Restaurant & Food Hospitality Services (5% Composite GST).</div>
+      <div style="margin-top: 4px;">Thank you for dining with ${restaurantName}! This is a computer generated invoice requiring no physical signature.</div>
+    </div>
+  </div>
+</body>
+</html>`;
+}

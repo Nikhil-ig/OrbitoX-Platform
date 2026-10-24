@@ -42,7 +42,8 @@ export function renderKdsWorkspace(
   currentSequence = 0,
   branchId = 'branch_ldh',
   staffRole?: string,
-  isAuthenticated?: boolean
+  isAuthenticated?: boolean,
+  restaurantName?: string
 ): string {
   // Station categorization
   const stations = [
@@ -100,7 +101,7 @@ export function renderKdsWorkspace(
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>KDS Kitchen Instrument · ${branchName}</title>
+  <title>${restaurantName ? `${restaurantName} · ` : ''}KDS Kitchen Instrument · ${branchName}</title>
   <script>
     window.__STAFF_SESSION__ = {
       isAuthenticated: ${isAuthed},
@@ -475,7 +476,7 @@ export function renderKdsWorkspace(
         <span>KITCHEN WORKSTATION</span>
       </span>
       <span class="kds-badge" style="background: var(--color-copper); color: #FFF;">${activeStation}</span>
-      <span style="font-size: 12px; color: var(--color-stone);">${branchName} · ${serviceShift}</span>
+      <span style="font-size: 12px; color: var(--color-stone);">${restaurantName ? `${restaurantName} · ` : ''}${branchName} · ${serviceShift}</span>
     </div>
 
     <div style="display: flex; align-items: center; gap: 14px;">

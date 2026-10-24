@@ -11,6 +11,7 @@
 
 import * as crypto from 'crypto';
 import { monitorEventLoopDelay, IntervalHistogram } from 'perf_hooks';
+import { tryGetActiveTenant } from './tenancy';
 
 export type LogLevel = 'debug' | 'info' | 'warn' | 'error';
 
@@ -215,7 +216,7 @@ class StructuredLogger {
       level: entry.level,
       message: entry.message,
       requestId: entry.requestId,
-      tenantId: entry.tenantId,
+      tenantId: entry.tenantId || tryGetActiveTenant()?.tenantId,
       method: entry.method,
       pathname: entry.pathname,
       status: entry.status,

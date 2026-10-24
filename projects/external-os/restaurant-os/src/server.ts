@@ -55,6 +55,7 @@ import {
   withTenantContext,
   getActiveTenant,
   tryGetActiveTenant,
+  invalidateTenantResolutionCache,
   renderTenantNotFoundPage,
   TenantProvisioningService,
   CustomDomainService,
@@ -69,6 +70,7 @@ import {
   buildGSTInvoice,
   computeFiscalYear,
   SAC_RESTAURANT_SERVICES,
+  renderPrintableInvoiceHtml,
 } from '../packages/domain/invoicing';
 import { RestaurantRuntimeStore, DomainEvent, getTenantRepository, RestaurantRepository } from '../packages/storage';
 import { PostgresRestaurantStore } from '../packages/storage/postgres-store';
@@ -82,6 +84,8 @@ import {
   renderKdsWorkspace,
   renderDinerPwa,
   renderTablesList,
+  renderTableQrStand,
+  renderOnboardingWorkspace,
   renderOrdersWorkspace,
   renderMenuWorkspace,
   renderGuestsWorkspace,
@@ -128,6 +132,52 @@ const provisioningService = new TenantProvisioningService(postgresStore ? postgr
 const customDomainService = new CustomDomainService(postgresStore ? postgresStore.prisma : undefined);
 const ownerSelfService = new OwnerSelfService(postgresStore ? postgresStore.prisma : undefined);
 
+// In-Memory Token Bucket Rate Limiter Keyed by Tenant ID
+interface RateLimitBucket {
+  tokens: number;
+  lastRefill: number;
+}
+const tenantGuestRateLimits = new Map<string, RateLimitBucket>();
+const tenantStaffRateLimits = new Map<string, RateLimitBucket>();
+
+function checkTenantRateLimit(tenantId: string, isStaff: boolean): { allowed: boolean; remaining: number; resetSeconds: number } {
+  // Public guest limit: 100 req/min (refill ~1.67/s); Staff limit: 300 req/min (refill ~5/s)
+  const maxTokens = isStaff ? 300 : 100;
+  const refillRatePerSec = maxTokens / 60;
+  const now = Date.now();
+  const map = isStaff ? tenantStaffRateLimits : tenantGuestRateLimits;
+
+  let bucket = map.get(tenantId);
+  if (!bucket) {
+    bucket = { tokens: maxTokens - 1, lastRefill: now };
+    map.set(tenantId, bucket);
+    return {
+      allowed: true,
+      remaining: Math.floor(bucket.tokens),
+      resetSeconds: 60,
+    };
+  }
+
+  const elapsedSec = (now - bucket.lastRefill) / 1000;
+  bucket.tokens = Math.min(maxTokens, bucket.tokens + elapsedSec * refillRatePerSec);
+  bucket.lastRefill = now;
+
+  if (bucket.tokens >= 1) {
+    bucket.tokens -= 1;
+    return {
+      allowed: true,
+      remaining: Math.floor(bucket.tokens),
+      resetSeconds: Math.ceil((maxTokens - bucket.tokens) / refillRatePerSec),
+    };
+  }
+
+  return {
+    allowed: false,
+    remaining: 0,
+    resetSeconds: Math.ceil((1 - bucket.tokens) / refillRatePerSec) || 1,
+  };
+}
+
 // Startup security signing secret verification
 try {
   getStaffAuthSecret();
@@ -154,6 +204,19 @@ const activeSettlementLocks = new Set<string>();
 const activeDispatchLocks = new Set<string>();
 
 function parseBody(req: http.IncomingMessage): Promise<any> {
+  if ((req as any)._parsedBody !== undefined) {
+    return Promise.resolve((req as any)._parsedBody);
+  }
+  if ((req as any)._rawBuffer !== undefined) {
+    try {
+      const parsed = (req as any)._rawBuffer.length ? JSON.parse((req as any)._rawBuffer.toString('utf8')) : {};
+      (req as any)._parsedBody = parsed;
+      return Promise.resolve(parsed);
+    } catch {
+      (req as any)._parsedBody = {};
+      return Promise.resolve({});
+    }
+  }
   return new Promise((resolve, reject) => {
     let data = '';
     req.on('data', (chunk) => {
@@ -161,10 +224,14 @@ function parseBody(req: http.IncomingMessage): Promise<any> {
     });
     req.on('end', () => {
       (req as any).rawBody = data;
+      (req as any)._rawBuffer = Buffer.from(data);
       try {
-        resolve(data ? JSON.parse(data) : {});
+        const parsed = data ? JSON.parse(data) : {};
+        (req as any)._parsedBody = parsed;
+        resolve(parsed);
       } catch (err) {
         (req as any).rawBody = data;
+        (req as any)._parsedBody = {};
         resolve({});
       }
     });
@@ -173,13 +240,24 @@ function parseBody(req: http.IncomingMessage): Promise<any> {
 }
 
 function parseBuffer(req: http.IncomingMessage): Promise<Buffer> {
+  if ((req as any)._rawBuffer !== undefined) {
+    return Promise.resolve((req as any)._rawBuffer);
+  }
+  if ((req as any).rawBody !== undefined) {
+    const buf = Buffer.from((req as any).rawBody);
+    (req as any)._rawBuffer = buf;
+    return Promise.resolve(buf);
+  }
   return new Promise((resolve, reject) => {
     const chunks: Buffer[] = [];
     req.on('data', (chunk) => {
       chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
     });
     req.on('end', () => {
-      resolve(Buffer.concat(chunks));
+      const buf = Buffer.concat(chunks);
+      (req as any)._rawBuffer = buf;
+      (req as any).rawBody = buf.toString('utf8');
+      resolve(buf);
     });
     req.on('error', reject);
   });
@@ -922,6 +1000,49 @@ export async function handleRequest(req: http.IncomingMessage, res: http.ServerR
     return;
   }
 
+  // Enforce In-Memory Token Bucket Rate Limiting per Tenant
+  if (!pathname.startsWith('/internal/') && pathname !== '/health' && pathname !== '/manifest.json') {
+    const isStaffReq = Boolean(activeStaffToken) || requestIdentity.type === 'STAFF' || requestIdentity.type === 'ADMIN' || requestIdentity.type === 'STATION';
+    const rateLimit = checkTenantRateLimit(tenantContext.tenantId, isStaffReq);
+    res.setHeader('x-ratelimit-remaining', String(rateLimit.remaining));
+    if (!rateLimit.allowed) {
+      res.setHeader('retry-after', String(rateLimit.resetSeconds));
+      sendJson(res, 429, {
+        error: 'RATE_LIMIT_EXCEEDED',
+        code: 'RATE_LIMIT_EXCEEDED',
+        message: `Too many requests for tenant ${tenantContext.tenantId}. Please retry after ${rateLimit.resetSeconds}s.`,
+      });
+      return;
+    }
+  }
+
+  // --- PUBLIC PWA WEB MANIFEST (/manifest.json) ---
+  if (pathname === '/manifest.json' && method === 'GET') {
+    const brand = await repo.getTenantBrand();
+    const manifest = {
+      name: brand?.restaurantName || tenantContext.tenantName,
+      short_name: brand?.restaurantName || tenantContext.tenantSlug,
+      description: brand?.tagline || `${brand?.restaurantName || tenantContext.tenantName} digital dining experience`,
+      start_url: '/',
+      display: 'standalone',
+      theme_color: brand?.primaryColor || '#C86B3C',
+      background_color: '#080A0D',
+      icons: [
+        {
+          src: brand?.logoUrl || brand?.faviconUrl || '/favicon.ico',
+          sizes: '192x192',
+          type: 'image/png',
+        },
+      ],
+    };
+    res.writeHead(200, {
+      'Content-Type': 'application/manifest+json; charset=utf-8',
+      'Cache-Control': 'public, max-age=3600',
+    });
+    res.end(JSON.stringify(manifest, null, 2));
+    return;
+  }
+
   // Gating for test and debug routes: require RESTAURANTOS_ENABLE_TEST_ROUTES === 'true'
   const isTestOrDebugRoute =
     pathname.startsWith('/api/test/') ||
@@ -1049,6 +1170,7 @@ export async function handleRequest(req: http.IncomingMessage, res: http.ServerR
       const tenantId = suspendMatch[1];
       try {
         const updated = await provisioningService.suspendTenant(tenantId);
+        invalidateTenantResolutionCache(tenantId);
         sendJson(res, 200, { success: true, tenant: updated });
       } catch (err: any) {
         sendJson(res, 400, { error: 'SUSPEND_FAILED', message: err.message });
@@ -1061,6 +1183,7 @@ export async function handleRequest(req: http.IncomingMessage, res: http.ServerR
       const tenantId = resumeMatch[1];
       try {
         const updated = await provisioningService.resumeTenant(tenantId);
+        invalidateTenantResolutionCache(tenantId);
         sendJson(res, 200, { success: true, tenant: updated });
       } catch (err: any) {
         sendJson(res, 400, { error: 'RESUME_FAILED', message: err.message });
@@ -1073,6 +1196,7 @@ export async function handleRequest(req: http.IncomingMessage, res: http.ServerR
       const tenantId = cancelMatch[1];
       try {
         const updated = await provisioningService.cancelTenant(tenantId);
+        invalidateTenantResolutionCache(tenantId);
         sendJson(res, 200, { success: true, tenant: updated });
       } catch (err: any) {
         sendJson(res, 400, { error: 'CANCEL_FAILED', message: err.message });
@@ -2806,7 +2930,9 @@ export async function handleRequest(req: http.IncomingMessage, res: http.ServerR
   // 6d. Razorpay Payment Order Creation (Server-Recomputed Amounts)
   if (
     (pathname === '/api/restaurant/payments/create-order' ||
-      pathname === '/api/commerce/payments/create-session') &&
+      pathname === '/api/commerce/payments/create-session' ||
+      pathname === '/api/commerce/razorpay/create-order' ||
+      pathname === '/api/restaurant/checkout/razorpay/order') &&
     method === 'POST'
   ) {
     const body = await parseBody(req);
@@ -2836,10 +2962,33 @@ export async function handleRequest(req: http.IncomingMessage, res: http.ServerR
 
     // Server-recomputed amounts: Never trust client-passed amountMinor
     const amountMinor = order.totalMinor;
-    const tableNumber = order.tableNumber || body.tableNumber || '';
+    const tableNumber = order.tableNumber || body.tableNumber;
+    if (!tableNumber) {
+      sendJson(res, 400, {
+        error: 'TABLE_REQUIRED',
+        code: 'TABLE_REQUIRED',
+        message: 'Order has no associated table number.',
+      });
+      return;
+    }
+
+    // Tenant-isolated Razorpay adapter instantiation
+    let activeRazorpay = razorpayAdapter;
+    try {
+      const pConfig = await ownerSelfService.getPaymentConfig(tid, true);
+      if (pConfig && pConfig.configured && pConfig.keyId && pConfig.keySecret) {
+        activeRazorpay = new RazorpayPaymentGatewayAdapter({
+          keyId: pConfig.keyId,
+          keySecret: pConfig.keySecret,
+          webhookSecret: pConfig.webhookSecret,
+        });
+      }
+    } catch {
+      // Fallback to default configured adapter
+    }
 
     try {
-      const result = await razorpayAdapter.createOrder({
+      const result = await activeRazorpay.createOrder({
         orderId,
         amountMinor,
         currency: order.currency || 'INR',
@@ -2882,7 +3031,7 @@ export async function handleRequest(req: http.IncomingMessage, res: http.ServerR
           razorpayOrderId: result.razorpayOrderId,
           amountMinor,
           currency: result.currency,
-          keyId: razorpayAdapter.keyId,
+          keyId: activeRazorpay.keyId,
           orderId,
           tableNumber,
           paymentUrl: result.paymentUrl,
@@ -2901,15 +3050,33 @@ export async function handleRequest(req: http.IncomingMessage, res: http.ServerR
   // 6e. Razorpay Webhook Receiver with HMAC-SHA256 Verification & Invoicing
   if (
     (pathname === '/api/restaurant/payments/webhook' ||
-      pathname === '/api/commerce/payments/webhook') &&
+      pathname === '/api/commerce/payments/webhook' ||
+      pathname === '/api/restaurant/checkout/razorpay/webhook') &&
     method === 'POST'
   ) {
     const body = await parseBody(req);
     const rawBody = (req as any).rawBody || JSON.stringify(body);
     const signature = (req.headers['x-razorpay-signature'] as string) || '';
 
+    const tenant = getActiveTenant();
+    const tid = tenant.tenantId;
+
+    let activeRazorpay = razorpayAdapter;
+    try {
+      const pConfig = await ownerSelfService.getPaymentConfig(tid, true);
+      if (pConfig && pConfig.configured && pConfig.keyId && pConfig.keySecret) {
+        activeRazorpay = new RazorpayPaymentGatewayAdapter({
+          keyId: pConfig.keyId,
+          keySecret: pConfig.keySecret,
+          webhookSecret: pConfig.webhookSecret,
+        });
+      }
+    } catch {
+      // Fallback
+    }
+
     // Verify HMAC-SHA256 signature
-    const isValidSignature = razorpayAdapter.verifyWebhookSignature(rawBody, signature);
+    const isValidSignature = activeRazorpay.verifyWebhookSignature(rawBody, signature);
     if (!isValidSignature) {
       sendJson(res, 401, {
         error: 'INVALID_SIGNATURE',
@@ -2940,7 +3107,7 @@ export async function handleRequest(req: http.IncomingMessage, res: http.ServerR
     const razorpayOrderId = paymentEntity.order_id || body.order_id;
     const notes = paymentEntity.notes || body.notes || {};
     const orderId = notes.orderId || body.orderId;
-    const tid = notes.tenantId || getActiveTenant().tenantId;
+    const targetTid = notes.tenantId || tid;
 
     if (
       eventType === 'payment.captured' ||
@@ -3105,34 +3272,45 @@ export async function handleRequest(req: http.IncomingMessage, res: http.ServerR
   }
 
   // 6f. GST Invoicing Retrieval Endpoints
-  // GET /api/restaurant/invoices/:id
+  // GET /invoices/:id, /invoices/:id/print, GET /api/restaurant/invoices/:id
   if (
-    pathname.startsWith('/api/restaurant/invoices/') &&
+    (pathname.startsWith('/api/restaurant/invoices/') || pathname.startsWith('/invoices/')) &&
     pathname !== '/api/restaurant/invoices/generate' &&
+    pathname !== '/api/restaurant/invoices' &&
     method === 'GET'
   ) {
-    const param = pathname.replace('/api/restaurant/invoices/', '');
-    const tid = getActiveTenant().tenantId;
+    const isApi = pathname.startsWith('/api/');
+    const isPrint = pathname.endsWith('/print');
+    const rawParam = pathname
+      .replace('/api/restaurant/invoices/', '')
+      .replace('/invoices/', '')
+      .replace('/print', '');
 
-    if (!postgresStore) {
-      sendJson(res, 503, {
-        error: 'POSTGRES_STORE_UNAVAILABLE',
-        message: 'PostgreSQL storage required for durable invoices.',
-      });
-      return;
+    let invoice = await repo.getInvoiceByOrderId(rawParam);
+    if (!invoice && rawParam.startsWith('INV-')) {
+      invoice = await repo.getInvoiceByNumber(rawParam);
     }
-
-    let invoice = await postgresStore.getInvoiceByOrderId(param, tid);
-    if (!invoice && param.startsWith('INV-')) {
-      invoice = await postgresStore.getInvoiceByNumber(param, tid);
+    if (!invoice && postgresStore) {
+      invoice = await postgresStore.getInvoiceByOrderId(rawParam, tenantContext.tenantId);
+      if (!invoice && rawParam.startsWith('INV-')) {
+        invoice = await postgresStore.getInvoiceByNumber(rawParam, tenantContext.tenantId);
+      }
     }
 
     if (!invoice) {
       sendJson(res, 404, {
         error: 'INVOICE_NOT_FOUND',
         code: 'INVOICE_NOT_FOUND',
-        message: `Invoice not found for identifier: ${param}`,
+        message: `Invoice not found for identifier: ${rawParam}`,
       });
+      return;
+    }
+
+    const wantsHtml = !isApi || isPrint || parsedUrl.query.format === 'html';
+    if (wantsHtml) {
+      const tenantBrand = await repo.getTenantBrand();
+      const html = renderPrintableInvoiceHtml(invoice, tenantBrand, currentBranch);
+      sendHtml(res, html);
       return;
     }
 
@@ -5335,7 +5513,9 @@ export async function handleRequest(req: http.IncomingMessage, res: http.ServerR
   }
 
   if (
-    (pathname === '/api/restaurant/uploads/logo' || pathname === '/api/restaurant/uploads/hero') &&
+    (pathname === '/api/restaurant/uploads/logo' ||
+      pathname === '/api/restaurant/uploads/hero' ||
+      pathname === '/api/restaurant/branding/upload-image') &&
     method === 'POST'
   ) {
     if (requestIdentity.type === 'INVALID_CREDENTIAL' || requestIdentity.type === 'REVOKED_CAPABILITY') {
@@ -5346,8 +5526,9 @@ export async function handleRequest(req: http.IncomingMessage, res: http.ServerR
       sendJson(res, 403, { error: 'FORBIDDEN', message: 'Manager or Admin privileges required to upload branding assets.' });
       return;
     }
-    const kind = pathname.endsWith('/logo') ? 'logo' : 'hero';
     try {
+      const parsed = await parseBody(req).catch(() => ({}));
+      const kind = pathname.endsWith('/hero') || parsed.kind === 'hero' ? 'hero' : 'logo';
       const { buffer } = await extractImageBuffer(req);
       const saved = await ownerSelfService.saveTenantImage(tenantContext.tenantId, buffer, kind);
       if (kind === 'logo') {
@@ -6539,6 +6720,28 @@ export async function handleRequest(req: http.IncomingMessage, res: http.ServerR
     return;
   }
 
+  // --- 3b. TABLE PRINTABLE QR STAND (/operations/tables/:id/qr-stand) ---
+  if (
+    pathname.startsWith('/operations/tables/') &&
+    pathname.endsWith('/qr-stand') &&
+    method === 'GET'
+  ) {
+    const tableId = pathname.replace('/operations/tables/', '').replace('/qr-stand', '');
+    const table = (await repo.getTable(tableId)) || (await repo.getTableByNumber(tableId));
+    if (!table) {
+      sendJson(res, 404, {
+        error: 'TABLE_NOT_FOUND',
+        message: `Table "${tableId}" does not exist in this restaurant.`,
+      });
+      return;
+    }
+    const tenantBrand = await repo.getTenantBrand();
+    const branchName = currentBranch?.name || 'Main Dining';
+    const html = renderTableQrStand(table, tenantBrand, branchName);
+    sendHtml(res, html);
+    return;
+  }
+
   // --- 4. ORDERS WORKSPACE (/operations/orders & /orders) ---
   if (pathname === '/operations/orders' || pathname === '/orders') {
     const branchOrders = await repo.getOrders(undefined, undefined, currentBranch.id);
@@ -6576,6 +6779,7 @@ export async function handleRequest(req: http.IncomingMessage, res: http.ServerR
 
     const branchTasks = await repo.getKitchenTasks(undefined, currentBranch.id);
     const lastSeq = await repo.getLastEventSequence();
+    const tenantBrand = await repo.getTenantBrand();
     const html = renderKdsWorkspace(
       branchTasks,
       activeStation,
@@ -6585,7 +6789,8 @@ export async function handleRequest(req: http.IncomingMessage, res: http.ServerR
       lastSeq,
       currentBranch.id,
       kdsRole,
-      isKitchenAuthorized
+      isKitchenAuthorized,
+      tenantBrand?.restaurantName
     );
     sendHtml(res, html);
     return;
@@ -6861,6 +7066,28 @@ export async function handleRequest(req: http.IncomingMessage, res: http.ServerR
       {
         title: 'Customer Support Desk',
         activeNav: 'support',
+        restaurantName: tenantBrand.restaurantName,
+        currentBranchId: currentBranch.id,
+        currentFloorId: currentFloor.id,
+        currentServiceShift: serviceShift,
+        branches,
+        floors,
+        staffRole: activeStaffRole,
+      }
+    );
+    sendHtml(res, html);
+    return;
+  }
+
+  // --- 16b. OWNER ONBOARDING WORKSPACE (/operations/onboarding & /onboarding) ---
+  if (pathname === '/operations/onboarding' || pathname === '/onboarding') {
+    const onboardingState = await ownerSelfService.getOnboardingState(tenantContext.tenantId);
+    const tenantBrand = await repo.getTenantBrand();
+    const html = renderShell(
+      renderOnboardingWorkspace(onboardingState, tenantBrand, currentBranch?.name),
+      {
+        title: 'Owner Onboarding',
+        activeNav: 'onboarding',
         restaurantName: tenantBrand.restaurantName,
         currentBranchId: currentBranch.id,
         currentFloorId: currentFloor.id,

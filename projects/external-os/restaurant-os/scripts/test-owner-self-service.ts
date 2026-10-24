@@ -439,6 +439,8 @@ async function main() {
     },
     stdio: 'pipe',
   });
+  serverProc.stdout?.on('data', (d) => process.stdout.write(d));
+  serverProc.stderr?.on('data', (d) => process.stderr.write(d));
 
   let serverReady = false;
   for (let i = 0; i < 40; i++) {
@@ -610,6 +612,8 @@ async function main() {
       });
     }
     await prisma.restaurantOrder.createMany({ data: batchOrders });
+    const firstItem = await prisma.menuItem.findFirst({ where: { tenantId: provisionResult.tenantId } });
+    const testItemId = firstItem ? firstItem.id : 'item_butter_chicken';
 
     const orderWarningRes = await makeRequest(
       serverPort,
@@ -621,7 +625,7 @@ async function main() {
       },
       {
         tableNumber: 'T-01',
-        items: [{ id: 'item_butter_chicken', quantity: 1 }],
+        items: [{ id: testItemId, quantity: 1 }],
       }
     );
     assert(orderWarningRes.status === 201, 'Order submitted successfully at 80% quota (HTTP 201)');
@@ -657,7 +661,7 @@ async function main() {
       },
       {
         tableNumber: 'T-01',
-        items: [{ id: 'item_butter_chicken', quantity: 1 }],
+        items: [{ id: testItemId, quantity: 1 }],
       }
     );
     assert(orderBlockedRes.status === 403, 'Order rejected at 100% quota with HTTP 403');
