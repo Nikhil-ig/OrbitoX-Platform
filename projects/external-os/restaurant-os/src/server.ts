@@ -46,6 +46,7 @@ import {
   getActiveTenant,
   renderTenantNotFoundPage,
   TenantProvisioningService,
+  CustomDomainService,
   verifyPlatformAuth,
   validateTenantSlug,
 } from '../packages/domain';
@@ -100,6 +101,7 @@ try {
 }
 
 const provisioningService = new TenantProvisioningService(postgresStore ? postgresStore.prisma : undefined);
+const customDomainService = new CustomDomainService(postgresStore ? postgresStore.prisma : undefined);
 
 // Startup security signing secret verification
 try {
@@ -525,6 +527,20 @@ const server = http.createServer(async (req, res) => {
 
   // Platform internal management endpoints (require platform auth token, bypass public host resolution)
   if (pathname.startsWith('/internal/')) {
+    // Caddy On-Demand TLS Ask gatekeeper: Called by reverse proxy to authorize automated SSL issuance
+    if (pathname === '/internal/tls/ask' && method === 'GET') {
+      const askDomain = (parsedUrl.query.domain as string) || '';
+      const allowed = await customDomainService.isDomainAllowedForTls(askDomain);
+      if (allowed) {
+        res.writeHead(200, { 'Content-Type': 'text/plain' });
+        res.end('OK');
+      } else {
+        res.writeHead(403, { 'Content-Type': 'text/plain' });
+        res.end('FORBIDDEN: Domain not permitted for TLS');
+      }
+      return;
+    }
+
     if (!verifyPlatformAuth(req)) {
       sendJson(res, 401, {
         error: 'UNAUTHORIZED',
@@ -4632,8 +4648,46 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
-  if ((pathname === '/api/restaurant/branding/verify-domain' || pathname === '/api/restaurant/settings/domains/verify') && method === 'POST') {
-    const identity = resolveRequestIdentity(req);
+  // 28b. Custom Domains Management & DNS Verification
+  if (pathname === '/api/restaurant/domains' && method === 'GET') {
+    const identity = resolveRequestIdentity(req, tenantContext.tenantId);
+    if (!identity.isPrivileged) {
+      sendJson(res, 403, { error: 'FORBIDDEN', message: 'Viewing custom domains requires Manager or Admin privileges.' });
+      return;
+    }
+    try {
+      const list = await customDomainService.listCustomDomains(tenantContext.tenantId);
+      sendJson(res, 200, { success: true, data: list });
+    } catch (err: any) {
+      sendJson(res, 400, { success: false, error: err.message });
+    }
+    return;
+  }
+
+  if (pathname === '/api/restaurant/domains' && method === 'POST') {
+    const identity = resolveRequestIdentity(req, tenantContext.tenantId);
+    if (!identity.isPrivileged) {
+      sendJson(res, 403, { error: 'FORBIDDEN', message: 'Adding custom domains requires Manager or Admin privileges.' });
+      return;
+    }
+    const body = await parseBody(req);
+    try {
+      const challenge = await customDomainService.addCustomDomain(tenantContext.tenantId, body.domain);
+      sendJson(res, 201, { success: true, data: challenge });
+    } catch (err: any) {
+      const isCollision = err.message.includes('DOMAIN_ALREADY_CLAIMED');
+      sendJson(res, isCollision ? 409 : 400, { success: false, error: err.message });
+    }
+    return;
+  }
+
+  if (
+    (pathname === '/api/restaurant/domains/verify' ||
+      pathname === '/api/restaurant/branding/verify-domain' ||
+      pathname === '/api/restaurant/settings/domains/verify') &&
+    method === 'POST'
+  ) {
+    const identity = resolveRequestIdentity(req, tenantContext.tenantId);
     if (identity.type === 'INVALID_CREDENTIAL' || identity.type === 'REVOKED_CAPABILITY') {
       sendJson(res, 401, { error: identity.type, code: identity.type, message: 'Invalid or revoked credential.' });
       return;
@@ -4652,16 +4706,45 @@ const server = http.createServer(async (req, res) => {
       sendJson(res, 400, { success: false, error: 'INVALID_DOMAIN', message: 'Domain must be a fully qualified domain name.' });
       return;
     }
-    const updated = store.updateTenantBrand({
-      customDomain: domain,
-      domainStatus: 'VERIFIED',
-      sslStatus: 'ACTIVE',
-    });
-    sendJson(res, 200, {
-      success: true,
-      data: updated,
-      message: `Domain ${domain} successfully verified with SSL provisioned.`,
-    });
+    try {
+      const verifyRes = await customDomainService.verifyCustomDomain(tenantContext.tenantId, domain);
+      if (verifyRes.verified) {
+        store.updateTenantBrand({
+          customDomain: domain,
+          domainStatus: 'VERIFIED',
+          sslStatus: 'ACTIVE',
+        });
+        sendJson(res, 200, {
+          success: true,
+          data: verifyRes,
+          message: `Domain ${domain} successfully verified with SSL provisioned.`,
+        });
+      } else {
+        sendJson(res, 400, {
+          success: false,
+          data: verifyRes,
+          error: verifyRes.error || 'DNS TXT verification failed.',
+        });
+      }
+    } catch (err: any) {
+      sendJson(res, 400, { success: false, error: err.message });
+    }
+    return;
+  }
+
+  if (pathname.startsWith('/api/restaurant/domains/') && method === 'DELETE') {
+    const identity = resolveRequestIdentity(req, tenantContext.tenantId);
+    if (!identity.isPrivileged) {
+      sendJson(res, 403, { error: 'FORBIDDEN', message: 'Removing custom domains requires Manager or Admin privileges.' });
+      return;
+    }
+    const targetDomain = decodeURIComponent(pathname.replace('/api/restaurant/domains/', '')).trim();
+    try {
+      const deleteRes = await customDomainService.removeCustomDomain(tenantContext.tenantId, targetDomain);
+      sendJson(res, 200, deleteRes);
+    } catch (err: any) {
+      sendJson(res, 400, { success: false, error: err.message });
+    }
     return;
   }
 

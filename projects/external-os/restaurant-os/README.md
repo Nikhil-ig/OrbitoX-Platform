@@ -113,8 +113,39 @@ docker build -f projects/external-os/restaurant-os/Dockerfile -t restaurant-os .
 | `/api/restaurant/invoices` | `GET` | Query invoices by number or date | Staff / Admin |
 | `/api/restaurant/invoices/generate` | `POST` | Manually generate GST invoice | Staff / Admin |
 | `/api/restaurant/payments/refund` | `POST` | Level 4 Refund Request (Manager PIN) | Manager / Admin |
+| `/api/restaurant/domains` | `GET` | List registered custom domains | Manager / Admin |
+| `/api/restaurant/domains` | `POST` | Add custom domain & generate DNS challenges | Manager / Admin |
+| `/api/restaurant/domains/verify` | `POST` | Trigger cryptographic DNS TXT verification | Manager / Admin |
+| `/api/restaurant/domains/:domain` | `DELETE` | Remove custom domain & invalidate cache | Manager / Admin |
+| `/internal/tls/ask` | `GET` | Caddy on-demand TLS authorization gatekeeper | Public / Reverse Proxy |
 
 ---
+
+## 🌐 Custom Domains & Automated On-Demand TLS
+
+RestaurantOS provides automated, zero-friction custom domain onboarding with automated SSL provisioning via **Caddy On-Demand TLS**.
+
+### 1. Step-by-Step Domain Verification Flow
+1. **Operator or Owner adds a domain** via `POST /api/restaurant/domains` with `{ "domain": "dine.bistro.com" }`.
+2. RestaurantOS generates a cryptographic challenge and returns DNS configuration instructions:
+   - **TXT Record**: `_restaurantos-verify.dine.bistro.com` → `orb_verify_<token>`
+   - **CNAME Record**: `dine.bistro.com` → `cname.restaurantos.orbitox.io`
+3. **Owner configures DNS** with their registrar (GoDaddy, Cloudflare, Route53, Namecheap).
+4. **Verification Call**: Invoking `POST /api/restaurant/domains/verify` queries authoritative DNS:
+   - If TXT record matches the token, the domain transitions to `VERIFIED` and `sslStatus: 'ACTIVE'`.
+   - The multi-tenant LRU resolution cache is invalidated immediately.
+
+### 2. Caddy On-Demand TLS Gatekeeper (`/internal/tls/ask`)
+To prevent Denial-of-Service and Let's Encrypt rate-limit exhaustion, Caddy queries RestaurantOS on every incoming TLS handshake:
+```
+Client (HTTPS) ──▶ Caddy ──▶ GET /internal/tls/ask?domain=...
+                                ├── Status 200: Allowed -> Caddy provisions/renews SSL
+                                └── Status 403: Denied -> Handshake terminated immediately
+```
+The gatekeeper permits certificate generation **only** if the domain exists in the database with status `VERIFIED` and the tenant is active (non-suspended).
+
+---
+
 
 ## 📋 Pilot Launch Readiness Checklist
 

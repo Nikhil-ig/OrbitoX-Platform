@@ -1,0 +1,38 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# 🪐 RestaurantOS Production Caddyfile with Automated On-Demand TLS
+# ─────────────────────────────────────────────────────────────────────────────
+# Guarantees:
+# 1. Zero manual certificate provisioning for custom restaurant domains.
+# 2. Cryptographic and authorized issuance gatekeeping via /internal/tls/ask.
+# 3. Rate limiting and burst protection against TLS certificate exhaustion attacks.
+# ─────────────────────────────────────────────────────────────────────────────
+
+{
+    # Global on-demand TLS configuration
+    on_demand_tls {
+        # Queries RestaurantOS gatekeeper endpoint before initiating ACME TLS challenge
+        ask http://127.0.0.1:4000/internal/tls/ask
+        interval 2m
+        burst 10
+    }
+    
+    # ACME certificate registration email
+    email ops@orbitox.io
+}
+
+# Ingress handler for wildcard subdomain and verified customer domains
+:443, *.orbitox.live {
+    tls {
+        on_demand
+    }
+
+    encode zstd gzip
+
+    # Reverse proxy to RestaurantOS hospitality runtime engine
+    reverse_proxy 127.0.0.1:4000 {
+        header_up Host {host}
+        header_up X-Real-IP {remote_host}
+        header_up X-Forwarded-For {remote_host}
+        header_up X-Forwarded-Proto {scheme}
+    }
+}

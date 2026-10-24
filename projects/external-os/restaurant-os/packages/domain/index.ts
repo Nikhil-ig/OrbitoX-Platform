@@ -3204,3 +3204,4 @@ export * from './tenancy';
 export * from './invoicing';
 export * from './templates';
 export * from './provisioning';
+export * from './domains';
