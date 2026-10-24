@@ -51,8 +51,8 @@ await expectStatus('GET /api/health is public', 200, '/api/health');
 
 console.log('\nAdmin surface rejects anonymous callers');
 for (const path of [
-  '/platform', '/platform/fleet', '/platform/plans', '/platform/connect', '/platform/settings', '/admin',
-  '/api/v1/fleet', '/api/v1/overview', '/api/v1/system/settings', '/api/v1/system/cluster',
+  '/platform', '/platform/restaurants', '/platform/fleet', '/platform/plans', '/platform/connect', '/platform/settings', '/admin',
+  '/api/v1/platform/restaurants', '/api/v1/fleet', '/api/v1/overview', '/api/v1/system/settings', '/api/v1/system/cluster',
   '/hms', '/hrms', '/crm', '/finance', '/commerce', '/store'
 ]) {
   await expectStatus(`GET ${path} -> 401`, 401, path);
@@ -68,10 +68,12 @@ await expectStatus('GET /api/v1/fleet with Basic', 200, '/api/v1/fleet', {
 await expectStatus('GET /api/v1/overview with Bearer', 200, '/api/v1/overview', { headers: bearer(ADMIN) });
 await expectStatus('GET /api/v1/system/settings with Bearer', 200, '/api/v1/system/settings', { headers: bearer(ADMIN) });
 await expectStatus('GET /platform with Bearer', 200, '/platform', { headers: bearer(ADMIN) });
+await expectStatus('GET /platform/restaurants with Bearer', 200, '/platform/restaurants', { headers: bearer(ADMIN) });
 await expectStatus('GET /platform/fleet with Bearer', 200, '/platform/fleet', { headers: bearer(ADMIN) });
 await expectStatus('GET /platform/plans with Bearer', 200, '/platform/plans', { headers: bearer(ADMIN) });
 await expectStatus('GET /platform/connect with Bearer', 200, '/platform/connect', { headers: bearer(ADMIN) });
 await expectStatus('GET /platform/settings with Bearer', 200, '/platform/settings', { headers: bearer(ADMIN) });
+await expectStatus('GET /api/v1/platform/restaurants/check-slug with Bearer', 200, '/api/v1/platform/restaurants/check-slug?slug=smoke-test-bistro', { headers: bearer(ADMIN) });
 
 console.log('\nProtected demo surfaces work with admin Bearer');
 for (const path of ['/hms', '/hrms', '/crm', '/finance', '/commerce', '/store']) {
