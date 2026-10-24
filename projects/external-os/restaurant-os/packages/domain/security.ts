@@ -18,10 +18,13 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as http from 'http';
 
+export type StaffRole = 'OWNER' | 'ADMIN' | 'MANAGER' | 'OPERATIONS' | 'POS' | 'SERVER' | 'CHEF';
+
 export interface StaffClaims {
   sub: string;
   name?: string;
-  role: 'MANAGER' | 'OPERATIONS' | 'POS' | 'CHEF' | 'ADMIN';
+  role: StaffRole;
+  tenantId?: string;
   branchId: string;
   station?: string;
   permissions: string[];
@@ -46,12 +49,12 @@ export interface TokenVerificationResult {
 export interface StaffDirectoryMember {
   id: string;
   name: string;
-  role: 'MANAGER' | 'OPERATIONS' | 'POS' | 'CHEF' | 'ADMIN';
+  role: StaffRole;
   branchId: string;
   station?: string;
   salt: string;
   pinHash: string;
-  status: 'ACTIVE' | 'SUSPENDED';
+  status: 'ACTIVE' | 'SUSPENDED' | 'PENDING_INVITE';
   permissions?: string[];
 }
 
@@ -195,7 +198,7 @@ loadDurableRevocations();
 /**
  * Helper to compute salted PIN hash.
  */
-function hashPin(pin: string, salt: string): string {
+export function hashPin(pin: string, salt: string): string {
   return crypto.createHmac('sha256', salt).update(`pin_salt_${pin}`).digest('hex');
 }
 
@@ -526,7 +529,8 @@ export function issueStaffToken(
   options: {
     sub: string;
     name?: string;
-    role: 'MANAGER' | 'OPERATIONS' | 'POS' | 'CHEF' | 'ADMIN';
+    role: StaffRole;
+    tenantId?: string;
     branchId?: string;
     station?: string;
     permissions?: string[];
@@ -540,6 +544,7 @@ export function issueStaffToken(
   const jti = `jti_${Date.now()}_${crypto.randomBytes(8).toString('hex')}`;
 
   const defaultPermissions: Record<string, string[]> = {
+    OWNER: ['*'],
     ADMIN: ['*'],
     MANAGER: ['*'],
     OPERATIONS: [
@@ -550,6 +555,7 @@ export function issueStaffToken(
       'SEAT_MANAGE',
     ],
     POS: ['SESSION_CLOSE', 'BILL_SETTLEMENT', 'ORDER_CREATE', 'FINANCE_READ'],
+    SERVER: ['ORDER_CREATE', 'SERVICE_REQUEST_RESOLVE', 'TABLE_UPDATE', 'BILL_SETTLEMENT'],
     CHEF: ['KDS_BUMP', 'ITEM_FULFILL', 'RECALL', 'EXPO_DISPATCH'],
   };
 
@@ -557,6 +563,7 @@ export function issueStaffToken(
     sub: options.sub,
     name: options.name,
     role: options.role,
+    tenantId: options.tenantId,
     branchId: options.branchId || '*',
     station: options.station,
     permissions: options.permissions || defaultPermissions[options.role] || [],

@@ -15,11 +15,14 @@ model Tenant {
   id               String   @id // e.g. "tenant_pilot_bistro"
   name             String   // e.g. "Orbitox Bistro Pilot"
   slug             String   @unique // e.g. "bistro-pilot"
-  status           String   @default("active") // "trial", "active", "suspended"
+  status           String   @default("active") // "trial", "active", "suspended", "cancelled"
+  planId           String   @default("starter") // "starter", "growth", "pro", "enterprise"
   orbitoxProjectId String?  // e.g. "restaurant-os-pilot"
   currency         String   @default("INR")
   timezone         String   @default("Asia/Kolkata")
   gstin            String?  // Indian GST identification number (e.g. 03AAAAA0000A1Z5)
+  retentionUntil   DateTime? // for scheduled deletion after cancellation
+  onboardingState  Json?    // onboarding checklist progress
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt
 
@@ -42,6 +45,9 @@ model Tenant {
   idempotency      IdempotencyRecord[]
   invoices         Invoice[]
   paymentSessions  RazorpayPaymentSession[]
+  invites          OwnerInvite[]
+  domains          TenantDomain[]
+  paymentConfig    TenantPaymentConfig?
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -463,3 +469,55 @@ model RazorpayPaymentSession {
   @@index([tenantId])
   @@index([tenantId, id])
 }
+
+// ─────────────────────────────────────────────────────────────
+// 8. MULTI-TENANT PROVISIONING, INVITES & CUSTOM DOMAINS
+// ─────────────────────────────────────────────────────────────
+
+model OwnerInvite {
+  id            String    @id @default(cuid())
+  tenantId      String
+  staffMemberId String
+  tokenHash     String    @unique // SHA-256 hash of single-use invite token
+  expiresAt     DateTime  // 72h expiry
+  usedAt        DateTime?
+  createdAt     DateTime  @default(now())
+
+  tenant        Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+}
+
+model TenantDomain {
+  id                 String    @id @default(cuid())
+  tenantId           String
+  domain             String    @unique // e.g. "bistro.mysite.com"
+  verificationToken  String    // e.g. "rzp_verify_abc123"
+  verificationStatus String    @default("PENDING") // PENDING, VERIFIED, FAILED
+  verifiedAt         DateTime?
+  sslStatus          String    @default("NOT_PROVISIONED") // NOT_PROVISIONED, PROVISIONING, ACTIVE, ERROR
+  lastCheckedAt      DateTime?
+  cnameTarget        String?
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+
+  tenant             Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@index([domain])
+}
+
+model TenantPaymentConfig {
+  id                     String   @id @default(cuid())
+  tenantId               String   @unique
+  encryptedKeyId         String?  // AES-256-GCM encrypted
+  encryptedKeySecret     String?  // AES-256-GCM encrypted
+  encryptedWebhookSecret String?  // AES-256-GCM encrypted
+  gstin                  String?
+  legalEntityName        String?
+  createdAt              DateTime @default(now())
+  updatedAt              DateTime @updatedAt
+
+  tenant                 Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+}
+

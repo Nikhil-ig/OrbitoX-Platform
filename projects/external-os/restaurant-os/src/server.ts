@@ -44,6 +44,9 @@ import {
   resolveTenantFromRequest,
   withTenantContext,
   getActiveTenant,
+  TenantProvisioningService,
+  verifyPlatformAuth,
+  validateTenantSlug,
 } from '../packages/domain';
 import {
   buildGSTInvoice,
@@ -78,6 +81,8 @@ import {
   renderCraveAtlasPage,
   renderSwiftBitePage,
   renderPantryRushPage,
+  renderOwnerInvitePage,
+  renderSuspendedTenantPage,
 } from '../packages/ui';
 
 const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 4010;
@@ -92,6 +97,8 @@ try {
 } catch (err: any) {
   console.warn('[Storage] PostgresRestaurantStore deferred:', err.message);
 }
+
+const provisioningService = new TenantProvisioningService(postgresStore ? postgresStore.prisma : undefined);
 
 // Startup security signing secret verification
 try {
@@ -597,6 +604,164 @@ const server = http.createServer((req, res) => {
     store.addKitchenTask(body);
     sendJson(res, 200, { success: true, task: body });
     return;
+  }
+
+  // --- TENANT SUSPENSION ENFORCEMENT ---
+  if (postgresStore && !pathname.startsWith('/internal/')) {
+    const currentTenant = await postgresStore.getTenant(tenantContext.tenantId);
+    if (currentTenant?.status === 'suspended') {
+      if (['POST', 'PUT', 'PATCH', 'DELETE'].includes(method)) {
+        sendJson(res, 403, {
+          error: 'TENANT_SUSPENDED',
+          code: 'TENANT_SUSPENDED',
+          message: 'This restaurant account is temporarily suspended. Writes are disabled.',
+        });
+        return;
+      }
+      if (method === 'GET' && (pathname === '/' || pathname.startsWith('/dine') || pathname.startsWith('/kds') || pathname.startsWith('/swift-bite') || pathname.startsWith('/crave-atlas') || pathname.startsWith('/operations'))) {
+        sendHtml(res, renderSuspendedTenantPage(currentTenant.name));
+        return;
+      }
+    }
+  }
+
+  // --- OWNER INVITE ACCEPTANCE FLOW ---
+  if (pathname === '/accept-invite' && method === 'GET') {
+    const token = (parsedUrl.query.token as string) || '';
+    sendHtml(res, renderOwnerInvitePage(token, tenantContext.tenantName));
+    return;
+  }
+
+  if (pathname === '/api/restaurant/auth/accept-invite' && method === 'POST') {
+    try {
+      const body = await parseBody(req);
+      const acceptRes = await provisioningService.acceptOwnerInvite({
+        token: body.token,
+        pin: body.pin,
+        ownerName: body.name,
+      });
+      sendJson(res, 200, acceptRes);
+    } catch (err: any) {
+      sendJson(res, 400, { error: 'INVITE_ACCEPTANCE_FAILED', message: err.message });
+    }
+    return;
+  }
+
+  // --- PLATFORM INTERNAL TENANT PROVISIONING & LIFECYCLE ---
+  if (pathname.startsWith('/internal/tenants')) {
+    if (!verifyPlatformAuth(req)) {
+      sendJson(res, 401, {
+        error: 'UNAUTHORIZED',
+        message: 'Platform service credentials required (RESTAURANTOS_PLATFORM_TOKEN >= 32 chars).',
+      });
+      return;
+    }
+
+    if (pathname === '/internal/tenants' && method === 'POST') {
+      try {
+        const body = await parseBody(req);
+        const idemKey = (req.headers['x-idempotency-key'] as string) || body.idempotencyKey;
+        const result = await provisioningService.provisionTenant({
+          ...body,
+          idempotencyKey: idemKey,
+        });
+        sendJson(res, 201, result);
+      } catch (err: any) {
+        const status = err.message.includes('already taken') ? 409 : 400;
+        sendJson(res, status, { error: 'PROVISIONING_FAILED', message: err.message });
+      }
+      return;
+    }
+
+    if (pathname === '/internal/tenants' && method === 'GET') {
+      try {
+        const page = parsedUrl.query.page ? parseInt(parsedUrl.query.page as string, 10) : 1;
+        const limit = parsedUrl.query.limit ? parseInt(parsedUrl.query.limit as string, 10) : 20;
+        const search = (parsedUrl.query.search as string) || undefined;
+        const status = (parsedUrl.query.status as string) || undefined;
+        const list = await provisioningService.listTenants({ page, limit, search, status });
+        sendJson(res, 200, list);
+      } catch (err: any) {
+        sendJson(res, 500, { error: 'INTERNAL_ERROR', message: err.message });
+      }
+      return;
+    }
+
+    const exportMatch = /^\/internal\/tenants\/([^/]+)\/export$/.exec(pathname);
+    if (exportMatch && method === 'GET') {
+      const tenantId = exportMatch[1];
+      try {
+        const data = await provisioningService.exportTenantData(tenantId);
+        sendJson(res, 200, data);
+      } catch (err: any) {
+        sendJson(res, 404, { error: 'NOT_FOUND', message: err.message });
+      }
+      return;
+    }
+
+    const suspendMatch = /^\/internal\/tenants\/([^/]+)\/suspend$/.exec(pathname);
+    if (suspendMatch && method === 'POST') {
+      const tenantId = suspendMatch[1];
+      try {
+        const updated = await provisioningService.suspendTenant(tenantId);
+        sendJson(res, 200, { success: true, tenant: updated });
+      } catch (err: any) {
+        sendJson(res, 400, { error: 'SUSPEND_FAILED', message: err.message });
+      }
+      return;
+    }
+
+    const resumeMatch = /^\/internal\/tenants\/([^/]+)\/resume$/.exec(pathname);
+    if (resumeMatch && method === 'POST') {
+      const tenantId = resumeMatch[1];
+      try {
+        const updated = await provisioningService.resumeTenant(tenantId);
+        sendJson(res, 200, { success: true, tenant: updated });
+      } catch (err: any) {
+        sendJson(res, 400, { error: 'RESUME_FAILED', message: err.message });
+      }
+      return;
+    }
+
+    const cancelMatch = /^\/internal\/tenants\/([^/]+)\/cancel$/.exec(pathname);
+    if (cancelMatch && method === 'POST') {
+      const tenantId = cancelMatch[1];
+      try {
+        const updated = await provisioningService.cancelTenant(tenantId);
+        sendJson(res, 200, { success: true, tenant: updated });
+      } catch (err: any) {
+        sendJson(res, 400, { error: 'CANCEL_FAILED', message: err.message });
+      }
+      return;
+    }
+
+    const detailMatch = /^\/internal\/tenants\/([^/]+)$/.exec(pathname);
+    if (detailMatch && method === 'GET') {
+      const tenantId = detailMatch[1];
+      try {
+        const tenant = await provisioningService.getTenantDetails(tenantId);
+        if (!tenant) {
+          sendJson(res, 404, { error: 'TENANT_NOT_FOUND', message: `Tenant ${tenantId} not found` });
+          return;
+        }
+        sendJson(res, 200, tenant);
+      } catch (err: any) {
+        sendJson(res, 500, { error: 'INTERNAL_ERROR', message: err.message });
+      }
+      return;
+    }
+
+    if (detailMatch && method === 'PATCH') {
+      const tenantId = detailMatch[1];
+      try {
+        const body = await parseBody(req);
+        const updated = await provisioningService.updateTenant(tenantId, body);
+        sendJson(res, 200, { success: true, tenant: updated });
+      } catch (err: any) {
+        sendJson(res, 400, { error: 'UPDATE_FAILED', message: err.message });
+      }
+      return;
+    }
   }
 
   // --- AUTHENTICATION & CREDENTIAL MANAGEMENT ---
