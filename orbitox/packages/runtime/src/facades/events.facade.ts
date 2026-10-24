@@ -9,6 +9,7 @@
  * - Zero manual configuration required
  */
 
+import * as crypto from 'crypto';
 import { EventEmitter } from 'events';
 
 export type EventHandler = (payload: any, meta: EventMeta) => Promise<void> | void;
@@ -68,7 +69,7 @@ export class EventsFacade {
    */
   async emit(eventName: string, payload: any, contextId: string = 'global', source: string = 'orbitox'): Promise<void> {
     const meta: EventMeta = {
-      id: `evt_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+      id: `evt_${crypto.randomUUID()}`,
       name: eventName,
       contextId,
       source,

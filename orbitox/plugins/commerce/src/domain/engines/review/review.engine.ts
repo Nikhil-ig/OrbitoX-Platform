@@ -95,7 +95,7 @@ export class ReviewEngine {
 
     const now = new Date().toISOString();
     const review: CustomerReview = {
-      id: `rev_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+      id: `rev_${globalThis.crypto.randomUUID()}`,
       productId: payload.productId,
       storeId: payload.storeId,
       customerName: payload.customerName.trim() || 'Valued Patron',

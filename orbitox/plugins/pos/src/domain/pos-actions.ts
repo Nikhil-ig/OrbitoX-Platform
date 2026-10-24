@@ -1,3 +1,4 @@
+import * as crypto from 'crypto';
 import { EventBusService } from '@orbitox/core';
 import { PosOrder, AddToCartPayload, OrderStatus, PaymentMethod } from './types';
 import { PosStateMachine } from './pos-state-machine';
@@ -13,8 +14,8 @@ export class HeadlessPosService {
 
   async createOrder(tableNumber?: string, contextId: string = 'system'): Promise<PosOrder> {
     const order: PosOrder = {
-      id: `order_${Date.now()}`,
-      orderNumber: `ORD-${Math.floor(Math.random() * 10000)}`,
+      id: `order_${crypto.randomUUID()}`,
+      orderNumber: `ORD-${crypto.randomInt(1000, 10000)}`,
       tableNumber,
       status: 'OPEN',
       items: [],

@@ -40,7 +40,7 @@ export class OrderEngine {
     const now = new Date().toISOString();
 
     const orderItems: OrderItem[] = cart.items.map((item) => ({
-      id: `item_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+      id: `item_${globalThis.crypto.randomUUID()}`,
       productId: item.productId,
       variantId: item.variantId,
       title: item.title,

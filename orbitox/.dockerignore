@@ -6,10 +6,13 @@
 .env
 .env.*
 !.env.example
-**/data
+apps/web/orbitox/data
+data
+!apps/web/app/**/data
 .orbitox-data
 snapshots
 apps/celebrations
 **/test-results
 **/*.log
 .git
+plugins/my-noob-plugin

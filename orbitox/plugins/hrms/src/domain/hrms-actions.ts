@@ -1,3 +1,4 @@
+import * as crypto from 'crypto';
 import { Employee, EmployeeStatus, OnboardEmployeePayload, HrmsFilter } from './types';
 import { HrmsStateMachine } from './hrms-state-machine';
 
@@ -17,8 +18,8 @@ export class HeadlessHrmsService {
     }
 
     const newEmp: Employee = {
-      id: `emp_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
-      employeeCode: `EMP-${Math.floor(1000 + Math.random() * 9000)}`,
+      id: `emp_${crypto.randomUUID()}`,
+      employeeCode: `EMP-${crypto.randomInt(1000, 10000)}`,
       name: payload.name.trim(),
       email: payload.email.trim(),
       role: payload.role.trim(),
@@ -83,7 +84,7 @@ export class HeadlessHrmsService {
     const areasForImprovement = ['Advanced Tooling Proficiency'];
 
     if (emp.status === 'ACTIVE') {
-      performanceScore = 85 + Math.floor(Math.random() * 10);
+      performanceScore = 85 + crypto.randomInt(0, 10);
       strengths.push('Consistent output delivery');
     } else if (emp.status === 'SUSPENDED') {
       performanceScore = 40;

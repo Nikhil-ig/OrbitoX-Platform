@@ -16,6 +16,7 @@
 import * as crypto from 'crypto';
 import * as fs from 'fs';
 import * as path from 'path';
+import * as http from 'http';
 
 export interface StaffClaims {
   sub: string;
@@ -684,35 +685,80 @@ export function loadPersistedStaffRevocations(tokens: string[], jtis: string[], 
   if (Array.isArray(staffIds)) staffIds.forEach((s) => revokedStaffIds.add(s));
 }
 
-export const DEV_TEST_STATION_SECRETS: Record<
-  string,
-  { station: string; branchId: string; isPrivileged: boolean }
-> = {
-  'stn_sec_tandoor_ldh_99x7': { station: 'TANDOOR', branchId: 'branch_ldh', isPrivileged: false },
-  'stn_sec_curry_ldh_88y6': { station: 'CURRY_LINE', branchId: 'branch_ldh', isPrivileged: false },
-  'stn_sec_expo_ldh_77z5': { station: 'EXPO', branchId: 'branch_ldh', isPrivileged: true },
-  'stn_sec_beverage_ldh_66w4': { station: 'BEVERAGE', branchId: 'branch_ldh', isPrivileged: false },
-};
+/**
+ * Resolves whether an incoming request Origin is permitted under CORS policy.
+ * Evaluates process.env.RESTAURANTOS_ALLOWED_ORIGINS (comma-separated origins).
+ * Defaults safely to localhost / 127.0.0.1 / [::1].
+ * Returns the permitted origin string to reflect, or null if disallowed.
+ */
+export function resolveAllowedOrigin(req?: http.IncomingMessage): string | null {
+  if (!req || !req.headers) return null;
+  const origin = req.headers.origin;
+  if (!origin || typeof origin !== 'string') return null;
+
+  const envOrigins = process.env.RESTAURANTOS_ALLOWED_ORIGINS;
+  if (envOrigins) {
+    const list = envOrigins.split(',').map((s) => s.trim()).filter(Boolean);
+    if (list.includes('*')) return '*';
+    if (list.includes(origin)) return origin;
+    return null;
+  }
+
+  // Default allowlist: localhost and loopback interfaces
+  try {
+    const parsed = new URL(origin);
+    if (
+      parsed.hostname === 'localhost' ||
+      parsed.hostname === '127.0.0.1' ||
+      parsed.hostname === '[::1]'
+    ) {
+      return origin;
+    }
+  } catch {
+    return null;
+  }
+
+  return null;
+}
+
+let cachedStationSecrets: Record<string, { station: string; branchId: string; isPrivileged: boolean }> | null = null;
+
+function resolvePersistentStationSecretsFile(): string {
+  const dataDir = process.env.RESTAURANT_STORE_PATH
+    ? path.dirname(process.env.RESTAURANT_STORE_PATH)
+    : path.join(__dirname, '..', '..', 'data');
+
+  if (!fs.existsSync(dataDir)) {
+    try {
+      fs.mkdirSync(dataDir, { recursive: true });
+    } catch {
+      // Non-fatal
+    }
+  }
+
+  return path.join(dataDir, '.station_secrets.json');
+}
 
 /**
  * Resolves registered physical hardware kitchen station secrets.
  *
  * Security & Environment Rules:
- * - In production mode, station credentials MUST come from validated runtime configuration (RESTAURANT_STATION_SECRETS).
- * - Hardcoded source secrets and dev test fixtures are strictly forbidden in production.
- * - If no station secrets are configured in production, station authentication fails closed.
- *
- * Safe Rotation Process:
- * - Generate a new high-entropy random token (e.g. crypto.randomBytes(24).toString('hex')).
- * - Update RESTAURANT_STATION_SECRETS environment variable with the new secret mapping.
- * - Terminate active connections and update terminal hardware settings.
+ * - Station credentials are dynamically loaded from RESTAURANT_STATION_SECRETS (JSON or comma-separated pairs)
+ *   or from a local permissions-restricted 0600 file (.station_secrets.json).
+ * - If neither is present, dynamic high-entropy station secrets are generated and written to .station_secrets.json (mode 0600).
+ * - Hardcoded static stn_sec_* secrets are completely eliminated.
  */
 export function getRegisteredStationSecrets(): Record<
   string,
   { station: string; branchId: string; isPrivileged: boolean }
 > {
+  if (cachedStationSecrets && !process.env.RELOAD_STATION_SECRETS) {
+    return cachedStationSecrets;
+  }
+
   const configuredSecrets: Record<string, { station: string; branchId: string; isPrivileged: boolean }> = {};
 
+  // 1. From environment variable RESTAURANT_STATION_SECRETS
   const envSecrets = process.env.RESTAURANT_STATION_SECRETS;
   if (envSecrets) {
     try {
@@ -729,22 +775,59 @@ export function getRegisteredStationSecrets(): Record<
         }
       }
     }
-  }
-
-  if (process.env.NODE_ENV === 'production') {
+    cachedStationSecrets = configuredSecrets;
     return configuredSecrets;
   }
 
-  return {
-    ...DEV_TEST_STATION_SECRETS,
-    ...configuredSecrets,
+  // 2. From persistent 0600 file .station_secrets.json
+  const secretFile = resolvePersistentStationSecretsFile();
+  if (fs.existsSync(secretFile)) {
+    try {
+      const content = fs.readFileSync(secretFile, 'utf8').trim();
+      const parsed = JSON.parse(content);
+      if (typeof parsed === 'object' && parsed !== null && Object.keys(parsed).length > 0) {
+        cachedStationSecrets = parsed;
+        return parsed;
+      }
+    } catch {
+      // Non-fatal, fallback to generation
+    }
+  }
+
+  // 3. Dynamically generate fresh station secrets and save with 0600 mode
+  const generated: Record<string, { station: string; branchId: string; isPrivileged: boolean }> = {
+    [`stn_sec_${crypto.randomBytes(16).toString('hex')}`]: { station: 'TANDOOR', branchId: 'branch_ldh', isPrivileged: false },
+    [`stn_sec_${crypto.randomBytes(16).toString('hex')}`]: { station: 'CURRY_LINE', branchId: 'branch_ldh', isPrivileged: false },
+    [`stn_sec_${crypto.randomBytes(16).toString('hex')}`]: { station: 'EXPO', branchId: 'branch_ldh', isPrivileged: true },
+    [`stn_sec_${crypto.randomBytes(16).toString('hex')}`]: { station: 'BEVERAGE', branchId: 'branch_ldh', isPrivileged: false },
   };
+
+  try {
+    fs.writeFileSync(secretFile, JSON.stringify(generated, null, 2), { mode: 0o600, encoding: 'utf8' });
+  } catch {
+    // Non-fatal
+  }
+
+  cachedStationSecrets = generated;
+  return generated;
 }
+
+// Eagerly resolve and guarantee station secrets exist on boot
+try {
+  getRegisteredStationSecrets();
+} catch {
+  // Non-fatal during early boot
+}
+
+export const DEV_TEST_STATION_SECRETS: Record<
+  string,
+  { station: string; branchId: string; isPrivileged: boolean }
+> = {};
 
 export const REGISTERED_STATION_SECRETS: Record<
   string,
   { station: string; branchId: string; isPrivileged: boolean }
-> = new Proxy(DEV_TEST_STATION_SECRETS, {
+> = new Proxy({} as any, {
   get(target, prop: string) {
     const secrets = getRegisteredStationSecrets();
     return (secrets as any)[prop];
@@ -752,6 +835,22 @@ export const REGISTERED_STATION_SECRETS: Record<
   has(target, prop: string) {
     const secrets = getRegisteredStationSecrets();
     return prop in secrets;
+  },
+  ownKeys() {
+    const secrets = getRegisteredStationSecrets();
+    return Reflect.ownKeys(secrets);
+  },
+  getOwnPropertyDescriptor(target, prop) {
+    const secrets = getRegisteredStationSecrets();
+    if (prop in secrets) {
+      return {
+        configurable: true,
+        enumerable: true,
+        value: (secrets as any)[prop],
+        writable: false,
+      };
+    }
+    return undefined;
   },
 });
 

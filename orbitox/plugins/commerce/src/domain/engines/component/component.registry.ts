@@ -41,7 +41,7 @@ export class ComponentRegistry {
     }
 
     return {
-      id: `sec_${type.replace(/[^a-zA-Z0-9]/g, '_')}_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+      id: `sec_${type.replace(/[^a-zA-Z0-9]/g, '_')}_${globalThis.crypto.randomUUID()}`,
       type,
       name: def.name,
       enabled: true,

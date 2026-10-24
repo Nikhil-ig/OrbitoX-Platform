@@ -15,6 +15,7 @@
 import * as http from 'http';
 import * as url from 'url';
 import { DomainEvent, RestaurantRuntimeStore } from '../storage';
+import { resolveAllowedOrigin } from './security';
 
 export interface ClientScope {
   branchId?: string;
@@ -44,13 +45,18 @@ export class RealtimeEventBus {
     store?: RestaurantRuntimeStore,
     identity?: any
   ): void {
-    res.writeHead(200, {
+    const allowedOrigin = resolveAllowedOrigin(req);
+    const sseHeaders: Record<string, string> = {
       'Content-Type': 'text/event-stream',
       'Cache-Control': 'no-cache, no-transform',
       'Connection': 'keep-alive',
-      'Access-Control-Allow-Origin': '*',
       'X-Accel-Buffering': 'no',
-    });
+    };
+    if (allowedOrigin) {
+      sseHeaders['Access-Control-Allow-Origin'] = allowedOrigin;
+      sseHeaders['Vary'] = 'Origin';
+    }
+    res.writeHead(200, sseHeaders);
 
     const parsed = url.parse(req.url || '', true);
     const scope: ClientScope = {
@@ -76,7 +82,7 @@ export class RealtimeEventBus {
       if (identity.branchId) scope.branchId = identity.branchId;
     }
 
-    const token = identity?.id || (parsed.query.token as string) || (parsed.query.orderToken as string) || '';
+    const token = identity?.id || (parsed.query.orderToken as string) || '';
 
     const connInfo: ClientConnectionInfo = {
       scope,

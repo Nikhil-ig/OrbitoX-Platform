@@ -125,6 +125,7 @@ export interface ExternalProjectRecord {
   desiredRevisionNumber: number;
   syncStatus: 'IN_SYNC' | 'OUT_OF_SYNC' | 'RECONCILING';
   runtimeSession?: RuntimeSessionRecord;
+  projectKeyHash?: string;
   createdAt: string;
   updatedAt: string;
 }

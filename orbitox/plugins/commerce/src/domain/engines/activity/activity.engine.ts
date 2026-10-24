@@ -100,7 +100,7 @@ export class ActivityEngine {
 
   logEvent(payload: Omit<ActivityEvent, 'id' | 'timestamp'> & { timestamp?: string }): ActivityEvent {
     const event: ActivityEvent = {
-      id: `act_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+      id: `act_${globalThis.crypto.randomUUID()}`,
       timestamp: payload.timestamp || new Date().toISOString(),
       ...payload,
     };

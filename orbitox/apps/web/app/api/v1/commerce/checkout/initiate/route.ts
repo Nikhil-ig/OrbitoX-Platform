@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import * as crypto from 'crypto';
 import { withApiGuard, PlatformApiState } from '../../../_lib/api-guard';
 
 export const POST = withApiGuard(
@@ -18,8 +19,8 @@ export const POST = withApiGuard(
         );
       }
 
-      const orderId = `ord-${Date.now()}`;
-      const sessionToken = `tok_chk_${Math.random().toString(36).slice(2, 12)}`;
+      const orderId = `ord-${crypto.randomUUID()}`;
+      const sessionToken = `tok_chk_${crypto.randomBytes(16).toString('hex')}`;
 
       PlatformApiState.recordTelemetry({
         tenantId: ctx.tenantId,

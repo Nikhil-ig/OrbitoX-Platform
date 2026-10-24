@@ -18,7 +18,7 @@ export class MockPaymentProvider implements PaymentProvider {
     return {
       success: true,
       provider: 'mock',
-      providerOrderId: `mock_order_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
+      providerOrderId: `mock_order_${globalThis.crypto.randomUUID()}`,
       amount: request.amount,
       currency: request.currency,
       checkoutPayload: {

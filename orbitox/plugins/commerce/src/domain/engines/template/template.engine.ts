@@ -122,7 +122,7 @@ export class TemplateEngine {
         // Deep clone sections with new distinct IDs to prevent collision
         const clonedSections = tPage.sections.map((sec, idx) => ({
           ...JSON.parse(JSON.stringify(sec)),
-          id: `sec_${Date.now()}_${idx}_${Math.random().toString(36).substring(2, 6)}`,
+          id: `sec_${globalThis.crypto.randomUUID()}`,
           order: idx,
         }));
 

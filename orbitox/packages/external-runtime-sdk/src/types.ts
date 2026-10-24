@@ -123,6 +123,7 @@ export interface RuntimeRegistrationResponse {
   signedConfig: SignedRuntimeConfiguration;
   desiredRevision: number;
   platformTime: string;
+  projectKey?: string;
 }
 
 export interface RuntimeHeartbeatReport {

@@ -34,6 +34,7 @@ import {
   updateStaffMember,
   resetStaffLockout,
   REGISTERED_STATION_SECRETS,
+  resolveAllowedOrigin,
   DEV_TEST_STAFF_TOKENS,
   DEV_TEST_STATION_TOKENS,
   validateAndSanitizeCustomCss,
@@ -110,25 +111,36 @@ function parseBody(req: http.IncomingMessage): Promise<any> {
 }
 
 function sendJson(res: http.ServerResponse, statusCode: number, data: any) {
-  res.writeHead(statusCode, {
+  const allowedOrigin = resolveAllowedOrigin(res.req);
+  const headers: Record<string, string> = {
     'Content-Type': 'application/json',
-    'Access-Control-Allow-Origin': '*',
     'Access-Control-Allow-Methods': 'GET, POST, PUT, PATCH, DELETE, OPTIONS',
-    'Access-Control-Allow-Headers': 'Content-Type, Authorization, x-idempotency-key, x-session-id, x-order-token, x-request-id, x-correlation-id',
+    'Access-Control-Allow-Headers': 'Content-Type, Authorization, x-idempotency-key, x-session-id, x-order-token, x-request-id, x-correlation-id, x-station-token',
     'Access-Control-Expose-Headers': 'x-request-id',
     'Referrer-Policy': 'strict-origin-when-cross-origin',
     'X-Content-Type-Options': 'nosniff',
-  });
+  };
+  if (allowedOrigin) {
+    headers['Access-Control-Allow-Origin'] = allowedOrigin;
+    headers['Vary'] = 'Origin';
+    headers['Access-Control-Allow-Credentials'] = 'true';
+  }
+  res.writeHead(statusCode, headers);
   res.end(JSON.stringify(data));
 }
 
 function sendHtml(res: http.ServerResponse, html: string) {
-  res.writeHead(200, {
+  const allowedOrigin = resolveAllowedOrigin(res.req);
+  const headers: Record<string, string> = {
     'Content-Type': 'text/html; charset=utf-8',
-    'Access-Control-Allow-Origin': '*',
     'Referrer-Policy': 'strict-origin-when-cross-origin',
     'X-Content-Type-Options': 'nosniff',
-  });
+  };
+  if (allowedOrigin) {
+    headers['Access-Control-Allow-Origin'] = allowedOrigin;
+    headers['Vary'] = 'Origin';
+  }
+  res.writeHead(200, headers);
   res.end(html);
 }
 
@@ -221,7 +233,7 @@ function resolveRequestIdentity(req: http.IncomingMessage): RequestIdentity {
   const parsedUrl = url.parse(req.url || '', true);
 
   // Narrow query tokens for DINER capability only (staff tokens are strictly forbidden in query params)
-  const queryCapToken = (parsedUrl.query.capToken as string) || (parsedUrl.query.token as string) || '';
+  const queryCapToken = (parsedUrl.query.capToken as string) || '';
 
   const cookieHeader = (req.headers['cookie'] as string) || '';
   let cookieToken = '';
@@ -521,14 +533,39 @@ const server = http.createServer(async (req, res) => {
 
   // CORS Preflight
   if (method === 'OPTIONS') {
-    res.writeHead(204, {
-      'Access-Control-Allow-Origin': '*',
+    const allowedOrigin = resolveAllowedOrigin(req);
+    const headers: Record<string, string> = {
       'Access-Control-Allow-Methods': 'GET, POST, PUT, PATCH, DELETE, OPTIONS',
-      'Access-Control-Allow-Headers': 'Content-Type, Authorization, x-idempotency-key, x-session-id, x-order-token, x-request-id, x-correlation-id',
+      'Access-Control-Allow-Headers': 'Content-Type, Authorization, x-idempotency-key, x-session-id, x-order-token, x-request-id, x-correlation-id, x-station-token',
       'Access-Control-Expose-Headers': 'x-request-id',
-    });
+    };
+    if (allowedOrigin) {
+      headers['Access-Control-Allow-Origin'] = allowedOrigin;
+      headers['Vary'] = 'Origin';
+      headers['Access-Control-Allow-Credentials'] = 'true';
+    }
+    res.writeHead(204, headers);
     res.end();
     return;
+  }
+
+  // Gating for test and debug routes: require RESTAURANTOS_ENABLE_TEST_ROUTES === 'true'
+  const isTestOrDebugRoute =
+    pathname.startsWith('/api/test/') ||
+    pathname.startsWith('/debug/') ||
+    pathname === '/debug' ||
+    pathname.startsWith('/api/restaurant/test/') ||
+    pathname === '/api/restaurant/reseed';
+
+  if (isTestOrDebugRoute) {
+    if (process.env.RESTAURANTOS_ENABLE_TEST_ROUTES !== 'true') {
+      sendJson(res, 404, {
+        error: 'NOT_FOUND',
+        code: 'NOT_FOUND',
+        message: 'Endpoint not found or test routes disabled.',
+      });
+      return;
+    }
   }
 
   // Dev/Test helper endpoint for injecting tasks in test environments
@@ -1696,7 +1733,7 @@ const server = http.createServer(async (req, res) => {
 
       // Route each item to Kitchen Task Queue in Persistent Store
       const newTask: KitchenTask = {
-        id: `task_${Date.now()}_${Math.floor(Math.random() * 1000)}`,
+        id: `task_${crypto.randomUUID()}`,
         orderId,
         tableNumber,
         branchId: body.branchId || targetTableRecord?.branchId || currentBranch.id,
@@ -3281,7 +3318,7 @@ const server = http.createServer(async (req, res) => {
         return;
       }
       const floorRecord = {
-        id: body.id || `floor_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+        id: body.id || `floor_${crypto.randomUUID()}`,
         name: body.name || 'New Service Area',
         branchId: body.branchId || currentBranch.id,
         section: body.section || 'MAIN',
@@ -4329,7 +4366,7 @@ const server = http.createServer(async (req, res) => {
     const authHeader = (req.headers['authorization'] as string) || '';
     const bearerToken = authHeader.startsWith('Bearer ') ? authHeader.slice(7).trim() : undefined;
     const headerToken = (req.headers['x-order-token'] as string) || bearerToken;
-    const queryToken = (parsedUrl.query.token as string) || (parsedUrl.query.orderToken as string);
+    const queryToken = (parsedUrl.query.orderToken as string) || '';
     const reqToken = headerToken || queryToken;
 
     const identity = resolveRequestIdentity(req);
@@ -4440,7 +4477,7 @@ const server = http.createServer(async (req, res) => {
     const authHeader = (req.headers['authorization'] as string) || '';
     const bearerToken = authHeader.startsWith('Bearer ') ? authHeader.slice(7).trim() : undefined;
     const headerToken = (req.headers['x-order-token'] as string) || bearerToken;
-    const queryToken = (parsedUrl.query.token as string) || (parsedUrl.query.orderToken as string);
+    const queryToken = (parsedUrl.query.orderToken as string) || '';
     const reqToken = headerToken || queryToken;
 
     const identity = resolveRequestIdentity(req);

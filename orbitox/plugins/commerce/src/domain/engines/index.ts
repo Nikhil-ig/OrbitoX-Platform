@@ -24,6 +24,8 @@ export * from './seo/seo.engine';
 export * from './ai/ai-autopilot.engine';
 export * from './component/custom-component.engine';
 export * from './logic/flow.engine';
+export * from './logic/safe-expression';
+export * from './logic/safe-fetch';
 export * from './template/website-templates.presets';
 export * from './template/template.engine';
 

@@ -125,7 +125,9 @@ const orbitox = new ControlClient({
   },
 });
 
-// Registers with the control plane and starts automatic heartbeats
+// Registers with the control plane and starts automatic heartbeats.
+// On initial registration, the control plane issues a project-scoped key
+// which the SDK automatically stores and uses for all subsequent operations.
 await orbitox.registerRuntime();`;
 
   const copyEnv = () => {

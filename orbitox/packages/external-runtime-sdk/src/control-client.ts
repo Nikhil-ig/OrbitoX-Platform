@@ -25,6 +25,7 @@ import {
   HealthClient,
   AuditClient,
   EventClient,
+  ClientConfig,
 } from './clients';
 
 export interface ControlClientOptions {
@@ -40,7 +41,7 @@ export class ControlClient {
   public readonly manifest: OrbitoxProjectManifest;
   public readonly controlPlaneUrl: string;
   public readonly runtimePort: number;
-  public readonly apiKey?: string;
+  public apiKey?: string;
 
   public readonly project: ProjectClient;
   public readonly config: ConfigurationClient;
@@ -52,6 +53,7 @@ export class ControlClient {
   public readonly audit: AuditClient;
   public readonly events: EventClient;
 
+  private clientConfig: ClientConfig;
   private controlSessionId: string | null = null;
   private currentConfig: SignedRuntimeConfiguration | null = null;
   private appliedRevision = 1;
@@ -69,20 +71,20 @@ export class ControlClient {
     this.onConfigUpdated = options.onConfigUpdated;
     this.onCommandReceived = options.onCommandReceived;
 
-    const clientConfig = {
+    this.clientConfig = {
       controlPlaneUrl: this.controlPlaneUrl,
       projectId: this.manifest.projectId,
       apiKey: this.apiKey,
     };
 
-    this.project = new ProjectClient(clientConfig);
-    this.config = new ConfigurationClient(clientConfig);
-    this.features = new FeatureClient(clientConfig);
-    this.entitlements = new EntitlementClient(clientConfig);
-    this.apis = new ApiRegistryClient(clientConfig);
-    this.runtime = new RuntimeClient(clientConfig);
-    this.health = new HealthClient(clientConfig);
-    this.audit = new AuditClient(clientConfig);
+    this.project = new ProjectClient(this.clientConfig);
+    this.config = new ConfigurationClient(this.clientConfig);
+    this.features = new FeatureClient(this.clientConfig);
+    this.entitlements = new EntitlementClient(this.clientConfig);
+    this.apis = new ApiRegistryClient(this.clientConfig);
+    this.runtime = new RuntimeClient(this.clientConfig);
+    this.health = new HealthClient(this.clientConfig);
+    this.audit = new AuditClient(this.clientConfig);
     this.events = new EventClient();
   }
 
@@ -127,6 +129,11 @@ export class ControlClient {
     this.currentConfig = data.signedConfig;
     this.desiredRevision = data.desiredRevision || 1;
     this.appliedRevision = this.desiredRevision;
+
+    if (data.projectKey) {
+      this.apiKey = data.projectKey;
+      this.clientConfig.apiKey = data.projectKey;
+    }
 
     if (this.currentConfig) {
       this.features.setFeatures(this.currentConfig.features);
@@ -277,5 +284,9 @@ export class ControlClient {
 
   getSessionId(): string | null {
     return this.controlSessionId;
+  }
+
+  getProjectKey(): string | undefined {
+    return this.apiKey;
   }
 }

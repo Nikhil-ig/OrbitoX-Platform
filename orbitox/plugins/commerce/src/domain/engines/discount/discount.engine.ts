@@ -59,7 +59,7 @@ export class DiscountEngine {
     const now = new Date().toISOString();
 
     const discount: DiscountCoupon = {
-      id: `disc_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+      id: `disc_${globalThis.crypto.randomUUID()}`,
       storeId,
       code,
       type: payload.type,

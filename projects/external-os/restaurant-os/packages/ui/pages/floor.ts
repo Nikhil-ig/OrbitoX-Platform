@@ -1351,7 +1351,7 @@ export function renderFloorStudio(
         shape: 'rectangle',
         status: 'AVAILABLE',
         activeBillMinor: 0,
-        locator: 'loc_' + Math.random().toString(36).substring(2, 8)
+        locator: 'loc_' + (window.crypto?.randomUUID ? window.crypto.randomUUID().slice(0, 8) : Date.now().toString(36))
       };
       tablesData.push(newT);
       location.reload();

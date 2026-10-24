@@ -1,3 +1,4 @@
+import * as crypto from 'crypto';
 import { Injectable, Logger } from '@nestjs/common';
 import { Context, CreateContextPayload, PlatformContextType } from './types';
 
@@ -55,7 +56,7 @@ export class ContextService {
       throw new Error(`Context with slug '${payload.slug}' already exists under parent '${parentId}'`);
     }
 
-    const id = `ctx_${Date.now()}_${Math.floor(Math.random() * 1000)}`;
+    const id = `ctx_${crypto.randomUUID()}`;
     let rootId = 'platform_root';
     let path = id;
     let depth = 0;

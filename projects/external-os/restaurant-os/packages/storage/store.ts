@@ -13,6 +13,7 @@
 
 import * as fs from 'fs';
 import * as path from 'path';
+import * as crypto from 'crypto';
 import {
   BranchRecord,
   FloorRecord,
@@ -505,7 +506,7 @@ export class RestaurantRuntimeStore {
   }
 
   private flushSync(): void {
-    const uniqueSuffix = `${Date.now()}_${process.pid}_${Math.random().toString(36).slice(2)}`;
+    const uniqueSuffix = `${Date.now()}_${process.pid}_${crypto.randomBytes(8).toString('hex')}`;
     const tmpPath = `${this.filePath}.tmp.${uniqueSuffix}`;
     const bakPath = `${this.filePath}.bak`;
     this.data.lastUpdated = new Date().toISOString();
@@ -799,7 +800,7 @@ export class RestaurantRuntimeStore {
       return { success: false, error: `Table ${tableId} not found` };
     }
     const oldLocator = table.locator;
-    const newLocator = `LOC${table.id}_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 6)}`;
+    const newLocator = `LOC${table.id}_${Date.now().toString(36)}_${crypto.randomBytes(4).toString('hex')}`;
     table.locator = newLocator;
 
     this.appendEvent(
@@ -835,7 +836,7 @@ export class RestaurantRuntimeStore {
     this.eventSequence += 1;
     this.data.lastEventSequence = this.eventSequence;
     const event: DomainEvent<T> = {
-      id: `evt_${Date.now()}_${Math.floor(Math.random() * 10000)}`,
+      id: `evt_${crypto.randomUUID()}`,
       sequence: this.eventSequence,
       type,
       timestamp: new Date().toISOString(),
@@ -1664,7 +1665,7 @@ export class RestaurantRuntimeStore {
       const nextSeq = this.eventSequence + 1;
       const isEmergency = finalSettlement?.method === 'EMERGENCY_OVERRIDE';
       const event: DomainEvent = {
-        id: `evt_${Date.now()}_${Math.floor(Math.random() * 10000)}`,
+        id: `evt_${crypto.randomUUID()}`,
         sequence: nextSeq,
         type: isEmergency ? 'session.emergency_closed' : 'session.closed',
         timestamp: new Date().toISOString(),
@@ -2934,7 +2935,7 @@ export class RestaurantRuntimeStore {
         options: (grp.options || []).map((opt, oIdx) => {
           const deltaMinor = Math.round(Math.max(0, parseInt(String(opt.priceDeltaMinor || 0), 10) || 0));
           return {
-            id: opt.id || `opt_${gIdx}_${oIdx}_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 7)}`,
+            id: opt.id || `opt_${gIdx}_${oIdx}_${crypto.randomUUID().slice(0, 8)}`,
             name: (opt.name || `Option ${oIdx + 1}`).trim(),
             priceDeltaMinor: deltaMinor,
             formattedPriceDelta: deltaMinor > 0 ? `+₹${(deltaMinor / 100).toFixed(2)}` : undefined,

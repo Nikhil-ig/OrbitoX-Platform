@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import * as crypto from 'crypto';
 import { withApiGuard, PlatformApiState } from '../../_lib/api-guard';
 
 // In-memory catalog store
@@ -105,9 +106,9 @@ export const POST = withApiGuard(
       }
 
       const newProduct = {
-        id: `prod-${Date.now()}`,
+        id: `prod-${crypto.randomUUID()}`,
         name: body.name,
-        sku: body.sku || `AUR-${Math.floor(100 + Math.random() * 900)}`,
+        sku: body.sku || `AUR-${crypto.randomInt(100, 1000)}`,
         price: Number(body.price),
         currency: body.currency || 'USD',
         inventory: Number(body.inventory) || 10,

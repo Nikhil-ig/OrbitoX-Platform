@@ -10,6 +10,7 @@ import {
   SectionLogicConfig,
   LogicEvaluationContext,
 } from '../../types/logic.types';
+import { evaluateSafeExpression } from './safe-expression';
 
 export class FlowEngine {
   /**
@@ -226,11 +227,8 @@ export class FlowEngine {
       case 'condition:custom-expression': {
         const expr = config.expression || 'true';
         try {
-          const fn = new Function(
-            'context',
-            `with(context || {}) { return Boolean(${expr}); }`
-          );
-          const passed = Boolean(fn(context));
+          const evalResult = evaluateSafeExpression(expr, context || {});
+          const passed = Boolean(evalResult);
           return {
             passed,
             message: passed ? `Expression (${expr}) evaluated to true` : `Expression (${expr}) evaluated to false`,

@@ -1,5 +1,6 @@
 import * as fs from 'fs';
 import * as path from 'path';
+import * as crypto from 'crypto';
 import {
   ControlClient,
   OrbitoxProjectManifest,
@@ -44,7 +45,7 @@ export class RestaurantRuntimeController {
         if (this.receivedCommands.length > 50) this.receivedCommands.pop();
 
         if (cmd.action === 'rotate_qr_locator') {
-          const newLocator = Math.random().toString(36).substring(2, 10).toUpperCase();
+          const newLocator = crypto.randomBytes(4).toString('hex').toUpperCase();
           return { success: true, result: { table: cmd.parameters?.table || 'T-14', newLocator } };
         }
         if (cmd.action === 'run_health_check') {

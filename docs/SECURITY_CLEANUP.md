@@ -17,7 +17,7 @@ Assume each of these is public. Replace them, do not just delete them.
 | JWT fallback `default_secret` | `auth.module.ts` | Removed. Set `JWT_PRIVATE_KEY` / `JWT_PUBLIC_KEY` (RS256 pair) in production. |
 | Seeded sample API keys | `apps/web/app/admin/data/mock-data.ts` | Sample data only. Never use these values anywhere real. |
 | Database password `password123` | old `docker-compose*.yml` | Now `POSTGRES_PASSWORD` from `.env`. Change it on any database that ever used the old value. |
-| Kitchen station secrets (`stn_sec_*`) | `REGISTERED_STATION_SECRETS` in RestaurantOS `security.ts` | Still hardcoded in source. Move to config and rotate (open item). |
+| Kitchen station secrets (`stn_sec_*`) | `REGISTERED_STATION_SECRETS` in RestaurantOS `security.ts` | Hardcoded secrets removed. Dynamically loaded from `RESTAURANT_STATION_SECRETS` or generated to `.station_secrets.json` (mode 0600). |
 
 Generate fresh values with `node scripts/init-env.mjs` (or `openssl rand -hex 32`).
 
@@ -61,15 +61,45 @@ Afterwards:
 
 These are known and need their own work. They are listed so nothing is assumed safe:
 
-- The legacy admin API layer (`apps/web/app/api/v1/_lib/api-guard.ts`) still runs on sample
-  data and its guard does not enforce authentication. The control plane is now protected at
-  the edge by `middleware.ts`, which covers `/admin`, `/platform` and the management APIs.
-  Other demo surfaces (`/hms`, `/hrms`, `/crm`, `/finance`, `/commerce`, `/store`) are
-  not behind the admin token.
-- The runtime token is shared by all projects. A per-project key would stop one compromised
-  runtime from acting as another.
-- Tenant-authored expressions run through `new Function` in the commerce plugin
-  (`section-logic.engine.ts`, `flow.engine.ts`), and URL fetchers have no SSRF protection.
-- `Math.random()` is still used for IDs and rotated API keys in several API routes.
-- RestaurantOS: `Access-Control-Allow-Origin: *`, `?token=` in query strings, and test
-  endpoints gated only by `NODE_ENV`.
+- [x] **Remaining demo surfaces locked down (RESOLVED)**: All demo and plugin surfaces
+  (`/hms`, `/hrms`, `/crm`, `/finance`, `/commerce`, `/store`, and their `/api/v1/*` endpoints)
+  are now protected at the edge by `middleware.ts`, requiring the admin token like `/admin`
+  and `/platform`. Anonymous callers receive 401; authenticated admin callers receive 200.
+- [x] **Per-project runtime keys (RESOLVED)**: On initial `REGISTER` with the shared bootstrap
+  `ORBITOX_RUNTIME_TOKEN`, the control plane generates and returns a scoped `orb_proj_*` key,
+  persisting only its SHA-256 hash. Registered projects must present their own scoped key for
+  subsequent bridge, heartbeat, configuration, and command operations; cross-project key usage
+  and shared token reuse are rejected with 401.
+- [x] **Safe expression evaluator and SSRF protection (RESOLVED)**:
+  Replaced all usage of `new Function` in the commerce plugin (`section-logic.engine.ts`, `flow.engine.ts`)
+  with `evaluateSafeExpression` and `validateSafeExpression`, powered by an AST recursive-descent parser
+  and tree-walk evaluator (`safe-expression.ts`). It enforces strict operator whitelisting, explicit
+  rejection of dangerous identifiers/properties (`process`, `require`, `eval`, `Function`, `constructor`,
+  `__proto__`, etc.), recursion depth limits (30), and step count limits (1000). URL fetchers are
+  guarded with `safeFetch` (`safe-fetch.ts`) featuring SSRF protection: protocol whitelist (`http:`, `https:`),
+  strict IP address blocking (private IPv4 `10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`, loopback
+  `127.0.0.0/8`, link-local/cloud metadata `169.254.0.0/16`, multicast/reserved, and IPv6 loopback/ULA/link-local/mapped),
+  pre-flight DNS lookup, and manual redirect hop tracking with cap (max 3). Verified by 11 unit tests in
+  `safe-logic.test.ts`.
+- [x] **Secure ID and key generation (RESOLVED)**:
+  Replaced all insecure `Math.random()` invocations across API route handlers (`apps/web/app/api`),
+  core packages (`@orbitox/core`, `@orbitox-io/plugin-engine`, `@orbitox/runtime`), plugins
+  (`commerce`, `pos`, `crm`, `hrms`, `hms`, `finance`, `school`, `inventory`), and external runtimes
+  (`restaurant-os`). Rotated API keys, tokens, sessions, and credentials now use cryptographically secure
+  `crypto.randomBytes()`; unique identifiers utilize standard UUIDv4 via `crypto.randomUUID()`;
+  and integer codes/numbers use `crypto.randomInt()`.
+- [x] **Harden RestaurantOS (RESOLVED)**:
+  - **CORS allowlist**: Replaced `Access-Control-Allow-Origin: *` with `resolveAllowedOrigin(req)`
+    which checks `process.env.RESTAURANTOS_ALLOWED_ORIGINS` (comma-separated list) and defaults safely
+    to localhost and loopback interfaces. Unmatched origins receive no CORS header, blocking unauthorized cross-origin requests.
+  - **Removed `?token=` query strings**: Eliminated accepting sensitive authentication tokens via
+    URL query parameters (`?token=`), strictly enforcing the standard `Authorization: Bearer <token>`
+    header across API endpoints and event streaming gateways.
+  - **Dynamic station secrets**: Removed static `stn_sec_*` literals from `REGISTERED_STATION_SECRETS`
+    and source code. Station credentials are dynamically loaded from `RESTAURANT_STATION_SECRETS`
+    or automatically generated to `.station_secrets.json` with restricted `0600` file permissions.
+  - **Gated test endpoints**: Test and debug endpoints (`/api/test/*`, `/debug/*`, `/api/restaurant/test/*`,
+    `/api/restaurant/reseed`) are strictly gated behind `process.env.RESTAURANTOS_ENABLE_TEST_ROUTES === 'true'`.
+    When unset or false, all test endpoints return HTTP 404.
+  - Verified by 12 automated acceptance tests in `projects/external-os/restaurant-os/scripts/test-hardened-security.js`.
+

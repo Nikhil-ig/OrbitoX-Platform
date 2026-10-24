@@ -24,7 +24,7 @@ export class CartEngine {
 
     const now = new Date().toISOString();
     const newCart: Cart = {
-      id: `cart_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
+      id: `cart_${globalThis.crypto.randomUUID()}`,
       storeId,
       sessionId,
       customerId,
@@ -83,7 +83,7 @@ export class CartEngine {
       cart.items[existingIndex]!.quantity += payload.quantity;
     } else {
       const newItem: CartItem = {
-        id: `line_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+        id: `line_${globalThis.crypto.randomUUID()}`,
         productId: payload.productId,
         variantId: payload.variantId,
         title: product.title,

@@ -18,7 +18,7 @@ export class RazorpayProvider implements PaymentProvider {
     const keyId = config.credentials.apiKey || process.env.RAZORPAY_KEY_ID;
     
     // In production, instantiate Razorpay SDK or call REST API
-    const providerOrderId = `order_rzp_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
+    const providerOrderId = `order_rzp_${globalThis.crypto.randomUUID().slice(0, 16)}`;
 
     return {
       success: true,

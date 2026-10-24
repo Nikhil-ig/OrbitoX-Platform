@@ -1485,7 +1485,7 @@ export function renderSwiftBitePage(
         if (window.crypto && typeof window.crypto.randomUUID === 'function') {
           pendingSbOrderAttemptKey = 'idemp_sb_' + window.crypto.randomUUID();
         } else {
-          pendingSbOrderAttemptKey = 'idemp_sb_' + Date.now().toString(36) + '_' + Math.random().toString(36).substring(2, 10);
+          pendingSbOrderAttemptKey = 'idemp_sb_' + Date.now().toString(36) + '_' + Array.from(window.crypto.getRandomValues(new Uint8Array(6)), b => b.toString(16).padStart(2, '0')).join('');
         }
       }
       return pendingSbOrderAttemptKey;

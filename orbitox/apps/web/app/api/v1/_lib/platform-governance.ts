@@ -181,7 +181,7 @@ export class ApprovalEngine {
     }));
 
     const request: ApprovalRequest = {
-      id: `app_req_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
+      id: `app_req_${crypto.randomUUID()}`,
       contextId,
       entityType,
       entityId,

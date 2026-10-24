@@ -29,7 +29,7 @@ export class ProductEngine {
     const slug = name.toLowerCase().trim().replace(/[^a-z0-9-]/g, '-');
     const now = new Date().toISOString();
     const category: Category = {
-      id: `cat_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+      id: `cat_${globalThis.crypto.randomUUID()}`,
       storeId,
       name: name.trim(),
       slug,
@@ -79,7 +79,7 @@ export class ProductEngine {
     const slug = title.toLowerCase().trim().replace(/[^a-z0-9-]/g, '-');
     const now = new Date().toISOString();
     const collection: Collection = {
-      id: `col_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+      id: `col_${globalThis.crypto.randomUUID()}`,
       storeId,
       title: title.trim(),
       slug,
@@ -135,7 +135,7 @@ export class ProductEngine {
 
     const slug = payload.title.toLowerCase().trim().replace(/[^a-z0-9-]/g, '-');
     const now = new Date().toISOString();
-    const productId = `prod_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+    const productId = `prod_${globalThis.crypto.randomUUID()}`;
 
     // Generate variants if options exist
     let variants: ProductVariant[] = [];
@@ -166,7 +166,7 @@ export class ProductEngine {
       price: payload.price,
       compareAtPrice: payload.compareAtPrice,
       costPrice: payload.costPrice,
-      sku: payload.sku || `SKU-${Math.floor(10000 + Math.random() * 90000)}`,
+      sku: payload.sku || `SKU-${globalThis.crypto.randomUUID().slice(0, 8).toUpperCase()}`,
       status: 'active',
       categoryId: payload.categoryId,
       categoryName: category?.name,
@@ -227,7 +227,7 @@ export class ProductEngine {
       const skuSuffix = titleParts.map((t) => t.toUpperCase().replace(/[^A-Z0-9]/g, '')).join('-');
 
       return {
-        id: `var_${productId}_${idx}_${Math.random().toString(36).substring(2, 6)}`,
+        id: `var_${productId}_${idx}_${globalThis.crypto.randomUUID().slice(0, 8)}`,
         productId,
         title,
         sku: `${baseSku}-${skuSuffix}`,
@@ -442,7 +442,7 @@ export class ProductEngine {
         const skuSuffix = `${size.replace(/\s+/g, '')}-${color.replace(/\s+/g, '')}`.toUpperCase();
 
         variants.push({
-          id: `var_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+          id: `var_${globalThis.crypto.randomUUID()}`,
           productId: prodId,
           title,
           sku: `SKU-${skuSuffix}`,

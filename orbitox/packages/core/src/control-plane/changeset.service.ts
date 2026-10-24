@@ -1,3 +1,4 @@
+import * as crypto from 'crypto';
 import { Logger } from './logger';
 import { CommandBusService } from './command-bus.service';
 import { ResourceGraphService } from './resource-graph.service';
@@ -43,7 +44,7 @@ export class ChangeSetService {
     steps: ChangeSetStep[]
   ): ChangeSetPlan {
     return this.createChangeSet({
-      changeSetId: `cs_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
+      changeSetId: `cs_${crypto.randomUUID()}`,
       name,
       description,
       steps,

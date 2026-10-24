@@ -1,3 +1,4 @@
+import * as crypto from 'crypto';
 import { Invoice, InvoiceStatus, CreateInvoicePayload, FinanceFilter } from './types';
 import { FinanceStateMachine } from './finance-state-machine';
 
@@ -27,8 +28,8 @@ export class HeadlessFinanceService {
     }));
 
     const newInvoice: Invoice = {
-      id: `inv_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
-      invoiceNumber: `INV-${Math.floor(10000 + Math.random() * 90000)}`,
+      id: `inv_${crypto.randomUUID()}`,
+      invoiceNumber: `INV-${crypto.randomInt(10000, 100000)}`,
       customerName: payload.customerName.trim(),
       customerEmail: payload.customerEmail.trim(),
       items: formattedItems,

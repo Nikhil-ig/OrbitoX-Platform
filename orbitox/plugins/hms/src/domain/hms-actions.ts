@@ -1,3 +1,4 @@
+import * as crypto from 'crypto';
 import { Patient, PatientStatus, RegisterPatientPayload, HmsFilter } from './types';
 import { HmsStateMachine } from './hms-state-machine';
 
@@ -17,8 +18,8 @@ export class HeadlessHmsService {
     }
 
     const newPatient: Patient = {
-      id: `pat_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
-      mrn: `MRN-${Math.floor(100000 + Math.random() * 900000)}`,
+      id: `pat_${crypto.randomUUID()}`,
+      mrn: `MRN-${crypto.randomInt(100000, 1000000)}`,
       name: payload.name.trim(),
       age: payload.age,
       gender: payload.gender,
