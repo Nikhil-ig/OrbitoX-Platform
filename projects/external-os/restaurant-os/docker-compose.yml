@@ -4,15 +4,17 @@ services:
     container_name: restaurant-os-postgres
     restart: unless-stopped
     environment:
-      POSTGRES_USER: restaurantos
-      POSTGRES_PASSWORD: restaurantos_pilot_secret
-      POSTGRES_DB: restaurant_os
+      POSTGRES_USER: ${POSTGRES_USER:-restaurantos_admin}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-CHANGE_ME_ROOT_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB:-restaurant_os}
+      APP_DB_PASSWORD: ${APP_DB_PASSWORD:-CHANGE_ME_APP_PASSWORD}
     ports:
       - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
+      - ./docker/init-roles.sh:/docker-entrypoint-initdb.d/01-init-roles.sh:ro
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U restaurantos -d restaurant_os"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-restaurantos_admin} -d ${POSTGRES_DB:-restaurant_os}"]
       interval: 5s
       timeout: 5s
       retries: 5
@@ -30,17 +32,17 @@ services:
       - "4010:4010"
     environment:
       PORT: "4010"
-      NODE_ENV: "production"
-      DATABASE_URL: "postgresql://restaurantos:restaurantos_pilot_secret@postgres:5432/restaurant_os?schema=public"
-      RESTAURANT_GSTIN: "27AAPFU0939F1ZV"
-      RAZORPAY_KEY_ID: "${RAZORPAY_KEY_ID:-rzp_test_pilot_bistro}"
-      RAZORPAY_KEY_SECRET: "${RAZORPAY_KEY_SECRET:-rzp_test_secret_pilot_bistro}"
-      RAZORPAY_WEBHOOK_SECRET: "${RAZORPAY_WEBHOOK_SECRET:-rzp_test_webhook_pilot}"
-      STAFF_AUTH_SECRET: "${STAFF_AUTH_SECRET:-pilot_bistro_staff_secret_998877}"
+      NODE_ENV: "${NODE_ENV:-production}"
+      DATABASE_URL: "postgresql://restaurantos_app:${APP_DB_PASSWORD:-CHANGE_ME_APP_PASSWORD}@postgres:5432/${POSTGRES_DB:-restaurant_os}?schema=public"
+      MIGRATION_DATABASE_URL: "postgresql://${POSTGRES_USER:-restaurantos_admin}:${POSTGRES_PASSWORD:-CHANGE_ME_ROOT_PASSWORD}@postgres:5432/${POSTGRES_DB:-restaurant_os}?schema=public"
+      RESTAURANT_GSTIN: "${RESTAURANT_GSTIN:-27AAPFU0939F1ZV}"
+      RAZORPAY_KEY_ID: "${RAZORPAY_KEY_ID:-rzp_test_change_me}"
+      RAZORPAY_KEY_SECRET: "${RAZORPAY_KEY_SECRET:-CHANGE_ME_KEY_SECRET}"
+      RAZORPAY_WEBHOOK_SECRET: "${RAZORPAY_WEBHOOK_SECRET:-CHANGE_ME_WEBHOOK_SECRET}"
+      STAFF_AUTH_SECRET: "${STAFF_AUTH_SECRET:-CHANGE_ME_STAFF_AUTH_SECRET_32_CHARS_MIN}"
       ORBITOX_CONTROL_PLANE_URL: "${ORBITOX_CONTROL_PLANE_URL:-http://host.docker.internal:3005}"
-      ORBITOX_RUNTIME_TOKEN: "${ORBITOX_RUNTIME_TOKEN:-pilot-runtime-token}"
-      ORBITOX_PROJECT_ID: "restaurant-os-pilot"
-      DEFAULT_TENANT_ID: "tenant_pilot_bistro"
+      ORBITOX_RUNTIME_TOKEN: "${ORBITOX_RUNTIME_TOKEN:-CHANGE_ME_RUNTIME_TOKEN}"
+      ORBITOX_PROJECT_ID: "restaurant-os-fleet"
     volumes:
       - restaurantos_data:/app/data
 
