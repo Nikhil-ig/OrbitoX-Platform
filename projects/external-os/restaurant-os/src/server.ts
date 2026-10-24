@@ -12,6 +12,8 @@
 import * as http from 'http';
 import * as url from 'url';
 import * as crypto from 'crypto';
+import * as fs from 'fs';
+import * as path from 'path';
 import {
   MenuItem,
   KitchenTask,
@@ -47,8 +49,11 @@ import {
   renderTenantNotFoundPage,
   TenantProvisioningService,
   CustomDomainService,
+  OwnerSelfService,
+  OnboardingStepKey,
   verifyPlatformAuth,
   validateTenantSlug,
+  generateSeats,
 } from '../packages/domain';
 import {
   buildGSTInvoice,
@@ -102,6 +107,7 @@ try {
 
 const provisioningService = new TenantProvisioningService(postgresStore ? postgresStore.prisma : undefined);
 const customDomainService = new CustomDomainService(postgresStore ? postgresStore.prisma : undefined);
+const ownerSelfService = new OwnerSelfService(postgresStore ? postgresStore.prisma : undefined);
 
 // Startup security signing secret verification
 try {
@@ -140,16 +146,73 @@ function parseBody(req: http.IncomingMessage): Promise<any> {
   });
 }
 
+function parseBuffer(req: http.IncomingMessage): Promise<Buffer> {
+  return new Promise((resolve, reject) => {
+    const chunks: Buffer[] = [];
+    req.on('data', (chunk) => {
+      chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+    });
+    req.on('end', () => {
+      resolve(Buffer.concat(chunks));
+    });
+    req.on('error', reject);
+  });
+}
+
+async function extractImageBuffer(req: http.IncomingMessage): Promise<{ buffer: Buffer; filename: string }> {
+  const contentType = (req.headers['content-type'] || '').toLowerCase();
+
+  if (contentType.includes('application/json')) {
+    const body = await parseBody(req);
+    const dataStr = body.image || body.data || body.file || '';
+    if (!dataStr) {
+      throw new Error('MISSING_IMAGE_DATA: JSON payload must contain base64 string in image, data, or file field.');
+    }
+    const cleanBase64 = dataStr.replace(/^data:[a-zA-Z0-9/+-]+;base64,/, '');
+    const buffer = Buffer.from(cleanBase64, 'base64');
+    return { buffer, filename: body.filename || 'upload.png' };
+  }
+
+  const raw = await parseBuffer(req);
+  if (contentType.includes('multipart/form-data')) {
+    const boundaryMatch = contentType.match(/boundary=([^;]+)/i);
+    const boundary = boundaryMatch ? boundaryMatch[1].trim().replace(/^"|"$/g, '') : null;
+    if (boundary) {
+      const boundaryDelimiter = `--${boundary}`;
+      const str = raw.toString('binary');
+      const startIdx = str.indexOf(boundaryDelimiter);
+      if (startIdx !== -1) {
+        const headerEnd = str.indexOf('\r\n\r\n', startIdx);
+        if (headerEnd !== -1) {
+          const headersText = str.slice(startIdx, headerEnd);
+          const nextBoundary = str.indexOf(boundaryDelimiter, headerEnd + 4);
+          const endIdx = nextBoundary !== -1 ? nextBoundary - 2 : str.length;
+          const fileBinary = str.slice(headerEnd + 4, endIdx);
+          const buffer = Buffer.from(fileBinary, 'binary');
+          const fnMatch = headersText.match(/filename="([^"]+)"/i);
+          const filename = fnMatch ? fnMatch[1] : 'upload.png';
+          return { buffer, filename };
+        }
+      }
+    }
+  }
+
+  return { buffer: raw, filename: 'upload.png' };
+}
+
 function sendJson(res: http.ServerResponse, statusCode: number, data: any) {
   const allowedOrigin = resolveAllowedOrigin(res.req);
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
     'Access-Control-Allow-Methods': 'GET, POST, PUT, PATCH, DELETE, OPTIONS',
     'Access-Control-Allow-Headers': 'Content-Type, Authorization, x-idempotency-key, x-session-id, x-order-token, x-request-id, x-correlation-id, x-station-token, x-tenant-id, x-razorpay-signature, x-razorpay-event-id',
-    'Access-Control-Expose-Headers': 'x-request-id',
+    'Access-Control-Expose-Headers': 'x-request-id, x-quota-warning',
     'Referrer-Policy': 'strict-origin-when-cross-origin',
     'X-Content-Type-Options': 'nosniff',
   };
+  if (res.hasHeader('x-quota-warning')) {
+    headers['x-quota-warning'] = String(res.getHeader('x-quota-warning'));
+  }
   if (allowedOrigin) {
     headers['Access-Control-Allow-Origin'] = allowedOrigin;
     headers['Vary'] = 'Origin';
@@ -522,6 +585,40 @@ const server = http.createServer(async (req, res) => {
       uptime: process.uptime(),
       timestamp: new Date().toISOString(),
     });
+    return;
+  }
+
+  // Static Tenant Uploads Serving (with strict path-traversal protection and security headers)
+  if (pathname.startsWith('/uploads/') && method === 'GET') {
+    const safeUploadsRoot = path.resolve(
+      process.env.RESTAURANT_STORE_PATH
+        ? path.join(path.dirname(process.env.RESTAURANT_STORE_PATH), 'uploads')
+        : path.join(process.cwd(), 'data', 'uploads')
+    );
+    const relativeSubpath = pathname.replace(/^\/uploads\/?/, '');
+    const targetPath = path.resolve(safeUploadsRoot, relativeSubpath);
+
+    if (!targetPath.startsWith(safeUploadsRoot) || !fs.existsSync(targetPath) || fs.statSync(targetPath).isDirectory()) {
+      sendJson(res, 404, { error: 'NOT_FOUND', code: 'ASSET_NOT_FOUND', message: 'Requested upload asset not found.' });
+      return;
+    }
+
+    const ext = path.extname(targetPath).toLowerCase();
+    const mimeMap: Record<string, string> = {
+      '.png': 'image/png',
+      '.jpg': 'image/jpeg',
+      '.jpeg': 'image/jpeg',
+      '.webp': 'image/webp',
+      '.svg': 'image/svg+xml',
+    };
+    const contentType = mimeMap[ext] || 'application/octet-stream';
+
+    res.writeHead(200, {
+      'Content-Type': contentType,
+      'X-Content-Type-Options': 'nosniff',
+      'Cache-Control': 'public, max-age=86400, immutable',
+    });
+    fs.createReadStream(targetPath).pipe(res);
     return;
   }
 
@@ -1945,6 +2042,26 @@ const server = http.createServer(async (req, res) => {
 
     const orderId = `ord_${Date.now()}`;
     const tableNumber = body.tableNumber || 'T-14';
+
+    // Authoritative Plan Limits & Quota Enforcement
+    try {
+      const quotaCheck = await ownerSelfService.checkPlanLimits(tenantContext.tenantId, 'ORDERS');
+      if (!quotaCheck.allowed) {
+        sendJson(res, 403, {
+          error: 'PLAN_LIMIT_EXCEEDED',
+          code: 'PLAN_LIMIT_EXCEEDED',
+          message: quotaCheck.error || 'Monthly order limit reached for your subscription plan.',
+          quota: quotaCheck,
+        });
+        return;
+      }
+      if (quotaCheck.warning) {
+        res.setHeader('x-quota-warning', `${quotaCheck.percentage}%`);
+      }
+    } catch (quotaErr: any) {
+      // Allow fallback if running in-memory without database
+    }
+
     const normIdTable = (identity.tableNumber || '').replace(/^T-/, '');
     const normOrderTable = (tableNumber || '').replace(/^T-/, '');
 
@@ -3717,6 +3834,68 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  // 14c. Table Creation with Quota Enforcement (POST /api/restaurant/tables)
+  if (pathname === '/api/restaurant/tables' && method === 'POST') {
+    if (requestIdentity.type === 'INVALID_CREDENTIAL' || requestIdentity.type === 'REVOKED_CAPABILITY') {
+      sendJson(res, 401, { error: requestIdentity.type, code: requestIdentity.type, message: 'Invalid or revoked credential.' });
+      return;
+    }
+    if (requestIdentity.type === 'ANONYMOUS' || requestIdentity.type === 'DINER' || !requestIdentity.isPrivileged) {
+      sendJson(res, 403, { error: 'FORBIDDEN', message: 'Table creation requires Manager or Admin privileges.' });
+      return;
+    }
+
+    try {
+      const quotaCheck = await ownerSelfService.checkPlanLimits(tenantContext.tenantId, 'TABLES');
+      if (!quotaCheck.allowed) {
+        sendJson(res, 403, {
+          error: 'PLAN_LIMIT_EXCEEDED',
+          code: 'PLAN_LIMIT_EXCEEDED',
+          message: quotaCheck.error || 'Table limit exceeded for current plan tier.',
+          quota: quotaCheck,
+        });
+        return;
+      }
+      if (quotaCheck.warning) {
+        res.setHeader('x-quota-warning', `${quotaCheck.percentage}%`);
+      }
+
+      const body = await parseBody(req);
+      const allTables = store.getTables();
+      const nextId = body.id ? (typeof body.id === 'number' ? body.id : parseInt(body.id, 10)) : Math.max(0, ...allTables.map((t) => t.id)) + 1;
+      const tableNumber = body.number || `T-${nextId < 10 ? '0' + nextId : nextId}`;
+      const capacity = Number(body.capacity) || 4;
+
+      const newTable: TableFloorRecord = {
+        id: nextId,
+        number: tableNumber,
+        capacity,
+        status: 'AVAILABLE',
+        x: body.x || 100,
+        y: body.y || 100,
+        width: body.width || 90,
+        height: body.height || 90,
+        shape: body.shape || 'rectangle',
+        section: body.section || 'Main',
+        floorId: body.floorId || currentFloor?.id || 'fl_main',
+        branchId: body.branchId || currentBranch?.id || 'branch_main',
+        locator: crypto.randomBytes(6).toString('base64url'),
+        seats: generateSeats(capacity, nextId),
+      };
+
+      store.saveFloorTables([newTable]);
+      if (postgresStore) {
+        await postgresStore.saveTable(newTable, tenantContext.tenantId);
+      }
+      await ownerSelfService.updateOnboardingStep(tenantContext.tenantId, 'TABLES_REVIEWED', true);
+
+      sendJson(res, 201, { success: true, table: newTable });
+    } catch (err: any) {
+      sendJson(res, 400, { success: false, error: err.message });
+    }
+    return;
+  }
+
   if (pathname.startsWith('/api/restaurant/tables/') && method === 'PATCH') {
     const identity = resolveRequestIdentity(req);
     if (identity.type === 'INVALID_CREDENTIAL') {
@@ -4744,6 +4923,124 @@ const server = http.createServer(async (req, res) => {
       sendJson(res, 200, deleteRes);
     } catch (err: any) {
       sendJson(res, 400, { success: false, error: err.message });
+    }
+    return;
+  }
+
+  // 28c. Owner Self-Service Onboarding, Secure Image Uploads & Encrypted Gateway Credentials
+  if (pathname === '/api/restaurant/onboarding' && method === 'GET') {
+    try {
+      const state = await ownerSelfService.getOnboardingState(tenantContext.tenantId);
+      sendJson(res, 200, { success: true, onboarding: state });
+    } catch (err: any) {
+      sendJson(res, 500, { success: false, error: 'ONBOARDING_FETCH_FAILED', message: err.message });
+    }
+    return;
+  }
+
+  if (pathname === '/api/restaurant/onboarding/step' && method === 'POST') {
+    if (requestIdentity.type === 'INVALID_CREDENTIAL' || requestIdentity.type === 'REVOKED_CAPABILITY') {
+      sendJson(res, 401, { error: requestIdentity.type, code: requestIdentity.type, message: 'Invalid or revoked credential.' });
+      return;
+    }
+    if (requestIdentity.type === 'ANONYMOUS' || requestIdentity.type === 'DINER') {
+      sendJson(res, 403, { error: 'FORBIDDEN', message: 'Staff credentials required to update onboarding checklist.' });
+      return;
+    }
+    const body = await parseBody(req);
+    if (!body.step) {
+      sendJson(res, 400, { success: false, error: 'MISSING_STEP', message: 'Field "step" is required.' });
+      return;
+    }
+    try {
+      const state = await ownerSelfService.updateOnboardingStep(
+        tenantContext.tenantId,
+        body.step as OnboardingStepKey,
+        body.completed !== false
+      );
+      sendJson(res, 200, { success: true, onboarding: state });
+    } catch (err: any) {
+      sendJson(res, 400, { success: false, error: err.message });
+    }
+    return;
+  }
+
+  if (
+    (pathname === '/api/restaurant/uploads/logo' || pathname === '/api/restaurant/uploads/hero') &&
+    method === 'POST'
+  ) {
+    if (requestIdentity.type === 'INVALID_CREDENTIAL' || requestIdentity.type === 'REVOKED_CAPABILITY') {
+      sendJson(res, 401, { error: requestIdentity.type, code: requestIdentity.type, message: 'Invalid or revoked credential.' });
+      return;
+    }
+    if (requestIdentity.type === 'ANONYMOUS' || requestIdentity.type === 'DINER' || !requestIdentity.isPrivileged) {
+      sendJson(res, 403, { error: 'FORBIDDEN', message: 'Manager or Admin privileges required to upload branding assets.' });
+      return;
+    }
+    const kind = pathname.endsWith('/logo') ? 'logo' : 'hero';
+    try {
+      const { buffer } = await extractImageBuffer(req);
+      const saved = await ownerSelfService.saveTenantImage(tenantContext.tenantId, buffer, kind);
+      if (kind === 'logo') {
+        store.updateTenantBrand({ logoUrl: saved.url });
+      } else {
+        store.updateTenantBrand({ heroBannerUrl: saved.url });
+      }
+      sendJson(res, 200, { success: true, data: saved });
+    } catch (err: any) {
+      const isSecurity = err.message.includes('SECURITY_VIOLATION');
+      const isFormat = err.message.includes('UNSUPPORTED_IMAGE_FORMAT');
+      const isLarge = err.message.includes('IMAGE_TOO_LARGE');
+      const statusCode = (isSecurity || isFormat || isLarge) ? 400 : 500;
+      sendJson(res, statusCode, {
+        success: false,
+        error: isSecurity ? 'SECURITY_VIOLATION' : (isFormat ? 'UNSUPPORTED_IMAGE_FORMAT' : (isLarge ? 'IMAGE_TOO_LARGE' : 'UPLOAD_FAILED')),
+        message: err.message,
+      });
+    }
+    return;
+  }
+
+  if (pathname === '/api/restaurant/payments/config' && method === 'GET') {
+    if (requestIdentity.type === 'INVALID_CREDENTIAL' || requestIdentity.type === 'REVOKED_CAPABILITY') {
+      sendJson(res, 401, { error: requestIdentity.type, code: requestIdentity.type, message: 'Invalid or revoked credential.' });
+      return;
+    }
+    if (requestIdentity.type === 'ANONYMOUS' || requestIdentity.type === 'DINER') {
+      sendJson(res, 403, { error: 'FORBIDDEN', message: 'Staff credentials required to view payment configuration.' });
+      return;
+    }
+    const unmasked = parsedUrl.query.unmasked === 'true' && requestIdentity.isPrivileged;
+    try {
+      const paymentConfig = await ownerSelfService.getPaymentConfig(tenantContext.tenantId, unmasked);
+      sendJson(res, 200, { success: true, paymentConfig });
+    } catch (err: any) {
+      sendJson(res, 500, { success: false, error: 'PAYMENT_CONFIG_FAILED', message: err.message });
+    }
+    return;
+  }
+
+  if (pathname === '/api/restaurant/payments/config' && method === 'POST') {
+    if (requestIdentity.type === 'INVALID_CREDENTIAL' || requestIdentity.type === 'REVOKED_CAPABILITY') {
+      sendJson(res, 401, { error: requestIdentity.type, code: requestIdentity.type, message: 'Invalid or revoked credential.' });
+      return;
+    }
+    if (requestIdentity.type === 'ANONYMOUS' || requestIdentity.type === 'DINER' || !requestIdentity.isPrivileged) {
+      sendJson(res, 403, { error: 'FORBIDDEN', message: 'Manager or Admin privileges required to configure payment gateway.' });
+      return;
+    }
+    const body = await parseBody(req);
+    try {
+      const result = await ownerSelfService.savePaymentConfig(tenantContext.tenantId, {
+        keyId: body.keyId,
+        keySecret: body.keySecret,
+        webhookSecret: body.webhookSecret,
+        gstin: body.gstin,
+        legalEntityName: body.legalEntityName,
+      });
+      sendJson(res, 200, result);
+    } catch (err: any) {
+      sendJson(res, 400, { success: false, error: 'PAYMENT_CONFIG_FAILED', message: err.message });
     }
     return;
   }

@@ -57,7 +57,9 @@ export interface DomainVerificationResult {
 let sharedPrisma: PrismaClient | null = null;
 function getPrisma(): PrismaClient {
   if (!sharedPrisma) {
+    const dbUrl = process.env.DATABASE_URL || 'postgresql://apple@localhost:5432/restaurant_os';
     sharedPrisma = new PrismaClient({
+      datasources: { db: { url: dbUrl } },
       log: process.env.NODE_ENV === 'development' ? ['error', 'warn'] : ['error'],
     });
   }

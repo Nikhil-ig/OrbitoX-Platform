@@ -23,7 +23,9 @@ import {
 } from '../packages/domain/provisioning';
 import { getCleanStarterTemplate, CLEAN_STARTER_TEMPLATES } from '../packages/domain/templates';
 
-const prisma = new PrismaClient();
+const DATABASE_URL = process.env.DATABASE_URL || 'postgresql://apple@localhost:5432/restaurant_os';
+process.env.DATABASE_URL = DATABASE_URL;
+const prisma = new PrismaClient({ datasources: { db: { url: DATABASE_URL } } });
 const provisioning = new TenantProvisioningService(prisma, 'orbitox.live');
 
 const TEST_PLATFORM_TOKEN = 'test_platform_token_restaurantos_secure_32ch_alpha_bravo';
