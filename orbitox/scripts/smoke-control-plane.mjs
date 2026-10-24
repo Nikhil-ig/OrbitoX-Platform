@@ -51,12 +51,13 @@ await expectStatus('GET /api/health is public', 200, '/api/health');
 
 console.log('\nAdmin surface rejects anonymous callers');
 for (const path of [
-  '/platform', '/platform/fleet', '/platform/connect', '/platform/settings', '/admin',
+  '/platform', '/platform/fleet', '/platform/plans', '/platform/connect', '/platform/settings', '/admin',
   '/api/v1/fleet', '/api/v1/overview', '/api/v1/system/settings', '/api/v1/system/cluster',
   '/hms', '/hrms', '/crm', '/finance', '/commerce', '/store'
 ]) {
   await expectStatus(`GET ${path} -> 401`, 401, path);
 }
+await expectStatus('GET /api/v1/projects/anon/plans -> 401', 401, `/api/v1/projects/${projectId}/plans`);
 await expectStatus('POST /api/v1/projects/factory -> 401', 401, '/api/v1/projects/factory', { method: 'POST', headers: json, body: '{}' });
 
 console.log('\nAdmin token works (Bearer and Basic)');
@@ -68,6 +69,7 @@ await expectStatus('GET /api/v1/overview with Bearer', 200, '/api/v1/overview', 
 await expectStatus('GET /api/v1/system/settings with Bearer', 200, '/api/v1/system/settings', { headers: bearer(ADMIN) });
 await expectStatus('GET /platform with Bearer', 200, '/platform', { headers: bearer(ADMIN) });
 await expectStatus('GET /platform/fleet with Bearer', 200, '/platform/fleet', { headers: bearer(ADMIN) });
+await expectStatus('GET /platform/plans with Bearer', 200, '/platform/plans', { headers: bearer(ADMIN) });
 await expectStatus('GET /platform/connect with Bearer', 200, '/platform/connect', { headers: bearer(ADMIN) });
 await expectStatus('GET /platform/settings with Bearer', 200, '/platform/settings', { headers: bearer(ADMIN) });
 
@@ -127,6 +129,17 @@ try {
   console.log('\nPer-project runtime keys');
   await expectStatus("project A's own key works on its bridge route -> 200", 200, `/api/v1/projects/${projectId}/bridge`, { headers: bearer(projectKeyA) });
   await expectStatus("project A's own key works on its commands route -> 200", 200, `/api/v1/projects/${projectId}/commands`, { headers: bearer(projectKeyA) });
+  await expectStatus("project A's own key works on its plans route -> 200", 200, `/api/v1/projects/${projectId}/plans`, { headers: bearer(projectKeyA) });
+  await expectStatus("runtime key PUT on plans route -> 403", 403, `/api/v1/projects/${projectId}/plans`, {
+    method: 'PUT',
+    headers: { ...json, ...bearer(projectKeyA) },
+    body: JSON.stringify({ planReferences: ['plan_restaurant_growth'] }),
+  });
+  await expectStatus("admin PUT on plans route -> 200", 200, `/api/v1/projects/${projectId}/plans`, {
+    method: 'PUT',
+    headers: { ...json, ...bearer(ADMIN) },
+    body: JSON.stringify({ planReferences: ['plan_restaurant_growth'] }),
+  });
 
   const suffixB = randomBytes(3).toString('hex');
   const projectIdB = `smoke_b_${suffixB}`;
@@ -153,6 +166,7 @@ try {
 
   await expectStatus("project B key rejected on project A's bridge -> 401", 401, `/api/v1/projects/${projectId}/bridge`, { headers: bearer(projectKeyB) });
   await expectStatus("project B key rejected on project A's commands -> 401", 401, `/api/v1/projects/${projectId}/commands`, { headers: bearer(projectKeyB) });
+  await expectStatus("project B key rejected on project A's plans -> 401", 401, `/api/v1/projects/${projectId}/plans`, { headers: bearer(projectKeyB) });
 
   await expectStatus("shared runtime token rejected on already-registered project's bridge -> 401", 401, `/api/v1/projects/${projectId}/bridge`, { headers: bearer(RUNTIME) });
   await expectStatus("shared runtime token rejected on already-registered project's commands -> 401", 401, `/api/v1/projects/${projectId}/commands`, { headers: bearer(RUNTIME) });
@@ -161,6 +175,77 @@ try {
     headers: { ...json, ...bearer(RUNTIME) },
     body: JSON.stringify({ action: 'REGISTER', payload: { slug: manifest.slug } }),
   });
+
+  console.log('\nMilestone C: Entitlements, Plans & Live Usage Tracking');
+  // 1. Entitlements route security
+  await expectStatus('anonymous GET entitlements -> 401', 401, `/api/v1/projects/${projectId}/entitlements`);
+  await expectStatus("project B key on project A's entitlements -> 401", 401, `/api/v1/projects/${projectId}/entitlements`, { headers: bearer(projectKeyB) });
+  await expectStatus("project A's own key on its entitlements -> 200", 200, `/api/v1/projects/${projectId}/entitlements`, { headers: bearer(projectKeyA) });
+  await expectStatus("admin on project A's entitlements -> 200", 200, `/api/v1/projects/${projectId}/entitlements`, { headers: bearer(ADMIN) });
+
+  const entResA = await fetch(`${BASE}/api/v1/projects/${projectId}/entitlements`, { headers: bearer(projectKeyA) });
+  const entDataA = await entResA.json();
+  check('entitlements endpoint returns expected shape', entDataA.success && typeof entDataA.entitlements === 'object' && entDataA.entitlements.api_calls !== undefined);
+
+  // 2. Usage reporting security & increments
+  await expectStatus('anonymous POST usage -> 401', 401, `/api/v1/projects/${projectId}/usage`, {
+    method: 'POST', headers: json, body: JSON.stringify({ key: 'api_calls', amount: 1 }),
+  });
+  await expectStatus("project B key on project A's usage -> 401", 401, `/api/v1/projects/${projectId}/usage`, {
+    method: 'POST', headers: { ...json, ...bearer(projectKeyB) }, body: JSON.stringify({ key: 'api_calls', amount: 1 }),
+  });
+  await expectStatus("admin POST on project A's usage -> 403", 403, `/api/v1/projects/${projectId}/usage`, {
+    method: 'POST', headers: { ...json, ...bearer(ADMIN) }, body: JSON.stringify({ key: 'api_calls', amount: 1 }),
+  });
+
+  const usageRes1 = await fetch(`${BASE}/api/v1/projects/${projectId}/usage`, {
+    method: 'POST', headers: { ...json, ...bearer(projectKeyA) }, body: JSON.stringify({ key: 'api_calls', amount: 5 }),
+  });
+  const usageData1 = await usageRes1.json();
+  check('project A increments usage by 5', usageRes1.status === 200 && usageData1.used === 5 && usageData1.allowed === true);
+
+  // 3. Project isolation: project B's usage is unaffected
+  const entResB = await fetch(`${BASE}/api/v1/projects/${projectIdB}/entitlements`, { headers: bearer(projectKeyB) });
+  const entDataB = await entResB.json();
+  check("project B's usage is unaffected by project A's calls", entDataB.entitlements?.api_calls?.used === 0);
+
+  // 4. Exceeding enforced limit flips allowed: false and surfaces USAGE_LIMIT_EXCEEDED in fleet attention
+  const usageExceedRes = await fetch(`${BASE}/api/v1/projects/${projectId}/usage`, {
+    method: 'POST', headers: { ...json, ...bearer(projectKeyA) }, body: JSON.stringify({ key: 'api_calls', amount: 100000 }),
+  });
+  const usageExceedData = await usageExceedRes.json();
+  check('exceeding enforced limit flips allowed: false', usageExceedData.allowed === false && usageExceedData.used >= usageExceedData.limit);
+
+  const fleetExceed = await fleetEntry();
+  check('USAGE_LIMIT_EXCEEDED surfaces in fleet attention', Array.isArray(fleetExceed?.attention) && fleetExceed.attention.includes('USAGE_LIMIT_EXCEEDED'));
+
+  // 5. Admin reset of counter
+  await expectStatus('runtime key DELETE on usage -> 403', 403, `/api/v1/projects/${projectId}/usage?key=api_calls`, {
+    method: 'DELETE', headers: bearer(projectKeyA),
+  });
+  await expectStatus('admin DELETE on usage -> 200', 200, `/api/v1/projects/${projectId}/usage?key=api_calls`, {
+    method: 'DELETE', headers: bearer(ADMIN),
+  });
+  const entResAfterReset = await fetch(`${BASE}/api/v1/projects/${projectId}/entitlements`, { headers: bearer(projectKeyA) });
+  const entDataAfterReset = await entResAfterReset.json();
+  check('admin reset zeroes counter', entDataAfterReset.entitlements?.api_calls?.used === 0);
+
+  // 6. SDK BillingClient & EntitlementClient methods
+  const sdkPlans = await client.billing.getPlan();
+  check('SDK client.billing.getPlan() returns plans catalog', Array.isArray(sdkPlans.availablePlans) && sdkPlans.availablePlans.length > 0);
+
+  const sdkQuote = await client.billing.computeQuote({
+    planId: 'plan_restaurant_growth',
+    addons: ['addon_sommelier_ai'],
+    customDiscountPercent: 15,
+  });
+  check('SDK client.billing.computeQuote() computes live quote', !!sdkQuote && typeof sdkQuote.totalMinor === 'string');
+
+  const sdkEntitlements = await client.entitlements.fetchEntitlements();
+  check('SDK client.entitlements.fetchEntitlements() populates client cache', typeof sdkEntitlements === 'object' && sdkEntitlements.api_calls !== undefined);
+
+  const sdkUsageReport = await client.entitlements.reportUsage('api_calls', 10);
+  check('SDK client.entitlements.reportUsage() increments and returns allowed/remaining', sdkUsageReport.allowed === true && sdkUsageReport.remaining > 0);
 
   let entry = await fleetEntry();
   check('new project appears in the fleet', !!entry);

@@ -40,7 +40,21 @@ Requires Node 22+ and pnpm 9.
 
 ## Connect a project
 
-Any Node app can join the fleet. Add the SDK, then register on startup:
+Any Node app can join the fleet in seconds. You can either scaffold the configuration files automatically with our generator script or set them up manually:
+
+### Option A: 1-Line Scaffold (Recommended)
+
+Run the generator in your application's repository:
+
+```bash
+node orbitox/scripts/scaffold-project.mjs --name "My SaaS App" --slug "my-saas-app"
+```
+
+This immediately creates `orbitox.manifest.json` and `orbitox-client.ts` wired with registration, feature flags, and live entitlement usage tracking.
+
+### Option B: Manual Setup
+
+Add the SDK, then register on startup:
 
 ```ts
 import { ControlClient } from '@orbitox/external-runtime-sdk';
@@ -48,17 +62,17 @@ import manifest from './orbitox.manifest.json';
 
 const orbitox = new ControlClient({
   manifest,                                          // name, slug, projectId, ...
-  controlPlaneUrl: process.env.ORBITOX_BACKEND_URL,  // e.g. https://control.example.com
+  controlPlaneUrl: process.env.ORBITOX_CONTROL_PLANE_URL || process.env.ORBITOX_BACKEND_URL,  // e.g. https://control.example.com
   apiKey: process.env.ORBITOX_RUNTIME_TOKEN,         // from the control plane's .env
 });
 
 await orbitox.registerRuntime();  // registers the project and starts heartbeats
 ```
 
-The project appears in **Fleet** within seconds, and keeps reporting health, revision and
-activity. You can send it commands (health check, cache refresh, restart, ...) with
+The project appears in **Fleet** (`/platform/fleet`) within seconds, and keeps reporting health, revision,
+and live usage. You can send it commands (health check, cache refresh, restart, ...) with
 `POST /api/v1/projects/{id}/commands` (admin token); the app receives, runs and acknowledges
-them automatically. A command button in the Fleet UI is planned.
+them automatically. Plan details, quote computation, and live quotas are available under the **Billing** tab.
 
 ## Track your projects
 

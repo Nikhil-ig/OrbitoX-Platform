@@ -218,6 +218,29 @@ await orbitox.registerRuntime();`;
 
         <div className={styles.codeWrap}>
           <div className={styles.codeHeader}>
+            <span>⚡ 1-Line Project Scaffold (CLI)</span>
+            <button
+              type="button"
+              className={styles.btn}
+              onClick={() =>
+                navigator.clipboard.writeText(
+                  `node scripts/scaffold-project.mjs --name "${name}" --slug "${slug}" --url "${backendUrl}"`
+                )
+              }
+            >
+              Copy
+            </button>
+          </div>
+          <pre className={styles.codeBox}>
+            {`node scripts/scaffold-project.mjs --name "${name}" --slug "${slug}" --url "${backendUrl}"`}
+          </pre>
+          <div style={{ padding: '8px 12px', fontSize: '12px', color: 'var(--ui-text-muted)' }}>
+            Automatically creates <code>orbitox.manifest.json</code> and <code>orbitox-client.ts</code> wired with runtime registration, feature checks, and entitlement reporting.
+          </div>
+        </div>
+
+        <div className={styles.codeWrap}>
+          <div className={styles.codeHeader}>
             <span>Terminal</span>
             <button
               type="button"
