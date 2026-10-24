@@ -89,6 +89,7 @@ export interface MenuItem {
   modifierGroups?: ModifierGroup[];
   imageUrl?: string;
   isArchived?: boolean;
+  hsnCode?: string;
 }
 
 export type TaskStatus = 'QUEUED' | 'IN_PROGRESS' | 'READY' | 'BUMPED' | 'VOIDED' | 'CANCELLED';
@@ -212,6 +213,7 @@ export interface BranchRecord {
 }
 
 export interface BranchMenuOverride {
+  id?: string;
   itemId: string;
   branchId: string;
   isAvailable: boolean;          // true = available, false = 86'd / sold out at this branch
@@ -303,7 +305,12 @@ export interface RestaurantOrder {
     address?: string;
   };
   orderToken?: string;
+  id?: string;
+  idempotencyKey?: string;
+  paymentStatus?: string;
+  paymentSessionId?: string;
   createdAt: string;
+  updatedAt?: string;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -3207,3 +3214,4 @@ export * from './templates';
 export * from './provisioning';
 export * from './domains';
 export * from './owner-self-service';
+export * from './security-self-check';
