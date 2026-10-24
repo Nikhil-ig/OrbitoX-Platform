@@ -501,7 +501,7 @@ async function runProvisioningTestSuite() {
       serverPort,
       'POST',
       '/api/restaurant/orders',
-      { 'x-tenant-id': createdTenantId },
+      { Host: `${httpSlug}.orbitox.live` },
       { tableNumber: 'T-01', items: [] }
     );
     assert(blockedWrite.status === 403 && blockedWrite.body.code === 'TENANT_SUSPENDED', 'Writes to suspended tenant return 403 TENANT_SUSPENDED');

@@ -44,6 +44,7 @@ import {
   resolveTenantFromRequest,
   withTenantContext,
   getActiveTenant,
+  renderTenantNotFoundPage,
   TenantProvisioningService,
   verifyPlatformAuth,
   validateTenantSlug,
@@ -156,7 +157,7 @@ function sendJson(res: http.ServerResponse, statusCode: number, data: any) {
   res.end(JSON.stringify(data));
 }
 
-function sendHtml(res: http.ServerResponse, html: string) {
+function sendHtml(res: http.ServerResponse, html: string, statusCode: number = 200) {
   const allowedOrigin = resolveAllowedOrigin(res.req);
   const headers: Record<string, string> = {
     'Content-Type': 'text/html; charset=utf-8',
@@ -167,7 +168,7 @@ function sendHtml(res: http.ServerResponse, html: string) {
     headers['Access-Control-Allow-Origin'] = allowedOrigin;
     headers['Vary'] = 'Origin';
   }
-  res.writeHead(200, headers);
+  res.writeHead(statusCode, headers);
   res.end(html);
 }
 
@@ -254,7 +255,7 @@ function isSameOriginRequest(req: http.IncomingMessage): boolean {
   return (origin ? originMatches : true) && (referer ? refererMatches : true);
 }
 
-function resolveRequestIdentity(req: http.IncomingMessage): RequestIdentity {
+function resolveRequestIdentity(req: http.IncomingMessage, expectedTenantId?: string): RequestIdentity {
   const authHeader = (req.headers['authorization'] as string) || '';
   const stationToken = (req.headers['x-station-token'] as string) || '';
   const parsedUrl = url.parse(req.url || '', true);
@@ -363,7 +364,13 @@ function resolveRequestIdentity(req: http.IncomingMessage): RequestIdentity {
 
     // 2b. Cryptographically Signed Staff Token (orb_stf....)
     if (token.startsWith('orb_stf.')) {
-      const verification = verifyStaffToken(token);
+      const activeTenant = getActiveTenant();
+      const targetTenantId =
+        expectedTenantId ||
+        (activeTenant?.tenantId && activeTenant.tenantId !== 'PLATFORM_SUPERUSER'
+          ? activeTenant.tenantId
+          : undefined);
+      const verification = verifyStaffToken(token, { expectedTenantId: targetTenantId });
       if (!verification.valid) {
         return {
           type: 'INVALID_CREDENTIAL',
@@ -494,15 +501,7 @@ function resolveRequestIdentity(req: http.IncomingMessage): RequestIdentity {
   return identity;
 }
 
-const server = http.createServer((req, res) => {
-  const tenantContext = resolveTenantFromRequest(req);
-  res.setHeader('x-tenant-id', tenantContext.tenantId);
-  return withTenantContext(tenantContext, async () => {
-    const startHrTime = process.hrtime.bigint();
-    const rawReqId = req.headers['x-request-id'] || req.headers['x-correlation-id'];
-    const requestId = validateOrGenerateRequestId(rawReqId);
-    res.setHeader('x-request-id', requestId);
-
+const server = http.createServer(async (req, res) => {
   const parsedUrl = url.parse(req.url || '', true);
   const pathname = parsedUrl.pathname || '/';
   const method = req.method || 'GET';
@@ -512,6 +511,69 @@ const server = http.createServer((req, res) => {
     res.end();
     return;
   }
+
+  // Health and liveness probes (bypass tenant context)
+  if (pathname === '/health' || pathname === '/healthz' || pathname.startsWith('/healthz/')) {
+    sendJson(res, 200, {
+      status: 'healthy',
+      service: 'restaurant-os',
+      uptime: process.uptime(),
+      timestamp: new Date().toISOString(),
+    });
+    return;
+  }
+
+  // Platform internal management endpoints (require platform auth token, bypass public host resolution)
+  if (pathname.startsWith('/internal/')) {
+    if (!verifyPlatformAuth(req)) {
+      sendJson(res, 401, {
+        error: 'UNAUTHORIZED',
+        message: 'Platform service credentials required (RESTAURANTOS_PLATFORM_TOKEN >= 32 chars).',
+      });
+      return;
+    }
+  }
+
+  // Authoritative host-based tenant resolution
+  let tenantContext = await resolveTenantFromRequest(req, postgresStore?.prisma);
+  if (!tenantContext) {
+    if (pathname.startsWith('/internal/')) {
+      tenantContext = {
+        tenantId: 'PLATFORM_SUPERUSER',
+        tenantSlug: 'platform',
+        tenantName: 'Platform Superuser',
+        orbitoxProjectId: 'platform',
+        status: 'active',
+      };
+    } else if (pathname === '/accept-invite' || pathname === '/api/restaurant/auth/accept-invite') {
+      tenantContext = {
+        tenantId: 'PENDING_INVITE',
+        tenantSlug: 'invite',
+        tenantName: 'Pending Restaurant',
+        status: 'trial',
+      };
+    } else {
+      const rawHost = (req.headers.host || '').split(':')[0].trim();
+      const acceptHeader = (req.headers.accept || '').toLowerCase();
+      if (acceptHeader.includes('text/html')) {
+        sendHtml(res, renderTenantNotFoundPage(rawHost || 'unknown'), 404);
+      } else {
+        sendJson(res, 404, {
+          error: 'NOT_FOUND',
+          code: 'TENANT_NOT_FOUND',
+          message: `No restaurant tenant configured for host: ${rawHost || 'unknown'}`,
+        });
+      }
+      return;
+    }
+  }
+
+  res.setHeader('x-tenant-id', tenantContext.tenantId);
+  return withTenantContext(tenantContext, async () => {
+    const startHrTime = process.hrtime.bigint();
+    const rawReqId = req.headers['x-request-id'] || req.headers['x-correlation-id'];
+    const requestId = validateOrGenerateRequestId(rawReqId);
+    res.setHeader('x-request-id', requestId);
 
   // Context Hierarchy Validation
   const context = validateAndResolveContext(
@@ -545,7 +607,7 @@ const server = http.createServer((req, res) => {
     });
   });
 
-  const requestIdentity = resolveRequestIdentity(req);
+  const requestIdentity = resolveRequestIdentity(req, tenantContext.tenantId);
   const activeStaffToken = requestIdentity.rawToken;
   const activeStaffRole = requestIdentity.role || (requestIdentity.type === 'ADMIN' ? 'ADMIN' : undefined);
 
@@ -4605,11 +4667,27 @@ const server = http.createServer((req, res) => {
 
   // 29. Customer Support Desk & Cases
   if (pathname === '/api/restaurant/support/tickets' && method === 'GET') {
+    if (requestIdentity.type === 'INVALID_CREDENTIAL' || requestIdentity.type === 'REVOKED_CAPABILITY') {
+      sendJson(res, 401, { error: requestIdentity.type, code: requestIdentity.type, message: 'Invalid or revoked credential.' });
+      return;
+    }
+    if (requestIdentity.type !== 'STAFF' && requestIdentity.type !== 'ADMIN') {
+      sendJson(res, 401, { error: 'AUTHENTICATION_REQUIRED', code: 'AUTHENTICATION_REQUIRED', message: 'Staff or manager authentication required to view support tickets.' });
+      return;
+    }
     sendJson(res, 200, { success: true, data: store.getSupportTickets() });
     return;
   }
 
   if (pathname === '/api/restaurant/support/tickets' && method === 'POST') {
+    if (requestIdentity.type === 'INVALID_CREDENTIAL' || requestIdentity.type === 'REVOKED_CAPABILITY') {
+      sendJson(res, 401, { error: requestIdentity.type, code: requestIdentity.type, message: 'Invalid or revoked credential.' });
+      return;
+    }
+    if (requestIdentity.type !== 'STAFF' && requestIdentity.type !== 'ADMIN') {
+      sendJson(res, 401, { error: 'AUTHENTICATION_REQUIRED', code: 'AUTHENTICATION_REQUIRED', message: 'Staff or manager authentication required to create support tickets.' });
+      return;
+    }
     const body = await parseBody(req);
     if (!body.subject || !body.initialMessage) {
       sendJson(res, 400, { success: false, error: 'Missing subject or initialMessage' });
