@@ -11,7 +11,6 @@ import { PrismaClient } from '@prisma/client';
 import {
   ActiveTenantContext,
   getActiveTenant,
-  DEFAULT_PILOT_TENANT,
 } from '../domain/tenancy';
 import {
   BranchRecord,
@@ -73,8 +72,7 @@ export class PostgresRestaurantStore {
 
   private resolveTenantId(explicitTenantId?: string): string {
     if (explicitTenantId) return explicitTenantId;
-    const active = getActiveTenant();
-    return active?.tenantId || DEFAULT_PILOT_TENANT.tenantId;
+    return getActiveTenant().tenantId;
   }
 
   // ─────────────────────────────────────────────────────────────
