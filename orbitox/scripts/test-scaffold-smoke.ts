@@ -293,8 +293,10 @@ async function run() {
   }
 }
 
-run().catch((err) => {
+run()
+  .then(() => process.exit(0)) // spawned `npx tsx` children keep the event loop alive; exit explicitly
+  .catch((err) => {
   console.error('\n💥 FATAL SCAFFOLD SMOKE FAILURE:', err);
   cleanup();
   process.exit(1);
-});
+  });

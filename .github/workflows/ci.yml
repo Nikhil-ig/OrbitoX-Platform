@@ -63,6 +63,7 @@ jobs:
   pack-and-verify:
     name: Package Tarball & External Install Smoke
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     defaults:
       run:
         working-directory: orbitox
@@ -97,6 +98,7 @@ jobs:
   restaurantos-e2e:
     name: RestaurantOS HTTP Multi-Tenant & RLS Suite
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     services:
       postgres:
         image: postgres:16-alpine
@@ -131,8 +133,8 @@ jobs:
       - name: Build linked OrbitoX external-runtime-sdk
         working-directory: orbitox
         run: |
-          pnpm install --frozen-lockfile --filter @orbitox/external-runtime-sdk...
-          pnpm --filter @orbitox/external-runtime-sdk... run build
+          pnpm install --frozen-lockfile --filter @orbitox/external-runtime-sdk... --filter @orbitox/pos... --filter @orbitox/plugin-engine...
+          pnpm --filter @orbitox/external-runtime-sdk... --filter @orbitox/pos... --filter @orbitox/plugin-engine... run build
 
       - name: Generate Prisma Client & Push DB Schema
         run: |
