@@ -495,5 +495,12 @@ export async function createOrbitoXApp(config: OrbitoXConfig): Promise<{
     console.log(`   - ⚡ Port:   ${port}`);
   });
 
+  // 13. Auto-Register Platform Connection & Start Telemetry Heartbeats
+  if (platformSdk && typeof platformSdk.registerRuntime === 'function') {
+    platformSdk.registerRuntime().catch((err: any) => {
+      console.warn(`   ⚠️ Platform auto-registration skipped: ${err.message}`);
+    });
+  }
+
   return { app, server, platformSdk };
 }
