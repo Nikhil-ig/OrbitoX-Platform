@@ -110,6 +110,7 @@ function makeRequest(
 function assert(condition: boolean, message: string) {
   if (!condition) {
     console.error(`❌ FAIL: ${message}`);
+    if (process.env.GITHUB_ACTIONS) console.log(`::error title=E2E assertion failed::${message.replace(/\n/g, ' ')}`);
     throw new Error(`Assertion failed: ${message}`);
   }
   console.log(`  ✅ PASS: ${message}`);
@@ -875,5 +876,6 @@ runBlackBoxHttpMultiTenantSuite()
   .then(() => process.exit(0)) // spawned `npx tsx` child keeps the event loop alive; exit explicitly
   .catch((err) => {
   console.error('\n💥 FATAL TEST SUITE FAILURE:', err);
+    if (process.env.GITHUB_ACTIONS) console.log(`::error title=E2E fatal::${String((err as Error)?.stack ?? err).split('\n').slice(0, 4).join(' | ')}`);
   process.exit(1);
   });
