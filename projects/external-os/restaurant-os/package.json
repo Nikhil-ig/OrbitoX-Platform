@@ -16,6 +16,7 @@
   },
   "dependencies": {
     "@orbitox/external-runtime-sdk": "link:../../../orbitox/packages/external-runtime-sdk",
+    "@orbitox/pos": "link:../../../orbitox/plugins/pos",
     "@prisma/client": "^6.4.1"
   }
 }

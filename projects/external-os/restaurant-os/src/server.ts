@@ -73,6 +73,7 @@ import {
   renderPrintableInvoiceHtml,
 } from '../packages/domain/invoicing';
 import { RestaurantRuntimeStore, DomainEvent, getTenantRepository, RestaurantRepository } from '../packages/storage';
+import { PosService } from '@orbitox/pos';
 import { PostgresRestaurantStore } from '../packages/storage/postgres-store';
 import { RealtimeEventBus } from '../packages/domain/event-bus';
 import { RestaurantControlBridge, restaurantControlBridge } from './bridge';
@@ -928,6 +929,7 @@ export async function handleRequest(req: http.IncomingMessage, res: http.ServerR
   res.setHeader('x-tenant-id', tenantContext.tenantId);
   return withTenantContext(tenantContext, async () => {
     const repo = getTenantRepository(tenantContext, postgresStore?.prisma, eventBus);
+    const posService = new PosService(repo);
     const startHrTime = process.hrtime.bigint();
     const rawReqId = req.headers['x-request-id'] || req.headers['x-correlation-id'];
     const requestId = validateOrGenerateRequestId(rawReqId);
@@ -2012,13 +2014,13 @@ export async function handleRequest(req: http.IncomingMessage, res: http.ServerR
     const capabilityToken = `cap_${crypto.randomBytes(16).toString('hex')}`;
     const hostName = body.guestName || body.name || 'Primary Host';
 
-    const session = await repo.createOrJoinSession(
-      tableNum,
+    const session = await posService.createOrJoinSession({
+      tableNumber: tableNum,
       hostName,
-      targetTbl.branchId || currentBranch.id,
-      targetTbl.floorId || currentFloor.id,
-      capabilityToken
-    );
+      branchId: targetTbl.branchId || currentBranch.id,
+      floorId: targetTbl.floorId || currentFloor.id,
+      capabilityToken,
+    });
 
     const s1 = targetTbl.seats?.find((s) => s.seatNumber === 1);
     if (s1 && !s1.guestName) {
@@ -2372,157 +2374,23 @@ export async function handleRequest(req: http.IncomingMessage, res: http.ServerR
     }
   }
 
-  // 5. Deterministic Pricing Quote
+  // 5. Deterministic Pricing Quote (Delegated to @orbitox/pos engine)
   if (pathname === '/api/restaurant/quote' && method === 'POST') {
     const body = await parseBody(req);
-    const items = body.items || body.cartItems || [];
-    let subtotalMinor = 0;
-    const menuItems = await repo.getMenuItems();
-
-    for (const item of items) {
-      const found = menuItems.find((m) => m.id === (item.id || item.itemId));
-      let unitPrice = found ? found.basePriceMinor : 35000;
-      if (item.selectedModifierIds && Array.isArray(item.selectedModifierIds) && found?.modifierGroups) {
-        for (const modId of item.selectedModifierIds) {
-          for (const grp of found.modifierGroups) {
-            const opt = grp.options.find((o) => o.id === modId);
-            if (opt) {
-              unitPrice += opt.priceDeltaMinor;
-            }
-          }
-        }
-      } else if (item.modifierPriceDeltaMinor) {
-        unitPrice += Number(item.modifierPriceDeltaMinor);
-      }
-      subtotalMinor += unitPrice * (item.quantity || 1);
-    }
-
-    const taxBasisPoints = 500; // 5% GST
-    const taxMinor = Math.round((subtotalMinor * taxBasisPoints) / 10000);
-    const totalMinor = subtotalMinor + taxMinor;
-
-    const inputHash = crypto.createHash('sha256').update(JSON.stringify({ items, taxBasisPoints })).digest('hex');
-    const resultHash = crypto.createHash('sha256').update(`${subtotalMinor}:${taxMinor}:${totalMinor}`).digest('hex');
-
-    sendJson(res, 200, {
-      success: true,
-      data: {
-        quoteId: `quote_${Date.now()}`,
-        subtotalMinor: subtotalMinor.toString(),
-        taxMinor: taxMinor.toString(),
-        totalMinor: totalMinor.toString(),
-        currency: 'INR',
-        breakdown: {
-          subtotalFormatted: `₹${(subtotalMinor / 100).toFixed(2)}`,
-          taxFormatted: `₹${(taxMinor / 100).toFixed(2)}`,
-          totalFormatted: `₹${(totalMinor / 100).toFixed(2)}`,
-        },
-        inputHash,
-        resultHash,
-      },
+    const data = await posService.calculateQuote({
+      items: body.items || body.cartItems || [],
+      taxBasisPoints: body.taxBasisPoints ?? 500,
+      currency: body.currency,
     });
+    sendJson(res, 200, { success: true, data });
     return;
   }
 
-  // 6. Idempotent Order Submission
+  // 6. Idempotent Order Submission (Delegated to @orbitox/pos engine)
   if (pathname === '/api/restaurant/orders' && method === 'POST') {
     const identity = requestIdentity;
-    if (identity.type === 'INVALID_CREDENTIAL') {
-      sendJson(res, 401, {
-        error: 'INVALID_CREDENTIAL',
-        code: 'INVALID_CREDENTIAL',
-        message: 'Supplied authorization token is invalid or tampered.',
-      });
-      return;
-    }
-    if (identity.type === 'REVOKED_CAPABILITY') {
-      sendJson(res, 401, {
-        error: 'CAPABILITY_REVOKED',
-        code: 'CAPABILITY_REVOKED',
-        message: 'Guest capability token has expired or session is closed. Please scan QR to join a new session.',
-      });
-      return;
-    }
-    if (process.env.NODE_ENV === 'production' && identity.type === 'ANONYMOUS') {
-      sendJson(res, 401, {
-        error: 'CAPABILITY_REQUIRED',
-        code: 'CAPABILITY_REQUIRED',
-        message: 'A valid diner capability token or staff credential is required to place an order.',
-      });
-      return;
-    }
-
     const body = await parseBody(req);
-    const idempotencyKey = (req.headers['x-idempotency-key'] as string) || `idem_${Date.now()}`;
-    const payloadHash = crypto.createHash('sha256').update(JSON.stringify(body)).digest('hex');
-
-    const cached = await repo.getIdempotencyRecord(idempotencyKey);
-    if (cached) {
-      if (cached.payloadHash && cached.payloadHash !== payloadHash) {
-        sendJson(res, 409, {
-          error: 'IDEMPOTENCY_CONFLICT',
-          code: 'IDEMPOTENCY_CONFLICT',
-          message: 'An order was already processed with this idempotency key using different order contents.',
-        });
-        return;
-      }
-      sendJson(res, 200, cached?.response || cached);
-      return;
-    }
-
-    const items = body.items || body.cartItems || [];
-    if (!Array.isArray(items) || items.length === 0) {
-      sendJson(res, 400, {
-        error: 'EMPTY_ORDER',
-        code: 'EMPTY_ORDER',
-        message: 'Order must contain at least one valid item.',
-      });
-      return;
-    }
-
-    const menuItems = await repo.getMenuItems();
-    for (const it of items) {
-      const q = it.quantity !== undefined ? it.quantity : 1;
-      if (!Number.isInteger(q) || q < 1 || q > 50) {
-        sendJson(res, 400, {
-          error: 'INVALID_QUANTITY',
-          code: 'INVALID_QUANTITY',
-          message: `Item quantity must be an integer between 1 and 50. Received: ${q}`,
-        });
-        return;
-      }
-      const found = menuItems.find((m) => m.id === (it.id || it.itemId));
-      if (!found) {
-        sendJson(res, 400, {
-          error: 'INVALID_MENU_ITEM',
-          code: 'INVALID_MENU_ITEM',
-          message: `Item ${it.id || it.itemId} is not in the menu catalog.`,
-        });
-        return;
-      }
-    }
-
-    const orderId = (body.orderId && typeof body.orderId === 'string') ? body.orderId : `ord_${Date.now()}`;
-    if (!body.tableNumber && !body.tableId) {
-      sendJson(res, 400, {
-        error: 'TABLE_REQUIRED',
-        code: 'TABLE_REQUIRED',
-        message: 'tableNumber is required to place an order.',
-      });
-      return;
-    }
-    const targetTableRecord = body.tableNumber
-      ? await repo.getTableByNumber(body.tableNumber)
-      : await repo.getTable(body.tableId);
-    if (!targetTableRecord) {
-      sendJson(res, 404, {
-        error: 'TABLE_NOT_FOUND',
-        code: 'TABLE_NOT_FOUND',
-        message: `Table ${body.tableNumber || body.tableId} does not exist in this restaurant.`,
-      });
-      return;
-    }
-    const tableNumber = targetTableRecord.number;
+    const idempotencyKey = (req.headers['x-idempotency-key'] as string) || body.idempotencyKey;
 
     // Authoritative Plan Limits & Quota Enforcement
     try {
@@ -2539,156 +2407,27 @@ export async function handleRequest(req: http.IncomingMessage, res: http.ServerR
       if (quotaCheck.warning) {
         res.setHeader('x-quota-warning', `${quotaCheck.percentage}%`);
       }
-    } catch (quotaErr: any) {
+    } catch (_quotaErr: any) {
       // Allow fallback if running in-memory without database
     }
 
-    const normIdTable = (identity.tableNumber || '').replace(/^T-/, '');
-    const normOrderTable = (tableNumber || '').replace(/^T-/, '');
-
-    if (identity.type === 'DINER') {
-      if (identity.tableNumber && normIdTable !== normOrderTable) {
-        sendJson(res, 403, {
-          error: 'TABLE_MISMATCH',
-          code: 'TABLE_MISMATCH',
-          message: `Diner capability for ${identity.tableNumber} cannot submit orders for ${tableNumber}.`,
-        });
-        return;
-      }
-      const activeTable = targetTableRecord;
-      if (activeTable && activeTable.activeSessionId && identity.sessionId && activeTable.activeSessionId !== identity.sessionId) {
-        sendJson(res, 403, {
-          error: 'SESSION_MISMATCH',
-          code: 'SESSION_MISMATCH',
-          message: 'Diner capability does not match the active session for this table.',
-        });
-        return;
-      }
-    }
-
-    if (identity.branchId && identity.branchId !== '*' && targetTableRecord.branchId !== identity.branchId) {
-      sendJson(res, 403, {
-        error: 'BRANCH_MISMATCH',
-        code: 'BRANCH_MISMATCH',
-        message: `Staff token for branch ${identity.branchId} cannot create orders for table in branch ${targetTableRecord.branchId}`,
-      });
-      return;
-    }
-
-    let subtotalMinor = 0;
-    for (const it of items) {
-      const found = menuItems.find((m) => m.id === (it.id || it.itemId))!;
-      const q = it.quantity !== undefined ? it.quantity : 1;
-      let unitPrice = found.basePriceMinor;
-      if (it.selectedModifierIds && Array.isArray(it.selectedModifierIds) && found.modifierGroups) {
-        for (const modId of it.selectedModifierIds) {
-          for (const grp of found.modifierGroups) {
-            const opt = grp.options.find((o) => o.id === modId);
-            if (opt) {
-              unitPrice += opt.priceDeltaMinor;
-            }
-          }
-        }
-      } else if (it.modifierPriceDeltaMinor) {
-        unitPrice += Number(it.modifierPriceDeltaMinor);
-      }
-      subtotalMinor += unitPrice * q;
-
-      // Route each item to Kitchen Task Queue in Persistent Store
-      const newTask: KitchenTask = {
-        id: `task_${crypto.randomUUID()}`,
-        orderId,
-        tableNumber,
-        branchId: body.branchId || targetTableRecord?.branchId || currentBranch.id,
-        itemName: found.name,
-        quantity: q,
-        station: found.station as any,
-        status: 'QUEUED',
-        fireAt: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-        targetServeAt: new Date(Date.now() + 15 * 60 * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-        elapsedMinutes: 0,
-        slaMinutes: found.prepDurationMinutes || 12,
-        modifiers: it.modifiers || (it.modifier ? [it.modifier] : []),
-        guestName: body.guestName || 'Guest',
-      };
-      await repo.addKitchenTask(newTask);
-      eventBus.broadcast({
-        id: `evt_${Date.now()}`,
-        sequence: (await repo.getEvents()).length,
-        type: 'task.created',
-        timestamp: new Date().toISOString(),
-        producer: 'api:order-service',
-        branchId: body.branchId || currentBranch.id,
-        tableNumber,
-        tenantId: tenantContext.tenantId,
-        payload: newTask,
-      });
-    }
-
-    const taxMinor = Math.round((subtotalMinor * 500) / 10000);
-    const totalMinor = subtotalMinor + taxMinor;
-    const boundSessionId =
-      identity.type === 'DINER' && identity.sessionId
-        ? identity.sessionId
-        : body.sessionId || targetTableRecord?.activeSessionId || 'sess_demo';
-
-    const newOrder: RestaurantOrder = {
-      orderId,
-      tableNumber,
-      sessionId: boundSessionId,
-      branchId: body.branchId || targetTableRecord?.branchId || currentBranch.id,
-      guestName: body.guestName || 'Guest',
-      status: 'CONFIRMED',
-      items: items.map((it: any) => {
-        const found = menuItems.find((m) => m.id === (it.id || it.itemId))!;
-        return {
-          id: it.id || it.itemId,
-          name: found.name,
-          quantity: it.quantity !== undefined ? it.quantity : 1,
-          unitPriceMinor: found.basePriceMinor,
-          station: found.station || 'TANDOOR',
-          guestName: body.guestName || 'Guest',
-        };
-      }),
-      subtotalMinor,
-      taxMinor,
-      totalMinor,
-      currency: 'INR',
-      createdAt: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-    };
-
-    await repo.addOrder(newOrder);
-    eventBus.broadcast({
-      id: `evt_${Date.now()}`,
-      sequence: (await repo.getEvents()).length,
-      type: 'order.created',
-      timestamp: new Date().toISOString(),
-      producer: 'api:order-service',
+    const orderResult = await posService.submitOrder({
+      body,
+      identity,
+      idempotencyKey,
       branchId: body.branchId || currentBranch.id,
-      tableNumber,
-      tenantId: tenantContext.tenantId,
-      payload: newOrder,
+      branchName: currentBranch.name,
     });
 
-    const response = {
-      success: true,
-      data: {
-        orderId,
-        tableNumber: newOrder.tableNumber,
-        status: 'CONFIRMED',
-        totalMinor: totalMinor.toString(),
-        totalFormatted: `₹${(totalMinor / 100).toFixed(2)}`,
-        estimatedPrepMinutes: 15,
-      },
-    };
-
-    if (idempotencyKey) {
-      await repo.saveIdempotencyRecord(idempotencyKey, { payloadHash, response });
+    if (orderResult.status === 201) {
+      const orderId = orderResult.body.orderId || orderResult.body.data?.orderId;
+      const totalMinor = orderResult.body.quote?.totalMinor || 0;
+      const tableNumber = orderResult.body.tableNumber || body.tableNumber || 'unknown';
+      await runtimeController.emitAudit('ORDER_PLACED', `table:${tableNumber}`, { orderId, totalMinor });
+      await runtimeController.reportOrderProcessed(orderId, totalMinor);
     }
-    await runtimeController.emitAudit('ORDER_PLACED', `table:${newOrder.tableNumber}`, { orderId, totalMinor });
-    await runtimeController.reportOrderProcessed(orderId, totalMinor);
 
-    sendJson(res, 201, response);
+    sendJson(res, orderResult.status, orderResult.body);
     return;
   }
 
@@ -2711,7 +2450,12 @@ export async function handleRequest(req: http.IncomingMessage, res: http.ServerR
     const statusFilter = (parsedUrl.query.status as string) || 'ALL';
     const searchQuery = ((parsedUrl.query.search || parsedUrl.query.q || '') as string).toLowerCase().trim();
 
-    let orders = await repo.getOrders(tableFilter, sessionFilter, branchFilter, statusFilter);
+    let orders = await posService.listOrders({
+      tableNumber: tableFilter,
+      sessionId: sessionFilter,
+      branchId: branchFilter,
+      status: statusFilter,
+    });
 
     if (identity.type === 'DINER') {
       // Diner is strictly scoped to their own session
@@ -2753,7 +2497,7 @@ export async function handleRequest(req: http.IncomingMessage, res: http.ServerR
   ) {
     const identity = requestIdentity;
     const orderId = pathname.replace('/api/restaurant/orders/', '');
-    const order = await repo.getOrder(orderId);
+    const order = await posService.getOrder(orderId);
     if (!order) {
       sendJson(res, 404, { success: false, error: `Order ${orderId} not found`, code: 'ORDER_NOT_FOUND' });
       return;
@@ -3444,10 +3188,11 @@ export async function handleRequest(req: http.IncomingMessage, res: http.ServerR
   if ((pathname === '/api/restaurant/kds' || pathname === '/api/restaurant/kds/tasks') && method === 'GET') {
     const stationFilter = (parsedUrl.query.station || parsedUrl.query.stationId) as string;
     const branchFilter = (parsedUrl.query.branchId as string) || (requestIdentity.isPrivileged ? undefined : requestIdentity.branchId);
-    const tasks = await repo.getKitchenTasks(stationFilter, branchFilter);
+    const tasks = await posService.listKitchenTasks({ station: stationFilter, branchId: branchFilter });
     sendJson(res, 200, {
       success: true,
       data: tasks,
+      tasks,
     });
     return;
   }

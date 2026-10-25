@@ -34,8 +34,9 @@ import {
   RestaurantRuntimeStore,
 } from './store';
 import { RealtimeEventBus, eventBus as defaultEventBus } from '../domain/event-bus';
+import { PosRepository } from '@orbitox/pos';
 
-export interface RestaurantRepository {
+export interface RestaurantRepository extends PosRepository {
   readonly tenantId: string;
 
   // Infrastructure: Branches, Floors, Tables
@@ -243,6 +244,10 @@ export class PostgresRestaurantRepository implements RestaurantRepository {
     this.tenantId = tenantId.trim();
     this.prisma = prisma;
     this.eventBus = eventBus;
+  }
+
+  broadcast(event: any): void {
+    this.eventBus.broadcast(event);
   }
 
   // ─────────────────────────────────────────────────────────────
@@ -2664,6 +2669,10 @@ export class JsonRestaurantRepository implements RestaurantRepository {
     }
     this.tenantId = tenantId;
     this.store = store || new RestaurantRuntimeStore();
+  }
+
+  broadcast(event: any): void {
+    defaultEventBus.broadcast(event);
   }
 
   async getBranches() { return this.store.getBranches(); }
