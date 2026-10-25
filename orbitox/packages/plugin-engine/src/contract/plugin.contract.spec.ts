@@ -33,7 +33,7 @@ describe('OrbitoX Plugin Contract & Loader', () => {
       };
       const res = PluginContractLoader.validateManifest(invalid);
       expect(res.valid).toBe(false);
-      expect(res.errors).toContain('Manifest "id" must contain only lowercase alphanumeric characters, dashes, or underscores');
+      expect(res.errors).toContain('Manifest "id" must be a valid identifier or package identifier (e.g. "pos" or "@orbitox/pos")');
     });
 
     it('should reject manifest with invalid semver version', () => {
