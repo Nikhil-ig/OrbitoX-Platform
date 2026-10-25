@@ -4,6 +4,19 @@
 
 ARG NODE_VERSION=22
 
+# ---- 0. libs: build the linked OrbitoX workspace packages (their dist/ is not in git) ----
+FROM node:${NODE_VERSION}-slim AS libs
+RUN corepack enable && corepack prepare pnpm@9.15.0 --activate
+WORKDIR /workspace/orbitox
+COPY orbitox/package.json orbitox/pnpm-lock.yaml orbitox/pnpm-workspace.yaml orbitox/tsconfig.base.json orbitox/tsconfig.prod.json orbitox/turbo.json ./
+COPY orbitox/packages ./packages
+COPY orbitox/plugins ./plugins
+COPY orbitox/tools ./tools
+RUN --mount=type=cache,id=pnpm-libs,target=/root/.local/share/pnpm/store \
+    pnpm install --frozen-lockfile --ignore-scripts \
+      --filter @orbitox/external-runtime-sdk... --filter @orbitox/pos... --filter @orbitox/plugin-engine...
+RUN pnpm --filter @orbitox/external-runtime-sdk... --filter @orbitox/pos... --filter @orbitox/plugin-engine... run build
+
 # ---- 1. deps: install dependencies and compile prisma ----
 FROM node:${NODE_VERSION}-slim AS deps
 RUN apt-get update && apt-get install -y --no-install-recommends openssl curl \
@@ -12,11 +25,8 @@ RUN corepack enable && corepack prepare pnpm@9.15.0 --activate
 
 WORKDIR /workspace
 
-# Copy SDK dependency and RestaurantOS package manifests
-COPY orbitox/packages/external-runtime-sdk /workspace/orbitox/packages/external-runtime-sdk
-COPY orbitox/packages/plugin-engine /workspace/orbitox/packages/plugin-engine
-COPY orbitox/packages/types /workspace/orbitox/packages/types
-COPY orbitox/plugins/pos /workspace/orbitox/plugins/pos
+# Built OrbitoX workspace (sdk, plugin-engine, pos + their node_modules and dist)
+COPY --from=libs /workspace/orbitox /workspace/orbitox
 COPY projects/external-os/restaurant-os/package.json projects/external-os/restaurant-os/pnpm-lock.yaml projects/external-os/restaurant-os/pnpm-workspace.yaml /workspace/projects/external-os/restaurant-os/
 COPY projects/external-os/restaurant-os/prisma /workspace/projects/external-os/restaurant-os/prisma
 
