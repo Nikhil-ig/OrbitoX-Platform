@@ -871,7 +871,9 @@ async function runBlackBoxHttpMultiTenantSuite() {
   }
 }
 
-runBlackBoxHttpMultiTenantSuite().catch((err) => {
+runBlackBoxHttpMultiTenantSuite()
+  .then(() => process.exit(0)) // spawned `npx tsx` child keeps the event loop alive; exit explicitly
+  .catch((err) => {
   console.error('\n💥 FATAL TEST SUITE FAILURE:', err);
   process.exit(1);
-});
+  });
