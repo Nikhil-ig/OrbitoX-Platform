@@ -14,6 +14,9 @@ importers:
       prettier:
         specifier: ^3.5.0
         version: 3.9.6
+      tsx:
+        specifier: ^4.19.3
+        version: 4.23.15
       turbo:
         specifier: ^2.10.12
         version: 2.10.12
@@ -688,6 +691,10 @@ importers:
         version: 5.9.3
 
   plugins/crm:
+    dependencies:
+      '@orbitox/plugin-engine':
+        specifier: workspace:*
+        version: link:../../packages/plugin-engine
     devDependencies:
       '@orbitox/jest-config':
         specifier: workspace:*

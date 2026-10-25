@@ -789,8 +789,11 @@ async function runBlackBoxHttpMultiTenantSuite() {
     // Suite 14: High-Concurrency HTTP Load Test & p95 Latency Profiling
     // -------------------------------------------------------------------------
     console.log(`\n--- Suite 14: High-Concurrency HTTP Load Test & p95 Latency ---`);
-    // Warm up menu route and connection pool
-    await makeRequest(TEST_PORT, 'GET', '/api/restaurant/menu', { Host: HOST_A });
+    // Pre-warm menu route, JIT compiler, and server connection pool
+    for (let w = 0; w < 5; w++) {
+      await makeRequest(TEST_PORT, 'GET', '/api/restaurant/menu', { Host: HOST_A });
+      await makeRequest(TEST_PORT, 'GET', '/api/restaurant/menu', { Host: HOST_B });
+    }
 
     const LOAD_CONCURRENCY = 50;
     const latenciesMs: number[] = [];

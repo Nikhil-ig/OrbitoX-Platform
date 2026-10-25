@@ -53,8 +53,8 @@ export const posPlugin: OrbitoXPlugin<PosDomain, PosService, PosRepository> = de
     QRTrustEngine,
     IdempotencyEngine,
   },
-  service: (deps: { repository: PosRepository; clock: PluginClock; events?: any }) =>
-    new PosService(deps.repository, deps.clock),
+  service: (deps?: { repository?: PosRepository; clock?: PluginClock; events?: any }) =>
+    new PosService(deps?.repository, deps?.clock),
   routes: [
     {
       path: '/api/restaurant/quote',
@@ -99,6 +99,40 @@ export const posPlugin: OrbitoXPlugin<PosDomain, PosService, PosRepository> = de
         const service = ctx.services;
         const tasks = await service.listKitchenTasks(ctx.query || {});
         return { status: 200, body: { success: true, tasks } };
+      },
+    },
+    {
+      path: '/api/pos/orders',
+      method: 'POST',
+      entitlement: { feature: 'pos.orders', quotaKey: 'pos.monthly_orders' },
+      handler: async (ctx: PluginRequestContext<PosService>) => {
+        const service = ctx.services;
+        const idempotencyKey = (ctx.headers && ctx.headers['x-idempotency-key']) as string | undefined;
+        return await service.submitOrder({
+          body: ctx.body,
+          identity: ctx.user,
+          idempotencyKey,
+        });
+      },
+    },
+    {
+      path: '/api/pos/orders',
+      method: 'GET',
+      entitlement: { feature: 'pos.orders' },
+      handler: async (ctx: PluginRequestContext<PosService>) => {
+        const service = ctx.services;
+        const orders = await service.listOrders(ctx.query || {});
+        return { status: 200, body: { success: true, orders } };
+      },
+    },
+    {
+      path: '/api/pos/quote',
+      method: 'POST',
+      entitlement: { feature: 'pos.quotes' },
+      handler: async (ctx: PluginRequestContext<PosService>) => {
+        const service = ctx.services;
+        const result = await service.calculateQuote(ctx.body);
+        return { status: 200, body: { success: true, data: result } };
       },
     },
   ],

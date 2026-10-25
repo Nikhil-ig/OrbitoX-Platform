@@ -79,6 +79,8 @@ jobs:
       - run: pnpm install --frozen-lockfile --ignore-scripts
       - name: Pack packages, install into clean isolated temp dir, and verify
         run: bash scripts/pack-and-verify.sh
+      - name: Scaffold & Multi-Template End-to-End Smoke Test
+        run: pnpm exec tsx scripts/test-scaffold-smoke.ts
 
   secret-scan:
     name: Secret scan (working tree)

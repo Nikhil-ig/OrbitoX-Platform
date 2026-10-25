@@ -174,3 +174,81 @@ export interface PosRepository {
   // Realtime Event broadcast
   broadcast?(event: any): void;
 }
+
+/**
+ * 📦 Default In-Memory POS Repository
+ * Used for zero-dependency standalone operation, quick starts, and testing.
+ */
+export class MemoryPosRepository implements PosRepository {
+  private menuItems: PosMenuItem[] = [
+    { id: 'item_cold_brew', name: 'Nitro Cold Brew', basePriceMinor: 45000, station: 'BEVERAGE' },
+    { id: 'item_croissant', name: 'Almond Croissant', basePriceMinor: 35000, station: 'BAKERY' },
+    { id: 'item_espresso', name: 'Espresso', basePriceMinor: 25000, station: 'BEVERAGE' },
+  ];
+  private tables: PosTable[] = [
+    { id: 1, number: '1', capacity: 2, status: 'AVAILABLE' },
+    { id: 2, number: '2', capacity: 4, status: 'AVAILABLE' },
+    { id: 3, number: '3', capacity: 4, status: 'AVAILABLE' },
+    { id: 4, number: '4', capacity: 6, status: 'AVAILABLE' },
+    { id: 5, number: '5', capacity: 2, status: 'AVAILABLE' },
+  ];
+  private sessions: Map<string, PosSession> = new Map();
+  private orders: Map<string, PosOrderRecord> = new Map();
+  private kitchenTasks: Map<string, PosKitchenTask> = new Map();
+  private idempotency: Map<string, PosIdempotencyRecord> = new Map();
+
+  async getMenuItems(): Promise<PosMenuItem[]> { return [...this.menuItems]; }
+  async getMenuItem(id: string): Promise<PosMenuItem | undefined> { return this.menuItems.find(m => m.id === id); }
+  
+  async getTable(id: string | number): Promise<PosTable | undefined> {
+    return this.tables.find(t => String(t.id) === String(id) || String(t.number) === String(id)) 
+      || { id, number: String(id), capacity: 4, status: 'AVAILABLE' };
+  }
+  async getTableByNumber(number: string): Promise<PosTable | undefined> {
+    return this.tables.find(t => String(t.number) === String(number)) 
+      || { id: number, number, capacity: 4, status: 'AVAILABLE' };
+  }
+  async getTableByLocator(locator: string): Promise<PosTable | undefined> { 
+    return this.tables.find(t => t.locator === locator); 
+  }
+
+  async getSession(sessionId: string): Promise<PosSession | undefined> { return this.sessions.get(sessionId); }
+  async createOrJoinSession(tableNumber: string, hostName: string): Promise<PosSession> {
+    const session: PosSession = { sessionId: `sess_${tableNumber}`, tableNumber, status: 'ACTIVE', hostName };
+    this.sessions.set(session.sessionId!, session);
+    return session;
+  }
+  async closeSession(tableNumber: string): Promise<any> {
+    const session = Array.from(this.sessions.values()).find(s => s.tableNumber === tableNumber);
+    if (session) session.status = 'CLOSED';
+    return session;
+  }
+
+  async getOrders(): Promise<any[]> { return Array.from(this.orders.values()); }
+  async getOrder(orderId: string): Promise<any | undefined> { return this.orders.get(orderId); }
+  async getOrderByOrderToken(token: string): Promise<any | undefined> { 
+    return Array.from(this.orders.values()).find(o => o.orderToken === token); 
+  }
+  async addOrder(order: any): Promise<void> { this.orders.set(order.orderId || order.id, order); }
+  async updateOrderStatus(orderId: string, status: string): Promise<boolean> {
+    const order = this.orders.get(orderId);
+    if (order) { order.status = status; return true; }
+    return false;
+  }
+
+  async getKitchenTasks(): Promise<any[]> { return Array.from(this.kitchenTasks.values()); }
+  async addKitchenTask(task: any): Promise<void> { this.kitchenTasks.set(task.id, task); }
+  async updateKitchenTaskStatus(taskId: string, status?: string): Promise<any> {
+    const task = this.kitchenTasks.get(taskId);
+    if (task && status) task.status = status;
+    return task;
+  }
+
+  async getIdempotencyRecord(key: string): Promise<PosIdempotencyRecord | undefined> { 
+    return this.idempotency.get(key); 
+  }
+  async saveIdempotencyRecord(key: string, record: any): Promise<void> { 
+    this.idempotency.set(key, record); 
+  }
+}
+

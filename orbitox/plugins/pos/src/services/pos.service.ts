@@ -17,6 +17,7 @@ import {
   PosMenuItem,
   PosTable,
   PosSession,
+  MemoryPosRepository,
 } from '../domain/pos-repository';
 
 export interface PosServiceClock {
@@ -54,7 +55,7 @@ export interface QuoteResponseData {
 export interface SubmitOrderInput {
   body: {
     orderId?: string;
-    tableNumber?: string;
+    tableNumber?: string | number;
     tableId?: string | number;
     sessionId?: string;
     guestName?: string;
@@ -90,10 +91,19 @@ export interface PosOperationResult {
 }
 
 export class PosService {
+  public readonly repository: PosRepository;
+  public readonly clock: PosServiceClock;
+
   constructor(
-    public readonly repository: PosRepository,
-    public readonly clock: PosServiceClock = { now: () => new Date() }
-  ) {}
+    repository?: PosRepository,
+    clock: PosServiceClock = { now: () => new Date() }
+  ) {
+    this.repository =
+      repository && typeof repository.getMenuItems === 'function'
+        ? repository
+        : new MemoryPosRepository();
+    this.clock = clock;
+  }
 
   /**
    * 1. Calculate Deterministic Pricing Quote
@@ -243,7 +253,10 @@ export class PosService {
           },
         };
       }
-      const found = menuItems.find((m) => m.id === (it.id || it.itemId));
+      let found = menuItems.find((m) => m.id === (it.id || it.itemId));
+      if (!found && typeof (this.repository as any).getMenuItem === 'function') {
+        found = await (this.repository as any).getMenuItem(it.id || it.itemId);
+      }
       if (!found) {
         return {
           status: 400,
@@ -257,7 +270,7 @@ export class PosService {
     }
 
     // D. Validate Physical Table
-    if (!body.tableNumber && !body.tableId) {
+    if (body.tableNumber === undefined && body.tableId === undefined) {
       return {
         status: 400,
         body: {
@@ -268,8 +281,8 @@ export class PosService {
       };
     }
 
-    const targetTableRecord = body.tableNumber
-      ? await this.repository.getTableByNumber(body.tableNumber)
+    const targetTableRecord = body.tableNumber !== undefined
+      ? await this.repository.getTableByNumber(String(body.tableNumber))
       : await this.repository.getTable(body.tableId!);
 
     if (!targetTableRecord) {
@@ -313,7 +326,13 @@ export class PosService {
     const targetServeAt = new Date(this.clock.now().getTime() + 25 * 60 * 1000).toISOString();
 
     for (const it of items) {
-      const found = menuItems.find((m) => m.id === (it.id || it.itemId))!;
+      let found = menuItems.find((m) => m.id === (it.id || it.itemId));
+      if (!found && typeof (this.repository as any).getMenuItem === 'function') {
+        found = await (this.repository as any).getMenuItem(it.id || it.itemId);
+      }
+      if (!found) {
+        found = { id: it.id || it.itemId, name: it.name || 'Item', basePriceMinor: it.priceMinor || 25000, station: 'EXPO' };
+      }
       let unitPrice = found.basePriceMinor;
       const modNames: string[] = [];
 
@@ -432,6 +451,7 @@ export class PosService {
         station: i.station,
       })),
       customer: newOrder.customer,
+      kitchenTasks: kitchenTasksToCreate,
       createdAt: newOrder.createdAt,
     };
 

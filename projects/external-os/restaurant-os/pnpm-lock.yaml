@@ -11,6 +11,12 @@ importers:
       '@orbitox/external-runtime-sdk':
         specifier: link:../../../orbitox/packages/external-runtime-sdk
         version: link:../../../orbitox/packages/external-runtime-sdk
+      '@orbitox/plugin-engine':
+        specifier: link:../../../orbitox/packages/plugin-engine
+        version: link:../../../orbitox/packages/plugin-engine
+      '@orbitox/pos':
+        specifier: link:../../../orbitox/plugins/pos
+        version: link:../../../orbitox/plugins/pos
       '@prisma/client':
         specifier: ^6.4.1
         version: 6.19.3(prisma@6.19.3(typescript@5.9.3))(typescript@5.9.3)

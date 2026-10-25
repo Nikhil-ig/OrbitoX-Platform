@@ -48,8 +48,8 @@ export class PluginContractLoader {
 
     if (!manifest.id || typeof manifest.id !== 'string' || manifest.id.trim() === '') {
       errors.push('Manifest "id" is required and must be a non-empty string');
-    } else if (!/^[a-z0-9-_]+$/.test(manifest.id)) {
-      errors.push('Manifest "id" must contain only lowercase alphanumeric characters, dashes, or underscores');
+    } else if (!/^(@[a-z0-9-_]+\/)?[a-z0-9-_]+$/.test(manifest.id)) {
+      errors.push('Manifest "id" must be a valid identifier or package identifier (e.g. "pos" or "@orbitox/pos")');
     }
 
     if (!manifest.name || typeof manifest.name !== 'string' || manifest.name.trim() === '') {
