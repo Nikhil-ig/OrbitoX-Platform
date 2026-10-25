@@ -106,6 +106,12 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      - name: Build linked OrbitoX external-runtime-sdk
+        working-directory: orbitox
+        run: |
+          pnpm install --frozen-lockfile --filter @orbitox/external-runtime-sdk...
+          pnpm --filter @orbitox/external-runtime-sdk... run build
+
       - name: Generate Prisma Client & Push DB Schema
         run: |
           pnpm exec prisma generate
