@@ -460,6 +460,9 @@ importers:
       '@orbitox/types':
         specifier: workspace:*
         version: link:../types
+      reflect-metadata:
+        specifier: ^0.2.2
+        version: 0.2.2
     devDependencies:
       '@orbitox/eslint-config':
         specifier: workspace:*

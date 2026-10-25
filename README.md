@@ -141,34 +141,33 @@ Unit tests: `pnpm --filter @orbitox/external-project-engine test`. CI runs all o
 ## Repository layout
 
 ```
-orbitox/                 The monorepo (pnpm + Turborepo)
-  apps/web/              Control plane: admin UI + APIs (Next.js, port 3005)
-  apps/celebrations/     Celebrations Studio, a separate visual-editor product
-  packages/              Kernel and SDKs (core, runtime, plugin-engine, external-runtime-sdk, ui, ...)
-  plugins/               Business modules (commerce, pos, crm, finance, inventory, hms, hrms, school, ...)
-  scripts/               init-env, smoke test, cluster switch tools
-projects/external-os/restaurant-os/   RestaurantOS, an independent app that connects to the control plane
-hospital-os/, external-restaurant-os/, test-consumer-app/   Example and reference apps
-docs/                    Architecture and guides (start at docs/README.md)
-developer_guide/, B2B2C_Template_Docs/   Deeper design documents
+orbitox/                             The monorepo (pnpm + Turborepo)
+  apps/web/                          Control plane: admin UI + APIs (Next.js, port 3005)
+  apps/celebrations/                 Celebrations Studio, a separate visual-editor product
+  packages/                          Kernel and SDKs (core, runtime, plugin-engine, external-runtime-sdk, ui, ...)
+  plugins/                           Authoritative Business Plugins (@orbitox/pos, @orbitox/crm, commerce, finance, ...)
+  tools/cli/                         OrbitoX CLI (@orbitox/cli): scaffold composed apps and templates
+  scripts/                           pack-and-verify, test-scaffold-smoke, init-env, smoke tests
+projects/external-os/restaurant-os/  Authoritative RestaurantOS, a multi-tenant app composed with @orbitox/pos
+projects/external-os/hospital-os/    HospitalOS reference clinical vertical
+projects/examples/test-consumer-app/ Standalone consumer application testing @orbitox-io GitHub packages
+docs/                                Architecture and guides (start at docs/README.md)
+developer_guide/, B2B2C_Template_Docs/ Deeper domain design documents
 ```
 
 ## Status
 
-Working and tested: deployment (Docker, health checks, fail-fast config), access control,
-runtime registration, heartbeats, command loop, Fleet view, CI.
-
-In progress or known limitations (details in [`docs/SECURITY_CLEANUP.md`](docs/SECURITY_CLEANUP.md)):
-
-- The older `/admin` screens still run on sample data (they say so in a banner). They are being
-  replaced by live screens under `/platform`, starting with Fleet.
-- State is stored in a JSON file. A Postgres-backed store (the Prisma schema exists) is planned.
-- The runtime token is shared across projects; per-project keys are planned.
+Working and tested:
+- **Composable SaaS Engine**: Scaffold new vertical products (`orbitox create my-app --template=restaurant|crm`) that compose authoritative business logic plugins (`@orbitox/pos`, `@orbitox/crm`) with zero-trust multi-tenancy and platform connection.
+- **Zero-Trust Per-Project Keys**: Cryptographically secure project runtime keys (`orb_proj_...`) with one-time secret display and SHA-256 hash isolation.
+- **Unified Publishing**: Single scope `@orbitox/*` at v1.0.0 with backwards-compatibility proxies for `@orbitox-io/*`.
+- **Automated Verification**: Monorepo packs and verifies all 12 packages in clean offline temp sandboxes; boots composed apps and runs multi-template E2E smoke tests in CI.
 
 ## Documentation
 
-Start with [`docs/README.md`](docs/README.md). Highlights: architecture
-([`docs/02_ARCHITECTURE.md`](docs/02_ARCHITECTURE.md)), deployment
-([`docs/12_PRODUCTION_DEPLOYMENT.md`](docs/12_PRODUCTION_DEPLOYMENT.md)), client projects
-([`docs/CLIENT_PROJECTS_AND_ECOSYSTEM_GUIDE.md`](docs/CLIENT_PROJECTS_AND_ECOSYSTEM_GUIDE.md)).
-Historical design and acceptance reports are kept in [`docs/archive/`](docs/archive/).
+Start with [`docs/README.md`](docs/README.md). Highlights:
+- Plugin Contract: [`docs/20_PLUGIN_CONTRACT.md`](docs/20_PLUGIN_CONTRACT.md)
+- CLI Scaffolding: [`docs/11_CLI_SCAFFOLDING.md`](docs/11_CLI_SCAFFOLDING.md)
+- Getting Started: [`docs/01_GETTING_STARTED.md`](docs/01_GETTING_STARTED.md)
+- Production Deployment: [`docs/12_PRODUCTION_DEPLOYMENT.md`](docs/12_PRODUCTION_DEPLOYMENT.md)
+- Client Projects & Ecosystem: [`docs/CLIENT_PROJECTS_AND_ECOSYSTEM_GUIDE.md`](docs/CLIENT_PROJECTS_AND_ECOSYSTEM_GUIDE.md)

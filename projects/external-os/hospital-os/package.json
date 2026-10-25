@@ -20,12 +20,13 @@
   "author": "OrbitoX Healthcare Engineering Team",
   "license": "PROPRIETARY",
   "dependencies": {
-    "@orbitox/core": "file:../orbitox/packages/core",
-    "@orbitox/plugin-engine": "file:../orbitox/packages/plugin-engine",
-    "@orbitox/runtime": "file:../orbitox/packages/runtime",
-    "@orbitox/sdk": "file:../orbitox/packages/sdk",
-    "@orbitox/types": "file:../orbitox/packages/types",
-    "@orbitox/utils": "file:../orbitox/packages/utils"
+    "@orbitox/core": "file:../../../orbitox/packages/core",
+    "@orbitox/plugin-engine": "file:../../../orbitox/packages/plugin-engine",
+    "@orbitox/runtime": "file:../../../orbitox/packages/runtime",
+    "@orbitox/sdk": "file:../../../orbitox/packages/sdk",
+    "@orbitox/types": "file:../../../orbitox/packages/types",
+    "@orbitox/utils": "file:../../../orbitox/packages/utils",
+    "reflect-metadata": "^0.2.2"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",

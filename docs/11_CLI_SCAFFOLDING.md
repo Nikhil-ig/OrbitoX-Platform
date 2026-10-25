@@ -29,15 +29,35 @@ flowchart LR
 
 ---
 
-## 📊 Available Templates Matrix
+## 📊 Available Composable Templates Matrix
 
-| Template | Flag | Pre-built Entities | Pre-built Features | Ideal Industry |
+| Template | Flag | Composed Plugin | Built-In Capabilities | Target Industry |
 | :--- | :--- | :--- | :--- | :--- |
-| **Restaurant OS** | `--template=restaurant` | `menu_item`, `order`, `table`, `reservation` | KDS integration, Table QR ordering | Food & Beverage SaaS |
-| **CRM Platform** | `--template=crm` | `lead`, `contact`, `deal`, `activity`, `pipeline` | Sales funnel, Activity timeline | Sales & Marketing SaaS |
-| **Healthcare HMS** | `--template=hms` | `patient`, `doctor`, `appointment`, `prescription` | HIPAA audit mode on, Patient portal | Hospital Management |
-| **E-Commerce** | `--template=ecommerce` | `product`, `cart`, `order`, `customer`, `review` | Inventory management, Order tracking | Retail & Commerce |
-| **Minimal Default** | `--template=default` | `example_entity` | None | Custom SaaS startups |
+| **Restaurant OS** | `--template=restaurant` | `@orbitox/pos` | Deterministic GST Quote, Kitchen DAG, Order Lifecycle, Dining Sessions | Food & Beverage SaaS |
+| **CRM Platform** | `--template=crm` | `@orbitox/crm` | Predictive Lead Scoring, Opportunity Stages, Durable State Machine | Sales & B2B SaaS |
+| **Foundation Starter** | `--template=blank` | `@orbitox/core` | Barebones Zero-Trust Multi-Tenancy & Platform Telemetry | Custom SaaS Vertical |
+
+---
+
+## 📦 Installation Modes
+
+`orbitox create` supports multiple package resolution modes:
+
+| Mode | Flag | Description |
+| :--- | :--- | :--- |
+| **Registry (Default)** | `--install-mode=registry` | Resolves packages from npm / GitHub Packages registry. |
+| **Local Tarballs** | `--install-mode=file --pack-dir=<dir>` | Offline mode: installs pre-packed `.tgz` tarballs from a directory. |
+| **Monorepo Workspace**| `--install-mode=workspace` | Uses `workspace:*` links when scaffolding inside the monorepo. |
+
+---
+
+## 📁 Generated Project Structure
+
+Every scaffolded application includes:
+- `docker-compose.yml`: Out-of-the-box local PostgreSQL container.
+- `orbitox.config.ts`: Host configuration specifying plugins, tenancy resolver, auth provider, and platform connection.
+- `package.json`: Pre-configured dependencies (`@orbitox/runtime`, plugin package, and `tsx`).
+- `src/main.ts`: 1-line asynchronous `createOrbitoXApp(config)` bootstrap.
 
 ---
 
