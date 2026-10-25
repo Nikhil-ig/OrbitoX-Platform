@@ -1,5 +1,5 @@
 import { OrbitoXDatabaseAdapter } from './database/types';
-import { OrbitoXPlugin } from '@orbitox-io/plugin-engine';
+import { OrbitoXPlugin } from '@orbitox/plugin-engine';
 
 export interface OrbitoXUser {
   id: string;

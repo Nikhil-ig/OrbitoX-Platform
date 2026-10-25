@@ -156,7 +156,7 @@ async function runBlackBoxHttpMultiTenantSuite() {
       env: {
         ...process.env,
         PORT: String(TEST_PORT),
-        DATABASE_URL: APP_DB_URL,
+        DATABASE_URL: APP_DB_URL.includes('?') ? `${APP_DB_URL}&connection_limit=50` : `${APP_DB_URL}?connection_limit=50`,
         STORAGE_DRIVER: 'postgres',
         RESTAURANTOS_PLATFORM_TOKEN: PLATFORM_TOKEN,
         RAZORPAY_WEBHOOK_SECRET: 'test_webhook_secret_123',
@@ -789,6 +789,9 @@ async function runBlackBoxHttpMultiTenantSuite() {
     // Suite 14: High-Concurrency HTTP Load Test & p95 Latency Profiling
     // -------------------------------------------------------------------------
     console.log(`\n--- Suite 14: High-Concurrency HTTP Load Test & p95 Latency ---`);
+    // Warm up menu route and connection pool
+    await makeRequest(TEST_PORT, 'GET', '/api/restaurant/menu', { Host: HOST_A });
+
     const LOAD_CONCURRENCY = 50;
     const latenciesMs: number[] = [];
 

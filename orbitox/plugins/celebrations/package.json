@@ -1,16 +1,21 @@
 {
-  "name": "@orbitox-io/celebrations",
+  "name": "@orbitox/celebrations",
   "version": "1.0.0",
   "description": "Headless Digital Invitations & Celebration Experience Engine — occasion-agnostic, configuration-driven platform for creating beautiful digital invitations and celebration experiences.",
   "main": "./dist/index.js",
   "module": "./dist/index.js",
   "types": "./dist/index.d.ts",
+  "files": [
+    "dist",
+    "README.md"
+  ],
   "repository": {
     "type": "git",
     "url": "https://github.com/OrbitoX-io/OrbitoX-Platform.git",
     "directory": "plugins/celebrations"
   },
   "publishConfig": {
+    "access": "public",
     "registry": "https://npm.pkg.github.com"
   },
   "exports": {

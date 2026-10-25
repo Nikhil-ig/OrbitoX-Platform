@@ -1,6 +1,6 @@
 import http from 'http';
 import { createOrbitoXApp } from './orbitox-app';
-import { defineOrbitoXPlugin } from '@orbitox-io/plugin-engine';
+import { defineOrbitoXPlugin } from '@orbitox/plugin-engine';
 
 describe('Hardened createOrbitoXApp', () => {
   const originalEnv = process.env.NODE_ENV;

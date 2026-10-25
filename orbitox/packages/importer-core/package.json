@@ -1,5 +1,5 @@
 {
-  "name": "@orbitox-io/importer-core",
+  "name": "@orbitox/importer-core",
   "version": "1.0.0",
   "description": "OrbitoX Universal Import Engine — Canonical Import IR, Adapters, Semantic Inference, and SceneGraph Compiler",
   "main": "./dist/index.js",
@@ -10,6 +10,7 @@
     "directory": "packages/importer-core"
   },
   "publishConfig": {
+    "access": "public",
     "registry": "https://npm.pkg.github.com"
   },
   "scripts": {

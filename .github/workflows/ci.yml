@@ -60,6 +60,26 @@ jobs:
           done
           ORBITOX_URL=http://127.0.0.1:3005 node scripts/smoke-control-plane.mjs || { cat "$RUNNER_TEMP/server.log"; exit 1; }
 
+  pack-and-verify:
+    name: Package Tarball & External Install Smoke
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: orbitox
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9.15.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: orbitox/pnpm-lock.yaml
+      - run: pnpm install --frozen-lockfile --ignore-scripts
+      - name: Pack packages, install into clean isolated temp dir, and verify
+        run: bash scripts/pack-and-verify.sh
+
   secret-scan:
     name: Secret scan (working tree)
     runs-on: ubuntu-latest

@@ -1,9 +1,16 @@
 {
   "name": "@orbitox/pos",
-  "version": "0.1.0",
-  "private": true,
+  "version": "1.0.0",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://npm.pkg.github.com"
+  },
   "scripts": {
     "build": "tsc --build",
     "clean": "rm -rf dist",
@@ -13,7 +20,7 @@
     "@orbitox/core": "workspace:*",
     "@orbitox/sdk": "workspace:*",
     "@orbitox/types": "workspace:*",
-    "@orbitox-io/plugin-engine": "workspace:*"
+    "@orbitox/plugin-engine": "workspace:*"
   },
   "devDependencies": {
     "@orbitox/tsconfig": "workspace:*",

@@ -10,7 +10,7 @@ import {
   OrbitoXPlugin,
   PluginRequestContext,
   PluginClock,
-} from '@orbitox-io/plugin-engine';
+} from '@orbitox/plugin-engine';
 import { PosRepository } from './domain/pos-repository';
 import { PosService } from './services/pos.service';
 import { PricingEngine } from './domain/pricing-quote';
@@ -34,9 +34,9 @@ export const posPlugin: OrbitoXPlugin<PosDomain, PosService, PosRepository> = de
 >({
   manifest: {
     id: '@orbitox/pos',
-    name: 'pos',
+    name: '@orbitox/pos',
     displayName: 'OrbitoX POS & Kitchen Engine',
-    version: '0.1.0',
+    version: '1.0.0',
     description: 'Authoritative Point of Sale, Deterministic Pricing, Kitchen DAG, and Session Engine',
     entitlements: {
       features: ['pos.orders', 'pos.kitchen', 'pos.quotes', 'pos.sessions'],

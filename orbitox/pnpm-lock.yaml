@@ -28,16 +28,16 @@ importers:
         version: 2.1.2(gsap@3.15.0)(react@19.2.8)
       '@orbitox-io/celebrations':
         specifier: workspace:*
-        version: link:../../plugins/celebrations
+        version: link:../../packages/compat-celebrations
       '@orbitox-io/crm':
         specifier: workspace:*
-        version: link:../../plugins/crm
+        version: link:../../packages/compat-crm
       '@orbitox-io/importer-core':
         specifier: workspace:*
-        version: link:../../packages/importer-core
+        version: link:../../packages/compat-importer-core
       '@orbitox-io/plugin-engine':
         specifier: workspace:*
-        version: link:../../packages/plugin-engine
+        version: link:../../packages/compat-plugin-engine
       '@orbitox/sdk':
         specifier: workspace:*
         version: link:../../packages/sdk
@@ -95,19 +95,25 @@ importers:
     dependencies:
       '@orbitox-io/plugin-engine':
         specifier: workspace:*
-        version: link:../../packages/plugin-engine
+        version: link:../../packages/compat-plugin-engine
       '@orbitox/commerce':
         specifier: workspace:*
         version: link:../../plugins/commerce
       '@orbitox/core':
         specifier: workspace:*
         version: link:../../packages/core
+      '@orbitox/crm':
+        specifier: workspace:*
+        version: link:../../plugins/crm
       '@orbitox/external-project-engine':
         specifier: workspace:*
         version: link:../../plugins/external-project-engine
       '@orbitox/external-runtime-sdk':
         specifier: workspace:*
         version: link:../../packages/external-runtime-sdk
+      '@orbitox/plugin-engine':
+        specifier: workspace:*
+        version: link:../../packages/plugin-engine
       '@orbitox/pos':
         specifier: workspace:*
         version: link:../../plugins/pos
@@ -154,6 +160,30 @@ importers:
       typescript:
         specifier: ~5.9.3
         version: 5.9.3
+
+  packages/compat-celebrations:
+    dependencies:
+      '@orbitox/celebrations':
+        specifier: workspace:*
+        version: link:../../plugins/celebrations
+
+  packages/compat-crm:
+    dependencies:
+      '@orbitox/crm':
+        specifier: workspace:*
+        version: link:../../plugins/crm
+
+  packages/compat-importer-core:
+    dependencies:
+      '@orbitox/importer-core':
+        specifier: workspace:*
+        version: link:../importer-core
+
+  packages/compat-plugin-engine:
+    dependencies:
+      '@orbitox/plugin-engine':
+        specifier: workspace:*
+        version: link:../plugin-engine
 
   packages/config/eslint:
     dependencies:
@@ -381,15 +411,15 @@ importers:
       '@nestjs/common':
         specifier: ^12.0.1
         version: 12.0.1(class-transformer@0.5.1)(class-validator@0.14.4)(reflect-metadata@0.2.2)(rxjs@7.8.2)
-      '@orbitox-io/plugin-engine':
-        specifier: workspace:*
-        version: link:../plugin-engine
       '@orbitox/core':
         specifier: workspace:*
         version: link:../core
       '@orbitox/external-runtime-sdk':
         specifier: workspace:*
         version: link:../external-runtime-sdk
+      '@orbitox/plugin-engine':
+        specifier: workspace:*
+        version: link:../plugin-engine
       '@orbitox/sdk':
         specifier: workspace:*
         version: link:../sdk
@@ -577,7 +607,7 @@ importers:
     dependencies:
       '@orbitox-io/crm':
         specifier: workspace:*
-        version: link:../crm
+        version: link:../../packages/compat-crm
     devDependencies:
       '@orbitox/jest-config':
         specifier: workspace:*
@@ -897,7 +927,7 @@ importers:
     devDependencies:
       '@orbitox-io/plugin-engine':
         specifier: workspace:*
-        version: link:../../packages/plugin-engine
+        version: link:../../packages/compat-plugin-engine
       tsx:
         specifier: ^4.23.7
         version: 4.23.15
@@ -907,12 +937,12 @@ importers:
 
   plugins/pos:
     dependencies:
-      '@orbitox-io/plugin-engine':
-        specifier: workspace:*
-        version: link:../../packages/plugin-engine
       '@orbitox/core':
         specifier: workspace:*
         version: link:../../packages/core
+      '@orbitox/plugin-engine':
+        specifier: workspace:*
+        version: link:../../packages/plugin-engine
       '@orbitox/sdk':
         specifier: workspace:*
         version: link:../../packages/sdk

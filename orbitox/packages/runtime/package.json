@@ -5,6 +5,14 @@
   "main": "./dist/index.js",
   "module": "./dist/index.mjs",
   "types": "./dist/index.d.ts",
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://npm.pkg.github.com"
+  },
   "scripts": {
     "build": "tsc --build",
     "clean": "rm -rf dist",
@@ -14,7 +22,7 @@
     "@nestjs/common": "^12.0.1",
     "@orbitox/core": "workspace:*",
     "@orbitox/external-runtime-sdk": "workspace:*",
-    "@orbitox-io/plugin-engine": "workspace:*",
+    "@orbitox/plugin-engine": "workspace:*",
     "@orbitox/sdk": "workspace:*",
     "express": "^5.2.1"
   },

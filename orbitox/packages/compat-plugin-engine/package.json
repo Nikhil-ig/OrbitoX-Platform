@@ -1,0 +1,10 @@
+{
+  "name": "@orbitox-io/plugin-engine",
+  "version": "1.4.0",
+  "description": "Compatibility alias forwarding to @orbitox/plugin-engine",
+  "main": "./index.js",
+  "types": "./index.d.ts",
+  "dependencies": {
+    "@orbitox/plugin-engine": "workspace:*"
+  }
+}

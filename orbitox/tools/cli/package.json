@@ -1,9 +1,17 @@
 {
   "name": "@orbitox/cli",
   "version": "1.0.0",
-  "private": true,
+  "main": "./dist/bin.js",
   "bin": {
     "orbitox": "./dist/bin.js"
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://npm.pkg.github.com"
   },
   "scripts": {
     "build": "tsc -p tsconfig.json"

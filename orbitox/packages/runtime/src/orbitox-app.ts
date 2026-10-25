@@ -1,5 +1,5 @@
 import express from 'express';
-import { MetadataEngine, PluginContractLoader } from '@orbitox-io/plugin-engine';
+import { MetadataEngine, PluginContractLoader } from '@orbitox/plugin-engine';
 import { ControlClient } from '@orbitox/external-runtime-sdk';
 import { OrbitoXConfig, OrbitoXEntity } from './config.types';
 import { orbitox } from './orbitox-singleton';
