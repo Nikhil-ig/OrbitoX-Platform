@@ -14,6 +14,9 @@ WORKDIR /workspace
 
 # Copy SDK dependency and RestaurantOS package manifests
 COPY orbitox/packages/external-runtime-sdk /workspace/orbitox/packages/external-runtime-sdk
+COPY orbitox/packages/plugin-engine /workspace/orbitox/packages/plugin-engine
+COPY orbitox/packages/types /workspace/orbitox/packages/types
+COPY orbitox/plugins/pos /workspace/orbitox/plugins/pos
 COPY projects/external-os/restaurant-os/package.json projects/external-os/restaurant-os/pnpm-lock.yaml projects/external-os/restaurant-os/pnpm-workspace.yaml /workspace/projects/external-os/restaurant-os/
 COPY projects/external-os/restaurant-os/prisma /workspace/projects/external-os/restaurant-os/prisma
 
@@ -47,7 +50,7 @@ WORKDIR /app
 RUN groupadd --system restaurantos && useradd --system --gid restaurantos restaurantos \
     && mkdir -p /app/data && chown -R restaurantos:restaurantos /app
 
-COPY --from=build --chown=restaurantos:restaurantos /workspace/orbitox/packages/external-runtime-sdk /workspace/orbitox/packages/external-runtime-sdk
+COPY --from=build --chown=restaurantos:restaurantos /workspace/orbitox /workspace/orbitox
 COPY --from=build --chown=restaurantos:restaurantos /workspace/projects/external-os/restaurant-os /app
 
 USER restaurantos
