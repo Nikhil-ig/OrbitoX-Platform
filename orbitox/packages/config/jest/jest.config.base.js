@@ -1,3 +1,5 @@
+const path = require('path');
+
 /** @type {import('jest').Config} */
 module.exports = {
   preset: 'ts-jest',
@@ -21,7 +23,13 @@ module.exports = {
     '!src/**/index.ts',
     '!src/**/*.module.ts',
   ],
+  moduleNameMapper: {
+    '^@nestjs/common$': path.resolve(__dirname, 'nestjs-common-shim.js'),
+  },
   transform: {
     '^.+\\.ts$': 'ts-jest',
   },
 };
+
+
+

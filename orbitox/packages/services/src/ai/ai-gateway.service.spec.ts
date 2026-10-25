@@ -18,9 +18,18 @@ describe('AiGatewayService', () => {
       getPromptTemplate: jest.fn().mockResolvedValue('Summarize: {{text}}'),
     } as any;
 
+    const mockPiiService = {
+      sanitize: jest.fn().mockImplementation((v) => v),
+    } as any;
+
+    const mockMeteringService = {
+      recordUsage: jest.fn(),
+    } as any;
+
     templateService = new TemplateService();
-    service = new AiGatewayService(mockLlmRouter, mockPromptLibrary, templateService);
+    service = new AiGatewayService(mockLlmRouter, mockPromptLibrary, templateService, mockPiiService, mockMeteringService);
   });
+
 
   it('should fetch prompt template, hydrate it, and route to LLM provider', async () => {
     const result = await service.executePrompt(
