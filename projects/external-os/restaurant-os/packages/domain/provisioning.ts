@@ -10,7 +10,8 @@ import * as http from 'http';
 import { PrismaClient } from '@prisma/client';
 import { getCleanStarterTemplate, StarterTemplate } from './templates';
 import { generateSeats, SeatRecord } from './index';
-import { hashPin, issueStaffToken } from './security';
+import { hashStaffSecretSync, hashPin, issueStaffToken } from './security';
+import { withTenantRlsTransaction } from './tenancy';
 
 export const RESERVED_SLUGS = new Set([
   'www',
@@ -213,13 +214,14 @@ export class TenantProvisioningService {
     const ownerStaffId = `staff_${cleanSlug}_owner`;
     const branchCode = `${cleanSlug.replace(/[^a-z0-9]/g, '').slice(0, 3).toUpperCase()}-01`;
 
-    // 4. Execute atomic transaction
-    const result = await this.prisma.$transaction(async (tx) => {
+    // 4. Execute atomic transaction within tenant RLS scope
+    const result = await withTenantRlsTransaction(this.prisma, tenantId, async (tx: any) => {
       // 4a. Tenant entity
+      const restaurantName = (input.restaurantName || (input as any).name || cleanSlug).trim();
       const tenant = await tx.tenant.create({
         data: {
           id: tenantId,
-          name: input.restaurantName.trim(),
+          name: restaurantName,
           slug: cleanSlug,
           status: 'trial',
           planId,
@@ -249,7 +251,7 @@ export class TenantProvisioningService {
         data: {
           id: branchId,
           tenantId,
-          name: `${input.restaurantName.trim()} Main`,
+          name: `${restaurantName} Main`,
           code: branchCode,
           address: 'Main Dining Hall',
           city: 'Metropolis',
@@ -372,7 +374,7 @@ export class TenantProvisioningService {
 
       // 4f. Tenant Brand Configuration
       const brandConfigData = {
-        restaurantName: input.restaurantName.trim(),
+        restaurantName,
         tagline: `${template.category} Experience`,
         logoUrl: `https://assets.orbitox.io/starter/logos/${template.slug}.svg`,
         faviconUrl: '/favicon.ico',
@@ -436,7 +438,7 @@ export class TenantProvisioningService {
       const resObj: ProvisionTenantResult = {
         tenantId,
         slug: cleanSlug,
-        name: input.restaurantName.trim(),
+        name: restaurantName,
         planId,
         status: 'trial',
         subdomainUrl,
@@ -470,7 +472,9 @@ export class TenantProvisioningService {
    */
   async acceptOwnerInvite(input: {
     token: string;
-    pin: string;
+    pin?: string;
+    password?: string;
+    secret?: string;
     ownerName?: string;
   }): Promise<{
     success: boolean;
@@ -483,13 +487,17 @@ export class TenantProvisioningService {
     if (!input.token || typeof input.token !== 'string') {
       throw new Error('Invite token is required');
     }
-    if (!input.pin || !/^\d{4,6}$/.test(input.pin)) {
-      throw new Error('PIN must be between 4 and 6 numeric digits');
+    const secret = (input.secret || input.password || input.pin || '').toString().trim();
+    if (!secret) {
+      throw new Error('Secret, password or PIN is required to activate owner account');
+    }
+    if (secret.length < 8 && !/^\d{4,6}$/.test(secret)) {
+      throw new Error('Owner credentials require a password of at least 8 characters or a 4-6 digit numeric PIN');
     }
     // Block common insecure PINs
     const insecurePins = new Set(['0000', '1111', '1234', '8899', '1122', '9999']);
-    if (insecurePins.has(input.pin)) {
-      throw new Error('Selected PIN is too common. Please choose a more secure PIN.');
+    if (insecurePins.has(secret)) {
+      throw new Error('Selected PIN is too common. Please choose a more secure secret.');
     }
 
     const tokenHash = crypto.createHash('sha256').update(input.token.trim()).digest('hex');
@@ -516,9 +524,9 @@ export class TenantProvisioningService {
       throw new Error('Associated owner staff account not found');
     }
 
-    // Set real owner PIN and mark staff member ACTIVE
+    // Set real owner secret with slow scrypt hash and mark staff member ACTIVE
     const newSalt = crypto.randomBytes(16).toString('hex');
-    const newPinHash = hashPin(input.pin, newSalt);
+    const newPinHash = hashStaffSecretSync(secret, newSalt);
     const updatedName = input.ownerName ? input.ownerName.trim() : staffMember.name;
 
     await this.prisma.$transaction([

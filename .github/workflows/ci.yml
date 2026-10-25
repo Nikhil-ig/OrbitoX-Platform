@@ -72,17 +72,110 @@ jobs:
         run: |
           docker run --rm -v "$PWD:/repo" zricethezav/gitleaks:latest dir /repo --no-banner --redact --verbose
 
+  restaurantos-e2e:
+    name: RestaurantOS HTTP Multi-Tenant & RLS Suite
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: restaurant_os
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgrespassword
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    defaults:
+      run:
+        working-directory: projects/external-os/restaurant-os
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9.15.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: projects/external-os/restaurant-os/pnpm-lock.yaml
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build linked OrbitoX external-runtime-sdk
+        working-directory: orbitox
+        run: |
+          pnpm install --frozen-lockfile --filter @orbitox/external-runtime-sdk...
+          pnpm --filter @orbitox/external-runtime-sdk... run build
+
+      - name: Generate Prisma Client & Push DB Schema
+        run: |
+          pnpm exec prisma generate
+          pnpm exec prisma db push --skip-generate
+        env:
+          DATABASE_URL: postgresql://postgres:postgrespassword@127.0.0.1:5432/restaurant_os
+
+      - name: Setup PostgreSQL RLS & App Role
+        run: pnpm exec tsx scripts/setup-postgres-rls.ts
+        env:
+          DATABASE_URL: postgresql://postgres:postgrespassword@127.0.0.1:5432/restaurant_os
+          APP_DB_PASSWORD: test_app_pass_123
+
+      - name: Type-check RestaurantOS
+        run: pnpm exec tsc --noEmit
+
+      - name: Tenant Staff Auth Suite (Item 1)
+        run: pnpm exec tsx scripts/test-tenant-staff-auth.ts
+        env:
+          DATABASE_URL: postgresql://postgres:postgrespassword@127.0.0.1:5432/restaurant_os
+
+      - name: Safe Tenancy & Kernel RLS Suite (Item 2)
+        run: pnpm exec tsx scripts/test-safe-tenancy-and-rls.ts
+        env:
+          DATABASE_URL: postgresql://postgres:postgrespassword@127.0.0.1:5432/restaurant_os
+          APP_DATABASE_URL: postgresql://restaurantos_app:test_app_pass_123@127.0.0.1:5432/restaurant_os
+
+      - name: Owner Self-Service & Branding Suite (Item 4)
+        run: pnpm exec tsx scripts/test-owner-self-service.ts
+        env:
+          DATABASE_URL: postgresql://postgres:postgrespassword@127.0.0.1:5432/restaurant_os
+
+      - name: Custom Domains & SSL Verification Suite
+        run: pnpm exec tsx scripts/test-custom-domains.ts
+        env:
+          DATABASE_URL: postgresql://postgres:postgrespassword@127.0.0.1:5432/restaurant_os
+
+      - name: Black-Box HTTP Multi-Tenant Suite (Item 3)
+        run: pnpm exec tsx scripts/test-e2e-http-multitenancy.ts
+        env:
+          E2E_P95_LIMIT_MS: '600' # shared GitHub runner; 250ms SLA is checked on dedicated hardware
+          DATABASE_URL: postgresql://postgres:postgrespassword@127.0.0.1:5432/restaurant_os
+          APP_DATABASE_URL: postgresql://restaurantos_app:test_app_pass_123@127.0.0.1:5432/restaurant_os
+
   docker:
     name: Docker image builds
     runs-on: ubuntu-latest
-    needs: build
+    needs: [build, restaurantos-e2e]
     steps:
       - uses: actions/checkout@v4
       - uses: docker/setup-buildx-action@v3
-      - uses: docker/build-push-action@v6
+      - name: Build control plane image
+        uses: docker/build-push-action@v6
         with:
           context: orbitox
           file: orbitox/apps/web/Dockerfile
+          push: false
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+      - name: Build RestaurantOS runtime image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: projects/external-os/restaurant-os/Dockerfile
           push: false
           cache-from: type=gha
           cache-to: type=gha,mode=max

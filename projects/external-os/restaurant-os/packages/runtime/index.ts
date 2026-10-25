@@ -45,8 +45,11 @@ export class RestaurantRuntimeController {
         if (this.receivedCommands.length > 50) this.receivedCommands.pop();
 
         if (cmd.action === 'rotate_qr_locator') {
+          if (!cmd.parameters?.table) {
+            return { success: false, error: 'TABLE_REQUIRED' };
+          }
           const newLocator = crypto.randomBytes(4).toString('hex').toUpperCase();
-          return { success: true, result: { table: cmd.parameters?.table || 'T-14', newLocator } };
+          return { success: true, result: { table: cmd.parameters.table, newLocator } };
         }
         if (cmd.action === 'run_health_check') {
           return { success: true, result: { memoryMb: Math.round(process.memoryUsage().heapUsed / 1024 / 1024), uptime: process.uptime() } };

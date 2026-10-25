@@ -35,6 +35,14 @@ import {
   createStaffMember,
   updateStaffMember,
   resetStaffLockout,
+  hashStaffSecretSync,
+  verifyStaffSecret,
+  resolveClientIp,
+  checkStaffLockout,
+  recordFailedStaffAttempt,
+  recordSuccessfulStaffAttempt,
+  issueDeviceToken,
+  verifyDeviceToken,
   REGISTERED_STATION_SECRETS,
   resolveAllowedOrigin,
   DEV_TEST_STAFF_TOKENS,
@@ -47,6 +55,7 @@ import {
   withTenantContext,
   getActiveTenant,
   tryGetActiveTenant,
+  invalidateTenantResolutionCache,
   renderTenantNotFoundPage,
   TenantProvisioningService,
   CustomDomainService,
@@ -61,6 +70,7 @@ import {
   buildGSTInvoice,
   computeFiscalYear,
   SAC_RESTAURANT_SERVICES,
+  renderPrintableInvoiceHtml,
 } from '../packages/domain/invoicing';
 import { RestaurantRuntimeStore, DomainEvent, getTenantRepository, RestaurantRepository } from '../packages/storage';
 import { PostgresRestaurantStore } from '../packages/storage/postgres-store';
@@ -74,6 +84,8 @@ import {
   renderKdsWorkspace,
   renderDinerPwa,
   renderTablesList,
+  renderTableQrStand,
+  renderOnboardingWorkspace,
   renderOrdersWorkspace,
   renderMenuWorkspace,
   renderGuestsWorkspace,
@@ -102,7 +114,8 @@ if (process.env.STORAGE_DRIVER === 'json' && process.env.NODE_ENV === 'productio
   process.exit(1);
 }
 
-const store = new RestaurantRuntimeStore();
+const store: RestaurantRuntimeStore | null =
+  process.env.STORAGE_DRIVER === 'json' ? new RestaurantRuntimeStore() : null;
 const eventBus = new RealtimeEventBus();
 const runtimeController = restaurantControlBridge;
 const razorpayAdapter = new RazorpayPaymentGatewayAdapter();
@@ -110,6 +123,7 @@ const razorpayAdapter = new RazorpayPaymentGatewayAdapter();
 let postgresStore: PostgresRestaurantStore | null = null;
 try {
   postgresStore = new PostgresRestaurantStore();
+  (globalThis as any).__restaurantos_prisma = postgresStore.prisma;
 } catch (err: any) {
   console.warn('[Storage] PostgresRestaurantStore deferred:', err.message);
 }
@@ -117,6 +131,52 @@ try {
 const provisioningService = new TenantProvisioningService(postgresStore ? postgresStore.prisma : undefined);
 const customDomainService = new CustomDomainService(postgresStore ? postgresStore.prisma : undefined);
 const ownerSelfService = new OwnerSelfService(postgresStore ? postgresStore.prisma : undefined);
+
+// In-Memory Token Bucket Rate Limiter Keyed by Tenant ID
+interface RateLimitBucket {
+  tokens: number;
+  lastRefill: number;
+}
+const tenantGuestRateLimits = new Map<string, RateLimitBucket>();
+const tenantStaffRateLimits = new Map<string, RateLimitBucket>();
+
+function checkTenantRateLimit(tenantId: string, isStaff: boolean): { allowed: boolean; remaining: number; resetSeconds: number } {
+  // Public guest limit: 100 req/min (refill ~1.67/s); Staff limit: 300 req/min (refill ~5/s)
+  const maxTokens = isStaff ? 300 : 100;
+  const refillRatePerSec = maxTokens / 60;
+  const now = Date.now();
+  const map = isStaff ? tenantStaffRateLimits : tenantGuestRateLimits;
+
+  let bucket = map.get(tenantId);
+  if (!bucket) {
+    bucket = { tokens: maxTokens - 1, lastRefill: now };
+    map.set(tenantId, bucket);
+    return {
+      allowed: true,
+      remaining: Math.floor(bucket.tokens),
+      resetSeconds: 60,
+    };
+  }
+
+  const elapsedSec = (now - bucket.lastRefill) / 1000;
+  bucket.tokens = Math.min(maxTokens, bucket.tokens + elapsedSec * refillRatePerSec);
+  bucket.lastRefill = now;
+
+  if (bucket.tokens >= 1) {
+    bucket.tokens -= 1;
+    return {
+      allowed: true,
+      remaining: Math.floor(bucket.tokens),
+      resetSeconds: Math.ceil((maxTokens - bucket.tokens) / refillRatePerSec),
+    };
+  }
+
+  return {
+    allowed: false,
+    remaining: 0,
+    resetSeconds: Math.ceil((1 - bucket.tokens) / refillRatePerSec) || 1,
+  };
+}
 
 // Startup security signing secret verification
 try {
@@ -131,18 +191,32 @@ const statusCounts = new Map<number, number>();
 const methodCounts = new Map<string, number>();
 let totalDomainEvents = 0;
 
-// Automatically broadcast all domain events emitted by the authoritative store
-store.onEvent((event) => {
-  totalDomainEvents++;
-  eventBus.broadcast(event);
-});
+// Automatically broadcast all domain events emitted by the authoritative store (when in JSON mode)
+if (store) {
+  store.onEvent((event) => {
+    totalDomainEvents++;
+    eventBus.broadcast(event);
+  });
+}
 
-const idempotencyRecords = new Map<string, any>();
-const orderTokens = new Map<string, string>();
+// In-flight operation locks (strictly scoped by tenant to prevent cross-tenant collisions)
 const activeSettlementLocks = new Set<string>();
 const activeDispatchLocks = new Set<string>();
 
 function parseBody(req: http.IncomingMessage): Promise<any> {
+  if ((req as any)._parsedBody !== undefined) {
+    return Promise.resolve((req as any)._parsedBody);
+  }
+  if ((req as any)._rawBuffer !== undefined) {
+    try {
+      const parsed = (req as any)._rawBuffer.length ? JSON.parse((req as any)._rawBuffer.toString('utf8')) : {};
+      (req as any)._parsedBody = parsed;
+      return Promise.resolve(parsed);
+    } catch {
+      (req as any)._parsedBody = {};
+      return Promise.resolve({});
+    }
+  }
   return new Promise((resolve, reject) => {
     let data = '';
     req.on('data', (chunk) => {
@@ -150,10 +224,14 @@ function parseBody(req: http.IncomingMessage): Promise<any> {
     });
     req.on('end', () => {
       (req as any).rawBody = data;
+      (req as any)._rawBuffer = Buffer.from(data);
       try {
-        resolve(data ? JSON.parse(data) : {});
+        const parsed = data ? JSON.parse(data) : {};
+        (req as any)._parsedBody = parsed;
+        resolve(parsed);
       } catch (err) {
         (req as any).rawBody = data;
+        (req as any)._parsedBody = {};
         resolve({});
       }
     });
@@ -162,13 +240,24 @@ function parseBody(req: http.IncomingMessage): Promise<any> {
 }
 
 function parseBuffer(req: http.IncomingMessage): Promise<Buffer> {
+  if ((req as any)._rawBuffer !== undefined) {
+    return Promise.resolve((req as any)._rawBuffer);
+  }
+  if ((req as any).rawBody !== undefined) {
+    const buf = Buffer.from((req as any).rawBody);
+    (req as any)._rawBuffer = buf;
+    return Promise.resolve(buf);
+  }
   return new Promise((resolve, reject) => {
     const chunks: Buffer[] = [];
     req.on('data', (chunk) => {
       chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
     });
     req.on('end', () => {
-      resolve(Buffer.concat(chunks));
+      const buf = Buffer.concat(chunks);
+      (req as any)._rawBuffer = buf;
+      (req as any).rawBody = buf.toString('utf8');
+      resolve(buf);
     });
     req.on('error', reject);
   });
@@ -465,7 +554,37 @@ async function resolveRequestIdentity(
         };
       }
       const claims = verification.claims!;
-      const isPriv = claims.role === 'MANAGER' || claims.role === 'ADMIN' || claims.role === 'POS';
+
+      // Check tenant-scoped revocation in database
+      if (targetTenantId) {
+        try {
+          const tenantRepo = getTenantRepository(targetTenantId, postgresStore?.prisma, eventBus);
+          const isRevoked = await tenantRepo.isStaffTokenRevoked(claims.jti);
+          if (isRevoked) {
+            return {
+              type: 'INVALID_CREDENTIAL',
+              id: token,
+              isPrivileged: false,
+              error: 'TOKEN_REVOKED',
+            };
+          }
+          if (claims.sub) {
+            const member = await tenantRepo.getStaffMember(claims.sub);
+            if (member && member.status === 'REVOKED') {
+              return {
+                type: 'INVALID_CREDENTIAL',
+                id: token,
+                isPrivileged: false,
+                error: 'TOKEN_REVOKED',
+              };
+            }
+          }
+        } catch {
+          // Fall through to in-memory check
+        }
+      }
+
+      const isPriv = claims.role === 'OWNER' || claims.role === 'MANAGER' || claims.role === 'ADMIN' || claims.role === 'POS';
       if (claims.role === 'CHEF') {
         return {
           type: 'STATION',
@@ -478,7 +597,7 @@ async function resolveRequestIdentity(
         };
       }
       return {
-        type: claims.role === 'MANAGER' || claims.role === 'ADMIN' ? 'ADMIN' : 'STAFF',
+        type: claims.role === 'OWNER' || claims.role === 'MANAGER' || claims.role === 'ADMIN' ? 'ADMIN' : 'STAFF',
         id: claims.sub,
         role: claims.role,
         branchId: claims.branchId,
@@ -539,15 +658,14 @@ async function resolveRequestIdentity(
 
     // 2f. Order Tracking Capability Tokens
     if (token.startsWith('ordtok_')) {
-      for (const [oId, t] of orderTokens.entries()) {
-        if (t === token) {
-          return {
-            type: 'ORDER_TRACKER',
-            id: token,
-            orderId: oId,
-            isPrivileged: false,
-          };
-        }
+      const order = await repo.getOrderByOrderToken(token);
+      if (order) {
+        return {
+          type: 'ORDER_TRACKER',
+          id: token,
+          orderId: order.orderId,
+          isPrivileged: false,
+        };
       }
     }
 
@@ -562,15 +680,14 @@ async function resolveRequestIdentity(
 
   const orderTokenQuery = (parsedUrl.query.orderToken as string) || '';
   if (orderTokenQuery && orderTokenQuery.startsWith('ordtok_')) {
-    for (const [oId, t] of orderTokens.entries()) {
-      if (t === orderTokenQuery) {
-        return {
-          type: 'ORDER_TRACKER',
-          id: orderTokenQuery,
-          orderId: oId,
-          isPrivileged: false,
-        };
-      }
+    const order = await repo.getOrderByOrderToken(orderTokenQuery);
+    if (order) {
+      return {
+        type: 'ORDER_TRACKER',
+        id: orderTokenQuery,
+        orderId: order.orderId,
+        isPrivileged: false,
+      };
     }
   }
 
@@ -586,7 +703,7 @@ async function resolveRequestIdentity(
   return identity;
 }
 
-const server = http.createServer(async (req, res) => {
+export async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse): Promise<void> {
   const parsedUrl = url.parse(req.url || '', true);
   const pathname = parsedUrl.pathname || '/';
   const method = req.method || 'GET';
@@ -883,6 +1000,49 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  // Enforce In-Memory Token Bucket Rate Limiting per Tenant
+  if (!pathname.startsWith('/internal/') && pathname !== '/health' && pathname !== '/manifest.json') {
+    const isStaffReq = Boolean(activeStaffToken) || requestIdentity.type === 'STAFF' || requestIdentity.type === 'ADMIN' || requestIdentity.type === 'STATION';
+    const rateLimit = checkTenantRateLimit(tenantContext.tenantId, isStaffReq);
+    res.setHeader('x-ratelimit-remaining', String(rateLimit.remaining));
+    if (!rateLimit.allowed) {
+      res.setHeader('retry-after', String(rateLimit.resetSeconds));
+      sendJson(res, 429, {
+        error: 'RATE_LIMIT_EXCEEDED',
+        code: 'RATE_LIMIT_EXCEEDED',
+        message: `Too many requests for tenant ${tenantContext.tenantId}. Please retry after ${rateLimit.resetSeconds}s.`,
+      });
+      return;
+    }
+  }
+
+  // --- PUBLIC PWA WEB MANIFEST (/manifest.json) ---
+  if (pathname === '/manifest.json' && method === 'GET') {
+    const brand = await repo.getTenantBrand();
+    const manifest = {
+      name: brand?.restaurantName || tenantContext.tenantName,
+      short_name: brand?.restaurantName || tenantContext.tenantSlug,
+      description: brand?.tagline || `${brand?.restaurantName || tenantContext.tenantName} digital dining experience`,
+      start_url: '/',
+      display: 'standalone',
+      theme_color: brand?.primaryColor || '#C86B3C',
+      background_color: '#080A0D',
+      icons: [
+        {
+          src: brand?.logoUrl || brand?.faviconUrl || '/favicon.ico',
+          sizes: '192x192',
+          type: 'image/png',
+        },
+      ],
+    };
+    res.writeHead(200, {
+      'Content-Type': 'application/manifest+json; charset=utf-8',
+      'Cache-Control': 'public, max-age=3600',
+    });
+    res.end(JSON.stringify(manifest, null, 2));
+    return;
+  }
+
   // Gating for test and debug routes: require RESTAURANTOS_ENABLE_TEST_ROUTES === 'true'
   const isTestOrDebugRoute =
     pathname.startsWith('/api/test/') ||
@@ -939,10 +1099,12 @@ const server = http.createServer(async (req, res) => {
   if (pathname === '/api/restaurant/auth/accept-invite' && method === 'POST') {
     try {
       const body = await parseBody(req);
+      const secret = (body.secret || body.password || body.pin || '').toString().trim();
       const acceptRes = await provisioningService.acceptOwnerInvite({
         token: body.token,
-        pin: body.pin,
-        ownerName: body.name,
+        pin: secret,
+        secret,
+        ownerName: body.name || body.ownerName,
       });
       sendJson(res, 200, acceptRes);
     } catch (err: any) {
@@ -1008,6 +1170,7 @@ const server = http.createServer(async (req, res) => {
       const tenantId = suspendMatch[1];
       try {
         const updated = await provisioningService.suspendTenant(tenantId);
+        invalidateTenantResolutionCache(tenantId);
         sendJson(res, 200, { success: true, tenant: updated });
       } catch (err: any) {
         sendJson(res, 400, { error: 'SUSPEND_FAILED', message: err.message });
@@ -1020,6 +1183,7 @@ const server = http.createServer(async (req, res) => {
       const tenantId = resumeMatch[1];
       try {
         const updated = await provisioningService.resumeTenant(tenantId);
+        invalidateTenantResolutionCache(tenantId);
         sendJson(res, 200, { success: true, tenant: updated });
       } catch (err: any) {
         sendJson(res, 400, { error: 'RESUME_FAILED', message: err.message });
@@ -1032,6 +1196,7 @@ const server = http.createServer(async (req, res) => {
       const tenantId = cancelMatch[1];
       try {
         const updated = await provisioningService.cancelTenant(tenantId);
+        invalidateTenantResolutionCache(tenantId);
         sendJson(res, 200, { success: true, tenant: updated });
       } catch (err: any) {
         sendJson(res, 400, { error: 'CANCEL_FAILED', message: err.message });
@@ -1068,66 +1233,208 @@ const server = http.createServer(async (req, res) => {
     }
   }
 
-  // --- AUTHENTICATION & CREDENTIAL MANAGEMENT ---
-  if ((pathname === '/api/restaurant/auth/staff-token' || pathname === '/api/restaurant/auth/token' || pathname === '/api/restaurant/auth/api-token' || pathname === '/api/restaurant/auth/login' || pathname === '/api/restaurant/auth/staff') && method === 'POST') {
+  // --- AUTHENTICATION & CREDENTIAL MANAGEMENT (TENANT-SCOPED) ---
+  if (
+    (pathname === '/api/restaurant/auth/staff-token' ||
+      pathname === '/api/restaurant/auth/token' ||
+      pathname === '/api/restaurant/auth/api-token' ||
+      pathname === '/api/restaurant/auth/login' ||
+      pathname === '/api/restaurant/auth/staff') &&
+    method === 'POST'
+  ) {
     const body = await parseBody(req);
-    const pin = body.pin || '';
-    const requestedBranchId = body.branchId || currentBranch.id;
-    const clientIp = (req.headers['x-forwarded-for'] as string) || req.socket.remoteAddress || '127.0.0.1';
+    const clientIp = resolveClientIp(req);
+    const tenantId = tenantContext.tenantId;
 
-    // Authenticate PIN against server-authoritative staff directory with brute-force lockout
-    const authResult = authenticateStaffByPin(pin, {
-      branchId: requestedBranchId,
-      staffId: body.staffId,
-      clientIp,
-    });
+    // Staff identifier extraction: staffId, email, phone, or identifier
+    const identifier = (
+      body.identifier ||
+      body.staffId ||
+      body.username ||
+      body.email ||
+      body.phone ||
+      ''
+    ).toString().trim();
 
-    if (authResult.isLocked) {
-      await repo.appendEvent(
-        'STAFF_AUTH_LOCKED',
-        'auth-gateway',
-        requestedBranchId,
-        { clientIp, staffId: body.staffId }
-      );
+    // Secret extraction: secret, password, or pin
+    const secret = (
+      body.secret !== undefined
+        ? body.secret
+        : body.password !== undefined
+        ? body.password
+        : body.pin !== undefined
+        ? body.pin
+        : ''
+    ).toString().trim();
+
+    // Item 1 requirement: "Do not search all staff by PIN alone."
+    if (!identifier) {
+      sendJson(res, 400, {
+        error: 'IDENTIFIER_REQUIRED',
+        code: 'IDENTIFIER_REQUIRED',
+        message: 'Staff identifier (staffId, email, or phone) is required. Global PIN search is disabled.',
+      });
+      return;
+    }
+
+    if (!secret) {
+      sendJson(res, 400, {
+        error: 'SECRET_REQUIRED',
+        code: 'SECRET_REQUIRED',
+        message: 'Staff secret or password is required.',
+      });
+      return;
+    }
+
+    // 1. Check lockout before searching
+    const lockout = checkStaffLockout(tenantId, identifier, clientIp);
+    if (lockout.isLocked) {
+      await repo.appendEvent('STAFF_AUTH_LOCKED', 'auth-gateway', currentBranch?.id || '*', {
+        clientIp,
+        identifier,
+      });
       sendJson(res, 429, {
         error: 'TOO_MANY_FAILED_ATTEMPTS',
         code: 'TOO_MANY_FAILED_ATTEMPTS',
-        message: authResult.error || 'Too many failed PIN attempts. Account temporarily locked.',
+        message: lockout.error || 'Too many failed login attempts. Account temporarily locked.',
       });
       return;
     }
 
-    if (!authResult.success || !authResult.member) {
-      await repo.appendEvent(
-        'STAFF_AUTH_FAILED',
-        'auth-gateway',
-        requestedBranchId,
-        { clientIp, staffId: body.staffId, reason: authResult.error }
-      );
+    // 2. Look up staff strictly within tenant repository
+    const member = await repo.getStaffMemberByIdentifier(identifier);
+    if (!member) {
+      const fail = recordFailedStaffAttempt(tenantId, identifier, clientIp);
+      await repo.appendEvent('STAFF_AUTH_FAILED', 'auth-gateway', currentBranch?.id || '*', {
+        clientIp,
+        identifier,
+        reason: 'STAFF_NOT_FOUND',
+      });
+      if (fail.isLocked) {
+        sendJson(res, 429, {
+          error: 'TOO_MANY_FAILED_ATTEMPTS',
+          code: 'TOO_MANY_FAILED_ATTEMPTS',
+          message: fail.error,
+        });
+        return;
+      }
       sendJson(res, 401, {
         error: 'INVALID_CREDENTIALS',
         code: 'INVALID_CREDENTIALS',
-        message: 'Invalid staff authentication PIN or credential.',
+        message: 'Invalid staff identifier or secret.',
       });
       return;
     }
 
-    // Role and branch are derived authoritatively from server directory record
-    const member = authResult.member;
+    // 3. Status check
+    if (member.status !== 'ACTIVE') {
+      sendJson(res, 401, {
+        error: 'ACCOUNT_REVOKED',
+        code: 'ACCOUNT_REVOKED',
+        message: 'Staff account has been revoked or suspended.',
+      });
+      return;
+    }
+
+    // 4. Role & Secret strength enforcement
+    const isHighPrivilege = member.role === 'OWNER' || member.role === 'ADMIN' || member.role === 'MANAGER';
+    if (isHighPrivilege) {
+      // Owner/Manager require a stronger secret (>= 8 chars password or PIN + second factor)
+      if (secret.length < 8) {
+        const secondFactor =
+          body.secondFactor ||
+          body.mfaCode ||
+          body.totp ||
+          body.deviceToken ||
+          (req.headers['x-second-factor'] as string) ||
+          (req.headers['x-device-token'] as string);
+        if (!secondFactor) {
+          sendJson(res, 400, {
+            error: 'STRONG_SECRET_REQUIRED',
+            code: 'STRONG_SECRET_REQUIRED',
+            message:
+              'Owner and Manager roles require a password of at least 8 characters or a PIN paired with a verified second factor.',
+          });
+          return;
+        }
+      }
+    } else {
+      // Floor / kitchen roles (SERVER, OPERATIONS, POS, CHEF)
+      // "floor/kitchen roles may keep short PINs only when the device is enrolled to the tenant and branch (device token), not from the open internet."
+      if (secret.length < 8) {
+        const deviceToken = body.deviceToken || (req.headers['x-device-token'] as string);
+        if (!deviceToken) {
+          sendJson(res, 403, {
+            error: 'DEVICE_ENROLLMENT_REQUIRED',
+            code: 'DEVICE_ENROLLMENT_REQUIRED',
+            message:
+              'Short PIN login for floor and kitchen roles requires an enrolled device token.',
+          });
+          return;
+        }
+        const verifyDev = verifyDeviceToken(deviceToken, tenantId, member.branchId);
+        if (!verifyDev.valid) {
+          sendJson(res, 403, {
+            error: 'INVALID_DEVICE_TOKEN',
+            code: 'INVALID_DEVICE_TOKEN',
+            message: `Invalid device token for tenant/branch: ${verifyDev.error}`,
+          });
+          return;
+        }
+      }
+    }
+
+    // 5. Cryptographic secret verification (scrypt slow hash with timing-safe comparison)
+    const verification = verifyStaffSecret(secret, member.pinHash, member.salt);
+    if (!verification.valid) {
+      const fail = recordFailedStaffAttempt(tenantId, member.id, clientIp);
+      await repo.appendEvent('STAFF_AUTH_FAILED', 'auth-gateway', member.branchId, {
+        clientIp,
+        staffId: member.id,
+        reason: 'SECRET_MISMATCH',
+      });
+      if (fail.isLocked) {
+        sendJson(res, 429, {
+          error: 'TOO_MANY_FAILED_ATTEMPTS',
+          code: 'TOO_MANY_FAILED_ATTEMPTS',
+          message: fail.error,
+        });
+        return;
+      }
+      sendJson(res, 401, {
+        error: 'INVALID_CREDENTIALS',
+        code: 'INVALID_CREDENTIALS',
+        message: 'Invalid staff authentication secret.',
+      });
+      return;
+    }
+
+    // 6. Reset failed counter on success
+    recordSuccessfulStaffAttempt(tenantId, member.id, clientIp);
+
+    // 7. Transparent migration path: re-hash on login if using legacy hash
+    if (verification.needsRehash) {
+      const updatedHash = hashStaffSecretSync(secret, member.salt);
+      await repo.updateStaffMemberSecret(member.id, updatedHash, member.salt);
+    }
+
+    // 8. Issue strictly tenant-bound staff token
     const token = issueStaffToken({
       sub: member.id,
       name: member.name,
       role: member.role,
+      tenantId: tenantContext.tenantId, // STRICTLY BOUND
       branchId: member.branchId,
       station: member.station,
+      permissions: member.permissions as string[] | undefined,
+      expiresInSeconds: 3600, // Short expiry (1 hour)
     });
 
-    await repo.appendEvent(
-      'STAFF_TOKEN_ISSUED',
-      'auth-gateway',
-      member.branchId,
-      { staffId: member.id, role: member.role }
-    );
+    await repo.appendEvent('STAFF_TOKEN_ISSUED', 'auth-gateway', member.branchId, {
+      staffId: member.id,
+      role: member.role,
+      tenantId: tenantContext.tenantId,
+    });
 
     const isExplicitApiFlow =
       pathname === '/api/restaurant/auth/token' ||
@@ -1139,13 +1446,11 @@ const server = http.createServer(async (req, res) => {
       parsedUrl.query.flow === 'bearer';
 
     if (!isExplicitApiFlow) {
-      // BROWSER SESSION LOGIN:
-      // Sets HttpOnly cookie, returns ONLY non-secret metadata (NO raw token in JSON)
       const isHttps = Boolean((req.socket as any)?.encrypted || req.headers['x-forwarded-proto'] === 'https');
       const secureFlag = isHttps ? '; Secure' : '';
       res.setHeader(
         'Set-Cookie',
-        `orb_staff_token=${encodeURIComponent(token)}; Path=/; HttpOnly; SameSite=Lax${secureFlag}; Max-Age=28800`
+        `orb_staff_token=${encodeURIComponent(token)}; Path=/; HttpOnly; SameSite=Lax${secureFlag}; Max-Age=3600`
       );
 
       sendJson(res, 200, {
@@ -1156,13 +1461,13 @@ const server = http.createServer(async (req, res) => {
           role: member.role,
           station: member.station,
           branchId: member.branchId,
-          expiresInSeconds: 8 * 3600,
-          expiresAt: new Date(Date.now() + 8 * 3600 * 1000).toISOString(),
+          tenantId: tenantContext.tenantId,
+          expiresInSeconds: 3600,
+          expiresAt: new Date(Date.now() + 3600 * 1000).toISOString(),
         },
       });
       return;
     } else {
-      // EXPLICIT MACHINE / API AUTHENTICATION CONTRACT
       sendJson(res, 200, {
         success: true,
         data: {
@@ -1173,82 +1478,44 @@ const server = http.createServer(async (req, res) => {
           role: member.role,
           station: member.station,
           branchId: member.branchId,
-          expiresInSeconds: 8 * 3600,
-          expiresAt: new Date(Date.now() + 8 * 3600 * 1000).toISOString(),
+          tenantId: tenantContext.tenantId,
+          expiresInSeconds: 3600,
+          expiresAt: new Date(Date.now() + 3600 * 1000).toISOString(),
         },
       });
       return;
     }
   }
 
-  // --- DEDICATED MACHINE / API TOKEN ENDPOINT ---
-  if (
-    (pathname === '/api/restaurant/auth/token' || pathname === '/api/restaurant/auth/api-token') &&
-    method === 'POST'
-  ) {
+  // --- DEVICE ENROLLMENT ENDPOINT ---
+  if (pathname === '/api/restaurant/auth/device-enroll' && method === 'POST') {
+    const identity = requestIdentity;
+    if (
+      identity.type !== 'ADMIN' &&
+      identity.role !== 'MANAGER' &&
+      identity.role !== 'OWNER' &&
+      !verifyPlatformAuth(req)
+    ) {
+      sendJson(res, 403, {
+        error: 'FORBIDDEN',
+        message: 'Manager or Owner credentials required to enroll physical devices.',
+      });
+      return;
+    }
     const body = await parseBody(req);
-    const clientIp = (req.headers['x-forwarded-for'] as string) || req.socket.remoteAddress || '127.0.0.1';
-    const requestedBranchId = body.branchId;
-
-    const authResult = authenticateStaffByPin(body.pin, {
-      branchId: requestedBranchId,
-      staffId: body.staffId,
-      clientIp,
+    const targetBranch = body.branchId || identity.branchId || currentBranch?.id || '*';
+    const deviceToken = issueDeviceToken({
+      tenantId: tenantContext.tenantId,
+      branchId: targetBranch,
+      deviceId: body.deviceId,
     });
-
-    if (authResult.isLocked) {
-      sendJson(res, 429, {
-        error: 'ACCOUNT_LOCKED',
-        code: 'TOO_MANY_FAILED_ATTEMPTS',
-        message: authResult.error || 'Account locked due to consecutive failed attempts.',
-      });
-      return;
-    }
-
-    if (!authResult.success || !authResult.member) {
-      await repo.appendEvent(
-        'STAFF_AUTH_FAILED',
-        'auth-gateway',
-        requestedBranchId || '*',
-        { clientIp, staffId: body.staffId, reason: authResult.error }
-      );
-      sendJson(res, 401, {
-        error: 'INVALID_CREDENTIALS',
-        code: 'INVALID_CREDENTIALS',
-        message: 'Invalid staff authentication PIN or credential.',
-      });
-      return;
-    }
-
-    const member = authResult.member;
-    const token = issueStaffToken({
-      sub: member.id,
-      name: member.name,
-      role: member.role,
-      branchId: member.branchId,
-      station: member.station,
-    });
-
-    await repo.appendEvent(
-      'STAFF_TOKEN_ISSUED',
-      'auth-gateway',
-      member.branchId,
-      { staffId: member.id, role: member.role, type: 'API_BEARER' }
-    );
-
-    // Explicit API endpoint: does NOT set an HttpOnly session cookie, returns Bearer token in JSON
     sendJson(res, 200, {
       success: true,
       data: {
-        token,
-        tokenType: 'Bearer',
-        staffId: member.id,
-        name: member.name,
-        role: member.role,
-        station: member.station,
-        branchId: member.branchId,
-        expiresInSeconds: 8 * 3600,
-        expiresAt: new Date(Date.now() + 8 * 3600 * 1000).toISOString(),
+        deviceToken,
+        tenantId: tenantContext.tenantId,
+        branchId: targetBranch,
+        deviceId: body.deviceId,
       },
     });
     return;
@@ -1339,7 +1606,10 @@ const server = http.createServer(async (req, res) => {
     }
 
     const queryBranch = (parsedUrl.query.branchId as string) || (identity.branchId !== '*' ? identity.branchId : undefined);
-    const staffList = getPublicStaffList(queryBranch);
+    const members = await repo.getStaffMembers();
+    const staffList = members
+      .filter((m) => !queryBranch || queryBranch === '*' || m.branchId === '*' || m.branchId === queryBranch)
+      .map(({ salt, pinHash, ...safe }) => safe);
     sendJson(res, 200, { success: true, data: staffList });
     return;
   }
@@ -1360,7 +1630,7 @@ const server = http.createServer(async (req, res) => {
       return;
     }
 
-    if (identity.role !== 'MANAGER' && identity.role !== 'ADMIN' && identity.type !== 'ADMIN') {
+    if (identity.role !== 'MANAGER' && identity.role !== 'ADMIN' && identity.role !== 'OWNER' && identity.type !== 'ADMIN') {
       sendJson(res, 403, {
         error: 'FORBIDDEN',
         code: 'FORBIDDEN',
@@ -1382,43 +1652,51 @@ const server = http.createServer(async (req, res) => {
       return;
     }
 
-    // Privilege escalation check: only ADMIN can assign ADMIN role
-    if (body.role === 'ADMIN' && identity.role !== 'ADMIN') {
+    // Privilege escalation check: only ADMIN/OWNER can assign ADMIN role
+    if (body.role === 'ADMIN' && identity.role !== 'ADMIN' && identity.role !== 'OWNER') {
       sendJson(res, 403, {
         error: 'PRIVILEGE_ESCALATION',
         code: 'PRIVILEGE_ESCALATION',
-        message: 'Only platform administrators can provision the ADMIN role.',
+        message: 'Only platform administrators or owners can provision the ADMIN role.',
       });
       return;
     }
 
-    if (!body.name || !body.pin || !body.role) {
+    if (!body.name || (!body.pin && !body.secret) || !body.role) {
       sendJson(res, 400, {
         error: 'VALIDATION_ERROR',
         code: 'VALIDATION_ERROR',
-        message: 'Name, role, and PIN are required.',
+        message: 'Name, role, and PIN/secret are required.',
       });
       return;
     }
 
     try {
-      const created = createStaffMember({
-        name: body.name,
+      const id = `stf_${body.role.toLowerCase()}_${targetBranchId.replace('branch_', '')}_${Date.now().toString(36)}`;
+      const salt = `salt_${targetBranchId}_${crypto.randomBytes(8).toString('hex')}`;
+      const pinHash = hashStaffSecretSync(body.secret || body.pin, salt);
+      const member = {
+        id,
+        name: body.name.trim(),
         role: body.role,
         branchId: targetBranchId,
         station: body.station,
-        pin: body.pin,
+        salt,
+        pinHash,
+        status: 'ACTIVE' as const,
         permissions: body.permissions,
-      });
+      };
+      await repo.saveStaffMember(member);
 
       await runtimeController.emitAudit('STAFF_MEMBER_CREATED', identity.id, {
-        staffId: created.id,
-        role: created.role,
-        branchId: created.branchId,
-        station: created.station,
+        staffId: member.id,
+        role: member.role,
+        branchId: member.branchId,
+        station: member.station,
       });
 
-      sendJson(res, 201, { success: true, data: created });
+      const { salt: _s, pinHash: _p, ...safe } = member;
+      sendJson(res, 201, { success: true, data: safe });
       return;
     } catch (err: any) {
       sendJson(res, 400, { error: 'VALIDATION_ERROR', message: err.message });
@@ -1442,13 +1720,13 @@ const server = http.createServer(async (req, res) => {
       return;
     }
 
-    if (identity.role !== 'MANAGER' && identity.role !== 'ADMIN' && identity.type !== 'ADMIN') {
+    if (identity.role !== 'MANAGER' && identity.role !== 'ADMIN' && identity.role !== 'OWNER' && identity.type !== 'ADMIN') {
       sendJson(res, 403, { error: 'FORBIDDEN', code: 'FORBIDDEN', message: 'Manager credentials required.' });
       return;
     }
 
     const staffId = pathname.split('/')[4];
-    const targetMember = getStaffMember(staffId);
+    const targetMember = await repo.getStaffMember(staffId);
     if (!targetMember) {
       sendJson(res, 404, { error: 'STAFF_NOT_FOUND', code: 'STAFF_NOT_FOUND', message: `Staff member ${staffId} not found.` });
       return;
@@ -1466,22 +1744,34 @@ const server = http.createServer(async (req, res) => {
 
     const body = await parseBody(req);
     // Privilege escalation guard
-    if (body.role === 'ADMIN' && identity.role !== 'ADMIN') {
+    if (body.role === 'ADMIN' && identity.role !== 'ADMIN' && identity.role !== 'OWNER') {
       sendJson(res, 403, {
         error: 'PRIVILEGE_ESCALATION',
         code: 'PRIVILEGE_ESCALATION',
-        message: 'Only platform administrators can grant the ADMIN role.',
+        message: 'Only platform administrators or owners can grant the ADMIN role.',
       });
       return;
     }
 
-    const updated = updateStaffMember(staffId, body);
+    if (body.name !== undefined) targetMember.name = body.name.trim();
+    if (body.role !== undefined) targetMember.role = body.role;
+    if (body.branchId !== undefined) targetMember.branchId = body.branchId;
+    if (body.station !== undefined) targetMember.station = body.station;
+    if (body.status !== undefined) targetMember.status = body.status;
+    if (body.permissions !== undefined) targetMember.permissions = body.permissions;
+    if (body.pin || body.secret) {
+      targetMember.salt = `salt_${targetMember.branchId}_${crypto.randomBytes(8).toString('hex')}`;
+      targetMember.pinHash = hashStaffSecretSync(body.secret || body.pin, targetMember.salt);
+    }
+
+    await repo.saveStaffMember(targetMember);
     await runtimeController.emitAudit('STAFF_MEMBER_UPDATED', identity.id, {
       staffId,
       updates: { role: body.role, station: body.station, branchId: body.branchId, status: body.status },
     });
 
-    sendJson(res, 200, { success: true, data: updated });
+    const { salt: _s, pinHash: _p, ...safe } = targetMember;
+    sendJson(res, 200, { success: true, data: safe });
     return;
   }
 
@@ -1498,7 +1788,7 @@ const server = http.createServer(async (req, res) => {
     }
 
     const staffId = pathname.split('/')[4];
-    const targetMember = getStaffMember(staffId);
+    const targetMember = await repo.getStaffMember(staffId);
     if (!targetMember) {
       sendJson(res, 404, { error: 'STAFF_NOT_FOUND', code: 'STAFF_NOT_FOUND', message: `Staff member ${staffId} not found.` });
       return;
@@ -1561,7 +1851,7 @@ const server = http.createServer(async (req, res) => {
   // 2. Readiness Probe (/healthz/ready): verifies operational dependencies required for serving traffic
   if (pathname === '/healthz/ready' && method === 'GET') {
     const lagMetrics = eventLoopMonitor.getMetrics();
-    const isStoreWritable = typeof (store as any).checkWritable === 'function' ? (store as any).checkWritable() : true;
+    const isStoreWritable = store && typeof (store as any).checkWritable === 'function' ? (store as any).checkWritable() : true;
     const isSecurityReady = typeof isStaffTokenRevoked === 'function';
 
     const checks: Record<string, string> = {
@@ -1726,7 +2016,8 @@ const server = http.createServer(async (req, res) => {
       tableNum,
       hostName,
       targetTbl.branchId || currentBranch.id,
-      targetTbl.floorId || currentFloor.id
+      targetTbl.floorId || currentFloor.id,
+      capabilityToken
     );
 
     const s1 = targetTbl.seats?.find((s) => s.seatNumber === 1);
@@ -1943,7 +2234,7 @@ const server = http.createServer(async (req, res) => {
 
     const idempotencyKey = (req.headers['x-idempotency-key'] as string) || body.idempotencyKey;
     if (idempotencyKey) {
-      const existingIdempotent = (await repo.getIdempotencyRecord(idempotencyKey)) || idempotencyRecords.get(idempotencyKey);
+      const existingIdempotent = await repo.getIdempotencyRecord(idempotencyKey);
       if (existingIdempotent) {
         const isPayloadMatch =
           existingIdempotent.tableNumber === targetTable.number &&
@@ -1967,8 +2258,8 @@ const server = http.createServer(async (req, res) => {
       }
     }
 
-    const lockKey = `table_settle_${targetTable.id}`;
-    const idempLockKey = idempotencyKey ? `idemp_${idempotencyKey}` : undefined;
+    const lockKey = `table_settle_${tenantContext.tenantId}_${targetTable.id}`;
+    const idempLockKey = idempotencyKey ? `idemp_${tenantContext.tenantId}_${idempotencyKey}` : undefined;
 
     if (activeSettlementLocks.has(lockKey) || (idempLockKey && activeSettlementLocks.has(idempLockKey))) {
       sendJson(res, 409, {
@@ -2064,7 +2355,6 @@ const server = http.createServer(async (req, res) => {
       };
 
       if (idempotencyKey) {
-        idempotencyRecords.set(idempotencyKey, responsePayload);
         await repo.saveIdempotencyRecord(idempotencyKey, responsePayload);
       }
 
@@ -2166,9 +2456,9 @@ const server = http.createServer(async (req, res) => {
     const idempotencyKey = (req.headers['x-idempotency-key'] as string) || `idem_${Date.now()}`;
     const payloadHash = crypto.createHash('sha256').update(JSON.stringify(body)).digest('hex');
 
-    if (idempotencyRecords.has(idempotencyKey)) {
-      const cached = idempotencyRecords.get(idempotencyKey);
-      if (cached && cached.payloadHash && cached.payloadHash !== payloadHash) {
+    const cached = await repo.getIdempotencyRecord(idempotencyKey);
+    if (cached) {
+      if (cached.payloadHash && cached.payloadHash !== payloadHash) {
         sendJson(res, 409, {
           error: 'IDEMPOTENCY_CONFLICT',
           code: 'IDEMPOTENCY_CONFLICT',
@@ -2212,7 +2502,7 @@ const server = http.createServer(async (req, res) => {
       }
     }
 
-    const orderId = `ord_${Date.now()}`;
+    const orderId = (body.orderId && typeof body.orderId === 'string') ? body.orderId : `ord_${Date.now()}`;
     if (!body.tableNumber && !body.tableId) {
       sendJson(res, 400, {
         error: 'TABLE_REQUIRED',
@@ -2392,9 +2682,8 @@ const server = http.createServer(async (req, res) => {
       },
     };
 
-    idempotencyRecords.set(idempotencyKey, { payloadHash, response });
     if (idempotencyKey) {
-      await repo.saveIdempotencyRecord(idempotencyKey, response);
+      await repo.saveIdempotencyRecord(idempotencyKey, { payloadHash, response });
     }
     await runtimeController.emitAudit('ORDER_PLACED', `table:${newOrder.tableNumber}`, { orderId, totalMinor });
     await runtimeController.reportOrderProcessed(orderId, totalMinor);
@@ -2642,7 +2931,10 @@ const server = http.createServer(async (req, res) => {
   // 6d. Razorpay Payment Order Creation (Server-Recomputed Amounts)
   if (
     (pathname === '/api/restaurant/payments/create-order' ||
-      pathname === '/api/commerce/payments/create-session') &&
+      pathname === '/api/commerce/payments/create-session' ||
+      pathname === '/api/commerce/razorpay/create-order' ||
+      pathname === '/api/restaurant/checkout/razorpay/order' ||
+      pathname === '/api/restaurant/checkout/razorpay/create-order') &&
     method === 'POST'
   ) {
     const body = await parseBody(req);
@@ -2672,10 +2964,33 @@ const server = http.createServer(async (req, res) => {
 
     // Server-recomputed amounts: Never trust client-passed amountMinor
     const amountMinor = order.totalMinor;
-    const tableNumber = order.tableNumber || body.tableNumber || 'T-14';
+    const tableNumber = order.tableNumber || body.tableNumber;
+    if (!tableNumber) {
+      sendJson(res, 400, {
+        error: 'TABLE_REQUIRED',
+        code: 'TABLE_REQUIRED',
+        message: 'Order has no associated table number.',
+      });
+      return;
+    }
+
+    // Tenant-isolated Razorpay adapter instantiation
+    let activeRazorpay = razorpayAdapter;
+    try {
+      const pConfig = await ownerSelfService.getPaymentConfig(tid, true);
+      if (pConfig && pConfig.configured && pConfig.keyId && pConfig.keySecret) {
+        activeRazorpay = new RazorpayPaymentGatewayAdapter({
+          keyId: pConfig.keyId,
+          keySecret: pConfig.keySecret,
+          webhookSecret: pConfig.webhookSecret,
+        });
+      }
+    } catch {
+      // Fallback to default configured adapter
+    }
 
     try {
-      const result = await razorpayAdapter.createOrder({
+      const result = await activeRazorpay.createOrder({
         orderId,
         amountMinor,
         currency: order.currency || 'INR',
@@ -2718,7 +3033,7 @@ const server = http.createServer(async (req, res) => {
           razorpayOrderId: result.razorpayOrderId,
           amountMinor,
           currency: result.currency,
-          keyId: razorpayAdapter.keyId,
+          keyId: activeRazorpay.keyId,
           orderId,
           tableNumber,
           paymentUrl: result.paymentUrl,
@@ -2737,15 +3052,33 @@ const server = http.createServer(async (req, res) => {
   // 6e. Razorpay Webhook Receiver with HMAC-SHA256 Verification & Invoicing
   if (
     (pathname === '/api/restaurant/payments/webhook' ||
-      pathname === '/api/commerce/payments/webhook') &&
+      pathname === '/api/commerce/payments/webhook' ||
+      pathname === '/api/restaurant/checkout/razorpay/webhook') &&
     method === 'POST'
   ) {
     const body = await parseBody(req);
     const rawBody = (req as any).rawBody || JSON.stringify(body);
     const signature = (req.headers['x-razorpay-signature'] as string) || '';
 
+    const tenant = getActiveTenant();
+    const tid = tenant.tenantId;
+
+    let activeRazorpay = razorpayAdapter;
+    try {
+      const pConfig = await ownerSelfService.getPaymentConfig(tid, true);
+      if (pConfig && pConfig.configured && pConfig.keyId && pConfig.keySecret) {
+        activeRazorpay = new RazorpayPaymentGatewayAdapter({
+          keyId: pConfig.keyId,
+          keySecret: pConfig.keySecret,
+          webhookSecret: pConfig.webhookSecret,
+        });
+      }
+    } catch {
+      // Fallback
+    }
+
     // Verify HMAC-SHA256 signature
-    const isValidSignature = razorpayAdapter.verifyWebhookSignature(rawBody, signature);
+    const isValidSignature = activeRazorpay.verifyWebhookSignature(rawBody, signature);
     if (!isValidSignature) {
       sendJson(res, 401, {
         error: 'INVALID_SIGNATURE',
@@ -2762,9 +3095,12 @@ const server = http.createServer(async (req, res) => {
       body.id ||
       (body.payload?.payment?.entity?.id ? `evt_${body.payload.payment.entity.id}` : null);
 
-    if (eventId && idempotencyRecords.has(eventId)) {
-      sendJson(res, 200, { success: true, status: 'idempotent_duplicate', eventId });
-      return;
+    if (eventId) {
+      const existingEvt = await repo.getIdempotencyRecord(eventId);
+      if (existingEvt) {
+        sendJson(res, 200, { success: true, status: 'idempotent_duplicate', eventId });
+        return;
+      }
     }
 
     const eventType = body.event || 'payment.captured';
@@ -2773,7 +3109,7 @@ const server = http.createServer(async (req, res) => {
     const razorpayOrderId = paymentEntity.order_id || body.order_id;
     const notes = paymentEntity.notes || body.notes || {};
     const orderId = notes.orderId || body.orderId;
-    const tid = notes.tenantId || getActiveTenant().tenantId;
+    const targetTid = notes.tenantId || tid;
 
     if (
       eventType === 'payment.captured' ||
@@ -2799,7 +3135,7 @@ const server = http.createServer(async (req, res) => {
       }
 
       const amountMinor = paymentEntity.amount || existingSession?.amountMinor || 0;
-      const tableNumber = notes.tableNumber || existingSession?.tableNumber || 'T-14';
+      const tableNumber = notes.tableNumber || existingSession?.tableNumber || '';
 
       if (postgresStore && razorpayOrderId) {
         try {
@@ -2852,6 +3188,7 @@ const server = http.createServer(async (req, res) => {
               producer: 'api:payment-service',
               branchId: order.branchId || currentBranch?.id || 'branch_main',
               tableNumber: order.tableNumber,
+              tenantId: tid,
               payload: invoiceRecord,
             });
           }
@@ -2868,6 +3205,7 @@ const server = http.createServer(async (req, res) => {
         producer: 'api:payment-service',
         branchId: order?.branchId || currentBranch?.id || 'branch_main',
         tableNumber,
+        tenantId: tid,
         payload: {
           razorpayPaymentId,
           razorpayOrderId,
@@ -2885,7 +3223,7 @@ const server = http.createServer(async (req, res) => {
       });
 
       if (eventId) {
-        idempotencyRecords.set(eventId, { status: 'captured', razorpayPaymentId, targetOrderId });
+        await repo.saveIdempotencyRecord(eventId, { status: 'captured', razorpayPaymentId, targetOrderId });
       }
 
       sendJson(res, 200, {
@@ -2905,7 +3243,7 @@ const server = http.createServer(async (req, res) => {
             {
               id: razorpayOrderId,
               orderId: orderId || `ord_${Date.now()}`,
-              tableNumber: notes.tableNumber || 'T-14',
+              tableNumber: notes.tableNumber || '',
               amountMinor: paymentEntity.amount || 0,
               status: 'failed',
               razorpayPaymentId,
@@ -2921,7 +3259,7 @@ const server = http.createServer(async (req, res) => {
       });
 
       if (eventId) {
-        idempotencyRecords.set(eventId, { status: 'failed', razorpayPaymentId });
+        await repo.saveIdempotencyRecord(eventId, { status: 'failed', razorpayPaymentId });
       }
 
       sendJson(res, 200, { success: true, status: 'failed', razorpayPaymentId });
@@ -2929,41 +3267,52 @@ const server = http.createServer(async (req, res) => {
     }
 
     if (eventId) {
-      idempotencyRecords.set(eventId, { received: true, eventType });
+      await repo.saveIdempotencyRecord(eventId, { received: true, eventType });
     }
     sendJson(res, 200, { success: true, received: true, event: eventType });
     return;
   }
 
   // 6f. GST Invoicing Retrieval Endpoints
-  // GET /api/restaurant/invoices/:id
+  // GET /invoices/:id, /invoices/:id/print, GET /api/restaurant/invoices/:id
   if (
-    pathname.startsWith('/api/restaurant/invoices/') &&
+    (pathname.startsWith('/api/restaurant/invoices/') || pathname.startsWith('/invoices/')) &&
     pathname !== '/api/restaurant/invoices/generate' &&
+    pathname !== '/api/restaurant/invoices' &&
     method === 'GET'
   ) {
-    const param = pathname.replace('/api/restaurant/invoices/', '');
-    const tid = getActiveTenant().tenantId;
+    const isApi = pathname.startsWith('/api/');
+    const isPrint = pathname.endsWith('/print');
+    const rawParam = pathname
+      .replace('/api/restaurant/invoices/', '')
+      .replace('/invoices/', '')
+      .replace('/print', '');
 
-    if (!postgresStore) {
-      sendJson(res, 503, {
-        error: 'POSTGRES_STORE_UNAVAILABLE',
-        message: 'PostgreSQL storage required for durable invoices.',
-      });
-      return;
+    let invoice = await repo.getInvoiceByOrderId(rawParam);
+    if (!invoice && rawParam.startsWith('INV-')) {
+      invoice = await repo.getInvoiceByNumber(rawParam);
     }
-
-    let invoice = await postgresStore.getInvoiceByOrderId(param, tid);
-    if (!invoice && param.startsWith('INV-')) {
-      invoice = await postgresStore.getInvoiceByNumber(param, tid);
+    if (!invoice && postgresStore) {
+      invoice = await postgresStore.getInvoiceByOrderId(rawParam, tenantContext.tenantId);
+      if (!invoice && rawParam.startsWith('INV-')) {
+        invoice = await postgresStore.getInvoiceByNumber(rawParam, tenantContext.tenantId);
+      }
     }
 
     if (!invoice) {
       sendJson(res, 404, {
         error: 'INVOICE_NOT_FOUND',
         code: 'INVOICE_NOT_FOUND',
-        message: `Invoice not found for identifier: ${param}`,
+        message: `Invoice not found for identifier: ${rawParam}`,
       });
+      return;
+    }
+
+    const wantsHtml = !isApi || isPrint || parsedUrl.query.format === 'html';
+    if (wantsHtml) {
+      const tenantBrand = await repo.getTenantBrand();
+      const html = renderPrintableInvoiceHtml(invoice, tenantBrand, currentBranch);
+      sendHtml(res, html);
       return;
     }
 
@@ -3309,7 +3658,7 @@ const server = http.createServer(async (req, res) => {
     };
     const payloadHash = crypto.createHash('sha256').update(JSON.stringify(canonicalObj)).digest('hex');
 
-    const existing = (await repo.getIdempotencyRecord(idempotencyKey)) || idempotencyRecords.get(idempotencyKey);
+    const existing = await repo.getIdempotencyRecord(idempotencyKey);
     if (existing) {
       if (
         existing.operation !== operation ||
@@ -3454,7 +3803,6 @@ const server = http.createServer(async (req, res) => {
         payloadHash: idempCheck.payloadHash,
         response: responsePayload,
       };
-      idempotencyRecords.set(idempotencyKey, record);
       await repo.saveIdempotencyRecord(idempotencyKey, record);
     }
 
@@ -3467,6 +3815,7 @@ const server = http.createServer(async (req, res) => {
         producer: result.task.orderId || result.task.id,
         branchId: taskBranch,
         tableNumber: result.task.tableNumber,
+        tenantId: tenantContext.tenantId,
         payload: {
           taskId: result.task.id,
           orderId: result.task.orderId,
@@ -3566,7 +3915,6 @@ const server = http.createServer(async (req, res) => {
         payloadHash: idempCheck.payloadHash,
         response: responsePayload,
       };
-      idempotencyRecords.set(idempotencyKey, record);
       await repo.saveIdempotencyRecord(idempotencyKey, record);
     }
 
@@ -3659,7 +4007,6 @@ const server = http.createServer(async (req, res) => {
         payloadHash: idempCheck.payloadHash,
         response: responsePayload,
       };
-      idempotencyRecords.set(idempotencyKey, record);
       await repo.saveIdempotencyRecord(idempotencyKey, record);
     }
 
@@ -3741,7 +4088,7 @@ const server = http.createServer(async (req, res) => {
     }
 
     // 3. Mutex Lock Check for Concurrent Dispatches
-    const lockKey = `dispatch:${tableNumber}:${targetBranch || '*'}`;
+    const lockKey = `dispatch:${tenantContext.tenantId}:${tableNumber}:${targetBranch || '*'}`;
     if (activeDispatchLocks.has(lockKey)) {
       sendJson(res, 409, {
         error: 'DISPATCH_IN_PROGRESS',
@@ -3768,7 +4115,6 @@ const server = http.createServer(async (req, res) => {
             payloadHash: idempCheck.payloadHash,
             response: alreadyPayload,
           };
-          idempotencyRecords.set(idempotencyKey, record);
           await repo.saveIdempotencyRecord(idempotencyKey, record);
         }
         sendJson(res, 200, alreadyPayload);
@@ -3849,7 +4195,6 @@ const server = http.createServer(async (req, res) => {
           payloadHash: idempCheck.payloadHash,
           response: responsePayload,
         };
-        idempotencyRecords.set(idempotencyKey, record);
         await repo.saveIdempotencyRecord(idempotencyKey, record);
       }
 
@@ -3902,7 +4247,7 @@ const server = http.createServer(async (req, res) => {
   }
 
   // 12. Floor Tables List
-  if (pathname === '/api/restaurant/floor' && method === 'GET') {
+  if ((pathname === '/api/restaurant/floor' || pathname === '/api/restaurant/tables') && method === 'GET') {
     const bId = (parsedUrl.query.branchId as string) || currentBranch.id;
     const fId = (parsedUrl.query.floorId as string) || undefined;
     const tables = await repo.getTables(bId, fId);
@@ -3954,6 +4299,7 @@ const server = http.createServer(async (req, res) => {
         timestamp: new Date().toISOString(),
         producer: 'api:floor-save',
         branchId: currentBranch.id,
+        tenantId: tenantContext.tenantId,
         payload: { totalTables: body.tables.length },
       });
       await runtimeController.emitAudit('FLOOR_LAYOUT_SAVED', 'admin:operations', { totalTables: body.tables.length });
@@ -4135,6 +4481,7 @@ const server = http.createServer(async (req, res) => {
       producer: 'api:table-patch',
       branchId: currentBranch.id,
       tableNumber: updatedTable.number,
+      tenantId: tenantContext.tenantId,
       payload: updatedTable,
     });
 
@@ -4251,6 +4598,7 @@ const server = http.createServer(async (req, res) => {
       producer: 'api:table-security',
       branchId: currentBranch.id,
       tableNumber: result.table?.number,
+      tenantId: tenantContext.tenantId,
       payload: result,
     });
     sendJson(res, 200, {
@@ -4304,6 +4652,7 @@ const server = http.createServer(async (req, res) => {
       timestamp: new Date().toISOString(),
       producer: 'api:guest-assign',
       branchId: currentBranch.id,
+      tenantId: tenantContext.tenantId,
       payload: result,
     });
 
@@ -4340,6 +4689,7 @@ const server = http.createServer(async (req, res) => {
         timestamp: new Date().toISOString(),
         producer: 'api:branch-save',
         branchId: saved.id,
+        tenantId: tenantContext.tenantId,
         payload: saved,
       });
       sendJson(res, 200, { success: true, data: saved });
@@ -4476,6 +4826,7 @@ const server = http.createServer(async (req, res) => {
       timestamp: new Date().toISOString(),
       producer: 'api:table-merge',
       branchId: currentBranch.id,
+      tenantId: tenantContext.tenantId,
       payload: body,
     });
     sendJson(res, 200, { success: true, message: 'Tables merged successfully' });
@@ -4511,6 +4862,7 @@ const server = http.createServer(async (req, res) => {
       timestamp: new Date().toISOString(),
       producer: 'api:table-unmerge',
       branchId: currentBranch.id,
+      tenantId: tenantContext.tenantId,
       payload: body,
     });
     sendJson(res, 200, { success: true, message: 'Table unmerged successfully' });
@@ -4635,6 +4987,7 @@ const server = http.createServer(async (req, res) => {
       producer: 'api:service-resolve',
       branchId: currentBranch.id,
       tableNumber: resolved?.tableNumber || sReq.tableNumber,
+      tenantId: tenantContext.tenantId,
       payload: resolved,
     });
     sendJson(res, 200, { success: true, data: resolved });
@@ -5162,7 +5515,9 @@ const server = http.createServer(async (req, res) => {
   }
 
   if (
-    (pathname === '/api/restaurant/uploads/logo' || pathname === '/api/restaurant/uploads/hero') &&
+    (pathname === '/api/restaurant/uploads/logo' ||
+      pathname === '/api/restaurant/uploads/hero' ||
+      pathname === '/api/restaurant/branding/upload-image') &&
     method === 'POST'
   ) {
     if (requestIdentity.type === 'INVALID_CREDENTIAL' || requestIdentity.type === 'REVOKED_CAPABILITY') {
@@ -5173,8 +5528,9 @@ const server = http.createServer(async (req, res) => {
       sendJson(res, 403, { error: 'FORBIDDEN', message: 'Manager or Admin privileges required to upload branding assets.' });
       return;
     }
-    const kind = pathname.endsWith('/logo') ? 'logo' : 'hero';
     try {
+      const parsed = await parseBody(req).catch(() => ({}));
+      const kind = pathname.endsWith('/hero') || parsed.kind === 'hero' ? 'hero' : 'logo';
       const { buffer } = await extractImageBuffer(req);
       const saved = await ownerSelfService.saveTenantImage(tenantContext.tenantId, buffer, kind);
       if (kind === 'logo') {
@@ -5265,7 +5621,8 @@ const server = http.createServer(async (req, res) => {
       return;
     }
     const body = await parseBody(req);
-    if (!body.subject || !body.initialMessage) {
+    const initialMessage = body.initialMessage || body.description || body.message || body.subject;
+    if (!body.subject || !initialMessage) {
       sendJson(res, 400, { success: false, error: 'Missing subject or initialMessage' });
       return;
     }
@@ -5278,8 +5635,8 @@ const server = http.createServer(async (req, res) => {
         category: body.category || 'URGENT_INCIDENT',
         severity: body.severity || 'MEDIUM',
         subject: body.subject,
-        description: body.description || body.initialMessage || body.subject,
-        initialMessage: body.initialMessage,
+        description: body.description || initialMessage || body.subject,
+        initialMessage,
       });
       sendJson(res, 201, { success: true, data: ticket });
     } catch (err: any) {
@@ -5665,7 +6022,7 @@ const server = http.createServer(async (req, res) => {
   if (pathname.startsWith('/api/commerce/orders/') && method === 'GET') {
     const orderId = pathname.replace('/api/commerce/orders/', '');
     const order = await repo.getOrder(orderId);
-    const cachedRecord = idempotencyRecords.get(orderId);
+    const cachedRecord = await repo.getIdempotencyRecord(orderId);
     const cached = cachedRecord?.response || cachedRecord;
     if (!order && !cached) {
       sendJson(res, 404, { success: false, error: 'NOT_FOUND', message: `Order ${orderId} not found.` });
@@ -5680,7 +6037,7 @@ const server = http.createServer(async (req, res) => {
 
     const identity = requestIdentity;
     const isStaff = identity.type === 'STAFF' || identity.type === 'ADMIN' || identity.type === 'STATION';
-    const expectedToken = orderTokens.get(orderId) || order?.orderToken || cached?.orderToken;
+    const expectedToken = order?.orderToken || cached?.orderToken;
 
     // If an invalid tracking token is explicitly provided, reject with 403
     if (reqToken && expectedToken && reqToken !== expectedToken && !isStaff) {
@@ -5776,7 +6133,7 @@ const server = http.createServer(async (req, res) => {
   if (pathname.startsWith('/api/commerce/orders/') && pathname.endsWith('/cancel') && method === 'POST') {
     const orderId = pathname.replace('/api/commerce/orders/', '').replace('/cancel', '');
     const order = await repo.getOrder(orderId);
-    const cachedRecord = idempotencyRecords.get(orderId);
+    const cachedRecord = await repo.getIdempotencyRecord(orderId);
     const cached = cachedRecord?.response || cachedRecord;
     if (!order && !cached) {
       sendJson(res, 404, { success: false, error: 'NOT_FOUND', message: `Order ${orderId} not found.` });
@@ -5791,7 +6148,7 @@ const server = http.createServer(async (req, res) => {
 
     const identity = requestIdentity;
     const isStaff = identity.type === 'STAFF' || identity.type === 'ADMIN' || identity.type === 'STATION';
-    const expectedToken = orderTokens.get(orderId) || order?.orderToken || cached?.orderToken;
+    const expectedToken = order?.orderToken || cached?.orderToken;
 
     const isAuthorized = isStaff || (expectedToken && reqToken === expectedToken);
     if (!isAuthorized) {
@@ -5840,6 +6197,7 @@ const server = http.createServer(async (req, res) => {
       timestamp: new Date().toISOString(),
       producer: orderId,
       branchId: orderBranchId,
+      tenantId: tenantContext.tenantId,
       payload: { orderId, reason, status: 'CANCELLED' },
     });
 
@@ -5858,8 +6216,8 @@ const server = http.createServer(async (req, res) => {
     const idempotencyKey = (req.headers['x-idempotency-key'] as string) || body.idempotencyKey;
     const payloadHash = crypto.createHash('sha256').update(JSON.stringify(body)).digest('hex');
 
-    if (idempotencyKey && idempotencyRecords.has(idempotencyKey)) {
-      const cached = idempotencyRecords.get(idempotencyKey);
+    const cached = idempotencyKey ? await repo.getIdempotencyRecord(idempotencyKey) : null;
+    if (cached) {
       const replayData = cached?.response || cached;
       const cachedItemIds = new Set((replayData?.items || []).map((i: any) => i.id));
       const incomingItems = Array.isArray(body.items) ? body.items : [];
@@ -6016,7 +6374,6 @@ const server = http.createServer(async (req, res) => {
     const totalMinor = subtotalMinor + deliveryFeeMinor + taxMinor;
     const orderId = 'ord_mkt_' + crypto.randomUUID().slice(0, 8);
     const orderToken = 'ordtok_' + crypto.randomBytes(24).toString('hex');
-    orderTokens.set(orderId, orderToken);
     const tableNum = body.tableNumber || (fulfillmentMethod === 'pickup' ? 'Takeaway' : 'Delivery');
 
     const orderPayload = {
@@ -6028,7 +6385,7 @@ const server = http.createServer(async (req, res) => {
       branchId: targetBranch.id,
       branchName: targetBranch.name,
       fulfillmentMethod,
-      restaurantId: 'tenant_orbitox_bistro',
+      restaurantId: tenantContext.tenantId,
       quote: {
         subtotalMinor,
         taxMinor,
@@ -6048,9 +6405,9 @@ const server = http.createServer(async (req, res) => {
     };
 
     if (idempotencyKey) {
-      idempotencyRecords.set(idempotencyKey, { payloadHash, response: orderPayload });
+      await repo.saveIdempotencyRecord(idempotencyKey, { payloadHash, response: orderPayload });
     }
-    idempotencyRecords.set(orderId, { payloadHash, response: orderPayload });
+    await repo.saveIdempotencyRecord(orderId, { payloadHash, response: orderPayload });
 
     // 5. Create and Persist Restaurant Order in Domain Store with Correct Branch Scoping
     const restaurantOrder: RestaurantOrder = {
@@ -6060,6 +6417,7 @@ const server = http.createServer(async (req, res) => {
       sessionId: body.sessionId || `sess_${orderId}`,
       guestName: rawCustomerName,
       status: 'CONFIRMED',
+      orderToken,
       items: validatedOrderItems.map((it) => ({
         id: it.id,
         name: it.name,
@@ -6104,6 +6462,7 @@ const server = http.createServer(async (req, res) => {
         producer: orderId,
         branchId: targetBranch.id,
         tableNumber: tableNum,
+        tenantId: tenantContext.tenantId,
         payload: { orderId, task },
       });
     }
@@ -6121,6 +6480,7 @@ const server = http.createServer(async (req, res) => {
       timestamp: new Date().toISOString(),
       producer: orderId,
       branchId: targetBranch.id,
+      tenantId: tenantContext.tenantId,
       tableNumber: tableNum,
       payload: orderPayload,
     });
@@ -6134,9 +6494,9 @@ const server = http.createServer(async (req, res) => {
     const idempotencyKey = (req.headers['x-idempotency-key'] as string) || body.idempotencyKey;
     const payloadHash = crypto.createHash('sha256').update(JSON.stringify(body)).digest('hex');
 
-    if (idempotencyKey && idempotencyRecords.has(idempotencyKey)) {
-      const cached = idempotencyRecords.get(idempotencyKey);
-      if (cached && cached.payloadHash && cached.payloadHash !== payloadHash) {
+    const cached = idempotencyKey ? await repo.getIdempotencyRecord(idempotencyKey) : null;
+    if (cached) {
+      if (cached.payloadHash && cached.payloadHash !== payloadHash) {
         sendJson(res, 409, {
           success: false,
           error: 'IDEMPOTENCY_CONFLICT',
@@ -6239,7 +6599,7 @@ const server = http.createServer(async (req, res) => {
     };
 
     if (idempotencyKey) {
-      idempotencyRecords.set(idempotencyKey, { payloadHash, response: groceryOrderPayload });
+      await repo.saveIdempotencyRecord(idempotencyKey, { payloadHash, response: groceryOrderPayload });
     }
 
     await repo.appendEvent(
@@ -6363,6 +6723,28 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  // --- 3b. TABLE PRINTABLE QR STAND (/operations/tables/:id/qr-stand) ---
+  if (
+    pathname.startsWith('/operations/tables/') &&
+    pathname.endsWith('/qr-stand') &&
+    method === 'GET'
+  ) {
+    const tableId = pathname.replace('/operations/tables/', '').replace('/qr-stand', '');
+    const table = (await repo.getTable(tableId)) || (await repo.getTableByNumber(tableId));
+    if (!table) {
+      sendJson(res, 404, {
+        error: 'TABLE_NOT_FOUND',
+        message: `Table "${tableId}" does not exist in this restaurant.`,
+      });
+      return;
+    }
+    const tenantBrand = await repo.getTenantBrand();
+    const branchName = currentBranch?.name || 'Main Dining';
+    const html = renderTableQrStand(table, tenantBrand, branchName);
+    sendHtml(res, html);
+    return;
+  }
+
   // --- 4. ORDERS WORKSPACE (/operations/orders & /orders) ---
   if (pathname === '/operations/orders' || pathname === '/orders') {
     const branchOrders = await repo.getOrders(undefined, undefined, currentBranch.id);
@@ -6400,6 +6782,7 @@ const server = http.createServer(async (req, res) => {
 
     const branchTasks = await repo.getKitchenTasks(undefined, currentBranch.id);
     const lastSeq = await repo.getLastEventSequence();
+    const tenantBrand = await repo.getTenantBrand();
     const html = renderKdsWorkspace(
       branchTasks,
       activeStation,
@@ -6409,7 +6792,8 @@ const server = http.createServer(async (req, res) => {
       lastSeq,
       currentBranch.id,
       kdsRole,
-      isKitchenAuthorized
+      isKitchenAuthorized,
+      tenantBrand?.restaurantName
     );
     sendHtml(res, html);
     return;
@@ -6516,7 +6900,8 @@ const server = http.createServer(async (req, res) => {
   // --- 10b. STAFF & SECURITY WORKSPACE (/staff, /operations/staff) ---
   if (pathname === '/staff' || pathname === '/operations/staff') {
     const tenantBrand = await repo.getTenantBrand();
-    const html = renderShell(renderStaffWorkspace(branches, currentBranch.id), {
+    const staffMembers = await repo.getStaffMembers();
+    const html = renderShell(renderStaffWorkspace(branches, currentBranch.id, staffMembers), {
       title: 'Staff Directory & RBAC Security',
       activeNav: 'staff',
       restaurantName: tenantBrand.restaurantName,
@@ -6656,8 +7041,9 @@ const server = http.createServer(async (req, res) => {
   // --- 15. STAFF DIRECTORY & SECURITY (/staff) ---
   if (pathname === '/staff') {
     const tenantBrand = await repo.getTenantBrand();
+    const staffMembers = await repo.getStaffMembers();
     const html = renderShell(
-      renderStaffWorkspace(branches, currentBranch.id),
+      renderStaffWorkspace(branches, currentBranch.id, staffMembers),
       {
         title: 'Staff Directory & RBAC Security',
         activeNav: 'staff',
@@ -6683,6 +7069,28 @@ const server = http.createServer(async (req, res) => {
       {
         title: 'Customer Support Desk',
         activeNav: 'support',
+        restaurantName: tenantBrand.restaurantName,
+        currentBranchId: currentBranch.id,
+        currentFloorId: currentFloor.id,
+        currentServiceShift: serviceShift,
+        branches,
+        floors,
+        staffRole: activeStaffRole,
+      }
+    );
+    sendHtml(res, html);
+    return;
+  }
+
+  // --- 16b. OWNER ONBOARDING WORKSPACE (/operations/onboarding & /onboarding) ---
+  if (pathname === '/operations/onboarding' || pathname === '/onboarding') {
+    const onboardingState = await ownerSelfService.getOnboardingState(tenantContext.tenantId);
+    const tenantBrand = await repo.getTenantBrand();
+    const html = renderShell(
+      renderOnboardingWorkspace(onboardingState, tenantBrand, currentBranch?.name),
+      {
+        title: 'Owner Onboarding',
+        activeNav: 'onboarding',
         restaurantName: tenantBrand.restaurantName,
         currentBranchId: currentBranch.id,
         currentFloorId: currentFloor.id,
@@ -6801,13 +7209,16 @@ const server = http.createServer(async (req, res) => {
   // 404
   sendJson(res, 404, { error: `Route not found: ${pathname}` });
   });
-});
+}
+
+export const server = http.createServer(handleRequest);
 
 if (process.env.NODE_ENV === 'production' && process.env.ALLOW_DANGEROUS_RESET === 'true') {
   console.error('🚨 [SECURITY FATAL] Dangerous reset flags cannot be enabled in production mode! Halting startup.');
   process.exit(1);
 }
 
+if (process.env.RESTAURANTOS_DISABLE_AUTOLISTEN !== 'true') {
 server.listen(PORT, async () => {
   if (postgresStore?.prisma) {
     try {
@@ -6844,3 +7255,4 @@ server.listen(PORT, async () => {
 
   await runtimeController.start();
 });
+}

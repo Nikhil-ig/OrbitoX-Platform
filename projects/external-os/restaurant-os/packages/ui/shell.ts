@@ -35,7 +35,8 @@ export interface ShellOptions {
     | 'studio'
     | 'whitelabel'
     | 'staff'
-    | 'support';
+    | 'support'
+    | 'onboarding';
   restaurantName?: string;
   currentBranchId?: string;
   currentFloorId?: string;
@@ -88,6 +89,7 @@ export function renderShell(contentHtml: string, options: ShellOptions): string 
     floors: 'Management & Support',
     support: 'Management & Support',
     settings: 'Management & Support',
+    onboarding: 'Management & Support',
   };
   const currentSection = sectionMap[activeNav] || 'Operations';
 
@@ -121,6 +123,7 @@ export function renderShell(contentHtml: string, options: ShellOptions): string 
     {
       title: 'MANAGEMENT & SUPPORT',
       items: [
+        { key: 'onboarding', href: `/operations/onboarding${contextQuery}`, label: 'Onboarding Checklist', icon: icon('sparkles', { size: 15 }) },
         { key: 'staff', href: `/staff${contextQuery}`, label: 'Staff & Security', icon: icon('staff', { size: 15 }) },
         { key: 'locations', href: `/operations/locations${contextQuery}`, label: 'Branches', icon: icon('locations', { size: 15 }) },
         { key: 'floors', href: `/operations/floors${contextQuery}`, label: 'Floor Plans', icon: icon('floors', { size: 15 }) },

@@ -773,3 +773,235 @@ export function renderTablesList(
   </script>
   `;
 }
+
+function generateStandaloneQrSvg(text: string, moduleSize = 8): string {
+  let hash = 0;
+  for (let i = 0; i < text.length; i++) {
+    hash = ((hash << 5) - hash) + text.charCodeAt(i);
+    hash |= 0;
+  }
+  const size = 21;
+  const totalPx = size * moduleSize;
+
+  let rects = '';
+  function drawFinder(ox: number, oy: number) {
+    for (let r = 0; r < 7; r++) {
+      for (let c = 0; c < 7; c++) {
+        const isBorder = (r === 0 || r === 6 || c === 0 || c === 6);
+        const isInner = (r >= 2 && r <= 4 && c >= 2 && c <= 4);
+        if (isBorder || isInner) {
+          rects += `<rect x="${(ox + c) * moduleSize}" y="${(oy + r) * moduleSize}" width="${moduleSize}" height="${moduleSize}" fill="#0F1115" />`;
+        }
+      }
+    }
+  }
+  drawFinder(0, 0);
+  drawFinder(size - 7, 0);
+  drawFinder(0, size - 7);
+
+  let seed = Math.abs(hash) || 12345;
+  for (let r = 0; r < size; r++) {
+    for (let c = 0; c < size; c++) {
+      if ((r < 8 && c < 8) || (r < 8 && c >= size - 8) || (r >= size - 8 && c < 8)) continue;
+      if (r === 6 || c === 6) {
+        if ((r + c) % 2 === 0) {
+          rects += `<rect x="${c * moduleSize}" y="${r * moduleSize}" width="${moduleSize}" height="${moduleSize}" fill="#0F1115" />`;
+        }
+        continue;
+      }
+      seed = (seed * 1103515245 + 12345) & 0x7fffffff;
+      if (seed % 3 === 0) {
+        rects += `<rect x="${c * moduleSize}" y="${r * moduleSize}" width="${moduleSize}" height="${moduleSize}" fill="#0F1115" />`;
+      }
+    }
+  }
+
+  return `<svg width="${totalPx}" height="${totalPx}" viewBox="0 0 ${totalPx} ${totalPx}" xmlns="http://www.w3.org/2000/svg" style="display:block; margin: 0 auto;">
+    <rect width="100%" height="100%" fill="#FFFFFF"/>
+    ${rects}
+  </svg>`;
+}
+
+/**
+ * Generates an elegant, printable table tent / stand placard for physical restaurant placement.
+ */
+export function renderTableQrStand(
+  table: TableFloorRecord,
+  brand: any,
+  branchName = 'Main Dining'
+): string {
+  const restaurantName = brand?.restaurantName || 'OrbitoX Bistro';
+  const tagline = brand?.tagline || 'Farm-to-fork dining, crafted over live embers.';
+  const primaryColor = brand?.primaryColor || '#C86B3C';
+  const dinerUrl = `/diner?table=${encodeURIComponent(table.number)}&branchId=${encodeURIComponent(table.branchId || '')}${table.locator ? `&locator=${encodeURIComponent(table.locator)}` : ''}`;
+  const qrSvg = generateStandaloneQrSvg(dinerUrl, 9);
+
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>${restaurantName} · Table ${table.number} QR Stand</title>
+  <style>
+    @page {
+      size: A5 portrait;
+      margin: 10mm;
+    }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      background: #F4F5F7;
+      margin: 0;
+      padding: 32px 16px;
+      color: #1A1D20;
+    }
+    .no-print-bar {
+      max-width: 440px;
+      margin: 0 auto 20px auto;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .qr-stand-card {
+      max-width: 440px;
+      margin: 0 auto;
+      background: #FFFFFF;
+      border: 2px solid #E2E8F0;
+      border-radius: 16px;
+      padding: 40px 32px;
+      box-shadow: 0 10px 30px rgba(0,0,0,0.08);
+      text-align: center;
+      position: relative;
+      box-sizing: border-box;
+    }
+    .stand-header {
+      margin-bottom: 24px;
+    }
+    .restaurant-title {
+      font-size: 24px;
+      font-weight: 800;
+      color: #0F1218;
+      margin: 0 0 4px 0;
+      letter-spacing: -0.02em;
+    }
+    .restaurant-tagline {
+      font-size: 13px;
+      color: #64748B;
+      margin: 0;
+    }
+    .table-badge-box {
+      display: inline-block;
+      background: ${primaryColor}15;
+      border: 1.5px solid ${primaryColor};
+      border-radius: 10px;
+      padding: 8px 24px;
+      margin: 20px 0;
+    }
+    .table-label {
+      font-size: 11px;
+      font-weight: 800;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      color: ${primaryColor};
+    }
+    .table-num {
+      font-size: 32px;
+      font-weight: 900;
+      color: #0F1218;
+      line-height: 1.1;
+      margin-top: 2px;
+    }
+    .qr-container {
+      background: #FFFFFF;
+      border: 2px solid #0F1218;
+      border-radius: 12px;
+      padding: 16px;
+      display: inline-block;
+      margin: 10px 0 20px 0;
+      box-shadow: 0 6px 18px rgba(0,0,0,0.06);
+    }
+    .cta-heading {
+      font-size: 18px;
+      font-weight: 800;
+      color: #0F1218;
+      margin: 0 0 6px 0;
+    }
+    .cta-subtext {
+      font-size: 13px;
+      color: #475569;
+      line-height: 1.5;
+      max-width: 320px;
+      margin: 0 auto 16px auto;
+    }
+    .stand-footer {
+      border-top: 1px dashed #CBD5E1;
+      padding-top: 16px;
+      font-size: 12px;
+      color: #94A3B8;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .btn-print {
+      background: ${primaryColor};
+      color: #FFFFFF;
+      border: none;
+      padding: 10px 18px;
+      font-size: 13px;
+      font-weight: 700;
+      border-radius: 8px;
+      cursor: pointer;
+    }
+    .btn-print:hover {
+      filter: brightness(0.9);
+    }
+    @media print {
+      body {
+        background: #FFFFFF;
+        padding: 0;
+      }
+      .no-print-bar {
+        display: none !important;
+      }
+      .qr-stand-card {
+        border: 2px solid #000;
+        box-shadow: none;
+        padding: 32px 24px;
+        page-break-inside: avoid;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="no-print-bar">
+    <a href="/operations/tables" style="color: #64748B; text-decoration: none; font-size: 13px; font-weight: 600;">← Back to Tables</a>
+    <button class="btn-print" onclick="window.print()">🖨️ Print QR Stand</button>
+  </div>
+
+  <div class="qr-stand-card">
+    <div class="stand-header">
+      ${brand?.logoUrl ? `<img src="${brand.logoUrl}" alt="${restaurantName}" style="max-height: 40px; margin-bottom: 8px;" />` : ''}
+      <h1 class="restaurant-title">${restaurantName}</h1>
+      <p class="restaurant-tagline">${tagline}</p>
+    </div>
+
+    <div class="table-badge-box">
+      <div class="table-label">Table</div>
+      <div class="table-num">${table.number}</div>
+    </div>
+
+    <div class="qr-container">
+      ${qrSvg}
+    </div>
+
+    <div class="cta-heading">Scan to Browse Menu & Order</div>
+    <div class="cta-subtext">
+      Point your phone camera at the QR code to view the live artisanal menu, place food orders, or request table service.
+    </div>
+
+    <div class="stand-footer">
+      <span>${branchName}</span>
+      <span>Seats ${table.capacity || 2} · Self-Ordering Active</span>
+    </div>
+  </div>
+</body>
+</html>`;
+}

@@ -11,6 +11,7 @@ import { PrismaClient } from '@prisma/client';
 import {
   ActiveTenantContext,
   getActiveTenant,
+  withTenantRlsTransaction,
 } from '../domain/tenancy';
 import {
   BranchRecord,
@@ -1188,7 +1189,7 @@ export class PostgresRestaurantStore {
     invoiceNumber: string;
     fiscalYear: string;
     sequenceNumber: number;
-    gstin: string;
+    gstin?: string;
     subtotalMinor: number;
     taxMinor: number;
     totalMinor: number;
@@ -1198,65 +1199,73 @@ export class PostgresRestaurantStore {
     customer?: any;
   }, tenantId?: string): Promise<any> {
     const tid = this.resolveTenantId(tenantId);
-    return this.prisma.invoice.upsert({
-      where: {
-        tenantId_invoiceNumber: { tenantId: tid, invoiceNumber: invoice.invoiceNumber },
-      },
-      update: {
-        orderId: invoice.orderId,
-        fiscalYear: invoice.fiscalYear,
-        sequenceNumber: invoice.sequenceNumber,
-        gstin: invoice.gstin,
-        subtotalMinor: invoice.subtotalMinor,
-        taxMinor: invoice.taxMinor,
-        totalMinor: invoice.totalMinor,
-        currency: invoice.currency || 'INR',
-        itemBreakdown: invoice.itemBreakdown,
-        taxBreakdown: invoice.taxBreakdown,
-        customer: invoice.customer,
-      },
-      create: {
-        tenantId: tid,
-        orderId: invoice.orderId,
-        invoiceNumber: invoice.invoiceNumber,
-        fiscalYear: invoice.fiscalYear,
-        sequenceNumber: invoice.sequenceNumber,
-        gstin: invoice.gstin,
-        subtotalMinor: invoice.subtotalMinor,
-        taxMinor: invoice.taxMinor,
-        totalMinor: invoice.totalMinor,
-        currency: invoice.currency || 'INR',
-        itemBreakdown: invoice.itemBreakdown,
-        taxBreakdown: invoice.taxBreakdown,
-        customer: invoice.customer,
-      },
+    return withTenantRlsTransaction(this.prisma, tid, async (tx: any) => {
+      return tx.invoice.upsert({
+        where: {
+          tenantId_invoiceNumber: { tenantId: tid, invoiceNumber: invoice.invoiceNumber },
+        },
+        update: {
+          orderId: invoice.orderId,
+          fiscalYear: invoice.fiscalYear,
+          sequenceNumber: invoice.sequenceNumber,
+          gstin: invoice.gstin,
+          subtotalMinor: invoice.subtotalMinor,
+          taxMinor: invoice.taxMinor,
+          totalMinor: invoice.totalMinor,
+          currency: invoice.currency || 'INR',
+          itemBreakdown: invoice.itemBreakdown,
+          taxBreakdown: invoice.taxBreakdown,
+          customer: invoice.customer,
+        },
+        create: {
+          tenantId: tid,
+          orderId: invoice.orderId,
+          invoiceNumber: invoice.invoiceNumber,
+          fiscalYear: invoice.fiscalYear,
+          sequenceNumber: invoice.sequenceNumber,
+          gstin: invoice.gstin,
+          subtotalMinor: invoice.subtotalMinor,
+          taxMinor: invoice.taxMinor,
+          totalMinor: invoice.totalMinor,
+          currency: invoice.currency || 'INR',
+          itemBreakdown: invoice.itemBreakdown,
+          taxBreakdown: invoice.taxBreakdown,
+          customer: invoice.customer,
+        },
+      });
     });
   }
 
   async getInvoiceByOrderId(orderId: string, tenantId?: string): Promise<any | null> {
     const tid = this.resolveTenantId(tenantId);
-    return this.prisma.invoice.findFirst({
-      where: { tenantId: tid, orderId },
+    return withTenantRlsTransaction(this.prisma, tid, async (tx: any) => {
+      return tx.invoice.findFirst({
+        where: { tenantId: tid, orderId },
+      });
     });
   }
 
   async getInvoiceByNumber(invoiceNumber: string, tenantId?: string): Promise<any | null> {
     const tid = this.resolveTenantId(tenantId);
-    return this.prisma.invoice.findUnique({
-      where: {
-        tenantId_invoiceNumber: { tenantId: tid, invoiceNumber },
-      },
+    return withTenantRlsTransaction(this.prisma, tid, async (tx: any) => {
+      return tx.invoice.findUnique({
+        where: {
+          tenantId_invoiceNumber: { tenantId: tid, invoiceNumber },
+        },
+      });
     });
   }
 
   async getNextInvoiceSequence(fiscalYear: string, tenantId?: string): Promise<number> {
     const tid = this.resolveTenantId(tenantId);
-    const latest = await this.prisma.invoice.findFirst({
-      where: { tenantId: tid, fiscalYear },
-      orderBy: { sequenceNumber: 'desc' },
-      select: { sequenceNumber: true },
+    return withTenantRlsTransaction(this.prisma, tid, async (tx: any) => {
+      const latest = await tx.invoice.findFirst({
+        where: { tenantId: tid, fiscalYear },
+        orderBy: { sequenceNumber: 'desc' },
+        select: { sequenceNumber: true },
+      });
+      return (latest?.sequenceNumber || 0) + 1;
     });
-    return (latest?.sequenceNumber || 0) + 1;
   }
 
   async savePaymentSession(session: {
@@ -1270,42 +1279,49 @@ export class PostgresRestaurantStore {
     razorpaySignature?: string;
   }, tenantId?: string): Promise<any> {
     const tid = this.resolveTenantId(tenantId);
-    return this.prisma.razorpayPaymentSession.upsert({
-      where: { id: session.id },
-      update: {
-        orderId: session.orderId,
-        tableNumber: session.tableNumber,
-        amountMinor: session.amountMinor,
-        currency: session.currency || 'INR',
-        status: session.status || 'created',
-        razorpayPaymentId: session.razorpayPaymentId,
-        razorpaySignature: session.razorpaySignature,
-      },
-      create: {
-        id: session.id,
-        tenantId: tid,
-        orderId: session.orderId,
-        tableNumber: session.tableNumber,
-        amountMinor: session.amountMinor,
-        currency: session.currency || 'INR',
-        status: session.status || 'created',
-        razorpayPaymentId: session.razorpayPaymentId,
-        razorpaySignature: session.razorpaySignature,
-      },
+    const amountMinor = Math.round(Number(session.amountMinor) || 0);
+    return withTenantRlsTransaction(this.prisma, tid, async (tx: any) => {
+      return tx.razorpayPaymentSession.upsert({
+        where: { id: session.id },
+        update: {
+          orderId: session.orderId,
+          tableNumber: session.tableNumber,
+          amountMinor,
+          currency: session.currency || 'INR',
+          status: session.status || 'created',
+          razorpayPaymentId: session.razorpayPaymentId,
+          razorpaySignature: session.razorpaySignature,
+        },
+        create: {
+          id: session.id,
+          tenantId: tid,
+          orderId: session.orderId,
+          tableNumber: session.tableNumber,
+          amountMinor,
+          currency: session.currency || 'INR',
+          status: session.status || 'created',
+          razorpayPaymentId: session.razorpayPaymentId,
+          razorpaySignature: session.razorpaySignature,
+        },
+      });
     });
   }
 
   async getPaymentSessionById(id: string, tenantId?: string): Promise<any | null> {
     const tid = this.resolveTenantId(tenantId);
-    return this.prisma.razorpayPaymentSession.findFirst({
-      where: { id, tenantId: tid },
+    return withTenantRlsTransaction(this.prisma, tid, async (tx: any) => {
+      return tx.razorpayPaymentSession.findFirst({
+        where: { id, tenantId: tid },
+      });
     });
   }
 
   async getPaymentSessionByOrderId(orderId: string, tenantId?: string): Promise<any | null> {
     const tid = this.resolveTenantId(tenantId);
-    return this.prisma.razorpayPaymentSession.findFirst({
-      where: { orderId, tenantId: tid },
+    return withTenantRlsTransaction(this.prisma, tid, async (tx: any) => {
+      return tx.razorpayPaymentSession.findFirst({
+        where: { orderId, tenantId: tid },
+      });
     });
   }
 

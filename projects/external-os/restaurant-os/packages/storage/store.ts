@@ -506,6 +506,30 @@ export class RestaurantRuntimeStore {
     return member;
   }
 
+  public getStaffMemberByIdentifier(identifier: string): StaffDirectoryMember | undefined {
+    const list = this.getStaffMembers();
+    const trimmed = identifier.trim().toLowerCase();
+    return list.find((m) => {
+      if (m.id.toLowerCase() === trimmed) return true;
+      if (m.name.toLowerCase() === trimmed) return true;
+      const perms = m.permissions as any;
+      if (perms && typeof perms === 'object') {
+        if (perms.email && String(perms.email).toLowerCase() === trimmed) return true;
+        if (perms.phone && String(perms.phone) === trimmed) return true;
+      }
+      return false;
+    });
+  }
+
+  public updateStaffMemberSecret(id: string, hash: string, salt: string): void {
+    const member = this.getStaffMembers().find((m) => m.id === id);
+    if (member) {
+      member.pinHash = hash;
+      member.salt = salt;
+      this.flushSync();
+    }
+  }
+
   private flushSync(): void {
     const uniqueSuffix = `${Date.now()}_${process.pid}_${crypto.randomBytes(8).toString('hex')}`;
     const tmpPath = `${this.filePath}.tmp.${uniqueSuffix}`;
@@ -1363,10 +1387,24 @@ export class RestaurantRuntimeStore {
   public createOrJoinSession(
     tableNumber: string,
     hostName: string,
-    capabilityToken: string,
-    branchId = 'branch_ldh',
-    floorId = 'floor_courtyard'
+    arg3?: string,
+    arg4?: string,
+    arg5?: string
   ): DiningSessionRecord {
+    let branchId = 'main';
+    let floorId = 'ground';
+    let capabilityToken = `cap_${crypto.randomBytes(16).toString('hex')}`;
+
+    if (arg3 && (arg3.startsWith('cap_') || arg3.startsWith('orb_cap_'))) {
+      capabilityToken = arg3;
+      if (arg4) branchId = arg4;
+      if (arg5) floorId = arg5;
+    } else {
+      if (arg3) branchId = arg3;
+      if (arg4) floorId = arg4;
+      if (arg5) capabilityToken = arg5;
+    }
+
     let sess = this.data.sessions.find((s) => s.tableNumber === tableNumber && s.status === 'ACTIVE');
     if (!sess) {
       sess = {

@@ -96,73 +96,12 @@ function getPrisma(): PrismaClient {
 }
 
 /**
- * Resolves the tenant context strictly from verified Host or authenticated platform service.
- * Returns null if unrecognized host (which MUST be served as 404).
+ * Resolves tenant context purely from the HTTP Host header.
  */
-export async function resolveTenantFromRequest(
-  req: http.IncomingMessage,
-  prismaClient?: PrismaClient
+export async function resolveTenantFromHost(
+  rawHost: string,
+  prisma: PrismaClient
 ): Promise<ActiveTenantContext | null> {
-  const prisma = prismaClient || getPrisma();
-
-  // 1. Authenticated Platform Service Override:
-  // ONLY honoured if caller presents valid platform service credentials (RESTAURANTOS_PLATFORM_TOKEN)
-  const isPlatformService = verifyPlatformAuth(req);
-  if (isPlatformService) {
-    const customHeader = req.headers['x-tenant-id'] || req.headers['x-orbitox-tenant'];
-    if (typeof customHeader === 'string' && customHeader.trim()) {
-      const tid = customHeader.trim();
-      const actualId = tid.startsWith('tenant_') ? tid : `tenant_${tid}`;
-      const dbTenant = await prisma.tenant.findFirst({
-        where: { OR: [{ id: tid }, { id: actualId }, { slug: tid }] },
-      }).catch(() => null);
-      if (dbTenant) {
-        return {
-          tenantId: dbTenant.id,
-          tenantSlug: dbTenant.slug,
-          tenantName: dbTenant.name,
-          orbitoxProjectId: dbTenant.orbitoxProjectId || `restaurant-os-${dbTenant.slug}`,
-          status: dbTenant.status,
-        };
-      }
-      // Fail closed: Named tenant does not exist in database
-      return null;
-    }
-
-    const reqUrl = req.url || '/';
-    const queryMatch = /[?&](?:tenant|tenantId)=([^&]+)/i.exec(reqUrl);
-    if (queryMatch && queryMatch[1]) {
-      const tid = decodeURIComponent(queryMatch[1]).trim();
-      const actualId = tid.startsWith('tenant_') ? tid : `tenant_${tid}`;
-      const dbTenant = await prisma.tenant.findFirst({
-        where: { OR: [{ id: tid }, { id: actualId }, { slug: tid }] },
-      }).catch(() => null);
-      if (dbTenant) {
-        return {
-          tenantId: dbTenant.id,
-          tenantSlug: dbTenant.slug,
-          tenantName: dbTenant.name,
-          orbitoxProjectId: dbTenant.orbitoxProjectId || `restaurant-os-${dbTenant.slug}`,
-          status: dbTenant.status,
-        };
-      }
-      // Fail closed: Named tenant does not exist in database
-      return null;
-    }
-
-    // Authenticated platform service request without target tenant parameter
-    return {
-      tenantId: 'platform_fleet',
-      tenantSlug: 'platform',
-      tenantName: 'Platform Fleet Operations',
-      orbitoxProjectId: 'platform',
-      status: 'active',
-      isPlatform: true,
-    };
-  }
-
-  // 2. Strict Host-Based Resolution (Public & Staff callers MUST resolve from Host)
-  const rawHost = (req.headers.host || '').split(':')[0].trim().toLowerCase();
   if (!rawHost) {
     return null;
   }
@@ -176,10 +115,14 @@ export async function resolveTenantFromRequest(
   const baseDomain = (process.env.RESTAURANTOS_BASE_DOMAIN || 'orbitox.live').toLowerCase();
   const reservedWords = new Set(['www', 'api', 'admin', 'app', 'platform', 'static', 'localhost']);
 
-  // Pattern A: Subdomain of baseDomain, localhost, or direct slug match
+  // Pattern A: Subdomain of baseDomain, localhost, test domains, or direct slug match
   let candidateSlug: string | null = null;
   if (rawHost.endsWith(`.${baseDomain}`)) {
     candidateSlug = rawHost.slice(0, rawHost.length - baseDomain.length - 1);
+  } else if (rawHost.endsWith('.restaurantos.local')) {
+    candidateSlug = rawHost.slice(0, rawHost.length - '.restaurantos.local'.length);
+  } else if (rawHost.endsWith('.test.local')) {
+    candidateSlug = rawHost.slice(0, rawHost.length - '.test.local'.length);
   } else if (rawHost.endsWith('.localhost')) {
     candidateSlug = rawHost.slice(0, rawHost.length - '.localhost'.length);
   } else if (!rawHost.includes('.') && !reservedWords.has(rawHost)) {
@@ -235,6 +178,95 @@ export async function resolveTenantFromRequest(
     }
   } catch (err: any) {
     console.warn(`[Tenancy] Failed to query custom domain for ${rawHost}:`, err.message);
+  }
+
+  return null;
+}
+
+/**
+ * Resolves the tenant context strictly from verified Host or authenticated platform service.
+ * Returns null if unrecognized host (which MUST be served as 404).
+ */
+export async function resolveTenantFromRequest(
+  req: http.IncomingMessage,
+  prismaClient?: PrismaClient
+): Promise<ActiveTenantContext | null> {
+  const prisma = prismaClient || getPrisma();
+
+  // 1. Authenticated Platform Service Override:
+  // ONLY honoured if caller presents valid platform service credentials (RESTAURANTOS_PLATFORM_TOKEN)
+  const isPlatformService = verifyPlatformAuth(req);
+  if (isPlatformService) {
+    const customHeader = req.headers['x-tenant-id'] || req.headers['x-orbitox-tenant'];
+    if (typeof customHeader === 'string' && customHeader.trim()) {
+      const tid = customHeader.trim();
+      const actualId = tid.startsWith('tenant_') ? tid : `tenant_${tid}`;
+      const dbTenant = await prisma.tenant.findFirst({
+        where: { OR: [{ id: tid }, { id: actualId }, { slug: tid }] },
+      }).catch(() => null);
+      if (dbTenant) {
+        return {
+          tenantId: dbTenant.id,
+          tenantSlug: dbTenant.slug,
+          tenantName: dbTenant.name,
+          orbitoxProjectId: dbTenant.orbitoxProjectId || `restaurant-os-${dbTenant.slug}`,
+          status: dbTenant.status,
+        };
+      }
+      // Fail closed: Named tenant does not exist in database
+      return null;
+    }
+
+    const reqUrl = req.url || '/';
+    const queryMatch = /[?&](?:tenant|tenantId)=([^&]+)/i.exec(reqUrl);
+    if (queryMatch && queryMatch[1]) {
+      const tid = decodeURIComponent(queryMatch[1]).trim();
+      const actualId = tid.startsWith('tenant_') ? tid : `tenant_${tid}`;
+      const dbTenant = await prisma.tenant.findFirst({
+        where: { OR: [{ id: tid }, { id: actualId }, { slug: tid }] },
+      }).catch(() => null);
+      if (dbTenant) {
+        return {
+          tenantId: dbTenant.id,
+          tenantSlug: dbTenant.slug,
+          tenantName: dbTenant.name,
+          orbitoxProjectId: dbTenant.orbitoxProjectId || `restaurant-os-${dbTenant.slug}`,
+          status: dbTenant.status,
+        };
+      }
+      // Fail closed: Named tenant does not exist in database
+      return null;
+    }
+
+    // If caller targeted a specific tenant host, resolve from host before fallback
+    const rawHost = (req.headers.host || '').split(':')[0].trim().toLowerCase();
+    if (rawHost) {
+      const hostContext = await resolveTenantFromHost(rawHost, prisma);
+      if (hostContext) {
+        return { ...hostContext, isPlatform: true };
+      }
+    }
+
+    // Authenticated platform service request without target tenant parameter or matching host
+    return {
+      tenantId: 'platform_fleet',
+      tenantSlug: 'platform',
+      tenantName: 'Platform Fleet Operations',
+      orbitoxProjectId: 'platform',
+      status: 'active',
+      isPlatform: true,
+    };
+  }
+
+  // 2. Strict Host-Based Resolution (Public & Staff callers MUST resolve from Host)
+  const rawHost = (req.headers.host || '').split(':')[0].trim().toLowerCase();
+  if (!rawHost) {
+    return null;
+  }
+
+  const hostContext = await resolveTenantFromHost(rawHost, prisma);
+  if (hostContext) {
+    return hostContext;
   }
 
   // Pattern C: Token-based invite resolution on loopback/localhost for development & test flows
