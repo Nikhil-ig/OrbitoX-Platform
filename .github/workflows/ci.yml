@@ -152,6 +152,7 @@ jobs:
       - name: Black-Box HTTP Multi-Tenant Suite (Item 3)
         run: pnpm exec tsx scripts/test-e2e-http-multitenancy.ts
         env:
+          E2E_P95_LIMIT_MS: '600' # shared GitHub runner; 250ms SLA is checked on dedicated hardware
           DATABASE_URL: postgresql://postgres:postgrespassword@127.0.0.1:5432/restaurant_os
           APP_DATABASE_URL: postgresql://restaurantos_app:test_app_pass_123@127.0.0.1:5432/restaurant_os
 

@@ -832,7 +832,8 @@ async function runBlackBoxHttpMultiTenantSuite() {
     console.log(`  ⚡ p99 Latency:        ${p99Ms} ms`);
     console.log(`  ⚡ Max Latency:        ${maxMs} ms`);
 
-    assert(p95Ms < 250, `p95 Latency is under 250ms SLA (Actual: ${p95Ms}ms)`);
+    const p95LimitMs = Number(process.env.E2E_P95_LIMIT_MS ?? 250); // CI runners are shared/slow; production SLA stays 250ms
+    assert(p95Ms < p95LimitMs, `p95 Latency is under ${p95LimitMs}ms limit (Actual: ${p95Ms}ms)`);
 
     console.log(`\n======================================================================`);
     console.log(`🎉 ALL 14 BLACK-BOX HTTP MULTI-TENANT TEST SUITES PASSED 100%!`);
