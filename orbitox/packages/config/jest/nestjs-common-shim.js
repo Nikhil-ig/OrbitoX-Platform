@@ -66,6 +66,10 @@ class Logger {
   static verbose(...args) {}
 }
 
+class ConsoleLogger extends Logger {}
+class LoggerService {}
+
+
 const Injectable = () => (target) => target;
 const Module = (metadata) => (target) => {
   Reflect.defineMetadata('imports', metadata.imports || [], target);
@@ -86,11 +90,39 @@ const SetMetadata = (metadataKey, metadataValue) => (target, key, descriptor) =>
   return target;
 };
 
+const createParamDecorator = (factory) => (data) => (target, key, index) => {};
+const UseGuards = (...guards) => (target, key, descriptor) => descriptor || target;
+const UseInterceptors = (...interceptors) => (target, key, descriptor) => descriptor || target;
+const Controller = (prefix) => (target) => target;
+const Get = (path) => (target, key, descriptor) => descriptor;
+const Post = (path) => (target, key, descriptor) => descriptor;
+const Put = (path) => (target, key, descriptor) => descriptor;
+const Patch = (path) => (target, key, descriptor) => descriptor;
+const Delete = (path) => (target, key, descriptor) => descriptor;
+const Req = () => (target, key, index) => {};
+const Res = () => (target, key, index) => {};
+const Body = () => (target, key, index) => {};
+const Param = () => (target, key, index) => {};
+const Query = () => (target, key, index) => {};
+const Headers = () => (target, key, index) => {};
+
+const RequestMethod = {
+  GET: 0,
+  POST: 1,
+  PUT: 2,
+  DELETE: 3,
+  PATCH: 4,
+  ALL: 5,
+  OPTIONS: 6,
+  HEAD: 7,
+};
+
 const Scope = {
   DEFAULT: 0,
   TRANSIENT: 1,
   REQUEST: 2,
 };
+
 
 const HttpStatus = {
   CONTINUE: 100,
@@ -152,12 +184,35 @@ module.exports = {
   ConflictException,
   InternalServerErrorException,
   Logger,
+  ConsoleLogger,
+  LoggerService,
   Injectable,
+
   Module,
   Global,
   Inject,
   Optional,
   SetMetadata,
+  createParamDecorator,
+  UseGuards,
+  UseInterceptors,
+  Controller,
+  Get,
+  Post,
+  Put,
+  Patch,
+  Delete,
+  Req,
+  Res,
+  Body,
+  Param,
+  Query,
+  Headers,
+  RequestMethod,
+
   Scope,
   HttpStatus,
 };
+
+
+
