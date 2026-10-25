@@ -113,6 +113,7 @@ function makeRequest(
 function assert(condition: boolean, message: string) {
   if (!condition) {
     console.error(`❌ FAIL: ${message}`);
+    if (process.env.GITHUB_ACTIONS) console.log(`::error title=E2E assertion failed::${message.replace(/\n/g, ' ')}`);
     throw new Error(`Assertion failed: ${message}`);
   }
   console.log(`  ✅ PASS: ${message}`);
@@ -840,7 +841,8 @@ async function runBlackBoxHttpMultiTenantSuite() {
     console.log(`  ⚡ p99 Latency:        ${p99Ms} ms`);
     console.log(`  ⚡ Max Latency:        ${maxMs} ms`);
 
-    assert(p95Ms < 300, `p95 Latency is under 300ms SLA (Actual: ${p95Ms}ms)`);
+    const p95LimitMs = Number(process.env.E2E_P95_LIMIT_MS ?? 250); // CI runners are shared/slow; production SLA stays 250ms
+    assert(p95Ms < p95LimitMs, `p95 Latency is under ${p95LimitMs}ms limit (Actual: ${p95Ms}ms)`);
 
     console.log(`\n======================================================================`);
     console.log(`🎉 ALL 14 BLACK-BOX HTTP MULTI-TENANT TEST SUITES PASSED 100%!`);
@@ -880,7 +882,10 @@ async function runBlackBoxHttpMultiTenantSuite() {
   }
 }
 
-runBlackBoxHttpMultiTenantSuite().catch((err) => {
+runBlackBoxHttpMultiTenantSuite()
+  .then(() => process.exit(0)) // spawned `npx tsx` child keeps the event loop alive; exit explicitly
+  .catch((err) => {
   console.error('\n💥 FATAL TEST SUITE FAILURE:', err);
+    if (process.env.GITHUB_ACTIONS) console.log(`::error title=E2E fatal::${String((err as Error)?.stack ?? err).split('\n').slice(0, 4).join(' | ')}`);
   process.exit(1);
-});
+  });

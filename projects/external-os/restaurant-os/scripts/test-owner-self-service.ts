@@ -682,7 +682,9 @@ async function main() {
   console.log('\n🎉 ALL OWNER SELF-SERVICE & QUOTA TESTS PASSED PERFECTLY!');
 }
 
-main().catch((err) => {
+main()
+  .then(() => process.exit(0)) // spawned `npx tsx` child keeps the event loop alive; exit explicitly
+  .catch((err) => {
   console.error('\n❌ Test execution failed:', err);
   process.exit(1);
-});
+  });
