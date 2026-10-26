@@ -106,7 +106,16 @@ The OrbitoX engineering organization has established clear milestone boundaries 
 Ensure your environment satisfies these prerequisites before running or building the monorepo:
 
 - **Node.js**: `v20.12.0` or higher (`v22.x LTS` recommended).
-- **pnpm**: `v9.15.0` or higher (`corepack enable && corepack prepare pnpm@9.15.0 --activate`).
+- **pnpm**: exactly `v9.15.0`, pinned by `orbitox/package.json`'s `packageManager` field. Enable Corepack before using workspace commands:
+
+    ```bash
+    corepack enable
+    corepack prepare pnpm@9.15.0 --activate
+    cd orbitox
+    pnpm install
+    pnpm run build
+    pnpm run test
+    ```
 - **Docker & Docker Compose**: Docker Engine `v24+` with Compose `v2+`.
 - **PostgreSQL** *(optional for local dev, mandatory for production)*: `v15+` with `pgcrypto` extension enabled.
 - **Git**: `v2.40+`.

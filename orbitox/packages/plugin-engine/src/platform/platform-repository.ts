@@ -198,7 +198,13 @@ export class PlatformRepository {
 
     if (fs.existsSync(filePath)) {
       try {
-        this.hydrateStore(this.parseStoreData(fs.readFileSync(filePath, 'utf-8')));
+        const missingOptionalCollections: string[] = [];
+        const store = this.parseStoreData(fs.readFileSync(filePath, 'utf-8'), (name) => missingOptionalCollections.push(name));
+        this.hydrateStore(store);
+        if (missingOptionalCollections.length > 0) {
+          this.logLegacyStoreMigration(missingOptionalCollections);
+          this.saveDurable();
+        }
         this.writeInitializedMarker(initializedPath);
         return true;
       } catch (primaryError) {
@@ -207,9 +213,11 @@ export class PlatformRepository {
             cause: primaryError,
           });
         }
-        const backup = this.parseStoreData(fs.readFileSync(backupPath, 'utf-8'));
+        const missingOptionalCollections: string[] = [];
+        const backup = this.parseStoreData(fs.readFileSync(backupPath, 'utf-8'), (name) => missingOptionalCollections.push(name));
         this.hydrateStore(backup);
         console.error(`[PlatformRepository] Primary store is corrupt; recovered the previous good copy from ${backupPath}.`);
+        if (missingOptionalCollections.length > 0) this.logLegacyStoreMigration(missingOptionalCollections);
         this.writeAtomicFile(filePath, JSON.stringify(backup, null, 2));
         this.writeInitializedMarker(initializedPath);
         return true;
@@ -217,9 +225,11 @@ export class PlatformRepository {
     }
 
     if (fs.existsSync(backupPath)) {
-      const backup = this.parseStoreData(fs.readFileSync(backupPath, 'utf-8'));
+      const missingOptionalCollections: string[] = [];
+      const backup = this.parseStoreData(fs.readFileSync(backupPath, 'utf-8'), (name) => missingOptionalCollections.push(name));
       this.hydrateStore(backup);
       console.error(`[PlatformRepository] Primary store is missing; recovered the previous good copy from ${backupPath}.`);
+      if (missingOptionalCollections.length > 0) this.logLegacyStoreMigration(missingOptionalCollections);
       this.writeAtomicFile(filePath, JSON.stringify(backup, null, 2));
       this.writeInitializedMarker(initializedPath);
       return true;
@@ -264,9 +274,9 @@ export class PlatformRepository {
     }
   }
 
-  private static parseStoreData(raw: string): PlatformRepositoryStoreData {
+  private static parseStoreData(raw: string, onMissingOptionalCollection?: (name: string) => void): PlatformRepositoryStoreData {
     const parsed = JSON.parse(raw);
-    const collections = [
+    const requiredCollections = [
       'organizations',
       'projects',
       'environments',
@@ -278,10 +288,14 @@ export class PlatformRepository {
       'domains',
       'quotaPolicies',
       'rateLimitPolicies',
-      'auditLogs',
     ];
-    if (!parsed || collections.some((collection) => !Array.isArray(parsed[collection])) || parsed.organizations.length === 0) {
+    const optionalCollections = ['auditLogs'];
+    if (!parsed || requiredCollections.some((collection) => !Array.isArray(parsed[collection])) || parsed.organizations.length === 0) {
       throw new Error('Persistent store is empty or has an invalid schema.');
+    }
+    for (const collection of optionalCollections) {
+      if (parsed[collection] === undefined) onMissingOptionalCollection?.(collection);
+      else if (!Array.isArray(parsed[collection])) throw new Error('Persistent store is empty or has an invalid schema.');
     }
     return {
       organizations: parsed.organizations,
@@ -295,8 +309,14 @@ export class PlatformRepository {
       domains: parsed.domains,
       quotaPolicies: parsed.quotaPolicies,
       rateLimitPolicies: parsed.rateLimitPolicies,
-      auditLogs: parsed.auditLogs,
+      auditLogs: parsed.auditLogs ?? [],
     };
+  }
+
+  private static logLegacyStoreMigration(collections: string[]): void {
+    console.warn(
+      `[PlatformRepository] Legacy store is missing optional collection(s) ${collections.join(', ')}; defaulting to empty and upgrading the store.`
+    );
   }
 
   private static hydrateStore(parsed: PlatformRepositoryStoreData): void {

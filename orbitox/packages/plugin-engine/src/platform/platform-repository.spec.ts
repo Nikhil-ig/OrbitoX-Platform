@@ -8,14 +8,15 @@ import { PlatformKeyEngine } from '../security/platform-key-engine';
 describe('PlatformRepository (Normalized Domain Access & Cryptographic Binding)', () => {
   let suiteTempDir: string;
 
-  beforeAll(() => {
+  beforeEach(() => {
     suiteTempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'orbitox-repo-suite-'));
+    PlatformRepository.resetForTesting();
     PlatformRepository.setDataDir(suiteTempDir);
     PlatformRepository.setPersistenceEnabled(true);
     PlatformRepository.initialize();
   });
 
-  afterAll(() => {
+  afterEach(() => {
     PlatformRepository.resetForTesting();
     PlatformRepository.setDataDir('');
     try {
@@ -544,27 +545,6 @@ describe('PlatformRepository (Normalized Domain Access & Cryptographic Binding)'
   });
 
   describe('Durable File Persistence & Restart Survivability (P0.1)', () => {
-    let tempDir: string;
-
-    beforeAll(() => {
-      tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'orbitox-repo-test-'));
-      PlatformRepository.resetForTesting();
-      PlatformRepository.setDataDir(tempDir);
-      PlatformRepository.setPersistenceEnabled(true);
-      PlatformRepository.initialize();
-    });
-
-    afterAll(() => {
-      PlatformRepository.resetForTesting();
-      PlatformRepository.setDataDir(suiteTempDir);
-      PlatformRepository.initialize();
-      try {
-        fs.rmSync(tempDir, { recursive: true, force: true });
-      } catch {
-        // ignore cleanup error
-      }
-    });
-
     it('should durably persist projects, credentials, domains, and quotas to disk and reload on restart', () => {
       // 1. Provision a durable test organization
       const testOrg = PlatformRepository.createOrganization({
@@ -681,6 +661,27 @@ describe('PlatformRepository (Normalized Domain Access & Cryptographic Binding)'
       expect(PlatformRepository.getProject(project.id)).toBeUndefined();
       expect(PlatformRepository.getOrganization(testOrg.id)?.name).toBe('Durable Enterprise Corp (Updated)');
       expect(PlatformRepository.listDomains(prodEnv.id).some((d) => d.domainName === 'terminal.durable.io')).toBe(false);
+    });
+
+    it('loads a valid store snapshot from before auditLogs was added', () => {
+      const storePath = PlatformRepository.getFilePath();
+      const legacyStore = JSON.parse(fs.readFileSync(storePath, 'utf8'));
+      const expectedProjectIds = legacyStore.projects.map((project: { id: string }) => project.id);
+      delete legacyStore.auditLogs;
+      fs.writeFileSync(storePath, JSON.stringify(legacyStore), 'utf8');
+      const migrationWarning = jest.spyOn(console, 'warn').mockImplementation(() => undefined);
+
+      try {
+        PlatformRepository.resetForTesting();
+        PlatformRepository.setDataDir(suiteTempDir);
+        PlatformRepository.initialize();
+
+        expect(PlatformRepository.listProjects().map((project) => project.id)).toEqual(expectedProjectIds);
+        expect(JSON.parse(fs.readFileSync(storePath, 'utf8')).auditLogs).toEqual([]);
+        expect(migrationWarning).toHaveBeenCalledWith(expect.stringContaining('auditLogs'));
+      } finally {
+        migrationWarning.mockRestore();
+      }
     });
   });
 });

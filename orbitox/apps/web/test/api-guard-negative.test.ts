@@ -1,4 +1,4 @@
-import { describe, it, before, after } from 'node:test';
+import { describe, it, beforeEach, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
@@ -16,21 +16,24 @@ import { hospitalStore } from '../app/api/hospital/_store';
 
 describe('Phase 1 & 1.5 Security, Unified Auth & Licensed Customer Test Suite', () => {
   const TEST_ADMIN_TOKEN = 'test_admin_token_super_secret_32_chars_minimum';
-  let originalDataDir: string;
   let suiteDataDir: string;
+  let previousAdminToken: string | undefined;
+  let previousServerPepper: string | undefined;
   let validAdminKeySecret: string;
   let validCustomerKeySecret: string;
   let revokedKeySecret: string;
   let restaurantPosKeySecret: string;
   let restaurantPosProjectId: string;
 
-  before(async () => {
+  beforeEach(async () => {
+    previousAdminToken = process.env.ORBITOX_ADMIN_TOKEN;
+    previousServerPepper = process.env.ORBITOX_SERVER_PEPPER;
     process.env.ORBITOX_ADMIN_TOKEN = TEST_ADMIN_TOKEN;
     process.env.ORBITOX_SERVER_PEPPER = 'test_pepper_32_characters_minimum_len';
-    originalDataDir = path.dirname(PlatformRepository.getFilePath());
     suiteDataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'orbitox-api-guard-'));
     PlatformRepository.resetForTesting();
     PlatformRepository.setDataDir(suiteDataDir);
+    PlatformRepository.setPersistenceEnabled(true);
     PlatformRepository.initialize();
 
     // 1. Create a platform admin organization & project
@@ -161,11 +164,14 @@ describe('Phase 1 & 1.5 Security, Unified Auth & Licensed Customer Test Suite', 
     restaurantPosKeySecret = restPosKey.rawSecret;
   });
 
-  after(() => {
+  afterEach(() => {
     PlatformRepository.resetForTesting();
-    PlatformRepository.setDataDir(originalDataDir);
-    PlatformRepository.initialize();
+    PlatformRepository.setDataDir('');
     fs.rmSync(suiteDataDir, { recursive: true, force: true });
+    if (previousAdminToken === undefined) delete process.env.ORBITOX_ADMIN_TOKEN;
+    else process.env.ORBITOX_ADMIN_TOKEN = previousAdminToken;
+    if (previousServerPepper === undefined) delete process.env.ORBITOX_SERVER_PEPPER;
+    else process.env.ORBITOX_SERVER_PEPPER = previousServerPepper;
   });
 
   const dummyHandler = async (req: NextRequest, ctx: any) => {
@@ -681,45 +687,46 @@ describe('Phase 1 & 1.5 Security, Unified Auth & Licensed Customer Test Suite', 
   });
 
   it('project provisioning issues a persistent repository key that survives reinitialization', async () => {
-    const originalDataDir = path.dirname(PlatformRepository.getFilePath());
     const testDataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'orbitox-provisioning-'));
     PlatformRepository.saveImmediate();
     PlatformRepository.resetForTesting();
     PlatformRepository.setDataDir(testDataDir);
     PlatformRepository.initialize();
 
-    const response = await provisionProject(new NextRequest('http://localhost:3000/api/v1/admin/projects', {
-      method: 'POST',
-      headers: {
-        authorization: `Bearer ${TEST_ADMIN_TOKEN}`,
-        'content-type': 'application/json',
-      },
-      body: JSON.stringify({
-        name: 'Durable Provisioned Customer',
-        enabledServices: ['crm'],
-        contactEmail: 'durable@example.test',
-      }),
-    }));
+    try {
+      const response = await provisionProject(new NextRequest('http://localhost:3000/api/v1/admin/projects', {
+        method: 'POST',
+        headers: {
+          authorization: `Bearer ${TEST_ADMIN_TOKEN}`,
+          'content-type': 'application/json',
+        },
+        body: JSON.stringify({
+          name: 'Durable Provisioned Customer',
+          enabledServices: ['crm'],
+          contactEmail: 'durable@example.test',
+        }),
+      }));
 
-    assert.equal(response.status, 201);
-    const responseBody = await response.json();
-    const issuedSecret = responseBody.data.apiKey.rawKey;
-    const projectId = responseBody.data.project.id;
-    const projectSlug = responseBody.data.project.slug;
-    PlatformRepository.saveImmediate();
-    PlatformRepository.resetForTesting();
-    PlatformRepository.initialize();
+      assert.equal(response.status, 201);
+      const responseBody = await response.json();
+      const issuedSecret = responseBody.data.apiKey.rawKey;
+      const projectId = responseBody.data.project.id;
+      const projectSlug = responseBody.data.project.slug;
+      PlatformRepository.saveImmediate();
+      PlatformRepository.resetForTesting();
+      PlatformRepository.initialize();
 
-    const persistedKey = PlatformRepository.findKeyByRawSecret(issuedSecret);
-    assert.equal(persistedKey?.projectId, projectId);
-    assert.deepEqual(persistedKey?.tenantScope, [projectSlug]);
-    assert.ok(persistedKey?.environmentId);
-    assert.equal(PlatformRepository.getProject(projectId)?.slug, projectSlug);
-
-    PlatformRepository.resetForTesting();
-    PlatformRepository.setDataDir(originalDataDir);
-    PlatformRepository.initialize();
-    fs.rmSync(testDataDir, { recursive: true, force: true });
+      const persistedKey = PlatformRepository.findKeyByRawSecret(issuedSecret);
+      assert.equal(persistedKey?.projectId, projectId);
+      assert.deepEqual(persistedKey?.tenantScope, [projectSlug]);
+      assert.ok(persistedKey?.environmentId);
+      assert.equal(PlatformRepository.getProject(projectId)?.slug, projectSlug);
+    } finally {
+      PlatformRepository.resetForTesting();
+      PlatformRepository.setDataDir(suiteDataDir);
+      PlatformRepository.initialize();
+      fs.rmSync(testDataDir, { recursive: true, force: true });
+    }
   });
 
   it('reserves quota once under parallel load and releases failed handler calls', async () => {

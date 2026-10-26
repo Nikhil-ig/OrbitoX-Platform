@@ -4,7 +4,8 @@
     "baseUrl": ".",
     "paths": {
       "@/*": ["./*"],
-      "@orbitox-io/celebrations": ["../../plugins/celebrations/src/index.ts"],
+      "@orbitox-io/celebrations": ["../../plugins/celebrations/src/client.ts"],
+      "@orbitox-io/celebrations/server": ["../../plugins/celebrations/src/server.ts"],
       "@orbitox-io/celebrations/*": ["../../plugins/celebrations/src/*"],
       "@orbitox-io/crm": ["../../plugins/crm/src/index.ts"],
       "@orbitox-io/crm/*": ["../../plugins/crm/src/*"],
