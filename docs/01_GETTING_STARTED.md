@@ -136,7 +136,7 @@ curl http://localhost:4050/health
 curl -X POST http://localhost:4050/api/pos/orders \
   -H "Content-Type: application/json" \
   -H "x-tenant-id: tenant_artisan" \
-  -H "Authorization: Bearer my_staff_token" \
+  -H "Authorization: Bearer <STAFF_BEARER_TOKEN>" \
   -d '{
     "tableNumber": 4,
     "items": [

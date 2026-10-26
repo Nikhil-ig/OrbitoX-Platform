@@ -95,7 +95,7 @@ jobs:
       - uses: actions/checkout@v4
       - name: Scan files for secrets
         run: |
-          docker run --rm -v "$PWD:/repo" zricethezav/gitleaks:latest dir /repo --config=/repo/.gitleaks.toml --no-banner --redact --verbose
+          docker run --rm -v "$PWD:/repo" zricethezav/gitleaks:v8.21.2 dir /repo --config=/repo/.gitleaks.toml --no-banner --redact --verbose
 
   restaurantos-e2e:
     name: RestaurantOS HTTP Multi-Tenant & RLS Suite

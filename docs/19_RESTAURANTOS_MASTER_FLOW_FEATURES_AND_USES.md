@@ -265,9 +265,9 @@ Mobile dining apps operate over cellular connections where retries, dropped pack
 
 ```mermaid
 flowchart TD
-    Client["Client Mobile PWA"] -->|POST /orders with Idempotency-Key: idemp_abc123| Gateway["API Gateway Guard"]
+    Client["Client Mobile PWA"] -->|POST /orders with Idempotency-Key: req-idem-0001| Gateway["API Gateway Guard"]
 
-    Gateway --> CheckCache{"Has IdempotencyRecord<br>with key 'idemp_abc123'?"}
+    Gateway --> CheckCache{"Has IdempotencyRecord<br>with key 'req-idem-0001'?"}
 
     CheckCache -->|Yes & Status = COMPLETED| ReturnReplay["🔄 Return Replay Cached Response<br>(HTTP 200 with original orderId)"]
     CheckCache -->|Yes & Status = IN_PROGRESS| Conflict["⚠️ Return HTTP 409 Concurrent Submission In Progress"]

@@ -127,7 +127,7 @@ describe('PlatformRepository (Normalized Domain Access & Cryptographic Binding)'
       const project = PlatformRepository.listProjects()[0]!;
       const env = PlatformRepository.listEnvironments(project.id)[0]!;
 
-      const plaintext = 'sk_test_51M087TestStripeSecretToken991244';
+      const plaintext = 'sk_test_mock_key_9912';
       const credential = PlatformRepository.createCredential({
         name: 'Stripe Payment Gateway',
         provider: 'stripe',

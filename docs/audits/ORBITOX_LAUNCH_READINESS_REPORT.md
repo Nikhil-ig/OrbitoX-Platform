@@ -107,7 +107,16 @@ Every requirement was subjected to real-time execution in the repository. No moc
     - `build` job executes `pnpm exec turbo run type-check` followed by unit tests for `@orbitox/core`, `@orbitox/plugin-engine`, `@orbitox/pos`, `@orbitox/crm`, and `@orbitox/external-project-engine`.
     - `restaurantos-e2e` job executes `pnpm test` (multi-tenant SSE event bus partitioning and milestone 2 core tests) alongside `tsc --noEmit`.
 
-### 6. Phase P1 — RestaurantOS Identity Standardization
+### 6. Phase P0.6 — Gitleaks Security Scanner Pinned & Granular Allowlist Enforcement
+- **Root Problem**: Secret scanning relied on unpinned `:latest` Docker image and utilized broad categorical exclusions (`docs/`, `*.md`, `test files`, `snapshots/`, `scripts/`) which masked genuine scan coverage.
+- **Engineered Solution**:
+  - Pinned Gitleaks in [`.github/workflows/ci.yml`](../../.github/workflows/ci.yml) to verified release `zricethezav/gitleaks:v8.21.2`.
+  - Re-engineered [`.gitleaks.toml`](../../.gitleaks.toml) to completely eliminate blanket directory and file extension wildcards (`docs/`, `*.md`, `scripts/`, `snapshots/`, `*.test.ts`, `*.spec.ts` removed).
+  - Sanitized all documentation examples, API specifications, and mock datasets (`mock-data.ts`, `orbitox-snapshot-*.json`) to use safe, structured demo placeholders.
+  - Restricted the allowlist strictly to 6 individually justified test fixtures validating regex redaction and display masking (`credential-vault.spec.ts`, `test-phase6c-stage-a.js`, `test-phase6a-observability.js`, `test-owner-self-service.ts`, `test-phase6-1-identity-lifecycle.js`, `test-kds-security-adversarial.js`).
+  - Successfully executed full blocking working tree scan with 0 leaks found and exit code 0.
+
+### 7. Phase P1 — RestaurantOS Identity Standardization
 - **Root Problem**: RestaurantOS used disjoint identifiers across project manifests (`restaurant_os_subsystem` vs `restaurant-os`), creating configuration drift.
 - **Engineered Solution**:
   - Standardized canonical project identity across `projects/external-os/restaurant-os`:

@@ -87,7 +87,7 @@ flowchart LR
 
 | Config File | Scope | Merge Priority | Purpose & Customization Capability |
 |---|---|---|---|
-| `config/theme.json` | Global / Cascading | SuperAdmin (1) → Org (2) → Tenant (3) → Company (4) | Defines CSS design tokens, primary/secondary colors, gradients, font families, logo/favicon URLs. |
+| `config/theme.json` | Global / Cascading | SuperAdmin (1) → Org (2) → Tenant (3) → Company (4) | Defines CSS design tokens, primary and secondary colors, gradients, font families, logo/favicon URLs. |
 | `config/uiOverrides.yaml` | Per-Tier / Entity | Merged at Company level | Customizes dashboard component layouts, hide/show sidebar modules, custom navigation schemas. |
 | `config/featureFlags.yaml` | Global & Tiered | Evaluated at Tenant runtime | Toggles module availability (`feature.analytics`, `feature.webhooks`, `feature.commissions`). |
 | `config/billing.yaml` | Tier / Subscription | SuperAdmin Controlled | Configures multi-tier revenue share splits, subscription pricing models, and payment gateways. |
