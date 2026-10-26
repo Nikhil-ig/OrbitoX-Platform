@@ -5,6 +5,7 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { register } from '../instrumentation';
+import { containsBuildPepper, createBuildEnvironment } from '../scripts/build-next-with-temporary-pepper.mjs';
 import { patchStandaloneStartup } from '../scripts/patch-standalone-startup.mjs';
 
 describe('Production startup secret validation', () => {
@@ -31,6 +32,28 @@ describe('Production startup secret validation', () => {
             }
             Object.assign(process.env, environment);
         }
+    });
+
+    it('injects a temporary pepper only into the build child environment', () => {
+        const parentEnvironment = {
+            NODE_ENV: 'production',
+            NEXT_PHASE: 'phase-production-build',
+        } as NodeJS.ProcessEnv;
+        const buildEnvironment = createBuildEnvironment(parentEnvironment);
+
+        assert.equal(parentEnvironment.ORBITOX_SERVER_PEPPER, undefined);
+        assert.match(buildEnvironment.ORBITOX_SERVER_PEPPER || '', /^[a-f0-9]{64}$/);
+        assert.equal(Reflect.get(buildEnvironment, 'NEXT_PHASE'), 'phase-production-build');
+    });
+
+    it('detects a build pepper in generated output', () => {
+        const testDir = fs.mkdtempSync(path.join(os.tmpdir(), 'orbitox-build-pepper-scan-'));
+        const pepper = 'a'.repeat(64);
+        const serverChunk = path.join(testDir, 'server-chunk.js');
+        fs.writeFileSync(serverChunk, `const verifier = '${pepper}';`);
+        assert.equal(containsBuildPepper(testDir, pepper), true);
+        assert.equal(containsBuildPepper(serverChunk, pepper), true);
+        fs.rmSync(testDir, { recursive: true, force: true });
     });
 
     it('removes NEXT_PHASE before the standalone server loads Next', () => {

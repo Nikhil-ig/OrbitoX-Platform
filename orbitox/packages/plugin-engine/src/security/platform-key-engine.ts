@@ -84,9 +84,8 @@ export class PlatformKeyEngine {
     if (envPepper) return envPepper;
 
     const isProd = typeof process !== 'undefined' && process.env?.NODE_ENV === 'production';
-    const isBuildPhase = typeof process !== 'undefined' && process.env?.NEXT_PHASE === 'phase-production-build';
 
-    if (isProd && !isBuildPhase) {
+    if (isProd) {
       throw new Error(
         'SECURITY CRITICAL: ORBITOX_SERVER_PEPPER environment variable is required in production. Startup aborted.'
       );

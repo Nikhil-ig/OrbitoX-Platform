@@ -4,7 +4,7 @@
   "private": true,
   "scripts": {
     "dev": "next dev -p 3005",
-    "build": "../../node_modules/.bin/tsx --test test/api-route-auth-structure.test.ts && next build && node scripts/patch-standalone-startup.mjs",
+    "build": "../../node_modules/.bin/tsx --test test/api-route-auth-structure.test.ts && node scripts/build-next-with-temporary-pepper.mjs && node scripts/patch-standalone-startup.mjs",
     "type-check": "tsc --noEmit",
     "test": "tsx --test test/**/*.test.ts",
     "start": "node ../../scripts/check-production-env.mjs && next start -p 3005",

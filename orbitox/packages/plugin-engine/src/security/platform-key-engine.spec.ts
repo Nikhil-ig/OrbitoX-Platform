@@ -66,14 +66,38 @@ describe('PlatformKeyEngine (CSPRNG, HMAC-SHA-256 Verifier & Risk Engine)', () =
 
     it('should throw in production if ORBITOX_SERVER_PEPPER is missing', () => {
       const origEnv = process.env.NODE_ENV;
+      const origPhase = process.env.NEXT_PHASE;
       const origPepper = process.env.ORBITOX_SERVER_PEPPER;
       try {
         process.env.NODE_ENV = 'production';
         delete process.env.ORBITOX_SERVER_PEPPER;
         expect(() => PlatformKeyEngine.getActivePepper()).toThrow(/ORBITOX_SERVER_PEPPER/);
       } finally {
-        process.env.NODE_ENV = origEnv;
+        if (origEnv) process.env.NODE_ENV = origEnv;
+        else delete process.env.NODE_ENV;
+        if (origPhase) process.env.NEXT_PHASE = origPhase;
+        else delete process.env.NEXT_PHASE;
         if (origPepper) process.env.ORBITOX_SERVER_PEPPER = origPepper;
+        else delete process.env.ORBITOX_SERVER_PEPPER;
+      }
+    });
+
+    it('must reject a missing production pepper regardless of NEXT_PHASE', () => {
+      const origEnv = process.env.NODE_ENV;
+      const origPhase = process.env.NEXT_PHASE;
+      const origPepper = process.env.ORBITOX_SERVER_PEPPER;
+      try {
+        process.env.NODE_ENV = 'production';
+        process.env.NEXT_PHASE = 'phase-production-build';
+        delete process.env.ORBITOX_SERVER_PEPPER;
+        expect(() => PlatformKeyEngine.getActivePepper()).toThrow(/ORBITOX_SERVER_PEPPER/);
+      } finally {
+        if (origEnv) process.env.NODE_ENV = origEnv;
+        else delete process.env.NODE_ENV;
+        if (origPhase) process.env.NEXT_PHASE = origPhase;
+        else delete process.env.NEXT_PHASE;
+        if (origPepper) process.env.ORBITOX_SERVER_PEPPER = origPepper;
+        else delete process.env.ORBITOX_SERVER_PEPPER;
       }
     });
   });

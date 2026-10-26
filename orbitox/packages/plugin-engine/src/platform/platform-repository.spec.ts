@@ -1,6 +1,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
+import { spawnSync } from 'child_process';
 import { PlatformRepository } from './platform-repository';
 import { PlatformKeyEngine } from '../security/platform-key-engine';
 
@@ -219,6 +220,72 @@ describe('PlatformRepository (Normalized Domain Access & Cryptographic Binding)'
 
       expect(PlatformRepository.findKeyByRawSecret(rotated.replacementRawSecret)?.status).toBe('REVOKED');
       expect(PlatformRepository.findKeyByRawSecret(original.rawSecret)?.status).toBe('SUSPENDED');
+    });
+
+    it('flushes an immediate revocation on SIGTERM before the debounce fires', () => {
+      const originalDataDir = suiteTempDir;
+      const shutdownDataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'orbitox-shutdown-flush-'));
+      PlatformRepository.resetForTesting();
+      PlatformRepository.setDataDir(shutdownDataDir);
+      PlatformRepository.initialize();
+
+      const organization = PlatformRepository.listOrganizations()[0]!;
+      const project = PlatformRepository.createProject({
+        name: `Immediate Shutdown Revocation ${Date.now()}`,
+        organizationId: organization.id,
+        businessModel: 'B2B',
+        planTier: 'starter',
+        technicalLead: 'Shutdown Test',
+        contactEmail: 'shutdown@orbitox.io',
+        enabledServices: ['crm'],
+      }).project;
+      const environment = PlatformRepository.listEnvironments(project.id).find((item) => item.isProduction)!;
+      const key = PlatformRepository.createApiKey({
+        name: 'Immediate Shutdown Revocation Key',
+        environmentId: environment.id,
+        projectId: project.id,
+        capabilities: ['crm:read'],
+        createdBy: 'test-suite',
+      });
+      PlatformRepository.saveImmediate();
+      PlatformRepository.resetForTesting();
+      PlatformRepository.setDataDir(originalDataDir);
+      PlatformRepository.initialize();
+
+      const childScript = `
+        const { PlatformRepository } = require('./dist/platform/platform-repository.js');
+        PlatformRepository.setDataDir(${JSON.stringify(shutdownDataDir)});
+        PlatformRepository.initialize();
+        const keepAlive = setInterval(() => {}, 1000);
+        process.on('SIGTERM', () => {
+          clearInterval(keepAlive);
+          process.exit(0);
+        });
+        PlatformRepository.setKeyStatus(${JSON.stringify(key.keyRecord.id)}, 'REVOKED');
+        process.kill(process.pid, 'SIGTERM');
+      `;
+      const result = spawnSync(process.execPath, ['-e', childScript], {
+        cwd: path.resolve(__dirname, '../..'),
+        encoding: 'utf8',
+        env: {
+          ...process.env,
+          NODE_ENV: 'production',
+          ORBITOX_DATA_DIR: shutdownDataDir,
+          ORBITOX_SERVER_PEPPER: 'shutdown-test-pepper-32-characters-minimum',
+        },
+      });
+
+      expect(result.error).toBeUndefined();
+      expect(result.status).toBe(0);
+
+      PlatformRepository.resetForTesting();
+      PlatformRepository.setDataDir(shutdownDataDir);
+      PlatformRepository.initialize();
+      expect(PlatformRepository.getApiKey(key.keyRecord.id)?.status).toBe('REVOKED');
+      PlatformRepository.resetForTesting();
+      PlatformRepository.setDataDir(originalDataDir);
+      PlatformRepository.initialize();
+      fs.rmSync(shutdownDataDir, { recursive: true, force: true });
     });
   });
 

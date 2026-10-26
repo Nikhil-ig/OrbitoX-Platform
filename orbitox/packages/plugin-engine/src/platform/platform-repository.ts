@@ -111,6 +111,7 @@ export class PlatformRepository {
   private static dataDir: string | null = null;
   private static filePath: string | null = null;
   private static saveTimeout: NodeJS.Timeout | null = null;
+  private static shutdownFlushHandlersRegistered = false;
 
   public static setPersistenceEnabled(enabled: boolean): void {
     this.persistenceEnabled = enabled;
@@ -169,6 +170,7 @@ export class PlatformRepository {
   public static initialize(): void {
     if (this.initialized) return;
     this.initialized = true;
+    this.registerShutdownFlushHandlers();
 
     this.resolveDataPaths();
 
@@ -267,7 +269,28 @@ export class PlatformRepository {
     }, 150);
   }
 
+  public static flushPendingWrites(): void {
+    if (!this.saveTimeout) return;
+    clearTimeout(this.saveTimeout);
+    this.saveTimeout = null;
+    this.saveImmediate();
+  }
+
+  private static registerShutdownFlushHandlers(): void {
+    if (this.shutdownFlushHandlersRegistered || typeof process === 'undefined') return;
+    this.shutdownFlushHandlersRegistered = true;
+    const flush = () => this.flushPendingWrites();
+    process.once('beforeExit', flush);
+    process.once('SIGTERM', flush);
+    process.once('SIGINT', flush);
+    process.once('exit', flush);
+  }
+
   public static saveImmediate(): void {
+    if (this.saveTimeout) {
+      clearTimeout(this.saveTimeout);
+      this.saveTimeout = null;
+    }
     if (!this.persistenceEnabled) return;
     this.resolveDataPaths();
     if (!this.filePath) return;
