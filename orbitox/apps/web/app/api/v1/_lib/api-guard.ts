@@ -4,7 +4,9 @@ import {
   ApiGuardOptions,
   ApiRequestContext,
   ApiResponse,
+  RouteClass,
 } from './api-types';
+import { isIpAllowed, resolveClientIp } from './ip-guard';
 import {
   INITIAL_SERVICES,
   INITIAL_API_KEYS,
@@ -24,42 +26,6 @@ if (typeof PlatformRepository !== 'undefined' && typeof PlatformRepository.initi
   PlatformRepository.initialize();
 }
 
-function isIpAllowed(clientIp: string, allowlist?: string[]): boolean {
-  if (!allowlist || allowlist.length === 0) return true;
-  if (allowlist.includes('*') || allowlist.includes('0.0.0.0/0')) return true;
-  const normClient = clientIp === '::1' ? '127.0.0.1' : clientIp;
-
-  return allowlist.some((rule) => {
-    const trimmed = rule.trim();
-    if (trimmed === normClient || trimmed === clientIp) return true;
-    if (trimmed.endsWith('/32')) {
-      const single = trimmed.replace('/32', '');
-      return single === normClient || single === clientIp;
-    }
-    if (trimmed.includes('/')) {
-      const parts = trimmed.split('/');
-      if (parts.length === 2 && parts[0] && parts[1]) {
-        const subnet = parts[0];
-        const mask = parseInt(parts[1], 10);
-        const subParts = subnet.split('.').map(Number);
-        const ipParts = normClient.split('.').map(Number);
-        if (subParts.length === 4 && ipParts.length === 4 && !isNaN(mask)) {
-          if (mask === 24) {
-            return subParts[0] === ipParts[0] && subParts[1] === ipParts[1] && subParts[2] === ipParts[2];
-          }
-          if (mask === 16) {
-            return subParts[0] === ipParts[0] && subParts[1] === ipParts[1];
-          }
-          if (mask === 8) {
-            return subParts[0] === ipParts[0];
-          }
-        }
-      }
-    }
-    return false;
-  });
-}
-
 // In-memory sliding window rate limiter
 interface RateLimitBucket {
   count: number;
@@ -70,7 +36,16 @@ const rateLimitMap = new Map<string, RateLimitBucket>();
 // In-memory platform state store for live API changes
 export class PlatformApiState {
   private static services = [...INITIAL_SERVICES];
-  private static apiKeys = [...INITIAL_API_KEYS];
+  private static apiKeys = INITIAL_API_KEYS.map((k) => {
+    const { rawKey, ...rest } = k;
+    const authVerifier = rawKey ? PlatformKeyEngine.computeAuthVerifier(rawKey) : undefined;
+    const secretFingerprint = rawKey ? PlatformKeyEngine.computeFingerprint(rawKey) : undefined;
+    return {
+      ...rest,
+      authVerifier,
+      secretFingerprint,
+    };
+  });
   private static providers = { ...BUSINESS_PROVIDERS };
   private static projects: ClientProject[] = [...INITIAL_CLIENT_PROJECTS];
   private static telemetryLogs: any[] = [];
@@ -150,13 +125,9 @@ export class PlatformApiState {
     return this.projects.find((p) => p.id === idOrSlug || p.slug === idOrSlug);
   }
 
-  static findProjectByApiKey(keyOrPrefix: string) {
-    if (!keyOrPrefix) return null;
-    return this.projects.find(
-      (p) =>
-        p.primaryApiKeyId === keyOrPrefix ||
-        (p.primaryApiKeyPrefix && keyOrPrefix.startsWith(p.primaryApiKeyPrefix))
-    );
+  static findProjectByApiKey(keyId: string) {
+    if (!keyId) return null;
+    return this.projects.find((p) => p.primaryApiKeyId === keyId) || null;
   }
 
   static addProject(project: ClientProject) {
@@ -247,21 +218,38 @@ export class PlatformApiState {
   }
 
   static getApiKeys() {
-    return this.apiKeys;
+    return this.apiKeys.map((k: any) => {
+      const { rawKey, authVerifier, ...safe } = k;
+      return safe;
+    });
   }
 
-  static findApiKey(keyOrPrefix: string) {
-    if (!keyOrPrefix) return null;
-    const direct = this.apiKeys.find(
-      (k) =>
-        k.id === keyOrPrefix ||
-        k.rawKey === keyOrPrefix ||
-        k.keyPrefix === keyOrPrefix ||
-        k.maskedKey === keyOrPrefix
+  static findKeyByRawSecret(incomingSecret: string) {
+    if (!incomingSecret) return null;
+    return (
+      this.apiKeys.find((k: any) => {
+        if (k.authVerifier && PlatformKeyEngine.verifySecret(incomingSecret, k.authVerifier)) {
+          return true;
+        }
+        return false;
+      }) || null
     );
-    if (direct) return direct;
-    const repoKey = PlatformRepository.getApiKey(keyOrPrefix) || PlatformRepository.findKeyByRawSecret(keyOrPrefix);
-    return repoKey || null;
+  }
+
+  static findApiKeyById(keyId: string) {
+    if (!keyId) return null;
+    const k = this.apiKeys.find((item: any) => item.id === keyId || item.keyId === keyId);
+    if (!k) return null;
+    const { rawKey, authVerifier, ...safe } = k as any;
+    return safe;
+  }
+
+  static findApiKey(keyOrId: string) {
+    // Kept for backward compatibility of internal lookups by key ID only
+    if (!keyOrId) return null;
+    const byId = this.findApiKeyById(keyOrId);
+    if (byId) return byId;
+    return PlatformRepository.getApiKey(keyOrId) || null;
   }
 
   static addApiKey(key: any) {
@@ -270,20 +258,26 @@ export class PlatformApiState {
   }
 
   static rotateApiKey(keyId: string) {
-    const idx = this.apiKeys.findIndex((k) => k.id === keyId);
+    const idx = this.apiKeys.findIndex((k: any) => k.id === keyId || k.keyId === keyId);
     if (idx !== -1) {
       const old = this.apiKeys[idx]!;
-      const rawSecret = crypto.randomBytes(16).toString('hex');
+      const generated = PlatformKeyEngine.generateKey(old.environment || 'production');
       const newKey: any = {
         ...old,
-        id: `key-${crypto.randomUUID()}`,
-        maskedKey: `orb_live_********************${rawSecret.slice(-4)}`,
-        rawKey: `orb_live_rot_${rawSecret}`,
+        id: generated.keyId,
+        keyPrefix: generated.keyPrefix,
+        maskedKey: generated.maskedDisplay,
+        secretFingerprint: generated.secretFingerprint,
+        authVerifier: generated.authVerifier,
         createdAt: 'Just now',
         lastUsedAt: 'Never',
       };
       this.apiKeys[idx] = newKey;
-      return newKey;
+      const { rawKey, authVerifier, ...safeKey } = newKey;
+      return {
+        replacementKey: safeKey,
+        rawSecret: generated.rawSecret,
+      };
     }
     return null;
   }
@@ -586,34 +580,39 @@ export function withApiGuard<T = any>(
 
     PlatformApiState.trackRequest();
 
-    // 1. Client Identity & Headers
-    const clientIp =
-      req.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ||
-      req.headers.get('x-real-ip') ||
-      '127.0.0.1';
-    const userAgent = req.headers.get('user-agent') || 'Unknown';
-
-    // 2. Extract Auth Key
-    const authHeader = req.headers.get('authorization') || '';
-    const bearerToken = authHeader.startsWith('Bearer ') ? authHeader.substring(7).trim() : '';
-    const rawApiKey =
-      req.headers.get('x-api-key') ||
-      bearerToken ||
-      req.nextUrl.searchParams.get('apiKey') ||
-      '';
-
-    // 3. Extract Tenant ID requested by client
-    const urlTenant = req.nextUrl.searchParams.get('tenantId');
-    const headerTenant =
-      req.headers.get('x-tenant-id') ||
-      req.headers.get('x-context-id') ||
-      '';
-    const hostTenant = req.nextUrl.hostname.split('.')[0];
-    const clientRequestedTenant = urlTenant || headerTenant || (hostTenant && hostTenant !== 'localhost' ? hostTenant : '');
-
     const serviceId = options.serviceId || 'system';
 
-    // 4. Authenticate API Key if present
+    // 1. Client Identity & Headers (Trusted Proxy Resolution)
+    const clientIp = resolveClientIp(req.headers);
+    const userAgent = req.headers.get('user-agent') || 'Unknown';
+
+    // 2. Extract Auth Key - ONLY from headers, NEVER from URL query string
+    const authHeader = req.headers.get('authorization') || '';
+    const bearerToken = authHeader.startsWith('Bearer ') ? authHeader.substring(7).trim() : '';
+    const rawApiKey = req.headers.get('x-api-key')?.trim() || bearerToken;
+
+    // Admin session detection (for platform-admin web controller)
+    const adminSessionToken =
+      req.headers.get('x-admin-token')?.trim() ||
+      req.headers.get('x-admin-session')?.trim() ||
+      req.headers.get('x-orbitox-session')?.trim() ||
+      req.cookies.get('orbitox_admin_session')?.value;
+    const hasAdminSession = Boolean(adminSessionToken);
+
+    // 3. Route Classification & Public Allowlist Check
+    const pathname = req.nextUrl.pathname;
+    const isPublicAllowlist = pathname === '/api/v1/openapi.json' || pathname === '/api/health';
+    const isExplicitlyPublic = (options.routeClass === 'public' || options.allowPublic === true) && isPublicAllowlist;
+
+    const routeClass: RouteClass = options.routeClass || (
+      options.serviceId === 'admin' || options.serviceId === 'platform' || options.serviceId === 'system'
+        ? 'platform-admin'
+        : isExplicitlyPublic
+        ? 'public'
+        : 'customer'
+    );
+
+    // 4. Authenticate API Key via constant-time HMAC verifiers (zero prefix matching)
     let matchedKey: any = null;
     let isPlatformKeyRecord = false;
 
@@ -624,19 +623,15 @@ export function withApiGuard<T = any>(
         matchedKey = repoKey;
         isPlatformKeyRecord = true;
       } else {
-        // Fallback: Legacy in-memory key lookup
-        matchedKey = PlatformApiState.findApiKey(rawApiKey);
-        if (!matchedKey) {
-          matchedKey = PlatformApiState.getApiKeys().find(
-            (k) => rawApiKey.startsWith(k.keyPrefix)
-          );
-        }
+        // In-memory key lookup with constant-time HMAC-SHA256 verification (zero prefix matching)
+        matchedKey = PlatformApiState.findKeyByRawSecret(rawApiKey);
       }
     }
 
-    // 5. Enforce Authentication Gate
-    if (options.requireAuth) {
-      if (!rawApiKey) {
+    // 5. Enforce Mandatory Authentication Gate
+    if (!isExplicitlyPublic) {
+      if (!rawApiKey && !hasAdminSession) {
+        const latencyMs = Math.round(performance.now() - startTime);
         return NextResponse.json<ApiResponse>(
           {
             success: false,
@@ -645,7 +640,7 @@ export function withApiGuard<T = any>(
               message: 'Authentication required. Provide an API key via x-api-key or Authorization: Bearer <key>.',
             },
             meta: {
-              latencyMs: Math.round(performance.now() - startTime),
+              latencyMs,
               timestamp: new Date().toISOString(),
               requestId,
             },
@@ -654,10 +649,10 @@ export function withApiGuard<T = any>(
         );
       }
 
-      if (!matchedKey) {
+      if (rawApiKey && !matchedKey) {
         const latencyMs = Math.round(performance.now() - startTime);
         PlatformApiState.recordTelemetry({
-          tenantId: clientRequestedTenant || 'unknown',
+          tenantId: 'security',
           facade: 'SecurityFacade',
           level: 'SECURITY',
           message: `[API 401] Invalid or unrecognized API key secret provided.`,
@@ -679,44 +674,75 @@ export function withApiGuard<T = any>(
         );
       }
 
-      const keyStatus = (matchedKey.status || '').toLowerCase();
-      if (keyStatus !== 'active') {
-        const latencyMs = Math.round(performance.now() - startTime);
-        return NextResponse.json<ApiResponse>(
-          {
-            success: false,
-            error: {
-              code: 'KEY_DISABLED',
-              message: `The provided API key is currently ${matchedKey.status.toUpperCase()}.`,
-              details: { keyId: matchedKey.id || matchedKey.keyId, status: matchedKey.status },
-            },
-            meta: {
-              latencyMs,
-              timestamp: new Date().toISOString(),
-              requestId,
-            },
-          },
-          { status: 403 }
-        );
-      }
-
-      // 5.1 IP Allowlist Gate
-      if (matchedKey.ipAllowlist && matchedKey.ipAllowlist.length > 0) {
-        if (!isIpAllowed(clientIp, matchedKey.ipAllowlist)) {
+      if (matchedKey) {
+        const keyStatus = (matchedKey.status || '').toLowerCase();
+        if (keyStatus !== 'active') {
           const latencyMs = Math.round(performance.now() - startTime);
-          PlatformApiState.recordTelemetry({
-            tenantId: clientRequestedTenant || 'security',
-            facade: 'SecurityFacade',
-            level: 'SECURITY',
-            message: `[API 403] IP allowlist violation for key [${matchedKey.id || matchedKey.keyId}]: client IP [${clientIp}] blocked.`,
-          });
           return NextResponse.json<ApiResponse>(
             {
               success: false,
               error: {
-                code: 'IP_FORBIDDEN',
-                message: `Client IP address [${clientIp}] is not in the authorized IP allowlist for this API key.`,
-                details: { clientIp, allowlist: matchedKey.ipAllowlist },
+                code: 'KEY_DISABLED',
+                message: `The provided API key is currently ${matchedKey.status.toUpperCase()}.`,
+                details: { keyId: matchedKey.id || matchedKey.keyId, status: matchedKey.status },
+              },
+              meta: {
+                latencyMs,
+                timestamp: new Date().toISOString(),
+                requestId,
+              },
+            },
+            { status: 403 }
+          );
+        }
+
+        // 5.1 IP Allowlist Gate (using full CIDR matcher)
+        if (matchedKey.ipAllowlist && matchedKey.ipAllowlist.length > 0) {
+          if (!isIpAllowed(clientIp, matchedKey.ipAllowlist)) {
+            const latencyMs = Math.round(performance.now() - startTime);
+            PlatformApiState.recordTelemetry({
+              tenantId: 'security',
+              facade: 'SecurityFacade',
+              level: 'SECURITY',
+              message: `[API 403] IP allowlist violation for key [${matchedKey.id || matchedKey.keyId}]: client IP [${clientIp}] blocked.`,
+            });
+            return NextResponse.json<ApiResponse>(
+              {
+                success: false,
+                error: {
+                  code: 'IP_FORBIDDEN',
+                  message: `Client IP address [${clientIp}] is not in the authorized IP allowlist for this API key.`,
+                  details: { clientIp, allowlist: matchedKey.ipAllowlist },
+                },
+                meta: {
+                  latencyMs,
+                  timestamp: new Date().toISOString(),
+                  requestId,
+                },
+              },
+              { status: 403 }
+            );
+          }
+        }
+      }
+
+      // Check platform-admin route class authorization
+      if (routeClass === 'platform-admin') {
+        const caps = matchedKey ? (matchedKey.capabilities || matchedKey.scopes || []) : [];
+        const isAdmin =
+          hasAdminSession ||
+          caps.includes('*') ||
+          caps.includes('admin') ||
+          caps.some((c: string) => c.startsWith('platform.'));
+
+        if (!isAdmin) {
+          const latencyMs = Math.round(performance.now() - startTime);
+          return NextResponse.json<ApiResponse>(
+            {
+              success: false,
+              error: {
+                code: 'FORBIDDEN',
+                message: 'Platform Administration authority is required to access this endpoint.',
               },
               meta: {
                 latencyMs,
@@ -730,32 +756,75 @@ export function withApiGuard<T = any>(
       }
     }
 
-    // 6. Trusted Multi-Tenant Resolution & Anti-Spoofing
-    // If authenticated, derive or validate tenant scope strictly from key metadata
+    // 6. Check Required Scopes / Capabilities (fail-closed: missing creds = deny)
+    if (options.requiredScopes && options.requiredScopes.length > 0) {
+      if (!matchedKey && !hasAdminSession) {
+        const latencyMs = Math.round(performance.now() - startTime);
+        return NextResponse.json<ApiResponse>(
+          {
+            success: false,
+            error: {
+              code: 'UNAUTHORIZED',
+              message: `Authentication required: this endpoint requires capabilities [${options.requiredScopes.join(', ')}].`,
+            },
+            meta: { latencyMs, timestamp: new Date().toISOString(), requestId },
+          },
+          { status: 401 }
+        );
+      }
+
+      if (matchedKey) {
+        const grantedCapabilities: string[] = matchedKey.capabilities || matchedKey.scopes || [];
+        const hasAllCapabilities = options.requiredScopes.every((reqScope) =>
+          hasCapability(grantedCapabilities, reqScope)
+        );
+
+        if (!hasAllCapabilities) {
+          const latencyMs = Math.round(performance.now() - startTime);
+          return NextResponse.json<ApiResponse>(
+            {
+              success: false,
+              error: {
+                code: 'INSUFFICIENT_SCOPES',
+                message: `This operation requires the following capabilities: ${options.requiredScopes.join(', ')}`,
+                details: { required: options.requiredScopes, granted: grantedCapabilities },
+              },
+              meta: { latencyMs, timestamp: new Date().toISOString(), requestId },
+            },
+            { status: 403 }
+          );
+        }
+      }
+    }
+
+    // 7. Trusted Multi-Tenant Resolution & Anti-Spoofing
+    // Tenant identity derived ONLY from authenticated key or verified registered domain
     let tenantId = 'default';
     let project: any = null;
+
+    const clientHeaderTenant =
+      req.headers.get('x-tenant-id')?.trim() || req.headers.get('x-context-id')?.trim() || '';
 
     if (matchedKey) {
       const allowedTenantScope: string[] = matchedKey.tenantScope || [];
       const projectId = matchedKey.projectId;
       project = isPlatformKeyRecord
         ? (projectId ? PlatformRepository.getProject(projectId) : null)
-        : (PlatformApiState.findProjectByApiKey(rawApiKey) || (projectId ? PlatformApiState.getProject(projectId) : null));
+        : (projectId ? PlatformApiState.getProject(projectId) : PlatformApiState.findProjectByApiKey(matchedKey.id));
 
-      if (clientRequestedTenant) {
+      if (clientHeaderTenant) {
         const isPermitted =
-          allowedTenantScope.length === 0 ||
-          allowedTenantScope.includes('*') ||
-          allowedTenantScope.includes(clientRequestedTenant) ||
-          (project && (project.slug === clientRequestedTenant || project.id === clientRequestedTenant));
+          (allowedTenantScope.length > 0 &&
+            (allowedTenantScope.includes('*') || allowedTenantScope.includes(clientHeaderTenant))) ||
+          (project && (project.slug === clientHeaderTenant || project.id === clientHeaderTenant));
 
         if (!isPermitted) {
           const latencyMs = Math.round(performance.now() - startTime);
           PlatformApiState.recordTelemetry({
-            tenantId: clientRequestedTenant,
+            tenantId: clientHeaderTenant,
             facade: 'SecurityFacade',
             level: 'SECURITY',
-            message: `[API 403] Tenant spoofing attempt detected! Key [${matchedKey.id || matchedKey.keyId}] attempted unauthorized tenant access to [${clientRequestedTenant}].`,
+            message: `[API 403] Tenant spoofing attempt detected! Key [${matchedKey.id || matchedKey.keyId}] attempted unauthorized tenant access to [${clientHeaderTenant}].`,
           });
 
           return NextResponse.json<ApiResponse>(
@@ -763,14 +832,14 @@ export function withApiGuard<T = any>(
               success: false,
               error: {
                 code: 'TENANT_SCOPE_VIOLATION',
-                message: `Client requested tenant [${clientRequestedTenant}], but this API key is scoped only to [${allowedTenantScope.join(', ')}].`,
+                message: `Client requested tenant [${clientHeaderTenant}], but this API key is scoped only to [${allowedTenantScope.join(', ') || project?.slug || 'none'}].`,
                 details: {
-                  requestedTenant: clientRequestedTenant,
+                  requestedTenant: clientHeaderTenant,
                   authorizedScope: allowedTenantScope,
                 },
               },
               meta: {
-                tenantId: clientRequestedTenant,
+                tenantId: clientHeaderTenant,
                 serviceId,
                 latencyMs,
                 timestamp: new Date().toISOString(),
@@ -785,9 +854,8 @@ export function withApiGuard<T = any>(
             }
           );
         }
-        tenantId = clientRequestedTenant;
+        tenantId = clientHeaderTenant;
       } else {
-        // Derive tenant automatically from key scope or project slug
         if (allowedTenantScope.length > 0 && !allowedTenantScope.includes('*') && allowedTenantScope[0]) {
           tenantId = allowedTenantScope[0];
         } else if (project) {
@@ -796,95 +864,66 @@ export function withApiGuard<T = any>(
           tenantId = 'default';
         }
       }
+    } else if (isExplicitlyPublic) {
+      const host = req.nextUrl.hostname.toLowerCase();
+      const verifiedDomains = PlatformRepository.listDomains();
+      const matchingDomain = verifiedDomains.find((d) => d.domainName.toLowerCase() === host);
+      if (matchingDomain) {
+        const env = PlatformRepository.getEnvironment(matchingDomain.environmentId);
+        tenantId = env?.projectId || 'default';
+      } else {
+        tenantId = 'default';
+      }
     } else {
-      tenantId = clientRequestedTenant || 'default';
-      project =
-        PlatformApiState.getProject(tenantId) ||
-        PlatformApiState.getProjects().find((p) => p.slug === tenantId || p.id === tenantId);
+      tenantId = 'default';
     }
 
-    // 7. Check Required Scopes / Capabilities using typed grammar
-    if (options.requiredScopes && options.requiredScopes.length > 0 && matchedKey) {
-      const grantedCapabilities: string[] = matchedKey.capabilities || matchedKey.scopes || [];
-      const hasAllCapabilities = options.requiredScopes.every((reqScope) =>
-        hasCapability(grantedCapabilities, reqScope)
-      );
+    // 8. Fail-Closed Microservice Gates for Customer APIs
+    const PLAN_DEFAULT_QUOTAS: Record<string, number> = {
+      starter: 100000,
+      growth: 1000000,
+      pro: 5000000,
+      enterprise: 25000000,
+      hyperscale: 100000000,
+    };
 
-      if (!hasAllCapabilities) {
+    if (routeClass === 'customer' && serviceId !== 'system' && serviceId !== 'admin' && serviceId !== 'platform') {
+      // 8.1 Fail-closed project resolution: missing project = deny
+      if (!project) {
         const latencyMs = Math.round(performance.now() - startTime);
         return NextResponse.json<ApiResponse>(
           {
             success: false,
             error: {
-              code: 'INSUFFICIENT_SCOPES',
-              message: `This operation requires the following capabilities: ${options.requiredScopes.join(', ')}`,
-              details: { required: options.requiredScopes, granted: grantedCapabilities },
+              code: 'PROJECT_NOT_FOUND',
+              message: 'No valid client project could be resolved for this credential.',
             },
-            meta: {
-              latencyMs,
-              timestamp: new Date().toISOString(),
-              requestId,
-            },
+            meta: { tenantId, serviceId, latencyMs, timestamp: new Date().toISOString(), requestId },
           },
           { status: 403 }
         );
       }
-    }
 
-    // 8. Verify Project Suspension Gate
-    if (project && project.status === 'suspended') {
-      const latencyMs = Math.round(performance.now() - startTime);
-      PlatformApiState.recordTelemetry({
-        tenantId,
-        facade: 'SecurityFacade',
-        level: 'SECURITY',
-        message: `[API 403] Blocked request for suspended project [${project.name}] (ID: ${project.id})`,
-      });
-
-      return NextResponse.json<ApiResponse>(
-        {
-          success: false,
-          error: {
-            code: 'PROJECT_SUSPENDED',
-            message: `Client project [${project.name}] has been suspended by Platform Administration.`,
-            details: { projectId: project.id, status: project.status },
-          },
-          meta: {
-            tenantId,
-            serviceId,
-            latencyMs,
-            timestamp: new Date().toISOString(),
-            requestId,
-          },
-        },
-        {
-          status: 403,
-          headers: {
-            'x-orbitox-latency-ms': latencyMs.toString(),
-            'x-orbitox-anti-tamper': 'VERIFIED',
-            'x-orbitox-project-status': 'suspended',
-          },
-        }
-      );
-    }
-
-    // 8.1. Verify Plugin Package Entitlement Gate
-    if (
-      project &&
-      project.enabledServices &&
-      project.enabledServices.length > 0 &&
-      serviceId !== 'system' &&
-      serviceId !== 'admin'
-    ) {
-      if (!project.enabledServices.includes(serviceId)) {
+      // 8.2 Verify Project Suspension Gate
+      if (project.status === 'suspended') {
         const latencyMs = Math.round(performance.now() - startTime);
-        PlatformApiState.recordTelemetry({
-          tenantId,
-          facade: 'SecurityFacade',
-          level: 'WARN',
-          message: `[API 403] Project [${project.name}] attempted to access unentitled package [@orbitox/${serviceId}].`,
-        });
+        return NextResponse.json<ApiResponse>(
+          {
+            success: false,
+            error: {
+              code: 'PROJECT_SUSPENDED',
+              message: `Client project [${project.name}] has been suspended by Platform Administration.`,
+              details: { projectId: project.id, status: project.status },
+            },
+            meta: { tenantId, serviceId, latencyMs, timestamp: new Date().toISOString(), requestId },
+          },
+          { status: 403, headers: { 'x-orbitox-project-status': 'suspended' } }
+        );
+      }
 
+      // 8.3 Fail-closed plugin entitlement: empty services or unlisted service = deny
+      if (!project.enabledServices || project.enabledServices.length === 0 || !project.enabledServices.includes(serviceId)) {
+        const latencyMs = Math.round(performance.now() - startTime);
         return NextResponse.json<ApiResponse>(
           {
             success: false,
@@ -894,64 +933,39 @@ export function withApiGuard<T = any>(
               details: {
                 projectId: project.id,
                 requestedService: serviceId,
-                subscribedPackages: project.enabledServices,
+                subscribedPackages: project.enabledServices || [],
               },
             },
-            meta: {
-              tenantId,
-              serviceId,
-              latencyMs,
-              timestamp: new Date().toISOString(),
-              requestId,
-            },
+            meta: { tenantId, serviceId, latencyMs, timestamp: new Date().toISOString(), requestId },
           },
+          { status: 403, headers: { 'x-orbitox-entitlement': 'denied' } }
+        );
+      }
+
+      // 8.4 Fail-closed quota gate: missing or 0 quota uses plan default, never unlimited unless plan is unlimited
+      const effectiveQuota = project.apiCallQuota || PLAN_DEFAULT_QUOTAS[project.plan?.toLowerCase() || 'starter'] || 100000;
+      if (project.plan !== 'unlimited' && project.monthlyApiCalls >= effectiveQuota) {
+        const latencyMs = Math.round(performance.now() - startTime);
+        return NextResponse.json<ApiResponse>(
           {
-            status: 403,
-            headers: {
-              'x-orbitox-latency-ms': latencyMs.toString(),
-              'x-orbitox-anti-tamper': 'VERIFIED',
-              'x-orbitox-entitlement': 'denied',
+            success: false,
+            error: {
+              code: 'TENANT_QUOTA_EXCEEDED',
+              message: `Monthly API call quota of ${effectiveQuota.toLocaleString()} calls for project [${project.name}] has been exceeded. Upgrade plan in Platform Admin.`,
+              details: {
+                projectId: project.id,
+                consumed: project.monthlyApiCalls,
+                limit: effectiveQuota,
+              },
             },
-          }
+            meta: { tenantId, serviceId, latencyMs, timestamp: new Date().toISOString(), requestId },
+          },
+          { status: 429, headers: { 'x-orbitox-quota-exceeded': 'true', 'retry-after': '86400' } }
         );
       }
     }
 
-    // 8.2. Verify Tenant Monthly API Call Quota Gate
-    if (project && project.apiCallQuota && project.monthlyApiCalls >= project.apiCallQuota) {
-      const latencyMs = Math.round(performance.now() - startTime);
-      return NextResponse.json<ApiResponse>(
-        {
-          success: false,
-          error: {
-            code: 'TENANT_QUOTA_EXCEEDED',
-            message: `Monthly API call quota of ${project.apiCallQuota.toLocaleString()} calls for project [${project.name}] has been exceeded. Upgrade plan in Platform Admin.`,
-            details: {
-              projectId: project.id,
-              consumed: project.monthlyApiCalls,
-              limit: project.apiCallQuota,
-            },
-          },
-          meta: {
-            tenantId,
-            serviceId,
-            latencyMs,
-            timestamp: new Date().toISOString(),
-            requestId,
-          },
-        },
-        {
-          status: 429,
-          headers: {
-            'x-orbitox-latency-ms': latencyMs.toString(),
-            'x-orbitox-quota-exceeded': 'true',
-            'retry-after': '86400',
-          },
-        }
-      );
-    }
-
-    // 8.3. Verify Microservice Status Gate
+    // 8.5. Verify Microservice Status Gate
     if (options.serviceId && options.serviceId !== 'system' && options.serviceId !== 'admin') {
       const srv = PlatformApiState.getService(options.serviceId);
       if (srv && srv.status === 'blocked') {
@@ -983,7 +997,6 @@ export function withApiGuard<T = any>(
             status: 403,
             headers: {
               'x-orbitox-latency-ms': latencyMs.toString(),
-              'x-orbitox-anti-tamper': 'VERIFIED',
               'x-orbitox-service-status': 'blocked',
             },
           }
@@ -991,7 +1004,7 @@ export function withApiGuard<T = any>(
       }
     }
 
-    // 6. Sliding Window Rate Limiting (Dual-Engine: In-Memory / Distributed with Graceful Fallback)
+    // 9. Sliding Window Rate Limiting
     const clusterMode = PlatformApiState.getClusterMode();
     const rateLimit = project?.rateLimitPerMin || matchedKey?.rateLimitPerMin || options.rateLimitPerMin || 1200;
     const rateLimitKey = `${clusterMode}:${project?.id || matchedKey?.id || `${clientIp}:${serviceId}`}`;
@@ -1037,13 +1050,12 @@ export function withApiGuard<T = any>(
             'x-orbitox-latency-ms': latencyMs.toString(),
             'x-orbitox-cluster-mode': clusterMode,
             'x-orbitox-cluster-node': PlatformApiState.getClusterNodeId(),
-            'x-orbitox-failover-capable': 'true',
           },
         }
       );
     }
 
-    // 7. Context Preparation
+    // 10. Context Preparation
     const context: ApiRequestContext = {
       tenantId,
       serviceId,
@@ -1060,7 +1072,7 @@ export function withApiGuard<T = any>(
       startTime,
     };
 
-    // 8. Execute Handler with Latency & Anti-Tamper Envelope
+    // 11. Execute Handler
     try {
       const response = await handler(req, context);
       const latencyMs = Math.max(1, Math.round(performance.now() - startTime));
@@ -1078,15 +1090,13 @@ export function withApiGuard<T = any>(
         PlatformApiState.recordProjectCall(project.id);
       }
 
-      // Clone or wrap response to inject standard headers
+      // Inject standard response headers
       const resHeaders = new Headers(response.headers);
       resHeaders.set('x-orbitox-latency-ms', latencyMs.toString());
       resHeaders.set('x-orbitox-tenant-id', tenantId);
       resHeaders.set('x-orbitox-service-id', serviceId);
-      resHeaders.set('x-orbitox-anti-tamper', 'VERIFIED');
       resHeaders.set('x-orbitox-cluster-mode', clusterMode);
       resHeaders.set('x-orbitox-cluster-node', PlatformApiState.getClusterNodeId());
-      resHeaders.set('x-orbitox-failover-capable', 'true');
       resHeaders.set('x-ratelimit-limit', rateLimit.toString());
       resHeaders.set('x-ratelimit-remaining', remaining.toString());
       resHeaders.set('x-ratelimit-reset', resetSeconds.toString());
@@ -1133,7 +1143,6 @@ export function withApiGuard<T = any>(
           status: 500,
           headers: {
             'x-orbitox-latency-ms': latencyMs.toString(),
-            'x-orbitox-anti-tamper': 'VERIFIED',
           },
         }
       );

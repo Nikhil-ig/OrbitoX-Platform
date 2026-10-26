@@ -8,7 +8,9 @@ export const GET = withApiGuard(
   {
     serviceId: 'platform',
     serviceName: 'Platform Packages Service',
-    allowPublic: true,
+    routeClass: 'platform-admin',
+    allowPublic: false,
+    requiredScopes: ['admin', 'platform.packages'],
   },
   async (req: NextRequest, ctx: ApiRequestContext) => {
     PlatformRepository.initialize();

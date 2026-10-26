@@ -8,7 +8,8 @@ export const GET = withApiGuard(
   {
     serviceId: 'platform',
     serviceName: 'Platform Projects Service',
-    allowPublic: true,
+    routeClass: 'platform-admin',
+    requiredScopes: ['platform.projects.read', 'admin'],
   },
   async (req: NextRequest, ctx: ApiRequestContext) => {
     PlatformRepository.initialize();

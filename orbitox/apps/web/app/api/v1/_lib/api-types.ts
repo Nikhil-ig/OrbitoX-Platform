@@ -24,10 +24,13 @@ export interface ApiResponse<T = any> {
   };
 }
 
+export type RouteClass = 'platform-admin' | 'customer' | 'public';
+
 export interface ApiGuardOptions {
   serviceId?: string;
   serviceName?: string;
   requiredScopes?: string[];
+  routeClass?: RouteClass;
   requireAuth?: boolean;
   rateLimitPerMin?: number;
   allowPublic?: boolean;

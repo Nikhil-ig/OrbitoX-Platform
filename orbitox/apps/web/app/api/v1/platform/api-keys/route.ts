@@ -8,7 +8,8 @@ export const GET = withApiGuard(
   {
     serviceId: 'platform',
     serviceName: 'Platform Keys Service',
-    allowPublic: true,
+    routeClass: 'platform-admin',
+    requiredScopes: ['platform.keys.read', 'admin'],
   },
   async (req: NextRequest, ctx: ApiRequestContext) => {
     PlatformRepository.initialize();
@@ -22,8 +23,9 @@ export const GET = withApiGuard(
     const enriched = keys.map((key) => {
       const project = PlatformRepository.getProject(key.projectId);
       const environment = PlatformRepository.getEnvironment(key.environmentId);
+      const { authVerifier, rawSecret, rawKey, ...safeKey } = key as any;
       return {
-        ...key,
+        ...safeKey,
         projectName: project?.name || 'Unknown Project',
         projectSlug: project?.slug || 'unknown',
         environmentName: environment?.name || 'Unknown Environment',

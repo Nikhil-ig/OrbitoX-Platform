@@ -8,7 +8,8 @@ export const GET = withApiGuard(
   {
     serviceId: 'platform',
     serviceName: 'Platform Keys Service',
-    allowPublic: true,
+    routeClass: 'platform-admin',
+    requiredScopes: ['platform.keys.read', 'admin'],
   },
   async (req: NextRequest, ctx: ApiRequestContext) => {
     PlatformRepository.initialize();
@@ -29,11 +30,12 @@ export const GET = withApiGuard(
 
     const project = PlatformRepository.getProject(key.projectId);
     const environment = PlatformRepository.getEnvironment(key.environmentId);
+    const { authVerifier, rawSecret, rawKey, ...safeKey } = key as any;
 
     return NextResponse.json<ApiResponse>({
       success: true,
       data: {
-        ...key,
+        ...safeKey,
         projectName: project?.name,
         projectSlug: project?.slug,
         environmentName: environment?.name,

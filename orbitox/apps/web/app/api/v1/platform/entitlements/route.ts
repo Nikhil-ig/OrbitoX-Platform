@@ -7,7 +7,9 @@ export const POST = withApiGuard(
   {
     serviceId: 'platform',
     serviceName: 'Platform Entitlement Engine',
-    allowPublic: true,
+    routeClass: 'platform-admin',
+    allowPublic: false,
+    requiredScopes: ['platform.entitlements', 'admin'],
   },
   async (req: NextRequest, ctx: ApiRequestContext) => {
     try {

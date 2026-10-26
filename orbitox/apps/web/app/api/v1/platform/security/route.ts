@@ -8,7 +8,8 @@ export const GET = withApiGuard(
   {
     serviceId: 'platform',
     serviceName: 'Platform Security Posture Service',
-    allowPublic: true,
+    routeClass: 'platform-admin',
+    requiredScopes: ['platform.security.read', 'admin'],
   },
   async (req: NextRequest, ctx: ApiRequestContext) => {
     const keys = await PlatformRepository.listApiKeys();

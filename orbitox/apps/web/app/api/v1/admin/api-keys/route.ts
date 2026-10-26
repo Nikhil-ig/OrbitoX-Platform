@@ -1,11 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server';
-import * as crypto from 'crypto';
 import { withApiGuard, PlatformApiState } from '../../_lib/api-guard';
+import { ApiResponse } from '../../_lib/api-types';
+import { PlatformKeyEngine } from '@orbitox-io/plugin-engine';
 
 export const GET = withApiGuard(
   {
     serviceId: 'admin',
     serviceName: 'Platform Administration OS',
+    routeClass: 'platform-admin',
+    requiredScopes: ['admin', 'read'],
   },
   async (req: NextRequest) => {
     const { searchParams } = new URL(req.url);
@@ -16,19 +19,35 @@ export const GET = withApiGuard(
     let keys = PlatformApiState.getApiKeys();
 
     if (serviceId && serviceId !== 'all') {
-      keys = keys.filter((k) => k.serviceId === serviceId || k.serviceId === 'all');
+      keys = keys.filter((k: any) => k.serviceId === serviceId || k.serviceId === 'all');
     }
     if (environment && environment !== 'all') {
-      keys = keys.filter((k) => k.environment === environment);
+      keys = keys.filter((k: any) => k.environment === environment);
     }
     if (status && status !== 'all') {
-      keys = keys.filter((k) => k.status === status);
+      keys = keys.filter((k: any) => k.status === status);
     }
 
-    return NextResponse.json({
+    // Ensure zero raw secrets are ever returned
+    const sanitized = keys.map((k: any) => {
+      const { rawKey, authVerifier, ...safe } = k;
+      return safe;
+    });
+
+    return NextResponse.json<ApiResponse>({
       success: true,
-      data: keys,
-      meta: { total: keys.length },
+      data: sanitized,
+      meta: {
+        latencyMs: 1,
+        timestamp: new Date().toISOString(),
+        requestId: `req_${Date.now()}`,
+        pagination: {
+          page: 1,
+          limit: sanitized.length,
+          total: sanitized.length,
+          totalPages: 1,
+        },
+      },
     });
   }
 );
@@ -37,6 +56,7 @@ export const POST = withApiGuard(
   {
     serviceId: 'admin',
     serviceName: 'Platform Administration OS',
+    routeClass: 'platform-admin',
     requiredScopes: ['admin', 'write'],
   },
   async (req: NextRequest) => {
@@ -51,33 +71,35 @@ export const POST = withApiGuard(
         environment = 'production',
         scopes = ['read', 'write'],
         rateLimitPerMin = 1200,
+        tenantScope,
       } = body;
 
       if (!name || !serviceId) {
-        return NextResponse.json(
+        return NextResponse.json<ApiResponse>(
           { success: false, error: { code: 'INVALID_INPUT', message: 'Fields "name" and "serviceId" are required.' } },
           { status: 400 }
         );
       }
 
-      const prefix = `orb_${environment === 'production' ? 'live' : 'test'}_`;
-      const randomSecret = Math.random().toString(36).substring(2, 14) + Math.random().toString(36).substring(2, 14);
-      const rawKey = `${prefix}${randomSecret}`;
-      const maskedKey = `${prefix}********************${randomSecret.slice(-4)}`;
+      // Generate cryptographically secure CSPRNG key with HMAC verifier
+      const generated = PlatformKeyEngine.generateKey(environment);
 
-      const newKey = {
-        id: `key-${Date.now()}`,
+      const newKey: any = {
+        id: generated.keyId,
         name,
-        keyPrefix: prefix,
-        maskedKey,
-        rawKey,
+        keyPrefix: generated.keyPrefix,
+        maskedKey: generated.maskedDisplay,
+        secretFingerprint: generated.secretFingerprint,
+        authVerifier: generated.authVerifier,
         serviceId,
         serviceName: serviceName || serviceId,
         providerId,
         providerName,
         environment,
         scopes,
-        createdAt: 'Just now',
+        capabilities: scopes,
+        tenantScope: tenantScope || (providerId ? [providerId] : []),
+        createdAt: new Date().toISOString(),
         lastUsedAt: 'Never',
         status: 'active',
         rateLimitPerMin,
@@ -87,19 +109,29 @@ export const POST = withApiGuard(
       PlatformApiState.addApiKey(newKey);
 
       PlatformApiState.recordTelemetry({
-        tenantId: providerId,
+        tenantId: providerId || 'admin',
         facade: 'SecurityFacade',
         level: 'SECURITY',
-        message: `Issued new Ed25519-compatible API Key [${name}] for service [${serviceId}] (${environment}).`,
+        message: `Issued new CSPRNG API Key [${name}] for service [${serviceId}] (${environment}).`,
       });
 
-      return NextResponse.json({
+      const { authVerifier, ...safeRecord } = newKey;
+
+      return NextResponse.json<ApiResponse>({
         success: true,
-        data: newKey,
-        message: 'API Key generated successfully. Save the rawKey securely as it will not be displayed again.',
+        data: {
+          keyRecord: safeRecord,
+          rawSecret: generated.rawSecret,
+          warning: 'This raw secret will never be shown again. Store it securely in your deployment pipeline or vault.',
+        },
+        meta: {
+          latencyMs: 1,
+          timestamp: new Date().toISOString(),
+          requestId: `req_${Date.now()}`,
+        },
       });
     } catch (err: any) {
-      return NextResponse.json(
+      return NextResponse.json<ApiResponse>(
         { success: false, error: { code: 'BAD_REQUEST', message: err.message } },
         { status: 400 }
       );

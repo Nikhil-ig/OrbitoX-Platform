@@ -1,19 +1,32 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { withApiGuard, PlatformApiState } from '../../../_lib/api-guard';
+import { ApiResponse } from '../../../_lib/api-types';
 
 export async function GET(
   req: NextRequest,
   { params }: { params: Promise<{ keyId: string }> }
 ) {
   const { keyId } = await params;
-  const key = PlatformApiState.findApiKey(keyId);
+  const key = PlatformApiState.findApiKeyById(keyId) || PlatformApiState.findApiKey(keyId);
   if (!key) {
-    return NextResponse.json(
+    return NextResponse.json<ApiResponse>(
       { success: false, error: { code: 'NOT_FOUND', message: `API Key ${keyId} not found.` } },
       { status: 404 }
     );
   }
-  return NextResponse.json({ success: true, data: key });
+
+  // Ensure zero plaintext secrets are returned
+  const { rawKey, authVerifier, ...safe } = key as any;
+
+  return NextResponse.json<ApiResponse>({
+    success: true,
+    data: safe,
+    meta: {
+      latencyMs: 1,
+      timestamp: new Date().toISOString(),
+      requestId: `req_${Date.now()}`,
+    },
+  });
 }
 
 export async function DELETE(
@@ -23,7 +36,7 @@ export async function DELETE(
   const { keyId } = await params;
   const revoked = PlatformApiState.revokeApiKey(keyId);
   if (!revoked) {
-    return NextResponse.json(
+    return NextResponse.json<ApiResponse>(
       { success: false, error: { code: 'NOT_FOUND', message: `API Key ${keyId} not found.` } },
       { status: 404 }
     );
@@ -35,10 +48,16 @@ export async function DELETE(
     message: `Cryptographically REVOKED API key [${revoked.name}] (${keyId}).`,
   });
 
-  return NextResponse.json({
+  const { rawKey, authVerifier, ...safe } = revoked as any;
+
+  return NextResponse.json<ApiResponse>({
     success: true,
-    data: revoked,
-    message: `API Key ${revoked.name} has been revoked.`,
+    data: safe,
+    meta: {
+      latencyMs: 1,
+      timestamp: new Date().toISOString(),
+      requestId: `req_${Date.now()}`,
+    },
   });
 }
 
@@ -49,7 +68,7 @@ export async function PATCH(
   const { keyId } = await params;
   const toggled = PlatformApiState.toggleApiKey(keyId);
   if (!toggled) {
-    return NextResponse.json(
+    return NextResponse.json<ApiResponse>(
       { success: false, error: { code: 'NOT_FOUND', message: `API Key ${keyId} not found.` } },
       { status: 404 }
     );
@@ -61,9 +80,15 @@ export async function PATCH(
     message: `API Key [${toggled.name}] set to ${toggled.status.toUpperCase()}.`,
   });
 
-  return NextResponse.json({
+  const { rawKey, authVerifier, ...safe } = toggled as any;
+
+  return NextResponse.json<ApiResponse>({
     success: true,
-    data: toggled,
-    message: `API Key ${toggled.name} is now ${toggled.status}.`,
+    data: safe,
+    meta: {
+      latencyMs: 1,
+      timestamp: new Date().toISOString(),
+      requestId: `req_${Date.now()}`,
+    },
   });
 }

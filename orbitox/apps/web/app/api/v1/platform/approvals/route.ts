@@ -7,7 +7,8 @@ export const GET = withApiGuard(
   {
     serviceId: 'platform',
     serviceName: 'Platform Approvals Service',
-    allowPublic: true,
+    routeClass: 'platform-admin',
+    requiredScopes: ['platform.approvals.read', 'admin'],
   },
   async (req: NextRequest, ctx: ApiRequestContext) => {
     // Collect all requests from the engine
