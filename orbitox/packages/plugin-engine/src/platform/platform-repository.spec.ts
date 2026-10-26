@@ -287,6 +287,182 @@ describe('PlatformRepository (Normalized Domain Access & Cryptographic Binding)'
       PlatformRepository.initialize();
       fs.rmSync(shutdownDataDir, { recursive: true, force: true });
     });
+
+    it('preserves revocation across 20 immediate SIGKILL/restart cycles', () => {
+      const crashDataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'orbitox-sigkill-revoke-'));
+      const repositoryCwd = path.resolve(__dirname, '../..');
+      const childEnv = { ...process.env, ORBITOX_DATA_DIR: crashDataDir, NODE_ENV: 'test' };
+      PlatformRepository.resetForTesting();
+      PlatformRepository.setDataDir(crashDataDir);
+      PlatformRepository.initialize();
+
+      try {
+        const project = PlatformRepository.listProjects()[0]!;
+        const environment = PlatformRepository.listEnvironments(project.id).find((item) => item.isProduction)!;
+        for (let iteration = 0; iteration < 20; iteration++) {
+          const key = PlatformRepository.createApiKey({
+            name: `SIGKILL Revoke ${iteration}`,
+            environmentId: environment.id,
+            projectId: project.id,
+            capabilities: ['crm:read'],
+            createdBy: 'test-suite',
+          });
+          const script = `
+            const { PlatformRepository } = require('./dist/platform/platform-repository.js');
+            PlatformRepository.setDataDir(${JSON.stringify(crashDataDir)});
+            PlatformRepository.initialize();
+            PlatformRepository.setKeyStatus(${JSON.stringify(key.keyRecord.keyId)}, 'REVOKED');
+            process.kill(process.pid, 'SIGKILL');
+          `;
+          const result = spawnSync(process.execPath, ['-e', script], {
+            cwd: repositoryCwd,
+            encoding: 'utf8',
+            env: childEnv,
+          });
+          expect(result.signal).toBe('SIGKILL');
+
+          PlatformRepository.resetForTesting();
+          PlatformRepository.setDataDir(crashDataDir);
+          PlatformRepository.initialize();
+          expect(PlatformRepository.getApiKey(key.keyRecord.keyId)?.status).toBe('REVOKED');
+        }
+      } finally {
+        PlatformRepository.resetForTesting();
+        PlatformRepository.setDataDir(suiteTempDir);
+        PlatformRepository.initialize();
+        fs.rmSync(crashDataDir, { recursive: true, force: true });
+      }
+    }, 30000);
+
+    it('preserves atomic zero-grace rotation across 20 immediate SIGKILL/restart cycles', () => {
+      const crashDataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'orbitox-sigkill-rotate-'));
+      const repositoryCwd = path.resolve(__dirname, '../..');
+      const childEnv = { ...process.env, ORBITOX_DATA_DIR: crashDataDir, NODE_ENV: 'test' };
+      PlatformRepository.resetForTesting();
+      PlatformRepository.setDataDir(crashDataDir);
+      PlatformRepository.initialize();
+
+      try {
+        const project = PlatformRepository.listProjects()[0]!;
+        const environment = PlatformRepository.listEnvironments(project.id).find((item) => item.isProduction)!;
+        for (let iteration = 0; iteration < 20; iteration++) {
+          const original = PlatformRepository.createApiKey({
+            name: `SIGKILL Rotate ${iteration}`,
+            environmentId: environment.id,
+            projectId: project.id,
+            capabilities: ['crm:read'],
+            createdBy: 'test-suite',
+          });
+          const script = `
+            const fs = require('fs');
+            const { PlatformRepository } = require('./dist/platform/platform-repository.js');
+            PlatformRepository.setDataDir(${JSON.stringify(crashDataDir)});
+            PlatformRepository.initialize();
+            const rotated = PlatformRepository.rotateApiKey(${JSON.stringify(original.keyRecord.keyId)}, {
+              graceWindowDays: 0,
+              operatorEmail: 'test-suite',
+            });
+            fs.writeSync(1, rotated.replacementKey.keyId + '\\n');
+            process.kill(process.pid, 'SIGKILL');
+          `;
+          const result = spawnSync(process.execPath, ['-e', script], {
+            cwd: repositoryCwd,
+            encoding: 'utf8',
+            env: childEnv,
+          });
+          expect(result.signal).toBe('SIGKILL');
+          const replacementKeyId = result.stdout.trim();
+          expect(replacementKeyId).toBeTruthy();
+
+          PlatformRepository.resetForTesting();
+          PlatformRepository.setDataDir(crashDataDir);
+          PlatformRepository.initialize();
+          expect(PlatformRepository.getApiKey(original.keyRecord.keyId)?.status).toBe('SUSPENDED');
+          expect(PlatformRepository.getApiKey(replacementKeyId)?.status).toBe('ACTIVE');
+        }
+      } finally {
+        PlatformRepository.resetForTesting();
+        PlatformRepository.setDataDir(suiteTempDir);
+        PlatformRepository.initialize();
+        fs.rmSync(crashDataDir, { recursive: true, force: true });
+      }
+    }, 30000);
+
+    it('preserves project suspension across 20 immediate SIGKILL/restart cycles', () => {
+      const crashDataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'orbitox-sigkill-project-'));
+      const repositoryCwd = path.resolve(__dirname, '../..');
+      const childEnv = { ...process.env, ORBITOX_DATA_DIR: crashDataDir, NODE_ENV: 'test' };
+      PlatformRepository.resetForTesting();
+      PlatformRepository.setDataDir(crashDataDir);
+      PlatformRepository.initialize();
+
+      try {
+        const project = PlatformRepository.listProjects()[0]!;
+        for (let iteration = 0; iteration < 20; iteration++) {
+          PlatformRepository.updateProject(project.id, { status: 'ACTIVE' });
+          const script = `
+            const { PlatformRepository } = require('./dist/platform/platform-repository.js');
+            PlatformRepository.setDataDir(${JSON.stringify(crashDataDir)});
+            PlatformRepository.initialize();
+            PlatformRepository.updateProject(${JSON.stringify(project.id)}, { status: 'SUSPENDED' });
+            process.kill(process.pid, 'SIGKILL');
+          `;
+          const result = spawnSync(process.execPath, ['-e', script], {
+            cwd: repositoryCwd,
+            encoding: 'utf8',
+            env: childEnv,
+          });
+          expect(result.signal).toBe('SIGKILL');
+
+          PlatformRepository.resetForTesting();
+          PlatformRepository.setDataDir(crashDataDir);
+          PlatformRepository.initialize();
+          expect(PlatformRepository.getProject(project.id)?.status).toBe('SUSPENDED');
+        }
+      } finally {
+        PlatformRepository.resetForTesting();
+        PlatformRepository.setDataDir(suiteTempDir);
+        PlatformRepository.initialize();
+        fs.rmSync(crashDataDir, { recursive: true, force: true });
+      }
+    }, 30000);
+
+    it('recovers a missing or corrupt store from its previous good copy and fails if both copies are lost', () => {
+      const recoveryDataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'orbitox-store-recovery-'));
+      PlatformRepository.resetForTesting();
+      PlatformRepository.setDataDir(recoveryDataDir);
+      PlatformRepository.initialize();
+      const project = PlatformRepository.listProjects()[0]!;
+      const filePath = PlatformRepository.getFilePath();
+      const backupPath = `${filePath}.bak`;
+
+      try {
+        PlatformRepository.updateProject(project.id, { status: 'SUSPENDED' });
+        expect(fs.existsSync(backupPath)).toBe(true);
+        fs.writeFileSync(filePath, '{corrupt', 'utf8');
+        PlatformRepository.resetForTesting();
+        PlatformRepository.setDataDir(recoveryDataDir);
+        PlatformRepository.initialize();
+        expect(PlatformRepository.getProject(project.id)?.status).toBe('ACTIVE');
+
+        fs.unlinkSync(filePath);
+        PlatformRepository.resetForTesting();
+        PlatformRepository.setDataDir(recoveryDataDir);
+        PlatformRepository.initialize();
+        expect(PlatformRepository.getProject(project.id)?.status).toBe('ACTIVE');
+
+        fs.unlinkSync(filePath);
+        fs.unlinkSync(backupPath);
+        PlatformRepository.resetForTesting();
+        PlatformRepository.setDataDir(recoveryDataDir);
+        expect(() => PlatformRepository.initialize()).toThrow(/missing and no previous good copy/);
+      } finally {
+        PlatformRepository.resetForTesting();
+        PlatformRepository.setDataDir(suiteTempDir);
+        PlatformRepository.initialize();
+        fs.rmSync(recoveryDataDir, { recursive: true, force: true });
+      }
+    });
   });
 
   describe('Credential Vault & Envelope Encryption', () => {

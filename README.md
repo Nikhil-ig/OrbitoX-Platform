@@ -37,7 +37,7 @@ flowchart TD
     subgraph ControlPlane["🪐 OrbitoX Control Plane (orbitox/apps/web - Port 3005)"]
         UI["Control Center Admin UI (Next.js 14)"]
         API["Fleet & Governance REST APIs"]
-        Repo["PlatformRepository (Atomic JSON File Persistence)"]
+        Repo["PlatformRepository (Single-Server JSON Store)"]
         KeyEngine["PlatformKeyEngine (SHA-256 Verifiers)"]
         Vault["CredentialVault (AES-256-GCM Envelope Encryption)"]
         UI --> API
@@ -72,7 +72,7 @@ flowchart TD
 
 ### 1. The Control Plane (`orbitox/apps/web`)
 - **Fleet Observability**: Real-time heartbeat tracking, version drift detection, health probes, and live audit telemetry across all registered microservices.
-- **Durable Persistence**: State is stored through an atomic, debounced file-backed persistence engine (`PlatformRepository`), guaranteeing full survivability across server restarts without requiring external database dependencies for basic operation.
+- **Development-Grade Persistence**: The JSON-backed `PlatformRepository` is single-server storage. Security-critical local mutations are synchronously flushed with atomic replacement and fsync, but this file store is not a multi-server production database.
 - **Machine API Key Engine**: Issues cryptographically secure, high-entropy machine credentials (`orb_live_...`). Plaintext tokens are returned once upon creation; only constant-time verifiable SHA-256 fingerprints are stored.
 - **Envelope Credential Vault**: Stores third-party secrets (Stripe, Twilio, OpenAI) using AES-256-GCM encryption with master key derivation.
 - **Quota & Rate-Limit Enforcement**: Tracks monthly API call budgets and bursts across individual tenants and environments.
@@ -213,12 +213,13 @@ Test the live endpoints:
 
 ## 💾 Control Plane Persistence & Storage Configuration
 
-The Control Plane's persistence layer (`PlatformRepository`) uses a robust, atomic file-backed JSON store:
+The Control Plane's JSON persistence layer (`PlatformRepository`) is intended for development and single-server deployments. It does not provide multi-server coordination or transactional guarantees. Phase 2 replaces it with a transactional database; that is the production fix for multi-server consistency and crash-safe state changes.
 
 ### How It Works
-- **Atomic Writes**: Writes are staged into a temporary file (`.tmp.<timestamp>`) and swapped atomically using `fs.renameSync` to prevent file corruption during power failures or sudden process termination.
-- **Debounced Sync**: In-memory mutations are batched and synced with a 150ms debounce window; critical paths can trigger synchronous writes via `PlatformRepository.saveImmediate()`.
-- **Automatic Seed & Fallback**: If no persisted store exists, the repository initializes default enterprise organizations, demo projects, and sample API keys.
+- **Durable Critical Changes**: Key creation, revocation, rotation, project status and entitlement changes, and quota-limit changes are synchronously written through a same-directory temporary file, file fsync, atomic rename, and directory fsync before success is returned.
+- **Previous Good Copy**: The repository retains a `.bak` copy and recovers from it with an explicit log message. Missing or corrupt state without a usable backup aborts startup instead of silently reseeding.
+- **Debounced Telemetry**: Low-value usage counters and last-used timestamps may be delayed and lost on an unclean shutdown.
+- **First-Run Seed**: A brand-new data directory is initialized with default organizations, demo projects, and sample API keys. Once initialized, missing or corrupt state is not treated as a fresh install.
 
 ### Storage Directory Selection (`ORBITOX_DATA_DIR`)
 Configure the storage location using the `ORBITOX_DATA_DIR` environment variable:

@@ -107,6 +107,7 @@ export class PlatformRepository {
   private static auditLogs: Array<Record<string, any>> = [];
 
   private static initialized = false;
+  private static initializing = false;
   private static persistenceEnabled = true;
   private static dataDir: string | null = null;
   private static filePath: string | null = null;
@@ -168,67 +169,122 @@ export class PlatformRepository {
   }
 
   public static initialize(): void {
-    if (this.initialized) return;
-    this.initialized = true;
+    if (this.initialized || this.initializing) return;
+    this.initializing = true;
     this.registerShutdownFlushHandlers();
 
-    this.resolveDataPaths();
+    try {
+      this.resolveDataPaths();
+      const loaded = this.persistenceEnabled ? this.loadPersistedStore() : false;
+      if (!loaded) {
+        this.seedDefaults();
+        this.repairDuplicateProjectSlugs();
+        if (this.persistenceEnabled) this.saveDurable();
+      } else {
+        this.repairDuplicateProjectSlugs();
+      }
+      this.initialized = true;
+    } finally {
+      this.initializing = false;
+    }
+  }
 
-    if (this.persistenceEnabled && this.filePath && fs.existsSync(this.filePath)) {
+  private static loadPersistedStore(): boolean {
+    this.resolveDataPaths();
+    const filePath = this.filePath!;
+    const backupPath = `${filePath}.bak`;
+    const initializedPath = `${filePath}.initialized`;
+
+    if (fs.existsSync(filePath)) {
       try {
-        const raw = fs.readFileSync(this.filePath, 'utf-8');
-        const parsed: PlatformRepositoryStoreData = JSON.parse(raw);
-        if (parsed && Array.isArray(parsed.organizations) && parsed.organizations.length > 0) {
-          this.organizations = parsed.organizations || [];
-          this.projects = parsed.projects || [];
-          this.environments = parsed.environments || [];
-          this.apiKeys = parsed.apiKeys || [];
-          this.credentials = parsed.credentials || [];
-          this.packages = parsed.packages || [];
-          this.packageVersions = parsed.packageVersions || [];
-          this.packageInstallations = parsed.packageInstallations || [];
-          this.domains = parsed.domains || [];
-          this.quotaPolicies = parsed.quotaPolicies || [];
-          this.rateLimitPolicies = parsed.rateLimitPolicies || [];
-          this.auditLogs = parsed.auditLogs || [];
-          this.repairDuplicateProjectSlugs();
-          return;
+        this.hydrateStore(this.parseStoreData(fs.readFileSync(filePath, 'utf-8')));
+        this.writeInitializedMarker(initializedPath);
+        return true;
+      } catch (primaryError) {
+        if (!fs.existsSync(backupPath)) {
+          throw new Error(`[PlatformRepository] Persistent store is corrupt and no previous good copy exists at ${backupPath}.`, {
+            cause: primaryError,
+          });
         }
-      } catch (err) {
-        console.error('[PlatformRepository] Error reading persistent store, re-seeding defaults:', err);
+        const backup = this.parseStoreData(fs.readFileSync(backupPath, 'utf-8'));
+        this.hydrateStore(backup);
+        console.error(`[PlatformRepository] Primary store is corrupt; recovered the previous good copy from ${backupPath}.`);
+        this.writeAtomicFile(filePath, JSON.stringify(backup, null, 2));
+        this.writeInitializedMarker(initializedPath);
+        return true;
       }
     }
 
-    this.seedDefaults();
-    this.repairDuplicateProjectSlugs();
-    if (this.persistenceEnabled) {
-      this.saveImmediate();
+    if (fs.existsSync(backupPath)) {
+      const backup = this.parseStoreData(fs.readFileSync(backupPath, 'utf-8'));
+      this.hydrateStore(backup);
+      console.error(`[PlatformRepository] Primary store is missing; recovered the previous good copy from ${backupPath}.`);
+      this.writeAtomicFile(filePath, JSON.stringify(backup, null, 2));
+      this.writeInitializedMarker(initializedPath);
+      return true;
     }
+
+    if (fs.existsSync(initializedPath)) {
+      throw new Error(`[PlatformRepository] Persistent store is missing and no previous good copy exists at ${filePath}. Startup aborted.`);
+    }
+
+    return false;
+  }
+
+  private static parseStoreData(raw: string): PlatformRepositoryStoreData {
+    const parsed = JSON.parse(raw);
+    const collections = [
+      'organizations',
+      'projects',
+      'environments',
+      'apiKeys',
+      'credentials',
+      'packages',
+      'packageVersions',
+      'packageInstallations',
+      'domains',
+      'quotaPolicies',
+      'rateLimitPolicies',
+      'auditLogs',
+    ];
+    if (!parsed || collections.some((collection) => !Array.isArray(parsed[collection])) || parsed.organizations.length === 0) {
+      throw new Error('Persistent store is empty or has an invalid schema.');
+    }
+    return {
+      organizations: parsed.organizations,
+      projects: parsed.projects,
+      environments: parsed.environments,
+      apiKeys: parsed.apiKeys,
+      credentials: parsed.credentials,
+      packages: parsed.packages,
+      packageVersions: parsed.packageVersions,
+      packageInstallations: parsed.packageInstallations,
+      domains: parsed.domains,
+      quotaPolicies: parsed.quotaPolicies,
+      rateLimitPolicies: parsed.rateLimitPolicies,
+      auditLogs: parsed.auditLogs,
+    };
+  }
+
+  private static hydrateStore(parsed: PlatformRepositoryStoreData): void {
+    this.organizations = parsed.organizations;
+    this.projects = parsed.projects;
+    this.environments = parsed.environments;
+    this.apiKeys = parsed.apiKeys;
+    this.credentials = parsed.credentials;
+    this.packages = parsed.packages;
+    this.packageVersions = parsed.packageVersions;
+    this.packageInstallations = parsed.packageInstallations;
+    this.domains = parsed.domains;
+    this.quotaPolicies = parsed.quotaPolicies;
+    this.rateLimitPolicies = parsed.rateLimitPolicies;
+    this.auditLogs = parsed.auditLogs;
   }
 
   public static reloadFromDisk(): void {
     this.resolveDataPaths();
-    if (this.filePath && fs.existsSync(this.filePath)) {
-      try {
-        const raw = fs.readFileSync(this.filePath, 'utf-8');
-        const parsed: PlatformRepositoryStoreData = JSON.parse(raw);
-        this.organizations = parsed.organizations || [];
-        this.projects = parsed.projects || [];
-        this.environments = parsed.environments || [];
-        this.apiKeys = parsed.apiKeys || [];
-        this.credentials = parsed.credentials || [];
-        this.packages = parsed.packages || [];
-        this.packageVersions = parsed.packageVersions || [];
-        this.packageInstallations = parsed.packageInstallations || [];
-        this.domains = parsed.domains || [];
-        this.quotaPolicies = parsed.quotaPolicies || [];
-        this.rateLimitPolicies = parsed.rateLimitPolicies || [];
-        this.auditLogs = parsed.auditLogs || [];
-        this.repairDuplicateProjectSlugs();
-      } catch (err) {
-        console.error('[PlatformRepository] Failed to reload store from disk:', err);
-      }
-    }
+    if (!this.loadPersistedStore()) throw new Error('[PlatformRepository] Persistent store is missing. Startup aborted.');
+    this.repairDuplicateProjectSlugs();
   }
 
   private static repairDuplicateProjectSlugs(): void {
@@ -262,7 +318,7 @@ export class PlatformRepository {
   }
 
   public static saveDebounced(): void {
-    if (!this.persistenceEnabled) return;
+    if (!this.persistenceEnabled || this.initializing) return;
     if (this.saveTimeout) clearTimeout(this.saveTimeout);
     this.saveTimeout = setTimeout(() => {
       this.saveImmediate();
@@ -287,6 +343,14 @@ export class PlatformRepository {
   }
 
   public static saveImmediate(): void {
+    try {
+      this.saveDurable();
+    } catch (err) {
+      console.error('[PlatformRepository] Failed to write persistent store to disk:', err);
+    }
+  }
+
+  public static saveDurable(): void {
     if (this.saveTimeout) {
       clearTimeout(this.saveTimeout);
       this.saveTimeout = null;
@@ -295,31 +359,71 @@ export class PlatformRepository {
     this.resolveDataPaths();
     if (!this.filePath) return;
 
-    try {
-      const dir = path.dirname(this.filePath);
-      if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+    const payload: PlatformRepositoryStoreData = {
+      organizations: this.organizations,
+      projects: this.projects,
+      environments: this.environments,
+      apiKeys: this.apiKeys,
+      credentials: this.credentials,
+      packages: this.packages,
+      packageVersions: this.packageVersions,
+      packageInstallations: this.packageInstallations,
+      domains: this.domains,
+      quotaPolicies: this.quotaPolicies,
+      rateLimitPolicies: this.rateLimitPolicies,
+      auditLogs: this.auditLogs,
+    };
 
-      const payload: PlatformRepositoryStoreData = {
-        organizations: this.organizations,
-        projects: this.projects,
-        environments: this.environments,
-        apiKeys: this.apiKeys,
-        credentials: this.credentials,
-        packages: this.packages,
-        packageVersions: this.packageVersions,
-        packageInstallations: this.packageInstallations,
-        domains: this.domains,
-        quotaPolicies: this.quotaPolicies,
-        rateLimitPolicies: this.rateLimitPolicies,
-        auditLogs: this.auditLogs,
-      };
-
-      const tempPath = `${this.filePath}.tmp.${Date.now()}`;
-      fs.writeFileSync(tempPath, JSON.stringify(payload, null, 2), 'utf-8');
-      fs.renameSync(tempPath, this.filePath);
-    } catch (err) {
-      console.error('[PlatformRepository] Failed to write persistent store to disk:', err);
+    const serialized = JSON.stringify(payload, null, 2);
+    const backupPath = `${this.filePath}.bak`;
+    if (fs.existsSync(this.filePath)) {
+      const previous = fs.readFileSync(this.filePath, 'utf-8');
+      this.parseStoreData(previous);
+      this.writeAtomicFile(backupPath, previous);
     }
+    this.writeAtomicFile(this.filePath, serialized);
+    this.writeInitializedMarker(`${this.filePath}.initialized`);
+  }
+
+  private static writeInitializedMarker(markerPath: string): void {
+    if (!fs.existsSync(markerPath)) this.writeAtomicFile(markerPath, 'initialized\n');
+  }
+
+  private static writeAtomicFile(targetPath: string, contents: string): void {
+    const dir = path.dirname(targetPath);
+    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+    const tempPath = `${targetPath}.tmp.${process.pid}.${crypto.randomBytes(6).toString('hex')}`;
+    let fd: number | undefined;
+    try {
+      fd = fs.openSync(tempPath, 'wx', 0o600);
+      fs.writeFileSync(fd, contents, 'utf-8');
+      fs.fsyncSync(fd);
+      fs.closeSync(fd);
+      fd = undefined;
+      fs.renameSync(tempPath, targetPath);
+      const dirFd = fs.openSync(dir, 'r');
+      try {
+        fs.fsyncSync(dirFd);
+      } finally {
+        fs.closeSync(dirFd);
+      }
+    } catch (err) {
+      if (fd !== undefined) fs.closeSync(fd);
+      try {
+        fs.unlinkSync(tempPath);
+      } catch {
+        // A completed rename leaves no temporary file to clean up.
+      }
+      throw err;
+    }
+  }
+
+  private static persistCriticalChange(): void {
+    if (this.initializing) return;
+    if (!this.persistenceEnabled) {
+      throw new Error('[PlatformRepository] Persistent storage is required for critical state changes.');
+    }
+    this.saveDurable();
   }
 
   public static resetForTesting(): void {
@@ -340,6 +444,7 @@ export class PlatformRepository {
     this.rateLimitPolicies = [];
     this.auditLogs = [];
     this.initialized = false;
+    this.initializing = false;
   }
 
   // ─────────────────────────────────────────────────────────────
@@ -369,7 +474,7 @@ export class PlatformRepository {
       updatedAt: new Date().toISOString(),
     };
     this.organizations.push(org);
-    this.saveDebounced();
+    this.persistCriticalChange();
     return org;
   }
 
@@ -382,7 +487,8 @@ export class PlatformRepository {
         ...updates,
         updatedAt: new Date().toISOString(),
       };
-      this.saveDebounced();
+      if (updates.status !== undefined || updates.complianceTier !== undefined) this.persistCriticalChange();
+      else this.saveDebounced();
       return this.organizations[idx];
     }
     return undefined;
@@ -533,7 +639,7 @@ export class PlatformRepository {
       }
     }
 
-    this.saveDebounced();
+    this.persistCriticalChange();
     return { project, environments: [prodEnv, stgEnv, devEnv] };
   }
 
@@ -545,7 +651,16 @@ export class PlatformRepository {
         throw new Error('Project slug is immutable after creation.');
       }
       this.projects[idx] = { ...this.projects[idx]!, ...updates, updatedAt: new Date().toISOString() };
-      this.saveDebounced();
+      const durableFields: Array<keyof PlatformProject> = [
+        'status',
+        'planTier',
+        'plan',
+        'enabledServices',
+        'apiCallQuota',
+        'rateLimitPerMin',
+      ];
+      if (durableFields.some((field) => updates[field] !== undefined)) this.persistCriticalChange();
+      else this.saveDebounced();
       return this.projects[idx];
     }
     return undefined;
@@ -556,7 +671,7 @@ export class PlatformRepository {
     const initialLen = this.projects.length;
     this.projects = this.projects.filter((p) => p.id !== projectId && p.slug !== projectId);
     if (this.projects.length !== initialLen) {
-      this.saveDebounced();
+      this.persistCriticalChange();
       return true;
     }
     return false;
@@ -716,8 +831,7 @@ export class PlatformRepository {
     return undefined;
   }
 
-  static createApiKey(input: CreateKeyInput, serverPepper?: string): { keyRecord: PlatformApiKeyRecord; rawSecret: string } {
-    this.initialize();
+  private static buildApiKey(input: CreateKeyInput, serverPepper?: string): { keyRecord: PlatformApiKeyRecord; rawSecret: string } {
     const env = this.getEnvironment(input.environmentId);
     const envName = env?.isProduction ? 'production' : env?.slug === 'staging' ? 'staging' : 'development';
 
@@ -763,10 +877,15 @@ export class PlatformRepository {
       version: 1,
     };
 
-    this.apiKeys.push(keyRecord);
-    this.saveDebounced();
-
     return { keyRecord, rawSecret: generated.rawSecret };
+  }
+
+  static createApiKey(input: CreateKeyInput, serverPepper?: string): { keyRecord: PlatformApiKeyRecord; rawSecret: string } {
+    this.initialize();
+    const created = this.buildApiKey(input, serverPepper);
+    this.apiKeys.push(created.keyRecord);
+    this.persistCriticalChange();
+    return created;
   }
 
   static rotateApiKey(
@@ -778,7 +897,7 @@ export class PlatformRepository {
     if (!oldKey) return undefined;
 
     // 1. Generate Replacement Key with identical parameters
-    const created = this.createApiKey(
+    const created = this.buildApiKey(
       {
         name: `${oldKey.name} (Rotated Replacement)`,
         environmentId: oldKey.environmentId,
@@ -791,6 +910,7 @@ export class PlatformRepository {
         createdBy: options.operatorEmail,
       }
     );
+    this.apiKeys.push(created.keyRecord);
 
     // 2. Set grace period on old key or mark suspended
     const oldIdx = this.apiKeys.findIndex((k) => k.id === oldKey.id);
@@ -801,8 +921,9 @@ export class PlatformRepository {
         this.apiKeys[oldIdx]!.status = 'SUSPENDED';
       }
       this.apiKeys[oldIdx]!.revokeReason = `Rotated in favor of replacement key [${created.keyRecord.keyId}]`;
-      this.saveDebounced();
     }
+
+    this.persistCriticalChange();
 
     return { replacementKey: created.keyRecord, replacementRawSecret: created.rawSecret };
   }
@@ -815,7 +936,7 @@ export class PlatformRepository {
       if (reason) this.apiKeys[idx]!.revokeReason = reason;
       if (status === 'COMPROMISED') this.apiKeys[idx]!.compromisedAt = new Date().toISOString();
       if (status === 'REVOKED') this.apiKeys[idx]!.revokedAt = new Date().toISOString();
-      this.saveDebounced();
+      this.persistCriticalChange();
       return this.apiKeys[idx];
     }
     return undefined;
@@ -878,7 +999,7 @@ export class PlatformRepository {
     };
 
     this.credentials.push(cred);
-    this.saveDebounced();
+    this.persistCriticalChange();
     return cred;
   }
 
@@ -1009,7 +1130,7 @@ export class PlatformRepository {
         ...updates,
         updatedAt: new Date().toISOString(),
       };
-      this.saveDebounced();
+      this.persistCriticalChange();
       return this.quotaPolicies[idx];
     }
     return undefined;
