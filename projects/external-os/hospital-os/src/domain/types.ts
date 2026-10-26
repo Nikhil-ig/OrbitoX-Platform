@@ -150,12 +150,40 @@ export interface BedFeatures {
 }
 
 export interface TelemetryThresholds {
-  hrMin: number;
-  hrMax: number;
-  spO2Min: number;
-  sysBPMin: number;
-  sysBPMax: number;
-  tempMax: number;
+  hrMin?: number;
+  hrMax?: number;
+  spO2Min?: number;
+  sysBPMin?: number;
+  sysBPMax?: number;
+  tempMax?: number;
+  minSpO2?: number;
+  maxHeartRate?: number;
+  minHeartRate?: number;
+  maxTemperature?: number;
+  minTemperature?: number;
+  maxRespiratoryRate?: number;
+}
+
+export type MedicalDeviceType =
+  | 'multi_para_vitals_monitor'
+  | 'mechanical_ventilator'
+  | 'infusion_syringe_pump'
+  | 'defibrillator_crash_cart'
+  | 'dialysis_unit'
+  | 'pulse_oximeter_standalone'
+  | 'ecmo_circuit'
+  | string;
+
+export interface AttachedMedicalDevice {
+  deviceId: string;
+  deviceType: MedicalDeviceType;
+  manufacturer: string;
+  model: string;
+  serialNumber: string;
+  status: 'online' | 'offline' | 'calibrating' | 'error' | string;
+  lastCalibrationDate: string;
+  nextMaintenanceDue: string;
+  telemetryTopic: string;
 }
 
 export interface BedEntity {
@@ -166,7 +194,7 @@ export interface BedEntity {
   type: BedType;
   status: BedStatus;
   isTemporary: boolean;
-  attachedEquipment: AttachedEquipment[];
+  attachedEquipment: (AttachedEquipment | AttachedMedicalDevice)[];
   features?: BedFeatures;
   telemetryThresholds?: TelemetryThresholds;
   dailyRate: number;
@@ -239,6 +267,7 @@ export type MedicalRecordType =
   | 'operative_report'
   | 'discharge_summary'
   | 'nursing_assessment'
+  | 'initial_assessment'
   | 'triage_evaluation';
 
 export interface MedicalRecordEntity {
@@ -250,6 +279,7 @@ export interface MedicalRecordEntity {
   icdCode?: string;
   clinicalNotes: string;
   vitalsSnapshot?: DeviceTelemetryPoint;
+  vitals?: any;
   timestamp: string;
 }
 
@@ -348,4 +378,7 @@ export interface InvoiceEntity {
   status: InvoiceStatus;
   issuedAt?: string;
   settledAt?: string;
+  generatedAt?: string;
+  insuranceProvider?: string;
+  policyNumber?: string;
 }

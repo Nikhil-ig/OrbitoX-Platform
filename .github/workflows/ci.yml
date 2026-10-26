@@ -34,11 +34,16 @@ jobs:
       - name: Build workspace packages
         run: pnpm exec turbo run build --filter='web^...'
 
-      - name: Type-check control plane
-        run: pnpm --filter web exec tsc --noEmit
+      - name: Type-check monorepo packages & control plane
+        run: pnpm exec turbo run type-check
 
-      - name: Unit tests
-        run: pnpm --filter @orbitox/external-project-engine test
+      - name: Unit tests (Core, Plugin Engine, POS, CRM, External Project Engine)
+        run: |
+          pnpm --filter @orbitox/core test
+          pnpm --filter @orbitox/plugin-engine test
+          pnpm --filter @orbitox/pos test
+          pnpm --filter @orbitox/crm test
+          pnpm --filter @orbitox/external-project-engine test
 
       - name: Build control plane
         run: pnpm --filter web exec next build
@@ -86,14 +91,11 @@ jobs:
   secret-scan:
     name: Secret scan (working tree)
     runs-on: ubuntu-latest
-    # Non-blocking until git history is purged of the secrets that were committed
-    # before this cleanup (see docs/SECURITY_CLEANUP.md). Then remove continue-on-error.
-    continue-on-error: true
     steps:
       - uses: actions/checkout@v4
       - name: Scan files for secrets
         run: |
-          docker run --rm -v "$PWD:/repo" zricethezav/gitleaks:latest dir /repo --no-banner --redact --verbose
+          docker run --rm -v "$PWD:/repo" zricethezav/gitleaks:latest dir /repo --config=/repo/.gitleaks.toml --no-banner --redact --verbose
 
   restaurantos-e2e:
     name: RestaurantOS HTTP Multi-Tenant & RLS Suite
@@ -151,6 +153,9 @@ jobs:
 
       - name: Type-check RestaurantOS
         run: pnpm exec tsc --noEmit
+
+      - name: RestaurantOS Core & Event Bus Tests (P0.2)
+        run: pnpm test
 
       - name: Tenant Staff Auth Suite (Item 1)
         run: pnpm exec tsx scripts/test-tenant-staff-auth.ts

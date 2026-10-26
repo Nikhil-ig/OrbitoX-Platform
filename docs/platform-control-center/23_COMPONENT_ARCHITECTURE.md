@@ -9,9 +9,9 @@
 To eliminate arbitrary one-off CSS and inline style inconsistencies, the following components constitute the standard library:
 
 ### 1.1. Layout & Shell
-- [`PlatformShell`](file:///Users/apple/Documents/Office/company/Orbito/OrbitoX%20Platform/orbitox/apps/web/app/platform/components/PlatformShell.tsx): Root layout wrapper containing sidebar, topbar, inspector drawer, and command palette.
-- [`PlatformSidebar`](file:///Users/apple/Documents/Office/company/Orbito/OrbitoX%20Platform/orbitox/apps/web/app/platform/components/PlatformSidebar.tsx): Compact, hierarchical navigation rail with collapsible sections and clean SVG icons.
-- [`PlatformTopbar`](file:///Users/apple/Documents/Office/company/Orbito/OrbitoX%20Platform/orbitox/apps/web/app/platform/components/PlatformTopbar.tsx): Restrained header with breadcrumb navigation, search bar (⌘K), environment switcher, and notifications.
+- [`PlatformShell`](../../orbitox/apps/web/app/platform/components/PlatformContext.tsx): Root layout wrapper containing sidebar, topbar, inspector drawer, and command palette.
+- [`PlatformSidebar`](../../orbitox/apps/web/app/platform/components/PlatformSidebar.tsx): Compact, hierarchical navigation rail with collapsible sections and clean SVG icons.
+- [`PlatformTopbar`](../../orbitox/apps/web/app/platform/components/GlobalPlatformBar.tsx): Restrained header with breadcrumb navigation, search bar (⌘K), environment switcher, and notifications.
 
 ### 1.2. Interactive Primitives
 - `MetricStrip`: Horizontal metrics bar with typography-driven numbers and subtle labels.

@@ -53,13 +53,13 @@ Following the initial audit pass of the OrbitoX repository and its existing admi
 
 ### 2.6. Elimination of Duplicate Audit Systems
 - **Correction**: The proposed `PlatformAuditEvent` model is dropped as an independent ledger.
-- The platform reuses the existing `@orbitox/core` [`AuditService`](file:///Users/apple/Documents/Office/company/Orbito/OrbitoX%20Platform/orbitox/packages/core/src/audit/audit.service.ts).
+- The platform reuses the existing `@orbitox/core` [`AuditService`](../../orbitox/packages/core/src/audit/audit.service.ts).
 - All administrative mutations pipe into `AuditService.log()`, maintaining the SHA-256 cryptographic hash-chain (`previousHash` -> `rowHash`).
 - The Control Center exposes a **read/projection interface** and live chain verification tool (`verifyChain()`) over the existing authoritative ledger.
 
 ### 2.7. Elimination of Duplicate Approval Engines
 - **Correction**: The Control Center does not implement an ad-hoc approval database.
-- It builds an API and UI façade directly over the existing `@orbitox/core` [`ApprovalEngine`](file:///Users/apple/Documents/Office/company/Orbito/OrbitoX%20Platform/orbitox/packages/core/src/approval/approval-engine.ts), enforcing multi-stage four-eyes authorization for high-risk operations.
+- It builds an API and UI façade directly over the existing `@orbitox/core` [`ApprovalEngine`](../../orbitox/packages/core/src/approval/approval-engine.ts), enforcing multi-stage four-eyes authorization for high-risk operations.
 
 ### 2.8. Remediation of Tenant ID Client-Spoofing Vulnerability
 - **Correction**: Client-provided query parameters (`?tenantId=`) or unverified headers (`x-tenant-id`) are **strictly prohibited** from determining security context.

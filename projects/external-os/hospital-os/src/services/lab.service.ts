@@ -1,5 +1,5 @@
 import { orbitox } from '@orbitox/runtime';
-import { LabOrderEntity } from '../domain/types';
+import { LabOrderEntity, LabTestType } from '../domain/types';
 
 export interface LabReferenceRange {
   testType: string;
@@ -69,7 +69,7 @@ export class LabService {
     const order = await orbitox.db.create<LabOrderEntity>('lab_order', {
       patientId: params.patientId,
       orderedByDoctorId: params.doctorId,
-      testType: params.testType,
+      testType: params.testType as LabTestType,
       priority: params.priority || 'routine',
       status: 'ordered',
       isCriticalValue: false,

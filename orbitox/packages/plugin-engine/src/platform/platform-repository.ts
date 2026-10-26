@@ -1,4 +1,6 @@
 import * as crypto from 'crypto';
+import * as fs from 'fs';
+import * as path from 'path';
 import {
   PlatformOrganization,
   PlatformProject,
@@ -54,6 +56,20 @@ export interface CreateCredentialInput {
   rotationIntervalDays?: number;
 }
 
+export interface PlatformRepositoryStoreData {
+  organizations: PlatformOrganization[];
+  projects: PlatformProject[];
+  environments: ProjectEnvironment[];
+  apiKeys: PlatformApiKeyRecord[];
+  credentials: PlatformCredentialRecord[];
+  packages: PlatformPackageCatalogItem[];
+  packageVersions: PackageVersionRecord[];
+  packageInstallations: PackageInstallationRecord[];
+  domains: ProjectDomainRecord[];
+  quotaPolicies: EnvironmentQuotaPolicyRecord[];
+  rateLimitPolicies: EnvironmentRateLimitPolicyRecord[];
+}
+
 export class PlatformRepository {
   private static organizations: PlatformOrganization[] = [];
   private static projects: PlatformProject[] = [];
@@ -68,11 +84,179 @@ export class PlatformRepository {
   private static rateLimitPolicies: EnvironmentRateLimitPolicyRecord[] = [];
 
   private static initialized = false;
+  private static persistenceEnabled = true;
+  private static dataDir: string | null = null;
+  private static filePath: string | null = null;
+  private static saveTimeout: NodeJS.Timeout | null = null;
+
+  public static setPersistenceEnabled(enabled: boolean): void {
+    this.persistenceEnabled = enabled;
+  }
+
+  public static setDataDir(dir: string): void {
+    if (!dir) {
+      this.dataDir = null;
+      this.filePath = null;
+      return;
+    }
+    this.dataDir = dir;
+    this.filePath = path.join(dir, 'platform-repository-store.json');
+    if (this.initialized) {
+      this.reloadFromDisk();
+    }
+  }
+
+  public static getFilePath(): string {
+    this.resolveDataPaths();
+    return this.filePath!;
+  }
+
+  private static resolveDataPaths(): void {
+    if (this.filePath) return;
+
+    const candidates = [
+      process.env.ORBITOX_DATA_DIR?.trim(),
+      path.resolve(process.cwd(), 'orbitox/data'),
+      path.resolve(process.cwd(), 'data'),
+      path.resolve(process.cwd(), '../../data'),
+      path.resolve(__dirname, '../../../../data'),
+    ].filter(Boolean) as string[];
+
+    let resolvedDir: string = candidates[0] || path.resolve(process.cwd(), 'data');
+    for (const cand of candidates) {
+      if (fs.existsSync(cand) || cand.includes('data')) {
+        resolvedDir = cand;
+        break;
+      }
+    }
+
+    if (!fs.existsSync(resolvedDir)) {
+      try {
+        fs.mkdirSync(resolvedDir, { recursive: true });
+      } catch {
+        resolvedDir = path.resolve(process.cwd(), '.orbitox_state');
+        if (!fs.existsSync(resolvedDir)) fs.mkdirSync(resolvedDir, { recursive: true });
+      }
+    }
+
+    this.dataDir = resolvedDir;
+    this.filePath = path.join(resolvedDir, 'platform-repository-store.json');
+  }
 
   public static initialize(): void {
     if (this.initialized) return;
     this.initialized = true;
+
+    this.resolveDataPaths();
+
+    if (this.persistenceEnabled && this.filePath && fs.existsSync(this.filePath)) {
+      try {
+        const raw = fs.readFileSync(this.filePath, 'utf-8');
+        const parsed: PlatformRepositoryStoreData = JSON.parse(raw);
+        if (parsed && Array.isArray(parsed.organizations) && parsed.organizations.length > 0) {
+          this.organizations = parsed.organizations || [];
+          this.projects = parsed.projects || [];
+          this.environments = parsed.environments || [];
+          this.apiKeys = parsed.apiKeys || [];
+          this.credentials = parsed.credentials || [];
+          this.packages = parsed.packages || [];
+          this.packageVersions = parsed.packageVersions || [];
+          this.packageInstallations = parsed.packageInstallations || [];
+          this.domains = parsed.domains || [];
+          this.quotaPolicies = parsed.quotaPolicies || [];
+          this.rateLimitPolicies = parsed.rateLimitPolicies || [];
+          return;
+        }
+      } catch (err) {
+        console.error('[PlatformRepository] Error reading persistent store, re-seeding defaults:', err);
+      }
+    }
+
     this.seedDefaults();
+    if (this.persistenceEnabled) {
+      this.saveImmediate();
+    }
+  }
+
+  public static reloadFromDisk(): void {
+    this.resolveDataPaths();
+    if (this.filePath && fs.existsSync(this.filePath)) {
+      try {
+        const raw = fs.readFileSync(this.filePath, 'utf-8');
+        const parsed: PlatformRepositoryStoreData = JSON.parse(raw);
+        this.organizations = parsed.organizations || [];
+        this.projects = parsed.projects || [];
+        this.environments = parsed.environments || [];
+        this.apiKeys = parsed.apiKeys || [];
+        this.credentials = parsed.credentials || [];
+        this.packages = parsed.packages || [];
+        this.packageVersions = parsed.packageVersions || [];
+        this.packageInstallations = parsed.packageInstallations || [];
+        this.domains = parsed.domains || [];
+        this.quotaPolicies = parsed.quotaPolicies || [];
+        this.rateLimitPolicies = parsed.rateLimitPolicies || [];
+      } catch (err) {
+        console.error('[PlatformRepository] Failed to reload store from disk:', err);
+      }
+    }
+  }
+
+  public static saveDebounced(): void {
+    if (!this.persistenceEnabled) return;
+    if (this.saveTimeout) clearTimeout(this.saveTimeout);
+    this.saveTimeout = setTimeout(() => {
+      this.saveImmediate();
+    }, 150);
+  }
+
+  public static saveImmediate(): void {
+    if (!this.persistenceEnabled) return;
+    this.resolveDataPaths();
+    if (!this.filePath) return;
+
+    try {
+      const dir = path.dirname(this.filePath);
+      if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+
+      const payload: PlatformRepositoryStoreData = {
+        organizations: this.organizations,
+        projects: this.projects,
+        environments: this.environments,
+        apiKeys: this.apiKeys,
+        credentials: this.credentials,
+        packages: this.packages,
+        packageVersions: this.packageVersions,
+        packageInstallations: this.packageInstallations,
+        domains: this.domains,
+        quotaPolicies: this.quotaPolicies,
+        rateLimitPolicies: this.rateLimitPolicies,
+      };
+
+      const tempPath = `${this.filePath}.tmp.${Date.now()}`;
+      fs.writeFileSync(tempPath, JSON.stringify(payload, null, 2), 'utf-8');
+      fs.renameSync(tempPath, this.filePath);
+    } catch (err) {
+      console.error('[PlatformRepository] Failed to write persistent store to disk:', err);
+    }
+  }
+
+  public static resetForTesting(): void {
+    if (this.saveTimeout) {
+      clearTimeout(this.saveTimeout);
+      this.saveTimeout = null;
+    }
+    this.organizations = [];
+    this.projects = [];
+    this.environments = [];
+    this.apiKeys = [];
+    this.credentials = [];
+    this.packages = [];
+    this.packageVersions = [];
+    this.packageInstallations = [];
+    this.domains = [];
+    this.quotaPolicies = [];
+    this.rateLimitPolicies = [];
+    this.initialized = false;
   }
 
   // ─────────────────────────────────────────────────────────────
@@ -102,7 +286,23 @@ export class PlatformRepository {
       updatedAt: new Date().toISOString(),
     };
     this.organizations.push(org);
+    this.saveDebounced();
     return org;
+  }
+
+  static updateOrganization(idOrSlug: string, updates: Partial<PlatformOrganization>): PlatformOrganization | undefined {
+    this.initialize();
+    const idx = this.organizations.findIndex((o) => o.id === idOrSlug || o.slug === idOrSlug);
+    if (idx !== -1) {
+      this.organizations[idx] = {
+        ...this.organizations[idx]!,
+        ...updates,
+        updatedAt: new Date().toISOString(),
+      };
+      this.saveDebounced();
+      return this.organizations[idx];
+    }
+    return undefined;
   }
 
   // ─────────────────────────────────────────────────────────────
@@ -223,6 +423,7 @@ export class PlatformRepository {
       }
     }
 
+    this.saveDebounced();
     return { project, environments: [prodEnv, stgEnv, devEnv] };
   }
 
@@ -231,9 +432,21 @@ export class PlatformRepository {
     const idx = this.projects.findIndex((p) => p.id === projectId || p.slug === projectId);
     if (idx !== -1) {
       this.projects[idx] = { ...this.projects[idx]!, ...updates, updatedAt: new Date().toISOString() };
+      this.saveDebounced();
       return this.projects[idx];
     }
     return undefined;
+  }
+
+  static deleteProject(projectId: string): boolean {
+    this.initialize();
+    const initialLen = this.projects.length;
+    this.projects = this.projects.filter((p) => p.id !== projectId && p.slug !== projectId);
+    if (this.projects.length !== initialLen) {
+      this.saveDebounced();
+      return true;
+    }
+    return false;
   }
 
   static listEnvironments(projectId?: string): ProjectEnvironment[] {
@@ -363,6 +576,7 @@ export class PlatformRepository {
     };
 
     this.apiKeys.push(keyRecord);
+    this.saveDebounced();
 
     return { keyRecord, rawSecret: generated.rawSecret };
   }
@@ -399,6 +613,7 @@ export class PlatformRepository {
         this.apiKeys[oldIdx]!.status = 'SUSPENDED';
       }
       this.apiKeys[oldIdx]!.revokeReason = `Rotated in favor of replacement key [${created.keyRecord.keyId}]`;
+      this.saveDebounced();
     }
 
     return { replacementKey: created.keyRecord, replacementRawSecret: created.rawSecret };
@@ -412,6 +627,7 @@ export class PlatformRepository {
       if (reason) this.apiKeys[idx]!.revokeReason = reason;
       if (status === 'COMPROMISED') this.apiKeys[idx]!.compromisedAt = new Date().toISOString();
       if (status === 'REVOKED') this.apiKeys[idx]!.revokedAt = new Date().toISOString();
+      this.saveDebounced();
       return this.apiKeys[idx];
     }
     return undefined;
@@ -425,6 +641,7 @@ export class PlatformRepository {
       if (clientIp) {
         this.apiKeys[idx]!.lastUsedIp = clientIp;
       }
+      this.saveDebounced();
     }
   }
 
@@ -473,6 +690,7 @@ export class PlatformRepository {
     };
 
     this.credentials.push(cred);
+    this.saveDebounced();
     return cred;
   }
 
@@ -538,6 +756,7 @@ export class PlatformRepository {
       this.packageInstallations.push(record);
     }
 
+    this.saveDebounced();
     return record;
   }
 
@@ -569,7 +788,19 @@ export class PlatformRepository {
       verifiedAt: new Date().toISOString(),
     };
     this.domains.push(domain);
+    this.saveDebounced();
     return domain;
+  }
+
+  static removeDomain(idOrDomainName: string): boolean {
+    this.initialize();
+    const initialLen = this.domains.length;
+    this.domains = this.domains.filter((d) => d.id !== idOrDomainName && d.domainName !== idOrDomainName.toLowerCase());
+    if (this.domains.length !== initialLen) {
+      this.saveDebounced();
+      return true;
+    }
+    return false;
   }
 
   // ─────────────────────────────────────────────────────────────
@@ -581,12 +812,28 @@ export class PlatformRepository {
     return this.quotaPolicies.find((q) => q.environmentId === environmentId);
   }
 
+  static updateQuotaPolicy(environmentId: string, updates: Partial<EnvironmentQuotaPolicyRecord>): EnvironmentQuotaPolicyRecord | undefined {
+    this.initialize();
+    const idx = this.quotaPolicies.findIndex((q) => q.environmentId === environmentId);
+    if (idx !== -1) {
+      this.quotaPolicies[idx] = {
+        ...this.quotaPolicies[idx]!,
+        ...updates,
+        updatedAt: new Date().toISOString(),
+      };
+      this.saveDebounced();
+      return this.quotaPolicies[idx];
+    }
+    return undefined;
+  }
+
   static recordCall(environmentId: string): void {
     this.initialize();
     const q = this.quotaPolicies.find((pol) => pol.environmentId === environmentId);
     if (q) {
       q.monthlyCallsUsed += 1;
       q.updatedAt = new Date().toISOString();
+      this.saveDebounced();
     }
   }
 
@@ -737,7 +984,7 @@ export class PlatformRepository {
         provider: 'stripe',
         environmentId: omniProd.id,
         projectId: omni.project.id,
-        plaintextSecret: 'sk_test_51M08729OmniDeliverProductionStripeKeyToken94812',
+        plaintextSecret: 'sandbox_omni_stripe_mock_token_94812',
         ownerEmail: 'finance@omnideliver.global',
       });
     }

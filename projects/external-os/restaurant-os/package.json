@@ -4,8 +4,13 @@
   "description": "OrbitoX RestaurantOS Independent Runtime Product",
   "main": "src/server.ts",
   "scripts": {
-    "dev": "npx -y tsx src/server.ts",
-    "start": "npx -y tsx src/server.ts"
+    "dev": "tsx src/server.ts",
+    "start": "tsx src/server.ts",
+    "test": "tsx scripts/test-event-bus-tenants.ts && node scripts/test-milestone2-core.js",
+    "test:isolation": "tsx scripts/test-event-bus-tenants.ts",
+    "test:core": "node scripts/test-milestone2-core.js",
+    "test:all": "tsx scripts/test-event-bus-tenants.ts && node scripts/test-milestone2-core.js",
+    "type-check": "tsc --noEmit"
   },
   "devDependencies": {
     "@types/node": "^20.0.0",

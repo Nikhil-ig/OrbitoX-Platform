@@ -469,6 +469,7 @@ export class HospitalOSClient {
     doctorId: string;
     testType: string;
     priority?: 'routine' | 'urgent' | 'stat';
+    clinicalNotes?: string;
   }): Promise<LabOrderEntity> {
     const res = await fetch(`${this.baseUrl}/labs`, {
       method: 'POST',
@@ -516,24 +517,6 @@ export class HospitalOSClient {
     return data.data || [];
   }
 
-  /**
-   * Order a pathology / diagnostic laboratory test
-   */
-  async orderLabTest(params: {
-    patientId: string;
-    doctorId: string;
-    testType: string;
-    priority?: 'routine' | 'urgent' | 'stat';
-  }): Promise<LabOrderEntity> {
-    const res = await fetch(`${this.baseUrl}/labs`, {
-      method: 'POST',
-      headers: this.headers,
-      body: JSON.stringify(params)
-    });
-    const data = await res.json();
-    if (!data.success) throw new Error(data.error || 'Failed to order lab test');
-    return data.order;
-  }
 
   /**
    * Submit / report diagnostic lab findings & evaluate critical alerts

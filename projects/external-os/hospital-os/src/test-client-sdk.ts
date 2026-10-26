@@ -112,7 +112,7 @@ async function testHospitalOSClientSDK() {
   });
   console.log(`   ✅ Lab Findings Recorded: Status ${completedLab.status}, Critical: ${completedLab.isCriticalValue}, Flag: ${completedLab.flag}`);
 
-  const patientLabs = await client.getLabOrders(testPatient.id);
+  const patientLabs = await client.getLabOrders({ patientId: testPatient.id });
   console.log(`   ✅ Patient Diagnostic Orders Count: ${patientLabs.length}`);
 
   // 10. Financial Billing & Inpatient Revenue Settlement

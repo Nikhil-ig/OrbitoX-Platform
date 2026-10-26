@@ -122,11 +122,13 @@ const runtimeController = restaurantControlBridge;
 const razorpayAdapter = new RazorpayPaymentGatewayAdapter();
 
 let postgresStore: PostgresRestaurantStore | null = null;
-try {
-  postgresStore = new PostgresRestaurantStore();
-  (globalThis as any).__restaurantos_prisma = postgresStore.prisma;
-} catch (err: any) {
-  console.warn('[Storage] PostgresRestaurantStore deferred:', err.message);
+if (process.env.STORAGE_DRIVER !== 'json' && process.env.DATABASE_URL) {
+  try {
+    postgresStore = new PostgresRestaurantStore();
+    (globalThis as any).__restaurantos_prisma = postgresStore.prisma;
+  } catch (err: any) {
+    console.warn('[Storage] PostgresRestaurantStore deferred:', err.message);
+  }
 }
 
 const provisioningService = new TenantProvisioningService(postgresStore ? postgresStore.prisma : undefined);
@@ -752,7 +754,7 @@ export async function handleRequest(req: http.IncomingMessage, res: http.ServerR
   }
 
   // Liveness and basic health probes
-  if (pathname === '/health' || pathname === '/healthz') {
+  if (pathname === '/health' || pathname === '/healthz' || pathname === '/healthz/live' || pathname === '/live') {
     sendJson(res, 200, {
       status: 'healthy',
       service: 'restaurant-os',

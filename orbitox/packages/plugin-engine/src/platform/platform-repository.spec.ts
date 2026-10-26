@@ -1,9 +1,27 @@
+import * as fs from 'fs';
+import * as path from 'path';
+import * as os from 'os';
 import { PlatformRepository } from './platform-repository';
 import { PlatformKeyEngine } from '../security/platform-key-engine';
 
 describe('PlatformRepository (Normalized Domain Access & Cryptographic Binding)', () => {
+  let suiteTempDir: string;
+
   beforeAll(() => {
+    suiteTempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'orbitox-repo-suite-'));
+    PlatformRepository.setDataDir(suiteTempDir);
+    PlatformRepository.setPersistenceEnabled(true);
     PlatformRepository.initialize();
+  });
+
+  afterAll(() => {
+    PlatformRepository.resetForTesting();
+    PlatformRepository.setDataDir('');
+    try {
+      fs.rmSync(suiteTempDir, { recursive: true, force: true });
+    } catch {
+      // ignore cleanup
+    }
   });
 
   describe('Organization & Project Hierarchy', () => {
@@ -147,6 +165,144 @@ describe('PlatformRepository (Normalized Domain Access & Cryptographic Binding)'
       PlatformRepository.recordCall(env.id);
       const updatedQuota = PlatformRepository.getQuotaPolicy(env.id);
       expect(updatedQuota?.monthlyCallsUsed).toBe(initialCalls + 1);
+    });
+  });
+
+  describe('Durable File Persistence & Restart Survivability (P0.1)', () => {
+    let tempDir: string;
+
+    beforeAll(() => {
+      tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'orbitox-repo-test-'));
+      PlatformRepository.setDataDir(tempDir);
+      PlatformRepository.setPersistenceEnabled(true);
+      PlatformRepository.initialize();
+    });
+
+    afterAll(() => {
+      PlatformRepository.setDataDir(suiteTempDir);
+      try {
+        fs.rmSync(tempDir, { recursive: true, force: true });
+      } catch {
+        // ignore cleanup error
+      }
+    });
+
+    it('should durably persist projects, credentials, domains, and quotas to disk and reload on restart', () => {
+      // 1. Provision a durable test organization
+      const testOrg = PlatformRepository.createOrganization({
+        name: 'Durable Enterprise Corp',
+        slug: 'durable-corp',
+        billingTier: 'ENTERPRISE',
+        ownerEmail: 'founder@durable.io',
+      });
+      expect(testOrg.id).toBeDefined();
+
+      // 2. Provision a durable project with environments
+      const { project, environments } = PlatformRepository.createProject({
+        name: 'Durable POS Fleet',
+        slug: 'durable-pos-fleet',
+        organizationId: testOrg.id,
+        businessModel: 'HOSPITALITY_POS',
+        planTier: 'enterprise',
+        technicalLead: 'Lead Architect',
+        contactEmail: 'pos@durable.io',
+        initialPackages: ['@orbitox/pos'],
+      });
+      expect(project.id).toBeDefined();
+      const prodEnv = environments.find((e) => e.isProduction)!;
+
+      // 3. Issue an API key
+      const { keyRecord, rawSecret } = PlatformRepository.createApiKey({
+        name: 'Durable Terminal Key',
+        environmentId: prodEnv.id,
+        projectId: project.id,
+        capabilities: ['pos.orders.write', 'pos.orders.read'],
+        createdBy: 'admin@durable.io',
+      });
+      expect(rawSecret).toBeDefined();
+
+      // 4. Store an envelope credential
+      const cred = PlatformRepository.createCredential({
+        name: 'Durable Payment Gateway',
+        provider: 'stripe',
+        environmentId: prodEnv.id,
+        projectId: project.id,
+        plaintextSecret: 'sk_live_durable_token_xyz987',
+        ownerEmail: 'finance@durable.io',
+      });
+      expect(cred.id).toBeDefined();
+
+      // 5. Register a custom domain
+      const domain = PlatformRepository.registerDomain({
+        environmentId: prodEnv.id,
+        domainName: 'terminal.durable.io',
+      });
+      expect(domain.domainName).toBe('terminal.durable.io');
+
+      // 6. Update quota policy
+      const initialQuota = PlatformRepository.getQuotaPolicy(prodEnv.id);
+      expect(initialQuota).toBeDefined();
+      PlatformRepository.recordCall(prodEnv.id);
+      PlatformRepository.updateQuotaPolicy(prodEnv.id, { monthlyCallsLimit: 500000 });
+
+      // 7. Flush immediately to disk
+      PlatformRepository.saveImmediate();
+
+      const storeFilePath = PlatformRepository.getFilePath();
+      expect(fs.existsSync(storeFilePath)).toBe(true);
+      const fileRaw = fs.readFileSync(storeFilePath, 'utf-8');
+      const storeJson = JSON.parse(fileRaw);
+      expect(storeJson.projects.some((p: any) => p.id === project.id)).toBe(true);
+
+      // 8. Simulate process restart by resetting in-memory state
+      PlatformRepository.resetForTesting();
+
+      // 9. Re-initialize from persisted store on disk
+      PlatformRepository.initialize();
+
+      // 10. Verify everything was recovered faithfully
+      const reloadedProject = PlatformRepository.getProject(project.id);
+      expect(reloadedProject).toBeDefined();
+      expect(reloadedProject?.name).toBe('Durable POS Fleet');
+
+      const reloadedOrg = PlatformRepository.getOrganization(testOrg.id);
+      expect(reloadedOrg).toBeDefined();
+      expect(reloadedOrg?.slug).toBe('durable-corp');
+
+      const reloadedKey = PlatformRepository.getApiKey(keyRecord.keyId);
+      expect(reloadedKey).toBeDefined();
+      expect(reloadedKey?.authVerifier).toBe(keyRecord.authVerifier);
+      expect(reloadedKey?.capabilities).toContain('pos.orders.write');
+
+      // Verify that findKeyByRawSecret still works with cryptographic constant-time comparison
+      const validatedKey = PlatformRepository.findKeyByRawSecret(rawSecret);
+      expect(validatedKey).toBeDefined();
+      expect(validatedKey?.keyId).toBe(keyRecord.keyId);
+
+      // Verify credential envelope decryption survives restart
+      const decryptedSecret = PlatformRepository.decryptCredential(cred.id);
+      expect(decryptedSecret).toBe('sk_live_durable_token_xyz987');
+
+      // Verify custom domain and quotas survived
+      const reloadedDomains = PlatformRepository.listDomains(prodEnv.id);
+      expect(reloadedDomains.some((d) => d.domainName === 'terminal.durable.io')).toBe(true);
+
+      const reloadedQuota = PlatformRepository.getQuotaPolicy(prodEnv.id);
+      expect(reloadedQuota?.monthlyCallsLimit).toBe(500000);
+      expect(reloadedQuota?.monthlyCallsUsed).toBeGreaterThanOrEqual(1);
+
+      // 11. Test mutation durability: update organization and delete project
+      PlatformRepository.updateOrganization(testOrg.id, { name: 'Durable Enterprise Corp (Updated)' });
+      PlatformRepository.deleteProject(project.id);
+      PlatformRepository.removeDomain('terminal.durable.io');
+      PlatformRepository.saveImmediate();
+
+      PlatformRepository.resetForTesting();
+      PlatformRepository.initialize();
+
+      expect(PlatformRepository.getProject(project.id)).toBeUndefined();
+      expect(PlatformRepository.getOrganization(testOrg.id)?.name).toBe('Durable Enterprise Corp (Updated)');
+      expect(PlatformRepository.listDomains(prodEnv.id).some((d) => d.domainName === 'terminal.durable.io')).toBe(false);
     });
   });
 });

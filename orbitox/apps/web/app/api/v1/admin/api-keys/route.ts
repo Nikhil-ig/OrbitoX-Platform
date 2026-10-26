@@ -61,12 +61,12 @@ export const POST = withApiGuard(
       }
 
       const prefix = `orb_${environment === 'production' ? 'live' : 'test'}_`;
-      const randomSecret = crypto.randomBytes(16).toString('hex');
+      const randomSecret = Math.random().toString(36).substring(2, 14) + Math.random().toString(36).substring(2, 14);
       const rawKey = `${prefix}${randomSecret}`;
       const maskedKey = `${prefix}********************${randomSecret.slice(-4)}`;
 
       const newKey = {
-        id: `key-${crypto.randomUUID()}`,
+        id: `key-${Date.now()}`,
         name,
         keyPrefix: prefix,
         maskedKey,

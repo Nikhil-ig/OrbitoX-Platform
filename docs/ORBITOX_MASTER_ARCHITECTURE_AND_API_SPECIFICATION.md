@@ -606,7 +606,7 @@ To guarantee that runtime plugins and extensions cannot alter core platform inte
 
 ### 6.1 Cryptographic Merkle Hash-Chained Audit Ledger
 
-Every administrative mutation within OrbitoX is recorded in an immutable, append-only cryptographic ledger powered by `@orbitox/core` [`AuditService`](file:///Users/apple/Documents/Office/company/Orbito/OrbitoX%20Platform/orbitox/packages/core/src/audit/audit.service.ts).
+Every administrative mutation within OrbitoX is recorded in an immutable, append-only cryptographic ledger powered by `@orbitox/core` [`AuditService`](../orbitox/packages/core/src/audit/audit.service.ts).
 
 ```
 Row N-1 Ledger Record:
@@ -725,7 +725,7 @@ If an API client exceeds the allocated rate:
 
 ### 7.4 Billing Quotes Lifecycle (Draft to Provisioned)
 
-The `@orbitox/core` [`QuoteService`](file:///Users/apple/Documents/Office/company/Orbito/OrbitoX%20Platform/orbitox/packages/core/src/billing/quote.service.ts) governs enterprise client sales agreements:
+The `@orbitox/core` [`QuoteService`](../orbitox/packages/core/src/billing/quote.service.ts) governs enterprise client sales agreements:
 
 ```mermaid
 stateDiagram-v2
