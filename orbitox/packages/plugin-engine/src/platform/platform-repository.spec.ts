@@ -437,6 +437,17 @@ describe('PlatformRepository (Normalized Domain Access & Cryptographic Binding)'
       const backupPath = `${filePath}.bak`;
 
       try {
+        const deadWriter = spawnSync(process.execPath, ['-e', 'process.exit(0)']);
+        const staleTempFiles = [
+          `${filePath}.tmp.${deadWriter.pid}.dead`,
+          `${backupPath}.tmp.${deadWriter.pid}.dead`,
+        ];
+        staleTempFiles.forEach((tempFile) => fs.writeFileSync(tempFile, 'incomplete', 'utf8'));
+        PlatformRepository.resetForTesting();
+        PlatformRepository.setDataDir(recoveryDataDir);
+        PlatformRepository.initialize();
+        expect(staleTempFiles.every((tempFile) => !fs.existsSync(tempFile))).toBe(true);
+
         PlatformRepository.updateProject(project.id, { status: 'SUSPENDED' });
         expect(fs.existsSync(backupPath)).toBe(true);
         fs.writeFileSync(filePath, '{corrupt', 'utf8');
@@ -461,6 +472,27 @@ describe('PlatformRepository (Normalized Domain Access & Cryptographic Binding)'
         PlatformRepository.setDataDir(suiteTempDir);
         PlatformRepository.initialize();
         fs.rmSync(recoveryDataDir, { recursive: true, force: true });
+      }
+    });
+
+    it('reports persistence unhealthy when both store copies disappear after initialization', () => {
+      const unavailableDataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'orbitox-live-store-loss-'));
+      PlatformRepository.resetForTesting();
+      PlatformRepository.setDataDir(unavailableDataDir);
+      PlatformRepository.initialize();
+      const project = PlatformRepository.listProjects()[0]!;
+      PlatformRepository.updateProject(project.id, { status: 'SUSPENDED' });
+      const storePath = PlatformRepository.getFilePath();
+
+      try {
+        fs.unlinkSync(storePath);
+        fs.unlinkSync(`${storePath}.bak`);
+        expect(() => PlatformRepository.assertPersistenceHealthy()).toThrow(/No valid persistent store/);
+      } finally {
+        PlatformRepository.resetForTesting();
+        PlatformRepository.setDataDir(suiteTempDir);
+        PlatformRepository.initialize();
+        fs.rmSync(unavailableDataDir, { recursive: true, force: true });
       }
     });
   });
@@ -516,13 +548,16 @@ describe('PlatformRepository (Normalized Domain Access & Cryptographic Binding)'
 
     beforeAll(() => {
       tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'orbitox-repo-test-'));
+      PlatformRepository.resetForTesting();
       PlatformRepository.setDataDir(tempDir);
       PlatformRepository.setPersistenceEnabled(true);
       PlatformRepository.initialize();
     });
 
     afterAll(() => {
+      PlatformRepository.resetForTesting();
       PlatformRepository.setDataDir(suiteTempDir);
+      PlatformRepository.initialize();
       try {
         fs.rmSync(tempDir, { recursive: true, force: true });
       } catch {

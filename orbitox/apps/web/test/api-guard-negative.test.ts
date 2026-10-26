@@ -684,8 +684,8 @@ describe('Phase 1 & 1.5 Security, Unified Auth & Licensed Customer Test Suite', 
     const originalDataDir = path.dirname(PlatformRepository.getFilePath());
     const testDataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'orbitox-provisioning-'));
     PlatformRepository.saveImmediate();
-    PlatformRepository.setDataDir(testDataDir);
     PlatformRepository.resetForTesting();
+    PlatformRepository.setDataDir(testDataDir);
     PlatformRepository.initialize();
 
     const response = await provisionProject(new NextRequest('http://localhost:3000/api/v1/admin/projects', {

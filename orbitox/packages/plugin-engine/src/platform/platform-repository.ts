@@ -192,6 +192,7 @@ export class PlatformRepository {
   private static loadPersistedStore(): boolean {
     this.resolveDataPaths();
     const filePath = this.filePath!;
+    this.cleanupStaleTempFiles(filePath);
     const backupPath = `${filePath}.bak`;
     const initializedPath = `${filePath}.initialized`;
 
@@ -229,6 +230,38 @@ export class PlatformRepository {
     }
 
     return false;
+  }
+
+  private static cleanupStaleTempFiles(filePath: string): void {
+    const dir = path.dirname(filePath);
+    const primaryPrefix = `${path.basename(filePath)}.tmp.`;
+    const backupPrefix = `${path.basename(filePath)}.bak.tmp.`;
+
+    for (const name of fs.readdirSync(dir)) {
+      const prefix = name.startsWith(primaryPrefix) ? primaryPrefix : name.startsWith(backupPrefix) ? backupPrefix : null;
+      if (!prefix) continue;
+      const pid = Number(name.slice(prefix.length).split('.')[0]);
+      if (!Number.isSafeInteger(pid) || pid <= 0) continue;
+
+      let stale = pid > 0x7fffffff;
+      if (!stale) {
+        try {
+          process.kill(pid, 0);
+        } catch (error) {
+          stale = (error as NodeJS.ErrnoException).code === 'ESRCH';
+        }
+      }
+
+      if (stale) {
+        try {
+          fs.unlinkSync(path.join(dir, name));
+        } catch (error) {
+          if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
+            console.error(`[PlatformRepository] Failed to remove stale temporary file ${path.join(dir, name)}:`, error);
+          }
+        }
+      }
+    }
   }
 
   private static parseStoreData(raw: string): PlatformRepositoryStoreData {
@@ -285,6 +318,24 @@ export class PlatformRepository {
     this.resolveDataPaths();
     if (!this.loadPersistedStore()) throw new Error('[PlatformRepository] Persistent store is missing. Startup aborted.');
     this.repairDuplicateProjectSlugs();
+  }
+
+  public static assertPersistenceHealthy(): void {
+    this.initialize();
+    if (!this.persistenceEnabled) return;
+    this.resolveDataPaths();
+
+    const candidates = [this.filePath!, `${this.filePath}.bak`];
+    for (const candidate of candidates) {
+      try {
+        this.parseStoreData(fs.readFileSync(candidate, 'utf-8'));
+        return;
+      } catch {
+        continue;
+      }
+    }
+
+    throw new Error('[PlatformRepository] No valid persistent store or previous good copy is available.');
   }
 
   private static repairDuplicateProjectSlugs(): void {
