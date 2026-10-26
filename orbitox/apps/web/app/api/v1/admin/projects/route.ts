@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import * as crypto from 'crypto';
-import { withApiGuard, PlatformApiState } from '../../_lib/api-guard';
+import { withApiGuard, PlatformApiState, PlatformKeyEngine } from '../../_lib/api-guard';
 import { ClientProject, PLAN_TIER_PRESETS } from '@/app/admin/data/mock-data';
 
 export const GET = withApiGuard(
@@ -25,9 +25,9 @@ export const GET = withApiGuard(
     }
 
     // Compute aggregated platform stats
-    const totalCalls = projects.reduce((sum, p) => sum + p.monthlyApiCalls, 0);
-    const totalQuota = projects.reduce((sum, p) => sum + p.apiCallQuota, 0);
-    const activeProjects = projects.filter((p) => p.status === 'active').length;
+    const totalCalls = projects.reduce((sum, p) => sum + (p.monthlyApiCalls || 0), 0);
+    const totalQuota = projects.reduce((sum, p) => sum + (p.apiCallQuota || 0), 0);
+    const activeProjects = projects.filter((p) => (p.status || '').toLowerCase() === 'active').length;
     const o2oProjects = projects.filter((p) => p.businessModel === 'O2O2B2B2C').length;
 
     return NextResponse.json({
@@ -84,33 +84,6 @@ export const POST = withApiGuard(
       const preset = PLAN_TIER_PRESETS[plan] || PLAN_TIER_PRESETS.growth!;
       const projectId = `proj-${slug || Date.now()}`;
 
-      // Generate initial API key for project
-      const randomHex = crypto.randomBytes(12).toString('hex');
-      const keyPrefix = `orb_live_${slug.slice(0, 8)}_`;
-      const fullKey = `${keyPrefix}${randomHex}`;
-      const keyId = `key-${crypto.randomUUID()}`;
-
-      const newKey: any = {
-        id: keyId,
-        name: `${name} Primary Live Key`,
-        keyPrefix,
-        maskedKey: `${keyPrefix}${randomHex.slice(0, 4)}********************${randomHex.slice(-4)}`,
-        rawKey: fullKey,
-        serviceId: 'all',
-        serviceName: 'All Subscribed Packages',
-        providerId: projectId,
-        providerName: name,
-        environment: 'production',
-        scopes: ['*'],
-        createdAt: new Date().toISOString().slice(0, 10),
-        lastUsedAt: 'Never',
-        status: 'active',
-        rateLimitPerMin: customRateLimit || preset.defaultRateLimitPerMin,
-        requestsLast30Days: 0,
-      };
-
-      PlatformApiState.addApiKey(newKey);
-
       const modelLabels: Record<string, string> = {
         O2O2B2B2C: 'O2O2B2B2C (Kitchen-to-Merchant-to-Consumer)',
         B2B2C: 'B2B2C Multi-Vendor Platform',
@@ -132,8 +105,8 @@ export const POST = withApiGuard(
         planLabel: preset.name,
         status: 'active',
         customDomain: customDomain || `${slug}.orbitox.io`,
-        primaryApiKeyId: keyId,
-        primaryApiKeyPrefix: keyPrefix,
+        primaryApiKeyId: '',
+        primaryApiKeyPrefix: '',
         enabledServices,
         monthlyApiCalls: 0,
         apiCallQuota: customQuota || preset.defaultCallQuota,
@@ -148,7 +121,42 @@ export const POST = withApiGuard(
         recentLatencyMs: 12,
       };
 
-      PlatformApiState.addProject(newProject);
+      const createdProject = PlatformApiState.addProject(newProject);
+      const actualProjectId = createdProject?.id || projectId;
+
+      // Generate initial API key for project
+      const randomHex = crypto.randomBytes(12).toString('hex');
+      const keyPrefix = `orb_live_${slug.slice(0, 8)}_`;
+      const fullKey = `${keyPrefix}${randomHex}`;
+      const keyId = `key-${crypto.randomUUID()}`;
+
+      newProject.id = actualProjectId;
+      newProject.primaryApiKeyId = keyId;
+      newProject.primaryApiKeyPrefix = keyPrefix;
+
+      const newKey: any = {
+        id: keyId,
+        projectId: actualProjectId,
+        name: `${name} Primary Live Key`,
+        keyPrefix,
+        maskedKey: `${keyPrefix}${randomHex.slice(0, 4)}********************${randomHex.slice(-4)}`,
+        rawKey: fullKey,
+        authVerifier: PlatformKeyEngine.computeAuthVerifier(fullKey),
+        serviceId: 'all',
+        serviceName: 'All Subscribed Packages',
+        providerId: actualProjectId,
+        providerName: name,
+        environment: 'production',
+        scopes: ['*'],
+        tenantScope: [slug],
+        createdAt: new Date().toISOString().slice(0, 10),
+        lastUsedAt: 'Never',
+        status: 'active',
+        rateLimitPerMin: customRateLimit || preset.defaultRateLimitPerMin,
+        requestsLast30Days: 0,
+      };
+
+      PlatformApiState.addApiKey(newKey);
 
       PlatformApiState.recordTelemetry({
         tenantId: slug,

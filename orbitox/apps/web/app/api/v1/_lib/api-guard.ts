@@ -8,18 +8,24 @@ import {
 } from './api-types';
 import { isIpAllowed, resolveClientIp } from './ip-guard';
 import {
+  extractPresentedCredential,
+  verifyAdminTokenSync,
+  verifyInternalAuthTokenSync,
+} from './auth-pipeline';
+import {
   INITIAL_SERVICES,
   INITIAL_API_KEYS,
   BUSINESS_PROVIDERS,
-  INITIAL_CLIENT_PROJECTS,
-  ClientProject,
 } from '@/app/admin/data/mock-data';
 import {
   PlatformRepository,
   PlatformKeyEngine,
   hasCapability,
+  PLAN_DEFAULT_QUOTAS,
 } from '@orbitox-io/plugin-engine';
-import { PlatformApiKeyRecord } from '@orbitox/types';
+import { PlatformApiKeyRecord, PlatformProject } from '@orbitox/types';
+
+export { PlatformRepository, PlatformKeyEngine };
 
 // Ensure PlatformRepository defaults are seeded
 if (typeof PlatformRepository !== 'undefined' && typeof PlatformRepository.initialize === 'function') {
@@ -36,19 +42,32 @@ const rateLimitMap = new Map<string, RateLimitBucket>();
 // In-memory platform state store for live API changes
 export class PlatformApiState {
   private static services = [...INITIAL_SERVICES];
-  private static apiKeys = INITIAL_API_KEYS.map((k) => {
-    const { rawKey, ...rest } = k;
-    const authVerifier = rawKey ? PlatformKeyEngine.computeAuthVerifier(rawKey) : undefined;
-    const secretFingerprint = rawKey ? PlatformKeyEngine.computeFingerprint(rawKey) : undefined;
-    return {
-      ...rest,
-      authVerifier,
-      secretFingerprint,
-    };
-  });
+  private static apiKeys: any[] = [];
+  private static seeded = false;
   private static providers = { ...BUSINESS_PROVIDERS };
-  private static projects: ClientProject[] = [...INITIAL_CLIENT_PROJECTS];
   private static telemetryLogs: any[] = [];
+
+  private static ensureSeeded(): void {
+    if (this.seeded) return;
+    this.seeded = true;
+    const isProd = typeof process !== 'undefined' && process.env?.NODE_ENV === 'production';
+    if (!isProd) {
+      try {
+        this.apiKeys = INITIAL_API_KEYS.map((k: any) => {
+          const { rawKey, ...rest } = k;
+          const authVerifier = rawKey ? PlatformKeyEngine.computeAuthVerifier(rawKey) : undefined;
+          const secretFingerprint = rawKey ? PlatformKeyEngine.computeFingerprint(rawKey) : undefined;
+          return {
+            ...rest,
+            authVerifier,
+            secretFingerprint,
+          };
+        });
+      } catch {
+        // Fallback if pepper is absent in development test runs
+      }
+    }
+  }
 
   private static clusterMode: 'standalone' | 'distributed' =
     typeof process !== 'undefined' &&
@@ -117,43 +136,54 @@ export class PlatformApiState {
     };
   }
 
-  static getProjects() {
-    return this.projects;
+  static getProjects(): PlatformProject[] {
+    PlatformRepository.initialize();
+    return PlatformRepository.listProjects();
   }
 
-  static getProject(idOrSlug: string) {
-    return this.projects.find((p) => p.id === idOrSlug || p.slug === idOrSlug);
+  static getProject(idOrSlug: string): PlatformProject | undefined {
+    PlatformRepository.initialize();
+    return PlatformRepository.getProject(idOrSlug);
   }
 
-  static findProjectByApiKey(keyId: string) {
+  static findProjectByApiKey(keyId: string): PlatformProject | null {
     if (!keyId) return null;
-    return this.projects.find((p) => p.primaryApiKeyId === keyId) || null;
-  }
-
-  static addProject(project: ClientProject) {
-    this.projects = [project, ...this.projects];
-    return project;
-  }
-
-  static updateProject(projectId: string, updates: Partial<ClientProject>) {
-    const idx = this.projects.findIndex((p) => p.id === projectId || p.slug === projectId);
-    if (idx !== -1) {
-      this.projects[idx] = { ...this.projects[idx]!, ...updates };
-      return this.projects[idx];
+    PlatformRepository.initialize();
+    const key = PlatformRepository.getApiKey(keyId);
+    if (key && key.projectId) {
+      return PlatformRepository.getProject(key.projectId) || null;
+    }
+    const memKey = this.apiKeys.find((k: any) => k.id === keyId || k.keyId === keyId);
+    if (memKey) {
+      const pId = memKey.projectId || memKey.providerId;
+      if (pId) {
+        return PlatformRepository.getProject(pId) || null;
+      }
     }
     return null;
   }
 
-  static deleteProject(projectId: string) {
-    this.projects = this.projects.filter((p) => p.id !== projectId && p.slug !== projectId);
-    return true;
+  static addProject(project: any): PlatformProject {
+    PlatformRepository.initialize();
+    const res = PlatformRepository.createProject(project);
+    return res.project;
   }
 
-  static recordProjectCall(projectIdOrSlug: string) {
-    const p = this.projects.find((proj) => proj.id === projectIdOrSlug || proj.slug === projectIdOrSlug);
+  static updateProject(projectId: string, updates: Partial<PlatformProject>): PlatformProject | null {
+    PlatformRepository.initialize();
+    return PlatformRepository.updateProject(projectId, updates) || null;
+  }
+
+  static deleteProject(projectId: string): boolean {
+    PlatformRepository.initialize();
+    return PlatformRepository.deleteProject(projectId);
+  }
+
+  static recordProjectCall(projectIdOrSlug: string): PlatformProject | null {
+    PlatformRepository.initialize();
+    const p = PlatformRepository.getProject(projectIdOrSlug);
     if (p) {
-      p.monthlyApiCalls = (p.monthlyApiCalls || 0) + 1;
-      p.lastActiveAt = 'Just now';
+      PlatformRepository.incrementProjectUsage(p.id, 1);
       return p;
     }
     return null;
@@ -218,6 +248,7 @@ export class PlatformApiState {
   }
 
   static getApiKeys() {
+    this.ensureSeeded();
     return this.apiKeys.map((k: any) => {
       const { rawKey, authVerifier, ...safe } = k;
       return safe;
@@ -225,6 +256,7 @@ export class PlatformApiState {
   }
 
   static findKeyByRawSecret(incomingSecret: string) {
+    this.ensureSeeded();
     if (!incomingSecret) return null;
     return (
       this.apiKeys.find((k: any) => {
@@ -253,6 +285,13 @@ export class PlatformApiState {
   }
 
   static addApiKey(key: any) {
+    if (!key.authVerifier && (key.rawKey || key.rawSecret)) {
+      const raw = key.rawKey || key.rawSecret;
+      key.authVerifier = PlatformKeyEngine.computeAuthVerifier(raw);
+    }
+    if (!key.projectId && key.providerId) {
+      key.projectId = key.providerId;
+    }
     this.apiKeys = [key, ...this.apiKeys];
     return key;
   }
@@ -354,9 +393,11 @@ export class PlatformApiState {
   }
 
   static exportSnapshot(targetMode?: 'standalone' | 'distributed') {
+    const currentProjects = this.getProjects();
+    const currentKeys = this.getApiKeys();
     const data = {
-      projects: this.projects,
-      apiKeys: this.apiKeys,
+      projects: currentProjects,
+      apiKeys: currentKeys,
       services: this.services,
       providers: this.providers,
       telemetryLogs: this.telemetryLogs.slice(0, 50),
@@ -390,8 +431,8 @@ export class PlatformApiState {
         sourceNodeId: this.clusterNodeId,
         checksum: hash,
         stats: {
-          projectsCount: this.projects.length,
-          apiKeysCount: this.apiKeys.length,
+          projectsCount: currentProjects.length,
+          apiKeysCount: currentKeys.length,
           servicesCount: this.services.length,
           providersCount,
           telemetryLogsCount: this.telemetryLogs.length,
@@ -410,7 +451,6 @@ export class PlatformApiState {
     }
     const { data, metadata } = snapshot;
 
-    if (Array.isArray(data.projects)) this.projects = [...data.projects];
     if (Array.isArray(data.apiKeys)) this.apiKeys = [...data.apiKeys];
     if (Array.isArray(data.services)) this.services = [...data.services];
     if (data.providers && typeof data.providers === 'object') this.providers = { ...data.providers };
@@ -429,13 +469,13 @@ export class PlatformApiState {
       tenantId: 'system',
       facade: 'StateTransferEngine',
       level: 'SECURITY',
-      message: `[State Ingest] Ingested snapshot [${metadata?.snapshotId || 'custom'}] — Restored ${this.projects.length} projects, ${this.apiKeys.length} keys, ${this.services.length} services.`,
+      message: `[State Ingest] Ingested snapshot [${metadata?.snapshotId || 'custom'}] — Restored ${this.getProjects().length} projects, ${this.apiKeys.length} keys, ${this.services.length} services.`,
     });
 
     return {
       success: true,
       stats: metadata?.stats || {
-        projectsCount: this.projects.length,
+        projectsCount: this.getProjects().length,
         apiKeysCount: this.apiKeys.length,
         servicesCount: this.services.length,
       },
@@ -495,7 +535,7 @@ export class PlatformApiState {
     const receipt = {
       snapshotId: snapshot?.metadata?.snapshotId || `snap_switch_${Date.now()}`,
       itemsTransferred: {
-        projects: this.projects.length,
+        projects: this.getProjects().length,
         apiKeys: this.apiKeys.length,
         services: this.services.length,
         providers: Object.keys(this.providers).length,
@@ -515,7 +555,7 @@ export class PlatformApiState {
       transferReceipt: receipt,
       message:
         targetMode === 'standalone'
-          ? `Engine seamlessly switched to [STANDALONE SINGLE NODE]. State transferred with 0 data loss (${this.projects.length} projects, ${this.apiKeys.length} API keys preserved).`
+          ? `Engine seamlessly switched to [STANDALONE SINGLE NODE]. State transferred with 0 data loss (${this.getProjects().length} projects, ${this.apiKeys.length} API keys preserved).`
           : `Engine scaled up to [DISTRIBUTED CLUSTERED MESH]. State synchronized across cluster nodes.`,
     };
   }
@@ -586,18 +626,32 @@ export function withApiGuard<T = any>(
     const clientIp = resolveClientIp(req.headers);
     const userAgent = req.headers.get('user-agent') || 'Unknown';
 
-    // 2. Extract Auth Key - ONLY from headers, NEVER from URL query string
-    const authHeader = req.headers.get('authorization') || '';
-    const bearerToken = authHeader.startsWith('Bearer ') ? authHeader.substring(7).trim() : '';
-    const rawApiKey = req.headers.get('x-api-key')?.trim() || bearerToken;
+    // 2. Cryptographically verify Admin Session / Principal
+    // Mode A: Internal signed token forwarded from middleware
+    const forwardedPrincipal = req.headers.get('x-orbitox-principal');
+    const internalSig = req.headers.get('x-orbitox-internal-sig');
+    const internalTs = req.headers.get('x-orbitox-internal-ts');
+    const isInternalAdmin = Boolean(
+      forwardedPrincipal === 'admin' &&
+      internalSig &&
+      internalTs &&
+      verifyInternalAuthTokenSync('admin', internalSig, internalTs)
+    );
 
-    // Admin session detection (for platform-admin web controller)
-    const adminSessionToken =
-      req.headers.get('x-admin-token')?.trim() ||
-      req.headers.get('x-admin-session')?.trim() ||
-      req.headers.get('x-orbitox-session')?.trim() ||
-      req.cookies.get('orbitox_admin_session')?.value;
-    const hasAdminSession = Boolean(adminSessionToken);
+    // Mode B: Direct admin credential verification (Bearer, Basic, or x-admin-token)
+    const presentedCred = extractPresentedCredential(req);
+    const isDirectAdmin = Boolean(presentedCred && verifyAdminTokenSync(presentedCred));
+
+    const hasAdminSession = isInternalAdmin || isDirectAdmin;
+
+    // 3. Extract API Key - strictly from headers (x-api-key or non-admin Authorization: Bearer <key>)
+    const xApiKey = req.headers.get('x-api-key')?.trim();
+    const authHeader = req.headers.get('authorization')?.trim() || '';
+    const bearerCandidate = authHeader.startsWith('Bearer ') ? authHeader.substring(7).trim() : '';
+
+    // An admin token MUST NEVER be interpreted as an API key!
+    const bearerIsAdminToken = isDirectAdmin && presentedCred === bearerCandidate;
+    const rawApiKey = xApiKey || (!bearerIsAdminToken ? bearerCandidate : '');
 
     // 3. Route Classification & Public Allowlist Check
     const pathname = req.nextUrl.pathname;
@@ -808,9 +862,9 @@ export function withApiGuard<T = any>(
     if (matchedKey) {
       const allowedTenantScope: string[] = matchedKey.tenantScope || [];
       const projectId = matchedKey.projectId;
-      project = isPlatformKeyRecord
-        ? (projectId ? PlatformRepository.getProject(projectId) : null)
-        : (projectId ? PlatformApiState.getProject(projectId) : PlatformApiState.findProjectByApiKey(matchedKey.id));
+      PlatformRepository.initialize();
+      project = (projectId ? PlatformRepository.getProject(projectId) : null) ||
+                PlatformApiState.findProjectByApiKey(matchedKey.id || matchedKey.keyId);
 
       if (clientHeaderTenant) {
         const isPermitted =
@@ -879,14 +933,6 @@ export function withApiGuard<T = any>(
     }
 
     // 8. Fail-Closed Microservice Gates for Customer APIs
-    const PLAN_DEFAULT_QUOTAS: Record<string, number> = {
-      starter: 100000,
-      growth: 1000000,
-      pro: 5000000,
-      enterprise: 25000000,
-      hyperscale: 100000000,
-    };
-
     if (routeClass === 'customer' && serviceId !== 'system' && serviceId !== 'admin' && serviceId !== 'platform') {
       // 8.1 Fail-closed project resolution: missing project = deny
       if (!project) {
@@ -904,8 +950,8 @@ export function withApiGuard<T = any>(
         );
       }
 
-      // 8.2 Verify Project Suspension Gate
-      if (project.status === 'suspended') {
+      // 8.2 Verify Project Suspension Gate (case-insensitive)
+      if ((project.status || '').toLowerCase() === 'suspended') {
         const latencyMs = Math.round(performance.now() - startTime);
         return NextResponse.json<ApiResponse>(
           {
@@ -922,7 +968,11 @@ export function withApiGuard<T = any>(
       }
 
       // 8.3 Fail-closed plugin entitlement: empty services or unlisted service = deny
-      if (!project.enabledServices || project.enabledServices.length === 0 || !project.enabledServices.includes(serviceId)) {
+      const services: string[] = project.enabledServices || [];
+      const isEntitled = services.some(
+        (s: string) => s === serviceId || s === `@orbitox/${serviceId}` || s === `@orbitox-io/${serviceId}`
+      );
+      if (!isEntitled) {
         const latencyMs = Math.round(performance.now() - startTime);
         return NextResponse.json<ApiResponse>(
           {
@@ -933,7 +983,7 @@ export function withApiGuard<T = any>(
               details: {
                 projectId: project.id,
                 requestedService: serviceId,
-                subscribedPackages: project.enabledServices || [],
+                subscribedPackages: services,
               },
             },
             meta: { tenantId, serviceId, latencyMs, timestamp: new Date().toISOString(), requestId },
@@ -944,7 +994,7 @@ export function withApiGuard<T = any>(
 
       // 8.4 Fail-closed quota gate: missing or 0 quota uses plan default, never unlimited unless plan is unlimited
       const effectiveQuota = project.apiCallQuota || PLAN_DEFAULT_QUOTAS[project.plan?.toLowerCase() || 'starter'] || 100000;
-      if (project.plan !== 'unlimited' && project.monthlyApiCalls >= effectiveQuota) {
+      if (project.plan !== 'unlimited' && (project.monthlyApiCalls || 0) >= effectiveQuota) {
         const latencyMs = Math.round(performance.now() - startTime);
         return NextResponse.json<ApiResponse>(
           {
@@ -954,7 +1004,7 @@ export function withApiGuard<T = any>(
               message: `Monthly API call quota of ${effectiveQuota.toLocaleString()} calls for project [${project.name}] has been exceeded. Upgrade plan in Platform Admin.`,
               details: {
                 projectId: project.id,
-                consumed: project.monthlyApiCalls,
+                consumed: project.monthlyApiCalls || 0,
                 limit: effectiveQuota,
               },
             },
@@ -963,6 +1013,9 @@ export function withApiGuard<T = any>(
           { status: 429, headers: { 'x-orbitox-quota-exceeded': 'true', 'retry-after': '86400' } }
         );
       }
+
+      // Increment usage atomically
+      PlatformRepository.incrementProjectUsage(project.id, 1);
     }
 
     // 8.5. Verify Microservice Status Gate

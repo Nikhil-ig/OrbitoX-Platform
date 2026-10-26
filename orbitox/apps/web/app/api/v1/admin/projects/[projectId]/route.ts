@@ -23,7 +23,7 @@ export const GET = withApiGuard(
 
     // Also fetch associated API keys
     const keys = PlatformApiState.getApiKeys().filter(
-      (k) => k.providerId === project.id || (project.primaryApiKeyPrefix && k.keyPrefix?.startsWith(project.primaryApiKeyPrefix))
+      (k: any) => k.projectId === project.id || k.providerId === project.id
     );
 
     return NextResponse.json({

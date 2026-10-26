@@ -22,15 +22,36 @@ import {
 import { PlatformKeyEngine, GeneratedKeyResult } from '../security/platform-key-engine';
 import { CredentialVault } from '../security/credential-vault';
 
+export const PLAN_DEFAULT_QUOTAS: Record<string, number> = {
+  starter: 100000,
+  growth: 1000000,
+  pro: 5000000,
+  enterprise: 25000000,
+  hyperscale: 100000000,
+};
+
+export const PLAN_DEFAULT_RATE_LIMITS: Record<string, number> = {
+  starter: 60,
+  growth: 300,
+  pro: 1200,
+  enterprise: 6000,
+  hyperscale: 30000,
+};
+
 export interface CreateProjectInput {
   name: string;
   slug?: string;
   organizationId: string;
   businessModel: string;
   planTier: string;
+  plan?: string;
   technicalLead: string;
   contactEmail: string;
   initialPackages?: string[];
+  enabledServices?: string[];
+  apiCallQuota?: number;
+  rateLimitPerMin?: number;
+  status?: ProjectLifecycleStatus;
 }
 
 export interface CreateKeyInput {
@@ -328,14 +349,24 @@ export class PlatformRepository {
     const slug = (input.slug || input.name.toLowerCase().replace(/[^a-z0-9]/g, '-').replace(/-+/g, '-')).replace(/^-|-$/g, '');
     const projectId = `proj_${slug}_${Date.now().toString(36)}`;
 
+    const planKey = (input.plan || input.planTier || 'starter').toLowerCase();
+    const enabledServices = input.enabledServices || input.initialPackages || [];
+    const quota = input.apiCallQuota || PLAN_DEFAULT_QUOTAS[planKey] || 100000;
+    const rateLimit = input.rateLimitPerMin || PLAN_DEFAULT_RATE_LIMITS[planKey] || 60;
+
     const project: PlatformProject = {
       id: projectId,
       slug,
       name: input.name,
       organizationId: input.organizationId,
       businessModel: input.businessModel as any,
-      planTier: input.planTier as any,
-      status: 'ACTIVE',
+      planTier: planKey as any,
+      plan: planKey,
+      enabledServices,
+      apiCallQuota: quota,
+      monthlyApiCalls: 0,
+      rateLimitPerMin: rateLimit,
+      status: input.status || 'ACTIVE',
       technicalLead: input.technicalLead,
       contactEmail: input.contactEmail,
       createdAt: new Date().toISOString(),
@@ -449,6 +480,17 @@ export class PlatformRepository {
     return false;
   }
 
+  static incrementProjectUsage(projectId: string, amount: number = 1): number {
+    this.initialize();
+    const proj = this.projects.find((p) => p.id === projectId || p.slug === projectId);
+    if (proj) {
+      proj.monthlyApiCalls = (proj.monthlyApiCalls || 0) + amount;
+      this.saveDebounced();
+      return proj.monthlyApiCalls;
+    }
+    return 0;
+  }
+
   static listEnvironments(projectId?: string): ProjectEnvironment[] {
     this.initialize();
     if (projectId) {
@@ -520,7 +562,6 @@ export class PlatformRepository {
   static findKeyByRawSecret(incomingSecret: string, serverPepper?: string): PlatformApiKeyRecord | undefined {
     this.initialize();
     for (const key of this.apiKeys) {
-      if (key.status !== 'ACTIVE') continue;
       if (PlatformKeyEngine.verifySecret(incomingSecret, key.authVerifier, serverPepper)) {
         return key;
       }

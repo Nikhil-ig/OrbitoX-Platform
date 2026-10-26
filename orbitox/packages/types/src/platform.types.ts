@@ -103,7 +103,12 @@ export interface PlatformProject {
   organizationId: string;
   businessModel: BusinessModelType;
   planTier: PlanTier;
+  plan?: string;
   status: ProjectLifecycleStatus;
+  enabledServices?: string[];
+  apiCallQuota?: number;
+  monthlyApiCalls?: number;
+  rateLimitPerMin?: number;
   technicalLead: string;
   contactEmail: string;
   createdAt: string;

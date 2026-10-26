@@ -6,6 +6,7 @@
   "scripts": {
     "bootstrap": "pnpm install && turbo run build --filter=web^...",
     "init:env": "node scripts/init-env.mjs",
+    "check:env": "node scripts/check-production-env.mjs",
     "dev:web": "pnpm --filter web dev",
     "smoke": "node scripts/smoke-control-plane.mjs",
     "build": "turbo run build",
