@@ -3,11 +3,11 @@ import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
 export function patchStandaloneStartup(serverFile) {
-  if (!fs.existsSync(serverFile)) throw new Error(`Standalone server not found: ${serverFile}`);
-  const source = fs.readFileSync(serverFile, 'utf8');
-  const anchor = "process.env.NODE_ENV = 'production'";
-  if (!source.includes(anchor)) throw new Error('Standalone server startup anchor was not found.');
-  const preflight = `${anchor}
+    if (!fs.existsSync(serverFile)) throw new Error(`Standalone server not found: ${serverFile}`);
+    const source = fs.readFileSync(serverFile, 'utf8');
+    const anchor = "process.env.NODE_ENV = 'production'";
+    if (!source.includes(anchor)) throw new Error('Standalone server startup anchor was not found.');
+    const preflight = `${anchor}
 delete process.env.NEXT_PHASE;
 const requiredProductionSecrets = [
   ['ORBITOX_ADMIN_TOKEN', 'Master credential for control plane & management APIs'],
@@ -31,11 +31,11 @@ if (productionConfigurationProblems.length > 0) {
     'Or run: node scripts/check-production-env.mjs',
   ].join('\\n'));
 }`;
-  const patched = source.replace(anchor, preflight);
-  fs.writeFileSync(serverFile, patched);
+    const patched = source.replace(anchor, preflight);
+    fs.writeFileSync(serverFile, patched);
 }
 
 const currentFile = fileURLToPath(import.meta.url);
 if (process.argv[1] && pathToFileURL(path.resolve(process.argv[1])).href === import.meta.url) {
-  patchStandaloneStartup(path.resolve('.next/standalone/apps/web/server.js'));
+    patchStandaloneStartup(path.resolve('.next/standalone/apps/web/server.js'));
 }

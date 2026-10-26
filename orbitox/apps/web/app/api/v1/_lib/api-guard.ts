@@ -61,9 +61,9 @@ export class PlatformApiState {
 
   private static clusterMode: 'standalone' | 'distributed' =
     typeof process !== 'undefined' &&
-    (process.env?.CLUSTER_MODE === 'distributed' ||
-      process.env?.ORBITOX_DEPLOYMENT_MODE === 'distributed' ||
-      Boolean(process.env?.REDIS_URL))
+      (process.env?.CLUSTER_MODE === 'distributed' ||
+        process.env?.ORBITOX_DEPLOYMENT_MODE === 'distributed' ||
+        Boolean(process.env?.REDIS_URL))
       ? 'distributed'
       : 'standalone';
 
@@ -108,16 +108,16 @@ export class PlatformApiState {
       nodesList: isDist
         ? this.clusterNodes
         : [
-            {
-              id: 'node-standalone-01',
-              region: 'Local Host / Standalone (Zero-Dependency)',
-              status: 'healthy',
-              latencyMs: 0,
-              isLeader: true,
-              cpuPercent: 14,
-              memoryPercent: 28,
-            },
-          ],
+          {
+            id: 'node-standalone-01',
+            region: 'Local Host / Standalone (Zero-Dependency)',
+            status: 'healthy',
+            latencyMs: 0,
+            isLeader: true,
+            cpuPercent: 14,
+            memoryPercent: 28,
+          },
+        ],
       syncProtocol: isDist ? 'Redis Pub/Sub (Atomic sliding window)' : 'In-Memory Shared V8 Map',
       dbPool: isDist ? 'PgBouncer Transaction Pool' : 'Direct Dedicated Connection',
       rateLimiter: isDist ? 'Distributed Redis Sliding-Window (with memory fallback)' : 'Zero-Dependency In-Memory Window',
@@ -595,8 +595,8 @@ export function withApiGuard<T = any>(
       options.serviceId === 'admin' || options.serviceId === 'platform' || options.serviceId === 'system'
         ? 'platform-admin'
         : isExplicitlyPublic
-        ? 'public'
-        : 'customer'
+          ? 'public'
+          : 'customer'
     );
 
     // 4. Authenticate API Key via constant-time HMAC verifiers (zero prefix matching)
@@ -815,7 +815,7 @@ export function withApiGuard<T = any>(
       const projectId = matchedKey.projectId;
       PlatformRepository.initialize();
       project = (projectId ? PlatformRepository.getProject(projectId) : null) ||
-                PlatformApiState.findProjectByApiKey(matchedKey.id || matchedKey.keyId);
+        PlatformApiState.findProjectByApiKey(matchedKey.id || matchedKey.keyId);
 
       if (clientHeaderTenant) {
         const isPermitted =

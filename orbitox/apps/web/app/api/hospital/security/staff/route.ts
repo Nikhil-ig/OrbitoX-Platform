@@ -11,8 +11,8 @@ export const GET = withHospitalGuard(async (req: NextRequest, _routeContext, aut
     req,
     upstreamPath,
     () => hospitalStore.getStaff(),
-      {},
-      authContext
+    {},
+    authContext
   );
 }, { adminOnly: true, sensitive: true });
 
