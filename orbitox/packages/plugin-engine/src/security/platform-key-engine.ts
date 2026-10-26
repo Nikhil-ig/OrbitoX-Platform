@@ -145,8 +145,8 @@ export class PlatformKeyEngine {
       environment === 'production'
         ? 'live'
         : environment === 'staging'
-        ? 'stage'
-        : 'test';
+          ? 'stage'
+          : 'test';
 
     const keyPrefix = `orb_${envNormalized}_`;
 
