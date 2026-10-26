@@ -1,17 +1,15 @@
 import { NextRequest } from 'next/server';
 import { restaurantRuntime } from '../_lib/restaurant-runtime';
 import { createLegacyProxyResponse } from '../_lib/legacy-proxy';
+import { withGuestToken } from '@/app/api/_lib/route-auth';
 
 /**
  * ⚠️ LEGACY COMPATIBILITY PROXY: Public Menu
  * Target runtime: http://localhost:4010/api/restaurant/menu
  */
-export async function GET(request: NextRequest) {
+export const GET = withGuestToken(async (_request: NextRequest, _routeContext, guest) => {
   try {
-    const searchParams = request.nextUrl.searchParams;
-    const locationId = searchParams.get('locationId') || 'loc_ludhiana';
-
-    const menu = restaurantRuntime.catalogService.getPublicMenu({ locationId });
+    const menu = restaurantRuntime.catalogService.getPublicMenu({ locationId: guest.locationId });
     return createLegacyProxyResponse({ success: true, data: menu });
   } catch (error: any) {
     return createLegacyProxyResponse(
@@ -19,4 +17,4 @@ export async function GET(request: NextRequest) {
       { status: 500 }
     );
   }
-}
+});

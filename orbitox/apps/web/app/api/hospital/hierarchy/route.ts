@@ -1,9 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { ORBITOX_BACKEND_URL } from '../_init';
+import { authenticatedHospitalFetch } from '../_init';
+import { withHospitalGuard } from '@/app/api/_lib/route-auth';
 
-export async function GET() {
+export const GET = withHospitalGuard(async (_req: NextRequest, _routeContext, authContext) => {
   try {
-    const res = await fetch(`${ORBITOX_BACKEND_URL}/api/hospital/hierarchy`, {
+    const res = await authenticatedHospitalFetch('/api/hospital/hierarchy', authContext, {
       cache: 'no-store'
     });
     const data = await res.json();
@@ -11,12 +12,12 @@ export async function GET() {
   } catch (err: any) {
     return NextResponse.json({ success: false, error: err.message }, { status: 502 });
   }
-}
+});
 
-export async function POST(req: NextRequest) {
+export const POST = withHospitalGuard(async (req: NextRequest, _routeContext, authContext) => {
   try {
     const body = await req.json();
-    const res = await fetch(`${ORBITOX_BACKEND_URL}/api/hospital/contexts`, {
+    const res = await authenticatedHospitalFetch('/api/hospital/contexts', authContext, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body)
@@ -26,4 +27,4 @@ export async function POST(req: NextRequest) {
   } catch (err: any) {
     return NextResponse.json({ success: false, error: err.message }, { status: 502 });
   }
-}
+});

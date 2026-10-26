@@ -1,12 +1,13 @@
 import { NextRequest } from 'next/server';
 import { restaurantRuntime } from '../../_lib/restaurant-runtime';
 import { createLegacyProxyResponse } from '../../_lib/legacy-proxy';
+import { withPublicGuestBootstrap } from '@/app/api/_lib/route-auth';
 
 /**
  * ⚠️ LEGACY COMPATIBILITY PROXY: Session Join / Seating
  * Target runtime: http://localhost:4010/api/restaurant/sessions/join
  */
-export async function POST(request: NextRequest) {
+export const POST = withPublicGuestBootstrap(async (request: NextRequest) => {
   try {
     const body = await request.json();
     const { locator, displayName, nonce } = body;
@@ -59,4 +60,4 @@ export async function POST(request: NextRequest) {
       { status: 422 }
     );
   }
-}
+});

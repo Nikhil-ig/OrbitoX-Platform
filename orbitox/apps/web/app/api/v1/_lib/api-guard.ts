@@ -14,22 +14,36 @@ import {
 } from './auth-pipeline';
 import {
   INITIAL_SERVICES,
-  INITIAL_API_KEYS,
   BUSINESS_PROVIDERS,
 } from '@/app/admin/data/mock-data';
 import {
   PlatformRepository,
-  PlatformKeyEngine,
   hasCapability,
   PLAN_DEFAULT_QUOTAS,
 } from '@orbitox-io/plugin-engine';
 import { PlatformApiKeyRecord, PlatformProject } from '@orbitox/types';
+import { runWithHospitalTenant } from '@/app/api/hospital/_store';
 
-export { PlatformRepository, PlatformKeyEngine };
+export { PlatformRepository };
 
 // Ensure PlatformRepository defaults are seeded
 if (typeof PlatformRepository !== 'undefined' && typeof PlatformRepository.initialize === 'function') {
   PlatformRepository.initialize();
+}
+
+if (process.env.NODE_ENV === 'production' || !process.env.NODE_ENV) {
+  scheduleMonthlyUsageReset();
+}
+
+function scheduleMonthlyUsageReset(): void {
+  const now = new Date();
+  const nextMonth = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 1));
+  const resetAt = nextMonth.getTime();
+  const timer = setTimeout(() => {
+    if (Date.now() >= resetAt) PlatformRepository.resetMonthlyProjectUsage();
+    scheduleMonthlyUsageReset();
+  }, Math.min(resetAt - now.getTime(), 2_000_000_000));
+  timer.unref();
 }
 
 // In-memory sliding window rate limiter
@@ -42,32 +56,8 @@ const rateLimitMap = new Map<string, RateLimitBucket>();
 // In-memory platform state store for live API changes
 export class PlatformApiState {
   private static services = [...INITIAL_SERVICES];
-  private static apiKeys: any[] = [];
-  private static seeded = false;
   private static providers = { ...BUSINESS_PROVIDERS };
   private static telemetryLogs: any[] = [];
-
-  private static ensureSeeded(): void {
-    if (this.seeded) return;
-    this.seeded = true;
-    const isProd = typeof process !== 'undefined' && process.env?.NODE_ENV === 'production';
-    if (!isProd) {
-      try {
-        this.apiKeys = INITIAL_API_KEYS.map((k: any) => {
-          const { rawKey, ...rest } = k;
-          const authVerifier = rawKey ? PlatformKeyEngine.computeAuthVerifier(rawKey) : undefined;
-          const secretFingerprint = rawKey ? PlatformKeyEngine.computeFingerprint(rawKey) : undefined;
-          return {
-            ...rest,
-            authVerifier,
-            secretFingerprint,
-          };
-        });
-      } catch {
-        // Fallback if pepper is absent in development test runs
-      }
-    }
-  }
 
   private static clusterMode: 'standalone' | 'distributed' =
     typeof process !== 'undefined' &&
@@ -153,13 +143,6 @@ export class PlatformApiState {
     if (key && key.projectId) {
       return PlatformRepository.getProject(key.projectId) || null;
     }
-    const memKey = this.apiKeys.find((k: any) => k.id === keyId || k.keyId === keyId);
-    if (memKey) {
-      const pId = memKey.projectId || memKey.providerId;
-      if (pId) {
-        return PlatformRepository.getProject(pId) || null;
-      }
-    }
     return null;
   }
 
@@ -177,16 +160,6 @@ export class PlatformApiState {
   static deleteProject(projectId: string): boolean {
     PlatformRepository.initialize();
     return PlatformRepository.deleteProject(projectId);
-  }
-
-  static recordProjectCall(projectIdOrSlug: string): PlatformProject | null {
-    PlatformRepository.initialize();
-    const p = PlatformRepository.getProject(projectIdOrSlug);
-    if (p) {
-      PlatformRepository.incrementProjectUsage(p.id, 1);
-      return p;
-    }
-    return null;
   }
 
   static getServices() {
@@ -248,31 +221,23 @@ export class PlatformApiState {
   }
 
   static getApiKeys() {
-    this.ensureSeeded();
-    return this.apiKeys.map((k: any) => {
-      const { rawKey, authVerifier, ...safe } = k;
-      return safe;
-    });
+    return PlatformRepository.listApiKeys().map((key) => ({
+      ...key,
+      maskedKey: key.maskedDisplay,
+      status: key.status.toLowerCase(),
+    }));
   }
 
   static findKeyByRawSecret(incomingSecret: string) {
-    this.ensureSeeded();
     if (!incomingSecret) return null;
-    return (
-      this.apiKeys.find((k: any) => {
-        if (k.authVerifier && PlatformKeyEngine.verifySecret(incomingSecret, k.authVerifier)) {
-          return true;
-        }
-        return false;
-      }) || null
-    );
+    return PlatformRepository.findKeyByRawSecret(incomingSecret) || null;
   }
 
   static findApiKeyById(keyId: string) {
     if (!keyId) return null;
-    const k = this.apiKeys.find((item: any) => item.id === keyId || item.keyId === keyId);
+    const k = PlatformRepository.getApiKey(keyId);
     if (!k) return null;
-    const { rawKey, authVerifier, ...safe } = k as any;
+    const { authVerifier, ...safe } = k as any;
     return safe;
   }
 
@@ -284,59 +249,28 @@ export class PlatformApiState {
     return PlatformRepository.getApiKey(keyOrId) || null;
   }
 
-  static addApiKey(key: any) {
-    if (!key.authVerifier && (key.rawKey || key.rawSecret)) {
-      const raw = key.rawKey || key.rawSecret;
-      key.authVerifier = PlatformKeyEngine.computeAuthVerifier(raw);
-    }
-    if (!key.projectId && key.providerId) {
-      key.projectId = key.providerId;
-    }
-    this.apiKeys = [key, ...this.apiKeys];
-    return key;
-  }
-
   static rotateApiKey(keyId: string) {
-    const idx = this.apiKeys.findIndex((k: any) => k.id === keyId || k.keyId === keyId);
-    if (idx !== -1) {
-      const old = this.apiKeys[idx]!;
-      const generated = PlatformKeyEngine.generateKey(old.environment || 'production');
-      const newKey: any = {
-        ...old,
-        id: generated.keyId,
-        keyPrefix: generated.keyPrefix,
-        maskedKey: generated.maskedDisplay,
-        secretFingerprint: generated.secretFingerprint,
-        authVerifier: generated.authVerifier,
-        createdAt: 'Just now',
-        lastUsedAt: 'Never',
-      };
-      this.apiKeys[idx] = newKey;
-      const { rawKey, authVerifier, ...safeKey } = newKey;
-      return {
-        replacementKey: safeKey,
-        rawSecret: generated.rawSecret,
-      };
-    }
-    return null;
+    const rotated = PlatformRepository.rotateApiKey(keyId, { operatorEmail: 'platform-admin' });
+    if (!rotated) return null;
+    const { authVerifier, ...safeKey } = rotated.replacementKey;
+    return { replacementKey: { ...safeKey, maskedKey: safeKey.maskedDisplay }, rawSecret: rotated.replacementRawSecret };
   }
 
   static revokeApiKey(keyId: string) {
-    const key = this.apiKeys.find((k) => k.id === keyId);
-    if (key) {
-      key.status = 'revoked';
-      return key;
-    }
-    return null;
+    const key = PlatformRepository.setKeyStatus(keyId, 'REVOKED');
+    if (!key) return null;
+    const { authVerifier, ...safeKey } = key;
+    return safeKey;
   }
 
   static toggleApiKey(keyId: string) {
-    const key = this.apiKeys.find((k) => k.id === keyId);
-    if (key) {
-      key.status = key.status === 'active' ? 'blocked' : 'active';
-      return key;
-    }
-    return null;
+    const existing = PlatformRepository.getApiKey(keyId);
+    if (!existing) return null;
+    const status = existing.status === 'ACTIVE' ? 'SUSPENDED' : 'ACTIVE';
+    const key = PlatformRepository.setKeyStatus(keyId, status);
+    if (!key) return null;
+    const { authVerifier, ...safeKey } = key;
+    return { ...safeKey, status: safeKey.status.toLowerCase() };
   }
 
   // Drain & Migration state
@@ -451,7 +385,6 @@ export class PlatformApiState {
     }
     const { data, metadata } = snapshot;
 
-    if (Array.isArray(data.apiKeys)) this.apiKeys = [...data.apiKeys];
     if (Array.isArray(data.services)) this.services = [...data.services];
     if (data.providers && typeof data.providers === 'object') this.providers = { ...data.providers };
     if (Array.isArray(data.telemetryLogs)) {
@@ -469,14 +402,14 @@ export class PlatformApiState {
       tenantId: 'system',
       facade: 'StateTransferEngine',
       level: 'SECURITY',
-      message: `[State Ingest] Ingested snapshot [${metadata?.snapshotId || 'custom'}] — Restored ${this.getProjects().length} projects, ${this.apiKeys.length} keys, ${this.services.length} services.`,
+      message: `[State Ingest] Ingested snapshot [${metadata?.snapshotId || 'custom'}] — Restored ${this.getProjects().length} projects, ${PlatformRepository.listApiKeys().length} keys, ${this.services.length} services.`,
     });
 
     return {
       success: true,
       stats: metadata?.stats || {
         projectsCount: this.getProjects().length,
-        apiKeysCount: this.apiKeys.length,
+        apiKeysCount: PlatformRepository.listApiKeys().length,
         servicesCount: this.services.length,
       },
       message: `Snapshot ingested successfully.`,
@@ -536,7 +469,7 @@ export class PlatformApiState {
       snapshotId: snapshot?.metadata?.snapshotId || `snap_switch_${Date.now()}`,
       itemsTransferred: {
         projects: this.getProjects().length,
-        apiKeys: this.apiKeys.length,
+        apiKeys: PlatformRepository.listApiKeys().length,
         services: this.services.length,
         providers: Object.keys(this.providers).length,
         telemetryLogs: this.telemetryLogs.length,
@@ -555,7 +488,7 @@ export class PlatformApiState {
       transferReceipt: receipt,
       message:
         targetMode === 'standalone'
-          ? `Engine seamlessly switched to [STANDALONE SINGLE NODE]. State transferred with 0 data loss (${this.getProjects().length} projects, ${this.apiKeys.length} API keys preserved).`
+          ? `Engine seamlessly switched to [STANDALONE SINGLE NODE]. State transferred with 0 data loss (${this.getProjects().length} projects, ${PlatformRepository.listApiKeys().length} API keys preserved).`
           : `Engine scaled up to [DISTRIBUTED CLUSTERED MESH]. State synchronized across cluster nodes.`,
     };
   }
@@ -669,6 +602,8 @@ export function withApiGuard<T = any>(
     // 4. Authenticate API Key via constant-time HMAC verifiers (zero prefix matching)
     let matchedKey: any = null;
     let isPlatformKeyRecord = false;
+    let projectUsageReserved = false;
+    let effectiveProjectQuota = Number.POSITIVE_INFINITY;
 
     if (rawApiKey) {
       // Primary: Cryptographic constant-time HMAC-SHA256 verifier lookup in PlatformRepository
@@ -745,6 +680,22 @@ export function withApiGuard<T = any>(
                 timestamp: new Date().toISOString(),
                 requestId,
               },
+            },
+            { status: 403 }
+          );
+        }
+
+        if (matchedKey.expiresAt && Date.parse(matchedKey.expiresAt) <= Date.now()) {
+          const latencyMs = Math.round(performance.now() - startTime);
+          return NextResponse.json<ApiResponse>(
+            {
+              success: false,
+              error: {
+                code: 'KEY_EXPIRED',
+                message: 'The provided API key has expired.',
+                details: { keyId: matchedKey.id || matchedKey.keyId, expiresAt: matchedKey.expiresAt },
+              },
+              meta: { latencyMs, timestamp: new Date().toISOString(), requestId },
             },
             { status: 403 }
           );
@@ -993,29 +944,7 @@ export function withApiGuard<T = any>(
       }
 
       // 8.4 Fail-closed quota gate: missing or 0 quota uses plan default, never unlimited unless plan is unlimited
-      const effectiveQuota = project.apiCallQuota || PLAN_DEFAULT_QUOTAS[project.plan?.toLowerCase() || 'starter'] || 100000;
-      if (project.plan !== 'unlimited' && (project.monthlyApiCalls || 0) >= effectiveQuota) {
-        const latencyMs = Math.round(performance.now() - startTime);
-        return NextResponse.json<ApiResponse>(
-          {
-            success: false,
-            error: {
-              code: 'TENANT_QUOTA_EXCEEDED',
-              message: `Monthly API call quota of ${effectiveQuota.toLocaleString()} calls for project [${project.name}] has been exceeded. Upgrade plan in Platform Admin.`,
-              details: {
-                projectId: project.id,
-                consumed: project.monthlyApiCalls || 0,
-                limit: effectiveQuota,
-              },
-            },
-            meta: { tenantId, serviceId, latencyMs, timestamp: new Date().toISOString(), requestId },
-          },
-          { status: 429, headers: { 'x-orbitox-quota-exceeded': 'true', 'retry-after': '86400' } }
-        );
-      }
-
-      // Increment usage atomically
-      PlatformRepository.incrementProjectUsage(project.id, 1);
+      effectiveProjectQuota = project.apiCallQuota || PLAN_DEFAULT_QUOTAS[project.plan?.toLowerCase() || 'starter'] || 100000;
     }
 
     // 8.5. Verify Microservice Status Gate
@@ -1113,6 +1042,7 @@ export function withApiGuard<T = any>(
       tenantId,
       serviceId,
       apiKey: rawApiKey,
+      credential: matchedKey ? rawApiKey : hasAdminSession ? presentedCred || req.headers.get('x-orbitox-credential') || undefined : undefined,
       keyPrefix: matchedKey?.keyPrefix,
       environment: matchedKey?.environment || 'production',
       scopes: matchedKey?.scopes || ['*'],
@@ -1126,21 +1056,47 @@ export function withApiGuard<T = any>(
     };
 
     // 11. Execute Handler
+    if (project) {
+      const projectQuota = project.plan?.toLowerCase() === 'unlimited'
+        ? Number.POSITIVE_INFINITY
+        : effectiveProjectQuota;
+      const reservation = PlatformRepository.reserveProjectUsage(project.id, projectQuota);
+      if (reservation === undefined) {
+        const latencyMs = Math.round(performance.now() - startTime);
+        return NextResponse.json<ApiResponse>(
+          {
+            success: false,
+            error: {
+              code: 'TENANT_QUOTA_EXCEEDED',
+              message: `Monthly API call quota of ${projectQuota.toLocaleString()} calls for project [${project.name}] has been exceeded. Upgrade plan in Platform Admin.`,
+              details: { projectId: project.id, consumed: project.monthlyApiCalls || 0, limit: projectQuota },
+            },
+            meta: { tenantId, serviceId, latencyMs, timestamp: new Date().toISOString(), requestId },
+          },
+          { status: 429, headers: { 'x-orbitox-quota-exceeded': 'true', 'retry-after': '86400' } }
+        );
+      }
+      projectUsageReserved = true;
+    }
+
     try {
-      const response = await handler(req, context);
+      const response = serviceId === 'hms'
+        ? await runWithHospitalTenant(tenantId, () => handler(req, context))
+        : await handler(req, context);
       const latencyMs = Math.max(1, Math.round(performance.now() - startTime));
 
+      if (projectUsageReserved && project && (response.status < 200 || response.status >= 300)) {
+        PlatformRepository.releaseProjectUsage(project.id);
+        projectUsageReserved = false;
+      }
+
       // Record key usage and platform environment quota
-      if (matchedKey && isPlatformKeyRecord) {
+      const isBillableResponse = response.status >= 200 && response.status < 300;
+      if (matchedKey && isPlatformKeyRecord && isBillableResponse) {
         PlatformRepository.recordKeyUsage(matchedKey.id, clientIp);
         if (matchedKey.environmentId) {
           PlatformRepository.recordCall(matchedKey.environmentId);
         }
-      }
-
-      // Record call against project quota
-      if (project) {
-        PlatformApiState.recordProjectCall(project.id);
       }
 
       // Inject standard response headers
@@ -1174,6 +1130,10 @@ export function withApiGuard<T = any>(
         headers: resHeaders,
       });
     } catch (err: any) {
+      if (projectUsageReserved && project) {
+        PlatformRepository.releaseProjectUsage(project.id);
+        projectUsageReserved = false;
+      }
       const latencyMs = Math.max(1, Math.round(performance.now() - startTime));
       console.error(`[OrbitoX API Error] ${req.method} ${req.nextUrl.pathname}:`, err);
 

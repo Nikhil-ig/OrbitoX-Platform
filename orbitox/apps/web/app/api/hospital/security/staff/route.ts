@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { safeProxyOrFallback } from '../../_init';
 import { hospitalStore } from '../../_store';
+import { withHospitalGuard } from '@/app/api/_lib/route-auth';
 
-export async function GET(req: NextRequest) {
+export const GET = withHospitalGuard(async (req: NextRequest, _routeContext, authContext) => {
   const searchParams = req.nextUrl.searchParams.toString();
   const upstreamPath = `/api/hospital/security/staff${searchParams ? `?${searchParams}` : ''}`;
 
@@ -10,16 +11,12 @@ export async function GET(req: NextRequest) {
     req,
     upstreamPath,
     () => hospitalStore.getStaff(),
-    {
-      headers: {
-        'x-staff-id': req.headers.get('x-staff-id') || 'admin_root_01',
-        'x-context-id': req.headers.get('x-context-id') || 'apollo-global',
-      },
-    }
+      {},
+      authContext
   );
-}
+}, { adminOnly: true, sensitive: true });
 
-export async function POST(req: NextRequest) {
+export const POST = withHospitalGuard(async (req: NextRequest, _routeContext, authContext) => {
   try {
     const body = await req.json();
     return safeProxyOrFallback(
@@ -29,13 +26,10 @@ export async function POST(req: NextRequest) {
       {
         method: 'POST',
         body,
-        headers: {
-          'x-staff-id': req.headers.get('x-staff-id') || 'admin_root_01',
-          'x-context-id': req.headers.get('x-context-id') || 'apollo-global',
-        },
-      }
+      },
+      authContext
     );
   } catch (err: any) {
     return NextResponse.json({ success: false, error: err.message }, { status: 400 });
   }
-}
+}, { adminOnly: true, sensitive: true });

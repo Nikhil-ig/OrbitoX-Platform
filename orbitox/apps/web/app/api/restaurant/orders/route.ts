@@ -2,19 +2,21 @@ import { NextRequest } from 'next/server';
 import { restaurantRuntime } from '../_lib/restaurant-runtime';
 import { createLegacyProxyResponse } from '../_lib/legacy-proxy';
 import { QRTrustEngine } from '@orbitox/pos';
+import { withGuestToken } from '@/app/api/_lib/route-auth';
 
 /**
  * ⚠️ LEGACY COMPATIBILITY PROXY: Orders Submission and Status
  * Target runtime: http://localhost:4010/api/restaurant/orders
  */
-export async function POST(request: NextRequest) {
+export const POST = withGuestToken(async (request: NextRequest, _routeContext, tokenPayload) => {
   try {
     const body = await request.json();
-    const { capabilityToken, quoteId, cartItems, idempotencyKey, specialInstructions } = body;
+    const { quoteId, cartItems, idempotencyKey, specialInstructions } = body;
+    const capabilityToken = request.headers.get('x-guest-token') || '';
 
-    if (!capabilityToken || !quoteId || !cartItems) {
+    if (!quoteId || !cartItems) {
       return createLegacyProxyResponse(
-        { success: false, error: 'capabilityToken, quoteId, and cartItems are required' },
+        { success: false, error: 'quoteId and cartItems are required' },
         { status: 400 }
       );
     }
@@ -22,14 +24,7 @@ export async function POST(request: NextRequest) {
     // 1. Verify and redeem quote
     const redeemedQuote = restaurantRuntime.catalogService.redeemQuote(quoteId, cartItems);
 
-    // 2. Decode capability to identify session
-    const parts = capabilityToken.split('.');
-    if (parts.length !== 2 || !parts[0]) {
-      return createLegacyProxyResponse({ success: false, error: 'Malformed capability token' }, { status: 401 });
-    }
-    const tokenPayload = JSON.parse(Buffer.from(parts[0], 'base64url').toString('utf8'));
-
-    // 3. Submit Order
+    // Submit against the active session identified by the verified guest token.
     const catalogMap = restaurantRuntime.getCatalogMap();
     const submittedOrder = restaurantRuntime.orderKitchenService.submitOrder({
       tenantId: tokenPayload.tenantId,
@@ -108,9 +103,9 @@ export async function POST(request: NextRequest) {
       { status: 422 }
     );
   }
-}
+});
 
-export async function GET(request: NextRequest) {
+export const GET = withGuestToken(async (request: NextRequest, _routeContext, guest) => {
   try {
     const searchParams = request.nextUrl.searchParams;
     const orderId = searchParams.get('orderId');
@@ -121,6 +116,9 @@ export async function GET(request: NextRequest) {
 
     const order = restaurantRuntime.orderKitchenService.getOrder(orderId);
     if (!order) {
+      return createLegacyProxyResponse({ success: false, error: 'Order not found' }, { status: 404 });
+    }
+    if (order.participantId !== guest.participantId || order.sessionId !== guest.diningSessionId) {
       return createLegacyProxyResponse({ success: false, error: 'Order not found' }, { status: 404 });
     }
 
@@ -150,4 +148,4 @@ export async function GET(request: NextRequest) {
       { status: 500 }
     );
   }
-}
+});

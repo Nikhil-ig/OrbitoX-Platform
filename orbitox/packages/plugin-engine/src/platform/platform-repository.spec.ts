@@ -62,6 +62,77 @@ describe('PlatformRepository (Normalized Domain Access & Cryptographic Binding)'
       expect(installations.length).toBe(2);
       expect(installations.some((i) => i.packageId === '@orbitox/pos')).toBe(true);
     });
+
+    it('generates unique slugs for repeated names and rejects case-insensitive collisions', () => {
+      const org = PlatformRepository.listOrganizations()[0]!;
+      const name = `Repeated Project ${Date.now()}`;
+      const projectInput = {
+        name,
+        organizationId: org.id,
+        businessModel: 'B2B',
+        planTier: 'starter',
+        technicalLead: 'Test Lead',
+        contactEmail: 'test@orbitox.io',
+      };
+
+      const first = PlatformRepository.createProject(projectInput).project;
+      const second = PlatformRepository.createProject(projectInput).project;
+
+      expect(second.slug).toBe(`${first.slug}-2`);
+      expect(() => PlatformRepository.createProject({ ...projectInput, slug: first.slug.toUpperCase() }))
+        .toThrow(`Project slug "${first.slug}" is already in use.`);
+      expect(() => PlatformRepository.updateProject(first.id, { slug: 'changed-project-slug' }))
+        .toThrow('Project slug is immutable after creation.');
+    });
+
+    it('resets monthly project usage explicitly at the repository boundary', () => {
+      const org = PlatformRepository.listOrganizations()[0]!;
+      const project = PlatformRepository.createProject({
+        name: `Monthly Reset ${Date.now()}`,
+        organizationId: org.id,
+        businessModel: 'B2B',
+        planTier: 'starter',
+        technicalLead: 'Test Lead',
+        contactEmail: 'reset@orbitox.io',
+      }).project;
+      PlatformRepository.updateProject(project.id, { monthlyApiCalls: 9 });
+
+      expect(PlatformRepository.resetMonthlyProjectUsage()).toBeGreaterThan(0);
+      expect(PlatformRepository.getProject(project.id)?.monthlyApiCalls).toBe(0);
+    });
+
+    it('repairs legacy duplicate slugs and updates their persisted key scopes on load', () => {
+      const project = PlatformRepository.listProjects()[0]!;
+      const environment = PlatformRepository.listEnvironments(project.id).find((item) => item.isProduction)!;
+      const key = PlatformRepository.createApiKey({
+        name: 'Legacy Duplicate Scope Key',
+        environmentId: environment.id,
+        projectId: project.id,
+        capabilities: ['crm:read'],
+        tenantScope: [project.slug],
+        createdBy: 'test-suite',
+      });
+      (PlatformRepository as any).projects.push({
+        ...project,
+        id: `legacy-duplicate-${Date.now()}`,
+        name: 'Legacy Duplicate Project',
+      });
+      const duplicate = (PlatformRepository as any).projects.at(-1);
+      (PlatformRepository as any).apiKeys.push({
+        ...key.keyRecord,
+        id: `legacy-key-${Date.now()}`,
+        projectId: duplicate.id,
+        tenantScope: [project.slug],
+      });
+      PlatformRepository.saveImmediate();
+      PlatformRepository.resetForTesting();
+      PlatformRepository.initialize();
+
+      const repaired = PlatformRepository.getProject(duplicate.id)!;
+      expect(repaired.slug).toBe(`${project.slug}-2`);
+      expect(PlatformRepository.getProject(project.slug)?.id).toBe(project.id);
+      expect(PlatformRepository.listApiKeys({ projectId: duplicate.id })[0]?.tenantScope).toEqual([repaired.slug]);
+    });
   });
 
   describe('Machine API Keys & Lifecycle', () => {
@@ -119,6 +190,35 @@ describe('PlatformRepository (Normalized Domain Access & Cryptographic Binding)'
       // Verify old key status has revokeReason attached
       const reloadedOldKey = PlatformRepository.getApiKey(oldKey.keyId)!;
       expect(reloadedOldKey.revokeReason).toContain('Rotated in favor of replacement');
+    });
+
+    it('persists rotation and revocation through repository reinitialization', () => {
+      const project = PlatformRepository.listProjects()[0]!;
+      const environment = PlatformRepository.listEnvironments(project.id).find((item) => item.isProduction)!;
+      const original = PlatformRepository.createApiKey({
+        name: 'Restart Lifecycle Key',
+        environmentId: environment.id,
+        projectId: project.id,
+        capabilities: ['crm:read'],
+        createdBy: 'test-suite',
+      });
+      const rotated = PlatformRepository.rotateApiKey(original.keyRecord.keyId, {
+        operatorEmail: 'test-suite',
+      })!;
+      PlatformRepository.saveImmediate();
+      PlatformRepository.resetForTesting();
+      PlatformRepository.initialize();
+
+      expect(PlatformRepository.findKeyByRawSecret(original.rawSecret)?.status).toBe('SUSPENDED');
+      expect(PlatformRepository.findKeyByRawSecret(rotated.replacementRawSecret)?.status).toBe('ACTIVE');
+
+      PlatformRepository.setKeyStatus(rotated.replacementKey.keyId, 'REVOKED');
+      PlatformRepository.saveImmediate();
+      PlatformRepository.resetForTesting();
+      PlatformRepository.initialize();
+
+      expect(PlatformRepository.findKeyByRawSecret(rotated.replacementRawSecret)?.status).toBe('REVOKED');
+      expect(PlatformRepository.findKeyByRawSecret(original.rawSecret)?.status).toBe('SUSPENDED');
     });
   });
 

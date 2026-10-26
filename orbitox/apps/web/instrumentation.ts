@@ -5,8 +5,8 @@
  */
 export async function register() {
   if (process.env.NEXT_RUNTIME !== 'nodejs') return;
-  // `next build` also runs with NODE_ENV=production; only validate a real server.
-  if (process.env.NEXT_PHASE === 'phase-production-build') return;
+  // Build validation must not depend on a runtime-controlled environment variable.
+  if (process.argv.some((argument) => argument === 'build' || argument.endsWith('/next-build-worker'))) return;
 
   const nodeEnv = (process.env.NODE_ENV || '').trim();
   const isProduction = nodeEnv === 'production' || !nodeEnv;
@@ -50,5 +50,7 @@ export async function register() {
       console.warn('NEVER deploy this configuration to staging or production!');
       console.warn('='.repeat(80) + '\n');
     }
+
   }
+
 }

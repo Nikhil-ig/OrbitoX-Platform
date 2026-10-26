@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { withApiGuard, PlatformApiState } from '../../_lib/api-guard';
 import { ApiResponse } from '../../_lib/api-types';
-import { PlatformKeyEngine } from '@orbitox-io/plugin-engine';
+import { PlatformRepository } from '@orbitox-io/plugin-engine';
 
 export const GET = withApiGuard(
   {
@@ -66,6 +66,7 @@ export const POST = withApiGuard(
         name,
         serviceId,
         serviceName,
+        projectId: requestedProjectId,
         providerId,
         providerName,
         environment = 'production',
@@ -81,47 +82,49 @@ export const POST = withApiGuard(
         );
       }
 
-      // Generate cryptographically secure CSPRNG key with HMAC verifier
-      const generated = PlatformKeyEngine.generateKey(environment);
-
-      const newKey: any = {
-        id: generated.keyId,
+      const projectId = requestedProjectId || providerId;
+      const project = projectId ? PlatformRepository.getProject(projectId) : undefined;
+      if (!project) {
+        return NextResponse.json<ApiResponse>(
+          { success: false, error: { code: 'INVALID_PROJECT', message: 'A valid projectId is required to issue a durable API key.' } },
+          { status: 400 }
+        );
+      }
+      const environmentRecord = PlatformRepository.listEnvironments(project.id).find(
+        (item) => item.slug.toLowerCase() === environment.toLowerCase()
+      );
+      if (!environmentRecord) {
+        return NextResponse.json<ApiResponse>(
+          { success: false, error: { code: 'INVALID_ENVIRONMENT', message: `Environment ${environment} was not found for this project.` } },
+          { status: 400 }
+        );
+      }
+      const { keyRecord, rawSecret } = PlatformRepository.createApiKey({
         name,
-        keyPrefix: generated.keyPrefix,
-        maskedKey: generated.maskedDisplay,
-        secretFingerprint: generated.secretFingerprint,
-        authVerifier: generated.authVerifier,
-        serviceId,
-        serviceName: serviceName || serviceId,
-        providerId,
-        providerName,
-        environment,
-        scopes,
+        environmentId: environmentRecord.id,
+        projectId: project.id,
         capabilities: scopes,
-        tenantScope: tenantScope || (providerId ? [providerId] : []),
-        createdAt: new Date().toISOString(),
-        lastUsedAt: 'Never',
-        status: 'active',
+        ipAllowlist: body.ipAllowlist,
         rateLimitPerMin,
-        requestsLast30Days: 0,
-      };
-
-      PlatformApiState.addApiKey(newKey);
+        tenantScope: tenantScope || [project.slug],
+        expiresInDays: body.expiresInDays,
+        createdBy: 'platform-admin',
+      });
 
       PlatformApiState.recordTelemetry({
-        tenantId: providerId || 'admin',
+        tenantId: project.slug,
         facade: 'SecurityFacade',
         level: 'SECURITY',
         message: `Issued new CSPRNG API Key [${name}] for service [${serviceId}] (${environment}).`,
       });
 
-      const { authVerifier, ...safeRecord } = newKey;
+      const { authVerifier, ...safeRecord } = keyRecord;
 
       return NextResponse.json<ApiResponse>({
         success: true,
         data: {
-          keyRecord: safeRecord,
-          rawSecret: generated.rawSecret,
+          keyRecord: { ...safeRecord, serviceId, serviceName: serviceName || serviceId, providerId, providerName },
+          rawSecret,
           warning: 'This raw secret will never be shown again. Store it securely in your deployment pipeline or vault.',
         },
         meta: {

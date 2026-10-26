@@ -4,10 +4,10 @@
   "private": true,
   "scripts": {
     "dev": "next dev -p 3005",
-    "build": "next build",
+    "build": "../../node_modules/.bin/tsx --test test/api-route-auth-structure.test.ts && next build && node scripts/patch-standalone-startup.mjs",
     "type-check": "tsc --noEmit",
     "test": "tsx --test test/**/*.test.ts",
-    "start": "next start -p 3005",
+    "start": "node ../../scripts/check-production-env.mjs && next start -p 3005",
     "lint": "next lint"
   },
 

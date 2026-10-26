@@ -1,6 +1,29 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { ApiRequestContext } from '@/app/api/v1/_lib/api-types';
 
 export const ORBITOX_BACKEND_URL = process.env.ORBITOX_BACKEND_URL || 'http://localhost:3000';
+
+function trustedHeaders(authContext: ApiRequestContext, headers?: HeadersInit): Headers {
+  const trusted = new Headers(headers);
+  trusted.set('Authorization', `Bearer ${authContext.credential}`);
+  trusted.set('x-tenant-id', authContext.tenantId);
+  trusted.set('x-context-id', authContext.tenantId);
+  return trusted;
+}
+
+export async function authenticatedHospitalFetch(
+  upstreamPath: string,
+  authContext: ApiRequestContext | undefined,
+  init: RequestInit = {}
+): Promise<Response> {
+  if (!authContext?.tenantId || !authContext.credential) {
+    throw new Error('A verified customer principal is required.');
+  }
+  return fetch(`${ORBITOX_BACKEND_URL}${upstreamPath}`, {
+    ...init,
+    headers: trustedHeaders(authContext, init.headers),
+  });
+}
 
 export async function safeProxyOrFallback(
   req: NextRequest,
@@ -10,8 +33,16 @@ export async function safeProxyOrFallback(
     method?: string;
     body?: any;
     headers?: Record<string, string>;
-  } = {}
+  } = {},
+  authContext: ApiRequestContext
 ) {
+  if (!authContext?.tenantId || !authContext.credential) {
+    return NextResponse.json(
+      { success: false, error: { code: 'UNAUTHORIZED', message: 'A verified customer principal is required.' } },
+      { status: 401 }
+    );
+  }
+
   const method = options.method || req.method || 'GET';
   const abortController = new AbortController();
   const timeoutId = setTimeout(() => abortController.abort(), 800);
@@ -19,11 +50,11 @@ export async function safeProxyOrFallback(
   try {
     const fetchOptions: RequestInit = {
       method,
-      headers: {
+      headers: trustedHeaders(authContext, {
         'Accept': 'application/json',
         ...(options.body ? { 'Content-Type': 'application/json' } : {}),
         ...options.headers,
-      },
+      }),
       signal: abortController.signal,
       cache: 'no-store',
     };

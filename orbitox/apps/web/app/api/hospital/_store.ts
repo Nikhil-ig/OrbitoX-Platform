@@ -1,4 +1,5 @@
 // In-Memory Transactional Hospital Database for Resilient Standalone & Edge Execution
+import { AsyncLocalStorage } from 'node:async_hooks';
 
 export interface Patient {
   id: string;
@@ -406,4 +407,27 @@ class HospitalInMemoryStore {
 }
 
 // Global Singleton
-export const hospitalStore = new HospitalInMemoryStore();
+const tenantContext = new AsyncLocalStorage<string>();
+const tenantStores = new Map<string, HospitalInMemoryStore>();
+
+export function runWithHospitalTenant<T>(tenantId: string, callback: () => Promise<T>): Promise<T> {
+  return tenantContext.run(tenantId, callback);
+}
+
+function getTenantStore(): HospitalInMemoryStore {
+  const tenantId = tenantContext.getStore() || 'unscoped';
+  let store = tenantStores.get(tenantId);
+  if (!store) {
+    store = new HospitalInMemoryStore();
+    tenantStores.set(tenantId, store);
+  }
+  return store;
+}
+
+export const hospitalStore = new Proxy({} as HospitalInMemoryStore, {
+  get(_target, property) {
+    const store = getTenantStore();
+    const value = Reflect.get(store, property, store);
+    return typeof value === 'function' ? value.bind(store) : value;
+  },
+});

@@ -327,7 +327,7 @@ OrbitoX follows strict zero-trust security principles:
 - Secrets are decrypted only in-memory upon authorized demand.
 
 ### Mandatory Environment Secrets
-The production server **refuses to boot** if any of these secrets are missing or shorter than 32 characters:
+The production server (or a server with missing `NODE_ENV`) **refuses to boot** if any of these secrets are missing or shorter than 32 characters. Setting `NEXT_PHASE` does not bypass runtime validation.
 
 | Variable | Purpose | Minimum Length |
 |---|---|---|
@@ -335,6 +335,22 @@ The production server **refuses to boot** if any of these secrets are missing or
 | `ORBITOX_RUNTIME_TOKEN` | Shared secret for connected applications registering via SDK | 32 chars |
 | `ORBITOX_CONTROL_SECRET` | HMAC secret for signing commands dispatched to runtimes | 32 chars |
 | `ORBITOX_GUEST_SECRET` | Cryptographic secret for signing guest QR session tokens | 32 chars |
+| `ORBITOX_SERVER_PEPPER` | Server-only pepper for API-key verifier derivation | 32 chars |
+
+`NODE_ENV=production` is required for production deployment. `ORBITOX_DATA_DIR` should point to a persistent writable volume so project, key, quota, and audit records survive restarts. Sensitive Hospital API routes return 404 in production unless `ORBITOX_ENABLE_HOSPITAL_ADMIN_ENDPOINTS=true` is explicitly set.
+
+### Authentication Headers
+
+| Caller | Header | Format |
+|---|---|---|
+| Admin API | `Authorization` | `Bearer <ORBITOX_ADMIN_TOKEN>` |
+| Admin browser | `Authorization` | `Basic <base64(username:ORBITOX_ADMIN_TOKEN)>`; username is ignored |
+| Admin compatibility | `x-admin-token` | `<ORBITOX_ADMIN_TOKEN>` |
+| Customer API | `x-api-key` | Full issued API key, never a prefix |
+| Customer API alternative | `Authorization` | `Bearer <customer-api-key>`; an admin token is not treated as a customer key |
+| Diner API | `x-guest-token` | Signed, expiring capability returned by guest session bootstrap |
+
+`x-tenant-id` and `x-context-id` are never authentication credentials. If supplied with a customer key, a tenant value is accepted only when it matches that key's persisted tenant scope. See [Phase 1.6 route inventory and verification](docs/PHASE_1_6_SECURITY_VERIFICATION.md) for route ownership and enforcement.
 
 ---
 

@@ -42,6 +42,7 @@ export interface ApiRequestContext {
   categorySlug?: string;
   serviceId: string;
   apiKey?: string;
+  credential?: string;
   keyPrefix?: string;
   environment?: 'production' | 'staging' | 'sandbox' | string;
   scopes: string[];

@@ -1,9 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { ORBITOX_BACKEND_URL } from '../../_init';
+import { authenticatedHospitalFetch } from '../../_init';
+import { withHospitalGuard } from '@/app/api/_lib/route-auth';
 
-export async function GET(req: NextRequest) {
+export const GET = withHospitalGuard(async (_req: NextRequest, _routeContext, authContext) => {
   try {
-    const res = await fetch(`${ORBITOX_BACKEND_URL}/api/hospital/security/roles`, {
+    const res = await authenticatedHospitalFetch('/api/hospital/security/roles', authContext, {
       cache: 'no-store'
     });
     const data = await res.json();
@@ -11,4 +12,4 @@ export async function GET(req: NextRequest) {
   } catch (err: any) {
     return NextResponse.json({ success: false, error: err.message }, { status: 502 });
   }
-}
+}, { adminOnly: true, sensitive: true });

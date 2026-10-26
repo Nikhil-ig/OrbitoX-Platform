@@ -57,8 +57,38 @@ export const PATCH = withApiGuard(
       }
 
       const body = await req.json();
+      const editableFields = new Set([
+        'plan',
+        'apiCallQuota',
+        'rateLimitPerMin',
+        'storageQuotaGb',
+        'enabledServices',
+        'status',
+        'customDomain',
+      ]);
+      const unsupportedFields = Object.keys(body).filter((field) => !editableFields.has(field));
+      if (unsupportedFields.length > 0) {
+        return NextResponse.json(
+          {
+            success: false,
+            error: {
+              code: 'UNSUPPORTED_FIELDS',
+              message: `Project fields cannot be updated here: ${unsupportedFields.join(', ')}. Use the dedicated usage action to change monthly usage.`,
+              details: { fields: unsupportedFields },
+            },
+          },
+          { status: 400 }
+        );
+      }
+
       const updates: any = {};
 
+      if (body.plan && !PLAN_TIER_PRESETS[body.plan]) {
+        return NextResponse.json(
+          { success: false, error: { code: 'INVALID_PLAN', message: `Unknown plan: ${body.plan}.` } },
+          { status: 400 }
+        );
+      }
       if (body.plan && PLAN_TIER_PRESETS[body.plan]) {
         updates.plan = body.plan;
         updates.planLabel = PLAN_TIER_PRESETS[body.plan]!.name;
@@ -70,7 +100,14 @@ export const PATCH = withApiGuard(
       if (body.status && ['active', 'throttled', 'suspended'].includes(body.status)) {
         updates.status = body.status;
       }
-      if (body.customDomain) updates.customDomain = body.customDomain;
+      if (body.customDomain !== undefined) updates.customDomain = body.customDomain;
+
+      if (Object.keys(updates).length === 0) {
+        return NextResponse.json(
+          { success: false, error: { code: 'EMPTY_UPDATE', message: 'At least one supported project field is required.' } },
+          { status: 400 }
+        );
+      }
 
       const updated = PlatformApiState.updateProject(project.id, updates);
 

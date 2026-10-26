@@ -1,13 +1,23 @@
-import { describe, it, before } from 'node:test';
+import { describe, it, before, after } from 'node:test';
 import assert from 'node:assert/strict';
+import * as fs from 'node:fs';
+import * as os from 'node:os';
+import * as path from 'node:path';
 import { NextRequest, NextResponse } from 'next/server';
 import { withApiGuard, PlatformApiState } from '../app/api/v1/_lib/api-guard';
 import { isIpAllowed, resolveClientIp } from '../app/api/v1/_lib/ip-guard';
 import { PlatformRepository, PlatformKeyEngine } from '@orbitox-io/plugin-engine';
 import { createInternalAuthToken } from '../app/api/v1/_lib/auth-pipeline';
+import { GET as getPatients, POST as createPatient } from '../app/api/hospital/patients/route';
+import { POST as provisionProject } from '../app/api/v1/admin/projects/route';
+import { PATCH as updateProject } from '../app/api/v1/admin/projects/[projectId]/route';
+import { POST as updateProjectUsage } from '../app/api/v1/admin/projects/[projectId]/usage/route';
+import { hospitalStore } from '../app/api/hospital/_store';
 
 describe('Phase 1 & 1.5 Security, Unified Auth & Licensed Customer Test Suite', () => {
   const TEST_ADMIN_TOKEN = 'test_admin_token_super_secret_32_chars_minimum';
+  let originalDataDir: string;
+  let suiteDataDir: string;
   let validAdminKeySecret: string;
   let validCustomerKeySecret: string;
   let revokedKeySecret: string;
@@ -17,6 +27,10 @@ describe('Phase 1 & 1.5 Security, Unified Auth & Licensed Customer Test Suite', 
   before(async () => {
     process.env.ORBITOX_ADMIN_TOKEN = TEST_ADMIN_TOKEN;
     process.env.ORBITOX_SERVER_PEPPER = 'test_pepper_32_characters_minimum_len';
+    originalDataDir = path.dirname(PlatformRepository.getFilePath());
+    suiteDataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'orbitox-api-guard-'));
+    PlatformRepository.resetForTesting();
+    PlatformRepository.setDataDir(suiteDataDir);
     PlatformRepository.initialize();
 
     // 1. Create a platform admin organization & project
@@ -49,7 +63,7 @@ describe('Phase 1 & 1.5 Security, Unified Auth & Licensed Customer Test Suite', 
     // 2. Create customer project (CRM only)
     const customerProjRes = PlatformRepository.createProject({
       name: 'Omega Tenant Project',
-      slug: 'tenant_omega',
+      slug: 'tenant-omega',
       organizationId: adminOrg.id,
       businessModel: 'B2B',
       planTier: 'pro',
@@ -65,7 +79,7 @@ describe('Phase 1 & 1.5 Security, Unified Auth & Licensed Customer Test Suite', 
       environmentId: customerProjRes.environments[0]!.id,
       projectId: customerProjRes.project.id,
       capabilities: ['crm:read', 'crm:write'],
-      tenantScope: ['tenant_omega'],
+      tenantScope: ['tenant-omega'],
       createdBy: 'test_suite',
     });
     validCustomerKeySecret = customerKeyRes.rawSecret;
@@ -84,7 +98,7 @@ describe('Phase 1 & 1.5 Security, Unified Auth & Licensed Customer Test Suite', 
     // 4. Create suspended project
     const suspendedProjRes = PlatformRepository.createProject({
       name: 'Suspended Project',
-      slug: 'tenant_suspended',
+      slug: 'tenant-suspended',
       organizationId: adminOrg.id,
       businessModel: 'B2B',
       planTier: 'starter',
@@ -97,7 +111,7 @@ describe('Phase 1 & 1.5 Security, Unified Auth & Licensed Customer Test Suite', 
     // 5. Create empty services project (unentitled)
     PlatformRepository.createProject({
       name: 'Empty Services Project',
-      slug: 'tenant_empty',
+      slug: 'tenant-empty',
       organizationId: adminOrg.id,
       businessModel: 'B2B',
       planTier: 'starter',
@@ -109,7 +123,7 @@ describe('Phase 1 & 1.5 Security, Unified Auth & Licensed Customer Test Suite', 
     // 6. Create over-quota project
     PlatformRepository.createProject({
       name: 'Over Quota Project',
-      slug: 'tenant_quota',
+      slug: 'tenant-quota',
       organizationId: adminOrg.id,
       businessModel: 'B2B',
       planTier: 'starter',
@@ -119,7 +133,7 @@ describe('Phase 1 & 1.5 Security, Unified Auth & Licensed Customer Test Suite', 
       enabledServices: ['crm'],
       apiCallQuota: 100,
     });
-    PlatformRepository.updateProject('tenant_quota', { monthlyApiCalls: 100 });
+    PlatformRepository.updateProject('tenant-quota', { monthlyApiCalls: 100 });
 
     // 7. Create Restaurant + POS licensed project
     const restPosRes = PlatformRepository.createProject({
@@ -147,6 +161,13 @@ describe('Phase 1 & 1.5 Security, Unified Auth & Licensed Customer Test Suite', 
     restaurantPosKeySecret = restPosKey.rawSecret;
   });
 
+  after(() => {
+    PlatformRepository.resetForTesting();
+    PlatformRepository.setDataDir(originalDataDir);
+    PlatformRepository.initialize();
+    fs.rmSync(suiteDataDir, { recursive: true, force: true });
+  });
+
   const dummyHandler = async (req: NextRequest, ctx: any) => {
     return NextResponse.json({ success: true, tenantId: ctx.tenantId, keyId: ctx.keyId });
   };
@@ -159,6 +180,18 @@ describe('Phase 1 & 1.5 Security, Unified Auth & Licensed Customer Test Suite', 
     assert.equal(res.status, 401);
     const body = await res.json();
     assert.equal(body.error?.code, 'UNAUTHORIZED');
+  });
+
+  it('Hospital patient reads and writes reject anonymous requests', async () => {
+    const read = await getPatients(new NextRequest('http://localhost:3000/api/hospital/patients'));
+    const write = await createPatient(new NextRequest('http://localhost:3000/api/hospital/patients', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ name: 'Anonymous Patient' }),
+    }));
+
+    assert.equal(read.status, 401);
+    assert.equal(write.status, 401);
   });
 
   it('2. Query Parameter Auth: ignores and rejects apiKey in query string with 401', async () => {
@@ -206,6 +239,26 @@ describe('Phase 1 & 1.5 Security, Unified Auth & Licensed Customer Test Suite', 
     assert.equal(res.status, 403);
     const body = await res.json();
     assert.equal(body.error?.code, 'KEY_DISABLED');
+  });
+
+  it('rejects an expired persisted API key', async () => {
+    const project = PlatformRepository.getProject('tenant-omega')!;
+    const environment = PlatformRepository.listEnvironments(project.id).find((item) => item.isProduction)!;
+    const expired = PlatformRepository.createApiKey({
+      name: 'Expired Key',
+      environmentId: environment.id,
+      projectId: project.id,
+      capabilities: ['crm:read'],
+      createdBy: 'test_suite',
+      expiresInDays: -1,
+    });
+    const handler = withApiGuard({ serviceId: 'crm', serviceName: 'CRM Service' }, dummyHandler);
+    const response = await handler(new NextRequest('http://localhost:3000/api/v1/crm/leads', {
+      headers: { 'x-api-key': expired.rawSecret },
+    }));
+
+    assert.equal(response.status, 403);
+    assert.equal((await response.json()).error?.code, 'KEY_EXPIRED');
   });
 
   it('6. Missing Required Scopes: rejects authenticated key lacking declared scopes with 403', async () => {
@@ -279,7 +332,7 @@ describe('Phase 1 & 1.5 Security, Unified Auth & Licensed Customer Test Suite', 
   });
 
   it('10. Suspended Project Gate: rejects requests for suspended project with 403', async () => {
-    const suspendedProj = PlatformRepository.getProject('tenant_suspended');
+    const suspendedProj = PlatformRepository.getProject('tenant-suspended');
     const suspendedKey = PlatformRepository.createApiKey({
       name: 'Suspended Machine Key',
       environmentId: 'env_suspended',
@@ -300,7 +353,7 @@ describe('Phase 1 & 1.5 Security, Unified Auth & Licensed Customer Test Suite', 
   });
 
   it('11. Plugin Entitlement Gate Fails Closed: unentitled plugin rejected with 403', async () => {
-    const emptyProj = PlatformRepository.getProject('tenant_empty');
+    const emptyProj = PlatformRepository.getProject('tenant-empty');
     const emptyKey = PlatformRepository.createApiKey({
       name: 'Empty Key',
       environmentId: 'env_empty',
@@ -321,7 +374,7 @@ describe('Phase 1 & 1.5 Security, Unified Auth & Licensed Customer Test Suite', 
   });
 
   it('12. Quota Gate Fails Closed: over-quota project returns 429', async () => {
-    const quotaProj = PlatformRepository.getProject('tenant_quota');
+    const quotaProj = PlatformRepository.getProject('tenant-quota');
     const quotaKey = PlatformRepository.createApiKey({
       name: 'Quota Key',
       environmentId: 'env_quota',
@@ -406,7 +459,7 @@ describe('Phase 1 & 1.5 Security, Unified Auth & Licensed Customer Test Suite', 
     assert.equal(res.status, 200);
     const body = await res.json();
     assert.equal(body.success, true);
-    assert.equal(body.tenantId, 'tenant_omega');
+    assert.equal(body.tenantId, 'tenant-omega');
   });
 
   // ─────────────────────────────────────────────────────────────
@@ -531,7 +584,7 @@ describe('Phase 1 & 1.5 Security, Unified Auth & Licensed Customer Test Suite', 
     const res = await handler(req);
     assert.equal(res.status, 200);
     const body = await res.json();
-    assert.equal(body.tenantId, 'tenant_omega');
+    assert.equal(body.tenantId, 'tenant-omega');
   });
 
   it('23. Admin Token Calling Customer Route Lacking Project: returns 403 PROJECT_NOT_FOUND', async () => {
@@ -625,5 +678,220 @@ describe('Phase 1 & 1.5 Security, Unified Auth & Licensed Customer Test Suite', 
     });
     const res3 = await restHandler(req3);
     assert.equal(res3.status, 200);
+  });
+
+  it('project provisioning issues a persistent repository key that survives reinitialization', async () => {
+    const originalDataDir = path.dirname(PlatformRepository.getFilePath());
+    const testDataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'orbitox-provisioning-'));
+    PlatformRepository.saveImmediate();
+    PlatformRepository.setDataDir(testDataDir);
+    PlatformRepository.resetForTesting();
+    PlatformRepository.initialize();
+
+    const response = await provisionProject(new NextRequest('http://localhost:3000/api/v1/admin/projects', {
+      method: 'POST',
+      headers: {
+        authorization: `Bearer ${TEST_ADMIN_TOKEN}`,
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({
+        name: 'Durable Provisioned Customer',
+        enabledServices: ['crm'],
+        contactEmail: 'durable@example.test',
+      }),
+    }));
+
+    assert.equal(response.status, 201);
+    const responseBody = await response.json();
+    const issuedSecret = responseBody.data.apiKey.rawKey;
+    const projectId = responseBody.data.project.id;
+    const projectSlug = responseBody.data.project.slug;
+    PlatformRepository.saveImmediate();
+    PlatformRepository.resetForTesting();
+    PlatformRepository.initialize();
+
+    const persistedKey = PlatformRepository.findKeyByRawSecret(issuedSecret);
+    assert.equal(persistedKey?.projectId, projectId);
+    assert.deepEqual(persistedKey?.tenantScope, [projectSlug]);
+    assert.ok(persistedKey?.environmentId);
+    assert.equal(PlatformRepository.getProject(projectId)?.slug, projectSlug);
+
+    PlatformRepository.resetForTesting();
+    PlatformRepository.setDataDir(originalDataDir);
+    PlatformRepository.initialize();
+    fs.rmSync(testDataDir, { recursive: true, force: true });
+  });
+
+  it('reserves quota once under parallel load and releases failed handler calls', async () => {
+    const organizationId = PlatformRepository.listOrganizations()[0]!.id;
+    const project = PlatformRepository.createProject({
+      name: `Atomic Quota ${Date.now()}`,
+      organizationId,
+      businessModel: 'B2B',
+      planTier: 'starter',
+      technicalLead: 'Quota Test',
+      contactEmail: 'quota@example.test',
+      enabledServices: ['crm'],
+      apiCallQuota: 10,
+    }).project;
+    const productionEnvironment = PlatformRepository.listEnvironments(project.id).find((item) => item.isProduction)!;
+    const key = PlatformRepository.createApiKey({
+      name: 'Atomic Quota Test Key',
+      environmentId: productionEnvironment.id,
+      projectId: project.id,
+      capabilities: ['crm:read'],
+      tenantScope: [project.slug],
+      createdBy: 'test_suite',
+    });
+    const handler = withApiGuard(
+      { serviceId: 'crm', serviceName: 'CRM Service' },
+      async () => NextResponse.json({ success: true })
+    );
+
+    const responses = await Promise.all(Array.from({ length: 50 }, () => handler(new NextRequest(
+      'http://localhost:3000/api/v1/crm/leads',
+      { headers: { 'x-api-key': key.rawSecret } }
+    ))));
+
+    assert.equal(responses.filter((response) => response.status === 200).length, 10);
+    assert.equal(PlatformRepository.getProject(project.id)?.monthlyApiCalls, 10);
+
+    const failingProject = PlatformRepository.createProject({
+      name: `Failed Call Quota ${Date.now()}`,
+      organizationId,
+      businessModel: 'B2B',
+      planTier: 'starter',
+      technicalLead: 'Quota Test',
+      contactEmail: 'quota-failure@example.test',
+      enabledServices: ['crm'],
+      apiCallQuota: 1,
+    }).project;
+    const failingEnvironment = PlatformRepository.listEnvironments(failingProject.id).find((item) => item.isProduction)!;
+    const failingKey = PlatformRepository.createApiKey({
+      name: 'Failed Call Test Key',
+      environmentId: failingEnvironment.id,
+      projectId: failingProject.id,
+      capabilities: ['crm:read'],
+      tenantScope: [failingProject.slug],
+      createdBy: 'test_suite',
+    });
+    const environmentCallsBeforeFailure = PlatformRepository.getQuotaPolicy(failingEnvironment.id)?.monthlyCallsUsed || 0;
+    const failOnce = withApiGuard(
+      { serviceId: 'crm', serviceName: 'CRM Service' },
+      async () => NextResponse.json({ success: false }, { status: 503 })
+    );
+    const failure = await failOnce(new NextRequest('http://localhost:3000/api/v1/crm/leads', {
+      headers: { 'x-api-key': failingKey.rawSecret },
+    }));
+
+    assert.equal(failure.status, 503);
+    assert.equal(PlatformRepository.getProject(failingProject.id)?.monthlyApiCalls, 0);
+    assert.equal(
+      PlatformRepository.getQuotaPolicy(failingEnvironment.id)?.monthlyCallsUsed || 0,
+      environmentCallsBeforeFailure
+    );
+  });
+
+  it('isolates hospital fallback data by authenticated tenant', async () => {
+    const organizationId = PlatformRepository.listOrganizations()[0]!.id;
+    const makeHospitalCredential = (name: string) => {
+      const project = PlatformRepository.createProject({
+        name: `${name} ${Date.now()}`,
+        organizationId,
+        businessModel: 'B2B',
+        planTier: 'starter',
+        technicalLead: 'Tenant Isolation Test',
+        contactEmail: `${name.toLowerCase()}@example.test`,
+        enabledServices: ['hms'],
+      }).project;
+      const environment = PlatformRepository.listEnvironments(project.id).find((item) => item.isProduction)!;
+      const key = PlatformRepository.createApiKey({
+        name: `${name} Key`,
+        environmentId: environment.id,
+        projectId: project.id,
+        capabilities: ['hms:read', 'hms:write'],
+        tenantScope: [project.slug],
+        createdBy: 'test_suite',
+      });
+      return { project, rawSecret: key.rawSecret };
+    };
+    const firstTenant = makeHospitalCredential('Hospital Alpha');
+    const secondTenant = makeHospitalCredential('Hospital Beta');
+    const handler = withApiGuard(
+      { serviceId: 'hms', serviceName: 'Hospital API' },
+      async () => NextResponse.json({ data: hospitalStore.addPatient({ name: 'Alpha-only Patient' }) })
+    );
+
+    await handler(new NextRequest('http://localhost:3000/api/v1/hms/patients', {
+      method: 'POST',
+      headers: { 'x-api-key': firstTenant.rawSecret },
+    }));
+    const secondResponse = await withApiGuard(
+      { serviceId: 'hms', serviceName: 'Hospital API' },
+      async () => NextResponse.json({ data: hospitalStore.getPatients() })
+    )(new NextRequest('http://localhost:3000/api/v1/hms/patients', {
+      headers: { 'x-api-key': secondTenant.rawSecret },
+    }));
+
+    assert.equal(secondResponse.status, 200);
+    const patients = (await secondResponse.json()).data;
+    assert.equal(patients.some((patient: any) => patient.name === 'Alpha-only Patient'), false);
+  });
+
+  it('denies hospital writes to a read-only customer key', async () => {
+    const organizationId = PlatformRepository.listOrganizations()[0]!.id;
+    const project = PlatformRepository.createProject({
+      name: `Read Only Hospital ${Date.now()}`,
+      organizationId,
+      businessModel: 'B2B',
+      planTier: 'starter',
+      technicalLead: 'Capability Test',
+      contactEmail: 'readonly@example.test',
+      enabledServices: ['hms'],
+    }).project;
+    const environment = PlatformRepository.listEnvironments(project.id).find((item) => item.isProduction)!;
+    const key = PlatformRepository.createApiKey({
+      name: 'Read Only Hospital Key',
+      environmentId: environment.id,
+      projectId: project.id,
+      capabilities: ['hms:read'],
+      tenantScope: [project.slug],
+      createdBy: 'test_suite',
+    });
+
+    const response = await createPatient(new NextRequest('http://localhost:3000/api/hospital/patients', {
+      method: 'POST',
+      headers: { 'x-api-key': key.rawSecret, 'content-type': 'application/json' },
+      body: JSON.stringify({ name: 'Read-only key must not write' }),
+    }));
+
+    assert.equal(response.status, 403);
+    assert.equal((await response.json()).error?.code, 'INSUFFICIENT_SCOPES');
+  });
+
+  it('rejects ignored usage updates and audits the explicit admin reset action', async () => {
+    const project = PlatformRepository.getProject(restaurantPosProjectId)!;
+    PlatformRepository.updateProject(project.id, { monthlyApiCalls: 7 });
+    const usageBeforeUpdateAttempt = PlatformRepository.getProject(project.id)?.monthlyApiCalls;
+    const headers = {
+      authorization: `Bearer ${TEST_ADMIN_TOKEN}`,
+      'content-type': 'application/json',
+    };
+    const unsupportedUpdate = await updateProject(new NextRequest(
+      `http://localhost:3000/api/v1/admin/projects/${project.id}`,
+      { method: 'PATCH', headers, body: JSON.stringify({ monthlyApiCalls: 0 }) }
+    ));
+    assert.equal(unsupportedUpdate.status, 400);
+    assert.equal(PlatformRepository.getProject(project.id)?.monthlyApiCalls, usageBeforeUpdateAttempt);
+
+    const resetResponse = await updateProjectUsage(new NextRequest(
+      `http://localhost:3000/api/v1/admin/projects/${project.id}/usage`,
+      { method: 'POST', headers, body: JSON.stringify({ action: 'reset' }) }
+    ));
+    assert.equal(resetResponse.status, 200);
+    assert.equal(PlatformRepository.getProject(project.id)?.monthlyApiCalls, 0);
+    assert.ok(PlatformRepository.listAuditEvents({ projectId: project.id }).some((entry) =>
+      entry.action === 'project.usage.reset' && entry.previousValue === 7 && entry.newValue === 0
+    ));
   });
 });

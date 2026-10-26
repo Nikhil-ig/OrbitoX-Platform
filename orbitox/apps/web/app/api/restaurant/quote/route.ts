@@ -1,15 +1,16 @@
 import { NextRequest } from 'next/server';
 import { restaurantRuntime } from '../_lib/restaurant-runtime';
 import { createLegacyProxyResponse } from '../_lib/legacy-proxy';
+import { withGuestToken } from '@/app/api/_lib/route-auth';
 
 /**
  * ⚠️ LEGACY COMPATIBILITY PROXY: Pricing Quote
  * Target runtime: http://localhost:4010/api/restaurant/quote
  */
-export async function POST(request: NextRequest) {
+export const POST = withGuestToken(async (request: NextRequest, _routeContext, guest) => {
   try {
     const body = await request.json();
-    const { tenantId, companyId, locationId, sessionId, cartItems } = body;
+    const { cartItems } = body;
 
     if (!cartItems || !Array.isArray(cartItems) || cartItems.length === 0) {
       return createLegacyProxyResponse(
@@ -19,10 +20,10 @@ export async function POST(request: NextRequest) {
     }
 
     const quote = restaurantRuntime.catalogService.requestQuote({
-      tenantId: tenantId || 'tenant_orbitox',
-      companyId: companyId || 'company_bistro',
-      locationId: locationId || 'loc_ludhiana',
-      sessionId: sessionId || 'sess_1001',
+      tenantId: guest.tenantId,
+      companyId: guest.companyId,
+      locationId: guest.locationId,
+      sessionId: guest.diningSessionId,
       cartItems,
       taxRateBasisPoints: 500, // 5% GST
       serviceFeeBasisPoints: 0,
@@ -49,4 +50,4 @@ export async function POST(request: NextRequest) {
       { status: 422 }
     );
   }
-}
+});

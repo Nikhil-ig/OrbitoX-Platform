@@ -1,10 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { ORBITOX_BACKEND_URL } from '../../_init';
+import { authenticatedHospitalFetch } from '../../_init';
+import { withHospitalGuard } from '@/app/api/_lib/route-auth';
 
-export async function POST(req: NextRequest) {
+export const POST = withHospitalGuard(async (req: NextRequest, _routeContext, authContext) => {
   try {
     const body = await req.json();
-    const res = await fetch(`${ORBITOX_BACKEND_URL}/api/security/break-glass`, {
+    const res = await authenticatedHospitalFetch('/api/security/break-glass', authContext, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body)
@@ -14,4 +15,4 @@ export async function POST(req: NextRequest) {
   } catch (err: any) {
     return NextResponse.json({ success: false, error: err.message }, { status: 502 });
   }
-}
+}, { adminOnly: true, sensitive: true });

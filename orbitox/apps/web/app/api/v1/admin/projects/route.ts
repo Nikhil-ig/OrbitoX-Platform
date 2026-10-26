@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import * as crypto from 'crypto';
-import { withApiGuard, PlatformApiState, PlatformKeyEngine } from '../../_lib/api-guard';
+import { withApiGuard, PlatformApiState, PlatformRepository } from '../../_lib/api-guard';
 import { ClientProject, PLAN_TIER_PRESETS } from '@/app/admin/data/mock-data';
 
 export const GET = withApiGuard(
@@ -56,6 +55,7 @@ export const POST = withApiGuard(
       const body = await req.json();
       const {
         name,
+        slug: requestedSlug,
         organization,
         businessModel = 'O2O2B2B2C',
         plan = 'growth',
@@ -75,14 +75,35 @@ export const POST = withApiGuard(
         );
       }
 
-      const slug = name
-        .toLowerCase()
-        .replace(/[^a-z0-9]/g, '-')
-        .replace(/-+/g, '-')
-        .replace(/^-|-$/g, '');
-
       const preset = PLAN_TIER_PRESETS[plan] || PLAN_TIER_PRESETS.growth!;
-      const projectId = `proj-${slug || Date.now()}`;
+      const organizationName = organization || name;
+      const organizationSlug = organizationName
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, '-')
+        .replace(/^-|-$/g, '') || `org-${Date.now()}`;
+      const organizationRecord = PlatformRepository.listOrganizations().find(
+        (item) => item.name.toLowerCase() === organizationName.toLowerCase()
+      ) || PlatformRepository.createOrganization({
+        name: organizationName,
+        slug: `${organizationSlug}-${Date.now().toString(36)}`,
+        billingEmail: contactEmail || `dev@${organizationSlug}.com`,
+      });
+      const projectResult = PlatformRepository.createProject({
+        name,
+        ...(typeof requestedSlug === 'string' ? { slug: requestedSlug } : {}),
+        organizationId: organizationRecord.id,
+        businessModel,
+        planTier: plan,
+        plan,
+        technicalLead: technicalLead || 'Lead Systems Architect',
+        contactEmail: contactEmail || `dev@${organizationSlug}.com`,
+        enabledServices,
+        apiCallQuota: customQuota || preset.defaultCallQuota,
+        rateLimitPerMin: customRateLimit || preset.defaultRateLimitPerMin,
+      });
+      const createdProject = projectResult.project;
+      const slug = createdProject.slug;
+      const projectId = createdProject.id;
 
       const modelLabels: Record<string, string> = {
         O2O2B2B2C: 'O2O2B2B2C (Kitchen-to-Merchant-to-Consumer)',
@@ -121,42 +142,22 @@ export const POST = withApiGuard(
         recentLatencyMs: 12,
       };
 
-      const createdProject = PlatformApiState.addProject(newProject);
-      const actualProjectId = createdProject?.id || projectId;
+      const productionEnvironment = projectResult.environments.find((environment) => environment.isProduction)!;
+      const { keyRecord, rawSecret: fullKey } = PlatformRepository.createApiKey({
+        name: `${name} Primary Live Key`,
+        environmentId: productionEnvironment.id,
+        projectId,
+        capabilities: ['*'],
+        tenantScope: [slug],
+        rateLimitPerMin: customRateLimit || preset.defaultRateLimitPerMin,
+        createdBy: 'platform-admin',
+      });
+      const keyId = keyRecord.id;
+      const keyPrefix = keyRecord.keyPrefix;
 
-      // Generate initial API key for project
-      const randomHex = crypto.randomBytes(12).toString('hex');
-      const keyPrefix = `orb_live_${slug.slice(0, 8)}_`;
-      const fullKey = `${keyPrefix}${randomHex}`;
-      const keyId = `key-${crypto.randomUUID()}`;
-
-      newProject.id = actualProjectId;
+      newProject.id = projectId;
       newProject.primaryApiKeyId = keyId;
       newProject.primaryApiKeyPrefix = keyPrefix;
-
-      const newKey: any = {
-        id: keyId,
-        projectId: actualProjectId,
-        name: `${name} Primary Live Key`,
-        keyPrefix,
-        maskedKey: `${keyPrefix}${randomHex.slice(0, 4)}********************${randomHex.slice(-4)}`,
-        rawKey: fullKey,
-        authVerifier: PlatformKeyEngine.computeAuthVerifier(fullKey),
-        serviceId: 'all',
-        serviceName: 'All Subscribed Packages',
-        providerId: actualProjectId,
-        providerName: name,
-        environment: 'production',
-        scopes: ['*'],
-        tenantScope: [slug],
-        createdAt: new Date().toISOString().slice(0, 10),
-        lastUsedAt: 'Never',
-        status: 'active',
-        rateLimitPerMin: customRateLimit || preset.defaultRateLimitPerMin,
-        requestsLast30Days: 0,
-      };
-
-      PlatformApiState.addApiKey(newKey);
 
       PlatformApiState.recordTelemetry({
         tenantId: slug,
@@ -192,8 +193,8 @@ console.log('OrbitoX OS Active with plugins:', Object.keys(app.plugins));`;
             apiKey: {
               id: keyId,
               rawKey: fullKey,
-              maskedKey: newKey.maskedKey,
-              rateLimitPerMin: newKey.rateLimitPerMin,
+              maskedKey: keyRecord.maskedDisplay,
+              rateLimitPerMin: keyRecord.rateLimitPerMin,
             },
             onboardingKit: {
               bootstrapperCode: quickstartCode,

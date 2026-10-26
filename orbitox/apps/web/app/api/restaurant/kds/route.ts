@@ -1,12 +1,13 @@
 import { NextRequest } from 'next/server';
 import { restaurantRuntime } from '../_lib/restaurant-runtime';
 import { createLegacyProxyResponse } from '../_lib/legacy-proxy';
+import { withRestaurantGuard } from '@/app/api/_lib/route-auth';
 
 /**
  * ⚠️ LEGACY COMPATIBILITY PROXY: Kitchen Display System (KDS)
  * Target runtime: http://localhost:4010/api/restaurant/kds/tasks
  */
-export async function GET(request: NextRequest) {
+export const GET = withRestaurantGuard(async (request: NextRequest) => {
   try {
     const searchParams = request.nextUrl.searchParams;
     const stationId = searchParams.get('stationId') || 'st_tandoor';
@@ -19,9 +20,9 @@ export async function GET(request: NextRequest) {
       { status: 500 }
     );
   }
-}
+}, { adminOnly: true, sensitive: true });
 
-export async function POST(request: NextRequest) {
+export const POST = withRestaurantGuard(async (request: NextRequest) => {
   try {
     const body = await request.json();
     const { taskId, newStatus, bumpedBy } = body;
@@ -46,4 +47,4 @@ export async function POST(request: NextRequest) {
       { status: 422 }
     );
   }
-}
+}, { adminOnly: true, sensitive: true });

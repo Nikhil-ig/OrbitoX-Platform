@@ -89,6 +89,7 @@ export interface PlatformRepositoryStoreData {
   domains: ProjectDomainRecord[];
   quotaPolicies: EnvironmentQuotaPolicyRecord[];
   rateLimitPolicies: EnvironmentRateLimitPolicyRecord[];
+  auditLogs: Array<Record<string, any>>;
 }
 
 export class PlatformRepository {
@@ -103,6 +104,7 @@ export class PlatformRepository {
   private static domains: ProjectDomainRecord[] = [];
   private static quotaPolicies: EnvironmentQuotaPolicyRecord[] = [];
   private static rateLimitPolicies: EnvironmentRateLimitPolicyRecord[] = [];
+  private static auditLogs: Array<Record<string, any>> = [];
 
   private static initialized = false;
   private static persistenceEnabled = true;
@@ -186,6 +188,8 @@ export class PlatformRepository {
           this.domains = parsed.domains || [];
           this.quotaPolicies = parsed.quotaPolicies || [];
           this.rateLimitPolicies = parsed.rateLimitPolicies || [];
+          this.auditLogs = parsed.auditLogs || [];
+          this.repairDuplicateProjectSlugs();
           return;
         }
       } catch (err) {
@@ -194,6 +198,7 @@ export class PlatformRepository {
     }
 
     this.seedDefaults();
+    this.repairDuplicateProjectSlugs();
     if (this.persistenceEnabled) {
       this.saveImmediate();
     }
@@ -216,9 +221,41 @@ export class PlatformRepository {
         this.domains = parsed.domains || [];
         this.quotaPolicies = parsed.quotaPolicies || [];
         this.rateLimitPolicies = parsed.rateLimitPolicies || [];
+        this.auditLogs = parsed.auditLogs || [];
+        this.repairDuplicateProjectSlugs();
       } catch (err) {
         console.error('[PlatformRepository] Failed to reload store from disk:', err);
       }
+    }
+  }
+
+  private static repairDuplicateProjectSlugs(): void {
+    const seenSlugs = new Set<string>();
+    const repairs: string[] = [];
+    for (const project of this.projects) {
+      const originalSlug = project.slug;
+      const normalizedSlug = originalSlug.toLowerCase();
+      if (!seenSlugs.has(normalizedSlug)) {
+        seenSlugs.add(normalizedSlug);
+        continue;
+      }
+
+      let suffix = 2;
+      let repairedSlug = `${originalSlug}-${suffix}`;
+      while (seenSlugs.has(repairedSlug.toLowerCase())) repairedSlug = `${originalSlug}-${++suffix}`;
+      project.slug = repairedSlug;
+      project.updatedAt = new Date().toISOString();
+      seenSlugs.add(repairedSlug.toLowerCase());
+      for (const key of this.apiKeys) {
+        if (key.projectId === project.id && key.tenantScope?.includes(originalSlug)) {
+          key.tenantScope = [repairedSlug];
+        }
+      }
+      repairs.push(`${originalSlug} -> ${repairedSlug} (${project.id})`);
+    }
+    if (repairs.length > 0) {
+      console.error(`[PlatformRepository] Repaired duplicate project slugs: ${repairs.join('; ')}`);
+      this.saveImmediate();
     }
   }
 
@@ -251,6 +288,7 @@ export class PlatformRepository {
         domains: this.domains,
         quotaPolicies: this.quotaPolicies,
         rateLimitPolicies: this.rateLimitPolicies,
+        auditLogs: this.auditLogs,
       };
 
       const tempPath = `${this.filePath}.tmp.${Date.now()}`;
@@ -277,6 +315,7 @@ export class PlatformRepository {
     this.domains = [];
     this.quotaPolicies = [];
     this.rateLimitPolicies = [];
+    this.auditLogs = [];
     this.initialized = false;
   }
 
@@ -341,12 +380,29 @@ export class PlatformRepository {
 
   static getProject(idOrSlug: string): PlatformProject | undefined {
     this.initialize();
-    return this.projects.find((p) => p.id === idOrSlug || p.slug === idOrSlug);
+    const lookupSlug = idOrSlug.toLowerCase();
+    return this.projects.find((p) => p.id === idOrSlug || p.slug.toLowerCase() === lookupSlug);
   }
 
   static createProject(input: CreateProjectInput): { project: PlatformProject; environments: ProjectEnvironment[] } {
     this.initialize();
-    const slug = (input.slug || input.name.toLowerCase().replace(/[^a-z0-9]/g, '-').replace(/-+/g, '-')).replace(/^-|-$/g, '');
+    const suppliedSlug = input.slug?.trim() || '';
+    const suppliedSlugIsValid = /^[a-z0-9]+(?:-[a-z0-9]+)*$/i.test(suppliedSlug);
+    const slugSource = suppliedSlugIsValid ? suppliedSlug : input.name;
+    const baseSlug = slugSource.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+    if (!baseSlug) throw new Error('Project name must produce a valid slug.');
+
+    const slugExists = (candidate: string) =>
+      this.projects.some((project) => project.slug.toLowerCase() === candidate.toLowerCase());
+    if (suppliedSlugIsValid && slugExists(baseSlug)) {
+      throw new Error(`Project slug "${baseSlug}" is already in use.`);
+    }
+
+    let slug = baseSlug;
+    if (!suppliedSlugIsValid) {
+      let suffix = 2;
+      while (slugExists(slug)) slug = `${baseSlug}-${suffix++}`;
+    }
     const projectId = `proj_${slug}_${Date.now().toString(36)}`;
 
     const planKey = (input.plan || input.planTier || 'starter').toLowerCase();
@@ -460,8 +516,11 @@ export class PlatformRepository {
 
   static updateProject(projectId: string, updates: Partial<PlatformProject>): PlatformProject | undefined {
     this.initialize();
-    const idx = this.projects.findIndex((p) => p.id === projectId || p.slug === projectId);
+    const idx = this.projects.findIndex((p) => p.id === projectId || p.slug.toLowerCase() === projectId.toLowerCase());
     if (idx !== -1) {
+      if (updates.slug !== undefined && updates.slug !== this.projects[idx]!.slug) {
+        throw new Error('Project slug is immutable after creation.');
+      }
       this.projects[idx] = { ...this.projects[idx]!, ...updates, updatedAt: new Date().toISOString() };
       this.saveDebounced();
       return this.projects[idx];
@@ -489,6 +548,71 @@ export class PlatformRepository {
       return proj.monthlyApiCalls;
     }
     return 0;
+  }
+
+  static reserveProjectUsage(projectId: string, monthlyQuota: number = Number.POSITIVE_INFINITY): number | undefined {
+    this.initialize();
+    const project = this.projects.find((item) => item.id === projectId || item.slug === projectId);
+    if (!project) return undefined;
+
+    const currentUsage = project.monthlyApiCalls || 0;
+    if (currentUsage >= monthlyQuota) return undefined;
+
+    project.monthlyApiCalls = currentUsage + 1;
+    this.saveDebounced();
+    return project.monthlyApiCalls;
+  }
+
+  static releaseProjectUsage(projectId: string, amount: number = 1): number {
+    this.initialize();
+    const project = this.projects.find((item) => item.id === projectId || item.slug === projectId);
+    if (!project) return 0;
+
+    project.monthlyApiCalls = Math.max(0, (project.monthlyApiCalls || 0) - amount);
+    this.saveDebounced();
+    return project.monthlyApiCalls;
+  }
+
+  static setProjectUsage(projectId: string, monthlyApiCalls: number): PlatformProject | undefined {
+    this.initialize();
+    if (!Number.isSafeInteger(monthlyApiCalls) || monthlyApiCalls < 0) {
+      throw new Error('monthlyApiCalls must be a non-negative safe integer.');
+    }
+    const project = this.projects.find((item) => item.id === projectId || item.slug === projectId);
+    if (!project) return undefined;
+    project.monthlyApiCalls = monthlyApiCalls;
+    project.updatedAt = new Date().toISOString();
+    this.saveImmediate();
+    return project;
+  }
+
+  static resetMonthlyProjectUsage(): number {
+    this.initialize();
+    let resetCount = 0;
+    for (const project of this.projects) {
+      if ((project.monthlyApiCalls || 0) !== 0) resetCount++;
+      project.monthlyApiCalls = 0;
+      project.updatedAt = new Date().toISOString();
+    }
+    this.saveImmediate();
+    return resetCount;
+  }
+
+  static recordAuditEvent(event: Record<string, any>): Record<string, any> {
+    this.initialize();
+    const record = {
+      id: `audit_${crypto.randomUUID()}`,
+      createdAt: new Date().toISOString(),
+      ...event,
+    };
+    this.auditLogs = [record, ...this.auditLogs].slice(0, 10000);
+    this.saveImmediate();
+    return record;
+  }
+
+  static listAuditEvents(filter?: { projectId?: string }): Array<Record<string, any>> {
+    this.initialize();
+    return this.auditLogs.filter((event) => !filter?.projectId || event.projectId === filter.projectId);
   }
 
   static listEnvironments(projectId?: string): ProjectEnvironment[] {

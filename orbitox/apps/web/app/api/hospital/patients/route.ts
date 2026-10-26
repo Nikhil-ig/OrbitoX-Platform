@@ -1,20 +1,19 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { safeProxyOrFallback } from '../_init';
 import { hospitalStore } from '../_store';
+import { withHospitalGuard } from '@/app/api/_lib/route-auth';
 
-export async function GET(req: NextRequest) {
-  const contextId = req.headers.get('x-context-id') || '';
+export const GET = withHospitalGuard(async (req: NextRequest, _routeContext, authContext) => {
   return safeProxyOrFallback(
     req,
     '/api/hospital/patients',
     () => hospitalStore.getPatients(),
-    {
-      headers: contextId ? { 'x-context-id': contextId } : undefined,
-    }
+    {},
+    authContext
   );
-}
+});
 
-export async function POST(req: NextRequest) {
+export const POST = withHospitalGuard(async (req: NextRequest, _routeContext, authContext) => {
   try {
     const body = await req.json();
     return safeProxyOrFallback(
@@ -24,7 +23,8 @@ export async function POST(req: NextRequest) {
       {
         method: 'POST',
         body,
-      }
+      },
+      authContext
     );
   } catch (err: any) {
     return NextResponse.json(
@@ -32,4 +32,4 @@ export async function POST(req: NextRequest) {
       { status: 400 }
     );
   }
-}
+});
