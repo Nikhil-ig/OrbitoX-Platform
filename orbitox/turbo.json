@@ -15,6 +15,22 @@
       "dependsOn": ["^build"],
       "outputs": []
     },
+    "test:database-outage": {
+      "outputs": []
+    },
+    "web#test": {
+      "dependsOn": ["^build", "web#prisma:generate"]
+    },
+    "web#test:integration": {
+      "dependsOn": ["^build", "web#prisma:generate"]
+    },
+    "web#test:database-outage": {
+      "dependsOn": ["web#prisma:generate"]
+    },
+    "prisma:generate": {
+      "cache": false,
+      "outputs": []
+    },
     "lint": {
       "outputs": []
     },

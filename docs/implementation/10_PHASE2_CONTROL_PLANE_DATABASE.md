@@ -42,7 +42,7 @@ Move tenant-owned business data out of process memory, mock/sample stores, and p
 
 Every persistent tenant query must carry authenticated tenant scope, including reads by id, list filters, updates, deletes, relationship lookups, quota accounting, and error paths. Production mode must fail closed if its database is unavailable; it must never serve sample or process-local data as a fallback. Add cross-tenant tests for each plugin's actual persistence adapter.
 
-The canonical tenant is the owning organization. Every request is additionally scoped to `(organizationId, projectId, environmentId)` so development and staging credentials cannot access production data within the same organization or project. Bind all three values from authenticated server-side state, never from client tenant headers. Isolation tests must include environment-to-environment attempts as well as cross-organization and cross-project attempts.
+The canonical database tenant identifier is one composite value in the form `org/<encoded-organizationId>/project/<encoded-projectId>/environment/<encoded-environmentId>`, produced by `buildPlatformTenantScope`. IDs are URI-component encoded, and the complete value is stored in tenant-table `tenantId`/`contextId` columns and set as transaction-local `app.current_tenant_id`. Bind all three values from authenticated server-side state, never from client tenant headers. Development and staging scopes therefore cannot access production data within the same organization and project. Isolation tests must include environment-to-environment attempts as well as cross-organization and cross-project attempts.
 
 ## 4. Target architecture
 
@@ -78,9 +78,11 @@ Keep quota and rate-limit policy separate from mutable usage. Use period-keyed q
 
 Use RLS as a second isolation barrier for tenant-owned tables. Every tenant policy must be enabled and forced (`ENABLE ROW LEVEL SECURITY` and `FORCE ROW LEVEL SECURITY`) where supported. The runtime application role must be a non-superuser, must not own the protected tables, and must not have `BYPASSRLS`; use a separate migration/owner role for DDL. Do not run isolation tests as the owner or a superuser.
 
-All tenant table access must go through one wrapper that opens a transaction, sets authenticated `organizationId`, `projectId`, and `environmentId` using transaction-local state, then executes the tenant queries inside that same transaction. Direct Prisma client queries against tenant models outside this wrapper are forbidden; enforce this with an architecture test or lint rule. Policies must deny access when any required setting is unset or empty. Never use a client-supplied tenant header as the RLS identity. Define an explicit, separately audited policy for platform-admin access rather than bypassing RLS with an elevated runtime connection.
+All tenant table access must go through one wrapper that opens a transaction, sets the canonical composite scope using transaction-local `app.current_tenant_id`, then executes the tenant queries inside that same transaction. Direct Prisma client queries against tenant models outside this wrapper are forbidden; enforce this with an architecture test or lint rule. Policies must deny access when the setting is unset or empty. Never use a client-supplied tenant header as the RLS identity. Define an explicit, separately audited policy for platform-admin access rather than bypassing RLS with an elevated runtime connection.
 
 RLS integration tests must assert that direct queries with unset tenant context return no rows (or fail closed), and that the wrapper scopes rows to exactly one organization, project, and environment. Run these tests using the non-owner, non-superuser runtime role without `BYPASSRLS`.
+
+The Step 1 table-classification test requires every public table to have forced RLS or appear on an explicit global allowlist. The allowlist currently covers the six shared Celebration catalogs, Prisma migration bookkeeping, control-plane organization/project/environment/key/credential/package/domain/quota/rate-policy tables, idempotency/outbox records, and shared rate-limit buckets. These remain intentionally available to the control-plane runtime role in Phase 2a; this role is also used by application runtime code. Before Phase 2b enables tenant business writes in those processes, split control-plane access from tenant-data access or otherwise constrain these global grants, and add role-specific tests. The allowlist classifies exposure; it does not claim tenant isolation for listed tables.
 
 ### 5.3 Migration history decision
 
@@ -114,7 +116,16 @@ Use a PostgreSQL atomic upsert on a unique `(scope_type, scope_id, window_start)
 
 Database failure while reading or incrementing either rate-limit bucket is fail-closed: deny the request with a non-success `503` response and do not use a process-local allow-through fallback. Keep the counter behind a rate-limit store contract so Redis can replace PostgreSQL later without changing route semantics.
 
-Use logged daily range partitions by `window_start` for rate-limit buckets. Create partitions at least 14 days ahead and maintain that horizon daily; drop expired daily partitions after the retention buffer. Set a lower fillfactor (initially 70) on every partition to reduce page splits from hot counter updates. Alert before the future-partition horizon is exhausted and on any missed creation; without a matching partition, writes must fail and requests return 503 (fail closed). Do not use an unlogged table in this phase: losing active counters on crash could reset limits and admit a boundary burst.
+Use logged daily range partitions by `window_start` for rate-limit buckets. Create partitions 14 days ahead and maintain that horizon daily; readiness requires only a 3-day UTC runway so one missed daily maintenance run does not take every server out of service. Alert when the contiguous future runway falls below 7 days; without a matching partition, writes must fail and requests return 503 (fail closed). Drop expired daily partitions after the retention buffer. Pin the runtime and maintenance roles to UTC and have partition functions explicitly use UTC. Set a lower fillfactor (initially 70) on every partition to reduce page splits from hot counter updates. Do not use an unlogged table in this phase: losing active counters on crash could reset limits and admit a boundary burst.
+
+Schedule maintenance daily at 02:10 UTC using the dedicated `orbitox_maintenance` connection, and run the runway monitor at 02:20 UTC using a read-only/runtime connection. For a host cron deployment, install these entries in the OrbitoX service account's crontab; inject the URLs through the service manager environment and never place credentials in the crontab:
+
+```cron
+10 2 * * * cd /srv/orbitox && pnpm run maintain:rate-limit-partitions
+20 2 * * * cd /srv/orbitox && pnpm run check:rate-limit-runway
+```
+
+The monitor exits nonzero and prints an `ALERT` below 7 future UTC days. Configure the scheduler/monitoring system to alert on that exit status and on missed job completion. The maintenance command verifies that at least 14 future days were restored.
 
 Initial performance acceptance target: 1,000 aggregate authorization/rate-limit decisions per second across two application servers, with added database-path latency of p95 <= 25 ms and p99 <= 75 ms on the documented CI benchmark profile. Measure throughput, latency, lock waits, pool saturation, database CPU, and SQL query count per authorization request. The verifier lookup must have a unique index; combine key, project, environment, and entitlement reads into one joined query or a small fixed number of queries. Record actual results and revisit the target using pilot traffic before production commitments.
 
@@ -130,7 +141,7 @@ Also run a single-hot-project benchmark with all traffic across both servers tar
 
 ### Audit immutability
 
-Audit records are append-only. The runtime role receives `INSERT` and scoped `SELECT` only on `PlatformAuditEvent`; it receives no `UPDATE` or `DELETE` grant. Database ownership/migration roles are separate from the runtime role. Test that update/delete attempts as the runtime role are denied.
+Audit records are append-only. The runtime role receives `INSERT` and RLS-scoped `SELECT` only on `PlatformAuditEvent`, restricted to the same organization, project, and environment in the canonical scope; it receives no `UPDATE`, `DELETE`, or `TRUNCATE` privilege. Database ownership/migration roles are separate from the runtime role. Test matching and cross-environment audit reads, and denied mutations, as the runtime role.
 
 ### Expand-then-contract compatibility
 
@@ -140,7 +151,7 @@ Every schema change follows expand-then-contract. First add schema compatible wi
 
 1. Convert all `PlatformRepository` consumers to await reads/writes, including `withApiGuard`, project provisioning, admin routes, platform routes, audit writers, control-plane projections, and scheduled reset work.
 2. Retain the route-auth structure test in the web build and the no-secret build behavior.
-3. `/api/health` readiness may return healthy only after a bounded database ping and required schema/migration-version check. Database errors return 503. Keep liveness separate: liveness indicates process responsiveness; readiness indicates database availability, role permissions, and migration compatibility.
+3. `/api/health` readiness may return healthy only after a bounded database ping, required schema/migration-version check, and at least 3 future UTC partition days. Database errors return 503. Keep liveness separate: liveness indicates process responsiveness; readiness indicates database availability, role permissions, and migration compatibility.
 4. Production startup must require `DATABASE_URL`; production must not create a new JSON store or seed defaults on database failure. Development may use explicit test adapters, but they must be opt-in and clearly non-production.
 
 ## 8. Verification and CI gates

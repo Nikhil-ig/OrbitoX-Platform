@@ -21,6 +21,7 @@
     "seed": "turbo run seed",
     "doctor": "turbo run doctor",
     "maintain:rate-limit-partitions": "tsx scripts/maintain-rate-limit-partitions.ts",
+    "check:rate-limit-runway": "tsx scripts/check-rate-limit-partition-runway.ts",
     "keygen": "node tools/cli/dist/bin.js keygen",
     "package:plugins": "turbo run build && node tools/cli/dist/bin.js package crm",
     "verify:plugins": "node tools/cli/dist/bin.js verify crm",
