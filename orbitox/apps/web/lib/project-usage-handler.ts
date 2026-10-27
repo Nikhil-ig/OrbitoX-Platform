@@ -49,23 +49,24 @@ export function createProjectUsageHandler(repository: UsageRepository = platform
                 const previousValue = project.monthlyApiCalls || 0;
                 projectOrganizationId = project.organizationId;
                 projectIdForAudit = project.id;
-                auditWriteInProgress = true;
-                auditIntentId = await repository.createPlatformAdminAuditIntent({
-                    action: `project.usage.${body.action}`,
-                    entityType: 'PLATFORM_PROJECT_USAGE',
-                    entityId: project.id,
-                    organizationId: project.organizationId,
-                    projectId: project.id,
-                    actorId: 'platform-admin',
-                    metadata: { previousValue, newValue: monthlyApiCalls },
-                });
+                auditIntentId = (typeof body.auditIntentId === 'string' && body.auditIntentId)
+                    ? body.auditIntentId
+                    : await repository.createPlatformAdminAuditIntent({
+                        action: `project.usage.${body.action}`,
+                        entityType: 'PLATFORM_PROJECT_USAGE',
+                        entityId: project.id,
+                        organizationId: project.organizationId,
+                        projectId: project.id,
+                        actorId: 'platform-admin',
+                        metadata: { previousValue, newValue: monthlyApiCalls },
+                    });
                 auditWriteInProgress = false;
                 usageWriteInProgress = true;
                 const updated = await repository.setProjectUsageWithAuditIntent(
                     project.id,
                     project.organizationId,
                     monthlyApiCalls,
-                    auditIntentId,
+                    auditIntentId!,
                 );
                 usageWriteInProgress = false;
                 if (!updated) {

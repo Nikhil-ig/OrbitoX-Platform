@@ -96,8 +96,8 @@ export const PATCH = withApiGuard(
       if (typeof body.rateLimitPerMin === 'number') updates.rateLimitPerMin = body.rateLimitPerMin;
       if (typeof body.storageQuotaGb === 'number') updates.storageQuotaGb = body.storageQuotaGb;
       if (Array.isArray(body.enabledServices)) updates.enabledServices = body.enabledServices;
-      if (body.status && ['active', 'throttled', 'suspended'].includes(body.status)) {
-        updates.status = body.status;
+      if (body.status && ['active', 'throttled', 'suspended'].includes(String(body.status).toLowerCase())) {
+        updates.status = String(body.status).toLowerCase();
       }
       if (body.customDomain !== undefined) updates.customDomain = body.customDomain;
 

@@ -8,7 +8,12 @@ export async function POST(
   { params }: { params: Promise<{ keyId: string }> }
 ) {
   const { keyId } = await params;
-  const rotated = await platformRepository.rotateApiKey(keyId, { operatorEmail: 'platform-admin' });
+  const body = await req.json().catch(() => ({}));
+  const graceWindowDays = body.graceWindowDays !== undefined ? Number(body.graceWindowDays) : undefined;
+  const rotated = await platformRepository.rotateApiKey(keyId, {
+    graceWindowDays,
+    operatorEmail: body.operatorEmail || 'platform-admin',
+  });
   if (!rotated) {
     return NextResponse.json<ApiResponse>(
       { success: false, error: { code: 'NOT_FOUND', message: `API Key ${keyId} not found.` } },
