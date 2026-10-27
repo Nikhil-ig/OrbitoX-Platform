@@ -7,6 +7,12 @@ import {
   getRuntimeToken,
 } from './app/api/v1/_lib/auth-pipeline';
 
+import {
+  isStaticAsset,
+  isExplicitPublicRoute,
+  isSelfGuardedApiRoute,
+} from './lib/route-classification';
+
 /**
  * Access control for the OrbitoX control plane. Two credentials, two roles:
  *
@@ -16,34 +22,18 @@ import {
  *                            the narrow set of endpoints a runtime needs (see RUNTIME_RULES),
  *                            so a leaked runtime token can never open the admin UI.
  *
- * Browsers get the native login prompt (HTTP Basic: any username, token as password).
- * API clients send `Authorization: Bearer <token>` or `x-admin-token: <token>`.
- *
- * Missing NODE_ENV is treated as production (fail closed).
- * Development stays open ONLY when explicitly opted in via ALLOW_UNAUTHENTICATED_DEV_MODE=true.
- * The verified role is cryptographically signed and forwarded to route handlers in `x-orbitox-principal`
- * and `x-orbitox-internal-sig` (any client-supplied values are stripped and discarded).
- *
- * Customer microservice APIs (/api/v1/crm, /api/v1/commerce, etc.) and public storefronts
- * are NOT gated by this middleware and are protected fail-closed by withApiGuard using API keys.
+ * Inverted fail-closed architecture:
+ * All incoming routes are intercepted by default except Next.js internals.
+ * Routes are evaluated against three clear boundaries:
+ * 1. Static assets (images, fonts, bundles) bypass middleware.
+ * 2. Explicit public routes (/api/health, /api/v1/openapi.json, diner bootstrap, shopper storefronts) bypass middleware.
+ * 3. Self-guarded customer API routes (/api/hospital/*, /api/restaurant/*, /api/v1/{crm,commerce,pos...}/*)
+ *    bypass middleware and enforce zero-trust authentication fail-closed inside their own handlers (withApiGuard).
+ * 4. Everything else is control plane and MUST present authentic admin or runtime credentials.
  */
 export const config = {
   matcher: [
-    '/admin/:path*',
-    '/platform/:path*',
-    '/hms/:path*',
-    '/hrms/:path*',
-    '/crm/:path*',
-    '/finance/:path*',
-    '/commerce/:path*',
-    '/store/:path*',
-    '/api/v1/admin/:path*',
-    '/api/v1/platform/:path*',
-    '/api/v1/fleet/:path*',
-    '/api/v1/overview',
-    '/api/v1/overview/:path*',
-    '/api/v1/system/:path*',
-    '/api/v1/projects/:path*',
+    '/((?!_next/static|_next/image|favicon.ico).*)',
   ],
 };
 
@@ -98,6 +88,23 @@ function runtimeEndpoint(pathname: string): string | null {
 }
 
 export async function middleware(req: NextRequest) {
+  const pathname = req.nextUrl.pathname;
+
+  // 1. Static files bypass middleware
+  if (isStaticAsset(pathname)) {
+    return NextResponse.next();
+  }
+
+  // 2. Explicit public routes bypass middleware
+  if (isExplicitPublicRoute(pathname)) {
+    return NextResponse.next();
+  }
+
+  // 3. Customer API routes authenticate inside their own route guards (withApiGuard / withHospitalGuard / withGuestToken)
+  if (isSelfGuardedApiRoute(pathname)) {
+    return NextResponse.next();
+  }
+
   const rawNodeEnv = (process.env.NODE_ENV || '').toLowerCase().trim();
   // Safe default: missing NODE_ENV is treated as production
   const isDevelopment = rawNodeEnv === 'development' || rawEnvIsTest(rawNodeEnv);
