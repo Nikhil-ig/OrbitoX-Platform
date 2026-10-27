@@ -78,7 +78,7 @@ export function createProjectUsageHandler(repository: UsageRepository = platform
                     tenantId: project.slug,
                     facade: 'AuditFacade',
                     level: 'AUDIT',
-                    message: `Admin ${body.action} project monthly API usage from ${project.monthlyApiCalls || 0} to ${monthlyApiCalls}.`,
+                    message: `Admin ${body.action} project monthly API usage from ${updated.previousMonthlyApiCalls ?? project.monthlyApiCalls ?? 0} to ${monthlyApiCalls}.`,
                 });
 
                 return NextResponse.json({ success: true, data: updated });

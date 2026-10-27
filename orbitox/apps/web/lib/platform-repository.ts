@@ -77,6 +77,8 @@ export type AsyncPlatformRepository = AsyncMethods<typeof PlatformRepository> & 
         reason: string,
     ): Promise<void>;
     findVerifiedDomain(domainName: string): Promise<ProjectDomainRecord | undefined>;
+    incrementProjectUsage(projectId: string, amount?: number): Promise<number>;
+    recordBillableCall(projectId: string, amount?: number): Promise<number | undefined>;
 };
 
 type DatabaseClient = PrismaClient;
@@ -603,6 +605,28 @@ export function createPrismaPlatformRepository(client: PrismaClient, adminAuditC
         ): Promise<PlatformProject | undefined> {
             if (!Number.isSafeInteger(monthlyApiCalls) || monthlyApiCalls < 0) throw new Error('monthlyApiCalls must be a non-negative safe integer.');
             return client.$transaction(async (transaction) => {
+                // Statement 1: Lock project row and capture its exact current value under FOR UPDATE
+                const lockedRows = await transaction.$queryRaw<Array<{ id: string; monthlyApiCalls: bigint }>>`
+                    SELECT "id", "monthlyApiCalls"
+                    FROM "PlatformProject"
+                    WHERE "id" = ${projectId} AND "organizationId" = ${organizationId}
+                    FOR UPDATE
+                `;
+                const lockedProject = lockedRows[0];
+                if (!lockedProject) {
+                    const scope = `org/${organizationId}/project/${projectId}/environment/platform-admin`;
+                    await transaction.$queryRaw`SELECT set_config('app.current_tenant_id', ${scope}, true)`;
+                    await transaction.$queryRaw`
+                        SELECT public.resolve_platform_audit_intent(
+                            ${intentId}, 'FAILED', 'Project no longer exists.'
+                        )
+                    `;
+                    return undefined;
+                }
+
+                const previousMonthlyApiCalls = Number(lockedProject.monthlyApiCalls);
+
+                // Statement 2: Update project usage row (now locked against concurrent writes)
                 const rows = await transaction.$queryRaw<RawRow[]>`
                     UPDATE "PlatformProject"
                     SET "monthlyApiCalls" = ${BigInt(monthlyApiCalls)}, "updatedAt" = NOW()
@@ -611,18 +635,19 @@ export function createPrismaPlatformRepository(client: PrismaClient, adminAuditC
                 `;
                 const scope = `org/${organizationId}/project/${projectId}/environment/platform-admin`;
                 await transaction.$queryRaw`SELECT set_config('app.current_tenant_id', ${scope}, true)`;
-                const resolution = rows.length
-                    ? 'COMMITTED'
-                    : 'FAILED';
                 const resolved = await transaction.$queryRaw<Array<{ resolve_platform_audit_intent: boolean }>>`
                     SELECT public.resolve_platform_audit_intent(
-                        ${intentId}, ${resolution}, ${rows.length ? null : 'Project no longer exists.'}
+                        ${intentId}, 'COMMITTED', NULL, ${BigInt(previousMonthlyApiCalls)}
                     ) AS resolve_platform_audit_intent
                 `;
                 if (!resolved[0]?.resolve_platform_audit_intent) {
                     throw new Error('Audit intent could not be resolved in the usage transaction.');
                 }
-                return rows[0] ? toProject(rows[0]) : undefined;
+                const project = rows[0] ? toProject(rows[0]) : undefined;
+                if (project) {
+                    project.previousMonthlyApiCalls = previousMonthlyApiCalls;
+                }
+                return project;
             });
         },
         async resolvePlatformAdminAuditIntentFailure(
@@ -1066,11 +1091,19 @@ const extraMethods = {
         intentId: string,
     ): Promise<PlatformProject | undefined> => {
         if (prismaIsRequired()) return getPrismaRepository().setProjectUsageWithAuditIntent(projectId, organizationId, monthlyApiCalls, intentId);
+        const existing = await platformRepository.getProject(projectId);
+        const previousMonthlyApiCalls = existing?.monthlyApiCalls ?? 0;
         const project = await platformRepository.setProjectUsage(projectId, monthlyApiCalls);
+        if (project) {
+            project.previousMonthlyApiCalls = previousMonthlyApiCalls;
+        }
         const event = PlatformRepository.listAuditEvents().find((item) => item.id === intentId);
         if (event) {
             event.status = project ? 'COMMITTED' : 'FAILED';
             event.failureReason = project ? undefined : 'Project no longer exists.';
+            if (project) {
+                event.metadata = { ...(event.metadata || {}), previousValue: previousMonthlyApiCalls };
+            }
             PlatformRepository.saveImmediate();
         }
         return project;
@@ -1100,6 +1133,20 @@ const extraMethods = {
         return PlatformRepository.listDomains().find((domain) =>
             domain.verificationStatus === 'VERIFIED' && domain.domainName.toLowerCase() === domainName.toLowerCase()
         );
+    },
+    incrementProjectUsage: async (projectId: string, amount = 1): Promise<number> => {
+        if (prismaIsRequired()) return getPrismaRepository().incrementProjectUsage(projectId, amount);
+        const project = await platformRepository.getProject(projectId);
+        const next = (project?.monthlyApiCalls || 0) + amount;
+        await platformRepository.setProjectUsage(projectId, next);
+        return next;
+    },
+    recordBillableCall: async (projectId: string, amount = 1): Promise<number | undefined> => {
+        if (prismaIsRequired()) return getPrismaRepository().incrementProjectUsage(projectId, amount);
+        const project = await platformRepository.getProject(projectId);
+        const next = (project?.monthlyApiCalls || 0) + amount;
+        await platformRepository.setProjectUsage(projectId, next);
+        return next;
     },
 };
 

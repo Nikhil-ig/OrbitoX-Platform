@@ -110,6 +110,7 @@ export interface PlatformProject {
   enabledServices?: string[];
   apiCallQuota?: number;
   monthlyApiCalls?: number;
+  previousMonthlyApiCalls?: number;
   rateLimitPerMin?: number;
   customDomain?: string;
   storageQuotaGb?: number;
