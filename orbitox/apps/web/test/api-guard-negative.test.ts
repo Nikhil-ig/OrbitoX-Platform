@@ -898,7 +898,7 @@ describe('Phase 1 & 1.5 Security, Unified Auth & Licensed Customer Test Suite', 
     assert.equal(resetResponse.status, 200);
     assert.equal(PlatformRepository.getProject(project.id)?.monthlyApiCalls, 0);
     assert.ok(PlatformRepository.listAuditEvents({ projectId: project.id }).some((entry) =>
-      entry.action === 'project.usage.reset' && entry.previousValue === 7 && entry.newValue === 0
+      entry.action === 'project.usage.reset' && entry.metadata?.previousValue === 7 && entry.metadata?.newValue === 0
     ));
   });
 });
