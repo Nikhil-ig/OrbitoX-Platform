@@ -155,7 +155,7 @@ export interface PlatformApiKeyRecord {
   ipAllowlist: string[];
   rateLimitPerMin: number;
   tenantScope?: string[]; // Specific tenant IDs allowed; if empty, matches bound project
-  
+
   riskScore: number; // 0 to 100
   riskLevel: RiskLevel;
   riskFactors: StructuredRiskFactor[];

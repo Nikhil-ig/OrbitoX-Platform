@@ -20,7 +20,7 @@ export const GET = withApiGuard(
         platformRepository.listApiKeys({ projectId: project.id }),
         platformRepository.listCredentials({ projectId: project.id }),
       ]);
-      
+
       let domainsCount = 0;
       let totalCallsUsed = 0;
       let totalCallLimit = 0;

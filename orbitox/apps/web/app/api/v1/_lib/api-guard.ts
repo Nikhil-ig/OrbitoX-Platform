@@ -397,7 +397,7 @@ export class PlatformApiState {
       tenantId: 'system',
       facade: 'StateTransferEngine',
       level: 'SECURITY',
-      message: `[State Ingest] Ingested snapshot [${metadata?.snapshotId || 'custom'}] — Restored ${ (await this.getProjects()).length} projects, ${(await platformRepository.listApiKeys()).length} keys, ${this.services.length} services.`,
+      message: `[State Ingest] Ingested snapshot [${metadata?.snapshotId || 'custom'}] — Restored ${(await this.getProjects()).length} projects, ${(await platformRepository.listApiKeys()).length} keys, ${this.services.length} services.`,
     });
 
     return {
