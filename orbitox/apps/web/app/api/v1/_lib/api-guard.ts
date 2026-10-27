@@ -1092,10 +1092,10 @@ export function withApiGuard<T = any>(
         ? Number.POSITIVE_INFINITY
         : effectiveProjectQuota;
       const reservation = await platformRepository.reserveProjectUsage(project.id, projectQuota);
-        if (platformRepository.isPrismaBacked()) {
-          guardDatabaseOperations += 1;
-          guardDatabaseWrites += 1;
-        }
+      if (platformRepository.isPrismaBacked()) {
+        guardDatabaseOperations += 1;
+        guardDatabaseWrites += 1;
+      }
       if (reservation === undefined) {
         const latencyMs = Math.round(performance.now() - startTime);
         return NextResponse.json<ApiResponse>(
