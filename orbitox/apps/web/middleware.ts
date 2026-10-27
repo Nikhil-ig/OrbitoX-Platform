@@ -31,6 +31,12 @@ export const config = {
   matcher: [
     '/admin/:path*',
     '/platform/:path*',
+    '/hms/:path*',
+    '/hrms/:path*',
+    '/crm/:path*',
+    '/finance/:path*',
+    '/commerce/:path*',
+    '/store/:path*',
     '/api/v1/admin/:path*',
     '/api/v1/platform/:path*',
     '/api/v1/fleet/:path*',

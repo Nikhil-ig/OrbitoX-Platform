@@ -2,7 +2,11 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    branches:
+      - main
+      - 'feat/**'
+      - 'fix/**'
+      - 'hardening/**'
   pull_request:
 
 concurrency:
@@ -248,6 +252,8 @@ jobs:
           cache-dependency-path: orbitox/pnpm-lock.yaml
       - name: Install dependencies
         run: pnpm install --frozen-lockfile --ignore-scripts
+      - name: Build workspace packages
+        run: pnpm exec turbo run build --filter='web^...'
       - name: Validate Prisma schema and generate client
         run: |
           pnpm exec prisma validate --schema prisma/schema.prisma
