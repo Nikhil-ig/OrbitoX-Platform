@@ -4,19 +4,49 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { NextRequest, NextResponse } from 'next/server';
+import { PrismaClient } from '@prisma/client';
 import { withApiGuard, PlatformApiState } from '../app/api/v1/_lib/api-guard';
 import { isIpAllowed, resolveClientIp } from '../app/api/v1/_lib/ip-guard';
 import { PlatformRepository, PlatformKeyEngine } from '@orbitox-io/plugin-engine';
+import { platformRepository } from '../lib/platform-repository';
 import { createInternalAuthToken } from '../app/api/v1/_lib/auth-pipeline';
 import { GET as getPatients, POST as createPatient } from '../app/api/hospital/patients/route';
 import { POST as provisionProject } from '../app/api/v1/admin/projects/route';
 import { PATCH as updateProject } from '../app/api/v1/admin/projects/[projectId]/route';
 import { POST as updateProjectUsage } from '../app/api/v1/admin/projects/[projectId]/usage/route';
+import { createProjectUsageHandler } from '../lib/project-usage-handler';
 import { hospitalStore } from '../app/api/hospital/_store';
+
+async function listUsageResetAuditEvents(projectId: string): Promise<Array<{ action: string; metadata: any }>> {
+  if (!platformRepository.isPrismaBacked()) return PlatformRepository.listAuditEvents({ projectId }) as Array<{ action: string; metadata: any }>;
+  const databaseUrl = process.env.TEST_DATABASE_URL || process.env.DATABASE_URL;
+  assert.ok(databaseUrl, 'TEST_DATABASE_URL or DATABASE_URL is required for audit assertions');
+  const reader = new PrismaClient({ datasources: { db: { url: databaseUrl } } });
+  try {
+    return await reader.platformAuditEvent.findMany({
+      where: { projectId, action: { in: ['project.usage.reset', 'project.usage.reset.requested'] } },
+      select: { action: true, metadata: true },
+    });
+  } finally {
+    await reader.$disconnect();
+  }
+}
+
+async function withTestOwner<T>(action: (owner: PrismaClient) => Promise<T>): Promise<T> {
+  const databaseUrl = process.env.TEST_DATABASE_URL || process.env.DATABASE_URL;
+  assert.ok(databaseUrl, 'TEST_DATABASE_URL or DATABASE_URL is required for PostgreSQL fixture cleanup');
+  const owner = new PrismaClient({ datasources: { db: { url: databaseUrl } } });
+  try {
+    return await action(owner);
+  } finally {
+    await owner.$disconnect();
+  }
+}
 
 describe('Phase 1 & 1.5 Security, Unified Auth & Licensed Customer Test Suite', () => {
   const TEST_ADMIN_TOKEN = 'test_admin_token_super_secret_32_chars_minimum';
   let suiteDataDir: string;
+  let suiteOrganizationId: string;
   let previousAdminToken: string | undefined;
   let previousServerPepper: string | undefined;
   let validAdminKeySecret: string;
@@ -30,20 +60,25 @@ describe('Phase 1 & 1.5 Security, Unified Auth & Licensed Customer Test Suite', 
     previousServerPepper = process.env.ORBITOX_SERVER_PEPPER;
     process.env.ORBITOX_ADMIN_TOKEN = TEST_ADMIN_TOKEN;
     process.env.ORBITOX_SERVER_PEPPER = 'test_pepper_32_characters_minimum_len';
-    suiteDataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'orbitox-api-guard-'));
-    PlatformRepository.resetForTesting();
-    PlatformRepository.setDataDir(suiteDataDir);
-    PlatformRepository.setPersistenceEnabled(true);
-    PlatformRepository.initialize();
+    if (platformRepository.isPrismaBacked()) {
+      suiteDataDir = '';
+    } else {
+      suiteDataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'orbitox-api-guard-'));
+      PlatformRepository.resetForTesting();
+      PlatformRepository.setDataDir(suiteDataDir);
+      PlatformRepository.setPersistenceEnabled(true);
+      PlatformRepository.initialize();
+    }
 
     // 1. Create a platform admin organization & project
-    const adminOrg = PlatformRepository.createOrganization({
+    const adminOrg = await platformRepository.createOrganization({
       name: 'Platform Admin Org',
       slug: 'platform-admin',
       billingEmail: 'admin@orbitox.io',
     });
+    suiteOrganizationId = adminOrg.id;
 
-    const adminProjRes = PlatformRepository.createProject({
+    const adminProjRes = await platformRepository.createProject({
       name: 'Platform Project',
       slug: 'platform',
       organizationId: adminOrg.id,
@@ -54,7 +89,7 @@ describe('Phase 1 & 1.5 Security, Unified Auth & Licensed Customer Test Suite', 
       enabledServices: ['platform', 'admin', 'system'],
     });
 
-    const adminKeyRes = PlatformRepository.createApiKey({
+    const adminKeyRes = await platformRepository.createApiKey({
       name: 'Admin Machine Key',
       environmentId: adminProjRes.environments[0]!.id,
       projectId: adminProjRes.project.id,
@@ -64,7 +99,7 @@ describe('Phase 1 & 1.5 Security, Unified Auth & Licensed Customer Test Suite', 
     validAdminKeySecret = adminKeyRes.rawSecret;
 
     // 2. Create customer project (CRM only)
-    const customerProjRes = PlatformRepository.createProject({
+    const customerProjRes = await platformRepository.createProject({
       name: 'Omega Tenant Project',
       slug: 'tenant-omega',
       organizationId: adminOrg.id,
@@ -77,7 +112,7 @@ describe('Phase 1 & 1.5 Security, Unified Auth & Licensed Customer Test Suite', 
       apiCallQuota: 5000000,
     });
 
-    const customerKeyRes = PlatformRepository.createApiKey({
+    const customerKeyRes = await platformRepository.createApiKey({
       name: 'Omega Customer Key',
       environmentId: customerProjRes.environments[0]!.id,
       projectId: customerProjRes.project.id,
@@ -88,7 +123,7 @@ describe('Phase 1 & 1.5 Security, Unified Auth & Licensed Customer Test Suite', 
     validCustomerKeySecret = customerKeyRes.rawSecret;
 
     // 3. Create revoked key
-    const revokedKeyRes = PlatformRepository.createApiKey({
+    const revokedKeyRes = await platformRepository.createApiKey({
       name: 'Revoked Key',
       environmentId: customerProjRes.environments[0]!.id,
       projectId: customerProjRes.project.id,
@@ -96,10 +131,10 @@ describe('Phase 1 & 1.5 Security, Unified Auth & Licensed Customer Test Suite', 
       createdBy: 'test_suite',
     });
     revokedKeySecret = revokedKeyRes.rawSecret;
-    PlatformRepository.setKeyStatus(revokedKeyRes.keyRecord.id, 'REVOKED');
+    await platformRepository.setKeyStatus(revokedKeyRes.keyRecord.id, 'REVOKED');
 
     // 4. Create suspended project
-    const suspendedProjRes = PlatformRepository.createProject({
+    const suspendedProjRes = await platformRepository.createProject({
       name: 'Suspended Project',
       slug: 'tenant-suspended',
       organizationId: adminOrg.id,
@@ -112,7 +147,7 @@ describe('Phase 1 & 1.5 Security, Unified Auth & Licensed Customer Test Suite', 
     });
 
     // 5. Create empty services project (unentitled)
-    PlatformRepository.createProject({
+    await platformRepository.createProject({
       name: 'Empty Services Project',
       slug: 'tenant-empty',
       organizationId: adminOrg.id,
@@ -124,7 +159,7 @@ describe('Phase 1 & 1.5 Security, Unified Auth & Licensed Customer Test Suite', 
     });
 
     // 6. Create over-quota project
-    PlatformRepository.createProject({
+    await platformRepository.createProject({
       name: 'Over Quota Project',
       slug: 'tenant-quota',
       organizationId: adminOrg.id,
@@ -136,10 +171,10 @@ describe('Phase 1 & 1.5 Security, Unified Auth & Licensed Customer Test Suite', 
       enabledServices: ['crm'],
       apiCallQuota: 100,
     });
-    PlatformRepository.updateProject('tenant-quota', { monthlyApiCalls: 100 });
+    await platformRepository.updateProject('tenant-quota', { monthlyApiCalls: 100 });
 
     // 7. Create Restaurant + POS licensed project
-    const restPosRes = PlatformRepository.createProject({
+    const restPosRes = await platformRepository.createProject({
       name: 'Bistro 360',
       slug: 'bistro360',
       organizationId: adminOrg.id,
@@ -153,7 +188,7 @@ describe('Phase 1 & 1.5 Security, Unified Auth & Licensed Customer Test Suite', 
     });
     restaurantPosProjectId = restPosRes.project.id;
 
-    const restPosKey = PlatformRepository.createApiKey({
+    const restPosKey = await platformRepository.createApiKey({
       name: 'Bistro API Key',
       environmentId: restPosRes.environments[0]!.id,
       projectId: restPosRes.project.id,
@@ -164,10 +199,16 @@ describe('Phase 1 & 1.5 Security, Unified Auth & Licensed Customer Test Suite', 
     restaurantPosKeySecret = restPosKey.rawSecret;
   });
 
-  afterEach(() => {
-    PlatformRepository.resetForTesting();
-    PlatformRepository.setDataDir('');
-    fs.rmSync(suiteDataDir, { recursive: true, force: true });
+  afterEach(async () => {
+    if (platformRepository.isPrismaBacked()) {
+      await withTestOwner(async (owner) => {
+        await owner.platformOrganization.delete({ where: { id: suiteOrganizationId } });
+      });
+    } else {
+      PlatformRepository.resetForTesting();
+      PlatformRepository.setDataDir('');
+      if (suiteDataDir) fs.rmSync(suiteDataDir, { recursive: true, force: true });
+    }
     if (previousAdminToken === undefined) delete process.env.ORBITOX_ADMIN_TOKEN;
     else process.env.ORBITOX_ADMIN_TOKEN = previousAdminToken;
     if (previousServerPepper === undefined) delete process.env.ORBITOX_SERVER_PEPPER;
@@ -248,9 +289,9 @@ describe('Phase 1 & 1.5 Security, Unified Auth & Licensed Customer Test Suite', 
   });
 
   it('rejects an expired persisted API key', async () => {
-    const project = PlatformRepository.getProject('tenant-omega')!;
-    const environment = PlatformRepository.listEnvironments(project.id).find((item) => item.isProduction)!;
-    const expired = PlatformRepository.createApiKey({
+    const project = (await platformRepository.getProject('tenant-omega'))!;
+    const environment = (await platformRepository.listEnvironments(project.id)).find((item) => item.isProduction)!;
+    const expired = await platformRepository.createApiKey({
       name: 'Expired Key',
       environmentId: environment.id,
       projectId: project.id,
@@ -338,10 +379,11 @@ describe('Phase 1 & 1.5 Security, Unified Auth & Licensed Customer Test Suite', 
   });
 
   it('10. Suspended Project Gate: rejects requests for suspended project with 403', async () => {
-    const suspendedProj = PlatformRepository.getProject('tenant-suspended');
-    const suspendedKey = PlatformRepository.createApiKey({
+    const suspendedProj = await platformRepository.getProject('tenant-suspended');
+    const suspendedEnvironment = (await platformRepository.listEnvironments(suspendedProj!.id)).find((item) => item.isProduction)!;
+    const suspendedKey = await platformRepository.createApiKey({
       name: 'Suspended Machine Key',
-      environmentId: 'env_suspended',
+      environmentId: suspendedEnvironment.id,
       projectId: suspendedProj!.id,
       capabilities: ['crm:read'],
       createdBy: 'test_suite',
@@ -359,10 +401,11 @@ describe('Phase 1 & 1.5 Security, Unified Auth & Licensed Customer Test Suite', 
   });
 
   it('11. Plugin Entitlement Gate Fails Closed: unentitled plugin rejected with 403', async () => {
-    const emptyProj = PlatformRepository.getProject('tenant-empty');
-    const emptyKey = PlatformRepository.createApiKey({
+    const emptyProj = await platformRepository.getProject('tenant-empty');
+    const emptyEnvironment = (await platformRepository.listEnvironments(emptyProj!.id)).find((item) => item.isProduction)!;
+    const emptyKey = await platformRepository.createApiKey({
       name: 'Empty Key',
-      environmentId: 'env_empty',
+      environmentId: emptyEnvironment.id,
       projectId: emptyProj!.id,
       capabilities: ['crm:read'],
       createdBy: 'test_suite',
@@ -380,10 +423,11 @@ describe('Phase 1 & 1.5 Security, Unified Auth & Licensed Customer Test Suite', 
   });
 
   it('12. Quota Gate Fails Closed: over-quota project returns 429', async () => {
-    const quotaProj = PlatformRepository.getProject('tenant-quota');
-    const quotaKey = PlatformRepository.createApiKey({
+    const quotaProj = await platformRepository.getProject('tenant-quota');
+    const quotaEnvironment = (await platformRepository.listEnvironments(quotaProj!.id)).find((item) => item.isProduction)!;
+    const quotaKey = await platformRepository.createApiKey({
       name: 'Quota Key',
-      environmentId: 'env_quota',
+      environmentId: quotaEnvironment.id,
       projectId: quotaProj!.id,
       capabilities: ['crm:read'],
       createdBy: 'test_suite',
@@ -436,8 +480,8 @@ describe('Phase 1 & 1.5 Security, Unified Auth & Licensed Customer Test Suite', 
     assert.equal(blockedRes.status, 401);
   });
 
-  it('15. Key Sanitization: never returns rawKey, rawSecret or authVerifier', () => {
-    const keys = PlatformRepository.listApiKeys();
+  it('15. Key Sanitization: never returns rawKey, rawSecret or authVerifier', async () => {
+    const keys = await platformRepository.listApiKeys();
     assert.ok(keys.length > 0);
     for (const key of keys) {
       assert.equal((key as any).rawKey, undefined, 'rawKey must be undefined');
@@ -656,7 +700,7 @@ describe('Phase 1 & 1.5 Security, Unified Auth & Licensed Customer Test Suite', 
     const restHandler = withApiGuard({ serviceId: 'restaurant', serviceName: 'Restaurant Service' }, dummyHandler);
 
     // Suspend project
-    PlatformRepository.updateProject(restaurantPosProjectId, { status: 'SUSPENDED' });
+    await platformRepository.updateProject(restaurantPosProjectId, { status: 'SUSPENDED' });
 
     const req1 = new NextRequest('http://localhost:3000/api/v1/restaurant/menu', {
       headers: { 'x-api-key': restaurantPosKeySecret },
@@ -667,7 +711,7 @@ describe('Phase 1 & 1.5 Security, Unified Auth & Licensed Customer Test Suite', 
     assert.equal(body1.error?.code, 'PROJECT_SUSPENDED');
 
     // Reactivate project and remove restaurant entitlement
-    PlatformRepository.updateProject(restaurantPosProjectId, { status: 'ACTIVE', enabledServices: ['pos'] });
+    await platformRepository.updateProject(restaurantPosProjectId, { status: 'ACTIVE', enabledServices: ['pos'] });
 
     const req2 = new NextRequest('http://localhost:3000/api/v1/restaurant/menu', {
       headers: { 'x-api-key': restaurantPosKeySecret },
@@ -678,7 +722,7 @@ describe('Phase 1 & 1.5 Security, Unified Auth & Licensed Customer Test Suite', 
     assert.equal(body2.error?.code, 'PLUGIN_NOT_ENTITLED');
 
     // Re-grant restaurant entitlement
-    PlatformRepository.updateProject(restaurantPosProjectId, { enabledServices: ['restaurant', 'pos'] });
+    await platformRepository.updateProject(restaurantPosProjectId, { enabledServices: ['restaurant', 'pos'] });
     const req3 = new NextRequest('http://localhost:3000/api/v1/restaurant/menu', {
       headers: { 'x-api-key': restaurantPosKeySecret },
     });
@@ -687,6 +731,34 @@ describe('Phase 1 & 1.5 Security, Unified Auth & Licensed Customer Test Suite', 
   });
 
   it('project provisioning issues a persistent repository key that survives reinitialization', async () => {
+    if (platformRepository.isPrismaBacked()) {
+      const response = await provisionProject(new NextRequest('http://localhost:3000/api/v1/admin/projects', {
+        method: 'POST',
+        headers: {
+          authorization: `Bearer ${TEST_ADMIN_TOKEN}`,
+          'content-type': 'application/json',
+        },
+        body: JSON.stringify({
+          name: 'Durable Provisioned Customer',
+          enabledServices: ['crm'],
+          contactEmail: 'durable@example.test',
+        }),
+      }));
+      assert.equal(response.status, 201);
+      const responseBody = await response.json();
+      const issuedSecret = responseBody.data.apiKey.rawKey;
+      const projectId = responseBody.data.project.id;
+      const projectSlug = responseBody.data.project.slug;
+      const persistedKey = await platformRepository.findKeyByRawSecret(issuedSecret);
+      assert.equal(persistedKey?.projectId, projectId);
+      assert.deepEqual(persistedKey?.tenantScope, [projectSlug]);
+      assert.equal((await platformRepository.getProject(projectId))?.slug, projectSlug);
+      await withTestOwner(async (owner) => {
+        await owner.platformProject.delete({ where: { id: projectId } });
+      });
+      return;
+    }
+
     const testDataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'orbitox-provisioning-'));
     PlatformRepository.saveImmediate();
     PlatformRepository.resetForTesting();
@@ -730,8 +802,8 @@ describe('Phase 1 & 1.5 Security, Unified Auth & Licensed Customer Test Suite', 
   });
 
   it('reserves quota once under parallel load and releases failed handler calls', async () => {
-    const organizationId = PlatformRepository.listOrganizations()[0]!.id;
-    const project = PlatformRepository.createProject({
+    const organizationId = suiteOrganizationId;
+    const project = (await platformRepository.createProject({
       name: `Atomic Quota ${Date.now()}`,
       organizationId,
       businessModel: 'B2B',
@@ -740,9 +812,9 @@ describe('Phase 1 & 1.5 Security, Unified Auth & Licensed Customer Test Suite', 
       contactEmail: 'quota@example.test',
       enabledServices: ['crm'],
       apiCallQuota: 10,
-    }).project;
-    const productionEnvironment = PlatformRepository.listEnvironments(project.id).find((item) => item.isProduction)!;
-    const key = PlatformRepository.createApiKey({
+    })).project;
+    const productionEnvironment = (await platformRepository.listEnvironments(project.id)).find((item) => item.isProduction)!;
+    const key = await platformRepository.createApiKey({
       name: 'Atomic Quota Test Key',
       environmentId: productionEnvironment.id,
       projectId: project.id,
@@ -761,9 +833,9 @@ describe('Phase 1 & 1.5 Security, Unified Auth & Licensed Customer Test Suite', 
     ))));
 
     assert.equal(responses.filter((response) => response.status === 200).length, 10);
-    assert.equal(PlatformRepository.getProject(project.id)?.monthlyApiCalls, 10);
+    assert.equal((await platformRepository.getProject(project.id))?.monthlyApiCalls, 10);
 
-    const failingProject = PlatformRepository.createProject({
+    const failingProject = (await platformRepository.createProject({
       name: `Failed Call Quota ${Date.now()}`,
       organizationId,
       businessModel: 'B2B',
@@ -772,9 +844,9 @@ describe('Phase 1 & 1.5 Security, Unified Auth & Licensed Customer Test Suite', 
       contactEmail: 'quota-failure@example.test',
       enabledServices: ['crm'],
       apiCallQuota: 1,
-    }).project;
-    const failingEnvironment = PlatformRepository.listEnvironments(failingProject.id).find((item) => item.isProduction)!;
-    const failingKey = PlatformRepository.createApiKey({
+    })).project;
+    const failingEnvironment = (await platformRepository.listEnvironments(failingProject.id)).find((item) => item.isProduction)!;
+    const failingKey = await platformRepository.createApiKey({
       name: 'Failed Call Test Key',
       environmentId: failingEnvironment.id,
       projectId: failingProject.id,
@@ -782,7 +854,7 @@ describe('Phase 1 & 1.5 Security, Unified Auth & Licensed Customer Test Suite', 
       tenantScope: [failingProject.slug],
       createdBy: 'test_suite',
     });
-    const environmentCallsBeforeFailure = PlatformRepository.getQuotaPolicy(failingEnvironment.id)?.monthlyCallsUsed || 0;
+    const environmentCallsBeforeFailure = (await platformRepository.getQuotaPolicy(failingEnvironment.id))?.monthlyCallsUsed || 0;
     const failOnce = withApiGuard(
       { serviceId: 'crm', serviceName: 'CRM Service' },
       async () => NextResponse.json({ success: false }, { status: 503 })
@@ -792,17 +864,17 @@ describe('Phase 1 & 1.5 Security, Unified Auth & Licensed Customer Test Suite', 
     }));
 
     assert.equal(failure.status, 503);
-    assert.equal(PlatformRepository.getProject(failingProject.id)?.monthlyApiCalls, 0);
+    assert.equal((await platformRepository.getProject(failingProject.id))?.monthlyApiCalls, 0);
     assert.equal(
-      PlatformRepository.getQuotaPolicy(failingEnvironment.id)?.monthlyCallsUsed || 0,
+      (await platformRepository.getQuotaPolicy(failingEnvironment.id))?.monthlyCallsUsed || 0,
       environmentCallsBeforeFailure
     );
   });
 
   it('isolates hospital fallback data by authenticated tenant', async () => {
-    const organizationId = PlatformRepository.listOrganizations()[0]!.id;
-    const makeHospitalCredential = (name: string) => {
-      const project = PlatformRepository.createProject({
+    const organizationId = suiteOrganizationId;
+    const makeHospitalCredential = async (name: string) => {
+      const project = (await platformRepository.createProject({
         name: `${name} ${Date.now()}`,
         organizationId,
         businessModel: 'B2B',
@@ -810,9 +882,9 @@ describe('Phase 1 & 1.5 Security, Unified Auth & Licensed Customer Test Suite', 
         technicalLead: 'Tenant Isolation Test',
         contactEmail: `${name.toLowerCase()}@example.test`,
         enabledServices: ['hms'],
-      }).project;
-      const environment = PlatformRepository.listEnvironments(project.id).find((item) => item.isProduction)!;
-      const key = PlatformRepository.createApiKey({
+      })).project;
+      const environment = (await platformRepository.listEnvironments(project.id)).find((item) => item.isProduction)!;
+      const key = await platformRepository.createApiKey({
         name: `${name} Key`,
         environmentId: environment.id,
         projectId: project.id,
@@ -822,8 +894,10 @@ describe('Phase 1 & 1.5 Security, Unified Auth & Licensed Customer Test Suite', 
       });
       return { project, rawSecret: key.rawSecret };
     };
-    const firstTenant = makeHospitalCredential('Hospital Alpha');
-    const secondTenant = makeHospitalCredential('Hospital Beta');
+    const [firstTenant, secondTenant] = await Promise.all([
+      makeHospitalCredential('Hospital Alpha'),
+      makeHospitalCredential('Hospital Beta'),
+    ]);
     const handler = withApiGuard(
       { serviceId: 'hms', serviceName: 'Hospital API' },
       async () => NextResponse.json({ data: hospitalStore.addPatient({ name: 'Alpha-only Patient' }) })
@@ -846,8 +920,8 @@ describe('Phase 1 & 1.5 Security, Unified Auth & Licensed Customer Test Suite', 
   });
 
   it('denies hospital writes to a read-only customer key', async () => {
-    const organizationId = PlatformRepository.listOrganizations()[0]!.id;
-    const project = PlatformRepository.createProject({
+    const organizationId = suiteOrganizationId;
+    const project = (await platformRepository.createProject({
       name: `Read Only Hospital ${Date.now()}`,
       organizationId,
       businessModel: 'B2B',
@@ -855,9 +929,9 @@ describe('Phase 1 & 1.5 Security, Unified Auth & Licensed Customer Test Suite', 
       technicalLead: 'Capability Test',
       contactEmail: 'readonly@example.test',
       enabledServices: ['hms'],
-    }).project;
-    const environment = PlatformRepository.listEnvironments(project.id).find((item) => item.isProduction)!;
-    const key = PlatformRepository.createApiKey({
+    })).project;
+    const environment = (await platformRepository.listEnvironments(project.id)).find((item) => item.isProduction)!;
+    const key = await platformRepository.createApiKey({
       name: 'Read Only Hospital Key',
       environmentId: environment.id,
       projectId: project.id,
@@ -877,9 +951,9 @@ describe('Phase 1 & 1.5 Security, Unified Auth & Licensed Customer Test Suite', 
   });
 
   it('rejects ignored usage updates and audits the explicit admin reset action', async () => {
-    const project = PlatformRepository.getProject(restaurantPosProjectId)!;
-    PlatformRepository.updateProject(project.id, { monthlyApiCalls: 7 });
-    const usageBeforeUpdateAttempt = PlatformRepository.getProject(project.id)?.monthlyApiCalls;
+    const project = (await platformRepository.getProject(restaurantPosProjectId))!;
+    await platformRepository.updateProject(project.id, { monthlyApiCalls: 7 });
+    const usageBeforeUpdateAttempt = (await platformRepository.getProject(project.id))?.monthlyApiCalls;
     const headers = {
       authorization: `Bearer ${TEST_ADMIN_TOKEN}`,
       'content-type': 'application/json',
@@ -889,16 +963,104 @@ describe('Phase 1 & 1.5 Security, Unified Auth & Licensed Customer Test Suite', 
       { method: 'PATCH', headers, body: JSON.stringify({ monthlyApiCalls: 0 }) }
     ));
     assert.equal(unsupportedUpdate.status, 400);
-    assert.equal(PlatformRepository.getProject(project.id)?.monthlyApiCalls, usageBeforeUpdateAttempt);
+    assert.equal((await platformRepository.getProject(project.id))?.monthlyApiCalls, usageBeforeUpdateAttempt);
 
     const resetResponse = await updateProjectUsage(new NextRequest(
       `http://localhost:3000/api/v1/admin/projects/${project.id}/usage`,
       { method: 'POST', headers, body: JSON.stringify({ action: 'reset' }) }
     ));
     assert.equal(resetResponse.status, 200);
-    assert.equal(PlatformRepository.getProject(project.id)?.monthlyApiCalls, 0);
-    assert.ok(PlatformRepository.listAuditEvents({ projectId: project.id }).some((entry) =>
+    assert.equal((await platformRepository.getProject(project.id))?.monthlyApiCalls, 0);
+    assert.ok((await listUsageResetAuditEvents(project.id)).some((entry) =>
       entry.action === 'project.usage.reset' && entry.metadata?.previousValue === 7 && entry.metadata?.newValue === 0
     ));
+  });
+
+  it('does not mutate project usage when the audit store is unavailable', async () => {
+    let mutationApplied = false;
+    const handler = createProjectUsageHandler({
+      getProject: async () => ({ id: 'audit-failure-project', slug: 'audit-failure-project', monthlyApiCalls: 13 } as any),
+      recordPlatformAdminAudit: async () => { throw new Error('audit store unavailable'); },
+      setProjectUsage: async () => {
+        mutationApplied = true;
+        return undefined;
+      },
+    });
+    const response = await handler(new NextRequest(
+      'http://localhost:3000/api/v1/admin/projects/audit-failure-project/usage',
+      {
+        method: 'POST',
+        headers: {
+          authorization: `Bearer ${TEST_ADMIN_TOKEN}`,
+          'content-type': 'application/json',
+        },
+        body: JSON.stringify({ action: 'reset' }),
+      }
+    ));
+
+    assert.equal(response.status, 503);
+    assert.equal((await response.json()).error?.code, 'AUDIT_UNAVAILABLE');
+    assert.equal(mutationApplied, false);
+  });
+
+  it('records an audit intent when the completion audit write fails after mutation', async () => {
+    let auditWrites = 0;
+    let mutationApplied = false;
+    const auditEvents: string[] = [];
+    const handler = createProjectUsageHandler({
+      getProject: async () => ({ id: 'audit-completion-project', slug: 'audit-completion-project', monthlyApiCalls: 13 } as any),
+      recordPlatformAdminAudit: async (event) => {
+        auditWrites += 1;
+        if (auditWrites === 1) auditEvents.push(event.action);
+        else throw new Error('audit store unavailable after mutation');
+        return 'audit-event';
+      },
+      setProjectUsage: async () => {
+        mutationApplied = true;
+        return undefined;
+      },
+    });
+    const response = await handler(new NextRequest(
+      'http://localhost:3000/api/v1/admin/projects/audit-completion-project/usage',
+      {
+        method: 'POST',
+        headers: {
+          authorization: `Bearer ${TEST_ADMIN_TOKEN}`,
+          'content-type': 'application/json',
+        },
+        body: JSON.stringify({ action: 'reset' }),
+      }
+    ));
+
+    assert.equal(response.status, 503);
+    assert.equal(mutationApplied, true);
+    assert.deepEqual(auditEvents, ['project.usage.reset.requested']);
+  });
+
+  it('retains the audit intent and returns 503 when the usage write fails', async () => {
+    const auditEvents: string[] = [];
+    const handler = createProjectUsageHandler({
+      getProject: async () => ({ id: 'usage-failure-project', slug: 'usage-failure-project', monthlyApiCalls: 13 } as any),
+      recordPlatformAdminAudit: async (event) => {
+        auditEvents.push(event.action);
+        return 'audit-event';
+      },
+      setProjectUsage: async () => { throw new Error('database unavailable'); },
+    });
+    const response = await handler(new NextRequest(
+      'http://localhost:3000/api/v1/admin/projects/usage-failure-project/usage',
+      {
+        method: 'POST',
+        headers: {
+          authorization: `Bearer ${TEST_ADMIN_TOKEN}`,
+          'content-type': 'application/json',
+        },
+        body: JSON.stringify({ action: 'reset' }),
+      }
+    ));
+
+    assert.equal(response.status, 503);
+    assert.equal((await response.json()).error?.code, 'USAGE_UPDATE_UNAVAILABLE');
+    assert.deepEqual(auditEvents, ['project.usage.reset.requested']);
   });
 });

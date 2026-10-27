@@ -58,6 +58,7 @@ export type AsyncPlatformRepository = AsyncMethods<typeof PlatformRepository> & 
     isPrismaBacked(): boolean;
     authorizeApiKey(rawSecret: string): Promise<PlatformAuthorizationLookup>;
     recordPlatformAdminAudit(event: PlatformAdminAuditInput): Promise<string>;
+    findVerifiedDomain(domainName: string): Promise<ProjectDomainRecord | undefined>;
 };
 
 type DatabaseClient = PrismaClient;
@@ -133,7 +134,7 @@ function toKey(row: RawRow): PlatformApiKeyRecord {
         keyId: row.keyId,
         name: row.name,
         environmentId: row.environmentId,
-        projectId: row.projectId,
+        projectId: row.projectId || row.environment?.projectId,
         keyType: row.keyType,
         keyPrefix: row.keyPrefix,
         secretFingerprint: row.secretFingerprint,
@@ -308,8 +309,8 @@ function buildKey(input: CreateKeyInput, environment: RawRow): { record: Platfor
     return {
         rawSecret: generated.rawSecret,
         record: {
-            id: `key_${Date.now()}_${crypto.randomBytes(3).toString('hex')}`,
-            keyId: generated.keyId,
+            id: `key_${crypto.randomUUID()}`,
+            keyId: `key_${environmentName}_${crypto.randomUUID()}`,
             name: input.name,
             environmentId: input.environmentId,
             projectId: input.projectId,
@@ -447,20 +448,6 @@ export function createPrismaPlatformRepository(client: PrismaClient, adminAuditC
     const mapProject = (row: RawRow | null): PlatformProject | undefined => (row ? toProject(row) : undefined);
     const mapKey = (row: RawRow | null): PlatformApiKeyRecord | undefined => (row ? toKey(row) : undefined);
 
-    async function findKeyByVerifier(rawSecret: string) {
-        const verifier = PlatformKeyEngine.computeAuthVerifier(rawSecret);
-        return client.$queryRaw<Array<{ key_data: RawRow; project_data: RawRow; environment_data: RawRow }>>`
-      SELECT to_jsonb(k) AS key_data,
-             to_jsonb(p) AS project_data,
-             to_jsonb(e) AS environment_data
-      FROM "PlatformApiKey" k
-      JOIN "ProjectEnvironment" e ON e."id" = k."environmentId"
-      JOIN "PlatformProject" p ON p."id" = e."projectId" AND p."id" = k."projectId"
-      WHERE k."authVerifier" = ${verifier}
-      LIMIT 1
-    `;
-    }
-
     async function getEnvironment(id: string): Promise<RawRow | null> {
         return client.projectEnvironment.findUnique({ where: { id } });
     }
@@ -477,7 +464,7 @@ export function createPrismaPlatformRepository(client: PrismaClient, adminAuditC
             const now = new Date();
             const row = await client.platformOrganization.create({
                 data: {
-                    id: `org_${input.slug.replace(/[^a-z0-9]/gi, '_')}_${Date.now().toString(36)}`,
+                    id: `org_${crypto.randomUUID()}`,
                     slug: input.slug,
                     name: input.name,
                     billingEmail: input.billingEmail,
@@ -506,6 +493,7 @@ export function createPrismaPlatformRepository(client: PrismaClient, adminAuditC
             return rows.map(toProject);
         },
         async getProject(idOrSlug: string): Promise<PlatformProject | undefined> {
+            if (typeof idOrSlug !== 'string' || idOrSlug.trim() === '') return undefined;
             const row = await client.platformProject.findFirst({ where: { OR: [{ id: idOrSlug }, { slug: idOrSlug.toLowerCase() }] } });
             return mapProject(row);
         },
@@ -522,11 +510,19 @@ export function createPrismaPlatformRepository(client: PrismaClient, adminAuditC
                 let suffix = 2;
                 while (await slugExists(slug)) slug = `${baseSlug}-${suffix++}`;
             }
-            const projectId = `proj_${slug}_${Date.now().toString(36)}`;
-            const row = await client.platformProject.create({
-                data: makeProjectData(input, slug, projectId),
-                include: { environments: { orderBy: { slug: 'asc' } } },
-            });
+            const projectId = `proj_${crypto.randomUUID()}`;
+            let row;
+            try {
+                row = await client.platformProject.create({
+                    data: makeProjectData(input, slug, projectId),
+                    include: { environments: { orderBy: { slug: 'asc' } } },
+                });
+            } catch (error) {
+                if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
+                    throw new Error(`Project slug "${slug}" is already in use.`);
+                }
+                throw error;
+            }
             return { project: toProject(row), environments: row.environments.map(toEnvironment) };
         },
         async updateProject(projectId: string, updates: Partial<PlatformProject>): Promise<PlatformProject | undefined> {
@@ -534,7 +530,7 @@ export function createPrismaPlatformRepository(client: PrismaClient, adminAuditC
             if (!existing) return undefined;
             if (updates.slug !== undefined && updates.slug !== existing.slug) throw new Error('Project slug is immutable after creation.');
             const row = await client.platformProject.update({ where: { id: existing.id }, data: toDatabaseProjectData(updates as any) });
-            return { ...toProject(row), ...updates };
+            return toProject(row);
         },
         async deleteProject(projectId: string): Promise<boolean> {
             const result = await client.platformProject.deleteMany({ where: { OR: [{ id: projectId }, { slug: projectId }] } });
@@ -666,7 +662,7 @@ export function createPrismaPlatformRepository(client: PrismaClient, adminAuditC
           FROM "PlatformApiKey" k
           JOIN "ProjectEnvironment" e ON e."id" = k."environmentId"
           WHERE k."id" = ${keyId} OR k."keyId" = ${keyId}
-          FOR UPDATE
+                    FOR UPDATE OF k
         `;
                 const lockedRow = locked[0];
                 if (!lockedRow) return undefined;
@@ -716,10 +712,8 @@ export function createPrismaPlatformRepository(client: PrismaClient, adminAuditC
             return toKey(row);
         },
         async recordKeyUsage(keyId: string, clientIp?: string): Promise<void> {
-            const existing = await client.platformApiKey.findFirst({ where: { OR: [{ id: keyId }, { keyId }] }, select: { id: true } });
-            if (!existing) return;
-            await client.platformApiKey.update({
-                where: { id: existing.id },
+            await client.platformApiKey.updateMany({
+                where: { OR: [{ id: keyId }, { keyId }] },
                 data: { lastUsedAt: new Date(), ...(clientIp ? { lastUsedIp: clientIp } : {}) },
             });
         },
@@ -756,7 +750,7 @@ export function createPrismaPlatformRepository(client: PrismaClient, adminAuditC
             const now = new Date();
             const row = await client.platformCredential.create({
                 data: {
-                    id: `cred_${Date.now()}_${crypto.randomBytes(3).toString('hex')}`,
+                    id: `cred_${crypto.randomUUID()}`,
                     name: input.name,
                     provider: input.provider,
                     environment: { connect: { id: input.environmentId } },
@@ -843,11 +837,18 @@ export function createPrismaPlatformRepository(client: PrismaClient, adminAuditC
                 orderBy: { createdAt: 'desc' },
             })).map(toDomain);
         },
+        async findVerifiedDomain(domainName: string): Promise<ProjectDomainRecord | undefined> {
+            const row = await client.projectDomain.findFirst({
+                where: { domainName: domainName.toLowerCase(), verificationStatus: 'VERIFIED' },
+                orderBy: { createdAt: 'desc' },
+            });
+            return row ? toDomain(row) : undefined;
+        },
         async registerDomain(input: { environmentId: string; domainName: string; isApex?: boolean }): Promise<ProjectDomainRecord> {
             const now = new Date();
             const row = await client.projectDomain.create({
                 data: {
-                    id: `dom_${Date.now()}_${crypto.randomBytes(3).toString('hex')}`,
+                    id: `dom_${crypto.randomUUID()}`,
                     environmentId: input.environmentId,
                     domainName: input.domainName.toLowerCase(),
                     isApex: input.isApex || false,
@@ -933,7 +934,17 @@ let auditClient: PrismaClient | undefined;
 let prismaRepository: ReturnType<typeof createPrismaPlatformRepository> | undefined;
 
 function prismaIsRequired(): boolean {
-    return process.env.NODE_ENV === 'production' || process.env.ORBITOX_PLATFORM_REPOSITORY === 'prisma';
+    const repositoryMode = process.env.ORBITOX_PLATFORM_REPOSITORY;
+    if (repositoryMode === 'json') {
+        if (process.env.NODE_ENV === 'production' || !process.env.NODE_ENV) {
+            throw new Error('JSON platform repository mode is only allowed with NODE_ENV explicitly set outside production.');
+        }
+        return false;
+    }
+    if (repositoryMode && repositoryMode !== 'prisma') {
+        throw new Error(`Unsupported ORBITOX_PLATFORM_REPOSITORY mode: ${repositoryMode}`);
+    }
+    return true;
 }
 
 function getPrismaRepository(): ReturnType<typeof createPrismaPlatformRepository> {
@@ -962,6 +973,12 @@ const extraMethods = {
         const auditId = `audit_${crypto.randomUUID()}`;
         PlatformRepository.recordAuditEvent({ ...event, id: auditId });
         return auditId;
+    },
+    findVerifiedDomain: async (domainName: string): Promise<ProjectDomainRecord | undefined> => {
+        if (prismaIsRequired()) return getPrismaRepository().findVerifiedDomain(domainName);
+        return PlatformRepository.listDomains().find((domain) =>
+            domain.verificationStatus === 'VERIFIED' && domain.domainName.toLowerCase() === domainName.toLowerCase()
+        );
     },
 };
 

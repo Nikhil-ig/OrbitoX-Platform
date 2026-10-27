@@ -68,12 +68,20 @@ async function main(): Promise<void> {
         tenantScope: [created.project.slug],
         createdBy: 'step2-test',
     });
+    assert.equal(apiKey.keyRecord.projectId, created.project.id);
+    const listedKey = (await repository.listApiKeys({ projectId: created.project.id }))
+        .find((key) => key.id === apiKey.keyRecord.id);
+    assert.equal(listedKey?.projectId, created.project.id);
+    assert.equal((await repository.getApiKey(apiKey.keyRecord.id))?.projectId, created.project.id);
+    assert.equal((await repository.findKeyByRawSecret(apiKey.rawSecret))?.projectId, created.project.id);
     const authorized = await repository.authorizeApiKey(apiKey.rawSecret);
     assert.equal(authorized.key?.id, apiKey.keyRecord.id);
+    assert.equal(authorized.key?.projectId, created.project.id);
     assert.equal(authorized.project?.id, created.project.id);
     assert.equal(authorized.environment?.id, environment.id);
     assert.equal(authorized.queryCount, 1);
     assert.equal(authorized.source, 'prisma');
+    assert.equal(await repository.getProject(undefined as unknown as string), undefined);
     const unknown = await repository.authorizeApiKey(`invalid-${suffix}`);
     assert.equal(unknown.key, null);
     assert.equal(unknown.queryCount, 1);
@@ -91,9 +99,30 @@ async function main(): Promise<void> {
     assert.equal(response.status, 200);
     assert.equal(response.headers.get('x-orbitox-project-id'), created.project.id);
     assert.ok(
-        PlatformApiState.getTelemetry().some((event) => event.message === 'Authorization database query count: 1'),
+        PlatformApiState.getTelemetry().some((event) => event.message === 'Authorization lookup query count: 1'),
     );
-    pass('real API guard preserves successful request behavior and records one auth query');
+    assert.ok(
+        PlatformApiState.getTelemetry().some((event) => event.message.includes('API guard database operations: 4 total, 3 writes')),
+    );
+    pass('real API guard reports four guard-owned operations: one lookup and three writes');
+
+    const testDomain = `step2-${suffix}.example.test`;
+    await repository.registerDomain({ environmentId: environment.id, domainName: testDomain });
+    assert.equal((await repository.findVerifiedDomain(testDomain))?.environmentId, environment.id);
+    assert.equal(await repository.findVerifiedDomain(`other-${testDomain}`), undefined);
+    const publicHandler = withApiGuard(
+        { serviceId: 'docs', serviceName: 'Public Documentation', routeClass: 'public', allowPublic: true },
+        async (_request, context) => NextResponse.json({ tenantId: context.tenantId }),
+    );
+    const publicResponse = await publicHandler(new NextRequest(`https://${testDomain}/api/v1/openapi.json`));
+    assert.equal(publicResponse.status, 200);
+    assert.equal((await publicResponse.json()).tenantId, created.project.id);
+    assert.ok(PlatformApiState.getTelemetry().some((event) =>
+        event.message.includes('API guard database operations: 2 total, 0 writes')
+    ));
+    await runtime.projectDomain.update({ where: { domainName: testDomain }, data: { verificationStatus: 'PENDING_DNS' } });
+    assert.equal(await repository.findVerifiedDomain(testDomain), undefined);
+    pass('verified domain lookup matches only the requested host');
 
     await repository.setProjectUsage(created.project.id, 0);
     const firstReservation = await repository.reserveProjectUsage(created.project.id, 2);
@@ -104,6 +133,13 @@ async function main(): Promise<void> {
     assert.equal(exhaustedReservation, undefined);
     assert.equal(await repository.releaseProjectUsage(created.project.id), 1);
     pass('project quota reservations are atomic and release usage');
+
+    const rotated = await repository.rotateApiKey(apiKey.keyRecord.id, { operatorEmail: 'step2-test' });
+    assert.equal(rotated?.replacementKey.projectId, created.project.id);
+    const listedReplacement = (await repository.listApiKeys({ projectId: created.project.id }))
+        .find((key) => key.id === rotated?.replacementKey.id);
+    assert.equal(listedReplacement?.projectId, created.project.id);
+    pass('key list, get, secret lookup, authorization, and rotation preserve project identity');
 
     const revoked = await repository.setKeyStatus(apiKey.keyRecord.id, 'REVOKED', 'Step 2 test revoke');
     assert.equal(revoked?.status, 'REVOKED');

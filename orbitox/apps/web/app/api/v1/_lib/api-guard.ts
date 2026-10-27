@@ -41,7 +41,11 @@ function scheduleMonthlyUsageReset(): void {
   const nextMonth = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 1));
   const resetAt = nextMonth.getTime();
   const timer = setTimeout(() => {
-    if (Date.now() >= resetAt) void platformRepository.resetMonthlyProjectUsage();
+    if (Date.now() >= resetAt) {
+      void platformRepository.resetMonthlyProjectUsage().catch((error) => {
+        console.error('Monthly project usage reset failed.', error);
+      });
+    }
     scheduleMonthlyUsageReset();
   }, Math.min(resetAt - now.getTime(), 2_000_000_000));
   timer.unref();
@@ -600,18 +604,44 @@ export function withApiGuard<T = any>(
     let authorizedProject: PlatformProject | null = null;
     let projectUsageReserved = false;
     let effectiveProjectQuota = Number.POSITIVE_INFINITY;
+    let guardDatabaseOperations = 0;
+    let guardDatabaseWrites = 0;
+    let prismaRepositoryUsed = false;
 
     if (rawApiKey) {
-      const lookup = await platformRepository.authorizeApiKey(rawApiKey);
+      let lookup;
+      try {
+        lookup = await platformRepository.authorizeApiKey(rawApiKey);
+      } catch {
+        PlatformApiState.recordTelemetry({
+          tenantId: 'security',
+          facade: 'AuthorizationRepository',
+          level: 'ERROR',
+          message: 'Authorization repository unavailable; request denied.',
+        });
+        return NextResponse.json<ApiResponse>(
+          {
+            success: false,
+            error: {
+              code: 'AUTHENTICATION_UNAVAILABLE',
+              message: 'Credential verification is temporarily unavailable.',
+            },
+            meta: { latencyMs: Math.round(performance.now() - startTime), timestamp: new Date().toISOString(), requestId },
+          },
+          { status: 503, headers: { 'Retry-After': '1' } }
+        );
+      }
       matchedKey = lookup.key;
       authorizedProject = lookup.project;
       isPlatformKeyRecord = Boolean(lookup.key);
       if (lookup.source === 'prisma') {
+        prismaRepositoryUsed = true;
+        guardDatabaseOperations += lookup.queryCount;
         PlatformApiState.recordTelemetry({
           tenantId: lookup.key?.projectId || 'unknown',
           facade: 'AuthorizationRepository',
           level: 'DEBUG',
-          message: `Authorization database query count: ${lookup.queryCount}`,
+          message: `Authorization lookup query count: ${lookup.queryCount}`,
         });
       }
     }
@@ -868,10 +898,14 @@ export function withApiGuard<T = any>(
       }
     } else if (isExplicitlyPublic) {
       const host = req.nextUrl.hostname.toLowerCase();
-      const verifiedDomains = await platformRepository.listDomains();
-      const matchingDomain = verifiedDomains.find((d) => d.domainName.toLowerCase() === host);
+      const matchingDomain = await platformRepository.findVerifiedDomain(host);
+      if (platformRepository.isPrismaBacked()) {
+        prismaRepositoryUsed = true;
+        guardDatabaseOperations += 1;
+      }
       if (matchingDomain) {
         const env = await platformRepository.getEnvironment(matchingDomain.environmentId);
+        if (platformRepository.isPrismaBacked()) guardDatabaseOperations += 1;
         tenantId = env?.projectId || 'default';
       } else {
         tenantId = 'default';
@@ -1058,6 +1092,10 @@ export function withApiGuard<T = any>(
         ? Number.POSITIVE_INFINITY
         : effectiveProjectQuota;
       const reservation = await platformRepository.reserveProjectUsage(project.id, projectQuota);
+        if (platformRepository.isPrismaBacked()) {
+          guardDatabaseOperations += 1;
+          guardDatabaseWrites += 1;
+        }
       if (reservation === undefined) {
         const latencyMs = Math.round(performance.now() - startTime);
         return NextResponse.json<ApiResponse>(
@@ -1084,6 +1122,10 @@ export function withApiGuard<T = any>(
 
       if (projectUsageReserved && project && (response.status < 200 || response.status >= 300)) {
         await platformRepository.releaseProjectUsage(project.id);
+        if (platformRepository.isPrismaBacked()) {
+          guardDatabaseOperations += 1;
+          guardDatabaseWrites += 1;
+        }
         projectUsageReserved = false;
       }
 
@@ -1091,9 +1133,25 @@ export function withApiGuard<T = any>(
       const isBillableResponse = response.status >= 200 && response.status < 300;
       if (matchedKey && isPlatformKeyRecord && isBillableResponse) {
         await platformRepository.recordKeyUsage(matchedKey.id, clientIp);
+        if (platformRepository.isPrismaBacked()) {
+          guardDatabaseOperations += 1;
+          guardDatabaseWrites += 1;
+        }
         if (matchedKey.environmentId) {
           await platformRepository.recordCall(matchedKey.environmentId);
+          if (platformRepository.isPrismaBacked()) {
+            guardDatabaseOperations += 1;
+            guardDatabaseWrites += 1;
+          }
         }
+      }
+      if (prismaRepositoryUsed) {
+        PlatformApiState.recordTelemetry({
+          tenantId: project?.slug || 'unknown',
+          facade: 'AuthorizationRepository',
+          level: 'DEBUG',
+          message: `API guard database operations: ${guardDatabaseOperations} total, ${guardDatabaseWrites} writes; route-handler database calls excluded.`,
+        });
       }
 
       // Inject standard response headers
