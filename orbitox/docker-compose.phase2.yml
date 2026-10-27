@@ -1,0 +1,18 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: orbitox-phase2-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: orbitox_phase2
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${PHASE2_POSTGRES_PASSWORD:?set PHASE2_POSTGRES_PASSWORD}
+    ports:
+      - '127.0.0.1:55432:5432'
+    tmpfs:
+      - /var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U postgres -d orbitox_phase2']
+      interval: 5s
+      timeout: 5s
+      retries: 10

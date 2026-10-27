@@ -16,6 +16,20 @@ jobs:
   build:
     name: Build, test & smoke
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: orbitox_smoke
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgrespassword
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
     defaults:
       run:
         working-directory: orbitox
@@ -30,6 +44,15 @@ jobs:
           cache: pnpm
           cache-dependency-path: orbitox/pnpm-lock.yaml
       - run: pnpm install --frozen-lockfile --ignore-scripts
+
+      - name: Apply control-plane baseline and configure runtime role
+        run: |
+          pnpm exec prisma generate --schema prisma/schema.prisma
+          pnpm exec prisma migrate deploy --schema prisma/schema.prisma
+          PGPASSWORD=postgrespassword psql "$DATABASE_URL" -v app_role_password="$APP_DB_PASSWORD" -f scripts/configure-step1-runtime-role.sql
+        env:
+          DATABASE_URL: postgresql://postgres:postgrespassword@127.0.0.1:5432/orbitox_smoke
+          APP_DB_PASSWORD: phase2-smoke-${{ github.run_id }}-${{ github.run_attempt }}
 
       - name: Build workspace packages
         run: pnpm exec turbo run build --filter='web^...'
@@ -64,6 +87,8 @@ jobs:
             sleep 1
           done
           ORBITOX_URL=http://127.0.0.1:3005 node scripts/smoke-control-plane.mjs || { cat "$RUNNER_TEMP/server.log"; exit 1; }
+        env:
+          DATABASE_URL: postgresql://orbitox_runtime:phase2-smoke-${{ github.run_id }}-${{ github.run_attempt }}@127.0.0.1:5432/orbitox_smoke
 
   pack-and-verify:
     name: Package Tarball & External Install Smoke
@@ -181,9 +206,70 @@ jobs:
       - name: Black-Box HTTP Multi-Tenant Suite (Item 3)
         run: pnpm exec tsx scripts/test-e2e-http-multitenancy.ts
         env:
-          E2E_P95_LIMIT_MS: '600' # shared GitHub runner; 250ms SLA is checked on dedicated hardware
+          E2E_P95_LIMIT_MS: "600" # shared GitHub runner; 250ms SLA is checked on dedicated hardware
           DATABASE_URL: postgresql://postgres:postgrespassword@127.0.0.1:5432/restaurant_os
           APP_DATABASE_URL: postgresql://restaurantos_app:test_app_pass_123@127.0.0.1:5432/restaurant_os
+
+  platform-phase2-step1:
+    name: Control Plane PostgreSQL Step 1
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: orbitox_phase2
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgrespassword
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    defaults:
+      run:
+        working-directory: orbitox
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9.15.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: orbitox/pnpm-lock.yaml
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile --ignore-scripts
+      - name: Validate Prisma schema and generate client
+        run: |
+          pnpm exec prisma validate --schema prisma/schema.prisma
+          pnpm exec prisma generate --schema prisma/schema.prisma
+        env:
+          DATABASE_URL: postgresql://postgres:postgrespassword@127.0.0.1:5432/orbitox_phase2
+      - name: Apply fresh baseline and security migrations twice
+        run: |
+          pnpm exec prisma migrate deploy --schema prisma/schema.prisma
+          pnpm exec prisma migrate deploy --schema prisma/schema.prisma
+        env:
+          DATABASE_URL: postgresql://postgres:postgrespassword@127.0.0.1:5432/orbitox_phase2
+      - name: Verify database has no Prisma schema drift
+        run: pnpm exec prisma migrate diff --from-schema-datamodel prisma/schema.prisma --to-url "$DATABASE_URL" --exit-code
+        env:
+          DATABASE_URL: postgresql://postgres:postgrespassword@127.0.0.1:5432/orbitox_phase2
+      - name: Configure restricted runtime login
+        run: PGPASSWORD=postgrespassword psql "$DATABASE_URL" -v app_role_password="$APP_DB_PASSWORD" -f scripts/configure-step1-runtime-role.sql
+        env:
+          DATABASE_URL: postgresql://postgres:postgrespassword@127.0.0.1:5432/orbitox_phase2
+          APP_DB_PASSWORD: phase2-ci-${{ github.run_id }}-${{ github.run_attempt }}
+      - name: Verify RLS, audit immutability, and readiness
+        run: pnpm --filter web test:integration
+        env:
+          DATABASE_URL: postgresql://postgres:postgrespassword@127.0.0.1:5432/orbitox_phase2
+          TEST_DATABASE_URL: postgresql://postgres:postgrespassword@127.0.0.1:5432/orbitox_phase2
+          APP_DATABASE_URL: postgresql://orbitox_runtime:phase2-ci-${{ github.run_id }}-${{ github.run_attempt }}@127.0.0.1:5432/orbitox_phase2
 
   docker:
     name: Docker image builds

@@ -1464,6 +1464,9 @@ model PlatformProject {
   organizationId  String
   businessModel   String                // O2O2B2B2C, HEALTHCARE_NETWORK, D2C, B2B_SAAS
   planTier        String                // starter, growth, pro, enterprise, hyperscale
+  enabledServices String[]              @default([])
+  apiCallQuota    BigInt?
+  rateLimitPerMin Int?
   status          PlatformProjectStatus @default(ACTIVE)
   technicalLead   String
   contactEmail    String
@@ -1542,7 +1545,7 @@ model PlatformApiKey {
   environment         ProjectEnvironment @relation(fields: [environmentId], references: [id], onDelete: Cascade)
 
   @@index([environmentId])
-  @@index([authVerifier])
+  @@unique([authVerifier])
   @@index([secretFingerprint])
   @@index([status])
   @@index([riskLevel])
@@ -1682,6 +1685,40 @@ model EnvironmentRateLimitPolicy {
   updatedAt              DateTime           @updatedAt
 
   environment            ProjectEnvironment @relation(fields: [environmentId], references: [id], onDelete: Cascade)
+}
+
+model PlatformAuditEvent {
+  id             String   @id @default(cuid())
+  actorId        String?
+  actorEmail     String?
+  action         String
+  entityType     String
+  entityId       String?
+  organizationId String?
+  projectId      String?
+  environmentId  String?
+  ipAddress      String?
+  requestId      String?
+  reason         String?
+  metadata       Json     @default("{}")
+  occurredAt     DateTime @default(now())
+
+  @@index([occurredAt])
+  @@index([organizationId, occurredAt])
+  @@index([projectId, occurredAt])
+  @@index([entityType, entityId])
+  @@index([action, occurredAt])
+}
+
+model PlatformRateLimitBucket {
+  scopeType    String
+  scopeId      String
+  windowStart  DateTime @db.Timestamp(3)
+  requestCount BigInt   @default(0)
+  expiresAt    DateTime @db.Timestamp(3)
+
+  @@id([scopeType, scopeId, windowStart])
+  @@index([expiresAt])
 }
 
 

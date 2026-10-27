@@ -7,6 +7,7 @@
     "build": "../../node_modules/.bin/tsx --test test/api-route-auth-structure.test.ts && node scripts/build-next-with-temporary-pepper.mjs && node scripts/patch-standalone-startup.mjs",
     "type-check": "tsc --noEmit",
     "test": "tsx --test test/**/*.test.ts",
+    "test:integration": "tsx scripts/test-platform-step1-db.ts",
     "start": "node ../../scripts/check-production-env.mjs && next start -p 3005",
     "lint": "next lint"
   },
@@ -26,7 +27,8 @@
     "@orbitox/school": "workspace:*",
     "@orbitox/pos": "workspace:*",
     "@orbitox/external-project-engine": "workspace:*",
-    "@orbitox/external-runtime-sdk": "workspace:*"
+    "@orbitox/external-runtime-sdk": "workspace:*",
+    "@prisma/client": "^6.19.0"
   },
   "devDependencies": {
     "@types/node": "^20",

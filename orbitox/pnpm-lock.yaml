@@ -141,6 +141,9 @@ importers:
       '@orbitox/ui':
         specifier: workspace:*
         version: link:../../packages/ui
+      '@prisma/client':
+        specifier: ^6.19.0
+        version: 6.19.3(prisma@6.19.3(typescript@5.9.3))(typescript@5.9.3)
       next:
         specifier: ^15.5.25
         version: 15.5.25(@playwright/test@1.63.0)(@types/node@20.19.43)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
