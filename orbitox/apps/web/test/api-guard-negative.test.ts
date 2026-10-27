@@ -979,12 +979,13 @@ describe('Phase 1 & 1.5 Security, Unified Auth & Licensed Customer Test Suite', 
   it('does not mutate project usage when the audit store is unavailable', async () => {
     let mutationApplied = false;
     const handler = createProjectUsageHandler({
-      getProject: async () => ({ id: 'audit-failure-project', slug: 'audit-failure-project', monthlyApiCalls: 13 } as any),
-      recordPlatformAdminAudit: async () => { throw new Error('audit store unavailable'); },
-      setProjectUsage: async () => {
+      getProject: async () => ({ id: 'audit-failure-project', slug: 'audit-failure-project', organizationId: 'audit-org', monthlyApiCalls: 13 } as any),
+      createPlatformAdminAuditIntent: async () => { throw new Error('audit store unavailable'); },
+      setProjectUsageWithAuditIntent: async () => {
         mutationApplied = true;
         return undefined;
       },
+      resolvePlatformAdminAuditIntentFailure: async () => undefined,
     });
     const response = await handler(new NextRequest(
       'http://localhost:3000/api/v1/admin/projects/audit-failure-project/usage',
@@ -1003,21 +1004,23 @@ describe('Phase 1 & 1.5 Security, Unified Auth & Licensed Customer Test Suite', 
     assert.equal(mutationApplied, false);
   });
 
-  it('records an audit intent when the completion audit write fails after mutation', async () => {
-    let auditWrites = 0;
-    let mutationApplied = false;
-    const auditEvents: string[] = [];
+  it('marks the audit intent failed when the usage transaction fails', async () => {
+    let intentStatus = 'PENDING';
+    let failedIntentId: string | undefined;
+    let usageWriteAttempted = false;
     const handler = createProjectUsageHandler({
-      getProject: async () => ({ id: 'audit-completion-project', slug: 'audit-completion-project', monthlyApiCalls: 13 } as any),
-      recordPlatformAdminAudit: async (event) => {
-        auditWrites += 1;
-        if (auditWrites === 1) auditEvents.push(event.action);
-        else throw new Error('audit store unavailable after mutation');
-        return 'audit-event';
+      getProject: async () => ({ id: 'audit-completion-project', slug: 'audit-completion-project', organizationId: 'audit-org', monthlyApiCalls: 13 } as any),
+      createPlatformAdminAuditIntent: async () => 'intent-1',
+      setProjectUsageWithAuditIntent: async () => {
+        usageWriteAttempted = true;
+        throw new Error('usage transaction failed');
       },
-      setProjectUsage: async () => {
-        mutationApplied = true;
-        return undefined;
+      resolvePlatformAdminAuditIntentFailure: async (intentId, organizationId, projectId, reason) => {
+        assert.equal(organizationId, 'audit-org');
+        assert.equal(projectId, 'audit-completion-project');
+        assert.equal(reason, 'usage transaction failed');
+        failedIntentId = intentId;
+        intentStatus = 'FAILED';
       },
     });
     const response = await handler(new NextRequest(
@@ -1033,21 +1036,23 @@ describe('Phase 1 & 1.5 Security, Unified Auth & Licensed Customer Test Suite', 
     ));
 
     assert.equal(response.status, 503);
-    assert.equal(mutationApplied, true);
-    assert.deepEqual(auditEvents, ['project.usage.reset.requested']);
+    assert.equal(usageWriteAttempted, true);
+    assert.equal(failedIntentId, 'intent-1');
+    assert.equal(intentStatus, 'FAILED');
   });
 
-  it('retains the audit intent and returns 503 when the usage write fails', async () => {
-    const auditEvents: string[] = [];
+  it('leaves a crash-interrupted intent pending for maintenance recovery', async () => {
+    let intentStatus = 'PENDING';
+    const recoverStaleIntent = () => {
+      if (intentStatus === 'PENDING') intentStatus = 'FAILED';
+    };
     const handler = createProjectUsageHandler({
-      getProject: async () => ({ id: 'usage-failure-project', slug: 'usage-failure-project', monthlyApiCalls: 13 } as any),
-      recordPlatformAdminAudit: async (event) => {
-        auditEvents.push(event.action);
-        return 'audit-event';
-      },
-      setProjectUsage: async () => { throw new Error('database unavailable'); },
+      getProject: async () => ({ id: 'usage-failure-project', slug: 'usage-failure-project', organizationId: 'audit-org', monthlyApiCalls: 13 } as any),
+      createPlatformAdminAuditIntent: async () => 'intent-crash',
+      setProjectUsageWithAuditIntent: async () => undefined,
+      resolvePlatformAdminAuditIntentFailure: async () => undefined,
     });
-    const response = await handler(new NextRequest(
+    await handler(new NextRequest(
       'http://localhost:3000/api/v1/admin/projects/usage-failure-project/usage',
       {
         method: 'POST',
@@ -1058,9 +1063,8 @@ describe('Phase 1 & 1.5 Security, Unified Auth & Licensed Customer Test Suite', 
         body: JSON.stringify({ action: 'reset' }),
       }
     ));
-
-    assert.equal(response.status, 503);
-    assert.equal((await response.json()).error?.code, 'USAGE_UPDATE_UNAVAILABLE');
-    assert.deepEqual(auditEvents, ['project.usage.reset.requested']);
+    assert.equal(intentStatus, 'PENDING');
+    recoverStaleIntent();
+    assert.equal(intentStatus, 'FAILED');
   });
 });

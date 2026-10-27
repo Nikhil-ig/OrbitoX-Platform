@@ -7,8 +7,9 @@ import { createPrismaPlatformRepository } from '../lib/platform-repository';
 const databaseUrl = process.env.TEST_DATABASE_URL || process.env.DATABASE_URL;
 const runtimeUrl = process.env.APP_DATABASE_URL;
 const auditUrl = process.env.PLATFORM_AUDIT_DATABASE_URL;
-if (!databaseUrl || !runtimeUrl || !auditUrl) {
-    throw new Error('TEST_DATABASE_URL (or DATABASE_URL), APP_DATABASE_URL, and PLATFORM_AUDIT_DATABASE_URL are required.');
+const maintenanceUrl = process.env.MAINTENANCE_DATABASE_URL;
+if (!databaseUrl || !runtimeUrl || !auditUrl || !maintenanceUrl) {
+    throw new Error('TEST_DATABASE_URL (or DATABASE_URL), APP_DATABASE_URL, PLATFORM_AUDIT_DATABASE_URL, and MAINTENANCE_DATABASE_URL are required.');
 }
 
 function boundedUrl(connectionString: string): string {
@@ -22,6 +23,7 @@ function boundedUrl(connectionString: string): string {
 const owner = new PrismaClient({ datasources: { db: { url: boundedUrl(databaseUrl) } } });
 const runtime = new PrismaClient({ datasources: { db: { url: boundedUrl(runtimeUrl) } } });
 const audit = new PrismaClient({ datasources: { db: { url: boundedUrl(auditUrl) } } });
+const maintenance = new PrismaClient({ datasources: { db: { url: boundedUrl(maintenanceUrl) } } });
 const repository = createPrismaPlatformRepository(runtime, audit);
 const suffix = randomUUID();
 const organizationSlug = `step2-${suffix}`;
@@ -30,7 +32,10 @@ const passed: string[] = [];
 let organizationId: string | undefined;
 let projectId: string | undefined;
 let platformAuditId: string | undefined;
+const auditIntentIds: string[] = [];
 const previousRepositoryMode = process.env.ORBITOX_PLATFORM_REPOSITORY;
+const previousAdminToken = process.env.ORBITOX_ADMIN_TOKEN;
+const previousServerPepper = process.env.ORBITOX_SERVER_PEPPER;
 
 function pass(name: string): void {
     passed.push(name);
@@ -38,6 +43,7 @@ function pass(name: string): void {
 }
 
 async function main(): Promise<void> {
+    process.env.ORBITOX_SERVER_PEPPER = `step2-server-pepper-${suffix}`;
     const organization = await repository.createOrganization({
         slug: organizationSlug,
         name: `Step 2 ${suffix}`,
@@ -88,6 +94,7 @@ async function main(): Promise<void> {
     pass('one verifier query returns key, project, and environment; invalid keys fail closed');
 
     process.env.ORBITOX_PLATFORM_REPOSITORY = 'prisma';
+    process.env.ORBITOX_ADMIN_TOKEN = `step2-admin-${suffix}`;
     const { withApiGuard, PlatformApiState } = await import('../app/api/v1/_lib/api-guard');
     const handler = withApiGuard(
         { serviceId: 'crm', serviceName: 'CRM Service' },
@@ -105,6 +112,25 @@ async function main(): Promise<void> {
         PlatformApiState.getTelemetry().some((event) => event.message.includes('API guard database operations: 4 total, 3 writes')),
     );
     pass('real API guard reports four guard-owned operations: one lookup and three writes');
+
+    const [{ GET: listKeys }, { GET: getKey }] = await Promise.all([
+        import('../app/api/v1/platform/api-keys/route'),
+        import('../app/api/v1/platform/api-keys/[id]/route'),
+    ]);
+    const adminHeaders = { authorization: `Bearer ${process.env.ORBITOX_ADMIN_TOKEN}` };
+    const listResponse = await listKeys(new NextRequest(
+        `http://localhost/api/v1/platform/api-keys?projectId=${created.project.id}`,
+        { headers: adminHeaders },
+    ));
+    assert.equal(listResponse.status, 200);
+    const listedRouteKey = (await listResponse.json() as any).data.find((item: any) => item.id === apiKey.keyRecord.id);
+    assert.equal(listedRouteKey.projectId, created.project.id);
+    const detailResponse = await getKey(
+        new NextRequest(`http://localhost/api/v1/platform/api-keys/${apiKey.keyRecord.id}`, { headers: adminHeaders }),
+    );
+    assert.equal(detailResponse.status, 200);
+    assert.equal((await detailResponse.json() as any).data.projectId, created.project.id);
+    pass('platform key list and detail routes return 200 with the owning project id');
 
     const testDomain = `step2-${suffix}.example.test`;
     await repository.registerDomain({ environmentId: environment.id, domainName: testDomain });
@@ -146,6 +172,81 @@ async function main(): Promise<void> {
     assert.equal((await repository.authorizeApiKey(apiKey.rawSecret)).key?.status, 'REVOKED');
     pass('key revocation is persisted and immediately visible to authorization lookup');
 
+    const committedIntentId = await repository.createPlatformAdminAuditIntent({
+        action: 'project.usage.set',
+        entityType: 'PLATFORM_PROJECT_USAGE',
+        entityId: created.project.id,
+        organizationId: organization.id,
+        projectId: created.project.id,
+        actorId: 'step2-test',
+        metadata: { previousValue: 1, newValue: 5 },
+    });
+    auditIntentIds.push(committedIntentId);
+    const usageAfterIntent = await repository.setProjectUsageWithAuditIntent(
+        created.project.id,
+        organization.id,
+        5,
+        committedIntentId,
+    );
+    assert.equal(usageAfterIntent?.monthlyApiCalls, 5);
+    assert.equal((await owner.platformAuditEvent.findUnique({ where: { id: committedIntentId } }))?.status, 'COMMITTED');
+    await assert.rejects(() => runtime.$executeRaw`
+        UPDATE "PlatformAuditEvent" SET "status" = 'FAILED' WHERE "id" = ${committedIntentId}
+    `);
+    pass('usage mutation and COMMITTED audit status are atomic');
+
+    const failedIntentId = await repository.createPlatformAdminAuditIntent({
+        action: 'project.usage.reset',
+        entityType: 'PLATFORM_PROJECT_USAGE',
+        entityId: created.project.id,
+        organizationId: organization.id,
+        projectId: created.project.id,
+        actorId: 'step2-test',
+        metadata: { previousValue: 5, newValue: 0 },
+    });
+    auditIntentIds.push(failedIntentId);
+    await assert.rejects(() => repository.setProjectUsageWithAuditIntent(
+        `${created.project.id}-missing`,
+        organization.id,
+        0,
+        failedIntentId,
+    ));
+    assert.equal((await owner.platformAuditEvent.findUnique({ where: { id: failedIntentId } }))?.status, 'PENDING');
+    await repository.resolvePlatformAdminAuditIntentFailure(
+        failedIntentId,
+        organization.id,
+        created.project.id,
+        'Injected usage transaction failure.',
+    );
+    const failedIntent = await owner.platformAuditEvent.findUnique({ where: { id: failedIntentId } });
+    assert.equal(failedIntent?.status, 'FAILED');
+    assert.equal(failedIntent?.failureReason, 'Injected usage transaction failure.');
+    assert.equal((await owner.platformProject.findUnique({ where: { id: created.project.id } }))?.monthlyApiCalls, 5n);
+    pass('failed usage transaction rolls back and marks its intent FAILED');
+
+    const crashedIntentId = await repository.createPlatformAdminAuditIntent({
+        action: 'project.usage.reset',
+        entityType: 'PLATFORM_PROJECT_USAGE',
+        entityId: created.project.id,
+        organizationId: organization.id,
+        projectId: created.project.id,
+        actorId: 'step2-test',
+        metadata: { previousValue: 5, newValue: 0 },
+    });
+    auditIntentIds.push(crashedIntentId);
+    await owner.platformAuditEvent.update({
+        where: { id: crashedIntentId },
+        data: { occurredAt: new Date(Date.now() - 60_000) },
+    });
+    const recovery = await maintenance.$queryRaw<Array<{ recovered: number }>>`
+        SELECT public.recover_stale_platform_audit_intents(NOW(), 100) AS recovered
+    `;
+    assert.equal(recovery[0]?.recovered, 1);
+    const recoveredIntent = await owner.platformAuditEvent.findUnique({ where: { id: crashedIntentId } });
+    assert.equal(recoveredIntent?.status, 'FAILED');
+    assert.match(recoveredIntent?.failureReason || '', /Recovered as interrupted/);
+    pass('maintenance recovers a stale PENDING intent left by a process crash');
+
     platformAuditId = await repository.recordPlatformAdminAudit({
         action: 'ORGANIZATION_CREATED',
         entityType: 'PLATFORM_ORGANIZATION',
@@ -181,10 +282,17 @@ main()
     .finally(async () => {
         if (previousRepositoryMode === undefined) delete process.env.ORBITOX_PLATFORM_REPOSITORY;
         else process.env.ORBITOX_PLATFORM_REPOSITORY = previousRepositoryMode;
+        if (previousAdminToken === undefined) delete process.env.ORBITOX_ADMIN_TOKEN;
+        else process.env.ORBITOX_ADMIN_TOKEN = previousAdminToken;
+        if (previousServerPepper === undefined) delete process.env.ORBITOX_SERVER_PEPPER;
+        else process.env.ORBITOX_SERVER_PEPPER = previousServerPepper;
         if (platformAuditId) {
             await owner.$executeRaw`DELETE FROM "PlatformAuditEvent" WHERE "id" = ${platformAuditId}`.catch(() => undefined);
         }
+        if (auditIntentIds.length > 0) {
+            await owner.platformAuditEvent.deleteMany({ where: { id: { in: auditIntentIds } } }).catch(() => undefined);
+        }
         if (projectId) await owner.platformProject.delete({ where: { id: projectId } }).catch(() => undefined);
         if (organizationId) await owner.platformOrganization.delete({ where: { id: organizationId } }).catch(() => undefined);
-        await Promise.all([owner.$disconnect(), runtime.$disconnect(), audit.$disconnect()]);
+        await Promise.all([owner.$disconnect(), runtime.$disconnect(), audit.$disconnect(), maintenance.$disconnect()]);
     });

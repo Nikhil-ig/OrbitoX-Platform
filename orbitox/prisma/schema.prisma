@@ -1707,6 +1707,8 @@ model PlatformAuditEvent {
   requestId      String?
   reason         String?
   metadata       Json     @default("{}")
+  status         String   @default("COMMITTED")
+  failureReason  String?
   occurredAt     DateTime @default(now())
 
   @@index([occurredAt])
@@ -1714,6 +1716,7 @@ model PlatformAuditEvent {
   @@index([projectId, occurredAt])
   @@index([entityType, entityId])
   @@index([action, occurredAt])
+  @@index([status, occurredAt])
 }
 
 model PlatformRateLimitBucket {

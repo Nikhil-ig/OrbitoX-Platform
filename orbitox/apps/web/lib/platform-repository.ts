@@ -54,10 +54,28 @@ export interface PlatformAdminAuditInput {
     metadata?: Prisma.InputJsonValue;
 }
 
+export interface PlatformAdminAuditIntentInput extends PlatformAdminAuditInput {
+    organizationId: string;
+    projectId: string;
+}
+
 export type AsyncPlatformRepository = AsyncMethods<typeof PlatformRepository> & {
     isPrismaBacked(): boolean;
     authorizeApiKey(rawSecret: string): Promise<PlatformAuthorizationLookup>;
     recordPlatformAdminAudit(event: PlatformAdminAuditInput): Promise<string>;
+    createPlatformAdminAuditIntent(event: PlatformAdminAuditIntentInput): Promise<string>;
+    setProjectUsageWithAuditIntent(
+        projectId: string,
+        organizationId: string,
+        monthlyApiCalls: number,
+        intentId: string,
+    ): Promise<PlatformProject | undefined>;
+    resolvePlatformAdminAuditIntentFailure(
+        intentId: string,
+        organizationId: string,
+        projectId: string,
+        reason: string,
+    ): Promise<void>;
     findVerifiedDomain(domainName: string): Promise<ProjectDomainRecord | undefined>;
 };
 
@@ -577,6 +595,50 @@ export function createPrismaPlatformRepository(client: PrismaClient, adminAuditC
             if (!existing) return undefined;
             return toProject(await client.platformProject.update({ where: { id: existing.id }, data: { monthlyApiCalls: BigInt(monthlyApiCalls) } }));
         },
+        async setProjectUsageWithAuditIntent(
+            projectId: string,
+            organizationId: string,
+            monthlyApiCalls: number,
+            intentId: string,
+        ): Promise<PlatformProject | undefined> {
+            if (!Number.isSafeInteger(monthlyApiCalls) || monthlyApiCalls < 0) throw new Error('monthlyApiCalls must be a non-negative safe integer.');
+            return client.$transaction(async (transaction) => {
+                const rows = await transaction.$queryRaw<RawRow[]>`
+                    UPDATE "PlatformProject"
+                    SET "monthlyApiCalls" = ${BigInt(monthlyApiCalls)}, "updatedAt" = NOW()
+                    WHERE "id" = ${projectId} AND "organizationId" = ${organizationId}
+                    RETURNING *
+                `;
+                const scope = `org/${organizationId}/project/${projectId}/environment/platform-admin`;
+                await transaction.$queryRaw`SELECT set_config('app.current_tenant_id', ${scope}, true)`;
+                const resolution = rows.length
+                    ? 'COMMITTED'
+                    : 'FAILED';
+                const resolved = await transaction.$queryRaw<Array<{ resolve_platform_audit_intent: boolean }>>`
+                    SELECT public.resolve_platform_audit_intent(
+                        ${intentId}, ${resolution}, ${rows.length ? null : 'Project no longer exists.'}
+                    ) AS resolve_platform_audit_intent
+                `;
+                if (!resolved[0]?.resolve_platform_audit_intent) {
+                    throw new Error('Audit intent could not be resolved in the usage transaction.');
+                }
+                return rows[0] ? toProject(rows[0]) : undefined;
+            });
+        },
+        async resolvePlatformAdminAuditIntentFailure(
+            intentId: string,
+            organizationId: string,
+            projectId: string,
+            reason: string,
+        ): Promise<void> {
+            const scope = `org/${organizationId}/project/${projectId}/environment/platform-admin`;
+            await client.$transaction(async (transaction) => {
+                await transaction.$queryRaw`SELECT set_config('app.current_tenant_id', ${scope}, true)`;
+                await transaction.$queryRaw`
+                    SELECT public.resolve_platform_audit_intent(${intentId}, 'FAILED', ${reason})
+                `;
+            });
+        },
         async resetMonthlyProjectUsage(): Promise<number> {
             const rows = await client.$queryRaw<Array<{ id: string }>>`
         UPDATE "PlatformProject" SET "monthlyApiCalls" = 0, "updatedAt" = NOW()
@@ -926,6 +988,23 @@ export function createPrismaPlatformRepository(client: PrismaClient, adminAuditC
       `;
             return id;
         },
+        async createPlatformAdminAuditIntent(event: PlatformAdminAuditIntentInput): Promise<string> {
+            const id = `audit_${crypto.randomUUID()}`;
+            await adminAuditClient.$executeRaw`
+                INSERT INTO "PlatformAuditEvent" (
+                    "id", "actorId", "actorEmail", "action", "entityType", "entityId",
+                    "organizationId", "projectId", "environmentId", "ipAddress", "requestId",
+                    "reason", "metadata", "status", "occurredAt"
+                ) VALUES (
+                    ${id}, ${event.actorId || null}, ${event.actorEmail || null}, ${event.action},
+                    ${event.entityType}, ${event.entityId || null}, ${event.organizationId},
+                    ${event.projectId}, ${event.environmentId || null}, ${event.ipAddress || null},
+                    ${event.requestId || null}, ${event.reason || null},
+                    ${JSON.stringify(event.metadata || {})}::jsonb, 'PENDING', NOW()
+                )
+            `;
+            return id;
+        },
     };
 }
 
@@ -971,8 +1050,50 @@ const extraMethods = {
     recordPlatformAdminAudit: async (event: PlatformAdminAuditInput): Promise<string> => {
         if (prismaIsRequired()) return getPrismaRepository().recordPlatformAdminAudit(event);
         const auditId = `audit_${crypto.randomUUID()}`;
-        PlatformRepository.recordAuditEvent({ ...event, id: auditId });
+        PlatformRepository.recordAuditEvent({ ...event, id: auditId, status: 'COMMITTED' });
         return auditId;
+    },
+    createPlatformAdminAuditIntent: async (event: PlatformAdminAuditIntentInput): Promise<string> => {
+        if (prismaIsRequired()) return getPrismaRepository().createPlatformAdminAuditIntent(event);
+        const id = `audit_${crypto.randomUUID()}`;
+        PlatformRepository.recordAuditEvent({ ...event, id, status: 'PENDING', failureReason: undefined });
+        return id;
+    },
+    setProjectUsageWithAuditIntent: async (
+        projectId: string,
+        organizationId: string,
+        monthlyApiCalls: number,
+        intentId: string,
+    ): Promise<PlatformProject | undefined> => {
+        if (prismaIsRequired()) return getPrismaRepository().setProjectUsageWithAuditIntent(projectId, organizationId, monthlyApiCalls, intentId);
+        const project = await platformRepository.setProjectUsage(projectId, monthlyApiCalls);
+        const event = PlatformRepository.listAuditEvents().find((item) => item.id === intentId);
+        if (event) {
+            event.status = project ? 'COMMITTED' : 'FAILED';
+            event.failureReason = project ? undefined : 'Project no longer exists.';
+            PlatformRepository.saveImmediate();
+        }
+        return project;
+    },
+    resolvePlatformAdminAuditIntentFailure: async (
+        intentId: string,
+        organizationId: string,
+        projectId: string,
+        reason: string,
+    ): Promise<void> => {
+        if (prismaIsRequired()) return getPrismaRepository().resolvePlatformAdminAuditIntentFailure(intentId, organizationId, projectId, reason);
+        const event = PlatformRepository.listAuditEvents().find((item) => item.id === intentId);
+        if (!event || event.status !== 'PENDING') return;
+        event.status = 'FAILED';
+        event.failureReason = reason.slice(0, 1000);
+        PlatformRepository.recordAuditEvent({
+            action: 'platform.audit_intent.resolved',
+            entityType: 'PLATFORM_AUDIT_INTENT',
+            entityId: intentId,
+            organizationId,
+            projectId,
+            metadata: { status: event.status, failureReason: event.failureReason },
+        });
     },
     findVerifiedDomain: async (domainName: string): Promise<ProjectDomainRecord | undefined> => {
         if (prismaIsRequired()) return getPrismaRepository().findVerifiedDomain(domainName);

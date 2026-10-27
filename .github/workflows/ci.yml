@@ -285,6 +285,7 @@ jobs:
           TEST_DATABASE_URL: postgresql://postgres:postgrespassword@127.0.0.1:5432/orbitox_phase2
           APP_DATABASE_URL: postgresql://orbitox_runtime:phase2-ci-${{ github.run_id }}-${{ github.run_attempt }}@127.0.0.1:5432/orbitox_phase2
           PLATFORM_AUDIT_DATABASE_URL: postgresql://orbitox_platform_admin_audit:phase2-audit-${{ github.run_id }}-${{ github.run_attempt }}@127.0.0.1:5432/orbitox_phase2
+          MAINTENANCE_DATABASE_URL: postgresql://orbitox_maintenance:phase2-maint-${{ github.run_id }}-${{ github.run_attempt }}@127.0.0.1:5432/orbitox_phase2
       - name: Run full web suite against explicit JSON test adapter
         run: pnpm --filter web test
       - name: Run full web suite against PostgreSQL runtime role
@@ -298,15 +299,17 @@ jobs:
           TEST_DATABASE_URL: postgresql://postgres:postgrespassword@127.0.0.1:5432/orbitox_phase2
           APP_DATABASE_URL: postgresql://orbitox_runtime:phase2-ci-${{ github.run_id }}-${{ github.run_attempt }}@127.0.0.1:5432/orbitox_phase2
           PLATFORM_AUDIT_DATABASE_URL: postgresql://orbitox_platform_admin_audit:phase2-audit-${{ github.run_id }}-${{ github.run_attempt }}@127.0.0.1:5432/orbitox_phase2
+          MAINTENANCE_DATABASE_URL: postgresql://orbitox_maintenance:phase2-maint-${{ github.run_id }}-${{ github.run_attempt }}@127.0.0.1:5432/orbitox_phase2
       - name: Verify health fails while PostgreSQL is stopped
         env:
           POSTGRES_CONTAINER: ${{ job.services.postgres.id }}
+          DATABASE_URL: postgresql://postgres:postgrespassword@127.0.0.1:5432/orbitox_phase2
+          TEST_DATABASE_URL: postgresql://postgres:postgrespassword@127.0.0.1:5432/orbitox_phase2
           APP_DATABASE_URL: postgresql://orbitox_runtime:phase2-ci-${{ github.run_id }}-${{ github.run_attempt }}@127.0.0.1:5432/orbitox_phase2
           PLATFORM_AUDIT_DATABASE_URL: postgresql://orbitox_platform_admin_audit:phase2-audit-${{ github.run_id }}-${{ github.run_attempt }}@127.0.0.1:5432/orbitox_phase2
-        run: |
-          trap 'docker start "$POSTGRES_CONTAINER" >/dev/null' EXIT
-          docker stop "$POSTGRES_CONTAINER"
-          pnpm --filter web test:database-outage
+          ORBITOX_ADMIN_TOKEN: phase2-ci-admin-token-for-outage-test
+          ORBITOX_SERVER_PEPPER: phase2-ci-server-pepper-for-outage-test-32
+        run: pnpm --filter web test:database-outage
 
   docker:
     name: Docker image builds

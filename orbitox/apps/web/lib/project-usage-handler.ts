@@ -2,7 +2,10 @@ import { NextRequest, NextResponse } from 'next/server';
 import { withApiGuard, PlatformApiState } from '@/app/api/v1/_lib/api-guard';
 import { AsyncPlatformRepository, platformRepository } from '@/lib/platform-repository';
 
-type UsageRepository = Pick<AsyncPlatformRepository, 'getProject' | 'setProjectUsage' | 'recordPlatformAdminAudit'>;
+type UsageRepository = Pick<
+    AsyncPlatformRepository,
+    'getProject' | 'createPlatformAdminAuditIntent' | 'setProjectUsageWithAuditIntent' | 'resolvePlatformAdminAuditIntentFailure'
+>;
 
 export function createProjectUsageHandler(repository: UsageRepository = platformRepository) {
     return withApiGuard(
@@ -15,6 +18,9 @@ export function createProjectUsageHandler(repository: UsageRepository = platform
         async (req: NextRequest) => {
             let auditWriteInProgress = false;
             let usageWriteInProgress = false;
+            let auditIntentId: string | undefined;
+            let projectOrganizationId: string | undefined;
+            let projectIdForAudit: string | undefined;
             try {
                 const projectId = req.nextUrl.pathname.split('/').at(-2);
                 const project = projectId ? await repository.getProject(projectId) : undefined;
@@ -41,29 +47,33 @@ export function createProjectUsageHandler(repository: UsageRepository = platform
 
                 const monthlyApiCalls = body.action === 'reset' ? 0 : body.monthlyApiCalls;
                 const previousValue = project.monthlyApiCalls || 0;
+                projectOrganizationId = project.organizationId;
+                projectIdForAudit = project.id;
                 auditWriteInProgress = true;
-                await repository.recordPlatformAdminAudit({
-                    action: `project.usage.${body.action}.requested`,
-                    entityType: 'PLATFORM_PROJECT_USAGE',
-                    entityId: project.id,
-                    projectId: project.id,
-                    actorId: 'platform-admin',
-                    metadata: { previousValue, newValue: monthlyApiCalls, phase: 'requested' },
-                });
-                auditWriteInProgress = false;
-                usageWriteInProgress = true;
-                const updated = await repository.setProjectUsage(project.id, monthlyApiCalls);
-                usageWriteInProgress = false;
-                auditWriteInProgress = true;
-                await repository.recordPlatformAdminAudit({
+                auditIntentId = await repository.createPlatformAdminAuditIntent({
                     action: `project.usage.${body.action}`,
                     entityType: 'PLATFORM_PROJECT_USAGE',
                     entityId: project.id,
+                    organizationId: project.organizationId,
                     projectId: project.id,
                     actorId: 'platform-admin',
                     metadata: { previousValue, newValue: monthlyApiCalls },
                 });
                 auditWriteInProgress = false;
+                usageWriteInProgress = true;
+                const updated = await repository.setProjectUsageWithAuditIntent(
+                    project.id,
+                    project.organizationId,
+                    monthlyApiCalls,
+                    auditIntentId,
+                );
+                usageWriteInProgress = false;
+                if (!updated) {
+                    return NextResponse.json(
+                        { success: false, error: { code: 'NOT_FOUND', message: 'Project not found.' } },
+                        { status: 404 }
+                    );
+                }
                 PlatformApiState.recordTelemetry({
                     tenantId: project.slug,
                     facade: 'AuditFacade',
@@ -82,6 +92,18 @@ export function createProjectUsageHandler(repository: UsageRepository = platform
                 }
                 if (usageWriteInProgress) {
                     console.error('Project usage write failed after recording audit intent.', error);
+                    if (auditIntentId && projectOrganizationId && projectIdForAudit) {
+                        try {
+                            await repository.resolvePlatformAdminAuditIntentFailure(
+                                auditIntentId,
+                                projectOrganizationId,
+                                projectIdForAudit,
+                                error.message || 'Project usage change failed.',
+                            );
+                        } catch (resolutionError) {
+                            console.error('Project usage audit intent remains pending for recovery.', resolutionError);
+                        }
+                    }
                     return NextResponse.json(
                         { success: false, error: { code: 'USAGE_UPDATE_UNAVAILABLE', message: 'The usage change could not be completed.' } },
                         { status: 503, headers: { 'Retry-After': '1' } }
