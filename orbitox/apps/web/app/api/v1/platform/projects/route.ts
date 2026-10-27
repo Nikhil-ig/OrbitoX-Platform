@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { withApiGuard } from '@/app/api/v1/_lib/api-guard';
 import { ApiResponse, ApiRequestContext } from '@/app/api/v1/_lib/api-types';
-import { PlatformRepository } from '@orbitox-io/plugin-engine';
 import { auditService } from '@/app/api/v1/_lib/platform-governance';
+import { platformRepository } from '@/lib/platform-repository';
 
 export const GET = withApiGuard(
   {
@@ -12,23 +12,24 @@ export const GET = withApiGuard(
     requiredScopes: ['platform.projects.read', 'admin'],
   },
   async (req: NextRequest) => {
-    PlatformRepository.initialize();
-    const projects = PlatformRepository.listProjects();
+    const projects = await platformRepository.listProjects();
 
-    const enriched = projects.map((project) => {
-      const environments = PlatformRepository.listEnvironments(project.id);
-      const keys = PlatformRepository.listApiKeys({ projectId: project.id });
-      const credentials = PlatformRepository.listCredentials({ projectId: project.id });
+    const enriched = await Promise.all(projects.map(async (project) => {
+      const [environments, keys, credentials] = await Promise.all([
+        platformRepository.listEnvironments(project.id),
+        platformRepository.listApiKeys({ projectId: project.id }),
+        platformRepository.listCredentials({ projectId: project.id }),
+      ]);
       
       let domainsCount = 0;
       let totalCallsUsed = 0;
       let totalCallLimit = 0;
 
       for (const env of environments) {
-        const domains = PlatformRepository.listDomains(env.id);
+        const domains = await platformRepository.listDomains(env.id);
         domainsCount += domains.length;
 
-        const quota = PlatformRepository.getQuotaPolicy(env.id);
+        const quota = await platformRepository.getQuotaPolicy(env.id);
         if (quota) {
           totalCallsUsed += quota.monthlyCallsUsed;
           totalCallLimit += quota.monthlyCallLimit;
@@ -47,7 +48,7 @@ export const GET = withApiGuard(
           monthlyCallLimit: totalCallLimit || 10000000,
         },
       };
-    });
+    }));
 
     return NextResponse.json<ApiResponse>({
       success: true,
@@ -84,10 +85,10 @@ export const POST = withApiGuard(
         );
       }
 
-      const orgs = PlatformRepository.listOrganizations();
+      const orgs = await platformRepository.listOrganizations();
       const targetOrgId = organizationId || (orgs[0]?.id || 'org_default');
 
-      const result = PlatformRepository.createProject({
+      const result = await platformRepository.createProject({
         name,
         slug,
         organizationId: targetOrgId,
@@ -95,6 +96,16 @@ export const POST = withApiGuard(
         planTier: planTier || 'growth',
         technicalLead: technicalLead || 'Platform SuperAdmin',
         contactEmail: contactEmail || 'devops@orbitox.io',
+      });
+      await platformRepository.recordPlatformAdminAudit({
+        action: 'PROJECT_CREATED',
+        entityType: 'PLATFORM_PROJECT',
+        entityId: result.project.id,
+        organizationId: targetOrgId,
+        projectId: result.project.id,
+        actorId: ctx.apiKey || 'platform_admin',
+        reason: `Provisioned project ${name}`,
+        metadata: { environments: result.environments.map((environment) => environment.slug) },
       });
 
       // Commit to immutable audit ledger

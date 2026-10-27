@@ -1384,6 +1384,7 @@ enum PlatformProjectStatus {
   PROVISIONING
   ACTIVE
   DEGRADED
+  THROTTLED
   SUSPENDED
   ARCHIVED
   DEPROVISIONING
@@ -1464,9 +1465,14 @@ model PlatformProject {
   organizationId  String
   businessModel   String                // O2O2B2B2C, HEALTHCARE_NETWORK, D2C, B2B_SAAS
   planTier        String                // starter, growth, pro, enterprise, hyperscale
+  plan            String                @default("starter")
+  planLabel       String?
   enabledServices String[]              @default([])
   apiCallQuota    BigInt?
+  monthlyApiCalls BigInt                @default(0)
   rateLimitPerMin Int?
+  customDomain    String?
+  storageQuotaGb  Float?
   status          PlatformProjectStatus @default(ACTIVE)
   technicalLead   String
   contactEmail    String

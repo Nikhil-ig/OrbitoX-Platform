@@ -4,11 +4,17 @@ export const REQUIRED_PLATFORM_MIGRATIONS = [
     '20261027000000_orbitox_phase2_full_baseline',
     '20261027000100_orbitox_phase2_step1_security',
     '20261027000200_orbitox_phase2_step1_review',
+    '20261027000300_orbitox_phase2_step2_repository',
+    '20261027000400_orbitox_phase2_step2_throttled_status',
+    '20261027000500_orbitox_phase2_step2_project_fields',
 ] as const;
 
 const globalForPrisma = globalThis as typeof globalThis & { platformPrisma?: PrismaClient };
 
-const prisma = globalForPrisma.platformPrisma ?? new PrismaClient();
+const databaseUrl = process.env.APP_DATABASE_URL || process.env.DATABASE_URL;
+const prisma = globalForPrisma.platformPrisma ?? new PrismaClient({
+    ...(databaseUrl ? { datasources: { db: { url: databaseUrl } } } : {}),
+});
 
 if (process.env.NODE_ENV !== 'production') globalForPrisma.platformPrisma = prisma;
 

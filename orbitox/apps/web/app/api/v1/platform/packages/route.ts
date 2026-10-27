@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { withApiGuard } from '@/app/api/v1/_lib/api-guard';
 import { ApiResponse, ApiRequestContext } from '@/app/api/v1/_lib/api-types';
-import { PlatformRepository } from '@orbitox-io/plugin-engine';
 import { auditService } from '@/app/api/v1/_lib/platform-governance';
+import { platformRepository } from '@/lib/platform-repository';
 
 export const GET = withApiGuard(
   {
@@ -13,29 +13,29 @@ export const GET = withApiGuard(
     requiredScopes: ['admin', 'platform.packages'],
   },
   async (req: NextRequest, ctx: ApiRequestContext) => {
-    PlatformRepository.initialize();
     const url = new URL(req.url);
     const category = url.searchParams.get('category') || undefined;
 
-    let packages = PlatformRepository.listPackages();
+    let packages = await platformRepository.listPackages();
     if (category) {
       packages = packages.filter((p) => p.category.toLowerCase() === category.toLowerCase());
     }
 
-    const enriched = packages.map((pkg) => {
-      const versions = PlatformRepository.listPackageVersions(pkg.packageId);
-      const installations = PlatformRepository.listInstallations().filter(
-        (i) => i.packageId === pkg.packageId || i.packageId === pkg.id
-      );
+    const enriched = await Promise.all(packages.map(async (pkg) => {
+      const [versions, installations] = await Promise.all([
+        platformRepository.listPackageVersions(pkg.packageId),
+        platformRepository.listInstallations(),
+      ]);
+      const packageInstallations = installations.filter((i) => i.packageId === pkg.packageId || i.packageId === pkg.id);
 
       return {
         ...pkg,
         versions,
-        installationsCount: installations.length,
+        installationsCount: packageInstallations.length,
         hasEd25519Signature: Boolean(pkg.signingPublicKeyPem),
         integrityStatus: 'VERIFIED',
       };
-    });
+    }));
 
     return NextResponse.json<ApiResponse>({
       success: true,
@@ -75,7 +75,7 @@ export const POST = withApiGuard(
         );
       }
 
-      const installation = PlatformRepository.installPackage(
+      const installation = await platformRepository.installPackage(
         environmentId,
         packageId,
         versionId,
@@ -94,6 +94,15 @@ export const POST = withApiGuard(
           packageId,
           versionId,
         },
+      });
+      await platformRepository.recordPlatformAdminAudit({
+        action: 'PACKAGE_INSTALLED',
+        entityType: 'PACKAGE_INSTALLATION',
+        entityId: installation.id,
+        environmentId,
+        actorId: ctx.apiKey || 'platform_admin',
+        reason: `Installed ${packageId} ${versionId}`,
+        metadata: { environmentId, packageId, versionId },
       });
 
       return NextResponse.json<ApiResponse>({

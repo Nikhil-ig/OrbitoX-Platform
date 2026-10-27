@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { withApiGuard, PlatformApiState, PlatformRepository } from '../../_lib/api-guard';
+import { withApiGuard, PlatformApiState } from '../../_lib/api-guard';
 import { ClientProject, PLAN_TIER_PRESETS } from '@/app/admin/data/mock-data';
+import { platformRepository } from '@/lib/platform-repository';
 
 export const GET = withApiGuard(
   {
@@ -13,7 +14,7 @@ export const GET = withApiGuard(
     const modelFilter = url.searchParams.get('model');
     const statusFilter = url.searchParams.get('status');
 
-    let projects = PlatformApiState.getProjects();
+    let projects = await platformRepository.listProjects();
 
     if (modelFilter && modelFilter !== 'all') {
       projects = projects.filter((p) => p.businessModel === modelFilter);
@@ -81,14 +82,26 @@ export const POST = withApiGuard(
         .toLowerCase()
         .replace(/[^a-z0-9]+/g, '-')
         .replace(/^-|-$/g, '') || `org-${Date.now()}`;
-      const organizationRecord = PlatformRepository.listOrganizations().find(
+      const existingOrganization = (await platformRepository.listOrganizations()).find(
         (item) => item.name.toLowerCase() === organizationName.toLowerCase()
-      ) || PlatformRepository.createOrganization({
+      );
+      const organizationRecord = existingOrganization || await platformRepository.createOrganization({
         name: organizationName,
         slug: `${organizationSlug}-${Date.now().toString(36)}`,
         billingEmail: contactEmail || `dev@${organizationSlug}.com`,
       });
-      const projectResult = PlatformRepository.createProject({
+      if (!existingOrganization) {
+        await platformRepository.recordPlatformAdminAudit({
+          action: 'ORGANIZATION_CREATED',
+          entityType: 'PLATFORM_ORGANIZATION',
+          entityId: organizationRecord.id,
+          organizationId: organizationRecord.id,
+          actorId: 'platform-admin',
+          reason: `Created organization ${organizationName} during project provisioning`,
+          metadata: { slug: organizationRecord.slug },
+        });
+      }
+      const projectResult = await platformRepository.createProject({
         name,
         ...(typeof requestedSlug === 'string' ? { slug: requestedSlug } : {}),
         organizationId: organizationRecord.id,
@@ -143,7 +156,7 @@ export const POST = withApiGuard(
       };
 
       const productionEnvironment = projectResult.environments.find((environment) => environment.isProduction)!;
-      const { keyRecord, rawSecret: fullKey } = PlatformRepository.createApiKey({
+      const { keyRecord, rawSecret: fullKey } = await platformRepository.createApiKey({
         name: `${name} Primary Live Key`,
         environmentId: productionEnvironment.id,
         projectId,
@@ -151,6 +164,17 @@ export const POST = withApiGuard(
         tenantScope: [slug],
         rateLimitPerMin: customRateLimit || preset.defaultRateLimitPerMin,
         createdBy: 'platform-admin',
+      });
+      await platformRepository.recordPlatformAdminAudit({
+        action: 'PROJECT_CREATED',
+        entityType: 'PLATFORM_PROJECT',
+        entityId: projectId,
+        organizationId: organizationRecord.id,
+        projectId,
+        environmentId: productionEnvironment.id,
+        actorId: 'platform-admin',
+        reason: `Provisioned project ${name}`,
+        metadata: { enabledServices, plan },
       });
       const keyId = keyRecord.id;
       const keyPrefix = keyRecord.keyPrefix;

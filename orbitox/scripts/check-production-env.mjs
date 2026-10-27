@@ -111,6 +111,20 @@ for (const secret of REQUIRED_SECRETS) {
   }
 }
 
+if (isProduction) {
+  for (const name of ['APP_DATABASE_URL', 'PLATFORM_AUDIT_DATABASE_URL']) {
+    if (!process.env[name]?.trim()) {
+      errors.push({
+        name,
+        reason: 'NOT SET',
+        purpose: name === 'APP_DATABASE_URL'
+          ? 'Restricted non-owner runtime connection for control-plane persistence'
+          : 'Insert-only connection for organization/project platform audit events',
+      });
+    }
+  }
+}
+
 for (const s of successes) {
   console.log(`  ✅ [PASS] ${s.name.padEnd(25)} (${s.length} chars) — ${s.purpose}`);
 }

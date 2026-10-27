@@ -23,11 +23,12 @@ import {
 } from '@orbitox-io/plugin-engine';
 import { PlatformApiKeyRecord, PlatformProject } from '@orbitox/types';
 import { runWithHospitalTenant } from '@/app/api/hospital/_store';
+import { platformRepository } from '@/lib/platform-repository';
 
 export { PlatformRepository };
 
-// Ensure PlatformRepository defaults are seeded
-if (typeof PlatformRepository !== 'undefined' && typeof PlatformRepository.initialize === 'function') {
+// Test/development mode keeps the explicit fixture repository; production uses PostgreSQL.
+if (!platformRepository.isPrismaBacked() && typeof PlatformRepository.initialize === 'function') {
   PlatformRepository.initialize();
 }
 
@@ -40,7 +41,7 @@ function scheduleMonthlyUsageReset(): void {
   const nextMonth = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 1));
   const resetAt = nextMonth.getTime();
   const timer = setTimeout(() => {
-    if (Date.now() >= resetAt) PlatformRepository.resetMonthlyProjectUsage();
+    if (Date.now() >= resetAt) void platformRepository.resetMonthlyProjectUsage();
     scheduleMonthlyUsageReset();
   }, Math.min(resetAt - now.getTime(), 2_000_000_000));
   timer.unref();
@@ -126,40 +127,34 @@ export class PlatformApiState {
     };
   }
 
-  static getProjects(): PlatformProject[] {
-    PlatformRepository.initialize();
-    return PlatformRepository.listProjects();
+  static async getProjects(): Promise<PlatformProject[]> {
+    return platformRepository.listProjects();
   }
 
-  static getProject(idOrSlug: string): PlatformProject | undefined {
-    PlatformRepository.initialize();
-    return PlatformRepository.getProject(idOrSlug);
+  static async getProject(idOrSlug: string): Promise<PlatformProject | undefined> {
+    return platformRepository.getProject(idOrSlug);
   }
 
-  static findProjectByApiKey(keyId: string): PlatformProject | null {
+  static async findProjectByApiKey(keyId: string): Promise<PlatformProject | null> {
     if (!keyId) return null;
-    PlatformRepository.initialize();
-    const key = PlatformRepository.getApiKey(keyId);
+    const key = await platformRepository.getApiKey(keyId);
     if (key && key.projectId) {
-      return PlatformRepository.getProject(key.projectId) || null;
+      return (await platformRepository.getProject(key.projectId)) || null;
     }
     return null;
   }
 
-  static addProject(project: any): PlatformProject {
-    PlatformRepository.initialize();
-    const res = PlatformRepository.createProject(project);
+  static async addProject(project: any): Promise<PlatformProject> {
+    const res = await platformRepository.createProject(project);
     return res.project;
   }
 
-  static updateProject(projectId: string, updates: Partial<PlatformProject>): PlatformProject | null {
-    PlatformRepository.initialize();
-    return PlatformRepository.updateProject(projectId, updates) || null;
+  static async updateProject(projectId: string, updates: Partial<PlatformProject>): Promise<PlatformProject | null> {
+    return (await platformRepository.updateProject(projectId, updates)) || null;
   }
 
-  static deleteProject(projectId: string): boolean {
-    PlatformRepository.initialize();
-    return PlatformRepository.deleteProject(projectId);
+  static async deleteProject(projectId: string): Promise<boolean> {
+    return platformRepository.deleteProject(projectId);
   }
 
   static getServices() {
@@ -220,54 +215,54 @@ export class PlatformApiState {
     return true;
   }
 
-  static getApiKeys() {
-    return PlatformRepository.listApiKeys().map((key) => ({
+  static async getApiKeys() {
+    return (await platformRepository.listApiKeys()).map((key) => ({
       ...key,
       maskedKey: key.maskedDisplay,
       status: key.status.toLowerCase(),
     }));
   }
 
-  static findKeyByRawSecret(incomingSecret: string) {
+  static async findKeyByRawSecret(incomingSecret: string) {
     if (!incomingSecret) return null;
-    return PlatformRepository.findKeyByRawSecret(incomingSecret) || null;
+    return (await platformRepository.findKeyByRawSecret(incomingSecret)) || null;
   }
 
-  static findApiKeyById(keyId: string) {
+  static async findApiKeyById(keyId: string) {
     if (!keyId) return null;
-    const k = PlatformRepository.getApiKey(keyId);
+    const k = await platformRepository.getApiKey(keyId);
     if (!k) return null;
     const { authVerifier, ...safe } = k as any;
     return safe;
   }
 
-  static findApiKey(keyOrId: string) {
+  static async findApiKey(keyOrId: string) {
     // Kept for backward compatibility of internal lookups by key ID only
     if (!keyOrId) return null;
-    const byId = this.findApiKeyById(keyOrId);
+    const byId = await this.findApiKeyById(keyOrId);
     if (byId) return byId;
-    return PlatformRepository.getApiKey(keyOrId) || null;
+    return (await platformRepository.getApiKey(keyOrId)) || null;
   }
 
-  static rotateApiKey(keyId: string) {
-    const rotated = PlatformRepository.rotateApiKey(keyId, { operatorEmail: 'platform-admin' });
+  static async rotateApiKey(keyId: string) {
+    const rotated = await platformRepository.rotateApiKey(keyId, { operatorEmail: 'platform-admin' });
     if (!rotated) return null;
     const { authVerifier, ...safeKey } = rotated.replacementKey;
     return { replacementKey: { ...safeKey, maskedKey: safeKey.maskedDisplay }, rawSecret: rotated.replacementRawSecret };
   }
 
-  static revokeApiKey(keyId: string) {
-    const key = PlatformRepository.setKeyStatus(keyId, 'REVOKED');
+  static async revokeApiKey(keyId: string) {
+    const key = await platformRepository.setKeyStatus(keyId, 'REVOKED');
     if (!key) return null;
     const { authVerifier, ...safeKey } = key;
     return safeKey;
   }
 
-  static toggleApiKey(keyId: string) {
-    const existing = PlatformRepository.getApiKey(keyId);
+  static async toggleApiKey(keyId: string) {
+    const existing = await platformRepository.getApiKey(keyId);
     if (!existing) return null;
     const status = existing.status === 'ACTIVE' ? 'SUSPENDED' : 'ACTIVE';
-    const key = PlatformRepository.setKeyStatus(keyId, status);
+    const key = await platformRepository.setKeyStatus(keyId, status);
     if (!key) return null;
     const { authVerifier, ...safeKey } = key;
     return { ...safeKey, status: safeKey.status.toLowerCase() };
@@ -326,9 +321,9 @@ export class PlatformApiState {
     return this.inFlightRequests === 0;
   }
 
-  static exportSnapshot(targetMode?: 'standalone' | 'distributed') {
-    const currentProjects = this.getProjects();
-    const currentKeys = this.getApiKeys();
+  static async exportSnapshot(targetMode?: 'standalone' | 'distributed') {
+    const currentProjects = await this.getProjects();
+    const currentKeys = await this.getApiKeys();
     const data = {
       projects: currentProjects,
       apiKeys: currentKeys,
@@ -379,7 +374,7 @@ export class PlatformApiState {
     return snapshot;
   }
 
-  static importSnapshot(snapshot: any) {
+  static async importSnapshot(snapshot: any) {
     if (!snapshot || !snapshot.data) {
       throw new Error('Invalid snapshot format: missing data payload');
     }
@@ -402,14 +397,14 @@ export class PlatformApiState {
       tenantId: 'system',
       facade: 'StateTransferEngine',
       level: 'SECURITY',
-      message: `[State Ingest] Ingested snapshot [${metadata?.snapshotId || 'custom'}] — Restored ${this.getProjects().length} projects, ${PlatformRepository.listApiKeys().length} keys, ${this.services.length} services.`,
+      message: `[State Ingest] Ingested snapshot [${metadata?.snapshotId || 'custom'}] — Restored ${ (await this.getProjects()).length} projects, ${(await platformRepository.listApiKeys()).length} keys, ${this.services.length} services.`,
     });
 
     return {
       success: true,
       stats: metadata?.stats || {
-        projectsCount: this.getProjects().length,
-        apiKeysCount: PlatformRepository.listApiKeys().length,
+        projectsCount: (await this.getProjects()).length,
+        apiKeysCount: (await platformRepository.listApiKeys()).length,
         servicesCount: this.services.length,
       },
       message: `Snapshot ingested successfully.`,
@@ -434,7 +429,7 @@ export class PlatformApiState {
     // 2. Snapshot state
     let snapshot = null;
     if (transferState) {
-      snapshot = this.exportSnapshot(targetMode);
+      snapshot = await this.exportSnapshot(targetMode);
     }
 
     // 3. Reconfigure Cluster Mode
@@ -456,7 +451,7 @@ export class PlatformApiState {
 
     // 5. Ingest snapshot into target state
     if (snapshot) {
-      this.importSnapshot(snapshot);
+      await this.importSnapshot(snapshot);
     }
 
     // 6. Release drain lock
@@ -468,8 +463,8 @@ export class PlatformApiState {
     const receipt = {
       snapshotId: snapshot?.metadata?.snapshotId || `snap_switch_${Date.now()}`,
       itemsTransferred: {
-        projects: this.getProjects().length,
-        apiKeys: PlatformRepository.listApiKeys().length,
+        projects: (await this.getProjects()).length,
+        apiKeys: (await platformRepository.listApiKeys()).length,
         services: this.services.length,
         providers: Object.keys(this.providers).length,
         telemetryLogs: this.telemetryLogs.length,
@@ -488,7 +483,7 @@ export class PlatformApiState {
       transferReceipt: receipt,
       message:
         targetMode === 'standalone'
-          ? `Engine seamlessly switched to [STANDALONE SINGLE NODE]. State transferred with 0 data loss (${this.getProjects().length} projects, ${PlatformRepository.listApiKeys().length} API keys preserved).`
+          ? `Engine seamlessly switched to [STANDALONE SINGLE NODE]. State transferred with 0 data loss (${(await this.getProjects()).length} projects, ${(await platformRepository.listApiKeys()).length} API keys preserved).`
           : `Engine scaled up to [DISTRIBUTED CLUSTERED MESH]. State synchronized across cluster nodes.`,
     };
   }
@@ -602,18 +597,22 @@ export function withApiGuard<T = any>(
     // 4. Authenticate API Key via constant-time HMAC verifiers (zero prefix matching)
     let matchedKey: any = null;
     let isPlatformKeyRecord = false;
+    let authorizedProject: PlatformProject | null = null;
     let projectUsageReserved = false;
     let effectiveProjectQuota = Number.POSITIVE_INFINITY;
 
     if (rawApiKey) {
-      // Primary: Cryptographic constant-time HMAC-SHA256 verifier lookup in PlatformRepository
-      const repoKey = PlatformRepository.findKeyByRawSecret(rawApiKey);
-      if (repoKey) {
-        matchedKey = repoKey;
-        isPlatformKeyRecord = true;
-      } else {
-        // In-memory key lookup with constant-time HMAC-SHA256 verification (zero prefix matching)
-        matchedKey = PlatformApiState.findKeyByRawSecret(rawApiKey);
+      const lookup = await platformRepository.authorizeApiKey(rawApiKey);
+      matchedKey = lookup.key;
+      authorizedProject = lookup.project;
+      isPlatformKeyRecord = Boolean(lookup.key);
+      if (lookup.source === 'prisma') {
+        PlatformApiState.recordTelemetry({
+          tenantId: lookup.key?.projectId || 'unknown',
+          facade: 'AuthorizationRepository',
+          level: 'DEBUG',
+          message: `Authorization database query count: ${lookup.queryCount}`,
+        });
       }
     }
 
@@ -805,7 +804,7 @@ export function withApiGuard<T = any>(
     // 7. Trusted Multi-Tenant Resolution & Anti-Spoofing
     // Tenant identity derived ONLY from authenticated key or verified registered domain
     let tenantId = 'default';
-    let project: any = null;
+    let project: any = authorizedProject;
 
     const clientHeaderTenant =
       req.headers.get('x-tenant-id')?.trim() || req.headers.get('x-context-id')?.trim() || '';
@@ -813,9 +812,7 @@ export function withApiGuard<T = any>(
     if (matchedKey) {
       const allowedTenantScope: string[] = matchedKey.tenantScope || [];
       const projectId = matchedKey.projectId;
-      PlatformRepository.initialize();
-      project = (projectId ? PlatformRepository.getProject(projectId) : null) ||
-        PlatformApiState.findProjectByApiKey(matchedKey.id || matchedKey.keyId);
+      if (!project && projectId) project = await platformRepository.getProject(projectId);
 
       if (clientHeaderTenant) {
         const isPermitted =
@@ -871,10 +868,10 @@ export function withApiGuard<T = any>(
       }
     } else if (isExplicitlyPublic) {
       const host = req.nextUrl.hostname.toLowerCase();
-      const verifiedDomains = PlatformRepository.listDomains();
+      const verifiedDomains = await platformRepository.listDomains();
       const matchingDomain = verifiedDomains.find((d) => d.domainName.toLowerCase() === host);
       if (matchingDomain) {
-        const env = PlatformRepository.getEnvironment(matchingDomain.environmentId);
+        const env = await platformRepository.getEnvironment(matchingDomain.environmentId);
         tenantId = env?.projectId || 'default';
       } else {
         tenantId = 'default';
@@ -1060,7 +1057,7 @@ export function withApiGuard<T = any>(
       const projectQuota = project.plan?.toLowerCase() === 'unlimited'
         ? Number.POSITIVE_INFINITY
         : effectiveProjectQuota;
-      const reservation = PlatformRepository.reserveProjectUsage(project.id, projectQuota);
+      const reservation = await platformRepository.reserveProjectUsage(project.id, projectQuota);
       if (reservation === undefined) {
         const latencyMs = Math.round(performance.now() - startTime);
         return NextResponse.json<ApiResponse>(
@@ -1086,16 +1083,16 @@ export function withApiGuard<T = any>(
       const latencyMs = Math.max(1, Math.round(performance.now() - startTime));
 
       if (projectUsageReserved && project && (response.status < 200 || response.status >= 300)) {
-        PlatformRepository.releaseProjectUsage(project.id);
+        await platformRepository.releaseProjectUsage(project.id);
         projectUsageReserved = false;
       }
 
       // Record key usage and platform environment quota
       const isBillableResponse = response.status >= 200 && response.status < 300;
       if (matchedKey && isPlatformKeyRecord && isBillableResponse) {
-        PlatformRepository.recordKeyUsage(matchedKey.id, clientIp);
+        await platformRepository.recordKeyUsage(matchedKey.id, clientIp);
         if (matchedKey.environmentId) {
-          PlatformRepository.recordCall(matchedKey.environmentId);
+          await platformRepository.recordCall(matchedKey.environmentId);
         }
       }
 
@@ -1131,7 +1128,7 @@ export function withApiGuard<T = any>(
       });
     } catch (err: any) {
       if (projectUsageReserved && project) {
-        PlatformRepository.releaseProjectUsage(project.id);
+        await platformRepository.releaseProjectUsage(project.id);
         projectUsageReserved = false;
       }
       const latencyMs = Math.max(1, Math.round(performance.now() - startTime));

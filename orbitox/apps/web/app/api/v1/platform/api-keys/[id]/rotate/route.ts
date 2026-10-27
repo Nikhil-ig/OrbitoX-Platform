@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { withApiGuard } from '@/app/api/v1/_lib/api-guard';
 import { ApiResponse, ApiRequestContext } from '@/app/api/v1/_lib/api-types';
-import { PlatformRepository } from '@orbitox-io/plugin-engine';
 import { auditService } from '@/app/api/v1/_lib/platform-governance';
+import { platformRepository } from '@/lib/platform-repository';
 
 export const POST = withApiGuard(
   {
@@ -18,7 +18,7 @@ export const POST = withApiGuard(
       const keyId = segments[segments.length - 2] || '';
       const body = await req.json().catch(() => ({}));
 
-      const existing = PlatformRepository.getApiKey(keyId);
+      const existing = await platformRepository.getApiKey(keyId);
       if (!existing) {
         return NextResponse.json<ApiResponse>(
           {
@@ -32,7 +32,7 @@ export const POST = withApiGuard(
 
       const graceWindowDays = body.graceWindowDays !== undefined ? Number(body.graceWindowDays) : 3;
 
-      const result = PlatformRepository.rotateApiKey(existing.id, {
+      const result = await platformRepository.rotateApiKey(existing.id, {
         graceWindowDays,
         operatorEmail: body.operatorEmail || ctx.apiKey || 'platform_admin@orbitox.io',
       });
@@ -58,6 +58,20 @@ export const POST = withApiGuard(
         reason: `Zero-downtime key rotation. Replacement: [${result.replacementKey.keyId}]. Grace window: ${graceWindowDays} days.`,
         oldValue: { keyId: existing.keyId, status: existing.status },
         newValue: {
+          replacementKeyId: result.replacementKey.keyId,
+          replacementFingerprint: result.replacementKey.secretFingerprint,
+          graceWindowDays,
+        },
+      });
+      await platformRepository.recordPlatformAdminAudit({
+        action: 'API_KEY_ROTATED',
+        entityType: 'PLATFORM_KEY',
+        entityId: existing.id,
+        projectId: existing.projectId,
+        environmentId: existing.environmentId,
+        actorId: ctx.apiKey || 'platform_admin',
+        reason: `Key rotation; grace window ${graceWindowDays} days`,
+        metadata: {
           replacementKeyId: result.replacementKey.keyId,
           replacementFingerprint: result.replacementKey.secretFingerprint,
           graceWindowDays,

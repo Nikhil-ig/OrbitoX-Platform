@@ -48,6 +48,12 @@
         "web#prisma:generate"
       ]
     },
+    "web#test:repository": {
+      "dependsOn": [
+        "^build",
+        "web#prisma:generate"
+      ]
+    },
     "web#test:database-outage": {
       "dependsOn": [
         "web#prisma:generate"

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { withApiGuard, PlatformApiState } from '../../../_lib/api-guard';
 import { PLAN_TIER_PRESETS } from '@/app/admin/data/mock-data';
+import { platformRepository } from '@/lib/platform-repository';
 
 export const GET = withApiGuard(
   {
@@ -13,7 +14,7 @@ export const GET = withApiGuard(
     const parts = pathname.split('/');
     const projectId = parts[parts.length - 1];
 
-    const project = PlatformApiState.getProject(projectId!);
+    const project = await platformRepository.getProject(projectId!);
     if (!project) {
       return NextResponse.json(
         { success: false, error: { code: 'NOT_FOUND', message: `Project ${projectId} not found.` } },
@@ -22,9 +23,7 @@ export const GET = withApiGuard(
     }
 
     // Also fetch associated API keys
-    const keys = PlatformApiState.getApiKeys().filter(
-      (k: any) => k.projectId === project.id || k.providerId === project.id
-    );
+    const keys = await platformRepository.listApiKeys({ projectId: project.id });
 
     return NextResponse.json({
       success: true,
@@ -48,7 +47,7 @@ export const PATCH = withApiGuard(
       const parts = pathname.split('/');
       const projectId = parts[parts.length - 1];
 
-      const project = PlatformApiState.getProject(projectId!);
+      const project = await platformRepository.getProject(projectId!);
       if (!project) {
         return NextResponse.json(
           { success: false, error: { code: 'NOT_FOUND', message: `Project ${projectId} not found.` } },
@@ -109,7 +108,17 @@ export const PATCH = withApiGuard(
         );
       }
 
-      const updated = PlatformApiState.updateProject(project.id, updates);
+      const updated = await platformRepository.updateProject(project.id, updates);
+      await platformRepository.recordPlatformAdminAudit({
+        action: 'PROJECT_UPDATED',
+        entityType: 'PLATFORM_PROJECT',
+        entityId: project.id,
+        organizationId: project.organizationId,
+        projectId: project.id,
+        actorId: 'platform-admin',
+        reason: `Updated project configuration: ${Object.keys(updates).join(', ')}`,
+        metadata: updates,
+      });
 
       PlatformApiState.recordTelemetry({
         tenantId: project.slug,
@@ -143,7 +152,7 @@ export const DELETE = withApiGuard(
     const parts = pathname.split('/');
     const projectId = parts[parts.length - 1];
 
-    const project = PlatformApiState.getProject(projectId!);
+    const project = await platformRepository.getProject(projectId!);
     if (!project) {
       return NextResponse.json(
         { success: false, error: { code: 'NOT_FOUND', message: `Project ${projectId} not found.` } },
@@ -151,7 +160,16 @@ export const DELETE = withApiGuard(
       );
     }
 
-    PlatformApiState.deleteProject(project.id);
+    await platformRepository.deleteProject(project.id);
+    await platformRepository.recordPlatformAdminAudit({
+      action: 'PROJECT_DELETED',
+      entityType: 'PLATFORM_PROJECT',
+      entityId: project.id,
+      organizationId: project.organizationId,
+      projectId: project.id,
+      actorId: 'platform-admin',
+      reason: `Deprovisioned project ${project.name}`,
+    });
 
     PlatformApiState.recordTelemetry({
       tenantId: project.slug,

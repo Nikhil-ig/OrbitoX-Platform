@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { withApiGuard, PlatformApiState, PlatformRepository } from '../../../../_lib/api-guard';
+import { withApiGuard, PlatformApiState } from '../../../../_lib/api-guard';
+import { platformRepository } from '@/lib/platform-repository';
 
 export const POST = withApiGuard(
     {
@@ -11,7 +12,7 @@ export const POST = withApiGuard(
     async (req: NextRequest) => {
         try {
             const projectId = req.nextUrl.pathname.split('/').at(-2);
-            const project = projectId ? PlatformRepository.getProject(projectId) : undefined;
+            const project = projectId ? await platformRepository.getProject(projectId) : undefined;
             if (!project) {
                 return NextResponse.json(
                     { success: false, error: { code: 'NOT_FOUND', message: 'Project not found.' } },
@@ -35,14 +36,14 @@ export const POST = withApiGuard(
 
             const monthlyApiCalls = body.action === 'reset' ? 0 : body.monthlyApiCalls;
             const previousValue = project.monthlyApiCalls || 0;
-            const updated = PlatformRepository.setProjectUsage(project.id, monthlyApiCalls);
-            PlatformRepository.recordAuditEvent({
+            const updated = await platformRepository.setProjectUsage(project.id, monthlyApiCalls);
+            await platformRepository.recordPlatformAdminAudit({
                 action: `project.usage.${body.action}`,
-                actor: 'platform-admin',
+                entityType: 'PLATFORM_PROJECT_USAGE',
+                entityId: project.id,
                 projectId: project.id,
-                tenantId: project.slug,
-                previousValue,
-                newValue: monthlyApiCalls,
+                actorId: 'platform-admin',
+                metadata: { previousValue, newValue: monthlyApiCalls },
             });
             PlatformApiState.recordTelemetry({
                 tenantId: project.slug,

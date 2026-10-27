@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { withApiGuard, PlatformApiState } from '../../_lib/api-guard';
 import { ApiResponse } from '../../_lib/api-types';
-import { PlatformRepository } from '@orbitox-io/plugin-engine';
+import { platformRepository } from '@/lib/platform-repository';
 
 export const GET = withApiGuard(
   {
@@ -16,7 +16,12 @@ export const GET = withApiGuard(
     const environment = searchParams.get('environment');
     const status = searchParams.get('status');
 
-    let keys = PlatformApiState.getApiKeys();
+    let keys = (await platformRepository.listApiKeys()).map((key) => ({
+      ...key,
+      maskedKey: key.maskedDisplay,
+      status: key.status.toLowerCase(),
+      environment: key.keyPrefix.includes('_live_') ? 'production' : key.keyPrefix.includes('_stage_') ? 'staging' : 'development',
+    }));
 
     if (serviceId && serviceId !== 'all') {
       keys = keys.filter((k: any) => k.serviceId === serviceId || k.serviceId === 'all');
@@ -83,14 +88,14 @@ export const POST = withApiGuard(
       }
 
       const projectId = requestedProjectId || providerId;
-      const project = projectId ? PlatformRepository.getProject(projectId) : undefined;
+      const project = projectId ? await platformRepository.getProject(projectId) : undefined;
       if (!project) {
         return NextResponse.json<ApiResponse>(
           { success: false, error: { code: 'INVALID_PROJECT', message: 'A valid projectId is required to issue a durable API key.' } },
           { status: 400 }
         );
       }
-      const environmentRecord = PlatformRepository.listEnvironments(project.id).find(
+      const environmentRecord = (await platformRepository.listEnvironments(project.id)).find(
         (item) => item.slug.toLowerCase() === environment.toLowerCase()
       );
       if (!environmentRecord) {
@@ -99,7 +104,7 @@ export const POST = withApiGuard(
           { status: 400 }
         );
       }
-      const { keyRecord, rawSecret } = PlatformRepository.createApiKey({
+      const { keyRecord, rawSecret } = await platformRepository.createApiKey({
         name,
         environmentId: environmentRecord.id,
         projectId: project.id,
@@ -109,6 +114,16 @@ export const POST = withApiGuard(
         tenantScope: tenantScope || [project.slug],
         expiresInDays: body.expiresInDays,
         createdBy: 'platform-admin',
+      });
+      await platformRepository.recordPlatformAdminAudit({
+        action: 'API_KEY_ISSUED',
+        entityType: 'PLATFORM_KEY',
+        entityId: keyRecord.id,
+        projectId: project.id,
+        environmentId: environmentRecord.id,
+        actorId: 'platform-admin',
+        reason: `Issued key for service ${serviceId}`,
+        metadata: { keyId: keyRecord.keyId, keyPrefix: keyRecord.keyPrefix, capabilities: keyRecord.capabilities },
       });
 
       PlatformApiState.recordTelemetry({

@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { withApiGuard } from '@/app/api/v1/_lib/api-guard';
 import { ApiResponse, ApiRequestContext } from '@/app/api/v1/_lib/api-types';
-import { PlatformRepository } from '@orbitox-io/plugin-engine';
 import { auditService } from '@/app/api/v1/_lib/platform-governance';
+import { platformRepository } from '@/lib/platform-repository';
 
 export const GET = withApiGuard(
   {
@@ -12,11 +12,10 @@ export const GET = withApiGuard(
     requiredScopes: ['platform.projects.read', 'admin'],
   },
   async (req: NextRequest, ctx: ApiRequestContext) => {
-    PlatformRepository.initialize();
     const url = new URL(req.url);
     const id = url.pathname.split('/').pop() || '';
 
-    const project = PlatformRepository.getProject(id);
+    const project = await platformRepository.getProject(id);
     if (!project) {
       return NextResponse.json<ApiResponse>(
         {
@@ -28,21 +27,25 @@ export const GET = withApiGuard(
       );
     }
 
-    const environments = PlatformRepository.listEnvironments(project.id);
-    const keys = PlatformRepository.listApiKeys({ projectId: project.id });
-    const credentials = PlatformRepository.listCredentials({ projectId: project.id });
+    const [environments, keys, credentials] = await Promise.all([
+      platformRepository.listEnvironments(project.id),
+      platformRepository.listApiKeys({ projectId: project.id }),
+      platformRepository.listCredentials({ projectId: project.id }),
+    ]);
 
-    const environmentsWithDetails = environments.map((env) => {
-      const domains = PlatformRepository.listDomains(env.id);
-      const quota = PlatformRepository.getQuotaPolicy(env.id);
-      const installations = PlatformRepository.listInstallations(env.id);
+    const environmentsWithDetails = await Promise.all(environments.map(async (env) => {
+      const [domains, quota, installations] = await Promise.all([
+        platformRepository.listDomains(env.id),
+        platformRepository.getQuotaPolicy(env.id),
+        platformRepository.listInstallations(env.id),
+      ]);
       return {
         ...env,
         domains,
         quota,
         installations,
       };
-    });
+    }));
 
     return NextResponse.json<ApiResponse>({
       success: true,
@@ -74,7 +77,7 @@ export const PATCH = withApiGuard(
       const id = url.pathname.split('/').pop() || '';
       const body = await req.json();
 
-      const existing = PlatformRepository.getProject(id);
+      const existing = await platformRepository.getProject(id);
       if (!existing) {
         return NextResponse.json<ApiResponse>(
           {
@@ -86,7 +89,7 @@ export const PATCH = withApiGuard(
         );
       }
 
-      const updated = PlatformRepository.updateProject(existing.id, body);
+      const updated = await platformRepository.updateProject(existing.id, body);
 
       // Audit log the mutation
       await auditService.log({
@@ -98,6 +101,16 @@ export const PATCH = withApiGuard(
         reason: body.reason || `Updated project properties for [${existing.name}]`,
         oldValue: { status: existing.status, planTier: existing.planTier },
         newValue: { status: updated?.status, planTier: updated?.planTier, updates: body },
+      });
+      await platformRepository.recordPlatformAdminAudit({
+        action: 'PROJECT_UPDATED',
+        entityType: 'PLATFORM_PROJECT',
+        entityId: existing.id,
+        organizationId: existing.organizationId,
+        projectId: existing.id,
+        actorId: ctx.apiKey || 'platform_admin',
+        reason: body.reason || `Updated project properties for [${existing.name}]`,
+        metadata: { oldStatus: existing.status, newStatus: updated?.status, updates: body },
       });
 
       return NextResponse.json<ApiResponse>({

@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { withApiGuard } from '@/app/api/v1/_lib/api-guard';
 import { ApiResponse, ApiRequestContext } from '@/app/api/v1/_lib/api-types';
-import { PlatformRepository } from '@orbitox-io/plugin-engine';
 import { auditService } from '@/app/api/v1/_lib/platform-governance';
+import { platformRepository } from '@/lib/platform-repository';
 
 export const GET = withApiGuard(
   {
@@ -12,23 +12,24 @@ export const GET = withApiGuard(
     requiredScopes: ['platform.credentials.read', 'admin'],
   },
   async (req: NextRequest, ctx: ApiRequestContext) => {
-    PlatformRepository.initialize();
     const url = new URL(req.url);
     const projectId = url.searchParams.get('projectId') || undefined;
     const environmentId = url.searchParams.get('environmentId') || undefined;
 
-    const credentials = PlatformRepository.listCredentials({ projectId, environmentId });
+    const credentials = await platformRepository.listCredentials({ projectId, environmentId });
 
-    const enriched = credentials.map((cred) => {
-      const project = PlatformRepository.getProject(cred.projectId);
-      const environment = PlatformRepository.getEnvironment(cred.environmentId);
+    const enriched = await Promise.all(credentials.map(async (cred) => {
+      const [project, environment] = await Promise.all([
+        platformRepository.getProject(cred.projectId),
+        platformRepository.getEnvironment(cred.environmentId),
+      ]);
       return {
         ...cred,
         encryptedPayload: undefined,
         projectName: project?.name || 'Unknown Project',
         environmentName: environment?.name || 'Unknown Environment',
       };
-    });
+    }));
 
     return NextResponse.json<ApiResponse>({
       success: true,
@@ -68,7 +69,7 @@ export const POST = withApiGuard(
         );
       }
 
-      const credential = PlatformRepository.createCredential({
+      const credential = await platformRepository.createCredential({
         name,
         provider,
         environmentId,
@@ -76,6 +77,16 @@ export const POST = withApiGuard(
         plaintextSecret,
         ownerEmail: ownerEmail || ctx.apiKey || 'operator@orbitox.io',
         rotationIntervalDays: rotationIntervalDays ? Number(rotationIntervalDays) : 90,
+      });
+      await platformRepository.recordPlatformAdminAudit({
+        action: 'CREDENTIAL_VAULTED',
+        entityType: 'PLATFORM_CREDENTIAL',
+        entityId: credential.id,
+        projectId,
+        environmentId,
+        actorId: ctx.apiKey || 'platform_admin',
+        reason: `Envelope-encrypted ${provider} credential`,
+        metadata: { provider, fingerprint: credential.secretFingerprint },
       });
 
       // Immutable audit log (never plaintext)

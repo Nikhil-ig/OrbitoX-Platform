@@ -49,11 +49,12 @@ jobs:
         run: |
           pnpm exec prisma generate --schema prisma/schema.prisma
           pnpm exec prisma migrate deploy --schema prisma/schema.prisma
-          PGPASSWORD=postgrespassword psql "$DATABASE_URL" -v app_role_password="$APP_DB_PASSWORD" -v maintenance_role_password="$MAINTENANCE_DB_PASSWORD" -f scripts/configure-step1-runtime-role.sql
+          PGPASSWORD=postgrespassword psql "$DATABASE_URL" -v app_role_password="$APP_DB_PASSWORD" -v maintenance_role_password="$MAINTENANCE_DB_PASSWORD" -v platform_admin_audit_password="$PLATFORM_ADMIN_AUDIT_DB_PASSWORD" -f scripts/configure-step1-runtime-role.sql
         env:
           DATABASE_URL: postgresql://postgres:postgrespassword@127.0.0.1:5432/orbitox_smoke
           APP_DB_PASSWORD: phase2-smoke-${{ github.run_id }}-${{ github.run_attempt }}
           MAINTENANCE_DB_PASSWORD: phase2-maint-smoke-${{ github.run_id }}-${{ github.run_attempt }}
+          PLATFORM_ADMIN_AUDIT_DB_PASSWORD: phase2-audit-smoke-${{ github.run_id }}-${{ github.run_attempt }}
 
       - name: Build workspace packages
         run: pnpm exec turbo run build --filter='web^...'
@@ -80,6 +81,7 @@ jobs:
           export ORBITOX_RUNTIME_TOKEN="$(openssl rand -hex 32)"
           export ORBITOX_CONTROL_SECRET="$(openssl rand -hex 32)"
           export ORBITOX_GUEST_SECRET="$(openssl rand -hex 32)"
+          export ORBITOX_SERVER_PEPPER="$(openssl rand -hex 32)"
           cp -r apps/web/.next/static apps/web/.next/standalone/apps/web/.next/static
           NODE_ENV=production PORT=3005 HOSTNAME=127.0.0.1 ORBITOX_DATA_DIR="$RUNNER_TEMP/orbitox-data" \
             node apps/web/.next/standalone/apps/web/server.js > "$RUNNER_TEMP/server.log" 2>&1 &
@@ -90,6 +92,8 @@ jobs:
           ORBITOX_URL=http://127.0.0.1:3005 node scripts/smoke-control-plane.mjs || { cat "$RUNNER_TEMP/server.log"; exit 1; }
         env:
           DATABASE_URL: postgresql://orbitox_runtime:phase2-smoke-${{ github.run_id }}-${{ github.run_attempt }}@127.0.0.1:5432/orbitox_smoke
+          APP_DATABASE_URL: postgresql://orbitox_runtime:phase2-smoke-${{ github.run_id }}-${{ github.run_attempt }}@127.0.0.1:5432/orbitox_smoke
+          PLATFORM_AUDIT_DATABASE_URL: postgresql://orbitox_platform_admin_audit:phase2-audit-smoke-${{ github.run_id }}-${{ github.run_attempt }}@127.0.0.1:5432/orbitox_smoke
 
   pack-and-verify:
     name: Package Tarball & External Install Smoke
@@ -261,21 +265,31 @@ jobs:
         env:
           DATABASE_URL: postgresql://postgres:postgrespassword@127.0.0.1:5432/orbitox_phase2
       - name: Configure restricted runtime and maintenance logins
-        run: PGPASSWORD=postgrespassword psql "$DATABASE_URL" -v app_role_password="$APP_DB_PASSWORD" -v maintenance_role_password="$MAINTENANCE_DB_PASSWORD" -f scripts/configure-step1-runtime-role.sql
+        run: PGPASSWORD=postgrespassword psql "$DATABASE_URL" -v app_role_password="$APP_DB_PASSWORD" -v maintenance_role_password="$MAINTENANCE_DB_PASSWORD" -v platform_admin_audit_password="$PLATFORM_ADMIN_AUDIT_DB_PASSWORD" -f scripts/configure-step1-runtime-role.sql
         env:
           DATABASE_URL: postgresql://postgres:postgrespassword@127.0.0.1:5432/orbitox_phase2
           APP_DB_PASSWORD: phase2-ci-${{ github.run_id }}-${{ github.run_attempt }}
           MAINTENANCE_DB_PASSWORD: phase2-maint-${{ github.run_id }}-${{ github.run_attempt }}
+          PLATFORM_ADMIN_AUDIT_DB_PASSWORD: phase2-audit-${{ github.run_id }}-${{ github.run_attempt }}
       - name: Verify RLS, audit immutability, and readiness
         run: pnpm --filter web test:integration
         env:
           DATABASE_URL: postgresql://postgres:postgrespassword@127.0.0.1:5432/orbitox_phase2
           TEST_DATABASE_URL: postgresql://postgres:postgrespassword@127.0.0.1:5432/orbitox_phase2
           APP_DATABASE_URL: postgresql://orbitox_runtime:phase2-ci-${{ github.run_id }}-${{ github.run_attempt }}@127.0.0.1:5432/orbitox_phase2
+          PLATFORM_AUDIT_DATABASE_URL: postgresql://orbitox_platform_admin_audit:phase2-audit-${{ github.run_id }}-${{ github.run_attempt }}@127.0.0.1:5432/orbitox_phase2
+      - name: Verify async Prisma repository and authorization query budget
+        run: pnpm --filter web test:repository
+        env:
+          DATABASE_URL: postgresql://postgres:postgrespassword@127.0.0.1:5432/orbitox_phase2
+          TEST_DATABASE_URL: postgresql://postgres:postgrespassword@127.0.0.1:5432/orbitox_phase2
+          APP_DATABASE_URL: postgresql://orbitox_runtime:phase2-ci-${{ github.run_id }}-${{ github.run_attempt }}@127.0.0.1:5432/orbitox_phase2
+          PLATFORM_AUDIT_DATABASE_URL: postgresql://orbitox_platform_admin_audit:phase2-audit-${{ github.run_id }}-${{ github.run_attempt }}@127.0.0.1:5432/orbitox_phase2
       - name: Verify health fails while PostgreSQL is stopped
         env:
           POSTGRES_CONTAINER: ${{ job.services.postgres.id }}
           APP_DATABASE_URL: postgresql://orbitox_runtime:phase2-ci-${{ github.run_id }}-${{ github.run_attempt }}@127.0.0.1:5432/orbitox_phase2
+          PLATFORM_AUDIT_DATABASE_URL: postgresql://orbitox_platform_admin_audit:phase2-audit-${{ github.run_id }}-${{ github.run_attempt }}@127.0.0.1:5432/orbitox_phase2
         run: |
           trap 'docker start "$POSTGRES_CONTAINER" >/dev/null' EXIT
           docker stop "$POSTGRES_CONTAINER"

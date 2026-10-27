@@ -20,6 +20,7 @@ export type ProjectLifecycleStatus =
   | 'PROVISIONING'
   | 'ACTIVE'
   | 'DEGRADED'
+  | 'THROTTLED'
   | 'SUSPENDED'
   | 'ARCHIVED'
   | 'DEPROVISIONING';
@@ -104,11 +105,14 @@ export interface PlatformProject {
   businessModel: BusinessModelType;
   planTier: PlanTier;
   plan?: string;
+  planLabel?: string;
   status: ProjectLifecycleStatus;
   enabledServices?: string[];
   apiCallQuota?: number;
   monthlyApiCalls?: number;
   rateLimitPerMin?: number;
+  customDomain?: string;
+  storageQuotaGb?: number;
   technicalLead: string;
   contactEmail: string;
   createdAt: string;
