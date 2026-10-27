@@ -13,20 +13,20 @@ connectionUrl.searchParams.set('socket_timeout', '5');
 
 const prisma = new PrismaClient({ datasources: { db: { url: connectionUrl.toString() } } });
 const timeout = setTimeout(() => {
-  console.error('FAIL health check exceeded the 15-second outage deadline.');
-  process.exit(1);
+    console.error('FAIL health check exceeded the 15-second outage deadline.');
+    process.exit(1);
 }, 15_000);
 
 createHealthHandler(() => assertPlatformDatabaseReady(prisma))()
-  .then((response) => {
-    assert.equal(response.status, 503, 'health must fail closed while PostgreSQL is stopped');
-    console.log('PASS health returns 503 while PostgreSQL is unavailable');
-  })
-  .catch((error) => {
-    console.error(error);
-    process.exitCode = 1;
-  })
-  .finally(async () => {
-    await prisma.$disconnect();
-    clearTimeout(timeout);
-  });
+    .then((response) => {
+        assert.equal(response.status, 503, 'health must fail closed while PostgreSQL is stopped');
+        console.log('PASS health returns 503 while PostgreSQL is unavailable');
+    })
+    .catch((error) => {
+        console.error(error);
+        process.exitCode = 1;
+    })
+    .finally(async () => {
+        await prisma.$disconnect();
+        clearTimeout(timeout);
+    });
