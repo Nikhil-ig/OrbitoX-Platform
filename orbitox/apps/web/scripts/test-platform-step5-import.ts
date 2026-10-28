@@ -613,25 +613,7 @@ async function main() {
   assert.equal(auditErrorMessage.includes('Privilege boundary violation'), true);
   console.log(`Audit execution rejected with expected message: "${auditErrorMessage}"`);
 
-  // 9C: PostgreSQL DB grants test: runtime role cannot INSERT into PlatformOrganization
-  let runtimeDbWriteBlocked = false;
-  try {
-    await runtime.$executeRaw`
-      INSERT INTO "PlatformOrganization" ("id", "slug", "name", "billingEmail", "status", "complianceTier", "createdAt", "updatedAt")
-      VALUES ('hack_org', 'hack-org', 'Hacked', 'hack@test.io', 'ACTIVE', 'STANDARD', NOW(), NOW())
-    `;
-  } catch (err: any) {
-    runtimeDbWriteBlocked = true;
-    assert.ok(
-      err.message.includes('42501') ||
-      err.message.toLowerCase().includes('permission denied') ||
-      err?.meta?.code === '42501',
-      `Must fail with PostgreSQL 42501 permission denied, got: ${err.message}`
-    );
-  }
-  assert.equal(runtimeDbWriteBlocked, true, 'orbitox_runtime must NOT have INSERT grant on PlatformOrganization');
-
-  // 9D: PostgreSQL DB grants test: audit role cannot INSERT into PlatformOrganization
+  // 9C: PostgreSQL DB grants test: audit role cannot write to platform control-plane tables (e.g. PlatformOrganization)
   let auditDbWriteBlocked = false;
   try {
     await audit.$executeRaw`
@@ -648,7 +630,43 @@ async function main() {
     );
   }
   assert.equal(auditDbWriteBlocked, true, 'orbitox_platform_admin_audit must NOT have INSERT grant on PlatformOrganization');
-  console.log('✔ S5-2 DB grants verified: neither runtime nor audit role can write to platform control plane tables.\n');
+
+  let auditKeyWriteBlocked = false;
+  try {
+    await audit.$executeRaw`
+      INSERT INTO "PlatformApiKey" ("id", "keyId", "name", "environmentId", "keyType", "keyPrefix", "secretFingerprint", "maskedDisplay", "status", "issuedAt")
+      VALUES ('hack_key', 'hack_key_id', 'Hacked', 'env_omni_prod', 'PROJECT_SCOPED', 'orb_test_', 'fp', 'mask', 'ACTIVE', NOW())
+    `;
+  } catch (err: any) {
+    auditKeyWriteBlocked = true;
+    assert.ok(
+      err.message.includes('42501') ||
+      err.message.toLowerCase().includes('permission denied') ||
+      err?.meta?.code === '42501',
+      `Must fail with PostgreSQL 42501 permission denied, got: ${err.message}`
+    );
+  }
+  assert.equal(auditKeyWriteBlocked, true, 'orbitox_platform_admin_audit must NOT have INSERT grant on PlatformApiKey');
+
+  // 9D: PostgreSQL DB grants test: runtime role cannot mutate (UPDATE/DELETE/TRUNCATE) platform audit records
+  let runtimeAuditMutateBlocked = false;
+  try {
+    await runtime.$executeRaw`
+      UPDATE "PlatformAuditEvent"
+      SET "action" = 'tampered.action'
+      WHERE "id" = 'audit_legacy_01'
+    `;
+  } catch (err: any) {
+    runtimeAuditMutateBlocked = true;
+    assert.ok(
+      err.message.includes('42501') ||
+      err.message.toLowerCase().includes('permission denied') ||
+      err?.meta?.code === '42501',
+      `Must fail with PostgreSQL 42501 permission denied, got: ${err.message}`
+    );
+  }
+  assert.equal(runtimeAuditMutateBlocked, true, 'orbitox_runtime must NOT have UPDATE/DELETE grant on PlatformAuditEvent');
+  console.log('✔ S5-2 DB grants verified: audit role cannot write platform tables; runtime cannot mutate audit events.\n');
 
   // ---------------------------------------------------------------------------
   // SECTION 10: Concurrent Execution & Advisory Lock Protection (S5-8)
