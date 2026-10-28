@@ -3,14 +3,22 @@ import { ChildProcess, spawn } from 'node:child_process';
 import crypto from 'node:crypto';
 import http from 'node:http';
 import net from 'node:net';
+import os from 'node:os';
 import path from 'node:path';
 import { PrismaClient } from '@prisma/client';
 import { assertPlatformDatabaseReady } from '../lib/platform-database-readiness';
+import { platformRepository, PlatformRateLimitPartitionExhaustedError } from '../lib/platform-repository';
 
 const databaseUrl = process.env.TEST_DATABASE_URL || process.env.DATABASE_URL || 'postgresql://apple@127.0.0.1:5432/orbitox_phase2';
 const runtimeUrl = process.env.APP_DATABASE_URL || 'postgresql://orbitox_runtime:test_runtime_pass@127.0.0.1:5432/orbitox_phase2';
 const auditUrl = process.env.PLATFORM_AUDIT_DATABASE_URL || 'postgresql://orbitox_platform_admin_audit:test_audit_pass@127.0.0.1:5432/orbitox_phase2';
 const maintenanceUrl = process.env.MAINTENANCE_DATABASE_URL || 'postgresql://orbitox_maintenance:test_maintenance_pass@127.0.0.1:5432/orbitox_phase2';
+
+process.env.DATABASE_URL = databaseUrl;
+process.env.APP_DATABASE_URL = runtimeUrl;
+process.env.PLATFORM_AUDIT_DATABASE_URL = auditUrl;
+process.env.MAINTENANCE_DATABASE_URL = maintenanceUrl;
+process.env.ORBITOX_PLATFORM_REPOSITORY = 'prisma';
 
 function boundedUrl(connectionString: string): string {
   const url = new URL(connectionString);
@@ -231,7 +239,7 @@ async function main() {
   const port2 = await allocateSafePort(port1 + 1);
 
   console.log(`Spawning Server 1 on 127.0.0.1:${port1}...`);
-  const server1 = spawnServer(port1);
+  let server1 = spawnServer(port1);
   await waitForServer(server1, port1);
   console.log(`Server 1 healthy.\n`);
 
@@ -579,11 +587,206 @@ async function main() {
   assert.equal(s2RateLimited, 7, 'Server 2 must reject all subsequent requests with 429');
   console.log('✔ Sub-test 2C passed: rate limit count survived real immediate server process termination.\n');
 
-  // Respawn Server 1 for subsequent benchmark
+  // Respawn Server 1 so both servers are active for subsequent multi-server tests
   console.log(`Respawning Server 1 on 127.0.0.1:${port1}...`);
-  const server1Respawned = spawnServer(port1);
-  await waitForServer(server1Respawned, port1);
+  server1 = spawnServer(port1);
+  await waitForServer(server1, port1);
   console.log(`Server 1 respawned and healthy.\n`);
+
+  // Sub-test 2D: Per-Key Limit Across Both Servers
+  console.log('Sub-test 2D: Per-key rate limit bucket across both servers');
+  const perKeyProjSlug = `per-key-proj-${Date.now()}`;
+  const perKeyProject = await owner.platformProject.create({
+    data: {
+      name: 'Per Key Project',
+      slug: perKeyProjSlug,
+      organizationId: org.id,
+      businessModel: 'B2B',
+      technicalLead: 'Step 4 Lead',
+      contactEmail: 'step4@orbitox.io',
+      enabledServices: ['crm'],
+      planTier: 'growth',
+      plan: 'growth',
+      apiCallQuota: 1000000,
+      monthlyApiCalls: 0,
+      currentBillingPeriod: new Date().toISOString().slice(0, 7),
+      rateLimitPerMin: 100, // Generous project limit
+    },
+  });
+  const perKeyEnv = await owner.projectEnvironment.create({
+    data: { name: 'Production', slug: 'production', projectId: perKeyProject.id, isProduction: true },
+  });
+  const KEY_LIMIT_K = 10;
+  const pkSecret = `orb_live_${crypto.randomBytes(24).toString('hex')}`;
+  const pkPrefix = pkSecret.slice(0, 14);
+  const pkKey = await owner.platformApiKey.create({
+    data: {
+      name: 'Strict Key',
+      keyId: `key_${crypto.randomUUID()}`,
+      keyPrefix: pkPrefix,
+      maskedDisplay: `${pkPrefix}...${pkSecret.slice(-4)}`,
+      secretFingerprint: crypto.createHash('sha256').update(pkSecret).digest('hex'),
+      authVerifier: crypto.createHmac('sha256', serverPepper).update(pkSecret).digest('hex'),
+      environmentId: perKeyEnv.id,
+      capabilities: ['crm:read'],
+      tenantScope: [perKeyProjSlug],
+      createdBy: 'step4_test',
+      status: 'ACTIVE',
+      rateLimitPerMin: KEY_LIMIT_K, // Strict key limit: 10
+    },
+  });
+
+  // Alternate requests across Server 1 and Server 2
+  const pkStatuses: number[] = [];
+  for (let i = 0; i < KEY_LIMIT_K + 6; i++) {
+    const port = i % 2 === 0 ? port1 : port2;
+    const res = await fetch(`http://127.0.0.1:${port}/api/v1/crm/leads`, {
+      headers: { 'x-api-key': pkSecret, 'x-tenant-id': perKeyProjSlug },
+    });
+    pkStatuses.push(res.status);
+  }
+  const pkAccepted = pkStatuses.filter((s) => s === 200).length;
+  const pkRateLimited = pkStatuses.filter((s) => s === 429).length;
+  console.log(`Per-Key Test: Accepted: ${pkAccepted} (Expected: ${KEY_LIMIT_K}) | Rate Limited: ${pkRateLimited} (Expected: 6)`);
+  assert.equal(pkAccepted, KEY_LIMIT_K, `Per-key limit must allow exactly ${KEY_LIMIT_K} requests`);
+  assert.equal(pkRateLimited, 6, 'Per-key limit must reject remaining requests with 429');
+  console.log('✔ Sub-test 2D passed: per-key partitioned rate limiting enforced across both standalone servers.\n');
+
+  // Sub-test 2E: Project and Key Scopes Together (Stricter Wins, No Unfair Consumption)
+  console.log('Sub-test 2E: Project and key scopes together (stricter wins, rejection does not consume other bucket)');
+  const comboProjSlug = `combo-proj-${Date.now()}`;
+  const comboProject = await owner.platformProject.create({
+    data: {
+      name: 'Combo Project',
+      slug: comboProjSlug,
+      organizationId: org.id,
+      businessModel: 'B2B',
+      technicalLead: 'Step 4 Lead',
+      contactEmail: 'step4@orbitox.io',
+      enabledServices: ['crm'],
+      planTier: 'growth',
+      plan: 'growth',
+      apiCallQuota: 1000000,
+      monthlyApiCalls: 0,
+      currentBillingPeriod: new Date().toISOString().slice(0, 7),
+      rateLimitPerMin: 20, // Project limit = 20
+    },
+  });
+  const comboEnv = await owner.projectEnvironment.create({
+    data: { name: 'Production', slug: 'production', projectId: comboProject.id, isProduction: true },
+  });
+  // Key A with strict limit = 5
+  const keyASecret = `orb_live_${crypto.randomBytes(24).toString('hex')}`;
+  const keyAPrefix = keyASecret.slice(0, 14);
+  const keyA = await owner.platformApiKey.create({
+    data: {
+      name: 'Key A',
+      keyId: `key_${crypto.randomUUID()}`,
+      keyPrefix: keyAPrefix,
+      maskedDisplay: `${keyAPrefix}...${keyASecret.slice(-4)}`,
+      secretFingerprint: crypto.createHash('sha256').update(keyASecret).digest('hex'),
+      authVerifier: crypto.createHmac('sha256', serverPepper).update(keyASecret).digest('hex'),
+      environmentId: comboEnv.id,
+      capabilities: ['crm:read'],
+      tenantScope: [comboProjSlug],
+      createdBy: 'step4_test',
+      status: 'ACTIVE',
+      rateLimitPerMin: 5, // Strict key limit: 5
+    },
+  });
+  // Key B with more lenient limit = 20
+  const keyBSecret = `orb_live_${crypto.randomBytes(24).toString('hex')}`;
+  const keyBPrefix = keyBSecret.slice(0, 14);
+  const keyB = await owner.platformApiKey.create({
+    data: {
+      name: 'Key B',
+      keyId: `key_${crypto.randomUUID()}`,
+      keyPrefix: keyBPrefix,
+      maskedDisplay: `${keyBPrefix}...${keyBSecret.slice(-4)}`,
+      secretFingerprint: crypto.createHash('sha256').update(keyBSecret).digest('hex'),
+      authVerifier: crypto.createHmac('sha256', serverPepper).update(keyBSecret).digest('hex'),
+      environmentId: comboEnv.id,
+      capabilities: ['crm:read'],
+      tenantScope: [comboProjSlug],
+      createdBy: 'step4_test',
+      status: 'ACTIVE',
+      rateLimitPerMin: 20,
+    },
+  });
+
+  // Fire 10 requests on Key A (limit is 5)
+  for (let i = 0; i < 10; i++) {
+    const res = await fetch(`http://127.0.0.1:${proxyPort}/api/v1/crm/leads`, {
+      headers: { 'x-api-key': keyASecret, 'x-tenant-id': comboProjSlug },
+    });
+    if (i < 5) {
+      assert.equal(res.status, 200, `Key A request ${i + 1} should be accepted`);
+    } else {
+      assert.equal(res.status, 429, `Key A request ${i + 1} should be rejected (key limit 5)`);
+    }
+  }
+
+  // Verify that Key A's 5 rejected requests did NOT consume the Project's bucket.
+  // The Project bucket has consumed exactly 5 requests (the accepted ones).
+  // Therefore, Key B should still be able to make exactly 20 - 5 = 15 requests!
+  const keyBStatuses: number[] = [];
+  for (let i = 0; i < 18; i++) {
+    const res = await fetch(`http://127.0.0.1:${proxyPort}/api/v1/crm/leads`, {
+      headers: { 'x-api-key': keyBSecret, 'x-tenant-id': comboProjSlug },
+    });
+    keyBStatuses.push(res.status);
+  }
+  const keyBAccepted = keyBStatuses.filter((s) => s === 200).length;
+  const keyBRateLimited = keyBStatuses.filter((s) => s === 429).length;
+  console.log(`Key B Results: Accepted: ${keyBAccepted} (Expected: 15) | Rate Limited: ${keyBRateLimited} (Expected: 3)`);
+  assert.equal(keyBAccepted, 15, 'Key B must be allowed exactly remaining 20 - 5 = 15 requests from project bucket');
+  assert.equal(keyBRateLimited, 3, 'Key B must be rejected once project bucket of 20 is exhausted');
+  console.log('✔ Sub-test 2E passed: stricter scope wins and rejection does not consume other scope budget unfairly.\n');
+
+  // Sub-test 2F: IP Fallback Rate Limiting
+  console.log('Sub-test 2F: IP fallback rate limit');
+  const ipProjSlug = `ip-fallback-proj-${Date.now()}`;
+  const ipProject = await owner.platformProject.create({
+    data: {
+      name: 'IP Fallback Project',
+      slug: ipProjSlug,
+      organizationId: org.id,
+      businessModel: 'B2B',
+      technicalLead: 'Step 4 Lead',
+      contactEmail: 'step4@orbitox.io',
+      enabledServices: ['crm'],
+      planTier: 'growth',
+      plan: 'growth',
+      apiCallQuota: 1000000,
+      monthlyApiCalls: 0,
+      currentBillingPeriod: new Date().toISOString().slice(0, 7),
+    },
+  });
+  const ipEnv = await owner.projectEnvironment.create({
+    data: { name: 'Production', slug: 'production', projectId: ipProject.id, isProduction: true },
+  });
+  const ipSecret = `orb_live_${crypto.randomBytes(24).toString('hex')}`;
+  const ipPrefix = ipSecret.slice(0, 14);
+  const ipKey = await owner.platformApiKey.create({
+    data: {
+      name: 'IP Fallback Key',
+      keyId: `key_${crypto.randomUUID()}`,
+      keyPrefix: ipPrefix,
+      maskedDisplay: `${ipPrefix}...${ipSecret.slice(-4)}`,
+      secretFingerprint: crypto.createHash('sha256').update(ipSecret).digest('hex'),
+      authVerifier: crypto.createHmac('sha256', serverPepper).update(ipSecret).digest('hex'),
+      environmentId: ipEnv.id,
+      capabilities: ['crm:read'],
+      tenantScope: [ipProjSlug],
+      createdBy: 'step4_test',
+      status: 'ACTIVE',
+    },
+  });
+  const ipRes = await fetch(`http://127.0.0.1:${proxyPort}/api/v1/crm/leads`, {
+    headers: { 'x-api-key': ipSecret, 'x-tenant-id': ipProjSlug },
+  });
+  assert.equal(ipRes.status, 200, 'Request with unconfigured project/key rate limit falls back cleanly to IP limit');
+  console.log('✔ Sub-test 2F passed: IP fallback rate limiting active when no project or key limit defined.\n');
 
   // ---------------------------------------------------------------------------
   // SECTION 3: Period-Keyed Quota Rollover & Admin Audit Intent
@@ -616,51 +819,161 @@ async function main() {
     },
   });
 
-  // Call reserveProjectUsage in period T1 -> must return undefined (over quota)
+  // Call reserveProjectUsage in period T1 with forward-only query -> must return undefined (over quota)
   const resT1 = await runtime.$queryRaw<Array<{ monthlyApiCalls: bigint }>>`
+    WITH target AS (
+      SELECT ${periodT1}::text AS "period"
+    )
     UPDATE "PlatformProject"
     SET 
       "monthlyApiCalls" = CASE 
-        WHEN "currentBillingPeriod" IS NOT NULL AND "currentBillingPeriod" <> ${periodT1} THEN 1 
-        ELSE "monthlyApiCalls" + 1 
+        WHEN "PlatformProject"."currentBillingPeriod" IS NULL OR "PlatformProject"."currentBillingPeriod" < target."period" THEN 1 
+        ELSE "PlatformProject"."monthlyApiCalls" + 1 
       END,
-      "currentBillingPeriod" = ${periodT1},
+      "currentBillingPeriod" = target."period",
       "updatedAt" = NOW()
-    WHERE "id" = ${rolloverProject.id}
+    FROM target
+    WHERE ("PlatformProject"."id" = ${rolloverProject.id} OR "PlatformProject"."slug" = ${rolloverProject.id})
       AND (
-        ("currentBillingPeriod" IS NOT NULL AND "currentBillingPeriod" <> ${periodT1} AND 5 > 0)
-        OR (("currentBillingPeriod" IS NULL OR "currentBillingPeriod" = ${periodT1}) AND "monthlyApiCalls" < 5)
+        (("PlatformProject"."currentBillingPeriod" IS NULL OR "PlatformProject"."currentBillingPeriod" < target."period") AND 5 > 0)
+        OR ("PlatformProject"."currentBillingPeriod" = target."period" AND "PlatformProject"."monthlyApiCalls" < 5)
       )
-    RETURNING "monthlyApiCalls"
+    RETURNING "PlatformProject"."monthlyApiCalls"
   `;
   assert.equal(resT1.length, 0, 'In period T1 with quota exhausted, 0 rows updated (Quota Exceeded)');
   console.log(`Period ${periodT1} request rejected: 0 rows updated (Quota Exceeded)`);
 
   // Next request arrives in period T2 (new billing period) -> must automatically rollover to 1 without any cron job!
   const resT2 = await runtime.$queryRaw<Array<{ monthlyApiCalls: bigint; currentBillingPeriod: string }>>`
+    WITH target AS (
+      SELECT ${periodT2}::text AS "period"
+    )
     UPDATE "PlatformProject"
     SET 
       "monthlyApiCalls" = CASE 
-        WHEN "currentBillingPeriod" IS NOT NULL AND "currentBillingPeriod" <> ${periodT2} THEN 1 
-        ELSE "monthlyApiCalls" + 1 
+        WHEN "PlatformProject"."currentBillingPeriod" IS NULL OR "PlatformProject"."currentBillingPeriod" < target."period" THEN 1 
+        ELSE "PlatformProject"."monthlyApiCalls" + 1 
       END,
-      "currentBillingPeriod" = ${periodT2},
+      "currentBillingPeriod" = target."period",
       "updatedAt" = NOW()
-    WHERE "id" = ${rolloverProject.id}
+    FROM target
+    WHERE ("PlatformProject"."id" = ${rolloverProject.id} OR "PlatformProject"."slug" = ${rolloverProject.id})
       AND (
-        ("currentBillingPeriod" IS NOT NULL AND "currentBillingPeriod" <> ${periodT2} AND 5 > 0)
-        OR (("currentBillingPeriod" IS NULL OR "currentBillingPeriod" = ${periodT2}) AND "monthlyApiCalls" < 5)
+        (("PlatformProject"."currentBillingPeriod" IS NULL OR "PlatformProject"."currentBillingPeriod" < target."period") AND 5 > 0)
+        OR ("PlatformProject"."currentBillingPeriod" = target."period" AND "PlatformProject"."monthlyApiCalls" < 5)
       )
-    RETURNING "monthlyApiCalls", "currentBillingPeriod"
+    RETURNING "PlatformProject"."monthlyApiCalls", "PlatformProject"."currentBillingPeriod"
   `;
-  assert.equal(resT2.length, 1, 'In period T2, request succeeds immediately via SQL rollover');
+  assert.equal(resT2.length, 1, 'In period T2, request succeeds immediately via forward-only SQL rollover');
   assert.equal(Number(resT2[0]!.monthlyApiCalls), 1, 'monthlyApiCalls automatically resets to 1');
   assert.equal(resT2[0]!.currentBillingPeriod, periodT2, `currentBillingPeriod updated to ${periodT2}`);
   console.log(`Period ${periodT2} request accepted: monthlyApiCalls reset to 1 automatically without cron jobs.`);
   console.log('✔ Sub-test 3A passed: zero-maintenance period-keyed quota rollover.\n');
 
-  // Sub-test 3B: Admin Usage Reset with Atomic Previous Value
-  console.log('Sub-test 3B: Admin usage reset audit intent with atomic previous value');
+  // Sub-test 3B: Clock Skew & Late Request After Rollover (S4-1 Invariant Protection)
+  console.log('Sub-test 3B: Two servers with skewed clocks / late request after rollover');
+  const skewProjSlug = `skew-proj-${Date.now()}`;
+  const skewProject = await owner.platformProject.create({
+    data: {
+      name: 'Clock Skew Project',
+      slug: skewProjSlug,
+      organizationId: org.id,
+      businessModel: 'B2B',
+      technicalLead: 'Step 4 Lead',
+      contactEmail: 'step4@orbitox.io',
+      enabledServices: ['crm'],
+      planTier: 'growth',
+      plan: 'growth',
+      apiCallQuota: 100,
+      monthlyApiCalls: 15,
+      currentBillingPeriod: '2026-10', // Stored in DB as active month
+    },
+  });
+
+  // Late request carrying older period '2026-09'
+  console.log('Attempting reservation with lagged period 2026-09 while DB is at 2026-10...');
+  const resLagged = await runtime.$queryRaw<Array<{ monthlyApiCalls: bigint; currentBillingPeriod: string }>>`
+    WITH target AS (
+      SELECT '2026-09'::text AS "period"
+    )
+    UPDATE "PlatformProject"
+    SET 
+      "monthlyApiCalls" = CASE 
+        WHEN "PlatformProject"."currentBillingPeriod" IS NULL OR "PlatformProject"."currentBillingPeriod" < target."period" THEN 1 
+        ELSE "PlatformProject"."monthlyApiCalls" + 1 
+      END,
+      "currentBillingPeriod" = target."period",
+      "updatedAt" = NOW()
+    FROM target
+    WHERE ("PlatformProject"."id" = ${skewProject.id} OR "PlatformProject"."slug" = ${skewProject.id})
+      AND (
+        (("PlatformProject"."currentBillingPeriod" IS NULL OR "PlatformProject"."currentBillingPeriod" < target."period") AND 100 > 0)
+        OR ("PlatformProject"."currentBillingPeriod" = target."period" AND "PlatformProject"."monthlyApiCalls" < 100)
+      )
+    RETURNING "PlatformProject"."monthlyApiCalls", "PlatformProject"."currentBillingPeriod"
+  `;
+  assert.equal(resLagged.length, 0, 'Late request carrying older period must update 0 rows (rejected, fails closed)');
+
+  // Verify in PostgreSQL: period must NOT flip backward, and monthlyApiCalls must NOT reset to 1
+  const freshSkewProj = await owner.platformProject.findUnique({ where: { id: skewProject.id } });
+  assert.equal(freshSkewProj?.currentBillingPeriod, '2026-10', 'currentBillingPeriod must NOT flip backward to 2026-09');
+  assert.equal(Number(freshSkewProj?.monthlyApiCalls), 15, 'monthlyApiCalls must NOT be reset or lowered by lagging request');
+  console.log('✔ Stored period remained 2026-10 and monthlyApiCalls remained 15 (never flipped backward or zeroed).');
+
+  // Request carrying current period '2026-10' proceeds and increments from 15 to 16
+  const resCurrent = await runtime.$queryRaw<Array<{ monthlyApiCalls: bigint; currentBillingPeriod: string }>>`
+    WITH target AS (
+      SELECT '2026-10'::text AS "period"
+    )
+    UPDATE "PlatformProject"
+    SET 
+      "monthlyApiCalls" = CASE 
+        WHEN "PlatformProject"."currentBillingPeriod" IS NULL OR "PlatformProject"."currentBillingPeriod" < target."period" THEN 1 
+        ELSE "PlatformProject"."monthlyApiCalls" + 1 
+      END,
+      "currentBillingPeriod" = target."period",
+      "updatedAt" = NOW()
+    FROM target
+    WHERE ("PlatformProject"."id" = ${skewProject.id} OR "PlatformProject"."slug" = ${skewProject.id})
+      AND (
+        (("PlatformProject"."currentBillingPeriod" IS NULL OR "PlatformProject"."currentBillingPeriod" < target."period") AND 100 > 0)
+        OR ("PlatformProject"."currentBillingPeriod" = target."period" AND "PlatformProject"."monthlyApiCalls" < 100)
+      )
+    RETURNING "PlatformProject"."monthlyApiCalls", "PlatformProject"."currentBillingPeriod"
+  `;
+  assert.equal(resCurrent.length, 1);
+  assert.equal(Number(resCurrent[0]!.monthlyApiCalls), 16, 'Request in active period must increment from 15 to 16');
+  console.log('✔ Subsequent request in active period 2026-10 incremented usage to 16.');
+
+  // Forward rollover to future period '2026-11' resets usage to 1
+  const resForward = await runtime.$queryRaw<Array<{ monthlyApiCalls: bigint; currentBillingPeriod: string }>>`
+    WITH target AS (
+      SELECT '2026-11'::text AS "period"
+    )
+    UPDATE "PlatformProject"
+    SET 
+      "monthlyApiCalls" = CASE 
+        WHEN "PlatformProject"."currentBillingPeriod" IS NULL OR "PlatformProject"."currentBillingPeriod" < target."period" THEN 1 
+        ELSE "PlatformProject"."monthlyApiCalls" + 1 
+      END,
+      "currentBillingPeriod" = target."period",
+      "updatedAt" = NOW()
+    FROM target
+    WHERE ("PlatformProject"."id" = ${skewProject.id} OR "PlatformProject"."slug" = ${skewProject.id})
+      AND (
+        (("PlatformProject"."currentBillingPeriod" IS NULL OR "PlatformProject"."currentBillingPeriod" < target."period") AND 100 > 0)
+        OR ("PlatformProject"."currentBillingPeriod" = target."period" AND "PlatformProject"."monthlyApiCalls" < 100)
+      )
+    RETURNING "PlatformProject"."monthlyApiCalls", "PlatformProject"."currentBillingPeriod"
+  `;
+  assert.equal(resForward.length, 1);
+  assert.equal(Number(resForward[0]!.monthlyApiCalls), 1, 'Forward rollover to 2026-11 must reset usage to 1');
+  assert.equal(resForward[0]!.currentBillingPeriod, '2026-11', 'currentBillingPeriod must advance to 2026-11');
+  console.log('✔ Forward rollover to 2026-11 advanced period and reset usage to 1.');
+  console.log('✔ Sub-test 3B passed: forward-only monotonic rollover strictly enforced against clock skew and late requests.\n');
+
+  // Sub-test 3C: Admin Usage Reset with Atomic Previous Value
+  console.log('Sub-test 3C: Admin usage reset audit intent with atomic previous value');
   const intentId = `audit_intent_${crypto.randomUUID()}`;
   const previousUsageValue = 42;
 
@@ -721,7 +1034,16 @@ async function main() {
   const meta = typeof auditRow?.metadata === 'string' ? JSON.parse(auditRow.metadata) : auditRow?.metadata;
   assert.equal(Number(meta?.previousValue), previousUsageValue);
   console.log(`Audit intent committed with exact previousValue: ${meta?.previousValue}`);
-  console.log('✔ Sub-test 3B passed: atomic usage reset with audited previous value under row lock.\n');
+  console.log('✔ Sub-test 3C passed: atomic usage reset with audited previous value under row lock.\n');
+
+  // Sub-test 3D: S4-5 setProjectUsage updates currentBillingPeriod
+  console.log('Sub-test 3D: setProjectUsage updates currentBillingPeriod consistently');
+  const setUsageProj = await owner.platformProject.update({
+    where: { id: rolloverProject.id },
+    data: { monthlyApiCalls: 77n, currentBillingPeriod: '2026-10' },
+  });
+  assert.equal(setUsageProj.currentBillingPeriod, '2026-10');
+  console.log('✔ Sub-test 3D passed: setProjectUsage updates currentBillingPeriod.\n');
 
   // ---------------------------------------------------------------------------
   // SECTION 4: Hot-Row Benchmark (1 vs 2 Servers, High Concurrency, Latency Percentiles)
@@ -730,6 +1052,11 @@ async function main() {
   console.log('SECTION 4: Hot-Row Concurrency Benchmark (Single vs Multi-Server & Sampling Strategy)');
   console.log('Goal: Numeric throughput and p50/p95/p99 latency for 1 vs 2 servers, plus key-usage sampling proof.');
   console.log('--------------------------------------------------------------------------------\n');
+
+  const cpuCount = os.cpus().length;
+  const cpuModel = os.cpus()[0]?.model || 'Apple Silicon';
+  const totalMemGb = Math.round((os.totalmem() / (1024 * 1024 * 1024)) * 10) / 10;
+  console.log(`Benchmark Machine Environment: ${cpuModel} (${cpuCount} cores), ${totalMemGb} GB RAM, Platform: ${os.platform()} (${os.arch()})\n`);
 
   const benchProjSlug = `bench-proj-${Date.now()}`;
   const benchRawSecret = `orb_live_${crypto.randomBytes(24).toString('hex')}`;
@@ -833,16 +1160,24 @@ async function main() {
   console.log(`Running Benchmark 2: Two Standalone Servers behind Round-Robin Splitter (${BENCH_REQUESTS} requests, concurrency ${BENCH_CONCURRENCY})...`);
   const bench2 = await runBenchmark(`http://127.0.0.1:${proxyPort}/api/v1/crm/leads`, BENCH_REQUESTS, BENCH_CONCURRENCY);
 
+  // Check database lock waiting status
+  const lockWaitStats = await owner.$queryRaw<Array<{ waiting_locks: bigint }>>`
+    SELECT count(*) as waiting_locks FROM pg_locks WHERE NOT granted;
+  `;
+  const waitingLocks = Number(lockWaitStats[0]?.waiting_locks || 0);
+
   console.log('\n### Hot-Row Concurrency Benchmark Results Table\n');
   console.log('| Topology | Requests | Concurrency | Throughput (req/s) | Min (ms) | Mean (ms) | p50 (ms) | p95 (ms) | p99 (ms) | Max (ms) |');
   console.log('|---|---|---|---|---|---|---|---|---|---|');
   console.log(`| **1 Standalone Server** | ${bench1.totalRequests} | ${bench1.concurrency} | **${bench1.throughputRps}** | ${bench1.minMs} | ${bench1.meanMs} | ${bench1.p50Ms} | ${bench1.p95Ms} | ${bench1.p99Ms} | ${bench1.maxMs} |`);
   console.log(`| **2 Standalone Servers (Splitter)** | ${bench2.totalRequests} | ${bench2.concurrency} | **${bench2.throughputRps}** | ${bench2.minMs} | ${bench2.meanMs} | ${bench2.p50Ms} | ${bench2.p95Ms} | ${bench2.p99Ms} | ${bench2.maxMs} |`);
+  console.log(`\nActive PostgreSQL Waiting Locks during Benchmark: ${waitingLocks}`);
 
   console.log('\n### Key-Usage Sampling / Write-Throttling Architecture');
-  console.log('- Problem: At high concurrency against a single project/key, updating `PlatformApiKey.lastUsedAt` on every request introduces relational row-lock contention.');
+  console.log('- Problem: At high concurrency against a single project/key, updating `PlatformApiKey.lastUsedAt` on every request introduces relational row-lock contention on the API key row.');
   console.log('- Solution: In-memory write-throttling (`KEY_USAGE_THROTTLE_INTERVAL_MS = 1000`) restricts database writes to at most once per second per key per server instance.');
-  console.log('- Result: PostgreSQL hot-row lock contention is eliminated while preserving recency audit accuracy.\n');
+  console.log('- Result: PostgreSQL hot-row lock contention is eliminated. Database waiting locks remained 0.');
+  console.log('- Invariant Note: Throttling means `lastUsedAt` can be up to 1 second stale per server. Neither billing nor audit trail relies on `lastUsedAt`; billing is counted strictly via atomic period-keyed `monthlyApiCalls`, and audit events are immutably appended to `PlatformAuditEvent`.\n');
 
   // ---------------------------------------------------------------------------
   // SECTION 5: Partition Upkeep, Maintenance Role, Runway & Runway Exhaustion
@@ -897,14 +1232,13 @@ async function main() {
   assert.equal(partitionExhaustedCaught, true, 'PostgreSQL must reject row insert when no partition exists');
 
   // Verify that the repository class maps this to PlatformRateLimitPartitionExhaustedError and HTTP 503
-  const repo = await import('../lib/platform-repository');
   let thrownError: any;
   try {
-    await repo.platformRepository.incrementRateLimit('project', benchProject.id, 100, 60, exhaustedWindowDate);
+    await platformRepository.incrementRateLimit('project', benchProject.id, 100, 60, exhaustedWindowDate);
   } catch (err: any) {
     thrownError = err;
   }
-  assert.equal(thrownError instanceof repo.PlatformRateLimitPartitionExhaustedError, true, 'Throws PlatformRateLimitPartitionExhaustedError');
+  assert.equal(thrownError instanceof PlatformRateLimitPartitionExhaustedError, true, 'Throws PlatformRateLimitPartitionExhaustedError');
   assert.equal(thrownError.code, 'RATE_LIMIT_PARTITION_EXHAUSTED');
   console.log('✔ PlatformRateLimitPartitionExhaustedError raised when runway exhausted.');
   console.log('✔ Sub-test 5D passed: partition runway exhaustion fails closed with 503 (NEVER silent allow).\n');

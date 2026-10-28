@@ -470,6 +470,7 @@ function makeProjectData(input: CreateProjectInput, slug: string, projectId: str
         enabledServices: services,
         apiCallQuota: BigInt(quota),
         monthlyApiCalls: 0n,
+        currentBillingPeriod: getCurrentBillingPeriod(now),
         rateLimitPerMin: rateLimit,
         status: String(input.status || 'ACTIVE').toUpperCase() as Prisma.EnumPlatformProjectStatusFieldUpdateOperationsInput['set'],
         technicalLead: input.technicalLead,
@@ -610,54 +611,85 @@ export function createPrismaPlatformRepository(client: PrismaClient, adminAuditC
             return safeNumber(rows[0]?.monthlyApiCalls);
         },
         async reserveProjectUsage(projectId: string, monthlyQuota = Number.POSITIVE_INFINITY, periodKey?: string): Promise<number | undefined> {
-            const currentPeriod = periodKey || getCurrentBillingPeriod();
             const rows = Number.isFinite(monthlyQuota)
                 ? await client.$queryRaw<Array<{ monthlyApiCalls: bigint; currentBillingPeriod: string }>>`
+            WITH target AS (
+              SELECT COALESCE(${periodKey || null}::text, to_char(NOW() AT TIME ZONE 'UTC', 'YYYY-MM')) AS "period"
+            )
             UPDATE "PlatformProject"
             SET 
               "monthlyApiCalls" = CASE 
-                WHEN "currentBillingPeriod" IS NOT NULL AND "currentBillingPeriod" <> ${currentPeriod} THEN 1 
-                ELSE "monthlyApiCalls" + 1 
+                WHEN "PlatformProject"."currentBillingPeriod" IS NOT NULL AND "PlatformProject"."currentBillingPeriod" < target."period" THEN 1 
+                ELSE "PlatformProject"."monthlyApiCalls" + 1 
               END,
-              "currentBillingPeriod" = ${currentPeriod},
+              "currentBillingPeriod" = target."period",
               "updatedAt" = NOW()
-            WHERE ("id" = ${projectId} OR "slug" = ${projectId})
+            FROM target
+            WHERE ("PlatformProject"."id" = ${projectId} OR "PlatformProject"."slug" = ${projectId})
               AND (
-                ("currentBillingPeriod" IS NOT NULL AND "currentBillingPeriod" <> ${currentPeriod} AND ${BigInt(monthlyQuota)} > 0)
-                OR (("currentBillingPeriod" IS NULL OR "currentBillingPeriod" = ${currentPeriod}) AND "monthlyApiCalls" < ${BigInt(monthlyQuota)})
+                -- Forward-only rollover: stored period is strictly older than target
+                (
+                  "PlatformProject"."currentBillingPeriod" IS NOT NULL 
+                  AND "PlatformProject"."currentBillingPeriod" < target."period"
+                  AND ${BigInt(monthlyQuota)} > 0
+                )
+                -- Same period (or initial period): standard quota gate
+                OR (
+                  ("PlatformProject"."currentBillingPeriod" IS NULL OR "PlatformProject"."currentBillingPeriod" = target."period")
+                  AND "PlatformProject"."monthlyApiCalls" < ${BigInt(monthlyQuota)}
+                )
               )
-            RETURNING "monthlyApiCalls", "currentBillingPeriod"
+            RETURNING "PlatformProject"."monthlyApiCalls", "PlatformProject"."currentBillingPeriod"
           `
                 : await client.$queryRaw<Array<{ monthlyApiCalls: bigint; currentBillingPeriod: string }>>`
+            WITH target AS (
+              SELECT COALESCE(${periodKey || null}::text, to_char(NOW() AT TIME ZONE 'UTC', 'YYYY-MM')) AS "period"
+            )
             UPDATE "PlatformProject"
             SET 
               "monthlyApiCalls" = CASE 
-                WHEN "currentBillingPeriod" IS NOT NULL AND "currentBillingPeriod" <> ${currentPeriod} THEN 1 
-                ELSE "monthlyApiCalls" + 1 
+                WHEN "PlatformProject"."currentBillingPeriod" IS NOT NULL AND "PlatformProject"."currentBillingPeriod" < target."period" THEN 1 
+                ELSE "PlatformProject"."monthlyApiCalls" + 1 
               END,
-              "currentBillingPeriod" = ${currentPeriod},
+              "currentBillingPeriod" = target."period",
               "updatedAt" = NOW()
-            WHERE "id" = ${projectId} OR "slug" = ${projectId}
-            RETURNING "monthlyApiCalls", "currentBillingPeriod"
+            FROM target
+            WHERE ("PlatformProject"."id" = ${projectId} OR "PlatformProject"."slug" = ${projectId})
+              AND (
+                "PlatformProject"."currentBillingPeriod" IS NULL 
+                OR "PlatformProject"."currentBillingPeriod" <= target."period"
+              )
+            RETURNING "PlatformProject"."monthlyApiCalls", "PlatformProject"."currentBillingPeriod"
           `;
             return rows.length ? safeNumber(rows[0]!.monthlyApiCalls) : undefined;
         },
         async releaseProjectUsage(projectId: string, amount = 1, periodKey?: string): Promise<number> {
-            const currentPeriod = periodKey || getCurrentBillingPeriod();
             const rows = await client.$queryRaw<Array<{ monthlyApiCalls: bigint }>>`
+        WITH target AS (
+          SELECT COALESCE(${periodKey || null}::text, to_char(NOW() AT TIME ZONE 'UTC', 'YYYY-MM')) AS "period"
+        )
         UPDATE "PlatformProject"
         SET "monthlyApiCalls" = GREATEST(0, "monthlyApiCalls" - ${BigInt(amount)}), "updatedAt" = NOW()
-        WHERE ("id" = ${projectId} OR "slug" = ${projectId})
-          AND ("currentBillingPeriod" = ${currentPeriod} OR "currentBillingPeriod" IS NULL)
-        RETURNING "monthlyApiCalls"
+        FROM target
+        WHERE ("PlatformProject"."id" = ${projectId} OR "PlatformProject"."slug" = ${projectId})
+          AND ("PlatformProject"."currentBillingPeriod" = target."period" OR "PlatformProject"."currentBillingPeriod" IS NULL)
+        RETURNING "PlatformProject"."monthlyApiCalls"
       `;
             return safeNumber(rows[0]?.monthlyApiCalls);
         },
-        async setProjectUsage(projectId: string, monthlyApiCalls: number): Promise<PlatformProject | undefined> {
+        async setProjectUsage(projectId: string, monthlyApiCalls: number, periodKey?: string): Promise<PlatformProject | undefined> {
             if (!Number.isSafeInteger(monthlyApiCalls) || monthlyApiCalls < 0) throw new Error('monthlyApiCalls must be a non-negative safe integer.');
             const existing = await client.platformProject.findFirst({ where: { OR: [{ id: projectId }, { slug: projectId }] } });
             if (!existing) return undefined;
-            return toProject(await client.platformProject.update({ where: { id: existing.id }, data: { monthlyApiCalls: BigInt(monthlyApiCalls) } }));
+            const targetPeriod = periodKey || getCurrentBillingPeriod();
+            const row = await client.platformProject.update({
+                where: { id: existing.id },
+                data: {
+                    monthlyApiCalls: BigInt(monthlyApiCalls),
+                    currentBillingPeriod: targetPeriod,
+                },
+            });
+            return toProject(row);
         },
         async setProjectUsageWithAuditIntent(
             projectId: string,
@@ -758,6 +790,23 @@ export function createPrismaPlatformRepository(client: PrismaClient, adminAuditC
                 throw err;
             }
         },
+        async decrementRateLimit(
+            scopeType: 'project' | 'key' | 'ip',
+            scopeId: string,
+            windowSeconds = 60,
+            customWindowStart?: Date
+        ): Promise<void> {
+            const now = customWindowStart || new Date();
+            const windowMs = windowSeconds * 1000;
+            const windowStart = new Date(Math.floor(now.getTime() / windowMs) * windowMs);
+            await client.$queryRaw`
+                UPDATE "PlatformRateLimitBucket"
+                SET "requestCount" = GREATEST(0, "requestCount" - 1)
+                WHERE "scopeType" = ${scopeType}::"PlatformRateLimitScope"
+                  AND "scopeId" = ${scopeId}
+                  AND "windowStart" = ${windowStart}
+            `.catch(() => {});
+        },
         async checkRateLimits(
             scopes: Array<{ scopeType: 'project' | 'key' | 'ip'; scopeId: string; limit: number }>,
             windowSeconds = 60,
@@ -769,11 +818,15 @@ export function createPrismaPlatformRepository(client: PrismaClient, adminAuditC
             remaining: number;
             resetSeconds: number;
         }> {
+            // Check in order of strictness: lowest limit checked first
+            const sortedScopes = [...scopes].sort((a, b) => a.limit - b.limit);
+            const incrementedScopes: Array<{ scopeType: 'project' | 'key' | 'ip'; scopeId: string }> = [];
+
             let minRemaining = Number.POSITIVE_INFINITY;
             let maxResetSeconds = 1;
             let effectiveLimit = 1200;
 
-            for (const scope of scopes) {
+            for (const scope of sortedScopes) {
                 const result = await this.incrementRateLimit(
                     scope.scopeType,
                     scope.scopeId,
@@ -781,11 +834,17 @@ export function createPrismaPlatformRepository(client: PrismaClient, adminAuditC
                     windowSeconds,
                     customWindowStart
                 );
+                incrementedScopes.push(scope);
                 if (result.limit < effectiveLimit) effectiveLimit = result.limit;
                 if (result.remaining < minRemaining) minRemaining = result.remaining;
                 if (result.resetSeconds > maxResetSeconds) maxResetSeconds = result.resetSeconds;
 
                 if (!result.allowed) {
+                    // Compensation: revert any previously incremented scopes in this request
+                    // so a rejected request does not consume other scopes' budgets unfairly
+                    for (const prevScope of incrementedScopes) {
+                        await this.decrementRateLimit(prevScope.scopeType, prevScope.scopeId, windowSeconds, customWindowStart);
+                    }
                     return {
                         allowed: false,
                         exceededScope: {
@@ -1332,10 +1391,21 @@ const extraMethods = {
         const project = (PlatformRepository as any).projects.find((item: any) => item.id === projectId || item.slug === projectId);
         if (!project) return undefined;
         const currentPeriod = periodKey || getCurrentBillingPeriod();
-        if (project.currentBillingPeriod && project.currentBillingPeriod !== currentPeriod) {
-            project.monthlyApiCalls = 0;
-            project.currentBillingPeriod = currentPeriod;
+
+        // Forward-only rule: reject older period requests (stale clock or late arrival)
+        if (project.currentBillingPeriod && project.currentBillingPeriod > currentPeriod) {
+            return undefined;
         }
+
+        // Forward-only rollover (only when stored period is strictly older than target)
+        if (project.currentBillingPeriod && project.currentBillingPeriod < currentPeriod) {
+            if (monthlyQuota <= 0) return undefined;
+            project.monthlyApiCalls = 1;
+            project.currentBillingPeriod = currentPeriod;
+            (PlatformRepository as any).saveDebounced();
+            return 1;
+        }
+
         const currentUsage = project.monthlyApiCalls || 0;
         if (currentUsage >= monthlyQuota) return undefined;
         project.monthlyApiCalls = currentUsage + 1;
@@ -1351,6 +1421,20 @@ const extraMethods = {
         project.monthlyApiCalls = Math.max(0, (project.monthlyApiCalls || 0) - amount);
         (PlatformRepository as any).saveDebounced();
         return project.monthlyApiCalls;
+    },
+    decrementRateLimit: async (
+        scopeType: 'project' | 'key' | 'ip',
+        scopeId: string,
+        windowSeconds = 60,
+        customWindowStart?: Date
+    ) => {
+        if (prismaIsRequired()) return getPrismaRepository().decrementRateLimit(scopeType, scopeId, windowSeconds, customWindowStart);
+        const now = customWindowStart ? customWindowStart.getTime() : Date.now();
+        const windowMs = windowSeconds * 1000;
+        const windowStart = Math.floor(now / windowMs) * windowMs;
+        const key = `${scopeType}:${scopeId}:${windowStart}`;
+        const current = jsonRateLimitBuckets.get(key) || 0;
+        if (current > 0) jsonRateLimitBuckets.set(key, current - 1);
     },
     incrementRateLimit: async (
         scopeType: 'project' | 'key' | 'ip',
@@ -1377,16 +1461,23 @@ const extraMethods = {
         customWindowStart?: Date
     ) => {
         if (prismaIsRequired()) return getPrismaRepository().checkRateLimits(scopes, windowSeconds, customWindowStart);
+        const sortedScopes = [...scopes].sort((a, b) => a.limit - b.limit);
+        const incrementedScopes: Array<{ scopeType: 'project' | 'key' | 'ip'; scopeId: string }> = [];
+
         let minRemaining = Number.POSITIVE_INFINITY;
         let maxResetSeconds = 1;
         let effectiveLimit = 1200;
 
-        for (const scope of scopes) {
+        for (const scope of sortedScopes) {
             const res = await extraMethods.incrementRateLimit(scope.scopeType, scope.scopeId, scope.limit, windowSeconds, customWindowStart);
+            incrementedScopes.push(scope);
             if (res.limit < effectiveLimit) effectiveLimit = res.limit;
             if (res.remaining < minRemaining) minRemaining = res.remaining;
             if (res.resetSeconds > maxResetSeconds) maxResetSeconds = res.resetSeconds;
             if (!res.allowed) {
+                for (const prevScope of incrementedScopes) {
+                    await extraMethods.decrementRateLimit(prevScope.scopeType, prevScope.scopeId, windowSeconds, customWindowStart);
+                }
                 return {
                     allowed: false,
                     exceededScope: { scopeType: scope.scopeType, scopeId: scope.scopeId, limit: scope.limit, currentCount: res.currentCount },

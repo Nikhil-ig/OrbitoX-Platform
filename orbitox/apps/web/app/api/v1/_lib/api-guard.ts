@@ -1062,19 +1062,19 @@ export function withApiGuard<T = any>(
     const clusterMode = PlatformApiState.getClusterMode();
     const scopesToCheck: Array<{ scopeType: 'project' | 'key' | 'ip'; scopeId: string; limit: number }> = [];
 
-    if (project?.id && (project.rateLimitPerMin || options.rateLimitPerMin)) {
+    if (project?.id && project.rateLimitPerMin) {
       scopesToCheck.push({
         scopeType: 'project',
         scopeId: project.id,
-        limit: project.rateLimitPerMin || options.rateLimitPerMin || 1200,
+        limit: project.rateLimitPerMin,
       });
     }
 
-    if (matchedKey?.id && (matchedKey.rateLimitPerMin || options.rateLimitPerMin)) {
+    if (matchedKey?.id && matchedKey.rateLimitPerMin) {
       scopesToCheck.push({
         scopeType: 'key',
         scopeId: matchedKey.id,
-        limit: matchedKey.rateLimitPerMin || options.rateLimitPerMin || 1200,
+        limit: matchedKey.rateLimitPerMin,
       });
     }
 
