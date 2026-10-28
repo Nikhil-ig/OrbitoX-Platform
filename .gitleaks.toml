@@ -54,5 +54,12 @@ paths = [
   # File: scripts/test-kds-security-adversarial.js
   # Justification: Penetration testing harness verifying hardware-bound station secret verification
   # and rejecting forged station credentials.
-  '''(?i)scripts/test-kds-security-adversarial\.js$'''
+  '''(?i)scripts/test-kds-security-adversarial\.js$''',
+
+  # Individually Justified False Positive 7: Step 5 Legacy Store Fixture & Verification Harness
+  # Files: orbitox/apps/web/test/fixtures/legacy-platform-store.json, orbitox/apps/web/scripts/test-platform-step5-import.ts
+  # Justification: Validates that legacy unverified secrets are discarded, flagged as REVOKED,
+  # and never silently authenticated, while valid customer secrets authenticate against the live server.
+  '''(?i)orbitox/apps/web/test/fixtures/legacy-platform-store\.json$''',
+  '''(?i)orbitox/apps/web/scripts/test-platform-step5-import\.ts$'''
 ]
