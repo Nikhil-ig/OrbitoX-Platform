@@ -1058,25 +1058,83 @@ export function withApiGuard<T = any>(
       }
     }
 
-    // 9. Sliding Window Rate Limiting
+    // 9. Multi-Tenant Partitioned Rate Limiting (Cross-Process Durable)
     const clusterMode = PlatformApiState.getClusterMode();
-    const rateLimit = project?.rateLimitPerMin || matchedKey?.rateLimitPerMin || options.rateLimitPerMin || 1200;
-    const rateLimitKey = `${clusterMode}:${project?.id || matchedKey?.id || `${clientIp}:${serviceId}`}`;
-    const now = Date.now();
-    const windowMs = 60 * 1000;
+    const scopesToCheck: Array<{ scopeType: 'project' | 'key' | 'ip'; scopeId: string; limit: number }> = [];
 
-    let bucket = rateLimitMap.get(rateLimitKey);
-    if (!bucket || now > bucket.resetAt) {
-      bucket = { count: 1, resetAt: now + windowMs };
-      rateLimitMap.set(rateLimitKey, bucket);
-    } else {
-      bucket.count += 1;
+    if (project?.id && (project.rateLimitPerMin || options.rateLimitPerMin)) {
+      scopesToCheck.push({
+        scopeType: 'project',
+        scopeId: project.id,
+        limit: project.rateLimitPerMin || options.rateLimitPerMin || 1200,
+      });
     }
 
-    const remaining = Math.max(0, rateLimit - bucket.count);
-    const resetSeconds = Math.ceil((bucket.resetAt - now) / 1000);
+    if (matchedKey?.id && (matchedKey.rateLimitPerMin || options.rateLimitPerMin)) {
+      scopesToCheck.push({
+        scopeType: 'key',
+        scopeId: matchedKey.id,
+        limit: matchedKey.rateLimitPerMin || options.rateLimitPerMin || 1200,
+      });
+    }
 
-    if (bucket.count > rateLimit) {
+    if (scopesToCheck.length === 0) {
+      scopesToCheck.push({
+        scopeType: 'ip',
+        scopeId: `${clientIp}:${serviceId}`,
+        limit: options.rateLimitPerMin || 1200,
+      });
+    }
+
+    let rateLimitResult;
+    try {
+      rateLimitResult = await platformRepository.checkRateLimits(scopesToCheck, 60);
+      if (platformRepository.isPrismaBacked()) {
+        guardDatabaseOperations += scopesToCheck.length;
+        guardDatabaseWrites += scopesToCheck.length;
+      }
+    } catch (rateLimitErr: any) {
+      if (
+        rateLimitErr?.code === 'RATE_LIMIT_PARTITION_EXHAUSTED' ||
+        rateLimitErr?.name === 'PlatformRateLimitPartitionExhaustedError' ||
+        rateLimitErr?.message?.includes('partition runway exhausted') ||
+        rateLimitErr?.message?.includes('no partition of relation')
+      ) {
+        // Requirement 5: Partition runway exhaustion fails closed with 503, NEVER silent allow!
+        const latencyMs = Math.round(performance.now() - startTime);
+        return NextResponse.json<ApiResponse>(
+          {
+            success: false,
+            error: {
+              code: 'DATABASE_UNAVAILABLE',
+              message: 'Rate limiting partition runway exhausted. Database maintenance required.',
+            },
+            meta: {
+              tenantId,
+              serviceId,
+              latencyMs,
+              timestamp: new Date().toISOString(),
+              requestId,
+            },
+          },
+          {
+            status: 503,
+            headers: {
+              'x-orbitox-error-code': 'RATE_LIMIT_PARTITION_EXHAUSTED',
+              'retry-after': '60',
+              'x-orbitox-latency-ms': latencyMs.toString(),
+            },
+          }
+        );
+      }
+      throw rateLimitErr;
+    }
+
+    const rateLimit = rateLimitResult.limit;
+    const remaining = rateLimitResult.remaining;
+    const resetSeconds = rateLimitResult.resetSeconds;
+
+    if (!rateLimitResult.allowed) {
       const latencyMs = Math.round(performance.now() - startTime);
       return NextResponse.json<ApiResponse>(
         {
@@ -1179,27 +1237,56 @@ export function withApiGuard<T = any>(
       const latencyMs = Math.max(1, Math.round(performance.now() - startTime));
 
       if (projectUsageReserved && project && (response.status < 200 || response.status >= 300)) {
-        await platformRepository.releaseProjectUsage(project.id);
-        if (platformRepository.isPrismaBacked()) {
-          guardDatabaseOperations += 1;
-          guardDatabaseWrites += 1;
+        try {
+          await platformRepository.releaseProjectUsage(project.id);
+          if (platformRepository.isPrismaBacked()) {
+            guardDatabaseOperations += 1;
+            guardDatabaseWrites += 1;
+          }
+        } catch (releaseErr: any) {
+          PlatformApiState.recordTelemetry({
+            tenantId: project?.slug || 'unknown',
+            facade: 'AuthorizationRepository',
+            level: 'WARN',
+            message: `Project usage release failed after error response [${response.status}]: ${releaseErr?.message || releaseErr}`,
+          });
         }
         projectUsageReserved = false;
       }
 
       // Record key usage and platform environment quota
+      // Fix C1: Bookkeeping failures after a 2xx must not change the successful response to a 503
       const isBillableResponse = response.status >= 200 && response.status < 300;
       if (matchedKey && isPlatformKeyRecord && isBillableResponse) {
-        await platformRepository.recordKeyUsage(matchedKey.id, clientIp);
-        if (platformRepository.isPrismaBacked()) {
-          guardDatabaseOperations += 1;
-          guardDatabaseWrites += 1;
-        }
-        if (matchedKey.environmentId) {
-          await platformRepository.recordCall(matchedKey.environmentId);
+        try {
+          await platformRepository.recordKeyUsage(matchedKey.id, clientIp);
           if (platformRepository.isPrismaBacked()) {
             guardDatabaseOperations += 1;
             guardDatabaseWrites += 1;
+          }
+        } catch (keyUsageErr: any) {
+          PlatformApiState.recordTelemetry({
+            tenantId: project?.slug || 'unknown',
+            facade: 'AuthorizationRepository',
+            level: 'WARN',
+            message: `Key usage bookkeeping failed after successful response: ${keyUsageErr?.message || keyUsageErr}`,
+          });
+        }
+
+        if (matchedKey.environmentId) {
+          try {
+            await platformRepository.recordCall(matchedKey.environmentId);
+            if (platformRepository.isPrismaBacked()) {
+              guardDatabaseOperations += 1;
+              guardDatabaseWrites += 1;
+            }
+          } catch (callErr: any) {
+            PlatformApiState.recordTelemetry({
+              tenantId: project?.slug || 'unknown',
+              facade: 'AuthorizationRepository',
+              level: 'WARN',
+              message: `Environment call counter bookkeeping failed after successful response: ${callErr?.message || callErr}`,
+            });
           }
         }
       }

@@ -9,6 +9,7 @@ export const REQUIRED_PLATFORM_MIGRATIONS = [
     '20261027000500_orbitox_phase2_step2_project_fields',
     '20261027000600_orbitox_phase2_step2_audit_intents',
     '20261027000700_orbitox_phase2_step3_audit_previous_value',
+    '20261028000100_orbitox_phase2_step4_period_quota',
 ] as const;
 
 const globalForPrisma = globalThis as typeof globalThis & { platformPrisma?: PrismaClient };

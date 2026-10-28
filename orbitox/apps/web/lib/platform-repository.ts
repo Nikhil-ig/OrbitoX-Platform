@@ -59,6 +59,18 @@ export interface PlatformAdminAuditIntentInput extends PlatformAdminAuditInput {
     projectId: string;
 }
 
+export class PlatformRateLimitPartitionExhaustedError extends Error {
+    readonly code = 'RATE_LIMIT_PARTITION_EXHAUSTED';
+    constructor(message = 'Platform rate limit table partition runway exhausted') {
+        super(message);
+        this.name = 'PlatformRateLimitPartitionExhaustedError';
+    }
+}
+
+export function getCurrentBillingPeriod(date = new Date()): string {
+    return date.toISOString().slice(0, 7);
+}
+
 export type AsyncPlatformRepository = AsyncMethods<typeof PlatformRepository> & {
     isPrismaBacked(): boolean;
     authorizeApiKey(rawSecret: string): Promise<PlatformAuthorizationLookup>;
@@ -69,6 +81,7 @@ export type AsyncPlatformRepository = AsyncMethods<typeof PlatformRepository> & 
         organizationId: string,
         monthlyApiCalls: number,
         intentId: string,
+        periodKey?: string,
     ): Promise<PlatformProject | undefined>;
     resolvePlatformAdminAuditIntentFailure(
         intentId: string,
@@ -79,6 +92,32 @@ export type AsyncPlatformRepository = AsyncMethods<typeof PlatformRepository> & 
     findVerifiedDomain(domainName: string): Promise<ProjectDomainRecord | undefined>;
     incrementProjectUsage(projectId: string, amount?: number): Promise<number>;
     recordBillableCall(projectId: string, amount?: number): Promise<number | undefined>;
+    reserveProjectUsage(projectId: string, monthlyQuota?: number, periodKey?: string): Promise<number | undefined>;
+    releaseProjectUsage(projectId: string, amount?: number, periodKey?: string): Promise<number>;
+    incrementRateLimit(
+        scopeType: 'project' | 'key' | 'ip',
+        scopeId: string,
+        limit: number,
+        windowSeconds?: number,
+        customWindowStart?: Date
+    ): Promise<{
+        allowed: boolean;
+        currentCount: number;
+        limit: number;
+        remaining: number;
+        resetSeconds: number;
+    }>;
+    checkRateLimits(
+        scopes: Array<{ scopeType: 'project' | 'key' | 'ip'; scopeId: string; limit: number }>,
+        windowSeconds?: number,
+        customWindowStart?: Date
+    ): Promise<{
+        allowed: boolean;
+        exceededScope?: { scopeType: string; scopeId: string; limit: number; currentCount: number };
+        limit: number;
+        remaining: number;
+        resetSeconds: number;
+    }>;
 };
 
 type DatabaseClient = PrismaClient;
@@ -122,6 +161,7 @@ function toProject(row: RawRow): PlatformProject {
         enabledServices: row.enabledServices || [],
         apiCallQuota: row.apiCallQuota === null ? undefined : safeNumber(row.apiCallQuota),
         monthlyApiCalls: safeNumber(row.monthlyApiCalls),
+        currentBillingPeriod: row.currentBillingPeriod ?? undefined,
         rateLimitPerMin: row.rateLimitPerMin ?? undefined,
         technicalLead: row.technicalLead,
         contactEmail: row.contactEmail,
@@ -304,6 +344,7 @@ function toDatabaseProjectData(input: Partial<PlatformProject> & Record<string, 
     if (input.technicalLead !== undefined) data.technicalLead = input.technicalLead;
     if (input.contactEmail !== undefined) data.contactEmail = input.contactEmail;
     if (input.monthlyApiCalls !== undefined) data.monthlyApiCalls = BigInt(input.monthlyApiCalls);
+    if (input.currentBillingPeriod !== undefined) (data as any).currentBillingPeriod = input.currentBillingPeriod;
     return data;
 }
 
@@ -472,6 +513,9 @@ export function createPrismaPlatformRepository(client: PrismaClient, adminAuditC
         return client.projectEnvironment.findUnique({ where: { id } });
     }
 
+    const keyUsageThrottleMap = new Map<string, number>();
+    const KEY_USAGE_THROTTLE_INTERVAL_MS = 1000;
+
     return {
         async listOrganizations(): Promise<PlatformOrganization[]> {
             return (await client.platformOrganization.findMany({ orderBy: { createdAt: 'asc' } })).map(toOrganization);
@@ -565,28 +609,46 @@ export function createPrismaPlatformRepository(client: PrismaClient, adminAuditC
       `;
             return safeNumber(rows[0]?.monthlyApiCalls);
         },
-        async reserveProjectUsage(projectId: string, monthlyQuota = Number.POSITIVE_INFINITY): Promise<number | undefined> {
+        async reserveProjectUsage(projectId: string, monthlyQuota = Number.POSITIVE_INFINITY, periodKey?: string): Promise<number | undefined> {
+            const currentPeriod = periodKey || getCurrentBillingPeriod();
             const rows = Number.isFinite(monthlyQuota)
-                ? await client.$queryRaw<Array<{ monthlyApiCalls: bigint }>>`
+                ? await client.$queryRaw<Array<{ monthlyApiCalls: bigint; currentBillingPeriod: string }>>`
             UPDATE "PlatformProject"
-            SET "monthlyApiCalls" = "monthlyApiCalls" + 1, "updatedAt" = NOW()
+            SET 
+              "monthlyApiCalls" = CASE 
+                WHEN "currentBillingPeriod" IS NOT NULL AND "currentBillingPeriod" <> ${currentPeriod} THEN 1 
+                ELSE "monthlyApiCalls" + 1 
+              END,
+              "currentBillingPeriod" = ${currentPeriod},
+              "updatedAt" = NOW()
             WHERE ("id" = ${projectId} OR "slug" = ${projectId})
-              AND "monthlyApiCalls" < ${BigInt(monthlyQuota)}
-            RETURNING "monthlyApiCalls"
+              AND (
+                ("currentBillingPeriod" IS NOT NULL AND "currentBillingPeriod" <> ${currentPeriod} AND ${BigInt(monthlyQuota)} > 0)
+                OR (("currentBillingPeriod" IS NULL OR "currentBillingPeriod" = ${currentPeriod}) AND "monthlyApiCalls" < ${BigInt(monthlyQuota)})
+              )
+            RETURNING "monthlyApiCalls", "currentBillingPeriod"
           `
-                : await client.$queryRaw<Array<{ monthlyApiCalls: bigint }>>`
+                : await client.$queryRaw<Array<{ monthlyApiCalls: bigint; currentBillingPeriod: string }>>`
             UPDATE "PlatformProject"
-            SET "monthlyApiCalls" = "monthlyApiCalls" + 1, "updatedAt" = NOW()
+            SET 
+              "monthlyApiCalls" = CASE 
+                WHEN "currentBillingPeriod" IS NOT NULL AND "currentBillingPeriod" <> ${currentPeriod} THEN 1 
+                ELSE "monthlyApiCalls" + 1 
+              END,
+              "currentBillingPeriod" = ${currentPeriod},
+              "updatedAt" = NOW()
             WHERE "id" = ${projectId} OR "slug" = ${projectId}
-            RETURNING "monthlyApiCalls"
+            RETURNING "monthlyApiCalls", "currentBillingPeriod"
           `;
             return rows.length ? safeNumber(rows[0]!.monthlyApiCalls) : undefined;
         },
-        async releaseProjectUsage(projectId: string, amount = 1): Promise<number> {
+        async releaseProjectUsage(projectId: string, amount = 1, periodKey?: string): Promise<number> {
+            const currentPeriod = periodKey || getCurrentBillingPeriod();
             const rows = await client.$queryRaw<Array<{ monthlyApiCalls: bigint }>>`
         UPDATE "PlatformProject"
         SET "monthlyApiCalls" = GREATEST(0, "monthlyApiCalls" - ${BigInt(amount)}), "updatedAt" = NOW()
-        WHERE "id" = ${projectId} OR "slug" = ${projectId}
+        WHERE ("id" = ${projectId} OR "slug" = ${projectId})
+          AND ("currentBillingPeriod" = ${currentPeriod} OR "currentBillingPeriod" IS NULL)
         RETURNING "monthlyApiCalls"
       `;
             return safeNumber(rows[0]?.monthlyApiCalls);
@@ -602,12 +664,14 @@ export function createPrismaPlatformRepository(client: PrismaClient, adminAuditC
             organizationId: string,
             monthlyApiCalls: number,
             intentId: string,
+            periodKey?: string,
         ): Promise<PlatformProject | undefined> {
             if (!Number.isSafeInteger(monthlyApiCalls) || monthlyApiCalls < 0) throw new Error('monthlyApiCalls must be a non-negative safe integer.');
+            const targetPeriod = periodKey || getCurrentBillingPeriod();
             return client.$transaction(async (transaction) => {
                 // Statement 1: Lock project row and capture its exact current value under FOR UPDATE
-                const lockedRows = await transaction.$queryRaw<Array<{ id: string; monthlyApiCalls: bigint }>>`
-                    SELECT "id", "monthlyApiCalls"
+                const lockedRows = await transaction.$queryRaw<Array<{ id: string; monthlyApiCalls: bigint; currentBillingPeriod: string | null }>>`
+                    SELECT "id", "monthlyApiCalls", "currentBillingPeriod"
                     FROM "PlatformProject"
                     WHERE "id" = ${projectId} AND "organizationId" = ${organizationId}
                     FOR UPDATE
@@ -629,7 +693,7 @@ export function createPrismaPlatformRepository(client: PrismaClient, adminAuditC
                 // Statement 2: Update project usage row (now locked against concurrent writes)
                 const rows = await transaction.$queryRaw<RawRow[]>`
                     UPDATE "PlatformProject"
-                    SET "monthlyApiCalls" = ${BigInt(monthlyApiCalls)}, "updatedAt" = NOW()
+                    SET "monthlyApiCalls" = ${BigInt(monthlyApiCalls)}, "currentBillingPeriod" = ${targetPeriod}, "updatedAt" = NOW()
                     WHERE "id" = ${projectId} AND "organizationId" = ${organizationId}
                     RETURNING *
                 `;
@@ -649,6 +713,100 @@ export function createPrismaPlatformRepository(client: PrismaClient, adminAuditC
                 }
                 return project;
             });
+        },
+        async incrementRateLimit(
+            scopeType: 'project' | 'key' | 'ip',
+            scopeId: string,
+            limit: number,
+            windowSeconds = 60,
+            customWindowStart?: Date
+        ): Promise<{
+            allowed: boolean;
+            currentCount: number;
+            limit: number;
+            remaining: number;
+            resetSeconds: number;
+        }> {
+            const windowMs = windowSeconds * 1000;
+            const now = customWindowStart ? customWindowStart.getTime() : Date.now();
+            const windowStart = new Date(Math.floor(now / windowMs) * windowMs);
+            const expiresAt = new Date(windowStart.getTime() + windowMs * 2);
+            const resetSeconds = Math.max(1, Math.ceil((windowStart.getTime() + windowMs - now) / 1000));
+
+            try {
+                const rows = await client.$queryRaw<Array<{ requestCount: bigint }>>`
+                    INSERT INTO "PlatformRateLimitBucket" ("scopeType", "scopeId", "windowStart", "requestCount", "expiresAt")
+                    VALUES (${scopeType}, ${scopeId}, ${windowStart}, 1, ${expiresAt})
+                    ON CONFLICT ("scopeType", "scopeId", "windowStart")
+                    DO UPDATE SET "requestCount" = "PlatformRateLimitBucket"."requestCount" + 1
+                    RETURNING "requestCount"
+                `;
+                const currentCount = Number(rows[0]?.requestCount || 1);
+                const allowed = currentCount <= limit;
+                const remaining = Math.max(0, limit - currentCount);
+                return { allowed, currentCount, limit, remaining, resetSeconds };
+            } catch (err: any) {
+                if (
+                    err?.code === '23514' ||
+                    err?.message?.includes('no partition of relation') ||
+                    err?.message?.includes('check constraint')
+                ) {
+                    throw new PlatformRateLimitPartitionExhaustedError(
+                        `Platform rate limit table partition runway exhausted for window ${windowStart.toISOString()}: ${err.message}`
+                    );
+                }
+                throw err;
+            }
+        },
+        async checkRateLimits(
+            scopes: Array<{ scopeType: 'project' | 'key' | 'ip'; scopeId: string; limit: number }>,
+            windowSeconds = 60,
+            customWindowStart?: Date
+        ): Promise<{
+            allowed: boolean;
+            exceededScope?: { scopeType: string; scopeId: string; limit: number; currentCount: number };
+            limit: number;
+            remaining: number;
+            resetSeconds: number;
+        }> {
+            let minRemaining = Number.POSITIVE_INFINITY;
+            let maxResetSeconds = 1;
+            let effectiveLimit = 1200;
+
+            for (const scope of scopes) {
+                const result = await this.incrementRateLimit(
+                    scope.scopeType,
+                    scope.scopeId,
+                    scope.limit,
+                    windowSeconds,
+                    customWindowStart
+                );
+                if (result.limit < effectiveLimit) effectiveLimit = result.limit;
+                if (result.remaining < minRemaining) minRemaining = result.remaining;
+                if (result.resetSeconds > maxResetSeconds) maxResetSeconds = result.resetSeconds;
+
+                if (!result.allowed) {
+                    return {
+                        allowed: false,
+                        exceededScope: {
+                            scopeType: scope.scopeType,
+                            scopeId: scope.scopeId,
+                            limit: scope.limit,
+                            currentCount: result.currentCount,
+                        },
+                        limit: scope.limit,
+                        remaining: 0,
+                        resetSeconds: result.resetSeconds,
+                    };
+                }
+            }
+
+            return {
+                allowed: true,
+                limit: Number.isFinite(effectiveLimit) ? effectiveLimit : 1200,
+                remaining: Number.isFinite(minRemaining) ? minRemaining : 1200,
+                resetSeconds: maxResetSeconds,
+            };
         },
         async resolvePlatformAdminAuditIntentFailure(
             intentId: string,
@@ -798,10 +956,17 @@ export function createPrismaPlatformRepository(client: PrismaClient, adminAuditC
             });
             return toKey(row);
         },
-        async recordKeyUsage(keyId: string, clientIp?: string): Promise<void> {
+        async recordKeyUsage(keyId: string, clientIp?: string, force = false): Promise<void> {
+            const now = Date.now();
+            const lastWritten = keyUsageThrottleMap.get(keyId) || 0;
+            const throttleDisabled = process.env.ORBITOX_DISABLE_KEY_USAGE_THROTTLE === 'true';
+            if (!force && !throttleDisabled && (now - lastWritten < KEY_USAGE_THROTTLE_INTERVAL_MS)) {
+                return; // Throttled / sampled: avoids hot-row lock contention on PlatformApiKey
+            }
+            keyUsageThrottleMap.set(keyId, now);
             await client.platformApiKey.updateMany({
                 where: { OR: [{ id: keyId }, { keyId }] },
-                data: { lastUsedAt: new Date(), ...(clientIp ? { lastUsedIp: clientIp } : {}) },
+                data: { lastUsedAt: new Date(now), ...(clientIp ? { lastUsedIp: clientIp } : {}) },
             });
         },
         async listCredentials(filter?: { environmentId?: string; projectId?: string }): Promise<PlatformCredentialRecord[]> {
@@ -1072,6 +1237,8 @@ function getPrismaRepository(): ReturnType<typeof createPrismaPlatformRepository
     return prismaRepository;
 }
 
+const jsonRateLimitBuckets = new Map<string, number>();
+
 const extraMethods = {
     isPrismaBacked: () => prismaIsRequired(),
     authorizeApiKey: async (rawSecret: string): Promise<PlatformAuthorizationLookup> => {
@@ -1098,13 +1265,15 @@ const extraMethods = {
         organizationId: string,
         monthlyApiCalls: number,
         intentId: string,
+        periodKey?: string,
     ): Promise<PlatformProject | undefined> => {
-        if (prismaIsRequired()) return getPrismaRepository().setProjectUsageWithAuditIntent(projectId, organizationId, monthlyApiCalls, intentId);
+        if (prismaIsRequired()) return getPrismaRepository().setProjectUsageWithAuditIntent(projectId, organizationId, monthlyApiCalls, intentId, periodKey);
         const existing = await platformRepository.getProject(projectId);
         const previousMonthlyApiCalls = existing?.monthlyApiCalls ?? 0;
         const project = await platformRepository.setProjectUsage(projectId, monthlyApiCalls);
         if (project) {
             project.previousMonthlyApiCalls = previousMonthlyApiCalls;
+            if (periodKey) (project as any).currentBillingPeriod = periodKey;
         }
         const event = PlatformRepository.listAuditEvents().find((item) => item.id === intentId);
         if (event) {
@@ -1156,6 +1325,83 @@ const extraMethods = {
         const next = (project?.monthlyApiCalls || 0) + amount;
         await platformRepository.setProjectUsage(projectId, next);
         return next;
+    },
+    reserveProjectUsage: async (projectId: string, monthlyQuota = Number.POSITIVE_INFINITY, periodKey?: string): Promise<number | undefined> => {
+        if (prismaIsRequired()) return getPrismaRepository().reserveProjectUsage(projectId, monthlyQuota, periodKey);
+        PlatformRepository.initialize();
+        const project = (PlatformRepository as any).projects.find((item: any) => item.id === projectId || item.slug === projectId);
+        if (!project) return undefined;
+        const currentPeriod = periodKey || getCurrentBillingPeriod();
+        if (project.currentBillingPeriod && project.currentBillingPeriod !== currentPeriod) {
+            project.monthlyApiCalls = 0;
+            project.currentBillingPeriod = currentPeriod;
+        }
+        const currentUsage = project.monthlyApiCalls || 0;
+        if (currentUsage >= monthlyQuota) return undefined;
+        project.monthlyApiCalls = currentUsage + 1;
+        project.currentBillingPeriod = currentPeriod;
+        (PlatformRepository as any).saveDebounced();
+        return project.monthlyApiCalls;
+    },
+    releaseProjectUsage: async (projectId: string, amount = 1, periodKey?: string): Promise<number> => {
+        if (prismaIsRequired()) return getPrismaRepository().releaseProjectUsage(projectId, amount, periodKey);
+        PlatformRepository.initialize();
+        const project = (PlatformRepository as any).projects.find((item: any) => item.id === projectId || item.slug === projectId);
+        if (!project) return 0;
+        project.monthlyApiCalls = Math.max(0, (project.monthlyApiCalls || 0) - amount);
+        (PlatformRepository as any).saveDebounced();
+        return project.monthlyApiCalls;
+    },
+    incrementRateLimit: async (
+        scopeType: 'project' | 'key' | 'ip',
+        scopeId: string,
+        limit: number,
+        windowSeconds = 60,
+        customWindowStart?: Date
+    ) => {
+        if (prismaIsRequired()) return getPrismaRepository().incrementRateLimit(scopeType, scopeId, limit, windowSeconds, customWindowStart);
+        const now = customWindowStart ? customWindowStart.getTime() : Date.now();
+        const windowMs = windowSeconds * 1000;
+        const windowStart = Math.floor(now / windowMs) * windowMs;
+        const key = `${scopeType}:${scopeId}:${windowStart}`;
+        const current = (jsonRateLimitBuckets.get(key) || 0) + 1;
+        jsonRateLimitBuckets.set(key, current);
+        const allowed = current <= limit;
+        const remaining = Math.max(0, limit - current);
+        const resetSeconds = Math.max(1, Math.ceil((windowStart + windowMs - now) / 1000));
+        return { allowed, currentCount: current, limit, remaining, resetSeconds };
+    },
+    checkRateLimits: async (
+        scopes: Array<{ scopeType: 'project' | 'key' | 'ip'; scopeId: string; limit: number }>,
+        windowSeconds = 60,
+        customWindowStart?: Date
+    ) => {
+        if (prismaIsRequired()) return getPrismaRepository().checkRateLimits(scopes, windowSeconds, customWindowStart);
+        let minRemaining = Number.POSITIVE_INFINITY;
+        let maxResetSeconds = 1;
+        let effectiveLimit = 1200;
+
+        for (const scope of scopes) {
+            const res = await extraMethods.incrementRateLimit(scope.scopeType, scope.scopeId, scope.limit, windowSeconds, customWindowStart);
+            if (res.limit < effectiveLimit) effectiveLimit = res.limit;
+            if (res.remaining < minRemaining) minRemaining = res.remaining;
+            if (res.resetSeconds > maxResetSeconds) maxResetSeconds = res.resetSeconds;
+            if (!res.allowed) {
+                return {
+                    allowed: false,
+                    exceededScope: { scopeType: scope.scopeType, scopeId: scope.scopeId, limit: scope.limit, currentCount: res.currentCount },
+                    limit: scope.limit,
+                    remaining: 0,
+                    resetSeconds: res.resetSeconds,
+                };
+            }
+        }
+        return {
+            allowed: true,
+            limit: Number.isFinite(effectiveLimit) ? effectiveLimit : 1200,
+            remaining: Number.isFinite(minRemaining) ? minRemaining : 1200,
+            resetSeconds: maxResetSeconds,
+        };
     },
 };
 

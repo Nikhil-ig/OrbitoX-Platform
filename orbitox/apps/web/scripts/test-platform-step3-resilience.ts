@@ -2029,6 +2029,19 @@ async function main() {
       } finally {
         await killProcess(poolChild);
       }
+
+      recordReport({
+        category: 'S3-3 Transient DB Failures',
+        operation: 'Prisma Connection Pool Exhaustion (Bounded Pool)',
+        killPoint: 'POOL_TIMEOUT_EXHAUSTION',
+        iterations: 1,
+        diedBeforeCommit: 0,
+        diedAfterCommit: 0,
+        retriesOrDiscarded: 0,
+        dbStateVerified: 'Bounded pool (connection_limit=1, pool_timeout=1) classified as POOL_EXHAUSTED',
+        apiResultVerified: 'Maps to 503 Retry-After with error-code header POOL_EXHAUSTED',
+        status: 'PASS',
+      });
     } finally {
       await killProcess(child);
       await owner.$executeRawUnsafe(`ALTER ROLE orbitox_runtime RESET lock_timeout;`).catch(() => {});

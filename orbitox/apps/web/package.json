@@ -13,6 +13,8 @@
     "test:repository": "pnpm run prisma:generate && pnpm exec tsx scripts/test-platform-step2-repository.ts",
     "test:database-outage": "pnpm run prisma:generate && pnpm exec tsx scripts/test-platform-db-outage.ts",
     "test:step3-resilience": "pnpm run prisma:generate && pnpm exec tsx scripts/test-platform-step3-resilience.ts",
+    "test:step4-concurrency": "pnpm run prisma:generate && pnpm exec tsx scripts/test-platform-step4-concurrency.ts",
+    "test:api-no-token-sweep": "pnpm exec tsx scripts/live-api-no-token-sweep.ts",
     "recover:platform-audit-intents": "pnpm exec tsx scripts/recover-platform-audit-intents.ts",
     "start": "node ../../scripts/check-production-env.mjs && next start -p 3005",
     "lint": "next lint"

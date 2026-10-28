@@ -48,6 +48,7 @@ export interface PlatformProject {
     enabledServices?: string[];
     apiCallQuota?: number;
     monthlyApiCalls?: number;
+    currentBillingPeriod?: string;
     previousMonthlyApiCalls?: number;
     rateLimitPerMin?: number;
     technicalLead: string;

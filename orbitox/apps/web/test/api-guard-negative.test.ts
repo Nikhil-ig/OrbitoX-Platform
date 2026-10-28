@@ -1101,4 +1101,41 @@ describe('Phase 1 & 1.5 Security, Unified Auth & Licensed Customer Test Suite', 
     recoverStaleIntent();
     assert.equal(intentStatus, 'FAILED');
   });
+
+  it('Fix C1: preserves successful 2xx response when post-handler bookkeeping fails', async () => {
+    let mutationExecuted = false;
+    const originalRecordKeyUsage = platformRepository.recordKeyUsage;
+
+    try {
+      // Force recordKeyUsage to fail
+      platformRepository.recordKeyUsage = async () => {
+        throw new Error('transient database failure during key-usage recording');
+      };
+
+      const guardedHandler = withApiGuard(
+        { serviceId: 'crm', serviceName: 'CRM Service', requiredScopes: ['crm:read'] },
+        async () => {
+          mutationExecuted = true;
+          return NextResponse.json({ success: true, leadId: 'lead-created-123' }, { status: 201 });
+        }
+      );
+
+      const req = new NextRequest('http://localhost:3000/api/v1/crm/leads', {
+        method: 'POST',
+        headers: {
+          'x-api-key': validCustomerKeySecret,
+          'content-type': 'application/json',
+        },
+        body: JSON.stringify({ name: 'New Lead' }),
+      });
+
+      const res = await guardedHandler(req);
+      assert.equal(res.status, 201, 'Response must remain 201 and not be converted to 503');
+      assert.equal(mutationExecuted, true, 'Mutation must have executed');
+      const body = await res.json();
+      assert.equal(body.leadId, 'lead-created-123');
+    } finally {
+      platformRepository.recordKeyUsage = originalRecordKeyUsage;
+    }
+  });
 });

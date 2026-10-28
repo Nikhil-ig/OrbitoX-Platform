@@ -1468,9 +1468,10 @@ model PlatformProject {
   plan            String                @default("starter")
   planLabel       String?
   enabledServices String[]              @default([])
-  apiCallQuota    BigInt?
-  monthlyApiCalls BigInt                @default(0)
-  rateLimitPerMin Int?
+  apiCallQuota         BigInt?
+  monthlyApiCalls      BigInt                @default(0)
+  currentBillingPeriod String?
+  rateLimitPerMin      Int?
   customDomain    String?
   storageQuotaGb  Float?
   status          PlatformProjectStatus @default(ACTIVE)
