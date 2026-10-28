@@ -1,0 +1,177 @@
+{
+  "organizations": [
+    {
+      "id": "org_legacy_omni_01",
+      "slug": "omni-legacy",
+      "name": "Omni Logistics Legacy",
+      "billingEmail": "billing@omni-legacy.global",
+      "complianceTier": "SOC2",
+      "status": "ACTIVE",
+      "createdAt": "2025-06-15T10:00:00.000Z",
+      "updatedAt": "2025-06-15T10:00:00.000Z"
+    },
+    {
+      "id": "org_legacy_mednet_02",
+      "slug": "mednet-legacy-v1",
+      "name": "MedNet Healthcare Legacy V1",
+      "status": "ACTIVE",
+      "createdAt": "2025-01-10T08:30:00.000Z",
+      "updatedAt": "2025-01-10T08:30:00.000Z"
+    }
+  ],
+  "projects": [
+    {
+      "id": "proj_omni_logistics_01",
+      "slug": "omni-freight",
+      "name": "Omni Freight Main",
+      "organizationId": "org_legacy_omni_01",
+      "businessModel": "B2B_SAAS",
+      "planTier": "growth",
+      "plan": "growth",
+      "enabledServices": ["crm", "fleet"],
+      "apiCallQuota": 500000,
+      "monthlyApiCalls": 1250,
+      "currentBillingPeriod": "2026-10",
+      "rateLimitPerMin": 3000,
+      "status": "ACTIVE",
+      "technicalLead": "Chief Logistics Officer",
+      "contactEmail": "tech@omni-legacy.global",
+      "createdAt": "2025-06-15T10:05:00.000Z",
+      "updatedAt": "2026-10-25T14:20:00.000Z"
+    },
+    {
+      "id": "proj_mednet_inpatient_02",
+      "slug": "mednet-inpatient",
+      "name": "MedNet Inpatient System",
+      "organizationId": "org_legacy_mednet_02",
+      "businessModel": "HEALTHCARE_NETWORK",
+      "planTier": "enterprise",
+      "plan": "enterprise",
+      "enabledServices": ["crm"],
+      "apiCallQuota": 1000000,
+      "monthlyApiCalls": 4820,
+      "status": "ACTIVE",
+      "technicalLead": "Lead Health Architect",
+      "contactEmail": "arch@mednet.health",
+      "createdAt": "2025-01-10T08:35:00.000Z",
+      "updatedAt": "2025-01-10T08:35:00.000Z"
+    }
+  ],
+  "environments": [
+    {
+      "id": "env_omni_prod",
+      "projectId": "proj_omni_logistics_01",
+      "slug": "production",
+      "name": "Production Environment",
+      "type": "PRODUCTION",
+      "isProduction": true,
+      "status": "ACTIVE",
+      "createdAt": "2025-06-15T10:06:00.000Z",
+      "updatedAt": "2025-06-15T10:06:00.000Z"
+    },
+    {
+      "id": "env_mednet_prod",
+      "projectId": "proj_mednet_inpatient_02",
+      "slug": "production",
+      "name": "Production Main",
+      "type": "PRODUCTION",
+      "isProduction": true,
+      "status": "ACTIVE",
+      "createdAt": "2025-01-10T08:36:00.000Z",
+      "updatedAt": "2025-01-10T08:36:00.000Z"
+    }
+  ],
+  "apiKeys": [
+    {
+      "id": "key_omni_verified_01",
+      "keyId": "key_live_omni_verified_12345",
+      "name": "Omni Verified Live Key",
+      "environmentId": "env_omni_prod",
+      "projectId": "proj_omni_logistics_01",
+      "keyType": "PROJECT_SCOPED",
+      "keyPrefix": "orb_live_omni1_",
+      "secretFingerprint": "SHA256: 1234:ABCD...EF01",
+      "authVerifier": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+      "maskedDisplay": "orb_live_omni1_••••••••1234",
+      "status": "ACTIVE",
+      "capabilities": ["crm:read", "crm:write"],
+      "ipAllowlist": ["127.0.0.1/32"],
+      "rateLimitPerMin": 2500,
+      "tenantScope": ["omni-freight"],
+      "issuedAt": "2025-06-15T10:10:00.000Z",
+      "activatedAt": "2025-06-15T10:10:00.000Z",
+      "createdBy": "admin@omni-legacy.global",
+      "version": 1
+    },
+    {
+      "id": "key_mednet_legacy_unverified_02",
+      "keyId": "key_live_mednet_unverified_67890",
+      "name": "MedNet Old Unverified Secret Key",
+      "environmentId": "env_mednet_prod",
+      "projectId": "proj_mednet_inpatient_02",
+      "keyType": "PROJECT_SCOPED",
+      "keyPrefix": "orb_live_med2_",
+      "rawSecret": "orb_live_med2_unmigrated_plaintext_secret_xyz",
+      "secretFingerprint": "SHA256: 9999:EEEE...0000",
+      "maskedDisplay": "orb_live_med2_••••••••xyz",
+      "status": "ACTIVE",
+      "capabilities": ["crm:read"],
+      "issuedAt": "2025-01-10T08:40:00.000Z",
+      "activatedAt": "2025-01-10T08:40:00.000Z",
+      "createdBy": "legacy_dev@mednet.health"
+    }
+  ],
+  "credentials": [],
+  "packages": [],
+  "packageVersions": [],
+  "packageInstallations": [],
+  "domains": [
+    {
+      "id": "dom_omni_01",
+      "environmentId": "env_omni_prod",
+      "domainName": "freight.omni-legacy.global",
+      "isApex": false,
+      "verificationStatus": "VERIFIED",
+      "cnameTarget": "cname.orbitox.io",
+      "tlsCertificateStatus": "ISSUED",
+      "edgeLatencyMs": 12,
+      "createdAt": "2025-06-15T10:15:00.000Z",
+      "verifiedAt": "2025-06-15T10:20:00.000Z"
+    }
+  ],
+  "quotaPolicies": [
+    {
+      "id": "quota_omni_01",
+      "environmentId": "env_omni_prod",
+      "monthlyCallLimit": 500000,
+      "monthlyCallsUsed": 1250,
+      "storageQuotaGb": 100.0,
+      "storageUsedGb": 15.5,
+      "warningThreshold": 80
+    }
+  ],
+  "rateLimitPolicies": [
+    {
+      "id": "rate_omni_01",
+      "environmentId": "env_omni_prod",
+      "requestsPerMinute": 3000,
+      "requestsPerSecondBurst": 200,
+      "slidingWindowType": "HYBRID_REDIS_RAM"
+    }
+  ],
+  "auditLogs": [
+    {
+      "id": "audit_legacy_01",
+      "actorId": "usr_omni_admin",
+      "actorEmail": "admin@omni-legacy.global",
+      "action": "project.created",
+      "entityType": "PROJECT",
+      "entityId": "proj_omni_logistics_01",
+      "organizationId": "org_legacy_omni_01",
+      "projectId": "proj_omni_logistics_01",
+      "environmentId": "env_omni_prod",
+      "metadata": { "importedFrom": "legacy_v1", "migrated": true },
+      "occurredAt": "2025-06-15T10:05:00.000Z"
+    }
+  ]
+}
