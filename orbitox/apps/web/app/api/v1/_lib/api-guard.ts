@@ -1089,10 +1089,6 @@ export function withApiGuard<T = any>(
     let rateLimitResult;
     try {
       rateLimitResult = await platformRepository.checkRateLimits(scopesToCheck, 60);
-      if (platformRepository.isPrismaBacked()) {
-        guardDatabaseOperations += scopesToCheck.length;
-        guardDatabaseWrites += scopesToCheck.length;
-      }
     } catch (rateLimitErr: any) {
       if (
         rateLimitErr?.code === 'RATE_LIMIT_PARTITION_EXHAUSTED' ||
