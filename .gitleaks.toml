@@ -12,6 +12,16 @@ useDefault = true
 
 [allowlist]
 description = "Individually justified test fixtures for security masking/redaction algorithms and local gitignored dev caches"
+regexes = [
+  # S5-4: Value-specific allowlists for synthetic test vectors and markers (never allowlist entire files by path)
+  '''(?i)orb_test_.*''',
+  '''DISCARDED_UNVERIFIED_LEGACY_KEY''',
+  '''key_live_omni_verified_12345''',
+  '''key_live_mednet_unverified_67890''',
+  '''__orbitox_preflight_vector__''',
+  '''stn_sec_tandoor_ldh_99x7''',
+  '''e3fd2fa74174360f0984a7b9c9cd04e4059d3e57'''
+]
 paths = [
   # Local ephemeral dependencies, build outputs, and Git metadata (all in .gitignore)
   '''(?i)node_modules/''',
