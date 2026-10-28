@@ -515,6 +515,22 @@ export class PlatformApiState {
   }
 }
 
+export function classifyDatabaseError(err: any): { code: string; message: string } {
+  const errMsg = String(err?.message || '');
+  const errCode = String(err?.code || '');
+
+  if (errCode === '57014' || errMsg.includes('statement timeout') || errMsg.includes('canceling statement due to statement timeout')) {
+    return { code: 'STATEMENT_TIMEOUT', message: 'Database statement timed out.' };
+  }
+  if (errCode === '55P03' || errMsg.includes('lock timeout') || errMsg.includes('canceling statement due to lock timeout')) {
+    return { code: 'LOCK_TIMEOUT', message: 'Database lock timed out.' };
+  }
+  if (errCode === 'P2024' || errMsg.includes('connection pool') || errMsg.includes('Timed out fetching a new connection') || errMsg.includes('remaining connection slots are reserved')) {
+    return { code: 'POOL_EXHAUSTED', message: 'Database connection pool exhausted.' };
+  }
+  return { code: 'DATABASE_UNAVAILABLE', message: 'Database is temporarily unavailable.' };
+}
+
 export function withApiGuard<T = any>(
   options: ApiGuardOptions,
   handler: (req: NextRequest, ctx: ApiRequestContext) => Promise<NextResponse<ApiResponse<T>> | Response>
@@ -612,23 +628,25 @@ export function withApiGuard<T = any>(
       let lookup;
       try {
         lookup = await platformRepository.authorizeApiKey(rawApiKey);
-      } catch {
+      } catch (err: any) {
+        const classified = classifyDatabaseError(err);
+        const errorCode = classified.code === 'DATABASE_UNAVAILABLE' ? 'AUTHENTICATION_UNAVAILABLE' : classified.code;
         PlatformApiState.recordTelemetry({
           tenantId: 'security',
           facade: 'AuthorizationRepository',
           level: 'ERROR',
-          message: 'Authorization repository unavailable; request denied.',
+          message: `Authorization repository unavailable (${errorCode}): ${classified.message}`,
         });
         return NextResponse.json<ApiResponse>(
           {
             success: false,
             error: {
-              code: 'AUTHENTICATION_UNAVAILABLE',
-              message: 'Credential verification is temporarily unavailable.',
+              code: errorCode,
+              message: classified.message,
             },
             meta: { latencyMs: Math.round(performance.now() - startTime), timestamp: new Date().toISOString(), requestId },
           },
-          { status: 503, headers: { 'Retry-After': '1' } }
+          { status: 503, headers: { 'Retry-After': '1', 'x-orbitox-error-code': errorCode } }
         );
       }
       matchedKey = lookup.key;
@@ -1091,7 +1109,24 @@ export function withApiGuard<T = any>(
       const projectQuota = project.plan?.toLowerCase() === 'unlimited'
         ? Number.POSITIVE_INFINITY
         : effectiveProjectQuota;
-      const reservation = await platformRepository.reserveProjectUsage(project.id, projectQuota);
+      let reservation: number | undefined;
+      try {
+        reservation = await platformRepository.reserveProjectUsage(project.id, projectQuota);
+      } catch (err: any) {
+        const classified = classifyDatabaseError(err);
+        const latencyMs = Math.round(performance.now() - startTime);
+        return NextResponse.json<ApiResponse>(
+          {
+            success: false,
+            error: {
+              code: classified.code,
+              message: classified.message,
+            },
+            meta: { tenantId, serviceId, latencyMs, timestamp: new Date().toISOString(), requestId },
+          },
+          { status: 503, headers: { 'Retry-After': '1', 'x-orbitox-error-code': classified.code } }
+        );
+      }
       if (platformRepository.isPrismaBacked()) {
         guardDatabaseOperations += 1;
         guardDatabaseWrites += 1;

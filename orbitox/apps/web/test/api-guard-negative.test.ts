@@ -1004,6 +1004,40 @@ describe('Phase 1 & 1.5 Security, Unified Auth & Licensed Customer Test Suite', 
     assert.equal(mutationApplied, false);
   });
 
+  it('rejects client-supplied auditIntentId with 400 AUDIT_INTENT_INJECTION_REJECTED (Fix S3-4)', async () => {
+    let auditCreated = false;
+    let mutationApplied = false;
+    const handler = createProjectUsageHandler({
+      getProject: async () => ({ id: 'injection-test-project', slug: 'injection-test-project', organizationId: 'audit-org', monthlyApiCalls: 10 } as any),
+      createPlatformAdminAuditIntent: async () => {
+        auditCreated = true;
+        return 'intent-injected';
+      },
+      setProjectUsageWithAuditIntent: async () => {
+        mutationApplied = true;
+        return undefined;
+      },
+      resolvePlatformAdminAuditIntentFailure: async () => undefined,
+    });
+    const response = await handler(new NextRequest(
+      'http://localhost:3000/api/v1/admin/projects/injection-test-project/usage',
+      {
+        method: 'POST',
+        headers: {
+          authorization: `Bearer ${TEST_ADMIN_TOKEN}`,
+          'content-type': 'application/json',
+        },
+        body: JSON.stringify({ action: 'reset', auditIntentId: 'forged-intent-id-123' }),
+      }
+    ));
+
+    assert.equal(response.status, 400);
+    const body = await response.json();
+    assert.equal(body.error?.code, 'AUDIT_INTENT_INJECTION_REJECTED');
+    assert.equal(auditCreated, false);
+    assert.equal(mutationApplied, false);
+  });
+
   it('marks the audit intent failed when the usage transaction fails', async () => {
     let intentStatus = 'PENDING';
     let failedIntentId: string | undefined;

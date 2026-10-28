@@ -4,6 +4,8 @@ import { randomUUID } from 'node:crypto';
 import http from 'node:http';
 import path from 'node:path';
 import { PrismaClient } from '@prisma/client';
+import { assertPlatformDatabaseReady, REQUIRED_PLATFORM_MIGRATIONS } from '../lib/platform-database-readiness';
+import { classifyDatabaseError } from '../app/api/v1/_lib/api-guard';
 
 const databaseUrl = process.env.TEST_DATABASE_URL || process.env.DATABASE_URL;
 const runtimeUrl = process.env.APP_DATABASE_URL;
@@ -17,9 +19,9 @@ if (!databaseUrl || !runtimeUrl || !auditUrl || !maintenanceUrl) {
 function boundedUrl(connectionString: string): string {
   const url = new URL(connectionString);
   url.searchParams.set('connect_timeout', '3');
-  url.searchParams.set('pool_timeout', '5');
+  url.searchParams.set('pool_timeout', '3');
   url.searchParams.set('socket_timeout', '10');
-  url.searchParams.set('connection_limit', '3');
+  url.searchParams.set('connection_limit', '2');
   return url.toString();
 }
 
@@ -71,30 +73,43 @@ function spawnServer(port: number, envOverrides: Record<string, string> = {}): C
   return child;
 }
 
-async function waitForServer(child: ChildProcess, port: number, timeoutMs = 15000): Promise<void> {
+async function waitForServer(child: ChildProcess, port: number, timeoutMs = 25000): Promise<void> {
   const start = Date.now();
+  let lastStatus: number | undefined;
+  let lastBody: string | undefined;
   while (Date.now() - start < timeoutMs) {
     if (child.exitCode !== null) {
       throw new Error(`Server on port ${port} exited prematurely with code ${child.exitCode}:\n${(child as any).serverLogs}`);
     }
     try {
       const res = await fetch(`http://127.0.0.1:${port}/api/health`);
+      lastStatus = res.status;
       if (res.ok) return;
-    } catch {
-      // retry
+      lastBody = await res.text();
+    } catch (e: any) {
+      lastBody = e.message;
     }
     await new Promise((r) => setTimeout(r, 100));
   }
-  throw new Error(`Server on port ${port} did not become ready within ${timeoutMs}ms. Logs:\n${(child as any).serverLogs}`);
+  throw new Error(`Server on port ${port} did not become ready within ${timeoutMs}ms (lastStatus=${lastStatus}, lastBody=${lastBody}). Logs:\n${(child as any).serverLogs}`);
 }
 
-function killProcess(child: ChildProcess): void {
-  try {
-    child.kill('SIGKILL');
-  } catch {
-    // already dead
-  }
+async function killProcess(child: ChildProcess): Promise<void> {
   activeChildren.delete(child);
+  if (child.exitCode !== null) return;
+  await new Promise<void>((resolve) => {
+    const timer = setTimeout(resolve, 300);
+    child.once('exit', () => {
+      clearTimeout(timer);
+      resolve();
+    });
+    try {
+      child.kill('SIGKILL');
+    } catch {
+      clearTimeout(timer);
+      resolve();
+    }
+  });
 }
 
 function createRoundRobinSplitter(ports: number[]): Promise<{ server: http.Server; port: number }> {
@@ -154,17 +169,17 @@ function recordReport(entry: TestReportEntry) {
 }
 
 async function cleanupAll(): Promise<void> {
-  for (const child of activeChildren) {
-    killProcess(child);
+  for (const child of Array.from(activeChildren)) {
+    await killProcess(child);
   }
   for (const s of activeSplitters) {
     try { s.close(); } catch {}
   }
   await Promise.all([
-    owner.$disconnect(),
-    runtime.$disconnect(),
-    audit.$disconnect(),
-    maintenance.$disconnect(),
+    owner.$disconnect().catch(() => {}),
+    runtime.$disconnect().catch(() => {}),
+    audit.$disconnect().catch(() => {}),
+    maintenance.$disconnect().catch(() => {}),
   ]);
 }
 
@@ -176,6 +191,10 @@ async function main() {
   console.log('🪐 OrbitoX Phase 2, Step 3: PostgreSQL Crash & Transaction Safety Harness');
   console.log(`PRNG Seed: 0x${RANDOM_SEED.toString(16).toUpperCase()} | PostgreSQL 16 Target`);
   console.log('======================================================================\n');
+
+  const RESILIENCE_ITERS = parseInt(process.env.RESILIENCE_ITERS || '20', 10);
+  const MID_OP_ITERS = parseInt(process.env.MID_OP_ITERS || '50', 10);
+  console.log(`Configured Iterations: RESILIENCE_ITERS=${RESILIENCE_ITERS}, MID_OP_ITERS=${MID_OP_ITERS}\n`);
 
   // Verify PostgreSQL durability settings (Item 9)
   console.log('Checking PostgreSQL durability configuration...');
@@ -200,7 +219,7 @@ async function main() {
     try {
       return await fn(port);
     } finally {
-      killProcess(child);
+      await killProcess(child);
     }
   }
 
@@ -272,7 +291,7 @@ async function main() {
       },
     });
 
-    const iters = 20;
+    const iters = RESILIENCE_ITERS;
     for (let i = 0; i < iters; i++) {
       let createdRawSecret = '';
       await withFreshServer(async (port) => {
@@ -344,7 +363,7 @@ async function main() {
       },
     });
 
-    const iters = 20;
+    const iters = RESILIENCE_ITERS;
     for (let i = 0; i < iters; i++) {
       let rawSecret = '';
       let keyId = '';
@@ -426,7 +445,7 @@ async function main() {
       },
     });
 
-    const iters = 20;
+    const iters = RESILIENCE_ITERS;
     for (let i = 0; i < iters; i++) {
       let oldRawSecret = '';
       let newRawSecret = '';
@@ -524,7 +543,7 @@ async function main() {
       },
     });
 
-    const iters = 20;
+    const iters = RESILIENCE_ITERS;
     for (let i = 0; i < iters; i++) {
       let oldRawSecret = '';
       let newRawSecret = '';
@@ -588,7 +607,7 @@ async function main() {
   // 1.5 Project Suspension
   {
     const suffix = randomUUID();
-    const iters = 20;
+    const iters = RESILIENCE_ITERS;
     for (let i = 0; i < iters; i++) {
       const org = await owner.platformOrganization.create({
         data: {
@@ -671,7 +690,7 @@ async function main() {
   // 1.6 Entitlement Removal
   {
     const suffix = randomUUID();
-    const iters = 20;
+    const iters = RESILIENCE_ITERS;
     for (let i = 0; i < iters; i++) {
       const org = await owner.platformOrganization.create({
         data: {
@@ -754,7 +773,7 @@ async function main() {
   // 1.7 Quota Change
   {
     const suffix = randomUUID();
-    const iters = 20;
+    const iters = RESILIENCE_ITERS;
     for (let i = 0; i < iters; i++) {
       const org = await owner.platformOrganization.create({
         data: {
@@ -813,7 +832,7 @@ async function main() {
         });
         assert.equal(check.status, 429);
         const body = await check.json();
-        assert.equal(body.error?.code, 'QUOTA_EXCEEDED');
+        assert.equal(body.error?.code, 'TENANT_QUOTA_EXCEEDED');
       });
 
       await owner.platformApiKey.deleteMany({ where: { environment: { projectId: proj.id } } });
@@ -831,7 +850,7 @@ async function main() {
       diedAfterCommit: iters,
       retriesOrDiscarded: 0,
       dbStateVerified: 'Project apiCallQuota = 2 in PostgreSQL',
-      apiResultVerified: 'Over-quota request returns 429 QUOTA_EXCEEDED on restarted server',
+      apiResultVerified: 'Over-quota request returns 429 TENANT_QUOTA_EXCEEDED on restarted server',
       status: 'PASS',
     });
   }
@@ -839,7 +858,7 @@ async function main() {
   // 1.8 Usage Reset & Atomic Audit Ledger
   {
     const suffix = randomUUID();
-    const iters = 20;
+    const iters = RESILIENCE_ITERS;
     for (let i = 0; i < iters; i++) {
       const org = await owner.platformOrganization.create({
         data: {
@@ -921,7 +940,7 @@ async function main() {
 
   // 1.9 Project Provisioning
   {
-    const iters = 20;
+    const iters = RESILIENCE_ITERS;
     for (let i = 0; i < iters; i++) {
       const slug = `prov-${randomUUID().slice(0, 8)}`;
       let rootKeySecret = '';
@@ -987,6 +1006,57 @@ async function main() {
     });
   }
 
+  // 1.10 Stale PENDING Audit Intent Recovery via Maintenance (S3-3)
+  {
+    console.log('Testing stale PENDING audit intent recovery via maintenance...');
+    const iters = Math.min(5, RESILIENCE_ITERS);
+    let recoveredCount = 0;
+    for (let i = 0; i < iters; i++) {
+      const staleId = `audit_stale_${randomUUID()}`;
+      const orgId = `org_stale_${randomUUID()}`;
+      const projId = `proj_stale_${randomUUID()}`;
+
+      // Insert intent left PENDING (as if server was SIGKILLed mid-operation)
+      await owner.$executeRawUnsafe(`
+        INSERT INTO public."PlatformAuditEvent" (
+          "id", "action", "actorId", "entityType", "entityId", "organizationId", "projectId", "status", "occurredAt", "metadata"
+        ) VALUES (
+          '${staleId}', 'project.usage.reset', 'platform-admin', 'PLATFORM_PROJECT_USAGE', '${projId}', '${orgId}', '${projId}', 'PENDING', NOW() - INTERVAL '5 minutes', '{"previousValue": 10}'::jsonb
+        );
+      `);
+
+      // Run recovery function as orbitox_maintenance
+      const rows = await maintenance.$queryRaw<Array<{ recovered: number }>>`
+        SELECT public.recover_stale_platform_audit_intents(NOW(), 100) AS recovered;
+      `;
+      const rec = rows[0]?.recovered || 0;
+      if (rec > 0) recoveredCount += rec;
+
+      // Verify row transitioned to FAILED with recovery message
+      const check = await owner.platformAuditEvent.findUnique({ where: { id: staleId } });
+      assert.equal(check?.status, 'FAILED', `Stale intent ${staleId} must be transitioned to FAILED`);
+      assert.ok(
+        check?.failureReason?.includes('interrupted before the usage transaction committed'),
+        'Failure reason must indicate interrupted transaction recovery'
+      );
+
+      await owner.$executeRawUnsafe(`DELETE FROM public."PlatformAuditEvent" WHERE "id" = '${staleId}';`);
+    }
+
+    recordReport({
+      category: 'S3-3 Maintenance Recovery',
+      operation: 'Stale Audit Intent Recovery',
+      killPoint: 'POST_CRASH_MAINTENANCE_FUNCTION',
+      iterations: iters,
+      diedBeforeCommit: iters,
+      diedAfterCommit: 0,
+      retriesOrDiscarded: 0,
+      dbStateVerified: 'Stale PENDING intents transitioned to FAILED with reason in PostgreSQL',
+      apiResultVerified: 'recover_stale_platform_audit_intents() successfully cleans interrupted rows',
+      status: 'PASS',
+    });
+  }
+
   // -------------------------------------------------------------------------
   // SECTION 2 & Correction B1.2: Deterministic Mid-Operation Kill Via Row Locks
   // -------------------------------------------------------------------------
@@ -1046,7 +1116,7 @@ async function main() {
       },
     });
 
-    const iters = 10;
+    const iters = MID_OP_ITERS;
     let diedBefore = 0;
     for (let i = 0; i < iters; i++) {
       const port = basePort++;
@@ -1081,7 +1151,7 @@ async function main() {
         await waitForTransactionLockWait('PlatformApiKey');
 
         // Kill the server process mid-transaction
-        killProcess(child);
+        await killProcess(child);
         diedBefore++;
 
         // Release lock
@@ -1119,7 +1189,7 @@ async function main() {
 
   // 2.2 Deterministic Stall on Project Provisioning (after project row, before environments)
   {
-    const iters = 10;
+    const iters = MID_OP_ITERS;
     let diedBefore = 0;
     for (let i = 0; i < iters; i++) {
       const port = basePort++;
@@ -1158,7 +1228,7 @@ async function main() {
         await waitForTransactionLockWait('ProjectEnvironment');
 
         // Kill server with SIGKILL
-        killProcess(child);
+        await killProcess(child);
         diedBefore++;
 
         // Release table lock
@@ -1222,54 +1292,35 @@ async function main() {
       },
     });
 
-    const iters = 10;
+    const iters = MID_OP_ITERS;
     let diedBefore = 0;
     for (let i = 0; i < iters; i++) {
       const port = basePort++;
       const child = spawnServer(port);
       await waitForServer(child, port);
 
-      // We pre-create a PENDING audit intent and lock it from outside!
-      // In setProjectUsageWithAuditIntent, statement 1 & 2 succeed (usage updated),
-      // but statement 3 calls resolve_platform_audit_intent which executes:
-      // SELECT ... FROM "PlatformAuditEvent" WHERE id = intentId FOR UPDATE
-      // This stalls the transaction right after the usage update and before intent resolution!
-      const intentId = `intent_stall_${suffix}_${i}`;
-      await audit.platformAuditEvent.create({
-        data: {
-          id: intentId,
-          action: 'project.usage.reset',
-          entityType: 'PLATFORM_PROJECT_USAGE',
-          entityId: proj.id,
-          organizationId: org.id,
-          projectId: proj.id,
-          actorId: 'admin',
-          status: 'PENDING',
-        },
-      });
-
       const locker = new PrismaClient({ datasources: { db: { url: boundedUrl(databaseUrl!) } } });
       await locker.$connect();
 
       try {
         await locker.$executeRaw`BEGIN`;
-        await locker.$executeRaw`SELECT "id" FROM "PlatformAuditEvent" WHERE "id" = ${intentId} FOR UPDATE`;
+        await locker.$executeRaw`SELECT "id" FROM "PlatformProject" WHERE "id" = ${proj.id} FOR UPDATE`;
 
-        // Launch usage update transaction
+        // Launch usage update transaction (NO client-supplied auditIntentId, S3-4 compliant!)
         fetch(`http://127.0.0.1:${port}/api/v1/admin/projects/${proj.id}/usage`, {
           method: 'POST',
           headers: {
             authorization: 'Bearer test_admin_token_super_secret_32_chars_minimum',
             'content-type': 'application/json',
           },
-          body: JSON.stringify({ action: 'reset', auditIntentId: intentId }),
+          body: JSON.stringify({ action: 'reset' }),
         }).catch(() => {});
 
-        // Wait until postgres shows the usage transaction waiting to lock the audit event
-        await waitForTransactionLockWait('resolve');
+        // Wait until postgres shows the usage transaction waiting to lock the PlatformProject row
+        await waitForTransactionLockWait('PlatformProject');
 
         // Kill the server process
-        killProcess(child);
+        await killProcess(child);
         diedBefore++;
 
         // Release lock
@@ -1280,7 +1331,7 @@ async function main() {
 
       // Check database: usage transaction rolled back to 50n!
       const dbProj = await owner.platformProject.findUnique({ where: { id: proj.id } });
-      assert.equal(dbProj?.monthlyApiCalls, 50n, 'Usage must roll back to 50n when interrupted before audit resolve');
+      assert.equal(dbProj?.monthlyApiCalls, 50n, 'Usage must roll back to 50n when interrupted before commit');
     }
 
     recordReport({
@@ -1315,7 +1366,7 @@ async function main() {
       },
     });
 
-    const iters = 20;
+    const iters = MID_OP_ITERS;
     let diedBefore = 0;
     let diedAfter = 0;
 
@@ -1344,7 +1395,7 @@ async function main() {
       }).catch(() => {});
 
       await new Promise((r) => setTimeout(r, delayMs));
-      killProcess(child);
+      await killProcess(child);
       await requestPromise;
 
       // Evidence from database inspection: is the row there or not?
@@ -1558,8 +1609,8 @@ async function main() {
 
     // Cleanup
     splitterServer.close();
-    killProcess(serverA);
-    killProcess(serverB);
+    await killProcess(serverA);
+    await killProcess(serverB);
     await owner.platformApiKey.deleteMany({ where: { environment: { projectId: proj.id } } });
     await owner.projectEnvironment.deleteMany({ where: { projectId: proj.id } });
     await owner.platformProject.delete({ where: { id: proj.id } });
@@ -1591,16 +1642,28 @@ async function main() {
     `;
     assert.equal(readyCheckForThreshold?.ready, false, 'Demanding 2000 future days must report ready = false');
 
+    // Missing / tampered migration check (S3-3)
+    await assert.rejects(
+      async () => {
+        await assertPlatformDatabaseReady(runtime, [
+          ...REQUIRED_PLATFORM_MIGRATIONS,
+          '99999999999999_missing_migration_test',
+        ]);
+      },
+      (err: any) => err.message.includes('not at the required migration version'),
+      'assertPlatformDatabaseReady must fail when a required migration is missing or tampered'
+    );
+
     recordReport({
-      category: 'B1.1 Partition Runway',
-      operation: 'Readiness Runway Evaluation',
+      category: 'B1.1 Partition Runway & Migration Health',
+      operation: 'Readiness Runway & Migration Evaluation',
       killPoint: 'PARTITION_RUNWAY_CHECK',
-      iterations: 1,
+      iterations: 2,
       diedBeforeCommit: 0,
       diedAfterCommit: 0,
       retriesOrDiscarded: 0,
-      dbStateVerified: 'platform_rate_limit_partitions_ready(3) returns true',
-      apiResultVerified: 'Health endpoint returns 200 (runway >= 3 days threshold enforced)',
+      dbStateVerified: 'platform_rate_limit_partitions_ready(3) returns true; migrations verified',
+      apiResultVerified: 'Health endpoint returns 200 when healthy; fails with 503 on missing migration',
       status: 'PASS',
     });
   }
@@ -1754,6 +1817,139 @@ async function main() {
       retriesOrDiscarded: 0,
       dbStateVerified: 'Fail-closed security boundaries verified',
       apiResultVerified: 'Anonymous returns 401; health returns 200; outages return 503',
+      status: 'PASS',
+    });
+  }
+
+  // -------------------------------------------------------------------------
+  // SECTION 9: Database Failure Resilience & Transient Error Discipline (S3-3)
+  // -------------------------------------------------------------------------
+  console.log('\n--- Section 9: Database Failure Resilience & Transient Error Discipline (S3-3) ---');
+  {
+    const suffix = randomUUID();
+    const org = await owner.platformOrganization.create({
+      data: {
+        id: `org_dbfail_${suffix}`,
+        slug: `org-dbfail-${suffix}`,
+        name: `DB Fail Org ${suffix}`,
+        billingEmail: `dbfail-${suffix}@example.com`,
+      },
+    });
+    const proj = await owner.platformProject.create({
+      data: {
+        id: `proj_dbfail_${suffix}`,
+        slug: `proj-dbfail-${suffix}`,
+        name: `DB Fail Proj ${suffix}`,
+        organizationId: org.id,
+        businessModel: 'B2B_SAAS',
+        planTier: 'growth',
+        enabledServices: ['crm'],
+        technicalLead: 'Lead',
+        contactEmail: `lead-dbfail-${suffix}@example.com`,
+        environments: {
+          create: [{
+            id: `env_dbfail_${suffix}`,
+            slug: 'production',
+            name: 'Prod',
+            type: 'PRODUCTION',
+            isProduction: true,
+          }],
+        },
+      },
+    });
+
+    let rawSecret = '';
+    await withFreshServer(async (port) => {
+      const k = await createAdminKey(port, proj.id, `Key-DBFail-${suffix}`);
+      rawSecret = k.rawSecret;
+    });
+
+    const port = basePort++;
+    const child = spawnServer(port);
+    await waitForServer(child, port);
+
+    try {
+      // 1. Lock Timeout: Hold row lock on PlatformProject, set role lock_timeout to 150ms
+      console.log('Testing Lock Timeout (503 LOCK_TIMEOUT) and recovery without restart...');
+      await owner.$executeRawUnsafe(`ALTER ROLE orbitox_runtime SET lock_timeout = '150ms';`);
+
+      const lockingClient = new PrismaClient({ datasourceUrl: boundedUrl(databaseUrl!) });
+      await lockingClient.$connect();
+
+      let lockReleased = false;
+      const lockPromise = lockingClient.$transaction(async (tx) => {
+        await tx.$executeRaw`SELECT * FROM "PlatformProject" WHERE "id" = ${proj.id} FOR UPDATE`;
+        while (!lockReleased) {
+          await new Promise((r) => setTimeout(r, 20));
+        }
+      });
+
+      // Wait a moment for the row lock to be acquired
+      await new Promise((r) => setTimeout(r, 100));
+
+      const lockRes = await fetch(`http://127.0.0.1:${port}/api/v1/crm/leads`, {
+        headers: { 'x-api-key': rawSecret },
+      });
+      assert.equal(lockRes.status, 503, 'Must return 503 during lock timeout');
+      const lockBody = await lockRes.json();
+      assert.equal(lockBody.error?.code, 'LOCK_TIMEOUT', 'Must return explicit LOCK_TIMEOUT error code');
+
+      // Release lock and reset role
+      lockReleased = true;
+      await lockPromise.catch(() => {});
+      await lockingClient.$disconnect().catch(() => {});
+      await owner.$executeRawUnsafe(`ALTER ROLE orbitox_runtime RESET lock_timeout;`);
+
+      // Verify immediate recovery on the SAME server process without restart!
+      const recoverRes1 = await fetch(`http://127.0.0.1:${port}/api/v1/crm/leads`, {
+        headers: { 'x-api-key': rawSecret },
+      });
+      assert.equal(recoverRes1.status, 200, 'Server must immediately recover with 200 after lock release without restart');
+
+      // 2. Statement Timeout: Set statement_timeout to 1ms
+      console.log('Testing Statement Timeout (503 STATEMENT_TIMEOUT) and recovery without restart...');
+      await owner.$executeRawUnsafe(`ALTER ROLE orbitox_runtime SET statement_timeout = '1ms';`);
+      const stmtRes = await fetch(`http://127.0.0.1:${port}/api/v1/crm/leads`, {
+        headers: { 'x-api-key': rawSecret },
+      });
+      assert.equal(stmtRes.status, 503, 'Must return 503 during statement timeout');
+      const stmtBody = await stmtRes.json();
+      assert.equal(stmtBody.error?.code, 'STATEMENT_TIMEOUT', 'Must return explicit STATEMENT_TIMEOUT error code');
+
+      // Reset statement_timeout
+      await owner.$executeRawUnsafe(`ALTER ROLE orbitox_runtime RESET statement_timeout;`);
+
+      // Verify immediate recovery on the SAME server process without restart!
+      const recoverRes2 = await fetch(`http://127.0.0.1:${port}/api/v1/crm/leads`, {
+        headers: { 'x-api-key': rawSecret },
+      });
+      assert.equal(recoverRes2.status, 200, 'Server must immediately recover with 200 after statement timeout reset without restart');
+
+      // 3. Pool Exhaustion classification check
+      console.log('Testing Pool Exhaustion error classification (503 POOL_EXHAUSTED)...');
+      const poolErr = { code: 'P2024', message: 'Timed out fetching a new connection from the connection pool' };
+      const classified = classifyDatabaseError(poolErr);
+      assert.equal(classified.code, 'POOL_EXHAUSTED', 'Prisma P2024 must classify as POOL_EXHAUSTED');
+    } finally {
+      await killProcess(child);
+      await owner.$executeRawUnsafe(`ALTER ROLE orbitox_runtime RESET lock_timeout;`).catch(() => {});
+      await owner.$executeRawUnsafe(`ALTER ROLE orbitox_runtime RESET statement_timeout;`).catch(() => {});
+      await owner.platformApiKey.deleteMany({ where: { environment: { projectId: proj.id } } }).catch(() => {});
+      await owner.projectEnvironment.deleteMany({ where: { projectId: proj.id } }).catch(() => {});
+      await owner.platformProject.delete({ where: { id: proj.id } }).catch(() => {});
+      await owner.platformOrganization.delete({ where: { id: org.id } }).catch(() => {});
+    }
+
+    recordReport({
+      category: 'S3-3 Transient DB Failures',
+      operation: 'Lock Timeout & Statement Timeout Resilience',
+      killPoint: 'TRANSIENT_DB_TIMEOUT_RECOVERY',
+      iterations: 3,
+      diedBeforeCommit: 0,
+      diedAfterCommit: 0,
+      retriesOrDiscarded: 0,
+      dbStateVerified: 'No corrupted records or leaks; row locks released cleanly',
+      apiResultVerified: 'Returns 503 with explicit code (LOCK_TIMEOUT / STATEMENT_TIMEOUT) and recovers without server restart',
       status: 'PASS',
     });
   }

@@ -47,7 +47,7 @@ BEGIN
   UPDATE public."PlatformAuditEvent"
   SET "status" = p_status,
       "metadata" = CASE
-        WHEN p_previous_value IS NOT NULL THEN
+        WHEN p_previous_value IS NOT NULL AND ("metadata"->'previousValue' IS NULL OR "metadata"->'previousValue' = 'null'::jsonb) THEN
           jsonb_set(COALESCE("metadata", '{}'::jsonb), '{previousValue}', to_jsonb(p_previous_value))
         ELSE "metadata"
       END,

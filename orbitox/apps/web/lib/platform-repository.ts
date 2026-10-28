@@ -1037,6 +1037,15 @@ let runtimeClient: PrismaClient | undefined;
 let auditClient: PrismaClient | undefined;
 let prismaRepository: ReturnType<typeof createPrismaPlatformRepository> | undefined;
 
+/**
+ * S3-6 ARCHITECTURAL POLICY:
+ * The legacy in-memory/JSON platform repository adapter relies on non-atomic read-modify-write
+ * sequences for quota checks and usage increments. It is STRICTLY RESTRICTED to local development
+ * and unit tests where concurrency guarantees are not required.
+ *
+ * In production or whenever NODE_ENV is unset/production, Prisma with PostgreSQL 16 is MANDATORY.
+ * PostgreSQL executes atomic transactions with `FOR UPDATE` row locking to prevent race conditions.
+ */
 function prismaIsRequired(): boolean {
     const repositoryMode = process.env.ORBITOX_PLATFORM_REPOSITORY;
     if (repositoryMode === 'json') {

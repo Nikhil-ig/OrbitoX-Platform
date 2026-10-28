@@ -1,8 +1,10 @@
 /**
  * OrbitoX Control Plane Route Classification & Security Boundaries.
  *
- * Defines the three mutually exclusive access boundaries for all web and API routes:
- * 1. Static Assets: Next.js static bundles and public media files (unrestricted).
+ * Defines the mutually exclusive access boundaries for all web and API routes:
+ * 1. Static Assets: Next.js internal static bundles (/_next/) and explicit audited files in public/.
+ *    SECURITY: Static bypass is strictly prohibited from using file extension matching, which
+ *    would allow requests like /admin/projects/abc.png or /crm/leads/1.txt to bypass authentication.
  * 2. Explicit Public Routes: Minimal, strictly audited endpoints that require no auth
  *    (/api/health, /api/v1/openapi.json, diner bootstrap, shopper storefronts).
  * 3. Self-Guarded Routes: Customer microservice APIs that enforce their own fail-closed
@@ -11,7 +13,29 @@
  *    Protected fail-closed by middleware with ORBITOX_ADMIN_TOKEN or ORBITOX_RUNTIME_TOKEN.
  */
 
-export const STATIC_FILE_EXTENSIONS = /\.(ico|png|jpg|jpeg|svg|gif|webp|css|js|woff|woff2|ttf|eot|map|txt)$/i;
+/**
+ * Exact, audited static files allowed from public/.
+ * Any file placed in apps/web/public must be registered here and audited.
+ * Dynamic classification tests ensure apps/web/public matches this set exactly.
+ */
+export const ALLOWED_PUBLIC_FILES: ReadonlySet<string> = new Set([
+    '/favicon.ico',
+    '/robots.txt',
+]);
+
+export const PROTECTED_PAGE_PREFIXES: readonly string[] = [
+    '/admin',
+    '/platform',
+    '/hms',
+    '/hrms',
+    '/crm',
+    '/finance',
+    '/commerce',
+    '/inventory',
+    '/kds',
+    '/overview',
+    '/fleet',
+] as const;
 
 export const SELF_GUARDED_API_PREFIXES: readonly string[] = [
     '/api/hospital/',
@@ -28,13 +52,16 @@ export const SELF_GUARDED_API_PREFIXES: readonly string[] = [
 ] as const;
 
 export function isNextInternalStatic(pathname: string): boolean {
-    return pathname.startsWith('/_next/') || pathname === '/favicon.ico';
+    return pathname.startsWith('/_next/');
 }
 
+/**
+ * Evaluates whether a request is for an authorized static asset.
+ * MUST NEVER evaluate by file extension to prevent authentication bypass on dynamic routes.
+ */
 export function isStaticAsset(pathname: string): boolean {
     if (isNextInternalStatic(pathname)) return true;
-    if (pathname.startsWith('/api/')) return false;
-    return STATIC_FILE_EXTENSIONS.test(pathname);
+    return ALLOWED_PUBLIC_FILES.has(pathname);
 }
 
 export function isExplicitPublicRoute(pathname: string): boolean {

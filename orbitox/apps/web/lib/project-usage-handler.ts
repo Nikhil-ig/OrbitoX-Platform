@@ -45,21 +45,28 @@ export function createProjectUsageHandler(repository: UsageRepository = platform
                     );
                 }
 
+                // Fix S3-4: Audit intents are strictly server-owned; client-supplied IDs are rejected
+                if ('auditIntentId' in body && body.auditIntentId !== undefined) {
+                    return NextResponse.json(
+                        { success: false, error: { code: 'AUDIT_INTENT_INJECTION_REJECTED', message: 'Client must not supply auditIntentId; audit intents are server-owned.' } },
+                        { status: 400 }
+                    );
+                }
+
                 const monthlyApiCalls = body.action === 'reset' ? 0 : body.monthlyApiCalls;
                 const previousValue = project.monthlyApiCalls || 0;
                 projectOrganizationId = project.organizationId;
                 projectIdForAudit = project.id;
-                auditIntentId = (typeof body.auditIntentId === 'string' && body.auditIntentId)
-                    ? body.auditIntentId
-                    : await repository.createPlatformAdminAuditIntent({
-                        action: `project.usage.${body.action}`,
-                        entityType: 'PLATFORM_PROJECT_USAGE',
-                        entityId: project.id,
-                        organizationId: project.organizationId,
-                        projectId: project.id,
-                        actorId: 'platform-admin',
-                        metadata: { previousValue, newValue: monthlyApiCalls },
-                    });
+                auditWriteInProgress = true;
+                auditIntentId = await repository.createPlatformAdminAuditIntent({
+                    action: `project.usage.${body.action}`,
+                    entityType: 'PLATFORM_PROJECT_USAGE',
+                    entityId: project.id,
+                    organizationId: project.organizationId,
+                    projectId: project.id,
+                    actorId: 'platform-admin',
+                    metadata: { previousValue, newValue: monthlyApiCalls },
+                });
                 auditWriteInProgress = false;
                 usageWriteInProgress = true;
                 const updated = await repository.setProjectUsageWithAuditIntent(
