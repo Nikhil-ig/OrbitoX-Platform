@@ -291,6 +291,7 @@ jobs:
           TEST_DATABASE_URL: postgresql://postgres:postgrespassword@127.0.0.1:5432/orbitox_phase2
           APP_DATABASE_URL: postgresql://orbitox_runtime:phase2-ci-${{ github.run_id }}-${{ github.run_attempt }}@127.0.0.1:5432/orbitox_phase2
           PLATFORM_AUDIT_DATABASE_URL: postgresql://orbitox_platform_admin_audit:phase2-audit-${{ github.run_id }}-${{ github.run_attempt }}@127.0.0.1:5432/orbitox_phase2
+          MAINTENANCE_DATABASE_URL: postgresql://orbitox_maintenance:phase2-maint-${{ github.run_id }}-${{ github.run_attempt }}@127.0.0.1:5432/orbitox_phase2
       - name: Run full web suite against explicit JSON test adapter
         run: pnpm --filter web test
         env:
@@ -357,14 +358,6 @@ jobs:
         run: pnpm install --frozen-lockfile --ignore-scripts
       - name: Build workspace packages
         run: pnpm exec turbo run build --filter='web^...'
-      - name: Build Next.js standalone application
-        run: |
-          pnpm --filter web exec next build
-          mkdir -p apps/web/.next/standalone/apps/web/.next
-          cp -r apps/web/.next/static apps/web/.next/standalone/apps/web/.next/
-        env:
-          NEXT_TELEMETRY_DISABLED: "1"
-          ORBITOX_SERVER_PEPPER: "step3-ci-server-pepper-32-chars-min"
       - name: Apply all Prisma migrations and configure roles
         run: |
           pnpm exec prisma generate --schema prisma/schema.prisma
@@ -375,6 +368,14 @@ jobs:
           APP_DB_PASSWORD: phase2-ci-${{ github.run_id }}-${{ github.run_attempt }}
           MAINTENANCE_DB_PASSWORD: phase2-maint-${{ github.run_id }}-${{ github.run_attempt }}
           PLATFORM_ADMIN_AUDIT_DB_PASSWORD: phase2-audit-${{ github.run_id }}-${{ github.run_attempt }}
+      - name: Build Next.js standalone application
+        run: |
+          pnpm --filter web exec next build
+          mkdir -p apps/web/.next/standalone/apps/web/.next
+          cp -r apps/web/.next/static apps/web/.next/standalone/apps/web/.next/
+        env:
+          NEXT_TELEMETRY_DISABLED: "1"
+          ORBITOX_SERVER_PEPPER: "step3-ci-server-pepper-32-chars-min"
       - name: Verify S3-1 Route and Page Security Architecture
         run: pnpm --filter web exec tsx --test test/api-route-auth-structure.test.ts
       - name: Verify S3-5 Audit Role Permissions & Immutability
