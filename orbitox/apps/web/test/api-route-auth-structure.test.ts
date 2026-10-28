@@ -169,7 +169,7 @@ describe('Route & Page Security Boundary Architecture', () => {
     it('prohibits static extension bypass on all dynamic page routes (S3-1 regression test)', async () => {
         // Ensure test environment has admin token set for middleware authentication check
         process.env.ORBITOX_ADMIN_TOKEN = 'test_admin_token_super_secret_32_chars_minimum';
-        process.env.NODE_ENV = 'production';
+        Reflect.set(process.env, 'NODE_ENV', 'production');
 
         const pageFiles = listFiles(appDir, 'page.tsx');
         const dynamicProtectedPages: string[] = [];

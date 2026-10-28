@@ -3,10 +3,15 @@ import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import { PrismaClient } from '@prisma/client';
 
-const databaseUrl = process.env.TEST_DATABASE_URL || process.env.DATABASE_URL || 'postgresql://apple@127.0.0.1:5432/orbitox_phase2';
-const runtimeDatabaseUrl = process.env.APP_DATABASE_URL || 'postgresql://orbitox_runtime:test_runtime_pass@127.0.0.1:5432/orbitox_phase2';
+const databaseUrl = process.env.TEST_DATABASE_URL || process.env.DATABASE_URL;
+const runtimeDatabaseUrl = process.env.APP_DATABASE_URL;
 
 describe('S3-5: Audit Role-Permission Security & Metadata Immutability', () => {
+    if (!databaseUrl || !runtimeDatabaseUrl) {
+        it.skip('skips audit role permissions test when database credentials are not provided', () => {});
+        return;
+    }
+
     const adminPrisma = new PrismaClient({ datasourceUrl: databaseUrl });
     const runtimePrisma = new PrismaClient({ datasourceUrl: runtimeDatabaseUrl });
 

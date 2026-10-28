@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { withApiGuard, PlatformApiState } from '../../_lib/api-guard';
+import { withApiGuard, PlatformApiState, isDatabaseError, classifyDatabaseError } from '../../_lib/api-guard';
 import { ClientProject, PLAN_TIER_PRESETS } from '@/app/admin/data/mock-data';
 import { platformRepository } from '@/lib/platform-repository';
 
@@ -231,6 +231,13 @@ console.log('OrbitoX OS Active with plugins:', Object.keys(app.plugins));`;
         { status: 201 }
       );
     } catch (err: any) {
+      if (isDatabaseError(err)) {
+        const classified = classifyDatabaseError(err);
+        return NextResponse.json(
+          { success: false, error: { code: classified.code, message: classified.message } },
+          { status: 503, headers: { 'Retry-After': '1', 'x-orbitox-error-code': classified.code } }
+        );
+      }
       return NextResponse.json(
         { success: false, error: { code: 'BAD_REQUEST', message: err.message } },
         { status: 400 }

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { withApiGuard } from '@/app/api/v1/_lib/api-guard';
+import { withApiGuard, isDatabaseError, classifyDatabaseError } from '@/app/api/v1/_lib/api-guard';
 import { ApiResponse, ApiRequestContext } from '@/app/api/v1/_lib/api-types';
 import { auditService } from '@/app/api/v1/_lib/platform-governance';
 import { platformRepository } from '@/lib/platform-repository';
@@ -93,6 +93,17 @@ export const POST = withApiGuard(
         },
       });
     } catch (err: any) {
+      if (isDatabaseError(err)) {
+        const classified = classifyDatabaseError(err);
+        return NextResponse.json<ApiResponse>(
+          {
+            success: false,
+            error: { code: classified.code, message: classified.message },
+            meta: { latencyMs: 1, timestamp: new Date().toISOString(), requestId: ctx.requestId },
+          },
+          { status: 503, headers: { 'Retry-After': '1', 'x-orbitox-error-code': classified.code } }
+        );
+      }
       return NextResponse.json<ApiResponse>(
         {
           success: false,

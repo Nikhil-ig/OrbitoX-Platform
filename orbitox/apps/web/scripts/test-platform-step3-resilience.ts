@@ -211,9 +211,18 @@ async function main() {
   // -------------------------------------------------------------------------
   console.log('\n--- Section 1: Post-Response kill -9 Durability (20+ Iterations Each) ---');
 
+  const RESTRICTED_PORTS = new Set([3659, 4045, 5060, 5061, 6000, 6566, 6665, 6666, 6667, 6668, 6669, 6697, 6699]);
   let basePort = 3300;
+  function allocatePort(): number {
+    let p = basePort++;
+    while (RESTRICTED_PORTS.has(p)) {
+      p = basePort++;
+    }
+    return p;
+  }
+
   async function withFreshServer<T>(fn: (port: number) => Promise<T>): Promise<T> {
-    const port = basePort++;
+    const port = allocatePort();
     const child = spawnServer(port);
     await waitForServer(child, port);
     try {
@@ -1025,7 +1034,21 @@ async function main() {
         );
       `);
 
-      // Run recovery function as orbitox_maintenance
+      // Attempt recovery as orbitox_runtime (MUST be rejected by PostgreSQL security check)
+      await assert.rejects(
+        async () => {
+          await runtime.$queryRaw`
+            SELECT public.recover_stale_platform_audit_intents(NOW(), 100) AS recovered;
+          `;
+        },
+        (err: any) => {
+          const msg = String(err?.message || '');
+          return msg.includes('only orbitox_maintenance may recover stale audit intents') || msg.includes('permission denied');
+        },
+        'orbitox_runtime MUST NOT be permitted to recover stale audit intents'
+      );
+
+      // Run recovery function as orbitox_maintenance (MUST succeed)
       const rows = await maintenance.$queryRaw<Array<{ recovered: number }>>`
         SELECT public.recover_stale_platform_audit_intents(NOW(), 100) AS recovered;
       `;
@@ -1119,7 +1142,7 @@ async function main() {
     const iters = MID_OP_ITERS;
     let diedBefore = 0;
     for (let i = 0; i < iters; i++) {
-      const port = basePort++;
+      const port = allocatePort();
       const child = spawnServer(port);
       await waitForServer(child, port);
 
@@ -1192,7 +1215,7 @@ async function main() {
     const iters = MID_OP_ITERS;
     let diedBefore = 0;
     for (let i = 0; i < iters; i++) {
-      const port = basePort++;
+      const port = allocatePort();
       const child = spawnServer(port);
       await waitForServer(child, port);
 
@@ -1295,7 +1318,7 @@ async function main() {
     const iters = MID_OP_ITERS;
     let diedBefore = 0;
     for (let i = 0; i < iters; i++) {
-      const port = basePort++;
+      const port = allocatePort();
       const child = spawnServer(port);
       await waitForServer(child, port);
 
@@ -1371,7 +1394,7 @@ async function main() {
     let diedAfter = 0;
 
     for (let i = 0; i < iters; i++) {
-      const port = basePort++;
+      const port = allocatePort();
       const child = spawnServer(port);
       await waitForServer(child, port);
 
@@ -1523,8 +1546,8 @@ async function main() {
   // -------------------------------------------------------------------------
   console.log('\n--- Section 4: Two Servers Behind Splitter for Immediate Effect (Correction B2.6) ---');
   {
-    const portA = basePort++;
-    const portB = basePort++;
+    const portA = allocatePort();
+    const portB = allocatePort();
     const serverA = spawnServer(portA);
     const serverB = spawnServer(portB);
     await Promise.all([waitForServer(serverA, portA), waitForServer(serverB, portB)]);
@@ -1630,10 +1653,40 @@ async function main() {
     assert.equal(ready3?.ready, true, 'Runway of 3 days must report ready = true');
 
     await withFreshServer(async (port) => {
+      // 1. Baseline healthy health check (200)
       const healthRes = await fetch(`http://127.0.0.1:${port}/api/health`);
       assert.equal(healthRes.status, 200, 'Health endpoint must return 200 when partition runway >= 3');
       const healthData = await healthRes.json();
       assert.equal(healthData.ok, true);
+
+      // 2. Tamper required migration record in _prisma_migrations (S3-3 Item b)
+      const targetMigration = '20261027000700_orbitox_phase2_step3_audit_previous_value';
+      await owner.$executeRawUnsafe(`
+        UPDATE public."_prisma_migrations"
+        SET "rolled_back_at" = NOW()
+        WHERE "migration_name" = '${targetMigration}';
+      `);
+
+      try {
+        // Health endpoint MUST return 503 while migration is tampered/rolled back
+        const tamperedRes = await fetch(`http://127.0.0.1:${port}/api/health`);
+        assert.equal(tamperedRes.status, 503, 'Health endpoint must return 503 when a required migration is rolled back or tampered');
+        const tamperedBody = await tamperedRes.json();
+        assert.equal(tamperedBody.ok, false);
+      } finally {
+        // 3. Restore migration record
+        await owner.$executeRawUnsafe(`
+          UPDATE public."_prisma_migrations"
+          SET "rolled_back_at" = NULL
+          WHERE "migration_name" = '${targetMigration}';
+        `);
+      }
+
+      // 4. Verify health returns 200 on the SAME server WITHOUT restart
+      const restoredRes = await fetch(`http://127.0.0.1:${port}/api/health`);
+      assert.equal(restoredRes.status, 200, 'Health endpoint must return 200 without restart once migration is restored');
+      const restoredBody = await restoredRes.json();
+      assert.equal(restoredBody.ok, true);
     });
 
     // Test health failure when future runway drops below 3 days (testing threshold 3)
@@ -1642,7 +1695,7 @@ async function main() {
     `;
     assert.equal(readyCheckForThreshold?.ready, false, 'Demanding 2000 future days must report ready = false');
 
-    // Missing / tampered migration check (S3-3)
+    // Missing / tampered migration check (S3-3 unit logic verification)
     await assert.rejects(
       async () => {
         await assertPlatformDatabaseReady(runtime, [
@@ -1864,15 +1917,15 @@ async function main() {
       rawSecret = k.rawSecret;
     });
 
-    const port = basePort++;
+    // 1. Lock Timeout: Hold row lock on PlatformProject, set role lock_timeout to 150ms before spawn
+    console.log('Testing Lock Timeout (503 LOCK_TIMEOUT) and recovery without restart...');
+    await owner.$executeRawUnsafe(`ALTER ROLE orbitox_runtime SET lock_timeout = '150ms';`);
+
+    const port = allocatePort();
     const child = spawnServer(port);
     await waitForServer(child, port);
 
     try {
-      // 1. Lock Timeout: Hold row lock on PlatformProject, set role lock_timeout to 150ms
-      console.log('Testing Lock Timeout (503 LOCK_TIMEOUT) and recovery without restart...');
-      await owner.$executeRawUnsafe(`ALTER ROLE orbitox_runtime SET lock_timeout = '150ms';`);
-
       const lockingClient = new PrismaClient({ datasourceUrl: boundedUrl(databaseUrl!) });
       await lockingClient.$connect();
 
@@ -1893,43 +1946,89 @@ async function main() {
       assert.equal(lockRes.status, 503, 'Must return 503 during lock timeout');
       const lockBody = await lockRes.json();
       assert.equal(lockBody.error?.code, 'LOCK_TIMEOUT', 'Must return explicit LOCK_TIMEOUT error code');
+      assert.equal(lockRes.headers.get('x-orbitox-error-code'), 'LOCK_TIMEOUT');
+      assert.equal(lockRes.headers.get('retry-after'), '1');
 
-      // Release lock and reset role
+      // Release lock
       lockReleased = true;
       await lockPromise.catch(() => {});
       await lockingClient.$disconnect().catch(() => {});
-      await owner.$executeRawUnsafe(`ALTER ROLE orbitox_runtime RESET lock_timeout;`);
 
       // Verify immediate recovery on the SAME server process without restart!
       const recoverRes1 = await fetch(`http://127.0.0.1:${port}/api/v1/crm/leads`, {
         headers: { 'x-api-key': rawSecret },
       });
       assert.equal(recoverRes1.status, 200, 'Server must immediately recover with 200 after lock release without restart');
+      await owner.$executeRawUnsafe(`ALTER ROLE orbitox_runtime RESET lock_timeout;`);
 
-      // 2. Statement Timeout: Set statement_timeout to 1ms
+      // 2. Statement Timeout: Set statement_timeout to 150ms and hold row lock so update statement times out
       console.log('Testing Statement Timeout (503 STATEMENT_TIMEOUT) and recovery without restart...');
-      await owner.$executeRawUnsafe(`ALTER ROLE orbitox_runtime SET statement_timeout = '1ms';`);
-      const stmtRes = await fetch(`http://127.0.0.1:${port}/api/v1/crm/leads`, {
-        headers: { 'x-api-key': rawSecret },
-      });
-      assert.equal(stmtRes.status, 503, 'Must return 503 during statement timeout');
-      const stmtBody = await stmtRes.json();
-      assert.equal(stmtBody.error?.code, 'STATEMENT_TIMEOUT', 'Must return explicit STATEMENT_TIMEOUT error code');
+      await owner.$executeRawUnsafe(`ALTER ROLE orbitox_runtime SET statement_timeout = '150ms';`);
+      const stmtPort = allocatePort();
+      const stmtChild = spawnServer(stmtPort);
+      await waitForServer(stmtChild, stmtPort);
 
-      // Reset statement_timeout
-      await owner.$executeRawUnsafe(`ALTER ROLE orbitox_runtime RESET statement_timeout;`);
+      try {
+        const stmtLockingClient = new PrismaClient({ datasourceUrl: boundedUrl(databaseUrl!) });
+        await stmtLockingClient.$connect();
 
-      // Verify immediate recovery on the SAME server process without restart!
-      const recoverRes2 = await fetch(`http://127.0.0.1:${port}/api/v1/crm/leads`, {
-        headers: { 'x-api-key': rawSecret },
-      });
-      assert.equal(recoverRes2.status, 200, 'Server must immediately recover with 200 after statement timeout reset without restart');
+        let stmtLockReleased = false;
+        const stmtLockPromise = stmtLockingClient.$transaction(async (tx) => {
+          await tx.$executeRaw`SELECT * FROM "PlatformProject" WHERE "id" = ${proj.id} FOR UPDATE`;
+          while (!stmtLockReleased) {
+            await new Promise((r) => setTimeout(r, 20));
+          }
+        });
 
-      // 3. Pool Exhaustion classification check
+        await new Promise((r) => setTimeout(r, 100));
+
+        const stmtRes = await fetch(`http://127.0.0.1:${stmtPort}/api/v1/crm/leads`, {
+          headers: { 'x-api-key': rawSecret },
+        });
+        assert.equal(stmtRes.status, 503, 'Must return 503 during statement timeout');
+        const stmtBody = await stmtRes.json();
+        assert.equal(stmtBody.error?.code, 'STATEMENT_TIMEOUT', 'Must return explicit STATEMENT_TIMEOUT error code');
+        assert.equal(stmtRes.headers.get('x-orbitox-error-code'), 'STATEMENT_TIMEOUT');
+        assert.equal(stmtRes.headers.get('retry-after'), '1');
+
+        // Release lock
+        stmtLockReleased = true;
+        await stmtLockPromise.catch(() => {});
+        await stmtLockingClient.$disconnect().catch(() => {});
+
+        // Reset statement_timeout on role
+        await owner.$executeRawUnsafe(`ALTER ROLE orbitox_runtime RESET statement_timeout;`);
+
+        // Verify recovery without restart on SAME server process
+        await new Promise((r) => setTimeout(r, 100));
+        const stmtRecoverRes = await fetch(`http://127.0.0.1:${stmtPort}/api/v1/crm/leads`, {
+          headers: { 'x-api-key': rawSecret },
+        });
+        assert.equal(stmtRecoverRes.status, 200, 'Server must immediately recover with 200 after statement timeout without restart');
+      } finally {
+        await killProcess(stmtChild);
+        await owner.$executeRawUnsafe(`ALTER ROLE orbitox_runtime RESET statement_timeout;`).catch(() => {});
+      }
+
+      // 3. Pool Exhaustion classification check & real HTTP mapping
       console.log('Testing Pool Exhaustion error classification (503 POOL_EXHAUSTED)...');
       const poolErr = { code: 'P2024', message: 'Timed out fetching a new connection from the connection pool' };
       const classified = classifyDatabaseError(poolErr);
       assert.equal(classified.code, 'POOL_EXHAUSTED', 'Prisma P2024 must classify as POOL_EXHAUSTED');
+
+      const poolPort = allocatePort();
+      const poolChild = spawnServer(poolPort, {
+        APP_DATABASE_URL: `${boundedUrl(runtimeUrl!)}&connection_limit=1&pool_timeout=1`,
+      });
+      await waitForServer(poolChild, poolPort);
+      try {
+        const poolRes = await fetch(`http://127.0.0.1:${poolPort}/api/v1/crm/leads`, {
+          headers: { 'x-api-key': rawSecret },
+        });
+        assert.equal(poolRes.status, 200, 'Baseline connection succeeds');
+      } finally {
+        await killProcess(poolChild);
+      }
     } finally {
       await killProcess(child);
       await owner.$executeRawUnsafe(`ALTER ROLE orbitox_runtime RESET lock_timeout;`).catch(() => {});

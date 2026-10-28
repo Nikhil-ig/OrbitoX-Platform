@@ -515,6 +515,29 @@ export class PlatformApiState {
   }
 }
 
+export function isDatabaseError(err: any): boolean {
+  if (!err) return false;
+  const errMsg = String(err?.message || '');
+  const errCode = String(err?.code || '');
+  const errName = String(err?.name || '');
+  return (
+    errCode === '57014' ||
+    errCode === '55P03' ||
+    errCode === 'P2024' ||
+    errCode.startsWith('P') ||
+    /^[0-9A-Z]{5}$/.test(errCode) ||
+    errName.includes('Prisma') ||
+    errMsg.includes('statement timeout') ||
+    errMsg.includes('lock timeout') ||
+    errMsg.includes('connection pool') ||
+    errMsg.includes('Timed out fetching a new connection') ||
+    errMsg.includes('remaining connection slots are reserved') ||
+    errMsg.includes('Connection terminated') ||
+    errMsg.includes('ECONNREFUSED') ||
+    errMsg.includes('Connection refused')
+  );
+}
+
 export function classifyDatabaseError(err: any): { code: string; message: string } {
   const errMsg = String(err?.message || '');
   const errCode = String(err?.code || '');
@@ -1221,11 +1244,30 @@ export function withApiGuard<T = any>(
       });
     } catch (err: any) {
       if (projectUsageReserved && project) {
-        await platformRepository.releaseProjectUsage(project.id);
+        try {
+          await platformRepository.releaseProjectUsage(project.id);
+        } catch {
+          // Ignore secondary failure during release
+        }
         projectUsageReserved = false;
       }
       const latencyMs = Math.max(1, Math.round(performance.now() - startTime));
       console.error(`[OrbitoX API Error] ${req.method} ${req.nextUrl.pathname}:`, err);
+
+      if (isDatabaseError(err)) {
+        const classified = classifyDatabaseError(err);
+        return NextResponse.json<ApiResponse>(
+          {
+            success: false,
+            error: {
+              code: classified.code,
+              message: classified.message,
+            },
+            meta: { tenantId, serviceId, latencyMs, timestamp: new Date().toISOString(), requestId },
+          },
+          { status: 503, headers: { 'Retry-After': '1', 'x-orbitox-error-code': classified.code } }
+        );
+      }
 
       return NextResponse.json<ApiResponse>(
         {
