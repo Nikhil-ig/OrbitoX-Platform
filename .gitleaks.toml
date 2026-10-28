@@ -56,9 +56,3 @@ paths = [
   # and rejecting forged station credentials.
   '''(?i)scripts/test-kds-security-adversarial\.js$'''
 ]
-
-# S5-4: Value-specific allowlist for synthetic test vectors (never allowlist entire test files by path)
-regexes = [
-  '''orb_test_fixture_legacy_plaintext_secret_xyz_unmigrated''',
-  '''aabbccddeeff00112233445566778899aabbccddeeff00112233445566778899'''
-]

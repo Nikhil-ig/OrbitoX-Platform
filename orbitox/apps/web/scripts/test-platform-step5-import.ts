@@ -120,8 +120,27 @@ async function main() {
   console.log('🪐 OrbitoX Phase 2 Step 5: JSON-Store to PostgreSQL Migration & Importer Harness');
   console.log('================================================================================\n');
 
-  const legacyFixturePath = path.resolve(__dirname, '../test/fixtures/legacy-platform-store.json');
-  assert.equal(fs.existsSync(legacyFixturePath), true, 'Legacy fixture file must exist');
+  const baseFixturePath = path.resolve(__dirname, '../test/fixtures/legacy-platform-store.json');
+  assert.equal(fs.existsSync(baseFixturePath), true, 'Base legacy fixture file must exist');
+
+  // S5-4: Generate dynamic runtime test secrets with synthetic prefixes at test time
+  const serverPepper = process.env.ORBITOX_SERVER_PEPPER || 'step5-server-pepper-32-chars-minimum-entropy';
+  const validSecret = 'orb_test_dyn_' + crypto.randomBytes(16).toString('hex');
+  const expectedVerifier = crypto.createHmac('sha256', serverPepper).update(validSecret).digest('hex');
+  const legacyUnverifiedSecret = 'orb_test_unmigrated_' + crypto.randomBytes(16).toString('hex');
+
+  const fixtureData = JSON.parse(fs.readFileSync(baseFixturePath, 'utf8'));
+  const omniKey = fixtureData.apiKeys.find((k: any) => k.id === 'key_omni_verified_01');
+  if (omniKey) {
+    omniKey.authVerifier = expectedVerifier;
+  }
+  const mednetKey = fixtureData.apiKeys.find((k: any) => k.id === 'key_mednet_legacy_unverified_02');
+  if (mednetKey) {
+    mednetKey.rawSecret = legacyUnverifiedSecret;
+  }
+
+  const legacyFixturePath = path.resolve(__dirname, '../test/fixtures/.runtime-step5-store.json');
+  fs.writeFileSync(legacyFixturePath, JSON.stringify(fixtureData, null, 2));
 
   // ---------------------------------------------------------------------------
   // SECTION 1: Legacy Fixture Schema & Dry-Run Mode
@@ -461,15 +480,18 @@ async function main() {
   assert.equal(unverifiedKeyRow?.authVerifier.startsWith('unmigrated_missing_verifier_'), true);
   console.log('✔ S5-5 Low fix verified: Unverified legacy key stored with constant marker (no secret hash derived).\n');
 
-  const serverPepper = 'step5-server-pepper-32-chars-minimum-entropy';
-  // S5-4: Generate dynamic runtime test secret instead of static secrets
-  const validSecret = `orb_test_fixture_${crypto.randomBytes(16).toString('hex')}`;
-  const expectedVerifier = crypto.createHmac('sha256', serverPepper).update(validSecret).digest('hex');
 
-  // Update Omni key authVerifier to match our runtime test secret + serverPepper
+  await owner.platformOrganization.update({
+    where: { id: 'org_legacy_omni_01' },
+    data: { status: 'ACTIVE' },
+  });
+  await owner.platformProject.update({
+    where: { id: 'proj_omni_logistics_01' },
+    data: { status: 'ACTIVE' },
+  });
   await owner.platformApiKey.update({
     where: { keyId: 'key_live_omni_verified_12345' },
-    data: { authVerifier: expectedVerifier, status: 'ACTIVE', revokeReason: null, revokedAt: null },
+    data: { status: 'ACTIVE', revokeReason: null, revokedAt: null },
   });
 
   const port = await allocateSafePort(3735);
@@ -490,7 +512,6 @@ async function main() {
   console.log('✔ Migrated key with valid verifier authenticated successfully.');
 
   // Test 5B: Legacy key without verifier must NOT authenticate (REVOKED / dummy verifier)
-  const legacyUnverifiedSecret = 'orb_test_fixture_legacy_plaintext_secret_xyz_unmigrated';
   const invalidRes = await fetch(`http://127.0.0.1:${port}/api/v1/crm/leads`, {
     headers: {
       'x-api-key': legacyUnverifiedSecret,
@@ -762,6 +783,7 @@ async function main() {
     await owner.platformProject.deleteMany({ where: { id: { in: ['proj_omni_logistics_01', 'proj_mednet_inpatient_02'] } } });
     await owner.$executeRaw`DELETE FROM "PlatformAuditEvent" WHERE "id" = 'audit_legacy_01'`;
     await owner.platformOrganization.deleteMany({ where: { id: { in: ['org_legacy_omni_01', 'org_legacy_mednet_02'] } } });
+    try { fs.unlinkSync(legacyFixturePath); } catch {}
   } catch {}
 
   console.log('================================================================================');
