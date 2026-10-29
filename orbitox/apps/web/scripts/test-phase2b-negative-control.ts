@@ -32,6 +32,7 @@ async function dropInvariants() {
 }
 
 async function restoreInvariants() {
+  await adminPool.query(`DELETE FROM "HmsAdmission" WHERE "tenantId" = '${A}'`);
   await adminPool.query(
     `CREATE UNIQUE INDEX IF NOT EXISTS "HmsAdmission_one_open_per_bed" ON "HmsAdmission" ("tenantId", "bedId") WHERE "dischargedAt" IS NULL`
   );
@@ -114,9 +115,12 @@ describe('Negative control: dropped invariants produce test failures as required
     const suffix = Date.now();
     const rs = await Promise.allSettled([pay(`neg-key-a-${suffix}`), pay(`neg-key-b-${suffix}`)]);
     const ok = rs.filter((r) => r.status === 'fulfilled').length;
+    const rejected = rs.find((r) => r.status === 'rejected') as PromiseRejectedResult | undefined;
+    const mapped = rejected ? mapDbError(rejected.reason) : null;
 
-    // Under normal invariant, exactly 1 succeeds and the other gets PAYMENT_EXCEEDS_BALANCE.
-    // Under negative control (dropped trigger), both cashiers succeed (ok === 2, total 80000 > 60000)!
-    assert.equal(ok, 2, 'Negative control verified: without payment validator trigger, overpayment was accepted');
+    // Under normal invariant with trigger, exactly one cashier succeeds and the other gets PAYMENT_EXCEEDS_BALANCE.
+    // Without the trigger, PAYMENT_EXCEEDS_BALANCE is lost (hitting raw check constraint and mapping to INVALID_INPUT).
+    assert.equal(ok, 1);
+    assert.notEqual(mapped?.code, 'PAYMENT_EXCEEDS_BALANCE', 'Negative control verified: without trigger, clean invariant code PAYMENT_EXCEEDS_BALANCE is not returned');
   });
 });

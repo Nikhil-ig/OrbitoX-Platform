@@ -1,6 +1,7 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import { NextRequest } from 'next/server';
+import { restaurantRuntime } from '../app/api/restaurant/_lib/restaurant-runtime';
 import { POST as joinSession } from '../app/api/restaurant/sessions/join/route';
 import { GET as getMenu } from '../app/api/restaurant/menu/route';
 import { POST as createQuote } from '../app/api/restaurant/quote/route';
@@ -9,6 +10,9 @@ import { GET as getKds } from '../app/api/restaurant/kds/route';
 
 describe('Restaurant guest and admin route authentication', () => {
     it('issues an expiring guest capability during session bootstrap and requires it on diner routes', async () => {
+        Reflect.set(process.env, 'NODE_ENV', 'development');
+        process.env.ORBITOX_ENABLE_DEMO_SEED = 'true';
+        restaurantRuntime.seedDemoData();
         Reflect.set(process.env, 'NODE_ENV', 'test');
         process.env.ORBITOX_GUEST_SECRET = 'test_guest_secret_32_characters_minimum';
 

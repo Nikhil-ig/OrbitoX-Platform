@@ -86,6 +86,10 @@ jobs:
           export ORBITOX_CONTROL_SECRET="$(openssl rand -hex 32)"
           export ORBITOX_GUEST_SECRET="$(openssl rand -hex 32)"
           export ORBITOX_SERVER_PEPPER="$(openssl rand -hex 32)"
+          export ORBITOX_PHI_KEY="$(openssl rand -base64 32)"
+          export ORBITOX_PHI_KEYS="{\"k1\":\"$ORBITOX_PHI_KEY\"}"
+          export ORBITOX_PHI_ACTIVE_KID="k1"
+          export ORBITOX_PHI_INDEX_KEY="$(openssl rand -base64 32)"
           cp -r apps/web/.next/static apps/web/.next/standalone/apps/web/.next/static
           NODE_ENV=production PORT=3005 HOSTNAME=127.0.0.1 ORBITOX_DATA_DIR="$RUNNER_TEMP/orbitox-data" \
             node apps/web/.next/standalone/apps/web/server.js > "$RUNNER_TEMP/server.log" 2>&1 &

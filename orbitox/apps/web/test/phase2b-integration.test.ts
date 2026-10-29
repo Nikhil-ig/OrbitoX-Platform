@@ -277,13 +277,14 @@ describe('concurrency invariants through the repository', () => {
   });
 
   it('doctor double-booking under concurrency: 1 wins, others DOCTOR_SLOT_TAKEN', async () => {
-    // Clear any existing active slots for doc2 from prior runs
+    const docId = `doc_conc_${Date.now()}`;
     await withTenantTx(pool, A, (tx) =>
-      tx.query(`UPDATE "HmsAppointment" SET "status" = 'CANCELLED' WHERE "doctorId" = 'doc2'`)
+      tx.query(`INSERT INTO "HmsStaff"(id,"nameSealed","emailBlind",role) VALUES ($1,$2,$3,'DOCTOR')`,
+        [docId, SEALED, crypto.createHash('md5').update(docId).digest('hex')])
     );
 
     const pats: string[] = [];
-    const prefix = Date.now().toString().slice(-4);
+    const prefix = crypto.randomBytes(4).toString('hex').toUpperCase();
     for (let i = 0; i < 10; i++) {
       pats.push(
         (
@@ -293,11 +294,9 @@ describe('concurrency invariants through the repository', () => {
         ).id
       );
     }
-    const now = Date.now();
-    const start = new Date(1800000000000 + (now % 100000000));
-    const end = new Date(start.getTime() + 1800000);
+    const start = new Date('2026-11-05T05:00:00Z'), end = new Date('2026-11-05T05:30:00Z');
     const rs = await Promise.allSettled(
-      pats.map((patientId) => withTenantTx(pool, A, (tx) => hms.bookAppointment(tx, { patientId, doctorId: 'doc2', start, end })))
+      pats.map((patientId) => withTenantTx(pool, A, (tx) => hms.bookAppointment(tx, { patientId, doctorId: docId, start, end })))
     );
     const fulfilled = rs.filter((r) => r.status === 'fulfilled').length;
     assert.equal(fulfilled, 1);

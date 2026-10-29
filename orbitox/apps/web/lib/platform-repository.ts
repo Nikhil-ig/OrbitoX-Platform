@@ -22,7 +22,7 @@ import {
     PlatformKeyEngine,
     PlatformRepository,
 } from '@orbitox-io/plugin-engine';
-import { loadPepperRing, activeVerifier, candidateVerifiers } from '@/lib/pepper';
+import { loadPepperRing, activeVerifier, candidateVerifiers } from './pepper';
 
 type AsyncMethods<T> = {
     [Key in keyof T as T[Key] extends (...args: any[]) => any ? Key : never]: T[Key] extends (

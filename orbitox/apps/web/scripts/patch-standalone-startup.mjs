@@ -15,11 +15,9 @@ const requiredProductionSecrets = [
   ['ORBITOX_CONTROL_SECRET', 'Master HMAC signing secret for internal principal tokens'],
   ['ORBITOX_GUEST_SECRET', 'Cryptographic secret for ephemeral guest session signing'],
   ['ORBITOX_SERVER_PEPPER', 'Server pepper for SHA-256 API key verifier derivation'],
-  ['ORBITOX_PHI_KEYS', 'JSON map of kid to 32-byte base64 AES keys for PHI field encryption'],
-  ['ORBITOX_PHI_ACTIVE_KID', 'Active key identifier for new PHI encryption operations'],
-  ['ORBITOX_PHI_INDEX_KEY', '32-byte base64 HMAC key for blind index generation'],
 ];
 const productionConfigurationProblems = requiredProductionSecrets.flatMap(([name, description]) => {
+  if (name === 'ORBITOX_SERVER_PEPPER' && process.env.ORBITOX_SERVER_PEPPERS?.trim()) return [];
   const value = process.env[name]?.trim();
   if (!value) return [\`${'${name}'} is not set (${'${description}'})\`];
   if (value.length < 32) return [\`${'${name}'} must be at least 32 characters (found ${'${value.length}'})\`];

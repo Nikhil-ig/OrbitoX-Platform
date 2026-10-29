@@ -68,6 +68,8 @@ const globalTableAllowlist = new Set([
   'EnvironmentQuotaPolicy',
   'EnvironmentRateLimitPolicy',
   'PlatformRateLimitBucket',
+  'BridgeNonce',
+  'PlatformImporterLease',
 ]);
 
 const testTimeout = setTimeout(() => {

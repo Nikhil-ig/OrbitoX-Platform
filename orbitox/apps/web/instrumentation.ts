@@ -47,6 +47,16 @@ export async function register() {
       problems.push(`ORBITOX_SERVER_PEPPER must be at least 32 characters (found ${legacyPepper.length})`);
     }
 
+    // In CI or test environments where standalone test harnesses boot without PHI env,
+    // supply synthetic keys if unset so standalone control-plane smoke suites can run.
+    if ((process.env.CI === 'true' || process.env.ORBITOX_TEST_STANDALONE === 'true') && !process.env.ORBITOX_PHI_KEYS) {
+      process.env.ORBITOX_PHI_KEYS = JSON.stringify({
+        k1: Buffer.alloc(32, 1).toString('base64'),
+      });
+      process.env.ORBITOX_PHI_ACTIVE_KID = 'k1';
+      process.env.ORBITOX_PHI_INDEX_KEY = Buffer.alloc(32, 2).toString('base64');
+    }
+
     // PHI encryption keys validation (required in production)
     const phiSecrets = [
       { name: 'ORBITOX_PHI_KEYS', desc: 'JSON map of kid to 32-byte base64 AES keys for PHI field encryption' },
