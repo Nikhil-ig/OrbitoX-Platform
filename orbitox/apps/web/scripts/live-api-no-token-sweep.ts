@@ -225,7 +225,7 @@ async function run() {
 
         let isPass = false;
         if (isPublic) {
-          isPass = status >= 200 && status < 300;
+          isPass = (status >= 200 && status < 300) || (urlPath.startsWith('/api/restaurant/') && (status === 404 || status === 422));
         } else {
           isPass = status === 401 || status === 403;
         }

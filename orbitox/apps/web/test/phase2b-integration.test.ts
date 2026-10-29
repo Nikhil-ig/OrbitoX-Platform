@@ -14,7 +14,7 @@ import * as hms from '../lib/hms-repository';
 
 const A = 'org/a/project/p1/environment/prod';
 const B = 'org/b/project/p1/environment/prod';
-const url = process.env.HMS_IT_RUNTIME_URL || 'postgresql://orbitox_runtime@127.0.0.1:5432/orbitox_phase2';
+const url = process.env.HMS_IT_RUNTIME_URL || process.env.APP_DATABASE_URL || 'postgresql://orbitox_runtime@127.0.0.1:5432/orbitox_phase2';
 const pool = new Pool({ connectionString: url, max: 10 });
 const ring = new PhiKeyRing({
   keys: { k1: crypto.randomBytes(32).toString('base64') },
