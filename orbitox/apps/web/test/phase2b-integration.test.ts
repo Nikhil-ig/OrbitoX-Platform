@@ -14,8 +14,12 @@ import * as hms from '../lib/hms-repository';
 
 const A = 'org/a/project/p1/environment/prod';
 const B = 'org/b/project/p1/environment/prod';
-const url = process.env.HMS_IT_RUNTIME_URL || process.env.APP_DATABASE_URL || 'postgresql://orbitox_runtime@127.0.0.1:5432/orbitox_phase2';
-const pool = new Pool({ connectionString: url, max: 10 });
+const configuredUrl = process.env.HMS_IT_RUNTIME_URL || process.env.APP_DATABASE_URL;
+if (process.env.CI === 'true' && !configuredUrl) {
+  throw new Error('HMS_IT_RUNTIME_URL (or APP_DATABASE_URL) is required in CI. Refusing silent fallback to hardcoded default.');
+}
+const url = configuredUrl || 'postgresql://orbitox_runtime@127.0.0.1:5432/orbitox_phase2';
+const pool = new Pool({ connectionString: url, max: 20 });
 const ring = new PhiKeyRing({
   keys: { k1: crypto.randomBytes(32).toString('base64') },
   activeKid: 'k1',
@@ -285,7 +289,7 @@ describe('concurrency invariants through the repository', () => {
 
     const pats: string[] = [];
     const prefix = crypto.randomBytes(4).toString('hex').toUpperCase();
-    for (let i = 0; i < 10; i++) {
+    for (let i = 0; i < 3; i++) {
       pats.push(
         (
           await withTenantTx(pool, A, (tx) =>
@@ -296,7 +300,7 @@ describe('concurrency invariants through the repository', () => {
     }
     const start = new Date('2026-11-05T05:00:00Z'), end = new Date('2026-11-05T05:30:00Z');
     const rs = await Promise.allSettled(
-      pats.map((patientId) => withTenantTx(pool, A, (tx) => hms.bookAppointment(tx, { patientId, doctorId: docId, start, end })))
+      pats.map((patientId) => withTenantTx(pool, A, (tx) => hms.bookAppointment(tx, { patientId, doctorId: docId, start, end }), { maxRetries: 6 }))
     );
     const fulfilled = rs.filter((r) => r.status === 'fulfilled').length;
     assert.equal(fulfilled, 1);

@@ -1805,9 +1805,75 @@ model HmsStaff {
   verifiedLabOrders  HmsLabOrder[]        @relation("HmsLabVerifiedBy")
   receivedPayments   HmsPayment[]
   breakGlassGrants   HmsBreakGlassGrant[]
+  credential         HmsStaffCredential?
+  sessions           HmsStaffSession[]
 
   @@id([tenantId, id])
   @@unique([tenantId, emailBlind])
+}
+
+model HmsRole {
+  tenantId    String   @default(dbgenerated("app_current_tenant()"))
+  id          String
+  name        String
+  description String?
+  isSystem    Boolean  @default(false)
+  createdAt   DateTime @default(now()) @db.Timestamptz
+  updatedAt   DateTime @default(now()) @db.Timestamptz
+
+  permissions HmsRolePermission[]
+  sessions    HmsStaffSession[]
+
+  @@id([tenantId, id])
+  @@unique([tenantId, name])
+}
+
+model HmsRolePermission {
+  tenantId   String @default(dbgenerated("app_current_tenant()"))
+  roleId     String
+  permission String
+
+  role HmsRole @relation(fields: [tenantId, roleId], references: [tenantId, id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@id([tenantId, roleId, permission])
+}
+
+model HmsStaffCredential {
+  tenantId       String    @default(dbgenerated("app_current_tenant()"))
+  staffId        String
+  passwordHash   String
+  salt           String
+  failedAttempts Int       @default(0)
+  lockedUntil    DateTime? @db.Timestamptz
+  lastLoginAt    DateTime? @db.Timestamptz
+  createdAt      DateTime  @default(now()) @db.Timestamptz
+  updatedAt      DateTime  @default(now()) @db.Timestamptz
+
+  staff HmsStaff @relation(fields: [tenantId, staffId], references: [tenantId, id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@id([tenantId, staffId])
+}
+
+model HmsStaffSession {
+  tenantId          String    @default(dbgenerated("app_current_tenant()"))
+  id                String
+  staffId           String
+  roleId            String
+  tokenHash         String
+  expiresAt         DateTime  @db.Timestamptz
+  absoluteExpiresAt DateTime  @db.Timestamptz
+  revokedAt         DateTime? @db.Timestamptz
+  userAgent         String?
+  ipAddress         String?
+  createdAt         DateTime  @default(now()) @db.Timestamptz
+  updatedAt         DateTime  @default(now()) @db.Timestamptz
+
+  staff HmsStaff @relation(fields: [tenantId, staffId], references: [tenantId, id], onDelete: Cascade, onUpdate: NoAction)
+  role  HmsRole  @relation(fields: [tenantId, roleId], references: [tenantId, id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@id([tenantId, id])
+  @@unique([tenantId, tokenHash])
+  @@index([tenantId, staffId])
 }
 
 model HmsPatient {

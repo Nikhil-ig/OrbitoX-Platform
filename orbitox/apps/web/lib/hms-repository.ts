@@ -184,7 +184,7 @@ export async function recordPayment(
   const id = newId('pay');
   const ins = await tx.query<{ id: string }>(
     `INSERT INTO "HmsPayment" ("id","invoiceId","amountMinor","method","idempotencyKey","receivedById")
-     VALUES ($1,$2,$3,$4,$5,$6) ON CONFLICT ("tenantId","idempotencyKey") DO NOTHING RETURNING "id"`,
+     VALUES ($1,$2,$3::bigint,$4,$5,$6) ON CONFLICT ("tenantId","idempotencyKey") DO NOTHING RETURNING "id"`,
     [id, p.invoiceId, p.amountMinor.toString(), p.method, p.idempotencyKey, p.receivedById],
   );
   let paymentId = ins.rows[0]?.id;

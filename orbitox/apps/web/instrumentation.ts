@@ -86,6 +86,27 @@ export async function register() {
       }
     }
 
+    // Database runtime role check (required in production)
+    const appDbUrl = process.env.APP_DATABASE_URL?.trim();
+    if (!appDbUrl) {
+      problems.push('APP_DATABASE_URL is not set (Production runtime requires orbitox_runtime role connection)');
+    } else if (process.env.ORBITOX_TEST_SKIP_ROLE_CHECK !== 'true') {
+      try {
+        const { prisma } = await import('@/lib/prisma');
+        const roleRows = await prisma.$queryRaw<Array<{ current_user: string; rolsuper: boolean; rolbypassrls: boolean }>>`
+          SELECT current_user, r.rolsuper, r.rolbypassrls FROM pg_roles r WHERE r.rolname = current_user
+        `;
+        const role = roleRows[0];
+        if (!role || role.current_user !== 'orbitox_runtime' || role.rolsuper || role.rolbypassrls) {
+          problems.push(
+            `Database role is unsafe: user="${role?.current_user}", rolsuper=${role?.rolsuper}, rolbypassrls=${role?.rolbypassrls}. Production requires orbitox_runtime with rolsuper=false and rolbypassrls=false.`
+          );
+        }
+      } catch (dbErr: any) {
+        problems.push(`Database connection or role check failed: ${dbErr.message}`);
+      }
+    }
+
     if (problems.length > 0) {
       throw new Error(
         [

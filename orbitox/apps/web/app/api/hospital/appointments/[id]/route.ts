@@ -13,10 +13,10 @@ export const PATCH = withHospitalGuard(async (req: NextRequest, { params }: { pa
       const { rows } = await tx.query(
         `UPDATE "HmsAppointment"
          SET "status" = COALESCE($2, "status"),
-             "reason" = COALESCE($3, "reason")
+             "reasonSealed" = COALESCE($3, "reasonSealed")
          WHERE "id" = $1
-         RETURNING "id", "patientId", "doctorId", "status", "reason"`,
-        [id, body.status ?? null, body.reason ?? null]
+         RETURNING "id", "patientId", "doctorId", "status", "reasonSealed"`,
+        [id, body.status ?? null, body.reasonSealed ?? body.reason ?? null]
       );
       if (!rows[0]) throw new HttpError(404, 'REFERENCE_NOT_FOUND', 'Appointment not found');
       return rows[0];

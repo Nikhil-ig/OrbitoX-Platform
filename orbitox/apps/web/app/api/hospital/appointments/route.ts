@@ -12,7 +12,7 @@ export const GET = withHospitalGuard(async (req: NextRequest, _routeContext, aut
     const patientId = searchParams.get('patientId');
 
     const data = await withTenantTx(prisma, authContext.tenantId, async (tx) => {
-      let query = `SELECT "id", "patientId", "doctorId", lower("slot") as "start", upper("slot") as "end", "status", "reason", "createdAt"
+      let query = `SELECT "id", "patientId", "doctorId", lower("slot") as "start", upper("slot") as "end", "status", "reasonSealed"
                    FROM "HmsAppointment"`;
       const params: any[] = [];
       if (doctorId) {

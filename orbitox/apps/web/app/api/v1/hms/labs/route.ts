@@ -15,14 +15,14 @@ export const GET = withApiGuard(
       const patientId = searchParams.get('patientId');
 
       const data = await withTenantTx(prisma, ctx.tenantId, async (tx) => {
-        let query = `SELECT "id", "patientId", "orderedById", "testCode", "status", "orderedAt", "resultedAt", "verifiedAt"
+        let query = `SELECT "id", "patientId", "orderedById", "testType", "status", "resultSealed", "resultedById", "verifiedById", "verifiedAt", "updatedAt"
                      FROM "HmsLabOrder"`;
         const params: any[] = [];
         if (patientId) {
           params.push(patientId);
           query += ` WHERE "patientId" = $1`;
         }
-        query += ` ORDER BY "orderedAt" DESC LIMIT 50`;
+        query += ` ORDER BY "updatedAt" DESC LIMIT 50`;
 
         const { rows } = await tx.query(query, params);
         return rows;
@@ -48,8 +48,9 @@ export const POST = withApiGuard(
   async (req: NextRequest, ctx) => {
     try {
       const body = await req.json();
-      if (!body.patientId || !body.testCode) {
-        throw new HttpError(422, 'INVALID_INPUT', 'patientId and testCode are required');
+      const testType = body.testType || body.testCode;
+      if (!body.patientId || !testType) {
+        throw new HttpError(422, 'INVALID_INPUT', 'patientId and testType are required');
       }
 
       const lab = await withTenantTx(prisma, ctx.tenantId, async (tx) => {
@@ -57,10 +58,10 @@ export const POST = withApiGuard(
         const orderedById = body.orderedById || ctx.sub || 'staff_doctor';
 
         const { rows } = await tx.query(
-          `INSERT INTO "HmsLabOrder" ("id", "patientId", "orderedById", "testCode", "status")
+          `INSERT INTO "HmsLabOrder" ("id", "patientId", "orderedById", "testType", "status")
            VALUES ($1, $2, $3, $4, 'ORDERED')
-           RETURNING "id", "patientId", "orderedById", "testCode", "status", "orderedAt"`,
-          [id, body.patientId, orderedById, body.testCode]
+           RETURNING "id", "patientId", "orderedById", "testType", "status", "updatedAt"`,
+          [id, body.patientId, orderedById, testType]
         );
         return rows[0];
       });

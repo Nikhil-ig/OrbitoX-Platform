@@ -316,6 +316,21 @@ jobs:
           APP_DATABASE_URL: postgresql://orbitox_runtime:phase2-ci-${{ github.run_id }}-${{ github.run_attempt }}@127.0.0.1:5432/orbitox_phase2
           PLATFORM_AUDIT_DATABASE_URL: postgresql://orbitox_platform_admin_audit:phase2-audit-${{ github.run_id }}-${{ github.run_attempt }}@127.0.0.1:5432/orbitox_phase2
           MAINTENANCE_DATABASE_URL: postgresql://orbitox_maintenance:phase2-maint-${{ github.run_id }}-${{ github.run_attempt }}@127.0.0.1:5432/orbitox_phase2
+      - name: Run 62-check adversarial SQL suite against real HospitalOS migration
+        run: bash scripts/test-hms-adversarial-sql.sh orbitox_phase2 5432
+        env:
+          PGPASSWORD: postgrespassword
+          APP_DB_PASSWORD: phase2-ci-${{ github.run_id }}-${{ github.run_attempt }}
+      - name: Run Phase 2b Negative Control Suite (Invariants failure proof)
+        run: pnpm --filter web test:negative-control
+        env:
+          DATABASE_URL: postgresql://postgres:postgrespassword@127.0.0.1:5432/orbitox_phase2
+          APP_DATABASE_URL: postgresql://orbitox_runtime:phase2-ci-${{ github.run_id }}-${{ github.run_attempt }}@127.0.0.1:5432/orbitox_phase2
+      - name: Run Phase 2b-3 HMS Crash Durability Harness (SIGKILL Mid-Op)
+        run: pnpm --filter web test:hms-crash-durability
+        env:
+          DATABASE_URL: postgresql://postgres:postgrespassword@127.0.0.1:5432/orbitox_phase2
+          APP_DATABASE_URL: postgresql://orbitox_runtime:phase2-ci-${{ github.run_id }}-${{ github.run_attempt }}@127.0.0.1:5432/orbitox_phase2
       - name: Verify health fails while PostgreSQL is stopped
         env:
           POSTGRES_CONTAINER: ${{ job.services.postgres.id }}

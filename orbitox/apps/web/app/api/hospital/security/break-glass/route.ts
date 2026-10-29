@@ -25,6 +25,25 @@ export const POST = withHospitalGuard(async (req: NextRequest, _routeContext, au
          RETURNING "id", "staffId", "patientId", "reason", "grantedAt", "expiresAt"`,
         [id, body.staffId, body.patientId, body.reason, durationHours.toString()]
       );
+
+      // Alert hospital admin on every break-glass access
+      await tx.query(
+        `INSERT INTO "TenantOutbox" ("topic", "payload")
+         VALUES ($1, $2::jsonb)`,
+        [
+          'hospital.security.break_glass_alert',
+          JSON.stringify({
+            grantId: id,
+            staffId: body.staffId,
+            patientId: body.patientId,
+            reason: body.reason,
+            durationHours,
+            alert: 'SECURITY_BREAK_GLASS_ACCESSED',
+            at: new Date().toISOString(),
+          }),
+        ]
+      );
+
       return rows[0];
     });
 

@@ -14,6 +14,13 @@
  */
 import { Prisma, PrismaClient } from '@prisma/client';
 
+if (typeof BigInt !== 'undefined' && !(BigInt.prototype as any).toJSON) {
+  (BigInt.prototype as any).toJSON = function () {
+    const num = Number(this);
+    return Number.isSafeInteger(num) ? num : this.toString();
+  };
+}
+
 export interface QueryResultRow {
   [column: string]: any;
 }
@@ -65,11 +72,43 @@ export interface TenantTxOptions {
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
+function createGuardedPrismaClient(client: Prisma.TransactionClient): Prisma.TransactionClient {
+  return new Proxy(client, {
+    get(target, prop, receiver) {
+      if (prop === '$executeRawUnsafe' || prop === '$queryRawUnsafe') {
+        return function (query: string, ...args: any[]) {
+          if (typeof query === 'string' && FORBIDDEN_SQL.test(query)) {
+            throw new TenantScopeError('transaction-control statements are not allowed in TenantTx');
+          }
+          return (target as any)[prop](query, ...args);
+        };
+      }
+      if (prop === '$executeRaw' || prop === '$queryRaw') {
+        return function (queryOrStrings: any, ...args: any[]) {
+          let sql = '';
+          if (Array.isArray(queryOrStrings)) {
+            sql = queryOrStrings.join(' ? ');
+          } else if (queryOrStrings && typeof queryOrStrings.sql === 'string') {
+            sql = queryOrStrings.sql;
+          } else if (typeof queryOrStrings === 'string') {
+            sql = queryOrStrings;
+          }
+          if (FORBIDDEN_SQL.test(sql)) {
+            throw new TenantScopeError('transaction-control statements are not allowed in TenantTx');
+          }
+          return (target as any)[prop](queryOrStrings, ...args);
+        };
+      }
+      return Reflect.get(target, prop, receiver);
+    },
+  });
+}
+
 export async function withTenantTx<T>(
   poolOrPrisma: Pool | PrismaClient,
   tenantId: string,
   fn: (tx: TenantTx) => Promise<T>,
-  opts: TenantTxOptions = {},
+  opts: TenantTxOptions = {}
 ): Promise<T> {
   if (typeof tenantId !== 'string' || !TENANT_RE.test(tenantId) || tenantId.length > 512) {
     throw new TenantScopeError('invalid tenant id');
@@ -95,9 +134,10 @@ export async function withTenantTx<T>(
                                      set_config('statement_timeout', ${`${st}ms`}, true),
                                      set_config('lock_timeout', ${`${lt}ms`}, true)`;
 
+          const guardedPrisma = createGuardedPrismaClient(tx);
           const tenantTx: TenantTx = {
             tenantId,
-            prisma: tx,
+            prisma: guardedPrisma,
             async query(text, params) {
               if (FORBIDDEN_SQL.test(text)) throw new TenantScopeError('transaction-control statements are not allowed in TenantTx');
               if (/^\s*(insert|update|delete)\b/i.test(text) && !/returning/i.test(text)) {

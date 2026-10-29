@@ -10,14 +10,14 @@ export const GET = withHospitalGuard(async (req: NextRequest, _routeContext, aut
     const patientId = searchParams.get('patientId');
 
     const data = await withTenantTx(prisma, authContext.tenantId, async (tx) => {
-      let query = `SELECT "id", "patientId", "orderedById", "testCode", "status", "orderedAt", "resultedAt", "verifiedAt"
+      let query = `SELECT "id", "patientId", "orderedById", "testType", "status", "resultSealed", "resultedById", "verifiedById", "verifiedAt", "updatedAt"
                    FROM "HmsLabOrder"`;
       const params: any[] = [];
       if (patientId) {
         params.push(patientId);
         query += ` WHERE "patientId" = $1`;
       }
-      query += ` ORDER BY "orderedAt" DESC LIMIT 50`;
+      query += ` ORDER BY "updatedAt" DESC LIMIT 50`;
 
       const { rows } = await tx.query(query, params);
       return rows;

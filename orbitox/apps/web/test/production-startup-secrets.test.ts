@@ -83,4 +83,53 @@ describe('Production startup secret validation', () => {
         assert.match(result.stderr, /OrbitoX cannot start: invalid production configuration/);
         fs.rmSync(testDir, { recursive: true, force: true });
     });
+
+    it('refuses production startup when only DATABASE_URL is set (missing APP_DATABASE_URL)', async () => {
+        const environment = { ...process.env };
+        Reflect.set(process.env, 'NODE_ENV', 'production');
+        process.env.NEXT_RUNTIME = 'nodejs';
+        delete process.env.NEXT_PHASE;
+        process.env.ORBITOX_ADMIN_TOKEN = 'admin_secret_32_characters_minimum_000';
+        process.env.ORBITOX_RUNTIME_TOKEN = 'runtime_secret_32_characters_minimum_0';
+        process.env.ORBITOX_CONTROL_SECRET = 'control_secret_32_characters_minimum_';
+        process.env.ORBITOX_GUEST_SECRET = 'guest_secret_32_characters_minimum_00';
+        process.env.ORBITOX_SERVER_PEPPER = 'server_pepper_32_characters_minimum_';
+        process.env.DATABASE_URL = 'postgresql://postgres:postgrespassword@127.0.0.1:5432/orbitox_phase2';
+        delete process.env.APP_DATABASE_URL;
+
+        try {
+            await assert.rejects(register(), (error: Error) => {
+                assert.match(error.message, /APP_DATABASE_URL is not set/);
+                assert.match(error.message, /OrbitoX cannot start: invalid production configuration/);
+                return true;
+            });
+        } finally {
+            for (const key of Object.keys(process.env)) {
+                if (!(key in environment)) delete process.env[key];
+            }
+            Object.assign(process.env, environment);
+        }
+    });
+
+    it('returns 503 DATABASE_ROLE_UNSAFE from /api/health when connected role has superuser or bypassrls', async () => {
+        const { createHealthHandler } = await import('../lib/health-route-handler');
+        const mockUnsafeClient = {
+            async $queryRaw(strings: any) {
+                const sql = Array.isArray(strings) ? strings.join(' ') : String(strings?.sql || strings);
+                if (sql.includes('SELECT 1')) return [{ '?column?': 1 }];
+                if (sql.includes('pg_roles')) {
+                    return [{ current_user: 'postgres', rolsuper: true, rolbypassrls: true }];
+                }
+                return [];
+            },
+        } as any;
+
+        const { assertPlatformDatabaseReady } = await import('../lib/platform-database-readiness');
+        const handler = createHealthHandler(() => assertPlatformDatabaseReady(mockUnsafeClient));
+        const response = await handler();
+        assert.equal(response.status, 503);
+        const data = await response.json();
+        assert.equal(data.ok, false);
+        assert.equal(data.code, 'DATABASE_ROLE_UNSAFE');
+    });
 });

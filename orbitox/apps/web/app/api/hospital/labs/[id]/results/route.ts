@@ -44,10 +44,10 @@ export const POST = withHospitalGuard(async (
         `UPDATE "HmsLabOrder"
          SET "status" = 'RESULTED',
              "resultSealed" = $2,
-             "resultEnteredById" = $3,
-             "resultedAt" = now()
+             "resultedById" = $3,
+             "updatedAt" = now()
          WHERE "id" = $1
-         RETURNING "id", "status", "resultEnteredById", "resultedAt"`,
+         RETURNING "id", "status", "resultedById", "updatedAt"`,
         [id, sealedResult, actorId]
       );
       if (!rows[0]) throw new HttpError(404, 'REFERENCE_NOT_FOUND', 'Lab order not found');
