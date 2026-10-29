@@ -1,15 +1,21 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { authenticatedHospitalFetch } from '../_init';
 import { withHospitalGuard } from '@/app/api/_lib/route-auth';
+import { prisma } from '@/lib/prisma';
+import { mapDbError, errorBody } from '@/lib/db-errors';
 
 export const GET = withHospitalGuard(async (_req: NextRequest, _routeContext, authContext) => {
   try {
-    const res = await authenticatedHospitalFetch('/api/hospital/audit', authContext, {
-      cache: 'no-store'
+    const events = await prisma.platformAuditEvent.findMany({
+      where: {
+        ...(authContext.projectId ? { projectId: authContext.projectId } : {}),
+      },
+      orderBy: { occurredAt: 'desc' },
+      take: 50,
     });
-    const data = await res.json();
-    return NextResponse.json(data);
+
+    return NextResponse.json({ success: true, data: events });
   } catch (err: any) {
-    return NextResponse.json({ success: false, error: err.message }, { status: 502 });
+    const apiErr = mapDbError(err);
+    return NextResponse.json(errorBody(apiErr, authContext.requestId), { status: apiErr.status });
   }
 }, { adminOnly: true, sensitive: true });

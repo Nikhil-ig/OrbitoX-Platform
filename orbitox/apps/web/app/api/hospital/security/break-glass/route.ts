@@ -1,18 +1,36 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { authenticatedHospitalFetch } from '../../_init';
 import { withHospitalGuard } from '@/app/api/_lib/route-auth';
+import { withTenantTx } from '@/lib/tenant-db';
+import { prisma } from '@/lib/prisma';
+import { mapDbError, errorBody, HttpError } from '@/lib/db-errors';
 
 export const POST = withHospitalGuard(async (req: NextRequest, _routeContext, authContext) => {
   try {
     const body = await req.json();
-    const res = await authenticatedHospitalFetch('/api/security/break-glass', authContext, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body)
+
+    if (!body.staffId || !body.patientId || !body.reason) {
+      throw new HttpError(422, 'INVALID_INPUT', 'staffId, patientId and reason are required');
+    }
+    if (body.reason.length < 20) {
+      throw new HttpError(422, 'INVALID_INPUT', 'Break-glass reason must be at least 20 characters');
+    }
+
+    const data = await withTenantTx(prisma, authContext.tenantId, async (tx) => {
+      const id = body.id || `bg_${Date.now().toString(36)}`;
+      const durationHours = Math.min(Math.max(1, body.durationHours || 1), 4);
+
+      const { rows } = await tx.query(
+        `INSERT INTO "HmsBreakGlassGrant" ("id", "staffId", "patientId", "reason", "expiresAt")
+         VALUES ($1, $2, $3, $4, now() + ($5 || ' hours')::interval)
+         RETURNING "id", "staffId", "patientId", "reason", "grantedAt", "expiresAt"`,
+        [id, body.staffId, body.patientId, body.reason, durationHours.toString()]
+      );
+      return rows[0];
     });
-    const data = await res.json();
-    return NextResponse.json(data, { status: res.status });
+
+    return NextResponse.json({ success: true, data }, { status: 201 });
   } catch (err: any) {
-    return NextResponse.json({ success: false, error: err.message }, { status: 502 });
+    const apiErr = mapDbError(err);
+    return NextResponse.json(errorBody(apiErr, authContext.requestId), { status: apiErr.status });
   }
 }, { adminOnly: true, sensitive: true });

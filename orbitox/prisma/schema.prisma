@@ -1525,6 +1525,7 @@ model PlatformApiKey {
   keyPrefix           String             // orb_live_proj_
   secretFingerprint   String             // SHA-256(rawSecret).hex (display only)
   authVerifier        String             // HMAC-SHA-256(pepper, rawSecret).hex (auth check)
+  verifierPepperId    String?            // Active pepper ID at key creation (for rotation tracking)
   maskedDisplay       String             // orb_live_••••••••0zE
   status              KeyLifecycleState  @default(ACTIVE)
   capabilities        String[]           // Typed: ["restaurant.orders.read", "restaurant.orders.create"]
@@ -1730,5 +1731,251 @@ model PlatformRateLimitBucket {
   @@id([scopeType, scopeId, windowStart])
   @@index([expiresAt])
 }
+
+model PlatformImporterLease {
+  id        String   @id @default("singleton")
+  holder    String
+  expiresAt DateTime @db.Timestamptz
+}
+
+model BridgeNonce {
+  nonce     String   @id
+  expiresAt DateTime @db.Timestamptz
+}
+
+// ─────────────────────────────────────────────────────────────
+// HospitalOS Plugin Schema Models (Phase 2b-2)
+// ─────────────────────────────────────────────────────────────
+
+model HmsDepartment {
+  tenantId  String   @default(dbgenerated("app_current_tenant()"))
+  id        String
+  name      String
+  createdAt DateTime @default(now()) @db.Timestamptz
+
+  wards HmsWard[]
+  staff HmsStaff[]
+
+  @@id([tenantId, id])
+  @@unique([tenantId, name])
+}
+
+model HmsWard {
+  tenantId     String @default(dbgenerated("app_current_tenant()"))
+  id           String
+  departmentId String
+  name         String
+
+  department HmsDepartment @relation(fields: [tenantId, departmentId], references: [tenantId, id], onDelete: NoAction, onUpdate: NoAction)
+  beds       HmsBed[]
+
+  @@id([tenantId, id])
+}
+
+model HmsBed {
+  tenantId       String @default(dbgenerated("app_current_tenant()"))
+  id             String
+  wardId         String
+  label          String
+  dailyRateMinor BigInt
+  serviceState   String @default("IN_SERVICE")
+
+  ward       HmsWard        @relation(fields: [tenantId, wardId], references: [tenantId, id], onDelete: NoAction, onUpdate: NoAction)
+  admissions HmsAdmission[]
+
+  @@id([tenantId, id])
+  @@unique([tenantId, wardId, label])
+}
+
+model HmsStaff {
+  tenantId     String  @default(dbgenerated("app_current_tenant()"))
+  id           String
+  nameSealed   String
+  emailBlind   String
+  role         String
+  departmentId String?
+  status       String  @default("ACTIVE")
+  onDuty       Boolean @default(false)
+
+  department         HmsDepartment?       @relation(fields: [tenantId, departmentId], references: [tenantId, id], onDelete: NoAction, onUpdate: NoAction)
+  admissions         HmsAdmission[]       @relation("HmsAttendingStaff")
+  appointments       HmsAppointment[]
+  orderedLabOrders   HmsLabOrder[]        @relation("HmsLabOrderedBy")
+  resultedLabOrders  HmsLabOrder[]        @relation("HmsLabResultedBy")
+  verifiedLabOrders  HmsLabOrder[]        @relation("HmsLabVerifiedBy")
+  receivedPayments   HmsPayment[]
+  breakGlassGrants   HmsBreakGlassGrant[]
+
+  @@id([tenantId, id])
+  @@unique([tenantId, emailBlind])
+}
+
+model HmsPatient {
+  tenantId               String   @default(dbgenerated("app_current_tenant()"))
+  id                     String
+  mrn                    String
+  nameSealed             String
+  nameBlind              String
+  phoneSealed            String?
+  phoneBlind             String?
+  dateOfBirthSealed      String?
+  ageBand                String?
+  gender                 String?
+  bloodGroup             String?
+  allergiesSealed        String?
+  emergencyContactSealed String?
+  triageLevel            Int?     @db.SmallInt
+  createdAt              DateTime @default(now()) @db.Timestamptz
+  updatedAt              DateTime @default(now()) @db.Timestamptz
+  version                Int      @default(1)
+
+  admissions       HmsAdmission[]
+  appointments     HmsAppointment[]
+  labOrders        HmsLabOrder[]
+  invoices         HmsInvoice[]
+  breakGlassGrants HmsBreakGlassGrant[]
+
+  @@id([tenantId, id])
+  @@unique([tenantId, mrn])
+  @@index([tenantId, nameBlind], map: "HmsPatient_nameBlind")
+}
+
+model HmsAdmission {
+  tenantId         String    @default(dbgenerated("app_current_tenant()"))
+  id               String
+  patientId        String
+  bedId            String
+  attendingStaffId String
+  admittedAt       DateTime  @default(now()) @db.Timestamptz
+  dischargedAt     DateTime? @db.Timestamptz
+  notesSealed      String?
+
+  patient        HmsPatient @relation(fields: [tenantId, patientId], references: [tenantId, id], onDelete: NoAction, onUpdate: NoAction)
+  bed            HmsBed     @relation(fields: [tenantId, bedId], references: [tenantId, id], onDelete: NoAction, onUpdate: NoAction)
+  attendingStaff HmsStaff   @relation("HmsAttendingStaff", fields: [tenantId, attendingStaffId], references: [tenantId, id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@id([tenantId, id])
+}
+
+model HmsAppointment {
+  tenantId     String                   @default(dbgenerated("app_current_tenant()"))
+  id           String
+  patientId    String
+  doctorId     String
+  slot         Unsupported("tstzrange")
+  status       String                   @default("SCHEDULED")
+  reasonSealed String?
+
+  patient HmsPatient @relation(fields: [tenantId, patientId], references: [tenantId, id], onDelete: NoAction, onUpdate: NoAction)
+  doctor  HmsStaff   @relation(fields: [tenantId, doctorId], references: [tenantId, id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@id([tenantId, id])
+}
+
+model HmsLabOrder {
+  tenantId     String    @default(dbgenerated("app_current_tenant()"))
+  id           String
+  patientId    String
+  orderedById  String
+  testType     String
+  status       String    @default("ORDERED")
+  resultSealed String?
+  resultedById String?
+  verifiedById String?
+  verifiedAt   DateTime? @db.Timestamptz
+  version      Int       @default(1)
+  updatedAt    DateTime  @default(now()) @db.Timestamptz
+
+  patient    HmsPatient @relation(fields: [tenantId, patientId], references: [tenantId, id], onDelete: NoAction, onUpdate: NoAction)
+  orderedBy  HmsStaff   @relation("HmsLabOrderedBy", fields: [tenantId, orderedById], references: [tenantId, id], onDelete: NoAction, onUpdate: NoAction)
+  resultedBy HmsStaff?  @relation("HmsLabResultedBy", fields: [tenantId, resultedById], references: [tenantId, id], onDelete: NoAction, onUpdate: NoAction)
+  verifiedBy HmsStaff?  @relation("HmsLabVerifiedBy", fields: [tenantId, verifiedById], references: [tenantId, id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@id([tenantId, id])
+}
+
+model HmsInvoice {
+  tenantId   String   @default(dbgenerated("app_current_tenant()"))
+  id         String
+  patientId  String
+  currency   String   @default("INR") @db.Char(3)
+  totalMinor BigInt
+  paidMinor  BigInt   @default(0)
+  status     String   @default("OPEN")
+  createdAt  DateTime @default(now()) @db.Timestamptz
+
+  patient  HmsPatient   @relation(fields: [tenantId, patientId], references: [tenantId, id], onDelete: NoAction, onUpdate: NoAction)
+  payments HmsPayment[]
+
+  @@id([tenantId, id])
+}
+
+model HmsPayment {
+  tenantId       String   @default(dbgenerated("app_current_tenant()"))
+  id             String
+  invoiceId      String
+  amountMinor    BigInt
+  method         String
+  idempotencyKey String
+  receivedById   String
+  receivedAt     DateTime @default(now()) @db.Timestamptz
+
+  invoice    HmsInvoice @relation(fields: [tenantId, invoiceId], references: [tenantId, id], onDelete: NoAction, onUpdate: NoAction)
+  receivedBy HmsStaff   @relation(fields: [tenantId, receivedById], references: [tenantId, id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@id([tenantId, id])
+  @@unique([tenantId, idempotencyKey])
+}
+
+model HmsPhiAccessLog {
+  tenantId  String   @default(dbgenerated("app_current_tenant()"))
+  seq       BigInt   @default(autoincrement())
+  actorId   String
+  patientId String
+  columns   String[]
+  purpose   String
+  requestId String
+  at        DateTime @default(now()) @db.Timestamptz
+
+  @@id([tenantId, seq])
+}
+
+model HmsBreakGlassGrant {
+  tenantId  String   @default(dbgenerated("app_current_tenant()"))
+  id        String
+  staffId   String
+  patientId String
+  reason    String
+  grantedAt DateTime @default(now()) @db.Timestamptz
+  expiresAt DateTime @db.Timestamptz
+
+  staff   HmsStaff   @relation(fields: [tenantId, staffId], references: [tenantId, id], onDelete: NoAction, onUpdate: NoAction)
+  patient HmsPatient @relation(fields: [tenantId, patientId], references: [tenantId, id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@id([tenantId, id])
+}
+
+model TenantIdempotencyKey {
+  tenantId       String   @default(dbgenerated("app_current_tenant()"))
+  scope          String
+  key            String
+  requestHash    String
+  responseStatus Int?
+  responseBody   Json?
+  createdAt      DateTime @default(now()) @db.Timestamptz
+
+  @@id([tenantId, scope, key])
+}
+
+model TenantOutbox {
+  tenantId  String   @default(dbgenerated("app_current_tenant()"))
+  seq       BigInt   @default(autoincrement())
+  topic     String
+  payload   Json
+  createdAt DateTime @default(now()) @db.Timestamptz
+
+  @@id([tenantId, seq])
+}
+
 
 

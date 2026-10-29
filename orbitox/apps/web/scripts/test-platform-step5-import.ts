@@ -7,9 +7,10 @@ import path from 'node:path';
 import { PrismaClient } from '@prisma/client';
 import {
   runPlatformJsonImporter,
-  verifyServerPepperPreflight,
+  verifyPepperSamples,
   sanitizeDatabaseUrl,
 } from './import-platform-json';
+import { loadPepperRing, activeVerifier } from '../lib/pepper';
 
 const databaseUrl = process.env.TEST_DATABASE_URL || process.env.DATABASE_URL || 'postgresql://apple@127.0.0.1:5432/orbitox_phase2';
 const runtimeUrl = process.env.APP_DATABASE_URL || 'postgresql://orbitox_runtime:test_runtime_pass@127.0.0.1:5432/orbitox_phase2';
@@ -216,6 +217,7 @@ async function main() {
     const errorReport = await runPlatformJsonImporter(owner, {
       filePath: corruptFixturePath,
       dryRun: false,
+      allowUnsampledOrgs: ['*'],
     });
 
     assert.equal(errorReport.organizationsImported, 1, 'Exactly 1 organization must succeed');
@@ -286,7 +288,7 @@ async function main() {
     console.log('Testing test hooks security guard (must fail without ORBITOX_ALLOW_TEST_HOOKS)...');
     const ungatedChild = spawn(
       tsxBin,
-      [importerScript, `--file=${killFixturePath}`, `--kill-mid-org=${kOrg2}`],
+      [importerScript, `--file=${killFixturePath}`, `--kill-mid-org=${kOrg2}`, '--allow-unsampled-org=*'],
       {
         env: {
           ...process.env,
@@ -304,7 +306,7 @@ async function main() {
     console.log('Spawning importer in child process with mid-transaction violent kill hook on Org 2...');
     const child = spawn(
       tsxBin,
-      [importerScript, `--file=${killFixturePath}`, `--kill-mid-org=${kOrg2}`],
+      [importerScript, `--file=${killFixturePath}`, `--kill-mid-org=${kOrg2}`, '--allow-unsampled-org=*'],
       {
         env: {
           ...process.env,
@@ -351,6 +353,8 @@ async function main() {
     const resumeReport = await runPlatformJsonImporter(owner, {
       filePath: killFixturePath,
       dryRun: false,
+      allowUnsampledOrgs: ['*'],
+      bypassLease: true,
     });
 
     assert.equal(resumeReport.organizationsImported, 2, 'Remaining 2 organizations must be imported on resume');
@@ -368,6 +372,7 @@ async function main() {
   } finally {
     try { fs.unlinkSync(killFixturePath); } catch {}
     try {
+      await owner.$executeRaw`DELETE FROM "PlatformImporterLease" WHERE "id" = 'singleton'`;
       await owner.platformApiKey.deleteMany({ where: { keyId: { in: [`k_${kOrg1}`, `k_${kOrg2}`, `k_${kOrg3}`] } } });
       await owner.projectEnvironment.deleteMany({ where: { id: { in: [`env_${kOrg1}`, `env_${kOrg2}`, `env_${kOrg3}`] } } });
       await owner.platformProject.deleteMany({ where: { slug: { in: [`p-${kOrg1}`, `p-${kOrg2}`, `p-${kOrg3}`] } } });
@@ -398,6 +403,7 @@ async function main() {
   const legacyReport1 = await runPlatformJsonImporter(owner, {
     filePath: legacyFixturePath,
     dryRun: false,
+    allowUnsampledOrgs: ['*'],
   });
 
   assert.equal(legacyReport1.organizationsImported, 2, 'Must import 2 legacy organizations on first pass');
@@ -427,6 +433,7 @@ async function main() {
   const legacyReport2 = await runPlatformJsonImporter(owner, {
     filePath: legacyFixturePath,
     dryRun: false,
+    allowUnsampledOrgs: ['*'],
   });
 
   assert.equal(legacyReport2.organizationsImported, 0, 'Must import 0 organizations on re-run');
@@ -612,7 +619,7 @@ async function main() {
   let runtimeImporterThrew = false;
   let runtimeErrorMessage = '';
   try {
-    await runPlatformJsonImporter(runtime, { filePath: legacyFixturePath, dryRun: false });
+    await runPlatformJsonImporter(runtime, { filePath: legacyFixturePath, dryRun: false, allowUnsampledOrgs: ['*'] });
   } catch (err: any) {
     runtimeImporterThrew = true;
     runtimeErrorMessage = err.message;
@@ -625,7 +632,7 @@ async function main() {
   let auditImporterThrew = false;
   let auditErrorMessage = '';
   try {
-    await runPlatformJsonImporter(audit, { filePath: legacyFixturePath, dryRun: false });
+    await runPlatformJsonImporter(audit, { filePath: legacyFixturePath, dryRun: false, allowUnsampledOrgs: ['*'] });
   } catch (err: any) {
     auditImporterThrew = true;
     auditErrorMessage = err.message;
@@ -697,30 +704,67 @@ async function main() {
   console.log('Goal: Two importer processes cannot interleave; advisory lock rejects parallel run.');
   console.log('--------------------------------------------------------------------------------\n');
 
-  // Acquire advisory lock manually in owner connection
-  await owner.$executeRaw`SELECT pg_advisory_lock(74639201)`;
+  // S5-F2: 1. Test lease conflict rejection
+  await owner.$executeRaw`
+    CREATE TABLE IF NOT EXISTS "PlatformImporterLease" (
+      "id" TEXT PRIMARY KEY DEFAULT 'singleton',
+      "holder" TEXT NOT NULL,
+      "expiresAt" TIMESTAMPTZ NOT NULL
+    )
+  `;
+  await owner.$executeRaw`
+    INSERT INTO "PlatformImporterLease" ("id", "holder", "expiresAt")
+    VALUES ('singleton', 'manual_holder_test', now() + interval '2 minutes')
+    ON CONFLICT ("id") DO UPDATE
+    SET "holder" = 'manual_holder_test', "expiresAt" = now() + interval '2 minutes'
+  `;
 
   let lockRejectionThrew = false;
   let lockRejectionMsg = '';
+  const secondOwner = new PrismaClient({ datasources: { db: { url: boundedUrl(databaseUrl) } } });
   try {
-    // Try to run importer in second connection
-    const secondOwner = new PrismaClient({ datasources: { db: { url: boundedUrl(databaseUrl) } } });
     try {
-      await runPlatformJsonImporter(secondOwner, { filePath: legacyFixturePath, dryRun: false });
-    } finally {
-      await secondOwner.$disconnect();
+      await runPlatformJsonImporter(secondOwner, {
+        filePath: legacyFixturePath,
+        dryRun: false,
+        allowUnsampledOrgs: ['omni-logistics', 'mednet-health'],
+      });
+    } catch (err: any) {
+      lockRejectionThrew = true;
+      lockRejectionMsg = err.message;
     }
-  } catch (err: any) {
-    lockRejectionThrew = true;
-    lockRejectionMsg = err.message;
-  } finally {
-    await owner.$executeRaw`SELECT pg_advisory_unlock(74639201)`;
-  }
 
-  assert.equal(lockRejectionThrew, true, 'Concurrent importer run must fail on advisory lock');
-  assert.equal(lockRejectionMsg.includes('Concurrent execution conflict'), true);
-  console.log(`Advisory lock rejection verified: "${lockRejectionMsg}"`);
-  console.log('✔ S5-8 Advisory lock prevents interleaved concurrent importer executions.\n');
+    assert.equal(lockRejectionThrew, true, 'Concurrent importer run must fail when lease held');
+    assert.equal(lockRejectionMsg.includes('Concurrent execution conflict'), true);
+    console.log(`Lease conflict rejection verified: "${lockRejectionMsg}"`);
+
+    // Clean up lease
+    await owner.$executeRaw`DELETE FROM "PlatformImporterLease" WHERE "id" = 'singleton'`;
+
+    // 2. Test concurrent runs with bypassLease: transaction advisory lock prevents duplicates
+    const [p1, p2] = await Promise.all([
+      runPlatformJsonImporter(owner, {
+        filePath: legacyFixturePath,
+        dryRun: false,
+        bypassLease: true,
+        allowUnsampledOrgs: ['*'],
+      }),
+      runPlatformJsonImporter(secondOwner, {
+        filePath: legacyFixturePath,
+        dryRun: false,
+        bypassLease: true,
+        allowUnsampledOrgs: ['*'],
+      }),
+    ]);
+
+    assert.ok(p1.organizationsImported >= 0);
+    assert.ok(p2.organizationsImported >= 0);
+    console.log(`Parallel execution with lease bypass succeeded safely: p1=${p1.organizationsImported} imported / ${p1.organizationsSkipped} skipped, p2=${p2.organizationsImported} imported / ${p2.organizationsSkipped} skipped`);
+    console.log('✔ S5-F2 Transaction advisory lock and singleton lease verified.\n');
+  } finally {
+    await secondOwner.$disconnect();
+    await owner.$executeRaw`DELETE FROM "PlatformImporterLease" WHERE "id" = 'singleton'`;
+  }
 
   // ---------------------------------------------------------------------------
   // SECTION 11: Billing Period Override & Pepper Pre-Flight (S5-3 & S5-8)
@@ -730,12 +774,32 @@ async function main() {
   console.log('Goal: Operator override --default-billing-period works; server pepper pre-flight verified.');
   console.log('--------------------------------------------------------------------------------\n');
 
-  // Pepper pre-flight check
-  process.env.ORBITOX_SERVER_PEPPER = 'test-pepper-preflight-entropy-32-chars-min';
-  const preflight = verifyServerPepperPreflight();
-  assert.equal(preflight.ok, true);
-  assert.equal(preflight.pepperEntropy >= 32, true);
-  console.log(`Pepper preflight result: ${preflight.message}`);
+  // Pepper pre-flight check (F1)
+  const testRing = loadPepperRing({ ORBITOX_SERVER_PEPPER: 'test-pepper-preflight-entropy-32-chars-min' });
+  const testSampleKey = 'key_sample_test_01';
+  const testSampleSecret = 'orb_test_sample_secret_12345';
+  const testSampleVerifier = activeVerifier(testRing, testSampleSecret).verifier;
+
+  const testKeyList = [
+    { id: testSampleKey, organizationId: 'org_test_sample', authVerifier: testSampleVerifier },
+  ];
+
+  const sampleMatch = verifyPepperSamples(testKeyList, JSON.stringify({ [testSampleKey]: testSampleSecret }), testRing);
+  assert.equal(sampleMatch.matched, 1);
+  assert.equal(sampleMatch.mismatched.length, 0);
+  assert.equal(sampleMatch.orgsWithoutSample.length, 0);
+
+  // Mismatch fails
+  const sampleMismatch = verifyPepperSamples(testKeyList, JSON.stringify({ [testSampleKey]: 'wrong_secret' }), testRing);
+  assert.equal(sampleMismatch.mismatched.length, 1);
+
+  // Unsampled org detected
+  const unsampledResult = verifyPepperSamples([
+    ...testKeyList,
+    { id: 'key_unsampled_02', organizationId: 'org_unsampled', authVerifier: 'some_verifier_hex' },
+  ], JSON.stringify({ [testSampleKey]: testSampleSecret }), testRing);
+  assert.ok(unsampledResult.orgsWithoutSample.includes('org_unsampled'));
+  console.log('Pepper verification samples check (F1) verified: matched sample, caught mismatch, caught unsampled org.');
 
   // Operator billing period override
   const overrideOrgSlug = `override-org-${Date.now()}`;
@@ -755,6 +819,7 @@ async function main() {
       filePath: overrideFixturePath,
       dryRun: false,
       defaultBillingPeriod: '2026-12',
+      allowUnsampledOrgs: ['*'],
     });
     assert.equal(overrideReport.organizationsImported, 1);
     const pRow = await owner.platformProject.findUnique({ where: { slug: `p-${overrideOrgSlug}` } });

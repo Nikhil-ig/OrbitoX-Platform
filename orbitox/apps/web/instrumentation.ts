@@ -18,7 +18,6 @@ export async function register() {
       { name: 'ORBITOX_RUNTIME_TOKEN', desc: 'Internal inter-service runtime communication token' },
       { name: 'ORBITOX_CONTROL_SECRET', desc: 'Master HMAC signing secret for internal principal tokens' },
       { name: 'ORBITOX_GUEST_SECRET', desc: 'Cryptographic secret for ephemeral guest session signing' },
-      { name: 'ORBITOX_SERVER_PEPPER', desc: 'Server pepper for SHA-256 API key verifier derivation' },
     ];
 
     for (const secret of requiredSecrets) {
@@ -27,6 +26,53 @@ export async function register() {
         problems.push(`${secret.name} is not set (${secret.desc})`);
       } else if (value.length < 32) {
         problems.push(`${secret.name} must be at least 32 characters (found ${value.length})`);
+      }
+    }
+
+    // Pepper validation (ORBITOX_SERVER_PEPPERS or legacy ORBITOX_SERVER_PEPPER)
+    const rawPeppers = process.env.ORBITOX_SERVER_PEPPERS?.trim();
+    const legacyPepper = process.env.ORBITOX_SERVER_PEPPER?.trim();
+    if (!rawPeppers && !legacyPepper) {
+      problems.push('ORBITOX_SERVER_PEPPER is not set (Server pepper for SHA-256 API key verifier derivation)');
+    } else if (rawPeppers) {
+      try {
+        const parsed = JSON.parse(rawPeppers);
+        if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed) || Object.keys(parsed).length === 0) {
+          problems.push('ORBITOX_SERVER_PEPPERS must be a non-empty JSON object of {id: secret}');
+        }
+      } catch {
+        problems.push('ORBITOX_SERVER_PEPPERS must be a JSON object of {id: secret}');
+      }
+    } else if (legacyPepper && legacyPepper.length < 32) {
+      problems.push(`ORBITOX_SERVER_PEPPER must be at least 32 characters (found ${legacyPepper.length})`);
+    }
+
+    // PHI encryption keys validation (required in production)
+    const phiSecrets = [
+      { name: 'ORBITOX_PHI_KEYS', desc: 'JSON map of kid to 32-byte base64 AES keys for PHI field encryption' },
+      { name: 'ORBITOX_PHI_ACTIVE_KID', desc: 'Active key identifier for new PHI encryption operations' },
+      { name: 'ORBITOX_PHI_INDEX_KEY', desc: '32-byte base64 HMAC key for blind index generation' },
+    ];
+    for (const secret of phiSecrets) {
+      const value = process.env[secret.name]?.trim();
+      if (!value) {
+        problems.push(`${secret.name} is not set (${secret.desc})`);
+      }
+    }
+    const rawPhiKeys = process.env.ORBITOX_PHI_KEYS?.trim();
+    if (rawPhiKeys) {
+      try {
+        const parsed = JSON.parse(rawPhiKeys);
+        if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed) || Object.keys(parsed).length === 0) {
+          problems.push('ORBITOX_PHI_KEYS must be a non-empty JSON object');
+        } else {
+          const activeKid = process.env.ORBITOX_PHI_ACTIVE_KID?.trim();
+          if (activeKid && !parsed[activeKid]) {
+            problems.push(`active PHI kid "${activeKid}" not found in ORBITOX_PHI_KEYS`);
+          }
+        }
+      } catch {
+        problems.push('ORBITOX_PHI_KEYS must be valid JSON');
       }
     }
 

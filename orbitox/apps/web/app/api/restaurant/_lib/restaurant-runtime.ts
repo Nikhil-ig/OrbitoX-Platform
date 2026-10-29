@@ -14,8 +14,8 @@ import {
   RealtimeEventGateway,
   RestaurantCatalogItem,
   QRIdentity,
-  QRTrustEngine,
 } from '@orbitox/pos';
+import { assertDemoSeedAllowed, demoSeedAllowed, newTableToken } from '@/lib/seed-gate';
 
 class RestaurantRuntimeManager {
   public readonly qrService = new QrSessionService();
@@ -26,6 +26,13 @@ class RestaurantRuntimeManager {
   private initialized = false;
 
   constructor() {
+    if (demoSeedAllowed()) {
+      this.seedDefaults();
+    }
+  }
+
+  public seedDemoData() {
+    assertDemoSeedAllowed();
     this.seedDefaults();
   }
 
@@ -55,10 +62,12 @@ class RestaurantRuntimeManager {
   }
 
   private seedDefaults() {
+    assertDemoSeedAllowed();
     if (this.initialized) return;
     this.initialized = true;
 
     // 1. Seed Table 14
+    const qr14Token = newTableToken();
     const qr14: QRIdentity = {
       id: 'qr_t14',
       tenantId: 'tenant_orbitox',
@@ -66,7 +75,7 @@ class RestaurantRuntimeManager {
       locationId: 'loc_ludhiana',
       tableId: 'tbl_14',
       locator: '7Kp9xQ8m2L',
-      tokenHash: QRTrustEngine.hashToken('secret_t14_ludhiana'),
+      tokenHash: qr14Token.tokenHash,
       securityVersion: 1,
       isActive: true,
     };
@@ -76,6 +85,7 @@ class RestaurantRuntimeManager {
     for (let i = 1; i <= 10; i++) {
       if (i === 14) continue;
       const locator = `T${i}-${i * 777}`;
+      const tableToken = newTableToken();
       const qr: QRIdentity = {
         id: `qr_t${i}`,
         tenantId: 'tenant_orbitox',
@@ -83,7 +93,7 @@ class RestaurantRuntimeManager {
         locationId: 'loc_ludhiana',
         tableId: `tbl_${i}`,
         locator,
-        tokenHash: QRTrustEngine.hashToken(`secret_t${i}`),
+        tokenHash: tableToken.tokenHash,
         securityVersion: 1,
         isActive: true,
       };

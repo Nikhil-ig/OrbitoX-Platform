@@ -15,7 +15,6 @@ import { POST as provisionProject } from '../app/api/v1/admin/projects/route';
 import { PATCH as updateProject } from '../app/api/v1/admin/projects/[projectId]/route';
 import { POST as updateProjectUsage } from '../app/api/v1/admin/projects/[projectId]/usage/route';
 import { createProjectUsageHandler } from '../lib/project-usage-handler';
-import { hospitalStore } from '../app/api/hospital/_store';
 
 async function listUsageResetAuditEvents(projectId: string): Promise<Array<{ action: string; metadata: any }>> {
   if (!platformRepository.isPrismaBacked()) return PlatformRepository.listAuditEvents({ projectId }) as Array<{ action: string; metadata: any }>;
@@ -898,9 +897,15 @@ describe('Phase 1 & 1.5 Security, Unified Auth & Licensed Customer Test Suite', 
       makeHospitalCredential('Hospital Alpha'),
       makeHospitalCredential('Hospital Beta'),
     ]);
+    const testTenantStore = new Map<string, string[]>();
     const handler = withApiGuard(
       { serviceId: 'hms', serviceName: 'Hospital API' },
-      async () => NextResponse.json({ data: hospitalStore.addPatient({ name: 'Alpha-only Patient' }) })
+      async (_req, ctx) => {
+        const list = testTenantStore.get(ctx.tenantId) ?? [];
+        list.push('Alpha-only Patient');
+        testTenantStore.set(ctx.tenantId, list);
+        return NextResponse.json({ data: list });
+      }
     );
 
     await handler(new NextRequest('http://localhost:3000/api/v1/hms/patients', {
@@ -909,7 +914,7 @@ describe('Phase 1 & 1.5 Security, Unified Auth & Licensed Customer Test Suite', 
     }));
     const secondResponse = await withApiGuard(
       { serviceId: 'hms', serviceName: 'Hospital API' },
-      async () => NextResponse.json({ data: hospitalStore.getPatients() })
+      async (_req, ctx) => NextResponse.json({ data: testTenantStore.get(ctx.tenantId) ?? [] })
     )(new NextRequest('http://localhost:3000/api/v1/hms/patients', {
       headers: { 'x-api-key': secondTenant.rawSecret },
     }));

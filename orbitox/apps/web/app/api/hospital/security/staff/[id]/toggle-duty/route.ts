@@ -1,23 +1,32 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { authenticatedHospitalFetch } from '../../../../_init';
 import { withHospitalGuard } from '@/app/api/_lib/route-auth';
+import { withTenantTx } from '@/lib/tenant-db';
+import { prisma } from '@/lib/prisma';
+import { mapDbError, errorBody, HttpError } from '@/lib/db-errors';
 
 export const POST = withHospitalGuard(async (
-  req: NextRequest,
+  _req: NextRequest,
   { params }: { params: Promise<{ id: string }> },
   authContext
 ) => {
   try {
     const { id } = await params;
-    const body = await req.json();
-    const res = await authenticatedHospitalFetch(`/api/hospital/security/staff/${id}/toggle-duty`, authContext, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body)
+
+    const data = await withTenantTx(prisma, authContext.tenantId, async (tx) => {
+      const { rows } = await tx.query(
+        `UPDATE "HmsStaff"
+         SET "onDuty" = NOT "onDuty"
+         WHERE "id" = $1
+         RETURNING "id", "role", "onDuty"`,
+        [id]
+      );
+      if (!rows[0]) throw new HttpError(404, 'REFERENCE_NOT_FOUND', 'Staff member not found');
+      return rows[0];
     });
-    const data = await res.json();
-    return NextResponse.json(data, { status: res.status });
+
+    return NextResponse.json({ success: true, data });
   } catch (err: any) {
-    return NextResponse.json({ success: false, error: err.message }, { status: 502 });
+    const apiErr = mapDbError(err);
+    return NextResponse.json(errorBody(apiErr, authContext.requestId), { status: apiErr.status });
   }
 }, { adminOnly: true, sensitive: true });

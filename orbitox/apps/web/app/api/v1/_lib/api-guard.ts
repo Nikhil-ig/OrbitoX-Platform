@@ -22,7 +22,6 @@ import {
   PLAN_DEFAULT_QUOTAS,
 } from '@orbitox-io/plugin-engine';
 import { PlatformApiKeyRecord, PlatformProject } from '@orbitox/types';
-import { runWithHospitalTenant } from '@/app/api/hospital/_store';
 import { platformRepository } from '@/lib/platform-repository';
 
 export { PlatformRepository };
@@ -1227,9 +1226,7 @@ export function withApiGuard<T = any>(
     }
 
     try {
-      const response = serviceId === 'hms'
-        ? await runWithHospitalTenant(tenantId, () => handler(req, context))
-        : await handler(req, context);
+      const response = await handler(req, context);
       const latencyMs = Math.max(1, Math.round(performance.now() - startTime));
 
       if (projectUsageReserved && project && (response.status < 200 || response.status >= 300)) {

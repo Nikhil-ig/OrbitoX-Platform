@@ -1,41 +1,32 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { authenticatedHospitalFetch } from '../../../_init';
 import { withHospitalGuard } from '@/app/api/_lib/route-auth';
+import { withTenantTx } from '@/lib/tenant-db';
+import { prisma } from '@/lib/prisma';
+import { mapDbError, errorBody, HttpError } from '@/lib/db-errors';
 
 export const GET = withHospitalGuard(async (
-  req: NextRequest,
+  _req: NextRequest,
   { params }: { params: Promise<{ id: string }> },
   authContext
 ) => {
   try {
     const { id } = await params;
-    const res = await authenticatedHospitalFetch(`/api/hospital/security/staff/${id}`, authContext, {
-      cache: 'no-store'
-    });
-    const data = await res.json();
-    return NextResponse.json(data, { status: res.status });
-  } catch (err: any) {
-    return NextResponse.json({ success: false, error: err.message }, { status: 502 });
-  }
-}, { adminOnly: true, sensitive: true });
 
-export const PUT = withHospitalGuard(async (
-  req: NextRequest,
-  { params }: { params: Promise<{ id: string }> },
-  authContext
-) => {
-  try {
-    const { id } = await params;
-    const body = await req.json();
-    const res = await authenticatedHospitalFetch(`/api/hospital/security/staff/${id}`, authContext, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body)
+    const data = await withTenantTx(prisma, authContext.tenantId, async (tx) => {
+      const { rows } = await tx.query(
+        `SELECT "id", "role", "departmentId", "status", "onDuty"
+         FROM "HmsStaff"
+         WHERE "id" = $1`,
+        [id]
+      );
+      if (!rows[0]) throw new HttpError(404, 'REFERENCE_NOT_FOUND', 'Staff member not found');
+      return rows[0];
     });
-    const data = await res.json();
-    return NextResponse.json(data, { status: res.status });
+
+    return NextResponse.json({ success: true, data });
   } catch (err: any) {
-    return NextResponse.json({ success: false, error: err.message }, { status: 502 });
+    const apiErr = mapDbError(err);
+    return NextResponse.json(errorBody(apiErr, authContext.requestId), { status: apiErr.status });
   }
 }, { adminOnly: true, sensitive: true });
 
@@ -47,31 +38,25 @@ export const PATCH = withHospitalGuard(async (
   try {
     const { id } = await params;
     const body = await req.json();
-    const res = await authenticatedHospitalFetch(`/api/hospital/security/staff/${id}`, authContext, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body)
-    });
-    const data = await res.json();
-    return NextResponse.json(data, { status: res.status });
-  } catch (err: any) {
-    return NextResponse.json({ success: false, error: err.message }, { status: 502 });
-  }
-}, { adminOnly: true, sensitive: true });
 
-export const DELETE = withHospitalGuard(async (
-  req: NextRequest,
-  { params }: { params: Promise<{ id: string }> },
-  authContext
-) => {
-  try {
-    const { id } = await params;
-    const res = await authenticatedHospitalFetch(`/api/hospital/security/staff/${id}`, authContext, {
-      method: 'DELETE',
+    const data = await withTenantTx(prisma, authContext.tenantId, async (tx) => {
+      const { rows } = await tx.query(
+        `UPDATE "HmsStaff"
+         SET "role" = COALESCE($2, "role"),
+             "departmentId" = COALESCE($3, "departmentId"),
+             "status" = COALESCE($4, "status"),
+             "onDuty" = COALESCE($5, "onDuty")
+         WHERE "id" = $1
+         RETURNING "id", "role", "departmentId", "status", "onDuty"`,
+        [id, body.role ?? null, body.departmentId ?? null, body.status ?? null, body.onDuty ?? null]
+      );
+      if (!rows[0]) throw new HttpError(404, 'REFERENCE_NOT_FOUND', 'Staff member not found');
+      return rows[0];
     });
-    const data = await res.json();
-    return NextResponse.json(data, { status: res.status });
+
+    return NextResponse.json({ success: true, data });
   } catch (err: any) {
-    return NextResponse.json({ success: false, error: err.message }, { status: 502 });
+    const apiErr = mapDbError(err);
+    return NextResponse.json(errorBody(apiErr, authContext.requestId), { status: apiErr.status });
   }
 }, { adminOnly: true, sensitive: true });

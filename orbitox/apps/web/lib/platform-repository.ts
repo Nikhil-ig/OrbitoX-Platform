@@ -1,4 +1,4 @@
-import * as crypto from 'node:crypto';
+import * as crypto from 'crypto';
 import { Prisma, PrismaClient } from '@prisma/client';
 import {
     EnvironmentQuotaPolicyRecord,
@@ -22,6 +22,7 @@ import {
     PlatformKeyEngine,
     PlatformRepository,
 } from '@orbitox-io/plugin-engine';
+import { loadPepperRing, activeVerifier, candidateVerifiers } from '@/lib/pepper';
 
 type AsyncMethods<T> = {
     [Key in keyof T as T[Key] extends (...args: any[]) => any ? Key : never]: T[Key] extends (
@@ -118,6 +119,7 @@ export type AsyncPlatformRepository = AsyncMethods<typeof PlatformRepository> & 
         remaining: number;
         resetSeconds: number;
     }>;
+    getApiKeyPepperDistribution(): Promise<Record<string, number>>;
 };
 
 type DatabaseClient = PrismaClient;
@@ -199,6 +201,7 @@ function toKey(row: RawRow): PlatformApiKeyRecord {
         keyPrefix: row.keyPrefix,
         secretFingerprint: row.secretFingerprint,
         authVerifier: row.authVerifier,
+        verifierPepperId: row.verifierPepperId ?? undefined,
         maskedDisplay: row.maskedDisplay,
         status: row.status,
         capabilities: row.capabilities || [],
@@ -348,7 +351,7 @@ function toDatabaseProjectData(input: Partial<PlatformProject> & Record<string, 
     return data;
 }
 
-function buildKey(input: CreateKeyInput, environment: RawRow): { record: PlatformApiKeyRecord; rawSecret: string } {
+function buildKey(input: CreateKeyInput, environment: RawRow, serverPepper?: string): { record: PlatformApiKeyRecord; rawSecret: string } {
     const environmentName = environment.isProduction
         ? 'production'
         : environment.slug === 'staging'
@@ -367,6 +370,22 @@ function buildKey(input: CreateKeyInput, environment: RawRow): { record: Platfor
         lastUsedAt: null,
         ipAllowlist: input.ipAllowlist,
     });
+
+    let authVerifier = generated.authVerifier;
+    let verifierPepperId: string | undefined = undefined;
+    if (serverPepper) {
+        authVerifier = PlatformKeyEngine.computeAuthVerifier(generated.rawSecret, serverPepper);
+    } else {
+        try {
+            const ring = loadPepperRing();
+            const act = activeVerifier(ring, generated.rawSecret);
+            authVerifier = act.verifier;
+            verifierPepperId = act.pepperId;
+        } catch {
+            authVerifier = generated.authVerifier;
+        }
+    }
+
     return {
         rawSecret: generated.rawSecret,
         record: {
@@ -378,7 +397,8 @@ function buildKey(input: CreateKeyInput, environment: RawRow): { record: Platfor
             keyType: input.keyType || 'PROJECT_SCOPED',
             keyPrefix: generated.keyPrefix,
             secretFingerprint: generated.secretFingerprint,
-            authVerifier: generated.authVerifier,
+            authVerifier,
+            verifierPepperId,
             maskedDisplay: generated.maskedDisplay,
             status: 'ACTIVE',
             capabilities: input.capabilities,
@@ -406,6 +426,7 @@ function toKeyCreateData(key: PlatformApiKeyRecord): Prisma.PlatformApiKeyCreate
         keyPrefix: key.keyPrefix,
         secretFingerprint: key.secretFingerprint,
         authVerifier: key.authVerifier,
+        verifierPepperId: key.verifierPepperId,
         maskedDisplay: key.maskedDisplay,
         status: key.status,
         capabilities: key.capabilities,
@@ -922,14 +943,35 @@ export function createPrismaPlatformRepository(client: PrismaClient, adminAuditC
             }));
         },
         async findKeyByRawSecret(rawSecret: string, serverPepper?: string): Promise<PlatformApiKeyRecord | undefined> {
-            const verifier = PlatformKeyEngine.computeAuthVerifier(rawSecret, serverPepper);
-            return mapKey(await client.platformApiKey.findUnique({
-                where: { authVerifier: verifier },
+            let verifiers: string[];
+            if (serverPepper) {
+                verifiers = [PlatformKeyEngine.computeAuthVerifier(rawSecret, serverPepper)];
+            } else {
+                try {
+                    const ring = loadPepperRing();
+                    verifiers = candidateVerifiers(ring, rawSecret).map((c) => c.verifier);
+                } catch {
+                    verifiers = [PlatformKeyEngine.computeAuthVerifier(rawSecret)];
+                }
+            }
+            const rows = await client.platformApiKey.findMany({
+                where: { authVerifier: { in: verifiers } },
                 include: { environment: { select: { projectId: true } } },
-            }));
+                take: 2,
+            });
+            if (rows.length > 1) {
+                throw new Error('verifier collision');
+            }
+            return rows[0] ? mapKey(rows[0]) : undefined;
         },
         async authorizeApiKey(rawSecret: string): Promise<PlatformAuthorizationLookup> {
-            const verifier = PlatformKeyEngine.computeAuthVerifier(rawSecret);
+            let verifiers: string[];
+            try {
+                const ring = loadPepperRing();
+                verifiers = candidateVerifiers(ring, rawSecret).map((c) => c.verifier);
+            } catch {
+                verifiers = [PlatformKeyEngine.computeAuthVerifier(rawSecret)];
+            }
             const rows = await client.$queryRaw<Array<{ key_data: RawRow; project_data: RawRow; environment_data: RawRow }>>`
         SELECT to_jsonb(k) AS key_data,
                to_jsonb(p) AS project_data,
@@ -937,9 +979,12 @@ export function createPrismaPlatformRepository(client: PrismaClient, adminAuditC
         FROM "PlatformApiKey" k
         JOIN "ProjectEnvironment" e ON e."id" = k."environmentId"
         JOIN "PlatformProject" p ON p."id" = e."projectId"
-        WHERE k."authVerifier" = ${verifier}
-        LIMIT 1
+        WHERE k."authVerifier" = ANY(${verifiers}::text[])
+        LIMIT 2
       `;
+            if (rows.length > 1) {
+                throw new Error('verifier collision');
+            }
             const row = rows[0];
             return {
                 key: row ? toKey({ ...row.key_data, environment: row.environment_data }) : null,
@@ -948,6 +993,19 @@ export function createPrismaPlatformRepository(client: PrismaClient, adminAuditC
                 queryCount: 1,
                 source: 'prisma',
             };
+        },
+        async getApiKeyPepperDistribution(): Promise<Record<string, number>> {
+            const rows = await client.$queryRaw<Array<{ pepper_id: string | null; key_count: bigint }>>`
+                SELECT COALESCE(k."verifierPepperId", 'legacy') AS pepper_id,
+                       COUNT(*)::bigint AS key_count
+                FROM "PlatformApiKey" k
+                GROUP BY COALESCE(k."verifierPepperId", 'legacy')
+            `;
+            const report: Record<string, number> = {};
+            for (const r of rows) {
+                report[r.pepper_id || 'legacy'] = Number(r.key_count);
+            }
+            return report;
         },
         async createApiKey(input: CreateKeyInput, serverPepper?: string): Promise<{ keyRecord: PlatformApiKeyRecord; rawSecret: string }> {
             const environment = await getEnvironment(input.environmentId);
@@ -1306,6 +1364,10 @@ const extraMethods = {
         const project = key ? PlatformRepository.getProject(key.projectId) || null : null;
         const environment = key ? PlatformRepository.getEnvironment(key.environmentId) || null : null;
         return { key, project, environment, queryCount: 0, source: 'legacy' };
+    },
+    getApiKeyPepperDistribution: async (): Promise<Record<string, number>> => {
+        if (prismaIsRequired()) return getPrismaRepository().getApiKeyPepperDistribution();
+        return { legacy: PlatformRepository.listApiKeys().length };
     },
     recordPlatformAdminAudit: async (event: PlatformAdminAuditInput): Promise<string> => {
         if (prismaIsRequired()) return getPrismaRepository().recordPlatformAdminAudit(event);

@@ -81,6 +81,7 @@ export interface PlatformApiKeyRecord {
     keyPrefix: string;
     secretFingerprint: string;
     authVerifier: string;
+    verifierPepperId?: string;
     maskedDisplay: string;
     status: KeyLifecycleState;
     capabilities: string[];

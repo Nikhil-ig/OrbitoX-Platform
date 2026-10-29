@@ -151,6 +151,7 @@ export interface PlatformApiKeyRecord {
   keyPrefix: string; // e.g. orb_live_proj_
   secretFingerprint: string; // SHA-256(rawSecret).hex (first 16 chars)
   authVerifier: string; // HMAC-SHA-256(pepper, rawSecret).hex
+  verifierPepperId?: string; // Active pepper ID at key creation (for rotation tracking)
   maskedDisplay: string; // orb_live_••••••••0zE
   status: KeyLifecycleState;
   capabilities: string[];

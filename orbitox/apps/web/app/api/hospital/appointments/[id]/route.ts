@@ -1,32 +1,54 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { authenticatedHospitalFetch } from '../../_init';
 import { withHospitalGuard } from '@/app/api/_lib/route-auth';
+import { withTenantTx } from '@/lib/tenant-db';
+import { prisma } from '@/lib/prisma';
+import { mapDbError, errorBody, HttpError } from '@/lib/db-errors';
 
-export const PATCH = withHospitalGuard(async (req: NextRequest, context: { params: Promise<{ id: string }> }, authContext) => {
+export const PATCH = withHospitalGuard(async (req: NextRequest, { params }: { params: Promise<{ id: string }> }, authContext) => {
   try {
-    const { id } = await context.params;
+    const { id } = await params;
     const body = await req.json();
-    const res = await authenticatedHospitalFetch(`/api/hospital/appointments/${id}`, authContext, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body)
+
+    const data = await withTenantTx(prisma, authContext.tenantId, async (tx) => {
+      const { rows } = await tx.query(
+        `UPDATE "HmsAppointment"
+         SET "status" = COALESCE($2, "status"),
+             "reason" = COALESCE($3, "reason")
+         WHERE "id" = $1
+         RETURNING "id", "patientId", "doctorId", "status", "reason"`,
+        [id, body.status ?? null, body.reason ?? null]
+      );
+      if (!rows[0]) throw new HttpError(404, 'REFERENCE_NOT_FOUND', 'Appointment not found');
+      return rows[0];
     });
-    const data = await res.json();
-    return NextResponse.json(data, { status: res.status });
+
+    return NextResponse.json({ success: true, data });
   } catch (err: any) {
-    return NextResponse.json({ success: false, error: err.message }, { status: 502 });
+    const apiErr = mapDbError(err);
+    return NextResponse.json(errorBody(apiErr, authContext.requestId), { status: apiErr.status });
   }
 });
 
-export const DELETE = withHospitalGuard(async (_req: NextRequest, context: { params: Promise<{ id: string }> }, authContext) => {
+export const DELETE = withHospitalGuard(async (_req: NextRequest, { params }: { params: Promise<{ id: string }> }, authContext) => {
   try {
-    const { id } = await context.params;
-    const res = await authenticatedHospitalFetch(`/api/hospital/appointments/${id}`, authContext, {
-      method: 'DELETE',
+    const { id } = await params;
+
+    // Runtime role does not DELETE clinical rows (I8); soft-cancel appointment by setting status = 'CANCELLED'
+    const data = await withTenantTx(prisma, authContext.tenantId, async (tx) => {
+      const { rows } = await tx.query(
+        `UPDATE "HmsAppointment"
+         SET "status" = 'CANCELLED'
+         WHERE "id" = $1
+         RETURNING "id", "status"`,
+        [id]
+      );
+      if (!rows[0]) throw new HttpError(404, 'REFERENCE_NOT_FOUND', 'Appointment not found');
+      return rows[0];
     });
-    const data = await res.json();
-    return NextResponse.json(data, { status: res.status });
+
+    return NextResponse.json({ success: true, data });
   } catch (err: any) {
-    return NextResponse.json({ success: false, error: err.message }, { status: 502 });
+    const apiErr = mapDbError(err);
+    return NextResponse.json(errorBody(apiErr, authContext.requestId), { status: apiErr.status });
   }
 });

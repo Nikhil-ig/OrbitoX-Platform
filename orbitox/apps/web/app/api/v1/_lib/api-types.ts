@@ -41,6 +41,7 @@ export interface ApiRequestContext {
   tenantName?: string;
   categorySlug?: string;
   serviceId: string;
+  sub?: string;
   apiKey?: string;
   credential?: string;
   keyPrefix?: string;

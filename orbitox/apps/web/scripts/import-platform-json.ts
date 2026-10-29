@@ -2,6 +2,8 @@ import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { PrismaClient, Prisma } from '@prisma/client';
+import { PlatformKeyEngine } from '@orbitox-io/plugin-engine';
+import { loadPepperRing, candidateVerifiers, type PepperRing } from '../lib/pepper';
 
 export interface ImporterOptions {
   filePath?: string;
@@ -11,6 +13,8 @@ export interface ImporterOptions {
   abortAfterOrg?: number; // Strictly ignored unless ORBITOX_ALLOW_TEST_HOOKS === 'true' && NODE_ENV !== 'production'
   killMidOrg?: string; // Strictly ignored unless ORBITOX_ALLOW_TEST_HOOKS === 'true' && NODE_ENV !== 'production'
   defaultBillingPeriod?: string; // Operator override, format YYYY-MM
+  allowUnsampledOrgs?: string[]; // S5/F1: slugs of organizations allowed to have verified keys without out-of-band samples
+  bypassLease?: boolean; // Test only: bypass singleton lease to test xact lock under concurrency
 }
 
 export interface EntityReconciliation {
@@ -75,32 +79,55 @@ export function sanitizeDatabaseUrl(rawUrl: string): string {
   }
 }
 
-export function verifyServerPepperPreflight(): { ok: boolean; pepperEntropy: number; message: string } {
-  const pepper = process.env.ORBITOX_SERVER_PEPPER || '';
-  if (!pepper || pepper.length < 32) {
-    return {
-      ok: false,
-      pepperEntropy: pepper.length,
-      message: 'ORBITOX_SERVER_PEPPER is unset or shorter than 32 characters minimum entropy.',
-    };
+/**
+ * S5-F1: Real pepper verification before import.
+ * Operator supplies known secrets out-of-band:
+ *   ORBITOX_IMPORT_VERIFY_SAMPLES='{"key_live_abc":"orb_live_...","key_live_def":"orb_live_..."}'
+ * Never read samples from the JSON file. Never log values.
+ */
+export function verifyPepperSamples(
+  keys: Array<{ id: string; keyId?: string; organizationId: string; authVerifier?: string }>,
+  samplesJson = process.env.ORBITOX_IMPORT_VERIFY_SAMPLES,
+  ring?: PepperRing,
+): { checked: number; matched: number; mismatched: string[]; orgsWithoutSample: string[] } {
+  let samples: Record<string, string> = {};
+  if (samplesJson) {
+    try {
+      samples = JSON.parse(samplesJson);
+    } catch {
+      samples = {};
+    }
   }
-  const testSecret = '__orbitox_preflight_vector__';
-  const computed = crypto.createHmac('sha256', pepper).update(testSecret).digest('hex');
-  if (!computed || computed.length !== 64) {
-    return {
-      ok: false,
-      pepperEntropy: pepper.length,
-      message: 'Failed HMAC-SHA256 test vector pre-flight verification.',
-    };
-  }
-  return {
-    ok: true,
-    pepperEntropy: pepper.length,
-    message: `Server pepper verified (${pepper.length} chars entropy, test vector matched).`,
-  };
-}
+  const byId = new Map(keys.flatMap((k) => [[k.id, k], ...(k.keyId ? [[k.keyId, k]] as const : [])]));
+  const mismatched: string[] = [];
+  const sampledOrgs = new Set<string>();
+  let checked = 0, matched = 0;
 
-const ADVISORY_LOCK_ID = 74639201;
+  for (const [keyRef, raw] of Object.entries(samples)) {
+    const key = byId.get(keyRef);
+    if (!key?.authVerifier) { mismatched.push(keyRef); continue; }
+    checked++;
+    const expected = Buffer.from(key.authVerifier, 'hex');
+    let ok = false;
+    try {
+      const activeRing = ring || loadPepperRing();
+      ok = candidateVerifiers(activeRing, raw).some((candidate) => {
+        const got = Buffer.from(candidate.verifier, 'hex');
+        return got.length === expected.length && crypto.timingSafeEqual(got, expected);
+      });
+    } catch {
+      const candidates = PlatformKeyEngine.resolveCandidatePeppers();
+      ok = candidates.some((pepper) => {
+        const got = Buffer.from(crypto.createHmac('sha256', pepper).update(raw).digest('hex'), 'hex');
+        return got.length === expected.length && crypto.timingSafeEqual(got, expected);
+      });
+    }
+    if (ok) { matched++; sampledOrgs.add(key.organizationId); } else mismatched.push(keyRef);
+  }
+  const orgsWithVerifiedKeys = new Set(keys.filter((k) => k.authVerifier).map((k) => k.organizationId));
+  const orgsWithoutSample = [...orgsWithVerifiedKeys].filter((o) => !sampledOrgs.has(o));
+  return { checked, matched, mismatched, orgsWithoutSample };
+}
 
 export async function runPlatformJsonImporter(
   client: PrismaClient,
@@ -163,18 +190,45 @@ export async function runPlatformJsonImporter(
     defaultPeriod = options.defaultBillingPeriod;
   }
 
-  // S5-8: Advisory Lock for Concurrent Importers
-  let lockAcquired = false;
-  if (!isDryRun) {
-    const [lockRow] = await client.$queryRaw<Array<{ locked: boolean }>>`
-      SELECT pg_try_advisory_lock(${ADVISORY_LOCK_ID}) AS locked
+  // S5-F2: Singleton Lease Table for Importer Process Runs
+  const holderId = `importer_${process.pid}_${crypto.randomUUID()}`;
+  let leaseAcquired = false;
+  let heartbeatInterval: NodeJS.Timeout | undefined = undefined;
+
+  if (!isDryRun && !options.bypassLease) {
+    await client.$executeRaw`
+      CREATE TABLE IF NOT EXISTS "PlatformImporterLease" (
+        "id" TEXT PRIMARY KEY DEFAULT 'singleton',
+        "holder" TEXT NOT NULL,
+        "expiresAt" TIMESTAMPTZ NOT NULL
+      )
     `;
-    if (!lockRow?.locked) {
+    const acquired = await client.$queryRaw<Array<{ holder: string }>>`
+      INSERT INTO "PlatformImporterLease" ("id", "holder", "expiresAt")
+      VALUES ('singleton', ${holderId}, now() + interval '2 minutes')
+      ON CONFLICT ("id") DO UPDATE
+      SET "holder" = EXCLUDED."holder", "expiresAt" = EXCLUDED."expiresAt"
+      WHERE "PlatformImporterLease"."expiresAt" < now()
+      RETURNING "holder"
+    `;
+    if (!acquired[0]?.holder) {
       throw new Error(
-        'Concurrent execution conflict: another platform importer process is currently active. Failed to acquire PostgreSQL advisory lock (ID 74639201).'
+        'Concurrent execution conflict: another platform importer holds the lease in "PlatformImporterLease".'
       );
     }
-    lockAcquired = true;
+    leaseAcquired = true;
+    heartbeatInterval = setInterval(async () => {
+      try {
+        await client.$executeRaw`
+          UPDATE "PlatformImporterLease"
+          SET "expiresAt" = now() + interval '2 minutes'
+          WHERE "id" = 'singleton' AND "holder" = ${holderId}
+        `;
+      } catch {
+        // Heartbeat failure ignored; lease expires if process died
+      }
+    }, 30_000);
+    heartbeatInterval.unref();
   }
 
   try {
@@ -218,6 +272,46 @@ export async function runPlatformJsonImporter(
     }
 
     const knownOrgIds = new Set(organizations.map((o) => o.id));
+
+    // S5-F1: Pepper verification before first write
+    const projectToOrg = new Map<string, string>();
+    for (const p of projects) {
+      if (p.id && p.organizationId) projectToOrg.set(p.id, p.organizationId);
+    }
+    for (const e of environments) {
+      if (e.id && e.projectId && projectToOrg.has(e.projectId)) {
+        projectToOrg.set(e.id, projectToOrg.get(e.projectId)!);
+      }
+    }
+
+    const keysForVerification = apiKeys.map((k: any) => ({
+      id: k.id,
+      keyId: k.keyId,
+      organizationId: k.organizationId || projectToOrg.get(k.projectId) || projectToOrg.get(k.environmentId) || '',
+      authVerifier: k.authVerifier,
+    }));
+
+    const pepperCheck = verifyPepperSamples(keysForVerification);
+    if (pepperCheck.mismatched.length > 0) {
+      throw new Error(
+        `Pepper verification failed: ${pepperCheck.mismatched.length} sample(s) mismatched or had no verifier. Key IDs: ${pepperCheck.mismatched.join(', ')}`
+      );
+    }
+
+    const orgIdToSlug = new Map<string, string>();
+    for (const o of organizations) {
+      if (o.id && o.slug) orgIdToSlug.set(o.id, o.slug);
+    }
+    const allowedSlugs = new Set(options.allowUnsampledOrgs || []);
+    const unsampledSlugs = pepperCheck.orgsWithoutSample
+      .map((orgId) => orgIdToSlug.get(orgId) || orgId)
+      .filter((slug) => !allowedSlugs.has('*') && !allowedSlugs.has(slug));
+
+    if (unsampledSlugs.length > 0 && !isDryRun) {
+      throw new Error(
+        `Pepper verification aborted: organizations with verified keys have no out-of-band samples: ${unsampledSlugs.join(', ')}. Provide samples in ORBITOX_IMPORT_VERIFY_SAMPLES or explicitly permit via --allow-unsampled-org=<slug>.`
+      );
+    }
     const knownProjectIds = new Set(projects.map((p) => p.id));
     const unresolvedAudits = auditLogs.filter(
       (a) => !knownOrgIds.has(a.organizationId) && !knownProjectIds.has(a.projectId)
@@ -417,6 +511,9 @@ export async function runPlatformJsonImporter(
       try {
         await client.$transaction(
           async (tx) => {
+            // S5-F2: Serialises importers per organization. Released automatically at COMMIT/ROLLBACK.
+            await tx.$executeRaw`SELECT pg_advisory_xact_lock(74639201, hashtext(${org.slug}))`;
+
             // A. Organization (INSERT-ONLY)
             const existingOrg = await tx.platformOrganization.findFirst({
               where: { OR: [{ id: org.id }, { slug: org.slug }] },
@@ -863,9 +960,12 @@ export async function runPlatformJsonImporter(
 
     return report;
   } finally {
-    if (lockAcquired) {
+    if (heartbeatInterval) clearInterval(heartbeatInterval);
+    if (leaseAcquired) {
       try {
-        await client.$executeRaw`SELECT pg_advisory_unlock(${ADVISORY_LOCK_ID})`;
+        await client.$executeRaw`
+          DELETE FROM "PlatformImporterLease" WHERE "id" = 'singleton' AND "holder" = ${holderId}
+        `;
       } catch {}
     }
   }
@@ -926,6 +1026,11 @@ async function cliMain() {
   const abortAfterOrg = abortAfterArg ? Number(abortAfterArg.split('=')[1]) : undefined;
   const killMidArg = args.find((a) => a.startsWith('--kill-mid-org='));
   const killMidOrg = killMidArg ? killMidArg.split('=')[1] : undefined;
+  const allowUnsampledArgs = args
+    .filter((a) => a.startsWith('--allow-unsampled-org='))
+    .map((a) => a.split('=')[1])
+    .filter((s): s is string => Boolean(s));
+  const bypassLease = args.includes('--bypass-lease');
 
   // S5-7: Explicit validation of required arguments
   if (!filePath) {
@@ -952,6 +1057,8 @@ async function cliMain() {
       abortAfterOrg,
       killMidOrg,
       defaultBillingPeriod,
+      allowUnsampledOrgs: allowUnsampledArgs,
+      bypassLease,
     });
     printImporterReport(report);
   } finally {

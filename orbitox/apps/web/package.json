@@ -22,30 +22,32 @@
     "lint": "next lint"
   },
   "dependencies": {
-    "react": "^19.0.0",
-    "react-dom": "^19.0.0",
-    "next": "^15.5.25",
-    "@orbitox/ui": "workspace:*",
-    "@orbitox/sdk": "workspace:*",
-    "@orbitox/types": "workspace:*",
-    "@orbitox/runtime": "workspace:*",
-    "@orbitox/plugin-engine": "workspace:*",
     "@orbitox-io/plugin-engine": "workspace:*",
-    "@orbitox/crm": "workspace:*",
-    "@orbitox/core": "workspace:*",
     "@orbitox/commerce": "workspace:*",
-    "@orbitox/school": "workspace:*",
-    "@orbitox/pos": "workspace:*",
+    "@orbitox/core": "workspace:*",
+    "@orbitox/crm": "workspace:*",
     "@orbitox/external-project-engine": "workspace:*",
     "@orbitox/external-runtime-sdk": "workspace:*",
-    "@prisma/client": "^6.19.0"
+    "@orbitox/plugin-engine": "workspace:*",
+    "@orbitox/pos": "workspace:*",
+    "@orbitox/runtime": "workspace:*",
+    "@orbitox/school": "workspace:*",
+    "@orbitox/sdk": "workspace:*",
+    "@orbitox/types": "workspace:*",
+    "@orbitox/ui": "workspace:*",
+    "@prisma/client": "^6.19.0",
+    "next": "^15.5.25",
+    "pg": "^8.23.1",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0"
   },
   "devDependencies": {
+    "@orbitox/eslint-config": "workspace:*",
+    "@orbitox/tsconfig": "workspace:*",
     "@types/node": "^20",
+    "@types/pg": "^8.23.1",
     "@types/react": "^19",
     "@types/react-dom": "^19",
-    "typescript": "^5",
-    "@orbitox/eslint-config": "workspace:*",
-    "@orbitox/tsconfig": "workspace:*"
+    "typescript": "^5"
   }
 }
