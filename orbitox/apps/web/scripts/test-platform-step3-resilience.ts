@@ -11,6 +11,7 @@ const databaseUrl = process.env.TEST_DATABASE_URL || process.env.DATABASE_URL;
 const runtimeUrl = process.env.APP_DATABASE_URL;
 const auditUrl = process.env.PLATFORM_AUDIT_DATABASE_URL;
 const maintenanceUrl = process.env.MAINTENANCE_DATABASE_URL;
+const hmsAuditUrl = process.env.HMS_AUDIT_DATABASE_URL || 'postgresql://hms_audit_reader:test_audit_reader_pass@127.0.0.1:5432/orbitox_phase2';
 
 if (!databaseUrl || !runtimeUrl || !auditUrl || !maintenanceUrl) {
   throw new Error('TEST_DATABASE_URL (or DATABASE_URL), APP_DATABASE_URL, PLATFORM_AUDIT_DATABASE_URL, and MAINTENANCE_DATABASE_URL are required.');
@@ -59,6 +60,7 @@ function spawnServer(port: number, envOverrides: Record<string, string> = {}): C
       APP_DATABASE_URL: boundedUrl(runtimeUrl!),
       PLATFORM_AUDIT_DATABASE_URL: boundedUrl(auditUrl!),
       MAINTENANCE_DATABASE_URL: boundedUrl(maintenanceUrl!),
+      HMS_AUDIT_DATABASE_URL: boundedUrl(hmsAuditUrl),
       ...envOverrides,
     },
     stdio: ['pipe', 'pipe', 'pipe'],

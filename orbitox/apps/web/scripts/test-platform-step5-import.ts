@@ -15,6 +15,7 @@ import { loadPepperRing, activeVerifier } from '../lib/pepper';
 const databaseUrl = process.env.TEST_DATABASE_URL || process.env.DATABASE_URL || 'postgresql://apple@127.0.0.1:5432/orbitox_phase2';
 const runtimeUrl = process.env.APP_DATABASE_URL || 'postgresql://orbitox_runtime:test_runtime_pass@127.0.0.1:5432/orbitox_phase2';
 const auditUrl = process.env.PLATFORM_AUDIT_DATABASE_URL || 'postgresql://orbitox_platform_admin_audit:test_audit_pass@127.0.0.1:5432/orbitox_phase2';
+const hmsAuditUrl = process.env.HMS_AUDIT_DATABASE_URL || 'postgresql://hms_audit_reader:test_audit_reader_pass@127.0.0.1:5432/orbitox_phase2';
 
 function boundedUrl(connectionString: string): string {
   const url = new URL(connectionString);
@@ -77,6 +78,7 @@ function spawnServer(port: number, envOverrides: Record<string, string> = {}): C
       DATABASE_URL: boundedUrl(databaseUrl),
       APP_DATABASE_URL: boundedUrl(runtimeUrl),
       PLATFORM_AUDIT_DATABASE_URL: boundedUrl(auditUrl),
+      HMS_AUDIT_DATABASE_URL: boundedUrl(hmsAuditUrl),
       ...envOverrides,
     },
     stdio: ['pipe', 'pipe', 'pipe'],

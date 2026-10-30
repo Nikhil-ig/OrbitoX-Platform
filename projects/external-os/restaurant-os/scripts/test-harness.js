@@ -355,6 +355,7 @@ async function startIsolatedServer(options = {}) {
       RESTAURANT_STORE_PATH: storePath,
       STORAGE_DRIVER: 'json',
       NODE_ENV: 'test',
+      RESTAURANTOS_AUTOLISTEN: 'true',
       RESTAURANTOS_ENABLE_TEST_ROUTES: 'true',
     },
     stdio: ['ignore', 'ignore', 'pipe'],

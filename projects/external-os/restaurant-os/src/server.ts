@@ -149,7 +149,7 @@ const nonceStore = postgresStore?.prisma
   : new MemoryNonceStore();
 
 let pgEventListener: PostgresEventListener | null = null;
-if (process.env.DATABASE_URL) {
+if (process.env.STORAGE_DRIVER !== 'json' && process.env.DATABASE_URL) {
   try {
     pgEventListener = new PostgresEventListener(process.env.DATABASE_URL, eventBus);
     pgEventListener.start().catch((err: any) => console.warn('[PostgresEventListener] Startup warning:', err.message));
@@ -7455,8 +7455,8 @@ if (process.env.NODE_ENV === 'production' && process.env.ALLOW_DANGEROUS_RESET =
 
 if (
   process.env.RESTAURANTOS_DISABLE_AUTOLISTEN !== 'true' &&
-  process.env.NODE_ENV !== 'test' &&
-  !process.argv.includes('--test')
+  (process.env.RESTAURANTOS_AUTOLISTEN === 'true' ||
+   (process.env.NODE_ENV !== 'test' && !process.argv.includes('--test')))
 ) {
 server.listen(PORT, async () => {
   if (postgresStore?.prisma) {

@@ -13,11 +13,13 @@ const databaseUrl = process.env.TEST_DATABASE_URL || process.env.DATABASE_URL ||
 const runtimeUrl = process.env.APP_DATABASE_URL || 'postgresql://orbitox_runtime:test_runtime_pass@127.0.0.1:5432/orbitox_phase2';
 const auditUrl = process.env.PLATFORM_AUDIT_DATABASE_URL || 'postgresql://orbitox_platform_admin_audit:test_audit_pass@127.0.0.1:5432/orbitox_phase2';
 const maintenanceUrl = process.env.MAINTENANCE_DATABASE_URL || 'postgresql://orbitox_maintenance:test_maintenance_pass@127.0.0.1:5432/orbitox_phase2';
+const hmsAuditUrl = process.env.HMS_AUDIT_DATABASE_URL || 'postgresql://hms_audit_reader:test_audit_reader_pass@127.0.0.1:5432/orbitox_phase2';
 
 process.env.DATABASE_URL = databaseUrl;
 process.env.APP_DATABASE_URL = runtimeUrl;
 process.env.PLATFORM_AUDIT_DATABASE_URL = auditUrl;
 process.env.MAINTENANCE_DATABASE_URL = maintenanceUrl;
+process.env.HMS_AUDIT_DATABASE_URL = hmsAuditUrl;
 process.env.ORBITOX_PLATFORM_REPOSITORY = 'prisma';
 
 function boundedUrl(connectionString: string): string {
@@ -85,6 +87,7 @@ function spawnServer(port: number, envOverrides: Record<string, string> = {}): C
       APP_DATABASE_URL: boundedUrl(runtimeUrl),
       PLATFORM_AUDIT_DATABASE_URL: boundedUrl(auditUrl),
       MAINTENANCE_DATABASE_URL: boundedUrl(maintenanceUrl),
+      HMS_AUDIT_DATABASE_URL: boundedUrl(hmsAuditUrl),
       ORBITOX_ENABLE_HOSPITAL_ADMIN_ENDPOINTS: 'true',
       ...envOverrides,
     },
