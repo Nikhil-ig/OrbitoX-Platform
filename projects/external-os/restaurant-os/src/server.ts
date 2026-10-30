@@ -1451,8 +1451,8 @@ export async function handleRequest(req: http.IncomingMessage, res: http.ServerR
     if (currentTenant?.status === 'suspended' || tenantContext.status === 'suspended') {
       if (['POST', 'PUT', 'PATCH', 'DELETE'].includes(method)) {
         sendJson(res, 403, {
-          error: 'SERVICE_SUSPENDED',
-          code: 'SERVICE_SUSPENDED',
+          error: 'TENANT_SUSPENDED',
+          code: 'TENANT_SUSPENDED',
           message: 'This restaurant account is temporarily suspended. Writes are disabled.',
         });
         return;

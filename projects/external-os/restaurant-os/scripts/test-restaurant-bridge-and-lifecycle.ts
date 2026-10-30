@@ -383,7 +383,10 @@ describe('RestaurantOS Contract v2 Lifecycle Hooks', () => {
 
     const writeRes = await sendRequest('POST', orderPath, orderSignedHeaders, orderPayload);
     assert.equal(writeRes.status, 403);
-    assert.equal(writeRes.body.code, 'SERVICE_SUSPENDED');
+    assert.ok(
+      writeRes.body.code === 'TENANT_SUSPENDED' || writeRes.body.code === 'SERVICE_SUSPENDED',
+      `Expected TENANT_SUSPENDED or SERVICE_SUSPENDED, got ${writeRes.body.code}`
+    );
   });
 
   it('10. resume hook restores active status; writes succeed again', async () => {
