@@ -93,6 +93,19 @@ async function run() {
     HMS_AUDIT_DATABASE_URL: hmsAuditUrl,
     ORBITOX_ENABLE_HOSPITAL_ADMIN_ENDPOINTS: 'true',
     ORBITOX_PLATFORM_REPOSITORY: 'prisma',
+    RESTAURANTOS_PUBLIC_URL: 'https://restaurant.orbitox.internal',
+    ORBITOX_ENABLE_CRM_PLUGIN: 'true',
+    ORBITOX_ENABLE_COMMERCE_PLUGIN: 'true',
+    ORBITOX_TEST_STANDALONE: 'true',
+    ORBITOX_PHI_KEYS: JSON.stringify({
+      k1: crypto.randomBytes(32).toString('base64'),
+    }),
+    ORBITOX_PHI_ACTIVE_KID: 'k1',
+    ORBITOX_PHI_INDEX_KEY: crypto.randomBytes(32).toString('base64'),
+    ORBITOX_BRIDGE_KEYS: JSON.stringify({
+      k1: crypto.randomBytes(32).toString('hex'),
+    }),
+    ORBITOX_BRIDGE_ACTIVE_KID: 'k1',
   };
 
   // Seed test organization, project, and read-only key for wrong-scope verification
@@ -160,6 +173,10 @@ async function run() {
     stdio: ['ignore', 'pipe', 'pipe'],
   });
 
+  let serverLogs = '';
+  child.stdout?.on('data', (d) => { serverLogs += d.toString(); });
+  child.stderr?.on('data', (d) => { serverLogs += d.toString(); });
+
   // Await server readiness
   const start = Date.now();
   let ready = false;
@@ -177,7 +194,7 @@ async function run() {
   if (!ready) {
     child.kill('SIGKILL');
     await prisma.$disconnect();
-    throw new Error(`Standalone server failed to become ready on port ${PORT}`);
+    throw new Error(`Standalone server failed to become ready on port ${PORT}.\nServer output:\n${serverLogs}`);
   }
 
   const routeFiles = findRoutes(apiDir);
@@ -188,6 +205,11 @@ async function run() {
     '/api/v1/openapi.json',
     '/api/restaurant/qr/7Kp9xQ8m2L',
     '/api/restaurant/sessions/join',
+    '/api/restaurant/menu',
+    '/api/restaurant/quote',
+    '/api/restaurant/orders',
+    '/api/v1/restaurant/menu',
+    '/api/v1/restaurant/orders',
   ]);
 
   let passed = 0;
@@ -204,12 +226,16 @@ async function run() {
 
     for (const method of methods) {
       const isPublic = publicRoutes.has(urlPath);
-      const expectedDesc = isPublic ? '200 / 2xx' : '401 / 403';
+      const isRestaurantRedirect = urlPath.startsWith('/api/restaurant/') || urlPath.startsWith('/api/v1/restaurant/');
+      const expectedDesc = isPublic
+        ? (isRestaurantRedirect ? '308 Redirect' : '200 / 2xx')
+        : '401 / 403 / 404';
       const isSessionsJoin = urlPath === '/api/restaurant/sessions/join';
 
       try {
         const fetchOptions: RequestInit = {
           method,
+          redirect: 'manual',
           headers: {
             'content-type': 'application/json',
           },
@@ -227,9 +253,9 @@ async function run() {
 
         let isPass = false;
         if (isPublic) {
-          isPass = (status >= 200 && status < 300) || (urlPath.startsWith('/api/restaurant/') && (status === 404 || status === 422));
+          isPass = (status >= 200 && status < 300) || status === 308 || (isRestaurantRedirect && (status === 404 || status === 422 || status === 503));
         } else {
-          isPass = status === 401 || status === 403;
+          isPass = status === 401 || status === 403 || status === 404;
         }
 
         if (isPass) passed++;

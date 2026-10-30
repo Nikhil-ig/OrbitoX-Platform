@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { ApiRequestContext } from '@/app/api/v1/_lib/api-types';
 import { withApiGuard } from '@/app/api/v1/_lib/api-guard';
-import { restaurantRuntime } from '@/app/api/restaurant/_lib/restaurant-runtime';
 
 type RouteContext = any;
 type GuardedRouteHandler = (
@@ -56,7 +55,6 @@ export function verifyGuestCapabilityToken(token: string): any {
     const [encodedPayload] = token.split('.');
     if (!encodedPayload) throw new Error('Invalid guest capability token.');
     const payload = JSON.parse(Buffer.from(encodedPayload, 'base64url').toString('utf8'));
-    restaurantRuntime.qrService.getSharedOrders(token);
     return payload;
 }
 

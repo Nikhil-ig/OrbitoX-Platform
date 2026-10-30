@@ -6,6 +6,7 @@ import {
   hashProjectKey,
   ExternalProjectRecord,
 } from '@orbitox/external-project-engine';
+import { isSamplePluginEnabled } from '@/lib/sample-plugins';
 
 export async function POST(req: NextRequest) {
   try {
@@ -46,6 +47,15 @@ export async function POST(req: NextRequest) {
     let planReference = plan || 'plan_restaurant_growth';
 
     if (template === 'crm') {
+      if (!isSamplePluginEnabled('crm')) {
+        return NextResponse.json(
+          {
+            success: false,
+            error: 'The CRM template is not installable in production until rebuilt to HospitalOS multi-tenant standards (coming soon).',
+          },
+          { status: 400 }
+        );
+      }
       enabledPlugins = ['@orbitox/crm'];
       enabledFeatures = ['crm.leads', 'crm.pipelines', 'crm.scoring'];
       planReference = plan || 'plan_crm_growth';

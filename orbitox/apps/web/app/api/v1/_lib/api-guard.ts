@@ -21,8 +21,9 @@ import {
   hasCapability,
   PLAN_DEFAULT_QUOTAS,
 } from '@orbitox-io/plugin-engine';
-import { PlatformApiKeyRecord, PlatformProject } from '@orbitox/types';
 import { platformRepository } from '@/lib/platform-repository';
+import type { PlatformProject } from '@orbitox/types';
+import { isSamplePlugin, isSamplePluginEnabled, SamplePluginId } from '@/lib/sample-plugins';
 
 export { PlatformRepository };
 
@@ -591,6 +592,29 @@ export function withApiGuard<T = any>(
     PlatformApiState.trackRequest();
 
     const serviceId = options.serviceId || 'system';
+
+    // Sample-Data Plugins Elimination (Phase 2b-5)
+    // In production, sample-data plugins (CRM, finance, commerce, HRMS, school, inventory)
+    // MUST NOT serve demo data. Unless explicitly enabled via ORBITOX_ENABLE_<PLUGIN>_PLUGIN,
+    // their APIs return 404 PLUGIN_NOT_AVAILABLE.
+    if (isSamplePlugin(serviceId) && !isSamplePluginEnabled(serviceId as SamplePluginId)) {
+      return NextResponse.json<ApiResponse>(
+        {
+          success: false,
+          error: {
+            code: 'PLUGIN_NOT_AVAILABLE',
+            message: `The ${options.serviceName || serviceId} plugin is not available in production until rebuilt to HospitalOS multi-tenant standards (coming soon).`,
+          },
+          meta: {
+            serviceId,
+            latencyMs: 1,
+            timestamp: new Date().toISOString(),
+            requestId,
+          },
+        },
+        { status: 404 }
+      );
+    }
 
     // 1. Client Identity & Headers (Trusted Proxy Resolution)
     const clientIp = resolveClientIp(req.headers);

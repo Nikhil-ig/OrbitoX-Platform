@@ -3,6 +3,7 @@ import { withApiGuard } from '@/app/api/v1/_lib/api-guard';
 import { ApiResponse, ApiRequestContext } from '@/app/api/v1/_lib/api-types';
 import { auditService } from '@/app/api/v1/_lib/platform-governance';
 import { platformRepository } from '@/lib/platform-repository';
+import { isSamplePackage } from '@/lib/sample-plugins';
 
 export const GET = withApiGuard(
   {
@@ -28,12 +29,20 @@ export const GET = withApiGuard(
       ]);
       const packageInstallations = installations.filter((i) => i.packageId === pkg.packageId || i.packageId === pkg.id);
 
+      const isSample = isSamplePackage(pkg.packageId) || isSamplePackage(pkg.id);
+
       return {
         ...pkg,
         versions,
         installationsCount: packageInstallations.length,
         hasEd25519Signature: Boolean(pkg.signingPublicKeyPem),
         integrityStatus: 'VERIFIED',
+        installable: !isSample,
+        isInstallable: !isSample,
+        installabilityStatus: isSample ? 'NOT_INSTALLABLE' : 'AVAILABLE',
+        installabilityReason: isSample
+          ? 'Sample-data plugin: must be rebuilt to HospitalOS multi-tenant standard (dedicated schema, RLS, tests) before installation.'
+          : 'Production-ready with verified schema and tests.',
       };
     }));
 
@@ -60,6 +69,20 @@ export const POST = withApiGuard(
     try {
       const body = await req.json();
       const { environmentId, packageId, versionId, configOverrides } = body;
+
+      if (packageId && isSamplePackage(packageId)) {
+        return NextResponse.json<ApiResponse>(
+          {
+            success: false,
+            error: {
+              code: 'PACKAGE_NOT_INSTALLABLE',
+              message: `Package [${packageId}] cannot be installed: sample-data plugin pending HospitalOS multi-tenant rebuild with dedicated schema, RLS, and tests.`,
+            },
+            meta: { latencyMs: 1, timestamp: new Date().toISOString(), requestId: ctx.requestId },
+          },
+          { status: 400 }
+        );
+      }
 
       if (!environmentId || !packageId || !versionId) {
         return NextResponse.json<ApiResponse>(

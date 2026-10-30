@@ -1,24 +1,15 @@
 import { NextRequest } from 'next/server';
-import { restaurantRuntime } from '../../_lib/restaurant-runtime';
-import { createLegacyProxyResponse } from '../../_lib/legacy-proxy';
-import { withPublicGuestBootstrap } from '@/app/api/_lib/route-auth';
+import { handleRestaurantPublicRedirect } from '../../_lib/restaurant-routing';
 
 /**
- * ⚠️ LEGACY COMPATIBILITY PROXY: QR Discovery
- * Target runtime: http://localhost:4010/api/restaurant/qr/:locator
+ * 🛰️ OrbitoX RestaurantOS — Guest QR Discovery Redirect (Phase 2b-5)
+ * Answers 308 Permanent Redirect to RestaurantOS public origin.
+ * In production, fails closed with 503 if RESTAURANTOS_PUBLIC_URL is unconfigured.
  */
-export const GET = withPublicGuestBootstrap(async (
+export async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ locator: string }> }
-) => {
-  try {
-    const { locator } = await params;
-    const discovery = restaurantRuntime.qrService.resolveDiscoveryContext(locator);
-    return createLegacyProxyResponse({ success: true, data: discovery });
-  } catch (error: any) {
-    return createLegacyProxyResponse(
-      { success: false, error: error.message || 'Failed to resolve QR locator' },
-      { status: 404 }
-    );
-  }
-});
+) {
+  const { locator } = await params;
+  return handleRestaurantPublicRedirect(request, `/api/restaurant/qr/${locator}`);
+}

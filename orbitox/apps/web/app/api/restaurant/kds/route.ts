@@ -1,50 +1,31 @@
 import { NextRequest } from 'next/server';
-import { restaurantRuntime } from '../_lib/restaurant-runtime';
-import { createLegacyProxyResponse } from '../_lib/legacy-proxy';
 import { withRestaurantGuard } from '@/app/api/_lib/route-auth';
+import { forwardSignedBridgeCall } from '../_lib/restaurant-routing';
 
 /**
- * ⚠️ LEGACY COMPATIBILITY PROXY: Kitchen Display System (KDS)
- * Target runtime: http://localhost:4010/api/restaurant/kds/tasks
+ * 🛰️ OrbitoX RestaurantOS — Kitchen Display System (KDS) Bridge Gateway (Phase 2b-5)
+ * Staff and admin operations that stay on the platform.
+ * Cryptographically forwarded and signed with @orbitox-io/bridge.
+ * Verified tenant extracted strictly from the platform principal, NEVER from client input.
  */
-export const GET = withRestaurantGuard(async (request: NextRequest) => {
-  try {
-    const searchParams = request.nextUrl.searchParams;
-    const stationId = searchParams.get('stationId') || 'st_tandoor';
-
-    const queue = restaurantRuntime.orderKitchenService.getStationQueue(stationId);
-    return createLegacyProxyResponse({ success: true, data: queue });
-  } catch (error: any) {
-    return createLegacyProxyResponse(
-      { success: false, error: error.message || 'Failed to fetch KDS queue' },
-      { status: 500 }
+export const GET = withRestaurantGuard(
+  async (request: NextRequest, _routeContext, authContext) => {
+    return forwardSignedBridgeCall(
+      request,
+      '/api/restaurant/kds',
+      authContext.tenantId
     );
-  }
-}, { adminOnly: true, sensitive: true });
+  },
+  { adminOnly: true, sensitive: true }
+);
 
-export const POST = withRestaurantGuard(async (request: NextRequest) => {
-  try {
-    const body = await request.json();
-    const { taskId, newStatus, bumpedBy } = body;
-
-    if (!taskId || !newStatus) {
-      return createLegacyProxyResponse(
-        { success: false, error: 'taskId and newStatus are required' },
-        { status: 400 }
-      );
-    }
-
-    const updatedTask = restaurantRuntime.orderKitchenService.updateTaskStatus({
-      taskId,
-      newStatus,
-      bumpedBy,
-    });
-
-    return createLegacyProxyResponse({ success: true, data: updatedTask });
-  } catch (error: any) {
-    return createLegacyProxyResponse(
-      { success: false, error: error.message || 'Failed to update task status' },
-      { status: 422 }
+export const POST = withRestaurantGuard(
+  async (request: NextRequest, _routeContext, authContext) => {
+    return forwardSignedBridgeCall(
+      request,
+      '/api/restaurant/kds',
+      authContext.tenantId
     );
-  }
-}, { adminOnly: true, sensitive: true });
+  },
+  { adminOnly: true, sensitive: true }
+);

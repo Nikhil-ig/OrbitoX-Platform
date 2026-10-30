@@ -35,7 +35,7 @@ const middlewareProtectedApiPrefixes = [
     'v1/overview/route.ts',
 ];
 
-const approvedWrappers = /withApiGuard|withHospitalGuard|withRestaurantGuard|withGuestToken|withPublicGuestBootstrap/;
+const approvedWrappers = /withApiGuard|withHospitalGuard|withRestaurantGuard|withGuestToken|withPublicGuestBootstrap|handleRestaurantPublicRedirect|forwardSignedBridgeCall/;
 
 function listFiles(directory: string, filename: string): string[] {
     if (!fs.existsSync(directory)) return [];
@@ -85,9 +85,10 @@ describe('Route & Page Security Boundary Architecture', () => {
 
             if (
                 (routePath === 'restaurant/qr/[locator]/route.ts' || routePath === 'restaurant/sessions/join/route.ts') &&
-                !source.includes('withPublicGuestBootstrap')
+                !source.includes('withPublicGuestBootstrap') &&
+                !source.includes('handleRestaurantPublicRedirect')
             ) {
-                violations.push(`${routePath} (guest bootstrap wrapper missing)`);
+                violations.push(`${routePath} (guest bootstrap or redirect wrapper missing)`);
                 continue;
             }
 
@@ -239,5 +240,38 @@ describe('Route & Page Security Boundary Architecture', () => {
         assert.equal(isStaticAsset('/api/v1/openapi.json'), false);
         assert.equal(isStaticAsset('/api/health'), false);
     });
+
+    it('prohibits in-memory restaurant runtime and @orbitox/pos in-memory service maps from any API route (Phase 2b-5)', () => {
+        const allTsFiles = fs.readdirSync(apiRoot, { recursive: true, withFileTypes: true })
+            .filter((e) => e.isFile() && (e.name.endsWith('.ts') || e.name.endsWith('.tsx')))
+            .map((e) => path.join(e.parentPath || apiRoot, e.name));
+
+        const forbiddenPatterns = [
+            /restaurant-runtime/,
+            /from\s+['"]@orbitox\/pos['"]/,
+            /require\(['"]@orbitox\/pos['"]\)/,
+            /RestaurantRuntimeManager/,
+        ];
+
+        const violations: string[] = [];
+
+        for (const file of allTsFiles) {
+            const relPath = path.relative(apiRoot, file).split(path.sep).join('/');
+            const source = fs.readFileSync(file, 'utf8');
+
+            for (const pattern of forbiddenPatterns) {
+                if (pattern.test(source)) {
+                    violations.push(`${relPath} matches forbidden in-memory pattern ${pattern}`);
+                }
+            }
+        }
+
+        // Also assert that restaurant-runtime.ts does not exist on disk
+        const runtimePath = path.join(apiRoot, 'restaurant', '_lib', 'restaurant-runtime.ts');
+        assert.equal(fs.existsSync(runtimePath), false, 'restaurant-runtime.ts must not exist on disk');
+
+        assert.deepEqual(violations, [], `Found in-memory restaurant runtime references: ${violations.join(', ')}`);
+    });
 });
+
 

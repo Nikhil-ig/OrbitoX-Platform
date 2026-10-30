@@ -24,6 +24,9 @@ import {
 } from '@orbitox-io/plugin-engine';
 import { loadPepperRing, activeVerifier, candidateVerifiers } from './pepper';
 
+export type { PlatformProject };
+import { isSamplePackage } from './sample-plugins';
+
 type AsyncMethods<T> = {
     [Key in keyof T as T[Key] extends (...args: any[]) => any ? Key : never]: T[Key] extends (
         ...args: infer Args
@@ -1179,6 +1182,9 @@ export function createPrismaPlatformRepository(client: PrismaClient, adminAuditC
             versionId: string,
             configOverrides: Record<string, any> = {},
         ): Promise<PackageInstallationRecord> {
+            if (isSamplePackage(packageId)) {
+                throw new Error(`Package [${packageId}] is not installable: sample-data plugin pending HospitalOS multi-tenant rebuild.`);
+            }
             const pkg = await client.platformPackage.findFirst({ where: { OR: [{ packageId }, { id: packageId }] } });
             if (!pkg) throw new Error(`Package [${packageId}] not found.`);
             const storedVersion = await client.packageVersion.findFirst({
