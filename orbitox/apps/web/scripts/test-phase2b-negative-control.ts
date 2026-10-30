@@ -13,8 +13,8 @@ import { PhiKeyRing } from '../lib/phi-crypto';
 import * as hms from '../lib/hms-repository';
 
 const A = 'org/negative-ctrl/project/p1/environment/prod';
-const runtimeUrl = process.env.HMS_IT_RUNTIME_URL || 'postgresql://orbitox_runtime@127.0.0.1:5432/orbitox_phase2';
-const adminUrl = process.env.DATABASE_URL || 'postgresql://apple@127.0.0.1:5432/orbitox_phase2';
+const runtimeUrl = process.env.APP_DATABASE_URL || process.env.HMS_IT_RUNTIME_URL || 'postgresql://orbitox_runtime@127.0.0.1:5432/orbitox_phase2';
+const adminUrl = process.env.TEST_DATABASE_URL || process.env.DATABASE_URL || 'postgresql://apple@127.0.0.1:5432/orbitox_phase2';
 
 const runtimePool = new Pool({ connectionString: runtimeUrl, max: 10 });
 const adminPool = new Pool({ connectionString: adminUrl, max: 2 });

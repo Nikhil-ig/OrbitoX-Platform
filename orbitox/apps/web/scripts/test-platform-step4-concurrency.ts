@@ -227,7 +227,7 @@ async function main() {
   console.log('================================================================================\n');
 
   // Verify database readiness and runway
-  await assertPlatformDatabaseReady(owner);
+  await assertPlatformDatabaseReady(runtime);
   const [runwayCheck] = await owner.$queryRaw<Array<{ ready: boolean }>>`
     SELECT public.platform_rate_limit_partitions_ready(3) AS ready
   `;

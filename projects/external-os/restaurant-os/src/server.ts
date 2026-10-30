@@ -7455,8 +7455,7 @@ if (process.env.NODE_ENV === 'production' && process.env.ALLOW_DANGEROUS_RESET =
 
 if (
   process.env.RESTAURANTOS_DISABLE_AUTOLISTEN !== 'true' &&
-  (process.env.RESTAURANTOS_AUTOLISTEN === 'true' ||
-   (process.env.NODE_ENV !== 'test' && !process.argv.includes('--test')))
+  !process.argv.includes('--test')
 ) {
 server.listen(PORT, async () => {
   if (postgresStore?.prisma) {

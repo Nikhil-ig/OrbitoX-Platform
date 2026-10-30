@@ -264,6 +264,7 @@ jobs:
         working-directory: orbitox
         run: |
           pnpm install --frozen-lockfile
+          pnpm exec prisma generate --schema prisma/schema.prisma
           pnpm --filter @orbitox-io/bridge... --filter @orbitox/external-runtime-sdk... --filter @orbitox/pos... --filter @orbitox/plugin-engine... run build
 
       - name: Install RestaurantOS dependencies
