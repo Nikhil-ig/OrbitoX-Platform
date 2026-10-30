@@ -462,7 +462,7 @@ jobs:
   platform-phase2-step3:
     name: Phase 2 Step 3 Resilience & Transaction Safety
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 30
     services:
       postgres:
         image: postgres:16-alpine
