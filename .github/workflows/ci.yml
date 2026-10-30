@@ -290,35 +290,35 @@ jobs:
         working-directory: projects/external-os/restaurant-os
         run: pnpm exec tsc --noEmit
 
-      - name: Suite 1: Bridge Auth & Contract v2 Lifecycle Hooks
+      - name: "Suite 1: Bridge Auth & Contract v2 Lifecycle Hooks"
         working-directory: projects/external-os/restaurant-os
         run: pnpm exec tsx scripts/test-restaurant-bridge-and-lifecycle.ts
         env:
           DATABASE_URL: postgresql://postgres:postgrespassword@127.0.0.1:5432/restaurant_os
           APP_DATABASE_URL: postgresql://restaurantos_app:test_app_pass_123@127.0.0.1:5432/restaurant_os
 
-      - name: Suite 2: Multi-Server Correctness under Round-Robin Splitter
+      - name: "Suite 2: Multi-Server Correctness under Round-Robin Splitter"
         working-directory: projects/external-os/restaurant-os
         run: pnpm exec tsx scripts/test-restaurant-2servers.ts
         env:
           DATABASE_URL: postgresql://postgres:postgrespassword@127.0.0.1:5432/restaurant_os
           APP_DATABASE_URL: postgresql://restaurantos_app:test_app_pass_123@127.0.0.1:5432/restaurant_os
 
-      - name: Suite 3: Cross-Tenant Exhaustive Route Generator (Zero Leaks)
+      - name: "Suite 3: Cross-Tenant Exhaustive Route Generator (Zero Leaks)"
         working-directory: projects/external-os/restaurant-os
         run: pnpm exec tsx scripts/test-restaurant-cross-tenant.ts
         env:
           DATABASE_URL: postgresql://postgres:postgrespassword@127.0.0.1:5432/restaurant_os
           APP_DATABASE_URL: postgresql://restaurantos_app:test_app_pass_123@127.0.0.1:5432/restaurant_os
 
-      - name: Suite 4: Crash Durability 3-Stage Rotation (90 Trials)
+      - name: "Suite 4: Crash Durability 3-Stage Rotation (90 Trials)"
         working-directory: projects/external-os/restaurant-os
         run: pnpm exec tsx scripts/test-restaurant-crash-durability.ts
         env:
           DATABASE_URL: postgresql://postgres:postgrespassword@127.0.0.1:5432/restaurant_os
           APP_DATABASE_URL: postgresql://restaurantos_app:test_app_pass_123@127.0.0.1:5432/restaurant_os
 
-      - name: Suite 5: Platform <-> RestaurantOS Lifecycle Bridge E2E (Cross-Process)
+      - name: "Suite 5: Platform <-> RestaurantOS Lifecycle Bridge E2E (Cross-Process)"
         working-directory: orbitox
         run: pnpm --filter web exec tsx --test test/restaurant-lifecycle-bridge-e2e.test.ts
         env:
