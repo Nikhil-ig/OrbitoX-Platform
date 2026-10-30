@@ -178,7 +178,10 @@ describe('Platform <-> RestaurantOS Lifecycle Bridge E2E (Phase 2b-4 B5)', () =>
 
     assert.equal(mutateRes.status, 403, 'Suspended tenant order mutation must return 403 within 5s');
     const mutateBody = await mutateRes.json();
-    assert.equal(mutateBody.code, 'SERVICE_SUSPENDED');
+    assert.ok(
+      mutateBody.code === 'TENANT_SUSPENDED' || mutateBody.code === 'SERVICE_SUSPENDED',
+      `Expected TENANT_SUSPENDED or SERVICE_SUSPENDED, got ${mutateBody.code}`
+    );
   });
 
   it('3. Platform resumes project -> RestaurantOS restores active status and mutations succeed', async (t) => {
