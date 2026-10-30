@@ -2768,9 +2768,19 @@ export async function handleRequest(req: http.IncomingMessage, res: http.ServerR
     checkTestKillPoint(req, 'pre-commit');
 
     // Multi-Server Distributed Idempotency Lock
-    if (idempotencyKey && postgresStore?.prisma) {
+    if (idempotencyKey) {
+      const payloadHash = crypto.createHash('sha256').update(JSON.stringify(body)).digest('hex');
       const existing = await repo.getIdempotencyRecord(idempotencyKey);
       if (existing && existing.status !== 'PENDING') {
+        const storedHash = (existing as any).payloadHash;
+        if (storedHash && storedHash !== payloadHash) {
+          sendJson(res, 409, {
+            error: 'IDEMPOTENCY_CONFLICT',
+            code: 'IDEMPOTENCY_CONFLICT',
+            message: `Idempotency key ${idempotencyKey} has already been used with different request parameters.`,
+          });
+          return;
+        }
         sendJson(res, 200, existing.response || existing);
         return;
       }
@@ -2841,13 +2851,15 @@ export async function handleRequest(req: http.IncomingMessage, res: http.ServerR
       branchName: currentBranch.name,
     });
 
-    if (idempotencyKey && postgresStore?.prisma) {
+    if (idempotencyKey) {
+      const payloadHash = crypto.createHash('sha256').update(JSON.stringify(body)).digest('hex');
       if (orderResult.status === 201 || orderResult.status === 200) {
         await repo.saveIdempotencyRecord(idempotencyKey, {
           response: orderResult.body,
           status: 'DONE',
+          payloadHash,
         });
-      } else {
+      } else if (postgresStore?.prisma) {
         await postgresStore.prisma.idempotencyRecord.deleteMany({
           where: { tenantId: tenantContext.tenantId, key: idempotencyKey },
         }).catch(() => {});

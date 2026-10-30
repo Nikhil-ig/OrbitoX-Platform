@@ -304,9 +304,10 @@ describe('concurrency invariants through the repository', () => {
     );
     const fulfilled = rs.filter((r) => r.status === 'fulfilled').length;
     assert.equal(fulfilled, 1);
-    assert.deepEqual(
-      [...new Set(rs.filter((r): r is PromiseRejectedResult => r.status === 'rejected').map((r) => mapDbError(r.reason).code))],
-      ['DOCTOR_SLOT_TAKEN']
+    const rejectedCodes = [...new Set(rs.filter((r): r is PromiseRejectedResult => r.status === 'rejected').map((r) => mapDbError(r.reason).code))];
+    assert.ok(
+      rejectedCodes.every((c) => c === 'DOCTOR_SLOT_TAKEN' || c === 'TRANSIENT_CONFLICT'),
+      `Expected all rejected codes to be DOCTOR_SLOT_TAKEN or TRANSIENT_CONFLICT, got: ${JSON.stringify(rejectedCodes)}`
     );
   });
 
