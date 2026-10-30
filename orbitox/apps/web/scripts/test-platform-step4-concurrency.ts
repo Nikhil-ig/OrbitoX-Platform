@@ -1210,7 +1210,7 @@ async function main() {
 
   // Sub-test 5C: Runway Health Query
   console.log('Sub-test 5C: Runway health verification');
-  await assertPlatformDatabaseReady(owner);
+  await assertPlatformDatabaseReady(runtime);
   const [runway14] = await owner.$queryRaw<Array<{ ready: boolean }>>`
     SELECT public.platform_rate_limit_partitions_ready(14) AS ready
   `;

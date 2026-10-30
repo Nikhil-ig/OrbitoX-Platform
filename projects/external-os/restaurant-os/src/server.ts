@@ -821,14 +821,6 @@ export async function handleRequest(req: http.IncomingMessage, res: http.ServerR
       return;
     }
     verifiedBridge = { tenantId: verifyRes.tenantId, principal: verifyRes.principal };
-  } else if (rawTenantHeader) {
-    // Client sent x-tenant-id without a verified bridge signature: UNCONDITIONALLY REJECT
-    sendJson(res, 401, {
-      error: 'UNAUTHORIZED',
-      code: 'UNVERIFIED_CLIENT_TENANT_HEADER',
-      message: 'Client-supplied x-tenant-id rejected: requests carrying tenant headers must be signed via bridge-signature.',
-    });
-    return;
   }
 
   // Readiness check: verifies PostgreSQL, bridge keys, and runtime services
