@@ -97,6 +97,54 @@ export async function enablePostgresRLS(prisma: PrismaClient): Promise<void> {
     console.warn('  [RLS] Failed to set permissions on BridgeNonce:', err.message);
   }
 
+  // 4. Configure Outbox DomainEvent LISTEN/NOTIFY Trigger
+  try {
+    await prisma.$executeRawUnsafe(`
+      CREATE OR REPLACE FUNCTION public.notify_restaurant_kds_events()
+        RETURNS trigger
+        LANGUAGE plpgsql
+      AS $$
+      BEGIN
+        PERFORM pg_notify('restaurant_kds_events', json_build_object(
+          'id', NEW.id,
+          'tenantId', NEW."tenantId",
+          'sequence', NEW."sequence",
+          'type', NEW."type",
+          'producer', NEW."producer",
+          'branchId', NEW."branchId",
+          'floorId', NEW."floorId",
+          'tableNumber', NEW."tableNumber",
+          'payload', NEW."payload"
+        )::text);
+        RETURN NEW;
+      END;
+      $$;
+    `);
+    await prisma.$executeRawUnsafe(`
+      DO $$
+      BEGIN
+        DROP TRIGGER IF EXISTS trg_restaurant_kds_events ON "DomainEvent";
+        CREATE TRIGGER trg_restaurant_kds_events
+          AFTER INSERT ON "DomainEvent"
+          FOR EACH ROW
+          EXECUTE FUNCTION public.notify_restaurant_kds_events();
+      END
+      $$;
+    `);
+    await prisma.$executeRawUnsafe(`
+      DO $$
+      BEGIN
+        IF EXISTS (SELECT FROM pg_roles WHERE rolname = 'restaurantos_app') THEN
+          GRANT EXECUTE ON FUNCTION public.notify_restaurant_kds_events() TO restaurantos_app;
+        END IF;
+      END
+      $$;
+    `);
+    console.log('  [Outbox] Configured trg_restaurant_kds_events trigger on "DomainEvent"');
+  } catch (err: any) {
+    console.warn('  [Outbox] Failed to configure DomainEvent trigger:', err.message);
+  }
+
   console.log('✅ [RLS] Row Level Security successfully enforced on all tenant tables.');
 }
 

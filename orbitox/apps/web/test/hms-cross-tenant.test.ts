@@ -30,6 +30,7 @@ import { POST as breakGlass } from '../app/api/hospital/security/break-glass/rou
 import { GET as getStaff, POST as createStaff } from '../app/api/hospital/security/staff/route';
 import { GET as getStaffById, PATCH as patchStaffById } from '../app/api/hospital/security/staff/[id]/route';
 import { POST as toggleDuty } from '../app/api/hospital/security/staff/[id]/toggle-duty/route';
+import { POST as unlockStaff } from '../app/api/hospital/security/staff/[id]/unlock/route';
 import { GET as getRoles, POST as createRole } from '../app/api/hospital/security/roles/route';
 import { GET as getPermissions } from '../app/api/hospital/security/permissions/route';
 import { GET as getSession, DELETE as deleteSession } from '../app/api/hospital/security/session/route';
@@ -438,6 +439,11 @@ describe('HospitalOS & HMS Cross-Tenant Generator Suite (Phase 2b-3)', () => {
       expectedStatus: 404,
       run: (ctx) => advanceTriage(makeRequest(TENANT_A, '/api/v1/hms/triage/advance', 'POST', { patientId: ctx.idsB.patientId, newTriageLevel: 3 })),
     },
+    'POST app/api/hospital/security/staff/[id]/unlock/route.ts': {
+      description: 'Unlock Tenant B staff from Tenant A: 404 (scoped to tenant)',
+      expectedStatus: 404,
+      run: (ctx) => unlockStaff(makeRequest(TENANT_A, `/api/hospital/security/staff/${ctx.idsB.staffId}/unlock`, 'POST', {}), { params: Promise.resolve({ id: ctx.idsB.staffId }) } as any),
+    },
   };
 
   before(async () => {
@@ -609,7 +615,7 @@ describe('HospitalOS & HMS Cross-Tenant Generator Suite (Phase 2b-3)', () => {
       }
     }
 
-    assert.equal(discovered.length, 50, 'Discovered route+methods must be exactly 50 across the 30 route files');
+    assert.equal(discovered.length, 51, 'Discovered route+methods must be exactly 51 across the 31 route files');
 
     for (const item of discovered) {
       assert.ok(

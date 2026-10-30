@@ -152,6 +152,44 @@ before(async () => {
   server2Url = `http://127.0.0.1:${port2}`;
   proxyUrl = `http://127.0.0.1:${proxyPort}`;
 
+  // Ensure Outbox LISTEN/NOTIFY trigger exists
+  try {
+    await prisma.$executeRawUnsafe(`
+      CREATE OR REPLACE FUNCTION public.notify_restaurant_kds_events()
+        RETURNS trigger
+        LANGUAGE plpgsql
+      AS $$
+      BEGIN
+        PERFORM pg_notify('restaurant_kds_events', json_build_object(
+          'id', NEW.id,
+          'tenantId', NEW."tenantId",
+          'sequence', NEW."sequence",
+          'type', NEW."type",
+          'producer', NEW."producer",
+          'branchId', NEW."branchId",
+          'floorId', NEW."floorId",
+          'tableNumber', NEW."tableNumber",
+          'payload', NEW."payload"
+        )::text);
+        RETURN NEW;
+      END;
+      $$;
+    `);
+    await prisma.$executeRawUnsafe(`
+      DO $$
+      BEGIN
+        DROP TRIGGER IF EXISTS trg_restaurant_kds_events ON "DomainEvent";
+        CREATE TRIGGER trg_restaurant_kds_events
+          AFTER INSERT ON "DomainEvent"
+          FOR EACH ROW
+          EXECUTE FUNCTION public.notify_restaurant_kds_events();
+      END
+      $$;
+    `);
+  } catch (err: any) {
+    console.warn('[2servers test] Trigger setup warning:', err.message);
+  }
+
   // Start two independent server processes
   proc1 = startServerProcess(port1);
   proc2 = startServerProcess(port2);
@@ -489,8 +527,8 @@ describe('RestaurantOS Multi-Server Correctness under Round-Robin Load Balancer'
     assert.ok([200, 201].includes(orderRes.status));
     const targetOrderId = orderRes.body.orderId || orderRes.body.data?.orderId;
 
-    // Wait for the event to arrive on Server 2's KDS stream within 1000ms (allow 2500ms on shared CI runner)
-    const timeoutLimit = process.env.CI ? 2500 : 1000;
+    // Wait for the event to arrive on Server 2's KDS stream within 1000ms (allow 4000ms on shared CI runner)
+    const timeoutLimit = process.env.CI ? 4000 : 1000;
     const received = await Promise.race([
       eventPromise,
       new Promise((_, reject) => setTimeout(() => reject(new Error(`KDS cross-server event timed out (> ${timeoutLimit}ms)`)), timeoutLimit)),

@@ -1,5 +1,6 @@
 import crypto from 'node:crypto';
 import type { TenantTx } from './tenant-db';
+import { HttpError } from './db-errors';
 
 export const SCRYPT_OPTIONS: crypto.ScryptOptions = {
   N: 32768, // 2^15
@@ -290,7 +291,7 @@ export async function unlockStaffCredential(
     [staffId],
   );
   if (!rows[0]) {
-    throw new Error('STAFF_NOT_FOUND');
+    throw new HttpError(404, 'STAFF_NOT_FOUND', 'Staff member credential not found');
   }
   return { staffId: rows[0].staffId, unlocked: true };
 }

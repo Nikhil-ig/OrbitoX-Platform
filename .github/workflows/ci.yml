@@ -78,6 +78,9 @@ jobs:
         run: pnpm --filter web exec next build
         env:
           NEXT_TELEMETRY_DISABLED: "1"
+          DATABASE_URL: postgresql://orbitox_runtime:phase2-smoke-${{ github.run_id }}-${{ github.run_attempt }}@127.0.0.1:5432/orbitox_smoke
+          APP_DATABASE_URL: postgresql://orbitox_runtime:phase2-smoke-${{ github.run_id }}-${{ github.run_attempt }}@127.0.0.1:5432/orbitox_smoke
+          PLATFORM_AUDIT_DATABASE_URL: postgresql://orbitox_platform_admin_audit:phase2-audit-smoke-${{ github.run_id }}-${{ github.run_attempt }}@127.0.0.1:5432/orbitox_smoke
 
       - name: Smoke test against the production server
         run: |
@@ -173,8 +176,8 @@ jobs:
       - name: Build linked OrbitoX external-runtime-sdk
         working-directory: orbitox
         run: |
-          pnpm install --frozen-lockfile --filter @orbitox/external-runtime-sdk... --filter @orbitox/pos... --filter @orbitox/plugin-engine...
-          pnpm --filter @orbitox/external-runtime-sdk... --filter @orbitox/pos... --filter @orbitox/plugin-engine... run build
+          pnpm install --frozen-lockfile --filter @orbitox-io/bridge... --filter @orbitox/external-runtime-sdk... --filter @orbitox/pos... --filter @orbitox/plugin-engine...
+          pnpm --filter @orbitox-io/bridge... --filter @orbitox/external-runtime-sdk... --filter @orbitox/pos... --filter @orbitox/plugin-engine... run build
 
       - name: Generate Prisma Client & Deploy Migrations
         run: |
@@ -505,6 +508,8 @@ jobs:
         env:
           NEXT_TELEMETRY_DISABLED: "1"
           ORBITOX_SERVER_PEPPER: "step3-ci-server-pepper-32-chars-min"
+          DATABASE_URL: postgresql://postgres:postgrespassword@127.0.0.1:5432/orbitox_phase2
+          APP_DATABASE_URL: postgresql://orbitox_runtime:phase2-ci-${{ github.run_id }}-${{ github.run_attempt }}@127.0.0.1:5432/orbitox_phase2
       - name: Verify S3-1 Route and Page Security Architecture
         run: pnpm --filter web exec tsx --test test/api-route-auth-structure.test.ts
       - name: Verify S3-5 Audit Role Permissions & Immutability
@@ -586,6 +591,8 @@ jobs:
         env:
           NEXT_TELEMETRY_DISABLED: "1"
           ORBITOX_SERVER_PEPPER: "step4-ci-server-pepper-32-chars-min"
+          DATABASE_URL: postgresql://postgres:postgrespassword@127.0.0.1:5432/orbitox_phase2
+          APP_DATABASE_URL: postgresql://orbitox_runtime:phase2-ci-${{ github.run_id }}-${{ github.run_attempt }}@127.0.0.1:5432/orbitox_phase2
       - name: Run C2 Live Unauthenticated & Wrong-Scope Sweep (220 Endpoints)
         run: pnpm --filter web test:api-no-token-sweep
         env:
@@ -656,6 +663,8 @@ jobs:
         env:
           NEXT_TELEMETRY_DISABLED: "1"
           ORBITOX_SERVER_PEPPER: "step5-ci-server-pepper-32-chars-min"
+          DATABASE_URL: postgresql://postgres:postgrespassword@127.0.0.1:5432/orbitox_phase2
+          APP_DATABASE_URL: postgresql://orbitox_runtime:phase2-ci-${{ github.run_id }}-${{ github.run_attempt }}@127.0.0.1:5432/orbitox_phase2
       - name: Run Step 5 JSON Importer, Mid-Transaction Kill -9 & Verification Harness
         run: pnpm --filter web test:step5-import
         env:

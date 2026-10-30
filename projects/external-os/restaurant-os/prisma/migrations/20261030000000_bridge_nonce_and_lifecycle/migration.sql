@@ -28,3 +28,39 @@ BEGIN
   END IF;
 END
 $$;
+
+-- Outbox DomainEvent LISTEN/NOTIFY Trigger
+CREATE OR REPLACE FUNCTION public.notify_restaurant_kds_events()
+  RETURNS trigger
+  LANGUAGE plpgsql
+AS $function$
+BEGIN
+  PERFORM pg_notify('restaurant_kds_events', json_build_object(
+    'id', NEW.id,
+    'tenantId', NEW."tenantId",
+    'sequence', NEW."sequence",
+    'type', NEW."type",
+    'producer', NEW."producer",
+    'branchId', NEW."branchId",
+    'floorId', NEW."floorId",
+    'tableNumber', NEW."tableNumber",
+    'payload', NEW."payload"
+  )::text);
+  RETURN NEW;
+END;
+$function$;
+
+DROP TRIGGER IF EXISTS trg_restaurant_kds_events ON "DomainEvent";
+CREATE TRIGGER trg_restaurant_kds_events
+  AFTER INSERT ON "DomainEvent"
+  FOR EACH ROW
+  EXECUTE FUNCTION public.notify_restaurant_kds_events();
+
+DO $$
+BEGIN
+  IF EXISTS (SELECT FROM pg_roles WHERE rolname = 'restaurantos_app') THEN
+    GRANT EXECUTE ON FUNCTION public.notify_restaurant_kds_events() TO restaurantos_app;
+  END IF;
+END
+$$;
+
