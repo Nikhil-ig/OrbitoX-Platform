@@ -27,19 +27,6 @@ export async function assertPlatformDatabaseReady(
 ): Promise<void> {
     await client.$queryRaw`SELECT 1`;
 
-    const roleRows = await client.$queryRaw<Array<{ current_user: string; rolsuper: boolean; rolbypassrls: boolean }>>`
-        SELECT current_user, r.rolsuper, r.rolbypassrls FROM pg_roles r WHERE r.rolname = current_user
-    `.catch(() => null);
-
-    if (roleRows && roleRows.length > 0) {
-        const role = roleRows[0];
-        if (role && (role.current_user !== 'orbitox_runtime' || role.rolsuper || role.rolbypassrls)) {
-            const err = new Error('DATABASE_ROLE_UNSAFE');
-            (err as any).code = 'DATABASE_ROLE_UNSAFE';
-            throw err;
-        }
-    }
-
     const applied = await client.$queryRaw<Array<{ migration_name: string }>>(Prisma.sql`
     SELECT migration_name
     FROM "_prisma_migrations"
@@ -57,4 +44,17 @@ export async function assertPlatformDatabaseReady(
         SELECT public.platform_rate_limit_partitions_ready(3) AS ready
   `;
     if (!partitionStatus?.ready) throw new Error('Rate-limit partition runway is below 3 days.');
+
+    const roleRows = await client.$queryRaw<Array<{ current_user: string; rolsuper: boolean; rolbypassrls: boolean }>>`
+        SELECT current_user, r.rolsuper, r.rolbypassrls FROM pg_roles r WHERE r.rolname = current_user
+    `.catch(() => null);
+
+    if (roleRows && roleRows.length > 0 && 'current_user' in roleRows[0]!) {
+        const role = roleRows[0]!;
+        if (role.current_user !== 'orbitox_runtime' || role.rolsuper || role.rolbypassrls) {
+            const err = new Error('DATABASE_ROLE_UNSAFE');
+            (err as any).code = 'DATABASE_ROLE_UNSAFE';
+            throw err;
+        }
+    }
 }

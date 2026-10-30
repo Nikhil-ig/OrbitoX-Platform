@@ -84,6 +84,7 @@ $PSQL_ADMIN -c "DELETE FROM \"HmsAdmission\" WHERE id='x'" >/dev/null 2>&1 || tr
 
 echo "== I8 no deletes for runtime"
 deny "runtime cannot DELETE patients"        "permission denied" "$A" "DELETE FROM \"HmsPatient\" WHERE id='pat2'"
+deny "runtime cannot DELETE staff sessions"  "permission denied" "$A" "DELETE FROM \"HmsStaffSession\" WHERE id='any'"
 deny "runtime cannot TRUNCATE"               "permission denied" "$A" "TRUNCATE \"HmsInvoice\""
 
 echo "== PHI shape guard"

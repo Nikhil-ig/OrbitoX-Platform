@@ -8,14 +8,24 @@ const globalForAudit = globalThis as typeof globalThis & { hmsAuditPrisma?: Pris
 
 function getAuditClient(): PrismaClient {
   if (globalForAudit.hmsAuditPrisma) return globalForAudit.hmsAuditPrisma;
-  const auditDbUrl =
-    process.env.PLATFORM_AUDIT_DATABASE_URL ||
-    process.env.APP_DATABASE_URL ||
-    process.env.DATABASE_URL;
-  const client = new PrismaClient({
-    ...(auditDbUrl ? { datasources: { db: { url: auditDbUrl } } } : {}),
-  });
-  if (process.env.NODE_ENV !== 'production') globalForAudit.hmsAuditPrisma = client;
+  const auditDbUrl = process.env.HMS_AUDIT_DATABASE_URL?.trim();
+  if (!auditDbUrl) {
+    if (process.env.NODE_ENV === 'production') {
+      throw new Error(
+        'HMS_AUDIT_DATABASE_URL is not set: Hospital audit requires dedicated hms_audit_reader role connection.',
+      );
+    }
+    // In development/test only, fallback to restricted APP_DATABASE_URL, NEVER to owner DATABASE_URL
+    const fallbackUrl = process.env.APP_DATABASE_URL?.trim();
+    if (!fallbackUrl) {
+      throw new Error('HMS_AUDIT_DATABASE_URL (or APP_DATABASE_URL in development) is required for audit client.');
+    }
+    const client = new PrismaClient({ datasources: { db: { url: fallbackUrl } } });
+    if ((process.env.NODE_ENV as string) !== 'production') globalForAudit.hmsAuditPrisma = client;
+    return client;
+  }
+  const client = new PrismaClient({ datasources: { db: { url: auditDbUrl } } });
+  if ((process.env.NODE_ENV as string) !== 'production') globalForAudit.hmsAuditPrisma = client;
   return client;
 }
 

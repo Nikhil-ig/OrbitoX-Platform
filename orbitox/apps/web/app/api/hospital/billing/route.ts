@@ -53,10 +53,10 @@ export const POST = withHospitalGuard(async (req: NextRequest, _routeContext, au
       const totalMinor = BigInt(body.totalMinor);
 
       const { rows } = await tx.query(
-        `INSERT INTO "HmsInvoice" ("id", "patientId", "admissionId", "totalMinor")
-         VALUES ($1, $2, $3, $4)
-         RETURNING "id", "patientId", "admissionId", "totalMinor"::text as "totalMinor", "paidMinor"::text as "paidMinor", "status", "issuedAt"`,
-        [id, body.patientId, body.admissionId ?? null, totalMinor.toString()]
+        `INSERT INTO "HmsInvoice" ("id", "patientId", "totalMinor")
+         VALUES ($1, $2, $3::bigint)
+         RETURNING "id", "patientId", "totalMinor"::text as "totalMinor", "paidMinor"::text as "paidMinor", "status", "createdAt"`,
+        [id, body.patientId, totalMinor.toString()]
       );
       return rows[0];
     });

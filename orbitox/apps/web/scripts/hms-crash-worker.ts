@@ -1,13 +1,16 @@
 /**
  * Worker process for HospitalOS crash durability harness (Phase 2b-3).
  * Performs admissions, payments, or lab verifications inside withTenantTx
- * and signals the parent right before commit so parent can send SIGKILL mid-operation.
+ * and signals parent at one of 3 randomized kill points:
+ * 1. 'before-statement': signals before any database transaction/query begins.
+ * 2. 'mid-tx': signals inside withTenantTx before commit.
+ * 3. 'post-commit': signals after withTenantTx commits before response.
  */
 import crypto from 'node:crypto';
 import { Pool } from 'pg';
 import { withTenantTx } from '../lib/tenant-db';
-import { PhiKeyRing, seal, blindIndex } from '../lib/phi-crypto';
-import { recordPayment, admitPatient } from '../lib/hms-repository';
+import { PhiKeyRing, seal } from '../lib/phi-crypto';
+import { recordPayment } from '../lib/hms-repository';
 
 const url = process.env.APP_DATABASE_URL || process.env.DATABASE_URL || 'postgresql://orbitox_runtime@127.0.0.1:5432/orbitox_phase2';
 const pool = new Pool({ connectionString: url });
@@ -22,24 +25,28 @@ async function run() {
   const op = process.argv[2]; // 'admit' | 'pay' | 'verify'
   const tenantId = process.argv[3];
   const payloadJson = process.argv[4];
+  const killPoint = (process.argv[5] || 'mid-tx') as 'before-statement' | 'mid-tx' | 'post-commit';
 
   if (!op || !tenantId || !payloadJson) {
-    process.stderr.write('Usage: tsx hms-crash-worker.ts <admit|pay|verify> <tenantId> <payloadJson>\n');
+    process.stderr.write('Usage: tsx hms-crash-worker.ts <admit|pay|verify> <tenantId> <payloadJson> [killPoint]\n');
     process.exit(1);
   }
 
   const payload = JSON.parse(payloadJson);
 
+  // 1. Kill point: before-statement (killed before any SQL or transaction is started)
+  if (killPoint === 'before-statement') {
+    if (process.send) {
+      process.send({ status: 'BEFORE_STATEMENT', op, killPoint });
+    }
+    // Hold while parent delivers SIGKILL
+    await new Promise((r) => setTimeout(r, 2500));
+    process.exit(0);
+  }
+
+  // Operations inside transaction
   await withTenantTx(pool, tenantId, async (tx) => {
     if (op === 'admit') {
-      // Step 1: Check bed service state
-      const bed = await tx.query<{ serviceState: string }>(
-        `SELECT "serviceState" FROM "HmsBed" WHERE "id" = $1`,
-        [payload.bedId]
-      );
-      if (!bed.rows[0]) throw new Error('Bed not found');
-
-      // Step 2: Insert admission
       const admId = payload.admissionId || `adm_crash_${Date.now()}`;
       await tx.query(
         `INSERT INTO "HmsAdmission" ("id", "patientId", "bedId", "attendingStaffId")
@@ -47,63 +54,38 @@ async function run() {
         [admId, payload.patientId, payload.bedId, payload.staffId]
       );
 
-      // Signal parent that we are in transaction
-      if (process.send) {
-        process.send({ status: 'IN_TRANSACTION', op, id: admId });
-      } else {
-        process.stdout.write(`STATUS:IN_TRANSACTION:${op}:${admId}\n`);
+      // 2. Kill point: mid-tx (killed inside transaction before commit)
+      if (killPoint === 'mid-tx') {
+        if (process.send) {
+          process.send({ status: 'MID_TX', op, id: admId, killPoint });
+        }
+        await new Promise((r) => setTimeout(r, 2500));
       }
-
-      // Artificial hold to allow SIGKILL
-      await new Promise((r) => setTimeout(r, 200));
-
     } else if (op === 'pay') {
-      // Signal parent right before payment record
-      if (process.send) {
-        process.send({ status: 'IN_TRANSACTION', op, id: payload.invoiceId });
+      if (killPoint === 'mid-tx') {
+        // Execute direct payment row insert to establish in-flight uncommitted state
+        const payId = `pay_${Date.now()}`;
+        await tx.query(
+          `INSERT INTO "HmsPayment" ("id", "invoiceId", "amountMinor", "method", "idempotencyKey", "receivedById")
+           VALUES ($1, $2, $3::bigint, $4, $5, $6)`,
+          [payId, payload.invoiceId, payload.amountMinor, payload.method || 'CASH', payload.idempotencyKey, payload.receivedById || 'staff_crash_1']
+        );
+        if (process.send) {
+          process.send({ status: 'MID_TX', op, id: payload.invoiceId, killPoint });
+        }
+        await new Promise((r) => setTimeout(r, 2500));
       } else {
-        process.stdout.write(`STATUS:IN_TRANSACTION:${op}:${payload.invoiceId}\n`);
+        // Normal recordPayment with outbox and invoice trigger
+        await recordPayment(tx, {
+          invoiceId: payload.invoiceId,
+          amountMinor: BigInt(payload.amountMinor),
+          method: payload.method || 'CASH',
+          idempotencyKey: payload.idempotencyKey,
+          receivedById: payload.receivedById || 'staff_crash_1',
+        });
       }
-
-      // Insert payment inside transaction
-      await recordPayment(tx, {
-        invoiceId: payload.invoiceId,
-        amountMinor: BigInt(payload.amountMinor),
-        method: payload.method || 'CASH',
-        idempotencyKey: payload.idempotencyKey || `idem_crash_${Date.now()}`,
-        receivedById: payload.receivedById || 'staff_cashier',
-      });
-
-      // Artificial hold to allow SIGKILL
-      await new Promise((r) => setTimeout(r, 200));
-
     } else if (op === 'verify') {
-      // Result then verify
-      const sealed = seal(ring, 'Lab normal value', {
-        tenantId,
-        column: 'result',
-        rowId: payload.labOrderId,
-      });
-
-      await tx.query(
-        `UPDATE "HmsLabOrder"
-         SET "status" = 'RESULTED',
-             "resultSealed" = $2,
-             "resultedById" = $3,
-             "updatedAt" = now()
-         WHERE "id" = $1`,
-        [payload.labOrderId, sealed, payload.staffId]
-      );
-
-      if (process.send) {
-        process.send({ status: 'IN_TRANSACTION', op, id: payload.labOrderId });
-      } else {
-        process.stdout.write(`STATUS:IN_TRANSACTION:${op}:${payload.labOrderId}\n`);
-      }
-
-      // Artificial hold to allow SIGKILL
-      await new Promise((r) => setTimeout(r, 200));
-
+      // Transition from RESULTED to VERIFIED
       await tx.query(
         `UPDATE "HmsLabOrder"
          SET "status" = 'VERIFIED',
@@ -111,10 +93,25 @@ async function run() {
              "verifiedAt" = now(),
              "updatedAt" = now()
          WHERE "id" = $1`,
-        [payload.labOrderId, payload.verifierId || payload.staffId]
+        [payload.labOrderId, payload.verifierId || 'staff_crash_2']
       );
+
+      if (killPoint === 'mid-tx') {
+        if (process.send) {
+          process.send({ status: 'MID_TX', op, id: payload.labOrderId, killPoint });
+        }
+        await new Promise((r) => setTimeout(r, 2500));
+      }
     }
   });
+
+  // 3. Kill point: post-commit (killed after commit succeeds, before returning response)
+  if (killPoint === 'post-commit') {
+    if (process.send) {
+      process.send({ status: 'POST_COMMIT', op, killPoint });
+    }
+    await new Promise((r) => setTimeout(r, 2500));
+  }
 
   process.stdout.write(`COMPLETED:${op}\n`);
   await pool.end();

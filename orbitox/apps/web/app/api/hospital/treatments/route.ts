@@ -8,9 +8,9 @@ export const GET = withHospitalGuard(async (_req: NextRequest, _routeContext, au
   try {
     const data = await withTenantTx(prisma, authContext.tenantId, async (tx) => {
       const { rows } = await tx.query(
-        `SELECT "id", "patientId", "orderedById", "testCode" as "code", "status", "orderedAt", "resultedAt"
+        `SELECT "id", "patientId", "orderedById", "testType" as "code", "status", "updatedAt"
          FROM "HmsLabOrder"
-         ORDER BY "orderedAt" DESC
+         ORDER BY "updatedAt" DESC
          LIMIT 50`
       );
       return rows;
@@ -36,9 +36,9 @@ export const POST = withHospitalGuard(async (req: NextRequest, _routeContext, au
       const orderedById = body.orderedById || authContext.sub || 'staff_doctor';
 
       const { rows } = await tx.query(
-        `INSERT INTO "HmsLabOrder" ("id", "patientId", "orderedById", "testCode", "status")
+        `INSERT INTO "HmsLabOrder" ("id", "patientId", "orderedById", "testType", "status")
          VALUES ($1, $2, $3, $4, 'ORDERED')
-         RETURNING "id", "patientId", "orderedById", "testCode" as "code", "status", "orderedAt"`,
+         RETURNING "id", "patientId", "orderedById", "testType" as "code", "status", "updatedAt"`,
         [id, body.patientId, orderedById, body.code]
       );
       return rows[0];

@@ -111,12 +111,48 @@ describe('Production startup secret validation', () => {
         }
     });
 
+    it('refuses production startup when HMS_AUDIT_DATABASE_URL is missing', async () => {
+        const environment = { ...process.env };
+        Reflect.set(process.env, 'NODE_ENV', 'production');
+        process.env.NEXT_RUNTIME = 'nodejs';
+        delete process.env.NEXT_PHASE;
+        process.env.ORBITOX_ADMIN_TOKEN = 'admin_secret_32_characters_minimum_000';
+        process.env.ORBITOX_RUNTIME_TOKEN = 'runtime_secret_32_characters_minimum_0';
+        process.env.ORBITOX_CONTROL_SECRET = 'control_secret_32_characters_minimum_';
+        process.env.ORBITOX_GUEST_SECRET = 'guest_secret_32_characters_minimum_00';
+        process.env.ORBITOX_SERVER_PEPPER = 'server_pepper_32_characters_minimum_';
+        process.env.DATABASE_URL = 'postgresql://postgres:postgrespassword@127.0.0.1:5432/orbitox_phase2';
+        process.env.APP_DATABASE_URL = 'postgresql://orbitox_runtime:pwd@127.0.0.1:5432/orbitox_phase2';
+        process.env.ORBITOX_TEST_SKIP_ROLE_CHECK = 'true';
+        delete process.env.HMS_AUDIT_DATABASE_URL;
+
+        try {
+            await assert.rejects(register(), (error: Error) => {
+                assert.match(error.message, /HMS_AUDIT_DATABASE_URL is not set/);
+                assert.match(error.message, /OrbitoX cannot start: invalid production configuration/);
+                return true;
+            });
+        } finally {
+            for (const key of Object.keys(process.env)) {
+                if (!(key in environment)) delete process.env[key];
+            }
+            Object.assign(process.env, environment);
+        }
+    });
+
     it('returns 503 DATABASE_ROLE_UNSAFE from /api/health when connected role has superuser or bypassrls', async () => {
         const { createHealthHandler } = await import('../lib/health-route-handler');
+        const { REQUIRED_PLATFORM_MIGRATIONS, assertPlatformDatabaseReady } = await import('../lib/platform-database-readiness');
         const mockUnsafeClient = {
             async $queryRaw(strings: any) {
                 const sql = Array.isArray(strings) ? strings.join(' ') : String(strings?.sql || strings);
                 if (sql.includes('SELECT 1')) return [{ '?column?': 1 }];
+                if (sql.includes('_prisma_migrations')) {
+                    return REQUIRED_PLATFORM_MIGRATIONS.map((migration_name) => ({ migration_name }));
+                }
+                if (sql.includes('platform_rate_limit_partitions_ready')) {
+                    return [{ ready: true }];
+                }
                 if (sql.includes('pg_roles')) {
                     return [{ current_user: 'postgres', rolsuper: true, rolbypassrls: true }];
                 }
@@ -124,7 +160,6 @@ describe('Production startup secret validation', () => {
             },
         } as any;
 
-        const { assertPlatformDatabaseReady } = await import('../lib/platform-database-readiness');
         const handler = createHealthHandler(() => assertPlatformDatabaseReady(mockUnsafeClient));
         const response = await handler();
         assert.equal(response.status, 503);

@@ -107,6 +107,29 @@ export async function register() {
       }
     }
 
+    // Dedicated HMS Audit reader role check (required in production)
+    const hmsAuditUrl = process.env.HMS_AUDIT_DATABASE_URL?.trim();
+    if (!hmsAuditUrl) {
+      problems.push('HMS_AUDIT_DATABASE_URL is not set (Production audit queries require dedicated hms_audit_reader connection)');
+    } else if (process.env.ORBITOX_TEST_SKIP_ROLE_CHECK !== 'true') {
+      try {
+        const { PrismaClient } = await import('@prisma/client');
+        const auditClient = new PrismaClient({ datasources: { db: { url: hmsAuditUrl } } });
+        const auditRoleRows = await auditClient.$queryRaw<Array<{ current_user: string; rolsuper: boolean; rolbypassrls: boolean }>>`
+          SELECT current_user, r.rolsuper, r.rolbypassrls FROM pg_roles r WHERE r.rolname = current_user
+        `;
+        await auditClient.$disconnect();
+        const role = auditRoleRows[0];
+        if (!role || role.current_user !== 'hms_audit_reader' || role.rolsuper || role.rolbypassrls) {
+          problems.push(
+            `Audit database role is unsafe: user="${role?.current_user}", rolsuper=${role?.rolsuper}, rolbypassrls=${role?.rolbypassrls}. Production requires hms_audit_reader with rolsuper=false and rolbypassrls=false.`
+          );
+        }
+      } catch (dbErr: any) {
+        problems.push(`Audit database connection or role check failed: ${dbErr.message}`);
+      }
+    }
+
     if (problems.length > 0) {
       throw new Error(
         [

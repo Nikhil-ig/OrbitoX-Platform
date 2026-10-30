@@ -13,6 +13,15 @@ export const ABSOLUTE_TIMEOUT_MS = 12 * 60 * 60 * 1000; // 12 hours
 export const MAX_FAILED_ATTEMPTS = 5;
 export const BASE_LOCKOUT_MS = 15 * 60 * 1000; // 15 minutes
 
+export const DUMMY_SALT = crypto.randomBytes(16).toString('hex');
+export const DUMMY_HASH = crypto
+  .scryptSync('dummy_precomputed_constant_timing_verifier_fixed', DUMMY_SALT, 64, SCRYPT_OPTIONS)
+  .toString('hex');
+
+export type AuthOutcome =
+  | { ok: true; staffId: string; roleId: string; roleName: string }
+  | { ok: false; staffId: string | null; locked: boolean; reason: 'UNKNOWN_STAFF' | 'SUSPENDED' | 'LOCKED' | 'INVALID_PASSWORD' };
+
 export interface StaffActor {
   staffId: string;
   roleId: string;
@@ -179,154 +188,169 @@ export async function createStaffCredential(
   });
 }
 
+export async function checkPassword(
+  tx: TenantTx,
+  who: { staffId?: string; emailBlind?: string },
+  password: string,
+): Promise<AuthOutcome> {
+  const query = `
+    SELECT s.id, s.status, s.role,
+           c."passwordHash", c.salt, c."lockedUntil"
+      FROM "HmsStaff" s
+      JOIN "HmsStaffCredential" c
+        ON c."tenantId" = s."tenantId" AND c."staffId" = s.id
+     WHERE ($1::text IS NULL OR s.id = $1)
+       AND ($2::text IS NULL OR s."emailBlind" = $2)
+     LIMIT 1
+  `;
+  const { rows } = await tx.query<{
+    id: string;
+    status: string;
+    role: string;
+    passwordHash: string;
+    salt: string;
+    lockedUntil: Date | string | null;
+  }>(query, [who.staffId ?? null, who.emailBlind ?? null]);
+
+  const row = rows[0];
+
+  // Always perform the expensive scrypt check so execution timing is identical regardless of existence
+  const valid = await verifyPassword(password, row?.salt ?? DUMMY_SALT, row?.passwordHash ?? DUMMY_HASH);
+
+  if (!row) {
+    return { ok: false, staffId: null, locked: false, reason: 'UNKNOWN_STAFF' };
+  }
+
+  const lockedUntil = row.lockedUntil ? new Date(row.lockedUntil) : null;
+  const locked = !!lockedUntil && lockedUntil.getTime() > Date.now();
+
+  if (locked) {
+    return { ok: false, staffId: row.id, locked: true, reason: 'LOCKED' };
+  }
+
+  if (row.status !== 'ACTIVE') {
+    return { ok: false, staffId: row.id, locked: false, reason: 'SUSPENDED' };
+  }
+
+  if (!valid) {
+    return { ok: false, staffId: row.id, locked: false, reason: 'INVALID_PASSWORD' };
+  }
+
+  const roleName = (row.role || 'DOCTOR').toUpperCase();
+  const roleId = `role_${roleName.toLowerCase()}`;
+
+  return { ok: true, staffId: row.id, roleId, roleName };
+}
+
+export async function recordFailure(tx: TenantTx, staffId: string): Promise<void> {
+  await tx.query(
+    `UPDATE "HmsStaffCredential"
+        SET "failedAttempts" = CASE
+              WHEN now() > "updatedAt" + interval '15 minutes' THEN 1
+              ELSE "failedAttempts" + 1
+            END,
+            "lockedUntil" = CASE
+              WHEN (CASE WHEN now() > "updatedAt" + interval '15 minutes' THEN 1 ELSE "failedAttempts" + 1 END) >= 5
+              THEN now() + make_interval(mins => LEAST(960, (15 * power(2, (CASE WHEN now() > "updatedAt" + interval '15 minutes' THEN 1 ELSE "failedAttempts" + 1 END) - 5))::int))
+              WHEN now() > "updatedAt" + interval '15 minutes' THEN NULL
+              ELSE "lockedUntil"
+            END,
+            "updatedAt" = now()
+      WHERE "staffId" = $1`,
+    [staffId],
+  );
+}
+
+export async function createSession(
+  tx: TenantTx,
+  outcome: { staffId: string; roleId: string; roleName: string },
+  metadata: { clientIp?: string; userAgent?: string } = {},
+): Promise<{ rawToken: string; tokenHash: string; session: any; staff: any; permissions: string[] }> {
+  // Ensure default roles exist in this tenant
+  await ensureDefaultRoles(tx);
+
+  // 1) Reset failed attempts and lockedUntil upon successful login
+  await tx.query(
+    `UPDATE "HmsStaffCredential"
+        SET "failedAttempts" = 0,
+            "lockedUntil" = NULL,
+            "lastLoginAt" = now(),
+            "updatedAt" = now()
+      WHERE "staffId" = $1`,
+    [outcome.staffId],
+  );
+
+  // 2) Verify or create role if missing
+  let roleId = outcome.roleId;
+  const { rows: existingRoles } = await tx.query<{ id: string }>(
+    `SELECT id FROM "HmsRole" WHERE id = $1 OR name = $2 LIMIT 1`,
+    [outcome.roleId, outcome.roleName],
+  );
+  if (existingRoles.length > 0) {
+    roleId = existingRoles[0]!.id;
+  } else {
+    await tx.query(
+      `INSERT INTO "HmsRole"(id, name, description, "isSystem") VALUES ($1, $2, $3, false) ON CONFLICT DO NOTHING`,
+      [roleId, outcome.roleName, `${outcome.roleName} role`],
+    );
+  }
+
+  // 3) Mint 256-bit random session token
+  const { rawToken, tokenHash } = generateSessionToken();
+  const sessionId = `sess_${crypto.randomBytes(12).toString('hex')}`;
+  const now = Date.now();
+  const expiresAt = new Date(now + IDLE_TIMEOUT_MS);
+  const absoluteExpiresAt = new Date(now + ABSOLUTE_TIMEOUT_MS);
+
+  await tx.query(
+    `INSERT INTO "HmsStaffSession"(id, "staffId", "roleId", "tokenHash", "expiresAt", "absoluteExpiresAt", "ipAddress", "userAgent")
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+    [sessionId, outcome.staffId, roleId, tokenHash, expiresAt, absoluteExpiresAt, metadata.clientIp ?? null, metadata.userAgent ?? null],
+  );
+
+  // 4) Fetch permissions
+  const { rows: permRows } = await tx.query<{ permission: string }>(
+    `SELECT permission FROM "HmsRolePermission" WHERE "roleId" = $1`,
+    [roleId],
+  );
+  const permissions = permRows.map((r) => r.permission);
+
+  // 5) Fetch staff details
+  const { rows: staffRows } = await tx.query<{ id: string; role: string; departmentId: string | null; onDuty: boolean }>(
+    `SELECT id, role, "departmentId", "onDuty" FROM "HmsStaff" WHERE id = $1`,
+    [outcome.staffId],
+  );
+
+  return {
+    rawToken,
+    tokenHash,
+    session: {
+      id: sessionId,
+      roleId,
+      expiresAt: expiresAt.toISOString(),
+      absoluteExpiresAt: absoluteExpiresAt.toISOString(),
+    },
+    staff: staffRows[0] || { id: outcome.staffId, role: outcome.roleName },
+    permissions,
+  };
+}
+
 export async function authenticateStaff(
   tx: TenantTx,
   identifier: { staffId?: string; emailBlind?: string },
   plainPassword: string,
   metadata: { userAgent?: string; ipAddress?: string } = {},
 ): Promise<{ rawToken: string; staff: any; session: any; permissions: string[] }> {
-  if (!tx.prisma) throw new Error('Prisma client required on TenantTx');
-  await ensureDefaultRoles(tx);
-
-  const staff = await tx.prisma.hmsStaff.findFirst({
-    where: {
-      tenantId: tx.tenantId,
-      ...(identifier.staffId ? { id: identifier.staffId } : {}),
-      ...(identifier.emailBlind ? { emailBlind: identifier.emailBlind } : {}),
-    },
-    include: {
-      credential: true,
-    },
-  });
-
-  if (!staff || !staff.credential) {
+  const outcome = await checkPassword(tx, identifier, plainPassword);
+  if (!outcome.ok) {
+    if (outcome.staffId) {
+      await recordFailure(tx, outcome.staffId);
+    }
+    if (outcome.locked) throw new Error('ACCOUNT_LOCKED');
+    if (outcome.reason === 'SUSPENDED') throw new Error('STAFF_SUSPENDED');
     throw new Error('INVALID_CREDENTIALS');
   }
-
-  if (staff.status === 'SUSPENDED') {
-    throw new Error('STAFF_SUSPENDED');
-  }
-
-  const cred = staff.credential;
-  const now = new Date();
-
-  // Check if account is currently locked
-  if (cred.lockedUntil && cred.lockedUntil > now) {
-    const remainingMs = cred.lockedUntil.getTime() - now.getTime();
-    throw new Error(`ACCOUNT_LOCKED:${Math.ceil(remainingMs / 1000)}`);
-  }
-
-  const isValid = await verifyPassword(plainPassword, cred.salt, cred.passwordHash);
-
-  if (!isValid) {
-    const failedAttempts = cred.failedAttempts + 1;
-    let lockedUntil: Date | null = null;
-    if (failedAttempts >= MAX_FAILED_ATTEMPTS) {
-      // Exponential backoff: 15 min * 2^(failedAttempts - 5)
-      const multiplier = Math.pow(2, failedAttempts - MAX_FAILED_ATTEMPTS);
-      const lockoutDurationMs = BASE_LOCKOUT_MS * multiplier;
-      lockedUntil = new Date(Date.now() + lockoutDurationMs);
-    }
-
-    await tx.prisma.hmsStaffCredential.update({
-      where: {
-        tenantId_staffId: {
-          tenantId: tx.tenantId,
-          staffId: staff.id,
-        },
-      },
-      data: {
-        failedAttempts,
-        lockedUntil,
-        updatedAt: new Date(),
-      },
-    });
-
-    if (lockedUntil) {
-      throw new Error(`ACCOUNT_LOCKED:${Math.ceil((lockedUntil.getTime() - Date.now()) / 1000)}`);
-    }
-    throw new Error('INVALID_CREDENTIALS');
-  }
-
-  // Password is valid - reset lock and failures, update lastLoginAt
-  await tx.prisma.hmsStaffCredential.update({
-    where: {
-      tenantId_staffId: {
-        tenantId: tx.tenantId,
-        staffId: staff.id,
-      },
-    },
-    data: {
-      failedAttempts: 0,
-      lockedUntil: null,
-      lastLoginAt: now,
-      updatedAt: now,
-    },
-  });
-
-  // Resolve staff role
-  const roleName = (staff.role || 'DOCTOR').toUpperCase();
-  let role = await tx.prisma.hmsRole.findFirst({
-    where: {
-      tenantId: tx.tenantId,
-      name: roleName,
-    },
-    include: {
-      permissions: true,
-    },
-  });
-
-  if (!role) {
-    role = await tx.prisma.hmsRole.create({
-      data: {
-        tenantId: tx.tenantId,
-        id: `role_${roleName.toLowerCase()}_${crypto.randomBytes(4).toString('hex')}`,
-        name: roleName,
-        description: `${roleName} role`,
-        isSystem: false,
-      },
-      include: {
-        permissions: true,
-      },
-    });
-  }
-
-  const permissions = role.permissions.map((p) => p.permission);
-
-  // Mint new session: 256-bit random token
-  const { rawToken, tokenHash } = generateSessionToken();
-  const expiresAt = new Date(Date.now() + IDLE_TIMEOUT_MS);
-  const absoluteExpiresAt = new Date(Date.now() + ABSOLUTE_TIMEOUT_MS);
-
-  const session = await tx.prisma.hmsStaffSession.create({
-    data: {
-      tenantId: tx.tenantId,
-      id: `sess_${crypto.randomBytes(12).toString('hex')}`,
-      staffId: staff.id,
-      roleId: role.id,
-      tokenHash,
-      expiresAt,
-      absoluteExpiresAt,
-      userAgent: metadata.userAgent || null,
-      ipAddress: metadata.ipAddress || null,
-    },
-  });
-
-  return {
-    rawToken,
-    staff: {
-      id: staff.id,
-      role: role.name,
-      departmentId: staff.departmentId,
-      onDuty: staff.onDuty,
-    },
-    session: {
-      id: session.id,
-      expiresAt: session.expiresAt,
-      absoluteExpiresAt: session.absoluteExpiresAt,
-    },
-    permissions,
-  };
+  return await createSession(tx, outcome, { clientIp: metadata.ipAddress, userAgent: metadata.userAgent });
 }
 
 export async function verifyStaffSession(

@@ -34,8 +34,9 @@ export const POST = withHospitalGuard(async (req: NextRequest, _routeContext, au
   try {
     const body = await req.json();
 
-    if (!body.patientId || !body.testCode) {
-      throw new HttpError(422, 'INVALID_INPUT', 'patientId and testCode are required');
+    const testType = body.testType || body.testCode;
+    if (!body.patientId || !testType) {
+      throw new HttpError(422, 'INVALID_INPUT', 'patientId and testType are required');
     }
 
     const data = await withTenantTx(prisma, authContext.tenantId, async (tx) => {
@@ -43,10 +44,10 @@ export const POST = withHospitalGuard(async (req: NextRequest, _routeContext, au
       const orderedById = body.orderedById || authContext.sub || 'staff_doctor';
 
       const { rows } = await tx.query(
-        `INSERT INTO "HmsLabOrder" ("id", "patientId", "orderedById", "testCode", "status")
+        `INSERT INTO "HmsLabOrder" ("id", "patientId", "orderedById", "testType", "status")
          VALUES ($1, $2, $3, $4, 'ORDERED')
-         RETURNING "id", "patientId", "orderedById", "testCode", "status", "orderedAt"`,
-        [id, body.patientId, orderedById, body.testCode]
+         RETURNING "id", "patientId", "orderedById", "testType", "status", "updatedAt"`,
+        [id, body.patientId, orderedById, testType]
       );
       return rows[0];
     });

@@ -79,7 +79,6 @@ export const POST = withHospitalGuard(async (req: NextRequest, _routeContext, au
           isSystem: false,
           permissions: {
             create: perms.map((perm) => ({
-              tenantId: tx.tenantId,
               permission: perm,
             })),
           },

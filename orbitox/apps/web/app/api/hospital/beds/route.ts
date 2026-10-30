@@ -45,7 +45,7 @@ export const POST = withHospitalGuard(async (req: NextRequest, _routeContext, au
 
       const { rows } = await tx.query(
         `INSERT INTO "HmsBed" ("id", "wardId", "label", "dailyRateMinor", "serviceState")
-         VALUES ($1, $2, $3, $4, $5)
+         VALUES ($1, $2, $3, $4::bigint, $5)
          RETURNING "id", "wardId", "label", "dailyRateMinor", "serviceState"`,
         [id, body.wardId, body.label, dailyRate.toString(), serviceState]
       );

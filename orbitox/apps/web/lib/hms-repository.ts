@@ -21,7 +21,7 @@ async function outbox(tx: TenantTx, topic: string, payload: Record<string, strin
     JSON.stringify(payload),
   ]);
   // Delivered only on COMMIT; payload is just the tenant (listeners re-read the outbox under RLS).
-  await tx.query(`SELECT pg_notify('orbitox_outbox', current_setting('app.current_tenant_id'))`);
+  await tx.query(`SELECT pg_notify('orbitox_outbox', current_setting('app.current_tenant_id'))::text`);
 }
 
 export interface NewPatient {
@@ -160,7 +160,7 @@ export async function bookAppointment(
   if (!(b.end > b.start)) throw new HttpError(422, 'INVALID_SLOT');
   const id = newId('apt');
   await tx.query(
-    `INSERT INTO "HmsAppointment" ("id","patientId","doctorId","slot") VALUES ($1,$2,$3,tstzrange($4,$5,'[)'))`,
+    `INSERT INTO "HmsAppointment" ("id","patientId","doctorId","slot") VALUES ($1,$2,$3,tstzrange($4::timestamptz,$5::timestamptz,'[)'))`,
     [id, b.patientId, b.doctorId, b.start.toISOString(), b.end.toISOString()],
   );
   return { id };

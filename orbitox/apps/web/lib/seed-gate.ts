@@ -2,6 +2,7 @@
  * Demo seed data and table tokens (fixes A5: predictable QR secrets in source).
  */
 import crypto from 'crypto';
+import { HttpError } from './db-errors';
 
 export function demoSeedAllowed(env: NodeJS.ProcessEnv = process.env): boolean {
   return env.NODE_ENV === 'development' && env.ORBITOX_ENABLE_DEMO_SEED === 'true';
@@ -9,7 +10,7 @@ export function demoSeedAllowed(env: NodeJS.ProcessEnv = process.env): boolean {
 
 /** Call at the top of every seeding path; throws in production, test and unset NODE_ENV. */
 export function assertDemoSeedAllowed(env: NodeJS.ProcessEnv = process.env): void {
-  if (!demoSeedAllowed(env)) throw new Error('Demo seed disabled: requires NODE_ENV=development and ORBITOX_ENABLE_DEMO_SEED=true');
+  if (!demoSeedAllowed(env)) throw new HttpError(403, 'DEMO_SEED_DISABLED', 'Demo seed disabled: requires NODE_ENV=development and ORBITOX_ENABLE_DEMO_SEED=true');
 }
 
 /** Random 256-bit table token for QR codes; only the hash is stored. Rotate per table on demand. */

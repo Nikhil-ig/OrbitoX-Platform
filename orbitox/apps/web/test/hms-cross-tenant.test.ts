@@ -1,6 +1,8 @@
 import { describe, it, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import crypto from 'node:crypto';
+import fs from 'node:fs';
+import path from 'node:path';
 import { NextRequest } from 'next/server';
 import { Pool } from 'pg';
 import { withTenantTx } from '../lib/tenant-db';
@@ -9,39 +11,40 @@ import { hashPassword, generateSalt } from '../lib/hms-auth';
 
 // Hospital route handlers
 import { GET as getDepts } from '../app/api/hospital/departments/route';
-import { GET as getHierarchy } from '../app/api/hospital/hierarchy/route';
+import { GET as getHierarchy, POST as postHierarchy } from '../app/api/hospital/hierarchy/route';
 import { GET as getBeds, POST as createBed } from '../app/api/hospital/beds/route';
 import { POST as postBedAction, PATCH as patchBedById } from '../app/api/hospital/beds/[id]/route';
 import { GET as getPatients, POST as createPatient } from '../app/api/hospital/patients/route';
-import { GET as getPatientById, PATCH as patchPatientById } from '../app/api/hospital/patients/[id]/route';
+import { GET as getPatientById, POST as postPatientAction, PATCH as patchPatientById } from '../app/api/hospital/patients/[id]/route';
 import { GET as getAdmissions, POST as createAdmission } from '../app/api/hospital/admissions/route';
 import { GET as getAppointments, POST as createAppointment } from '../app/api/hospital/appointments/route';
 import { PATCH as patchAppointmentById, DELETE as deleteAppointmentById } from '../app/api/hospital/appointments/[id]/route';
 import { GET as getLabs, POST as createLab } from '../app/api/hospital/labs/route';
 import { POST as resultLab } from '../app/api/hospital/labs/[id]/results/route';
-import { GET as getBilling } from '../app/api/hospital/billing/route';
+import { GET as getBilling, POST as createInvoice } from '../app/api/hospital/billing/route';
 import { POST as payInvoice } from '../app/api/hospital/billing/pay/[id]/route';
 import { GET as getStats } from '../app/api/hospital/stats/route';
 import { POST as postTelemetry } from '../app/api/hospital/telemetry/route';
 import { GET as getAudit } from '../app/api/hospital/audit/route';
 import { POST as breakGlass } from '../app/api/hospital/security/break-glass/route';
 import { GET as getStaff, POST as createStaff } from '../app/api/hospital/security/staff/route';
-import { GET as getStaffById } from '../app/api/hospital/security/staff/[id]/route';
+import { GET as getStaffById, PATCH as patchStaffById } from '../app/api/hospital/security/staff/[id]/route';
 import { POST as toggleDuty } from '../app/api/hospital/security/staff/[id]/toggle-duty/route';
 import { GET as getRoles, POST as createRole } from '../app/api/hospital/security/roles/route';
 import { GET as getPermissions } from '../app/api/hospital/security/permissions/route';
 import { GET as getSession, DELETE as deleteSession } from '../app/api/hospital/security/session/route';
 import { POST as loginStaff } from '../app/api/hospital/security/login/route';
-import { GET as getTreatments, POST as createTreatment } from '../app/api/hospital/treatments/route';
+import { GET as getTreatments, POST as createTreatment, PATCH as patchTreatment } from '../app/api/hospital/treatments/route';
 import { POST as resetSeed } from '../app/api/hospital/reset-seed/route';
 
-import { GET as getV1Beds } from '../app/api/v1/hms/beds/route';
-import { GET as getV1Labs } from '../app/api/v1/hms/labs/route';
+import { GET as getV1Beds, POST as createV1Bed } from '../app/api/v1/hms/beds/route';
+import { GET as getV1Labs, POST as createV1Lab } from '../app/api/v1/hms/labs/route';
 import { GET as getV1Patients, POST as createV1Patient } from '../app/api/v1/hms/patients/route';
 import { POST as advanceTriage } from '../app/api/v1/hms/triage/advance/route';
 
 process.env.APP_DATABASE_URL = process.env.APP_DATABASE_URL || 'postgresql://orbitox_runtime@127.0.0.1:5432/orbitox_phase2';
 process.env.PLATFORM_AUDIT_DATABASE_URL = process.env.PLATFORM_AUDIT_DATABASE_URL || 'postgresql://orbitox_platform_admin_audit@127.0.0.1:5432/orbitox_phase2';
+process.env.HMS_AUDIT_DATABASE_URL = process.env.HMS_AUDIT_DATABASE_URL || 'postgresql://hms_audit_reader:test_audit_reader_pass@127.0.0.1:5432/orbitox_phase2';
 if (!process.env.DATABASE_URL) {
   process.env.DATABASE_URL = process.env.APP_DATABASE_URL;
 }
@@ -72,6 +75,7 @@ function makeRequest(tenantId: string, urlPath: string, method = 'GET', body?: a
   headers.set('x-tenant-id', tenantId);
   headers.set('x-context-id', tenantId);
   headers.set('x-orbitox-principal', 'admin');
+  headers.set('x-forwarded-for', '127.0.0.1');
   if (body) headers.set('content-type', 'application/json');
 
   return new NextRequest(`http://localhost:3005${urlPath}`, {
@@ -79,6 +83,33 @@ function makeRequest(tenantId: string, urlPath: string, method = 'GET', body?: a
     headers,
     body: body ? JSON.stringify(body) : undefined,
   });
+}
+
+function getRouteFiles(dir: string): string[] {
+  const entries = fs.readdirSync(dir, { withFileTypes: true });
+  let files: string[] = [];
+  for (const entry of entries) {
+    const fullPath = path.join(dir, entry.name);
+    if (entry.isDirectory()) {
+      files = files.concat(getRouteFiles(fullPath));
+    } else if (entry.name === 'route.ts') {
+      files.push(fullPath);
+    }
+  }
+  return files;
+}
+
+interface ScenarioContext {
+  idsA: any;
+  idsB: any;
+  TENANT_A: string;
+  TENANT_B: string;
+}
+
+interface CoverageEntry {
+  description: string;
+  expectedStatus: number | number[];
+  run: (ctx: ScenarioContext) => Promise<Response>;
 }
 
 describe('HospitalOS & HMS Cross-Tenant Generator Suite (Phase 2b-3)', () => {
@@ -139,10 +170,281 @@ describe('HospitalOS & HMS Cross-Tenant Generator Suite (Phase 2b-3)', () => {
     return counts;
   }
 
+  const COVERAGE_TABLE: Record<string, CoverageEntry> = {
+    'GET app/api/hospital/admissions/route.ts': {
+      description: 'List admissions: Tenant A sees 0 Tenant B admissions',
+      expectedStatus: 200,
+      run: () => getAdmissions(makeRequest(TENANT_A, '/api/hospital/admissions')),
+    },
+    'POST app/api/hospital/admissions/route.ts': {
+      description: 'Create admission referencing B patient: rejected',
+      expectedStatus: [404, 422],
+      run: (ctx) => createAdmission(makeRequest(TENANT_A, '/api/hospital/admissions', 'POST', { patientId: ctx.idsB.patientId, bedId: ctx.idsA.bedId, staffId: ctx.idsA.staffId })),
+    },
+    'PATCH app/api/hospital/appointments/[id]/route.ts': {
+      description: 'Patch appointment on Tenant B appointment: 404',
+      expectedStatus: 404,
+      run: (ctx) => patchAppointmentById(makeRequest(TENANT_A, `/api/hospital/appointments/${ctx.idsB.appointmentId}`, 'PATCH', { status: 'CANCELLED' }), { params: Promise.resolve({ id: ctx.idsB.appointmentId }) }),
+    },
+    'DELETE app/api/hospital/appointments/[id]/route.ts': {
+      description: 'Delete appointment on Tenant B appointment: 404',
+      expectedStatus: 404,
+      run: (ctx) => deleteAppointmentById(makeRequest(TENANT_A, `/api/hospital/appointments/${ctx.idsB.appointmentId}`, 'DELETE'), { params: Promise.resolve({ id: ctx.idsB.appointmentId }) }),
+    },
+    'GET app/api/hospital/appointments/route.ts': {
+      description: 'List appointments: Tenant A sees 0 Tenant B appointments',
+      expectedStatus: 200,
+      run: () => getAppointments(makeRequest(TENANT_A, '/api/hospital/appointments')),
+    },
+    'POST app/api/hospital/appointments/route.ts': {
+      description: 'Create appointment referencing B doctor: rejected',
+      expectedStatus: [404, 422],
+      run: (ctx) => createAppointment(makeRequest(TENANT_A, '/api/hospital/appointments', 'POST', { patientId: ctx.idsA.patientId, doctorId: ctx.idsB.staffId, start: '2026-11-20T11:00:00Z', end: '2026-11-20T11:30:00Z' })),
+    },
+    'GET app/api/hospital/audit/route.ts': {
+      description: 'List audit PHI access logs: Tenant A sees 0 Tenant B logs',
+      expectedStatus: 200,
+      run: () => getAudit(makeRequest(TENANT_A, '/api/hospital/audit')),
+    },
+    'POST app/api/hospital/beds/[id]/route.ts': {
+      description: 'Bed action on Tenant B bed: 404',
+      expectedStatus: 404,
+      run: (ctx) => postBedAction(makeRequest(TENANT_A, `/api/hospital/beds/${ctx.idsB.bedId}?action=turnover`, 'POST'), { params: Promise.resolve({ id: ctx.idsB.bedId }) }),
+    },
+    'PATCH app/api/hospital/beds/[id]/route.ts': {
+      description: 'Patch bed on Tenant B bed: 404',
+      expectedStatus: 404,
+      run: (ctx) => patchBedById(makeRequest(TENANT_A, `/api/hospital/beds/${ctx.idsB.bedId}`, 'PATCH', { serviceState: 'MAINTENANCE' }), { params: Promise.resolve({ id: ctx.idsB.bedId }) }),
+    },
+    'GET app/api/hospital/beds/route.ts': {
+      description: 'List beds: Tenant A sees 0 Tenant B beds',
+      expectedStatus: 200,
+      run: () => getBeds(makeRequest(TENANT_A, '/api/hospital/beds')),
+    },
+    'POST app/api/hospital/beds/route.ts': {
+      description: 'Create bed referencing Tenant B ward: rejected',
+      expectedStatus: [404, 422],
+      run: (ctx) => createBed(makeRequest(TENANT_A, '/api/hospital/beds', 'POST', { id: `bed_a_cross_fail_${Date.now()}`, wardId: ctx.idsB.wardId, label: 'Illegal Bed', dailyRateMinor: 100000 })),
+    },
+    'POST app/api/hospital/billing/pay/[id]/route.ts': {
+      description: 'Pay invoice on Tenant B invoice: 404',
+      expectedStatus: 404,
+      run: (ctx) => payInvoice(makeRequest(TENANT_A, `/api/hospital/billing/pay/${ctx.idsB.invoiceId}`, 'POST', { amountMinor: 10000, method: 'CASH', idempotencyKey: `idem-cross-fail-${Date.now()}`, receivedById: ctx.idsA.staffId }), { params: Promise.resolve({ id: ctx.idsB.invoiceId }) }),
+    },
+    'GET app/api/hospital/billing/route.ts': {
+      description: 'List billing invoices: Tenant A sees 0 Tenant B invoices',
+      expectedStatus: 200,
+      run: () => getBilling(makeRequest(TENANT_A, '/api/hospital/billing')),
+    },
+    'POST app/api/hospital/billing/route.ts': {
+      description: 'Create invoice referencing Tenant B patient: rejected',
+      expectedStatus: [404, 422],
+      run: (ctx) => createInvoice(makeRequest(TENANT_A, '/api/hospital/billing', 'POST', { patientId: ctx.idsB.patientId, totalMinor: 50000 })),
+    },
+    'GET app/api/hospital/departments/route.ts': {
+      description: 'List departments: Tenant A sees 0 Tenant B departments',
+      expectedStatus: 200,
+      run: () => getDepts(makeRequest(TENANT_A, '/api/hospital/departments')),
+    },
+    'GET app/api/hospital/hierarchy/route.ts': {
+      description: 'Get hierarchy: Tenant A sees 0 Tenant B hierarchy nodes',
+      expectedStatus: 200,
+      run: () => getHierarchy(makeRequest(TENANT_A, '/api/hospital/hierarchy')),
+    },
+    'POST app/api/hospital/hierarchy/route.ts': {
+      description: 'Create ward referencing Tenant B department: rejected',
+      expectedStatus: [404, 422],
+      run: (ctx) => postHierarchy(makeRequest(TENANT_A, '/api/hospital/hierarchy', 'POST', { type: 'ward', departmentId: ctx.idsB.deptId, name: 'Cross Ward' })),
+    },
+    'POST app/api/hospital/labs/[id]/results/route.ts': {
+      description: 'Result lab on Tenant B lab order: 404',
+      expectedStatus: 404,
+      run: (ctx) => resultLab(makeRequest(TENANT_A, `/api/hospital/labs/${ctx.idsB.labOrderId}/results`, 'POST', { result: 'Normal', resultEnteredById: ctx.idsA.staffId }), { params: Promise.resolve({ id: ctx.idsB.labOrderId }) }),
+    },
+    'GET app/api/hospital/labs/route.ts': {
+      description: 'List labs: Tenant A sees 0 Tenant B lab orders',
+      expectedStatus: 200,
+      run: () => getLabs(makeRequest(TENANT_A, '/api/hospital/labs')),
+    },
+    'POST app/api/hospital/labs/route.ts': {
+      description: 'Create lab order referencing Tenant B patient: rejected',
+      expectedStatus: [404, 422],
+      run: (ctx) => createLab(makeRequest(TENANT_A, '/api/hospital/labs', 'POST', { patientId: ctx.idsB.patientId, orderedById: ctx.idsA.staffId, testType: 'Lipid Profile' })),
+    },
+    'GET app/api/hospital/patients/[id]/route.ts': {
+      description: 'Get patient on Tenant B patient: 404',
+      expectedStatus: 404,
+      run: (ctx) => getPatientById(makeRequest(TENANT_A, `/api/hospital/patients/${ctx.idsB.patientId}`), { params: Promise.resolve({ id: ctx.idsB.patientId }) }),
+    },
+    'POST app/api/hospital/patients/[id]/route.ts': {
+      description: 'Patient action on Tenant B patient: 404',
+      expectedStatus: 404,
+      run: (ctx) => postPatientAction(makeRequest(TENANT_A, `/api/hospital/patients/${ctx.idsB.patientId}?action=discharge`, 'POST', {}), { params: Promise.resolve({ id: ctx.idsB.patientId }) }),
+    },
+    'PATCH app/api/hospital/patients/[id]/route.ts': {
+      description: 'Patch patient on Tenant B patient: 404',
+      expectedStatus: 404,
+      run: (ctx) => patchPatientById(makeRequest(TENANT_A, `/api/hospital/patients/${ctx.idsB.patientId}`, 'PATCH', { triageLevel: 2 }), { params: Promise.resolve({ id: ctx.idsB.patientId }) }),
+    },
+    'GET app/api/hospital/patients/route.ts': {
+      description: 'List patients: Tenant A sees 0 Tenant B patients',
+      expectedStatus: 200,
+      run: () => getPatients(makeRequest(TENANT_A, '/api/hospital/patients')),
+    },
+    'POST app/api/hospital/patients/route.ts': {
+      description: 'Create patient in Tenant A: 201 (scoped to Tenant A)',
+      expectedStatus: 201,
+      run: (ctx) => createPatient(makeRequest(TENANT_A, '/api/hospital/patients', 'POST', { name: 'A Cross Pat', mrn: `${ctx.idsA.mrn}-GEN` })),
+    },
+    'POST app/api/hospital/reset-seed/route.ts': {
+      description: 'Reset seed: scoped to Tenant A only: 200 or 403',
+      expectedStatus: [200, 403],
+      run: async () => {
+        const prev = process.env.ORBITOX_ENABLE_DEMO_SEED;
+        const prevEnv = process.env.NODE_ENV;
+        try {
+          Reflect.set(process.env, 'NODE_ENV', 'development');
+          process.env.ORBITOX_ENABLE_DEMO_SEED = 'true';
+          return await resetSeed(makeRequest(TENANT_A, '/api/hospital/reset-seed', 'POST', {}));
+        } finally {
+          if (prev === undefined) delete process.env.ORBITOX_ENABLE_DEMO_SEED;
+          else process.env.ORBITOX_ENABLE_DEMO_SEED = prev;
+          if (prevEnv === undefined) Reflect.deleteProperty(process.env, 'NODE_ENV');
+          else Reflect.set(process.env, 'NODE_ENV', prevEnv);
+        }
+      },
+    },
+    'POST app/api/hospital/security/break-glass/route.ts': {
+      description: 'Break glass on Tenant B patient: rejected',
+      expectedStatus: [404, 422],
+      run: (ctx) => breakGlass(makeRequest(TENANT_A, '/api/hospital/security/break-glass', 'POST', { staffId: ctx.idsA.staffId, patientId: ctx.idsB.patientId, reason: 'unauthorized cross access' })),
+    },
+    'POST app/api/hospital/security/login/route.ts': {
+      description: 'Login with Tenant B credentials on Tenant A: 401',
+      expectedStatus: 401,
+      run: (ctx) => loginStaff(makeRequest(TENANT_A, '/api/hospital/security/login', 'POST', { email: ctx.idsB.staffEmail, password: 'PasswordB!2026' })),
+    },
+    'GET app/api/hospital/security/permissions/route.ts': {
+      description: 'List permissions catalogue: 200',
+      expectedStatus: 200,
+      run: () => getPermissions(makeRequest(TENANT_A, '/api/hospital/security/permissions')),
+    },
+    'GET app/api/hospital/security/roles/route.ts': {
+      description: 'List roles: Tenant A sees 0 Tenant B custom roles',
+      expectedStatus: 200,
+      run: () => getRoles(makeRequest(TENANT_A, '/api/hospital/security/roles')),
+    },
+    'POST app/api/hospital/security/roles/route.ts': {
+      description: 'Create role in Tenant A: 201 (scoped to Tenant A)',
+      expectedStatus: [200, 201],
+      run: () => createRole(makeRequest(TENANT_A, '/api/hospital/security/roles', 'POST', { name: `SURGEON_A_${Date.now()}`, description: 'Surgeon', permissions: ['patients:read'] })),
+    },
+    'GET app/api/hospital/security/session/route.ts': {
+      description: 'Inspect session presenting Tenant B session token: 401',
+      expectedStatus: 401,
+      run: (ctx) => {
+        const req = makeRequest(TENANT_A, '/api/hospital/security/session');
+        req.headers.set('x-staff-session', ctx.idsB.sessionToken);
+        return getSession(req);
+      },
+    },
+    'DELETE app/api/hospital/security/session/route.ts': {
+      description: 'Revoke session for Tenant B session ID from Tenant A: 200 (does not affect Tenant B)',
+      expectedStatus: 200,
+      run: (ctx) => deleteSession(makeRequest(TENANT_A, '/api/hospital/security/session', 'DELETE', { sessionId: ctx.idsB.sessionId })),
+    },
+    'GET app/api/hospital/security/staff/[id]/route.ts': {
+      description: 'Get staff by ID on Tenant B staff: 404',
+      expectedStatus: 404,
+      run: (ctx) => getStaffById(makeRequest(TENANT_A, `/api/hospital/security/staff/${ctx.idsB.staffId}`), { params: Promise.resolve({ id: ctx.idsB.staffId }) }),
+    },
+    'PATCH app/api/hospital/security/staff/[id]/route.ts': {
+      description: 'Patch staff by ID on Tenant B staff: 404',
+      expectedStatus: 404,
+      run: (ctx) => patchStaffById(makeRequest(TENANT_A, `/api/hospital/security/staff/${ctx.idsB.staffId}`, 'PATCH', { status: 'SUSPENDED' }), { params: Promise.resolve({ id: ctx.idsB.staffId }) }),
+    },
+    'POST app/api/hospital/security/staff/[id]/toggle-duty/route.ts': {
+      description: 'Toggle duty on Tenant B staff: 404',
+      expectedStatus: 404,
+      run: (ctx) => toggleDuty(makeRequest(TENANT_A, `/api/hospital/security/staff/${ctx.idsB.staffId}/toggle-duty`, 'POST'), { params: Promise.resolve({ id: ctx.idsB.staffId }) }),
+    },
+    'GET app/api/hospital/security/staff/route.ts': {
+      description: 'List staff: Tenant A sees 0 Tenant B staff members',
+      expectedStatus: 200,
+      run: () => getStaff(makeRequest(TENANT_A, '/api/hospital/security/staff')),
+    },
+    'POST app/api/hospital/security/staff/route.ts': {
+      description: 'Create staff referencing Tenant B department: rejected',
+      expectedStatus: [404, 422],
+      run: (ctx) => createStaff(makeRequest(TENANT_A, '/api/hospital/security/staff', 'POST', { name: 'Dr. Cross Illegal', email: `cross.${Date.now()}@a.org`, role: 'DOCTOR', departmentId: ctx.idsB.deptId })),
+    },
+    'GET app/api/hospital/stats/route.ts': {
+      description: 'Get stats: Tenant A sees only Tenant A statistics',
+      expectedStatus: 200,
+      run: () => getStats(makeRequest(TENANT_A, '/api/hospital/stats')),
+    },
+    'POST app/api/hospital/telemetry/route.ts': {
+      description: 'Post telemetry: scoped to Tenant A: 200',
+      expectedStatus: 200,
+      run: () => postTelemetry(makeRequest(TENANT_A, '/api/hospital/telemetry', 'POST', { metric: 'heartbeat', value: 1 })),
+    },
+    'GET app/api/hospital/treatments/route.ts': {
+      description: 'List treatments: Tenant A sees 0 Tenant B treatments',
+      expectedStatus: 200,
+      run: () => getTreatments(makeRequest(TENANT_A, '/api/hospital/treatments')),
+    },
+    'POST app/api/hospital/treatments/route.ts': {
+      description: 'Create treatment referencing Tenant B patient: rejected',
+      expectedStatus: [404, 422],
+      run: (ctx) => createTreatment(makeRequest(TENANT_A, '/api/hospital/treatments', 'POST', { patientId: ctx.idsB.patientId, code: 'CROSS_TRT' })),
+    },
+    'PATCH app/api/hospital/treatments/route.ts': {
+      description: 'Patch treatment on non-owned treatment: 404',
+      expectedStatus: 404,
+      run: () => patchTreatment(makeRequest(TENANT_A, '/api/hospital/treatments', 'PATCH', { treatmentId: 'trt_cross_nonexistent_or_b', action: 'complete' })),
+    },
+    'GET app/api/v1/hms/beds/route.ts': {
+      description: 'V1 List beds: Tenant A sees 0 Tenant B beds',
+      expectedStatus: 200,
+      run: () => getV1Beds(makeRequest(TENANT_A, '/api/v1/hms/beds')),
+    },
+    'POST app/api/v1/hms/beds/route.ts': {
+      description: 'V1 Bed allocation referencing Tenant B bed: 404',
+      expectedStatus: 404,
+      run: (ctx) => createV1Bed(makeRequest(TENANT_A, '/api/v1/hms/beds', 'POST', { bedId: ctx.idsB.bedId, patientId: ctx.idsA.patientId })),
+    },
+    'GET app/api/v1/hms/labs/route.ts': {
+      description: 'V1 List labs: Tenant A sees 0 Tenant B labs',
+      expectedStatus: 200,
+      run: () => getV1Labs(makeRequest(TENANT_A, '/api/v1/hms/labs')),
+    },
+    'POST app/api/v1/hms/labs/route.ts': {
+      description: 'V1 Create lab referencing Tenant B patient: rejected',
+      expectedStatus: [404, 422],
+      run: (ctx) => createV1Lab(makeRequest(TENANT_A, '/api/v1/hms/labs', 'POST', { patientId: ctx.idsB.patientId, testType: 'CBC' })),
+    },
+    'GET app/api/v1/hms/patients/route.ts': {
+      description: 'V1 List patients: Tenant A sees 0 Tenant B patients',
+      expectedStatus: 200,
+      run: () => getV1Patients(makeRequest(TENANT_A, '/api/v1/hms/patients')),
+    },
+    'POST app/api/v1/hms/patients/route.ts': {
+      description: 'V1 Create patient in Tenant A: 201 (scoped to Tenant A)',
+      expectedStatus: 201,
+      run: (ctx) => createV1Patient(makeRequest(TENANT_A, '/api/v1/hms/patients', 'POST', { name: 'V1 Pat A', mrn: `${ctx.idsA.mrn}-V1` })),
+    },
+    'POST app/api/v1/hms/triage/advance/route.ts': {
+      description: 'V1 Advance triage on Tenant B patient: 404',
+      expectedStatus: 404,
+      run: (ctx) => advanceTriage(makeRequest(TENANT_A, '/api/v1/hms/triage/advance', 'POST', { patientId: ctx.idsB.patientId, newTriageLevel: 3 })),
+    },
+  };
+
   before(async () => {
     process.env.ORBITOX_ADMIN_TOKEN = ADMIN_TOKEN;
     process.env.ORBITOX_SERVER_PEPPER = process.env.ORBITOX_SERVER_PEPPER || 'test_pepper_32_characters_minimum_len';
     process.env.ORBITOX_ENABLE_HOSPITAL_ADMIN_ENDPOINTS = 'true';
+    process.env.TRUST_PROXY = 'true';
 
     // 1. Create a platform org & project with HMS enabled
     const crossOrg = await platformRepository.createOrganization({
@@ -196,25 +498,22 @@ describe('HospitalOS & HMS Cross-Tenant Generator Suite (Phase 2b-3)', () => {
         [idsB.staffId, pwHashB, saltB]
       );
 
+      await tx.query(
+        `INSERT INTO "HmsRole"(id, name, "isSystem") VALUES ('role_doctor', 'DOCTOR', true) ON CONFLICT DO NOTHING`
+      );
+
       idsB.sessionId = `sess_cross_b_${runSuffix}`;
       idsB.sessionToken = crypto.randomBytes(32).toString('hex');
       const tokenHashB = crypto.createHash('sha256').update(idsB.sessionToken).digest('hex');
       await tx.query(
-        `INSERT INTO "HmsRole"(id, name, "isSystem") VALUES ('role_doctor', 'DOCTOR', true) ON CONFLICT DO NOTHING`
-      );
-      await tx.query(
-        `INSERT INTO "HmsRole"(id, name, "isSystem") VALUES ($1, 'SPECIALIST_B', false) ON CONFLICT DO NOTHING`,
-        [idsB.roleId]
-      );
-      await tx.query(
-        `INSERT INTO "HmsStaffSession"(id, "staffId", "roleId", "tokenHash", "expiresAt", "absoluteExpiresAt")
+        `INSERT INTO "HmsStaffSession"("id", "staffId", "roleId", "tokenHash", "expiresAt", "absoluteExpiresAt")
          VALUES ($1, $2, 'role_doctor', $3, now() + interval '30 minutes', now() + interval '12 hours')`,
         [idsB.sessionId, idsB.staffId, tokenHashB]
       );
 
       // Seed Patient B
-      const nameSealedPatB = seal(ring, 'Patient B Verma', { tenantId: TENANT_B, column: 'nameSealed', rowId: idsB.patientId });
-      const nameBlindPatB = blindIndex(ring, 'Patient B Verma', 'name', TENANT_B, 'nameBlind');
+      const nameSealedPatB = seal(ring, 'Patient B Patel', { tenantId: TENANT_B, column: 'nameSealed', rowId: idsB.patientId });
+      const nameBlindPatB = blindIndex(ring, 'Patient B Patel', 'name', TENANT_B, 'nameBlind');
       await tx.query(
         `INSERT INTO "HmsPatient"(id, mrn, "nameSealed", "nameBlind") VALUES ($1, $2, $3, $4)`,
         [idsB.patientId, idsB.mrn, nameSealedPatB, nameBlindPatB]
@@ -290,309 +589,57 @@ describe('HospitalOS & HMS Cross-Tenant Generator Suite (Phase 2b-3)', () => {
     }
   }
 
-  // 1. Departments & Hierarchy List isolation
-  it('GET /api/hospital/departments and /hierarchy: Tenant A sees 0 Tenant B IDs', async () => {
-    const res1 = await getDepts(makeRequest(TENANT_A, '/api/hospital/departments'));
-    const text1 = await res1.text();
-    assert.equal(res1.status, 200);
-    assertNoLeakedIds(text1);
+  // 1. Generator Enumeration and Coverage Gate
+  it('reads all route files dynamically and fails if any route+method has no entry in the coverage table', async () => {
+    const hospitalDir = path.resolve(__dirname, '../app/api/hospital');
+    const v1HmsDir = path.resolve(__dirname, '../app/api/v1/hms');
+    const allFiles = [...getRouteFiles(hospitalDir), ...getRouteFiles(v1HmsDir)].sort();
 
-    const res2 = await getHierarchy(makeRequest(TENANT_A, '/api/hospital/hierarchy'));
-    const text2 = await res2.text();
-    assert.equal(res2.status, 200);
-    assertNoLeakedIds(text2);
+    const methods = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'];
+    const discovered: string[] = [];
+
+    for (const f of allFiles) {
+      const rel = path.relative(path.resolve(__dirname, '..'), f).replace(/\\/g, '/');
+      const mod = await import(f);
+      const target = (mod as any).default && (mod as any).default.GET ? (mod as any).default : mod;
+      for (const m of methods) {
+        if (typeof target[m] === 'function' || typeof (mod as any)[m] === 'function') {
+          discovered.push(`${m} ${rel}`);
+        }
+      }
+    }
+
+    assert.equal(discovered.length, 50, 'Discovered route+methods must be exactly 50 across the 30 route files');
+
+    for (const item of discovered) {
+      assert.ok(
+        COVERAGE_TABLE[item],
+        `Dynamic route enumeration failure: missing coverage table entry for route+method [${item}]`
+      );
+    }
+
+    const coveredCount = Object.keys(COVERAGE_TABLE).length;
+    console.log(`Cross-tenant generator coverage: ${coveredCount} of ${discovered.length} route+methods covered`);
   });
 
-  // 2. Beds isolation
-  it('Beds routes: Tenant A gets 404 for bed_b and list contains no bed_b', async () => {
-    // List
-    const listRes = await getBeds(makeRequest(TENANT_A, '/api/hospital/beds'));
-    const listText = await listRes.text();
-    assert.equal(listRes.status, 200);
-    assertNoLeakedIds(listText);
-
-    // Cross-tenant item action (turnover) -> 404
-    const actionRes = await postBedAction(
-      makeRequest(TENANT_A, `/api/hospital/beds/${idsB.bedId}?action=turnover`, 'POST'),
-      { params: Promise.resolve({ id: idsB.bedId }) }
-    );
-    const actionText = await actionRes.text();
-    assert.equal(actionRes.status, 404);
-    assertNoLeakedIds(actionText);
-
-    // Cross-tenant item update -> 404
-    const patchRes = await patchBedById(
-      makeRequest(TENANT_A, `/api/hospital/beds/${idsB.bedId}`, 'PATCH', { serviceState: 'MAINTENANCE' }),
-      { params: Promise.resolve({ id: idsB.bedId }) }
-    );
-    const patchText = await patchRes.text();
-    assert.equal(patchRes.status, 404);
-    assertNoLeakedIds(patchText);
-
-    // Cross-tenant create bed referencing B's ward -> 404 / error
-    const createRes = await createBed(
-      makeRequest(TENANT_A, '/api/hospital/beds', 'POST', {
-        id: 'bed_a_cross_fail',
-        wardId: idsB.wardId,
-        label: 'Illegal Bed',
-        dailyRateMinor: 100000,
-      })
-    );
-    const createText = await createRes.text();
-    assert.notEqual(createRes.status, 201);
-    assertNoLeakedIds(createText);
+  // 2. Comprehensive Generator Execution Across All 50 Route+Methods
+  it('executes cross-tenant scenarios for all 50 route+methods, verifying 404/403/expected isolation and zero data leakage', async () => {
+    let executedCount = 0;
+    for (const [key, entry] of Object.entries(COVERAGE_TABLE)) {
+      const res = await entry.run({ idsA, idsB, TENANT_A, TENANT_B });
+      const allowed = Array.isArray(entry.expectedStatus) ? entry.expectedStatus : [entry.expectedStatus];
+      if (!allowed.includes(res.status)) {
+        const text = await res.text();
+        assert.fail(`Route+method [${key}] expected status ${allowed.join('|')}, got ${res.status}: ${text}`);
+      }
+      const text = await res.text();
+      assertNoLeakedIds(text);
+      executedCount++;
+    }
+    console.log(`Successfully verified isolation across all ${executedCount} route+methods`);
   });
 
-  // 3. Patients isolation
-  it('Patients routes: Tenant A gets 404 for pat_b and list contains no pat_b', async () => {
-    const listRes = await getPatients(makeRequest(TENANT_A, '/api/hospital/patients'));
-    const listText = await listRes.text();
-    assert.equal(listRes.status, 200);
-    assertNoLeakedIds(listText);
-
-    // Cross-tenant patient read -> 404
-    const getRes = await getPatientById(
-      makeRequest(TENANT_A, `/api/hospital/patients/${idsB.patientId}`),
-      { params: Promise.resolve({ id: idsB.patientId }) }
-    );
-    const getText = await getRes.text();
-    assert.equal(getRes.status, 404);
-    assertNoLeakedIds(getText);
-
-    // Cross-tenant patient update -> 404
-    const patchRes = await patchPatientById(
-      makeRequest(TENANT_A, `/api/hospital/patients/${idsB.patientId}`, 'PATCH', { triageLevel: 2 }),
-      { params: Promise.resolve({ id: idsB.patientId }) }
-    );
-    const patchText = await patchRes.text();
-    assert.equal(patchRes.status, 404);
-    assertNoLeakedIds(patchText);
-  });
-
-  // 4. Admissions isolation
-  it('Admissions routes: Tenant A cannot admit with B patient or B bed; list has 0 B admissions', async () => {
-    const listRes = await getAdmissions(makeRequest(TENANT_A, '/api/hospital/admissions'));
-    const listText = await listRes.text();
-    assert.equal(listRes.status, 200);
-    assertNoLeakedIds(listText);
-
-    // Cross-tenant admission referencing B's patient
-    const admRes1 = await createAdmission(
-      makeRequest(TENANT_A, '/api/hospital/admissions', 'POST', {
-        patientId: idsB.patientId,
-        bedId: idsA.bedId,
-        staffId: idsA.staffId,
-      })
-    );
-    assert.notEqual(admRes1.status, 201);
-    assertNoLeakedIds(await admRes1.text());
-
-    // Cross-tenant admission referencing B's bed
-    const admRes2 = await createAdmission(
-      makeRequest(TENANT_A, '/api/hospital/admissions', 'POST', {
-        patientId: idsA.patientId,
-        bedId: idsB.bedId,
-        staffId: idsA.staffId,
-      })
-    );
-    assert.notEqual(admRes2.status, 201);
-    assertNoLeakedIds(await admRes2.text());
-  });
-
-  // 5. Appointments isolation
-  it('Appointments routes: Tenant A gets 404 for apt_b and cannot book B doctor or B patient', async () => {
-    const listRes = await getAppointments(makeRequest(TENANT_A, '/api/hospital/appointments'));
-    const listText = await listRes.text();
-    assert.equal(listRes.status, 200);
-    assertNoLeakedIds(listText);
-
-    // Cancel / Delete -> 404
-    const delRes = await deleteAppointmentById(
-      makeRequest(TENANT_A, `/api/hospital/appointments/${idsB.appointmentId}`, 'DELETE'),
-      { params: Promise.resolve({ id: idsB.appointmentId }) }
-    );
-    assert.equal(delRes.status, 404);
-    assertNoLeakedIds(await delRes.text());
-
-    // Cancel / Patch -> 404
-    const patchRes = await patchAppointmentById(
-      makeRequest(TENANT_A, `/api/hospital/appointments/${idsB.appointmentId}`, 'PATCH', { status: 'CANCELLED' }),
-      { params: Promise.resolve({ id: idsB.appointmentId }) }
-    );
-    assert.equal(patchRes.status, 404);
-    assertNoLeakedIds(await patchRes.text());
-
-    // Create appointment with B's doctor -> 404 / error
-    const createRes = await createAppointment(
-      makeRequest(TENANT_A, '/api/hospital/appointments', 'POST', {
-        patientId: idsA.patientId,
-        doctorId: idsB.staffId,
-        start: '2026-11-20T11:00:00Z',
-        end: '2026-11-20T11:30:00Z',
-      })
-    );
-    assert.notEqual(createRes.status, 201);
-    assertNoLeakedIds(await createRes.text());
-  });
-
-  // 6. Labs isolation
-  it('Labs routes: Tenant A gets 404 for lab_b and cannot verify B lab', async () => {
-    const listRes = await getLabs(makeRequest(TENANT_A, '/api/hospital/labs'));
-    const listText = await listRes.text();
-    assert.equal(listRes.status, 200);
-    assertNoLeakedIds(listText);
-
-    // Order lab for B's patient -> 404 / error
-    const orderRes = await createLab(
-      makeRequest(TENANT_A, '/api/hospital/labs', 'POST', {
-        patientId: idsB.patientId,
-        orderedById: idsA.staffId,
-        testType: 'Lipid Profile',
-      })
-    );
-    assert.notEqual(orderRes.status, 201);
-    assertNoLeakedIds(await orderRes.text());
-
-    // Result lab for B's lab order -> 404
-    const resultRes = await resultLab(
-      makeRequest(TENANT_A, `/api/hospital/labs/${idsB.labOrderId}/results`, 'POST', {
-        result: 'Normal values within range',
-        resultEnteredById: idsA.staffId,
-      }),
-      { params: Promise.resolve({ id: idsB.labOrderId }) }
-    );
-    assert.equal(resultRes.status, 404);
-    assertNoLeakedIds(await resultRes.text());
-  });
-
-  // 7. Billing & Payments isolation
-  it('Billing routes: Tenant A cannot see B invoices or pay B invoice', async () => {
-    const listRes = await getBilling(makeRequest(TENANT_A, '/api/hospital/billing'));
-    const listText = await listRes.text();
-    assert.equal(listRes.status, 200);
-    assertNoLeakedIds(listText);
-
-    // Attempt to pay Tenant B's invoice from Tenant A -> 404
-    const payRes = await payInvoice(
-      makeRequest(TENANT_A, `/api/hospital/billing/pay/${idsB.invoiceId}`, 'POST', {
-        amountMinor: 10000,
-        method: 'CASH',
-        idempotencyKey: `idem-cross-fail-${Date.now()}`,
-        receivedById: idsA.staffId,
-      }),
-      { params: Promise.resolve({ id: idsB.invoiceId }) }
-    );
-    const payText = await payRes.text();
-    assert.equal(payRes.status, 404);
-    assertNoLeakedIds(payText);
-  });
-
-  // 8. Staff & Security isolation
-  it('Security routes: Tenant A cannot see B staff, sessions, or roles', async () => {
-    // Staff list
-    const staffListRes = await getStaff(makeRequest(TENANT_A, '/api/hospital/security/staff'));
-    const staffText = await staffListRes.text();
-    assert.equal(staffListRes.status, 200);
-    assertNoLeakedIds(staffText);
-
-    // Staff by ID -> 404
-    const getStaffRes = await getStaffById(
-      makeRequest(TENANT_A, `/api/hospital/security/staff/${idsB.staffId}`),
-      { params: Promise.resolve({ id: idsB.staffId }) }
-    );
-    assert.equal(getStaffRes.status, 404);
-    assertNoLeakedIds(await getStaffRes.text());
-
-    // Toggle duty on B staff -> 404
-    const toggleRes = await toggleDuty(
-      makeRequest(TENANT_A, `/api/hospital/security/staff/${idsB.staffId}/toggle-duty`, 'POST'),
-      { params: Promise.resolve({ id: idsB.staffId }) }
-    );
-    assert.equal(toggleRes.status, 404);
-    assertNoLeakedIds(await toggleRes.text());
-
-    // Break glass on B patient -> 404 / 422
-    const bgRes = await breakGlass(
-      makeRequest(TENANT_A, '/api/hospital/security/break-glass', 'POST', {
-        staffId: idsA.staffId,
-        patientId: idsB.patientId,
-        reason: 'Emergency consultation cross tenant unauthorized',
-      })
-    );
-    assert.notEqual(bgRes.status, 201);
-    assertNoLeakedIds(await bgRes.text());
-
-    // Roles list
-    const rolesRes = await getRoles(makeRequest(TENANT_A, '/api/hospital/security/roles'));
-    const rolesText = await rolesRes.text();
-    assert.equal(rolesRes.status, 200);
-    assertNoLeakedIds(rolesText);
-
-    // Permissions catalogue
-    const permsRes = await getPermissions(makeRequest(TENANT_A, '/api/hospital/security/permissions'));
-    const permsText = await permsRes.text();
-    assert.equal(permsRes.status, 200);
-    assertNoLeakedIds(permsText);
-
-    // Cross-tenant session inspection: Tenant A presents Tenant B's session token -> 401 / 404
-    const reqSess = makeRequest(TENANT_A, '/api/hospital/security/session');
-    reqSess.headers.set('x-staff-session', idsB.sessionToken);
-    const sessRes = await getSession(reqSess);
-    assert.notEqual(sessRes.status, 200);
-    assertNoLeakedIds(await sessRes.text());
-
-    // Cross-tenant login: Tenant A tries to authenticate with Tenant B's email -> 401
-    const loginRes = await loginStaff(
-      makeRequest(TENANT_A, '/api/hospital/security/login', 'POST', {
-        email: idsB.staffEmail,
-        password: 'PasswordB!2026',
-      })
-    );
-    assert.equal(loginRes.status, 401);
-    assertNoLeakedIds(await loginRes.text());
-  });
-
-  // 9. Stats, Telemetry, and Audit isolation
-  it('Stats, Telemetry, and Audit routes return Tenant A data only', async () => {
-    const statsRes = await getStats(makeRequest(TENANT_A, '/api/hospital/stats'));
-    assert.equal(statsRes.status, 200);
-    assertNoLeakedIds(await statsRes.text());
-
-    const telemRes = await postTelemetry(makeRequest(TENANT_A, '/api/hospital/telemetry', 'POST', { metric: 'heartbeat', value: 1 }));
-    assert.equal(telemRes.status, 200);
-    assertNoLeakedIds(await telemRes.text());
-
-    const auditRes = await getAudit(makeRequest(TENANT_A, '/api/hospital/audit'));
-    assert.equal(auditRes.status, 200);
-    assertNoLeakedIds(await auditRes.text());
-  });
-
-  // 10. HMS V1 routes isolation
-  it('HMS V1 routes: Tenant A sees no Tenant B beds, labs, or patients; cannot advance B triage', async () => {
-    const bedsRes = await getV1Beds(makeRequest(TENANT_A, '/api/v1/hms/beds'));
-    assert.equal(bedsRes.status, 200);
-    assertNoLeakedIds(await bedsRes.text());
-
-    const labsRes = await getV1Labs(makeRequest(TENANT_A, '/api/v1/hms/labs'));
-    assert.equal(labsRes.status, 200);
-    assertNoLeakedIds(await labsRes.text());
-
-    const patRes = await getV1Patients(makeRequest(TENANT_A, '/api/v1/hms/patients'));
-    assert.equal(patRes.status, 200);
-    assertNoLeakedIds(await patRes.text());
-
-    // Advance triage on Tenant B's patient from Tenant A -> 404
-    const triageRes = await advanceTriage(
-      makeRequest(TENANT_A, '/api/v1/hms/triage/advance', 'POST', {
-        patientId: idsB.patientId,
-        newTriageLevel: 3,
-      })
-    );
-    assert.equal(triageRes.status, 404);
-    assertNoLeakedIds(await triageRes.text());
-  });
-
-  // 11. Final verification: Tenant B row counts are completely unchanged
+  // 3. Final verification: Tenant B row counts are completely unchanged
   it('verifies Tenant B row counts remain completely identical after entire suite', async () => {
     const finalCounts = await getTenantBRowCounts();
     assert.deepEqual(
