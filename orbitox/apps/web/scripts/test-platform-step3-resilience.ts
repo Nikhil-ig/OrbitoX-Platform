@@ -4,6 +4,7 @@ import { randomUUID } from 'node:crypto';
 import http from 'node:http';
 import path from 'node:path';
 import { PrismaClient } from '@prisma/client';
+import { Client } from 'pg';
 import { assertPlatformDatabaseReady, REQUIRED_PLATFORM_MIGRATIONS } from '../lib/platform-database-readiness';
 import { classifyDatabaseError } from '../app/api/v1/_lib/api-guard';
 
@@ -1155,12 +1156,12 @@ async function main() {
       // Hold lock on ProjectEnvironment from out-of-band transaction
       // This allows statement 1 of rotate (SELECT ... FOR UPDATE OF k) to succeed,
       // but blocks the replacement key insert (which takes FOR KEY SHARE on ProjectEnvironment)
-      const locker = new PrismaClient({ datasources: { db: { url: boundedUrl(databaseUrl!) } } });
-      await locker.$connect();
+      const locker = new Client({ connectionString: databaseUrl });
+      await locker.connect();
 
       try {
-        await locker.$executeRaw`BEGIN`;
-        await locker.$executeRaw`SELECT "id" FROM "ProjectEnvironment" WHERE "id" = ${`env_stall_rot_${suffix}`} FOR UPDATE`;
+        await locker.query('BEGIN');
+        await locker.query('SELECT "id" FROM "ProjectEnvironment" WHERE "id" = $1 FOR UPDATE', [`env_stall_rot_${suffix}`]);
 
         // Launch rotate HTTP request in background without awaiting completion
         fetch(`http://127.0.0.1:${port}/api/v1/admin/api-keys/${oldKeyId}/rotate`, {
@@ -1180,9 +1181,9 @@ async function main() {
         diedBefore++;
 
         // Release lock
-        await locker.$executeRaw`ROLLBACK`;
+        await locker.query('ROLLBACK');
       } finally {
-        await locker.$disconnect();
+        await locker.end().catch(() => {});
       }
 
       // Read database after kill to verify atomicity
@@ -1225,12 +1226,12 @@ async function main() {
 
       // Harness acquires SHARE ROW EXCLUSIVE lock on ProjectEnvironment
       // This allows INSERT into PlatformProject to proceed, but blocks INSERT into ProjectEnvironment!
-      const locker = new PrismaClient({ datasources: { db: { url: boundedUrl(databaseUrl!) } } });
-      await locker.$connect();
+      const locker = new Client({ connectionString: databaseUrl });
+      await locker.connect();
 
       try {
-        await locker.$executeRaw`BEGIN`;
-        await locker.$executeRaw`LOCK TABLE "ProjectEnvironment" IN SHARE ROW EXCLUSIVE MODE`;
+        await locker.query('BEGIN');
+        await locker.query('LOCK TABLE "ProjectEnvironment" IN SHARE ROW EXCLUSIVE MODE');
 
         // Launch provisioning request
         fetch(`http://127.0.0.1:${port}/api/v1/admin/projects`, {
@@ -1257,9 +1258,9 @@ async function main() {
         diedBefore++;
 
         // Release table lock
-        await locker.$executeRaw`ROLLBACK`;
+        await locker.query('ROLLBACK');
       } finally {
-        await locker.$disconnect();
+        await locker.end().catch(() => {});
       }
 
       // Check database: PlatformProject row MUST NOT exist (rolled back completely!)
@@ -1324,12 +1325,12 @@ async function main() {
       const child = spawnServer(port);
       await waitForServer(child, port);
 
-      const locker = new PrismaClient({ datasources: { db: { url: boundedUrl(databaseUrl!) } } });
-      await locker.$connect();
+      const locker = new Client({ connectionString: databaseUrl });
+      await locker.connect();
 
       try {
-        await locker.$executeRaw`BEGIN`;
-        await locker.$executeRaw`SELECT "id" FROM "PlatformProject" WHERE "id" = ${proj.id} FOR UPDATE`;
+        await locker.query('BEGIN');
+        await locker.query('SELECT "id" FROM "PlatformProject" WHERE "id" = $1 FOR UPDATE', [proj.id]);
 
         // Launch usage update transaction (NO client-supplied auditIntentId, S3-4 compliant!)
         fetch(`http://127.0.0.1:${port}/api/v1/admin/projects/${proj.id}/usage`, {
@@ -1349,9 +1350,9 @@ async function main() {
         diedBefore++;
 
         // Release lock
-        await locker.$executeRaw`ROLLBACK`;
+        await locker.query('ROLLBACK');
       } finally {
-        await locker.$disconnect();
+        await locker.end().catch(() => {});
       }
 
       // Check database: usage transaction rolled back to 50n!
