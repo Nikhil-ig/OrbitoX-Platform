@@ -14,8 +14,8 @@ COPY orbitox/plugins ./plugins
 COPY orbitox/tools ./tools
 RUN --mount=type=cache,id=pnpm-libs,target=/root/.local/share/pnpm/store \
     pnpm install --frozen-lockfile --ignore-scripts \
-      --filter @orbitox/external-runtime-sdk... --filter @orbitox/pos... --filter @orbitox/plugin-engine...
-RUN pnpm --filter @orbitox/external-runtime-sdk... --filter @orbitox/pos... --filter @orbitox/plugin-engine... run build
+      --filter @orbitox-io/bridge... --filter @orbitox/external-runtime-sdk... --filter @orbitox/pos... --filter @orbitox/plugin-engine...
+RUN pnpm --filter @orbitox-io/bridge... --filter @orbitox/external-runtime-sdk... --filter @orbitox/pos... --filter @orbitox/plugin-engine... run build
 
 # ---- 1. deps: install dependencies and compile prisma ----
 FROM node:${NODE_VERSION}-slim AS deps

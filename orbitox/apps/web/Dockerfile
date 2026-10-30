@@ -26,7 +26,11 @@ RUN pnpm exec prisma generate --schema prisma/schema.prisma
 # ---- 2. build: compile workspace packages, then the Next.js app ----
 FROM deps AS build
 COPY apps/web ./apps/web
-ENV NEXT_TELEMETRY_DISABLED=1
+ENV NEXT_TELEMETRY_DISABLED=1 \
+    APP_DATABASE_URL=postgresql://orbitox_build:orbitox_build@127.0.0.1:5432/orbitox_build \
+    DATABASE_URL=postgresql://orbitox_build:orbitox_build@127.0.0.1:5432/orbitox_build \
+    PLATFORM_AUDIT_DATABASE_URL=postgresql://orbitox_build:orbitox_build@127.0.0.1:5432/orbitox_build \
+    HMS_AUDIT_DATABASE_URL=postgresql://orbitox_build:orbitox_build@127.0.0.1:5432/orbitox_build
 RUN pnpm exec turbo run build --filter=web...
 
 # ---- 3. runtime: only the standalone server bundle, running as non-root ----
