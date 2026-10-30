@@ -10,6 +10,9 @@
  */
 
 if (!process.env.DATABASE_URL) {
+  if (process.env.CI) {
+    throw new Error('DATABASE_URL environment variable is required in CI.');
+  }
   process.env.DATABASE_URL = 'postgresql://apple@localhost:5432/restaurant_os';
 }
 
@@ -24,6 +27,7 @@ import { signBridgeRequest, getDefaultBridgeKeys } from '../packages/domain/brid
 
 const prisma = new PrismaClient();
 const keys = getDefaultBridgeKeys();
+process.env.ORBITOX_BRIDGE_KEYS = JSON.stringify(keys);
 
 let port1 = 0;
 let port2 = 0;
@@ -75,7 +79,8 @@ function startServerProcess(port: number): ChildProcess {
         ...process.env,
         PORT: String(port),
         NODE_ENV: 'development',
-        DATABASE_URL: 'postgresql://apple@localhost:5432/restaurant_os',
+        DATABASE_URL: process.env.DATABASE_URL!,
+        ORBITOX_BRIDGE_KEYS: JSON.stringify(keys),
         RESTAURANTOS_DISABLE_AUTOLISTEN: 'false',
         RESTAURANTOS_ENABLE_TEST_ROUTES: 'true',
       },

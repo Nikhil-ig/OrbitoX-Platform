@@ -102,6 +102,9 @@ importers:
 
   apps/web:
     dependencies:
+      '@orbitox-io/bridge':
+        specifier: workspace:*
+        version: link:../../packages/bridge
       '@orbitox-io/plugin-engine':
         specifier: workspace:*
         version: link:../../packages/compat-plugin-engine
@@ -175,6 +178,18 @@ importers:
       '@types/react-dom':
         specifier: ^19
         version: 19.2.4(@types/react@19.2.18)
+      typescript:
+        specifier: ~5.9.3
+        version: 5.9.3
+
+  packages/bridge:
+    devDependencies:
+      '@orbitox/tsconfig':
+        specifier: workspace:*
+        version: link:../config/tsconfig
+      '@types/node':
+        specifier: ^20.0.0
+        version: 20.19.43
       typescript:
         specifier: ~5.9.3
         version: 5.9.3

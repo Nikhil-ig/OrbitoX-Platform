@@ -80,10 +80,30 @@ export async function enablePostgresRLS(prisma: PrismaClient): Promise<void> {
     }
   }
 
+  // 3. Explicitly secure non-tenant BridgeNonce table if present
+  try {
+    await prisma.$executeRawUnsafe(`
+      DO $$
+      BEGIN
+        IF EXISTS (SELECT FROM information_schema.tables WHERE table_name = 'BridgeNonce' AND table_schema = 'public') THEN
+          REVOKE ALL ON TABLE "BridgeNonce" FROM restaurantos_app;
+          GRANT SELECT, INSERT ON TABLE "BridgeNonce" TO restaurantos_app;
+        END IF;
+      END
+      $$;
+    `);
+    console.log('  [RLS] Enforced SELECT/INSERT-only permissions on "BridgeNonce" for restaurantos_app');
+  } catch (err: any) {
+    console.warn('  [RLS] Failed to set permissions on BridgeNonce:', err.message);
+  }
+
   console.log('✅ [RLS] Row Level Security successfully enforced on all tenant tables.');
 }
 
 if (require.main === module) {
+  if (process.env.CI && !process.env.DATABASE_URL) {
+    throw new Error('DATABASE_URL environment variable is required in CI.');
+  }
   const databaseUrl = process.env.DATABASE_URL || 'postgresql://apple@localhost:5432/restaurant_os';
   const prisma = new PrismaClient({ datasources: { db: { url: databaseUrl } } });
   enablePostgresRLS(prisma)

@@ -8,6 +8,9 @@ importers:
 
   .:
     dependencies:
+      '@orbitox-io/bridge':
+        specifier: link:../../../orbitox/packages/bridge
+        version: link:../../../orbitox/packages/bridge
       '@orbitox/external-runtime-sdk':
         specifier: link:../../../orbitox/packages/external-runtime-sdk
         version: link:../../../orbitox/packages/external-runtime-sdk

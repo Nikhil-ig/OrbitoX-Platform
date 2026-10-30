@@ -7,6 +7,9 @@
 
 process.env.RESTAURANTOS_DISABLE_AUTOLISTEN = 'true';
 if (!process.env.DATABASE_URL) {
+  if (process.env.CI) {
+    throw new Error('DATABASE_URL environment variable is required in CI.');
+  }
   process.env.DATABASE_URL = 'postgresql://apple@localhost:5432/restaurant_os';
 }
 

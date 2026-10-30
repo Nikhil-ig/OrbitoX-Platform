@@ -831,9 +831,26 @@ export async function handleRequest(req: http.IncomingMessage, res: http.ServerR
     return;
   }
 
-  // Readiness check: verifies PostgreSQL and runtime services
+  // Readiness check: verifies PostgreSQL, bridge keys, and runtime services
   if ((pathname === '/healthz/ready' || pathname === '/ready') && method === 'GET') {
     try {
+      if (process.env.NODE_ENV === 'production') {
+        try {
+          getDefaultBridgeKeys();
+        } catch (keyErr: any) {
+          sendJson(res, 503, {
+            status: 'not_ready',
+            checks: {
+              database: 'UP',
+              bridgeKeys: 'DOWN',
+              error: keyErr.message,
+            },
+            uptime: process.uptime(),
+            timestamp: new Date().toISOString(),
+          });
+          return;
+        }
+      }
       if (postgresStore?.prisma) {
         await postgresStore.prisma.$queryRawUnsafe('SELECT 1');
       }
@@ -841,6 +858,7 @@ export async function handleRequest(req: http.IncomingMessage, res: http.ServerR
         status: 'ready',
         checks: {
           database: 'UP',
+          bridgeKeys: 'UP',
           store: 'UP',
           eventBus: 'UP',
         },
@@ -1074,7 +1092,7 @@ export async function handleRequest(req: http.IncomingMessage, res: http.ServerR
   const isLifecyclePlanChanged = (pathname === '/orbitox/lifecycle/plan-changed' || pathname === '/api/platform/lifecycle/plan-changed' || pathname === '/internal/lifecycle/plan-changed') && method === 'POST';
 
   if (isLifecycleProvision || isLifecycleSuspend || isLifecycleResume || isLifecyclePlanChanged) {
-    if (!verifiedBridge && !verifyPlatformAuth(req)) {
+    if (!verifiedBridge) {
       sendJson(res, 401, {
         error: 'UNAUTHORIZED',
         code: 'BRIDGE_SIGNATURE_REQUIRED',
@@ -1084,7 +1102,7 @@ export async function handleRequest(req: http.IncomingMessage, res: http.ServerR
     }
 
     const body = await parseBody(req);
-    const targetTenantId = verifiedBridge?.tenantId || (req.headers['x-tenant-id'] as string) || body.tenantId || tenantContext?.tenantId;
+    const targetTenantId = verifiedBridge.tenantId;
     if (!targetTenantId) {
       sendJson(res, 400, { error: 'BAD_REQUEST', code: 'TENANT_ID_REQUIRED', message: 'Tenant ID is required for lifecycle operation.' });
       return;

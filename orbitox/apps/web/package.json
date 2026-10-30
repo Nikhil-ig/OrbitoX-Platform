@@ -25,6 +25,7 @@
     "lint": "next lint"
   },
   "dependencies": {
+    "@orbitox-io/bridge": "workspace:*",
     "@orbitox-io/plugin-engine": "workspace:*",
     "@orbitox/commerce": "workspace:*",
     "@orbitox/core": "workspace:*",

@@ -11,6 +11,9 @@
 
 process.env.RESTAURANTOS_DISABLE_AUTOLISTEN = 'true';
 if (!process.env.DATABASE_URL) {
+  if (process.env.CI) {
+    throw new Error('DATABASE_URL environment variable is required in CI.');
+  }
   process.env.DATABASE_URL = 'postgresql://apple@localhost:5432/restaurant_os';
 }
 
@@ -25,6 +28,7 @@ import { TenantProvisioningService } from '../packages/domain/provisioning';
 
 const prisma = new PrismaClient();
 const keys = getDefaultBridgeKeys();
+process.env.ORBITOX_BRIDGE_KEYS = JSON.stringify(keys);
 
 let testPort = 0;
 let baseUrl = '';

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { withApiGuard, PlatformApiState } from '../../../_lib/api-guard';
 import { PLAN_TIER_PRESETS } from '@/app/admin/data/mock-data';
 import { platformRepository } from '@/lib/platform-repository';
+import { restaurantBridgeClient } from '@/lib/restaurant-bridge-client';
 
 export const GET = withApiGuard(
   {
@@ -109,6 +110,24 @@ export const PATCH = withApiGuard(
       }
 
       const updated = await platformRepository.updateProject(project.id, updates);
+
+      // Propagate project suspension/resumption to connected RestaurantOS runtime
+      if (updates.status === 'suspended' || updates.status === 'active') {
+        try {
+          const envs = await platformRepository.listEnvironments(project.id);
+          for (const env of envs) {
+            const tenantId = `org/${project.organizationId}/project/${project.slug}/environment/${env.name}`;
+            if (updates.status === 'suspended') {
+              await restaurantBridgeClient.suspendTenant(tenantId, 1);
+            } else if (updates.status === 'active') {
+              await restaurantBridgeClient.resumeTenant(tenantId, 1);
+            }
+          }
+        } catch (lifecycleErr) {
+          console.warn('[Project Update] Failed to propagate lifecycle to RestaurantOS:', lifecycleErr);
+        }
+      }
+
       await platformRepository.recordPlatformAdminAudit({
         action: 'PROJECT_UPDATED',
         entityType: 'PLATFORM_PROJECT',

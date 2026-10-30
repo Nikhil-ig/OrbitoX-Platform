@@ -12,6 +12,9 @@
 
 process.env.RESTAURANTOS_DISABLE_AUTOLISTEN = 'true';
 if (!process.env.DATABASE_URL) {
+  if (process.env.CI) {
+    throw new Error('DATABASE_URL environment variable is required in CI.');
+  }
   process.env.DATABASE_URL = 'postgresql://apple@localhost:5432/restaurant_os';
 }
 
@@ -193,6 +196,74 @@ describe('RestaurantOS Bridge Auth & Zero-Trust Verification', () => {
     const res = await sendRequest('GET', path, spoofHeaders);
     assert.equal(res.status, 401);
     assert.equal(res.body.code, 'UNVERIFIED_CLIENT_TENANT_HEADER');
+  });
+
+  it('6a. rejects request signed with legacy literal secret -> 401 (B1 fix)', async () => {
+    const path = '/healthz/ready';
+    // Attacker attempting to use the old literal string
+    const legacyBannedLiteral = ['dev_platform_secret', 'token_restaurantos_secure_32ch'].join('_');
+    const literalKeys = {
+      activeKeyId: 'k1',
+      keys: { k1: legacyBannedLiteral },
+    };
+    const signedHeaders = signBridgeRequest(literalKeys, {
+      method: 'GET',
+      pathWithQuery: path,
+      tenantId: TEST_TENANT,
+      principal: TEST_PRINCIPAL,
+    });
+
+    const res = await sendRequest('GET', path, signedHeaders);
+    assert.equal(res.status, 401);
+    assert.ok(['UNKNOWN_KEY', 'BAD_SIGNATURE'].includes(res.body.code));
+  });
+
+  it('6b. production mode refuses when ORBITOX_BRIDGE_KEYS is missing (B1 fix)', () => {
+    const prevEnv = process.env.NODE_ENV;
+    const prevKeys = process.env.ORBITOX_BRIDGE_KEYS;
+    try {
+      process.env.NODE_ENV = 'production';
+      delete process.env.ORBITOX_BRIDGE_KEYS;
+      assert.throws(() => getDefaultBridgeKeys(), /Production requires ORBITOX_BRIDGE_KEYS/);
+    } finally {
+      process.env.NODE_ENV = prevEnv;
+      if (prevKeys !== undefined) process.env.ORBITOX_BRIDGE_KEYS = prevKeys;
+    }
+  });
+
+  it('6c. production mode refuses when ORBITOX_BRIDGE_KEYS is malformed JSON (B1 fix)', () => {
+    const prevEnv = process.env.NODE_ENV;
+    const prevKeys = process.env.ORBITOX_BRIDGE_KEYS;
+    try {
+      process.env.NODE_ENV = 'production';
+      process.env.ORBITOX_BRIDGE_KEYS = '{ invalid-json ';
+      assert.throws(() => getDefaultBridgeKeys(), /malformed JSON/);
+    } finally {
+      process.env.NODE_ENV = prevEnv;
+      if (prevKeys !== undefined) process.env.ORBITOX_BRIDGE_KEYS = prevKeys;
+    }
+  });
+
+  it('6d. rejects non-canonical tenant format (B4 fix)', async () => {
+    // Attempting non-canonical string "anything-at-all"
+    assert.throws(() => {
+      signBridgeRequest(keys, {
+        method: 'GET',
+        pathWithQuery: '/healthz/ready',
+        tenantId: 'anything-at-all',
+        principal: TEST_PRINCIPAL,
+      });
+    }, /Invalid tenant ID format/);
+  });
+
+  it('6e. lifecycle routes reject bearer token auth path -> 401 BRIDGE_SIGNATURE_REQUIRED (B6 fix)', async () => {
+    const res = await sendRequest('POST', '/orbitox/lifecycle/suspend', {
+      Authorization: 'Bearer test_bearer_token_should_be_rejected_123',
+      'Content-Type': 'application/json',
+    }, { tenantId: TEST_TENANT });
+
+    assert.equal(res.status, 401);
+    assert.equal(res.body.code, 'BRIDGE_SIGNATURE_REQUIRED');
   });
 });
 

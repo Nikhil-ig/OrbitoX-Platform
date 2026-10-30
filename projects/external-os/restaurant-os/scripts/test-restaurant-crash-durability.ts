@@ -15,6 +15,9 @@
 
 process.env.RESTAURANTOS_DISABLE_AUTOLISTEN = 'true';
 if (!process.env.DATABASE_URL) {
+  if (process.env.CI) {
+    throw new Error('DATABASE_URL environment variable is required in CI.');
+  }
   process.env.DATABASE_URL = 'postgresql://apple@localhost:5432/restaurant_os';
 }
 
@@ -29,6 +32,7 @@ import { TenantProvisioningService } from '../packages/domain/provisioning';
 
 const prisma = new PrismaClient();
 const keys = getDefaultBridgeKeys();
+process.env.ORBITOX_BRIDGE_KEYS = JSON.stringify(keys);
 
 const runId = crypto.randomBytes(4).toString('hex');
 const TEST_TENANT = `org/crash-${runId}/project/p1/environment/prod`;
@@ -224,7 +228,7 @@ after(async () => {
   setTimeout(() => process.exit(0), 300).unref();
 });
 
-describe('Crash Durability Harness: 90 Trials with Randomized Kill Points', () => {
+describe('Crash Durability Harness: 90 Trials with Seeded 3-Stage Kill Rotation', () => {
   const TOTAL_TRIALS = 30;
 
   // ───────────────────────────────────────────────────────────────────────────

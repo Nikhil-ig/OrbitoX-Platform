@@ -1,0 +1,25 @@
+{
+  "name": "@orbitox-io/bridge",
+  "version": "1.0.0",
+  "description": "Zero-trust cryptographic request signing and bridge protocol for OrbitoX Platform and external runtimes",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://npm.pkg.github.com"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "type-check": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {},
+  "devDependencies": {
+    "@orbitox/tsconfig": "workspace:*",
+    "@types/node": "^20.0.0",
+    "typescript": "^5.0.0"
+  }
+}

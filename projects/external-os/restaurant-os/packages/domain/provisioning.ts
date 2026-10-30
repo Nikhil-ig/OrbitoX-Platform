@@ -87,7 +87,10 @@ export function verifyPlatformAuth(req: http.IncomingMessage): boolean {
     }
   }
 
-  const expectedToken = envToken || 'dev_platform_secret_token_restaurantos_secure_32ch';
+  const expectedToken = envToken;
+  if (!expectedToken) {
+    return false;
+  }
 
   const authHeader = req.headers['authorization'] || (req.headers['x-platform-token'] as string);
   if (!authHeader || typeof authHeader !== 'string') {

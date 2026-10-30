@@ -66,3 +66,10 @@ paths = [
   # and rejecting forged station credentials.
   '''(?i)scripts/test-kds-security-adversarial\.js$'''
 ]
+
+[[rules]]
+id = "restaurantos-literal-bridge-secret"
+description = "Banned legacy hardcoded bridge secret literal"
+regex = '''dev_platform_secret_token_restaurantos_secure_32ch'''
+tags = ["key", "bridge", "secret"]
+
