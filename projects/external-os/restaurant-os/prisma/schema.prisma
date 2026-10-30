@@ -23,6 +23,8 @@ model Tenant {
   gstin            String?  // Indian GST identification number (e.g. 03AAAAA0000A1Z5)
   retentionUntil   DateTime? // for scheduled deletion after cancellation
   onboardingState  Json?    // onboarding checklist progress
+  entitlementRevision Int   @default(0)
+  lastLifecycleKey String?
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt
 
@@ -225,6 +227,7 @@ model RestaurantOrder {
   idempotencyKey    String?
   paymentStatus     String   @default("UNPAID") // UNPAID, AUTHORIZED, CAPTURED, REFUNDED
   paymentSessionId  String?
+  version           Int      @default(1)
   createdAt         DateTime @default(now())
   updatedAt         DateTime @updatedAt
 
@@ -254,6 +257,7 @@ model KitchenTask {
   modifiers          Json?
   course             String?
   fulfilledItemCount Int      @default(0)
+  version            Int      @default(1)
   createdAt          DateTime @default(now())
   updatedAt          DateTime @updatedAt
 
@@ -519,5 +523,12 @@ model TenantPaymentConfig {
   updatedAt              DateTime @updatedAt
 
   tenant                 Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+}
+
+model BridgeNonce {
+  nonce     String   @id
+  expiresAt DateTime @db.Timestamptz
+
+  @@index([expiresAt])
 }
 

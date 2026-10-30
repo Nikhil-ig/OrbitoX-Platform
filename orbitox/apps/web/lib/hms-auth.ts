@@ -192,6 +192,7 @@ export async function checkPassword(
   tx: TenantTx,
   who: { staffId?: string; emailBlind?: string },
   password: string,
+  atTime?: Date,
 ): Promise<AuthOutcome> {
   const query = `
     SELECT s.id, s.status, s.role,
@@ -222,7 +223,8 @@ export async function checkPassword(
   }
 
   const lockedUntil = row.lockedUntil ? new Date(row.lockedUntil) : null;
-  const locked = !!lockedUntil && lockedUntil.getTime() > Date.now();
+  const currentMs = atTime ? atTime.getTime() : Date.now();
+  const locked = !!lockedUntil && lockedUntil.getTime() > currentMs;
 
   if (locked) {
     return { ok: false, staffId: row.id, locked: true, reason: 'LOCKED' };
@@ -242,23 +244,55 @@ export async function checkPassword(
   return { ok: true, staffId: row.id, roleId, roleName };
 }
 
-export async function recordFailure(tx: TenantTx, staffId: string): Promise<void> {
-  await tx.query(
+export async function recordFailure(
+  tx: TenantTx,
+  staffId: string,
+  atTime?: Date,
+): Promise<{ failedAttempts: number; lockedUntil: Date | null }> {
+  const atTimeIso = atTime ? atTime.toISOString() : null;
+  const { rows } = await tx.query<{ failedAttempts: number; lockedUntil: Date | string | null }>(
     `UPDATE "HmsStaffCredential"
         SET "failedAttempts" = CASE
-              WHEN now() > "updatedAt" + interval '15 minutes' THEN 1
+              WHEN COALESCE($2::timestamptz, now()) > "updatedAt" + interval '24 hours' THEN 1
               ELSE "failedAttempts" + 1
             END,
             "lockedUntil" = CASE
-              WHEN (CASE WHEN now() > "updatedAt" + interval '15 minutes' THEN 1 ELSE "failedAttempts" + 1 END) >= 5
-              THEN now() + make_interval(mins => LEAST(960, (15 * power(2, (CASE WHEN now() > "updatedAt" + interval '15 minutes' THEN 1 ELSE "failedAttempts" + 1 END) - 5))::int))
-              WHEN now() > "updatedAt" + interval '15 minutes' THEN NULL
-              ELSE "lockedUntil"
+              WHEN (CASE WHEN COALESCE($2::timestamptz, now()) > "updatedAt" + interval '24 hours' THEN 1 ELSE "failedAttempts" + 1 END) >= 5
+              THEN COALESCE($2::timestamptz, now()) + make_interval(mins => LEAST(960, (15 * power(2,
+                     (CASE WHEN COALESCE($2::timestamptz, now()) > "updatedAt" + interval '24 hours' THEN 1 ELSE "failedAttempts" + 1 END) - 5))::int))
+              ELSE NULL
             END,
+            "updatedAt" = COALESCE($2::timestamptz, now())
+      WHERE "staffId" = $1
+      RETURNING "failedAttempts", "lockedUntil"`,
+    [staffId, atTimeIso],
+  );
+  if (!rows[0]) {
+    return { failedAttempts: 0, lockedUntil: null };
+  }
+  return {
+    failedAttempts: rows[0].failedAttempts,
+    lockedUntil: rows[0].lockedUntil ? new Date(rows[0].lockedUntil) : null,
+  };
+}
+
+export async function unlockStaffCredential(
+  tx: TenantTx,
+  staffId: string,
+): Promise<{ staffId: string; unlocked: boolean }> {
+  const { rows } = await tx.query<{ staffId: string }>(
+    `UPDATE "HmsStaffCredential"
+        SET "failedAttempts" = 0,
+            "lockedUntil" = NULL,
             "updatedAt" = now()
-      WHERE "staffId" = $1`,
+      WHERE "staffId" = $1
+      RETURNING "staffId"`,
     [staffId],
   );
+  if (!rows[0]) {
+    throw new Error('STAFF_NOT_FOUND');
+  }
+  return { staffId: rows[0].staffId, unlocked: true };
 }
 
 export async function createSession(
@@ -343,7 +377,7 @@ export async function authenticateStaff(
 ): Promise<{ rawToken: string; staff: any; session: any; permissions: string[] }> {
   const outcome = await checkPassword(tx, identifier, plainPassword);
   if (!outcome.ok) {
-    if (outcome.staffId) {
+    if (outcome.reason === 'INVALID_PASSWORD' && outcome.staffId) {
       await recordFailure(tx, outcome.staffId);
     }
     if (outcome.locked) throw new Error('ACCOUNT_LOCKED');

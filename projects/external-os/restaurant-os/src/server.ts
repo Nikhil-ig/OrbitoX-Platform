@@ -65,6 +65,11 @@ import {
   validateTenantSlug,
   generateSeats,
   runDatabaseSecuritySelfCheck,
+  verifyBridgeRequest,
+  getDefaultBridgeKeys,
+  PostgresNonceStore,
+  MemoryNonceStore,
+  PostgresEventListener,
 } from '../packages/domain';
 import {
   buildGSTInvoice,
@@ -121,6 +126,10 @@ const eventBus = new RealtimeEventBus();
 const runtimeController = restaurantControlBridge;
 const razorpayAdapter = new RazorpayPaymentGatewayAdapter();
 
+if (!process.env.DATABASE_URL) {
+  process.env.DATABASE_URL = 'postgresql://apple@localhost:5432/restaurant_os';
+}
+
 let postgresStore: PostgresRestaurantStore | null = null;
 if (process.env.STORAGE_DRIVER !== 'json' && process.env.DATABASE_URL) {
   try {
@@ -134,6 +143,31 @@ if (process.env.STORAGE_DRIVER !== 'json' && process.env.DATABASE_URL) {
 const provisioningService = new TenantProvisioningService(postgresStore ? postgresStore.prisma : undefined);
 const customDomainService = new CustomDomainService(postgresStore ? postgresStore.prisma : undefined);
 const ownerSelfService = new OwnerSelfService(postgresStore ? postgresStore.prisma : undefined);
+
+const nonceStore = postgresStore?.prisma
+  ? new PostgresNonceStore(postgresStore.prisma)
+  : new MemoryNonceStore();
+
+let pgEventListener: PostgresEventListener | null = null;
+if (process.env.DATABASE_URL) {
+  try {
+    pgEventListener = new PostgresEventListener(process.env.DATABASE_URL, eventBus);
+    pgEventListener.start().catch((err: any) => console.warn('[PostgresEventListener] Startup warning:', err.message));
+  } catch (err: any) {
+    console.warn('[PostgresEventListener] Init warning:', err.message);
+  }
+}
+
+export { pgEventListener, postgresStore };
+
+export async function closeRuntimeServer(): Promise<void> {
+  if (pgEventListener) {
+    await pgEventListener.stop();
+  }
+  if (postgresStore?.prisma) {
+    await postgresStore.prisma.$disconnect();
+  }
+}
 
 // In-Memory Token Bucket Rate Limiter Keyed by Tenant ID
 interface RateLimitBucket {
@@ -239,6 +273,29 @@ function parseBody(req: http.IncomingMessage): Promise<any> {
       }
     });
     req.on('error', reject);
+  });
+}
+
+function readRawBody(req: http.IncomingMessage): Promise<string> {
+  if ((req as any).rawBody !== undefined) {
+    return Promise.resolve((req as any).rawBody);
+  }
+  return new Promise((resolve) => {
+    let data = '';
+    req.on('data', (chunk) => {
+      data += chunk;
+    });
+    req.on('end', () => {
+      (req as any).rawBody = data;
+      (req as any)._rawBuffer = Buffer.from(data);
+      try {
+        (req as any)._parsedBody = data ? JSON.parse(data) : {};
+      } catch {
+        (req as any)._parsedBody = {};
+      }
+      resolve(data);
+    });
+    req.on('error', () => resolve(''));
   });
 }
 
@@ -706,6 +763,19 @@ async function resolveRequestIdentity(
   return identity;
 }
 
+function checkTestKillPoint(req: http.IncomingMessage, stage: 'pre-commit' | 'post-commit'): void {
+  if (process.env.NODE_ENV === 'production') return;
+  const targetStage = req.headers['x-test-kill-point'] as string | undefined;
+  if (!targetStage) return;
+  if (targetStage === stage) {
+    process.kill(process.pid, 'SIGKILL');
+  } else if (targetStage === 'random-timing' && stage === 'pre-commit') {
+    setTimeout(() => {
+      try { process.kill(process.pid, 'SIGKILL'); } catch {}
+    }, Math.floor(Math.random() * 20));
+  }
+}
+
 export async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse): Promise<void> {
   const parsedUrl = url.parse(req.url || '', true);
   const pathname = parsedUrl.pathname || '/';
@@ -722,6 +792,44 @@ export async function handleRequest(req: http.IncomingMessage, res: http.ServerR
     statusCounts.set(res.statusCode, (statusCounts.get(res.statusCode) || 0) + 1);
     methodCounts.set(method, (methodCounts.get(method) || 0) + 1);
   });
+
+  // --- ORBITOX PLATFORM BRIDGE SIGNATURE & TENANT VERIFICATION ---
+  const rawSig = req.headers['x-orbitox-signature'] || req.headers['bridge-signature'] || req.headers['x-bridge-signature'];
+  const rawTenantHeader = req.headers['x-tenant-id'] || req.headers['x-orbitox-tenant'] || req.headers['bridge-tenant'];
+
+  let verifiedBridge: { tenantId: string; principal: { sub: string; scopes: string[] } } | null = null;
+
+  if (rawSig) {
+    const rawBody = await readRawBody(req);
+    const verifyRes = await verifyBridgeRequest(
+      getDefaultBridgeKeys(),
+      nonceStore,
+      {
+        method,
+        pathWithQuery: req.url || '/',
+        headers: req.headers as Record<string, string | undefined>,
+        rawBody,
+      }
+    );
+    if (!verifyRes.ok) {
+      const failReason = (verifyRes as any).reason;
+      sendJson(res, 401, {
+        error: 'UNAUTHORIZED',
+        code: failReason,
+        message: `Bridge signature verification failed: ${failReason}`,
+      });
+      return;
+    }
+    verifiedBridge = { tenantId: verifyRes.tenantId, principal: verifyRes.principal };
+  } else if (rawTenantHeader) {
+    // Client sent x-tenant-id without a verified bridge signature: UNCONDITIONALLY REJECT
+    sendJson(res, 401, {
+      error: 'UNAUTHORIZED',
+      code: 'UNVERIFIED_CLIENT_TENANT_HEADER',
+      message: 'Client-supplied x-tenant-id rejected: requests carrying tenant headers must be signed via bridge-signature.',
+    });
+    return;
+  }
 
   // Readiness check: verifies PostgreSQL and runtime services
   if ((pathname === '/healthz/ready' || pathname === '/ready') && method === 'GET') {
@@ -895,9 +1003,40 @@ export async function handleRequest(req: http.IncomingMessage, res: http.ServerR
   }
 
   // Authoritative host-based tenant resolution
-  let tenantContext = await resolveTenantFromRequest(req, postgresStore?.prisma);
+  let tenantContext: any = null;
+  if (verifiedBridge) {
+    const targetTenantId = verifiedBridge.tenantId;
+    const dbTenant = postgresStore?.prisma ? await postgresStore.prisma.tenant.findFirst({
+      where: { OR: [{ id: targetTenantId }, { slug: targetTenantId }, { orbitoxProjectId: targetTenantId }] },
+    }).catch(() => null) : null;
+
+    if (dbTenant) {
+      tenantContext = {
+        tenantId: dbTenant.id,
+        tenantSlug: dbTenant.slug,
+        tenantName: dbTenant.name,
+        orbitoxProjectId: dbTenant.orbitoxProjectId || `restaurant-os-${dbTenant.slug}`,
+        status: dbTenant.status,
+        planId: dbTenant.planId,
+        entitlementRevision: dbTenant.entitlementRevision,
+        isPlatform: true,
+      };
+    } else {
+      tenantContext = {
+        tenantId: targetTenantId,
+        tenantSlug: targetTenantId.replace(/^org\/[^/]+\/project\/[^/]+\/environment\//, '').replace(/^tenant_/, '').replace(/[^a-z0-9-]/g, '-'),
+        tenantName: 'Signed Bridge Tenant',
+        orbitoxProjectId: targetTenantId,
+        status: 'active',
+        isPlatform: true,
+      };
+    }
+  } else {
+    tenantContext = await resolveTenantFromRequest(req, postgresStore?.prisma);
+  }
+
   if (!tenantContext) {
-    if (pathname.startsWith('/internal/')) {
+    if (pathname.startsWith('/internal/') || pathname.startsWith('/orbitox/lifecycle')) {
       tenantContext = {
         tenantId: 'PLATFORM_SUPERUSER',
         tenantSlug: 'platform',
@@ -924,6 +1063,217 @@ export async function handleRequest(req: http.IncomingMessage, res: http.ServerR
           message: `No restaurant tenant configured for host: ${rawHost || 'unknown'}`,
         });
       }
+      return;
+    }
+  }
+
+  // --- LIFECYCLE HOOKS (Contract v2 Subset) ---
+  const isLifecycleProvision = (pathname === '/orbitox/lifecycle/provision' || pathname === '/api/platform/lifecycle/provision' || pathname === '/internal/lifecycle/provision') && method === 'POST';
+  const isLifecycleSuspend = (pathname === '/orbitox/lifecycle/suspend' || pathname === '/api/platform/lifecycle/suspend' || pathname === '/internal/lifecycle/suspend') && method === 'POST';
+  const isLifecycleResume = (pathname === '/orbitox/lifecycle/resume' || pathname === '/api/platform/lifecycle/resume' || pathname === '/internal/lifecycle/resume') && method === 'POST';
+  const isLifecyclePlanChanged = (pathname === '/orbitox/lifecycle/plan-changed' || pathname === '/api/platform/lifecycle/plan-changed' || pathname === '/internal/lifecycle/plan-changed') && method === 'POST';
+
+  if (isLifecycleProvision || isLifecycleSuspend || isLifecycleResume || isLifecyclePlanChanged) {
+    if (!verifiedBridge && !verifyPlatformAuth(req)) {
+      sendJson(res, 401, {
+        error: 'UNAUTHORIZED',
+        code: 'BRIDGE_SIGNATURE_REQUIRED',
+        message: 'Lifecycle endpoints require a verified bridge signature.',
+      });
+      return;
+    }
+
+    const body = await parseBody(req);
+    const targetTenantId = verifiedBridge?.tenantId || (req.headers['x-tenant-id'] as string) || body.tenantId || tenantContext?.tenantId;
+    if (!targetTenantId) {
+      sendJson(res, 400, { error: 'BAD_REQUEST', code: 'TENANT_ID_REQUIRED', message: 'Tenant ID is required for lifecycle operation.' });
+      return;
+    }
+
+    const idempotencyKey = (req.headers['x-idempotency-key'] as string) || body.idempotencyKey || (verifiedBridge ? req.headers['x-orbitox-nonce'] || req.headers['bridge-nonce'] : undefined);
+    const incomingRevision = typeof body.revision === 'number' ? body.revision : (typeof body.entitlementRevision === 'number' ? body.entitlementRevision : 0);
+
+    const existingTenant = postgresStore?.prisma ? await postgresStore.prisma.tenant.findFirst({
+      where: { OR: [{ id: targetTenantId }, { slug: targetTenantId }, { orbitoxProjectId: targetTenantId }] },
+    }).catch(() => null) : null;
+
+    // Idempotency check: if lastLifecycleKey matches, return cached/idempotent success
+    if (existingTenant && idempotencyKey && existingTenant.lastLifecycleKey === idempotencyKey) {
+      sendJson(res, 200, {
+        ok: true,
+        replayed: true,
+        tenantId: existingTenant.id,
+        status: existingTenant.status,
+        planId: existingTenant.planId,
+        revision: existingTenant.entitlementRevision,
+      });
+      return;
+    }
+
+    // Older revision check: if incoming revision is strictly less than current revision, ignore
+    if (existingTenant && incomingRevision > 0 && incomingRevision < existingTenant.entitlementRevision) {
+      sendJson(res, 200, {
+        ok: true,
+        ignored: true,
+        reason: 'OLDER_REVISION',
+        currentRevision: existingTenant.entitlementRevision,
+        incomingRevision,
+      });
+      return;
+    }
+
+    if (isLifecycleProvision) {
+      if (existingTenant) {
+        // Provision twice gives one tenant (idempotent)
+        sendJson(res, 200, {
+          ok: true,
+          replayed: true,
+          tenantId: existingTenant.id,
+          status: existingTenant.status,
+          revision: existingTenant.entitlementRevision,
+        });
+        return;
+      }
+
+      const cleanSlug = body.slug || targetTenantId.replace(/^org\/[^/]+\/project\/[^/]+\/environment\//, '').replace(/^tenant_/, '').replace(/[^a-z0-9-]/g, '-').slice(0, 30);
+      const provResult = await provisioningService.provisionTenant({
+        tenantId: targetTenantId,
+        restaurantName: body.restaurantName || body.name || `Restaurant ${cleanSlug}`,
+        slug: cleanSlug,
+        planId: body.planId || 'starter',
+        entitlementRevision: Math.max(1, incomingRevision),
+        idempotencyKey,
+      });
+
+      // Audit log
+      if (postgresStore?.prisma) {
+        await (postgresStore.prisma as any).domainEvent.create({
+          data: {
+            tenantId: targetTenantId,
+            sequence: 1,
+            type: 'tenant.lifecycle.provisioned',
+            producer: 'platform-lifecycle',
+            payload: { tenantId: targetTenantId, revision: incomingRevision, idempotencyKey },
+            branchId: 'main',
+          },
+        }).catch(() => {});
+      }
+
+      sendJson(res, 201, {
+        ok: true,
+        tenantId: targetTenantId,
+        status: 'active',
+        revision: Math.max(1, incomingRevision),
+        result: provResult,
+      });
+      return;
+    }
+
+    if (isLifecycleSuspend) {
+      if (!existingTenant) {
+        sendJson(res, 404, { error: 'TENANT_NOT_FOUND', code: 'TENANT_NOT_FOUND', message: `Tenant ${targetTenantId} not found` });
+        return;
+      }
+      await provisioningService.suspendTenant(existingTenant.id);
+      if (postgresStore?.prisma) {
+        await postgresStore.prisma.tenant.update({
+          where: { id: existingTenant.id },
+          data: {
+            status: 'suspended',
+            entitlementRevision: Math.max(existingTenant.entitlementRevision, incomingRevision),
+            lastLifecycleKey: idempotencyKey,
+          },
+        }).catch(() => {});
+        await (postgresStore.prisma as any).domainEvent.create({
+          data: {
+            tenantId: existingTenant.id,
+            sequence: 1,
+            type: 'tenant.lifecycle.suspended',
+            producer: 'platform-lifecycle',
+            payload: { tenantId: existingTenant.id, revision: incomingRevision, idempotencyKey },
+            branchId: 'main',
+          },
+        }).catch(() => {});
+      }
+      invalidateTenantResolutionCache(existingTenant.id);
+      sendJson(res, 200, {
+        ok: true,
+        tenantId: existingTenant.id,
+        status: 'suspended',
+        revision: Math.max(existingTenant.entitlementRevision, incomingRevision),
+      });
+      return;
+    }
+
+    if (isLifecycleResume) {
+      if (!existingTenant) {
+        sendJson(res, 404, { error: 'TENANT_NOT_FOUND', code: 'TENANT_NOT_FOUND', message: `Tenant ${targetTenantId} not found` });
+        return;
+      }
+      await provisioningService.resumeTenant(existingTenant.id);
+      if (postgresStore?.prisma) {
+        await postgresStore.prisma.tenant.update({
+          where: { id: existingTenant.id },
+          data: {
+            status: 'active',
+            entitlementRevision: Math.max(existingTenant.entitlementRevision, incomingRevision),
+            lastLifecycleKey: idempotencyKey,
+          },
+        }).catch(() => {});
+        await (postgresStore.prisma as any).domainEvent.create({
+          data: {
+            tenantId: existingTenant.id,
+            sequence: 1,
+            type: 'tenant.lifecycle.resumed',
+            producer: 'platform-lifecycle',
+            payload: { tenantId: existingTenant.id, revision: incomingRevision, idempotencyKey },
+            branchId: 'main',
+          },
+        }).catch(() => {});
+      }
+      invalidateTenantResolutionCache(existingTenant.id);
+      sendJson(res, 200, {
+        ok: true,
+        tenantId: existingTenant.id,
+        status: 'active',
+        revision: Math.max(existingTenant.entitlementRevision, incomingRevision),
+      });
+      return;
+    }
+
+    if (isLifecyclePlanChanged) {
+      if (!existingTenant) {
+        sendJson(res, 404, { error: 'TENANT_NOT_FOUND', code: 'TENANT_NOT_FOUND', message: `Tenant ${targetTenantId} not found` });
+        return;
+      }
+      const newPlanId = body.planId || body.newPlanId || existingTenant.planId;
+      if (postgresStore?.prisma) {
+        await postgresStore.prisma.tenant.update({
+          where: { id: existingTenant.id },
+          data: {
+            planId: newPlanId,
+            entitlementRevision: Math.max(existingTenant.entitlementRevision, incomingRevision),
+            lastLifecycleKey: idempotencyKey,
+          },
+        }).catch(() => {});
+        await (postgresStore.prisma as any).domainEvent.create({
+          data: {
+            tenantId: existingTenant.id,
+            sequence: 1,
+            type: 'tenant.lifecycle.plan_changed',
+            producer: 'platform-lifecycle',
+            payload: { tenantId: existingTenant.id, planId: newPlanId, revision: incomingRevision, idempotencyKey },
+            branchId: 'main',
+          },
+        }).catch(() => {});
+      }
+      invalidateTenantResolutionCache(existingTenant.id);
+      sendJson(res, 200, {
+        ok: true,
+        tenantId: existingTenant.id,
+        planId: newPlanId,
+        revision: Math.max(existingTenant.entitlementRevision, incomingRevision),
+      });
       return;
     }
   }
@@ -970,7 +1320,17 @@ export async function handleRequest(req: http.IncomingMessage, res: http.ServerR
     });
   });
 
-  const requestIdentity = await resolveRequestIdentity(req, tenantContext.tenantId, repo);
+  const requestIdentity: any = verifiedBridge
+    ? {
+        type: 'PLATFORM_BRIDGE',
+        id: verifiedBridge.principal.sub,
+        role: 'ADMIN',
+        isPrivileged: true,
+        scopes: verifiedBridge.principal.scopes,
+        tenantId: tenantContext.tenantId,
+        authSource: 'BRIDGE_SIGNATURE',
+      }
+    : await resolveRequestIdentity(req, tenantContext.tenantId, repo);
   const activeStaffToken = requestIdentity.rawToken;
   const activeStaffRole = requestIdentity.role || (requestIdentity.type === 'ADMIN' ? 'ADMIN' : undefined);
 
@@ -1074,20 +1434,21 @@ export async function handleRequest(req: http.IncomingMessage, res: http.ServerR
     return;
   }
 
+
   // --- TENANT SUSPENSION ENFORCEMENT ---
-  if (postgresStore && !pathname.startsWith('/internal/')) {
+  if (postgresStore && !pathname.startsWith('/internal/') && !pathname.startsWith('/orbitox/lifecycle')) {
     const currentTenant = await postgresStore.getTenant(tenantContext.tenantId);
-    if (currentTenant?.status === 'suspended') {
+    if (currentTenant?.status === 'suspended' || tenantContext.status === 'suspended') {
       if (['POST', 'PUT', 'PATCH', 'DELETE'].includes(method)) {
         sendJson(res, 403, {
-          error: 'TENANT_SUSPENDED',
-          code: 'TENANT_SUSPENDED',
+          error: 'SERVICE_SUSPENDED',
+          code: 'SERVICE_SUSPENDED',
           message: 'This restaurant account is temporarily suspended. Writes are disabled.',
         });
         return;
       }
       if (method === 'GET' && (pathname === '/' || pathname.startsWith('/dine') || pathname.startsWith('/kds') || pathname.startsWith('/swift-bite') || pathname.startsWith('/crave-atlas') || pathname.startsWith('/operations'))) {
-        sendHtml(res, renderSuspendedTenantPage(currentTenant.name));
+        sendHtml(res, renderSuspendedTenantPage(currentTenant?.name || tenantContext.tenantName));
         return;
       }
     }
@@ -2394,6 +2755,51 @@ export async function handleRequest(req: http.IncomingMessage, res: http.ServerR
     const body = await parseBody(req);
     const idempotencyKey = (req.headers['x-idempotency-key'] as string) || body.idempotencyKey;
 
+    checkTestKillPoint(req, 'pre-commit');
+
+    // Multi-Server Distributed Idempotency Lock
+    if (idempotencyKey && postgresStore?.prisma) {
+      const existing = await repo.getIdempotencyRecord(idempotencyKey);
+      if (existing && existing.status !== 'PENDING') {
+        sendJson(res, 200, existing.response || existing);
+        return;
+      }
+
+      let isLeader = false;
+      const startedAt = Date.now();
+      try {
+        await postgresStore.prisma.idempotencyRecord.create({
+          data: {
+            tenantId: tenantContext.tenantId,
+            key: idempotencyKey,
+            result: { status: 'PENDING', startedAt },
+            expiresAt: new Date(Date.now() + 86400 * 1000),
+          },
+        });
+        isLeader = true;
+      } catch {
+        // If an abandoned PENDING record exists older than 1500ms, reclaim leadership
+        if (existing && existing.status === 'PENDING') {
+          const prevStarted = Number((existing as any).startedAt || (existing.result as any)?.startedAt || 0);
+          if (Date.now() - prevStarted > 1500) {
+            isLeader = true;
+          }
+        }
+      }
+
+      if (!isLeader) {
+        const pollStart = Date.now();
+        while (Date.now() - pollStart < 800) {
+          await new Promise((r) => setTimeout(r, 40));
+          const rec = await repo.getIdempotencyRecord(idempotencyKey);
+          if (rec && rec.status !== 'PENDING') {
+            sendJson(res, 200, rec.response || rec);
+            return;
+          }
+        }
+      }
+    }
+
     // Authoritative Plan Limits & Quota Enforcement
     try {
       const quotaCheck = await ownerSelfService.checkPlanLimits(tenantContext.tenantId, 'ORDERS');
@@ -2413,13 +2819,32 @@ export async function handleRequest(req: http.IncomingMessage, res: http.ServerR
       // Allow fallback if running in-memory without database
     }
 
+    // Strip idempotencyKey so PosService does not trip on our distributed PENDING reservation
+    const posBody = { ...body };
+    delete posBody.idempotencyKey;
+
     const orderResult = await posService.submitOrder({
-      body,
+      body: posBody,
       identity,
-      idempotencyKey,
+      idempotencyKey: undefined,
       branchId: body.branchId || currentBranch.id,
       branchName: currentBranch.name,
     });
+
+    if (idempotencyKey && postgresStore?.prisma) {
+      if (orderResult.status === 201 || orderResult.status === 200) {
+        await repo.saveIdempotencyRecord(idempotencyKey, {
+          response: orderResult.body,
+          status: 'DONE',
+        });
+      } else {
+        await postgresStore.prisma.idempotencyRecord.deleteMany({
+          where: { tenantId: tenantContext.tenantId, key: idempotencyKey },
+        }).catch(() => {});
+      }
+    }
+
+    checkTestKillPoint(req, 'post-commit');
 
     if (orderResult.status === 201) {
       const orderId = orderResult.body.orderId || orderResult.body.data?.orderId;
@@ -2583,21 +3008,40 @@ export async function handleRequest(req: http.IncomingMessage, res: http.ServerR
 
     const body = await parseBody(req);
     const newStatus = body.status || body.newStatus;
+    const version = typeof body.version === 'number' ? body.version : undefined;
 
     if (!newStatus) {
       sendJson(res, 400, { success: false, error: 'Target status required', code: 'STATUS_REQUIRED' });
       return;
     }
 
-    const success = await repo.updateOrderStatus(orderId, newStatus);
-    if (!success) {
-      sendJson(res, 400, { success: false, error: 'Failed to update order status', code: 'UPDATE_FAILED' });
+    try {
+      const success = await repo.updateOrderStatus(orderId, newStatus, {
+        authorizedBy: identity.id,
+        reason: body.reason,
+        version,
+      });
+      if (!success) {
+        sendJson(res, 400, { success: false, error: 'Failed to update order status', code: 'UPDATE_FAILED' });
+        return;
+      }
+
+      const updatedOrder = await repo.getOrder(orderId);
+      sendJson(res, 200, { success: true, data: updatedOrder });
+      return;
+    } catch (err: any) {
+      if (err.code === 'STATE_CONFLICT' || err.statusCode === 409 || err.message?.includes('STATE_CONFLICT')) {
+        sendJson(res, 409, {
+          success: false,
+          error: 'STATE_CONFLICT',
+          code: 'STATE_CONFLICT',
+          message: 'Concurrent modification conflict: order was updated by another kitchen screen.',
+        });
+        return;
+      }
+      sendJson(res, 500, { success: false, error: 'INTERNAL_ERROR', message: err.message });
       return;
     }
-
-    const updatedOrder = await repo.getOrder(orderId);
-    sendJson(res, 200, { success: true, data: updatedOrder });
-    return;
   }
 
   // 6e. Order Cancellation (POST /api/restaurant/orders/:id/cancel)
@@ -2685,6 +3129,7 @@ export async function handleRequest(req: http.IncomingMessage, res: http.ServerR
   ) {
     const body = await parseBody(req);
     const orderId = body.orderId;
+    const idempotencyKey = (req.headers['x-idempotency-key'] as string) || body.idempotencyKey;
     if (!orderId) {
       sendJson(res, 400, {
         error: 'ORDER_ID_REQUIRED',
@@ -2696,6 +3141,14 @@ export async function handleRequest(req: http.IncomingMessage, res: http.ServerR
 
     const tenant = getActiveTenant();
     const tid = tenant.tenantId;
+
+    if (idempotencyKey && postgresStore?.prisma) {
+      const existing = await repo.getIdempotencyRecord(idempotencyKey);
+      if (existing) {
+        sendJson(res, 200, existing.response || existing);
+        return;
+      }
+    }
 
     let order = await repo.getOrder(orderId);
 
@@ -2748,6 +3201,8 @@ export async function handleRequest(req: http.IncomingMessage, res: http.ServerR
         },
       });
 
+      checkTestKillPoint(req, 'pre-commit');
+
       if (postgresStore) {
         try {
           await postgresStore.savePaymentSession(
@@ -2773,17 +3228,28 @@ export async function handleRequest(req: http.IncomingMessage, res: http.ServerR
         tenantId: tid,
       });
 
+      const responseData = {
+        razorpayOrderId: result.razorpayOrderId,
+        amountMinor,
+        currency: result.currency,
+        keyId: activeRazorpay.keyId,
+        orderId,
+        tableNumber,
+        paymentUrl: result.paymentUrl,
+      };
+
+      if (idempotencyKey && postgresStore?.prisma) {
+        await repo.saveIdempotencyRecord(idempotencyKey, {
+          success: true,
+          data: responseData,
+        }).catch(() => {});
+      }
+
+      checkTestKillPoint(req, 'post-commit');
+
       sendJson(res, 201, {
         success: true,
-        data: {
-          razorpayOrderId: result.razorpayOrderId,
-          amountMinor,
-          currency: result.currency,
-          keyId: activeRazorpay.keyId,
-          orderId,
-          tableNumber,
-          paymentUrl: result.paymentUrl,
-        },
+        data: responseData,
       });
     } catch (err: any) {
       sendJson(res, 500, {
@@ -3434,7 +3900,7 @@ export async function handleRequest(req: http.IncomingMessage, res: http.ServerR
     const identity = requestIdentity;
     const body = await parseBody(req);
     const taskId = body.taskId || (pathname.startsWith('/api/restaurant/kds/tasks/') ? pathname.split('/')[5] : undefined);
-    const nextStatus = body.newStatus || body.status;
+    const nextStatus = body.newStatus || body.status || body.targetStatus;
     const idempotencyKey = (req.headers['x-idempotency-key'] as string) || body.idempotencyKey;
 
     // 1. Authenticate identity
@@ -3515,6 +3981,8 @@ export async function handleRequest(req: http.IncomingMessage, res: http.ServerR
       return;
     }
 
+    checkTestKillPoint(req, 'pre-commit');
+
     const result = await repo.updateKitchenTaskStatus(taskId, nextStatus, {
       station: requestedStation,
       expectedRevision: body.expectedRevision,
@@ -3552,6 +4020,8 @@ export async function handleRequest(req: http.IncomingMessage, res: http.ServerR
       };
       await repo.saveIdempotencyRecord(idempotencyKey, record);
     }
+
+    checkTestKillPoint(req, 'post-commit');
 
     if (result.task) {
       eventBus.broadcast({
@@ -6965,7 +7435,11 @@ if (process.env.NODE_ENV === 'production' && process.env.ALLOW_DANGEROUS_RESET =
   process.exit(1);
 }
 
-if (process.env.RESTAURANTOS_DISABLE_AUTOLISTEN !== 'true') {
+if (
+  process.env.RESTAURANTOS_DISABLE_AUTOLISTEN !== 'true' &&
+  process.env.NODE_ENV !== 'test' &&
+  !process.argv.includes('--test')
+) {
 server.listen(PORT, async () => {
   if (postgresStore?.prisma) {
     try {

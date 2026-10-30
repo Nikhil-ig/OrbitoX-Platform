@@ -53,10 +53,35 @@ export const POST = withHospitalGuard(async (req: NextRequest, _routeContext, au
 
     // 2) Failure path: separate transaction that commits, using atomic increment
     if (!outcome.ok) {
-      if (outcome.staffId) {
-        await withTenantTx(prisma, authContext.tenantId, (tx) =>
+      if (outcome.reason === 'INVALID_PASSWORD' && outcome.staffId) {
+        const failure = await withTenantTx(prisma, authContext.tenantId, (tx) =>
           recordFailure(tx, outcome.staffId!),
         );
+
+        if (failure.failedAttempts >= 5) {
+          console.warn(
+            `[HMS Security ALERT] Staff account locked for tenant=${authContext.tenantId} staffId=${outcome.staffId} failedAttempts=${failure.failedAttempts} lockedUntil=${failure.lockedUntil?.toISOString()}`,
+          );
+          try {
+            await platformRepository.recordPlatformAdminAudit({
+              action: 'hms.security.account_locked',
+              entityType: 'HmsStaff',
+              entityId: outcome.staffId,
+              organizationId: authContext.tenantId,
+              ipAddress: clientIp,
+              requestId: authContext.requestId,
+              reason: `Staff account locked after ${failure.failedAttempts} failed attempts`,
+              metadata: {
+                tenantId: authContext.tenantId,
+                staffId: outcome.staffId,
+                failedAttempts: failure.failedAttempts,
+                lockedUntil: failure.lockedUntil?.toISOString(),
+              },
+            });
+          } catch (auditErr) {
+            console.error('[HMS Security] Failed to record lockout audit alert:', auditErr);
+          }
+        }
       }
 
       console.warn(

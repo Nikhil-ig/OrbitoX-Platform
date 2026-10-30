@@ -26,11 +26,14 @@ import {
   checkPassword,
   recordFailure,
   createSession,
+  authenticateStaff,
+  unlockStaffCredential,
   DUMMY_SALT,
   DUMMY_HASH,
 } from '../lib/hms-auth';
 import { withTenantTx } from '../lib/tenant-db';
 import { POST as loginRoute } from '../app/api/hospital/security/login/route';
+import { POST as unlockStaffRoute } from '../app/api/hospital/security/staff/[id]/unlock/route';
 import { PhiKeyRing, seal } from '../lib/phi-crypto';
 import { platformRepository } from '../lib/platform-repository';
 
@@ -60,6 +63,9 @@ describe('HMS Staff Identity & Cryptographic Security (Phase 2b-3)', () => {
   const staffAtomicId = `staff_atom_${runSuffix}`;
   const staffExpId = `staff_exp_${runSuffix}`;
   const staffResetId = `staff_reset_${runSuffix}`;
+  const staffSimAttackerId = `staff_sim_${runSuffix}`;
+  const staffDosGuardId = `staff_dos_${runSuffix}`;
+  const staffUnlockId = `staff_unl_${runSuffix}`;
   const defaultPassword = 'HospitalStaffPassword123!';
 
   before(async () => {
@@ -171,6 +177,48 @@ describe('HMS Staff Identity & Cryptographic Security (Phase 2b-3)', () => {
       await tx.query(
         `INSERT INTO "HmsStaffCredential"("staffId", "passwordHash", "salt", "failedAttempts", "lockedUntil") VALUES ($1, $2, $3, 0, NULL) ON CONFLICT DO NOTHING`,
         [staffResetId, hash5, salt5]
+      );
+
+      // 5b. Seed staff for 24h simulated attacker test
+      const saltSim = generateSalt();
+      const hashSim = await hashPassword(defaultPassword, saltSim);
+      const blindSim = crypto.createHash('md5').update(`sim_${runSuffix}`).digest('hex');
+      const nameSealedSim = seal(ring, 'Dr. SimAttacker', { tenantId: TENANT, column: 'nameSealed', rowId: staffSimAttackerId });
+      await tx.query(
+        `INSERT INTO "HmsStaff"(id, "nameSealed", "emailBlind", role, status) VALUES ($1, $2, $3, 'DOCTOR', 'ACTIVE') ON CONFLICT DO NOTHING`,
+        [staffSimAttackerId, nameSealedSim, blindSim]
+      );
+      await tx.query(
+        `INSERT INTO "HmsStaffCredential"("staffId", "passwordHash", "salt", "failedAttempts", "lockedUntil") VALUES ($1, $2, $3, 0, NULL) ON CONFLICT DO NOTHING`,
+        [staffSimAttackerId, hashSim, saltSim]
+      );
+
+      // 5c. Seed staff for DOS guard test
+      const saltDos = generateSalt();
+      const hashDos = await hashPassword(defaultPassword, saltDos);
+      const blindDos = crypto.createHash('md5').update(`dos_${runSuffix}`).digest('hex');
+      const nameSealedDos = seal(ring, 'Dr. DosGuard', { tenantId: TENANT, column: 'nameSealed', rowId: staffDosGuardId });
+      await tx.query(
+        `INSERT INTO "HmsStaff"(id, "nameSealed", "emailBlind", role, status) VALUES ($1, $2, $3, 'DOCTOR', 'ACTIVE') ON CONFLICT DO NOTHING`,
+        [staffDosGuardId, nameSealedDos, blindDos]
+      );
+      await tx.query(
+        `INSERT INTO "HmsStaffCredential"("staffId", "passwordHash", "salt", "failedAttempts", "lockedUntil") VALUES ($1, $2, $3, 0, NULL) ON CONFLICT DO NOTHING`,
+        [staffDosGuardId, hashDos, saltDos]
+      );
+
+      // 5d. Seed staff for Admin Unlock test
+      const saltUnl = generateSalt();
+      const hashUnl = await hashPassword(defaultPassword, saltUnl);
+      const blindUnl = crypto.createHash('md5').update(`unl_${runSuffix}`).digest('hex');
+      const nameSealedUnl = seal(ring, 'Dr. AdminUnlock', { tenantId: TENANT, column: 'nameSealed', rowId: staffUnlockId });
+      await tx.query(
+        `INSERT INTO "HmsStaff"(id, "nameSealed", "emailBlind", role, status) VALUES ($1, $2, $3, 'DOCTOR', 'ACTIVE') ON CONFLICT DO NOTHING`,
+        [staffUnlockId, nameSealedUnl, blindUnl]
+      );
+      await tx.query(
+        `INSERT INTO "HmsStaffCredential"("staffId", "passwordHash", "salt", "failedAttempts", "lockedUntil") VALUES ($1, $2, $3, 0, NULL) ON CONFLICT DO NOTHING`,
+        [staffUnlockId, hashUnl, saltUnl]
       );
 
       // 6. Seed 20 accounts each for Unknown, Active (wrong pass), Suspended, and Locked timing runs
@@ -422,18 +470,18 @@ describe('HMS Staff Identity & Cryptographic Security (Phase 2b-3)', () => {
     assert.ok(Math.abs(res.rows[0]!.lockMins - 960) <= 1, `Expected ~960 mins (16h cap), got ${res.rows[0]!.lockMins}`);
   });
 
-  it('Resets failedAttempts to 1 and clears lockedUntil when 15 minutes pass without a failure', async () => {
-    // Setup 4 failures and age updatedAt to 16 minutes ago
+  it('Resets failedAttempts to 1 and clears lockedUntil only when 24 hours pass without a failure', async () => {
+    // Setup 4 failures and age updatedAt to 25 hours ago (> 24 hour decay window)
     await withTenantTx(pool, TENANT, async (tx) => {
       await tx.query(
         `UPDATE "HmsStaffCredential"
-            SET "failedAttempts" = 4, "lockedUntil" = NULL, "updatedAt" = now() - interval '16 minutes'
+            SET "failedAttempts" = 4, "lockedUntil" = NULL, "updatedAt" = now() - interval '25 hours'
           WHERE "staffId" = $1`,
         [staffResetId]
       );
     });
 
-    // Next failure occurs after 16 minutes of inactivity (> 15 min window)
+    // Next failure occurs after 25 hours of quiet
     await withTenantTx(pool, TENANT, (tx) => recordFailure(tx, staffResetId));
 
     // Inspect stored row: counter resets to 1, lockedUntil is null
@@ -443,30 +491,224 @@ describe('HMS Staff Identity & Cryptographic Security (Phase 2b-3)', () => {
         [staffResetId]
       )
     );
-    assert.equal(rows[0]!.failedAttempts, 1, 'failedAttempts must reset to 1 after 15 minutes of inactivity');
-    assert.equal(rows[0]!.lockedUntil, null, 'lockedUntil must be null after inactivity reset');
+    assert.equal(rows[0]!.failedAttempts, 1, 'failedAttempts must reset to 1 after 24 hours of inactivity');
+    assert.equal(rows[0]!.lockedUntil, null, 'lockedUntil must be null after 24h decay reset');
 
-    // Repeat test on account that was previously locked (5 failures)
+    // Negative case: after only 23 hours of quiet (< 24 hours), counter must NOT reset!
     await withTenantTx(pool, TENANT, async (tx) => {
       await tx.query(
         `UPDATE "HmsStaffCredential"
-            SET "failedAttempts" = 5,
-                "lockedUntil" = now() - interval '1 minute',
-                "updatedAt" = now() - interval '16 minutes'
+            SET "failedAttempts" = 4, "lockedUntil" = NULL, "updatedAt" = now() - interval '23 hours'
           WHERE "staffId" = $1`,
         [staffResetId]
       );
     });
-
     await withTenantTx(pool, TENANT, (tx) => recordFailure(tx, staffResetId));
-    const res2 = await withTenantTx(pool, TENANT, (tx) =>
-      tx.query<{ failedAttempts: number; lockedUntil: Date | null }>(
-        `SELECT "failedAttempts", "lockedUntil" FROM "HmsStaffCredential" WHERE "staffId" = $1`,
+    const resQuiet23 = await withTenantTx(pool, TENANT, (tx) =>
+      tx.query<{ failedAttempts: number }>(
+        `SELECT "failedAttempts" FROM "HmsStaffCredential" WHERE "staffId" = $1`,
         [staffResetId]
       )
     );
-    assert.equal(res2.rows[0]!.failedAttempts, 1, 'failedAttempts must reset to 1 after lockout and 15 min inactivity');
-    assert.equal(res2.rows[0]!.lockedUntil, null, 'lockedUntil must be cleared after inactivity reset');
+    assert.equal(resQuiet23.rows[0]!.failedAttempts, 5, 'failedAttempts must NOT reset after 23 hours (< 24h)');
+  });
+
+  it('Simulates an attacker who waits out each lock for 24 hours -> at most 12 password checks allowed (escalation reaches 16-hour cap)', async () => {
+    // Simulated clock starting at T0
+    let virtualClock = new Date('2026-10-30T00:00:00Z');
+    let realPasswordChecks = 0;
+    const windowEnd = new Date(virtualClock.getTime() + 24 * 3600 * 1000); // 24 hours later
+
+    while (virtualClock.getTime() <= windowEnd.getTime()) {
+      // 1. Attacker attempts login / checkPassword with current virtual clock
+      const outcome = await withTenantTx(pool, TENANT, (tx) =>
+        checkPassword(tx, { staffId: staffSimAttackerId }, 'WrongGuess!', virtualClock)
+      );
+
+      if (outcome.ok) {
+        assert.fail('Attacker guessed correct password');
+      }
+
+      if (outcome.reason === 'LOCKED') {
+        // Attacker is locked out! Retrieve current lockedUntil
+        const { rows } = await withTenantTx(pool, TENANT, (tx) =>
+          tx.query<{ lockedUntil: Date }>(
+            `SELECT "lockedUntil" FROM "HmsStaffCredential" WHERE "staffId" = $1`,
+            [staffSimAttackerId]
+          )
+        );
+        const lockUntil = new Date(rows[0]!.lockedUntil);
+        assert.ok(lockUntil.getTime() > virtualClock.getTime(), 'Lock must be in future');
+
+        // Attacker waits out the lock: advance virtual clock to lock expiry + 10 seconds
+        virtualClock = new Date(lockUntil.getTime() + 10000);
+        continue;
+      }
+
+      // Valid attempt where password was actually verified
+      assert.equal(outcome.reason, 'INVALID_PASSWORD');
+      realPasswordChecks++;
+
+      // Record failure with current virtual clock
+      await withTenantTx(pool, TENANT, (tx) =>
+        recordFailure(tx, staffSimAttackerId, virtualClock)
+      );
+
+      // Check new lockout state
+      const { rows } = await withTenantTx(pool, TENANT, (tx) =>
+        tx.query<{ failedAttempts: number; lockedUntil: Date | null }>(
+          `SELECT "failedAttempts", "lockedUntil" FROM "HmsStaffCredential" WHERE "staffId" = $1`,
+          [staffSimAttackerId]
+        )
+      );
+
+      if (rows[0]!.lockedUntil) {
+        const lockExpiry = new Date(rows[0]!.lockedUntil);
+        // Attacker waits out the lock
+        virtualClock = new Date(lockExpiry.getTime() + 10000);
+      } else {
+        // Immediate next attempt
+        virtualClock = new Date(virtualClock.getTime() + 1000);
+      }
+    }
+
+    console.log(`[L1b Attacker Simulation] Over 24 hours waiting out every lock:`);
+    console.log(`  Total real password checks performed: ${realPasswordChecks}`);
+
+    // Must be at most 12 password checks (actually 11 checks)
+    assert.ok(
+      realPasswordChecks <= 12,
+      `Expected at most 12 password checks in 24 hours, got ${realPasswordChecks}`,
+    );
+
+    // Verify counter reached 11 and escalation reached the 16-hour cap
+    const finalRow = await withTenantTx(pool, TENANT, (tx) =>
+      tx.query<{ failedAttempts: number }>(
+        `SELECT "failedAttempts" FROM "HmsStaffCredential" WHERE "staffId" = $1`,
+        [staffSimAttackerId]
+      )
+    );
+    assert.equal(finalRow.rows[0]!.failedAttempts, 11, 'Counter must escalate to 11 without resetting');
+  });
+
+  it('50 login attempts during a lock do NOT extend lockedUntil', async () => {
+    // First, lock the account with 5 failures
+    for (let i = 1; i <= 5; i++) {
+      const outcome = await withTenantTx(pool, TENANT, (tx) =>
+        checkPassword(tx, { staffId: staffDosGuardId }, 'BadPass!')
+      );
+      assert.equal(outcome.ok, false);
+      if (!outcome.ok) assert.equal(outcome.reason, 'INVALID_PASSWORD');
+      await withTenantTx(pool, TENANT, (tx) => recordFailure(tx, staffDosGuardId));
+    }
+
+    // Inspect initial lockedUntil
+    const { rows: initialRows } = await withTenantTx(pool, TENANT, (tx) =>
+      tx.query<{ failedAttempts: number; lockedUntil: Date }>(
+        `SELECT "failedAttempts", "lockedUntil" FROM "HmsStaffCredential" WHERE "staffId" = $1`,
+        [staffDosGuardId]
+      )
+    );
+    assert.equal(initialRows[0]!.failedAttempts, 5);
+    const initialLockedUntil = new Date(initialRows[0]!.lockedUntil).getTime();
+
+    // Now send 50 login attempts through authenticateStaff and login route
+    for (let i = 0; i < 50; i++) {
+      await assert.rejects(
+        () => withTenantTx(pool, TENANT, (tx) => authenticateStaff(tx, { staffId: staffDosGuardId }, 'AnyPasswordDuringLock')),
+        /ACCOUNT_LOCKED/
+      );
+
+      const headers = new Headers();
+      headers.set('authorization', `Bearer ${ADMIN_TOKEN}`);
+      headers.set('x-api-key', apiKeySecret);
+      headers.set('x-tenant-id', TENANT);
+      headers.set('x-context-id', TENANT);
+      headers.set('x-orbitox-principal', 'admin');
+      headers.set('content-type', 'application/json');
+      headers.set('x-forwarded-for', `10.5.0.${(i % 250) + 1}`);
+
+      const req = new NextRequest('http://localhost:3005/api/hospital/security/login', {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ staffId: staffDosGuardId, password: 'AnyPasswordDuringLock' }),
+      });
+
+      const res = await loginRoute(req);
+      assert.ok(res.status === 401 || res.status === 429);
+      if (res.status === 401) {
+        const data = await res.json();
+        assert.equal(data.error.code, 'INVALID_CREDENTIALS');
+      }
+    }
+
+    // Inspect row: failedAttempts and lockedUntil must be COMPLETELY UNCHANGED
+    const { rows: afterRows } = await withTenantTx(pool, TENANT, (tx) =>
+      tx.query<{ failedAttempts: number; lockedUntil: Date }>(
+        `SELECT "failedAttempts", "lockedUntil" FROM "HmsStaffCredential" WHERE "staffId" = $1`,
+        [staffDosGuardId]
+      )
+    );
+    assert.equal(afterRows[0]!.failedAttempts, 5, 'failedAttempts must remain 5');
+    const afterLockedUntil = new Date(afterRows[0]!.lockedUntil).getTime();
+    assert.equal(afterLockedUntil, initialLockedUntil, 'lockedUntil must NOT be extended by attempts during lock');
+  });
+
+  it('Hospital admin can unlock account (audited), resetting lockout and allowing immediate login', async () => {
+    // 1. Lock the account
+    for (let i = 1; i <= 5; i++) {
+      await withTenantTx(pool, TENANT, (tx) => recordFailure(tx, staffUnlockId));
+    }
+    const { rows: lockedRows } = await withTenantTx(pool, TENANT, (tx) =>
+      tx.query<{ failedAttempts: number; lockedUntil: Date }>(
+        `SELECT "failedAttempts", "lockedUntil" FROM "HmsStaffCredential" WHERE "staffId" = $1`,
+        [staffUnlockId]
+      )
+    );
+    assert.equal(lockedRows[0]!.failedAttempts, 5);
+    assert.ok(new Date(lockedRows[0]!.lockedUntil).getTime() > Date.now());
+
+    // 2. Admin calls unlock endpoint
+    const unlockHeaders = new Headers();
+    unlockHeaders.set('authorization', `Bearer ${ADMIN_TOKEN}`);
+    unlockHeaders.set('x-api-key', apiKeySecret);
+    unlockHeaders.set('x-tenant-id', TENANT);
+    unlockHeaders.set('x-context-id', TENANT);
+    unlockHeaders.set('x-orbitox-principal', 'admin');
+    unlockHeaders.set('content-type', 'application/json');
+
+    const unlockReq = new NextRequest(`http://localhost:3005/api/hospital/security/staff/${staffUnlockId}/unlock`, {
+      method: 'POST',
+      headers: unlockHeaders,
+    });
+
+    const unlockRes = await unlockStaffRoute(unlockReq, { params: Promise.resolve({ id: staffUnlockId }) } as any);
+    assert.equal(unlockRes.status, 200);
+    const unlockData = await unlockRes.json();
+    assert.equal(unlockData.success, true);
+    assert.equal(unlockData.data.unlocked, true);
+
+    // 3. Inspect DB: failedAttempts=0, lockedUntil=null
+    const { rows: unlockedRows } = await withTenantTx(pool, TENANT, (tx) =>
+      tx.query<{ failedAttempts: number; lockedUntil: Date | null }>(
+        `SELECT "failedAttempts", "lockedUntil" FROM "HmsStaffCredential" WHERE "staffId" = $1`,
+        [staffUnlockId]
+      )
+    );
+    assert.equal(unlockedRows[0]!.failedAttempts, 0);
+    assert.equal(unlockedRows[0]!.lockedUntil, null);
+
+    // 4. Staff can now log in immediately with correct password
+    const loginReq = new NextRequest('http://localhost:3005/api/hospital/security/login', {
+      method: 'POST',
+      headers: unlockHeaders,
+      body: JSON.stringify({ staffId: staffUnlockId, password: defaultPassword }),
+    });
+    const loginRes = await loginRoute(loginReq);
+    assert.equal(loginRes.status, 200);
+    const loginData = await loginRes.json();
+    assert.equal(loginData.success, true);
+    assert.ok(loginData.data.token);
   });
 
   it('Unknown staff, existing staff (wrong password), suspended staff, and locked staff return uniform timing', async () => {

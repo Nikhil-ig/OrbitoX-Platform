@@ -88,7 +88,7 @@ export class RealtimeEventBus {
       if (identity.tableNumber) scope.tableNumber = identity.tableNumber;
       if (identity.sessionId) scope.sessionId = identity.sessionId;
       if (identity.branchId) scope.branchId = identity.branchId;
-    } else if (identity && (identity.type === 'STAFF' || identity.type === 'ADMIN')) {
+    } else if (identity && (identity.type === 'STAFF' || identity.type === 'ADMIN' || identity.type === 'PLATFORM_BRIDGE')) {
       if (identity.branchId && identity.branchId !== '*') {
         scope.branchId = identity.branchId;
       }
@@ -291,7 +291,7 @@ export class RealtimeEventBus {
     }
 
     // 2. Staff branch filtering
-    if (identity && (identity.type === 'STAFF' || identity.type === 'ADMIN')) {
+    if (identity && (identity.type === 'STAFF' || identity.type === 'ADMIN' || identity.type === 'PLATFORM_BRIDGE')) {
       if (identity.branchId && identity.branchId !== '*' && event.branchId) {
         if (event.branchId !== identity.branchId) {
           return false;
