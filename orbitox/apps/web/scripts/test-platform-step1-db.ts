@@ -64,6 +64,7 @@ const globalTableAllowlist = new Set([
   'PlatformPackage',
   'PackageVersion',
   'PackageInstallation',
+  'PluginInstallation',
   'ProjectDomain',
   'EnvironmentQuotaPolicy',
   'EnvironmentRateLimitPolicy',
