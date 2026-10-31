@@ -1,0 +1,10 @@
+{
+  "name": "@orbitox-io/importer-core",
+  "version": "1.0.0",
+  "description": "Compatibility alias forwarding to @orbitox/importer-core",
+  "main": "./index.js",
+  "types": "./index.d.ts",
+  "dependencies": {
+    "@orbitox/importer-core": "workspace:*"
+  }
+}

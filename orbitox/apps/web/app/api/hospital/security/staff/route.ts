@@ -1,41 +1,58 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { safeProxyOrFallback } from '../../_init';
-import { hospitalStore } from '../../_store';
+import { withHospitalGuard } from '@/app/api/_lib/route-auth';
+import { withTenantTx } from '@/lib/tenant-db';
+import { prisma } from '@/lib/prisma';
+import { mapDbError, errorBody, HttpError } from '@/lib/db-errors';
+import { getPhiKeyRing, seal, blindIndex } from '@/lib/phi-crypto';
 
-export async function GET(req: NextRequest) {
-  const searchParams = req.nextUrl.searchParams.toString();
-  const upstreamPath = `/api/hospital/security/staff${searchParams ? `?${searchParams}` : ''}`;
+export const GET = withHospitalGuard(async (_req: NextRequest, _routeContext, authContext) => {
+  try {
+    const data = await withTenantTx(prisma, authContext.tenantId, async (tx) => {
+      const { rows } = await tx.query(
+        `SELECT "id", "role", "departmentId", "status", "onDuty"
+         FROM "HmsStaff"
+         ORDER BY "id" ASC`
+      );
+      return rows;
+    });
 
-  return safeProxyOrFallback(
-    req,
-    upstreamPath,
-    () => hospitalStore.getStaff(),
-    {
-      headers: {
-        'x-staff-id': req.headers.get('x-staff-id') || 'admin_root_01',
-        'x-context-id': req.headers.get('x-context-id') || 'apollo-global',
-      },
-    }
-  );
-}
+    return NextResponse.json({ success: true, data });
+  } catch (err: any) {
+    const apiErr = mapDbError(err);
+    return NextResponse.json(errorBody(apiErr, authContext.requestId), { status: apiErr.status });
+  }
+}, { adminOnly: true, sensitive: true });
 
-export async function POST(req: NextRequest) {
+export const POST = withHospitalGuard(async (req: NextRequest, _routeContext, authContext) => {
   try {
     const body = await req.json();
-    return safeProxyOrFallback(
-      req,
-      '/api/hospital/security/staff',
-      () => hospitalStore.getStaff(),
-      {
-        method: 'POST',
-        body,
-        headers: {
-          'x-staff-id': req.headers.get('x-staff-id') || 'admin_root_01',
-          'x-context-id': req.headers.get('x-context-id') || 'apollo-global',
-        },
-      }
-    );
+    const ring = getPhiKeyRing();
+
+    if (!body.name || !body.email || !body.role) {
+      throw new HttpError(422, 'INVALID_INPUT', 'name, email and role are required');
+    }
+
+    const data = await withTenantTx(prisma, authContext.tenantId, async (tx) => {
+      const id = body.id || `staff_${Date.now().toString(36)}`;
+      const nameSealed = seal(ring, body.name, {
+        tenantId: tx.tenantId,
+        column: 'name',
+        rowId: id,
+      });
+      const emailBlind = blindIndex(ring, body.email, 'email', tx.tenantId, 'email');
+
+      const { rows } = await tx.query(
+        `INSERT INTO "HmsStaff" ("id", "nameSealed", "emailBlind", "role", "departmentId", "status", "onDuty")
+         VALUES ($1, $2, $3, $4, $5, $6, $7)
+         RETURNING "id", "role", "departmentId", "status", "onDuty"`,
+        [id, nameSealed, emailBlind, body.role, body.departmentId ?? null, body.status ?? 'ACTIVE', body.onDuty ?? false]
+      );
+      return rows[0];
+    });
+
+    return NextResponse.json({ success: true, data }, { status: 201 });
   } catch (err: any) {
-    return NextResponse.json({ success: false, error: err.message }, { status: 400 });
+    const apiErr = mapDbError(err);
+    return NextResponse.json(errorBody(apiErr, authContext.requestId), { status: apiErr.status });
   }
-}
+}, { adminOnly: true, sensitive: true });

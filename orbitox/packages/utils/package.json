@@ -1,9 +1,17 @@
 {
   "name": "@orbitox/utils",
-  "version": "0.0.0",
-  "private": true,
+  "version": "1.0.0",
+  "description": "OrbitoX Core Utilities",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://npm.pkg.github.com"
+  },
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "clean": "rm -rf dist",
@@ -15,8 +23,5 @@
   "devDependencies": {
     "@types/node": "^20",
     "typescript": "~5.9.3"
-  },
-  "files": [
-    "dist"
-  ]
+  }
 }

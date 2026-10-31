@@ -217,7 +217,7 @@ const payload = {
   email: 'john.doe@example.com', 
   phone: '+1 555-1234',
   cardNumber: '4111222233334444',
-  stripeToken: 'tok_123456789'
+  stripeToken: '<STRIPE_TOKEN>'
 };
 
 const safeData = orbitox.security.sanitizePii(payload);

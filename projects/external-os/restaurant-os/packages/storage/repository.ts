@@ -34,8 +34,9 @@ import {
   RestaurantRuntimeStore,
 } from './store';
 import { RealtimeEventBus, eventBus as defaultEventBus } from '../domain/event-bus';
+import { PosRepository } from '@orbitox/pos';
 
-export interface RestaurantRepository {
+export interface RestaurantRepository extends PosRepository {
   readonly tenantId: string;
 
   // Infrastructure: Branches, Floors, Tables
@@ -85,7 +86,7 @@ export interface RestaurantRepository {
   updateOrderStatus(
     orderId: string,
     status: string,
-    optionsOrReason?: { authorizedBy?: string; reason?: string } | string
+    optionsOrReason?: { authorizedBy?: string; reason?: string; version?: number } | string
   ): Promise<boolean>;
 
   getSessions(): Promise<DiningSessionRecord[]>;
@@ -243,6 +244,10 @@ export class PostgresRestaurantRepository implements RestaurantRepository {
     this.tenantId = tenantId.trim();
     this.prisma = prisma;
     this.eventBus = eventBus;
+  }
+
+  broadcast(event: any): void {
+    this.eventBus.broadcast(event);
   }
 
   // ─────────────────────────────────────────────────────────────
@@ -461,7 +466,12 @@ export class PostgresRestaurantRepository implements RestaurantRepository {
 
   async getTableByNumber(number: string, branchId?: string): Promise<TableFloorRecord | undefined> {
     return withTenantRlsTransaction(this.prisma, this.tenantId, async (tx: any) => {
-      const where: any = { tenantId: this.tenantId, number };
+      const normalizedNum = number.replace(/^T-0?/, '');
+      const paddedNum = `T-${normalizedNum.padStart(2, '0')}`;
+      const where: any = {
+        tenantId: this.tenantId,
+        OR: [{ number }, { number: paddedNum }, { number: normalizedNum }],
+      };
       if (branchId) where.branchId = branchId;
       const r = await tx.tableFloor.findFirst({ where });
       return r ? this.mapTableRecord(r) : undefined;
@@ -928,20 +938,44 @@ export class PostgresRestaurantRepository implements RestaurantRepository {
   async updateOrderStatus(
     orderId: string,
     status: string,
-    optionsOrReason?: { authorizedBy?: string; reason?: string } | string
+    optionsOrReason?: { authorizedBy?: string; reason?: string; version?: number } | string
   ): Promise<boolean> {
     const reason = typeof optionsOrReason === 'string' ? optionsOrReason : optionsOrReason?.reason;
     const authorizedBy = typeof optionsOrReason === 'object' ? optionsOrReason?.authorizedBy : undefined;
+    const expectedVersion = typeof optionsOrReason === 'object' && typeof optionsOrReason.version === 'number'
+      ? optionsOrReason.version
+      : undefined;
+
     const event = await withTenantRlsTransaction(this.prisma, this.tenantId, async (tx: any) => {
       const order = await tx.restaurantOrder.findFirst({
         where: { id: orderId, tenantId: this.tenantId },
       });
       if (!order) return null;
 
-      await tx.restaurantOrder.update({
-        where: { id: order.id },
-        data: { status },
-      });
+      if (expectedVersion !== undefined) {
+        const res = await tx.restaurantOrder.updateMany({
+          where: {
+            id: order.id,
+            tenantId: this.tenantId,
+            version: expectedVersion,
+          },
+          data: {
+            status,
+            version: { increment: 1 },
+          },
+        });
+        if (res.count === 0) {
+          const conflict = new Error('STATE_CONFLICT: Order was modified concurrently by another screen');
+          (conflict as any).code = 'STATE_CONFLICT';
+          (conflict as any).statusCode = 409;
+          throw conflict;
+        }
+      } else {
+        await tx.restaurantOrder.update({
+          where: { id: order.id },
+          data: { status, version: { increment: 1 } },
+        });
+      }
 
       const seq = await this.getNextEventSequence(tx);
       const evt = await tx.domainEvent.create({
@@ -952,7 +986,15 @@ export class PostgresRestaurantRepository implements RestaurantRepository {
           producer: 'pos',
           branchId: order.branchId || 'main',
           tableNumber: order.tableNumber,
-          payload: { orderId, previousStatus: order.status, status, reason, authorizedBy, tenantId: this.tenantId },
+          payload: {
+            orderId,
+            previousStatus: order.status,
+            status,
+            reason,
+            authorizedBy,
+            version: (order.version || 1) + 1,
+            tenantId: this.tenantId,
+          },
         },
       });
       return this.mapDomainEvent(evt);
@@ -2664,6 +2706,10 @@ export class JsonRestaurantRepository implements RestaurantRepository {
     }
     this.tenantId = tenantId;
     this.store = store || new RestaurantRuntimeStore();
+  }
+
+  broadcast(event: any): void {
+    defaultEventBus.broadcast(event);
   }
 
   async getBranches() { return this.store.getBranches(); }

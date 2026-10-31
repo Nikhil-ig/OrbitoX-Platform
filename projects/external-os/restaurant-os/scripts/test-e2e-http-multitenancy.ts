@@ -55,6 +55,8 @@ interface HttpResponse {
   rawText: string;
 }
 
+const keepAliveAgent = new http.Agent({ keepAlive: true, maxSockets: 100 });
+
 function makeRequest(
   port: number,
   method: string,
@@ -82,6 +84,7 @@ function makeRequest(
         path: reqPath,
         method,
         headers: reqHeaders,
+        agent: keepAliveAgent,
       },
       (res) => {
         const chunks: Buffer[] = [];
@@ -157,7 +160,7 @@ async function runBlackBoxHttpMultiTenantSuite() {
       env: {
         ...process.env,
         PORT: String(TEST_PORT),
-        DATABASE_URL: APP_DB_URL,
+        DATABASE_URL: APP_DB_URL.includes('?') ? `${APP_DB_URL}&connection_limit=50` : `${APP_DB_URL}?connection_limit=50`,
         STORAGE_DRIVER: 'postgres',
         RESTAURANTOS_PLATFORM_TOKEN: PLATFORM_TOKEN,
         RAZORPAY_WEBHOOK_SECRET: 'test_webhook_secret_123',
@@ -790,6 +793,12 @@ async function runBlackBoxHttpMultiTenantSuite() {
     // Suite 14: High-Concurrency HTTP Load Test & p95 Latency Profiling
     // -------------------------------------------------------------------------
     console.log(`\n--- Suite 14: High-Concurrency HTTP Load Test & p95 Latency ---`);
+    // Pre-warm menu route, JIT compiler, and server connection pool
+    for (let w = 0; w < 10; w++) {
+      await makeRequest(TEST_PORT, 'GET', '/api/restaurant/menu', { Host: HOST_A });
+      await makeRequest(TEST_PORT, 'GET', '/api/restaurant/menu', { Host: HOST_B });
+    }
+
     const LOAD_CONCURRENCY = 50;
     const latenciesMs: number[] = [];
 

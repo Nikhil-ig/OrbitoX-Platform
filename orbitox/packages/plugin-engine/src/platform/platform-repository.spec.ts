@@ -1,9 +1,29 @@
+import * as fs from 'fs';
+import * as path from 'path';
+import * as os from 'os';
+import { spawnSync } from 'child_process';
 import { PlatformRepository } from './platform-repository';
 import { PlatformKeyEngine } from '../security/platform-key-engine';
 
 describe('PlatformRepository (Normalized Domain Access & Cryptographic Binding)', () => {
-  beforeAll(() => {
+  let suiteTempDir: string;
+
+  beforeEach(() => {
+    suiteTempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'orbitox-repo-suite-'));
+    PlatformRepository.resetForTesting();
+    PlatformRepository.setDataDir(suiteTempDir);
+    PlatformRepository.setPersistenceEnabled(true);
     PlatformRepository.initialize();
+  });
+
+  afterEach(() => {
+    PlatformRepository.resetForTesting();
+    PlatformRepository.setDataDir('');
+    try {
+      fs.rmSync(suiteTempDir, { recursive: true, force: true });
+    } catch {
+      // ignore cleanup
+    }
   });
 
   describe('Organization & Project Hierarchy', () => {
@@ -43,6 +63,77 @@ describe('PlatformRepository (Normalized Domain Access & Cryptographic Binding)'
       const installations = PlatformRepository.listInstallations(prodEnv.id);
       expect(installations.length).toBe(2);
       expect(installations.some((i) => i.packageId === '@orbitox/pos')).toBe(true);
+    });
+
+    it('generates unique slugs for repeated names and rejects case-insensitive collisions', () => {
+      const org = PlatformRepository.listOrganizations()[0]!;
+      const name = `Repeated Project ${Date.now()}`;
+      const projectInput = {
+        name,
+        organizationId: org.id,
+        businessModel: 'B2B',
+        planTier: 'starter',
+        technicalLead: 'Test Lead',
+        contactEmail: 'test@orbitox.io',
+      };
+
+      const first = PlatformRepository.createProject(projectInput).project;
+      const second = PlatformRepository.createProject(projectInput).project;
+
+      expect(second.slug).toBe(`${first.slug}-2`);
+      expect(() => PlatformRepository.createProject({ ...projectInput, slug: first.slug.toUpperCase() }))
+        .toThrow(`Project slug "${first.slug}" is already in use.`);
+      expect(() => PlatformRepository.updateProject(first.id, { slug: 'changed-project-slug' }))
+        .toThrow('Project slug is immutable after creation.');
+    });
+
+    it('resets monthly project usage explicitly at the repository boundary', () => {
+      const org = PlatformRepository.listOrganizations()[0]!;
+      const project = PlatformRepository.createProject({
+        name: `Monthly Reset ${Date.now()}`,
+        organizationId: org.id,
+        businessModel: 'B2B',
+        planTier: 'starter',
+        technicalLead: 'Test Lead',
+        contactEmail: 'reset@orbitox.io',
+      }).project;
+      PlatformRepository.updateProject(project.id, { monthlyApiCalls: 9 });
+
+      expect(PlatformRepository.resetMonthlyProjectUsage()).toBeGreaterThan(0);
+      expect(PlatformRepository.getProject(project.id)?.monthlyApiCalls).toBe(0);
+    });
+
+    it('repairs legacy duplicate slugs and updates their persisted key scopes on load', () => {
+      const project = PlatformRepository.listProjects()[0]!;
+      const environment = PlatformRepository.listEnvironments(project.id).find((item) => item.isProduction)!;
+      const key = PlatformRepository.createApiKey({
+        name: 'Legacy Duplicate Scope Key',
+        environmentId: environment.id,
+        projectId: project.id,
+        capabilities: ['crm:read'],
+        tenantScope: [project.slug],
+        createdBy: 'test-suite',
+      });
+      (PlatformRepository as any).projects.push({
+        ...project,
+        id: `legacy-duplicate-${Date.now()}`,
+        name: 'Legacy Duplicate Project',
+      });
+      const duplicate = (PlatformRepository as any).projects.at(-1);
+      (PlatformRepository as any).apiKeys.push({
+        ...key.keyRecord,
+        id: `legacy-key-${Date.now()}`,
+        projectId: duplicate.id,
+        tenantScope: [project.slug],
+      });
+      PlatformRepository.saveImmediate();
+      PlatformRepository.resetForTesting();
+      PlatformRepository.initialize();
+
+      const repaired = PlatformRepository.getProject(duplicate.id)!;
+      expect(repaired.slug).toBe(`${project.slug}-2`);
+      expect(PlatformRepository.getProject(project.slug)?.id).toBe(project.id);
+      expect(PlatformRepository.listApiKeys({ projectId: duplicate.id })[0]?.tenantScope).toEqual([repaired.slug]);
     });
   });
 
@@ -102,6 +193,309 @@ describe('PlatformRepository (Normalized Domain Access & Cryptographic Binding)'
       const reloadedOldKey = PlatformRepository.getApiKey(oldKey.keyId)!;
       expect(reloadedOldKey.revokeReason).toContain('Rotated in favor of replacement');
     });
+
+    it('persists rotation and revocation through repository reinitialization', () => {
+      const project = PlatformRepository.listProjects()[0]!;
+      const environment = PlatformRepository.listEnvironments(project.id).find((item) => item.isProduction)!;
+      const original = PlatformRepository.createApiKey({
+        name: 'Restart Lifecycle Key',
+        environmentId: environment.id,
+        projectId: project.id,
+        capabilities: ['crm:read'],
+        createdBy: 'test-suite',
+      });
+      const rotated = PlatformRepository.rotateApiKey(original.keyRecord.keyId, {
+        operatorEmail: 'test-suite',
+      })!;
+      PlatformRepository.saveImmediate();
+      PlatformRepository.resetForTesting();
+      PlatformRepository.initialize();
+
+      expect(PlatformRepository.findKeyByRawSecret(original.rawSecret)?.status).toBe('SUSPENDED');
+      expect(PlatformRepository.findKeyByRawSecret(rotated.replacementRawSecret)?.status).toBe('ACTIVE');
+
+      PlatformRepository.setKeyStatus(rotated.replacementKey.keyId, 'REVOKED');
+      PlatformRepository.saveImmediate();
+      PlatformRepository.resetForTesting();
+      PlatformRepository.initialize();
+
+      expect(PlatformRepository.findKeyByRawSecret(rotated.replacementRawSecret)?.status).toBe('REVOKED');
+      expect(PlatformRepository.findKeyByRawSecret(original.rawSecret)?.status).toBe('SUSPENDED');
+    });
+
+    it('flushes an immediate revocation on SIGTERM before the debounce fires', () => {
+      const originalDataDir = suiteTempDir;
+      const shutdownDataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'orbitox-shutdown-flush-'));
+      PlatformRepository.resetForTesting();
+      PlatformRepository.setDataDir(shutdownDataDir);
+      PlatformRepository.initialize();
+
+      const organization = PlatformRepository.listOrganizations()[0]!;
+      const project = PlatformRepository.createProject({
+        name: `Immediate Shutdown Revocation ${Date.now()}`,
+        organizationId: organization.id,
+        businessModel: 'B2B',
+        planTier: 'starter',
+        technicalLead: 'Shutdown Test',
+        contactEmail: 'shutdown@orbitox.io',
+        enabledServices: ['crm'],
+      }).project;
+      const environment = PlatformRepository.listEnvironments(project.id).find((item) => item.isProduction)!;
+      const key = PlatformRepository.createApiKey({
+        name: 'Immediate Shutdown Revocation Key',
+        environmentId: environment.id,
+        projectId: project.id,
+        capabilities: ['crm:read'],
+        createdBy: 'test-suite',
+      });
+      PlatformRepository.saveImmediate();
+      PlatformRepository.resetForTesting();
+      PlatformRepository.setDataDir(originalDataDir);
+      PlatformRepository.initialize();
+
+      const childScript = `
+        const { PlatformRepository } = require('./dist/platform/platform-repository.js');
+        PlatformRepository.setDataDir(${JSON.stringify(shutdownDataDir)});
+        PlatformRepository.initialize();
+        const keepAlive = setInterval(() => {}, 1000);
+        process.on('SIGTERM', () => {
+          clearInterval(keepAlive);
+          process.exit(0);
+        });
+        PlatformRepository.setKeyStatus(${JSON.stringify(key.keyRecord.id)}, 'REVOKED');
+        process.kill(process.pid, 'SIGTERM');
+      `;
+      const result = spawnSync(process.execPath, ['-e', childScript], {
+        cwd: path.resolve(__dirname, '../..'),
+        encoding: 'utf8',
+        env: {
+          ...process.env,
+          NODE_ENV: 'production',
+          ORBITOX_DATA_DIR: shutdownDataDir,
+          ORBITOX_SERVER_PEPPER: 'shutdown-test-pepper-32-characters-minimum',
+        },
+      });
+
+      expect(result.error).toBeUndefined();
+      expect(result.status).toBe(0);
+
+      PlatformRepository.resetForTesting();
+      PlatformRepository.setDataDir(shutdownDataDir);
+      PlatformRepository.initialize();
+      expect(PlatformRepository.getApiKey(key.keyRecord.id)?.status).toBe('REVOKED');
+      PlatformRepository.resetForTesting();
+      PlatformRepository.setDataDir(originalDataDir);
+      PlatformRepository.initialize();
+      fs.rmSync(shutdownDataDir, { recursive: true, force: true });
+    });
+
+    it('preserves revocation across 20 immediate SIGKILL/restart cycles', () => {
+      const crashDataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'orbitox-sigkill-revoke-'));
+      const repositoryCwd = path.resolve(__dirname, '../..');
+      const childEnv = { ...process.env, ORBITOX_DATA_DIR: crashDataDir, NODE_ENV: 'test' };
+      PlatformRepository.resetForTesting();
+      PlatformRepository.setDataDir(crashDataDir);
+      PlatformRepository.initialize();
+
+      try {
+        const project = PlatformRepository.listProjects()[0]!;
+        const environment = PlatformRepository.listEnvironments(project.id).find((item) => item.isProduction)!;
+        for (let iteration = 0; iteration < 20; iteration++) {
+          const key = PlatformRepository.createApiKey({
+            name: `SIGKILL Revoke ${iteration}`,
+            environmentId: environment.id,
+            projectId: project.id,
+            capabilities: ['crm:read'],
+            createdBy: 'test-suite',
+          });
+          const script = `
+            const { PlatformRepository } = require('./dist/platform/platform-repository.js');
+            PlatformRepository.setDataDir(${JSON.stringify(crashDataDir)});
+            PlatformRepository.initialize();
+            PlatformRepository.setKeyStatus(${JSON.stringify(key.keyRecord.keyId)}, 'REVOKED');
+            process.kill(process.pid, 'SIGKILL');
+          `;
+          const result = spawnSync(process.execPath, ['-e', script], {
+            cwd: repositoryCwd,
+            encoding: 'utf8',
+            env: childEnv,
+          });
+          expect(result.signal).toBe('SIGKILL');
+
+          PlatformRepository.resetForTesting();
+          PlatformRepository.setDataDir(crashDataDir);
+          PlatformRepository.initialize();
+          expect(PlatformRepository.getApiKey(key.keyRecord.keyId)?.status).toBe('REVOKED');
+        }
+      } finally {
+        PlatformRepository.resetForTesting();
+        PlatformRepository.setDataDir(suiteTempDir);
+        PlatformRepository.initialize();
+        fs.rmSync(crashDataDir, { recursive: true, force: true });
+      }
+    }, 30000);
+
+    it('preserves atomic zero-grace rotation across 20 immediate SIGKILL/restart cycles', () => {
+      const crashDataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'orbitox-sigkill-rotate-'));
+      const repositoryCwd = path.resolve(__dirname, '../..');
+      const childEnv = { ...process.env, ORBITOX_DATA_DIR: crashDataDir, NODE_ENV: 'test' };
+      PlatformRepository.resetForTesting();
+      PlatformRepository.setDataDir(crashDataDir);
+      PlatformRepository.initialize();
+
+      try {
+        const project = PlatformRepository.listProjects()[0]!;
+        const environment = PlatformRepository.listEnvironments(project.id).find((item) => item.isProduction)!;
+        for (let iteration = 0; iteration < 20; iteration++) {
+          const original = PlatformRepository.createApiKey({
+            name: `SIGKILL Rotate ${iteration}`,
+            environmentId: environment.id,
+            projectId: project.id,
+            capabilities: ['crm:read'],
+            createdBy: 'test-suite',
+          });
+          const script = `
+            const fs = require('fs');
+            const { PlatformRepository } = require('./dist/platform/platform-repository.js');
+            PlatformRepository.setDataDir(${JSON.stringify(crashDataDir)});
+            PlatformRepository.initialize();
+            const rotated = PlatformRepository.rotateApiKey(${JSON.stringify(original.keyRecord.keyId)}, {
+              graceWindowDays: 0,
+              operatorEmail: 'test-suite',
+            });
+            fs.writeSync(1, rotated.replacementKey.keyId + '\\n');
+            process.kill(process.pid, 'SIGKILL');
+          `;
+          const result = spawnSync(process.execPath, ['-e', script], {
+            cwd: repositoryCwd,
+            encoding: 'utf8',
+            env: childEnv,
+          });
+          expect(result.signal).toBe('SIGKILL');
+          const replacementKeyId = result.stdout.trim();
+          expect(replacementKeyId).toBeTruthy();
+
+          PlatformRepository.resetForTesting();
+          PlatformRepository.setDataDir(crashDataDir);
+          PlatformRepository.initialize();
+          expect(PlatformRepository.getApiKey(original.keyRecord.keyId)?.status).toBe('SUSPENDED');
+          expect(PlatformRepository.getApiKey(replacementKeyId)?.status).toBe('ACTIVE');
+        }
+      } finally {
+        PlatformRepository.resetForTesting();
+        PlatformRepository.setDataDir(suiteTempDir);
+        PlatformRepository.initialize();
+        fs.rmSync(crashDataDir, { recursive: true, force: true });
+      }
+    }, 30000);
+
+    it('preserves project suspension across 20 immediate SIGKILL/restart cycles', () => {
+      const crashDataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'orbitox-sigkill-project-'));
+      const repositoryCwd = path.resolve(__dirname, '../..');
+      const childEnv = { ...process.env, ORBITOX_DATA_DIR: crashDataDir, NODE_ENV: 'test' };
+      PlatformRepository.resetForTesting();
+      PlatformRepository.setDataDir(crashDataDir);
+      PlatformRepository.initialize();
+
+      try {
+        const project = PlatformRepository.listProjects()[0]!;
+        for (let iteration = 0; iteration < 20; iteration++) {
+          PlatformRepository.updateProject(project.id, { status: 'ACTIVE' });
+          const script = `
+            const { PlatformRepository } = require('./dist/platform/platform-repository.js');
+            PlatformRepository.setDataDir(${JSON.stringify(crashDataDir)});
+            PlatformRepository.initialize();
+            PlatformRepository.updateProject(${JSON.stringify(project.id)}, { status: 'SUSPENDED' });
+            process.kill(process.pid, 'SIGKILL');
+          `;
+          const result = spawnSync(process.execPath, ['-e', script], {
+            cwd: repositoryCwd,
+            encoding: 'utf8',
+            env: childEnv,
+          });
+          expect(result.signal).toBe('SIGKILL');
+
+          PlatformRepository.resetForTesting();
+          PlatformRepository.setDataDir(crashDataDir);
+          PlatformRepository.initialize();
+          expect(PlatformRepository.getProject(project.id)?.status).toBe('SUSPENDED');
+        }
+      } finally {
+        PlatformRepository.resetForTesting();
+        PlatformRepository.setDataDir(suiteTempDir);
+        PlatformRepository.initialize();
+        fs.rmSync(crashDataDir, { recursive: true, force: true });
+      }
+    }, 30000);
+
+    it('recovers a missing or corrupt store from its previous good copy and fails if both copies are lost', () => {
+      const recoveryDataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'orbitox-store-recovery-'));
+      PlatformRepository.resetForTesting();
+      PlatformRepository.setDataDir(recoveryDataDir);
+      PlatformRepository.initialize();
+      const project = PlatformRepository.listProjects()[0]!;
+      const filePath = PlatformRepository.getFilePath();
+      const backupPath = `${filePath}.bak`;
+
+      try {
+        const deadWriter = spawnSync(process.execPath, ['-e', 'process.exit(0)']);
+        const staleTempFiles = [
+          `${filePath}.tmp.${deadWriter.pid}.dead`,
+          `${backupPath}.tmp.${deadWriter.pid}.dead`,
+        ];
+        staleTempFiles.forEach((tempFile) => fs.writeFileSync(tempFile, 'incomplete', 'utf8'));
+        PlatformRepository.resetForTesting();
+        PlatformRepository.setDataDir(recoveryDataDir);
+        PlatformRepository.initialize();
+        expect(staleTempFiles.every((tempFile) => !fs.existsSync(tempFile))).toBe(true);
+
+        PlatformRepository.updateProject(project.id, { status: 'SUSPENDED' });
+        expect(fs.existsSync(backupPath)).toBe(true);
+        fs.writeFileSync(filePath, '{corrupt', 'utf8');
+        PlatformRepository.resetForTesting();
+        PlatformRepository.setDataDir(recoveryDataDir);
+        PlatformRepository.initialize();
+        expect(PlatformRepository.getProject(project.id)?.status).toBe('ACTIVE');
+
+        fs.unlinkSync(filePath);
+        PlatformRepository.resetForTesting();
+        PlatformRepository.setDataDir(recoveryDataDir);
+        PlatformRepository.initialize();
+        expect(PlatformRepository.getProject(project.id)?.status).toBe('ACTIVE');
+
+        fs.unlinkSync(filePath);
+        fs.unlinkSync(backupPath);
+        PlatformRepository.resetForTesting();
+        PlatformRepository.setDataDir(recoveryDataDir);
+        expect(() => PlatformRepository.initialize()).toThrow(/missing and no previous good copy/);
+      } finally {
+        PlatformRepository.resetForTesting();
+        PlatformRepository.setDataDir(suiteTempDir);
+        PlatformRepository.initialize();
+        fs.rmSync(recoveryDataDir, { recursive: true, force: true });
+      }
+    });
+
+    it('reports persistence unhealthy when both store copies disappear after initialization', () => {
+      const unavailableDataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'orbitox-live-store-loss-'));
+      PlatformRepository.resetForTesting();
+      PlatformRepository.setDataDir(unavailableDataDir);
+      PlatformRepository.initialize();
+      const project = PlatformRepository.listProjects()[0]!;
+      PlatformRepository.updateProject(project.id, { status: 'SUSPENDED' });
+      const storePath = PlatformRepository.getFilePath();
+
+      try {
+        fs.unlinkSync(storePath);
+        fs.unlinkSync(`${storePath}.bak`);
+        expect(() => PlatformRepository.assertPersistenceHealthy()).toThrow(/No valid persistent store/);
+      } finally {
+        PlatformRepository.resetForTesting();
+        PlatformRepository.setDataDir(suiteTempDir);
+        PlatformRepository.initialize();
+        fs.rmSync(unavailableDataDir, { recursive: true, force: true });
+      }
+    });
   });
 
   describe('Credential Vault & Envelope Encryption', () => {
@@ -109,7 +503,7 @@ describe('PlatformRepository (Normalized Domain Access & Cryptographic Binding)'
       const project = PlatformRepository.listProjects()[0]!;
       const env = PlatformRepository.listEnvironments(project.id)[0]!;
 
-      const plaintext = 'sk_test_51M087TestStripeSecretToken991244';
+      const plaintext = 'sk_test_mock_key_9912';
       const credential = PlatformRepository.createCredential({
         name: 'Stripe Payment Gateway',
         provider: 'stripe',
@@ -149,4 +543,195 @@ describe('PlatformRepository (Normalized Domain Access & Cryptographic Binding)'
       expect(updatedQuota?.monthlyCallsUsed).toBe(initialCalls + 1);
     });
   });
+
+  describe('Durable File Persistence & Restart Survivability (P0.1)', () => {
+    it('should durably persist projects, credentials, domains, and quotas to disk and reload on restart', () => {
+      // 1. Provision a durable test organization
+      const testOrg = PlatformRepository.createOrganization({
+        name: 'Durable Enterprise Corp',
+        slug: 'durable-corp',
+        billingTier: 'ENTERPRISE',
+        ownerEmail: 'founder@durable.io',
+      });
+      expect(testOrg.id).toBeDefined();
+
+      // 2. Provision a durable project with environments
+      const { project, environments } = PlatformRepository.createProject({
+        name: 'Durable POS Fleet',
+        slug: 'durable-pos-fleet',
+        organizationId: testOrg.id,
+        businessModel: 'HOSPITALITY_POS',
+        planTier: 'enterprise',
+        technicalLead: 'Lead Architect',
+        contactEmail: 'pos@durable.io',
+        initialPackages: ['@orbitox/pos'],
+      });
+      expect(project.id).toBeDefined();
+      const prodEnv = environments.find((e) => e.isProduction)!;
+
+      // 3. Issue an API key
+      const { keyRecord, rawSecret } = PlatformRepository.createApiKey({
+        name: 'Durable Terminal Key',
+        environmentId: prodEnv.id,
+        projectId: project.id,
+        capabilities: ['pos.orders.write', 'pos.orders.read'],
+        createdBy: 'admin@durable.io',
+      });
+      expect(rawSecret).toBeDefined();
+
+      // 4. Store an envelope credential
+      const cred = PlatformRepository.createCredential({
+        name: 'Durable Payment Gateway',
+        provider: 'stripe',
+        environmentId: prodEnv.id,
+        projectId: project.id,
+        plaintextSecret: 'sk_live_durable_token_xyz987',
+        ownerEmail: 'finance@durable.io',
+      });
+      expect(cred.id).toBeDefined();
+
+      // 5. Register a custom domain
+      const domain = PlatformRepository.registerDomain({
+        environmentId: prodEnv.id,
+        domainName: 'terminal.durable.io',
+      });
+      expect(domain.domainName).toBe('terminal.durable.io');
+
+      // 6. Update quota policy
+      const initialQuota = PlatformRepository.getQuotaPolicy(prodEnv.id);
+      expect(initialQuota).toBeDefined();
+      PlatformRepository.recordCall(prodEnv.id);
+      PlatformRepository.updateQuotaPolicy(prodEnv.id, { monthlyCallsLimit: 500000 });
+
+      // 7. Flush immediately to disk
+      PlatformRepository.saveImmediate();
+
+      const storeFilePath = PlatformRepository.getFilePath();
+      expect(fs.existsSync(storeFilePath)).toBe(true);
+      const fileRaw = fs.readFileSync(storeFilePath, 'utf-8');
+      const storeJson = JSON.parse(fileRaw);
+      expect(storeJson.projects.some((p: any) => p.id === project.id)).toBe(true);
+
+      // 8. Simulate process restart by resetting in-memory state
+      PlatformRepository.resetForTesting();
+
+      // 9. Re-initialize from persisted store on disk
+      PlatformRepository.initialize();
+
+      // 10. Verify everything was recovered faithfully
+      const reloadedProject = PlatformRepository.getProject(project.id);
+      expect(reloadedProject).toBeDefined();
+      expect(reloadedProject?.name).toBe('Durable POS Fleet');
+
+      const reloadedOrg = PlatformRepository.getOrganization(testOrg.id);
+      expect(reloadedOrg).toBeDefined();
+      expect(reloadedOrg?.slug).toBe('durable-corp');
+
+      const reloadedKey = PlatformRepository.getApiKey(keyRecord.keyId);
+      expect(reloadedKey).toBeDefined();
+      expect(reloadedKey?.authVerifier).toBe(keyRecord.authVerifier);
+      expect(reloadedKey?.capabilities).toContain('pos.orders.write');
+
+      // Verify that findKeyByRawSecret still works with cryptographic constant-time comparison
+      const validatedKey = PlatformRepository.findKeyByRawSecret(rawSecret);
+      expect(validatedKey).toBeDefined();
+      expect(validatedKey?.keyId).toBe(keyRecord.keyId);
+
+      // Verify credential envelope decryption survives restart
+      const decryptedSecret = PlatformRepository.decryptCredential(cred.id);
+      expect(decryptedSecret).toBe('sk_live_durable_token_xyz987');
+
+      // Verify custom domain and quotas survived
+      const reloadedDomains = PlatformRepository.listDomains(prodEnv.id);
+      expect(reloadedDomains.some((d) => d.domainName === 'terminal.durable.io')).toBe(true);
+
+      const reloadedQuota = PlatformRepository.getQuotaPolicy(prodEnv.id);
+      expect(reloadedQuota?.monthlyCallsLimit).toBe(500000);
+      expect(reloadedQuota?.monthlyCallsUsed).toBeGreaterThanOrEqual(1);
+
+      // 11. Test mutation durability: update organization and delete project
+      PlatformRepository.updateOrganization(testOrg.id, { name: 'Durable Enterprise Corp (Updated)' });
+      PlatformRepository.deleteProject(project.id);
+      PlatformRepository.removeDomain('terminal.durable.io');
+      PlatformRepository.saveImmediate();
+
+      PlatformRepository.resetForTesting();
+      PlatformRepository.initialize();
+
+      expect(PlatformRepository.getProject(project.id)).toBeUndefined();
+      expect(PlatformRepository.getOrganization(testOrg.id)?.name).toBe('Durable Enterprise Corp (Updated)');
+      expect(PlatformRepository.listDomains(prodEnv.id).some((d) => d.domainName === 'terminal.durable.io')).toBe(false);
+    });
+
+    it('loads a valid store snapshot from before auditLogs was added', () => {
+      const storePath = PlatformRepository.getFilePath();
+      const legacyStore = JSON.parse(fs.readFileSync(storePath, 'utf8'));
+      const expectedProjectIds = legacyStore.projects.map((project: { id: string }) => project.id);
+      delete legacyStore.auditLogs;
+      fs.writeFileSync(storePath, JSON.stringify(legacyStore), 'utf8');
+      const migrationWarning = jest.spyOn(console, 'warn').mockImplementation(() => undefined);
+
+      try {
+        PlatformRepository.resetForTesting();
+        PlatformRepository.setDataDir(suiteTempDir);
+        PlatformRepository.initialize();
+
+        expect(PlatformRepository.listProjects().map((project) => project.id)).toEqual(expectedProjectIds);
+        expect(JSON.parse(fs.readFileSync(storePath, 'utf8')).auditLogs).toEqual([]);
+        expect(migrationWarning).toHaveBeenCalledWith(expect.stringContaining('auditLogs'));
+      } finally {
+        migrationWarning.mockRestore();
+      }
+    });
+
+    it('provisions a plugin installation with explicit runtimeTenantId and prevents cross-tenant claims', () => {
+      const canonicalA = 'org/org1/project/proj-a/environment/prod';
+      const canonicalB = 'org/org1/project/proj-b/environment/prod';
+
+      // 1. Provision for tenant A
+      const instA = PlatformRepository.provisionPluginInstallation({
+        tenantId: 'plat-tenant-a',
+        pluginId: '@orbitox/restaurant',
+        runtimeTenantId: canonicalA,
+        status: 'ACTIVE',
+      });
+      expect(instA.tenantId).toBe('plat-tenant-a');
+      expect(instA.runtimeTenantId).toBe(canonicalA);
+
+      // 2. Tenant B attempts to claim Tenant A's runtimeTenantId -> throws RUNTIME_TENANT_ALREADY_CLAIMED
+      expect(() => {
+        PlatformRepository.provisionPluginInstallation({
+          tenantId: 'plat-tenant-b',
+          pluginId: '@orbitox/restaurant',
+          runtimeTenantId: canonicalA,
+          status: 'ACTIVE',
+        });
+      }).toThrow(/already claimed by tenant "plat-tenant-a"/);
+
+      // 3. Normalized alias ('restaurant') also refuses claim
+      expect(() => {
+        PlatformRepository.provisionPluginInstallation({
+          tenantId: 'plat-tenant-b',
+          pluginId: 'restaurant',
+          runtimeTenantId: canonicalA,
+          status: 'ACTIVE',
+        });
+      }).toThrow(/already claimed by tenant "plat-tenant-a"/);
+
+      // 4. Tenant B provisions its own distinct runtimeTenantId
+      const instB = PlatformRepository.provisionPluginInstallation({
+        tenantId: 'plat-tenant-b',
+        pluginId: '@orbitox/restaurant',
+        runtimeTenantId: canonicalB,
+        status: 'ACTIVE',
+      });
+      expect(instB.runtimeTenantId).toBe(canonicalB);
+
+      // 5. Lookups strictly return respective runtime identities
+      expect(PlatformRepository.getPluginInstallation('plat-tenant-a', '@orbitox/restaurant')?.runtimeTenantId).toBe(canonicalA);
+      expect(PlatformRepository.getPluginInstallation('plat-tenant-b', '@orbitox/restaurant')?.runtimeTenantId).toBe(canonicalB);
+      expect(PlatformRepository.getPluginInstallation('plat-tenant-unknown', '@orbitox/restaurant')).toBeUndefined();
+    });
+  });
 });
+

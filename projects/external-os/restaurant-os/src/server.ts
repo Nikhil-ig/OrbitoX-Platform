@@ -65,6 +65,11 @@ import {
   validateTenantSlug,
   generateSeats,
   runDatabaseSecuritySelfCheck,
+  verifyBridgeRequest,
+  getDefaultBridgeKeys,
+  PostgresNonceStore,
+  MemoryNonceStore,
+  PostgresEventListener,
 } from '../packages/domain';
 import {
   buildGSTInvoice,
@@ -73,6 +78,7 @@ import {
   renderPrintableInvoiceHtml,
 } from '../packages/domain/invoicing';
 import { RestaurantRuntimeStore, DomainEvent, getTenantRepository, RestaurantRepository } from '../packages/storage';
+import { PosService } from '@orbitox/pos';
 import { PostgresRestaurantStore } from '../packages/storage/postgres-store';
 import { RealtimeEventBus } from '../packages/domain/event-bus';
 import { RestaurantControlBridge, restaurantControlBridge } from './bridge';
@@ -120,17 +126,48 @@ const eventBus = new RealtimeEventBus();
 const runtimeController = restaurantControlBridge;
 const razorpayAdapter = new RazorpayPaymentGatewayAdapter();
 
+if (!process.env.DATABASE_URL) {
+  process.env.DATABASE_URL = 'postgresql://apple@localhost:5432/restaurant_os';
+}
+
 let postgresStore: PostgresRestaurantStore | null = null;
-try {
-  postgresStore = new PostgresRestaurantStore();
-  (globalThis as any).__restaurantos_prisma = postgresStore.prisma;
-} catch (err: any) {
-  console.warn('[Storage] PostgresRestaurantStore deferred:', err.message);
+if (process.env.STORAGE_DRIVER !== 'json' && process.env.DATABASE_URL) {
+  try {
+    postgresStore = new PostgresRestaurantStore();
+    (globalThis as any).__restaurantos_prisma = postgresStore.prisma;
+  } catch (err: any) {
+    console.warn('[Storage] PostgresRestaurantStore deferred:', err.message);
+  }
 }
 
 const provisioningService = new TenantProvisioningService(postgresStore ? postgresStore.prisma : undefined);
 const customDomainService = new CustomDomainService(postgresStore ? postgresStore.prisma : undefined);
 const ownerSelfService = new OwnerSelfService(postgresStore ? postgresStore.prisma : undefined);
+
+const nonceStore = postgresStore?.prisma
+  ? new PostgresNonceStore(postgresStore.prisma)
+  : new MemoryNonceStore();
+
+let pgEventListener: PostgresEventListener | null = null;
+if (process.env.STORAGE_DRIVER !== 'json' && process.env.DATABASE_URL) {
+  try {
+    pgEventListener = new PostgresEventListener(process.env.DATABASE_URL, eventBus);
+    pgEventListener.start().catch((err: any) => console.warn('[PostgresEventListener] Startup warning:', err.message));
+  } catch (err: any) {
+    console.warn('[PostgresEventListener] Init warning:', err.message);
+  }
+}
+
+export { pgEventListener, postgresStore };
+
+export async function closeRuntimeServer(): Promise<void> {
+  if (pgEventListener) {
+    await pgEventListener.stop();
+  }
+  if (postgresStore?.prisma) {
+    await postgresStore.prisma.$disconnect();
+  }
+}
 
 // In-Memory Token Bucket Rate Limiter Keyed by Tenant ID
 interface RateLimitBucket {
@@ -236,6 +273,29 @@ function parseBody(req: http.IncomingMessage): Promise<any> {
       }
     });
     req.on('error', reject);
+  });
+}
+
+function readRawBody(req: http.IncomingMessage): Promise<string> {
+  if ((req as any).rawBody !== undefined) {
+    return Promise.resolve((req as any).rawBody);
+  }
+  return new Promise((resolve) => {
+    let data = '';
+    req.on('data', (chunk) => {
+      data += chunk;
+    });
+    req.on('end', () => {
+      (req as any).rawBody = data;
+      (req as any)._rawBuffer = Buffer.from(data);
+      try {
+        (req as any)._parsedBody = data ? JSON.parse(data) : {};
+      } catch {
+        (req as any)._parsedBody = {};
+      }
+      resolve(data);
+    });
+    req.on('error', () => resolve(''));
   });
 }
 
@@ -703,6 +763,19 @@ async function resolveRequestIdentity(
   return identity;
 }
 
+function checkTestKillPoint(req: http.IncomingMessage, stage: 'pre-commit' | 'post-commit'): void {
+  if (process.env.NODE_ENV === 'production') return;
+  const targetStage = req.headers['x-test-kill-point'] as string | undefined;
+  if (!targetStage) return;
+  if (targetStage === stage) {
+    process.kill(process.pid, 'SIGKILL');
+  } else if (targetStage === 'random-timing' && stage === 'pre-commit') {
+    setTimeout(() => {
+      try { process.kill(process.pid, 'SIGKILL'); } catch {}
+    }, Math.floor(Math.random() * 20));
+  }
+}
+
 export async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse): Promise<void> {
   const parsedUrl = url.parse(req.url || '', true);
   const pathname = parsedUrl.pathname || '/';
@@ -720,9 +793,56 @@ export async function handleRequest(req: http.IncomingMessage, res: http.ServerR
     methodCounts.set(method, (methodCounts.get(method) || 0) + 1);
   });
 
-  // Readiness check: verifies PostgreSQL and runtime services
+  // --- ORBITOX PLATFORM BRIDGE SIGNATURE & TENANT VERIFICATION ---
+  const rawSig = req.headers['x-orbitox-signature'] || req.headers['bridge-signature'] || req.headers['x-bridge-signature'];
+  const rawTenantHeader = req.headers['x-tenant-id'] || req.headers['x-orbitox-tenant'] || req.headers['bridge-tenant'];
+
+  let verifiedBridge: { tenantId: string; principal: { sub: string; scopes: string[] } } | null = null;
+
+  if (rawSig) {
+    const rawBody = await readRawBody(req);
+    const verifyRes = await verifyBridgeRequest(
+      getDefaultBridgeKeys(),
+      nonceStore,
+      {
+        method,
+        pathWithQuery: req.url || '/',
+        headers: req.headers as Record<string, string | undefined>,
+        rawBody,
+      }
+    );
+    if (!verifyRes.ok) {
+      const failReason = (verifyRes as any).reason;
+      sendJson(res, 401, {
+        error: 'UNAUTHORIZED',
+        code: failReason,
+        message: `Bridge signature verification failed: ${failReason}`,
+      });
+      return;
+    }
+    verifiedBridge = { tenantId: verifyRes.tenantId, principal: verifyRes.principal };
+  }
+
+  // Readiness check: verifies PostgreSQL, bridge keys, and runtime services
   if ((pathname === '/healthz/ready' || pathname === '/ready') && method === 'GET') {
     try {
+      if (process.env.NODE_ENV === 'production') {
+        try {
+          getDefaultBridgeKeys();
+        } catch (keyErr: any) {
+          sendJson(res, 503, {
+            status: 'not_ready',
+            checks: {
+              database: 'UP',
+              bridgeKeys: 'DOWN',
+              error: keyErr.message,
+            },
+            uptime: process.uptime(),
+            timestamp: new Date().toISOString(),
+          });
+          return;
+        }
+      }
       if (postgresStore?.prisma) {
         await postgresStore.prisma.$queryRawUnsafe('SELECT 1');
       }
@@ -730,6 +850,7 @@ export async function handleRequest(req: http.IncomingMessage, res: http.ServerR
         status: 'ready',
         checks: {
           database: 'UP',
+          bridgeKeys: 'UP',
           store: 'UP',
           eventBus: 'UP',
         },
@@ -751,7 +872,7 @@ export async function handleRequest(req: http.IncomingMessage, res: http.ServerR
   }
 
   // Liveness and basic health probes
-  if (pathname === '/health' || pathname === '/healthz') {
+  if (pathname === '/health' || pathname === '/healthz' || pathname === '/healthz/live' || pathname === '/live') {
     sendJson(res, 200, {
       status: 'healthy',
       service: 'restaurant-os',
@@ -892,9 +1013,40 @@ export async function handleRequest(req: http.IncomingMessage, res: http.ServerR
   }
 
   // Authoritative host-based tenant resolution
-  let tenantContext = await resolveTenantFromRequest(req, postgresStore?.prisma);
+  let tenantContext: any = null;
+  if (verifiedBridge) {
+    const targetTenantId = verifiedBridge.tenantId;
+    const dbTenant = postgresStore?.prisma ? await postgresStore.prisma.tenant.findFirst({
+      where: { OR: [{ id: targetTenantId }, { slug: targetTenantId }, { orbitoxProjectId: targetTenantId }] },
+    }).catch(() => null) : null;
+
+    if (dbTenant) {
+      tenantContext = {
+        tenantId: dbTenant.id,
+        tenantSlug: dbTenant.slug,
+        tenantName: dbTenant.name,
+        orbitoxProjectId: dbTenant.orbitoxProjectId || `restaurant-os-${dbTenant.slug}`,
+        status: dbTenant.status,
+        planId: dbTenant.planId,
+        entitlementRevision: dbTenant.entitlementRevision,
+        isPlatform: true,
+      };
+    } else {
+      tenantContext = {
+        tenantId: targetTenantId,
+        tenantSlug: targetTenantId.replace(/^org\/[^/]+\/project\/[^/]+\/environment\//, '').replace(/^tenant_/, '').replace(/[^a-z0-9-]/g, '-'),
+        tenantName: 'Signed Bridge Tenant',
+        orbitoxProjectId: targetTenantId,
+        status: 'active',
+        isPlatform: true,
+      };
+    }
+  } else {
+    tenantContext = await resolveTenantFromRequest(req, postgresStore?.prisma);
+  }
+
   if (!tenantContext) {
-    if (pathname.startsWith('/internal/')) {
+    if (pathname.startsWith('/internal/') || pathname.startsWith('/orbitox/lifecycle')) {
       tenantContext = {
         tenantId: 'PLATFORM_SUPERUSER',
         tenantSlug: 'platform',
@@ -925,9 +1077,221 @@ export async function handleRequest(req: http.IncomingMessage, res: http.ServerR
     }
   }
 
+  // --- LIFECYCLE HOOKS (Contract v2 Subset) ---
+  const isLifecycleProvision = (pathname === '/orbitox/lifecycle/provision' || pathname === '/api/platform/lifecycle/provision' || pathname === '/internal/lifecycle/provision') && method === 'POST';
+  const isLifecycleSuspend = (pathname === '/orbitox/lifecycle/suspend' || pathname === '/api/platform/lifecycle/suspend' || pathname === '/internal/lifecycle/suspend') && method === 'POST';
+  const isLifecycleResume = (pathname === '/orbitox/lifecycle/resume' || pathname === '/api/platform/lifecycle/resume' || pathname === '/internal/lifecycle/resume') && method === 'POST';
+  const isLifecyclePlanChanged = (pathname === '/orbitox/lifecycle/plan-changed' || pathname === '/api/platform/lifecycle/plan-changed' || pathname === '/internal/lifecycle/plan-changed') && method === 'POST';
+
+  if (isLifecycleProvision || isLifecycleSuspend || isLifecycleResume || isLifecyclePlanChanged) {
+    if (!verifiedBridge) {
+      sendJson(res, 401, {
+        error: 'UNAUTHORIZED',
+        code: 'BRIDGE_SIGNATURE_REQUIRED',
+        message: 'Lifecycle endpoints require a verified bridge signature.',
+      });
+      return;
+    }
+
+    const body = await parseBody(req);
+    const targetTenantId = verifiedBridge.tenantId;
+    if (!targetTenantId) {
+      sendJson(res, 400, { error: 'BAD_REQUEST', code: 'TENANT_ID_REQUIRED', message: 'Tenant ID is required for lifecycle operation.' });
+      return;
+    }
+
+    const idempotencyKey = (req.headers['x-idempotency-key'] as string) || body.idempotencyKey || (verifiedBridge ? req.headers['x-orbitox-nonce'] || req.headers['bridge-nonce'] : undefined);
+    const incomingRevision = typeof body.revision === 'number' ? body.revision : (typeof body.entitlementRevision === 'number' ? body.entitlementRevision : 0);
+
+    const existingTenant = postgresStore?.prisma ? await postgresStore.prisma.tenant.findFirst({
+      where: { OR: [{ id: targetTenantId }, { slug: targetTenantId }, { orbitoxProjectId: targetTenantId }] },
+    }).catch(() => null) : null;
+
+    // Idempotency check: if lastLifecycleKey matches, return cached/idempotent success
+    if (existingTenant && idempotencyKey && existingTenant.lastLifecycleKey === idempotencyKey) {
+      sendJson(res, 200, {
+        ok: true,
+        replayed: true,
+        tenantId: existingTenant.id,
+        status: existingTenant.status,
+        planId: existingTenant.planId,
+        revision: existingTenant.entitlementRevision,
+      });
+      return;
+    }
+
+    // Older revision check: if incoming revision is strictly less than current revision, ignore
+    if (existingTenant && incomingRevision > 0 && incomingRevision < existingTenant.entitlementRevision) {
+      sendJson(res, 200, {
+        ok: true,
+        ignored: true,
+        reason: 'OLDER_REVISION',
+        currentRevision: existingTenant.entitlementRevision,
+        incomingRevision,
+      });
+      return;
+    }
+
+    if (isLifecycleProvision) {
+      if (existingTenant) {
+        // Provision twice gives one tenant (idempotent)
+        sendJson(res, 200, {
+          ok: true,
+          replayed: true,
+          tenantId: existingTenant.id,
+          status: existingTenant.status,
+          revision: existingTenant.entitlementRevision,
+        });
+        return;
+      }
+
+      const cleanSlug = body.slug || targetTenantId.replace(/^org\/[^/]+\/project\/[^/]+\/environment\//, '').replace(/^tenant_/, '').replace(/[^a-z0-9-]/g, '-').slice(0, 30);
+      const provResult = await provisioningService.provisionTenant({
+        tenantId: targetTenantId,
+        restaurantName: body.restaurantName || body.name || `Restaurant ${cleanSlug}`,
+        slug: cleanSlug,
+        planId: body.planId || 'starter',
+        entitlementRevision: Math.max(1, incomingRevision),
+        idempotencyKey,
+      });
+
+      // Audit log
+      if (postgresStore?.prisma) {
+        await (postgresStore.prisma as any).domainEvent.create({
+          data: {
+            tenantId: targetTenantId,
+            sequence: 1,
+            type: 'tenant.lifecycle.provisioned',
+            producer: 'platform-lifecycle',
+            payload: { tenantId: targetTenantId, revision: incomingRevision, idempotencyKey },
+            branchId: 'main',
+          },
+        }).catch(() => {});
+      }
+
+      sendJson(res, 201, {
+        ok: true,
+        tenantId: targetTenantId,
+        status: 'active',
+        revision: Math.max(1, incomingRevision),
+        result: provResult,
+      });
+      return;
+    }
+
+    if (isLifecycleSuspend) {
+      if (!existingTenant) {
+        sendJson(res, 404, { error: 'TENANT_NOT_FOUND', code: 'TENANT_NOT_FOUND', message: `Tenant ${targetTenantId} not found` });
+        return;
+      }
+      await provisioningService.suspendTenant(existingTenant.id);
+      if (postgresStore?.prisma) {
+        await postgresStore.prisma.tenant.update({
+          where: { id: existingTenant.id },
+          data: {
+            status: 'suspended',
+            entitlementRevision: Math.max(existingTenant.entitlementRevision, incomingRevision),
+            lastLifecycleKey: idempotencyKey,
+          },
+        }).catch(() => {});
+        await (postgresStore.prisma as any).domainEvent.create({
+          data: {
+            tenantId: existingTenant.id,
+            sequence: 1,
+            type: 'tenant.lifecycle.suspended',
+            producer: 'platform-lifecycle',
+            payload: { tenantId: existingTenant.id, revision: incomingRevision, idempotencyKey },
+            branchId: 'main',
+          },
+        }).catch(() => {});
+      }
+      invalidateTenantResolutionCache(existingTenant.id);
+      sendJson(res, 200, {
+        ok: true,
+        tenantId: existingTenant.id,
+        status: 'suspended',
+        revision: Math.max(existingTenant.entitlementRevision, incomingRevision),
+      });
+      return;
+    }
+
+    if (isLifecycleResume) {
+      if (!existingTenant) {
+        sendJson(res, 404, { error: 'TENANT_NOT_FOUND', code: 'TENANT_NOT_FOUND', message: `Tenant ${targetTenantId} not found` });
+        return;
+      }
+      await provisioningService.resumeTenant(existingTenant.id);
+      if (postgresStore?.prisma) {
+        await postgresStore.prisma.tenant.update({
+          where: { id: existingTenant.id },
+          data: {
+            status: 'active',
+            entitlementRevision: Math.max(existingTenant.entitlementRevision, incomingRevision),
+            lastLifecycleKey: idempotencyKey,
+          },
+        }).catch(() => {});
+        await (postgresStore.prisma as any).domainEvent.create({
+          data: {
+            tenantId: existingTenant.id,
+            sequence: 1,
+            type: 'tenant.lifecycle.resumed',
+            producer: 'platform-lifecycle',
+            payload: { tenantId: existingTenant.id, revision: incomingRevision, idempotencyKey },
+            branchId: 'main',
+          },
+        }).catch(() => {});
+      }
+      invalidateTenantResolutionCache(existingTenant.id);
+      sendJson(res, 200, {
+        ok: true,
+        tenantId: existingTenant.id,
+        status: 'active',
+        revision: Math.max(existingTenant.entitlementRevision, incomingRevision),
+      });
+      return;
+    }
+
+    if (isLifecyclePlanChanged) {
+      if (!existingTenant) {
+        sendJson(res, 404, { error: 'TENANT_NOT_FOUND', code: 'TENANT_NOT_FOUND', message: `Tenant ${targetTenantId} not found` });
+        return;
+      }
+      const newPlanId = body.planId || body.newPlanId || existingTenant.planId;
+      if (postgresStore?.prisma) {
+        await postgresStore.prisma.tenant.update({
+          where: { id: existingTenant.id },
+          data: {
+            planId: newPlanId,
+            entitlementRevision: Math.max(existingTenant.entitlementRevision, incomingRevision),
+            lastLifecycleKey: idempotencyKey,
+          },
+        }).catch(() => {});
+        await (postgresStore.prisma as any).domainEvent.create({
+          data: {
+            tenantId: existingTenant.id,
+            sequence: 1,
+            type: 'tenant.lifecycle.plan_changed',
+            producer: 'platform-lifecycle',
+            payload: { tenantId: existingTenant.id, planId: newPlanId, revision: incomingRevision, idempotencyKey },
+            branchId: 'main',
+          },
+        }).catch(() => {});
+      }
+      invalidateTenantResolutionCache(existingTenant.id);
+      sendJson(res, 200, {
+        ok: true,
+        tenantId: existingTenant.id,
+        planId: newPlanId,
+        revision: Math.max(existingTenant.entitlementRevision, incomingRevision),
+      });
+      return;
+    }
+  }
+
   res.setHeader('x-tenant-id', tenantContext.tenantId);
   return withTenantContext(tenantContext, async () => {
     const repo = getTenantRepository(tenantContext, postgresStore?.prisma, eventBus);
+    const posService = new PosService(repo);
     const startHrTime = process.hrtime.bigint();
     const rawReqId = req.headers['x-request-id'] || req.headers['x-correlation-id'];
     const requestId = validateOrGenerateRequestId(rawReqId);
@@ -966,7 +1330,17 @@ export async function handleRequest(req: http.IncomingMessage, res: http.ServerR
     });
   });
 
-  const requestIdentity = await resolveRequestIdentity(req, tenantContext.tenantId, repo);
+  const requestIdentity: any = verifiedBridge
+    ? {
+        type: 'PLATFORM_BRIDGE',
+        id: verifiedBridge.principal.sub,
+        role: 'ADMIN',
+        isPrivileged: true,
+        scopes: verifiedBridge.principal.scopes,
+        tenantId: tenantContext.tenantId,
+        authSource: 'BRIDGE_SIGNATURE',
+      }
+    : await resolveRequestIdentity(req, tenantContext.tenantId, repo);
   const activeStaffToken = requestIdentity.rawToken;
   const activeStaffRole = requestIdentity.role || (requestIdentity.type === 'ADMIN' ? 'ADMIN' : undefined);
 
@@ -1070,10 +1444,11 @@ export async function handleRequest(req: http.IncomingMessage, res: http.ServerR
     return;
   }
 
+
   // --- TENANT SUSPENSION ENFORCEMENT ---
-  if (postgresStore && !pathname.startsWith('/internal/')) {
+  if (postgresStore && !pathname.startsWith('/internal/') && !pathname.startsWith('/orbitox/lifecycle')) {
     const currentTenant = await postgresStore.getTenant(tenantContext.tenantId);
-    if (currentTenant?.status === 'suspended') {
+    if (currentTenant?.status === 'suspended' || tenantContext.status === 'suspended') {
       if (['POST', 'PUT', 'PATCH', 'DELETE'].includes(method)) {
         sendJson(res, 403, {
           error: 'TENANT_SUSPENDED',
@@ -1083,7 +1458,7 @@ export async function handleRequest(req: http.IncomingMessage, res: http.ServerR
         return;
       }
       if (method === 'GET' && (pathname === '/' || pathname.startsWith('/dine') || pathname.startsWith('/kds') || pathname.startsWith('/swift-bite') || pathname.startsWith('/crave-atlas') || pathname.startsWith('/operations'))) {
-        sendHtml(res, renderSuspendedTenantPage(currentTenant.name));
+        sendHtml(res, renderSuspendedTenantPage(currentTenant?.name || tenantContext.tenantName));
         return;
       }
     }
@@ -2012,13 +2387,13 @@ export async function handleRequest(req: http.IncomingMessage, res: http.ServerR
     const capabilityToken = `cap_${crypto.randomBytes(16).toString('hex')}`;
     const hostName = body.guestName || body.name || 'Primary Host';
 
-    const session = await repo.createOrJoinSession(
-      tableNum,
+    const session = await posService.createOrJoinSession({
+      tableNumber: tableNum,
       hostName,
-      targetTbl.branchId || currentBranch.id,
-      targetTbl.floorId || currentFloor.id,
-      capabilityToken
-    );
+      branchId: targetTbl.branchId || currentBranch.id,
+      floorId: targetTbl.floorId || currentFloor.id,
+      capabilityToken,
+    });
 
     const s1 = targetTbl.seats?.find((s) => s.seatNumber === 1);
     if (s1 && !s1.guestName) {
@@ -2372,157 +2747,78 @@ export async function handleRequest(req: http.IncomingMessage, res: http.ServerR
     }
   }
 
-  // 5. Deterministic Pricing Quote
+  // 5. Deterministic Pricing Quote (Delegated to @orbitox/pos engine)
   if (pathname === '/api/restaurant/quote' && method === 'POST') {
     const body = await parseBody(req);
-    const items = body.items || body.cartItems || [];
-    let subtotalMinor = 0;
-    const menuItems = await repo.getMenuItems();
-
-    for (const item of items) {
-      const found = menuItems.find((m) => m.id === (item.id || item.itemId));
-      let unitPrice = found ? found.basePriceMinor : 35000;
-      if (item.selectedModifierIds && Array.isArray(item.selectedModifierIds) && found?.modifierGroups) {
-        for (const modId of item.selectedModifierIds) {
-          for (const grp of found.modifierGroups) {
-            const opt = grp.options.find((o) => o.id === modId);
-            if (opt) {
-              unitPrice += opt.priceDeltaMinor;
-            }
-          }
-        }
-      } else if (item.modifierPriceDeltaMinor) {
-        unitPrice += Number(item.modifierPriceDeltaMinor);
-      }
-      subtotalMinor += unitPrice * (item.quantity || 1);
-    }
-
-    const taxBasisPoints = 500; // 5% GST
-    const taxMinor = Math.round((subtotalMinor * taxBasisPoints) / 10000);
-    const totalMinor = subtotalMinor + taxMinor;
-
-    const inputHash = crypto.createHash('sha256').update(JSON.stringify({ items, taxBasisPoints })).digest('hex');
-    const resultHash = crypto.createHash('sha256').update(`${subtotalMinor}:${taxMinor}:${totalMinor}`).digest('hex');
-
-    sendJson(res, 200, {
-      success: true,
-      data: {
-        quoteId: `quote_${Date.now()}`,
-        subtotalMinor: subtotalMinor.toString(),
-        taxMinor: taxMinor.toString(),
-        totalMinor: totalMinor.toString(),
-        currency: 'INR',
-        breakdown: {
-          subtotalFormatted: `₹${(subtotalMinor / 100).toFixed(2)}`,
-          taxFormatted: `₹${(taxMinor / 100).toFixed(2)}`,
-          totalFormatted: `₹${(totalMinor / 100).toFixed(2)}`,
-        },
-        inputHash,
-        resultHash,
-      },
+    const data = await posService.calculateQuote({
+      items: body.items || body.cartItems || [],
+      taxBasisPoints: body.taxBasisPoints ?? 500,
+      currency: body.currency,
     });
+    sendJson(res, 200, { success: true, data });
     return;
   }
 
-  // 6. Idempotent Order Submission
+  // 6. Idempotent Order Submission (Delegated to @orbitox/pos engine)
   if (pathname === '/api/restaurant/orders' && method === 'POST') {
     const identity = requestIdentity;
-    if (identity.type === 'INVALID_CREDENTIAL') {
-      sendJson(res, 401, {
-        error: 'INVALID_CREDENTIAL',
-        code: 'INVALID_CREDENTIAL',
-        message: 'Supplied authorization token is invalid or tampered.',
-      });
-      return;
-    }
-    if (identity.type === 'REVOKED_CAPABILITY') {
-      sendJson(res, 401, {
-        error: 'CAPABILITY_REVOKED',
-        code: 'CAPABILITY_REVOKED',
-        message: 'Guest capability token has expired or session is closed. Please scan QR to join a new session.',
-      });
-      return;
-    }
-    if (process.env.NODE_ENV === 'production' && identity.type === 'ANONYMOUS') {
-      sendJson(res, 401, {
-        error: 'CAPABILITY_REQUIRED',
-        code: 'CAPABILITY_REQUIRED',
-        message: 'A valid diner capability token or staff credential is required to place an order.',
-      });
-      return;
-    }
-
     const body = await parseBody(req);
-    const idempotencyKey = (req.headers['x-idempotency-key'] as string) || `idem_${Date.now()}`;
-    const payloadHash = crypto.createHash('sha256').update(JSON.stringify(body)).digest('hex');
+    const idempotencyKey = (req.headers['x-idempotency-key'] as string) || body.idempotencyKey;
 
-    const cached = await repo.getIdempotencyRecord(idempotencyKey);
-    if (cached) {
-      if (cached.payloadHash && cached.payloadHash !== payloadHash) {
-        sendJson(res, 409, {
-          error: 'IDEMPOTENCY_CONFLICT',
-          code: 'IDEMPOTENCY_CONFLICT',
-          message: 'An order was already processed with this idempotency key using different order contents.',
-        });
+    checkTestKillPoint(req, 'pre-commit');
+
+    // Multi-Server Distributed Idempotency Lock
+    if (idempotencyKey) {
+      const payloadHash = crypto.createHash('sha256').update(JSON.stringify(body)).digest('hex');
+      const existing = await repo.getIdempotencyRecord(idempotencyKey);
+      if (existing && existing.status !== 'PENDING') {
+        const storedHash = (existing as any).payloadHash;
+        if (storedHash && storedHash !== payloadHash) {
+          sendJson(res, 409, {
+            error: 'IDEMPOTENCY_CONFLICT',
+            code: 'IDEMPOTENCY_CONFLICT',
+            message: `Idempotency key ${idempotencyKey} has already been used with different request parameters.`,
+          });
+          return;
+        }
+        sendJson(res, 200, existing.response || existing);
         return;
       }
-      sendJson(res, 200, cached?.response || cached);
-      return;
-    }
 
-    const items = body.items || body.cartItems || [];
-    if (!Array.isArray(items) || items.length === 0) {
-      sendJson(res, 400, {
-        error: 'EMPTY_ORDER',
-        code: 'EMPTY_ORDER',
-        message: 'Order must contain at least one valid item.',
-      });
-      return;
-    }
-
-    const menuItems = await repo.getMenuItems();
-    for (const it of items) {
-      const q = it.quantity !== undefined ? it.quantity : 1;
-      if (!Number.isInteger(q) || q < 1 || q > 50) {
-        sendJson(res, 400, {
-          error: 'INVALID_QUANTITY',
-          code: 'INVALID_QUANTITY',
-          message: `Item quantity must be an integer between 1 and 50. Received: ${q}`,
+      let isLeader = false;
+      const startedAt = Date.now();
+      try {
+        await postgresStore.prisma.idempotencyRecord.create({
+          data: {
+            tenantId: tenantContext.tenantId,
+            key: idempotencyKey,
+            result: { status: 'PENDING', startedAt },
+            expiresAt: new Date(Date.now() + 86400 * 1000),
+          },
         });
-        return;
+        isLeader = true;
+      } catch {
+        // If an abandoned PENDING record exists older than 1500ms, reclaim leadership
+        if (existing && existing.status === 'PENDING') {
+          const prevStarted = Number((existing as any).startedAt || (existing.result as any)?.startedAt || 0);
+          if (Date.now() - prevStarted > 1500) {
+            isLeader = true;
+          }
+        }
       }
-      const found = menuItems.find((m) => m.id === (it.id || it.itemId));
-      if (!found) {
-        sendJson(res, 400, {
-          error: 'INVALID_MENU_ITEM',
-          code: 'INVALID_MENU_ITEM',
-          message: `Item ${it.id || it.itemId} is not in the menu catalog.`,
-        });
-        return;
-      }
-    }
 
-    const orderId = (body.orderId && typeof body.orderId === 'string') ? body.orderId : `ord_${Date.now()}`;
-    if (!body.tableNumber && !body.tableId) {
-      sendJson(res, 400, {
-        error: 'TABLE_REQUIRED',
-        code: 'TABLE_REQUIRED',
-        message: 'tableNumber is required to place an order.',
-      });
-      return;
+      if (!isLeader) {
+        const pollStart = Date.now();
+        while (Date.now() - pollStart < 800) {
+          await new Promise((r) => setTimeout(r, 40));
+          const rec = await repo.getIdempotencyRecord(idempotencyKey);
+          if (rec && rec.status !== 'PENDING') {
+            sendJson(res, 200, rec.response || rec);
+            return;
+          }
+        }
+      }
     }
-    const targetTableRecord = body.tableNumber
-      ? await repo.getTableByNumber(body.tableNumber)
-      : await repo.getTable(body.tableId);
-    if (!targetTableRecord) {
-      sendJson(res, 404, {
-        error: 'TABLE_NOT_FOUND',
-        code: 'TABLE_NOT_FOUND',
-        message: `Table ${body.tableNumber || body.tableId} does not exist in this restaurant.`,
-      });
-      return;
-    }
-    const tableNumber = targetTableRecord.number;
 
     // Authoritative Plan Limits & Quota Enforcement
     try {
@@ -2539,156 +2835,48 @@ export async function handleRequest(req: http.IncomingMessage, res: http.ServerR
       if (quotaCheck.warning) {
         res.setHeader('x-quota-warning', `${quotaCheck.percentage}%`);
       }
-    } catch (quotaErr: any) {
+    } catch (_quotaErr: any) {
       // Allow fallback if running in-memory without database
     }
 
-    const normIdTable = (identity.tableNumber || '').replace(/^T-/, '');
-    const normOrderTable = (tableNumber || '').replace(/^T-/, '');
+    // Strip idempotencyKey so PosService does not trip on our distributed PENDING reservation
+    const posBody = { ...body };
+    delete posBody.idempotencyKey;
 
-    if (identity.type === 'DINER') {
-      if (identity.tableNumber && normIdTable !== normOrderTable) {
-        sendJson(res, 403, {
-          error: 'TABLE_MISMATCH',
-          code: 'TABLE_MISMATCH',
-          message: `Diner capability for ${identity.tableNumber} cannot submit orders for ${tableNumber}.`,
-        });
-        return;
-      }
-      const activeTable = targetTableRecord;
-      if (activeTable && activeTable.activeSessionId && identity.sessionId && activeTable.activeSessionId !== identity.sessionId) {
-        sendJson(res, 403, {
-          error: 'SESSION_MISMATCH',
-          code: 'SESSION_MISMATCH',
-          message: 'Diner capability does not match the active session for this table.',
-        });
-        return;
-      }
-    }
-
-    if (identity.branchId && identity.branchId !== '*' && targetTableRecord.branchId !== identity.branchId) {
-      sendJson(res, 403, {
-        error: 'BRANCH_MISMATCH',
-        code: 'BRANCH_MISMATCH',
-        message: `Staff token for branch ${identity.branchId} cannot create orders for table in branch ${targetTableRecord.branchId}`,
-      });
-      return;
-    }
-
-    let subtotalMinor = 0;
-    for (const it of items) {
-      const found = menuItems.find((m) => m.id === (it.id || it.itemId))!;
-      const q = it.quantity !== undefined ? it.quantity : 1;
-      let unitPrice = found.basePriceMinor;
-      if (it.selectedModifierIds && Array.isArray(it.selectedModifierIds) && found.modifierGroups) {
-        for (const modId of it.selectedModifierIds) {
-          for (const grp of found.modifierGroups) {
-            const opt = grp.options.find((o) => o.id === modId);
-            if (opt) {
-              unitPrice += opt.priceDeltaMinor;
-            }
-          }
-        }
-      } else if (it.modifierPriceDeltaMinor) {
-        unitPrice += Number(it.modifierPriceDeltaMinor);
-      }
-      subtotalMinor += unitPrice * q;
-
-      // Route each item to Kitchen Task Queue in Persistent Store
-      const newTask: KitchenTask = {
-        id: `task_${crypto.randomUUID()}`,
-        orderId,
-        tableNumber,
-        branchId: body.branchId || targetTableRecord?.branchId || currentBranch.id,
-        itemName: found.name,
-        quantity: q,
-        station: found.station as any,
-        status: 'QUEUED',
-        fireAt: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-        targetServeAt: new Date(Date.now() + 15 * 60 * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-        elapsedMinutes: 0,
-        slaMinutes: found.prepDurationMinutes || 12,
-        modifiers: it.modifiers || (it.modifier ? [it.modifier] : []),
-        guestName: body.guestName || 'Guest',
-      };
-      await repo.addKitchenTask(newTask);
-      eventBus.broadcast({
-        id: `evt_${Date.now()}`,
-        sequence: (await repo.getEvents()).length,
-        type: 'task.created',
-        timestamp: new Date().toISOString(),
-        producer: 'api:order-service',
-        branchId: body.branchId || currentBranch.id,
-        tableNumber,
-        tenantId: tenantContext.tenantId,
-        payload: newTask,
-      });
-    }
-
-    const taxMinor = Math.round((subtotalMinor * 500) / 10000);
-    const totalMinor = subtotalMinor + taxMinor;
-    const boundSessionId =
-      identity.type === 'DINER' && identity.sessionId
-        ? identity.sessionId
-        : body.sessionId || targetTableRecord?.activeSessionId || 'sess_demo';
-
-    const newOrder: RestaurantOrder = {
-      orderId,
-      tableNumber,
-      sessionId: boundSessionId,
-      branchId: body.branchId || targetTableRecord?.branchId || currentBranch.id,
-      guestName: body.guestName || 'Guest',
-      status: 'CONFIRMED',
-      items: items.map((it: any) => {
-        const found = menuItems.find((m) => m.id === (it.id || it.itemId))!;
-        return {
-          id: it.id || it.itemId,
-          name: found.name,
-          quantity: it.quantity !== undefined ? it.quantity : 1,
-          unitPriceMinor: found.basePriceMinor,
-          station: found.station || 'TANDOOR',
-          guestName: body.guestName || 'Guest',
-        };
-      }),
-      subtotalMinor,
-      taxMinor,
-      totalMinor,
-      currency: 'INR',
-      createdAt: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-    };
-
-    await repo.addOrder(newOrder);
-    eventBus.broadcast({
-      id: `evt_${Date.now()}`,
-      sequence: (await repo.getEvents()).length,
-      type: 'order.created',
-      timestamp: new Date().toISOString(),
-      producer: 'api:order-service',
+    const orderResult = await posService.submitOrder({
+      body: posBody,
+      identity,
+      idempotencyKey: undefined,
       branchId: body.branchId || currentBranch.id,
-      tableNumber,
-      tenantId: tenantContext.tenantId,
-      payload: newOrder,
+      branchName: currentBranch.name,
     });
 
-    const response = {
-      success: true,
-      data: {
-        orderId,
-        tableNumber: newOrder.tableNumber,
-        status: 'CONFIRMED',
-        totalMinor: totalMinor.toString(),
-        totalFormatted: `₹${(totalMinor / 100).toFixed(2)}`,
-        estimatedPrepMinutes: 15,
-      },
-    };
-
     if (idempotencyKey) {
-      await repo.saveIdempotencyRecord(idempotencyKey, { payloadHash, response });
+      const payloadHash = crypto.createHash('sha256').update(JSON.stringify(body)).digest('hex');
+      if (orderResult.status === 201 || orderResult.status === 200) {
+        await repo.saveIdempotencyRecord(idempotencyKey, {
+          response: orderResult.body,
+          status: 'DONE',
+          payloadHash,
+        });
+      } else if (postgresStore?.prisma) {
+        await postgresStore.prisma.idempotencyRecord.deleteMany({
+          where: { tenantId: tenantContext.tenantId, key: idempotencyKey },
+        }).catch(() => {});
+      }
     }
-    await runtimeController.emitAudit('ORDER_PLACED', `table:${newOrder.tableNumber}`, { orderId, totalMinor });
-    await runtimeController.reportOrderProcessed(orderId, totalMinor);
 
-    sendJson(res, 201, response);
+    checkTestKillPoint(req, 'post-commit');
+
+    if (orderResult.status === 201) {
+      const orderId = orderResult.body.orderId || orderResult.body.data?.orderId;
+      const totalMinor = orderResult.body.quote?.totalMinor || 0;
+      const tableNumber = orderResult.body.tableNumber || body.tableNumber || 'unknown';
+      await runtimeController.emitAudit('ORDER_PLACED', `table:${tableNumber}`, { orderId, totalMinor });
+      await runtimeController.reportOrderProcessed(orderId, totalMinor);
+    }
+
+    sendJson(res, orderResult.status, orderResult.body);
     return;
   }
 
@@ -2711,7 +2899,12 @@ export async function handleRequest(req: http.IncomingMessage, res: http.ServerR
     const statusFilter = (parsedUrl.query.status as string) || 'ALL';
     const searchQuery = ((parsedUrl.query.search || parsedUrl.query.q || '') as string).toLowerCase().trim();
 
-    let orders = await repo.getOrders(tableFilter, sessionFilter, branchFilter, statusFilter);
+    let orders = await posService.listOrders({
+      tableNumber: tableFilter,
+      sessionId: sessionFilter,
+      branchId: branchFilter,
+      status: statusFilter,
+    });
 
     if (identity.type === 'DINER') {
       // Diner is strictly scoped to their own session
@@ -2753,7 +2946,7 @@ export async function handleRequest(req: http.IncomingMessage, res: http.ServerR
   ) {
     const identity = requestIdentity;
     const orderId = pathname.replace('/api/restaurant/orders/', '');
-    const order = await repo.getOrder(orderId);
+    const order = await posService.getOrder(orderId);
     if (!order) {
       sendJson(res, 404, { success: false, error: `Order ${orderId} not found`, code: 'ORDER_NOT_FOUND' });
       return;
@@ -2837,21 +3030,40 @@ export async function handleRequest(req: http.IncomingMessage, res: http.ServerR
 
     const body = await parseBody(req);
     const newStatus = body.status || body.newStatus;
+    const version = typeof body.version === 'number' ? body.version : undefined;
 
     if (!newStatus) {
       sendJson(res, 400, { success: false, error: 'Target status required', code: 'STATUS_REQUIRED' });
       return;
     }
 
-    const success = await repo.updateOrderStatus(orderId, newStatus);
-    if (!success) {
-      sendJson(res, 400, { success: false, error: 'Failed to update order status', code: 'UPDATE_FAILED' });
+    try {
+      const success = await repo.updateOrderStatus(orderId, newStatus, {
+        authorizedBy: identity.id,
+        reason: body.reason,
+        version,
+      });
+      if (!success) {
+        sendJson(res, 400, { success: false, error: 'Failed to update order status', code: 'UPDATE_FAILED' });
+        return;
+      }
+
+      const updatedOrder = await repo.getOrder(orderId);
+      sendJson(res, 200, { success: true, data: updatedOrder });
+      return;
+    } catch (err: any) {
+      if (err.code === 'STATE_CONFLICT' || err.statusCode === 409 || err.message?.includes('STATE_CONFLICT')) {
+        sendJson(res, 409, {
+          success: false,
+          error: 'STATE_CONFLICT',
+          code: 'STATE_CONFLICT',
+          message: 'Concurrent modification conflict: order was updated by another kitchen screen.',
+        });
+        return;
+      }
+      sendJson(res, 500, { success: false, error: 'INTERNAL_ERROR', message: err.message });
       return;
     }
-
-    const updatedOrder = await repo.getOrder(orderId);
-    sendJson(res, 200, { success: true, data: updatedOrder });
-    return;
   }
 
   // 6e. Order Cancellation (POST /api/restaurant/orders/:id/cancel)
@@ -2939,6 +3151,7 @@ export async function handleRequest(req: http.IncomingMessage, res: http.ServerR
   ) {
     const body = await parseBody(req);
     const orderId = body.orderId;
+    const idempotencyKey = (req.headers['x-idempotency-key'] as string) || body.idempotencyKey;
     if (!orderId) {
       sendJson(res, 400, {
         error: 'ORDER_ID_REQUIRED',
@@ -2950,6 +3163,14 @@ export async function handleRequest(req: http.IncomingMessage, res: http.ServerR
 
     const tenant = getActiveTenant();
     const tid = tenant.tenantId;
+
+    if (idempotencyKey && postgresStore?.prisma) {
+      const existing = await repo.getIdempotencyRecord(idempotencyKey);
+      if (existing) {
+        sendJson(res, 200, existing.response || existing);
+        return;
+      }
+    }
 
     let order = await repo.getOrder(orderId);
 
@@ -3002,6 +3223,8 @@ export async function handleRequest(req: http.IncomingMessage, res: http.ServerR
         },
       });
 
+      checkTestKillPoint(req, 'pre-commit');
+
       if (postgresStore) {
         try {
           await postgresStore.savePaymentSession(
@@ -3027,17 +3250,28 @@ export async function handleRequest(req: http.IncomingMessage, res: http.ServerR
         tenantId: tid,
       });
 
+      const responseData = {
+        razorpayOrderId: result.razorpayOrderId,
+        amountMinor,
+        currency: result.currency,
+        keyId: activeRazorpay.keyId,
+        orderId,
+        tableNumber,
+        paymentUrl: result.paymentUrl,
+      };
+
+      if (idempotencyKey && postgresStore?.prisma) {
+        await repo.saveIdempotencyRecord(idempotencyKey, {
+          success: true,
+          data: responseData,
+        }).catch(() => {});
+      }
+
+      checkTestKillPoint(req, 'post-commit');
+
       sendJson(res, 201, {
         success: true,
-        data: {
-          razorpayOrderId: result.razorpayOrderId,
-          amountMinor,
-          currency: result.currency,
-          keyId: activeRazorpay.keyId,
-          orderId,
-          tableNumber,
-          paymentUrl: result.paymentUrl,
-        },
+        data: responseData,
       });
     } catch (err: any) {
       sendJson(res, 500, {
@@ -3444,10 +3678,11 @@ export async function handleRequest(req: http.IncomingMessage, res: http.ServerR
   if ((pathname === '/api/restaurant/kds' || pathname === '/api/restaurant/kds/tasks') && method === 'GET') {
     const stationFilter = (parsedUrl.query.station || parsedUrl.query.stationId) as string;
     const branchFilter = (parsedUrl.query.branchId as string) || (requestIdentity.isPrivileged ? undefined : requestIdentity.branchId);
-    const tasks = await repo.getKitchenTasks(stationFilter, branchFilter);
+    const tasks = await posService.listKitchenTasks({ station: stationFilter, branchId: branchFilter });
     sendJson(res, 200, {
       success: true,
       data: tasks,
+      tasks,
     });
     return;
   }
@@ -3687,7 +3922,7 @@ export async function handleRequest(req: http.IncomingMessage, res: http.ServerR
     const identity = requestIdentity;
     const body = await parseBody(req);
     const taskId = body.taskId || (pathname.startsWith('/api/restaurant/kds/tasks/') ? pathname.split('/')[5] : undefined);
-    const nextStatus = body.newStatus || body.status;
+    const nextStatus = body.newStatus || body.status || body.targetStatus;
     const idempotencyKey = (req.headers['x-idempotency-key'] as string) || body.idempotencyKey;
 
     // 1. Authenticate identity
@@ -3768,6 +4003,8 @@ export async function handleRequest(req: http.IncomingMessage, res: http.ServerR
       return;
     }
 
+    checkTestKillPoint(req, 'pre-commit');
+
     const result = await repo.updateKitchenTaskStatus(taskId, nextStatus, {
       station: requestedStation,
       expectedRevision: body.expectedRevision,
@@ -3805,6 +4042,8 @@ export async function handleRequest(req: http.IncomingMessage, res: http.ServerR
       };
       await repo.saveIdempotencyRecord(idempotencyKey, record);
     }
+
+    checkTestKillPoint(req, 'post-commit');
 
     if (result.task) {
       eventBus.broadcast({
@@ -7218,7 +7457,10 @@ if (process.env.NODE_ENV === 'production' && process.env.ALLOW_DANGEROUS_RESET =
   process.exit(1);
 }
 
-if (process.env.RESTAURANTOS_DISABLE_AUTOLISTEN !== 'true') {
+if (
+  process.env.RESTAURANTOS_DISABLE_AUTOLISTEN !== 'true' &&
+  !process.argv.includes('--test')
+) {
 server.listen(PORT, async () => {
   if (postgresStore?.prisma) {
     try {

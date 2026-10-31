@@ -1,46 +1,99 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { externalProjectEngine } from '@orbitox/external-project-engine';
+import { withApiGuard } from '@/app/api/v1/_lib/api-guard';
+import { ApiResponse, ApiRequestContext } from '@/app/api/v1/_lib/api-types';
+import { platformRepository } from '@/lib/platform-repository';
 
 export const dynamic = 'force-dynamic';
 
-export async function GET(req: NextRequest) {
-  try {
-    const plans = externalProjectEngine.quoteService.listPlans();
-    const projects = externalProjectEngine.runtimeController.listProjects();
+export const GET = withApiGuard(
+  {
+    serviceId: 'platform',
+    serviceName: 'Plan Catalogue Service',
+    routeClass: 'platform-admin',
+    allowPublic: false,
+    requiredScopes: ['platform.plans', 'admin'],
+  },
+  async (req: NextRequest, ctx: ApiRequestContext) => {
+    try {
+      await platformRepository.ensurePlanCatalogueSeeded();
+      const pluginId = req.nextUrl?.searchParams?.get('pluginId') || undefined;
+      const plans = await platformRepository.listPlans(pluginId);
 
-    const planProjectMap: Record<string, Array<{ id: string; name: string; slug: string; status: string }>> = {};
-    for (const plan of plans) {
-      planProjectMap[plan.id] = [];
-    }
-
-    for (const proj of projects) {
-      const desired = externalProjectEngine.runtimeController.getDesiredState(proj.id) || {};
-      const activePlanId = desired.activePlan || proj.manifest?.planReferences?.[0] || 'plan_restaurant_growth';
-      if (!planProjectMap[activePlanId]) {
-        planProjectMap[activePlanId] = [];
-      }
-      planProjectMap[activePlanId]!.push({
-        id: proj.id,
-        name: proj.name,
-        slug: proj.slug,
-        status: proj.status,
-      });
-    }
-
-    return NextResponse.json(
-      {
-        success: true,
-        data: {
-          plans,
-          planProjectMap,
+      return NextResponse.json<ApiResponse>(
+        {
+          success: true,
+          data: plans,
+          meta: {
+            latencyMs: 1,
+            timestamp: new Date().toISOString(),
+            requestId: ctx.requestId,
+          },
         },
-      },
-      { headers: { 'Cache-Control': 'no-store' } }
-    );
-  } catch (err: any) {
-    return NextResponse.json(
-      { success: false, error: { code: 'INTERNAL', message: err.message } },
-      { status: 500 }
-    );
+        { headers: { 'Cache-Control': 'no-store' } }
+      );
+    } catch (err: any) {
+      return NextResponse.json<ApiResponse>(
+        {
+          success: false,
+          error: { code: 'INTERNAL', message: err.message },
+          meta: { latencyMs: 1, timestamp: new Date().toISOString(), requestId: ctx.requestId },
+        },
+        { status: 500 }
+      );
+    }
   }
-}
+);
+
+export const POST = withApiGuard(
+  {
+    serviceId: 'platform',
+    serviceName: 'Plan Catalogue Service',
+    routeClass: 'platform-admin',
+    allowPublic: false,
+    requiredScopes: ['platform.plans.manage', 'admin'],
+  },
+  async (req: NextRequest, ctx: ApiRequestContext) => {
+    try {
+      const body = await req.json();
+      if (!body.planId || !body.pluginId || !body.name) {
+        return NextResponse.json<ApiResponse>(
+          {
+            success: false,
+            error: { code: 'INVALID_INPUT', message: 'Fields "planId", "pluginId", and "name" are required.' },
+            meta: { latencyMs: 1, timestamp: new Date().toISOString(), requestId: ctx.requestId },
+          },
+          { status: 400 }
+        );
+      }
+
+      const plan = await platformRepository.createPlan(body);
+
+      await platformRepository.recordPlatformAdminAudit({
+        action: 'PLAN_CREATED',
+        entityType: 'PLAN',
+        entityId: plan.planId,
+        actorId: ctx.apiKey || 'platform_admin',
+        reason: `Created plan ${plan.planId} for plugin ${plan.pluginId}`,
+        metadata: { tier: plan.tier, priceMinor: plan.priceMinor },
+      });
+
+      return NextResponse.json<ApiResponse>(
+        {
+          success: true,
+          data: plan,
+          meta: { latencyMs: 1, timestamp: new Date().toISOString(), requestId: ctx.requestId },
+        },
+        { status: 201 }
+      );
+    } catch (err: any) {
+      return NextResponse.json<ApiResponse>(
+        {
+          success: false,
+          error: { code: 'INTERNAL', message: err.message },
+          meta: { latencyMs: 1, timestamp: new Date().toISOString(), requestId: ctx.requestId },
+        },
+        { status: 500 }
+      );
+    }
+  }
+);

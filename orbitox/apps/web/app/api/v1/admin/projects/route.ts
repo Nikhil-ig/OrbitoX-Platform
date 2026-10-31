@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
-import * as crypto from 'crypto';
-import { withApiGuard, PlatformApiState } from '../../_lib/api-guard';
+import { withApiGuard, PlatformApiState, isDatabaseError, classifyDatabaseError } from '../../_lib/api-guard';
 import { ClientProject, PLAN_TIER_PRESETS } from '@/app/admin/data/mock-data';
+import { platformRepository } from '@/lib/platform-repository';
 
 export const GET = withApiGuard(
   {
@@ -14,7 +14,7 @@ export const GET = withApiGuard(
     const modelFilter = url.searchParams.get('model');
     const statusFilter = url.searchParams.get('status');
 
-    let projects = PlatformApiState.getProjects();
+    let projects = await platformRepository.listProjects();
 
     if (modelFilter && modelFilter !== 'all') {
       projects = projects.filter((p) => p.businessModel === modelFilter);
@@ -25,9 +25,9 @@ export const GET = withApiGuard(
     }
 
     // Compute aggregated platform stats
-    const totalCalls = projects.reduce((sum, p) => sum + p.monthlyApiCalls, 0);
-    const totalQuota = projects.reduce((sum, p) => sum + p.apiCallQuota, 0);
-    const activeProjects = projects.filter((p) => p.status === 'active').length;
+    const totalCalls = projects.reduce((sum, p) => sum + (p.monthlyApiCalls || 0), 0);
+    const totalQuota = projects.reduce((sum, p) => sum + (p.apiCallQuota || 0), 0);
+    const activeProjects = projects.filter((p) => (p.status || '').toLowerCase() === 'active').length;
     const o2oProjects = projects.filter((p) => p.businessModel === 'O2O2B2B2C').length;
 
     return NextResponse.json({
@@ -56,6 +56,7 @@ export const POST = withApiGuard(
       const body = await req.json();
       const {
         name,
+        slug: requestedSlug,
         organization,
         businessModel = 'O2O2B2B2C',
         plan = 'growth',
@@ -75,41 +76,47 @@ export const POST = withApiGuard(
         );
       }
 
-      const slug = name
-        .toLowerCase()
-        .replace(/[^a-z0-9]/g, '-')
-        .replace(/-+/g, '-')
-        .replace(/^-|-$/g, '');
-
       const preset = PLAN_TIER_PRESETS[plan] || PLAN_TIER_PRESETS.growth!;
-      const projectId = `proj-${slug || Date.now()}`;
-
-      // Generate initial API key for project
-      const randomHex = crypto.randomBytes(12).toString('hex');
-      const keyPrefix = `orb_live_${slug.slice(0, 8)}_`;
-      const fullKey = `${keyPrefix}${randomHex}`;
-      const keyId = `key-${crypto.randomUUID()}`;
-
-      const newKey: any = {
-        id: keyId,
-        name: `${name} Primary Live Key`,
-        keyPrefix,
-        maskedKey: `${keyPrefix}${randomHex.slice(0, 4)}********************${randomHex.slice(-4)}`,
-        rawKey: fullKey,
-        serviceId: 'all',
-        serviceName: 'All Subscribed Packages',
-        providerId: projectId,
-        providerName: name,
-        environment: 'production',
-        scopes: ['*'],
-        createdAt: new Date().toISOString().slice(0, 10),
-        lastUsedAt: 'Never',
-        status: 'active',
+      const organizationName = organization || name;
+      const organizationSlug = organizationName
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, '-')
+        .replace(/^-|-$/g, '') || `org-${Date.now()}`;
+      const existingOrganization = (await platformRepository.listOrganizations()).find(
+        (item) => item.name.toLowerCase() === organizationName.toLowerCase()
+      );
+      const organizationRecord = existingOrganization || await platformRepository.createOrganization({
+        name: organizationName,
+        slug: `${organizationSlug}-${Date.now().toString(36)}`,
+        billingEmail: contactEmail || `dev@${organizationSlug}.com`,
+      });
+      if (!existingOrganization) {
+        await platformRepository.recordPlatformAdminAudit({
+          action: 'ORGANIZATION_CREATED',
+          entityType: 'PLATFORM_ORGANIZATION',
+          entityId: organizationRecord.id,
+          organizationId: organizationRecord.id,
+          actorId: 'platform-admin',
+          reason: `Created organization ${organizationName} during project provisioning`,
+          metadata: { slug: organizationRecord.slug },
+        });
+      }
+      const projectResult = await platformRepository.createProject({
+        name,
+        ...(typeof requestedSlug === 'string' ? { slug: requestedSlug } : {}),
+        organizationId: organizationRecord.id,
+        businessModel,
+        planTier: plan,
+        plan,
+        technicalLead: technicalLead || 'Lead Systems Architect',
+        contactEmail: contactEmail || `dev@${organizationSlug}.com`,
+        enabledServices,
+        apiCallQuota: customQuota || preset.defaultCallQuota,
         rateLimitPerMin: customRateLimit || preset.defaultRateLimitPerMin,
-        requestsLast30Days: 0,
-      };
-
-      PlatformApiState.addApiKey(newKey);
+      });
+      const createdProject = projectResult.project;
+      const slug = createdProject.slug;
+      const projectId = createdProject.id;
 
       const modelLabels: Record<string, string> = {
         O2O2B2B2C: 'O2O2B2B2C (Kitchen-to-Merchant-to-Consumer)',
@@ -132,8 +139,8 @@ export const POST = withApiGuard(
         planLabel: preset.name,
         status: 'active',
         customDomain: customDomain || `${slug}.orbitox.io`,
-        primaryApiKeyId: keyId,
-        primaryApiKeyPrefix: keyPrefix,
+        primaryApiKeyId: '',
+        primaryApiKeyPrefix: '',
         enabledServices,
         monthlyApiCalls: 0,
         apiCallQuota: customQuota || preset.defaultCallQuota,
@@ -148,7 +155,33 @@ export const POST = withApiGuard(
         recentLatencyMs: 12,
       };
 
-      PlatformApiState.addProject(newProject);
+      const productionEnvironment = projectResult.environments.find((environment) => environment.isProduction)!;
+      const { keyRecord, rawSecret: fullKey } = await platformRepository.createApiKey({
+        name: `${name} Primary Live Key`,
+        environmentId: productionEnvironment.id,
+        projectId,
+        capabilities: ['*'],
+        tenantScope: [slug],
+        rateLimitPerMin: customRateLimit || preset.defaultRateLimitPerMin,
+        createdBy: 'platform-admin',
+      });
+      await platformRepository.recordPlatformAdminAudit({
+        action: 'PROJECT_CREATED',
+        entityType: 'PLATFORM_PROJECT',
+        entityId: projectId,
+        organizationId: organizationRecord.id,
+        projectId,
+        environmentId: productionEnvironment.id,
+        actorId: 'platform-admin',
+        reason: `Provisioned project ${name}`,
+        metadata: { enabledServices, plan },
+      });
+      const keyId = keyRecord.id;
+      const keyPrefix = keyRecord.keyPrefix;
+
+      newProject.id = projectId;
+      newProject.primaryApiKeyId = keyId;
+      newProject.primaryApiKeyPrefix = keyPrefix;
 
       PlatformApiState.recordTelemetry({
         tenantId: slug,
@@ -184,8 +217,8 @@ console.log('OrbitoX OS Active with plugins:', Object.keys(app.plugins));`;
             apiKey: {
               id: keyId,
               rawKey: fullKey,
-              maskedKey: newKey.maskedKey,
-              rateLimitPerMin: newKey.rateLimitPerMin,
+              maskedKey: keyRecord.maskedDisplay,
+              rateLimitPerMin: keyRecord.rateLimitPerMin,
             },
             onboardingKit: {
               bootstrapperCode: quickstartCode,
@@ -198,6 +231,13 @@ console.log('OrbitoX OS Active with plugins:', Object.keys(app.plugins));`;
         { status: 201 }
       );
     } catch (err: any) {
+      if (isDatabaseError(err)) {
+        const classified = classifyDatabaseError(err);
+        return NextResponse.json(
+          { success: false, error: { code: classified.code, message: classified.message } },
+          { status: 503, headers: { 'Retry-After': '1', 'x-orbitox-error-code': classified.code } }
+        );
+      }
       return NextResponse.json(
         { success: false, error: { code: 'BAD_REQUEST', message: err.message } },
         { status: 400 }

@@ -84,7 +84,7 @@ async function run() {
 
   const webhookSecret = 'rzp_sec_test_secret_998877';
   const adapter = new RazorpayPaymentGatewayAdapter({
-    keyId: 'rzp_test_1234567890',
+    keyId: 'mock-rzp-key-01',
     keySecret: 'sec_test_abcdef',
     webhookSecret,
   });

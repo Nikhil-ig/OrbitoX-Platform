@@ -4,18 +4,32 @@
   "description": "OrbitoX RestaurantOS Independent Runtime Product",
   "main": "src/server.ts",
   "scripts": {
-    "dev": "npx -y tsx src/server.ts",
-    "start": "npx -y tsx src/server.ts"
+    "dev": "tsx src/server.ts",
+    "start": "tsx src/server.ts",
+    "test": "tsx scripts/test-event-bus-tenants.ts && node scripts/test-milestone2-core.js",
+    "test:isolation": "tsx scripts/test-event-bus-tenants.ts",
+    "test:core": "node scripts/test-milestone2-core.js",
+    "test:bridge": "tsx scripts/test-restaurant-bridge-and-lifecycle.ts",
+    "test:2servers": "tsx scripts/test-restaurant-2servers.ts",
+    "test:cross-tenant": "tsx scripts/test-restaurant-cross-tenant.ts",
+    "test:durability": "tsx scripts/test-restaurant-crash-durability.ts",
+    "test:all": "tsx scripts/test-restaurant-bridge-and-lifecycle.ts && tsx scripts/test-restaurant-2servers.ts && tsx scripts/test-restaurant-cross-tenant.ts && tsx scripts/test-restaurant-crash-durability.ts",
+    "type-check": "tsc --noEmit"
   },
   "devDependencies": {
     "@types/node": "^20.0.0",
+    "@types/pg": "^8.16.0",
     "playwright": "^1.64.0",
     "prisma": "^6.4.1",
     "tsx": "^4.23.15",
     "typescript": "^5.0.0"
   },
   "dependencies": {
+    "@orbitox-io/bridge": "link:../../../orbitox/packages/bridge",
     "@orbitox/external-runtime-sdk": "link:../../../orbitox/packages/external-runtime-sdk",
-    "@prisma/client": "^6.4.1"
+    "@orbitox/pos": "link:../../../orbitox/plugins/pos",
+    "@orbitox/plugin-engine": "link:../../../orbitox/packages/plugin-engine",
+    "@prisma/client": "^6.4.1",
+    "pg": "^8.23.1"
   }
 }

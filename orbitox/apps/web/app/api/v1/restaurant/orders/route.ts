@@ -1,63 +1,15 @@
-import { NextRequest, NextResponse } from 'next/server';
-import * as crypto from 'crypto';
-import { withApiGuard, PlatformApiState } from '../../_lib/api-guard';
+import { NextRequest } from 'next/server';
+import { handleRestaurantPublicRedirect } from '@/app/api/restaurant/_lib/restaurant-routing';
 
-let restaurantOrders = [
-  { id: 'TKT-101', table: 'Table 4', items: ['Wood-Fired Truffle Margherita', 'Barolo DOCG 2018 Glass'], total: 50, status: 'cooking', elapsedMin: 8 },
-  { id: 'TKT-102', table: 'Table 12', items: ['Wagyu Ribeye Steak (A5 8oz)', 'Wild Mushroom Risotto'], total: 129, status: 'ready', elapsedMin: 18 },
-  { id: 'TKT-103', table: 'Bar 2', items: ['Classic Tiramisu al Mascarpone'], total: 16, status: 'served', elapsedMin: 2 },
-];
+/**
+ * 🛰️ OrbitoX RestaurantOS — Legacy v1 Orders Redirect (Phase 2b-5)
+ * Answers 308 Permanent Redirect to RestaurantOS public origin.
+ * In production, fails closed with 503 if RESTAURANTOS_PUBLIC_URL is unconfigured.
+ */
+export async function GET(request: NextRequest) {
+  return handleRestaurantPublicRedirect(request, '/api/restaurant/orders');
+}
 
-export const GET = withApiGuard(
-  {
-    serviceId: 'restaurant',
-    serviceName: 'Restaurant & Kitchen OS',
-  },
-  async () => {
-    return NextResponse.json({
-      success: true,
-      data: restaurantOrders,
-      meta: { total: restaurantOrders.length },
-    });
-  }
-);
-
-export const POST = withApiGuard(
-  {
-    serviceId: 'restaurant',
-    serviceName: 'Restaurant & Kitchen OS',
-  },
-  async (req: NextRequest, ctx) => {
-    try {
-      const body = await req.json();
-      const newOrder = {
-        id: `TKT-${crypto.randomInt(100, 1000)}`,
-        table: body.table || 'Takeout',
-        items: body.items || ['Chef Special'],
-        total: Number(body.total) || 45,
-        status: 'received',
-        elapsedMin: 0,
-      };
-
-      restaurantOrders = [newOrder, ...restaurantOrders];
-
-      PlatformApiState.recordTelemetry({
-        tenantId: ctx.tenantId,
-        facade: 'EventsFacade',
-        level: 'INFO',
-        message: `Kitchen order dispatched: [${newOrder.id}] for [${newOrder.table}] ($${newOrder.total}).`,
-      });
-
-      return NextResponse.json({
-        success: true,
-        data: newOrder,
-        message: `Kitchen ticket ${newOrder.id} dispatched to display.`,
-      });
-    } catch (err: any) {
-      return NextResponse.json(
-        { success: false, error: { code: 'BAD_REQUEST', message: err.message } },
-        { status: 400 }
-      );
-    }
-  }
-);
+export async function POST(request: NextRequest) {
+  return handleRestaurantPublicRedirect(request, '/api/restaurant/orders');
+}

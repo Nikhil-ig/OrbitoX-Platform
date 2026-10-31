@@ -42,7 +42,7 @@ Organisations, Tenants, and Companies can register webhooks to receive HTTP POST
   "tier": "COMPANY",
   "company_id": "comp-123",
   "target_url": "https://api.company-client.com/webhooks/orders",
-  "secret": "whsec_abc123xyz...", // Used for HMAC Signature
+  "secret": "<WEBHOOK_SIGNING_SECRET>", // Used for HMAC Signature
   "events": ["order.completed", "customer.created"],
   "status": "ACTIVE"
 }

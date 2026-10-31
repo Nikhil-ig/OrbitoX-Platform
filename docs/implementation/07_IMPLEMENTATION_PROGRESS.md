@@ -27,8 +27,8 @@
 
 ## Phase 1 Execution Evidence
 
-- **Database Models Added (21 Models & Enums):** Added to [`orbitox/prisma/schema.prisma`](file:///Users/apple/Documents/Office/company/Orbito/OrbitoX%20Platform/orbitox/prisma/schema.prisma) without collision with existing e-commerce/celebrations models.
-- **PostgreSQL Migration Script:** [`orbitox/prisma/migrations/20261007_restaurant_os_subsystem/migration.sql`](file:///Users/apple/Documents/Office/company/Orbito/OrbitoX%20Platform/orbitox/prisma/migrations/20261007_restaurant_os_subsystem/migration.sql) with full composite indexes and RLS policies.
+- **Database Models Added (21 Models & Enums):** Added to [`orbitox/prisma/schema.prisma`](../../orbitox/prisma/schema.prisma) without collision with existing e-commerce/celebrations models.
+- **PostgreSQL Migration Script:** [`orbitox/prisma/migrations/20261007_restaurant_os_subsystem/migration.sql`](../../orbitox/prisma/migrations/20261007_restaurant_os_subsystem/migration.sql) with full composite indexes and RLS policies.
 - **Domain Primitives Compiled:**
   - `money.ts`: 64-bit integer minor currency units, basis points tax/fee calculations, zero floating-point drift.
   - `qr-trust.ts`: Physical QR locator, `TableDiscoveryContext`, `DiningSession` with `accessEpoch`, ephemeral `GuestCapability` HMAC-SHA256 tokens, sanitized participant projections.

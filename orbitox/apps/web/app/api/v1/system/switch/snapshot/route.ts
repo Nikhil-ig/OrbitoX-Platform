@@ -19,7 +19,7 @@ export const GET = withApiGuard(
   },
   async (req, ctx) => {
     const isDownload = req.nextUrl.searchParams.get('download') === 'true';
-    const snapshot = PlatformApiState.exportSnapshot();
+    const snapshot = await PlatformApiState.exportSnapshot();
 
     if (isDownload) {
       const fileName = `orbitox-snapshot-${snapshot.metadata.snapshotId}.json`;
@@ -87,7 +87,7 @@ export const POST = withApiGuard(
     try {
       // Handle either direct snapshot or { snapshot: ... }
       const snapshotObj = payload.snapshot || payload;
-      const result = PlatformApiState.importSnapshot(snapshotObj);
+      const result = await PlatformApiState.importSnapshot(snapshotObj);
 
       return NextResponse.json<ApiResponse>({
         success: true,

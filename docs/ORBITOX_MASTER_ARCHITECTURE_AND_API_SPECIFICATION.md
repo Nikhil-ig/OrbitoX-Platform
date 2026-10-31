@@ -515,8 +515,8 @@ All machine tokens (API Keys) are generated using operating-system-level cryptog
 
 ```
 API Key Anatomy:
-orb_live_proj_01j7x4a8b9c0d1e2f3g4h5i6j7k8l9m0
-│   │    │    └───────────────────────────────┘
+orb_live_proj_EXAMPLE_SECRET_BODY_NOT_A_REAL_KEY_000
+│   │    │    └─────────────────────────────────────┘
 │   │    │                   └─ 32-Byte Base62 CSPRNG Secret Body
 │   │    └─ Project Scope Indicator
 │   └─ Environment Flag (live / test)
@@ -606,7 +606,7 @@ To guarantee that runtime plugins and extensions cannot alter core platform inte
 
 ### 6.1 Cryptographic Merkle Hash-Chained Audit Ledger
 
-Every administrative mutation within OrbitoX is recorded in an immutable, append-only cryptographic ledger powered by `@orbitox/core` [`AuditService`](file:///Users/apple/Documents/Office/company/Orbito/OrbitoX%20Platform/orbitox/packages/core/src/audit/audit.service.ts).
+Every administrative mutation within OrbitoX is recorded in an immutable, append-only cryptographic ledger powered by `@orbitox/core` [`AuditService`](../orbitox/packages/core/src/audit/audit.service.ts).
 
 ```
 Row N-1 Ledger Record:
@@ -725,7 +725,7 @@ If an API client exceeds the allocated rate:
 
 ### 7.4 Billing Quotes Lifecycle (Draft to Provisioned)
 
-The `@orbitox/core` [`QuoteService`](file:///Users/apple/Documents/Office/company/Orbito/OrbitoX%20Platform/orbitox/packages/core/src/billing/quote.service.ts) governs enterprise client sales agreements:
+The `@orbitox/core` [`QuoteService`](../orbitox/packages/core/src/billing/quote.service.ts) governs enterprise client sales agreements:
 
 ```mermaid
 stateDiagram-v2
@@ -828,7 +828,7 @@ Invoke the edge gateway directly from any programming language or external partn
 ```bash
 # Authenticate using 256-bit CSPRNG Machine Key
 curl -X GET "https://api.orbitox.io/api/v1/restaurant/orders?status=PENDING" \
-  -H "Authorization: Bearer orb_live_proj_01j7x4a8b9c0d1e2f3g4h5i6j7k8l9m0" \
+  -H "Authorization: Bearer <YOUR_PROJECT_API_KEY>" \
   -H "x-environment-slug: production" \
   -H "Content-Type: application/json"
 ```
@@ -977,7 +977,7 @@ This section provides an exhaustive, production-grade specification for every Cr
 
 | Operation | HTTP Method & Path | Headers & Auth | Request Body / Parameters | Success Response | Error Codes |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| **CREATE** | `POST /api/v1/platform/api-keys` | `Authorization: Bearer <key>` | `{"name": "POS Gateway Machine", "environmentId": "env_cuid", "keyType": "PROJECT_SCOPED", "capabilities": ["restaurant.orders.read", "restaurant.orders.create"], "rateLimitPerMin": 2400, "expiresInDays": 90}` | `HTTP 201 Created`<br/>`{"keyId": "key_live_01j7x4", "rawSecret": "orb_live_proj_...", "secretFingerprint": "SHA256: 9F2A...81C7", "maskedDisplay": "orb_live_••••••••0zE"}`<br/>*Raw secret displayed ONCE* | `400` Capability Error<br/>`403` Insufficient Permissions |
+| **CREATE** | `POST /api/v1/platform/api-keys` | `Authorization: Bearer <key>` | `{"name": "POS Gateway Machine", "environmentId": "env_cuid", "keyType": "PROJECT_SCOPED", "capabilities": ["restaurant.orders.read", "restaurant.orders.create"], "rateLimitPerMin": 2400, "expiresInDays": 90}` | `HTTP 201 Created`<br/>`{"keyId": "key_demo_01", "rawSecret": "orb_live_proj_...", "secretFingerprint": "SHA256: 9F2A...81C7", "maskedDisplay": "orb_live_••••••••0zE"}`<br/>*Raw secret displayed ONCE* | `400` Capability Error<br/>`403` Insufficient Permissions |
 | **READ (List)**| `GET /api/v1/platform/api-keys` | `Authorization: Bearer <key>` | Query: `?environmentId=env_cuid&status=ACTIVE` | `HTTP 200 OK`<br/>`{"keys": [...], "securitySummary": {"highRiskCount": 0}}` | `401` Unauthorized |
 | **READ (One)** | `GET /api/v1/platform/api-keys/:id` | `Authorization: Bearer <key>` | Path: `:id` (keyId) | `HTTP 200 OK`<br/>`{"key": {...}, "riskEvaluation": {"score": 15, "level": "LOW", "factors": []}}` | `404` Not Found |
 | **ROTATE** | `POST /api/v1/platform/api-keys/:id/rotate` | `Authorization: Bearer <key>` | `{"gracePeriodHours": 72}` | `HTTP 200 OK`<br/>`{"oldKeyId": "key_live_01", "newKey": {"keyId": "key_live_02", "rawSecret": "..."}, "gracePeriodEndsAt": "..."}` | `400` Key already rotating |
@@ -990,10 +990,10 @@ This section provides an exhaustive, production-grade specification for every Cr
 
 | Operation | HTTP Method & Path | Headers & Auth | Request Body / Parameters | Success Response | Error Codes |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| **CREATE** | `POST /api/v1/platform/credentials` | `Authorization: Bearer <key>` | `{"name": "Stripe Live US", "provider": "stripe", "environmentId": "env_cuid", "secretPayload": "sk_live_51Abc...", "ownerEmail": "devops@client.com", "rotationFrequencyDays": 90}` | `HTTP 201 Created`<br/>`{"credential": {"id": "crd_01j7", "provider": "stripe", "maskedDisplay": "sk_live_••••••••9F2A", "health": "HEALTHY", "secretFingerprint": "SHA256: 3B..."}}` | `400` Plaintext payload missing |
+| **CREATE** | `POST /api/v1/platform/credentials` | `Authorization: Bearer <key>` | `{"name": "Stripe Live US", "provider": "stripe", "environmentId": "env_cuid", "secretPayload": "<YOUR_SECRET_PAYLOAD>", "ownerEmail": "devops@client.com", "rotationFrequencyDays": 90}` | `HTTP 201 Created`<br/>`{"credential": {"id": "crd_01j7", "provider": "stripe", "maskedDisplay": "sk_live_••••••••9F2A", "health": "HEALTHY", "secretFingerprint": "SHA256: 3B..."}}` | `400` Plaintext payload missing |
 | **READ (List)**| `GET /api/v1/platform/credentials` | `Authorization: Bearer <key>` | Query: `?environmentId=env_cuid` | `HTTP 200 OK`<br/>`{"credentials": [...]}` *(Zero plaintext returned)* | `401` Unauthorized |
 | **READ (Validate)**| `POST /api/v1/platform/credentials/:id/validate` | `Authorization: Bearer <key>` | Path: `:id` (Performs live provider test) | `HTTP 200 OK`<br/>`{"valid": true, "health": "HEALTHY", "latencyMs": 142}` | `422` Secret Rejected by Provider |
-| **UPDATE / ROTATE**| `PUT /api/v1/platform/credentials/:id` | `Authorization: Bearer <key>` | `{"newSecretPayload": "sk_live_51Xyz..."}` | `HTTP 200 OK`<br/>`{"success": true, "lastRotatedAt": "...", "nextRotationDueAt": "..."}` | `404` Not Found |
+| **UPDATE / ROTATE**| `PUT /api/v1/platform/credentials/:id` | `Authorization: Bearer <key>` | `{"newSecretPayload": "<YOUR_NEW_SECRET_PAYLOAD>"}` | `HTTP 200 OK`<br/>`{"success": true, "lastRotatedAt": "...", "nextRotationDueAt": "..."}` | `404` Not Found |
 | **DELETE** | `DELETE /api/v1/platform/credentials/:id` | `Authorization: Bearer <key>` | Path: `:id` | `HTTP 200 OK`<br/>`{"message": "Secret envelope securely destroyed"}` | `404` Not Found |
 
 ---

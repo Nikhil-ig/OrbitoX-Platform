@@ -332,13 +332,16 @@ function FleetPageContent() {
           <button type="button" className={styles.btn} onClick={() => void load()}>
             Refresh
           </button>
+          <Link href="/platform/connect?mode=template" className={`${styles.btn} ${styles.btnPrimary}`}>
+            + Create from Template
+          </Link>
           <button
             type="button"
-            className={`${styles.btn} ${styles.btnPrimary}`}
+            className={styles.btn}
             onClick={() => void handleBulkHealthCheck()}
             disabled={isIssuingBulk || visible.length === 0}
           >
-            Run Health Check on Visible ({visible.length})
+            Health Check ({visible.length})
           </button>
         </div>
       </header>

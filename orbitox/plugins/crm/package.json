@@ -1,16 +1,21 @@
 {
-  "name": "@orbitox-io/crm",
-  "version": "1.0.1",
+  "name": "@orbitox/crm",
+  "version": "1.0.0",
   "description": "Headless CRM domain core package providing UI-agnostic business actions, state machines, and hooks.",
   "main": "./dist/index.js",
   "module": "./dist/index.js",
   "types": "./dist/index.d.ts",
+  "files": [
+    "dist",
+    "README.md"
+  ],
   "repository": {
     "type": "git",
     "url": "https://github.com/OrbitoX-io/OrbitoX-Platform.git",
     "directory": "plugins/crm"
   },
   "publishConfig": {
+    "access": "public",
     "registry": "https://npm.pkg.github.com"
   },
   "exports": {
@@ -29,10 +34,14 @@
   },
   "scripts": {
     "build": "tsc --build",
+    "type-check": "tsc --noEmit",
     "clean": "rm -rf dist",
     "test": "jest --passWithNoTests"
   },
 
+  "dependencies": {
+    "@orbitox/plugin-engine": "workspace:*"
+  },
   "peerDependencies": {
     "react": "^18.0.0 || ^19.0.0"
   },

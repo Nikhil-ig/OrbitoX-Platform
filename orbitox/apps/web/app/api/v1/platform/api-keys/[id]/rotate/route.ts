@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { withApiGuard } from '@/app/api/v1/_lib/api-guard';
+import { withApiGuard, isDatabaseError, classifyDatabaseError } from '@/app/api/v1/_lib/api-guard';
 import { ApiResponse, ApiRequestContext } from '@/app/api/v1/_lib/api-types';
-import { PlatformRepository } from '@orbitox-io/plugin-engine';
 import { auditService } from '@/app/api/v1/_lib/platform-governance';
+import { platformRepository } from '@/lib/platform-repository';
 
 export const POST = withApiGuard(
   {
@@ -18,7 +18,7 @@ export const POST = withApiGuard(
       const keyId = segments[segments.length - 2] || '';
       const body = await req.json().catch(() => ({}));
 
-      const existing = PlatformRepository.getApiKey(keyId);
+      const existing = await platformRepository.getApiKey(keyId);
       if (!existing) {
         return NextResponse.json<ApiResponse>(
           {
@@ -32,7 +32,7 @@ export const POST = withApiGuard(
 
       const graceWindowDays = body.graceWindowDays !== undefined ? Number(body.graceWindowDays) : 3;
 
-      const result = PlatformRepository.rotateApiKey(existing.id, {
+      const result = await platformRepository.rotateApiKey(existing.id, {
         graceWindowDays,
         operatorEmail: body.operatorEmail || ctx.apiKey || 'platform_admin@orbitox.io',
       });
@@ -63,6 +63,20 @@ export const POST = withApiGuard(
           graceWindowDays,
         },
       });
+      await platformRepository.recordPlatformAdminAudit({
+        action: 'API_KEY_ROTATED',
+        entityType: 'PLATFORM_KEY',
+        entityId: existing.id,
+        projectId: existing.projectId,
+        environmentId: existing.environmentId,
+        actorId: ctx.apiKey || 'platform_admin',
+        reason: `Key rotation; grace window ${graceWindowDays} days`,
+        metadata: {
+          replacementKeyId: result.replacementKey.keyId,
+          replacementFingerprint: result.replacementKey.secretFingerprint,
+          graceWindowDays,
+        },
+      });
 
       return NextResponse.json<ApiResponse>({
         success: true,
@@ -79,6 +93,17 @@ export const POST = withApiGuard(
         },
       });
     } catch (err: any) {
+      if (isDatabaseError(err)) {
+        const classified = classifyDatabaseError(err);
+        return NextResponse.json<ApiResponse>(
+          {
+            success: false,
+            error: { code: classified.code, message: classified.message },
+            meta: { latencyMs: 1, timestamp: new Date().toISOString(), requestId: ctx.requestId },
+          },
+          { status: 503, headers: { 'Retry-After': '1', 'x-orbitox-error-code': classified.code } }
+        );
+      }
       return NextResponse.json<ApiResponse>(
         {
           success: false,

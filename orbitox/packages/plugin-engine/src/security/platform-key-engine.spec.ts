@@ -44,6 +44,62 @@ describe('PlatformKeyEngine (CSPRNG, HMAC-SHA-256 Verifier & Risk Engine)', () =
       const isWrongPepperValid = PlatformKeyEngine.verifySecret(key.rawSecret, key.authVerifier, 'wrong-pepper-value');
       expect(isWrongPepperValid).toBe(false);
     });
+
+    it('should support secret rotation and candidate peppers', () => {
+      const oldPepper = 'old-pepper-v1';
+      const newPepper = 'new-pepper-v2';
+      const key = PlatformKeyEngine.generateKey('production', oldPepper);
+
+      // Verify against old pepper directly
+      expect(PlatformKeyEngine.verifySecret(key.rawSecret, key.authVerifier, oldPepper)).toBe(true);
+
+      // Set environment rotation peppers
+      const origPeppers = process.env.ORBITOX_SERVER_PEPPERS;
+      try {
+        process.env.ORBITOX_SERVER_PEPPERS = JSON.stringify({ v1: oldPepper, v2: newPepper });
+        // Even when verifying with default / candidate resolution, old pepper matches
+        expect(PlatformKeyEngine.verifySecret(key.rawSecret, key.authVerifier)).toBe(true);
+      } finally {
+        process.env.ORBITOX_SERVER_PEPPERS = origPeppers;
+      }
+    });
+
+    it('should throw in production if ORBITOX_SERVER_PEPPER is missing', () => {
+      const origEnv = process.env.NODE_ENV;
+      const origPhase = process.env.NEXT_PHASE;
+      const origPepper = process.env.ORBITOX_SERVER_PEPPER;
+      try {
+        process.env.NODE_ENV = 'production';
+        delete process.env.ORBITOX_SERVER_PEPPER;
+        expect(() => PlatformKeyEngine.getActivePepper()).toThrow(/ORBITOX_SERVER_PEPPER/);
+      } finally {
+        if (origEnv) process.env.NODE_ENV = origEnv;
+        else delete process.env.NODE_ENV;
+        if (origPhase) process.env.NEXT_PHASE = origPhase;
+        else delete process.env.NEXT_PHASE;
+        if (origPepper) process.env.ORBITOX_SERVER_PEPPER = origPepper;
+        else delete process.env.ORBITOX_SERVER_PEPPER;
+      }
+    });
+
+    it('must reject a missing production pepper regardless of NEXT_PHASE', () => {
+      const origEnv = process.env.NODE_ENV;
+      const origPhase = process.env.NEXT_PHASE;
+      const origPepper = process.env.ORBITOX_SERVER_PEPPER;
+      try {
+        process.env.NODE_ENV = 'production';
+        process.env.NEXT_PHASE = 'phase-production-build';
+        delete process.env.ORBITOX_SERVER_PEPPER;
+        expect(() => PlatformKeyEngine.getActivePepper()).toThrow(/ORBITOX_SERVER_PEPPER/);
+      } finally {
+        if (origEnv) process.env.NODE_ENV = origEnv;
+        else delete process.env.NODE_ENV;
+        if (origPhase) process.env.NEXT_PHASE = origPhase;
+        else delete process.env.NEXT_PHASE;
+        if (origPepper) process.env.ORBITOX_SERVER_PEPPER = origPepper;
+        else delete process.env.ORBITOX_SERVER_PEPPER;
+      }
+    });
   });
 
   describe('Deterministic Risk Engine', () => {

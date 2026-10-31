@@ -1,0 +1,80 @@
+name: Nightly Step 3 Stress & Long-Haul Resilience
+
+on:
+  schedule:
+    - cron: '0 2 * * *' # Daily at 02:00 UTC
+  workflow_dispatch:
+    inputs:
+      iterations:
+        description: 'Number of iterations per scenario'
+        required: false
+        default: '200'
+
+permissions:
+  contents: read
+
+jobs:
+  nightly-stress:
+    name: 200-Iteration PostgreSQL Resilience Stress
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: orbitox_phase2
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgrespassword
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    defaults:
+      run:
+        working-directory: orbitox
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9.15.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: orbitox/pnpm-lock.yaml
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile --ignore-scripts
+      - name: Build workspace packages
+        run: pnpm exec turbo run build --filter='web^...'
+      - name: Build Next.js standalone application
+        run: |
+          pnpm --filter web exec next build
+          mkdir -p apps/web/.next/standalone/apps/web/.next
+          cp -r apps/web/.next/static apps/web/.next/standalone/apps/web/.next/
+        env:
+          NEXT_TELEMETRY_DISABLED: "1"
+          ORBITOX_SERVER_PEPPER: "nightly-stress-pepper-32-chars-min"
+      - name: Apply migrations and configure roles
+        run: |
+          pnpm exec prisma generate --schema prisma/schema.prisma
+          pnpm exec prisma migrate deploy --schema prisma/schema.prisma
+          PGPASSWORD=postgrespassword psql "$DATABASE_URL" -v app_role_password="$APP_DB_PASSWORD" -v maintenance_role_password="$MAINTENANCE_DB_PASSWORD" -v platform_admin_audit_password="$PLATFORM_ADMIN_AUDIT_DB_PASSWORD" -f scripts/configure-step1-runtime-role.sql
+        env:
+          DATABASE_URL: postgresql://postgres:postgrespassword@127.0.0.1:5432/orbitox_phase2
+          APP_DB_PASSWORD: phase2-nightly-${{ github.run_id }}
+          MAINTENANCE_DB_PASSWORD: phase2-maint-nightly-${{ github.run_id }}
+          PLATFORM_ADMIN_AUDIT_DB_PASSWORD: phase2-audit-nightly-${{ github.run_id }}
+      - name: Execute 200-Iteration Step 3 Resilience Stress Harness
+        run: pnpm --filter web test:step3-resilience
+        env:
+          RESILIENCE_ITERS: ${{ github.event.inputs.iterations || '200' }}
+          MID_OP_ITERS: ${{ github.event.inputs.iterations || '200' }}
+          POSTGRES_CONTAINER: ${{ job.services.postgres.id }}
+          DATABASE_URL: postgresql://postgres:postgrespassword@127.0.0.1:5432/orbitox_phase2
+          TEST_DATABASE_URL: postgresql://postgres:postgrespassword@127.0.0.1:5432/orbitox_phase2
+          APP_DATABASE_URL: postgresql://orbitox_runtime:phase2-nightly-${{ github.run_id }}@127.0.0.1:5432/orbitox_phase2
+          PLATFORM_AUDIT_DATABASE_URL: postgresql://orbitox_platform_admin_audit:phase2-audit-nightly-${{ github.run_id }}@127.0.0.1:5432/orbitox_phase2
+          MAINTENANCE_DATABASE_URL: postgresql://orbitox_maintenance:phase2-maint-nightly-${{ github.run_id }}@127.0.0.1:5432/orbitox_phase2

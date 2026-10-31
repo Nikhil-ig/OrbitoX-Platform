@@ -1,35 +1,38 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { withApiGuard } from '@/app/api/v1/_lib/api-guard';
 import { ApiResponse, ApiRequestContext } from '@/app/api/v1/_lib/api-types';
-import { PlatformRepository } from '@orbitox-io/plugin-engine';
 import { auditService } from '@/app/api/v1/_lib/platform-governance';
+import { platformRepository } from '@/lib/platform-repository';
 
 export const GET = withApiGuard(
   {
     serviceId: 'platform',
     serviceName: 'Platform Keys Service',
-    allowPublic: true,
+    routeClass: 'platform-admin',
+    requiredScopes: ['platform.keys.read', 'admin'],
   },
   async (req: NextRequest, ctx: ApiRequestContext) => {
-    PlatformRepository.initialize();
     const url = new URL(req.url);
     const projectId = url.searchParams.get('projectId') || undefined;
     const environmentId = url.searchParams.get('environmentId') || undefined;
     const status = url.searchParams.get('status') as any || undefined;
 
-    const keys = PlatformRepository.listApiKeys({ projectId, environmentId, status });
+    const keys = await platformRepository.listApiKeys({ projectId, environmentId, status });
 
-    const enriched = keys.map((key) => {
-      const project = PlatformRepository.getProject(key.projectId);
-      const environment = PlatformRepository.getEnvironment(key.environmentId);
+    const enriched = await Promise.all(keys.map(async (key) => {
+      const [project, environment] = await Promise.all([
+        platformRepository.getProject(key.projectId),
+        platformRepository.getEnvironment(key.environmentId),
+      ]);
+      const { authVerifier, rawSecret, rawKey, ...safeKey } = key as any;
       return {
-        ...key,
+        ...safeKey,
         projectName: project?.name || 'Unknown Project',
         projectSlug: project?.slug || 'unknown',
         environmentName: environment?.name || 'Unknown Environment',
         environmentType: environment?.type || 'DEVELOPMENT',
       };
-    });
+    }));
 
     return NextResponse.json<ApiResponse>({
       success: true,
@@ -79,7 +82,7 @@ export const POST = withApiGuard(
         );
       }
 
-      const created = PlatformRepository.createApiKey({
+      const created = await platformRepository.createApiKey({
         name,
         projectId,
         environmentId,
@@ -90,6 +93,21 @@ export const POST = withApiGuard(
         tenantScope: tenantScope || [],
         expiresInDays: expiresInDays ? Number(expiresInDays) : 90,
         createdBy: ctx.apiKey || 'platform_admin',
+      });
+      await platformRepository.recordPlatformAdminAudit({
+        action: 'API_KEY_ISSUED',
+        entityType: 'PLATFORM_KEY',
+        entityId: created.keyRecord.id,
+        projectId,
+        environmentId,
+        actorId: ctx.apiKey || 'platform_admin',
+        reason: `Issued new machine key ${name}`,
+        metadata: {
+          keyId: created.keyRecord.keyId,
+          keyPrefix: created.keyRecord.keyPrefix,
+          capabilities: created.keyRecord.capabilities,
+          expiresAt: created.keyRecord.expiresAt,
+        },
       });
 
       // Immutable audit log (never recording plaintext secret)

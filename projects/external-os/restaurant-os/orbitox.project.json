@@ -1,7 +1,7 @@
 {
-  "projectId": "restaurant-os-pilot",
-  "slug": "restaurant-os-pilot",
-  "name": "RestaurantOS Pilot (Bistro & Bar)",
+  "projectId": "restaurant-os",
+  "slug": "restaurant-os",
+  "name": "OrbitoX RestaurantOS",
   "type": "restaurant-os",
   "version": "1.0.0",
   "runtime": {

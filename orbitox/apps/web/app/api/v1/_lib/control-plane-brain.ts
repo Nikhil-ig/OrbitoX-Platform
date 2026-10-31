@@ -19,46 +19,24 @@ import {
   ResourceEditorService,
 } from '@orbitox/core/control-plane';
 
-import { PlatformRepository } from '@orbitox-io/plugin-engine';
 import { auditService, approvalEngine } from './platform-governance';
+import { platformRepository } from '@/lib/platform-repository';
 
 // Authoritative Resource Provider mapping PlatformRepository into the Materialized DAG
 export const platformRepoProvider: AuthoritativeResourceProvider = {
-  getOrganizations: () => {
-    PlatformRepository.initialize();
-    return PlatformRepository.listOrganizations();
-  },
-  getProjects: () => {
-    PlatformRepository.initialize();
-    return PlatformRepository.listProjects();
-  },
-  getEnvironments: (projectId?: string) => {
-    PlatformRepository.initialize();
-    return PlatformRepository.listEnvironments(projectId);
-  },
-  getPackages: () => {
-    PlatformRepository.initialize();
-    return PlatformRepository.listPackages();
-  },
-  getPackageVersions: (packageId?: string) => {
-    PlatformRepository.initialize();
-    return packageId ? PlatformRepository.listPackageVersions(packageId) : [];
-  },
-  getPackageInstallations: (environmentId?: string) => {
-    PlatformRepository.initialize();
-    return PlatformRepository.listInstallations(environmentId);
-  },
-  getApiKeys: (filter?: any) => {
-    PlatformRepository.initialize();
-    return PlatformRepository.listApiKeys(filter);
-  },
-  getCredentials: (filter?: any) => {
-    PlatformRepository.initialize();
-    return PlatformRepository.listCredentials(filter);
-  },
-  getDomains: (environmentId?: string) => {
-    PlatformRepository.initialize();
-    return PlatformRepository.listDomains(environmentId);
+  getOrganizations: () => platformRepository.listOrganizations(),
+  getProjects: () => platformRepository.listProjects(),
+  getEnvironments: (projectId?: string) => platformRepository.listEnvironments(projectId),
+  getPackages: () => platformRepository.listPackages(),
+  getPackageVersions: (packageId?: string) => packageId ? platformRepository.listPackageVersions(packageId) : Promise.resolve([]),
+  getPackageInstallations: (environmentId?: string) => platformRepository.listInstallations(environmentId),
+  getApiKeys: (filter?: any) => platformRepository.listApiKeys(filter),
+  getCredentials: (filter?: any) => platformRepository.listCredentials(filter),
+  getDomains: (environmentId?: string) => platformRepository.listDomains(environmentId),
+  getQuotaPolicies: async () => {
+    const environments = await platformRepository.listEnvironments();
+    const policies = await Promise.all(environments.map((environment) => platformRepository.getQuotaPolicy(environment.id)));
+    return policies.filter(Boolean);
   },
   getPlans: () => {
     return [
@@ -69,9 +47,8 @@ export const platformRepoProvider: AuthoritativeResourceProvider = {
       { id: 'plan_hyperscale', name: 'Hyperscale Mesh', price: 9999, features: ['all_features', 'dedicated_vpc'], limits: { maxEnvs: 100, maxPackages: 200 } },
     ];
   },
-  getTenants: () => {
-    PlatformRepository.initialize();
-    const envs = PlatformRepository.listEnvironments();
+  getTenants: async () => {
+    const envs = await platformRepository.listEnvironments();
     const omniProd = envs.find((e) => e.slug === 'production' && e.name.toLowerCase().includes('omni'));
     const medProd = envs.find((e) => e.slug === 'production' && e.name.toLowerCase().includes('mednet'));
     const auraProd = envs.find((e) => e.slug === 'production' && e.name.toLowerCase().includes('aura'));
@@ -142,8 +119,8 @@ export const platformRepoProvider: AuthoritativeResourceProvider = {
       },
     ];
   },
-  getSubscriptions: () => {
-    const projects = PlatformRepository.listProjects();
+  getSubscriptions: async () => {
+    const projects = await platformRepository.listProjects();
     const omni = projects.find((p) => p.slug === 'omnideliver');
     const mednet = projects.find((p) => p.slug === 'mednet-health');
     const aura = projects.find((p) => p.slug === 'aura-luxury');
@@ -175,8 +152,8 @@ export const platformRepoProvider: AuthoritativeResourceProvider = {
       },
     ];
   },
-  getFeatureFlags: () => {
-    const envs = PlatformRepository.listEnvironments();
+  getFeatureFlags: async () => {
+    const envs = await platformRepository.listEnvironments();
     const omniProd = envs.find((e) => e.slug === 'production' && e.name.toLowerCase().includes('omni'));
 
     return [
@@ -319,7 +296,6 @@ export const resourceGraph =
 
 // 2. Materialize authoritative projection immediately once
 if (!brainGlobal.projectionInitialized) {
-  PlatformRepository.initialize();
   if (typeof resourceGraph.projectFromAuthoritativeSources === 'function') {
     resourceGraph.projectFromAuthoritativeSources(platformRepoProvider).catch((err) => {
       console.error('[Control Plane] Initial projection failed:', err);

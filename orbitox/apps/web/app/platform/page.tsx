@@ -140,8 +140,11 @@ export default function PlatformOverviewPage() {
           <button type="button" className={styles.btn} onClick={() => void load()}>
             Refresh
           </button>
-          <Link href="/platform/connect" className={`${styles.btn} ${styles.btnPrimary}`}>
-            + Connect Project
+          <Link href="/platform/connect?mode=template" className={`${styles.btn} ${styles.btnPrimary}`}>
+            + Create from Template
+          </Link>
+          <Link href="/platform/connect?mode=manual" className={styles.btn}>
+            Connect App
           </Link>
         </div>
       </header>

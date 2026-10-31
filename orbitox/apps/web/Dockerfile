@@ -9,6 +9,8 @@ ARG NODE_VERSION=22
 # prebuilt binaries resolved via libc detection at require time, which is a known source
 # of "works everywhere except alpine" failures in minimal musl containers. slim avoids it.
 FROM node:${NODE_VERSION}-slim AS deps
+RUN apt-get update && apt-get install -y --no-install-recommends openssl \
+    && rm -rf /var/lib/apt/lists/*
 RUN corepack enable && corepack prepare pnpm@9.15.0 --activate
 WORKDIR /repo
 COPY pnpm-lock.yaml pnpm-workspace.yaml package.json turbo.json tsconfig.base.json tsconfig.prod.json ./
@@ -16,18 +18,24 @@ COPY apps/web/package.json apps/web/
 COPY packages ./packages
 COPY plugins ./plugins
 COPY tools ./tools
+COPY prisma ./prisma
 RUN --mount=type=cache,id=pnpm,target=/root/.local/share/pnpm/store \
     pnpm install --frozen-lockfile --ignore-scripts
+RUN pnpm exec prisma generate --schema prisma/schema.prisma
 
 # ---- 2. build: compile workspace packages, then the Next.js app ----
 FROM deps AS build
 COPY apps/web ./apps/web
-ENV NEXT_TELEMETRY_DISABLED=1
+ENV NEXT_TELEMETRY_DISABLED=1 \
+    APP_DATABASE_URL=postgresql://orbitox_build:orbitox_build@127.0.0.1:5432/orbitox_build \
+    DATABASE_URL=postgresql://orbitox_build:orbitox_build@127.0.0.1:5432/orbitox_build \
+    PLATFORM_AUDIT_DATABASE_URL=postgresql://orbitox_build:orbitox_build@127.0.0.1:5432/orbitox_build \
+    HMS_AUDIT_DATABASE_URL=postgresql://orbitox_build:orbitox_build@127.0.0.1:5432/orbitox_build
 RUN pnpm exec turbo run build --filter=web...
 
 # ---- 3. runtime: only the standalone server bundle, running as non-root ----
 FROM node:${NODE_VERSION}-slim AS runtime
-RUN apt-get update && apt-get install -y --no-install-recommends curl \
+RUN apt-get update && apt-get install -y --no-install-recommends openssl curl \
     && rm -rf /var/lib/apt/lists/*
 ENV NODE_ENV=production \
     NEXT_TELEMETRY_DISABLED=1 \

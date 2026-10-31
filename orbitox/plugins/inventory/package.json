@@ -1,6 +1,6 @@
 {
   "name": "@orbitox/inventory",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "description": "Headless Inventory & Stock Domain Core package providing UI-agnostic actions, stock state machines, and hooks.",
   "main": "./dist/index.js",
   "module": "./dist/index.mjs",
@@ -33,5 +33,14 @@
     "@types/react": "^19.0.0",
     "react": "^19.0.0",
     "typescript": "^5.0.0"
+  },
+  "private": false,
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://npm.pkg.github.com"
   }
 }

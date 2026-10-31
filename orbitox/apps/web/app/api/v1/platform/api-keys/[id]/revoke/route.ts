@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { withApiGuard } from '@/app/api/v1/_lib/api-guard';
 import { ApiResponse, ApiRequestContext } from '@/app/api/v1/_lib/api-types';
-import { PlatformRepository } from '@orbitox-io/plugin-engine';
 import { auditService } from '@/app/api/v1/_lib/platform-governance';
+import { platformRepository } from '@/lib/platform-repository';
 
 export const POST = withApiGuard(
   {
@@ -18,7 +18,7 @@ export const POST = withApiGuard(
       const keyId = segments[segments.length - 2] || '';
       const body = await req.json().catch(() => ({}));
 
-      const existing = PlatformRepository.getApiKey(keyId);
+      const existing = await platformRepository.getApiKey(keyId);
       if (!existing) {
         return NextResponse.json<ApiResponse>(
           {
@@ -31,7 +31,7 @@ export const POST = withApiGuard(
       }
 
       const reason = body.reason || 'Revoked by Platform Administrator via Control Center';
-      const updated = PlatformRepository.setKeyStatus(existing.id, 'REVOKED', reason);
+      const updated = await platformRepository.setKeyStatus(existing.id, 'REVOKED', reason);
 
       // Record in immutable audit ledger
       await auditService.log({
@@ -43,6 +43,16 @@ export const POST = withApiGuard(
         reason,
         oldValue: { status: existing.status },
         newValue: { status: 'REVOKED', reason },
+      });
+      await platformRepository.recordPlatformAdminAudit({
+        action: 'API_KEY_REVOKED',
+        entityType: 'PLATFORM_KEY',
+        entityId: existing.id,
+        projectId: existing.projectId,
+        environmentId: existing.environmentId,
+        actorId: ctx.apiKey || 'platform_admin',
+        reason,
+        metadata: { oldStatus: existing.status, newStatus: 'REVOKED' },
       });
 
       return NextResponse.json<ApiResponse>({

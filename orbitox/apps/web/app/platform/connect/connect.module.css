@@ -247,3 +247,111 @@
   font-size: 13px;
   color: var(--ui-text-secondary);
 }
+
+/* ── Mode Tabs ─────────────────────────────────────────────────── */
+.tabsBar {
+  display: flex;
+  gap: 8px;
+  border-bottom: 1px solid var(--ui-border-default);
+  padding-bottom: 8px;
+}
+
+.tabBtn {
+  appearance: none;
+  background: transparent;
+  border: none;
+  font: inherit;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--ui-text-muted);
+  cursor: pointer;
+  padding: 8px 16px;
+  border-radius: 8px;
+  transition: all 0.2s ease;
+}
+
+.tabBtn:hover {
+  color: var(--ui-text-primary);
+  background: var(--ui-bg-input);
+}
+
+.tabBtnActive {
+  color: var(--ui-text-primary);
+  background: var(--ui-bg-card);
+  border: 1px solid var(--ui-border-default);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+}
+
+/* ── Template Cards ────────────────────────────────────────────── */
+.templateCards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 16px;
+}
+
+.templateCard {
+  background: var(--ui-bg-input);
+  border: 2px solid var(--ui-border-default);
+  border-radius: 10px;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  cursor: pointer;
+  text-align: left;
+  transition: all 0.2s ease;
+}
+
+.templateCard:hover {
+  border-color: var(--ui-border-bright);
+  background: var(--ui-bg-card-hover);
+}
+
+.templateCardActive {
+  border-color: var(--ui-accent-primary);
+  background: var(--ui-bg-card);
+  box-shadow: 0 0 0 1px var(--ui-accent-primary);
+}
+
+.templateIcon {
+  font-size: 28px;
+}
+
+.templateTitle {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--ui-text-primary);
+}
+
+.templateDesc {
+  margin: 0;
+  font-size: 12px;
+  color: var(--ui-text-secondary);
+  line-height: 1.5;
+  flex: 1;
+}
+
+.templateBadge {
+  font-size: 11px;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 4px;
+  background: var(--ui-bg-elevated);
+  color: var(--ui-text-muted);
+  width: fit-content;
+}
+
+.secretWarning {
+  background: rgba(234, 179, 8, 0.1);
+  border: 1px solid rgba(234, 179, 8, 0.3);
+  color: #EAB308;
+  padding: 10px 14px;
+  border-radius: 8px;
+  font-size: 12px;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+

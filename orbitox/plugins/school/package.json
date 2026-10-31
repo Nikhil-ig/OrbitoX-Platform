@@ -1,7 +1,7 @@
 {
   "name": "@orbitox/school",
-  "version": "0.1.0",
-  "private": true,
+  "version": "1.0.0",
+  "private": false,
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "scripts": {
@@ -16,5 +16,13 @@
   "devDependencies": {
     "@orbitox/tsconfig": "workspace:*",
     "typescript": "^5.0.0"
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://npm.pkg.github.com"
   }
 }

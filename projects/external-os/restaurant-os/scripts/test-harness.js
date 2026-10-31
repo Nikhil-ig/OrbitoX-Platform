@@ -88,12 +88,12 @@ function generateSyntheticTestStore() {
       height: 72,
       shape: i === 1 ? 'circle' : 'rectangle',
       section: i <= 8 ? 'Main Dining Room' : 'Terrace Lounge',
-      locator: `loc_test_${i}`,
+      locator: i === 1 ? '7Kp9xQ8m2L' : `loc_test_${i}`,
       seats: [
         { id: `s_${i}_1`, label: 'Seat 1', isOccupied: false },
         { id: `s_${i}_2`, label: 'Seat 2', isOccupied: false },
       ],
-      qrLocator: `qr_loc_test_${i}`,
+      qrLocator: i === 1 ? '7Kp9xQ8m2L' : `qr_loc_test_${i}`,
       activeBillMinor: i === 14 ? 76650 : (i === 8 ? 47250 : 0),
       activeSessionId: i === 14 ? 'sess_test_14' : (i === 8 ? 'sess_test_8' : undefined),
     });
@@ -268,8 +268,19 @@ function generateSyntheticTestStore() {
     invalidatedCapabilityTokens: [],
     revokedStaffTokens: [],
     revokedStaffTokenJtis: [],
-    revokedStaffIds: [],
-    staffMembers: [],
+    staffMembers: [
+      {
+        id: 'staff_mgr_ldh',
+        name: 'Elena Rostova',
+        role: 'MANAGER',
+        branchId: 'branch_ldh',
+        station: 'MANAGEMENT',
+        salt: 'test_salt_123',
+        pinHash: 'scrypt:69d3b32d8ae12c33eba477a53bd50cb9dbab605820cdfc66fd8e3bb860eec01c',
+        status: 'ACTIVE',
+        permissions: ['*'],
+      },
+    ],
     templates: [],
     tenantBrand: {
       restaurantName: 'OrbitoX Bistro & Bar',
@@ -332,21 +343,37 @@ async function startIsolatedServer(options = {}) {
 
   const url = `http://127.0.0.1:${port}`;
 
-  const serverProcess = spawn('npx', ['tsx', 'src/server.ts'], {
+  const localTsx = path.join(__dirname, '..', 'node_modules', '.bin', process.platform === 'win32' ? 'tsx.cmd' : 'tsx');
+  const tsxCmd = fs.existsSync(localTsx) ? localTsx : 'tsx';
+
+  let serverStderr = '';
+  const serverProcess = spawn(tsxCmd, ['src/server.ts'], {
     cwd: path.join(__dirname, '..'),
     env: {
       ...process.env,
       PORT: String(port),
       RESTAURANT_STORE_PATH: storePath,
+      STORAGE_DRIVER: 'json',
       NODE_ENV: 'test',
+      RESTAURANTOS_AUTOLISTEN: 'true',
       RESTAURANTOS_ENABLE_TEST_ROUTES: 'true',
     },
-    stdio: 'ignore',
+    stdio: ['ignore', 'ignore', 'pipe'],
   });
 
-  // Wait for server readiness
+  serverProcess.stderr?.on('data', (d) => {
+    serverStderr += d.toString();
+  });
+
+  serverProcess.on('exit', (code, signal) => {
+    if (code !== null && code !== 0) {
+      console.error(`[ServerProcess Crashed] exit code: ${code}, signal: ${signal}\nStderr: ${serverStderr}`);
+    }
+  });
+
+  // Wait for server readiness (up to 20s for TypeScript compilation cold start)
   let ready = false;
-  for (let i = 0; i < 40; i++) {
+  for (let i = 0; i < 100; i++) {
     try {
       const res = await fetch(`${url}/healthz/live`);
       if (res.ok) {
@@ -360,7 +387,7 @@ async function startIsolatedServer(options = {}) {
   if (!ready) {
     try { serverProcess.kill('SIGKILL'); } catch {}
     try { fs.rmSync(tmpDir, { recursive: true, force: true }); } catch {}
-    throw new Error(`Isolated test server failed to start on ${url} within 8000ms`);
+    throw new Error(`Isolated test server failed to start on ${url} within 20000ms. Stderr: ${serverStderr.slice(-1000)}`);
   }
 
   const activeHarnesses = new Set();
@@ -400,6 +427,7 @@ async function startIsolatedServer(options = {}) {
     tmpDir,
     serverProcess,
     stop,
+    getStderr: () => serverStderr,
   };
 }
 

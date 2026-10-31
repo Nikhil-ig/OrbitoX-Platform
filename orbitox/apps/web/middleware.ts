@@ -1,45 +1,39 @@
 import { NextRequest, NextResponse } from 'next/server';
+import {
+  extractPresentedCredential,
+  safeEqual,
+  createInternalAuthToken,
+  getAdminToken,
+  getRuntimeToken,
+} from './app/api/v1/_lib/auth-pipeline';
+
+import {
+  isStaticAsset,
+  isExplicitPublicRoute,
+  isSelfGuardedApiRoute,
+} from './lib/route-classification';
 
 /**
  * Access control for the OrbitoX control plane. Two credentials, two roles:
  *
- *  ORBITOX_ADMIN_TOKEN    -> "admin":   people and tools that manage the platform
+ *  ORBITOX_ADMIN_TOKEN    -> "admin": people and tools that manage the platform
  *                            (admin UI, management APIs, issuing commands).
  *  ORBITOX_RUNTIME_TOKEN  -> "runtime": apps connected through the SDK. It only opens
  *                            the narrow set of endpoints a runtime needs (see RUNTIME_RULES),
  *                            so a leaked runtime token can never open the admin UI.
  *
- * Browsers get the native login prompt (HTTP Basic: any username, token as password).
- * API clients send `Authorization: Bearer <token>`.
- *
- * Production fails closed when a token is missing; development stays open for convenience.
- * The verified role is forwarded to route handlers in `x-orbitox-principal`
- * (any value sent by the client is discarded and replaced).
- *
- * Public, never gated: storefronts / diner pages and GET /api/health.
+ * Inverted fail-closed architecture:
+ * All incoming routes are intercepted by default except Next.js internals.
+ * Routes are evaluated against three clear boundaries:
+ * 1. Static assets (images, fonts, bundles) bypass middleware.
+ * 2. Explicit public routes (/api/health, /api/v1/openapi.json, diner bootstrap, shopper storefronts) bypass middleware.
+ * 3. Self-guarded customer API routes (/api/hospital/*, /api/restaurant/*, /api/v1/{crm,commerce,pos...}/*)
+ *    bypass middleware and enforce zero-trust authentication fail-closed inside their own handlers (withApiGuard).
+ * 4. Everything else is control plane and MUST present authentic admin or runtime credentials.
  */
 export const config = {
   matcher: [
-    '/admin/:path*',
-    '/platform/:path*',
-    '/hms/:path*',
-    '/hrms/:path*',
-    '/crm/:path*',
-    '/finance/:path*',
-    '/commerce/:path*',
-    '/store/:path*',
-    '/api/v1/admin/:path*',
-    '/api/v1/platform/:path*',
-    '/api/v1/fleet/:path*',
-    '/api/v1/overview',
-    '/api/v1/overview/:path*',
-    '/api/v1/system/:path*',
-    '/api/v1/projects/:path*',
-    '/api/v1/crm/:path*',
-    '/api/v1/finance/:path*',
-    '/api/v1/hms/:path*',
-    '/api/v1/hrms/:path*',
-    '/api/v1/commerce/:path*',
+    '/((?!_next/static|_next/image|favicon.ico).*)',
   ],
 };
 
@@ -49,7 +43,7 @@ export type Principal = 'admin' | 'runtime';
 const RUNTIME_RULES: Record<string, ReadonlySet<string>> = {
   bridge: new Set(['GET', 'POST']),
   apis: new Set(['GET', 'POST', 'PUT']),
-  commands: new Set(['GET', 'POST']), // POST is further restricted to COMPLETE in the route
+  commands: new Set(['GET', 'POST']),
   features: new Set(['GET']),
   manifest: new Set(['GET', 'PUT']),
   plans: new Set(['GET']),
@@ -57,39 +51,6 @@ const RUNTIME_RULES: Record<string, ReadonlySet<string>> = {
   entitlements: new Set(['GET']),
   usage: new Set(['POST']),
 };
-
-const encoder = new TextEncoder();
-
-/** Constant-time string comparison (hashes first so lengths never leak). */
-async function safeEqual(a: string, b: string): Promise<boolean> {
-  const [ha, hb] = await Promise.all([
-    crypto.subtle.digest('SHA-256', encoder.encode(a)),
-    crypto.subtle.digest('SHA-256', encoder.encode(b)),
-  ]);
-  const va = new Uint8Array(ha);
-  const vb = new Uint8Array(hb);
-  let diff = 0;
-  for (let i = 0; i < va.length; i++) diff |= va[i]! ^ vb[i]!;
-  return diff === 0;
-}
-
-function extractCredential(req: NextRequest): string | null {
-  const header = req.headers.get('authorization');
-  if (!header) return null;
-  const [scheme, value] = header.split(' ');
-  if (!scheme || !value) return null;
-  if (scheme.toLowerCase() === 'bearer') return value;
-  if (scheme.toLowerCase() === 'basic') {
-    try {
-      const decoded = atob(value);
-      const idx = decoded.indexOf(':');
-      return idx === -1 ? decoded : decoded.slice(idx + 1);
-    } catch {
-      return null;
-    }
-  }
-  return null;
-}
 
 function deny(req: NextRequest, status: 401 | 403 | 503, message: string): NextResponse {
   const isApi = req.nextUrl.pathname.startsWith('/api/');
@@ -102,9 +63,18 @@ function deny(req: NextRequest, status: 401 | 403 | 503, message: string): NextR
   return new NextResponse(message, { status, headers: { ...headers, 'Content-Type': 'text/plain; charset=utf-8' } });
 }
 
-function allow(req: NextRequest, principal: Principal, credential?: string | null): NextResponse {
+async function allow(req: NextRequest, principal: Principal, credential?: string | null): Promise<NextResponse> {
   const headers = new Headers(req.headers);
-  headers.set('x-orbitox-principal', principal); // overwrites anything the client sent
+  // Strip any client-supplied internal or principal headers before setting verified ones
+  headers.delete('x-orbitox-principal');
+  headers.delete('x-orbitox-internal-sig');
+  headers.delete('x-orbitox-internal-ts');
+
+  const { signature, timestamp } = await createInternalAuthToken(principal);
+  headers.set('x-orbitox-principal', principal);
+  headers.set('x-orbitox-internal-sig', signature);
+  headers.set('x-orbitox-internal-ts', timestamp);
+
   if (credential) {
     headers.set('x-orbitox-credential', credential);
   }
@@ -118,14 +88,38 @@ function runtimeEndpoint(pathname: string): string | null {
 }
 
 export async function middleware(req: NextRequest) {
-  const isProduction = process.env.NODE_ENV === 'production';
-  const adminToken = process.env.ORBITOX_ADMIN_TOKEN?.trim();
-  const runtimeToken = process.env.ORBITOX_RUNTIME_TOKEN?.trim();
+  const pathname = req.nextUrl.pathname;
+
+  // 1. Static files bypass middleware
+  if (isStaticAsset(pathname)) {
+    return NextResponse.next();
+  }
+
+  // 2. Explicit public routes bypass middleware
+  if (isExplicitPublicRoute(pathname)) {
+    return NextResponse.next();
+  }
+
+  // 3. Customer API routes authenticate inside their own route guards (withApiGuard / withHospitalGuard / withGuestToken)
+  if (isSelfGuardedApiRoute(pathname)) {
+    return NextResponse.next();
+  }
+
+  const rawNodeEnv = (process.env.NODE_ENV || '').toLowerCase().trim();
+  // Safe default: missing NODE_ENV is treated as production
+  const isDevelopment = rawNodeEnv === 'development' || rawEnvIsTest(rawNodeEnv);
+  const isProduction = !isDevelopment;
+  const allowInsecureDev = isDevelopment && process.env.ALLOW_UNAUTHENTICATED_DEV_MODE === 'true';
+
+  const adminToken = getAdminToken();
+  const runtimeToken = getRuntimeToken();
   const endpoint = runtimeEndpoint(req.nextUrl.pathname);
 
-  const presented = extractCredential(req);
+  const presented = extractPresentedCredential(req);
   if (presented) {
-    if (adminToken && (await safeEqual(presented, adminToken))) return allow(req, 'admin', presented);
+    if (adminToken && (await safeEqual(presented, adminToken))) {
+      return allow(req, 'admin', presented);
+    }
     if (endpoint) {
       const isProjectKey = presented.startsWith('orb_proj_');
       const isSharedToken = Boolean(runtimeToken && (await safeEqual(presented, runtimeToken)));
@@ -136,18 +130,24 @@ export async function middleware(req: NextRequest) {
     }
   }
 
-  // No valid credential. Development convenience: open when the relevant token is not configured.
-  if (!isProduction) {
+  // Development convenience ONLY when explicitly opted in via ALLOW_UNAUTHENTICATED_DEV_MODE=true
+  if (allowInsecureDev) {
     if (endpoint && !runtimeToken && !adminToken) return allow(req, 'admin');
     if (endpoint && !runtimeToken) return allow(req, 'runtime');
     if (!endpoint && !adminToken) return allow(req, 'admin');
   } else {
-    // Production fails closed with a clear reason when the config itself is missing.
-    if (!adminToken && !endpoint) return deny(req, 503, 'Control plane is locked: ORBITOX_ADMIN_TOKEN is not configured.');
+    // Production & secure development fail closed with a clear reason when config is missing
+    if (!adminToken && !endpoint) {
+      return deny(req, 503, 'Control plane is locked: ORBITOX_ADMIN_TOKEN is not configured.');
+    }
     if (endpoint && !runtimeToken && !adminToken) {
       return deny(req, 503, 'Control plane is locked: ORBITOX_RUNTIME_TOKEN is not configured.');
     }
   }
 
   return deny(req, 401, 'Authentication required.');
+}
+
+function rawEnvIsTest(env: string): boolean {
+  return env === 'test';
 }

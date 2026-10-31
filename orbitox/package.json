@@ -6,6 +6,7 @@
   "scripts": {
     "bootstrap": "pnpm install && turbo run build --filter=web^...",
     "init:env": "node scripts/init-env.mjs",
+    "check:env": "node scripts/check-production-env.mjs",
     "dev:web": "pnpm --filter web dev",
     "smoke": "node scripts/smoke-control-plane.mjs",
     "build": "turbo run build",
@@ -19,6 +20,8 @@
     "migrate": "turbo run migrate",
     "seed": "turbo run seed",
     "doctor": "turbo run doctor",
+    "maintain:rate-limit-partitions": "tsx scripts/maintain-rate-limit-partitions.ts",
+    "check:rate-limit-runway": "tsx scripts/check-rate-limit-partition-runway.ts",
     "keygen": "node tools/cli/dist/bin.js keygen",
     "package:plugins": "turbo run build && node tools/cli/dist/bin.js package crm",
     "verify:plugins": "node tools/cli/dist/bin.js verify crm",
@@ -30,7 +33,10 @@
     "format:check": "prettier --check \"**/*.{ts,tsx,js,jsx,json,md}\""
   },
   "devDependencies": {
+    "@prisma/client": "^6.19.0",
     "prettier": "^3.5.0",
+    "prisma": "^6.19.0",
+    "tsx": "^4.19.3",
     "turbo": "^2.10.12",
     "typescript": "~5.9.3"
   },

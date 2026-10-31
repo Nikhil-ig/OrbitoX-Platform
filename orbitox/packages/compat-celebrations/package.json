@@ -1,0 +1,10 @@
+{
+  "name": "@orbitox-io/celebrations",
+  "version": "1.0.0",
+  "description": "Compatibility alias forwarding to @orbitox/celebrations",
+  "main": "./index.js",
+  "types": "./index.d.ts",
+  "dependencies": {
+    "@orbitox/celebrations": "workspace:*"
+  }
+}

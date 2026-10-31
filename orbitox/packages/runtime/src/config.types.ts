@@ -1,20 +1,63 @@
 import { OrbitoXDatabaseAdapter } from './database/types';
+import { OrbitoXPlugin } from '@orbitox/plugin-engine';
+
+export interface OrbitoXUser {
+  id: string;
+  email?: string;
+  roles?: string[];
+  scopes?: string[];
+  tenantId?: string;
+  [key: string]: any;
+}
+
+export interface OrbitoXTenant {
+  tenantId: string;
+  name?: string;
+  status?: 'ACTIVE' | 'SUSPENDED' | string;
+  features?: string[];
+  tier?: string;
+  quotas?: Record<string, number>;
+  metadata?: Record<string, any>;
+  [key: string]: any;
+}
+
+export interface PlatformConfig {
+  enabled?: boolean;
+  controlPlaneUrl?: string;
+  projectId?: string;
+  slug?: string;
+  apiKey?: string;
+  syncIntervalSeconds?: number;
+  sdk?: any;
+}
 
 export interface OrbitoXConfig {
   app: {
     name: string;
     port?: number;
+    environment?: 'development' | 'staging' | 'production' | string;
   };
   database?: {
     adapter?: OrbitoXDatabaseAdapter;
     url?: string;
     provider?: 'sqlite' | 'postgresql' | 'mongodb' | 'mysql' | string;
+    repositories?: Record<string, any>;
+  };
+  storage?: {
+    repositories?: Record<string, any>;
   };
   auth?: {
+    provider?: (req: any) => Promise<OrbitoXUser | null | undefined> | OrbitoXUser | null | undefined;
     adminEmail?: string;
     adminPassword?: string;
   };
-  entities: OrbitoXEntity[];
+  tenancy?: {
+    resolver: (req: any) => Promise<OrbitoXTenant | null | undefined> | OrbitoXTenant | null | undefined;
+    bypassPaths?: string[];
+  };
+  plugins?: Array<OrbitoXPlugin<any, any, any>>;
+  platform?: PlatformConfig;
+  entities?: OrbitoXEntity[];
 }
 
 export interface OrbitoXEntity {
@@ -22,6 +65,10 @@ export interface OrbitoXEntity {
   name: string;
   fields: OrbitoXField[];
   permissions?: string[];
+  entitlement?: {
+    feature?: string;
+    quotaKey?: string;
+  };
   hooks?: OrbitoXEntityHooks;
 }
 

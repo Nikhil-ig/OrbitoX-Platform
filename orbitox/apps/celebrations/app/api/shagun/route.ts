@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
-import { CelebrationsInterconnect, ShagunContribution } from '@orbitox-io/celebrations';
+import { CelebrationsInterconnect } from '@orbitox-io/celebrations/server';
+import type { ShagunContribution } from '@orbitox-io/celebrations';
 
 export async function POST(req: Request) {
   try {

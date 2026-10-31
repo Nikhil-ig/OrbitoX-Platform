@@ -7,7 +7,8 @@ export const GET = withApiGuard(
   {
     serviceId: 'platform',
     serviceName: 'Platform Audit Service',
-    allowPublic: true,
+    routeClass: 'platform-admin',
+    requiredScopes: ['platform.audit.read', 'admin'],
   },
   async (req: NextRequest, ctx: ApiRequestContext) => {
     const url = new URL(req.url);

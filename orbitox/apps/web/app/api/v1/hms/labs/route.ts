@@ -1,22 +1,42 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { withApiGuard, PlatformApiState } from '../../_lib/api-guard';
-import { hospitalStore } from '@/app/api/hospital/_store';
+import { withTenantTx } from '@/lib/tenant-db';
+import { prisma } from '@/lib/prisma';
+import { mapDbError, errorBody, HttpError } from '@/lib/db-errors';
 
 export const GET = withApiGuard(
   {
     serviceId: 'hms',
     serviceName: 'Hospital Management System',
   },
-  async (req: NextRequest) => {
-    const { searchParams } = new URL(req.url);
-    const patientId = searchParams.get('patientId') || undefined;
-    const labs = hospitalStore.getLabs(patientId);
+  async (req: NextRequest, ctx) => {
+    try {
+      const { searchParams } = new URL(req.url);
+      const patientId = searchParams.get('patientId');
 
-    return NextResponse.json({
-      success: true,
-      data: labs,
-      meta: { total: labs.length },
-    });
+      const data = await withTenantTx(prisma, ctx.tenantId, async (tx) => {
+        let query = `SELECT "id", "patientId", "orderedById", "testType", "status", "resultSealed", "resultedById", "verifiedById", "verifiedAt", "updatedAt"
+                     FROM "HmsLabOrder"`;
+        const params: any[] = [];
+        if (patientId) {
+          params.push(patientId);
+          query += ` WHERE "patientId" = $1`;
+        }
+        query += ` ORDER BY "updatedAt" DESC LIMIT 50`;
+
+        const { rows } = await tx.query(query, params);
+        return rows;
+      });
+
+      return NextResponse.json({
+        success: true,
+        data,
+        meta: { total: data.length },
+      });
+    } catch (err: any) {
+      const apiErr = mapDbError(err);
+      return NextResponse.json(errorBody(apiErr, ctx.requestId), { status: apiErr.status });
+    }
   }
 );
 
@@ -28,24 +48,38 @@ export const POST = withApiGuard(
   async (req: NextRequest, ctx) => {
     try {
       const body = await req.json();
-      const lab = hospitalStore.addLab(body);
+      const testType = body.testType || body.testCode;
+      if (!body.patientId || !testType) {
+        throw new HttpError(422, 'INVALID_INPUT', 'patientId and testType are required');
+      }
+
+      const lab = await withTenantTx(prisma, ctx.tenantId, async (tx) => {
+        const id = body.id || `lab_${Date.now().toString(36)}`;
+        const orderedById = body.orderedById || ctx.sub || 'staff_doctor';
+
+        const { rows } = await tx.query(
+          `INSERT INTO "HmsLabOrder" ("id", "patientId", "orderedById", "testType", "status")
+           VALUES ($1, $2, $3, $4, 'ORDERED')
+           RETURNING "id", "patientId", "orderedById", "testType", "status", "updatedAt"`,
+          [id, body.patientId, orderedById, testType]
+        );
+        return rows[0];
+      });
 
       PlatformApiState.recordTelemetry({
         tenantId: ctx.tenantId,
         facade: 'EventsFacade',
         level: 'INFO',
-        message: `Ordered lab diagnostic [${lab.testType}] for patient [${lab.patientName}].`,
+        message: `Ordered lab diagnostic [${lab.testCode}] for patient [${lab.patientId}].`,
       });
 
       return NextResponse.json({
         success: true,
         data: lab,
-      });
+      }, { status: 201 });
     } catch (err: any) {
-      return NextResponse.json(
-        { success: false, error: { code: 'BAD_REQUEST', message: err.message } },
-        { status: 400 }
-      );
+      const apiErr = mapDbError(err);
+      return NextResponse.json(errorBody(apiErr, ctx.requestId), { status: apiErr.status });
     }
   }
 );

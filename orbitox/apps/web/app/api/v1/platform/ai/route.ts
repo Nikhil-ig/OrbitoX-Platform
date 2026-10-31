@@ -145,7 +145,9 @@ export const GET = withApiGuard(
   {
     serviceId: 'platform',
     serviceName: 'Platform AI & MCP Governance Gateway',
-    allowPublic: true,
+    routeClass: 'platform-admin',
+    allowPublic: false,
+    requiredScopes: ['platform.ai', 'admin'],
   },
   async (req: NextRequest, ctx: ApiRequestContext) => {
     return NextResponse.json<ApiResponse>({

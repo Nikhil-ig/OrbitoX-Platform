@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { withApiGuard } from '@/app/api/v1/_lib/api-guard';
 import { ApiResponse, ApiRequestContext } from '@/app/api/v1/_lib/api-types';
-import { PlatformRepository } from '@orbitox-io/plugin-engine';
 import { auditService } from '@/app/api/v1/_lib/platform-governance';
+import { platformRepository } from '@/lib/platform-repository';
 
 export const POST = withApiGuard(
   {
@@ -17,7 +17,7 @@ export const POST = withApiGuard(
       const segments = url.pathname.split('/');
       const credId = segments[segments.length - 2] || '';
 
-      const cred = PlatformRepository.getCredential(credId);
+      const cred = await platformRepository.getCredential(credId);
       if (!cred) {
         return NextResponse.json<ApiResponse>(
           {
@@ -48,6 +48,15 @@ export const POST = withApiGuard(
           verdict: 'HEALTHY',
           checkedAt: new Date().toISOString(),
         },
+      });
+      await platformRepository.recordPlatformAdminAudit({
+        action: 'CREDENTIAL_PING_TESTED',
+        entityType: 'PLATFORM_CREDENTIAL',
+        entityId: cred.id,
+        projectId: cred.projectId,
+        environmentId: cred.environmentId,
+        actorId: ctx.apiKey || 'platform_admin',
+        metadata: { provider: cred.provider, latencyMs, verdict: 'HEALTHY' },
       });
 
       return NextResponse.json<ApiResponse>({
