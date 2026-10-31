@@ -93,3 +93,7 @@ GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE "PlanFeature" TO orbitox_maintenan
 
 GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE "PlanQuota" TO orbitox_runtime;
 GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE "PlanQuota" TO orbitox_maintenance;
+
+-- Ensure PlatformOutboxMessage is accessible to orbitox_runtime across tenants without RLS
+ALTER TABLE "PlatformOutboxMessage" DISABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS orbitox_tenant_isolation ON "PlatformOutboxMessage";
