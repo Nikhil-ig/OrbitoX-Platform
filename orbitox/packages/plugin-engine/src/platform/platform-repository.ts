@@ -18,6 +18,9 @@ import {
   CredentialHealth,
   PackageInstallationStatus,
   KeyType,
+  PluginInstallationRecord,
+  PluginInstallationStatus,
+  ProvisionPluginInstallationInput,
 } from '@orbitox/types';
 import { PlatformKeyEngine, GeneratedKeyResult } from '../security/platform-key-engine';
 import { CredentialVault } from '../security/credential-vault';
@@ -37,6 +40,25 @@ export const PLAN_DEFAULT_RATE_LIMITS: Record<string, number> = {
   enterprise: 6000,
   hyperscale: 30000,
 };
+
+const TENANT_RE = /^org\/[a-zA-Z0-9_-]+\/project\/[a-zA-Z0-9_-]+\/environment\/[a-zA-Z0-9_-]+$/;
+
+export function canonicalizePluginId(pluginId: string): string {
+  const trimmed = (pluginId || '').trim();
+  if (trimmed === 'restaurant' || trimmed === '@orbitox-io/restaurant' || trimmed === '@orbitox/restaurant') {
+    return '@orbitox/restaurant';
+  }
+  if (trimmed === 'crm' || trimmed === '@orbitox-io/crm' || trimmed === '@orbitox/crm') {
+    return '@orbitox/crm';
+  }
+  if (trimmed === 'pos' || trimmed === '@orbitox-io/pos' || trimmed === '@orbitox/pos') {
+    return '@orbitox/pos';
+  }
+  if (trimmed === 'hms' || trimmed === '@orbitox-io/hms' || trimmed === '@orbitox/hms') {
+    return '@orbitox/hms';
+  }
+  return trimmed;
+}
 
 export interface CreateProjectInput {
   name: string;
@@ -86,6 +108,7 @@ export interface PlatformRepositoryStoreData {
   packages: PlatformPackageCatalogItem[];
   packageVersions: PackageVersionRecord[];
   packageInstallations: PackageInstallationRecord[];
+  pluginInstallations?: PluginInstallationRecord[];
   domains: ProjectDomainRecord[];
   quotaPolicies: EnvironmentQuotaPolicyRecord[];
   rateLimitPolicies: EnvironmentRateLimitPolicyRecord[];
@@ -101,6 +124,7 @@ export class PlatformRepository {
   private static packages: PlatformPackageCatalogItem[] = [];
   private static packageVersions: PackageVersionRecord[] = [];
   private static packageInstallations: PackageInstallationRecord[] = [];
+  private static pluginInstallations: PluginInstallationRecord[] = [];
   private static domains: ProjectDomainRecord[] = [];
   private static quotaPolicies: EnvironmentQuotaPolicyRecord[] = [];
   private static rateLimitPolicies: EnvironmentRateLimitPolicyRecord[] = [];
@@ -289,7 +313,7 @@ export class PlatformRepository {
       'quotaPolicies',
       'rateLimitPolicies',
     ];
-    const optionalCollections = ['auditLogs'];
+    const optionalCollections = ['auditLogs', 'pluginInstallations'];
     if (!parsed || requiredCollections.some((collection) => !Array.isArray(parsed[collection])) || parsed.organizations.length === 0) {
       throw new Error('Persistent store is empty or has an invalid schema.');
     }
@@ -306,6 +330,7 @@ export class PlatformRepository {
       packages: parsed.packages,
       packageVersions: parsed.packageVersions,
       packageInstallations: parsed.packageInstallations,
+      pluginInstallations: parsed.pluginInstallations ?? [],
       domains: parsed.domains,
       quotaPolicies: parsed.quotaPolicies,
       rateLimitPolicies: parsed.rateLimitPolicies,
@@ -328,6 +353,7 @@ export class PlatformRepository {
     this.packages = parsed.packages;
     this.packageVersions = parsed.packageVersions;
     this.packageInstallations = parsed.packageInstallations;
+    this.pluginInstallations = parsed.pluginInstallations ?? [];
     this.domains = parsed.domains;
     this.quotaPolicies = parsed.quotaPolicies;
     this.rateLimitPolicies = parsed.rateLimitPolicies;
@@ -439,6 +465,7 @@ export class PlatformRepository {
       packages: this.packages,
       packageVersions: this.packageVersions,
       packageInstallations: this.packageInstallations,
+      pluginInstallations: this.pluginInstallations,
       domains: this.domains,
       quotaPolicies: this.quotaPolicies,
       rateLimitPolicies: this.rateLimitPolicies,
@@ -510,6 +537,7 @@ export class PlatformRepository {
     this.packages = [];
     this.packageVersions = [];
     this.packageInstallations = [];
+    this.pluginInstallations = [];
     this.domains = [];
     this.quotaPolicies = [];
     this.rateLimitPolicies = [];
@@ -1134,6 +1162,86 @@ export class PlatformRepository {
       this.packageInstallations[existingIdx] = record;
     } else {
       this.packageInstallations.push(record);
+    }
+
+    this.saveDebounced();
+    return record;
+  }
+
+  // ─────────────────────────────────────────────────────────────
+  // PLUGIN INSTALLATIONS (Explicit runtimeTenantId, Anti-Claim)
+  // ─────────────────────────────────────────────────────────────
+
+  static listPluginInstallations(tenantId?: string): PluginInstallationRecord[] {
+    this.initialize();
+    if (tenantId) {
+      return this.pluginInstallations.filter((p) => p.tenantId === tenantId);
+    }
+    return [...this.pluginInstallations];
+  }
+
+  static getPluginInstallation(tenantId: string, pluginId: string): PluginInstallationRecord | undefined {
+    this.initialize();
+    const canonical = canonicalizePluginId(pluginId);
+    return this.pluginInstallations.find(
+      (p) =>
+        p.tenantId === tenantId &&
+        (canonicalizePluginId(p.pluginId) === canonical ||
+          p.pluginId === pluginId ||
+          p.pluginId === canonical.replace(/^@orbitox\//, ''))
+    );
+  }
+
+  static provisionPluginInstallation(input: ProvisionPluginInstallationInput): PluginInstallationRecord {
+    this.initialize();
+    const tenantId = input.tenantId?.trim();
+    const pluginId = canonicalizePluginId(input.pluginId);
+    const runtimeTenantId = input.runtimeTenantId?.trim();
+
+    if (!tenantId) throw new Error('Field "tenantId" is required for plugin installation.');
+    if (!pluginId) throw new Error('Field "pluginId" is required for plugin installation.');
+    if (!runtimeTenantId || !TENANT_RE.test(runtimeTenantId)) {
+      throw new Error(
+        `Target runtime tenant ID "${runtimeTenantId}" is not in canonical format (org/{org}/project/{proj}/environment/{env}).`
+      );
+    }
+
+    // Anti-claim protection: check if another tenant already claimed this runtimeTenantId for this plugin
+    const existingClaim = this.pluginInstallations.find(
+      (p) =>
+        canonicalizePluginId(p.pluginId) === pluginId &&
+        p.runtimeTenantId === runtimeTenantId &&
+        p.tenantId !== tenantId
+    );
+    if (existingClaim) {
+      const err = new Error(
+        `Runtime tenant "${runtimeTenantId}" for plugin "${pluginId}" is already claimed by tenant "${existingClaim.tenantId}".`
+      );
+      (err as any).code = 'RUNTIME_TENANT_ALREADY_CLAIMED';
+      throw err;
+    }
+
+    const existingIdx = this.pluginInstallations.findIndex(
+      (p) => p.tenantId === tenantId && canonicalizePluginId(p.pluginId) === pluginId
+    );
+
+    const record: PluginInstallationRecord = {
+      id: existingIdx !== -1 ? this.pluginInstallations[existingIdx]!.id : `pinst_${crypto.randomUUID()}`,
+      tenantId,
+      pluginId,
+      runtimeTenantId,
+      status: (input.status as any) || 'ACTIVE',
+      entitlementRevision: input.entitlementRevision ?? 1,
+      planId: input.planId ?? null,
+      config: input.config || {},
+      createdAt: existingIdx !== -1 ? this.pluginInstallations[existingIdx]!.createdAt : new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+
+    if (existingIdx !== -1) {
+      this.pluginInstallations[existingIdx] = record;
+    } else {
+      this.pluginInstallations.push(record);
     }
 
     this.saveDebounced();

@@ -250,6 +250,38 @@ export interface PackageInstallationRecord {
   updatedAt: string;
 }
 
+export type PluginInstallationStatus =
+  | 'REQUESTED'
+  | 'PROVISIONING'
+  | 'ACTIVE'
+  | 'READ_ONLY'
+  | 'SUSPENDED'
+  | 'DEPROVISIONING'
+  | 'ARCHIVED';
+
+export interface PluginInstallationRecord {
+  id: string;
+  tenantId: string;
+  pluginId: string;
+  runtimeTenantId: string;
+  status: PluginInstallationStatus | string;
+  entitlementRevision: number;
+  planId?: string | null;
+  config: Record<string, any>;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ProvisionPluginInstallationInput {
+  tenantId: string;
+  pluginId: string;
+  runtimeTenantId: string;
+  status?: PluginInstallationStatus | string;
+  entitlementRevision?: number;
+  planId?: string | null;
+  config?: Record<string, any>;
+}
+
 // ─────────────────────────────────────────────────────────────
 // 5. DOMAINS, QUOTAS & RATE LIMITS
 // ─────────────────────────────────────────────────────────────

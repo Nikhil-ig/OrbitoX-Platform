@@ -1650,6 +1650,25 @@ model PackageInstallation {
   @@index([packageId])
 }
 
+model PluginInstallation {
+  id                  String   @id @default(cuid())
+  tenantId            String
+  pluginId            String
+  runtimeTenantId     String
+  status              String   @default("ACTIVE")
+  entitlementRevision Int      @default(1)
+  planId              String?
+  config              Json     @default("{}")
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  @@unique([tenantId, pluginId])
+  @@unique([runtimeTenantId, pluginId])
+  @@index([tenantId])
+  @@index([runtimeTenantId])
+  @@index([pluginId])
+}
+
 model ProjectDomain {
   id                    String             @id @default(cuid())
   environmentId         String

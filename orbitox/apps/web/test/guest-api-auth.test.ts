@@ -19,6 +19,10 @@ import {
 } from '../app/api/restaurant/_lib/restaurant-routing';
 import { platformRepository } from '@/lib/platform-repository';
 
+// Ensure test environment
+Reflect.set(process.env, 'NODE_ENV', 'test');
+process.env.ORBITOX_PLATFORM_REPOSITORY = 'json';
+
 describe('Restaurant Traffic Routing & Demolition of In-Memory Runtime (Phase 2b-5)', () => {
     const PUBLIC_URL = 'https://restaurant.orbitox.internal';
 
@@ -103,7 +107,7 @@ describe('Restaurant Traffic Routing & Demolition of In-Memory Runtime (Phase 2b
             assert.equal(body.error?.code, 'RESTAURANT_RUNTIME_NOT_CONFIGURED');
             assert.equal(body.success, false);
         } finally {
-            Reflect.set(process.env, 'NODE_ENV', prevEnv);
+            Reflect.set(process.env, 'NODE_ENV', prevEnv || 'test');
         }
     });
 
@@ -210,25 +214,145 @@ describe('Restaurant Traffic Routing & Demolition of In-Memory Runtime (Phase 2b
         }
     });
 
-    it('K1: resolves non-canonical tenants from platform repository package installation records', async () => {
+    it('tenantLinkRegistry is strictly forbidden in production or non-test environments', () => {
+        const prevEnv = process.env.NODE_ENV;
+        try {
+            Reflect.set(process.env, 'NODE_ENV', 'production');
+            assert.throws(
+                () => registerRestaurantTenantLink('plat_prod', 'org/plat/project/prod/environment/prod'),
+                /tenantLinkRegistry is permitted only in test builds/
+            );
+            assert.throws(
+                () => clearRestaurantTenantLinks(),
+                /tenantLinkRegistry is permitted only in test builds/
+            );
+
+            Reflect.deleteProperty(process.env, 'NODE_ENV');
+            assert.throws(
+                () => registerRestaurantTenantLink('plat_prod', 'org/plat/project/prod/environment/prod'),
+                /tenantLinkRegistry is permitted only in test builds/
+            );
+        } finally {
+            if (prevEnv === undefined) Reflect.deleteProperty(process.env, 'NODE_ENV');
+            else Reflect.set(process.env, 'NODE_ENV', prevEnv);
+        }
+    });
+
+    it('resolves non-canonical platform tenant from PluginInstallation table without environment fallback', async () => {
         const prevRepo = process.env.ORBITOX_PLATFORM_REPOSITORY;
         const prevEnv = process.env.NODE_ENV;
         process.env.ORBITOX_PLATFORM_REPOSITORY = 'json';
         Reflect.set(process.env, 'NODE_ENV', 'test');
 
         try {
-            // Install a package record linking 'cafe.paris' -> 'org/orbitox/project/cafe-paris/environment/production'
-            await platformRepository.installPackage('env_k1_test', '@orbitox/restaurant', '1.0.0', {
-                platformTenantId: 'cafe.paris',
-                restaurantOsTenantId: 'org/orbitox/project/cafe-paris/environment/production',
+            const canonicalTenant = 'org/orbitox/project/cafe-paris/environment/production';
+            await platformRepository.provisionPluginInstallation({
+                tenantId: 'cafe.paris',
+                pluginId: '@orbitox/restaurant',
+                runtimeTenantId: canonicalTenant,
+                status: 'ACTIVE',
             });
 
             const resolved = await resolveLinkedRestaurantTenant('cafe.paris');
-            assert.equal(resolved, 'org/orbitox/project/cafe-paris/environment/production');
+            assert.equal(resolved, canonicalTenant);
 
-            // Non-existent tenant has no record and must return undefined
+            // Inactive installation must not resolve
+            await platformRepository.provisionPluginInstallation({
+                tenantId: 'suspended.bistro',
+                pluginId: '@orbitox/restaurant',
+                runtimeTenantId: 'org/orbitox/project/suspended-bistro/environment/production',
+                status: 'SUSPENDED',
+            });
+            const suspendedResolved = await resolveLinkedRestaurantTenant('suspended.bistro');
+            assert.equal(suspendedResolved, undefined);
+
+            // Unprovisioned tenant has no installation and returns undefined (zero fallback to default environment)
             const unlinked = await resolveLinkedRestaurantTenant('unlinked.unknown.cafe');
             assert.equal(unlinked, undefined);
+        } finally {
+            if (prevRepo === undefined) delete process.env.ORBITOX_PLATFORM_REPOSITORY;
+            else process.env.ORBITOX_PLATFORM_REPOSITORY = prevRepo;
+            if (prevEnv === undefined) Reflect.deleteProperty(process.env, 'NODE_ENV');
+            else Reflect.set(process.env, 'NODE_ENV', prevEnv);
+        }
+    });
+
+    it('anti-claim: tenant B installation cannot claim tenant A runtime tenant ID', async () => {
+        const prevRepo = process.env.ORBITOX_PLATFORM_REPOSITORY;
+        const prevEnv = process.env.NODE_ENV;
+        process.env.ORBITOX_PLATFORM_REPOSITORY = 'json';
+        Reflect.set(process.env, 'NODE_ENV', 'test');
+
+        try {
+            const tenantARuntime = 'org/orbitox/project/tenant-alpha/environment/production';
+            const tenantBRuntime = 'org/orbitox/project/tenant-bravo/environment/production';
+
+            // 1. Tenant A successfully provisions runtimeTenantId
+            const instA = await platformRepository.provisionPluginInstallation({
+                tenantId: 'tenant_a_platform',
+                pluginId: '@orbitox/restaurant',
+                runtimeTenantId: tenantARuntime,
+                status: 'ACTIVE',
+            });
+            assert.equal(instA.runtimeTenantId, tenantARuntime);
+            assert.equal(instA.tenantId, 'tenant_a_platform');
+
+            // 2. Tenant B attempts to claim Tenant A's runtimeTenantId -> MUST FAIL
+            await assert.rejects(
+                async () => {
+                    await platformRepository.provisionPluginInstallation({
+                        tenantId: 'tenant_b_platform',
+                        pluginId: '@orbitox/restaurant',
+                        runtimeTenantId: tenantARuntime,
+                        status: 'ACTIVE',
+                    });
+                },
+                (err: any) => {
+                    assert.ok(
+                        err.code === 'RUNTIME_TENANT_ALREADY_CLAIMED' ||
+                        err.message.includes('already claimed by tenant "tenant_a_platform"'),
+                        `Expected already-claimed error, got: ${err.message}`
+                    );
+                    return true;
+                }
+            );
+
+            // 3. Even with alternative plugin alias ('restaurant' vs '@orbitox/restaurant'), anti-claim prevents collision
+            await assert.rejects(
+                async () => {
+                    await platformRepository.provisionPluginInstallation({
+                        tenantId: 'tenant_b_platform',
+                        pluginId: 'restaurant',
+                        runtimeTenantId: tenantARuntime,
+                        status: 'ACTIVE',
+                    });
+                },
+                (err: any) => {
+                    assert.ok(
+                        err.code === 'RUNTIME_TENANT_ALREADY_CLAIMED' ||
+                        err.message.includes('already claimed by tenant "tenant_a_platform"'),
+                        `Expected already-claimed error, got: ${err.message}`
+                    );
+                    return true;
+                }
+            );
+
+            // 4. Tenant B provisions its own distinct runtimeTenantId successfully
+            const instB = await platformRepository.provisionPluginInstallation({
+                tenantId: 'tenant_b_platform',
+                pluginId: '@orbitox/restaurant',
+                runtimeTenantId: tenantBRuntime,
+                status: 'ACTIVE',
+            });
+            assert.equal(instB.runtimeTenantId, tenantBRuntime);
+            assert.equal(instB.tenantId, 'tenant_b_platform');
+
+            // 5. Verification of independent routing resolution
+            const resolvedA = await resolveLinkedRestaurantTenant('tenant_a_platform');
+            const resolvedB = await resolveLinkedRestaurantTenant('tenant_b_platform');
+            assert.equal(resolvedA, tenantARuntime);
+            assert.equal(resolvedB, tenantBRuntime);
+            assert.notEqual(resolvedA, resolvedB);
         } finally {
             if (prevRepo === undefined) delete process.env.ORBITOX_PLATFORM_REPOSITORY;
             else process.env.ORBITOX_PLATFORM_REPOSITORY = prevRepo;

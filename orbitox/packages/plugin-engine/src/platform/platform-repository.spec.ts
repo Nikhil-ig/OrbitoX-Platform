@@ -683,5 +683,55 @@ describe('PlatformRepository (Normalized Domain Access & Cryptographic Binding)'
         migrationWarning.mockRestore();
       }
     });
+
+    it('provisions a plugin installation with explicit runtimeTenantId and prevents cross-tenant claims', () => {
+      const canonicalA = 'org/org1/project/proj-a/environment/prod';
+      const canonicalB = 'org/org1/project/proj-b/environment/prod';
+
+      // 1. Provision for tenant A
+      const instA = PlatformRepository.provisionPluginInstallation({
+        tenantId: 'plat-tenant-a',
+        pluginId: '@orbitox/restaurant',
+        runtimeTenantId: canonicalA,
+        status: 'ACTIVE',
+      });
+      expect(instA.tenantId).toBe('plat-tenant-a');
+      expect(instA.runtimeTenantId).toBe(canonicalA);
+
+      // 2. Tenant B attempts to claim Tenant A's runtimeTenantId -> throws RUNTIME_TENANT_ALREADY_CLAIMED
+      expect(() => {
+        PlatformRepository.provisionPluginInstallation({
+          tenantId: 'plat-tenant-b',
+          pluginId: '@orbitox/restaurant',
+          runtimeTenantId: canonicalA,
+          status: 'ACTIVE',
+        });
+      }).toThrow(/already claimed by tenant "plat-tenant-a"/);
+
+      // 3. Normalized alias ('restaurant') also refuses claim
+      expect(() => {
+        PlatformRepository.provisionPluginInstallation({
+          tenantId: 'plat-tenant-b',
+          pluginId: 'restaurant',
+          runtimeTenantId: canonicalA,
+          status: 'ACTIVE',
+        });
+      }).toThrow(/already claimed by tenant "plat-tenant-a"/);
+
+      // 4. Tenant B provisions its own distinct runtimeTenantId
+      const instB = PlatformRepository.provisionPluginInstallation({
+        tenantId: 'plat-tenant-b',
+        pluginId: '@orbitox/restaurant',
+        runtimeTenantId: canonicalB,
+        status: 'ACTIVE',
+      });
+      expect(instB.runtimeTenantId).toBe(canonicalB);
+
+      // 5. Lookups strictly return respective runtime identities
+      expect(PlatformRepository.getPluginInstallation('plat-tenant-a', '@orbitox/restaurant')?.runtimeTenantId).toBe(canonicalA);
+      expect(PlatformRepository.getPluginInstallation('plat-tenant-b', '@orbitox/restaurant')?.runtimeTenantId).toBe(canonicalB);
+      expect(PlatformRepository.getPluginInstallation('plat-tenant-unknown', '@orbitox/restaurant')).toBeUndefined();
+    });
   });
 });
+

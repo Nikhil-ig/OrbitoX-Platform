@@ -10,8 +10,11 @@ import {
     PlatformOrganization,
     PlatformPackageCatalogItem,
     PlatformProject,
+    PluginInstallationRecord,
+    PluginInstallationStatus,
     ProjectDomainRecord,
     ProjectEnvironment,
+    ProvisionPluginInstallationInput,
 } from '@orbitox/types';
 import {
     CreateKeyInput,
@@ -21,7 +24,9 @@ import {
     CredentialVault,
     PlatformKeyEngine,
     PlatformRepository,
+    canonicalizePluginId,
 } from '@orbitox-io/plugin-engine';
+import { TENANT_RE } from '@orbitox-io/bridge';
 import { loadPepperRing, activeVerifier, candidateVerifiers } from './pepper';
 
 export type { PlatformProject };
@@ -123,6 +128,9 @@ export type AsyncPlatformRepository = AsyncMethods<typeof PlatformRepository> & 
         resetSeconds: number;
     }>;
     getApiKeyPepperDistribution(): Promise<Record<string, number>>;
+    listPluginInstallations(tenantId?: string): Promise<PluginInstallationRecord[]>;
+    getPluginInstallation(tenantId: string, pluginId: string): Promise<PluginInstallationRecord | undefined>;
+    provisionPluginInstallation(input: ProvisionPluginInstallationInput): Promise<PluginInstallationRecord>;
 };
 
 type DatabaseClient = PrismaClient;
@@ -312,6 +320,21 @@ function toInstallation(row: RawRow): PackageInstallationRecord {
         status: row.status,
         configOverrides: (row.configOverrides || {}) as Record<string, any>,
         installedAt: dateString(row.installedAt)!,
+        updatedAt: dateString(row.updatedAt)!,
+    };
+}
+
+function toPluginInstallation(row: RawRow): PluginInstallationRecord {
+    return {
+        id: row.id,
+        tenantId: row.tenantId,
+        pluginId: row.pluginId,
+        runtimeTenantId: row.runtimeTenantId,
+        status: row.status,
+        entitlementRevision: row.entitlementRevision,
+        planId: row.planId ?? undefined,
+        config: (row.config || {}) as Record<string, any>,
+        createdAt: dateString(row.createdAt)!,
         updatedAt: dateString(row.updatedAt)!,
     };
 }
@@ -1206,6 +1229,86 @@ export function createPrismaPlatformRepository(client: PrismaClient, adminAuditC
             });
             return toInstallation(row);
         },
+        async listPluginInstallations(tenantId?: string): Promise<PluginInstallationRecord[]> {
+            return (await client.pluginInstallation.findMany({
+                where: tenantId ? { tenantId } : undefined,
+                orderBy: { createdAt: 'desc' },
+            })).map(toPluginInstallation);
+        },
+        async getPluginInstallation(tenantId: string, pluginId: string): Promise<PluginInstallationRecord | undefined> {
+            const canonical = canonicalizePluginId(pluginId);
+            const row = await client.pluginInstallation.findFirst({
+                where: {
+                    tenantId,
+                    OR: [
+                        { pluginId: canonical },
+                        { pluginId },
+                        { pluginId: canonical.replace(/^@orbitox\//, '') },
+                    ],
+                },
+            });
+            return row ? toPluginInstallation(row) : undefined;
+        },
+        async provisionPluginInstallation(input: ProvisionPluginInstallationInput): Promise<PluginInstallationRecord> {
+            const tenantId = input.tenantId?.trim();
+            const pluginId = canonicalizePluginId(input.pluginId);
+            const runtimeTenantId = input.runtimeTenantId?.trim();
+
+            if (!tenantId) throw new Error('Field "tenantId" is required for plugin installation.');
+            if (!pluginId) throw new Error('Field "pluginId" is required for plugin installation.');
+            if (!runtimeTenantId || !TENANT_RE.test(runtimeTenantId)) {
+                throw new Error(
+                    `Target runtime tenant ID "${runtimeTenantId}" is not in canonical format (org/{org}/project/{proj}/environment/{env}).`
+                );
+            }
+
+            // Anti-claim protection: check if another tenant already claimed this runtimeTenantId for this plugin
+            const existingClaim = await client.pluginInstallation.findFirst({
+                where: {
+                    pluginId,
+                    runtimeTenantId,
+                    NOT: { tenantId },
+                },
+            });
+            if (existingClaim) {
+                const err = new Error(
+                    `Runtime tenant "${runtimeTenantId}" for plugin "${pluginId}" is already claimed by tenant "${existingClaim.tenantId}".`
+                );
+                (err as any).code = 'RUNTIME_TENANT_ALREADY_CLAIMED';
+                throw err;
+            }
+
+            try {
+                const row = await client.pluginInstallation.upsert({
+                    where: { tenantId_pluginId: { tenantId, pluginId } },
+                    create: {
+                        id: `pinst_${crypto.randomUUID()}`,
+                        tenantId,
+                        pluginId,
+                        runtimeTenantId,
+                        status: (input.status as any) || 'ACTIVE',
+                        entitlementRevision: input.entitlementRevision ?? 1,
+                        planId: input.planId || null,
+                        config: input.config || {},
+                    },
+                    update: {
+                        runtimeTenantId,
+                        status: (input.status as any) || 'ACTIVE',
+                        entitlementRevision: input.entitlementRevision !== undefined ? input.entitlementRevision : undefined,
+                        planId: input.planId !== undefined ? input.planId : undefined,
+                        config: input.config !== undefined ? input.config : undefined,
+                    },
+                });
+                return toPluginInstallation(row);
+            } catch (dbErr: any) {
+                if (dbErr.code === 'P2002' && Array.isArray(dbErr.meta?.target) && dbErr.meta.target.includes('runtimeTenantId')) {
+                    const err = new Error(`Runtime tenant "${runtimeTenantId}" for plugin "${pluginId}" is already claimed by another tenant.`);
+                    (err as any).code = 'RUNTIME_TENANT_ALREADY_CLAIMED';
+                    throw err;
+                }
+                throw dbErr;
+            }
+        },
         async listDomains(environmentId?: string): Promise<ProjectDomainRecord[]> {
             return (await client.projectDomain.findMany({
                 where: environmentId ? { environmentId } : undefined,
@@ -1438,6 +1541,18 @@ const extraMethods = {
         return PlatformRepository.listDomains().find((domain) =>
             domain.verificationStatus === 'VERIFIED' && domain.domainName.toLowerCase() === domainName.toLowerCase()
         );
+    },
+    listPluginInstallations: async (tenantId?: string): Promise<PluginInstallationRecord[]> => {
+        if (prismaIsRequired()) return getPrismaRepository().listPluginInstallations(tenantId);
+        return PlatformRepository.listPluginInstallations(tenantId);
+    },
+    getPluginInstallation: async (tenantId: string, pluginId: string): Promise<PluginInstallationRecord | undefined> => {
+        if (prismaIsRequired()) return getPrismaRepository().getPluginInstallation(tenantId, pluginId);
+        return PlatformRepository.getPluginInstallation(tenantId, pluginId);
+    },
+    provisionPluginInstallation: async (input: ProvisionPluginInstallationInput): Promise<PluginInstallationRecord> => {
+        if (prismaIsRequired()) return getPrismaRepository().provisionPluginInstallation(input);
+        return PlatformRepository.provisionPluginInstallation(input);
     },
     incrementProjectUsage: async (projectId: string, amount = 1): Promise<number> => {
         if (prismaIsRequired()) return getPrismaRepository().incrementProjectUsage(projectId, amount);
