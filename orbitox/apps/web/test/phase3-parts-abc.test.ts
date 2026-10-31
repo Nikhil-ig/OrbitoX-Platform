@@ -1,17 +1,43 @@
+process.env.APP_DATABASE_URL = process.env.APP_DATABASE_URL || 'postgresql://orbitox_runtime@127.0.0.1:5432/orbitox_phase2';
+process.env.PLATFORM_AUDIT_DATABASE_URL = process.env.PLATFORM_AUDIT_DATABASE_URL || 'postgresql://orbitox_platform_admin_audit@127.0.0.1:5432/orbitox_phase2';
+process.env.OUTBOX_RELAY_DATABASE_URL = process.env.OUTBOX_RELAY_DATABASE_URL || 'postgresql://orbitox_outbox_relay:relay_secret_change_me_in_prod@127.0.0.1:5432/orbitox_phase2';
+if (!process.env.DATABASE_URL) {
+  process.env.DATABASE_URL = process.env.APP_DATABASE_URL;
+}
+
 import { describe, it, before, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
 import * as crypto from 'crypto';
+import { NextRequest } from 'next/server';
+import { PrismaClient } from '@prisma/client';
 import { platformRepository } from '../lib/platform-repository';
 import {
   SEED_PLANS,
   SEED_PLUGINS,
   InvalidStateTransitionError,
 } from '@orbitox-io/plugin-engine';
+import { DELETE as deletePlan, PATCH as patchPlan } from '../app/api/v1/platform/plans/[planId]/route';
+
+async function listAuditEvents(entityId: string) {
+  const databaseUrl = process.env.TEST_OWNER_DATABASE_URL || process.env.TEST_DATABASE_URL || 'postgresql://postgres:postgrespassword@127.0.0.1:5432/orbitox_phase2';
+  const reader = new PrismaClient({ datasources: { db: { url: databaseUrl } } });
+  try {
+    return await reader.platformAuditEvent.findMany({
+      where: { entityId },
+      orderBy: { occurredAt: 'desc' },
+    });
+  } finally {
+    await reader.$disconnect();
+  }
+}
 
 describe('Phase 3 Parts A–C: Rights, Licensing & Entitlement Engine', () => {
+  const TEST_ADMIN_TOKEN = 'test_admin_token_super_secret_32_chars_minimum';
   let testOrg: any;
 
   before(async () => {
+    process.env.ORBITOX_ADMIN_TOKEN = TEST_ADMIN_TOKEN;
+    process.env.PLATFORM_ADMIN_TOKEN = TEST_ADMIN_TOKEN;
     await platformRepository.ensurePlanCatalogueSeeded();
     const orgs = await platformRepository.listOrganizations();
     testOrg = orgs.find((o) => o.slug === 'test-org-phase3');
@@ -326,6 +352,71 @@ describe('Phase 3 Parts A–C: Rights, Licensing & Entitlement Engine', () => {
       assert.ok(outbox1, 'Outbox message for Tenant 1 must be emitted on plan update');
       assert.ok(outbox2, 'Outbox message for Tenant 2 must be emitted on plan update');
     });
+
+    it('prohibits plan deletion via DELETE endpoint with 405 PLAN_DELETION_PROHIBITED', async () => {
+      const req = new NextRequest('http://localhost:3000/api/v1/platform/plans/hms-starter', {
+        method: 'DELETE',
+        headers: {
+          authorization: `Bearer ${TEST_ADMIN_TOKEN}`,
+        },
+      });
+      const res = await deletePlan(req);
+      assert.strictEqual(res.status, 405);
+      const json = await res.json();
+      assert.strictEqual(json.success, false);
+      assert.strictEqual(json.error?.code, 'PLAN_DELETION_PROHIBITED');
+    });
+
+    it('PATCH /api/v1/platform/plans/[planId] records platform-admin audit with old and new values', async () => {
+      const planBefore = await platformRepository.getPlan('restaurant-starter');
+      assert.ok(planBefore);
+
+      const req = new NextRequest('http://localhost:3000/api/v1/platform/plans/restaurant-starter', {
+        method: 'PATCH',
+        headers: {
+          authorization: `Bearer ${TEST_ADMIN_TOKEN}`,
+          'content-type': 'application/json',
+        },
+        body: JSON.stringify({
+          priceMinor: 349900,
+        }),
+      });
+      const res = await patchPlan(req);
+      assert.strictEqual(res.status, 200);
+
+      const audits = await listAuditEvents('restaurant-starter');
+      const lastAudit: any = audits.find((a: any) => a.action === 'PLAN_UPDATED' && a.entityId === 'restaurant-starter');
+      assert.ok(lastAudit, 'Audit record for PLAN_UPDATED must exist');
+      assert.ok(lastAudit.metadata?.old, 'Audit record must capture old plan state');
+      assert.ok(lastAudit.metadata?.new, 'Audit record must capture new plan state');
+      assert.strictEqual(lastAudit.metadata?.new?.priceMinor, 349900);
+    });
+
+    it('outbox relay role can list and update outbox messages', async () => {
+      const msg = await platformRepository.recordOutboxMessage({
+        tenantId: `org/test-org-phase3/project/outbox-relay-test/environment/production`,
+        eventType: 'entitlement.test',
+        aggregateType: 'PluginInstallation',
+        aggregateId: 'test-agg-1',
+        payload: { test: true },
+      });
+      assert.ok(msg.id);
+      assert.strictEqual(msg.status, 'PENDING');
+
+      const pending = await platformRepository.listOutboxMessages('PENDING');
+      const found = pending.find((m: any) => m.id === msg.id);
+      assert.ok(found, 'Outbox message must be listed');
+
+      await platformRepository.updateOutboxMessage(msg.id, {
+        status: 'DISPATCHED',
+        dispatchedAt: new Date(),
+      });
+
+      const updatedList = await platformRepository.listOutboxMessages('DISPATCHED');
+      const updated = updatedList.find((m: any) => m.id === msg.id);
+      assert.ok(updated, 'Outbox message status should be DISPATCHED');
+      assert.ok(updated.dispatchedAt, 'Dispatched timestamp should be set');
+    });
   });
 
   describe('Part C: Entitlement Engine & State Transitions', () => {
@@ -377,6 +468,72 @@ describe('Phase 3 Parts A–C: Rights, Licensing & Entitlement Engine', () => {
       const s8 = await platformRepository.updatePluginInstallationStatus(tenantId, '@orbitox/restaurant', 'ARCHIVED');
       assert.strictEqual(s8.status, 'ARCHIVED');
       assert.strictEqual(s8.entitlementRevision, 8);
+    });
+
+    it('checkQuotaUsage fails closed on missing installation, missing plan, or non-active status', async () => {
+      const nonExistentTenant = `org/test-org-phase3/project/non-existent-${Date.now()}/environment/production`;
+
+      // 1. Missing installation fails closed
+      const uninstalledCheck = await platformRepository.checkQuotaUsage(
+        nonExistentTenant,
+        '@orbitox/hms',
+        'beds',
+        0,
+        1
+      );
+      assert.strictEqual(uninstalledCheck.allowed, false, 'Uninstalled plugin must fail closed');
+      assert.strictEqual(uninstalledCheck.reason, 'NOT_INSTALLED');
+
+      // 2. Suspended installation fails closed
+      const suspendedTenant = `org/test-org-phase3/project/suspended-check-${Date.now()}/environment/production`;
+      await platformRepository.provisionPluginInstallation({
+        tenantId: suspendedTenant,
+        pluginId: '@orbitox/hms',
+        runtimeTenantId: suspendedTenant,
+        status: 'ACTIVE',
+        planId: 'hms-starter',
+      });
+      await platformRepository.updatePluginInstallationStatus(suspendedTenant, '@orbitox/hms', 'SUSPENDED');
+
+      const suspendedCheck = await platformRepository.checkQuotaUsage(
+        suspendedTenant,
+        '@orbitox/hms',
+        'beds',
+        5,
+        1
+      );
+      assert.strictEqual(suspendedCheck.allowed, false, 'Suspended installation must fail closed');
+      assert.strictEqual(suspendedCheck.reason, 'INSTALLATION_SUSPENDED');
+
+      // 3. READ_ONLY installation allows read (+0) but blocks write (+1)
+      const readOnlyTenant = `org/test-org-phase3/project/readonly-check-${Date.now()}/environment/production`;
+      await platformRepository.provisionPluginInstallation({
+        tenantId: readOnlyTenant,
+        pluginId: '@orbitox/hms',
+        runtimeTenantId: readOnlyTenant,
+        status: 'ACTIVE',
+        planId: 'hms-starter',
+      });
+      await platformRepository.updatePluginInstallationStatus(readOnlyTenant, '@orbitox/hms', 'READ_ONLY');
+
+      const readOnlyWriteCheck = await platformRepository.checkQuotaUsage(
+        readOnlyTenant,
+        '@orbitox/hms',
+        'beds',
+        5,
+        1
+      );
+      assert.strictEqual(readOnlyWriteCheck.allowed, false, 'READ_ONLY write must fail closed');
+      assert.strictEqual(readOnlyWriteCheck.reason, 'READ_ONLY');
+
+      const readOnlyReadCheck = await platformRepository.checkQuotaUsage(
+        readOnlyTenant,
+        '@orbitox/hms',
+        'beds',
+        5,
+        0
+      );
+      assert.strictEqual(readOnlyReadCheck.allowed, true, 'READ_ONLY read must succeed');
     });
 
     it('rejects illegal state transitions with InvalidStateTransitionError', async () => {

@@ -63,8 +63,19 @@ export const PATCH = withApiGuard(
     try {
       const url = new URL(req.url);
       const planId = url.pathname.split('/').pop() || '';
-      const body = await req.json();
+      const previousPlan = await platformRepository.getPlan(planId);
+      if (!previousPlan) {
+        return NextResponse.json<ApiResponse>(
+          {
+            success: false,
+            error: { code: 'NOT_FOUND', message: `Plan "${planId}" not found.` },
+            meta: { latencyMs: 1, timestamp: new Date().toISOString(), requestId: ctx.requestId },
+          },
+          { status: 404 }
+        );
+      }
 
+      const body = await req.json();
       const updated = await platformRepository.updatePlan(planId, body);
 
       await platformRepository.recordPlatformAdminAudit({
@@ -73,7 +84,7 @@ export const PATCH = withApiGuard(
         entityId: planId,
         actorId: ctx.apiKey || 'platform_admin',
         reason: `Updated plan ${planId}`,
-        metadata: { updates: body },
+        metadata: JSON.parse(JSON.stringify({ old: previousPlan, new: updated })),
       });
 
       return NextResponse.json<ApiResponse>({
@@ -96,3 +107,27 @@ export const PATCH = withApiGuard(
 );
 
 export const PUT = PATCH;
+
+export const DELETE = withApiGuard(
+  {
+    serviceId: 'platform',
+    serviceName: 'Plan Catalogue Service',
+    routeClass: 'platform-admin',
+    allowPublic: false,
+    requiredScopes: ['platform.plans.manage', 'admin'],
+  },
+  async (req: NextRequest, ctx: ApiRequestContext) => {
+    return NextResponse.json<ApiResponse>(
+      {
+        success: false,
+        error: {
+          code: 'PLAN_DELETION_PROHIBITED',
+          message: 'Plans cannot be deleted; deprecate or archive the plan instead.',
+        },
+        meta: { latencyMs: 1, timestamp: new Date().toISOString(), requestId: ctx.requestId },
+      },
+      { status: 405 }
+    );
+  }
+);
+

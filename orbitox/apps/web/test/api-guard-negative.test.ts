@@ -740,6 +740,9 @@ describe('Phase 1 & 1.5 Security, Unified Auth & Licensed Customer Test Suite', 
 
   it('project provisioning issues a persistent repository key that survives reinitialization', async () => {
     if (platformRepository.isPrismaBacked()) {
+      await withTestOwner(async (owner) => {
+        await owner.pluginInstallation.deleteMany({ where: { tenantId: { contains: 'durable-provisioned-customer' } } });
+      });
       const response = await provisionProject(new NextRequest('http://localhost:3000/api/v1/admin/projects', {
         method: 'POST',
         headers: {
@@ -762,6 +765,7 @@ describe('Phase 1 & 1.5 Security, Unified Auth & Licensed Customer Test Suite', 
       assert.deepEqual(persistedKey?.tenantScope, [projectSlug]);
       assert.equal((await platformRepository.getProject(projectId))?.slug, projectSlug);
       await withTestOwner(async (owner) => {
+        await owner.pluginInstallation.deleteMany({ where: { tenantId: { contains: projectSlug } } });
         await owner.platformProject.delete({ where: { id: projectId } });
       });
       return;

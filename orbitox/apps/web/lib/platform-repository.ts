@@ -172,6 +172,10 @@ export type AsyncPlatformRepository = AsyncMethods<typeof PlatformRepository> & 
         aggregateId: string;
         payload: Record<string, any>;
     }): Promise<PlatformOutboxRecord>;
+    updateOutboxMessage(
+        id: string,
+        updates: { status?: 'PENDING' | 'DISPATCHED' | 'FAILED'; retryCount?: number; lastError?: string; dispatchedAt?: Date }
+    ): Promise<void>;
 };
 
 type DatabaseClient = PrismaClient;
@@ -637,7 +641,11 @@ function makeProjectData(input: CreateProjectInput, slug: string, projectId: str
     };
 }
 
-export function createPrismaPlatformRepository(client: PrismaClient, adminAuditClient: PrismaClient) {
+export function createPrismaPlatformRepository(
+    client: PrismaClient,
+    adminAuditClient: PrismaClient,
+    outboxRelayClient: PrismaClient = client
+) {
     const mapProject = (row: RawRow | null): PlatformProject | undefined => (row ? toProject(row) : undefined);
     const mapKey = (row: RawRow | null): PlatformApiKeyRecord | undefined => (row ? toKey(row) : undefined);
 
@@ -1817,8 +1825,17 @@ export function createPrismaPlatformRepository(client: PrismaClient, adminAuditC
                     ],
                 },
             });
-            if (!row || !row.planId) {
-                return { allowed: true, currentCount };
+            if (!row) {
+                return { allowed: false, currentCount, reason: 'NOT_INSTALLED' };
+            }
+            if (!row.planId) {
+                return { allowed: false, currentCount, reason: 'NO_PLAN' };
+            }
+            if (row.status !== 'ACTIVE' && row.status !== 'READ_ONLY') {
+                return { allowed: false, currentCount, reason: `INSTALLATION_${row.status}` };
+            }
+            if (row.status === 'READ_ONLY' && requestedIncrement > 0) {
+                return { allowed: false, currentCount, reason: 'READ_ONLY' };
             }
 
             const quota = await client.planQuota.findUnique({
@@ -2149,7 +2166,7 @@ export function createPrismaPlatformRepository(client: PrismaClient, adminAuditC
             }
         },
         async listOutboxMessages(status?: string): Promise<PlatformOutboxRecord[]> {
-            const rows = await client.platformOutboxMessage.findMany({
+            const rows = await outboxRelayClient.platformOutboxMessage.findMany({
                 where: status ? { status: status as any } : undefined,
                 orderBy: { createdAt: 'asc' },
             });
@@ -2167,6 +2184,20 @@ export function createPrismaPlatformRepository(client: PrismaClient, adminAuditC
                 dispatchedAt: r.dispatchedAt ? r.dispatchedAt.toISOString() : undefined,
             }));
         },
+        async updateOutboxMessage(
+            id: string,
+            updates: { status?: 'PENDING' | 'DISPATCHED' | 'FAILED'; retryCount?: number; lastError?: string; dispatchedAt?: Date }
+        ): Promise<void> {
+            await outboxRelayClient.platformOutboxMessage.update({
+                where: { id },
+                data: {
+                    status: updates.status,
+                    retryCount: updates.retryCount,
+                    lastError: updates.lastError,
+                    dispatchedAt: updates.dispatchedAt,
+                },
+            });
+        },
         async recordOutboxMessage(input: {
             tenantId: string;
             eventType: string;
@@ -2174,32 +2205,34 @@ export function createPrismaPlatformRepository(client: PrismaClient, adminAuditC
             aggregateId: string;
             payload: Record<string, any>;
         }): Promise<PlatformOutboxRecord> {
-            await client.$queryRaw`SELECT set_config('app.current_tenant_id', ${input.tenantId}, true)`;
-            const row = await client.platformOutboxMessage.create({
-                data: {
-                    id: `outbox_${crypto.randomUUID()}`,
-                    tenantId: input.tenantId,
-                    eventType: input.eventType,
-                    aggregateType: input.aggregateType,
-                    aggregateId: input.aggregateId,
-                    payload: input.payload,
-                    status: 'PENDING',
-                    retryCount: 0,
-                },
+            return client.$transaction(async (tx) => {
+                await tx.$queryRaw`SELECT set_config('app.current_tenant_id', ${input.tenantId}, true)`;
+                const row = await tx.platformOutboxMessage.create({
+                    data: {
+                        id: `outbox_${crypto.randomUUID()}`,
+                        tenantId: input.tenantId,
+                        eventType: input.eventType,
+                        aggregateType: input.aggregateType,
+                        aggregateId: input.aggregateId,
+                        payload: input.payload,
+                        status: 'PENDING',
+                        retryCount: 0,
+                    },
+                });
+                return {
+                    id: row.id,
+                    tenantId: row.tenantId,
+                    eventType: row.eventType,
+                    aggregateType: row.aggregateType,
+                    aggregateId: row.aggregateId,
+                    payload: (row.payload || {}) as Record<string, any>,
+                    status: row.status as any,
+                    retryCount: row.retryCount,
+                    lastError: row.lastError ?? undefined,
+                    createdAt: row.createdAt.toISOString(),
+                    dispatchedAt: row.dispatchedAt ? row.dispatchedAt.toISOString() : undefined,
+                };
             });
-            return {
-                id: row.id,
-                tenantId: row.tenantId,
-                eventType: row.eventType,
-                aggregateType: row.aggregateType,
-                aggregateId: row.aggregateId,
-                payload: (row.payload || {}) as Record<string, any>,
-                status: row.status as any,
-                retryCount: row.retryCount,
-                lastError: row.lastError ?? undefined,
-                createdAt: row.createdAt.toISOString(),
-                dispatchedAt: row.dispatchedAt ? row.dispatchedAt.toISOString() : undefined,
-            };
         },
         async listDomains(environmentId?: string): Promise<ProjectDomainRecord[]> {
             return (await client.projectDomain.findMany({
@@ -2343,15 +2376,22 @@ function prismaIsRequired(): boolean {
     return true;
 }
 
+let outboxRelayClient: PrismaClient | null = null;
+
 function getPrismaRepository(): ReturnType<typeof createPrismaPlatformRepository> {
     if (prismaRepository) return prismaRepository;
     const runtimeUrl = process.env.APP_DATABASE_URL || (!prismaIsRequired() ? process.env.DATABASE_URL : undefined);
     const auditUrl = process.env.PLATFORM_AUDIT_DATABASE_URL;
+    const relayUrl = process.env.OUTBOX_RELAY_DATABASE_URL || (process.env.NODE_ENV !== 'production' ? auditUrl || runtimeUrl : undefined);
     if (!runtimeUrl) throw new Error('DATABASE_URL is required for the platform repository.');
     if (!auditUrl) throw new Error('PLATFORM_AUDIT_DATABASE_URL is required for platform-admin audit writes.');
+    if (process.env.NODE_ENV === 'production' && !process.env.OUTBOX_RELAY_DATABASE_URL) {
+        throw new Error('OUTBOX_RELAY_DATABASE_URL is required for the outbox relay role in production.');
+    }
     runtimeClient = new PrismaClient({ datasources: { db: { url: runtimeUrl } } });
     auditClient = new PrismaClient({ datasources: { db: { url: auditUrl } } });
-    prismaRepository = createPrismaPlatformRepository(runtimeClient, auditClient);
+    outboxRelayClient = new PrismaClient({ datasources: { db: { url: relayUrl || runtimeUrl } } });
+    prismaRepository = createPrismaPlatformRepository(runtimeClient, auditClient, outboxRelayClient);
     return prismaRepository;
 }
 
@@ -2533,6 +2573,10 @@ const extraMethods = {
     recordOutboxMessage: async (input: any): Promise<PlatformOutboxRecord> => {
         if (prismaIsRequired()) return getPrismaRepository().recordOutboxMessage(input);
         return PlatformRepository.recordOutboxMessage(input);
+    },
+    updateOutboxMessage: async (id: string, updates: any): Promise<void> => {
+        if (prismaIsRequired()) return getPrismaRepository().updateOutboxMessage(id, updates);
+        return PlatformRepository.updateOutboxMessage(id, updates);
     },
     incrementProjectUsage: async (projectId: string, amount = 1): Promise<number> => {
         if (prismaIsRequired()) return getPrismaRepository().incrementProjectUsage(projectId, amount);

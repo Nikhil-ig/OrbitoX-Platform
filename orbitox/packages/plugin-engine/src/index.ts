@@ -30,6 +30,7 @@ export * from './tenancy';
 export * from './modeSwitcher';
 export * from './platform/platform-repository';
 export * from './platform/plan-catalogue';
+export * from './platform/entitlement-token';
 export * from './contract';
 
 

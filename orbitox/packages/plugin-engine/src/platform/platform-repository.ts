@@ -39,7 +39,7 @@ export interface PlatformOutboxRecord {
   aggregateType: string;
   aggregateId: string;
   payload: Record<string, any>;
-  status: 'PENDING' | 'SENT' | 'FAILED';
+  status: 'PENDING' | 'DISPATCHED' | 'SENT' | 'FAILED';
   retryCount: number;
   lastError?: string;
   createdAt: string;
@@ -1648,13 +1648,22 @@ export class PlatformRepository {
     this.initialize();
     const canonical = canonicalizePluginId(pluginId);
     const existing = this.getPluginInstallation(tenantId, canonical);
-    if (!existing || !existing.planId) {
-      return { allowed: true, limit: -1, current: currentCount };
+    if (!existing) {
+      return { allowed: false, limit: -1, current: currentCount, reason: 'NOT_INSTALLED' };
+    }
+    if (!existing.planId) {
+      return { allowed: false, limit: -1, current: currentCount, reason: 'NO_PLAN' };
+    }
+    if (existing.status !== 'ACTIVE' && existing.status !== 'READ_ONLY') {
+      return { allowed: false, limit: -1, current: currentCount, reason: `INSTALLATION_${existing.status}` };
+    }
+    if (existing.status === 'READ_ONLY' && requestedIncrement > 0) {
+      return { allowed: false, limit: -1, current: currentCount, reason: 'READ_ONLY' };
     }
 
     const plan = this.getPlan(existing.planId);
     if (!plan) {
-      return { allowed: true, limit: -1, current: currentCount };
+      return { allowed: false, limit: -1, current: currentCount, reason: 'NO_PLAN' };
     }
 
     const quota = plan.quotas.find((q) => q.quotaKey === quotaKey);
@@ -1818,6 +1827,19 @@ export class PlatformRepository {
     };
     this.outboxMessages.push(message);
     return message;
+  }
+
+  static updateOutboxMessage(
+    id: string,
+    updates: { status?: 'PENDING' | 'DISPATCHED' | 'FAILED'; retryCount?: number; lastError?: string; dispatchedAt?: Date }
+  ): void {
+    this.initialize();
+    const msg = this.outboxMessages.find((m) => m.id === id);
+    if (!msg) return;
+    if (updates.status) msg.status = updates.status;
+    if (typeof updates.retryCount === 'number') msg.retryCount = updates.retryCount;
+    if (updates.lastError !== undefined) msg.lastError = updates.lastError;
+    if (updates.dispatchedAt) msg.dispatchedAt = updates.dispatchedAt.toISOString();
   }
 
   // ─────────────────────────────────────────────────────────────
