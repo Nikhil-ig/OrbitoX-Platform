@@ -381,6 +381,7 @@ describe('Restaurant Traffic Routing & Demolition of In-Memory Runtime (Phase 2b
                 planTier: 'growth',
                 technicalLead: 'lead@healthdine.org',
                 contactEmail: 'contact@healthdine.org',
+                businessModel: 'HEALTHCARE_NETWORK',
                 plugins: [
                     { pluginId: '@orbitox/restaurant', planId: 'restaurant-starter' },
                     { pluginId: '@orbitox/hms', planId: 'hms-starter' },
