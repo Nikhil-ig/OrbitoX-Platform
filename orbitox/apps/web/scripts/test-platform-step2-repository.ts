@@ -36,6 +36,7 @@ const auditIntentIds: string[] = [];
 const previousRepositoryMode = process.env.ORBITOX_PLATFORM_REPOSITORY;
 const previousAdminToken = process.env.ORBITOX_ADMIN_TOKEN;
 const previousServerPepper = process.env.ORBITOX_SERVER_PEPPER;
+const previousCrmPlugin = process.env.ORBITOX_ENABLE_CRM_PLUGIN;
 
 function pass(name: string): void {
     passed.push(name);
@@ -44,6 +45,7 @@ function pass(name: string): void {
 
 async function main(): Promise<void> {
     process.env.ORBITOX_SERVER_PEPPER = `step2-server-pepper-${suffix}`;
+    process.env.ORBITOX_ENABLE_CRM_PLUGIN = 'true';
     const organization = await repository.createOrganization({
         slug: organizationSlug,
         name: `Step 2 ${suffix}`,
@@ -286,6 +288,8 @@ main()
         else process.env.ORBITOX_ADMIN_TOKEN = previousAdminToken;
         if (previousServerPepper === undefined) delete process.env.ORBITOX_SERVER_PEPPER;
         else process.env.ORBITOX_SERVER_PEPPER = previousServerPepper;
+        if (previousCrmPlugin === undefined) delete process.env.ORBITOX_ENABLE_CRM_PLUGIN;
+        else process.env.ORBITOX_ENABLE_CRM_PLUGIN = previousCrmPlugin;
         if (platformAuditId) {
             await owner.$executeRaw`DELETE FROM "PlatformAuditEvent" WHERE "id" = ${platformAuditId}`.catch(() => undefined);
         }

@@ -30,6 +30,7 @@ const suffix = randomUUID();
 const previousMode = process.env.ORBITOX_PLATFORM_REPOSITORY;
 const previousPepper = process.env.ORBITOX_SERVER_PEPPER;
 const previousAdminToken = process.env.ORBITOX_ADMIN_TOKEN;
+const previousCrmPlugin = process.env.ORBITOX_ENABLE_CRM_PLUGIN;
 let organizationId: string | undefined;
 let databaseStopped = false;
 const timeout = setTimeout(() => {
@@ -83,6 +84,7 @@ async function main(): Promise<void> {
     process.env.ORBITOX_PLATFORM_REPOSITORY = 'prisma';
     process.env.ORBITOX_SERVER_PEPPER = `outage-pepper-${suffix}-32-characters`;
     process.env.ORBITOX_ADMIN_TOKEN = `outage-admin-${suffix}-32-characters`;
+    process.env.ORBITOX_ENABLE_CRM_PLUGIN = 'true';
     const organization = await repository.createOrganization({
         slug: `outage-${suffix}`,
         name: `Outage test ${suffix}`,
@@ -170,5 +172,7 @@ main()
         else process.env.ORBITOX_SERVER_PEPPER = previousPepper;
         if (previousAdminToken === undefined) delete process.env.ORBITOX_ADMIN_TOKEN;
         else process.env.ORBITOX_ADMIN_TOKEN = previousAdminToken;
+        if (previousCrmPlugin === undefined) delete process.env.ORBITOX_ENABLE_CRM_PLUGIN;
+        else process.env.ORBITOX_ENABLE_CRM_PLUGIN = previousCrmPlugin;
         clearTimeout(timeout);
     });
