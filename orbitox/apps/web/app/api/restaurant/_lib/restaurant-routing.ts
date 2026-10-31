@@ -1,5 +1,107 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { signBridgeRequest, getDefaultBridgeKeys } from '@orbitox-io/bridge';
+import { signBridgeRequest, getDefaultBridgeKeys, TENANT_RE } from '@orbitox-io/bridge';
+import { platformRepository } from '@/lib/platform-repository';
+
+// Programmatic link registry for fast lookups or runtime/test overrides
+const tenantLinkRegistry = new Map<string, string>();
+
+export function registerRestaurantTenantLink(platformTenantId: string, restaurantOsTenantId: string): void {
+  const trimmedTarget = restaurantOsTenantId?.trim();
+  if (!trimmedTarget || !TENANT_RE.test(trimmedTarget)) {
+    throw new Error(
+      `Target RestaurantOS tenant ID "${restaurantOsTenantId}" is not in canonical format (org/{org}/project/{proj}/environment/{env}).`
+    );
+  }
+  tenantLinkRegistry.set(platformTenantId.trim(), trimmedTarget);
+}
+
+export function clearRestaurantTenantLinks(): void {
+  tenantLinkRegistry.clear();
+}
+
+/**
+ * Resolves a non-canonical platform tenant identifier (e.g. project slug or alias)
+ * to its canonical RestaurantOS tenant identifier strictly by querying the platform's
+ * package installation records. Never guesses or rewrites strings.
+ */
+export async function resolveLinkedRestaurantTenant(
+  tenantId: string
+): Promise<string | undefined> {
+  const trimmed = tenantId?.trim();
+  if (!trimmed) return undefined;
+
+  // 1. Check programmatic/test link overrides
+  if (tenantLinkRegistry.has(trimmed)) {
+    return tenantLinkRegistry.get(trimmed);
+  }
+
+  // 2. Query platform package installations
+  try {
+    const installations = await platformRepository.listInstallations();
+    for (const inst of installations) {
+      if (inst.status !== 'ACTIVE') continue;
+      const cfg = inst.configOverrides || {};
+      const linked =
+        cfg.platformTenantId ||
+        cfg.linkedTenantId ||
+        cfg.tenantId ||
+        cfg.tenantSlug ||
+        cfg.tenant;
+      const targetRestaurantTenant =
+        cfg.restaurantOsTenantId ||
+        cfg.restaurantTenantId ||
+        cfg.canonicalTenantId;
+
+      if (linked === trimmed && targetRestaurantTenant && TENANT_RE.test(targetRestaurantTenant)) {
+        return targetRestaurantTenant;
+      }
+    }
+  } catch {
+    // If listing installations fails, proceed to project lookup
+  }
+
+  // 3. Query platform project by ID or slug
+  try {
+    const project = await platformRepository.getProject(trimmed);
+    if (project) {
+      const envs = await platformRepository.listEnvironments(project.id);
+      const env =
+        envs.find((e) => e.isProduction || e.name === 'production' || e.slug === 'production') ||
+        envs[0];
+      if (env) {
+        const envInsts = await platformRepository.listInstallations(env.id);
+        const restaurantInst = envInsts.find(
+          (i) =>
+            (i.packageId === '@orbitox/restaurant' ||
+              i.packageId === '@orbitox/pos' ||
+              i.packageId === '@orbitox-io/restaurant' ||
+              Boolean(i.configOverrides?.restaurantOsTenantId)) &&
+            i.status === 'ACTIVE'
+        );
+
+        if (restaurantInst) {
+          const stored =
+            restaurantInst.configOverrides?.restaurantOsTenantId ||
+            restaurantInst.configOverrides?.restaurantTenantId ||
+            restaurantInst.configOverrides?.canonicalTenantId;
+          if (stored && TENANT_RE.test(stored)) {
+            return stored;
+          }
+          // Only if project slug and organization ID naturally form a canonical tenant without any character replacements
+          const envName = env.name || env.slug || 'production';
+          const candidate = `org/${project.organizationId}/project/${project.slug}/environment/${envName}`;
+          if (TENANT_RE.test(candidate)) {
+            return candidate;
+          }
+        }
+      }
+    }
+  } catch {
+    // Return undefined if not linked
+  }
+
+  return undefined;
+}
 
 export function getRestaurantPublicUrl(): string | undefined {
   return process.env.RESTAURANTOS_PUBLIC_URL?.trim();
@@ -99,13 +201,37 @@ export async function forwardSignedBridgeCall(
     } catch {}
   }
 
-  // Canonicalize tenant format if needed
-  let canonicalTenant = verifiedTenantId;
-  const CANONICAL_TENANT_REGEX =
-    /^org\/[a-zA-Z0-9_-]+\/project\/[a-zA-Z0-9_-]+\/environment\/[a-zA-Z0-9_-]+$/;
-  if (!canonicalTenant || !CANONICAL_TENANT_REGEX.test(canonicalTenant)) {
-    const slug = canonicalTenant ? canonicalTenant.replace(/[^a-zA-Z0-9_-]/g, '_') : 'default';
-    canonicalTenant = `org/platform/project/${slug}/environment/production`;
+  // Strict tenant verification: platform must never vouch for a synthetic or guessed tenant
+  const rawTenant = verifiedTenantId?.trim();
+  if (!rawTenant) {
+    return NextResponse.json(
+      {
+        success: false,
+        error: {
+          code: 'UNAUTHORIZED',
+          message: 'Tenant identity is required.',
+        },
+      },
+      { status: 401 }
+    );
+  }
+
+  let canonicalTenant = rawTenant;
+  if (!TENANT_RE.test(canonicalTenant)) {
+    const linkedTenant = await resolveLinkedRestaurantTenant(canonicalTenant);
+    if (!linkedTenant) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: {
+            code: 'RESTAURANT_TENANT_NOT_LINKED',
+            message: `Tenant "${canonicalTenant}" is not linked to an active RestaurantOS installation.`,
+          },
+        },
+        { status: 403 }
+      );
+    }
+    canonicalTenant = linkedTenant;
   }
 
   const keys = getDefaultBridgeKeys();
