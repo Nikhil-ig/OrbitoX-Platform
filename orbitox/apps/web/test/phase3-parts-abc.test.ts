@@ -15,6 +15,7 @@ import {
   SEED_PLANS,
   SEED_PLUGINS,
   InvalidStateTransitionError,
+  PlatformRepository,
 } from '@orbitox-io/plugin-engine';
 import { DELETE as deletePlan, PATCH as patchPlan } from '../app/api/v1/platform/plans/[planId]/route';
 
@@ -384,12 +385,21 @@ describe('Phase 3 Parts A–C: Rights, Licensing & Entitlement Engine', () => {
       const res = await patchPlan(req);
       assert.strictEqual(res.status, 200);
 
-      const audits = await listAuditEvents('restaurant-starter');
-      const lastAudit: any = audits.find((a: any) => a.action === 'PLAN_UPDATED' && a.entityId === 'restaurant-starter');
-      assert.ok(lastAudit, 'Audit record for PLAN_UPDATED must exist');
-      assert.ok(lastAudit.metadata?.old, 'Audit record must capture old plan state');
-      assert.ok(lastAudit.metadata?.new, 'Audit record must capture new plan state');
-      assert.strictEqual(lastAudit.metadata?.new?.priceMinor, 349900);
+      if (platformRepository.isPrismaBacked()) {
+        const audits = await listAuditEvents('restaurant-starter');
+        const lastAudit: any = audits.find((a: any) => a.action === 'PLAN_UPDATED' && a.entityId === 'restaurant-starter');
+        assert.ok(lastAudit, 'Audit record for PLAN_UPDATED must exist');
+        assert.ok(lastAudit.metadata?.old, 'Audit record must capture old plan state');
+        assert.ok(lastAudit.metadata?.new, 'Audit record must capture new plan state');
+        assert.strictEqual(lastAudit.metadata?.new?.priceMinor, 349900);
+      } else {
+        const audits = PlatformRepository.listAuditEvents();
+        const lastAudit: any = audits.find((a: any) => a.action === 'PLAN_UPDATED' && a.entityId === 'restaurant-starter');
+        assert.ok(lastAudit, 'Audit record for PLAN_UPDATED must exist');
+        assert.ok(lastAudit.metadata?.old, 'Audit record must capture old plan state');
+        assert.ok(lastAudit.metadata?.new, 'Audit record must capture new plan state');
+        assert.strictEqual(lastAudit.metadata?.new?.priceMinor, 349900);
+      }
     });
 
     it('outbox relay role can list and update outbox messages', async () => {
