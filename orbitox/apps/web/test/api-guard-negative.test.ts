@@ -62,8 +62,8 @@ describe('Phase 1 & 1.5 Security, Unified Auth & Licensed Customer Test Suite', 
     if (platformRepository.isPrismaBacked()) {
       suiteDataDir = '';
       await withTestOwner(async (owner) => {
-        await owner.pluginInstallation.deleteMany({});
-        await owner.platformOutboxMessage.deleteMany({});
+        await owner.pluginInstallation.deleteMany({ where: { tenantId: { contains: 'platform-admin' } } });
+        await owner.platformOutboxMessage.deleteMany({ where: { tenantId: { contains: 'platform-admin' } } });
         await owner.platformOrganization.deleteMany({ where: { slug: 'platform-admin' } });
       });
     } else {
@@ -206,8 +206,8 @@ describe('Phase 1 & 1.5 Security, Unified Auth & Licensed Customer Test Suite', 
   afterEach(async () => {
     if (platformRepository.isPrismaBacked()) {
       await withTestOwner(async (owner) => {
-        await owner.pluginInstallation.deleteMany({});
-        await owner.platformOutboxMessage.deleteMany({});
+        await owner.pluginInstallation.deleteMany({ where: { tenantId: { contains: 'platform-admin' } } });
+        await owner.platformOutboxMessage.deleteMany({ where: { tenantId: { contains: 'platform-admin' } } });
         if (suiteOrganizationId) {
           await owner.platformOrganization.deleteMany({ where: { id: suiteOrganizationId } });
         }
