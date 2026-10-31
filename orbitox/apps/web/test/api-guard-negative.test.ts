@@ -61,6 +61,11 @@ describe('Phase 1 & 1.5 Security, Unified Auth & Licensed Customer Test Suite', 
     process.env.ORBITOX_SERVER_PEPPER = 'test_pepper_32_characters_minimum_len';
     if (platformRepository.isPrismaBacked()) {
       suiteDataDir = '';
+      await withTestOwner(async (owner) => {
+        await owner.pluginInstallation.deleteMany({});
+        await owner.platformOutboxMessage.deleteMany({});
+        await owner.platformOrganization.deleteMany({ where: { slug: 'platform-admin' } });
+      });
     } else {
       suiteDataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'orbitox-api-guard-'));
       PlatformRepository.resetForTesting();
@@ -201,7 +206,11 @@ describe('Phase 1 & 1.5 Security, Unified Auth & Licensed Customer Test Suite', 
   afterEach(async () => {
     if (platformRepository.isPrismaBacked()) {
       await withTestOwner(async (owner) => {
-        await owner.platformOrganization.delete({ where: { id: suiteOrganizationId } });
+        await owner.pluginInstallation.deleteMany({});
+        await owner.platformOutboxMessage.deleteMany({});
+        if (suiteOrganizationId) {
+          await owner.platformOrganization.deleteMany({ where: { id: suiteOrganizationId } });
+        }
       });
     } else {
       PlatformRepository.resetForTesting();
