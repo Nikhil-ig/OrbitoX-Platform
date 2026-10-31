@@ -71,6 +71,10 @@ const globalTableAllowlist = new Set([
   'PlatformRateLimitBucket',
   'BridgeNonce',
   'PlatformImporterLease',
+  'Plugin',
+  'Plan',
+  'PlanFeature',
+  'PlanQuota',
 ]);
 
 const testTimeout = setTimeout(() => {

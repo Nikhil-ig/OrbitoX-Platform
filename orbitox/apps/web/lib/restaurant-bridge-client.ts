@@ -222,17 +222,30 @@ export class RestaurantBridgeClient {
       idempotencyKey,
     };
 
-    const res = await this.sendLifecycleRequest('POST', '/orbitox/lifecycle/provision', input.tenantId, payload);
+    let res: LifecycleResult;
     try {
+      res = await this.sendLifecycleRequest('POST', '/orbitox/lifecycle/provision', input.tenantId, payload);
+    } catch (sendErr: any) {
       await platformRepository.provisionPluginInstallation({
         tenantId: input.tenantId,
         pluginId: '@orbitox/restaurant',
         runtimeTenantId: input.tenantId,
-        status: 'ACTIVE',
+        status: 'FAILED',
         planId: input.planId || 'growth',
         entitlementRevision: input.revision ?? 1,
       });
-    } catch {}
+      throw sendErr;
+    }
+
+    const installationStatus = res.ok ? 'ACTIVE' : 'FAILED';
+    await platformRepository.provisionPluginInstallation({
+      tenantId: input.tenantId,
+      pluginId: '@orbitox/restaurant',
+      runtimeTenantId: input.tenantId,
+      status: installationStatus,
+      planId: input.planId || 'growth',
+      entitlementRevision: input.revision ?? 1,
+    });
     await this.recordInstallationResult(input.tenantId, 'PROVISION', res);
     return res;
   }
@@ -252,9 +265,9 @@ export class RestaurantBridgeClient {
     };
 
     const res = await this.sendLifecycleRequest('POST', '/orbitox/lifecycle/suspend', tenantId, payload);
-    try {
+    if (res.ok) {
       await platformRepository.updatePluginInstallationStatus(tenantId, '@orbitox/restaurant', 'SUSPENDED');
-    } catch {}
+    }
     await this.recordInstallationResult(tenantId, 'SUSPEND', res);
     return res;
   }
@@ -274,9 +287,9 @@ export class RestaurantBridgeClient {
     };
 
     const res = await this.sendLifecycleRequest('POST', '/orbitox/lifecycle/resume', tenantId, payload);
-    try {
+    if (res.ok) {
       await platformRepository.updatePluginInstallationStatus(tenantId, '@orbitox/restaurant', 'ACTIVE');
-    } catch {}
+    }
     await this.recordInstallationResult(tenantId, 'RESUME', res);
     return res;
   }

@@ -12,6 +12,7 @@ Everything ran on PostgreSQL 16.15 with real role logins (`orbitox_runtime`, `or
 | TypeScript type-check (strict) | `npx tsc -p ts` | 0 errors |
 | Unit tests (crypto, pepper rotation, bridge signing, seed gate, errors) | `npx tsx --test ts/test/unit.test.ts` | 19 / 19 |
 | Integration on the real database (pool safety, PHI, 20-way races, idempotency, outbox) | `HMS_IT_RUNTIME_URL=… npx tsx --test ts/test/integration.test.ts` | 12 / 12 |
+| Entitlement grants (Ed25519: forgery, tamper, alg-none, wrong plugin/tenant, expiry, rollback, rotation) | `npx tsx --test ts/test/entitlement.test.ts` | 7 / 7 |
 | Negative control (dropped the bed-uniqueness index and the payment validator) | same integration suite | 2 failing tests, as required |
 
 Two real bugs were found and fixed while building this. Do not reintroduce either:
@@ -33,6 +34,7 @@ ts/src/hms-repository.ts        createPatient, phone search, purpose-limited aud
 ts/src/pepper.ts                N1: rotation-aware API key verifiers (= ANY(candidates))
 ts/src/bridge-signature.ts      platform -> RestaurantOS signed tenant/principal headers + replay protection
 ts/src/seed-gate.ts             A5: demo seed only in development + flag; random 256-bit table tokens
+ts/src/entitlement-token.ts     Phase 3: signed per-tenant/per-plugin grants + licence files (see blueprint)
 ts/test/unit.test.ts, ts/test/integration.test.ts
 ```
 

@@ -25,6 +25,13 @@ import {
     PlatformKeyEngine,
     PlatformRepository,
     canonicalizePluginId,
+    PluginCatalogueItem,
+    PlanCatalogueRecord,
+    PlatformOutboxRecord,
+    SEED_PLUGINS,
+    SEED_PLANS,
+    assertValidInstallationTransition,
+    InvalidStateTransitionError,
 } from '@orbitox-io/plugin-engine';
 import { TENANT_RE } from '@orbitox-io/bridge';
 import { loadPepperRing, activeVerifier, candidateVerifiers } from './pepper';
@@ -133,6 +140,38 @@ export type AsyncPlatformRepository = AsyncMethods<typeof PlatformRepository> & 
     provisionPluginInstallation(input: ProvisionPluginInstallationInput): Promise<PluginInstallationRecord>;
     updatePluginInstallationStatus(tenantId: string, pluginId: string, status: PluginInstallationStatus | string): Promise<PluginInstallationRecord>;
     uninstallPluginInstallation(tenantId: string, pluginId: string): Promise<PluginInstallationRecord>;
+    reactivatePluginInstallation(
+        tenantId: string,
+        pluginId: string,
+        adminActor?: { actorId?: string; actorEmail?: string; reason?: string }
+    ): Promise<PluginInstallationRecord>;
+    changePluginInstallationPlan(
+        tenantId: string,
+        pluginId: string,
+        newPlanId: string
+    ): Promise<PluginInstallationRecord>;
+    checkQuotaUsage(
+        tenantId: string,
+        pluginId: string,
+        quotaKey: string,
+        currentCount: number,
+        requestedIncrement?: number
+    ): Promise<{ allowed: boolean; limit?: number; currentCount: number; remaining?: number; reason?: string }>;
+    listPlugins(): Promise<PluginCatalogueItem[]>;
+    getPlugin(pluginId: string): Promise<PluginCatalogueItem | undefined>;
+    listPlans(pluginId?: string): Promise<PlanCatalogueRecord[]>;
+    getPlan(planId: string): Promise<PlanCatalogueRecord | undefined>;
+    createPlan(input: any): Promise<PlanCatalogueRecord>;
+    updatePlan(planId: string, updates: any): Promise<PlanCatalogueRecord>;
+    ensurePlanCatalogueSeeded(): Promise<void>;
+    listOutboxMessages(status?: string): Promise<PlatformOutboxRecord[]>;
+    recordOutboxMessage(input: {
+        tenantId: string;
+        eventType: string;
+        aggregateType: string;
+        aggregateId: string;
+        payload: Record<string, any>;
+    }): Promise<PlatformOutboxRecord>;
 };
 
 type DatabaseClient = PrismaClient;
@@ -336,6 +375,49 @@ function toPluginInstallation(row: RawRow): PluginInstallationRecord {
         entitlementRevision: row.entitlementRevision,
         planId: row.planId ?? undefined,
         config: (row.config || {}) as Record<string, any>,
+        createdAt: dateString(row.createdAt)!,
+        updatedAt: dateString(row.updatedAt)!,
+    };
+}
+
+function toPlan(row: RawRow): PlanCatalogueRecord {
+    return {
+        id: row.id,
+        planId: row.planId,
+        pluginId: row.pluginId,
+        name: row.name,
+        description: row.description ?? undefined,
+        tier: row.tier,
+        priceMinor: row.priceMinor,
+        currency: row.currency,
+        billingInterval: row.billingInterval,
+        gracePeriodDays: row.gracePeriodDays,
+        suspensionGraceDays: row.suspensionGraceDays,
+        status: row.status,
+        features: (row.features || []).map((f: RawRow) => ({
+            featureKey: f.featureKey,
+            description: f.description ?? undefined,
+            enabled: Boolean(f.enabled),
+        })),
+        quotas: (row.quotas || []).map((q: RawRow) => ({
+            quotaKey: q.quotaKey,
+            limit: q.limit,
+            window: q.window,
+            unit: q.unit,
+        })),
+        createdAt: dateString(row.createdAt)!,
+        updatedAt: dateString(row.updatedAt)!,
+    };
+}
+
+function toPluginRecord(row: RawRow): PluginCatalogueItem {
+    return {
+        id: row.id,
+        pluginId: row.pluginId,
+        name: row.name,
+        description: row.description ?? undefined,
+        version: row.version,
+        status: row.status,
         createdAt: dateString(row.createdAt)!,
         updatedAt: dateString(row.updatedAt)!,
     };
@@ -617,87 +699,132 @@ export function createPrismaPlatformRepository(client: PrismaClient, adminAuditC
             const slugSource = suppliedSlugIsValid ? suppliedSlug : input.name;
             const baseSlug = slugSource.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
             if (!baseSlug) throw new Error('Project name must produce a valid slug.');
-            const slugExists = async (slug: string) => Boolean(await client.platformProject.findUnique({ where: { slug } }));
-            if (suppliedSlugIsValid && (await slugExists(baseSlug))) throw new Error(`Project slug "${baseSlug}" is already in use.`);
-            let slug = baseSlug;
-            if (!suppliedSlugIsValid) {
-                let suffix = 2;
-                while (await slugExists(slug)) slug = `${baseSlug}-${suffix++}`;
-            }
-            const projectId = `proj_${crypto.randomUUID()}`;
-            let row;
-            try {
-                row = await client.platformProject.create({
-                    data: makeProjectData(input, slug, projectId),
-                    include: { environments: { orderBy: { slug: 'asc' } } },
+
+            return await client.$transaction(async (tx) => {
+                // Rule 3: No org_default. If the organisation cannot be resolved, refuse.
+                const org = await tx.platformOrganization.findFirst({
+                    where: { OR: [{ id: input.organizationId }, { slug: input.organizationId }] },
                 });
-            } catch (error) {
-                if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
-                    throw new Error(`Project slug "${slug}" is already in use.`);
+                if (!org) {
+                    throw new Error(`Organization "${input.organizationId}" cannot be resolved. (No org_default allowed)`);
                 }
-                throw error;
-            }
 
-            // Provision standard PluginInstallation rows with runtimeTenantId for RestaurantOS and HospitalOS
-            const org = await client.platformOrganization.findUnique({ where: { id: input.organizationId } }).catch(() => null);
-            const orgSlug = org?.slug || 'org_default';
-            const runtimeTenantId = TENANT_RE.test(slug)
-                ? slug
-                : `org/${orgSlug}/project/${slug}/environment/production`;
+                const slugExists = async (checkSlug: string) =>
+                    Boolean(await tx.platformProject.findUnique({ where: { slug: checkSlug } }));
 
-            const allServices = [...(input.enabledServices || []), ...(input.initialPackages || [])];
-            const isRestaurant =
-                allServices.some((s) => ['restaurant', '@orbitox/restaurant', '@orbitox-io/restaurant', 'pos', '@orbitox/pos'].includes(s)) ||
-                ['O2O2B2B2C', 'FRANCHISE_RETAIL', 'restaurant'].includes(input.businessModel);
-            const isHospital =
-                allServices.some((s) => ['hms', 'hospital', '@orbitox/hms', '@orbitox-io/hms', '@orbitox/hospital'].includes(s)) ||
-                ['HEALTHCARE_NETWORK', 'hospital', 'hms'].includes(input.businessModel);
+                if (suppliedSlugIsValid && (await slugExists(baseSlug))) {
+                    throw new Error(`Project slug "${baseSlug}" is already in use.`);
+                }
+                let slug = baseSlug;
+                if (!suppliedSlugIsValid) {
+                    let suffix = 2;
+                    while (await slugExists(slug)) slug = `${baseSlug}-${suffix++}`;
+                }
 
-            if (isRestaurant) {
+                const projectId = `proj_${crypto.randomUUID()}`;
+                let row;
                 try {
-                    await client.pluginInstallation.upsert({
-                        where: { tenantId_pluginId: { tenantId: slug, pluginId: '@orbitox/restaurant' } },
-                        create: {
-                            id: `pinst_${crypto.randomUUID()}`,
-                            tenantId: slug,
-                            pluginId: '@orbitox/restaurant',
-                            runtimeTenantId,
-                            status: (input.status as any) || 'ACTIVE',
-                            entitlementRevision: 1,
-                            planId: (input.plan || input.planTier || 'growth').toLowerCase(),
-                            config: {},
-                        },
-                        update: {
-                            runtimeTenantId,
-                            status: (input.status as any) || 'ACTIVE',
+                    row = await tx.platformProject.create({
+                        data: makeProjectData(input, slug, projectId),
+                        include: { environments: { orderBy: { slug: 'asc' } } },
+                    });
+                } catch (error) {
+                    if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
+                        throw new Error(`Project slug "${slug}" is already in use.`);
+                    }
+                    throw error;
+                }
+
+                const canonicalTenantId = `org/${org.slug}/project/${slug}/environment/production`;
+
+                // Rule 1: Create PluginInstallation rows ONLY from an explicit plugin/entitlement/plan request.
+                // Remove businessModel guessing completely. A business type never grants a plugin.
+                const pluginsToInstall: Array<{ pluginId: string; planId?: string; config?: Record<string, any> }> = [];
+                if (input.plugins && Array.isArray(input.plugins)) {
+                    for (const p of input.plugins) {
+                        if (p && p.pluginId) {
+                            pluginsToInstall.push({
+                                pluginId: canonicalizePluginId(p.pluginId),
+                                planId: p.planId || input.plan || input.planTier,
+                                config: p.config || {},
+                            });
+                        }
+                    }
+                }
+
+                // If caller provided explicit enabledServices or initialPackages containing known plugins
+                const explicitPackages = [...(input.initialPackages || []), ...(input.enabledServices || [])];
+                for (const pkg of explicitPackages) {
+                    const canonical = canonicalizePluginId(pkg);
+                    if (['@orbitox/restaurant', '@orbitox/hms', '@orbitox/crm', '@orbitox/pos'].includes(canonical)) {
+                        if (!pluginsToInstall.some((p) => p.pluginId === canonical)) {
+                            pluginsToInstall.push({
+                                pluginId: canonical,
+                                planId: input.plan || input.planTier || 'starter',
+                                config: {},
+                            });
+                        }
+                    }
+                }
+
+                // Rule 2: Create project and installations in ONE transaction. Delete every catch {} around installation writes.
+                // A claim conflict or failure must surface.
+                for (const item of pluginsToInstall) {
+                    const existingClaim = await tx.pluginInstallation.findFirst({
+                        where: {
+                            pluginId: item.pluginId,
+                            runtimeTenantId: canonicalTenantId,
+                            NOT: { tenantId: canonicalTenantId },
                         },
                     });
-                } catch {}
-            }
+                    if (existingClaim) {
+                        const err = new Error(
+                            `Runtime tenant "${canonicalTenantId}" for plugin "${item.pluginId}" is already claimed by tenant "${existingClaim.tenantId}".`
+                        );
+                        (err as any).code = 'RUNTIME_TENANT_ALREADY_CLAIMED';
+                        throw err;
+                    }
 
-            if (isHospital) {
-                try {
-                    await client.pluginInstallation.upsert({
-                        where: { tenantId_pluginId: { tenantId: slug, pluginId: '@orbitox/hms' } },
-                        create: {
-                            id: `pinst_${crypto.randomUUID()}`,
-                            tenantId: slug,
-                            pluginId: '@orbitox/hms',
-                            runtimeTenantId,
+                    const installationId = `pinst_${crypto.randomUUID()}`;
+                    const createdInstallation = await tx.pluginInstallation.create({
+                        data: {
+                            id: installationId,
+                            tenantId: canonicalTenantId,
+                            pluginId: item.pluginId,
+                            runtimeTenantId: canonicalTenantId,
                             status: (input.status as any) || 'ACTIVE',
                             entitlementRevision: 1,
-                            planId: (input.plan || input.planTier || 'growth').toLowerCase(),
-                            config: {},
-                        },
-                        update: {
-                            runtimeTenantId,
-                            status: (input.status as any) || 'ACTIVE',
+                            planId: item.planId ? item.planId.toLowerCase() : null,
+                            config: item.config || {},
                         },
                     });
-                } catch {}
-            }
 
-            return { project: toProject(row), environments: row.environments.map(toEnvironment) };
+                    // Rule C: Write outbox row in the same transaction
+                    await tx.$queryRaw`SELECT set_config('app.current_tenant_id', ${canonicalTenantId}, true)`;
+                    await tx.platformOutboxMessage.create({
+                        data: {
+                            id: `outbox_${crypto.randomUUID()}`,
+                            tenantId: canonicalTenantId,
+                            eventType: 'entitlement.updated',
+                            aggregateType: 'PluginInstallation',
+                            aggregateId: createdInstallation.id,
+                            payload: {
+                                tenantId: canonicalTenantId,
+                                pluginId: item.pluginId,
+                                runtimeTenantId: canonicalTenantId,
+                                status: (input.status as any) || 'ACTIVE',
+                                planId: createdInstallation.planId,
+                                entitlementRevision: 1,
+                                updatedAt: new Date().toISOString(),
+                            },
+                            status: 'PENDING',
+                            retryCount: 0,
+                        },
+                    });
+                }
+
+                return { project: toProject(row), environments: row.environments.map(toEnvironment) };
+            });
         },
         async updateProject(projectId: string, updates: Partial<PlatformProject>): Promise<PlatformProject | undefined> {
             const existing = await client.platformProject.findFirst({ where: { OR: [{ id: projectId }, { slug: projectId.toLowerCase() }] } });
@@ -1307,31 +1434,34 @@ export function createPrismaPlatformRepository(client: PrismaClient, adminAuditC
         },
         async getPluginInstallation(tenantId: string, pluginId: string): Promise<PluginInstallationRecord | undefined> {
             const canonical = canonicalizePluginId(pluginId);
+            const trimmedTenantId = (tenantId || '').trim();
+            if (!trimmedTenantId) return undefined;
+
+            let candidateTenantIds = [trimmedTenantId];
+            if (!TENANT_RE.test(trimmedTenantId)) {
+                const proj = await client.platformProject.findFirst({
+                    where: { OR: [{ id: trimmedTenantId }, { slug: trimmedTenantId.toLowerCase() }] },
+                    include: { organization: true },
+                });
+                if (proj && proj.organization) {
+                    candidateTenantIds.push(`org/${proj.organization.slug}/project/${proj.slug}/environment/production`);
+                }
+            }
+
             const row = await client.pluginInstallation.findFirst({
                 where: {
-                    OR: [
-                        { tenantId },
-                        { runtimeTenantId: tenantId },
-                    ],
-                    AND: [
-                        {
-                            OR: [
-                                { pluginId: canonical },
-                                { pluginId },
-                                { pluginId: canonical.replace(/^@orbitox\//, '') },
-                            ],
-                        },
-                    ],
+                    tenantId: { in: candidateTenantIds },
+                    pluginId: { in: [canonical, pluginId, canonical.replace(/^@orbitox\//, '')] },
                 },
             });
             return row ? toPluginInstallation(row) : undefined;
         },
         async provisionPluginInstallation(input: ProvisionPluginInstallationInput): Promise<PluginInstallationRecord> {
-            const tenantId = input.tenantId?.trim();
+            const rawTenantId = input.tenantId?.trim();
             const pluginId = canonicalizePluginId(input.pluginId);
             const runtimeTenantId = input.runtimeTenantId?.trim();
 
-            if (!tenantId) throw new Error('Field "tenantId" is required for plugin installation.');
+            if (!rawTenantId) throw new Error('Field "tenantId" is required for plugin installation.');
             if (!pluginId) throw new Error('Field "pluginId" is required for plugin installation.');
             if (!runtimeTenantId || !TENANT_RE.test(runtimeTenantId)) {
                 throw new Error(
@@ -1339,52 +1469,103 @@ export function createPrismaPlatformRepository(client: PrismaClient, adminAuditC
                 );
             }
 
-            // Anti-claim protection: check if another tenant already claimed this runtimeTenantId for this plugin
-            const existingClaim = await client.pluginInstallation.findFirst({
-                where: {
-                    pluginId,
-                    runtimeTenantId,
-                    NOT: { tenantId },
-                },
-            });
-            if (existingClaim) {
-                const err = new Error(
-                    `Runtime tenant "${runtimeTenantId}" for plugin "${pluginId}" is already claimed by tenant "${existingClaim.tenantId}".`
-                );
-                (err as any).code = 'RUNTIME_TENANT_ALREADY_CLAIMED';
-                throw err;
-            }
+            return await client.$transaction(async (tx) => {
+                const existing = await tx.pluginInstallation.findFirst({
+                    where: {
+                        tenantId: rawTenantId,
+                        OR: [
+                            { pluginId },
+                            { pluginId: canonicalizePluginId(pluginId) },
+                            { pluginId: canonicalizePluginId(pluginId).replace(/^@orbitox\//, '') },
+                        ],
+                    },
+                });
 
-            try {
-                const row = await client.pluginInstallation.upsert({
-                    where: { tenantId_pluginId: { tenantId, pluginId } },
-                    create: {
-                        id: `pinst_${crypto.randomUUID()}`,
-                        tenantId,
+                // Anti-claim protection: check if another tenant already claimed this runtimeTenantId for this plugin
+                const existingClaim = await tx.pluginInstallation.findFirst({
+                    where: {
                         pluginId,
                         runtimeTenantId,
-                        status: (input.status as any) || 'ACTIVE',
-                        entitlementRevision: input.entitlementRevision ?? 1,
+                        NOT: { tenantId: rawTenantId },
+                    },
+                });
+                if (existingClaim) {
+                    const err = new Error(
+                        `Runtime tenant "${runtimeTenantId}" for plugin "${pluginId}" is already claimed by tenant "${existingClaim.tenantId}".`
+                    );
+                    (err as any).code = 'RUNTIME_TENANT_ALREADY_CLAIMED';
+                    throw err;
+                }
+
+                // Rule 5: Provisioning never overwrites an existing runtimeTenantId
+                if (existing && existing.runtimeTenantId && existing.runtimeTenantId !== runtimeTenantId) {
+                    throw new Error(
+                        `Provisioning cannot overwrite existing runtimeTenantId "${existing.runtimeTenantId}" with "${runtimeTenantId}".`
+                    );
+                }
+
+                const targetStatus = (input.status as any) || (existing ? existing.status : 'ACTIVE');
+
+                // Rule 5: Provisioning never turns ARCHIVED back to ACTIVE
+                if (existing && existing.status === 'ARCHIVED' && targetStatus !== 'ARCHIVED') {
+                    const err = new Error(
+                        `Provisioning cannot turn an ARCHIVED installation back to ${targetStatus}. Re-activation is an explicit, audited admin action.`
+                    );
+                    (err as any).code = 'ARCHIVED_RESURRECTION_REFUSED';
+                    throw err;
+                }
+
+                if (existing && existing.status !== targetStatus) {
+                    assertValidInstallationTransition(existing.status, targetStatus, false);
+                }
+
+                const nextRevision = existing ? existing.entitlementRevision + 1 : (input.entitlementRevision ?? 1);
+
+                const row = await tx.pluginInstallation.upsert({
+                    where: { tenantId_pluginId: { tenantId: rawTenantId, pluginId } },
+                    create: {
+                        id: `pinst_${crypto.randomUUID()}`,
+                        tenantId: rawTenantId,
+                        pluginId,
+                        runtimeTenantId,
+                        status: targetStatus,
+                        entitlementRevision: nextRevision,
                         planId: input.planId || null,
                         config: input.config || {},
                     },
                     update: {
                         runtimeTenantId,
-                        status: (input.status as any) || 'ACTIVE',
-                        entitlementRevision: input.entitlementRevision !== undefined ? input.entitlementRevision : undefined,
+                        status: targetStatus,
+                        entitlementRevision: nextRevision,
                         planId: input.planId !== undefined ? input.planId : undefined,
                         config: input.config !== undefined ? input.config : undefined,
                     },
                 });
+
+                await tx.$queryRaw`SELECT set_config('app.current_tenant_id', ${rawTenantId}, true)`;
+                await tx.platformOutboxMessage.create({
+                    data: {
+                        id: `outbox_${crypto.randomUUID()}`,
+                        tenantId: rawTenantId,
+                        eventType: 'entitlement.updated',
+                        aggregateType: 'PluginInstallation',
+                        aggregateId: row.id,
+                        payload: {
+                            tenantId: rawTenantId,
+                            pluginId,
+                            runtimeTenantId,
+                            status: targetStatus,
+                            planId: row.planId,
+                            entitlementRevision: row.entitlementRevision,
+                            updatedAt: new Date().toISOString(),
+                        },
+                        status: 'PENDING',
+                        retryCount: 0,
+                    },
+                });
+
                 return toPluginInstallation(row);
-            } catch (dbErr: any) {
-                if (dbErr.code === 'P2002' && Array.isArray(dbErr.meta?.target) && dbErr.meta.target.includes('runtimeTenantId')) {
-                    const err = new Error(`Runtime tenant "${runtimeTenantId}" for plugin "${pluginId}" is already claimed by another tenant.`);
-                    (err as any).code = 'RUNTIME_TENANT_ALREADY_CLAIMED';
-                    throw err;
-                }
-                throw dbErr;
-            }
+            });
         },
         async updatePluginInstallationStatus(
             tenantId: string,
@@ -1392,33 +1573,241 @@ export function createPrismaPlatformRepository(client: PrismaClient, adminAuditC
             status: PluginInstallationStatus | string
         ): Promise<PluginInstallationRecord> {
             const canonical = canonicalizePluginId(pluginId);
-            const existing = await client.pluginInstallation.findFirst({
-                where: {
-                    tenantId,
-                    OR: [
-                        { pluginId: canonical },
-                        { pluginId },
-                        { pluginId: canonical.replace(/^@orbitox\//, '') },
-                    ],
-                },
+            return await client.$transaction(async (tx) => {
+                const existing = await tx.pluginInstallation.findFirst({
+                    where: {
+                        tenantId,
+                        OR: [
+                            { pluginId: canonical },
+                            { pluginId },
+                            { pluginId: canonical.replace(/^@orbitox\//, '') },
+                        ],
+                    },
+                });
+                if (!existing) {
+                    throw new Error(`Plugin installation for tenant "${tenantId}" and plugin "${canonical}" not found.`);
+                }
+
+                assertValidInstallationTransition(existing.status, String(status), false);
+
+                const row = await tx.pluginInstallation.update({
+                    where: { id: existing.id },
+                    data: {
+                        status: status as any,
+                        entitlementRevision: { increment: 1 },
+                    },
+                });
+
+                await tx.$queryRaw`SELECT set_config('app.current_tenant_id', ${tenantId}, true)`;
+                await tx.platformOutboxMessage.create({
+                    data: {
+                        id: `outbox_${crypto.randomUUID()}`,
+                        tenantId,
+                        eventType: 'entitlement.updated',
+                        aggregateType: 'PluginInstallation',
+                        aggregateId: row.id,
+                        payload: {
+                            tenantId,
+                            pluginId: canonical,
+                            runtimeTenantId: row.runtimeTenantId,
+                            status: row.status,
+                            planId: row.planId,
+                            entitlementRevision: row.entitlementRevision,
+                            updatedAt: new Date().toISOString(),
+                        },
+                        status: 'PENDING',
+                        retryCount: 0,
+                    },
+                });
+
+                return toPluginInstallation(row);
             });
-            if (!existing) {
-                throw new Error(`Plugin installation for tenant "${tenantId}" and plugin "${canonical}" not found.`);
-            }
-            const row = await client.pluginInstallation.update({
-                where: { id: existing.id },
-                data: {
-                    status: status as any,
-                },
-            });
-            return toPluginInstallation(row);
         },
         async uninstallPluginInstallation(
             tenantId: string,
             pluginId: string
         ): Promise<PluginInstallationRecord> {
             const canonical = canonicalizePluginId(pluginId);
-            const existing = await client.pluginInstallation.findFirst({
+            return await client.$transaction(async (tx) => {
+                const existing = await tx.pluginInstallation.findFirst({
+                    where: {
+                        tenantId,
+                        OR: [
+                            { pluginId: canonical },
+                            { pluginId },
+                            { pluginId: canonical.replace(/^@orbitox\//, '') },
+                        ],
+                    },
+                });
+                if (!existing) {
+                    throw new Error(`Plugin installation for tenant "${tenantId}" and plugin "${canonical}" not found.`);
+                }
+
+                assertValidInstallationTransition(existing.status, 'ARCHIVED', false);
+
+                const row = await tx.pluginInstallation.update({
+                    where: { id: existing.id },
+                    data: {
+                        status: 'ARCHIVED',
+                        entitlementRevision: { increment: 1 },
+                    },
+                });
+
+                await tx.$queryRaw`SELECT set_config('app.current_tenant_id', ${tenantId}, true)`;
+                await tx.platformOutboxMessage.create({
+                    data: {
+                        id: `outbox_${crypto.randomUUID()}`,
+                        tenantId,
+                        eventType: 'entitlement.updated',
+                        aggregateType: 'PluginInstallation',
+                        aggregateId: row.id,
+                        payload: {
+                            tenantId,
+                            pluginId: canonical,
+                            runtimeTenantId: row.runtimeTenantId,
+                            status: 'ARCHIVED',
+                            planId: row.planId,
+                            entitlementRevision: row.entitlementRevision,
+                            updatedAt: new Date().toISOString(),
+                        },
+                        status: 'PENDING',
+                        retryCount: 0,
+                    },
+                });
+
+                return toPluginInstallation(row);
+            });
+        },
+        async reactivatePluginInstallation(
+            tenantId: string,
+            pluginId: string,
+            adminActor?: { actorId?: string; actorEmail?: string; reason?: string }
+        ): Promise<PluginInstallationRecord> {
+            const canonical = canonicalizePluginId(pluginId);
+            return await client.$transaction(async (tx) => {
+                const existing = await tx.pluginInstallation.findFirst({
+                    where: {
+                        tenantId,
+                        OR: [
+                            { pluginId: canonical },
+                            { pluginId },
+                            { pluginId: canonical.replace(/^@orbitox\//, '') },
+                        ],
+                    },
+                });
+                if (!existing) {
+                    throw new Error(`Plugin installation for tenant "${tenantId}" and plugin "${canonical}" not found.`);
+                }
+                if (existing.status !== 'ARCHIVED') {
+                    throw new Error(`Only ARCHIVED plugin installations may be reactivated (current status is "${existing.status}").`);
+                }
+
+                assertValidInstallationTransition(existing.status, 'ACTIVE', true);
+
+                const row = await tx.pluginInstallation.update({
+                    where: { id: existing.id },
+                    data: {
+                        status: 'ACTIVE',
+                        entitlementRevision: { increment: 1 },
+                    },
+                });
+
+                await tx.$queryRaw`SELECT set_config('app.current_tenant_id', ${tenantId}, true)`;
+                await tx.platformOutboxMessage.create({
+                    data: {
+                        id: `outbox_${crypto.randomUUID()}`,
+                        tenantId,
+                        eventType: 'entitlement.updated',
+                        aggregateType: 'PluginInstallation',
+                        aggregateId: row.id,
+                        payload: {
+                            tenantId,
+                            pluginId: canonical,
+                            runtimeTenantId: row.runtimeTenantId,
+                            status: 'ACTIVE',
+                            planId: row.planId,
+                            entitlementRevision: row.entitlementRevision,
+                            reactivatedBy: adminActor?.actorEmail || adminActor?.actorId || 'platform-admin',
+                            reason: adminActor?.reason || 'Administrative reactivation',
+                            updatedAt: new Date().toISOString(),
+                        },
+                        status: 'PENDING',
+                        retryCount: 0,
+                    },
+                });
+
+                return toPluginInstallation(row);
+            });
+        },
+        async changePluginInstallationPlan(
+            tenantId: string,
+            pluginId: string,
+            newPlanId: string
+        ): Promise<PluginInstallationRecord> {
+            const canonical = canonicalizePluginId(pluginId);
+            return await client.$transaction(async (tx) => {
+                const existing = await tx.pluginInstallation.findFirst({
+                    where: {
+                        tenantId,
+                        OR: [
+                            { pluginId: canonical },
+                            { pluginId },
+                            { pluginId: canonical.replace(/^@orbitox\//, '') },
+                        ],
+                    },
+                });
+                if (!existing) {
+                    throw new Error(`Plugin installation for tenant "${tenantId}" and plugin "${canonical}" not found.`);
+                }
+
+                const plan = await tx.plan.findUnique({ where: { planId: newPlanId } });
+                if (!plan) {
+                    throw new Error(`Plan "${newPlanId}" not found in Plan Catalogue.`);
+                }
+
+                const row = await tx.pluginInstallation.update({
+                    where: { id: existing.id },
+                    data: {
+                        planId: newPlanId,
+                        entitlementRevision: { increment: 1 },
+                    },
+                });
+
+                await tx.$queryRaw`SELECT set_config('app.current_tenant_id', ${tenantId}, true)`;
+                await tx.platformOutboxMessage.create({
+                    data: {
+                        id: `outbox_${crypto.randomUUID()}`,
+                        tenantId,
+                        eventType: 'entitlement.updated',
+                        aggregateType: 'PluginInstallation',
+                        aggregateId: row.id,
+                        payload: {
+                            tenantId,
+                            pluginId: canonical,
+                            runtimeTenantId: row.runtimeTenantId,
+                            status: row.status,
+                            planId: newPlanId,
+                            entitlementRevision: row.entitlementRevision,
+                            action: 'plan.changed',
+                            updatedAt: new Date().toISOString(),
+                        },
+                        status: 'PENDING',
+                        retryCount: 0,
+                    },
+                });
+
+                return toPluginInstallation(row);
+            });
+        },
+        async checkQuotaUsage(
+            tenantId: string,
+            pluginId: string,
+            quotaKey: string,
+            currentCount: number,
+            requestedIncrement = 1
+        ): Promise<{ allowed: boolean; limit?: number; currentCount: number; remaining?: number; reason?: string }> {
+            const canonical = canonicalizePluginId(pluginId);
+            const row = await client.pluginInstallation.findFirst({
                 where: {
                     tenantId,
                     OR: [
@@ -1428,18 +1817,389 @@ export function createPrismaPlatformRepository(client: PrismaClient, adminAuditC
                     ],
                 },
             });
-            if (!existing) {
-                throw new Error(`Plugin installation for tenant "${tenantId}" and plugin "${canonical}" not found.`);
+            if (!row || !row.planId) {
+                return { allowed: true, currentCount };
             }
-            // Requirement 2b-5: Uninstalling sets status ARCHIVED, and the row is kept
-            const row = await client.pluginInstallation.update({
-                where: { id: existing.id },
+
+            const quota = await client.planQuota.findUnique({
+                where: { planId_quotaKey: { planId: row.planId, quotaKey } },
+            });
+            if (!quota) {
+                return { allowed: true, currentCount };
+            }
+
+            // If it's a read (requestedIncrement === 0), it is always allowed
+            if (requestedIncrement === 0) {
+                return {
+                    allowed: true,
+                    limit: quota.limit,
+                    currentCount,
+                    remaining: Math.max(0, quota.limit - currentCount),
+                };
+            }
+
+            if (currentCount + requestedIncrement > quota.limit) {
+                return {
+                    allowed: false,
+                    limit: quota.limit,
+                    currentCount,
+                    remaining: Math.max(0, quota.limit - currentCount),
+                    reason: `QUOTA_EXCEEDED: Quota "${quotaKey}" exceeded (current: ${currentCount}, limit: ${quota.limit}, requested: +${requestedIncrement}). Writes blocked, reads permitted.`,
+                };
+            }
+
+            return {
+                allowed: true,
+                limit: quota.limit,
+                currentCount,
+                remaining: quota.limit - (currentCount + requestedIncrement),
+            };
+        },
+        async listPlugins(): Promise<PluginCatalogueItem[]> {
+            const rows = await client.plugin.findMany({ orderBy: { pluginId: 'asc' } });
+            return rows.map(toPluginRecord);
+        },
+        async getPlugin(pluginId: string): Promise<PluginCatalogueItem | undefined> {
+            const canonical = canonicalizePluginId(pluginId);
+            const row = await client.plugin.findFirst({
+                where: { OR: [{ pluginId: canonical }, { pluginId }] },
+            });
+            return row ? toPluginRecord(row) : undefined;
+        },
+        async listPlans(pluginId?: string): Promise<PlanCatalogueRecord[]> {
+            const canonical = pluginId ? canonicalizePluginId(pluginId) : undefined;
+            const rows = await client.plan.findMany({
+                where: canonical ? { pluginId: canonical } : undefined,
+                include: { features: true, quotas: true },
+                orderBy: { priceMinor: 'asc' },
+            });
+            return rows.map(toPlan);
+        },
+        async getPlan(planId: string): Promise<PlanCatalogueRecord | undefined> {
+            const row = await client.plan.findUnique({
+                where: { planId },
+                include: { features: true, quotas: true },
+            });
+            return row ? toPlan(row) : undefined;
+        },
+        async createPlan(input: {
+            planId: string;
+            pluginId: string;
+            name: string;
+            description?: string;
+            tier?: string;
+            priceMinor?: number;
+            currency?: string;
+            billingInterval?: string;
+            gracePeriodDays?: number;
+            suspensionGraceDays?: number;
+            status?: string;
+            features?: Array<{ featureKey: string; description?: string; enabled?: boolean }>;
+            quotas?: Array<{ quotaKey: string; limit: number; window?: string; unit?: string }>;
+        }): Promise<PlanCatalogueRecord> {
+            const canonicalPlugin = canonicalizePluginId(input.pluginId);
+            return await client.$transaction(async (tx) => {
+                const planRow = await tx.plan.create({
+                    data: {
+                        id: `plan_${crypto.randomUUID()}`,
+                        planId: input.planId,
+                        pluginId: canonicalPlugin,
+                        name: input.name,
+                        description: input.description || null,
+                        tier: input.tier || 'starter',
+                        priceMinor: input.priceMinor ?? 0,
+                        currency: input.currency || 'INR',
+                        billingInterval: input.billingInterval || 'month',
+                        gracePeriodDays: input.gracePeriodDays ?? 7,
+                        suspensionGraceDays: input.suspensionGraceDays ?? 30,
+                        status: input.status || 'ACTIVE',
+                    },
+                });
+
+                if (input.features && Array.isArray(input.features)) {
+                    for (const f of input.features) {
+                        await tx.planFeature.create({
+                            data: {
+                                id: `pf_${crypto.randomUUID()}`,
+                                planId: input.planId,
+                                featureKey: f.featureKey,
+                                description: f.description || null,
+                                enabled: f.enabled !== undefined ? f.enabled : true,
+                            },
+                        });
+                    }
+                }
+
+                if (input.quotas && Array.isArray(input.quotas)) {
+                    for (const q of input.quotas) {
+                        await tx.planQuota.create({
+                            data: {
+                                id: `pq_${crypto.randomUUID()}`,
+                                planId: input.planId,
+                                quotaKey: q.quotaKey,
+                                limit: q.limit,
+                                window: q.window || 'none',
+                                unit: q.unit || 'records',
+                            },
+                        });
+                    }
+                }
+
+                const created = await tx.plan.findUnique({
+                    where: { planId: input.planId },
+                    include: { features: true, quotas: true },
+                });
+                return toPlan(created!);
+            });
+        },
+        async updatePlan(planId: string, updates: Partial<PlanCatalogueRecord>): Promise<PlanCatalogueRecord> {
+            return await client.$transaction(async (tx) => {
+                const existing = await tx.plan.findUnique({
+                    where: { planId },
+                    include: { features: true, quotas: true },
+                });
+                if (!existing) {
+                    throw new Error(`Plan "${planId}" not found.`);
+                }
+
+                await tx.plan.update({
+                    where: { planId },
+                    data: {
+                        name: updates.name !== undefined ? updates.name : undefined,
+                        description: updates.description !== undefined ? updates.description : undefined,
+                        tier: updates.tier !== undefined ? updates.tier : undefined,
+                        priceMinor: updates.priceMinor !== undefined ? updates.priceMinor : undefined,
+                        currency: updates.currency !== undefined ? updates.currency : undefined,
+                        billingInterval: updates.billingInterval !== undefined ? updates.billingInterval : undefined,
+                        gracePeriodDays: updates.gracePeriodDays !== undefined ? updates.gracePeriodDays : undefined,
+                        suspensionGraceDays: updates.suspensionGraceDays !== undefined ? updates.suspensionGraceDays : undefined,
+                        status: updates.status !== undefined ? updates.status : undefined,
+                    },
+                });
+
+                if (updates.features && Array.isArray(updates.features)) {
+                    for (const feat of updates.features) {
+                        await tx.planFeature.upsert({
+                            where: { planId_featureKey: { planId, featureKey: feat.featureKey } },
+                            create: {
+                                id: `pf_${crypto.randomUUID()}`,
+                                planId,
+                                featureKey: feat.featureKey,
+                                description: feat.description || null,
+                                enabled: feat.enabled !== undefined ? feat.enabled : true,
+                            },
+                            update: {
+                                description: feat.description !== undefined ? feat.description : undefined,
+                                enabled: feat.enabled !== undefined ? feat.enabled : undefined,
+                            },
+                        });
+                    }
+                }
+
+                if (updates.quotas && Array.isArray(updates.quotas)) {
+                    for (const quota of updates.quotas) {
+                        await tx.planQuota.upsert({
+                            where: { planId_quotaKey: { planId, quotaKey: quota.quotaKey } },
+                            create: {
+                                id: `pq_${crypto.randomUUID()}`,
+                                planId,
+                                quotaKey: quota.quotaKey,
+                                limit: quota.limit,
+                                window: quota.window || 'none',
+                                unit: quota.unit || 'records',
+                            },
+                            update: {
+                                limit: quota.limit !== undefined ? quota.limit : undefined,
+                                window: quota.window !== undefined ? quota.window : undefined,
+                                unit: quota.unit !== undefined ? quota.unit : undefined,
+                            },
+                        });
+                    }
+                }
+
+                // Requirement Part B: A plan change bumps the revision of every affected installation.
+                // Requirement Part C: writes an outbox row, in the same transaction.
+                const affectedInstallations = await tx.pluginInstallation.findMany({
+                    where: { planId },
+                });
+
+                for (const inst of affectedInstallations) {
+                    const updatedInst = await tx.pluginInstallation.update({
+                        where: { id: inst.id },
+                        data: { entitlementRevision: { increment: 1 } },
+                    });
+
+                    await tx.$queryRaw`SELECT set_config('app.current_tenant_id', ${inst.tenantId}, true)`;
+                    await tx.platformOutboxMessage.create({
+                        data: {
+                            id: `outbox_${crypto.randomUUID()}`,
+                            tenantId: inst.tenantId,
+                            eventType: 'entitlement.updated',
+                            aggregateType: 'PluginInstallation',
+                            aggregateId: inst.id,
+                            payload: {
+                                tenantId: inst.tenantId,
+                                pluginId: inst.pluginId,
+                                runtimeTenantId: inst.runtimeTenantId,
+                                status: inst.status,
+                                planId,
+                                entitlementRevision: updatedInst.entitlementRevision,
+                                reason: 'plan.updated',
+                                updatedAt: new Date().toISOString(),
+                            },
+                            status: 'PENDING',
+                            retryCount: 0,
+                        },
+                    });
+                }
+
+                const updated = await tx.plan.findUnique({
+                    where: { planId },
+                    include: { features: true, quotas: true },
+                });
+                return toPlan(updated!);
+            });
+        },
+        async ensurePlanCatalogueSeeded(): Promise<void> {
+            for (const p of SEED_PLUGINS) {
+                await client.plugin.upsert({
+                    where: { pluginId: p.pluginId },
+                    create: {
+                        id: `plug_${crypto.randomUUID()}`,
+                        pluginId: p.pluginId,
+                        name: p.name,
+                        description: p.description || null,
+                        version: p.version || '1.0.0',
+                        status: p.status || 'ACTIVE',
+                    },
+                    update: {
+                        name: p.name,
+                        description: p.description || null,
+                        version: p.version || '1.0.0',
+                        status: p.status || 'ACTIVE',
+                    },
+                });
+            }
+
+            for (const pl of SEED_PLANS) {
+                await client.plan.upsert({
+                    where: { planId: pl.planId },
+                    create: {
+                        id: `plan_${crypto.randomUUID()}`,
+                        planId: pl.planId,
+                        pluginId: pl.pluginId,
+                        name: pl.name,
+                        description: pl.description || null,
+                        tier: pl.tier,
+                        priceMinor: pl.priceMinor,
+                        currency: pl.currency,
+                        billingInterval: pl.billingInterval,
+                        gracePeriodDays: pl.gracePeriodDays,
+                        suspensionGraceDays: pl.suspensionGraceDays,
+                        status: pl.status,
+                    },
+                    update: {
+                        name: pl.name,
+                        description: pl.description || null,
+                        tier: pl.tier,
+                        priceMinor: pl.priceMinor,
+                        currency: pl.currency,
+                        billingInterval: pl.billingInterval,
+                        gracePeriodDays: pl.gracePeriodDays,
+                        suspensionGraceDays: pl.suspensionGraceDays,
+                        status: pl.status,
+                    },
+                });
+
+                for (const f of pl.features) {
+                    await client.planFeature.upsert({
+                        where: { planId_featureKey: { planId: pl.planId, featureKey: f.featureKey } },
+                        create: {
+                            id: `pf_${crypto.randomUUID()}`,
+                            planId: pl.planId,
+                            featureKey: f.featureKey,
+                            description: f.description || null,
+                            enabled: f.enabled,
+                        },
+                        update: {
+                            description: f.description || null,
+                            enabled: f.enabled,
+                        },
+                    });
+                }
+
+                for (const q of pl.quotas) {
+                    await client.planQuota.upsert({
+                        where: { planId_quotaKey: { planId: pl.planId, quotaKey: q.quotaKey } },
+                        create: {
+                            id: `pq_${crypto.randomUUID()}`,
+                            planId: pl.planId,
+                            quotaKey: q.quotaKey,
+                            limit: q.limit,
+                            window: q.window,
+                            unit: q.unit,
+                        },
+                        update: {
+                            limit: q.limit,
+                            window: q.window,
+                            unit: q.unit,
+                        },
+                    });
+                }
+            }
+        },
+        async listOutboxMessages(status?: string): Promise<PlatformOutboxRecord[]> {
+            const rows = await client.platformOutboxMessage.findMany({
+                where: status ? { status: status as any } : undefined,
+                orderBy: { createdAt: 'asc' },
+            });
+            return rows.map((r) => ({
+                id: r.id,
+                tenantId: r.tenantId,
+                eventType: r.eventType,
+                aggregateType: r.aggregateType,
+                aggregateId: r.aggregateId,
+                payload: (r.payload || {}) as Record<string, any>,
+                status: r.status as any,
+                retryCount: r.retryCount,
+                lastError: r.lastError ?? undefined,
+                createdAt: r.createdAt.toISOString(),
+                dispatchedAt: r.dispatchedAt ? r.dispatchedAt.toISOString() : undefined,
+            }));
+        },
+        async recordOutboxMessage(input: {
+            tenantId: string;
+            eventType: string;
+            aggregateType: string;
+            aggregateId: string;
+            payload: Record<string, any>;
+        }): Promise<PlatformOutboxRecord> {
+            await client.$queryRaw`SELECT set_config('app.current_tenant_id', ${input.tenantId}, true)`;
+            const row = await client.platformOutboxMessage.create({
                 data: {
-                    status: 'ARCHIVED',
-                    entitlementRevision: { increment: 1 },
+                    id: `outbox_${crypto.randomUUID()}`,
+                    tenantId: input.tenantId,
+                    eventType: input.eventType,
+                    aggregateType: input.aggregateType,
+                    aggregateId: input.aggregateId,
+                    payload: input.payload,
+                    status: 'PENDING',
+                    retryCount: 0,
                 },
             });
-            return toPluginInstallation(row);
+            return {
+                id: row.id,
+                tenantId: row.tenantId,
+                eventType: row.eventType,
+                aggregateType: row.aggregateType,
+                aggregateId: row.aggregateId,
+                payload: (row.payload || {}) as Record<string, any>,
+                status: row.status as any,
+                retryCount: row.retryCount,
+                lastError: row.lastError ?? undefined,
+                createdAt: row.createdAt.toISOString(),
+                dispatchedAt: row.dispatchedAt ? row.dispatchedAt.toISOString() : undefined,
+            };
         },
         async listDomains(environmentId?: string): Promise<ProjectDomainRecord[]> {
             return (await client.projectDomain.findMany({
@@ -1700,6 +2460,79 @@ const extraMethods = {
     ): Promise<PluginInstallationRecord> => {
         if (prismaIsRequired()) return getPrismaRepository().uninstallPluginInstallation(tenantId, pluginId);
         return PlatformRepository.uninstallPluginInstallation(tenantId, pluginId);
+    },
+    reactivatePluginInstallation: async (
+        tenantId: string,
+        pluginId: string,
+        adminActor?: { actorId?: string; actorEmail?: string; reason?: string }
+    ): Promise<PluginInstallationRecord> => {
+        if (prismaIsRequired()) return getPrismaRepository().reactivatePluginInstallation(tenantId, pluginId, adminActor);
+        return PlatformRepository.reactivatePluginInstallation(tenantId, pluginId, {
+            actorId: adminActor?.actorId,
+            actorEmail: adminActor?.actorEmail,
+            reason: adminActor?.reason || 'Administrative reactivation',
+        });
+    },
+    changePluginInstallationPlan: async (
+        tenantId: string,
+        pluginId: string,
+        newPlanId: string
+    ): Promise<PluginInstallationRecord> => {
+        if (prismaIsRequired()) return getPrismaRepository().changePluginInstallationPlan(tenantId, pluginId, newPlanId);
+        return PlatformRepository.changePluginInstallationPlan(tenantId, pluginId, newPlanId);
+    },
+    checkQuotaUsage: async (
+        tenantId: string,
+        pluginId: string,
+        quotaKey: string,
+        currentCount: number,
+        requestedIncrement = 1
+    ): Promise<{ allowed: boolean; limit?: number; currentCount: number; remaining?: number; reason?: string }> => {
+        if (prismaIsRequired()) return getPrismaRepository().checkQuotaUsage(tenantId, pluginId, quotaKey, currentCount, requestedIncrement);
+        const res = PlatformRepository.checkQuotaUsage(tenantId, pluginId, quotaKey, currentCount, requestedIncrement);
+        return {
+            allowed: res.allowed,
+            limit: res.limit,
+            currentCount: res.current,
+            remaining: res.limit >= 0 ? Math.max(0, res.limit - (currentCount + requestedIncrement)) : undefined,
+            reason: res.reason,
+        };
+    },
+    listPlugins: async (): Promise<PluginCatalogueItem[]> => {
+        if (prismaIsRequired()) return getPrismaRepository().listPlugins();
+        return PlatformRepository.listPlugins();
+    },
+    getPlugin: async (pluginId: string): Promise<PluginCatalogueItem | undefined> => {
+        if (prismaIsRequired()) return getPrismaRepository().getPlugin(pluginId);
+        return PlatformRepository.getPlugin(pluginId);
+    },
+    listPlans: async (pluginId?: string): Promise<PlanCatalogueRecord[]> => {
+        if (prismaIsRequired()) return getPrismaRepository().listPlans(pluginId);
+        return PlatformRepository.listPlans(pluginId);
+    },
+    getPlan: async (planId: string): Promise<PlanCatalogueRecord | undefined> => {
+        if (prismaIsRequired()) return getPrismaRepository().getPlan(planId);
+        return PlatformRepository.getPlan(planId);
+    },
+    createPlan: async (input: any): Promise<PlanCatalogueRecord> => {
+        if (prismaIsRequired()) return getPrismaRepository().createPlan(input);
+        return PlatformRepository.createPlan(input);
+    },
+    updatePlan: async (planId: string, updates: any): Promise<PlanCatalogueRecord> => {
+        if (prismaIsRequired()) return getPrismaRepository().updatePlan(planId, updates);
+        return PlatformRepository.updatePlan(planId, updates);
+    },
+    ensurePlanCatalogueSeeded: async (): Promise<void> => {
+        if (prismaIsRequired()) return getPrismaRepository().ensurePlanCatalogueSeeded();
+        return PlatformRepository.ensurePlanCatalogueSeeded();
+    },
+    listOutboxMessages: async (status?: string): Promise<PlatformOutboxRecord[]> => {
+        if (prismaIsRequired()) return getPrismaRepository().listOutboxMessages(status);
+        return PlatformRepository.listOutboxMessages(status ? { status } : undefined);
+    },
+    recordOutboxMessage: async (input: any): Promise<PlatformOutboxRecord> => {
+        if (prismaIsRequired()) return getPrismaRepository().recordOutboxMessage(input);
+        return PlatformRepository.recordOutboxMessage(input);
     },
     incrementProjectUsage: async (projectId: string, amount = 1): Promise<number> => {
         if (prismaIsRequired()) return getPrismaRepository().incrementProjectUsage(projectId, amount);

@@ -1669,6 +1669,75 @@ model PluginInstallation {
   @@index([pluginId])
 }
 
+model Plugin {
+  id          String   @id @default(cuid())
+  pluginId    String   @unique
+  name        String
+  description String?
+  version     String   @default("1.0.0")
+  status      String   @default("ACTIVE")
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  plans       Plan[]
+
+  @@index([pluginId])
+}
+
+model Plan {
+  id                  String        @id @default(cuid())
+  planId              String        @unique
+  pluginId            String
+  name                String
+  description         String?
+  tier                String        @default("starter")
+  priceMinor          Int           @default(0)
+  currency            String        @default("INR")
+  billingInterval     String        @default("month")
+  gracePeriodDays     Int           @default(7)
+  suspensionGraceDays Int           @default(30)
+  status              String        @default("ACTIVE")
+  createdAt           DateTime      @default(now())
+  updatedAt           DateTime      @updatedAt
+
+  plugin              Plugin        @relation(fields: [pluginId], references: [pluginId], onDelete: Cascade)
+  features            PlanFeature[]
+  quotas              PlanQuota[]
+
+  @@index([pluginId])
+  @@index([planId])
+}
+
+model PlanFeature {
+  id          String   @id @default(cuid())
+  planId      String
+  featureKey  String
+  description String?
+  enabled     Boolean  @default(true)
+  createdAt   DateTime @default(now())
+
+  plan        Plan     @relation(fields: [planId], references: [planId], onDelete: Cascade)
+
+  @@unique([planId, featureKey])
+  @@index([planId])
+}
+
+model PlanQuota {
+  id        String   @id @default(cuid())
+  planId    String
+  quotaKey  String
+  limit     Int
+  window    String   @default("none")
+  unit      String   @default("records")
+  createdAt DateTime @default(now())
+
+  plan      Plan     @relation(fields: [planId], references: [planId], onDelete: Cascade)
+
+  @@unique([planId, quotaKey])
+  @@index([planId])
+}
+
+
 model ProjectDomain {
   id                    String             @id @default(cuid())
   environmentId         String

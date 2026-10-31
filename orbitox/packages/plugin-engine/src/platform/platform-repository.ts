@@ -24,6 +24,27 @@ import {
 } from '@orbitox/types';
 import { PlatformKeyEngine, GeneratedKeyResult } from '../security/platform-key-engine';
 import { CredentialVault } from '../security/credential-vault';
+import {
+  PluginCatalogueItem,
+  PlanCatalogueRecord,
+  SEED_PLUGINS,
+  SEED_PLANS,
+  assertValidInstallationTransition,
+} from './plan-catalogue';
+
+export interface PlatformOutboxRecord {
+  id: string;
+  tenantId: string;
+  eventType: string;
+  aggregateType: string;
+  aggregateId: string;
+  payload: Record<string, any>;
+  status: 'PENDING' | 'SENT' | 'FAILED';
+  retryCount: number;
+  lastError?: string;
+  createdAt: string;
+  dispatchedAt?: string;
+}
 
 export const PLAN_DEFAULT_QUOTAS: Record<string, number> = {
   starter: 100000,
@@ -78,6 +99,7 @@ export interface CreateProjectInput {
   contactEmail: string;
   initialPackages?: string[];
   enabledServices?: string[];
+  plugins?: Array<{ pluginId: string; planId?: string; config?: Record<string, any> }>;
   apiCallQuota?: number;
   rateLimitPerMin?: number;
   status?: ProjectLifecycleStatus;
@@ -116,6 +138,9 @@ export interface PlatformRepositoryStoreData {
   packageVersions: PackageVersionRecord[];
   packageInstallations: PackageInstallationRecord[];
   pluginInstallations?: PluginInstallationRecord[];
+  plugins?: PluginCatalogueItem[];
+  plans?: PlanCatalogueRecord[];
+  outboxMessages?: PlatformOutboxRecord[];
   domains: ProjectDomainRecord[];
   quotaPolicies: EnvironmentQuotaPolicyRecord[];
   rateLimitPolicies: EnvironmentRateLimitPolicyRecord[];
@@ -132,6 +157,9 @@ export class PlatformRepository {
   private static packageVersions: PackageVersionRecord[] = [];
   private static packageInstallations: PackageInstallationRecord[] = [];
   private static pluginInstallations: PluginInstallationRecord[] = [];
+  private static plugins: PluginCatalogueItem[] = [];
+  private static plans: PlanCatalogueRecord[] = [];
+  private static outboxMessages: PlatformOutboxRecord[] = [];
   private static domains: ProjectDomainRecord[] = [];
   private static quotaPolicies: EnvironmentQuotaPolicyRecord[] = [];
   private static rateLimitPolicies: EnvironmentRateLimitPolicyRecord[] = [];
@@ -320,7 +348,7 @@ export class PlatformRepository {
       'quotaPolicies',
       'rateLimitPolicies',
     ];
-    const optionalCollections = ['auditLogs', 'pluginInstallations'];
+    const optionalCollections = ['auditLogs', 'pluginInstallations', 'plugins', 'plans', 'outboxMessages'];
     if (!parsed || requiredCollections.some((collection) => !Array.isArray(parsed[collection])) || parsed.organizations.length === 0) {
       throw new Error('Persistent store is empty or has an invalid schema.');
     }
@@ -338,6 +366,9 @@ export class PlatformRepository {
       packageVersions: parsed.packageVersions,
       packageInstallations: parsed.packageInstallations,
       pluginInstallations: parsed.pluginInstallations ?? [],
+      plugins: parsed.plugins && parsed.plugins.length > 0 ? parsed.plugins : [...SEED_PLUGINS],
+      plans: parsed.plans && parsed.plans.length > 0 ? parsed.plans : [...SEED_PLANS],
+      outboxMessages: parsed.outboxMessages ?? [],
       domains: parsed.domains,
       quotaPolicies: parsed.quotaPolicies,
       rateLimitPolicies: parsed.rateLimitPolicies,
@@ -361,6 +392,9 @@ export class PlatformRepository {
     this.packageVersions = parsed.packageVersions;
     this.packageInstallations = parsed.packageInstallations;
     this.pluginInstallations = parsed.pluginInstallations ?? [];
+    this.plugins = parsed.plugins && parsed.plugins.length > 0 ? parsed.plugins : [...SEED_PLUGINS];
+    this.plans = parsed.plans && parsed.plans.length > 0 ? parsed.plans : [...SEED_PLANS];
+    this.outboxMessages = parsed.outboxMessages ?? [];
     this.domains = parsed.domains;
     this.quotaPolicies = parsed.quotaPolicies;
     this.rateLimitPolicies = parsed.rateLimitPolicies;
@@ -473,6 +507,9 @@ export class PlatformRepository {
       packageVersions: this.packageVersions,
       packageInstallations: this.packageInstallations,
       pluginInstallations: this.pluginInstallations,
+      plugins: this.plugins,
+      plans: this.plans,
+      outboxMessages: this.outboxMessages,
       domains: this.domains,
       quotaPolicies: this.quotaPolicies,
       rateLimitPolicies: this.rateLimitPolicies,
@@ -545,6 +582,9 @@ export class PlatformRepository {
     this.packageVersions = [];
     this.packageInstallations = [];
     this.pluginInstallations = [];
+    this.plugins = [];
+    this.plans = [];
+    this.outboxMessages = [];
     this.domains = [];
     this.quotaPolicies = [];
     this.rateLimitPolicies = [];
@@ -745,43 +785,30 @@ export class PlatformRepository {
       }
     }
 
-    // Provision standard PluginInstallation rows with runtimeTenantId for RestaurantOS and HospitalOS
-    const org = this.organizations.find((o) => o.id === input.organizationId);
-    const orgSlug = org?.slug || 'org_default';
-    const runtimeTenantId = TENANT_RE.test(slug)
+    // Part A: Organization resolution (No org_default. Refuse if not resolved)
+    const org = this.organizations.find((o) => o.id === input.organizationId || o.slug === input.organizationId);
+    if (!org) {
+      throw new Error(`Organization "${input.organizationId}" not found. Cannot provision tenant without a valid organization.`);
+    }
+    const orgSlug = org.slug;
+    const canonicalTenantId = TENANT_RE.test(slug)
       ? slug
       : `org/${orgSlug}/project/${slug}/environment/production`;
 
-    const allServices = [...(input.enabledServices || []), ...(input.initialPackages || [])];
-    const isRestaurant =
-      allServices.some((s) => ['restaurant', '@orbitox/restaurant', '@orbitox-io/restaurant', 'pos', '@orbitox/pos'].includes(s)) ||
-      ['O2O2B2B2C', 'FRANCHISE_RETAIL', 'restaurant'].includes(input.businessModel);
-    const isHospital =
-      allServices.some((s) => ['hms', 'hospital', '@orbitox/hms', '@orbitox-io/hms', '@orbitox/hospital'].includes(s)) ||
-      ['HEALTHCARE_NETWORK', 'hospital', 'hms'].includes(input.businessModel);
-
-    if (isRestaurant) {
-      try {
+    // Part A: Create PluginInstallation rows ONLY from an explicit entitlement or plan
+    // Remove the businessModel guessing; a business type never grants a plugin.
+    if (input.plugins && input.plugins.length > 0) {
+      for (const p of input.plugins) {
+        const canonical = canonicalizePluginId(p.pluginId);
         this.provisionPluginInstallation({
-          tenantId: slug,
-          pluginId: '@orbitox/restaurant',
-          runtimeTenantId,
+          tenantId: canonicalTenantId,
+          pluginId: canonical,
+          runtimeTenantId: canonicalTenantId,
           status: (input.status as any) || 'ACTIVE',
-          planId: planKey,
+          planId: p.planId || planKey,
+          config: p.config || {},
         });
-      } catch {}
-    }
-
-    if (isHospital) {
-      try {
-        this.provisionPluginInstallation({
-          tenantId: slug,
-          pluginId: '@orbitox/hms',
-          runtimeTenantId,
-          status: (input.status as any) || 'ACTIVE',
-          planId: planKey,
-        });
-      } catch {}
+      }
     }
 
     this.persistCriticalChange();
@@ -1227,19 +1254,21 @@ export class PlatformRepository {
       const env = this.environments.find((e) => e.id === environmentId);
       const proj = env ? this.projects.find((p) => p.id === env.projectId) : undefined;
       const org = proj ? this.organizations.find((o) => o.id === proj.organizationId) : undefined;
-      const orgSlug = org?.slug || 'org_default';
+      if (!org) {
+        throw new Error(
+          `Organization for project "${proj?.slug || environmentId}" could not be resolved. Cannot provision installation without a valid organization.`
+        );
+      }
+      const orgSlug = org.slug;
       const slug = proj?.slug || environmentId;
-      const runtimeTenantId = env
-        ? `org/${orgSlug}/project/${slug}/environment/${env.slug}`
-        : `org/org_default/project/${slug}/environment/production`;
-      try {
-        this.provisionPluginInstallation({
-          tenantId: slug,
-          pluginId: canonical,
-          runtimeTenantId,
-          status: 'ACTIVE',
-        });
-      } catch {}
+      const canonicalTenantId = `org/${orgSlug}/project/${slug}/environment/${env?.slug || 'production'}`;
+      this.provisionPluginInstallation({
+        tenantId: canonicalTenantId,
+        pluginId: canonical,
+        runtimeTenantId: canonicalTenantId,
+        status: 'ACTIVE',
+        planId: proj?.plan || proj?.planTier,
+      });
     }
 
     this.saveDebounced();
@@ -1247,13 +1276,19 @@ export class PlatformRepository {
   }
 
   // ─────────────────────────────────────────────────────────────
-  // PLUGIN INSTALLATIONS (Explicit runtimeTenantId, Anti-Claim)
+  // PLUGIN INSTALLATIONS (Canonical tenantId, Entitlement Engine)
   // ─────────────────────────────────────────────────────────────
 
   static listPluginInstallations(tenantId?: string): PluginInstallationRecord[] {
     this.initialize();
     if (tenantId) {
-      return this.pluginInstallations.filter((p) => p.tenantId === tenantId);
+      let lookup = tenantId.trim();
+      if (!TENANT_RE.test(lookup)) {
+        const proj = this.getProject(lookup);
+        const org = proj ? this.getOrganization(proj.organizationId) : undefined;
+        if (proj && org) lookup = `org/${org.slug}/project/${proj.slug}/environment/production`;
+      }
+      return this.pluginInstallations.filter((p) => p.tenantId === lookup);
     }
     return [...this.pluginInstallations];
   }
@@ -1261,9 +1296,19 @@ export class PlatformRepository {
   static getPluginInstallation(tenantId: string, pluginId: string): PluginInstallationRecord | undefined {
     this.initialize();
     const canonical = canonicalizePluginId(pluginId);
+    const targetTenantId = tenantId?.trim();
+    let resolvedTenantId = targetTenantId;
+    if (!TENANT_RE.test(targetTenantId)) {
+      const proj = this.getProject(targetTenantId);
+      const org = proj ? this.getOrganization(proj.organizationId) : undefined;
+      if (proj && org) {
+        resolvedTenantId = `org/${org.slug}/project/${proj.slug}/environment/production`;
+      }
+    }
+    // Requirement 4: Look installations up by tenantId only, and remove the OR runtimeTenantId match
     return this.pluginInstallations.find(
       (p) =>
-        (p.tenantId === tenantId || p.runtimeTenantId === tenantId) &&
+        (p.tenantId === targetTenantId || p.tenantId === resolvedTenantId) &&
         (canonicalizePluginId(p.pluginId) === canonical ||
           p.pluginId === pluginId ||
           p.pluginId === canonical.replace(/^@orbitox\//, ''))
@@ -1274,10 +1319,23 @@ export class PlatformRepository {
     this.initialize();
     const tenantId = input.tenantId?.trim();
     const pluginId = canonicalizePluginId(input.pluginId);
-    const runtimeTenantId = input.runtimeTenantId?.trim();
+    let runtimeTenantId = input.runtimeTenantId?.trim();
 
     if (!tenantId) throw new Error('Field "tenantId" is required for plugin installation.');
     if (!pluginId) throw new Error('Field "pluginId" is required for plugin installation.');
+
+    if (!runtimeTenantId) {
+      if (TENANT_RE.test(tenantId)) {
+        runtimeTenantId = tenantId;
+      } else {
+        const proj = this.getProject(tenantId);
+        const org = proj ? this.getOrganization(proj.organizationId) : undefined;
+        if (proj && org) {
+          runtimeTenantId = `org/${org.slug}/project/${proj.slug}/environment/production`;
+        }
+      }
+    }
+
     if (!runtimeTenantId || !TENANT_RE.test(runtimeTenantId)) {
       throw new Error(
         `Target runtime tenant ID "${runtimeTenantId}" is not in canonical format (org/{org}/project/{proj}/environment/{env}).`
@@ -1303,24 +1361,88 @@ export class PlatformRepository {
       (p) => p.tenantId === tenantId && canonicalizePluginId(p.pluginId) === pluginId
     );
 
+    if (existingIdx !== -1) {
+      const existing = this.pluginInstallations[existingIdx]!;
+
+      // Part A 5: Never overwrite an existing runtimeTenantId
+      if (existing.runtimeTenantId && existing.runtimeTenantId !== runtimeTenantId) {
+        throw new Error(
+          `Cannot overwrite existing runtimeTenantId "${existing.runtimeTenantId}" with "${runtimeTenantId}".`
+        );
+      }
+
+      // Part A 5: Never turn ARCHIVED back to ACTIVE through provisioning
+      if (existing.status === 'ARCHIVED') {
+        const err = new Error(
+          `Cannot re-activate ARCHIVED plugin installation for tenant "${tenantId}". Re-activation requires an explicit, audited admin action.`
+        );
+        (err as any).code = 'ARCHIVED_RESURRECTION_REFUSED';
+        throw err;
+      }
+
+      const targetStatus = (input.status as any) || existing.status;
+      assertValidInstallationTransition(existing.status, targetStatus);
+      const revision = (input.entitlementRevision ?? existing.entitlementRevision) + (targetStatus !== existing.status ? 1 : 0);
+
+      const record: PluginInstallationRecord = {
+        ...existing,
+        runtimeTenantId,
+        status: targetStatus,
+        entitlementRevision: revision,
+        planId: input.planId !== undefined ? input.planId : existing.planId,
+        config: input.config || existing.config,
+        updatedAt: new Date().toISOString(),
+      };
+      this.pluginInstallations[existingIdx] = record;
+
+      this.recordOutboxMessage({
+        tenantId,
+        eventType: 'entitlement.updated',
+        aggregateType: 'PluginInstallation',
+        aggregateId: record.id,
+        payload: {
+          tenantId,
+          pluginId,
+          planId: record.planId,
+          status: record.status,
+          revision: record.entitlementRevision,
+        },
+      });
+
+      this.saveDebounced();
+      return record;
+    }
+
+    const targetStatus = (input.status as any) || 'ACTIVE';
+
     const record: PluginInstallationRecord = {
-      id: existingIdx !== -1 ? this.pluginInstallations[existingIdx]!.id : `pinst_${crypto.randomUUID()}`,
+      id: `pinst_${crypto.randomUUID()}`,
       tenantId,
       pluginId,
       runtimeTenantId,
-      status: (input.status as any) || 'ACTIVE',
+      status: targetStatus,
       entitlementRevision: input.entitlementRevision ?? 1,
       planId: input.planId ?? null,
       config: input.config || {},
-      createdAt: existingIdx !== -1 ? this.pluginInstallations[existingIdx]!.createdAt : new Date().toISOString(),
+      createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     };
 
-    if (existingIdx !== -1) {
-      this.pluginInstallations[existingIdx] = record;
-    } else {
-      this.pluginInstallations.push(record);
-    }
+    this.pluginInstallations.push(record);
+
+    this.recordOutboxMessage({
+      tenantId,
+      eventType: 'entitlement.updated',
+      aggregateType: 'PluginInstallation',
+      aggregateId: record.id,
+      payload: {
+        tenantId,
+        pluginId,
+        planId: record.planId,
+        status: record.status,
+        revision: record.entitlementRevision,
+      },
+    });
 
     this.saveDebounced();
     return record;
@@ -1337,15 +1459,34 @@ export class PlatformRepository {
     if (!existing) {
       throw new Error(`Plugin installation for tenant "${tenantId}" and plugin "${canonical}" not found.`);
     }
+
+    assertValidInstallationTransition(existing.status, status);
+
     const updated: PluginInstallationRecord = {
       ...existing,
       status,
+      entitlementRevision: existing.entitlementRevision + 1,
       updatedAt: new Date().toISOString(),
     };
     const idx = this.pluginInstallations.findIndex((p) => p.id === existing.id);
     if (idx !== -1) {
       this.pluginInstallations[idx] = updated;
     }
+
+    this.recordOutboxMessage({
+      tenantId: existing.tenantId,
+      eventType: 'entitlement.updated',
+      aggregateType: 'PluginInstallation',
+      aggregateId: updated.id,
+      payload: {
+        tenantId: existing.tenantId,
+        pluginId: canonical,
+        planId: updated.planId,
+        status: updated.status,
+        revision: updated.entitlementRevision,
+      },
+    });
+
     this.saveDebounced();
     return updated;
   }
@@ -1357,7 +1498,9 @@ export class PlatformRepository {
     if (!existing) {
       throw new Error(`Plugin installation for tenant "${tenantId}" and plugin "${canonical}" not found.`);
     }
-    // Requirement 2b-5: Uninstalling sets status ARCHIVED, and the row is kept.
+
+    assertValidInstallationTransition(existing.status, 'ARCHIVED');
+
     const updated: PluginInstallationRecord = {
       ...existing,
       status: 'ARCHIVED',
@@ -1368,8 +1511,313 @@ export class PlatformRepository {
     if (idx !== -1) {
       this.pluginInstallations[idx] = updated;
     }
+
+    this.recordOutboxMessage({
+      tenantId: existing.tenantId,
+      eventType: 'entitlement.updated',
+      aggregateType: 'PluginInstallation',
+      aggregateId: updated.id,
+      payload: {
+        tenantId: existing.tenantId,
+        pluginId: canonical,
+        planId: updated.planId,
+        status: updated.status,
+        revision: updated.entitlementRevision,
+      },
+    });
+
     this.saveDebounced();
     return updated;
+  }
+
+  static reactivatePluginInstallation(
+    tenantId: string,
+    pluginId: string,
+    options: { actorId?: string; actorEmail?: string; reason: string }
+  ): PluginInstallationRecord {
+    this.initialize();
+    const canonical = canonicalizePluginId(pluginId);
+    const existing = this.getPluginInstallation(tenantId, canonical);
+    if (!existing) {
+      throw new Error(`Plugin installation for tenant "${tenantId}" and plugin "${canonical}" not found.`);
+    }
+    if (existing.status !== 'ARCHIVED') {
+      throw new Error(`Only ARCHIVED installations can be reactivated. Current status is "${existing.status}".`);
+    }
+
+    assertValidInstallationTransition(existing.status, 'ACTIVE', true);
+
+    const updated: PluginInstallationRecord = {
+      ...existing,
+      status: 'ACTIVE',
+      entitlementRevision: existing.entitlementRevision + 1,
+      updatedAt: new Date().toISOString(),
+    };
+    const idx = this.pluginInstallations.findIndex((p) => p.id === existing.id);
+    if (idx !== -1) {
+      this.pluginInstallations[idx] = updated;
+    }
+
+    this.recordOutboxMessage({
+      tenantId: existing.tenantId,
+      eventType: 'entitlement.updated',
+      aggregateType: 'PluginInstallation',
+      aggregateId: updated.id,
+      payload: {
+        tenantId: existing.tenantId,
+        pluginId: canonical,
+        planId: updated.planId,
+        status: updated.status,
+        revision: updated.entitlementRevision,
+        reactivatedBy: options?.actorEmail || options?.actorId || 'platform_admin',
+        reason: options?.reason,
+      },
+    });
+
+    this.recordAuditEvent({
+      action: 'PLUGIN_INSTALLATION_REACTIVATED',
+      entityType: 'PluginInstallation',
+      entityId: updated.id,
+      actorId: options.actorId || 'platform_admin',
+      actorEmail: options.actorEmail,
+      reason: options.reason,
+      metadata: {
+        tenantId: existing.tenantId,
+        pluginId: canonical,
+        revision: updated.entitlementRevision,
+      },
+    });
+
+    this.persistCriticalChange();
+    return updated;
+  }
+
+  static changePluginInstallationPlan(
+    tenantId: string,
+    pluginId: string,
+    newPlanId: string
+  ): PluginInstallationRecord {
+    this.initialize();
+    const canonical = canonicalizePluginId(pluginId);
+    const existing = this.getPluginInstallation(tenantId, canonical);
+    if (!existing) {
+      throw new Error(`Plugin installation for tenant "${tenantId}" and plugin "${canonical}" not found.`);
+    }
+
+    const plan = this.getPlan(newPlanId);
+    if (!plan) {
+      throw new Error(`Plan "${newPlanId}" does not exist in the plan catalogue.`);
+    }
+
+    const updated: PluginInstallationRecord = {
+      ...existing,
+      planId: newPlanId,
+      entitlementRevision: existing.entitlementRevision + 1,
+      updatedAt: new Date().toISOString(),
+    };
+    const idx = this.pluginInstallations.findIndex((p) => p.id === existing.id);
+    if (idx !== -1) {
+      this.pluginInstallations[idx] = updated;
+    }
+
+    this.recordOutboxMessage({
+      tenantId: existing.tenantId,
+      eventType: 'entitlement.updated',
+      aggregateType: 'PluginInstallation',
+      aggregateId: updated.id,
+      payload: {
+        tenantId: existing.tenantId,
+        pluginId: canonical,
+        planId: newPlanId,
+        status: updated.status,
+        revision: updated.entitlementRevision,
+      },
+    });
+
+    this.saveDebounced();
+    return updated;
+  }
+
+  static checkQuotaUsage(
+    tenantId: string,
+    pluginId: string,
+    quotaKey: string,
+    currentCount: number,
+    requestedIncrement = 1
+  ): { allowed: boolean; limit: number; current: number; reason?: string } {
+    this.initialize();
+    const canonical = canonicalizePluginId(pluginId);
+    const existing = this.getPluginInstallation(tenantId, canonical);
+    if (!existing || !existing.planId) {
+      return { allowed: true, limit: -1, current: currentCount };
+    }
+
+    const plan = this.getPlan(existing.planId);
+    if (!plan) {
+      return { allowed: true, limit: -1, current: currentCount };
+    }
+
+    const quota = plan.quotas.find((q) => q.quotaKey === quotaKey);
+    if (!quota || quota.limit === -1) {
+      return { allowed: true, limit: -1, current: currentCount };
+    }
+
+    if (requestedIncrement === 0) {
+      return { allowed: true, limit: quota.limit, current: currentCount };
+    }
+
+    if (currentCount + requestedIncrement > quota.limit) {
+      return {
+        allowed: false,
+        limit: quota.limit,
+        current: currentCount,
+        reason: `QUOTA_EXCEEDED: Quota limit of ${quota.limit} for "${quotaKey}" would be exceeded (current: ${currentCount}, requested: +${requestedIncrement}). Writes blocked, reads permitted.`,
+      };
+    }
+
+    return { allowed: true, limit: quota.limit, current: currentCount };
+  }
+
+  // ─────────────────────────────────────────────────────────────
+  // PLAN CATALOGUE (Part B)
+  // ─────────────────────────────────────────────────────────────
+
+  static listPlugins(): PluginCatalogueItem[] {
+    this.initialize();
+    return [...this.plugins];
+  }
+
+  static getPlugin(pluginId: string): PluginCatalogueItem | undefined {
+    this.initialize();
+    const canonical = canonicalizePluginId(pluginId);
+    return this.plugins.find((p) => p.pluginId === canonical || p.pluginId === pluginId);
+  }
+
+  static listPlans(pluginId?: string): PlanCatalogueRecord[] {
+    this.initialize();
+    if (pluginId) {
+      const canonical = canonicalizePluginId(pluginId);
+      return this.plans.filter((p) => p.pluginId === canonical || p.pluginId === pluginId);
+    }
+    return [...this.plans];
+  }
+
+  static getPlan(planId: string): PlanCatalogueRecord | undefined {
+    this.initialize();
+    return this.plans.find((p) => p.planId === planId);
+  }
+
+  static createPlan(input: PlanCatalogueRecord): PlanCatalogueRecord {
+    this.initialize();
+    const existing = this.plans.find((p) => p.planId === input.planId);
+    if (existing) {
+      throw new Error(`Plan "${input.planId}" already exists.`);
+    }
+    const plan: PlanCatalogueRecord = {
+      ...input,
+      id: input.id || `plan_${crypto.randomUUID()}`,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+    this.plans.push(plan);
+    this.persistCriticalChange();
+    return plan;
+  }
+
+  static updatePlan(planId: string, updates: Partial<PlanCatalogueRecord>): PlanCatalogueRecord {
+    this.initialize();
+    const idx = this.plans.findIndex((p) => p.planId === planId);
+    if (idx === -1) {
+      throw new Error(`Plan "${planId}" not found.`);
+    }
+    const updated: PlanCatalogueRecord = {
+      ...this.plans[idx]!,
+      ...updates,
+      planId: this.plans[idx]!.planId,
+      updatedAt: new Date().toISOString(),
+    };
+    this.plans[idx] = updated;
+
+    // Requirement: A plan change bumps the revision of every affected installation
+    for (const inst of this.pluginInstallations) {
+      if (inst.planId === planId) {
+        inst.entitlementRevision += 1;
+        inst.updatedAt = new Date().toISOString();
+        this.recordOutboxMessage({
+          tenantId: inst.tenantId,
+          eventType: 'entitlement.updated',
+          aggregateType: 'PluginInstallation',
+          aggregateId: inst.id,
+          payload: {
+            tenantId: inst.tenantId,
+            pluginId: inst.pluginId,
+            planId: inst.planId,
+            status: inst.status,
+            revision: inst.entitlementRevision,
+            reason: 'plan.updated',
+          },
+        });
+      }
+    }
+
+    this.persistCriticalChange();
+    return updated;
+  }
+
+  static ensurePlanCatalogueSeeded(): void {
+    this.initialize();
+    for (const p of SEED_PLUGINS) {
+      const idx = this.plugins.findIndex((plug) => plug.pluginId === p.pluginId);
+      if (idx !== -1) {
+        this.plugins[idx] = { ...p, id: this.plugins[idx]!.id };
+      } else {
+        this.plugins.push(p);
+      }
+    }
+    for (const pl of SEED_PLANS) {
+      const idx = this.plans.findIndex((plan) => plan.planId === pl.planId);
+      if (idx !== -1) {
+        this.plans[idx] = { ...pl, id: this.plans[idx]!.id };
+      } else {
+        this.plans.push(pl);
+      }
+    }
+  }
+
+  // ─────────────────────────────────────────────────────────────
+  // OUTBOX MESSAGES (Part C)
+  // ─────────────────────────────────────────────────────────────
+
+  static listOutboxMessages(filter?: { tenantId?: string; status?: string }): PlatformOutboxRecord[] {
+    this.initialize();
+    return this.outboxMessages.filter((m) => {
+      if (filter?.tenantId && m.tenantId !== filter.tenantId) return false;
+      if (filter?.status && m.status !== filter.status) return false;
+      return true;
+    });
+  }
+
+  static recordOutboxMessage(input: {
+    tenantId: string;
+    eventType: string;
+    aggregateType: string;
+    aggregateId: string;
+    payload: Record<string, any>;
+  }): PlatformOutboxRecord {
+    this.initialize();
+    const message: PlatformOutboxRecord = {
+      id: `outbox_${crypto.randomUUID()}`,
+      tenantId: input.tenantId,
+      eventType: input.eventType,
+      aggregateType: input.aggregateType,
+      aggregateId: input.aggregateId,
+      payload: input.payload,
+      status: 'PENDING',
+      retryCount: 0,
+      createdAt: new Date().toISOString(),
+    };
+    this.outboxMessages.push(message);
+    return message;
   }
 
   // ─────────────────────────────────────────────────────────────
