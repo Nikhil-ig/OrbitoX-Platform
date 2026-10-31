@@ -267,6 +267,12 @@ async function main(): Promise<void> {
   await assert.rejects(() => runtime.$executeRaw`TRUNCATE TABLE "PlatformAuditEvent"`);
   pass('audit reads are environment-scoped and runtime cannot update, delete, or truncate events');
 
+  await assert.rejects(
+    () => runtime.$executeRaw`DELETE FROM "PluginInstallation" WHERE "id" = 'test_revoke_check'`,
+    /permission denied for table PluginInstallation/i,
+  );
+  pass('DELETE on PluginInstallation is strictly revoked from orbitox_runtime');
+
   const healthy = await createHealthHandler(() => assertPlatformDatabaseReady(runtime))();
   assert.equal(healthy.status, 200);
   pass('readiness is healthy at the required migration version');

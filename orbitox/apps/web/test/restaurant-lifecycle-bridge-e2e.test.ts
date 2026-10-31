@@ -21,6 +21,12 @@ import { spawn, ChildProcess } from 'child_process';
 import { Pool } from 'pg';
 import { RestaurantBridgeClient } from '../lib/restaurant-bridge-client';
 import { getDefaultBridgeKeys, signBridgeRequest } from '@orbitox-io/bridge';
+import { NextRequest } from 'next/server';
+import { forwardSignedBridgeCall } from '../app/api/restaurant/_lib/restaurant-routing';
+import { platformRepository } from '../lib/platform-repository';
+
+Reflect.set(process.env, 'NODE_ENV', 'test');
+process.env.ORBITOX_PLATFORM_REPOSITORY = 'json';
 
 const databaseUrl = process.env.DATABASE_URL || 'postgresql://apple@localhost:5432/restaurant_os';
 const pool = new Pool({ connectionString: databaseUrl });
@@ -221,4 +227,72 @@ describe('Platform <-> RestaurantOS Lifecycle Bridge E2E (Phase 2b-4 B5)', () =>
     assert.equal(dbCheck.rows[0].planId, 'enterprise', 'Older plan revision must not overwrite higher revision');
     assert.equal(dbCheck.rows[0].entitlementRevision, 5);
   });
+
+  it('5. End-to-end KDS flow: provision a restaurant tenant -> KDS call works; suspend it -> KDS returns SERVICE_SUSPENDED', async (t) => {
+    if (!isRestoInstalled) {
+      t.skip('RestaurantOS dependencies not present');
+      return;
+    }
+
+    const kdsRunId = crypto.randomBytes(4).toString('hex');
+    const kdsTenant = `org/org-kds-${kdsRunId}/project/proj-kds-${kdsRunId}/environment/prod`;
+    process.env.RESTAURANTOS_RUNTIME_URL = `http://127.0.0.1:${restaurantPort}`;
+
+    // 1. Provision a restaurant tenant via bridge client
+    const provRes = await bridgeClient.provisionTenant({
+      tenantId: kdsTenant,
+      restaurantName: 'The KDS Bistro',
+      slug: `kds-bistro-${kdsRunId}`,
+      planId: 'growth',
+    });
+    assert.equal(provRes.ok, true, `Provision failed: ${JSON.stringify(provRes)}`);
+
+    // Verify PluginInstallation row was created with runtimeTenantId
+    const installation = await platformRepository.getPluginInstallation(kdsTenant, '@orbitox/restaurant');
+    assert.ok(installation, 'PluginInstallation row must be created upon provisioning');
+    assert.equal(installation.status, 'ACTIVE');
+    assert.equal(installation.runtimeTenantId, kdsTenant);
+
+    // 2. KDS call works (GET /api/restaurant/kds via forwardSignedBridgeCall)
+    const req1 = new NextRequest(`http://127.0.0.1:${restaurantPort}/api/restaurant/kds`);
+    const kdsRes1 = await forwardSignedBridgeCall(req1, '/api/restaurant/kds', kdsTenant);
+    assert.equal(kdsRes1.status, 200, `Expected 200 OK for active tenant KDS call, got ${kdsRes1.status}`);
+    const kdsBody1 = await kdsRes1.json();
+    assert.equal(kdsBody1.success, true);
+    assert.ok(Array.isArray(kdsBody1.tasks) || Array.isArray(kdsBody1.data));
+
+    // 3. Suspend tenant via bridge client
+    const suspendRes = await bridgeClient.suspendTenant(kdsTenant, 2);
+    assert.equal(suspendRes.ok, true, `Suspend failed: ${JSON.stringify(suspendRes)}`);
+
+    const suspendedInst = await platformRepository.getPluginInstallation(kdsTenant, '@orbitox/restaurant');
+    assert.ok(suspendedInst);
+    assert.equal(suspendedInst.status, 'SUSPENDED');
+
+    // 4. KDS returns SERVICE_SUSPENDED
+    const req2 = new NextRequest(`http://127.0.0.1:${restaurantPort}/api/restaurant/kds`);
+    const kdsRes2 = await forwardSignedBridgeCall(req2, '/api/restaurant/kds', kdsTenant);
+    assert.equal(kdsRes2.status, 403, `Expected 403 on suspended tenant KDS call, got ${kdsRes2.status}`);
+    const kdsBody2 = await kdsRes2.json();
+    assert.equal(kdsBody2.success, false);
+    assert.equal(kdsBody2.error?.code, 'SERVICE_SUSPENDED');
+
+    // Also test POST mutation directly to upstream RestaurantOS KDS endpoint returns SERVICE_SUSPENDED / TENANT_SUSPENDED
+    const reqBump = new NextRequest(`http://127.0.0.1:${restaurantPort}/api/restaurant/kds/bump`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ taskId: 'task_nonexistent' }),
+    });
+    const kdsBumpRes = await forwardSignedBridgeCall(reqBump, '/api/restaurant/kds/bump', kdsTenant);
+    assert.equal(kdsBumpRes.status, 403);
+    const kdsBumpBody = await kdsBumpRes.json();
+    assert.equal(kdsBumpBody.success, false);
+    assert.equal(kdsBumpBody.error?.code, 'SERVICE_SUSPENDED');
+
+    // Cleanup tenant from RestaurantOS DB
+    try {
+      await pool.query('DELETE FROM "Tenant" WHERE "id" = $1', [kdsTenant]);
+    } catch {}
+  });
 });
+

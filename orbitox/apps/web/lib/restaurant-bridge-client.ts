@@ -223,6 +223,16 @@ export class RestaurantBridgeClient {
     };
 
     const res = await this.sendLifecycleRequest('POST', '/orbitox/lifecycle/provision', input.tenantId, payload);
+    try {
+      await platformRepository.provisionPluginInstallation({
+        tenantId: input.tenantId,
+        pluginId: '@orbitox/restaurant',
+        runtimeTenantId: input.tenantId,
+        status: 'ACTIVE',
+        planId: input.planId || 'growth',
+        entitlementRevision: input.revision ?? 1,
+      });
+    } catch {}
     await this.recordInstallationResult(input.tenantId, 'PROVISION', res);
     return res;
   }
@@ -242,6 +252,9 @@ export class RestaurantBridgeClient {
     };
 
     const res = await this.sendLifecycleRequest('POST', '/orbitox/lifecycle/suspend', tenantId, payload);
+    try {
+      await platformRepository.updatePluginInstallationStatus(tenantId, '@orbitox/restaurant', 'SUSPENDED');
+    } catch {}
     await this.recordInstallationResult(tenantId, 'SUSPEND', res);
     return res;
   }
@@ -261,6 +274,9 @@ export class RestaurantBridgeClient {
     };
 
     const res = await this.sendLifecycleRequest('POST', '/orbitox/lifecycle/resume', tenantId, payload);
+    try {
+      await platformRepository.updatePluginInstallationStatus(tenantId, '@orbitox/restaurant', 'ACTIVE');
+    } catch {}
     await this.recordInstallationResult(tenantId, 'RESUME', res);
     return res;
   }

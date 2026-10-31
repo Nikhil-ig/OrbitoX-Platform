@@ -175,6 +175,40 @@ export async function forwardSignedBridgeCall(
     );
   }
 
+  // Check if plugin installation is explicitly suspended or archived
+  try {
+    const inst =
+      (await platformRepository.getPluginInstallation(rawTenant, '@orbitox/restaurant')) ||
+      (await platformRepository.getPluginInstallation(rawTenant, 'restaurant'));
+
+    if (inst) {
+      if (inst.status === 'SUSPENDED') {
+        return NextResponse.json(
+          {
+            success: false,
+            error: {
+              code: 'SERVICE_SUSPENDED',
+              message: `Restaurant service for tenant "${rawTenant}" is suspended.`,
+            },
+          },
+          { status: 403 }
+        );
+      }
+      if (inst.status === 'ARCHIVED') {
+        return NextResponse.json(
+          {
+            success: false,
+            error: {
+              code: 'SERVICE_SUSPENDED',
+              message: `Restaurant service for tenant "${rawTenant}" has been archived.`,
+            },
+          },
+          { status: 403 }
+        );
+      }
+    }
+  } catch {}
+
   let canonicalTenant = rawTenant;
   if (!TENANT_RE.test(canonicalTenant)) {
     const linkedTenant = await resolveLinkedRestaurantTenant(canonicalTenant);
@@ -216,6 +250,30 @@ export async function forwardSignedBridgeCall(
     });
 
     const upstreamBody = await upstreamRes.arrayBuffer();
+
+    if (upstreamRes.status === 403) {
+      try {
+        const text = new TextDecoder().decode(upstreamBody);
+        const parsed = JSON.parse(text);
+        if (
+          parsed.code === 'TENANT_SUSPENDED' ||
+          parsed.code === 'SERVICE_SUSPENDED' ||
+          parsed.error === 'TENANT_SUSPENDED'
+        ) {
+          return NextResponse.json(
+            {
+              success: false,
+              error: {
+                code: 'SERVICE_SUSPENDED',
+                message: parsed.message || 'Restaurant service is suspended.',
+              },
+            },
+            { status: 403 }
+          );
+        }
+      } catch {}
+    }
+
     const responseHeaders = new Headers();
     upstreamRes.headers.forEach((val, key) => {
       if (key.toLowerCase() !== 'transfer-encoding') {

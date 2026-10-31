@@ -54,7 +54,14 @@ export function canonicalizePluginId(pluginId: string): string {
   if (trimmed === 'pos' || trimmed === '@orbitox-io/pos' || trimmed === '@orbitox/pos') {
     return '@orbitox/pos';
   }
-  if (trimmed === 'hms' || trimmed === '@orbitox-io/hms' || trimmed === '@orbitox/hms') {
+  if (
+    trimmed === 'hms' ||
+    trimmed === '@orbitox-io/hms' ||
+    trimmed === '@orbitox/hms' ||
+    trimmed === 'hospital' ||
+    trimmed === '@orbitox-io/hospital' ||
+    trimmed === '@orbitox/hospital'
+  ) {
     return '@orbitox/hms';
   }
   return trimmed;
@@ -738,6 +745,45 @@ export class PlatformRepository {
       }
     }
 
+    // Provision standard PluginInstallation rows with runtimeTenantId for RestaurantOS and HospitalOS
+    const org = this.organizations.find((o) => o.id === input.organizationId);
+    const orgSlug = org?.slug || 'org_default';
+    const runtimeTenantId = TENANT_RE.test(slug)
+      ? slug
+      : `org/${orgSlug}/project/${slug}/environment/production`;
+
+    const allServices = [...(input.enabledServices || []), ...(input.initialPackages || [])];
+    const isRestaurant =
+      allServices.some((s) => ['restaurant', '@orbitox/restaurant', '@orbitox-io/restaurant', 'pos', '@orbitox/pos'].includes(s)) ||
+      ['O2O2B2B2C', 'FRANCHISE_RETAIL', 'restaurant'].includes(input.businessModel);
+    const isHospital =
+      allServices.some((s) => ['hms', 'hospital', '@orbitox/hms', '@orbitox-io/hms', '@orbitox/hospital'].includes(s)) ||
+      ['HEALTHCARE_NETWORK', 'hospital', 'hms'].includes(input.businessModel);
+
+    if (isRestaurant) {
+      try {
+        this.provisionPluginInstallation({
+          tenantId: slug,
+          pluginId: '@orbitox/restaurant',
+          runtimeTenantId,
+          status: (input.status as any) || 'ACTIVE',
+          planId: planKey,
+        });
+      } catch {}
+    }
+
+    if (isHospital) {
+      try {
+        this.provisionPluginInstallation({
+          tenantId: slug,
+          pluginId: '@orbitox/hms',
+          runtimeTenantId,
+          status: (input.status as any) || 'ACTIVE',
+          planId: planKey,
+        });
+      } catch {}
+    }
+
     this.persistCriticalChange();
     return { project, environments: [prodEnv, stgEnv, devEnv] };
   }
@@ -750,6 +796,18 @@ export class PlatformRepository {
         throw new Error('Project slug is immutable after creation.');
       }
       this.projects[idx] = { ...this.projects[idx]!, ...updates, updatedAt: new Date().toISOString() };
+
+      if (updates.status) {
+        const projSlug = this.projects[idx]!.slug;
+        const projId = this.projects[idx]!.id;
+        for (const inst of this.pluginInstallations) {
+          if (inst.tenantId === projSlug || inst.tenantId === projId) {
+            inst.status = updates.status;
+            inst.updatedAt = new Date().toISOString();
+          }
+        }
+      }
+
       const durableFields: Array<keyof PlatformProject> = [
         'status',
         'planTier',
@@ -1164,6 +1222,26 @@ export class PlatformRepository {
       this.packageInstallations.push(record);
     }
 
+    const canonical = canonicalizePluginId(packageId);
+    if (canonical === '@orbitox/restaurant' || canonical === '@orbitox/hms') {
+      const env = this.environments.find((e) => e.id === environmentId);
+      const proj = env ? this.projects.find((p) => p.id === env.projectId) : undefined;
+      const org = proj ? this.organizations.find((o) => o.id === proj.organizationId) : undefined;
+      const orgSlug = org?.slug || 'org_default';
+      const slug = proj?.slug || environmentId;
+      const runtimeTenantId = env
+        ? `org/${orgSlug}/project/${slug}/environment/${env.slug}`
+        : `org/org_default/project/${slug}/environment/production`;
+      try {
+        this.provisionPluginInstallation({
+          tenantId: slug,
+          pluginId: canonical,
+          runtimeTenantId,
+          status: 'ACTIVE',
+        });
+      } catch {}
+    }
+
     this.saveDebounced();
     return record;
   }
@@ -1185,7 +1263,7 @@ export class PlatformRepository {
     const canonical = canonicalizePluginId(pluginId);
     return this.pluginInstallations.find(
       (p) =>
-        p.tenantId === tenantId &&
+        (p.tenantId === tenantId || p.runtimeTenantId === tenantId) &&
         (canonicalizePluginId(p.pluginId) === canonical ||
           p.pluginId === pluginId ||
           p.pluginId === canonical.replace(/^@orbitox\//, ''))
@@ -1246,6 +1324,52 @@ export class PlatformRepository {
 
     this.saveDebounced();
     return record;
+  }
+
+  static updatePluginInstallationStatus(
+    tenantId: string,
+    pluginId: string,
+    status: PluginInstallationStatus | string
+  ): PluginInstallationRecord {
+    this.initialize();
+    const canonical = canonicalizePluginId(pluginId);
+    const existing = this.getPluginInstallation(tenantId, canonical);
+    if (!existing) {
+      throw new Error(`Plugin installation for tenant "${tenantId}" and plugin "${canonical}" not found.`);
+    }
+    const updated: PluginInstallationRecord = {
+      ...existing,
+      status,
+      updatedAt: new Date().toISOString(),
+    };
+    const idx = this.pluginInstallations.findIndex((p) => p.id === existing.id);
+    if (idx !== -1) {
+      this.pluginInstallations[idx] = updated;
+    }
+    this.saveDebounced();
+    return updated;
+  }
+
+  static uninstallPluginInstallation(tenantId: string, pluginId: string): PluginInstallationRecord {
+    this.initialize();
+    const canonical = canonicalizePluginId(pluginId);
+    const existing = this.getPluginInstallation(tenantId, canonical);
+    if (!existing) {
+      throw new Error(`Plugin installation for tenant "${tenantId}" and plugin "${canonical}" not found.`);
+    }
+    // Requirement 2b-5: Uninstalling sets status ARCHIVED, and the row is kept.
+    const updated: PluginInstallationRecord = {
+      ...existing,
+      status: 'ARCHIVED',
+      entitlementRevision: existing.entitlementRevision + 1,
+      updatedAt: new Date().toISOString(),
+    };
+    const idx = this.pluginInstallations.findIndex((p) => p.id === existing.id);
+    if (idx !== -1) {
+      this.pluginInstallations[idx] = updated;
+    }
+    this.saveDebounced();
+    return updated;
   }
 
   // ─────────────────────────────────────────────────────────────

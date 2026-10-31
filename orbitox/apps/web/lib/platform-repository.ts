@@ -131,6 +131,8 @@ export type AsyncPlatformRepository = AsyncMethods<typeof PlatformRepository> & 
     listPluginInstallations(tenantId?: string): Promise<PluginInstallationRecord[]>;
     getPluginInstallation(tenantId: string, pluginId: string): Promise<PluginInstallationRecord | undefined>;
     provisionPluginInstallation(input: ProvisionPluginInstallationInput): Promise<PluginInstallationRecord>;
+    updatePluginInstallationStatus(tenantId: string, pluginId: string, status: PluginInstallationStatus | string): Promise<PluginInstallationRecord>;
+    uninstallPluginInstallation(tenantId: string, pluginId: string): Promise<PluginInstallationRecord>;
 };
 
 type DatabaseClient = PrismaClient;
@@ -635,6 +637,66 @@ export function createPrismaPlatformRepository(client: PrismaClient, adminAuditC
                 }
                 throw error;
             }
+
+            // Provision standard PluginInstallation rows with runtimeTenantId for RestaurantOS and HospitalOS
+            const org = await client.platformOrganization.findUnique({ where: { id: input.organizationId } }).catch(() => null);
+            const orgSlug = org?.slug || 'org_default';
+            const runtimeTenantId = TENANT_RE.test(slug)
+                ? slug
+                : `org/${orgSlug}/project/${slug}/environment/production`;
+
+            const allServices = [...(input.enabledServices || []), ...(input.initialPackages || [])];
+            const isRestaurant =
+                allServices.some((s) => ['restaurant', '@orbitox/restaurant', '@orbitox-io/restaurant', 'pos', '@orbitox/pos'].includes(s)) ||
+                ['O2O2B2B2C', 'FRANCHISE_RETAIL', 'restaurant'].includes(input.businessModel);
+            const isHospital =
+                allServices.some((s) => ['hms', 'hospital', '@orbitox/hms', '@orbitox-io/hms', '@orbitox/hospital'].includes(s)) ||
+                ['HEALTHCARE_NETWORK', 'hospital', 'hms'].includes(input.businessModel);
+
+            if (isRestaurant) {
+                try {
+                    await client.pluginInstallation.upsert({
+                        where: { tenantId_pluginId: { tenantId: slug, pluginId: '@orbitox/restaurant' } },
+                        create: {
+                            id: `pinst_${crypto.randomUUID()}`,
+                            tenantId: slug,
+                            pluginId: '@orbitox/restaurant',
+                            runtimeTenantId,
+                            status: (input.status as any) || 'ACTIVE',
+                            entitlementRevision: 1,
+                            planId: (input.plan || input.planTier || 'growth').toLowerCase(),
+                            config: {},
+                        },
+                        update: {
+                            runtimeTenantId,
+                            status: (input.status as any) || 'ACTIVE',
+                        },
+                    });
+                } catch {}
+            }
+
+            if (isHospital) {
+                try {
+                    await client.pluginInstallation.upsert({
+                        where: { tenantId_pluginId: { tenantId: slug, pluginId: '@orbitox/hms' } },
+                        create: {
+                            id: `pinst_${crypto.randomUUID()}`,
+                            tenantId: slug,
+                            pluginId: '@orbitox/hms',
+                            runtimeTenantId,
+                            status: (input.status as any) || 'ACTIVE',
+                            entitlementRevision: 1,
+                            planId: (input.plan || input.planTier || 'growth').toLowerCase(),
+                            config: {},
+                        },
+                        update: {
+                            runtimeTenantId,
+                            status: (input.status as any) || 'ACTIVE',
+                        },
+                    });
+                } catch {}
+            }
+
             return { project: toProject(row), environments: row.environments.map(toEnvironment) };
         },
         async updateProject(projectId: string, updates: Partial<PlatformProject>): Promise<PlatformProject | undefined> {
@@ -642,6 +704,14 @@ export function createPrismaPlatformRepository(client: PrismaClient, adminAuditC
             if (!existing) return undefined;
             if (updates.slug !== undefined && updates.slug !== existing.slug) throw new Error('Project slug is immutable after creation.');
             const row = await client.platformProject.update({ where: { id: existing.id }, data: toDatabaseProjectData(updates as any) });
+
+            if (updates.status) {
+                await client.pluginInstallation.updateMany({
+                    where: { OR: [{ tenantId: existing.slug }, { tenantId: existing.id }] },
+                    data: { status: updates.status as any },
+                }).catch(() => {});
+            }
+
             return toProject(row);
         },
         async deleteProject(projectId: string): Promise<boolean> {
@@ -1239,11 +1309,18 @@ export function createPrismaPlatformRepository(client: PrismaClient, adminAuditC
             const canonical = canonicalizePluginId(pluginId);
             const row = await client.pluginInstallation.findFirst({
                 where: {
-                    tenantId,
                     OR: [
-                        { pluginId: canonical },
-                        { pluginId },
-                        { pluginId: canonical.replace(/^@orbitox\//, '') },
+                        { tenantId },
+                        { runtimeTenantId: tenantId },
+                    ],
+                    AND: [
+                        {
+                            OR: [
+                                { pluginId: canonical },
+                                { pluginId },
+                                { pluginId: canonical.replace(/^@orbitox\//, '') },
+                            ],
+                        },
                     ],
                 },
             });
@@ -1308,6 +1385,61 @@ export function createPrismaPlatformRepository(client: PrismaClient, adminAuditC
                 }
                 throw dbErr;
             }
+        },
+        async updatePluginInstallationStatus(
+            tenantId: string,
+            pluginId: string,
+            status: PluginInstallationStatus | string
+        ): Promise<PluginInstallationRecord> {
+            const canonical = canonicalizePluginId(pluginId);
+            const existing = await client.pluginInstallation.findFirst({
+                where: {
+                    tenantId,
+                    OR: [
+                        { pluginId: canonical },
+                        { pluginId },
+                        { pluginId: canonical.replace(/^@orbitox\//, '') },
+                    ],
+                },
+            });
+            if (!existing) {
+                throw new Error(`Plugin installation for tenant "${tenantId}" and plugin "${canonical}" not found.`);
+            }
+            const row = await client.pluginInstallation.update({
+                where: { id: existing.id },
+                data: {
+                    status: status as any,
+                },
+            });
+            return toPluginInstallation(row);
+        },
+        async uninstallPluginInstallation(
+            tenantId: string,
+            pluginId: string
+        ): Promise<PluginInstallationRecord> {
+            const canonical = canonicalizePluginId(pluginId);
+            const existing = await client.pluginInstallation.findFirst({
+                where: {
+                    tenantId,
+                    OR: [
+                        { pluginId: canonical },
+                        { pluginId },
+                        { pluginId: canonical.replace(/^@orbitox\//, '') },
+                    ],
+                },
+            });
+            if (!existing) {
+                throw new Error(`Plugin installation for tenant "${tenantId}" and plugin "${canonical}" not found.`);
+            }
+            // Requirement 2b-5: Uninstalling sets status ARCHIVED, and the row is kept
+            const row = await client.pluginInstallation.update({
+                where: { id: existing.id },
+                data: {
+                    status: 'ARCHIVED',
+                    entitlementRevision: { increment: 1 },
+                },
+            });
+            return toPluginInstallation(row);
         },
         async listDomains(environmentId?: string): Promise<ProjectDomainRecord[]> {
             return (await client.projectDomain.findMany({
@@ -1553,6 +1685,21 @@ const extraMethods = {
     provisionPluginInstallation: async (input: ProvisionPluginInstallationInput): Promise<PluginInstallationRecord> => {
         if (prismaIsRequired()) return getPrismaRepository().provisionPluginInstallation(input);
         return PlatformRepository.provisionPluginInstallation(input);
+    },
+    updatePluginInstallationStatus: async (
+        tenantId: string,
+        pluginId: string,
+        status: PluginInstallationStatus | string
+    ): Promise<PluginInstallationRecord> => {
+        if (prismaIsRequired()) return getPrismaRepository().updatePluginInstallationStatus(tenantId, pluginId, status);
+        return PlatformRepository.updatePluginInstallationStatus(tenantId, pluginId, status);
+    },
+    uninstallPluginInstallation: async (
+        tenantId: string,
+        pluginId: string
+    ): Promise<PluginInstallationRecord> => {
+        if (prismaIsRequired()) return getPrismaRepository().uninstallPluginInstallation(tenantId, pluginId);
+        return PlatformRepository.uninstallPluginInstallation(tenantId, pluginId);
     },
     incrementProjectUsage: async (projectId: string, amount = 1): Promise<number> => {
         if (prismaIsRequired()) return getPrismaRepository().incrementProjectUsage(projectId, amount);

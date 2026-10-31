@@ -360,4 +360,140 @@ describe('Restaurant Traffic Routing & Demolition of In-Memory Runtime (Phase 2b
             else Reflect.set(process.env, 'NODE_ENV', prevEnv);
         }
     });
+
+    it('provisioning flow creates PluginInstallation row with runtimeTenantId for HospitalOS and RestaurantOS', async () => {
+        const prevRepo = process.env.ORBITOX_PLATFORM_REPOSITORY;
+        const prevEnv = process.env.NODE_ENV;
+        process.env.ORBITOX_PLATFORM_REPOSITORY = 'json';
+        Reflect.set(process.env, 'NODE_ENV', 'test');
+
+        try {
+            const org = await platformRepository.createOrganization({
+                name: 'Healthcare & Dining Group',
+                slug: `health-dine-${Date.now()}`,
+                billingEmail: 'billing@healthdine.org',
+            });
+
+            const { project } = await platformRepository.createProject({
+                organizationId: org.id,
+                name: 'St Jude Cafe and Care',
+                slug: `st-jude-${Date.now()}`,
+                planTier: 'growth',
+                technicalLead: 'lead@healthdine.org',
+                contactEmail: 'contact@healthdine.org',
+                enabledServices: ['restaurant', 'hms'],
+                businessModel: 'HEALTHCARE_NETWORK',
+            });
+
+            // 1. RestaurantOS installation created with runtimeTenantId
+            const restoInst = await platformRepository.getPluginInstallation(project.slug, '@orbitox/restaurant');
+            assert.ok(restoInst, 'RestaurantOS PluginInstallation row must be created');
+            assert.equal(restoInst.status, 'ACTIVE');
+            assert.ok(restoInst.runtimeTenantId);
+            assert.ok(
+                restoInst.runtimeTenantId.startsWith(`org/${org.slug}/project/${project.slug}/environment/`),
+                `Expected canonical runtimeTenantId, got ${restoInst.runtimeTenantId}`
+            );
+
+            // 2. HospitalOS installation created with runtimeTenantId
+            const hmsInst = await platformRepository.getPluginInstallation(project.slug, '@orbitox/hms');
+            assert.ok(hmsInst, 'HospitalOS PluginInstallation row must be created');
+            assert.equal(hmsInst.status, 'ACTIVE');
+            assert.ok(hmsInst.runtimeTenantId);
+            assert.ok(
+                hmsInst.runtimeTenantId.startsWith(`org/${org.slug}/project/${project.slug}/environment/`),
+                `Expected canonical runtimeTenantId, got ${hmsInst.runtimeTenantId}`
+            );
+        } finally {
+            if (prevRepo === undefined) delete process.env.ORBITOX_PLATFORM_REPOSITORY;
+            else process.env.ORBITOX_PLATFORM_REPOSITORY = prevRepo;
+            if (prevEnv === undefined) Reflect.deleteProperty(process.env, 'NODE_ENV');
+            else Reflect.set(process.env, 'NODE_ENV', prevEnv);
+        }
+    });
+
+    it('uninstalling sets status ARCHIVED and row is kept (never deleted)', async () => {
+        const prevRepo = process.env.ORBITOX_PLATFORM_REPOSITORY;
+        const prevEnv = process.env.NODE_ENV;
+        process.env.ORBITOX_PLATFORM_REPOSITORY = 'json';
+        Reflect.set(process.env, 'NODE_ENV', 'test');
+
+        try {
+            const tenantSlug = `tenant-archive-test-${Date.now()}`;
+            const canonicalRuntime = `org/orbitox/project/${tenantSlug}/environment/production`;
+
+            await platformRepository.provisionPluginInstallation({
+                tenantId: tenantSlug,
+                pluginId: '@orbitox/restaurant',
+                runtimeTenantId: canonicalRuntime,
+                status: 'ACTIVE',
+            });
+
+            const initial = await platformRepository.getPluginInstallation(tenantSlug, '@orbitox/restaurant');
+            assert.ok(initial);
+            assert.equal(initial.status, 'ACTIVE');
+            const initialRevision = initial.entitlementRevision;
+
+            // Uninstalling sets status ARCHIVED
+            const uninstalled = await platformRepository.uninstallPluginInstallation(tenantSlug, '@orbitox/restaurant');
+            assert.equal(uninstalled.status, 'ARCHIVED');
+            assert.equal(uninstalled.entitlementRevision, initialRevision + 1);
+
+            // Row is kept (still queryable, never deleted)
+            const retrieved = await platformRepository.getPluginInstallation(tenantSlug, '@orbitox/restaurant');
+            assert.ok(retrieved, 'PluginInstallation row must NOT be deleted upon uninstallation');
+            assert.equal(retrieved.status, 'ARCHIVED');
+            assert.equal(retrieved.id, initial.id);
+
+            // KDS call for this archived tenant must return SERVICE_SUSPENDED
+            const req = new NextRequest('http://localhost:3005/api/restaurant/kds');
+            const res = await forwardSignedBridgeCall(req, '/api/restaurant/kds', tenantSlug);
+            assert.equal(res.status, 403);
+            const body = await res.json();
+            assert.equal(body.success, false);
+            assert.equal(body.error?.code, 'SERVICE_SUSPENDED');
+        } finally {
+            if (prevRepo === undefined) delete process.env.ORBITOX_PLATFORM_REPOSITORY;
+            else process.env.ORBITOX_PLATFORM_REPOSITORY = prevRepo;
+            if (prevEnv === undefined) Reflect.deleteProperty(process.env, 'NODE_ENV');
+            else Reflect.set(process.env, 'NODE_ENV', prevEnv);
+        }
+    });
+
+    it('suspending restaurant tenant results in KDS returning SERVICE_SUSPENDED', async () => {
+        const prevRepo = process.env.ORBITOX_PLATFORM_REPOSITORY;
+        const prevEnv = process.env.NODE_ENV;
+        process.env.ORBITOX_PLATFORM_REPOSITORY = 'json';
+        Reflect.set(process.env, 'NODE_ENV', 'test');
+
+        try {
+            const tenantSlug = `tenant-suspend-test-${Date.now()}`;
+            const canonicalRuntime = `org/orbitox/project/${tenantSlug}/environment/production`;
+
+            await platformRepository.provisionPluginInstallation({
+                tenantId: tenantSlug,
+                pluginId: '@orbitox/restaurant',
+                runtimeTenantId: canonicalRuntime,
+                status: 'ACTIVE',
+            });
+
+            // Suspend plugin installation
+            await platformRepository.updatePluginInstallationStatus(tenantSlug, '@orbitox/restaurant', 'SUSPENDED');
+            const inst = await platformRepository.getPluginInstallation(tenantSlug, '@orbitox/restaurant');
+            assert.equal(inst?.status, 'SUSPENDED');
+
+            // KDS call must return SERVICE_SUSPENDED
+            const req = new NextRequest('http://localhost:3005/api/restaurant/kds');
+            const res = await forwardSignedBridgeCall(req, '/api/restaurant/kds', tenantSlug);
+            assert.equal(res.status, 403);
+            const body = await res.json();
+            assert.equal(body.success, false);
+            assert.equal(body.error?.code, 'SERVICE_SUSPENDED');
+        } finally {
+            if (prevRepo === undefined) delete process.env.ORBITOX_PLATFORM_REPOSITORY;
+            else process.env.ORBITOX_PLATFORM_REPOSITORY = prevRepo;
+            if (prevEnv === undefined) Reflect.deleteProperty(process.env, 'NODE_ENV');
+            else Reflect.set(process.env, 'NODE_ENV', prevEnv);
+        }
+    });
 });
