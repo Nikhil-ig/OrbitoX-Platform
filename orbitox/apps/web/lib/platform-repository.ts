@@ -2382,15 +2382,14 @@ function getPrismaRepository(): ReturnType<typeof createPrismaPlatformRepository
     if (prismaRepository) return prismaRepository;
     const runtimeUrl = process.env.APP_DATABASE_URL || (!prismaIsRequired() ? process.env.DATABASE_URL : undefined);
     const auditUrl = process.env.PLATFORM_AUDIT_DATABASE_URL;
-    const relayUrl = process.env.OUTBOX_RELAY_DATABASE_URL || (process.env.NODE_ENV !== 'production' ? auditUrl || runtimeUrl : undefined);
+    const relayUrl = process.env.OUTBOX_RELAY_DATABASE_URL || runtimeUrl;
     if (!runtimeUrl) throw new Error('DATABASE_URL is required for the platform repository.');
     if (!auditUrl) throw new Error('PLATFORM_AUDIT_DATABASE_URL is required for platform-admin audit writes.');
-    if (process.env.NODE_ENV === 'production' && !process.env.OUTBOX_RELAY_DATABASE_URL) {
-        throw new Error('OUTBOX_RELAY_DATABASE_URL is required for the outbox relay role in production.');
-    }
     runtimeClient = new PrismaClient({ datasources: { db: { url: runtimeUrl } } });
     auditClient = new PrismaClient({ datasources: { db: { url: auditUrl } } });
-    outboxRelayClient = new PrismaClient({ datasources: { db: { url: relayUrl || runtimeUrl } } });
+    outboxRelayClient = relayUrl && relayUrl !== runtimeUrl
+        ? new PrismaClient({ datasources: { db: { url: relayUrl } } })
+        : runtimeClient;
     prismaRepository = createPrismaPlatformRepository(runtimeClient, auditClient, outboxRelayClient);
     return prismaRepository;
 }

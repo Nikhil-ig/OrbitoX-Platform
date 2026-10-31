@@ -1,6 +1,5 @@
 process.env.APP_DATABASE_URL = process.env.APP_DATABASE_URL || 'postgresql://orbitox_runtime@127.0.0.1:5432/orbitox_phase2';
 process.env.PLATFORM_AUDIT_DATABASE_URL = process.env.PLATFORM_AUDIT_DATABASE_URL || 'postgresql://orbitox_platform_admin_audit@127.0.0.1:5432/orbitox_phase2';
-process.env.OUTBOX_RELAY_DATABASE_URL = process.env.OUTBOX_RELAY_DATABASE_URL || 'postgresql://orbitox_outbox_relay:relay_secret_change_me_in_prod@127.0.0.1:5432/orbitox_phase2';
 if (!process.env.DATABASE_URL) {
   process.env.DATABASE_URL = process.env.APP_DATABASE_URL;
 }
