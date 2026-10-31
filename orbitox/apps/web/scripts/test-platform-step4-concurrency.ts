@@ -89,6 +89,7 @@ function spawnServer(port: number, envOverrides: Record<string, string> = {}): C
       MAINTENANCE_DATABASE_URL: boundedUrl(maintenanceUrl),
       HMS_AUDIT_DATABASE_URL: boundedUrl(hmsAuditUrl),
       ORBITOX_ENABLE_HOSPITAL_ADMIN_ENDPOINTS: 'true',
+      ORBITOX_ENABLE_CRM_PLUGIN: 'true',
       ...envOverrides,
     },
     stdio: ['ignore', 'pipe', 'pipe'],
