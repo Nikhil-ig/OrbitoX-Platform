@@ -416,7 +416,7 @@ export class ControlClient {
 
   private startHeartbeat(): void {
     if (this.heartbeatTimer) clearInterval(this.heartbeatTimer);
-    const intervalSeconds = this.manifest.platformController.syncIntervalSeconds || 10;
+    const intervalSeconds = this.manifest.platformController?.syncIntervalSeconds || 10;
     this.heartbeatTimer = setInterval(() => {
       this.sendHeartbeat();
     }, intervalSeconds * 1000);

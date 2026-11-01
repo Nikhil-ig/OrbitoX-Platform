@@ -26,6 +26,7 @@
   },
   "dependencies": {
     "@orbitox-io/bridge": "link:../../../orbitox/packages/bridge",
+    "@orbitox-io/plugin-engine": "link:../../../orbitox/packages/plugin-engine",
     "@orbitox/external-runtime-sdk": "link:../../../orbitox/packages/external-runtime-sdk",
     "@orbitox/pos": "link:../../../orbitox/plugins/pos",
     "@orbitox/plugin-engine": "link:../../../orbitox/packages/plugin-engine",

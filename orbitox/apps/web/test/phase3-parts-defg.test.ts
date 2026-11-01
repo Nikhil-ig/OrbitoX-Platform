@@ -5,13 +5,13 @@ if (!process.env.DATABASE_URL) {
   process.env.DATABASE_URL = process.env.APP_DATABASE_URL;
 }
 
-import { describe, it, before, beforeEach } from 'node:test';
+import { describe, it, before, beforeEach, after } from 'node:test';
 import assert from 'node:assert/strict';
 import * as crypto from 'crypto';
 import { NextRequest } from 'next/server';
 import { PrismaClient } from '@prisma/client';
 import { prisma } from '../lib/prisma';
-import { platformRepository } from '../lib/platform-repository';
+import { platformRepository, closePlatformRepositoryClients } from '../lib/platform-repository';
 import {
   signGrant,
   verifyGrant,
@@ -24,6 +24,7 @@ import {
   setGrantKeysForTesting,
   getActiveGrantSigner,
   getPublicGrantKeys,
+  getPublicGrantKeyInfo,
   createEntitlementGrantToken,
   PluginGrantEnforcer,
 } from '@orbitox-io/plugin-engine';
@@ -38,7 +39,6 @@ import { hmsGrantEnforcer, hmsRevisionStore } from '../app/api/_lib/route-auth';
 import { withTenantTx } from '../lib/tenant-db';
 import { createPatient } from '../lib/hms-repository';
 import { getPhiKeyRing } from '../lib/phi-crypto';
-import { prisma } from '../lib/prisma';
 
 describe('Phase 3 Parts D–G: Rights, Licensing, Enforcement, Webhooks & SDK', () => {
   const TEST_ADMIN_TOKEN = 'test_admin_token_super_secret_32_chars_minimum';
@@ -281,7 +281,7 @@ describe('Phase 3 Parts D–G: Rights, Licensing, Enforcement, Webhooks & SDK', 
       const origPriv = process.env.ORBITOX_GRANT_PRIVATE_KEY;
 
       try {
-        process.env.NODE_ENV = 'production';
+        (process.env as any).NODE_ENV = 'production';
         delete process.env.ORBITOX_GRANT_SIGNING_KEYS;
         delete process.env.ORBITOX_GRANT_PRIVATE_KEY;
 
@@ -300,14 +300,14 @@ describe('Phase 3 Parts D–G: Rights, Licensing, Enforcement, Webhooks & SDK', 
 
         // 3. check-production-env fails
         const scriptPath = path.resolve(process.cwd(), '../../scripts/check-production-env.mjs');
-        const envWithoutKeys = { ...process.env, NODE_ENV: 'production' };
+        const envWithoutKeys: Record<string, string | undefined> = { ...process.env, NODE_ENV: 'production' };
         delete envWithoutKeys.ORBITOX_GRANT_SIGNING_KEYS;
         delete envWithoutKeys.ORBITOX_GRANT_PRIVATE_KEY;
-        const res = spawnSync(process.execPath, [scriptPath], { env: envWithoutKeys, encoding: 'utf8' });
+        const res = spawnSync(process.execPath, [scriptPath], { env: envWithoutKeys as NodeJS.ProcessEnv, encoding: 'utf8' });
         assert.notEqual(res.status, 0);
         assert.match(res.stderr + res.stdout, /ORBITOX_GRANT_SIGNING_KEYS/);
       } finally {
-        process.env.NODE_ENV = origNodeEnv;
+        (process.env as any).NODE_ENV = origNodeEnv;
         if (origKeys) process.env.ORBITOX_GRANT_SIGNING_KEYS = origKeys;
         if (origPriv) process.env.ORBITOX_GRANT_PRIVATE_KEY = origPriv;
         initializeGrantKeys(true);
@@ -747,6 +747,219 @@ describe('Phase 3 Parts D–G: Rights, Licensing, Enforcement, Webhooks & SDK', 
       assert.equal(replayRes.code, 'ROLLBACK');
       assert.equal(replayRes.status, 403);
     });
+
+    it('RestaurantOS local grant enforcement across processes: platform suspends -> guest order on RestaurantOS gets 403 SERVICE_SUSPENDED within 5s (G6)', async () => {
+      const { spawn } = await import('child_process');
+      const http = await import('http');
+      const path = await import('path');
+      const { Client } = await import('pg');
+      const { RestaurantBridgeClient } = await import('../lib/restaurant-bridge-client');
+
+      let platformHttpServer: any = null;
+      let restProcess: any = null;
+      let restStdout = '';
+      let restStderr = '';
+
+      try {
+        // 1. Dynamic ports for platform proxy and RestaurantOS process
+        platformHttpServer = http.createServer(async (req, res) => {
+          if (req.url?.startsWith('/api/v1/platform/grants')) {
+            const url = new URL(req.url, `http://${req.headers.host}`);
+            const nextReq = new NextRequest(url.toString(), {
+              method: req.method,
+              headers: req.headers as any,
+            });
+            try {
+              const nextRes = await getGrants(nextReq, { params: Promise.resolve({ slug: [] }) });
+              const body = await nextRes.text();
+              res.writeHead(nextRes.status, { 'Content-Type': 'application/json' });
+              res.end(body);
+            } catch (e: any) {
+              console.error('[PlatformProxy] Error in getGrants:', e);
+              res.writeHead(500, { 'Content-Type': 'application/json' });
+              res.end(JSON.stringify({ error: e.message }));
+            }
+            return;
+          }
+          if (req.url?.includes('/bridge')) {
+            res.writeHead(200, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ ok: true, controlSessionId: 'sess_test', desiredRevision: 1 }));
+            return;
+          }
+          res.writeHead(404);
+          res.end();
+        });
+
+        await new Promise<void>((resolve) => platformHttpServer.listen(0, '127.0.0.1', () => resolve()));
+        const platformPort = (platformHttpServer.address() as any).port;
+
+        const tempServer = http.createServer();
+        await new Promise<void>((r) => tempServer.listen(0, '127.0.0.1', () => r()));
+        const restPort = (tempServer.address() as any).port;
+        await new Promise<void>((r) => tempServer.close(() => r()));
+
+        // 2. Setup shared bridge keys and tenant in platform and restaurant_os database
+        const testBridgeKeys = {
+          activeKeyId: 'k_bridge_test',
+          keys: {
+            k_bridge_test: 'shared_bridge_secret_at_least_32_bytes_long_12345',
+          },
+        };
+
+        setGrantKeysForTesting(
+          {
+            k1: { privateKey: privK1Pem, publicKey: pubK1Pem },
+            k2: { privateKey: privK2Pem, publicKey: pubK2Pem },
+          },
+          'k1'
+        );
+        const grantKeysPem: Record<string, string> = {};
+        for (const k of getPublicGrantKeyInfo()) {
+          grantKeysPem[k.kid] = k.publicKeyPem;
+        }
+
+        const restProjSlug = `g6-bistro-${Date.now()}`;
+        const restCanonicalTenant = `org/${testOrg.slug}/project/${restProjSlug}/environment/production`;
+        await platformRepository.createProject({
+          name: 'Restaurant G6 Test Project',
+          slug: restProjSlug,
+          organizationId: testOrg.id,
+          businessModel: 'HOSPITALITY',
+          planTier: 'growth',
+          technicalLead: 'Lead Dev',
+          contactEmail: 'dev@test.io',
+          plugins: [{ pluginId: '@orbitox/restaurant', planId: 'restaurant-starter' }],
+        });
+
+        // Seed tenant record directly in restaurant_os database
+        const pg = new Client({ connectionString: 'postgresql://apple@localhost:5432/restaurant_os' });
+        await pg.connect();
+        await pg.query(`
+          INSERT INTO "Tenant" (id, slug, name, status, "planId", "orbitoxProjectId", "entitlementRevision", "createdAt", "updatedAt")
+          VALUES ($1, $2, $3, 'active', 'restaurant-starter', $1, 1, NOW(), NOW())
+          ON CONFLICT (id) DO UPDATE SET status = 'active', "entitlementRevision" = 1;
+        `, [restCanonicalTenant, restProjSlug, 'Restaurant G6 Test']);
+        await pg.query(`
+          INSERT INTO "Branch" (id, "tenantId", name, code, address, city, "createdAt", "updatedAt")
+          VALUES ('branch_ldh', $1, 'Ludhiana Central', 'LDH-01', 'Mall Road', 'Ludhiana', NOW(), NOW())
+          ON CONFLICT (id) DO UPDATE SET "tenantId" = $1;
+        `, [restCanonicalTenant]);
+        await pg.end();
+
+        // Helper to send guest HTTP request with explicit Host header
+        function sendRestaurantRequest(path: string, body?: any): Promise<{ status: number; text: string; json?: any }> {
+          return new Promise((resolve, reject) => {
+            const payload = body ? JSON.stringify(body) : '';
+            const req = http.request({
+              hostname: '127.0.0.1',
+              port: restPort,
+              path,
+              method: 'POST',
+              headers: {
+                Host: `${restProjSlug}.orbitox.live`,
+                'Content-Type': 'application/json',
+                'Content-Length': Buffer.byteLength(payload),
+              },
+            }, (res) => {
+              let data = '';
+              res.on('data', (c) => data += c);
+              res.on('end', () => {
+                let json;
+                try { json = JSON.parse(data); } catch {}
+                resolve({ status: res.statusCode || 0, text: data, json });
+              });
+            });
+            req.on('error', reject);
+            if (payload) req.write(payload);
+            req.end();
+          });
+        }
+
+        // 3. Spawn real RestaurantOS server as an independent child process
+        const restaurantDir = path.resolve(__dirname, '../../../../projects/external-os/restaurant-os');
+        const tsxPath = path.resolve(restaurantDir, 'node_modules/tsx/dist/cli.mjs');
+        restProcess = spawn(process.execPath, [tsxPath, 'src/server.ts'], {
+          cwd: restaurantDir,
+          env: {
+            ...process.env,
+            PORT: String(restPort),
+            DATABASE_URL: 'postgresql://apple@localhost:5432/restaurant_os',
+            STORAGE_DRIVER: 'postgres',
+            NODE_ENV: 'test',
+            RESTAURANTOS_AUTOLISTEN: 'true',
+            RESTAURANTOS_BASE_DOMAIN: 'orbitox.live',
+            ORBITOX_CONTROL_PLANE_URL: `http://127.0.0.1:${platformPort}`,
+            ORBITOX_BACKEND_URL: `http://127.0.0.1:${platformPort}`,
+            ORBITOX_GRANT_PUBLIC_KEYS: JSON.stringify(grantKeysPem),
+            ORBITOX_BRIDGE_KEYS: JSON.stringify(testBridgeKeys),
+            BRIDGE_SHARED_SECRET: 'shared_bridge_secret_at_least_32_bytes_long_12345',
+            ORBITOX_SERVICE_KEY: TEST_ADMIN_TOKEN,
+            ORBITOX_RUNTIME_TOKEN: TEST_ADMIN_TOKEN,
+          },
+          stdio: 'pipe',
+        });
+        restProcess.stdout?.on('data', (d: any) => { restStdout += d.toString(); });
+        restProcess.stderr?.on('data', (d: any) => { restStderr += d.toString(); });
+
+        // Wait for RestaurantOS process to be live and healthy
+        let live = false;
+        for (let i = 0; i < 40; i++) {
+          try {
+            const h = await fetch(`http://127.0.0.1:${restPort}/healthz/live`);
+            if (h.ok) {
+              live = true;
+              break;
+            }
+          } catch {}
+          await new Promise((r) => setTimeout(r, 200));
+        }
+        assert.ok(live, `RestaurantOS process failed to start within 8 seconds. Stderr: ${restStderr}`);
+
+        // 4. Initial guest request while ACTIVE: passes grant enforcement
+        const initialOrder = await sendRestaurantRequest('/api/restaurant/orders', {
+          tableNumber: 'T-01',
+          branchId: 'branch_ldh',
+          items: [{ id: 'item_tandoori_roti', name: 'Tandoori Roti', quantity: 2, priceMinor: 8000 }],
+        });
+        assert.notEqual(initialOrder.status, 403, `Active restaurant must not return 403. Response: ${initialOrder.text}`);
+
+        // 5. Platform suspends tenant over bridge
+        const startTime = Date.now();
+        const bridgeClient = new RestaurantBridgeClient({
+          baseUrl: `http://127.0.0.1:${restPort}`,
+          keys: testBridgeKeys,
+        });
+        const suspRes = await bridgeClient.suspendTenant(restCanonicalTenant, 2);
+        assert.equal(suspRes.ok, true, `Lifecycle suspension push must succeed: ${JSON.stringify(suspRes)}`);
+
+        // 6. Guest attempts order on RestaurantOS within 5 seconds -> gets 403 SERVICE_SUSPENDED
+        const suspendedOrder = await sendRestaurantRequest('/api/restaurant/orders', {
+          tableNumber: 'T-01',
+          branchId: 'branch_ldh',
+          items: [{ id: 'item_tandoori_roti', name: 'Tandoori Roti', quantity: 2, priceMinor: 8000 }],
+        });
+
+        const elapsed = Date.now() - startTime;
+        assert.ok(elapsed < 5000, `Suspension enforcement took ${elapsed}ms; must be under 5000ms`);
+        assert.equal(suspendedOrder.status, 403, `Suspended restaurant order must be rejected with 403: ${suspendedOrder.text}`);
+        assert.equal(suspendedOrder.json?.code, 'SERVICE_SUSPENDED');
+      } catch (err) {
+        console.error('TEST ERROR IN G6:', err);
+        console.error('RestaurantOS stdout:', restStdout);
+        console.error('RestaurantOS stderr:', restStderr);
+        throw err;
+      } finally {
+        if (restProcess) {
+          try { restProcess.kill('SIGKILL'); } catch {}
+          try { restProcess.unref?.(); } catch {}
+        }
+        if (platformHttpServer) {
+          try { platformHttpServer.closeAllConnections?.(); } catch {}
+          await new Promise<void>((resolve) => platformHttpServer.close(() => resolve()));
+          try { platformHttpServer.unref?.(); } catch {}
+        }
+      }
+    });
   });
 
   // ───────────────────────────────────────────────────────────────────────────
@@ -844,11 +1057,11 @@ describe('Phase 3 Parts D–G: Rights, Licensing, Enforcement, Webhooks & SDK', 
     it('production check refuses startup without RAZORPAY_WEBHOOK_SECRET', async () => {
       const { spawnSync } = await import('child_process');
       const path = await import('path');
-      const envWithoutSecret = { ...process.env, NODE_ENV: 'production' };
+      const envWithoutSecret: Record<string, string | undefined> = { ...process.env, NODE_ENV: 'production' };
       delete envWithoutSecret.RAZORPAY_WEBHOOK_SECRET;
 
       const scriptPath = path.resolve(process.cwd(), '../../scripts/check-production-env.mjs');
-      const res = spawnSync(process.execPath, [scriptPath], { env: envWithoutSecret, encoding: 'utf8' });
+      const res = spawnSync(process.execPath, [scriptPath], { env: envWithoutSecret as NodeJS.ProcessEnv, encoding: 'utf8' });
       assert.notEqual(res.status, 0, 'Startup check should refuse to start when RAZORPAY_WEBHOOK_SECRET is missing');
       assert.match(res.stderr + res.stdout, /RAZORPAY_WEBHOOK_SECRET/);
     });
@@ -1249,7 +1462,7 @@ describe('Phase 3 Parts D–G: Rights, Licensing, Enforcement, Webhooks & SDK', 
     it('insecureDevMode: true is strictly prohibited outside NODE_ENV=development', () => {
       const origEnv = process.env.NODE_ENV;
       try {
-        process.env.NODE_ENV = 'production';
+        (process.env as any).NODE_ENV = 'production';
         assert.throws(
           () =>
             new ControlClient({
@@ -1272,14 +1485,14 @@ describe('Phase 3 Parts D–G: Rights, Licensing, Enforcement, Webhooks & SDK', 
           /SECURITY_VIOLATION: insecureDevMode is strictly prohibited outside NODE_ENV=development/
         );
       } finally {
-        process.env.NODE_ENV = origEnv;
+        (process.env as any).NODE_ENV = origEnv;
       }
     });
 
     it('insecureDevMode: true allows unsigned config only when NODE_ENV=development', () => {
       const origEnv = process.env.NODE_ENV;
       try {
-        process.env.NODE_ENV = 'development';
+        (process.env as any).NODE_ENV = 'development';
         const client = new ControlClient({
           manifest: {
             projectId: 'proj_pilot_01',
@@ -1316,8 +1529,28 @@ describe('Phase 3 Parts D–G: Rights, Licensing, Enforcement, Webhooks & SDK', 
         assert.equal(client.verifyConfigSignature(devConfig), true);
         assert.equal(client.applyConfiguration(devConfig), true);
       } finally {
-        process.env.NODE_ENV = origEnv;
+        (process.env as any).NODE_ENV = origEnv;
       }
     });
   });
+
+  after(async () => {
+    try {
+      await prisma.$disconnect();
+    } catch {}
+    try {
+      await closePlatformRepositoryClients();
+    } catch {}
+    const http = await import('http');
+    http.globalAgent.destroy();
+    const https = await import('https');
+    https.globalAgent.destroy();
+    const handles = (process as any)._getActiveHandles?.() || [];
+    for (const h of handles) {
+      if (h && typeof h.destroy === 'function') {
+        try { h.destroy(); } catch {}
+      }
+    }
+  });
 });
+

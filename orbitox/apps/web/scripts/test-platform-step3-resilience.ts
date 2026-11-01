@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { ChildProcess, execFileSync, spawn } from 'node:child_process';
-import { randomUUID } from 'node:crypto';
+import crypto, { randomUUID } from 'node:crypto';
 import http from 'node:http';
 import path from 'node:path';
 import { PrismaClient } from '@prisma/client';

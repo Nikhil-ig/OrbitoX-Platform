@@ -14,6 +14,7 @@
 
 import * as http from 'http';
 import * as url from 'url';
+import { EventEmitter } from 'events';
 import { DomainEvent } from '../storage';
 import { resolveAllowedOrigin } from './security';
 import { tryGetActiveTenant } from './tenancy';
@@ -34,12 +35,13 @@ export interface ClientConnectionInfo {
   token?: string;
 }
 
-export class RealtimeEventBus {
+export class RealtimeEventBus extends EventEmitter {
   // Keyed by tenantId -> Map of active client responses
   private tenantClients: Map<string, Map<http.ServerResponse, ClientConnectionInfo>> = new Map();
   private pingInterval: NodeJS.Timeout | null = null;
 
   constructor() {
+    super();
     this.startHeartbeat();
   }
 
@@ -159,6 +161,11 @@ export class RealtimeEventBus {
   }
 
   public broadcast(event: DomainEvent): void {
+    try {
+      this.emit(event.type, event);
+      this.emit('*', event);
+    } catch {}
+
     const eventTenantId = event.tenantId || (event.payload && event.payload.tenantId);
     if (!eventTenantId) {
       // Fail closed: Do NOT broadcast events without an identifiable tenantId

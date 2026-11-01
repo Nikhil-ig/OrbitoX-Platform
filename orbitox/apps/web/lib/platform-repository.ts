@@ -2839,5 +2839,5 @@ export const platformRepository = new Proxy(Object.create(null), {
 }) as AsyncPlatformRepository;
 
 export function closePlatformRepositoryClients(): Promise<void> {
-    return Promise.all([runtimeClient?.$disconnect(), auditClient?.$disconnect()]).then(() => undefined);
+    return Promise.all([runtimeClient?.$disconnect(), auditClient?.$disconnect(), outboxRelayClient?.$disconnect()]).then(() => undefined);
 }

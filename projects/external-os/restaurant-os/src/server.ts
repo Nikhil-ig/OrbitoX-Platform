@@ -84,6 +84,12 @@ import { RealtimeEventBus } from '../packages/domain/event-bus';
 import { RestaurantControlBridge, restaurantControlBridge } from './bridge';
 import { RazorpayPaymentGatewayAdapter } from '../packages/integrations';
 import {
+  PluginGrantEnforcer,
+  PostgresRevisionStore,
+  MemoryRevisionStore,
+  getPublicGrantKeys,
+} from '@orbitox-io/plugin-engine';
+import {
   renderShell,
   renderOperationsHome,
   renderFloorStudio,
@@ -159,6 +165,96 @@ if (process.env.STORAGE_DRIVER !== 'json' && process.env.DATABASE_URL) {
 }
 
 export { pgEventListener, postgresStore };
+
+// --- ORBITOX PLUGIN GRANT ENFORCER SETUP (G6) ---
+export function getPinnedGrantKeys(): Record<string, crypto.KeyObject> {
+  if (process.env.ORBITOX_GRANT_PUBLIC_KEYS) {
+    try {
+      const parsed = JSON.parse(process.env.ORBITOX_GRANT_PUBLIC_KEYS);
+      const res: Record<string, crypto.KeyObject> = {};
+      if (Array.isArray(parsed)) {
+        for (const item of parsed) {
+          const kid = item.kid || 'k1';
+          const pem = item.publicKeyPem || item.publicKey || item.key;
+          if (pem) {
+            res[kid] = typeof pem === 'string' ? crypto.createPublicKey(pem) : pem;
+          }
+        }
+      } else if (typeof parsed === 'object' && parsed !== null) {
+        for (const [k, v] of Object.entries<any>(parsed)) {
+          const pem = typeof v === 'string' ? v : (v?.publicKeyPem || v?.publicKey || v?.key);
+          if (pem) {
+            res[k] = typeof pem === 'string' ? crypto.createPublicKey(pem) : pem;
+          }
+        }
+      }
+      if (Object.keys(res).length > 0) {
+        return res;
+      }
+    } catch (e: any) {
+      console.error('[GrantEnforcer] Failed to parse ORBITOX_GRANT_PUBLIC_KEYS:', e?.message || e);
+    }
+  }
+  if (process.env.ORBITOX_GRANT_PUBLIC_KEY) {
+    try {
+      return { default: crypto.createPublicKey(process.env.ORBITOX_GRANT_PUBLIC_KEY) };
+    } catch (e: any) {
+      console.error('[GrantEnforcer] Failed to parse ORBITOX_GRANT_PUBLIC_KEY:', e?.message || e);
+    }
+  }
+  try {
+    return getPublicGrantKeys();
+  } catch {
+    return {};
+  }
+}
+
+const restaurantRevisionStore = postgresStore?.prisma
+  ? new PostgresRevisionStore(postgresStore.prisma)
+  : new MemoryRevisionStore();
+
+export const restaurantGrantEnforcer = new PluginGrantEnforcer({
+  audience: '@orbitox/restaurant',
+  trustedKeys: getPinnedGrantKeys(),
+  revisions: restaurantRevisionStore,
+  allowOfflineReads: true,
+  fetchGrant: async (tenantId: string, pluginId: string) => {
+    const platformUrl = process.env.ORBITOX_CONTROL_PLANE_URL || process.env.ORBITOX_BACKEND_URL || 'http://localhost:3005';
+    const serviceAuth = process.env.ORBITOX_SERVICE_KEY || process.env.ORBITOX_RUNTIME_TOKEN || process.env.BRIDGE_SHARED_SECRET || '';
+    try {
+      const res = await fetch(
+        `${platformUrl}/api/v1/platform/grants?pluginId=${encodeURIComponent(pluginId)}&tenantId=${encodeURIComponent(tenantId)}`,
+        {
+          method: 'GET',
+          headers: {
+            'x-orbitox-service-auth': `Bearer ${serviceAuth}`,
+            'Authorization': `Bearer ${serviceAuth}`,
+          },
+        }
+      );
+      if (!res.ok) {
+        console.error(`[GrantEnforcer] fetchGrant failed with status ${res.status}: ${await res.text()}`);
+        return null;
+      }
+      const data = await res.json();
+      return data.token || data.grant || null;
+    } catch (err: any) {
+      console.error('[GrantEnforcer] fetchGrant network error:', err?.message || err);
+      return null;
+    }
+  },
+});
+
+eventBus.on('tenant.lifecycle.suspended', (event: any) => {
+  if (event.tenantId) {
+    restaurantGrantEnforcer.invalidate(event.tenantId);
+  }
+});
+eventBus.on('entitlement.updated', (event: any) => {
+  if (event.tenantId) {
+    restaurantGrantEnforcer.invalidate(event.tenantId);
+  }
+});
 
 export async function closeRuntimeServer(): Promise<void> {
   if (pgEventListener) {
@@ -1082,8 +1178,9 @@ export async function handleRequest(req: http.IncomingMessage, res: http.ServerR
   const isLifecycleSuspend = (pathname === '/orbitox/lifecycle/suspend' || pathname === '/api/platform/lifecycle/suspend' || pathname === '/internal/lifecycle/suspend') && method === 'POST';
   const isLifecycleResume = (pathname === '/orbitox/lifecycle/resume' || pathname === '/api/platform/lifecycle/resume' || pathname === '/internal/lifecycle/resume') && method === 'POST';
   const isLifecyclePlanChanged = (pathname === '/orbitox/lifecycle/plan-changed' || pathname === '/api/platform/lifecycle/plan-changed' || pathname === '/internal/lifecycle/plan-changed') && method === 'POST';
+  const isLifecycleEntitlementUpdated = (pathname === '/orbitox/lifecycle/entitlement-updated' || pathname === '/api/platform/lifecycle/entitlement-updated' || pathname === '/internal/lifecycle/entitlement-updated') && method === 'POST';
 
-  if (isLifecycleProvision || isLifecycleSuspend || isLifecycleResume || isLifecyclePlanChanged) {
+  if (isLifecycleProvision || isLifecycleSuspend || isLifecycleResume || isLifecyclePlanChanged || isLifecycleEntitlementUpdated) {
     if (!verifiedBridge) {
       sendJson(res, 401, {
         error: 'UNAUTHORIZED',
@@ -1205,6 +1302,8 @@ export async function handleRequest(req: http.IncomingMessage, res: http.ServerR
           },
         }).catch(() => {});
       }
+      restaurantGrantEnforcer.invalidate(existingTenant.id);
+      restaurantGrantEnforcer.invalidate(targetTenantId);
       invalidateTenantResolutionCache(existingTenant.id);
       sendJson(res, 200, {
         ok: true,
@@ -1241,6 +1340,8 @@ export async function handleRequest(req: http.IncomingMessage, res: http.ServerR
           },
         }).catch(() => {});
       }
+      restaurantGrantEnforcer.invalidate(existingTenant.id);
+      restaurantGrantEnforcer.invalidate(targetTenantId);
       invalidateTenantResolutionCache(existingTenant.id);
       sendJson(res, 200, {
         ok: true,
@@ -1277,6 +1378,8 @@ export async function handleRequest(req: http.IncomingMessage, res: http.ServerR
           },
         }).catch(() => {});
       }
+      restaurantGrantEnforcer.invalidate(existingTenant.id);
+      restaurantGrantEnforcer.invalidate(targetTenantId);
       invalidateTenantResolutionCache(existingTenant.id);
       sendJson(res, 200, {
         ok: true,
@@ -1284,6 +1387,27 @@ export async function handleRequest(req: http.IncomingMessage, res: http.ServerR
         planId: newPlanId,
         revision: Math.max(existingTenant.entitlementRevision, incomingRevision),
       });
+      return;
+    }
+
+    if (isLifecycleEntitlementUpdated) {
+      restaurantGrantEnforcer.invalidate(targetTenantId);
+      if (existingTenant) {
+        restaurantGrantEnforcer.invalidate(existingTenant.id);
+      }
+      if (body.grantToken) {
+        try {
+          await restaurantGrantEnforcer.enforce({
+            tenantId: existingTenant?.id || targetTenantId,
+            feature: 'orders',
+            write: false,
+            token: body.grantToken,
+          });
+        } catch {}
+      }
+      invalidateTenantResolutionCache(targetTenantId);
+      if (existingTenant) invalidateTenantResolutionCache(existingTenant.id);
+      sendJson(res, 200, { ok: true, invalidated: true });
       return;
     }
   }
@@ -1445,20 +1569,66 @@ export async function handleRequest(req: http.IncomingMessage, res: http.ServerR
   }
 
 
-  // --- TENANT SUSPENSION ENFORCEMENT ---
-  if (postgresStore && !pathname.startsWith('/internal/') && !pathname.startsWith('/orbitox/lifecycle')) {
-    const currentTenant = await postgresStore.getTenant(tenantContext.tenantId);
-    if (currentTenant?.status === 'suspended' || tenantContext.status === 'suspended') {
-      if (['POST', 'PUT', 'PATCH', 'DELETE'].includes(method)) {
-        sendJson(res, 403, {
-          error: 'TENANT_SUSPENDED',
-          code: 'TENANT_SUSPENDED',
-          message: 'This restaurant account is temporarily suspended. Writes are disabled.',
+  // --- ORBITOX PLUGIN GRANT & ENTITLEMENT ENFORCEMENT (G6) ---
+  if (
+    postgresStore &&
+    !pathname.startsWith('/internal/') &&
+    !pathname.startsWith('/orbitox/lifecycle') &&
+    !pathname.startsWith('/api/platform/lifecycle') &&
+    !pathname.startsWith('/health') &&
+    !pathname.startsWith('/metrics') &&
+    !pathname.startsWith('/ready') &&
+    !pathname.startsWith('/live') &&
+    !pathname.startsWith('/uploads/') &&
+    !pathname.startsWith('/assets/') &&
+    pathname !== '/favicon.ico' &&
+    tenantContext.tenantId !== 'PLATFORM_SUPERUSER' &&
+    tenantContext.tenantId !== 'PENDING_INVITE'
+  ) {
+    const isWrite = ['POST', 'PUT', 'PATCH', 'DELETE'].includes(method);
+    let targetFeature = 'orders';
+    if (pathname.startsWith('/api/restaurant/menu') || pathname.startsWith('/menu')) {
+      targetFeature = 'menu';
+    } else if (pathname.startsWith('/api/restaurant/tables') || pathname.startsWith('/tables') || pathname.startsWith('/floor')) {
+      targetFeature = 'tables';
+    } else if (pathname.startsWith('/api/restaurant/kds') || pathname.startsWith('/kds')) {
+      targetFeature = 'kds';
+    }
+
+    const grantHeader = (req.headers['x-orbitox-grant'] || req.headers['x-entitlement-grant']) as string | undefined;
+
+    // Refresh trusted keys if configured in env
+    const activeKeys = getPinnedGrantKeys();
+    if (Object.keys(activeKeys).length > 0) {
+      restaurantGrantEnforcer.setTrustedKeys(activeKeys);
+    }
+
+    const grantDecision = await restaurantGrantEnforcer.enforce({
+      tenantId: tenantContext.tenantId,
+      feature: targetFeature,
+      write: isWrite,
+      token: grantHeader,
+    });
+
+    const localTenant = postgresStore ? await postgresStore.getTenant(tenantContext.tenantId) : null;
+    const isLocallySuspended = localTenant?.status === 'suspended' || tenantContext.status === 'suspended';
+
+    if (!grantDecision.allowed || isLocallySuspended) {
+      const code = isLocallySuspended ? 'SERVICE_SUSPENDED' : (grantDecision.code || 'SERVICE_SUSPENDED');
+      const status = isLocallySuspended ? 403 : (grantDecision.status || 403);
+      const message = isLocallySuspended
+        ? 'This restaurant account is temporarily suspended. Service is suspended.'
+        : (grantDecision.message || 'This restaurant account is temporarily suspended.');
+
+      if (isWrite || !req.headers.accept?.toLowerCase().includes('text/html')) {
+        sendJson(res, status, {
+          error: code,
+          code,
+          message,
         });
         return;
-      }
-      if (method === 'GET' && (pathname === '/' || pathname.startsWith('/dine') || pathname.startsWith('/kds') || pathname.startsWith('/swift-bite') || pathname.startsWith('/crave-atlas') || pathname.startsWith('/operations'))) {
-        sendHtml(res, renderSuspendedTenantPage(currentTenant?.name || tenantContext.tenantName));
+      } else {
+        sendHtml(res, renderSuspendedTenantPage(localTenant?.name || tenantContext.tenantName), status);
         return;
       }
     }
@@ -1545,6 +1715,7 @@ export async function handleRequest(req: http.IncomingMessage, res: http.ServerR
       const tenantId = suspendMatch[1];
       try {
         const updated = await provisioningService.suspendTenant(tenantId);
+        restaurantGrantEnforcer.invalidate(tenantId);
         invalidateTenantResolutionCache(tenantId);
         sendJson(res, 200, { success: true, tenant: updated });
       } catch (err: any) {
@@ -1558,6 +1729,7 @@ export async function handleRequest(req: http.IncomingMessage, res: http.ServerR
       const tenantId = resumeMatch[1];
       try {
         const updated = await provisioningService.resumeTenant(tenantId);
+        restaurantGrantEnforcer.invalidate(tenantId);
         invalidateTenantResolutionCache(tenantId);
         sendJson(res, 200, { success: true, tenant: updated });
       } catch (err: any) {
@@ -2847,8 +3019,8 @@ export async function handleRequest(req: http.IncomingMessage, res: http.ServerR
       body: posBody,
       identity,
       idempotencyKey: undefined,
-      branchId: body.branchId || currentBranch.id,
-      branchName: currentBranch.name,
+      branchId: body.branchId || currentBranch?.id || 'branch_main',
+      branchName: currentBranch?.name || body.branchName || 'Main Branch',
     });
 
     if (idempotencyKey) {

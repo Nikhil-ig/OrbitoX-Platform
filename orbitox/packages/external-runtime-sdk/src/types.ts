@@ -36,10 +36,10 @@ export interface OrbitoxProjectManifest {
     defaultEnvironment: string;
     supportedEnvironments: string[];
   };
-  platformController: {
+  platformController?: {
     controlPlaneUrl: string;
     syncIntervalSeconds: number;
-    requireSignedConfig: boolean;
+    requireSignedConfig?: boolean;
   };
   capabilities: string[];
   customMetadata?: Record<string, any>;
