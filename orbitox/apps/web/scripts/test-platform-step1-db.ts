@@ -76,6 +76,7 @@ const globalTableAllowlist = new Set([
   'PlanQuota',
   'BillingWebhookEvent',
   'PluginGrantRevision',
+  'PlatformOperation',
 ]);
 
 const testTimeout = setTimeout(() => {

@@ -2512,8 +2512,9 @@ const extraMethods = {
     authorizeApiKey: async (rawSecret: string): Promise<PlatformAuthorizationLookup> => {
         if (prismaIsRequired()) return getPrismaRepository().authorizeApiKey(rawSecret);
         const key = PlatformRepository.findKeyByRawSecret(rawSecret) || null;
-        const project = key ? PlatformRepository.getProject(key.projectId) || null : null;
-        const environment = key ? PlatformRepository.getEnvironment(key.environmentId) || null : null;
+        const environment = key && key.environmentId ? PlatformRepository.getEnvironment(key.environmentId) || null : null;
+        const projectId = key?.projectId || environment?.projectId;
+        const project = projectId ? PlatformRepository.getProject(projectId) || null : null;
         return { key, project, environment, queryCount: 0, source: 'legacy' };
     },
     getApiKeyPepperDistribution: async (): Promise<Record<string, number>> => {

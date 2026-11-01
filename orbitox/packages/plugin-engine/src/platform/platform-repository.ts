@@ -683,6 +683,7 @@ export class PlatformRepository {
   }
 
   static getProject(idOrSlug: string): PlatformProject | undefined {
+    if (!idOrSlug) return undefined;
     this.initialize();
     const lookupSlug = idOrSlug.toLowerCase();
     return this.projects.find((p) => p.id === idOrSlug || p.slug.toLowerCase() === lookupSlug);
@@ -846,7 +847,11 @@ export class PlatformRepository {
 
   static updateProject(projectId: string, updates: Partial<PlatformProject>): PlatformProject | undefined {
     this.initialize();
-    const idx = this.projects.findIndex((p) => p.id === projectId || p.slug.toLowerCase() === projectId.toLowerCase());
+    if (!projectId) return undefined;
+    const lookup = projectId.toLowerCase();
+    const idx = this.projects.findIndex(
+      (p) => p.id === projectId || (p.slug && p.slug.toLowerCase() === lookup)
+    );
     if (idx !== -1) {
       if (updates.slug !== undefined && updates.slug !== this.projects[idx]!.slug) {
         throw new Error('Project slug is immutable after creation.');

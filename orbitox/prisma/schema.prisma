@@ -2152,5 +2152,28 @@ model PluginGrantRevision {
   @@index([tenantId])
 }
 
+model PlatformOperation {
+  id             String    @id @default(cuid())
+  type           String    @default("TENANT_PROVISION")
+  tenantId       String
+  organizationId String
+  idempotencyKey String?
+  status         String    @default("PROVISIONING")
+  steps          Json      @default("[]")
+  request        Json      @default("{}")
+  result         Json?
+  error          String?
+  operatorId     String?
+  requestId      String?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+  completedAt    DateTime?
+
+  @@index([organizationId])
+  @@index([tenantId])
+  @@index([status])
+  @@unique([organizationId, idempotencyKey])
+}
+
 
 

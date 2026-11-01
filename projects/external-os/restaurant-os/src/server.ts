@@ -1243,8 +1243,9 @@ export async function handleRequest(req: http.IncomingMessage, res: http.ServerR
   const isLifecycleResume = (pathname === '/orbitox/lifecycle/resume' || pathname === '/api/platform/lifecycle/resume' || pathname === '/internal/lifecycle/resume') && method === 'POST';
   const isLifecyclePlanChanged = (pathname === '/orbitox/lifecycle/plan-changed' || pathname === '/api/platform/lifecycle/plan-changed' || pathname === '/internal/lifecycle/plan-changed') && method === 'POST';
   const isLifecycleEntitlementUpdated = (pathname === '/orbitox/lifecycle/entitlement-updated' || pathname === '/api/platform/lifecycle/entitlement-updated' || pathname === '/internal/lifecycle/entitlement-updated') && method === 'POST';
+  const isLifecycleDeprovision = (pathname === '/orbitox/lifecycle/deprovision' || pathname === '/api/platform/lifecycle/deprovision' || pathname === '/internal/lifecycle/deprovision') && method === 'POST';
 
-  if (isLifecycleProvision || isLifecycleSuspend || isLifecycleResume || isLifecyclePlanChanged || isLifecycleEntitlementUpdated) {
+  if (isLifecycleProvision || isLifecycleSuspend || isLifecycleResume || isLifecyclePlanChanged || isLifecycleEntitlementUpdated || isLifecycleDeprovision) {
     if (!verifiedBridge) {
       sendJson(res, 401, {
         error: 'UNAUTHORIZED',
@@ -1474,6 +1475,30 @@ export async function handleRequest(req: http.IncomingMessage, res: http.ServerR
       sendJson(res, 200, { ok: true, invalidated: true });
       return;
     }
+
+    if (isLifecycleDeprovision) {
+      if (existingTenant && postgresStore?.prisma) {
+        await postgresStore.prisma.tenant.update({
+          where: { id: existingTenant.id },
+          data: {
+            status: 'deprovisioned',
+            lastLifecycleKey: idempotencyKey,
+          },
+        }).catch(() => null);
+      }
+      restaurantGrantEnforcer.invalidate(targetTenantId);
+      if (existingTenant) {
+        restaurantGrantEnforcer.invalidate(existingTenant.id);
+      }
+      invalidateTenantResolutionCache(targetTenantId);
+      if (existingTenant) invalidateTenantResolutionCache(existingTenant.id);
+      sendJson(res, 200, {
+        ok: true,
+        tenantId: existingTenant?.id || targetTenantId,
+        status: 'DEPROVISIONED',
+      });
+      return;
+    }
   }
 
   res.setHeader('x-tenant-id', tenantContext.tenantId);
@@ -1634,8 +1659,13 @@ export async function handleRequest(req: http.IncomingMessage, res: http.ServerR
 
 
   // --- ORBITOX PLUGIN GRANT & ENTITLEMENT ENFORCEMENT (G6) ---
+  const activeKeys = getPinnedGrantKeys();
+  const shouldEnforceGrants =
+    process.env.NODE_ENV === 'production' || Object.keys(activeKeys).length > 0;
+
   if (
     postgresStore &&
+    shouldEnforceGrants &&
     !pathname.startsWith('/internal/') &&
     !pathname.startsWith('/orbitox/lifecycle') &&
     !pathname.startsWith('/api/platform/lifecycle') &&
@@ -1733,18 +1763,10 @@ export async function handleRequest(req: http.IncomingMessage, res: http.ServerR
     }
 
     if (pathname === '/internal/tenants' && method === 'POST') {
-      try {
-        const body = await parseBody(req);
-        const idemKey = (req.headers['x-idempotency-key'] as string) || body.idempotencyKey;
-        const result = await provisioningService.provisionTenant({
-          ...body,
-          idempotencyKey: idemKey,
-        });
-        sendJson(res, 201, result);
-      } catch (err: any) {
-        const status = err.message.includes('already taken') ? 409 : 400;
-        sendJson(res, status, { error: 'PROVISIONING_FAILED', message: err.message });
-      }
+      sendJson(res, 410, {
+        error: 'ROUTE_DEPRECATED',
+        message: 'Tenant provisioning via /internal/tenants has been deleted. Tenant creation must go through the signed /orbitox/lifecycle/provision hook.',
+      });
       return;
     }
 
