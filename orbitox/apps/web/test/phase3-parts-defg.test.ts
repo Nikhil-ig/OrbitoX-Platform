@@ -39,6 +39,7 @@ import { hmsGrantEnforcer, hmsRevisionStore } from '../app/api/_lib/route-auth';
 import { withTenantTx } from '../lib/tenant-db';
 import { createPatient } from '../lib/hms-repository';
 import { getPhiKeyRing } from '../lib/phi-crypto';
+import { signBridgeRequest, getDefaultBridgeKeys } from '@orbitox-io/bridge';
 
 describe('Phase 3 Parts D–G: Rights, Licensing, Enforcement, Webhooks & SDK', () => {
   const TEST_ADMIN_TOKEN = 'test_admin_token_super_secret_32_chars_minimum';
@@ -314,7 +315,7 @@ describe('Phase 3 Parts D–G: Rights, Licensing, Enforcement, Webhooks & SDK', 
       }
     });
 
-    it('GET /api/v1/platform/grants rejects unauthorized caller without service auth or bridge signature', async () => {
+    it('GET /api/v1/platform/grants rejects unauthorized caller without bridge signature', async () => {
       const req = new NextRequest(`http://127.0.0.1:3005/api/v1/platform/grants/${canonicalTenant}/@orbitox/hms`);
       const res = await getGrants(req, {
         params: Promise.resolve({ slug: [testOrg.slug, 'project', projSlug, 'environment', 'production', '@orbitox', 'hms'] }),
@@ -324,7 +325,7 @@ describe('Phase 3 Parts D–G: Rights, Licensing, Enforcement, Webhooks & SDK', 
       assert.equal(body.error, 'UNAUTHORIZED');
     });
 
-    it('GET /api/v1/platform/grants issues 15-minute compact grant token with service auth', async () => {
+    it('GET /api/v1/platform/grants rejects bearer tokens without bridge signature (C2)', async () => {
       const req = new NextRequest(
         `http://127.0.0.1:3005/api/v1/platform/grants?tenant=${encodeURIComponent(canonicalTenant)}&plugin=@orbitox/hms`,
         {
@@ -333,6 +334,55 @@ describe('Phase 3 Parts D–G: Rights, Licensing, Enforcement, Webhooks & SDK', 
           },
         }
       );
+      const res = await getGrants(req, { params: Promise.resolve({ slug: [] }) });
+      assert.equal(res.status, 401);
+      const body = await res.json();
+      assert.equal(body.error, 'UNAUTHORIZED');
+    });
+
+    it('GET /api/v1/platform/grants rejects bridge signature for mismatched tenant (C2)', async () => {
+      const bridgeKeys = getDefaultBridgeKeys();
+      const pathWithQuery = `/api/v1/platform/grants?tenant=${encodeURIComponent(canonicalTenant)}&plugin=@orbitox/hms`;
+      const foreignTenant = 'org/foreign/project/foreign/environment/production';
+      const signedHeaders = signBridgeRequest(bridgeKeys, {
+        method: 'GET',
+        pathWithQuery,
+        tenantId: foreignTenant,
+        principal: { sub: '@orbitox/hms', scopes: ['grant:read', '@orbitox/hms'] },
+      });
+      const req = new NextRequest(`http://127.0.0.1:3005${pathWithQuery}`, { headers: signedHeaders });
+      const res = await getGrants(req, { params: Promise.resolve({ slug: [] }) });
+      assert.equal(res.status, 403);
+      const body = await res.json();
+      assert.equal(body.error, 'FORBIDDEN');
+    });
+
+    it('GET /api/v1/platform/grants rejects bridge signature for mismatched plugin (C2)', async () => {
+      const bridgeKeys = getDefaultBridgeKeys();
+      const pathWithQuery = `/api/v1/platform/grants?tenant=${encodeURIComponent(canonicalTenant)}&plugin=@orbitox/hms`;
+      const signedHeaders = signBridgeRequest(bridgeKeys, {
+        method: 'GET',
+        pathWithQuery,
+        tenantId: canonicalTenant,
+        principal: { sub: '@orbitox/pos', scopes: ['@orbitox/pos'] },
+      });
+      const req = new NextRequest(`http://127.0.0.1:3005${pathWithQuery}`, { headers: signedHeaders });
+      const res = await getGrants(req, { params: Promise.resolve({ slug: [] }) });
+      assert.equal(res.status, 403);
+      const body = await res.json();
+      assert.equal(body.error, 'FORBIDDEN');
+    });
+
+    it('GET /api/v1/platform/grants issues 15-minute compact grant token with signed bridge (C2)', async () => {
+      const bridgeKeys = getDefaultBridgeKeys();
+      const pathWithQuery = `/api/v1/platform/grants?tenant=${encodeURIComponent(canonicalTenant)}&plugin=@orbitox/hms`;
+      const signedHeaders = signBridgeRequest(bridgeKeys, {
+        method: 'GET',
+        pathWithQuery,
+        tenantId: canonicalTenant,
+        principal: { sub: '@orbitox/hms', scopes: ['grant:read', '@orbitox/hms'] },
+      });
+      const req = new NextRequest(`http://127.0.0.1:3005${pathWithQuery}`, { headers: signedHeaders });
       const res = await getGrants(req, { params: Promise.resolve({ slug: [] }) });
       assert.equal(res.status, 200);
       const body = await res.json();
@@ -805,6 +855,7 @@ describe('Phase 3 Parts D–G: Rights, Licensing, Enforcement, Webhooks & SDK', 
             k_bridge_test: 'shared_bridge_secret_at_least_32_bytes_long_12345',
           },
         };
+        process.env.ORBITOX_BRIDGE_KEYS = JSON.stringify(testBridgeKeys);
 
         setGrantKeysForTesting(
           {

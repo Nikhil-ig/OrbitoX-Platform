@@ -44,35 +44,13 @@ function parseTenantAndPlugin(req: NextRequest, slug: string[]): { tenantId: str
   return null;
 }
 
-function verifyServiceAuth(req: NextRequest): boolean {
-  const authHeader = (req.headers.get('authorization') || req.headers.get('x-orbitox-service-auth'))?.trim();
-  const bearerToken = authHeader?.replace(/^Bearer\s+/i, '');
-
-  const validTokens = [
-    process.env.ORBITOX_ADMIN_TOKEN,
-    process.env.PLATFORM_ADMIN_TOKEN,
-    process.env.ORBITOX_RUNTIME_TOKEN,
-    process.env.ORBITOX_SERVICE_KEY,
-    process.env.ORBITOX_CONTROL_SECRET,
-  ].filter(Boolean);
-
-  if (bearerToken && validTokens.includes(bearerToken)) {
-    return true;
-  }
-
-  // Test admin token check
-  if (bearerToken && (bearerToken.startsWith('test_admin_token') || bearerToken.startsWith('test_service_secret'))) {
-    return true;
-  }
-
-  return false;
-}
-
-async function verifyBridgeAuth(req: NextRequest): Promise<boolean> {
-  const bridgeSig = req.headers.get('x-bridge-signature');
-  if (!bridgeSig) return false;
-
+export async function GET(
+  req: NextRequest,
+  props: { params: Promise<{ slug: string[] }> }
+) {
+  const params = props?.params ?? Promise.resolve({ slug: [] });
   try {
+    // 1. Authorize caller: Signed bridge calls only (C2)
     const bridgeKeys = getDefaultBridgeKeys();
     const url = new URL(req.url);
     const pathWithQuery = url.pathname + url.search;
@@ -90,25 +68,9 @@ async function verifyBridgeAuth(req: NextRequest): Promise<boolean> {
       rawBody: bodyText,
     });
 
-    return verified.ok;
-  } catch {
-    return false;
-  }
-}
-
-export async function GET(
-  req: NextRequest,
-  props: { params: Promise<{ slug: string[] }> }
-) {
-  const params = props?.params ?? Promise.resolve({ slug: [] });
-  try {
-    // 1. Authorize caller: Signed bridge or Service auth
-    const hasServiceAuth = verifyServiceAuth(req);
-    const hasBridgeAuth = hasServiceAuth ? true : await verifyBridgeAuth(req);
-
-    if (!hasServiceAuth && !hasBridgeAuth) {
+    if (!verified.ok) {
       return NextResponse.json(
-        { success: false, error: 'UNAUTHORIZED', message: 'Signed-bridge or service auth required to mint grants.' },
+        { success: false, error: 'UNAUTHORIZED', message: `Signed bridge authorization failed: ${verified.reason}` },
         { status: 401 }
       );
     }
@@ -125,6 +87,29 @@ export async function GET(
 
     const { tenantId } = resolved;
     const canonicalPlugin = canonicalizePluginId(resolved.pluginId);
+
+    // 3. Verify tenant and plugin in signature (C2)
+    if (verified.tenantId !== tenantId) {
+      return NextResponse.json(
+        { success: false, error: 'FORBIDDEN', message: 'Tenant in bridge signature does not match requested tenant.' },
+        { status: 403 }
+      );
+    }
+
+    const signedPlugin = verified.principal.sub;
+    const signedScopes = verified.principal.scopes || [];
+    if (
+      signedPlugin !== canonicalPlugin &&
+      signedPlugin !== resolved.pluginId &&
+      !signedScopes.includes(canonicalPlugin) &&
+      !signedScopes.includes(resolved.pluginId) &&
+      !signedScopes.includes('*')
+    ) {
+      return NextResponse.json(
+        { success: false, error: 'FORBIDDEN', message: 'Plugin in bridge signature does not match requested plugin.' },
+        { status: 403 }
+      );
+    }
 
     // 3. Lookup PluginInstallation in repository
     const installation = await platformRepository.getPluginInstallation(tenantId, canonicalPlugin);

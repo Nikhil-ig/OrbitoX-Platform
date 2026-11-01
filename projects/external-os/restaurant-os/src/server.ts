@@ -66,6 +66,7 @@ import {
   generateSeats,
   runDatabaseSecuritySelfCheck,
   verifyBridgeRequest,
+  signBridgeRequest,
   getDefaultBridgeKeys,
   PostgresNonceStore,
   MemoryNonceStore,
@@ -87,7 +88,6 @@ import {
   PluginGrantEnforcer,
   PostgresRevisionStore,
   MemoryRevisionStore,
-  getPublicGrantKeys,
 } from '@orbitox-io/plugin-engine';
 import {
   renderShell,
@@ -166,8 +166,15 @@ if (process.env.STORAGE_DRIVER !== 'json' && process.env.DATABASE_URL) {
 
 export { pgEventListener, postgresStore };
 
-// --- ORBITOX PLUGIN GRANT ENFORCER SETUP (G6) ---
+// --- ORBITOX PLUGIN GRANT ENFORCER SETUP (C1, C2, C3) ---
 export function getPinnedGrantKeys(): Record<string, crypto.KeyObject> {
+  const isProd = process.env.NODE_ENV === 'production';
+  if (isProd) {
+    if (!process.env.ORBITOX_GRANT_PUBLIC_KEYS) {
+      throw new Error('FATAL: ORBITOX_GRANT_PUBLIC_KEYS is required in production mode. Refusing to start.');
+    }
+  }
+
   if (process.env.ORBITOX_GRANT_PUBLIC_KEYS) {
     try {
       const parsed = JSON.parse(process.env.ORBITOX_GRANT_PUBLIC_KEYS);
@@ -191,27 +198,49 @@ export function getPinnedGrantKeys(): Record<string, crypto.KeyObject> {
       if (Object.keys(res).length > 0) {
         return res;
       }
+      if (isProd) {
+        throw new Error('FATAL: No valid public keys found in ORBITOX_GRANT_PUBLIC_KEYS in production mode.');
+      }
     } catch (e: any) {
+      if (isProd) {
+        throw new Error(`FATAL: Failed to parse ORBITOX_GRANT_PUBLIC_KEYS in production mode: ${e?.message || e}`);
+      }
       console.error('[GrantEnforcer] Failed to parse ORBITOX_GRANT_PUBLIC_KEYS:', e?.message || e);
     }
   }
+
   if (process.env.ORBITOX_GRANT_PUBLIC_KEY) {
     try {
       return { default: crypto.createPublicKey(process.env.ORBITOX_GRANT_PUBLIC_KEY) };
     } catch (e: any) {
+      if (isProd) {
+        throw new Error(`FATAL: Failed to parse ORBITOX_GRANT_PUBLIC_KEY in production mode: ${e?.message || e}`);
+      }
       console.error('[GrantEnforcer] Failed to parse ORBITOX_GRANT_PUBLIC_KEY:', e?.message || e);
     }
   }
-  try {
-    return getPublicGrantKeys();
-  } catch {
-    return {};
+
+  if (isProd) {
+    throw new Error('FATAL: Valid grant public keys must be configured in production mode.');
+  }
+
+  return {};
+}
+
+// C3: Refuse to start in production if PostgreSQL is unavailable
+if (process.env.NODE_ENV === 'production') {
+  getPinnedGrantKeys(); // Startup validation: throws if unconfigured
+  if (!postgresStore?.prisma) {
+    console.error('🚨 [CRITICAL_SECURITY_VIOLATION] PostgreSQL revision store is required in production mode! Halting startup.');
+    process.exit(1);
   }
 }
 
 const restaurantRevisionStore = postgresStore?.prisma
   ? new PostgresRevisionStore(postgresStore.prisma)
-  : new MemoryRevisionStore();
+  : (process.env.NODE_ENV === 'production'
+      ? (() => { throw new Error('FATAL: MemoryRevisionStore cannot be used in production mode.'); })()
+      : new MemoryRevisionStore());
 
 export const restaurantGrantEnforcer = new PluginGrantEnforcer({
   audience: '@orbitox/restaurant',
@@ -219,19 +248,32 @@ export const restaurantGrantEnforcer = new PluginGrantEnforcer({
   revisions: restaurantRevisionStore,
   allowOfflineReads: true,
   fetchGrant: async (tenantId: string, pluginId: string) => {
-    const platformUrl = process.env.ORBITOX_CONTROL_PLANE_URL || process.env.ORBITOX_BACKEND_URL || 'http://localhost:3005';
-    const serviceAuth = process.env.ORBITOX_SERVICE_KEY || process.env.ORBITOX_RUNTIME_TOKEN || process.env.BRIDGE_SHARED_SECRET || '';
+    let platformUrl = process.env.ORBITOX_CONTROL_PLANE_URL || process.env.ORBITOX_BACKEND_URL;
+    if (process.env.NODE_ENV === 'production') {
+      if (!platformUrl) {
+        throw new Error('ORBITOX_CONTROL_PLANE_URL is required in production mode');
+      }
+      if (!platformUrl.startsWith('https://')) {
+        throw new Error('ORBITOX_CONTROL_PLANE_URL must use https:// in production mode');
+      }
+    } else {
+      platformUrl = platformUrl || 'http://localhost:3005';
+    }
+
+    const pathWithQuery = `/api/v1/platform/grants?pluginId=${encodeURIComponent(pluginId)}&tenantId=${encodeURIComponent(tenantId)}`;
+    const bridgeKeys = getDefaultBridgeKeys();
+    const signedHeaders = signBridgeRequest(bridgeKeys, {
+      method: 'GET',
+      pathWithQuery,
+      tenantId,
+      principal: { sub: pluginId, scopes: ['grant:read', pluginId] },
+    });
+
     try {
-      const res = await fetch(
-        `${platformUrl}/api/v1/platform/grants?pluginId=${encodeURIComponent(pluginId)}&tenantId=${encodeURIComponent(tenantId)}`,
-        {
-          method: 'GET',
-          headers: {
-            'x-orbitox-service-auth': `Bearer ${serviceAuth}`,
-            'Authorization': `Bearer ${serviceAuth}`,
-          },
-        }
-      );
+      const res = await fetch(`${platformUrl}${pathWithQuery}`, {
+        method: 'GET',
+        headers: signedHeaders,
+      });
       if (!res.ok) {
         console.error(`[GrantEnforcer] fetchGrant failed with status ${res.status}: ${await res.text()}`);
         return null;
@@ -919,9 +961,31 @@ export async function handleRequest(req: http.IncomingMessage, res: http.ServerR
     verifiedBridge = { tenantId: verifyRes.tenantId, principal: verifyRes.principal };
   }
 
-  // Readiness check: verifies PostgreSQL, bridge keys, and runtime services
+  // Readiness check: verifies PostgreSQL, bridge keys, grant keys, and runtime services
   if ((pathname === '/healthz/ready' || pathname === '/ready') && method === 'GET') {
     try {
+      try {
+        const grantKeys = getPinnedGrantKeys();
+        if (Object.keys(grantKeys).length === 0) {
+          sendJson(res, 503, {
+            status: 'not_ready',
+            error: 'GRANT_KEYS_UNCONFIGURED',
+            uptime: process.uptime(),
+            timestamp: new Date().toISOString(),
+          });
+          return;
+        }
+      } catch (keyErr: any) {
+        sendJson(res, 503, {
+          status: 'not_ready',
+          error: 'GRANT_KEYS_UNCONFIGURED',
+          message: keyErr.message,
+          uptime: process.uptime(),
+          timestamp: new Date().toISOString(),
+        });
+        return;
+      }
+
       if (process.env.NODE_ENV === 'production') {
         try {
           getDefaultBridgeKeys();
@@ -2397,6 +2461,26 @@ export async function handleRequest(req: http.IncomingMessage, res: http.ServerR
 
   // 2. Readiness Probe (/healthz/ready): verifies operational dependencies required for serving traffic
   if (pathname === '/healthz/ready' && method === 'GET') {
+    try {
+      const grantKeys = getPinnedGrantKeys();
+      if (Object.keys(grantKeys).length === 0) {
+        sendJson(res, 503, {
+          status: 'NOT_READY',
+          error: 'GRANT_KEYS_UNCONFIGURED',
+          timestamp: new Date().toISOString(),
+        });
+        return;
+      }
+    } catch (keyErr: any) {
+      sendJson(res, 503, {
+        status: 'NOT_READY',
+        error: 'GRANT_KEYS_UNCONFIGURED',
+        message: keyErr.message,
+        timestamp: new Date().toISOString(),
+      });
+      return;
+    }
+
     const lagMetrics = eventLoopMonitor.getMetrics();
     const isStoreWritable = store && typeof (store as any).checkWritable === 'function' ? (store as any).checkWritable() : true;
     const isSecurityReady = typeof isStaffTokenRevoked === 'function';

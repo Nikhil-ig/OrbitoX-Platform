@@ -11,6 +11,9 @@ importers:
       '@orbitox-io/bridge':
         specifier: link:../../../orbitox/packages/bridge
         version: link:../../../orbitox/packages/bridge
+      '@orbitox-io/plugin-engine':
+        specifier: link:../../../orbitox/packages/plugin-engine
+        version: link:../../../orbitox/packages/plugin-engine
       '@orbitox/external-runtime-sdk':
         specifier: link:../../../orbitox/packages/external-runtime-sdk
         version: link:../../../orbitox/packages/external-runtime-sdk
