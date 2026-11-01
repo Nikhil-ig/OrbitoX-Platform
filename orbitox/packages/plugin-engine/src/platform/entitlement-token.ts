@@ -96,14 +96,15 @@ export interface VerifyOptions {
 
 export async function verifyGrant<T extends Claims = Claims>(token: string, o: VerifyOptions): Promise<T> {
   const parts = token.split('.');
-  const [part0, part1, part2] = parts;
-  if (!part0 || !part1 || !part2 || parts.length !== 3 || token.length > 8192) throw new GrantError('MALFORMED');
+  if (parts.length !== 3 || !parts[0] || !parts[1] || token.length > 8192) throw new GrantError('MALFORMED');
   let header: any, claims: any;
   try {
-    header = JSON.parse(Buffer.from(part0, 'base64url').toString('utf8'));
-    claims = JSON.parse(Buffer.from(part1, 'base64url').toString('utf8'));
+    header = JSON.parse(Buffer.from(parts[0], 'base64url').toString('utf8'));
+    claims = JSON.parse(Buffer.from(parts[1], 'base64url').toString('utf8'));
   } catch { throw new GrantError('MALFORMED'); }
   if (header?.alg !== 'EdDSA') throw new GrantError('BAD_ALG');          // no alg negotiation, no "none"
+  const [part0, part1, part2] = parts;
+  if (!part2) throw new GrantError('MALFORMED');
   const key = Object.prototype.hasOwnProperty.call(o.trustedKeys, header?.kid) ? o.trustedKeys[header.kid] : undefined;
   if (!key) throw new GrantError('UNKNOWN_KID');
   const ok = crypto.verify(null, Buffer.from(`${part0}.${part1}`), key, Buffer.from(part2, 'base64url'));
@@ -132,7 +133,7 @@ export async function verifyGrant<T extends Claims = Claims>(token: string, o: V
 /** Request-time decision helpers for plugins. */
 export function canUse(ent: EntitlementClaims, feature: string, write: boolean): 'ALLOW' | 'SUSPENDED' | 'READ_ONLY' | 'NOT_IN_PLAN' {
   if (ent.status === 'SUSPENDED') return 'SUSPENDED';
-  if (!ent.features.includes(feature)) return 'NOT_IN_PLAN';
+  if (!ent.features.includes(feature) && !ent.features.includes('*')) return 'NOT_IN_PLAN';
   if (write && ent.status === 'READ_ONLY') return 'READ_ONLY';
   return 'ALLOW';
 }

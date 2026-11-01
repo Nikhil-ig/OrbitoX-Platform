@@ -34,14 +34,34 @@ export interface NewPatient {
   bloodGroup?: string;
   allergies?: string;
   emergencyContact?: string;
+  quotaLimit?: number;
 }
 
 export async function createPatient(
   tx: TenantTx,
   ring: PhiKeyRing,
   p: NewPatient,
+  quotaLimit?: number,
 ): Promise<{ id: string; mrn: string }> {
   if (!p.name?.trim()) throw new HttpError(422, 'INVALID_INPUT', 'name required');
+
+  const effectiveQuotaLimit = quotaLimit ?? p.quotaLimit;
+  if (effectiveQuotaLimit !== undefined) {
+    // P4: Hard quotas enforced inside plugin's own database in the same transaction as the write.
+    // 1. Transaction-scoped advisory lock serializes parallel transactions for this tenant's quota.
+    await tx.query(`SELECT pg_advisory_xact_lock(hashtext($1)) IS NOT NULL AS locked`, [`quota:hms:patients:${tx.tenantId}`]);
+
+    // 2. Count existing rows within the same transaction.
+    const { rows } = await tx.query<{ count: string | number }>(
+      `SELECT count(*)::int AS count FROM "HmsPatient" WHERE "tenantId" = $1`,
+      [tx.tenantId]
+    );
+    const count = Number(rows[0]?.count ?? 0);
+    if (count >= effectiveQuotaLimit) {
+      throw new HttpError(403, 'QUOTA_EXCEEDED', `Hard quota limit of ${effectiveQuotaLimit} patients reached for tenant.`);
+    }
+  }
+
   const id = newId('pat');
   const ref = (column: string) => ({ tenantId: tx.tenantId, column, rowId: id });
   const s = (v: string | undefined, col: string) => (v == null || v === '' ? null : seal(ring, v, ref(col)));

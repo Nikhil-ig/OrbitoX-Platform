@@ -31,6 +31,8 @@ export * from './modeSwitcher';
 export * from './platform/platform-repository';
 export * from './platform/plan-catalogue';
 export * from './platform/entitlement-token';
+export * from './platform/grant-keys';
+export * from './platform/grant-enforcer';
 export * from './contract';
 
 

@@ -37,18 +37,25 @@ export const POST = withHospitalGuard(async (req: NextRequest, _routeContext, au
     const body = await req.json();
     const ring = getPhiKeyRing();
 
+    const patientQuota = authContext.grant?.quotas?.patients?.limit ?? body.quotaLimit;
+
     const result = await withTenantTx(prisma, authContext.tenantId, async (tx) => {
-      return await createPatient(tx, ring, {
-        mrn: body.mrn || `MRN-${Date.now().toString(36).toUpperCase()}`,
-        name: body.name,
-        phone: body.phone,
-        dateOfBirth: body.dateOfBirth,
-        ageBand: body.ageBand,
-        gender: body.gender,
-        bloodGroup: body.bloodGroup,
-        allergies: body.allergies,
-        emergencyContact: body.emergencyContact,
-      });
+      return await createPatient(
+        tx,
+        ring,
+        {
+          mrn: body.mrn || `MRN-${Date.now().toString(36).toUpperCase()}`,
+          name: body.name,
+          phone: body.phone,
+          dateOfBirth: body.dateOfBirth,
+          ageBand: body.ageBand,
+          gender: body.gender,
+          bloodGroup: body.bloodGroup,
+          allergies: body.allergies,
+          emergencyContact: body.emergencyContact,
+        },
+        patientQuota
+      );
     });
 
     return NextResponse.json({ success: true, data: result }, { status: 201 });

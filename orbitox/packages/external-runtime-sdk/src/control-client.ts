@@ -3,6 +3,7 @@
  * Used by external projects to communicate with the OrbitoX Platform Control Plane.
  */
 
+import * as crypto from 'crypto';
 import {
   OrbitoxProjectManifest,
   SignedRuntimeConfiguration,
@@ -34,6 +35,8 @@ export interface ControlClientOptions {
   controlPlaneUrl?: string;
   runtimePort?: number;
   apiKey?: string;
+  pinnedPublicKeys?: Record<string, crypto.KeyObject | string>;
+  trustedKeys?: Record<string, crypto.KeyObject | string>;
   onConfigUpdated?: (newConfig: SignedRuntimeConfiguration) => void;
   onCommandReceived?: (command: ControlCommand) => Promise<{ success: boolean; result?: any; error?: string }>;
 }
@@ -65,6 +68,8 @@ export class ControlClient {
   private onConfigUpdated?: (newConfig: SignedRuntimeConfiguration) => void;
   private onCommandReceived?: (command: ControlCommand) => Promise<{ success: boolean; result?: any; error?: string }>;
 
+  public pinnedPublicKeys: Record<string, crypto.KeyObject> = {};
+
   constructor(options: ControlClientOptions) {
     this.manifest = options.manifest;
     this.controlPlaneUrl = options.controlPlaneUrl || options.manifest.platformController.controlPlaneUrl || 'http://localhost:3005';
@@ -72,6 +77,11 @@ export class ControlClient {
     this.apiKey = options.apiKey;
     this.onConfigUpdated = options.onConfigUpdated;
     this.onCommandReceived = options.onCommandReceived;
+
+    const rawKeys = options.pinnedPublicKeys || options.trustedKeys;
+    if (rawKeys) {
+      this.setPinnedPublicKeys(rawKeys);
+    }
 
     this.clientConfig = {
       controlPlaneUrl: this.controlPlaneUrl,
@@ -89,6 +99,87 @@ export class ControlClient {
     this.health = new HealthClient(this.clientConfig);
     this.audit = new AuditClient(this.clientConfig);
     this.events = new EventClient();
+  }
+
+  public setPinnedPublicKeys(keys: Record<string, crypto.KeyObject | string>): void {
+    this.pinnedPublicKeys = {};
+    for (const [kid, val] of Object.entries(keys)) {
+      if (typeof val === 'string') {
+        this.pinnedPublicKeys[kid] = crypto.createPublicKey(val);
+      } else {
+        this.pinnedPublicKeys[kid] = val;
+      }
+    }
+  }
+
+  /**
+   * Verifies configuration signature against pinned Ed25519 public keys.
+   */
+  public verifyConfigSignature(config: SignedRuntimeConfiguration): boolean {
+    if (!config || !config.signature || typeof config.signature !== 'string') {
+      return false;
+    }
+
+    const keys = Object.values(this.pinnedPublicKeys);
+    if (keys.length === 0) {
+      // If no keys pinned, only accept if requireSignedConfig is not set to true
+      return !this.manifest.platformController?.requireSignedConfig;
+    }
+
+    const sig = config.signature.trim();
+
+    // 1. Compact JWS token format: header.payload.signature
+    if (sig.includes('.')) {
+      const parts = sig.split('.');
+      const p0 = parts[0];
+      const p1 = parts[1];
+      const p2 = parts[2];
+      if (parts.length === 3 && p0 && p1 && p2) {
+        try {
+          const header = JSON.parse(Buffer.from(p0, 'base64url').toString('utf8'));
+          if (header.alg !== 'EdDSA') return false;
+          const targetKey = header.kid ? this.pinnedPublicKeys[header.kid] : undefined;
+          const candidateKeys = targetKey ? [targetKey] : keys;
+          for (const k of candidateKeys) {
+            const ok = crypto.verify(
+              null,
+              Buffer.from(`${p0}.${p1}`),
+              k,
+              Buffer.from(p2, 'base64url')
+            );
+            if (ok) return true;
+          }
+        } catch {
+          return false;
+        }
+      }
+    }
+
+    // 2. Detached Ed25519 signature format (hex or base64)
+    let sigBuffer: Buffer;
+    try {
+      sigBuffer = /^[0-9a-fA-F]+$/.test(sig) ? Buffer.from(sig, 'hex') : Buffer.from(sig, 'base64');
+    } catch {
+      return false;
+    }
+
+    const candidatePayloads = [
+      `${config.projectId}:${config.configVersion}:${config.revisionNumber || 1}:${config.issuedAt}`,
+      `${config.projectId}:${config.configVersion}:${config.revisionNumber || 1}:${config.issuedAt}:${JSON.stringify(config.desiredState || {})}`,
+    ];
+
+    for (const p of candidatePayloads) {
+      const pBuf = Buffer.from(p, 'utf8');
+      for (const k of keys) {
+        try {
+          if (crypto.verify(null, pBuf, k, sigBuffer)) {
+            return true;
+          }
+        } catch {}
+      }
+    }
+
+    return false;
   }
 
   /**
@@ -182,6 +273,19 @@ export class ControlClient {
     }
 
     const signedConfig: SignedRuntimeConfiguration = await res.json();
+
+    // Verify config signature against pinned Ed25519 public keys before applying
+    const isValid = this.verifyConfigSignature(signedConfig);
+    if (!isValid) {
+      console.error(
+        `[RuntimeSDK] Configuration signature verification failed for project "${this.manifest.projectId}". Keeping last good config.`
+      );
+      if (this.currentConfig) {
+        return this.currentConfig;
+      }
+      throw new Error(`INVALID_CONFIG_SIGNATURE: Unsigned or invalid signature for project ${this.manifest.projectId}`);
+    }
+
     this.currentConfig = signedConfig;
 
     if (signedConfig.revisionNumber && signedConfig.revisionNumber !== this.appliedRevision) {

@@ -65,8 +65,11 @@ export function isStaticAsset(pathname: string): boolean {
 }
 
 export function isExplicitPublicRoute(pathname: string): boolean {
-    // Exact public control plane diagnostics
-    if (pathname === '/api/health' || pathname === '/api/v1/openapi.json') return true;
+    // Exact public control plane diagnostics & public keys
+    if (pathname === '/api/health' || pathname === '/api/v1/openapi.json' || pathname === '/api/v1/platform/grant-keys') return true;
+
+    // Public billing webhook entry points (Phase 3 Part F: verified fail-closed by HMAC signature in route handler)
+    if (pathname === '/api/v1/billing/webhook' || pathname.startsWith('/api/v1/billing/webhook/')) return true;
 
     // Diner discovery and guest session join bootstrap
     if (/^\/api\/restaurant\/qr\/[^/]+$/.test(pathname)) return true;

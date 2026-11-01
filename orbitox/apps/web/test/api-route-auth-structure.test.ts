@@ -21,6 +21,9 @@ const apiRoot = path.join(appDir, 'api');
 const explicitPublicApiRoutes = new Set([
     'health/route.ts',
     'v1/openapi.json/route.ts',
+    'v1/platform/grant-keys/route.ts',
+    'v1/billing/webhook/route.ts',
+    'v1/billing/webhook/razorpay/route.ts',
     'restaurant/qr/[locator]/route.ts',
     'restaurant/sessions/join/route.ts',
 ]);
