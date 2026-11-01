@@ -7,14 +7,20 @@ export async function POST(req: NextRequest) {
   try {
     const rawBody = await req.text();
     const signature = req.headers.get('x-razorpay-signature');
-    const webhookSecret = process.env.RAZORPAY_WEBHOOK_SECRET || 'test_razorpay_webhook_secret';
+    const webhookSecret = process.env.RAZORPAY_WEBHOOK_SECRET?.trim();
+    if (!webhookSecret) {
+      return NextResponse.json(
+        { success: false, error: 'WEBHOOK_SECRET_NOT_CONFIGURED', message: 'RAZORPAY_WEBHOOK_SECRET is not configured on this server.' },
+        { status: 500 }
+      );
+    }
 
     // 1. Verify Razorpay HMAC SHA-256 signature
     const isValid = verifyRazorpaySignature(rawBody, signature, webhookSecret);
     if (!isValid) {
       return NextResponse.json(
         { success: false, error: 'INVALID_SIGNATURE', message: 'Razorpay webhook signature verification failed.' },
-        { status: 400 }
+        { status: 401 }
       );
     }
 
