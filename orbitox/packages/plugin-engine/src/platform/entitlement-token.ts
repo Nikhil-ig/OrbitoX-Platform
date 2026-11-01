@@ -85,6 +85,88 @@ export class MemoryRevisionStore implements RevisionStore {
   async raise(k: string, r: number) { if (r > (this.m.get(k) ?? 0)) this.m.set(k, r); }
 }
 
+export function parseRevisionKey(key: string): { tenantId: string; pluginId: string } {
+  if (key.includes('|')) {
+    const parts = key.split('|');
+    if (parts.length >= 3) {
+      // `${type}|${aud}|${sub}` -> aud is pluginId, sub is tenantId
+      return { pluginId: parts[1] || 'default', tenantId: parts[2] || 'unknown' };
+    }
+    return { pluginId: parts[0] || 'default', tenantId: parts[1] || 'unknown' };
+  }
+  return { tenantId: key, pluginId: 'default' };
+}
+
+export class PostgresRevisionStore implements RevisionStore {
+  constructor(
+    private readonly client:
+      | { $queryRawUnsafe: (sql: string, ...params: any[]) => Promise<any> }
+      | { query: (sql: string, params?: any[]) => Promise<any> }
+      | any
+  ) {}
+
+  async highest(k: string): Promise<number> {
+    const { tenantId, pluginId } = parseRevisionKey(k);
+    try {
+      let rows: any[] = [];
+      if (this.client && typeof this.client.$queryRawUnsafe === 'function') {
+        rows = await this.client.$queryRawUnsafe(
+          'SELECT "highestRevision" FROM "PluginGrantRevision" WHERE "tenantId" = $1 AND "pluginId" = $2',
+          tenantId,
+          pluginId
+        );
+      } else if (this.client && typeof this.client.query === 'function') {
+        const res = await this.client.query(
+          'SELECT "highestRevision" FROM "PluginGrantRevision" WHERE "tenantId" = $1 AND "pluginId" = $2',
+          [tenantId, pluginId]
+        );
+        rows = res.rows || [];
+      } else if (this.client && this.client.pluginGrantRevision) {
+        const row = await this.client.pluginGrantRevision.findUnique({
+          where: { tenantId_pluginId: { tenantId, pluginId } },
+        });
+        return row?.highestRevision ?? 0;
+      }
+      return rows && rows.length > 0 ? (rows[0].highestRevision ?? 0) : 0;
+    } catch {
+      return 0;
+    }
+  }
+
+  async raise(k: string, rev: number): Promise<void> {
+    const { tenantId, pluginId } = parseRevisionKey(k);
+    try {
+      if (this.client && typeof this.client.$queryRawUnsafe === 'function') {
+        await this.client.$queryRawUnsafe(
+          `INSERT INTO "PluginGrantRevision" ("tenantId", "pluginId", "highestRevision", "updatedAt")
+           VALUES ($1, $2, $3, NOW())
+           ON CONFLICT ("tenantId", "pluginId")
+           DO UPDATE SET "highestRevision" = GREATEST("PluginGrantRevision"."highestRevision", EXCLUDED."highestRevision"), "updatedAt" = NOW()`,
+          tenantId,
+          pluginId,
+          rev
+        );
+      } else if (this.client && typeof this.client.query === 'function') {
+        await this.client.query(
+          `INSERT INTO "PluginGrantRevision" ("tenantId", "pluginId", "highestRevision", "updatedAt")
+           VALUES ($1, $2, $3, NOW())
+           ON CONFLICT ("tenantId", "pluginId")
+           DO UPDATE SET "highestRevision" = GREATEST("PluginGrantRevision"."highestRevision", EXCLUDED."highestRevision"), "updatedAt" = NOW()`,
+          [tenantId, pluginId, rev]
+        );
+      } else if (this.client && this.client.pluginGrantRevision) {
+        await this.client.pluginGrantRevision.upsert({
+          where: { tenantId_pluginId: { tenantId, pluginId } },
+          create: { tenantId, pluginId, highestRevision: rev },
+          update: { highestRevision: { set: rev } },
+        });
+      }
+    } catch (err: any) {
+      console.error(`[PostgresRevisionStore] Failed to raise revision for ${tenantId}/${pluginId}:`, err.message);
+    }
+  }
+}
+
 export interface VerifyOptions {
   type: GrantType;
   audience: string;                          // this plugin's id / this deployment's id

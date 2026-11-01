@@ -532,3 +532,13 @@ model BridgeNonce {
   @@index([expiresAt])
 }
 
+model PluginGrantRevision {
+  tenantId        String
+  pluginId        String
+  highestRevision Int      @default(0)
+  updatedAt       DateTime @default(now()) @updatedAt
+
+  @@id([tenantId, pluginId])
+  @@index([tenantId])
+}
+

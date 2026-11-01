@@ -10,11 +10,13 @@ import assert from 'node:assert/strict';
 import * as crypto from 'crypto';
 import { NextRequest } from 'next/server';
 import { PrismaClient } from '@prisma/client';
+import { prisma } from '../lib/prisma';
 import { platformRepository } from '../lib/platform-repository';
 import {
   signGrant,
   verifyGrant,
   MemoryRevisionStore,
+  PostgresRevisionStore,
   canUse,
   GrantError,
   EntitlementClaims,
@@ -508,6 +510,47 @@ describe('Phase 3 Parts D–G: Rights, Licensing, Enforcement, Webhooks & SDK', 
       });
       assert.equal(rReadExpired.allowed, true);
     });
+
+    it('offline reads respect last known status: if last grant was SUSPENDED, reads stay blocked (G7)', async () => {
+      const enforcer = new PluginGrantEnforcer({
+        audience: '@orbitox/hms',
+        trustedKeys: getPublicGrantKeys(),
+        allowOfflineReads: true,
+        fetchGrant: async () => null, // platform unreachable
+      });
+
+      const now = Date.now();
+      // Cache a grant with status SUSPENDED that expired 10 minutes ago
+      const expiredSuspendedClaims: EntitlementClaims = {
+        typ: 'orbitox-ent',
+        iss: 'orbitox',
+        aud: '@orbitox/hms',
+        sub: canonicalTenant,
+        plan: 'hms-starter',
+        status: 'SUSPENDED',
+        features: ['patients', 'labs'],
+        quotas: {},
+        rev: 5,
+        iat: Math.floor((now - 1800 * 1000) / 1000),
+        nbf: Math.floor((now - 1800 * 1000) / 1000),
+        exp: Math.floor((now - 600 * 1000) / 1000),
+        jti: 'test-expired-suspended-grant',
+      };
+
+      enforcer.setCachedGrant(canonicalTenant, 'fake-token', expiredSuspendedClaims);
+
+      // Attempt read while platform unreachable and grant expired
+      const readDecision = await enforcer.enforce({
+        tenantId: canonicalTenant,
+        feature: 'patients',
+        write: false,
+        now,
+      });
+
+      assert.equal(readDecision.allowed, false, 'Expired grant with last status SUSPENDED must refuse reads');
+      assert.equal(readDecision.code, 'SERVICE_SUSPENDED');
+      assert.equal(readDecision.status, 403);
+    });
   });
 
   // ───────────────────────────────────────────────────────────────────────────
@@ -648,15 +691,15 @@ describe('Phase 3 Parts D–G: Rights, Licensing, Enforcement, Webhooks & SDK', 
       assert.equal(writeDecision.allowed, true);
     });
 
-    it('Replay rollback protection: an old grant replayed after suspension is refused with ROLLBACK', async () => {
-      const revStore = new MemoryRevisionStore();
+    it('Replay rollback protection: suspend, restart server process, replay old ACTIVE grant -> ROLLBACK (G3)', async () => {
+      const postgresStore = new PostgresRevisionStore(prisma);
       const enforcer = new PluginGrantEnforcer({
         audience: '@orbitox/hms',
         trustedKeys: getPublicGrantKeys(),
-        revisions: revStore,
+        revisions: postgresStore,
       });
 
-      // Grant at revision 10
+      // Grant at revision 10 (ACTIVE)
       const activeRev10 = createEntitlementGrantToken({
         tenantId: pTenant,
         pluginId: '@orbitox/hms',
@@ -681,12 +724,26 @@ describe('Phase 3 Parts D–G: Rights, Licensing, Enforcement, Webhooks & SDK', 
       // Plugin observes rev 10
       await enforcer.enforce({ tenantId: pTenant, feature: 'patients', write: true, token: activeRev10 });
 
-      // Plugin observes rev 11
+      // Tenant is suspended, plugin observes rev 11 and stores highestRevision=11 in PostgreSQL
       await enforcer.enforce({ tenantId: pTenant, feature: 'patients', write: true, token: suspendedRev11 });
 
-      // Attacker replays rev 10 -> MUST return ROLLBACK
-      const replayRes = await enforcer.enforce({ tenantId: pTenant, feature: 'patients', write: true, token: activeRev10 });
-      assert.equal(replayRes.allowed, false);
+      // SIMULATE SERVER PROCESS REBOOT:
+      // Completely dispose old in-memory enforcer instance and initialize a brand-new enforcer
+      // on a fresh process connecting to the same PostgreSQL revision store
+      const rebootedProcessEnforcer = new PluginGrantEnforcer({
+        audience: '@orbitox/hms',
+        trustedKeys: getPublicGrantKeys(),
+        revisions: new PostgresRevisionStore(prisma),
+      });
+
+      // Attacker replays old ACTIVE grant (rev 10) to the restarted server -> rejected with ROLLBACK!
+      const replayRes = await rebootedProcessEnforcer.enforce({
+        tenantId: pTenant,
+        feature: 'patients',
+        write: true,
+        token: activeRev10,
+      });
+      assert.equal(replayRes.allowed, false, 'Old ACTIVE grant must be rejected even after process reboot');
       assert.equal(replayRes.code, 'ROLLBACK');
       assert.equal(replayRes.status, 403);
     });
@@ -820,6 +877,43 @@ describe('Phase 3 Parts D–G: Rights, Licensing, Enforcement, Webhooks & SDK', 
       const body2 = await res2.json();
       assert.equal(body2.duplicate, true);
       assert.equal(body2.received, true);
+    });
+
+    it('concurrent delivery of identical webhook event ID to multiple server requests changes state exactly once (G2)', async () => {
+      await platformRepository.updatePluginInstallationStatus(fTenant, '@orbitox/hms', 'ACTIVE');
+      const instBefore = await platformRepository.getPluginInstallation(fTenant, '@orbitox/hms');
+      const revBefore = instBefore?.entitlementRevision || 1;
+
+      const eventId = `evt_concurrent_${Date.now()}`;
+      const event = {
+        id: eventId,
+        event: 'subscription.cancelled',
+        tenantId: fTenant,
+        pluginId: '@orbitox/hms',
+        notes: { tenantId: fTenant, pluginId: '@orbitox/hms' },
+      };
+
+      // Send 5 parallel requests with identical event ID (simulating concurrent webhook delivery to multiple servers)
+      const requests = Array.from({ length: 5 }, () => createRazorpayWebhookRequest(event));
+      const responses = await Promise.all(requests.map((r) => postRazorpayWebhook(r)));
+
+      // All requests return 200
+      for (const res of responses) {
+        assert.equal(res.status, 200);
+      }
+
+      const bodies = await Promise.all(responses.map((r) => r.json()));
+      const firstTimers = bodies.filter((b) => !b.duplicate);
+      const duplicates = bodies.filter((b) => b.duplicate);
+
+      // Exactly 1 request changes state and 4 are detected as duplicate
+      assert.equal(firstTimers.length, 1, 'Exactly one request should execute state transition');
+      assert.equal(duplicates.length, 4, 'Other 4 concurrent requests should be detected as duplicates');
+
+      // State changed exactly once
+      const instAfter = await platformRepository.getPluginInstallation(fTenant, '@orbitox/hms');
+      assert.equal(instAfter?.status, 'SUSPENDED');
+      assert.equal(instAfter?.entitlementRevision, revBefore + 1, 'Revision must advance by exactly 1');
     });
 
     it('payment.failed initiates grace period: Day 0–7 ACTIVE, Day 8 READ_ONLY, Day 31 SUSPENDED', async () => {

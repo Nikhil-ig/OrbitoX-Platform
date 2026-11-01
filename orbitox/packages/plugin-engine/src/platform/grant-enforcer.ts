@@ -149,7 +149,16 @@ export class PluginGrantEnforcer {
           if (cached && cached.expiresAtMs > now) {
             claims = cached.claims;
           } else if (cached && cached.expiresAtMs <= now) {
-            // Expired and platform unreachable
+            // Expired and platform unreachable: offline reads must respect last known status (G7)
+            if (cached.claims.status === 'SUSPENDED') {
+              return {
+                allowed: false,
+                status: 403,
+                code: 'SERVICE_SUSPENDED',
+                message: 'Service is suspended for this tenant (last known status).',
+                claims: cached.claims,
+              };
+            }
             if (write) {
               return {
                 allowed: false,
@@ -169,31 +178,12 @@ export class PluginGrantEnforcer {
               };
             }
           } else {
-            if (!write && this.allowOfflineReads) {
-              const nowSec = Math.floor(now / 1000);
-              claims = {
-                typ: 'orbitox-ent',
-                iss: 'orbitox',
-                aud: this.audience,
-                sub: tenantId,
-                plan: 'starter',
-                status: 'ACTIVE',
-                features: ['*'],
-                quotas: {},
-                rev: 1,
-                iat: nowSec,
-                nbf: nowSec - 30,
-                exp: nowSec + 900,
-                jti: `offline-${now}`,
-              };
-            } else {
-              return {
-                allowed: false,
-                status: 403,
-                code: 'PLATFORM_UNREACHABLE',
-                message: 'No grant available and platform unreachable.',
-              };
-            }
+            return {
+              allowed: false,
+              status: 403,
+              code: 'PLATFORM_UNREACHABLE',
+              message: 'No grant available and platform unreachable.',
+            };
           }
         }
       }

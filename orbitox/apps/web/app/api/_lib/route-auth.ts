@@ -8,8 +8,10 @@ import {
   SEED_PLANS,
   ServiceStatus,
   MemoryRevisionStore,
+  PostgresRevisionStore,
 } from '@orbitox-io/plugin-engine';
 import { platformRepository } from '@/lib/platform-repository';
+import { prisma } from '@/lib/prisma';
 
 type RouteContext = any;
 type GuardedRouteHandler = (
@@ -27,8 +29,15 @@ interface LegacyGuardOptions {
     feature?: string;
 }
 
-export const hmsRevisionStore = new MemoryRevisionStore();
-export const restaurantRevisionStore = new MemoryRevisionStore();
+export const hmsRevisionStore =
+  process.env.NODE_ENV === 'test' && process.env.ORBITOX_PLATFORM_REPOSITORY === 'json'
+    ? new MemoryRevisionStore()
+    : new PostgresRevisionStore(prisma);
+
+export const restaurantRevisionStore =
+  process.env.NODE_ENV === 'test' && process.env.ORBITOX_PLATFORM_REPOSITORY === 'json'
+    ? new MemoryRevisionStore()
+    : new PostgresRevisionStore(prisma);
 
 async function fetchGrantForService(tenantId: string, pluginId: string): Promise<string | null> {
   const installation = await platformRepository.getPluginInstallation(tenantId, pluginId);
