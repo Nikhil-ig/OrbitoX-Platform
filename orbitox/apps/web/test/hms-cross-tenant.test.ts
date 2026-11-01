@@ -37,6 +37,7 @@ import { GET as getSession, DELETE as deleteSession } from '../app/api/hospital/
 import { POST as loginStaff } from '../app/api/hospital/security/login/route';
 import { GET as getTreatments, POST as createTreatment, PATCH as patchTreatment } from '../app/api/hospital/treatments/route';
 import { POST as resetSeed } from '../app/api/hospital/reset-seed/route';
+import { POST as postHospitalLifecycle } from '../app/api/hospital/lifecycle/[action]/route';
 
 import { GET as getV1Beds, POST as createV1Bed } from '../app/api/v1/hms/beds/route';
 import { GET as getV1Labs, POST as createV1Lab } from '../app/api/v1/hms/labs/route';
@@ -444,6 +445,11 @@ describe('HospitalOS & HMS Cross-Tenant Generator Suite (Phase 2b-3)', () => {
       expectedStatus: 404,
       run: (ctx) => unlockStaff(makeRequest(TENANT_A, `/api/hospital/security/staff/${ctx.idsB.staffId}/unlock`, 'POST', {}), { params: Promise.resolve({ id: ctx.idsB.staffId }) } as any),
     },
+    'POST app/api/hospital/lifecycle/[action]/route.ts': {
+      description: 'Hospital lifecycle hook requires signed bridge payload: 401',
+      expectedStatus: 401,
+      run: () => postHospitalLifecycle(makeRequest(TENANT_A, '/api/hospital/lifecycle/provision', 'POST', { action: 'provision' }), { params: Promise.resolve({ action: 'provision' }) }),
+    },
   };
 
   before(async () => {
@@ -615,7 +621,7 @@ describe('HospitalOS & HMS Cross-Tenant Generator Suite (Phase 2b-3)', () => {
       }
     }
 
-    assert.equal(discovered.length, 51, 'Discovered route+methods must be exactly 51 across the 31 route files');
+    assert.equal(discovered.length, 52, 'Discovered route+methods must be exactly 52 across the 32 route files');
 
     for (const item of discovered) {
       assert.ok(
@@ -628,8 +634,8 @@ describe('HospitalOS & HMS Cross-Tenant Generator Suite (Phase 2b-3)', () => {
     console.log(`Cross-tenant generator coverage: ${coveredCount} of ${discovered.length} route+methods covered`);
   });
 
-  // 2. Comprehensive Generator Execution Across All 50 Route+Methods
-  it('executes cross-tenant scenarios for all 50 route+methods, verifying 404/403/expected isolation and zero data leakage', async () => {
+  // 2. Comprehensive Generator Execution Across All 52 Route+Methods
+  it('executes cross-tenant scenarios for all 52 route+methods, verifying 404/403/expected isolation and zero data leakage', async () => {
     let executedCount = 0;
     for (const [key, entry] of Object.entries(COVERAGE_TABLE)) {
       const res = await entry.run({ idsA, idsB, TENANT_A, TENANT_B });

@@ -28,11 +28,11 @@ describe('Hospital Route Structure & Isolation Tests (R1, R3, R4)', () => {
   const hmsV1RouteFiles = findFilesRecursive(hmsV1RoutesDir, /^route\.ts$/);
   const allHmsRouteFiles = [...hospitalRouteFiles, ...hmsV1RouteFiles];
 
-  it('R1: asserts exactly 27 hospital routes and 4 v1/hms routes exist (31 total)', () => {
+  it('R1: asserts exactly 28 hospital routes and 4 v1/hms routes exist (32 total)', () => {
     assert.equal(
       hospitalRouteFiles.length,
-      27,
-      `Expected 27 hospital routes, found ${hospitalRouteFiles.length}: ${hospitalRouteFiles.map((f) => path.relative(appApiDir, f)).join(', ')}`
+      28,
+      `Expected 28 hospital routes, found ${hospitalRouteFiles.length}: ${hospitalRouteFiles.map((f) => path.relative(appApiDir, f)).join(', ')}`
     );
     assert.equal(
       hmsV1RouteFiles.length,
