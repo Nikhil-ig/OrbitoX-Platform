@@ -27,6 +27,7 @@ import {
 } from '@orbitox-io/plugin-engine';
 import { ControlClient, SignedRuntimeConfiguration } from '@orbitox/external-runtime-sdk';
 import { GET as getGrantKeys } from '../app/api/v1/platform/grant-keys/route';
+import { GET as getGrants } from '../app/api/v1/platform/grants/[...slug]/route';
 import { POST as postRazorpayWebhook } from '../app/api/v1/billing/webhook/razorpay/route';
 import { webhookLedger } from '../lib/razorpay-webhook';
 import { POST as postPatient, GET as getPatients } from '../app/api/hospital/patients/route';
