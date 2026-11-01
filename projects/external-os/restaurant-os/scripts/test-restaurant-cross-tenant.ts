@@ -9,6 +9,7 @@
  * 4. Reports exact coverage as N of N routes verified (0 leaks).
  */
 
+process.env.NODE_ENV = process.env.NODE_ENV || 'test';
 process.env.RESTAURANTOS_DISABLE_AUTOLISTEN = 'true';
 if (!process.env.DATABASE_URL) {
   if (process.env.CI) {
@@ -22,9 +23,11 @@ import assert from 'node:assert/strict';
 import * as http from 'http';
 import * as crypto from 'crypto';
 import { PrismaClient } from '@prisma/client';
-import { handleRequest, closeRuntimeServer } from '../src/server';
 import { signBridgeRequest, getDefaultBridgeKeys } from '../packages/domain/bridge-auth';
 import { TenantProvisioningService } from '../packages/domain/provisioning';
+
+let handleRequest: (req: http.IncomingMessage, res: http.ServerResponse) => Promise<void>;
+let closeRuntimeServer: () => Promise<void>;
 
 const prisma = new PrismaClient();
 const keys = getDefaultBridgeKeys();
@@ -101,6 +104,10 @@ async function sendRequest(
 
 before(async () => {
   try {
+    const serverModule = await import('../src/server');
+    handleRequest = serverModule.handleRequest;
+    closeRuntimeServer = serverModule.closeRuntimeServer;
+
     // Bind server to ephemeral port 0
     await new Promise<void>((resolve) => {
       serverInstance = http.createServer(handleRequest);

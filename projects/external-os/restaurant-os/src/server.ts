@@ -120,8 +120,11 @@ import {
 
 const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 4010;
 
+export const isProductionEnvironment =
+  process.env.NODE_ENV !== 'development' && process.env.NODE_ENV !== 'test';
+
 // Production storage driver guard: file-backed JSON store is strictly prohibited in production
-if (process.env.STORAGE_DRIVER === 'json' && process.env.NODE_ENV === 'production') {
+if (process.env.STORAGE_DRIVER === 'json' && isProductionEnvironment) {
   console.error('🚨 [CRITICAL_SECURITY_VIOLATION] STORAGE_DRIVER=json is strictly prohibited in production mode! Halting startup.');
   process.exit(1);
 }
@@ -168,7 +171,7 @@ export { pgEventListener, postgresStore };
 
 // --- ORBITOX PLUGIN GRANT ENFORCER SETUP (C1, C2, C3) ---
 export function getPinnedGrantKeys(): Record<string, crypto.KeyObject> {
-  const isProd = process.env.NODE_ENV === 'production';
+  const isProd = isProductionEnvironment;
   if (isProd) {
     if (!process.env.ORBITOX_GRANT_PUBLIC_KEYS) {
       throw new Error('FATAL: ORBITOX_GRANT_PUBLIC_KEYS is required in production mode. Refusing to start.');
@@ -228,7 +231,7 @@ export function getPinnedGrantKeys(): Record<string, crypto.KeyObject> {
 }
 
 // C3: Refuse to start in production if PostgreSQL is unavailable
-if (process.env.NODE_ENV === 'production') {
+if (isProductionEnvironment) {
   getPinnedGrantKeys(); // Startup validation: throws if unconfigured
   if (!postgresStore?.prisma) {
     console.error('🚨 [CRITICAL_SECURITY_VIOLATION] PostgreSQL revision store is required in production mode! Halting startup.');
@@ -238,7 +241,7 @@ if (process.env.NODE_ENV === 'production') {
 
 const restaurantRevisionStore = postgresStore?.prisma
   ? new PostgresRevisionStore(postgresStore.prisma)
-  : (process.env.NODE_ENV === 'production'
+  : (isProductionEnvironment
       ? (() => { throw new Error('FATAL: MemoryRevisionStore cannot be used in production mode.'); })()
       : new MemoryRevisionStore());
 
@@ -249,7 +252,7 @@ export const restaurantGrantEnforcer = new PluginGrantEnforcer({
   allowOfflineReads: true,
   fetchGrant: async (tenantId: string, pluginId: string) => {
     let platformUrl = process.env.ORBITOX_CONTROL_PLANE_URL || process.env.ORBITOX_BACKEND_URL;
-    if (process.env.NODE_ENV === 'production') {
+    if (isProductionEnvironment) {
       if (!platformUrl) {
         throw new Error('ORBITOX_CONTROL_PLANE_URL is required in production mode');
       }
@@ -964,7 +967,7 @@ export async function handleRequest(req: http.IncomingMessage, res: http.ServerR
   // Readiness check: verifies PostgreSQL, bridge keys, grant keys, and runtime services
   if ((pathname === '/healthz/ready' || pathname === '/ready') && method === 'GET') {
     try {
-      if (process.env.NODE_ENV === 'production') {
+      if (isProductionEnvironment) {
         try {
           const grantKeys = getPinnedGrantKeys();
           if (Object.keys(grantKeys).length === 0) {
@@ -1669,7 +1672,7 @@ export async function handleRequest(req: http.IncomingMessage, res: http.ServerR
   // --- ORBITOX PLUGIN GRANT & ENTITLEMENT ENFORCEMENT (G6) ---
   const activeKeys = getPinnedGrantKeys();
   const shouldEnforceGrants =
-    process.env.NODE_ENV === 'production' || Object.keys(activeKeys).length > 0;
+    isProductionEnvironment || Object.keys(activeKeys).length > 0;
   const localTenant = postgresStore ? await postgresStore.getTenant(tenantContext.tenantId) : null;
   const isLocallySuspended = localTenant?.status === 'suspended' || tenantContext.status === 'suspended';
 
@@ -1784,26 +1787,10 @@ export async function handleRequest(req: http.IncomingMessage, res: http.ServerR
     }
 
     if (pathname === '/internal/tenants' && method === 'POST') {
-      if (process.env.NODE_ENV === 'production') {
-        sendJson(res, 410, {
-          error: 'ROUTE_DEPRECATED',
-          message: 'Tenant provisioning via /internal/tenants has been deleted. Tenant creation must go through the signed /orbitox/lifecycle/provision hook.',
-        });
-        return;
-      }
-
-      try {
-        const body = await parseBody(req);
-        const idemKey = (req.headers['x-idempotency-key'] as string) || body.idempotencyKey;
-        const result = await provisioningService.provisionTenant({
-          ...body,
-          idempotencyKey: idemKey,
-        });
-        sendJson(res, 201, result);
-      } catch (err: any) {
-        const status = err.message.includes('already taken') ? 409 : 400;
-        sendJson(res, status, { error: 'PROVISIONING_FAILED', message: err.message });
-      }
+      sendJson(res, 410, {
+        error: 'ROUTE_DEPRECATED',
+        message: 'Tenant provisioning via /internal/tenants has been deleted. Tenant creation must go through the signed /orbitox/lifecycle/provision hook.',
+      });
       return;
     }
 

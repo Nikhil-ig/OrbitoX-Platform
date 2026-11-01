@@ -10,6 +10,7 @@
  * 6. Suspended tenant gets 403 SERVICE_SUSPENDED on writes within 5 seconds.
  */
 
+process.env.NODE_ENV = process.env.NODE_ENV || 'test';
 process.env.RESTAURANTOS_DISABLE_AUTOLISTEN = 'true';
 if (!process.env.DATABASE_URL) {
   if (process.env.CI) {
@@ -23,8 +24,10 @@ import assert from 'node:assert/strict';
 import * as http from 'http';
 import * as crypto from 'crypto';
 import { PrismaClient } from '@prisma/client';
-import { handleRequest, closeRuntimeServer } from '../src/server';
 import { signBridgeRequest, getDefaultBridgeKeys } from '../packages/domain/bridge-auth';
+
+let handleRequest: (req: http.IncomingMessage, res: http.ServerResponse) => Promise<void>;
+let closeRuntimeServer: () => Promise<void>;
 
 const prisma = new PrismaClient();
 const keys = getDefaultBridgeKeys();
@@ -38,6 +41,10 @@ const TEST_PRINCIPAL = { sub: 'platform_orchestrator', scopes: ['tenant:admin', 
 let serverInstance: http.Server;
 
 before(async () => {
+  const serverModule = await import('../src/server');
+  handleRequest = serverModule.handleRequest;
+  closeRuntimeServer = serverModule.closeRuntimeServer;
+
   await new Promise<void>((resolve) => {
     serverInstance = http.createServer(handleRequest);
     serverInstance.listen(0, '127.0.0.1', () => {

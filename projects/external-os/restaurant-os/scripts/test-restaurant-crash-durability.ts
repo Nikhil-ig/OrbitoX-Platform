@@ -13,6 +13,7 @@
  * - Idempotency retries on restarted server prevent duplicate orders or duplicate payment sessions.
  */
 
+process.env.NODE_ENV = process.env.NODE_ENV || 'test';
 process.env.RESTAURANTOS_DISABLE_AUTOLISTEN = 'true';
 if (!process.env.DATABASE_URL) {
   if (process.env.CI) {
