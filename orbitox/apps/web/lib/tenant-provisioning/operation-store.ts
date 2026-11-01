@@ -4,29 +4,102 @@ import { PlatformOperationRecord, OperationStep } from './types';
 // In-memory fallback for JSON / mock test adapter modes
 const memoryOperations = new Map<string, PlatformOperationRecord>();
 
+// Ephemeral single-use secret store with 15-minute TTL (NEVER stored in DB)
+interface EphemeralSecret {
+  secret: string;
+  id?: string;
+  prefix?: string;
+  expiresAt: number;
+}
+
+const oneTimeSecretMap = new Map<string, EphemeralSecret>();
+
+export class OneTimeSecretStore {
+  setOneTimeSecret(
+    operationId: string,
+    secret: string,
+    metadata: { id?: string; prefix?: string } = {}
+  ): void {
+    const expiresAt = Date.now() + 15 * 60 * 1000; // 15 minutes TTL
+    oneTimeSecretMap.set(operationId, {
+      secret,
+      id: metadata.id,
+      prefix: metadata.prefix,
+      expiresAt,
+    });
+  }
+
+  getOneTimeSecret(operationId: string): { secret: string; id?: string; prefix?: string; expiresAt: string } | null {
+    const item = oneTimeSecretMap.get(operationId);
+    if (!item) return null;
+    if (Date.now() > item.expiresAt) {
+      oneTimeSecretMap.delete(operationId);
+      return null;
+    }
+    return {
+      secret: item.secret,
+      id: item.id,
+      prefix: item.prefix,
+      expiresAt: new Date(item.expiresAt).toISOString(),
+    };
+  }
+
+  consumeOneTimeSecret(operationId: string): { secret: string; id?: string; prefix?: string; expiresAt: string } | null {
+    const item = this.getOneTimeSecret(operationId);
+    if (item) {
+      oneTimeSecretMap.delete(operationId);
+    }
+    return item;
+  }
+
+  clear(): void {
+    oneTimeSecretMap.clear();
+  }
+}
+
+export const oneTimeSecretStore = new OneTimeSecretStore();
+
+/**
+ * Sanitizes any result payload so raw API key secrets are NEVER persisted to DB or memory.
+ */
+function sanitizeOperationResult(result: any): any {
+  if (!result || typeof result !== 'object') return result;
+  const clone = { ...result };
+  if (clone.apiKey && typeof clone.apiKey === 'object') {
+    const { secret, rawSecret, ...safeKey } = clone.apiKey;
+    clone.apiKey = safeKey;
+  }
+  return clone;
+}
+
 export class OperationStore {
   async createOperation(op: PlatformOperationRecord): Promise<PlatformOperationRecord> {
-    memoryOperations.set(op.id, { ...op });
+    const sanitizedOp: PlatformOperationRecord = {
+      ...op,
+      result: sanitizeOperationResult(op.result),
+    };
+
+    memoryOperations.set(sanitizedOp.id, { ...sanitizedOp });
 
     if (process.env.ORBITOX_PLATFORM_REPOSITORY !== 'json') {
       try {
         await (prisma as any).platformOperation.create({
           data: {
-            id: op.id,
-            type: op.type,
-            tenantId: op.tenantId,
-            organizationId: op.organizationId,
-            idempotencyKey: op.idempotencyKey,
-            status: op.status,
-            steps: op.steps as any,
-            request: op.request as any,
-            result: op.result as any,
-            error: op.error,
-            operatorId: op.operatorId,
-            requestId: op.requestId,
-            createdAt: new Date(op.createdAt),
-            updatedAt: new Date(op.updatedAt),
-            completedAt: op.completedAt ? new Date(op.completedAt) : null,
+            id: sanitizedOp.id,
+            type: sanitizedOp.type,
+            tenantId: sanitizedOp.tenantId,
+            organizationId: sanitizedOp.organizationId,
+            idempotencyKey: sanitizedOp.idempotencyKey,
+            status: sanitizedOp.status,
+            steps: sanitizedOp.steps as any,
+            request: sanitizedOp.request as any,
+            result: sanitizedOp.result as any,
+            error: sanitizedOp.error,
+            operatorId: sanitizedOp.operatorId,
+            requestId: sanitizedOp.requestId,
+            createdAt: new Date(sanitizedOp.createdAt),
+            updatedAt: new Date(sanitizedOp.updatedAt),
+            completedAt: sanitizedOp.completedAt ? new Date(sanitizedOp.completedAt) : null,
           },
         });
       } catch (err: any) {
@@ -35,7 +108,7 @@ export class OperationStore {
       }
     }
 
-    return op;
+    return sanitizedOp;
   }
 
   async getOperation(id: string): Promise<PlatformOperationRecord | null> {
@@ -68,7 +141,8 @@ export class OperationStore {
       }
     }
 
-    return memoryOperations.get(id) || null;
+    const mem = memoryOperations.get(id);
+    return mem ? JSON.parse(JSON.stringify(mem)) : null;
   }
 
   async getOperationByIdempotencyKey(
@@ -120,9 +194,12 @@ export class OperationStore {
     const existing = await this.getOperation(id);
     if (!existing) return null;
 
+    const sanitizedResult = updates.result !== undefined ? sanitizeOperationResult(updates.result) : existing.result;
+
     const merged: PlatformOperationRecord = {
       ...existing,
       ...updates,
+      result: sanitizedResult,
       updatedAt: new Date().toISOString(),
       ...(updates.status === 'ACTIVE' || updates.status === 'FAILED' || updates.status === 'PARTIAL' || updates.status === 'CANCELLED'
         ? { completedAt: updates.completedAt || new Date().toISOString() }
@@ -138,7 +215,7 @@ export class OperationStore {
           data: {
             ...(updates.status ? { status: updates.status } : {}),
             ...(updates.steps ? { steps: updates.steps as any } : {}),
-            ...(updates.result !== undefined ? { result: updates.result as any } : {}),
+            ...(updates.result !== undefined ? { result: sanitizedResult as any } : {}),
             ...(updates.error !== undefined ? { error: updates.error } : {}),
             updatedAt: new Date(merged.updatedAt),
             ...(merged.completedAt ? { completedAt: new Date(merged.completedAt) } : {}),
