@@ -76,6 +76,7 @@ async function run() {
   const runtimeUrl = process.env.APP_DATABASE_URL || 'postgresql://orbitox_runtime:test_runtime_pass@127.0.0.1:5432/orbitox_phase2';
   const auditUrl = process.env.PLATFORM_AUDIT_DATABASE_URL || 'postgresql://orbitox_platform_admin_audit:test_audit_pass@127.0.0.1:5432/orbitox_phase2';
   const hmsAuditUrl = process.env.HMS_AUDIT_DATABASE_URL || 'postgresql://hms_audit_reader:test_audit_reader_pass@127.0.0.1:5432/orbitox_phase2';
+  const outboxRelayUrl = process.env.OUTBOX_RELAY_DATABASE_URL || 'postgresql://orbitox_outbox_relay:test_relay_pass@127.0.0.1:5432/orbitox_phase2';
 
   const env: NodeJS.ProcessEnv = {
     ...process.env,
@@ -91,6 +92,7 @@ async function run() {
     APP_DATABASE_URL: runtimeUrl,
     PLATFORM_AUDIT_DATABASE_URL: auditUrl,
     HMS_AUDIT_DATABASE_URL: hmsAuditUrl,
+    OUTBOX_RELAY_DATABASE_URL: outboxRelayUrl,
     ORBITOX_ENABLE_HOSPITAL_ADMIN_ENDPOINTS: 'true',
     ORBITOX_PLATFORM_REPOSITORY: 'prisma',
     RESTAURANTOS_PUBLIC_URL: 'https://restaurant.orbitox.internal',
@@ -203,6 +205,7 @@ async function run() {
   const publicRoutes = new Set([
     '/api/health',
     '/api/v1/openapi.json',
+    '/api/v1/platform/grant-keys',
     '/api/restaurant/qr/7Kp9xQ8m2L',
     '/api/restaurant/sessions/join',
     '/api/restaurant/menu',
@@ -226,10 +229,13 @@ async function run() {
 
     for (const method of methods) {
       const isPublic = publicRoutes.has(urlPath);
+      const isWebhook = urlPath.startsWith('/api/v1/billing/webhook');
       const isRestaurantRedirect = urlPath.startsWith('/api/restaurant/') || urlPath.startsWith('/api/v1/restaurant/');
       const expectedDesc = isPublic
         ? (isRestaurantRedirect ? '308 Redirect' : '200 / 2xx')
-        : '401 / 403 / 404';
+        : isWebhook
+          ? '400 / 401 / 403'
+          : '401 / 403 / 404';
       const isSessionsJoin = urlPath === '/api/restaurant/sessions/join';
 
       try {
@@ -254,6 +260,8 @@ async function run() {
         let isPass = false;
         if (isPublic) {
           isPass = (status >= 200 && status < 300) || status === 308 || (isRestaurantRedirect && (status === 404 || status === 422 || status === 503));
+        } else if (isWebhook) {
+          isPass = status === 400 || status === 401 || status === 403;
         } else {
           isPass = status === 401 || status === 403 || status === 404;
         }
@@ -261,16 +269,18 @@ async function run() {
         if (isPass) passed++;
         else failed++;
 
-        const guardType = urlPath.startsWith('/api/v1/admin/') ||
-          urlPath.startsWith('/api/v1/platform/') ||
-          urlPath.startsWith('/api/v1/projects/') ||
-          urlPath.startsWith('/api/v1/system/') ||
-          urlPath.startsWith('/api/v1/fleet/') ||
-          urlPath.startsWith('/api/v1/overview/')
-          ? 'Middleware Control-Plane'
-          : isPublic
-            ? 'Explicit Public Route'
-            : 'Route Self-Guarded (withApiGuard)';
+        const guardType = isPublic
+          ? 'Explicit Public Route'
+          : isWebhook
+            ? 'Webhook Signature Guard'
+            : urlPath.startsWith('/api/v1/admin/') ||
+              urlPath.startsWith('/api/v1/platform/') ||
+              urlPath.startsWith('/api/v1/projects/') ||
+              urlPath.startsWith('/api/v1/system/') ||
+              urlPath.startsWith('/api/v1/fleet/') ||
+              urlPath.startsWith('/api/v1/overview/')
+              ? 'Middleware Control-Plane'
+              : 'Route Self-Guarded (withApiGuard)';
 
         console.log(
           `| \`${relFile}\` | **${method}** | \`${urlPath}\` | **${status}** | ${expectedDesc} | ${isPass ? 'PASS' : 'FAIL'} | ${guardType} |`
