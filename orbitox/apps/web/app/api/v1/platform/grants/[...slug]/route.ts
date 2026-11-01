@@ -50,8 +50,15 @@ export async function GET(
 ) {
   const params = props?.params ?? Promise.resolve({ slug: [] });
   try {
-    // 1. Authorize caller: Signed bridge calls only (C2)
-    const bridgeKeys = getDefaultBridgeKeys();
+    let bridgeKeys;
+    try {
+      bridgeKeys = getDefaultBridgeKeys();
+    } catch (keyErr: any) {
+      return NextResponse.json(
+        { success: false, error: 'UNAUTHORIZED', code: 'BRIDGE_SIGNATURE_REQUIRED', message: `Bridge key configuration error: ${keyErr?.message || keyErr}` },
+        { status: 401 }
+      );
+    }
     const url = new URL(req.url);
     const pathWithQuery = url.pathname + url.search;
     const bodyText = await req.clone().text();

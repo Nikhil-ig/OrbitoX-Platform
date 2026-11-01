@@ -12,11 +12,33 @@ export async function POST(
   req: NextRequest,
   props: { params: Promise<{ action: string }> }
 ) {
-  const { action } = await props.params;
-  const bridgeKeys = getDefaultBridgeKeys();
+  let action: string;
+  try {
+    const resolvedParams = await props.params;
+    action = resolvedParams.action;
+  } catch {
+    return NextResponse.json(
+      { error: 'BAD_REQUEST', message: 'Missing or invalid route action parameter' },
+      { status: 400 }
+    );
+  }
+
+  let bridgeKeys;
+  try {
+    bridgeKeys = getDefaultBridgeKeys();
+  } catch (keyErr: any) {
+    return NextResponse.json(
+      { error: 'UNAUTHORIZED', code: 'BRIDGE_SIGNATURE_REQUIRED', message: `Bridge key configuration error: ${keyErr?.message || keyErr}` },
+      { status: 401 }
+    );
+  }
+
   const url = new URL(req.url);
   const pathWithQuery = url.pathname + url.search;
-  const bodyText = await req.clone().text();
+  let bodyText = '';
+  try {
+    bodyText = await req.clone().text();
+  } catch {}
 
   const headersObj: Record<string, string> = {};
   req.headers.forEach((v, k) => {
@@ -24,12 +46,20 @@ export async function POST(
   });
 
   // 1. Verify cryptographic bridge signature
-  const verified = await verifyBridgeRequest(bridgeKeys, bridgeNonceStore, {
-    method: req.method,
-    pathWithQuery,
-    headers: headersObj,
-    rawBody: bodyText,
-  });
+  let verified;
+  try {
+    verified = await verifyBridgeRequest(bridgeKeys, bridgeNonceStore, {
+      method: req.method,
+      pathWithQuery,
+      headers: headersObj,
+      rawBody: bodyText,
+    });
+  } catch (verifyErr: any) {
+    return NextResponse.json(
+      { error: 'UNAUTHORIZED', code: 'BRIDGE_SIGNATURE_REQUIRED', message: `Bridge signature verification error: ${verifyErr?.message || verifyErr}` },
+      { status: 401 }
+    );
+  }
 
   if (!verified.ok) {
     return NextResponse.json(

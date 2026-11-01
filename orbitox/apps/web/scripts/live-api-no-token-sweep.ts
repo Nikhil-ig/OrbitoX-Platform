@@ -117,7 +117,10 @@ async function run() {
     ORBITOX_PHI_ACTIVE_KID: 'k1',
     ORBITOX_PHI_INDEX_KEY: crypto.randomBytes(32).toString('base64'),
     ORBITOX_BRIDGE_KEYS: JSON.stringify({
-      k1: crypto.randomBytes(32).toString('hex'),
+      activeKeyId: 'k1',
+      keys: {
+        k1: crypto.randomBytes(32).toString('hex'),
+      },
     }),
     ORBITOX_BRIDGE_ACTIVE_KID: 'k1',
   };

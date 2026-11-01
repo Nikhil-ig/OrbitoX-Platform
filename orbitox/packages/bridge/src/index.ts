@@ -212,24 +212,34 @@ export function getDefaultBridgeKeys(): BridgeKeys {
     } catch {
       throw new Error('Production ORBITOX_BRIDGE_KEYS contains malformed JSON.');
     }
-    if (!parsed || typeof parsed !== 'object' || typeof parsed.activeKeyId !== 'string' || !parsed.activeKeyId) {
+    if (!parsed || typeof parsed !== 'object') {
+      throw new Error('Production ORBITOX_BRIDGE_KEYS must contain a JSON object.');
+    }
+
+    const keysMap = parsed.keys && typeof parsed.keys === 'object' ? parsed.keys : parsed;
+    const activeKeyId =
+      (typeof parsed.activeKeyId === 'string' && parsed.activeKeyId) ||
+      (typeof process.env.ORBITOX_BRIDGE_ACTIVE_KID === 'string' && process.env.ORBITOX_BRIDGE_ACTIVE_KID) ||
+      (keysMap ? Object.keys(keysMap)[0] : undefined);
+
+    if (!activeKeyId || typeof activeKeyId !== 'string') {
       throw new Error('Production ORBITOX_BRIDGE_KEYS must contain a valid activeKeyId string.');
     }
-    if (!parsed.keys || typeof parsed.keys !== 'object') {
+    if (!keysMap || typeof keysMap !== 'object' || Object.keys(keysMap).length === 0) {
       throw new Error('Production ORBITOX_BRIDGE_KEYS must contain a keys map.');
     }
-    const activeSecret = parsed.keys[parsed.activeKeyId];
+    const activeSecret = keysMap[activeKeyId];
     if (typeof activeSecret !== 'string' || Buffer.byteLength(activeSecret, 'utf8') < 32) {
-      throw new Error(`Production active bridge key "${parsed.activeKeyId}" must be at least 32 bytes.`);
+      throw new Error(`Production active bridge key "${activeKeyId}" must be at least 32 bytes.`);
     }
-    for (const [kid, sec] of Object.entries(parsed.keys)) {
+    for (const [kid, sec] of Object.entries(keysMap)) {
       if (typeof sec !== 'string' || Buffer.byteLength(sec, 'utf8') < 32) {
         throw new Error(`Production bridge key "${kid}" must be at least 32 bytes.`);
       }
     }
     return {
-      activeKeyId: parsed.activeKeyId,
-      keys: { ...parsed.keys },
+      activeKeyId,
+      keys: { ...keysMap },
     };
   }
 
@@ -237,17 +247,18 @@ export function getDefaultBridgeKeys(): BridgeKeys {
   if (rawEnv && rawEnv.trim()) {
     try {
       const parsed = JSON.parse(rawEnv);
-      if (
-        parsed &&
-        typeof parsed.activeKeyId === 'string' &&
-        parsed.keys &&
-        typeof parsed.keys === 'object' &&
-        parsed.keys[parsed.activeKeyId]
-      ) {
-        return {
-          activeKeyId: parsed.activeKeyId,
-          keys: { ...parsed.keys },
-        };
+      if (parsed && typeof parsed === 'object') {
+        const keysMap = parsed.keys && typeof parsed.keys === 'object' ? parsed.keys : parsed;
+        const activeKeyId =
+          (typeof parsed.activeKeyId === 'string' && parsed.activeKeyId) ||
+          (typeof process.env.ORBITOX_BRIDGE_ACTIVE_KID === 'string' && process.env.ORBITOX_BRIDGE_ACTIVE_KID) ||
+          Object.keys(keysMap)[0];
+        if (activeKeyId && keysMap[activeKeyId]) {
+          return {
+            activeKeyId,
+            keys: { ...keysMap },
+          };
+        }
       }
     } catch {}
   }
