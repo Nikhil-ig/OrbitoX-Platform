@@ -2131,5 +2131,26 @@ model TenantOutbox {
   @@id([tenantId, seq])
 }
 
+model BillingWebhookEvent {
+  eventId     String    @id
+  provider    String    @default("razorpay")
+  receivedAt  DateTime  @default(now())
+  payload     Json
+  processedAt DateTime?
+  result      Json?
+
+  @@index([provider, receivedAt])
+}
+
+model PluginGrantRevision {
+  tenantId        String
+  pluginId        String
+  highestRevision Int      @default(0)
+  updatedAt       DateTime @default(now()) @updatedAt
+
+  @@id([tenantId, pluginId])
+  @@index([tenantId])
+}
+
 
 

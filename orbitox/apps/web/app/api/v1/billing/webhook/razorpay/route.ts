@@ -33,18 +33,7 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // 2. Idempotent processing check
-    if (webhookLedger.has(eventId)) {
-      return NextResponse.json({
-        success: true,
-        received: true,
-        duplicate: true,
-        eventId,
-        message: 'Event already processed idempotently.',
-      });
-    }
-
-    // 3. Extract tenantId, pluginId, and planId
+    // 2. Extract tenantId, pluginId, and planId
     const entity = event.payload?.subscription?.entity || event.payload?.payment?.entity || event.payload || {};
     const notes = entity.notes || event.notes || {};
     const tenantId = notes.tenantId || event.tenantId;
@@ -52,9 +41,15 @@ export async function POST(req: NextRequest) {
     const planId = notes.planId || entity.plan_id || event.planId;
 
     if (!tenantId) {
-      // Record raw event and return ok (e.g. unassociated system event)
+      // Record raw event without tenant binding
+      const result = await platformRepository.processBillingWebhookEvent({
+        eventId,
+        provider: 'razorpay',
+        rawPayload: event,
+        eventType: event.event || '',
+      });
       webhookLedger.set(eventId, { eventId, processedAt: new Date().toISOString(), payload: event });
-      return NextResponse.json({ success: true, processed: false, reason: 'NO_TENANT_BOUND' });
+      return NextResponse.json({ success: true, processed: false, reason: 'NO_TENANT_BOUND', duplicate: result.duplicate });
     }
 
     if (!pluginId && planId) {
@@ -66,7 +61,7 @@ export async function POST(req: NextRequest) {
     }
     const canonicalPlugin = canonicalizePluginId(pluginId || '@orbitox/hms');
 
-    // 4. State transition mapping
+    // 3. State transition mapping
     const eventType = event.event || '';
     const installation = await platformRepository.getPluginInstallation(tenantId, canonicalPlugin);
     let newStatus: string | undefined;
@@ -107,17 +102,29 @@ export async function POST(req: NextRequest) {
       newStatus = 'SUSPENDED';
     }
 
-    // 5. Apply state transition through entitlement engine
-    let updatedInstallation = installation;
-    if (newStatus && installation && installation.status !== newStatus) {
-      updatedInstallation = await platformRepository.updatePluginInstallationStatus(
-        tenantId,
-        canonicalPlugin,
-        newStatus
-      );
+    // 4. Atomic transactional execution: INSERT ... ON CONFLICT DO NOTHING + entitlement change
+    const result = await platformRepository.processBillingWebhookEvent({
+      eventId,
+      provider: 'razorpay',
+      rawPayload: event,
+      tenantId,
+      pluginId: canonicalPlugin,
+      planId,
+      eventType,
+      newStatus,
+    });
+
+    if (result.duplicate) {
+      return NextResponse.json({
+        success: true,
+        received: true,
+        duplicate: true,
+        eventId,
+        message: 'Event already processed idempotently.',
+      });
     }
 
-    // 6. Record raw event in webhook ledger
+    // 5. Mirror to in-memory ledger for backward compatibility
     webhookLedger.set(eventId, {
       eventId,
       processedAt: new Date().toISOString(),
@@ -129,9 +136,9 @@ export async function POST(req: NextRequest) {
       eventId,
       tenantId,
       pluginId: canonicalPlugin,
-      previousStatus: installation?.status,
-      currentStatus: updatedInstallation?.status || installation?.status,
-      entitlementRevision: updatedInstallation?.entitlementRevision || installation?.entitlementRevision,
+      previousStatus: result.previousStatus || installation?.status,
+      currentStatus: result.currentStatus || installation?.status,
+      entitlementRevision: result.entitlementRevision || installation?.entitlementRevision,
     });
   } catch (err: any) {
     return NextResponse.json({ success: false, error: err.message }, { status: 500 });

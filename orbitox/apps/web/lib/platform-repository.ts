@@ -32,6 +32,9 @@ import {
     SEED_PLANS,
     assertValidInstallationTransition,
     InvalidStateTransitionError,
+    BillingWebhookEventRecord,
+    ProcessBillingWebhookInput,
+    ProcessBillingWebhookResult,
 } from '@orbitox-io/plugin-engine';
 import { TENANT_RE } from '@orbitox-io/bridge';
 import { loadPepperRing, activeVerifier, candidateVerifiers } from './pepper';
@@ -139,6 +142,7 @@ export type AsyncPlatformRepository = AsyncMethods<typeof PlatformRepository> & 
     getPluginInstallation(tenantId: string, pluginId: string): Promise<PluginInstallationRecord | undefined>;
     provisionPluginInstallation(input: ProvisionPluginInstallationInput): Promise<PluginInstallationRecord>;
     updatePluginInstallationStatus(tenantId: string, pluginId: string, status: PluginInstallationStatus | string): Promise<PluginInstallationRecord>;
+    processBillingWebhookEvent(input: ProcessBillingWebhookInput): Promise<ProcessBillingWebhookResult>;
     uninstallPluginInstallation(tenantId: string, pluginId: string): Promise<PluginInstallationRecord>;
     reactivatePluginInstallation(
         tenantId: string,
@@ -1632,6 +1636,107 @@ export function createPrismaPlatformRepository(
                 return toPluginInstallation(row);
             });
         },
+        async processBillingWebhookEvent(input: ProcessBillingWebhookInput): Promise<ProcessBillingWebhookResult> {
+            const eventId = input.eventId;
+            const provider = input.provider || 'razorpay';
+            const canonicalPlugin = input.pluginId ? canonicalizePluginId(input.pluginId) : undefined;
+            const tenantId = input.tenantId;
+
+            return await client.$transaction(async (tx) => {
+                // 1. Transactional atomic INSERT ... ON CONFLICT DO NOTHING (idempotency barrier)
+                const insertCount = await tx.$executeRawUnsafe(
+                    `INSERT INTO "BillingWebhookEvent" ("eventId", "provider", "receivedAt", "payload")
+                     VALUES ($1, $2, NOW(), $3::jsonb)
+                     ON CONFLICT ("eventId") DO NOTHING`,
+                    eventId,
+                    provider,
+                    JSON.stringify(input.rawPayload)
+                );
+
+                if (insertCount === 0) {
+                    return { duplicate: true, eventId };
+                }
+
+                // 2. Entitlement change inside same transaction
+                let updatedInstallation: any = null;
+                let previousStatus: string | undefined;
+
+                if (tenantId && canonicalPlugin) {
+                    const existing = await tx.pluginInstallation.findFirst({
+                        where: {
+                            tenantId,
+                            OR: [
+                                { pluginId: canonicalPlugin },
+                                { pluginId: input.pluginId },
+                                { pluginId: canonicalPlugin.replace(/^@orbitox\//, '') },
+                            ],
+                        },
+                    });
+
+                    if (existing) {
+                        previousStatus = existing.status;
+                        if (input.newStatus && existing.status !== input.newStatus) {
+                            assertValidInstallationTransition(existing.status, String(input.newStatus), false);
+                            const row = await tx.pluginInstallation.update({
+                                where: { id: existing.id },
+                                data: {
+                                    status: input.newStatus as any,
+                                    entitlementRevision: { increment: 1 },
+                                },
+                            });
+
+                            await tx.$queryRaw`SELECT set_config('app.current_tenant_id', ${tenantId}, true)`;
+                            await tx.platformOutboxMessage.create({
+                                data: {
+                                    id: `outbox_${crypto.randomUUID()}`,
+                                    tenantId,
+                                    eventType: 'entitlement.updated',
+                                    aggregateType: 'PluginInstallation',
+                                    aggregateId: row.id,
+                                    payload: {
+                                        tenantId,
+                                        pluginId: canonicalPlugin,
+                                        runtimeTenantId: row.runtimeTenantId,
+                                        status: row.status,
+                                        planId: row.planId,
+                                        entitlementRevision: row.entitlementRevision,
+                                        updatedAt: new Date().toISOString(),
+                                    },
+                                    status: 'PENDING',
+                                    retryCount: 0,
+                                },
+                            });
+                            updatedInstallation = row;
+                        } else {
+                            updatedInstallation = existing;
+                        }
+                    }
+                }
+
+                // 3. Update processedAt and result in BillingWebhookEvent
+                const resultData = {
+                    previousStatus,
+                    currentStatus: updatedInstallation?.status || previousStatus,
+                    entitlementRevision: updatedInstallation?.entitlementRevision,
+                };
+
+                await tx.$executeRawUnsafe(
+                    `UPDATE "BillingWebhookEvent"
+                     SET "processedAt" = NOW(), "result" = $2::jsonb
+                     WHERE "eventId" = $1`,
+                    eventId,
+                    JSON.stringify(resultData)
+                );
+
+                return {
+                    duplicate: false,
+                    eventId,
+                    previousStatus,
+                    currentStatus: updatedInstallation?.status || previousStatus,
+                    entitlementRevision: updatedInstallation?.entitlementRevision,
+                };
+            });
+        },
         async uninstallPluginInstallation(
             tenantId: string,
             pluginId: string
@@ -2498,6 +2603,10 @@ const extraMethods = {
     ): Promise<PluginInstallationRecord> => {
         if (prismaIsRequired()) return getPrismaRepository().updatePluginInstallationStatus(tenantId, pluginId, status);
         return PlatformRepository.updatePluginInstallationStatus(tenantId, pluginId, status);
+    },
+    processBillingWebhookEvent: async (input: ProcessBillingWebhookInput): Promise<ProcessBillingWebhookResult> => {
+        if (prismaIsRequired()) return getPrismaRepository().processBillingWebhookEvent(input);
+        return PlatformRepository.processBillingWebhookEvent(input);
     },
     uninstallPluginInstallation: async (
         tenantId: string,

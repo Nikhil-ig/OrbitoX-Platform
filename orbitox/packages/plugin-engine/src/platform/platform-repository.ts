@@ -46,6 +46,34 @@ export interface PlatformOutboxRecord {
   dispatchedAt?: string;
 }
 
+export interface BillingWebhookEventRecord {
+  eventId: string;
+  provider: string;
+  receivedAt: string;
+  payload: any;
+  processedAt?: string | null;
+  result?: any;
+}
+
+export interface ProcessBillingWebhookInput {
+  eventId: string;
+  provider?: string;
+  rawPayload: any;
+  tenantId?: string;
+  pluginId?: string;
+  planId?: string;
+  eventType: string;
+  newStatus?: string;
+}
+
+export interface ProcessBillingWebhookResult {
+  duplicate: boolean;
+  eventId: string;
+  previousStatus?: string;
+  currentStatus?: string;
+  entitlementRevision?: number;
+}
+
 export const PLAN_DEFAULT_QUOTAS: Record<string, number> = {
   starter: 100000,
   growth: 1000000,
@@ -164,6 +192,7 @@ export class PlatformRepository {
   private static quotaPolicies: EnvironmentQuotaPolicyRecord[] = [];
   private static rateLimitPolicies: EnvironmentRateLimitPolicyRecord[] = [];
   private static auditLogs: Array<Record<string, any>> = [];
+  private static billingWebhookEvents: Map<string, BillingWebhookEventRecord> = new Map();
 
   private static initialized = false;
   private static initializing = false;
@@ -1528,6 +1557,61 @@ export class PlatformRepository {
 
     this.saveDebounced();
     return updated;
+  }
+
+  static processBillingWebhookEvent(input: ProcessBillingWebhookInput): ProcessBillingWebhookResult {
+    this.initialize();
+    const eventId = input.eventId;
+    const provider = input.provider || 'razorpay';
+    if (this.billingWebhookEvents.has(eventId)) {
+      return { duplicate: true, eventId };
+    }
+
+    let updatedInstallation: PluginInstallationRecord | undefined;
+    let previousStatus: string | undefined;
+
+    if (input.tenantId && input.pluginId) {
+      const canonical = canonicalizePluginId(input.pluginId);
+      const existing = this.getPluginInstallation(input.tenantId, canonical);
+      if (existing) {
+        previousStatus = existing.status;
+        if (input.newStatus && existing.status !== input.newStatus) {
+          updatedInstallation = this.updatePluginInstallationStatus(input.tenantId, canonical, input.newStatus);
+        } else {
+          updatedInstallation = existing;
+        }
+      }
+    }
+
+    const resultData = {
+      previousStatus,
+      currentStatus: updatedInstallation?.status || previousStatus,
+      entitlementRevision: updatedInstallation?.entitlementRevision,
+    };
+
+    const record: BillingWebhookEventRecord = {
+      eventId,
+      provider,
+      receivedAt: new Date().toISOString(),
+      payload: input.rawPayload,
+      processedAt: new Date().toISOString(),
+      result: resultData,
+    };
+    this.billingWebhookEvents.set(eventId, record);
+    this.saveDebounced();
+
+    return {
+      duplicate: false,
+      eventId,
+      previousStatus,
+      currentStatus: updatedInstallation?.status || previousStatus,
+      entitlementRevision: updatedInstallation?.entitlementRevision,
+    };
+  }
+
+  static getBillingWebhookEvent(eventId: string): BillingWebhookEventRecord | undefined {
+    this.initialize();
+    return this.billingWebhookEvents.get(eventId);
   }
 
   static reactivatePluginInstallation(
