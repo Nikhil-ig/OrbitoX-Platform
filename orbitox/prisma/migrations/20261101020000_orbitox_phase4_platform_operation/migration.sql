@@ -1,8 +1,7 @@
 -- Migration 20261101020000_orbitox_phase4_platform_operation
 -- Durable operation tracking for Phase 4 2-minute tenant provisioning sagas
 
--- CreateTable
-CREATE TABLE "PlatformOperation" (
+CREATE TABLE IF NOT EXISTS "PlatformOperation" (
     "id" TEXT NOT NULL,
     "type" TEXT NOT NULL DEFAULT 'TENANT_PROVISION',
     "tenantId" TEXT NOT NULL,
@@ -16,23 +15,16 @@ CREATE TABLE "PlatformOperation" (
     "operatorId" TEXT,
     "requestId" TEXT,
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    "updatedAt" TIMESTAMP(3) NOT NULL,
+    "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "completedAt" TIMESTAMP(3),
 
     CONSTRAINT "PlatformOperation_pkey" PRIMARY KEY ("id")
 );
 
--- CreateIndex
-CREATE INDEX "PlatformOperation_organizationId_idx" ON "PlatformOperation"("organizationId");
-
--- CreateIndex
-CREATE INDEX "PlatformOperation_tenantId_idx" ON "PlatformOperation"("tenantId");
-
--- CreateIndex
-CREATE INDEX "PlatformOperation_status_idx" ON "PlatformOperation"("status");
-
--- CreateIndex
-CREATE UNIQUE INDEX "PlatformOperation_organizationId_idempotencyKey_key" ON "PlatformOperation"("organizationId", "idempotencyKey");
+CREATE INDEX IF NOT EXISTS "PlatformOperation_organizationId_idx" ON "PlatformOperation"("organizationId");
+CREATE INDEX IF NOT EXISTS "PlatformOperation_tenantId_idx" ON "PlatformOperation"("tenantId");
+CREATE INDEX IF NOT EXISTS "PlatformOperation_status_idx" ON "PlatformOperation"("status");
+CREATE UNIQUE INDEX IF NOT EXISTS "PlatformOperation_org_idempotency_idx" ON "PlatformOperation"("organizationId", "idempotencyKey") WHERE "idempotencyKey" IS NOT NULL;
 
 -- Restricted grants on PlatformOperation for orbitox_runtime and orbitox_maintenance
 DO $$
