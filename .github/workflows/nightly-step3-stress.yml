@@ -57,16 +57,19 @@ jobs:
         env:
           NEXT_TELEMETRY_DISABLED: "1"
           ORBITOX_SERVER_PEPPER: "nightly-stress-pepper-32-chars-min"
+          OUTBOX_RELAY_DATABASE_URL: postgresql://orbitox_outbox_relay:phase2-relay-nightly-${{ github.run_id }}@127.0.0.1:5432/orbitox_phase2
       - name: Apply migrations and configure roles
         run: |
           pnpm exec prisma generate --schema prisma/schema.prisma
           pnpm exec prisma migrate deploy --schema prisma/schema.prisma
-          PGPASSWORD=postgrespassword psql "$DATABASE_URL" -v app_role_password="$APP_DB_PASSWORD" -v maintenance_role_password="$MAINTENANCE_DB_PASSWORD" -v platform_admin_audit_password="$PLATFORM_ADMIN_AUDIT_DB_PASSWORD" -f scripts/configure-step1-runtime-role.sql
+          PGPASSWORD=postgrespassword psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -v app_role_password="$APP_DB_PASSWORD" -v maintenance_role_password="$MAINTENANCE_DB_PASSWORD" -v platform_admin_audit_password="$PLATFORM_ADMIN_AUDIT_DB_PASSWORD" -v hms_audit_reader_password="$HMS_AUDIT_DB_PASSWORD" -v outbox_relay_password="$OUTBOX_RELAY_DB_PASSWORD" -f scripts/configure-step1-runtime-role.sql
         env:
           DATABASE_URL: postgresql://postgres:postgrespassword@127.0.0.1:5432/orbitox_phase2
           APP_DB_PASSWORD: phase2-nightly-${{ github.run_id }}
           MAINTENANCE_DB_PASSWORD: phase2-maint-nightly-${{ github.run_id }}
           PLATFORM_ADMIN_AUDIT_DB_PASSWORD: phase2-audit-nightly-${{ github.run_id }}
+          HMS_AUDIT_DB_PASSWORD: phase2-auditreader-nightly-${{ github.run_id }}
+          OUTBOX_RELAY_DB_PASSWORD: phase2-relay-nightly-${{ github.run_id }}
       - name: Execute 200-Iteration Step 3 Resilience Stress Harness
         run: pnpm --filter web test:step3-resilience
         env:
@@ -78,3 +81,4 @@ jobs:
           APP_DATABASE_URL: postgresql://orbitox_runtime:phase2-nightly-${{ github.run_id }}@127.0.0.1:5432/orbitox_phase2
           PLATFORM_AUDIT_DATABASE_URL: postgresql://orbitox_platform_admin_audit:phase2-audit-nightly-${{ github.run_id }}@127.0.0.1:5432/orbitox_phase2
           MAINTENANCE_DATABASE_URL: postgresql://orbitox_maintenance:phase2-maint-nightly-${{ github.run_id }}@127.0.0.1:5432/orbitox_phase2
+          OUTBOX_RELAY_DATABASE_URL: postgresql://orbitox_outbox_relay:phase2-relay-nightly-${{ github.run_id }}@127.0.0.1:5432/orbitox_phase2

@@ -55,7 +55,6 @@ const globalTableAllowlist = new Set([
   'CelebrationFeatureDefinition',
   'CelebrationPricingPlan',
   'PlatformIdempotencyRecord',
-  'PlatformOutboxMessage',
   'PlatformOrganization',
   'PlatformProject',
   'ProjectEnvironment',
@@ -103,6 +102,24 @@ async function main(): Promise<void> {
   assert.equal(roles[0]?.is_superuser, false);
   assert.equal(roles[0]?.bypass_rls, false);
   assert.equal(roles[0]?.can_login, true);
+
+  const relayRoles = await runtime.$queryRaw<
+    Array<{
+      role_name: string;
+      is_superuser: boolean;
+      bypass_rls: boolean;
+      can_login: boolean;
+    }>
+  >`
+    SELECT rolname AS role_name, rolsuper AS is_superuser, rolbypassrls AS bypass_rls, rolcanlogin AS can_login
+    FROM pg_roles WHERE rolname = 'orbitox_outbox_relay'
+  `;
+  if (relayRoles.length > 0) {
+    assert.equal(relayRoles[0]?.is_superuser, false, 'orbitox_outbox_relay must not be superuser');
+    assert.equal(relayRoles[0]?.bypass_rls, false, 'orbitox_outbox_relay must not bypass RLS');
+    assert.equal(relayRoles[0]?.can_login, true, 'orbitox_outbox_relay must be able to login');
+    pass('orbitox_outbox_relay role is restricted: rolsuper=false, rolbypassrls=false, rolcanlogin=true');
+  }
 
   const tableInventory = await runtime.$queryRaw<
     Array<{

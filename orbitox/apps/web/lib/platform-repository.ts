@@ -176,6 +176,7 @@ export type AsyncPlatformRepository = AsyncMethods<typeof PlatformRepository> & 
         id: string,
         updates: { status?: 'PENDING' | 'DISPATCHED' | 'FAILED'; retryCount?: number; lastError?: string; dispatchedAt?: Date }
     ): Promise<void>;
+    getOutboxRelayCurrentUser?(): Promise<string>;
 };
 
 type DatabaseClient = PrismaClient;
@@ -2198,6 +2199,10 @@ export function createPrismaPlatformRepository(
                 },
             });
         },
+        async getOutboxRelayCurrentUser(): Promise<string> {
+            const rows = await outboxRelayClient.$queryRaw<Array<{ current_user: string }>>`SELECT current_user`;
+            return rows[0]?.current_user || '';
+        },
         async recordOutboxMessage(input: {
             tenantId: string;
             eventType: string;
@@ -2577,6 +2582,10 @@ const extraMethods = {
     updateOutboxMessage: async (id: string, updates: any): Promise<void> => {
         if (prismaIsRequired()) return getPrismaRepository().updateOutboxMessage(id, updates);
         return PlatformRepository.updateOutboxMessage(id, updates);
+    },
+    getOutboxRelayCurrentUser: async (): Promise<string> => {
+        if (prismaIsRequired()) return getPrismaRepository().getOutboxRelayCurrentUser();
+        return 'orbitox_outbox_relay';
     },
     incrementProjectUsage: async (projectId: string, amount = 1): Promise<number> => {
         if (prismaIsRequired()) return getPrismaRepository().incrementProjectUsage(projectId, amount);

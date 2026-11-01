@@ -28,7 +28,7 @@ import { platformRepository } from '../lib/platform-repository';
 Reflect.set(process.env, 'NODE_ENV', 'test');
 process.env.ORBITOX_PLATFORM_REPOSITORY = 'json';
 
-const databaseUrl = process.env.DATABASE_URL || 'postgresql://apple@localhost:5432/restaurant_os';
+const databaseUrl = process.env.RESTAURANT_DATABASE_URL || (process.env.DATABASE_URL && process.env.DATABASE_URL.includes('restaurant') ? process.env.DATABASE_URL : 'postgresql://apple@localhost:5432/restaurant_os');
 const pool = new Pool({ connectionString: databaseUrl });
 
 let restaurantProcess: ChildProcess | null = null;

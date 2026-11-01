@@ -1,5 +1,6 @@
 process.env.APP_DATABASE_URL = process.env.APP_DATABASE_URL || 'postgresql://orbitox_runtime@127.0.0.1:5432/orbitox_phase2';
 process.env.PLATFORM_AUDIT_DATABASE_URL = process.env.PLATFORM_AUDIT_DATABASE_URL || 'postgresql://orbitox_platform_admin_audit@127.0.0.1:5432/orbitox_phase2';
+process.env.OUTBOX_RELAY_DATABASE_URL = process.env.OUTBOX_RELAY_DATABASE_URL || 'postgresql://orbitox_outbox_relay@127.0.0.1:5432/orbitox_phase2';
 if (!process.env.DATABASE_URL) {
   process.env.DATABASE_URL = process.env.APP_DATABASE_URL;
 }
@@ -402,6 +403,11 @@ describe('Phase 3 Parts A–C: Rights, Licensing & Entitlement Engine', () => {
     });
 
     it('outbox relay role can list and update outbox messages', async () => {
+      if (platformRepository.isPrismaBacked()) {
+        const currentUser = await platformRepository.getOutboxRelayCurrentUser?.();
+        assert.strictEqual(currentUser, 'orbitox_outbox_relay', 'Existing test must run queries as orbitox_outbox_relay role');
+      }
+
       const msg = await platformRepository.recordOutboxMessage({
         tenantId: `org/test-org-phase3/project/outbox-relay-test/environment/production`,
         eventType: 'entitlement.test',
@@ -425,6 +431,252 @@ describe('Phase 3 Parts A–C: Rights, Licensing & Entitlement Engine', () => {
       const updated = updatedList.find((m: any) => m.id === msg.id);
       assert.ok(updated, 'Outbox message status should be DISPATCHED');
       assert.ok(updated.dispatchedAt, 'Dispatched timestamp should be set');
+    });
+
+    it('PostgreSQL RLS: runtime with tenant A set sees only A outbox rows, and sees 0 rows with no tenant set', async () => {
+      if (!platformRepository.isPrismaBacked()) return;
+
+      const ownerUrl = process.env.TEST_OWNER_DATABASE_URL || process.env.TEST_DATABASE_URL || (process.env.DATABASE_URL && process.env.DATABASE_URL.includes('postgres:') ? process.env.DATABASE_URL : undefined) || 'postgresql://postgres:postgrespassword@127.0.0.1:5432/orbitox_phase2';
+      const runtimeUrl = process.env.APP_DATABASE_URL || 'postgresql://orbitox_runtime@127.0.0.1:5432/orbitox_phase2';
+
+      const ownerPrisma = new PrismaClient({ datasources: { db: { url: ownerUrl } } });
+      const runtimePrisma = new PrismaClient({ datasources: { db: { url: runtimeUrl } } });
+
+      const tenantA = `org/test-org-phase3/project/rls-tenant-a-${Date.now()}/environment/production`;
+      const tenantB = `org/test-org-phase3/project/rls-tenant-b-${Date.now()}/environment/production`;
+      const idA = `outbox_rls_a_${crypto.randomUUID()}`;
+      const idB = `outbox_rls_b_${crypto.randomUUID()}`;
+
+      try {
+        await ownerPrisma.platformOutboxMessage.createMany({
+          data: [
+            {
+              id: idA,
+              tenantId: tenantA,
+              eventType: 'rls.test.a',
+              aggregateType: 'PluginInstallation',
+              aggregateId: 'agg-a',
+              payload: { tenant: 'A' },
+              status: 'PENDING',
+              retryCount: 0,
+            },
+            {
+              id: idB,
+              tenantId: tenantB,
+              eventType: 'rls.test.b',
+              aggregateType: 'PluginInstallation',
+              aggregateId: 'agg-b',
+              payload: { tenant: 'B' },
+              status: 'PENDING',
+              retryCount: 0,
+            },
+          ],
+        });
+
+        // 1. With NO tenant set: runtime sees 0 rows
+        const noTenantRows = await runtimePrisma.platformOutboxMessage.findMany({
+          where: { id: { in: [idA, idB] } },
+        });
+        assert.strictEqual(noTenantRows.length, 0, 'orbitox_runtime with no tenant set must see 0 outbox rows');
+
+        await runtimePrisma.$transaction(async (tx) => {
+          await tx.$executeRawUnsafe(`SELECT set_config('app.current_tenant_id', '', true);`);
+          const rows = await tx.platformOutboxMessage.findMany({
+            where: { id: { in: [idA, idB] } },
+          });
+          assert.strictEqual(rows.length, 0, 'orbitox_runtime with empty tenant context must see 0 outbox rows');
+        });
+
+        // 2. With tenant A set: runtime sees only A outbox rows
+        await runtimePrisma.$transaction(async (tx) => {
+          await tx.$executeRawUnsafe(`SELECT set_config('app.current_tenant_id', '${tenantA}', true);`);
+          const rows = await tx.platformOutboxMessage.findMany({
+            where: { id: { in: [idA, idB] } },
+          });
+          assert.strictEqual(rows.length, 1, 'orbitox_runtime with tenant A set must see only A outbox rows');
+          assert.strictEqual(rows[0]?.id, idA);
+          assert.strictEqual(rows[0]?.tenantId, tenantA);
+        });
+
+        // 3. With tenant B set: runtime sees only B outbox rows
+        await runtimePrisma.$transaction(async (tx) => {
+          await tx.$executeRawUnsafe(`SELECT set_config('app.current_tenant_id', '${tenantB}', true);`);
+          const rows = await tx.platformOutboxMessage.findMany({
+            where: { id: { in: [idA, idB] } },
+          });
+          assert.strictEqual(rows.length, 1, 'orbitox_runtime with tenant B set must see only B outbox rows');
+          assert.strictEqual(rows[0]?.id, idB);
+          assert.strictEqual(rows[0]?.tenantId, tenantB);
+        });
+      } finally {
+        await ownerPrisma.platformOutboxMessage.deleteMany({
+          where: { id: { in: [idA, idB] } },
+        });
+        await ownerPrisma.$disconnect();
+        await runtimePrisma.$disconnect();
+      }
+    });
+
+    it('PostgreSQL Permissions: relay role can SELECT all rows and UPDATE status/retryCount/lastError/dispatchedAt', async () => {
+      if (!platformRepository.isPrismaBacked()) return;
+
+      const ownerUrl = process.env.TEST_OWNER_DATABASE_URL || process.env.TEST_DATABASE_URL || (process.env.DATABASE_URL && process.env.DATABASE_URL.includes('postgres:') ? process.env.DATABASE_URL : undefined) || 'postgresql://postgres:postgrespassword@127.0.0.1:5432/orbitox_phase2';
+      const relayUrl = process.env.OUTBOX_RELAY_DATABASE_URL || 'postgresql://orbitox_outbox_relay@127.0.0.1:5432/orbitox_phase2';
+
+      const ownerPrisma = new PrismaClient({ datasources: { db: { url: ownerUrl } } });
+      const relayPrisma = new PrismaClient({ datasources: { db: { url: relayUrl } } });
+
+      const tenantA = `org/test-org-phase3/project/relay-b-a-${Date.now()}/environment/production`;
+      const tenantB = `org/test-org-phase3/project/relay-b-b-${Date.now()}/environment/production`;
+      const idA = `outbox_relay_b_a_${crypto.randomUUID()}`;
+      const idB = `outbox_relay_b_b_${crypto.randomUUID()}`;
+
+      try {
+        const userRows = await relayPrisma.$queryRaw<Array<{ current_user: string }>>`SELECT current_user`;
+        assert.strictEqual(userRows[0]?.current_user, 'orbitox_outbox_relay', 'Must connect as orbitox_outbox_relay');
+
+        await ownerPrisma.platformOutboxMessage.createMany({
+          data: [
+            {
+              id: idA,
+              tenantId: tenantA,
+              eventType: 'relay.test.a',
+              aggregateType: 'PluginInstallation',
+              aggregateId: 'agg-a',
+              payload: { tenant: 'A' },
+              status: 'PENDING',
+              retryCount: 0,
+            },
+            {
+              id: idB,
+              tenantId: tenantB,
+              eventType: 'relay.test.b',
+              aggregateType: 'PluginInstallation',
+              aggregateId: 'agg-b',
+              payload: { tenant: 'B' },
+              status: 'PENDING',
+              retryCount: 0,
+            },
+          ],
+        });
+
+        // 1. SELECT all rows across tenants without tenant scoping
+        const allRows = await relayPrisma.platformOutboxMessage.findMany({
+          where: { id: { in: [idA, idB] } },
+          orderBy: { id: 'asc' },
+        });
+        assert.strictEqual(allRows.length, 2, 'orbitox_outbox_relay must be able to SELECT all rows across tenants');
+
+        // 2. UPDATE allowed columns: status, retryCount, lastError, dispatchedAt
+        const dispatchedAt = new Date();
+        const updatedRow = await relayPrisma.platformOutboxMessage.update({
+          where: { id: idA },
+          data: {
+            status: 'DISPATCHED',
+            retryCount: 2,
+            lastError: 'Simulated network hiccup',
+            dispatchedAt,
+          },
+        });
+        assert.strictEqual(updatedRow.status, 'DISPATCHED');
+        assert.strictEqual(updatedRow.retryCount, 2);
+        assert.strictEqual(updatedRow.lastError, 'Simulated network hiccup');
+        assert.ok(updatedRow.dispatchedAt);
+      } finally {
+        await ownerPrisma.platformOutboxMessage.deleteMany({
+          where: { id: { in: [idA, idB] } },
+        });
+        await ownerPrisma.$disconnect();
+        await relayPrisma.$disconnect();
+      }
+    });
+
+    it('PostgreSQL Permissions: relay role gets permission denied on INSERT, DELETE and UPDATE of payload', async () => {
+      if (!platformRepository.isPrismaBacked()) return;
+
+      const ownerUrl = process.env.TEST_OWNER_DATABASE_URL || process.env.TEST_DATABASE_URL || (process.env.DATABASE_URL && process.env.DATABASE_URL.includes('postgres:') ? process.env.DATABASE_URL : undefined) || 'postgresql://postgres:postgrespassword@127.0.0.1:5432/orbitox_phase2';
+      const relayUrl = process.env.OUTBOX_RELAY_DATABASE_URL || 'postgresql://orbitox_outbox_relay@127.0.0.1:5432/orbitox_phase2';
+
+      const ownerPrisma = new PrismaClient({ datasources: { db: { url: ownerUrl } } });
+      const relayPrisma = new PrismaClient({ datasources: { db: { url: relayUrl } } });
+
+      const tenantA = `org/test-org-phase3/project/relay-c-${Date.now()}/environment/production`;
+      const idA = `outbox_relay_c_${crypto.randomUUID()}`;
+
+      try {
+        const userRows = await relayPrisma.$queryRaw<Array<{ current_user: string }>>`SELECT current_user`;
+        assert.strictEqual(userRows[0]?.current_user, 'orbitox_outbox_relay', 'Must connect as orbitox_outbox_relay');
+
+        // 1. Permission denied on INSERT
+        await assert.rejects(
+          async () => {
+            await relayPrisma.platformOutboxMessage.create({
+              data: {
+                id: `outbox_illegal_insert_${crypto.randomUUID()}`,
+                tenantId: tenantA,
+                eventType: 'illegal.insert',
+                aggregateType: 'PluginInstallation',
+                aggregateId: 'agg-1',
+                payload: { malicious: true },
+                status: 'PENDING',
+                retryCount: 0,
+              },
+            });
+          },
+          (err: any) => {
+            return err.message?.includes('permission denied') || err.code === '42501';
+          },
+          'orbitox_outbox_relay must receive permission denied on INSERT'
+        );
+
+        await ownerPrisma.platformOutboxMessage.create({
+          data: {
+            id: idA,
+            tenantId: tenantA,
+            eventType: 'relay.test.c',
+            aggregateType: 'PluginInstallation',
+            aggregateId: 'agg-c',
+            payload: { safe: true },
+            status: 'PENDING',
+            retryCount: 0,
+          },
+        });
+
+        // 2. Permission denied on DELETE
+        await assert.rejects(
+          async () => {
+            await relayPrisma.platformOutboxMessage.delete({
+              where: { id: idA },
+            });
+          },
+          (err: any) => {
+            return err.message?.includes('permission denied') || err.code === '42501';
+          },
+          'orbitox_outbox_relay must receive permission denied on DELETE'
+        );
+
+        // 3. Permission denied on UPDATE of payload
+        await assert.rejects(
+          async () => {
+            await relayPrisma.platformOutboxMessage.update({
+              where: { id: idA },
+              data: {
+                payload: { tampered: true },
+              },
+            });
+          },
+          (err: any) => {
+            return err.message?.includes('permission denied') || err.code === '42501';
+          },
+          'orbitox_outbox_relay must receive permission denied on UPDATE of payload'
+        );
+      } finally {
+        await ownerPrisma.platformOutboxMessage.deleteMany({
+          where: { id: idA },
+        });
+        await ownerPrisma.$disconnect();
+        await relayPrisma.$disconnect();
+      }
     });
   });
 
