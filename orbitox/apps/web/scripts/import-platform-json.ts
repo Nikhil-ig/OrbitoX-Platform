@@ -166,6 +166,7 @@ export async function runPlatformJsonImporter(
     const DISALLOWED_APPLICATION_ROLES = new Set([
       'orbitox_runtime',
       'orbitox_platform_admin_audit',
+      'orbitox_outbox_relay',
       'restaurantos_app',
     ]);
 

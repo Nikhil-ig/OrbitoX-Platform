@@ -16,6 +16,8 @@ const databaseUrl = process.env.TEST_DATABASE_URL || process.env.DATABASE_URL ||
 const runtimeUrl = process.env.APP_DATABASE_URL || 'postgresql://orbitox_runtime:test_runtime_pass@127.0.0.1:5432/orbitox_phase2';
 const auditUrl = process.env.PLATFORM_AUDIT_DATABASE_URL || 'postgresql://orbitox_platform_admin_audit:test_audit_pass@127.0.0.1:5432/orbitox_phase2';
 const hmsAuditUrl = process.env.HMS_AUDIT_DATABASE_URL || 'postgresql://hms_audit_reader:test_audit_reader_pass@127.0.0.1:5432/orbitox_phase2';
+const outboxRelayUrl = process.env.OUTBOX_RELAY_DATABASE_URL || 'postgresql://orbitox_outbox_relay:test_relay_pass@127.0.0.1:5432/orbitox_phase2';
+const maintenanceUrl = process.env.MAINTENANCE_DATABASE_URL || 'postgresql://orbitox_maintenance:test_maint_pass@127.0.0.1:5432/orbitox_phase2';
 
 function boundedUrl(connectionString: string): string {
   const url = new URL(connectionString);
@@ -79,6 +81,9 @@ function spawnServer(port: number, envOverrides: Record<string, string> = {}): C
       APP_DATABASE_URL: boundedUrl(runtimeUrl),
       PLATFORM_AUDIT_DATABASE_URL: boundedUrl(auditUrl),
       HMS_AUDIT_DATABASE_URL: boundedUrl(hmsAuditUrl),
+      OUTBOX_RELAY_DATABASE_URL: boundedUrl(outboxRelayUrl),
+      MAINTENANCE_DATABASE_URL: boundedUrl(maintenanceUrl),
+      ORBITOX_TEST_STANDALONE: 'true',
       ORBITOX_ENABLE_CRM_PLUGIN: 'true',
       ...envOverrides,
     },
@@ -466,9 +471,10 @@ async function main() {
     where: { id: 'org_legacy_omni_01' },
     data: { status: 'ACTIVE', name: 'Omni Legacy Logistics Global' },
   });
+  const currentUtcPeriod = new Date().toISOString().slice(0, 7);
   await owner.platformProject.update({
     where: { id: 'proj_omni_logistics_01' },
-    data: { monthlyApiCalls: 1250n, plan: 'enterprise_scale' },
+    data: { monthlyApiCalls: 1250n, currentBillingPeriod: currentUtcPeriod, plan: 'enterprise_scale' },
   });
 
   // ---------------------------------------------------------------------------
@@ -542,7 +548,7 @@ async function main() {
 
   const omniProj = await owner.platformProject.findUnique({ where: { slug: 'omni-freight' } });
   assert.equal(Number(omniProj?.monthlyApiCalls), 1251, 'monthlyApiCalls after 1 live call must be 1251 (started at 1250)');
-  assert.equal(omniProj?.currentBillingPeriod, '2026-10', 'currentBillingPeriod must match legacy fixture value (2026-10)');
+  assert.equal(omniProj?.currentBillingPeriod, currentUtcPeriod, `currentBillingPeriod must match active period (${currentUtcPeriod})`);
   console.log(`Migrated Usage Verified: monthlyApiCalls=${omniProj?.monthlyApiCalls}, period=${omniProj?.currentBillingPeriod}`);
 
   // Fire another billable request
