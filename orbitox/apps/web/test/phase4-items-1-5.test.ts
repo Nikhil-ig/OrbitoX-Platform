@@ -9,11 +9,13 @@ import { NextRequest } from 'next/server';
 import { platformRepository } from '../lib/platform-repository';
 import { POST as postTenants } from '../app/v1/tenants/route';
 import { GET as getOperation, POST as postOperation } from '../app/v1/operations/[id]/route';
+import { GET as getCredentials } from '../app/v1/operations/[id]/credentials/route';
 import { POST as hospitalLifecycleHandler } from '../app/api/hospital/lifecycle/[action]/route';
 import { provisioningSaga } from '../lib/tenant-provisioning/provisioning-saga';
 import { operationStore } from '../lib/tenant-provisioning/operation-store';
 import { getEmittedWebhooks, clearEmittedWebhooks } from '../lib/tenant-provisioning/webhook-emitter';
 import { signBridgeRequest, getDefaultBridgeKeys } from '@orbitox-io/bridge';
+import { PlatformRepository } from '@orbitox-io/plugin-engine';
 
 describe('Phase 4 Items 1–5: The 2-Minute Tenant & Lifecycle Hooks', () => {
   let orgA: any;
@@ -190,13 +192,239 @@ describe('Phase 4 Items 1–5: The 2-Minute Tenant & Lifecycle Hooks', () => {
       const json = await res.json();
 
       assert.ok(json.tenantId.includes(tenantSlug), 'tenantId should include slug');
-      assert.ok(json.tenantId.includes(orgA.slug), 'tenantId should include org slug');
+      assert.ok(json.tenantId.includes(orgA.id), 'tenantId should include org id');
       assert.ok(json.operationId.startsWith('op_'), 'operationId should start with op_');
       assert.ok(json.status === 'PROVISIONING' || json.status === 'ACTIVE');
+      assert.ok(json.apiKey?.secret, 'raw API key secret must be returned once in 202 response');
+      assert.ok(json.apiKey.secret.startsWith('orb_live_'), 'secret format starts with orb_live_');
 
       // Verify Location header
       const location = res.headers.get('Location');
       assert.equal(location, `/v1/operations/${json.operationId}`);
+    });
+  });
+
+  // ─────────────────────────────────────────────────────────────
+  // ITEM 1b: W2 & W3 Invariants (Failure Handling, Exact Org & Env Binding)
+  // ─────────────────────────────────────────────────────────────
+  describe('Item 1b: W2 & W3 Invariants (Failure Handling, Exact Org & Env Binding)', () => {
+    it('W2: step error fails that step, operation becomes FAILED, and NO key is returned', async () => {
+      const origPlatformRepoCreate = (PlatformRepository as any).createApiKey;
+      (PlatformRepository as any).createApiKey = () => {
+        throw new Error('Key generation HSM cluster down');
+      };
+
+      try {
+        const failSlug = `fail-key-${crypto.randomBytes(3).toString('hex')}`;
+        const req = new NextRequest('http://127.0.0.1:3005/v1/tenants', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${keyASecret}`,
+          },
+          body: JSON.stringify({
+            organisation: orgA.slug,
+            name: 'HSM Failure Hospital',
+            slug: failSlug,
+            plugins: [{ id: 'hospital-os', plan: 'starter' }],
+          }),
+        });
+
+        const res = await postTenants(req);
+        // Step 4 error fails the operation
+        assert.equal(res.status, 500);
+        const json = await res.json();
+        assert.equal(json.error, 'PROVISIONING_FAILED');
+
+        // Check the operation row directly
+        const op = await operationStore.getOperation(json.operationId);
+        if (op) {
+          assert.equal(op.status, 'FAILED');
+          const step4 = op.steps.find((s) => s.id === '4');
+          assert.equal(step4?.status, 'FAILED');
+          assert.match(step4?.error || '', /HSM cluster down/);
+          assert.equal(op.result?.apiKey, undefined, 'No fake key in result');
+        }
+      } finally {
+        (PlatformRepository as any).createApiKey = origPlatformRepoCreate;
+      }
+    });
+
+    it('W3: two organisations whose names differ only in punctuation stay separate and are not squashed', async () => {
+      const runId = crypto.randomBytes(3).toString('hex');
+      const orgPunct1 = await platformRepository.createOrganization({
+        name: `Acme.In ${runId}`,
+        slug: `acme.in-${runId}`,
+        billingEmail: `acme.in.${runId}@orbitox.io`,
+      });
+      const orgPunct2 = await platformRepository.createOrganization({
+        name: `acme-in ${runId}`,
+        slug: `acme-in-${runId}`,
+        billingEmail: `acme-in.${runId}@orbitox.io`,
+      });
+
+      assert.notEqual(orgPunct1.id, orgPunct2.id, 'Distinct org IDs must be preserved');
+
+      // Create API keys for each
+      const res1 = await platformRepository.createProject({
+        name: `Punct Proj 1 ${runId}`,
+        slug: `punct-1-${runId}`,
+        organizationId: orgPunct1.id,
+        businessModel: 'B2B_SAAS',
+        planTier: 'starter',
+        technicalLead: 'Lead 1',
+        contactEmail: `p1@orbitox.io`,
+        plugins: [],
+      });
+      const res2 = await platformRepository.createProject({
+        name: `Punct Proj 2 ${runId}`,
+        slug: `punct-2-${runId}`,
+        organizationId: orgPunct2.id,
+        businessModel: 'B2B_SAAS',
+        planTier: 'starter',
+        technicalLead: 'Lead 2',
+        contactEmail: `p2@orbitox.io`,
+        plugins: [],
+      });
+
+      const p1 = (res1 as any).project || res1;
+      const p2 = (res2 as any).project || res2;
+      const envs1 = await platformRepository.listEnvironments(p1.id);
+      const envs2 = await platformRepository.listEnvironments(p2.id);
+
+      const key1 = await platformRepository.createApiKey({
+        name: 'Key 1',
+        projectId: p1.id,
+        environmentId: envs1[0]!.id,
+        keyType: 'PROJECT_SCOPED',
+        capabilities: ['tenant:write', 'tenant:read'],
+        tenantScope: ['*'],
+        createdBy: 'test',
+      });
+      const key2 = await platformRepository.createApiKey({
+        name: 'Key 2',
+        projectId: p2.id,
+        environmentId: envs2[0]!.id,
+        keyType: 'PROJECT_SCOPED',
+        capabilities: ['tenant:write', 'tenant:read'],
+        tenantScope: ['*'],
+        createdBy: 'test',
+      });
+
+      // Provision tenant in orgPunct1
+      const req1 = new NextRequest('http://127.0.0.1:3005/v1/tenants', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${key1.rawSecret}`,
+        },
+        body: JSON.stringify({
+          organisation: orgPunct1.id,
+          name: `Tenant 1 ${runId}`,
+          slug: `t1-${runId}`,
+          plugins: [{ id: 'hospital-os', plan: 'starter' }],
+        }),
+      });
+      const resp1 = await postTenants(req1);
+      assert.equal(resp1.status, 202);
+      const data1 = await resp1.json();
+
+      // Provision tenant in orgPunct2
+      const req2 = new NextRequest('http://127.0.0.1:3005/v1/tenants', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${key2.rawSecret}`,
+        },
+        body: JSON.stringify({
+          organisation: orgPunct2.id,
+          name: `Tenant 2 ${runId}`,
+          slug: `t2-${runId}`,
+          plugins: [{ id: 'hospital-os', plan: 'starter' }],
+        }),
+      });
+      const resp2 = await postTenants(req2);
+      assert.equal(resp2.status, 202);
+      const data2 = await resp2.json();
+
+      assert.ok(data1.tenantId.startsWith(`org/${orgPunct1.id}/`), 'Tenant 1 belongs to orgPunct1');
+      assert.ok(data2.tenantId.startsWith(`org/${orgPunct2.id}/`), 'Tenant 2 belongs to orgPunct2');
+      assert.notEqual(data1.tenantId, data2.tenantId);
+    });
+
+    it('W3: a missing organisation is refused with 404, and no organisation is created on the fly', async () => {
+      const missingOrgId = `nonexistent-org-${crypto.randomBytes(4).toString('hex')}`;
+      const adminKeyRec = await platformRepository.createApiKey({
+        name: 'Platform Admin Key',
+        projectId: projectA.id,
+        environmentId: envA.id,
+        keyType: 'PLATFORM_ROOT',
+        capabilities: ['*'],
+        tenantScope: ['*'],
+        createdBy: 'root',
+      });
+
+      const req = new NextRequest('http://127.0.0.1:3005/v1/tenants', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${adminKeyRec.rawSecret}`,
+        },
+        body: JSON.stringify({
+          organisation: missingOrgId,
+          name: 'Should Fail Hospital',
+          slug: `should-fail-${crypto.randomBytes(3).toString('hex')}`,
+          plugins: [{ id: 'hospital-os', plan: 'starter' }],
+        }),
+      });
+
+      const res = await postTenants(req);
+      assert.equal(res.status, 404, 'Must refuse missing organization with 404');
+
+      // Verify no organization was created on the fly
+      const createdOrg = await platformRepository.getOrganization(missingOrgId);
+      assert.equal(createdOrg, undefined, 'No organization must be created on the fly');
+    });
+
+    it('W3: the environment id in the tenant id equals the stored environment id created in step 2', async () => {
+      const runTag = crypto.randomBytes(3).toString('hex');
+      const slug = `env-check-${runTag}`;
+
+      const req = new NextRequest('http://127.0.0.1:3005/v1/tenants', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${keyASecret}`,
+        },
+        body: JSON.stringify({
+          organisation: orgA.slug,
+          name: `Env Check Hospital ${runTag}`,
+          slug,
+          environment: 'production',
+          plugins: [{ id: 'hospital-os', plan: 'starter' }],
+        }),
+      });
+
+      const res = await postTenants(req);
+      assert.equal(res.status, 202);
+      const json = await res.json();
+
+      // Extract env.id from tenantId: org/<org.id>/project/<project.id>/environment/<env.id>
+      const match = /^org\/([^/]+)\/project\/([^/]+)\/environment\/([^/]+)$/.exec(json.tenantId);
+      assert.ok(match, `tenantId must match canonical pattern: ${json.tenantId}`);
+      const [, orgIdInTenant, projIdInTenant, envIdInTenant] = match;
+
+      assert.equal(orgIdInTenant, orgA.id, 'org id in tenantId must match stored org.id');
+
+      // Look up project and stored environments
+      const storedProj = await platformRepository.getProject(slug);
+      assert.ok(storedProj, 'Project must exist');
+      assert.equal(projIdInTenant, storedProj.id, 'project id in tenantId must match stored project.id');
+
+      const envList = await platformRepository.listEnvironments(storedProj.id);
+      const prodEnv = envList.find((e) => e.slug === 'production');
+      assert.ok(prodEnv, 'Stored production environment must exist');
+      assert.equal(envIdInTenant, prodEnv.id, 'environment id in tenantId MUST equal stored environment.id');
     });
   });
 
@@ -352,6 +580,67 @@ describe('Phase 4 Items 1–5: The 2-Minute Tenant & Lifecycle Hooks', () => {
         assert.ok(opData.result.apiKey.masked.includes('••••'));
         assert.equal(opData.result.apiKey.secret, undefined);
       }
+    });
+
+    it('W1: raw API key secret is never persisted to DB or operation row, and retrieval token is single-use', async () => {
+      const runTag = crypto.randomBytes(3).toString('hex');
+      const tenantSlug = `sec-w1-${runTag}`;
+
+      // 1. Provision tenant
+      const req = new NextRequest('http://127.0.0.1:3005/v1/tenants', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${keyASecret}`,
+        },
+        body: JSON.stringify({
+          organisation: orgA.slug,
+          name: `Security Zero Secret ${runTag}`,
+          slug: tenantSlug,
+          plugins: [{ id: 'hospital-os', plan: 'starter' }],
+        }),
+      });
+
+      const res = await postTenants(req);
+      assert.equal(res.status, 202);
+      const json = await res.json();
+      assert.ok(json.apiKey?.secret, 'Secret returned once in 202 response');
+      const issuedSecret = json.apiKey.secret;
+      const last12 = issuedSecret.slice(-12);
+
+      // 2. Search whole database / operationStore for the secret's last 12 characters -> zero matches
+      const storedOp = await operationStore.getOperation(json.operationId);
+      assert.ok(storedOp, 'Operation record must exist');
+      const opString = JSON.stringify(storedOp);
+      assert.equal(
+        opString.includes(last12),
+        false,
+        `Raw secret last 12 chars ("${last12}") MUST NOT exist anywhere in operation record (W1 invariant)`
+      );
+
+      // Search all emitted webhooks / outbox payloads
+      const emitted = getEmittedWebhooks();
+      const emittedString = JSON.stringify(emitted);
+      assert.equal(
+        emittedString.includes(last12),
+        false,
+        `Raw secret last 12 chars ("${last12}") MUST NOT exist in webhooks or outbox`
+      );
+
+      // 3. Test single-use credentials endpoint GET /v1/operations/:id/credentials
+      const credReq = new NextRequest(`http://127.0.0.1:3005/v1/operations/${json.operationId}/credentials`, {
+        headers: { Authorization: `Bearer ${keyASecret}` },
+      });
+      const credRes1 = await getCredentials(credReq, { params: Promise.resolve({ id: json.operationId }) });
+      assert.equal(credRes1.status, 200, 'First credentials retrieval should succeed');
+      const credJson1 = await credRes1.json();
+      assert.equal(credJson1.apiKey.secret, issuedSecret);
+
+      // 4. Second read must return 410 GONE (single use)
+      const credRes2 = await getCredentials(credReq, { params: Promise.resolve({ id: json.operationId }) });
+      assert.equal(credRes2.status, 410, 'Second credentials retrieval must return 410 GONE');
+      const credJson2 = await credRes2.json();
+      assert.equal(credJson2.error, 'CREDENTIALS_EXPIRED_OR_CONSUMED');
     });
 
     it('emits tenant.ready webhook on completion', async () => {
@@ -564,6 +853,25 @@ describe('Phase 4 Items 1–5: The 2-Minute Tenant & Lifecycle Hooks', () => {
       assert.ok(
         serverSource.includes("Tenant creation must go through the signed /orbitox/lifecycle/provision hook"),
         'Server must direct operators to signed lifecycle hook'
+      );
+      assert.ok(
+        !serverSource.includes("if (process.env.NODE_ENV === 'production') {\n      sendJson(res, 410"),
+        'POST /internal/tenants deletion must NOT be gated on NODE_ENV === production'
+      );
+    });
+
+    it('verifies RestaurantOS treats non-development and non-test NODE_ENV as production (fail-closed)', () => {
+      const serverSource = require('fs').readFileSync(
+        require('path').resolve(__dirname, '../../../../projects/external-os/restaurant-os/src/server.ts'),
+        'utf8'
+      );
+      assert.ok(
+        serverSource.includes("isProductionEnvironment ="),
+        'Server must define isProductionEnvironment helper'
+      );
+      assert.ok(
+        serverSource.includes("process.env.NODE_ENV !== 'development' && process.env.NODE_ENV !== 'test'"),
+        'Server must fail-closed when NODE_ENV is unset or set to staging/prod/other'
       );
     });
   });

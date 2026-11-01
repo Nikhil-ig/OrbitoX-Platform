@@ -14,7 +14,7 @@ export const SKEW_SECONDS = 60;
 /**
  * Canonical tenant identifier format: org/{orgId}/project/{projectId}/environment/{envId}
  */
-export const TENANT_RE = /^org\/[a-zA-Z0-9_-]+\/project\/[a-zA-Z0-9_-]+\/environment\/[a-zA-Z0-9_-]+$/;
+export const TENANT_RE = /^org\/[a-zA-Z0-9_.-]+\/project\/[a-zA-Z0-9_.-]+\/environment\/[a-zA-Z0-9_.-]+$/;
 
 export interface BridgeKeys {
   activeKeyId: string;

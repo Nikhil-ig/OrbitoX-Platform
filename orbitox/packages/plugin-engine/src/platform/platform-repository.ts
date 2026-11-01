@@ -90,7 +90,7 @@ export const PLAN_DEFAULT_RATE_LIMITS: Record<string, number> = {
   hyperscale: 30000,
 };
 
-const TENANT_RE = /^org\/[a-zA-Z0-9_-]+\/project\/[a-zA-Z0-9_-]+\/environment\/[a-zA-Z0-9_-]+$/;
+const TENANT_RE = /^org\/[a-zA-Z0-9_.-]+\/project\/[a-zA-Z0-9_.-]+\/environment\/[a-zA-Z0-9_.-]+$/;
 
 export function canonicalizePluginId(pluginId: string): string {
   const trimmed = (pluginId || '').trim();

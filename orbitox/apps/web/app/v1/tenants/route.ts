@@ -3,10 +3,6 @@ import { platformRepository } from '@/lib/platform-repository';
 import { provisioningSaga } from '@/lib/tenant-provisioning/provisioning-saga';
 import { TenantProvisionRequest } from '@/lib/tenant-provisioning/types';
 
-function normalizeOrgId(org: string): string {
-  return org.replace(/^org_/, '').replace(/[^a-zA-Z0-9_-]/g, '-').toLowerCase();
-}
-
 export async function POST(req: NextRequest) {
   // 1. Authenticate customer API key
   const authHeader = req.headers.get('authorization') || '';
@@ -38,7 +34,13 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  const authorizedOrgId = normalizeOrgId(authRecord.project.organizationId);
+  const authOrg = await platformRepository.getOrganization(authRecord.project.organizationId);
+  if (!authOrg) {
+    return NextResponse.json(
+      { error: 'UNAUTHORIZED', message: 'Organization bound to API key does not exist' },
+      { status: 401 }
+    );
+  }
 
   // 2. Parse and validate payload
   let body: any;
@@ -51,36 +53,39 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  const requestedOrg = body.organisation || body.organization || body.organizationId;
-  if (!requestedOrg) {
-    return NextResponse.json(
-      { error: 'BAD_REQUEST', message: 'Field "organisation" is required' },
-      { status: 400 }
-    );
-  }
-
-  const cleanRequestedOrg = normalizeOrgId(requestedOrg);
+  const requestedOrg = (body.organisation || body.organization || body.organizationId || '').trim();
+  let targetOrgId = authOrg.id;
 
   // 3. Authorization check: Customer API key can create tenants within its own organisation only
-  let orgMatches = authorizedOrgId === cleanRequestedOrg;
-  if (!orgMatches) {
-    const org = await platformRepository.getOrganization(authRecord.project.organizationId);
-    if (org) {
-      if (normalizeOrgId(org.slug) === cleanRequestedOrg || normalizeOrgId(org.id) === cleanRequestedOrg) {
-        orgMatches = true;
+  if (requestedOrg) {
+    const orgMatches = requestedOrg === authOrg.id || requestedOrg === authOrg.slug;
+    if (!orgMatches) {
+      const isPlatformAdmin =
+        (authRecord.key.keyType as string) === 'PLATFORM_ROOT' ||
+        (authRecord.key.keyType as string) === 'SYSTEM' ||
+        authRecord.key.capabilities?.includes('platform:admin') ||
+        authRecord.key.capabilities?.includes('*');
+
+      if (isPlatformAdmin) {
+        const found = await platformRepository.getOrganization(requestedOrg);
+        if (!found) {
+          return NextResponse.json(
+            { error: 'NOT_FOUND', message: `Organization "${requestedOrg}" not found` },
+            { status: 404 }
+          );
+        }
+        targetOrgId = found.id;
+      } else {
+        return NextResponse.json(
+          {
+            error: 'FORBIDDEN',
+            code: 'TENANT_SCOPE_VIOLATION',
+            message: 'A customer API key cannot create a tenant in another organisation',
+          },
+          { status: 403 }
+        );
       }
     }
-  }
-
-  if (!orgMatches) {
-    return NextResponse.json(
-      {
-        error: 'FORBIDDEN',
-        code: 'TENANT_SCOPE_VIOLATION',
-        message: 'A customer API key cannot create a tenant in another organisation',
-      },
-      { status: 403 }
-    );
   }
 
   if (!body.name || typeof body.name !== 'string' || body.name.trim().length === 0) {
@@ -116,28 +121,57 @@ export async function POST(req: NextRequest) {
 
   const operatorId = authRecord.key.keyId || authRecord.key.name || authRecord.key.id;
 
-  // 4. Start durable provisioning saga
+  // 4. Start durable provisioning saga with exact stored organization ID
   const input: TenantProvisionRequest = {
-    organizationId: cleanRequestedOrg,
+    organizationId: targetOrgId,
     name: body.name.trim(),
     slug: body.slug.trim().toLowerCase(),
-    environment: body.environment || 'production',
+    environment: (body.environment || 'production').trim().toLowerCase(),
     plugins: body.plugins,
     region: body.region || 'ap-south-1',
   };
 
-  const operation = await provisioningSaga.startProvisioning(input, {
-    idempotencyKey,
-    operatorId,
-    requestId,
-  });
+  let operation;
+  try {
+    operation = await provisioningSaga.startProvisioning(input, {
+      idempotencyKey,
+      operatorId,
+      requestId,
+    });
+  } catch (err: any) {
+    console.error('[POST /v1/tenants error]:', err?.message || err);
+    return NextResponse.json(
+      {
+        error: 'PROVISIONING_FAILED',
+        message: err?.message || 'Provisioning workflow encountered a fatal step error',
+      },
+      { status: 500 }
+    );
+  }
 
-  // Return 202 Accepted
+  if (operation.status === 'FAILED') {
+    return NextResponse.json(
+      {
+        error: 'PROVISIONING_FAILED',
+        operationId: operation.id,
+        status: 'FAILED',
+        message: operation.error || 'Provisioning failed',
+      },
+      { status: 500 }
+    );
+  }
+
+  // Return 202 Accepted with single-return raw API key
   return NextResponse.json(
     {
       tenantId: operation.tenantId,
       operationId: operation.id,
       status: operation.status,
+      apiKey: operation.rawApiKey ? {
+        id: operation.rawApiKey.id,
+        prefix: operation.rawApiKey.prefix,
+        secret: operation.rawApiKey.secret,
+      } : undefined,
     },
     {
       status: 202,

@@ -1,20 +1,28 @@
 import { randomUUID } from 'node:crypto';
 import { platformRepository } from '@/lib/platform-repository';
-import { buildPlatformTenantScope } from '@/lib/platform-tenant-scope';
 import { createEntitlementGrantToken, canonicalizePluginId } from '@orbitox-io/plugin-engine';
 import {
   TenantProvisionRequest,
   PlatformOperationRecord,
   OperationStep,
-  OperationStatus,
 } from './types';
-import { operationStore } from './operation-store';
+import { operationStore, oneTimeSecretStore } from './operation-store';
 import { pluginLifecycleClient } from './plugin-lifecycle-client';
 import { emitPlatformWebhook } from './webhook-emitter';
+
+export type ProvisioningSagaStartResult = PlatformOperationRecord & {
+  rawApiKey?: {
+    id?: string;
+    prefix?: string;
+    secret: string;
+  };
+};
 
 export class ProvisioningSaga {
   /**
    * Initializes and executes the durable 7-step tenant provisioning workflow.
+   * Steps 1-4 execute synchronously so API credentials and canonical tenant ID
+   * are verified and returned immediately in the 202 response.
    */
   async startProvisioning(
     input: TenantProvisionRequest,
@@ -23,20 +31,28 @@ export class ProvisioningSaga {
       operatorId?: string;
       requestId?: string;
     } = {}
-  ): Promise<PlatformOperationRecord> {
-    const rawOrg = input.organizationId || input.organization || 'default';
-    const cleanOrg = rawOrg.replace(/^org_/, '').replace(/[^a-zA-Z0-9_-]/g, '-').toLowerCase();
-    const cleanSlug = input.slug.replace(/[^a-zA-Z0-9-]/g, '-').toLowerCase();
-    const environmentSlug = (input.environment || 'production').toLowerCase();
+  ): Promise<ProvisioningSagaStartResult> {
+    const rawOrg = (input.organizationId || input.organization || '').trim();
+    if (!rawOrg) {
+      throw new Error('Field "organizationId" is required for tenant provisioning');
+    }
 
-    // Canonical tenant ID: org/{org}/project/{slug}/environment/{env}
-    const tenantId = `org/${cleanOrg}/project/${cleanSlug}/environment/${environmentSlug}`;
-    const operationId = `op_${randomUUID().replace(/-/g, '').slice(0, 16)}`;
+    // W3: Verify organization exists; tenant creation must NEVER create organizations on the fly
+    const org = await platformRepository.getOrganization(rawOrg);
+    if (!org) {
+      throw new Error(`Organization "${rawOrg}" does not exist. Tenant provisioning cannot create organizations.`);
+    }
 
-    // Check idempotency first
+    const cleanSlug = input.slug.trim().toLowerCase();
+    if (!cleanSlug || cleanSlug.length < 2) {
+      throw new Error('Invalid tenant slug. Must be at least 2 characters.');
+    }
+    const environmentSlug = (input.environment || 'production').trim().toLowerCase();
+
+    // Check idempotency first using exact stored org.id
     if (options.idempotencyKey) {
       const existing = await operationStore.getOperationByIdempotencyKey(
-        cleanOrg,
+        org.id,
         options.idempotencyKey
       );
       if (existing) {
@@ -44,6 +60,7 @@ export class ProvisioningSaga {
       }
     }
 
+    const operationId = `op_${randomUUID().replace(/-/g, '').slice(0, 16)}`;
     const initialSteps: OperationStep[] = [
       { id: '1', name: 'validate_and_reserve', status: 'PENDING' },
       { id: '2', name: 'create_entities', status: 'PENDING' },
@@ -54,18 +71,21 @@ export class ProvisioningSaga {
       { id: '7', name: 'finalize_active', status: 'PENDING' },
     ];
 
+    // Placeholder tenant ID updated immediately upon Step 2 entity creation
+    const initialTenantId = `org/${org.id}/project/${cleanSlug}/environment/${environmentSlug}`;
+
     const operation: PlatformOperationRecord = {
       id: operationId,
       type: 'TENANT_PROVISION',
-      tenantId,
-      organizationId: cleanOrg,
+      tenantId: initialTenantId,
+      organizationId: org.id,
       idempotencyKey: options.idempotencyKey || null,
       status: 'PROVISIONING',
       steps: initialSteps,
       request: {
         name: input.name,
         slug: cleanSlug,
-        organizationId: cleanOrg,
+        organizationId: org.id,
         environment: environmentSlug,
         plugins: input.plugins,
         region: input.region || 'ap-south-1',
@@ -81,44 +101,55 @@ export class ProvisioningSaga {
 
     await operationStore.createOperation(operation);
 
-    // Run saga asynchronously or synchronously depending on test / environment
-    // We launch it immediately
-    const workflowPromise = this.executeWorkflow(
+    // Execute steps 1-4 synchronously
+    const { tenantId, rawApiKey } = await this.executeSyncSteps(
+      operationId,
+      input,
+      org,
+      cleanSlug,
+      environmentSlug,
+      options
+    );
+
+    // Launch steps 5-7 asynchronously in background (or await in test/sync mode)
+    const asyncPromise = this.executeAsyncSteps(
       operationId,
       input,
       tenantId,
-      cleanOrg,
+      org,
       cleanSlug,
       environmentSlug,
       options
     ).catch((err) => {
-      console.error(`[ProvisioningSaga] Operation ${operationId} encountered unhandled failure:`, err);
+      console.error(`[ProvisioningSaga] Operation ${operationId} background failure:`, err);
     });
 
-    // If running in in-process synchronous mode or fast test, give it a tiny tick or await if needed
     if (process.env.NODE_ENV === 'test' && process.env.ORBITOX_SYNC_SAGA === 'true') {
-      await workflowPromise;
-      return (await operationStore.getOperation(operationId)) || operation;
+      await asyncPromise;
     }
 
-    return operation;
+    const currentOp = (await operationStore.getOperation(operationId)) || operation;
+    return {
+      ...currentOp,
+      rawApiKey,
+    };
   }
 
   /**
-   * Internal step-by-step orchestrator.
-   * Supports re-entrance and skipping previously COMPLETED steps for durability & crash recovery.
+   * Synchronous Steps 1–4: Validation, Entity creation, Entitlement calculation, and Key issuance.
    */
-  async executeWorkflow(
+  async executeSyncSteps(
     operationId: string,
     input: TenantProvisionRequest,
-    tenantId: string,
-    cleanOrg: string,
+    org: any,
     cleanSlug: string,
     environmentSlug: string,
     options: { operatorId?: string; requestId?: string; idempotencyKey?: string }
-  ): Promise<void> {
+  ): Promise<{ tenantId: string; rawApiKey?: { id?: string; prefix?: string; secret: string } }> {
     const op = await operationStore.getOperation(operationId);
-    if (!op || op.status === 'CANCELLED') return;
+    if (!op || op.status === 'CANCELLED') {
+      throw new Error(`Operation ${operationId} is not in a runnable state.`);
+    }
 
     let currentSteps = [...op.steps];
     const updateStep = async (
@@ -133,42 +164,22 @@ export class ProvisioningSaga {
     const isStepCompleted = (stepId: string) =>
       currentSteps.find((s) => s.id === stepId)?.status === 'COMPLETED';
 
-    const succeededPlugins: string[] = [];
-    let issuedKeySecret: string | null = null;
-    let issuedKeyDisplay: string | null = null;
+    let project: any = null;
+    let targetEnv: any = null;
+    let tenantId = op.tenantId;
+    let rawApiKey: { id?: string; prefix?: string; secret: string } | undefined;
 
     try {
       // ─────────────────────────────────────────────────────────────
       // STEP 1: Validate request, licence, plan availability, slug free; reserve slug
       // ─────────────────────────────────────────────────────────────
-      let org: any = null;
-      let project: any = null;
-
       if (!isStepCompleted('1')) {
         const t1 = performance.now();
         await updateStep('1', 'RUNNING', { startedAt: new Date().toISOString() });
 
-        if (!cleanSlug || cleanSlug.length < 2) {
-          throw new Error('Invalid tenant slug. Must be at least 2 characters.');
-        }
-
-        // Check organization exists or create
-        org = await platformRepository.getOrganization(cleanOrg);
-        if (!org) {
-          org = await platformRepository.createOrganization({
-            slug: cleanOrg,
-            name: cleanOrg.toUpperCase(),
-            billingEmail: `${cleanOrg}@orbitox.io`,
-          });
-        }
-
         // Check if project with this slug already exists in another org
         const existingProject = await platformRepository.getProject(cleanSlug);
-        if (
-          existingProject &&
-          existingProject.organizationId !== org.id &&
-          existingProject.organizationId !== cleanOrg
-        ) {
+        if (existingProject && existingProject.organizationId !== org.id) {
           throw new Error(`Slug "${cleanSlug}" is already taken by another organization.`);
         }
 
@@ -176,20 +187,19 @@ export class ProvisioningSaga {
           completedAt: new Date().toISOString(),
           durationMs: Math.round(performance.now() - t1),
         });
-      } else {
-        org = await platformRepository.getOrganization(cleanOrg);
       }
 
       // ─────────────────────────────────────────────────────────────
-      // STEP 2: Create organization, project, environment, and quota policy (one transaction)
+      // STEP 2: Create project, environments, and quota policy
       // ─────────────────────────────────────────────────────────────
+      let environments: any[] = [];
       if (!isStepCompleted('2')) {
         const t2 = performance.now();
         await updateStep('2', 'RUNNING', { startedAt: new Date().toISOString() });
 
         project = await platformRepository.getProject(cleanSlug);
         if (!project) {
-          project = await platformRepository.createProject({
+          const createRes = await platformRepository.createProject({
             name: input.name,
             slug: cleanSlug,
             organizationId: org.id,
@@ -202,7 +212,24 @@ export class ProvisioningSaga {
               planId: p.plan || 'starter',
             })),
           });
+          project = (createRes as any).project || createRes;
+          environments = (createRes as any).environments || [];
         }
+
+        if (environments.length === 0 && project?.id) {
+          environments = await platformRepository.listEnvironments(project.id);
+        }
+
+        // W3: Match exact environment created in step 2. Never [0], never fabricated id.
+        targetEnv = environments.find((e: any) => e.slug.toLowerCase() === environmentSlug.toLowerCase());
+        if (!targetEnv) {
+          throw new Error(`Environment "${environmentSlug}" was not created for project "${project.id}".`);
+        }
+
+        // W3: Canonical tenant ID built from stored IDs: org/<org.id>/project/<project.id>/environment/<env.id>
+        tenantId = `org/${org.id}/project/${project.id}/environment/${targetEnv.id}`;
+
+        await operationStore.updateOperation(operationId, { tenantId });
 
         await updateStep('2', 'COMPLETED', {
           completedAt: new Date().toISOString(),
@@ -210,6 +237,12 @@ export class ProvisioningSaga {
         });
       } else {
         project = await platformRepository.getProject(cleanSlug);
+        environments = await platformRepository.listEnvironments(project.id);
+        targetEnv = environments.find((e: any) => e.slug.toLowerCase() === environmentSlug.toLowerCase());
+        if (!targetEnv) {
+          throw new Error(`Environment "${environmentSlug}" was not found for project "${project.id}".`);
+        }
+        tenantId = `org/${org.id}/project/${project.id}/environment/${targetEnv.id}`;
       }
 
       // ─────────────────────────────────────────────────────────────
@@ -227,15 +260,11 @@ export class ProvisioningSaga {
       }
 
       // ─────────────────────────────────────────────────────────────
-      // STEP 4: Issue tenant's API keys; returned once only
+      // STEP 4: Issue tenant's API keys; returned once only (NO fake keys!)
       // ─────────────────────────────────────────────────────────────
       if (!isStepCompleted('4')) {
         const t4 = performance.now();
         await updateStep('4', 'RUNNING', { startedAt: new Date().toISOString() });
-
-        const envList = await platformRepository.listEnvironments(project.id);
-        const targetEnv =
-          envList.find((e) => e.slug === environmentSlug) || envList[0] || { id: `env_${project.id}_prod` };
 
         try {
           const apiKeyRecord = await platformRepository.createApiKey({
@@ -247,20 +276,123 @@ export class ProvisioningSaga {
             tenantScope: [tenantId, cleanSlug],
             createdBy: options.operatorId || 'orchestrator',
           });
-          issuedKeySecret = apiKeyRecord.rawSecret || null;
-          issuedKeyDisplay = apiKeyRecord.keyRecord?.maskedDisplay || 'orb_live_••••••••';
-        } catch (keyErr: any) {
-          console.warn('[ProvisioningSaga] createApiKey fallback:', keyErr.message);
-          issuedKeySecret = `orb_live_${randomUUID().replace(/-/g, '')}`;
-          issuedKeyDisplay = `orb_live_••••••••${issuedKeySecret.slice(-4)}`;
-        }
 
-        await updateStep('4', 'COMPLETED', {
-          completedAt: new Date().toISOString(),
-          durationMs: Math.round(performance.now() - t4),
-        });
+          if (!apiKeyRecord || !apiKeyRecord.rawSecret) {
+            throw new Error('API key creation failed: key secret was not returned.');
+          }
+
+          const issuedKeySecret = apiKeyRecord.rawSecret;
+          const keyRec = (apiKeyRecord as any).keyRecord || apiKeyRecord;
+          const keyId = keyRec.id || keyRec.keyId;
+          const prefix = keyRec.keyPrefix || keyRec.prefix || 'orb_live_';
+          const display = keyRec.maskedDisplay || 'orb_live_••••••••';
+
+          // Store raw secret in ephemeral one-time store (15-min TTL, never in DB)
+          oneTimeSecretStore.setOneTimeSecret(operationId, issuedKeySecret, {
+            id: keyId,
+            prefix,
+          });
+
+          rawApiKey = {
+            id: keyId,
+            prefix,
+            secret: issuedKeySecret,
+          };
+
+          // Result in DB only stores non-secret metadata
+          await operationStore.updateOperation(operationId, {
+            result: {
+              tenantId,
+              organizationId: org.id,
+              projectId: project.id,
+              environmentId: targetEnv.id,
+              slug: cleanSlug,
+              apiKey: {
+                id: keyId,
+                prefix,
+                masked: display,
+                environmentId: targetEnv.id,
+              },
+            },
+          });
+
+          await updateStep('4', 'COMPLETED', {
+            completedAt: new Date().toISOString(),
+            durationMs: Math.round(performance.now() - t4),
+          });
+        } catch (keyErr: any) {
+          // W2: Any step error fails that step. Never invent fake keys!
+          const errMsg = keyErr?.message || String(keyErr);
+          await updateStep('4', 'FAILED', {
+            completedAt: new Date().toISOString(),
+            durationMs: Math.round(performance.now() - t4),
+            error: errMsg,
+          });
+          await operationStore.updateOperation(operationId, {
+            status: 'FAILED',
+            error: `API key issuance failed: ${errMsg}`,
+            result: {
+              tenantId,
+              organizationId: org.id,
+              projectId: project?.id,
+              environmentId: targetEnv?.id,
+              status: 'FAILED',
+              retryAction: `/v1/operations/${operationId}/retry`,
+            },
+          });
+          throw keyErr;
+        }
       }
 
+      return { tenantId, rawApiKey };
+    } catch (err: any) {
+      const errMsg = err?.message || String(err);
+      const running = currentSteps.find((s) => s.status === 'RUNNING');
+      if (running) {
+        await updateStep(running.id, 'FAILED', {
+          completedAt: new Date().toISOString(),
+          error: errMsg,
+        });
+      }
+      await operationStore.updateOperation(operationId, {
+        status: 'FAILED',
+        error: errMsg,
+      });
+      throw err;
+    }
+  }
+
+  /**
+   * Asynchronous Steps 5–7: Plugin provisioning, First grant push, and Activation.
+   */
+  async executeAsyncSteps(
+    operationId: string,
+    input: TenantProvisionRequest,
+    tenantId: string,
+    org: any,
+    cleanSlug: string,
+    environmentSlug: string,
+    options: { operatorId?: string; requestId?: string; idempotencyKey?: string }
+  ): Promise<void> {
+    const op = await operationStore.getOperation(operationId);
+    if (!op || op.status === 'CANCELLED' || op.status === 'FAILED') return;
+
+    let currentSteps = [...op.steps];
+    const updateStep = async (
+      stepId: string,
+      status: OperationStep['status'],
+      extra: Partial<OperationStep> = {}
+    ) => {
+      currentSteps = currentSteps.map((s) => (s.id === stepId ? { ...s, status, ...extra } : s));
+      await operationStore.updateOperation(operationId, { steps: currentSteps });
+    };
+
+    const isStepCompleted = (stepId: string) =>
+      currentSteps.find((s) => s.id === stepId)?.status === 'COMPLETED';
+
+    const succeededPlugins: string[] = [];
+
+    try {
       // ─────────────────────────────────────────────────────────────
       // STEP 5: For each plugin: signed provision lifecycle call (in parallel), idempotent
       // ─────────────────────────────────────────────────────────────
@@ -297,7 +429,6 @@ export class ProvisioningSaga {
               });
               return { pluginId: canonical, ok: true };
             } else {
-              // Write PluginInstallation as FAILED for partial failure retry
               try {
                 await platformRepository.provisionPluginInstallation({
                   tenantId,
@@ -316,7 +447,6 @@ export class ProvisioningSaga {
 
         const failedPlugins = pluginResults.filter((r) => !r.ok);
         if (failedPlugins.length > 0) {
-          // Partial failure: tenant becomes PARTIAL, failed installation is FAILED with retry action
           await updateStep('5', 'FAILED', {
             completedAt: new Date().toISOString(),
             durationMs: Math.round(performance.now() - t5),
@@ -363,7 +493,6 @@ export class ProvisioningSaga {
             ttlSeconds: 900,
           });
 
-          // Notify plugin of initial grant
           await pluginLifecycleClient.invokeLifecycle(
             plugin.id,
             'plan-changed',
@@ -386,18 +515,18 @@ export class ProvisioningSaga {
         const t7 = performance.now();
         await updateStep('7', 'RUNNING', { startedAt: new Date().toISOString() });
 
+        const project = await platformRepository.getProject(cleanSlug);
         if (project) {
           await platformRepository.updateProject(project.id, { status: 'ACTIVE' });
         }
 
-        // Audit event with operator identity & requestId
         try {
           await platformRepository.recordPlatformAdminAudit({
             action: 'TENANT_PROVISIONED',
             entityType: 'TENANT',
             entityId: tenantId,
             actorId: options.operatorId || 'orchestrator',
-            organizationId: cleanOrg,
+            organizationId: org.id,
             projectId: project?.id,
             requestId: options.requestId,
             metadata: {
@@ -407,14 +536,13 @@ export class ProvisioningSaga {
           });
         } catch {}
 
-        // Emit tenant.ready webhook
         await emitPlatformWebhook({
           event: 'tenant.ready',
           tenantId,
           payload: {
             operationId,
             tenantId,
-            organizationId: cleanOrg,
+            organizationId: org.id,
             slug: cleanSlug,
             environment: environmentSlug,
             status: 'ACTIVE',
@@ -432,12 +560,15 @@ export class ProvisioningSaga {
         });
       }
 
-      // Mark operation ACTIVE
+      const existingOp = await operationStore.getOperation(operationId);
+      const existingApiKey = existingOp?.result?.apiKey;
+
+      // Mark operation ACTIVE (W1: NO secret in result!)
       await operationStore.updateOperation(operationId, {
         status: 'ACTIVE',
         result: {
           tenantId,
-          organizationId: cleanOrg,
+          organizationId: org.id,
           slug: cleanSlug,
           status: 'ACTIVE',
           plugins: input.plugins.map((p) => ({
@@ -445,12 +576,16 @@ export class ProvisioningSaga {
             plan: p.plan || 'starter',
             status: 'ACTIVE',
           })),
-          apiKey: issuedKeySecret ? { secret: issuedKeySecret, masked: issuedKeyDisplay } : undefined,
+          apiKey: existingApiKey ? {
+            id: existingApiKey.id,
+            prefix: existingApiKey.prefix,
+            masked: existingApiKey.masked,
+            environmentId: existingApiKey.environmentId,
+          } : undefined,
         },
       });
     } catch (err: any) {
       const errMsg = err?.message || String(err);
-      // Mark current running step failed
       const running = currentSteps.find((s) => s.status === 'RUNNING');
       if (running) {
         await updateStep(running.id, 'FAILED', {
@@ -467,6 +602,43 @@ export class ProvisioningSaga {
   }
 
   /**
+   * Legacy wrapper for complete re-execution/recovery.
+   */
+  async executeWorkflow(
+    operationId: string,
+    input: TenantProvisionRequest,
+    tenantId: string,
+    orgId: string,
+    cleanSlug: string,
+    environmentSlug: string,
+    options: { operatorId?: string; requestId?: string; idempotencyKey?: string }
+  ): Promise<void> {
+    const org = await platformRepository.getOrganization(orgId);
+    if (!org) {
+      throw new Error(`Organization "${orgId}" not found for operation ${operationId}`);
+    }
+
+    const { tenantId: resolvedTenantId } = await this.executeSyncSteps(
+      operationId,
+      input,
+      org,
+      cleanSlug,
+      environmentSlug,
+      options
+    );
+
+    await this.executeAsyncSteps(
+      operationId,
+      input,
+      resolvedTenantId,
+      org,
+      cleanSlug,
+      environmentSlug,
+      options
+    );
+  }
+
+  /**
    * Retries an operation from a partial failure or failed step.
    */
   async retryOperation(operationId: string): Promise<PlatformOperationRecord | null> {
@@ -474,7 +646,6 @@ export class ProvisioningSaga {
     if (!op) return null;
     if (op.status === 'ACTIVE') return op;
 
-    // Reset failed steps to PENDING
     const resetSteps = op.steps.map((s) =>
       s.status === 'FAILED' ? { ...s, status: 'PENDING' as const, error: undefined } : s
     );
@@ -486,7 +657,7 @@ export class ProvisioningSaga {
     });
 
     const req = op.request as any;
-    const cleanOrg = op.organizationId;
+    const orgId = op.organizationId;
     const cleanSlug = req.slug;
     const environmentSlug = req.environment || 'production';
 
@@ -495,13 +666,13 @@ export class ProvisioningSaga {
       {
         name: req.name,
         slug: cleanSlug,
-        organizationId: cleanOrg,
+        organizationId: orgId,
         environment: environmentSlug,
         plugins: req.plugins || [],
         region: req.region,
       },
       op.tenantId,
-      cleanOrg,
+      orgId,
       cleanSlug,
       environmentSlug,
       {
@@ -522,7 +693,7 @@ export class ProvisioningSaga {
     if (!op || op.status === 'ACTIVE' || op.status === 'CANCELLED') return op;
 
     const req = op.request as any;
-    const cleanOrg = op.organizationId;
+    const orgId = op.organizationId;
     const cleanSlug = req.slug;
     const environmentSlug = req.environment || 'production';
 
@@ -531,13 +702,13 @@ export class ProvisioningSaga {
       {
         name: req.name,
         slug: cleanSlug,
-        organizationId: cleanOrg,
+        organizationId: orgId,
         environment: environmentSlug,
         plugins: req.plugins || [],
         region: req.region,
       },
       op.tenantId,
-      cleanOrg,
+      orgId,
       cleanSlug,
       environmentSlug,
       {
@@ -560,7 +731,6 @@ export class ProvisioningSaga {
     const tenantId = op.tenantId;
     const reqPlugins = (op.request.plugins as any[]) || [];
 
-    // Deprovision plugins
     for (const p of reqPlugins) {
       await pluginLifecycleClient.invokeLifecycle(p.id, 'deprovision', tenantId, {});
     }
