@@ -2,13 +2,23 @@ import { NextRequest, NextResponse } from 'next/server';
 import { platformRepository } from '@/lib/platform-repository';
 import { operationStore, oneTimeSecretStore } from '@/lib/tenant-provisioning/operation-store';
 
+/**
+ * Ephemeral Credential Retrieval Endpoint (Self-Guarded).
+ *
+ * Provides a short-lived (15-minute TTL) fallback to retrieve the provisioned
+ * raw customer API key secret exactly once if the client dropped or failed to parse
+ * the initial synchronous 202 Accepted response.
+ *
+ * NOTE: The in-memory one-time store is per-server instance (in-memory process state).
+ * The primary delivery mechanism is the raw secret returned once in the 202 response.
+ */
 export async function GET(
   req: NextRequest,
-  { params }: { params: Promise<{ id: string }> }
+  props: { params: Promise<{ id: string }> }
 ) {
-  const { id } = await params;
+  const { id } = await props.params;
 
-  // 1. Authenticate API key
+  // 1. Authenticate customer API key (self-guarded)
   const authHeader = req.headers.get('authorization') || '';
   const apiKeyHeader = req.headers.get('x-api-key') || '';
   const rawKey = authHeader.replace(/^Bearer\s+/i, '').trim() || apiKeyHeader.trim();
@@ -60,32 +70,49 @@ export async function GET(
     return NextResponse.json(
       {
         error: 'FORBIDDEN',
-        message: 'You are not authorized to view credentials for this operation',
+        code: 'TENANT_SCOPE_VIOLATION',
+        message: 'A customer API key cannot retrieve credentials for another organisation',
       },
       { status: 403 }
     );
   }
 
-  // 4. Consume one-time ephemeral secret (single-use, 15-min TTL)
-  const creds = oneTimeSecretStore.consumeOneTimeSecret(id);
-  if (!creds) {
+  // 4. Retrieve single-use secret
+  const oneTime = oneTimeSecretStore.consumeOneTimeSecret(id);
+  if (!oneTime) {
     return NextResponse.json(
       {
         error: 'CREDENTIALS_EXPIRED_OR_CONSUMED',
-        message: 'Credentials have already been retrieved or have expired (15-minute TTL).',
+        code: 'SECRET_ALREADY_RETRIEVED_OR_EXPIRED',
+        message: 'The API key secret for this operation has already been retrieved or expired. Secrets are never persisted in the database.',
       },
       { status: 410 }
     );
   }
 
+  const operatorId = authRecord.key.keyId || authRecord.key.name || authRecord.key.id;
+  try {
+    await platformRepository.recordPlatformAdminAudit({
+      action: 'TENANT_CREDENTIALS_CONSUMED',
+      entityType: 'TENANT_CREDENTIALS',
+      entityId: id,
+      actorId: operatorId,
+      organizationId: op.organizationId,
+      requestId: req.headers.get('x-request-id') || `req_${Date.now()}`,
+      metadata: { operationId: id, tenantId: op.tenantId, operatorId },
+    });
+  } catch {}
+
   return NextResponse.json({
     operationId: id,
     tenantId: op.tenantId,
     apiKey: {
-      id: creds.id,
-      prefix: creds.prefix,
-      secret: creds.secret,
-      expiresAt: creds.expiresAt,
+      id: oneTime.id,
+      prefix: oneTime.prefix,
+      secret: oneTime.secret,
+      expiresAt: oneTime.expiresAt,
     },
+    retrievedAt: new Date().toISOString(),
+    warning: 'Store this secret securely now. It cannot be retrieved again.',
   });
 }

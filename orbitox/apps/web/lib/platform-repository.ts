@@ -661,6 +661,40 @@ export function createPrismaPlatformRepository(
     const keyUsageThrottleMap = new Map<string, number>();
     const KEY_USAGE_THROTTLE_INTERVAL_MS = 1000;
 
+    async function resolveCandidateTenantIds(rawTenantId?: string): Promise<string[]> {
+        const trimmedTenantId = (rawTenantId || '').trim();
+        if (!trimmedTenantId) return [];
+        const candidates = new Set<string>([trimmedTenantId]);
+        const tenantMatch = /^org\/([^/]+)\/project\/([^/]+)\/environment\/([^/]+)$/.exec(trimmedTenantId);
+        if (tenantMatch) {
+            const [, orgPart, projPart, envPart] = tenantMatch;
+            const proj = projPart
+                ? await client.platformProject.findFirst({
+                    where: { OR: [{ id: projPart }, { slug: projPart.toLowerCase() }] },
+                    include: { organization: true, environments: true },
+                })
+                : null;
+            if (proj && proj.organization) {
+                const env = proj.environments?.find(
+                    (e: any) => e.id === envPart || (envPart && e.slug.toLowerCase() === envPart.toLowerCase())
+                );
+                candidates.add(`org/${proj.organization.slug}/project/${proj.slug}/environment/${env?.slug || envPart || 'production'}`);
+                candidates.add(`org/${proj.organization.id}/project/${proj.id}/environment/${env?.id || envPart || 'production'}`);
+                candidates.add(`org/${proj.organization.slug}/project/${proj.slug}/environment/production`);
+            }
+        } else {
+            const proj = await client.platformProject.findFirst({
+                where: { OR: [{ id: trimmedTenantId }, { slug: trimmedTenantId.toLowerCase() }] },
+                include: { organization: true },
+            });
+            if (proj && proj.organization) {
+                candidates.add(`org/${proj.organization.slug}/project/${proj.slug}/environment/production`);
+                candidates.add(`org/${proj.organization.id}/project/${proj.id}/environment/production`);
+            }
+        }
+        return Array.from(candidates);
+    }
+
     return {
         async listOrganizations(): Promise<PlatformOrganization[]> {
             return (await client.platformOrganization.findMany({ orderBy: { createdAt: 'asc' } })).map(toOrganization);
@@ -1440,26 +1474,16 @@ export function createPrismaPlatformRepository(
             return toInstallation(row);
         },
         async listPluginInstallations(tenantId?: string): Promise<PluginInstallationRecord[]> {
+            const candidateTenantIds = tenantId ? await resolveCandidateTenantIds(tenantId) : undefined;
             return (await client.pluginInstallation.findMany({
-                where: tenantId ? { tenantId } : undefined,
+                where: candidateTenantIds ? { tenantId: { in: candidateTenantIds } } : undefined,
                 orderBy: { createdAt: 'desc' },
             })).map(toPluginInstallation);
         },
         async getPluginInstallation(tenantId: string, pluginId: string): Promise<PluginInstallationRecord | undefined> {
             const canonical = canonicalizePluginId(pluginId);
-            const trimmedTenantId = (tenantId || '').trim();
-            if (!trimmedTenantId) return undefined;
-
-            let candidateTenantIds = [trimmedTenantId];
-            if (!TENANT_RE.test(trimmedTenantId)) {
-                const proj = await client.platformProject.findFirst({
-                    where: { OR: [{ id: trimmedTenantId }, { slug: trimmedTenantId.toLowerCase() }] },
-                    include: { organization: true },
-                });
-                if (proj && proj.organization) {
-                    candidateTenantIds.push(`org/${proj.organization.slug}/project/${proj.slug}/environment/production`);
-                }
-            }
+            const candidateTenantIds = await resolveCandidateTenantIds(tenantId);
+            if (candidateTenantIds.length === 0) return undefined;
 
             const row = await client.pluginInstallation.findFirst({
                 where: {
@@ -1586,10 +1610,11 @@ export function createPrismaPlatformRepository(
             status: PluginInstallationStatus | string
         ): Promise<PluginInstallationRecord> {
             const canonical = canonicalizePluginId(pluginId);
+            const candidateTenantIds = await resolveCandidateTenantIds(tenantId);
             return await client.$transaction(async (tx) => {
                 const existing = await tx.pluginInstallation.findFirst({
                     where: {
-                        tenantId,
+                        tenantId: { in: candidateTenantIds },
                         OR: [
                             { pluginId: canonical },
                             { pluginId },
@@ -1921,9 +1946,10 @@ export function createPrismaPlatformRepository(
             requestedIncrement = 1
         ): Promise<{ allowed: boolean; limit?: number; currentCount: number; remaining?: number; reason?: string }> {
             const canonical = canonicalizePluginId(pluginId);
+            const candidateTenantIds = await resolveCandidateTenantIds(tenantId);
             const row = await client.pluginInstallation.findFirst({
                 where: {
-                    tenantId,
+                    tenantId: { in: candidateTenantIds },
                     OR: [
                         { pluginId: canonical },
                         { pluginId },
@@ -2423,6 +2449,7 @@ export function createPrismaPlatformRepository(
         },
         async recordPlatformAdminAudit(event: PlatformAdminAuditInput): Promise<string> {
             const id = `audit_${crypto.randomUUID()}`;
+            const operatorId = event.actorId || event.actorEmail || 'system:orchestrator';
             const auditClient = adminAuditClient;
             await auditClient.$executeRaw`
         INSERT INTO "PlatformAuditEvent" (
@@ -2430,28 +2457,29 @@ export function createPrismaPlatformRepository(
           "organizationId", "projectId", "environmentId", "ipAddress", "requestId",
           "reason", "metadata", "occurredAt"
         ) VALUES (
-          ${id}, ${event.actorId || null}, ${event.actorEmail || null}, ${event.action},
+          ${id}, ${operatorId}, ${event.actorEmail || null}, ${event.action},
           ${event.entityType}, ${event.entityId || null}, ${event.organizationId || null},
           ${event.projectId || null}, ${event.environmentId || null}, ${event.ipAddress || null},
           ${event.requestId || null}, ${event.reason || null},
-          ${JSON.stringify(event.metadata || {})}::jsonb, NOW()
+          ${JSON.stringify({ operatorId, ...(typeof event.metadata === 'object' && event.metadata !== null ? (event.metadata as any) : {}) })}::jsonb, NOW()
         )
       `;
             return id;
         },
         async createPlatformAdminAuditIntent(event: PlatformAdminAuditIntentInput): Promise<string> {
             const id = `audit_${crypto.randomUUID()}`;
+            const operatorId = event.actorId || event.actorEmail || 'system:orchestrator';
             await adminAuditClient.$executeRaw`
                 INSERT INTO "PlatformAuditEvent" (
                     "id", "actorId", "actorEmail", "action", "entityType", "entityId",
                     "organizationId", "projectId", "environmentId", "ipAddress", "requestId",
                     "reason", "metadata", "status", "occurredAt"
                 ) VALUES (
-                    ${id}, ${event.actorId || null}, ${event.actorEmail || null}, ${event.action},
+                    ${id}, ${operatorId}, ${event.actorEmail || null}, ${event.action},
                     ${event.entityType}, ${event.entityId || null}, ${event.organizationId},
                     ${event.projectId}, ${event.environmentId || null}, ${event.ipAddress || null},
                     ${event.requestId || null}, ${event.reason || null},
-                    ${JSON.stringify(event.metadata || {})}::jsonb, 'PENDING', NOW()
+                    ${JSON.stringify({ operatorId, ...(typeof event.metadata === 'object' && event.metadata !== null ? (event.metadata as any) : {}) })}::jsonb, 'PENDING', NOW()
                 )
             `;
             return id;
@@ -2524,13 +2552,30 @@ const extraMethods = {
     recordPlatformAdminAudit: async (event: PlatformAdminAuditInput): Promise<string> => {
         if (prismaIsRequired()) return getPrismaRepository().recordPlatformAdminAudit(event);
         const auditId = `audit_${crypto.randomUUID()}`;
-        PlatformRepository.recordAuditEvent({ ...event, id: auditId, status: 'COMMITTED' });
+        const operatorId = event.actorId || event.actorEmail || 'system:orchestrator';
+        PlatformRepository.recordAuditEvent({
+            ...event,
+            actorId: operatorId,
+            operatorId,
+            metadata: { operatorId, ...(event.metadata as any || {}) },
+            id: auditId,
+            status: 'COMMITTED',
+        });
         return auditId;
     },
     createPlatformAdminAuditIntent: async (event: PlatformAdminAuditIntentInput): Promise<string> => {
         if (prismaIsRequired()) return getPrismaRepository().createPlatformAdminAuditIntent(event);
         const id = `audit_${crypto.randomUUID()}`;
-        PlatformRepository.recordAuditEvent({ ...event, id, status: 'PENDING', failureReason: undefined });
+        const operatorId = event.actorId || event.actorEmail || 'system:orchestrator';
+        PlatformRepository.recordAuditEvent({
+            ...event,
+            actorId: operatorId,
+            operatorId,
+            metadata: { operatorId, ...(event.metadata as any || {}) },
+            id,
+            status: 'PENDING',
+            failureReason: undefined,
+        });
         return id;
     },
     setProjectUsageWithAuditIntent: async (

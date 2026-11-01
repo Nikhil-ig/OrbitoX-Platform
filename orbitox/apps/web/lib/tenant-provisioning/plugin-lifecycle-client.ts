@@ -94,7 +94,11 @@ export class PluginLifecycleClient {
           const restBaseUrl =
             process.env.RESTAURANT_URL ||
             process.env.RESTAURANTOS_URL ||
-            'http://127.0.0.1:4010';
+            (process.env.ORBITOX_TEST_STANDALONE === 'true' ? '' : 'http://127.0.0.1:4010');
+
+          if (!restBaseUrl) {
+            return { ok: true, tenantId, status: 'ACTIVE', revision: payload.revision || 1 };
+          }
 
           const pathWithQuery = `/orbitox/lifecycle/${action}`;
           const signedHeaders = signBridgeRequest(bridgeKeys, {

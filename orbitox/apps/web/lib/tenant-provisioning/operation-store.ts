@@ -4,7 +4,14 @@ import { PlatformOperationRecord, OperationStep } from './types';
 // In-memory fallback for JSON / mock test adapter modes
 const memoryOperations = new Map<string, PlatformOperationRecord>();
 
-// Ephemeral single-use secret store with 15-minute TTL (NEVER stored in DB)
+/**
+ * Ephemeral single-use secret store with 15-minute TTL (NEVER stored in DB).
+ *
+ * NOTE: The in-memory one-time store is strictly per-server instance (process-local state).
+ * The primary delivery mechanism is the raw API key secret returned synchronously once
+ * in the initial 202 Accepted response. This in-memory store serves only as a short fallback
+ * for clients that failed to capture the secret in the initial 202 response.
+ */
 interface EphemeralSecret {
   secret: string;
   id?: string;
@@ -74,8 +81,11 @@ function sanitizeOperationResult(result: any): any {
 
 export class OperationStore {
   async createOperation(op: PlatformOperationRecord): Promise<PlatformOperationRecord> {
+    const nowIso = new Date().toISOString();
     const sanitizedOp: PlatformOperationRecord = {
       ...op,
+      createdAt: op.createdAt || nowIso,
+      updatedAt: op.updatedAt || nowIso,
       result: sanitizeOperationResult(op.result),
     };
 
@@ -86,7 +96,7 @@ export class OperationStore {
         await (prisma as any).platformOperation.create({
           data: {
             id: sanitizedOp.id,
-            type: sanitizedOp.type,
+            type: sanitizedOp.type || 'TENANT_PROVISION',
             tenantId: sanitizedOp.tenantId,
             organizationId: sanitizedOp.organizationId,
             idempotencyKey: sanitizedOp.idempotencyKey,
@@ -227,6 +237,51 @@ export class OperationStore {
     }
 
     return merged;
+  }
+
+  async listOperations(filter?: { organizationId?: string; status?: string }): Promise<PlatformOperationRecord[]> {
+    if (process.env.ORBITOX_PLATFORM_REPOSITORY !== 'json') {
+      try {
+        const where: any = {};
+        if (filter?.organizationId) where.organizationId = filter.organizationId;
+        if (filter?.status) where.status = filter.status;
+        const rows = await (prisma as any).platformOperation.findMany({
+          where,
+          orderBy: { createdAt: 'desc' },
+          take: 50,
+        });
+        if (rows && rows.length > 0) {
+          return rows.map((row: any) => ({
+            id: row.id,
+            type: row.type,
+            tenantId: row.tenantId,
+            organizationId: row.organizationId,
+            idempotencyKey: row.idempotencyKey,
+            status: row.status,
+            steps: (row.steps as unknown as OperationStep[]) || [],
+            request: (row.request as Record<string, any>) || {},
+            result: (row.result as Record<string, any>) || null,
+            error: row.error,
+            operatorId: row.operatorId,
+            requestId: row.requestId,
+            createdAt: row.createdAt.toISOString(),
+            updatedAt: row.updatedAt.toISOString(),
+            completedAt: row.completedAt ? row.completedAt.toISOString() : null,
+          }));
+        }
+      } catch (err: any) {
+        // fallback to memory
+      }
+    }
+
+    let items = Array.from(memoryOperations.values());
+    if (filter?.organizationId) {
+      items = items.filter((o) => o.organizationId === filter.organizationId);
+    }
+    if (filter?.status) {
+      items = items.filter((o) => o.status === filter.status);
+    }
+    return items.sort((a, b) => (b.createdAt > a.createdAt ? 1 : -1));
   }
 }
 

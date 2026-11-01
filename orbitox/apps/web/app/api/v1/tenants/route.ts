@@ -4,7 +4,7 @@ import { provisioningSaga } from '@/lib/tenant-provisioning/provisioning-saga';
 import { TenantProvisionRequest } from '@/lib/tenant-provisioning/types';
 
 export async function POST(req: NextRequest) {
-  // 1. Authenticate customer API key
+  // 1. Authenticate customer API key (self-guarded)
   const authHeader = req.headers.get('authorization') || '';
   const apiKeyHeader = req.headers.get('x-api-key') || '';
   const rawKey = authHeader.replace(/^Bearer\s+/i, '').trim() || apiKeyHeader.trim();
@@ -20,7 +20,7 @@ export async function POST(req: NextRequest) {
   try {
     authRecord = await platformRepository.authorizeApiKey(rawKey);
   } catch (err: any) {
-    console.error('[POST /v1/tenants] API key authorization failed:', err);
+    console.error('[POST /api/v1/tenants] API key authorization failed:', err);
     return NextResponse.json(
       { error: 'UNAUTHORIZED', message: 'Invalid or revoked customer API key' },
       { status: 401 }
@@ -139,7 +139,7 @@ export async function POST(req: NextRequest) {
       requestId,
     });
   } catch (err: any) {
-    console.error('[POST /v1/tenants error]:', err?.message || err);
+    console.error('[POST /api/v1/tenants error]:', err?.message || err);
     return NextResponse.json(
       {
         error: 'PROVISIONING_FAILED',
@@ -161,6 +161,24 @@ export async function POST(req: NextRequest) {
     );
   }
 
+  try {
+    await platformRepository.recordPlatformAdminAudit({
+      action: 'TENANT_PROVISION_REQUESTED',
+      entityType: 'TENANT',
+      entityId: operation.tenantId,
+      actorId: operatorId,
+      organizationId: targetOrgId,
+      requestId,
+      metadata: {
+        operationId: operation.id,
+        tenantId: operation.tenantId,
+        slug: body.slug,
+        plugins: body.plugins,
+        operatorId,
+      },
+    });
+  } catch {}
+
   // Return 202 Accepted with single-return raw API key
   return NextResponse.json(
     {
@@ -176,7 +194,7 @@ export async function POST(req: NextRequest) {
     {
       status: 202,
       headers: {
-        Location: `/v1/operations/${operation.id}`,
+        Location: `/api/v1/operations/${operation.id}`,
       },
     }
   );

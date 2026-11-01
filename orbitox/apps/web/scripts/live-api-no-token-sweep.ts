@@ -4,6 +4,10 @@ import path from 'node:path';
 import * as fs from 'node:fs';
 import net from 'node:net';
 import { PrismaClient } from '@prisma/client';
+import { fileURLToPath } from 'node:url';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 const RESTRICTED_PORTS = new Set([3659, 4045, 5060, 5061, 6000, 6566, 6665, 6666, 6667, 6668, 6669, 6697]);
 
@@ -133,6 +137,15 @@ async function run() {
   const keyPrefix = rawReadOnlySecret.slice(0, 14);
   const secretFingerprint = crypto.createHash('sha256').update(rawReadOnlySecret).digest('hex');
   const authVerifier = crypto.createHmac('sha256', serverPepper).update(rawReadOnlySecret).digest('hex');
+
+  // Seed other organization for cross-org testing
+  const otherOrg = await prisma.platformOrganization.create({
+    data: {
+      name: 'C2 Other Org',
+      slug: `c2-other-${Date.now()}`,
+      billingEmail: 'other@test.org',
+    },
+  });
 
   const org = await prisma.platformOrganization.create({
     data: {
@@ -424,6 +437,64 @@ async function run() {
     }
   }
 
+  // Part 3: Real Standalone Server Tenant Provisioning Gate (Fix N1 requirement)
+  console.log('\n### Part 3: Real Standalone Server Tenant Provisioning Gate (Fix N1 requirement)\n');
+  console.log('| Test Scenario | Method | URL Path | Presented Auth | Expected Status | Status | Pass/Fail |');
+  console.log('|---|---|---|---|---|---|---|');
+
+  // 1. No key -> 401
+  try {
+    const res = await fetch(`http://127.0.0.1:${PORT}/api/v1/tenants`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ name: 'No Auth Tenant', slug: 'no-auth-tenant', plugins: [{ id: 'hospital-os', plan: 'starter' }] }),
+    });
+    const isPass = res.status === 401;
+    if (isPass) passed++; else failed++;
+    console.log(`| No API key presented | **POST** | \`/api/v1/tenants\` | None | 401 | **${res.status}** | ${isPass ? 'PASS' : 'FAIL'} |`);
+  } catch (err: any) {
+    failed++;
+    console.log(`| No API key presented | **POST** | \`/api/v1/tenants\` | None | 401 | **ERROR** (${err.message}) | FAIL |`);
+  }
+
+  // 2. Cross-org key -> 403
+  try {
+    const res = await fetch(`http://127.0.0.1:${PORT}/api/v1/tenants`, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        'x-api-key': rawReadOnlySecret,
+      },
+      body: JSON.stringify({ organisation: otherOrg.slug, name: 'Cross Org Tenant', slug: 'cross-org-tenant', plugins: [{ id: 'hospital-os', plan: 'starter' }] }),
+    });
+    const isPass = res.status === 403;
+    if (isPass) passed++; else failed++;
+    console.log(`| Key from another organisation | **POST** | \`/api/v1/tenants\` | Key (Org ${org.slug}) | 403 | **${res.status}** | ${isPass ? 'PASS' : 'FAIL'} |`);
+  } catch (err: any) {
+    failed++;
+    console.log(`| Key from another organisation | **POST** | \`/api/v1/tenants\` | Key (Org ${org.slug}) | 403 | **ERROR** (${err.message}) | FAIL |`);
+  }
+
+  // 3. Customer API key creates tenant with 202
+  try {
+    const res = await fetch(`http://127.0.0.1:${PORT}/api/v1/tenants`, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        'x-api-key': rawReadOnlySecret,
+      },
+      body: JSON.stringify({ organisation: org.slug, name: 'Standalone Sweep Tenant', slug: `sweep-tenant-${Date.now()}`, plugins: [{ id: 'hospital-os', plan: 'starter' }] }),
+    });
+    const resJson = await res.json().catch(() => ({}));
+    const hasSecret = Boolean(resJson.apiKey && resJson.apiKey.secret);
+    const isPass = res.status === 202 && hasSecret;
+    if (isPass) passed++; else failed++;
+    console.log(`| Customer API key creates tenant | **POST** | \`/api/v1/tenants\` | Key (Org ${org.slug}) | 202 + apiKey.secret | **${res.status}** (secret: ${hasSecret}) | ${isPass ? 'PASS' : 'FAIL'} |`);
+  } catch (err: any) {
+    failed++;
+    console.log(`| Customer API key creates tenant | **POST** | \`/api/v1/tenants\` | Key (Org ${org.slug}) | 202 + apiKey.secret | **ERROR** (${err.message}) | FAIL |`);
+  }
+
   console.log(`\n======================================================`);
   console.log(`Live API Sweep Summary: ${passed} passed, ${failed} failed.`);
   console.log(`Total endpoints tested: ${passed + failed}`);
@@ -435,6 +506,7 @@ async function run() {
     await prisma.projectEnvironment.delete({ where: { id: envRecord.id } });
     await prisma.platformProject.delete({ where: { id: proj.id } });
     await prisma.platformOrganization.delete({ where: { id: org.id } });
+    await prisma.platformOrganization.delete({ where: { id: otherOrg.id } });
     await prisma.$disconnect();
   } catch {}
 

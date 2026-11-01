@@ -59,6 +59,8 @@ for (const path of [
 }
 await expectStatus('GET /api/v1/projects/anon/plans -> 401', 401, `/api/v1/projects/${projectId}/plans`);
 await expectStatus('POST /api/v1/projects/factory -> 401', 401, '/api/v1/projects/factory', { method: 'POST', headers: json, body: '{}' });
+await expectStatus('POST /api/v1/tenants -> 401', 401, '/api/v1/tenants', { method: 'POST', headers: json, body: '{}' });
+await expectStatus('GET /api/v1/operations/anon -> 401', 401, '/api/v1/operations/anon_123');
 
 console.log('\nAdmin token works (Bearer and Basic)');
 await expectStatus('GET /api/v1/fleet with Bearer', 200, '/api/v1/fleet', { headers: bearer(ADMIN) });

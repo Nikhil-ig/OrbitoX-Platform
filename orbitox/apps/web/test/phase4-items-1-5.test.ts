@@ -7,9 +7,9 @@ import assert from 'node:assert/strict';
 import crypto from 'node:crypto';
 import { NextRequest } from 'next/server';
 import { platformRepository } from '../lib/platform-repository';
-import { POST as postTenants } from '../app/v1/tenants/route';
-import { GET as getOperation, POST as postOperation } from '../app/v1/operations/[id]/route';
-import { GET as getCredentials } from '../app/v1/operations/[id]/credentials/route';
+import { POST as postTenants } from '../app/api/v1/tenants/route';
+import { GET as getOperation, POST as postOperation } from '../app/api/v1/operations/[id]/route';
+import { GET as getCredentials } from '../app/api/v1/operations/[id]/credentials/route';
 import { POST as hospitalLifecycleHandler } from '../app/api/hospital/lifecycle/[action]/route';
 import { provisioningSaga } from '../lib/tenant-provisioning/provisioning-saga';
 import { operationStore } from '../lib/tenant-provisioning/operation-store';
@@ -200,7 +200,7 @@ describe('Phase 4 Items 1–5: The 2-Minute Tenant & Lifecycle Hooks', () => {
 
       // Verify Location header
       const location = res.headers.get('Location');
-      assert.equal(location, `/v1/operations/${json.operationId}`);
+      assert.equal(location, `/api/v1/operations/${json.operationId}`);
     });
   });
 
@@ -513,8 +513,16 @@ describe('Phase 4 Items 1–5: The 2-Minute Tenant & Lifecycle Hooks', () => {
   // ITEM 3: Operation Status Endpoint GET /v1/operations/:id (No Secrets)
   // ─────────────────────────────────────────────────────────────
   describe('Item 3: Operation Status GET /v1/operations/:id with Zero Secrets Leaked', () => {
-    it('returns 404 for non-existent operation ID', async () => {
-      const req = new NextRequest('http://127.0.0.1:3005/v1/operations/op_nonexistent_999999');
+    it('returns 401 UNAUTHORIZED when no customer API key is presented', async () => {
+      const req = new NextRequest('http://127.0.0.1:3005/api/v1/operations/op_nonexistent_999999');
+      const res = await getOperation(req, { params: Promise.resolve({ id: 'op_nonexistent_999999' }) });
+      assert.equal(res.status, 401);
+    });
+
+    it('returns 404 for non-existent operation ID when authenticated', async () => {
+      const req = new NextRequest('http://127.0.0.1:3005/api/v1/operations/op_nonexistent_999999', {
+        headers: { Authorization: `Bearer ${keyASecret}` },
+      });
       const res = await getOperation(req, { params: Promise.resolve({ id: 'op_nonexistent_999999' }) });
       assert.equal(res.status, 404);
     });
@@ -545,9 +553,18 @@ describe('Phase 4 Items 1–5: The 2-Minute Tenant & Lifecycle Hooks', () => {
       // Poll or wait briefly for steps to record
       await new Promise((r) => setTimeout(r, 600));
 
-      const statusReq = new NextRequest(`http://127.0.0.1:3005/v1/operations/${operationId}`);
+      const statusReq = new NextRequest(`http://127.0.0.1:3005/api/v1/operations/${operationId}`, {
+        headers: { Authorization: `Bearer ${keyASecret}` },
+      });
       const statusRes = await getOperation(statusReq, { params: Promise.resolve({ id: operationId }) });
       assert.equal(statusRes.status, 200);
+
+      // Verify cross-org isolation: keyB from Org B cannot read Org A operation
+      const crossOrgReq = new NextRequest(`http://127.0.0.1:3005/api/v1/operations/${operationId}`, {
+        headers: { Authorization: `Bearer ${keyBSecret}` },
+      });
+      const crossOrgRes = await getOperation(crossOrgReq, { params: Promise.resolve({ id: operationId }) });
+      assert.equal(crossOrgRes.status, 403, 'Cross-org access must return 403 FORBIDDEN');
 
       const opData = await statusRes.json();
 

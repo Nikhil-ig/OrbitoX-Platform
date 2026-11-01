@@ -1,0 +1,457 @@
+/* 🪐 OrbitoX Tenant Provisioning Wizard Styles (Design Tokens v3.2) */
+
+.container {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+  max-width: 1040px;
+  margin: 0 auto;
+  padding-bottom: 60px;
+}
+
+.header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 16px;
+  flex-wrap: wrap;
+  border-bottom: 1px solid var(--ui-border-default, rgba(255, 255, 255, 0.08));
+  padding-bottom: 20px;
+}
+
+.backLink {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--ui-text-secondary, #9CA3AF);
+  text-decoration: none;
+  margin-bottom: 8px;
+  transition: color 0.15s ease;
+}
+
+.backLink:hover {
+  color: var(--ui-text-primary, #F3F4F6);
+}
+
+.title {
+  margin: 0;
+  font-size: 26px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  color: var(--ui-text-primary, #F3F4F6);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.subtitle {
+  margin: 6px 0 0;
+  font-size: 14px;
+  color: var(--ui-text-secondary, #9CA3AF);
+  max-width: 680px;
+  line-height: 1.5;
+}
+
+/* ── Wizard Cards & Sections ──────────────────────────────────────────────── */
+.card {
+  background: var(--ui-bg-surface, #111318);
+  border: 1px solid var(--ui-border-default, rgba(255, 255, 255, 0.08));
+  border-radius: 12px;
+  padding: 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.25);
+}
+
+.sectionHeader {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--ui-text-primary, #F3F4F6);
+}
+
+.stepNumber {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: rgba(99, 102, 241, 0.15);
+  color: var(--ui-accent-primary, #6366F1);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+/* ── Form Controls ────────────────────────────────────────────────────────── */
+.formGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 16px;
+}
+
+.formGroup {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.formGroupFull {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.label {
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--ui-text-secondary, #9CA3AF);
+}
+
+.input,
+.select {
+  appearance: none;
+  background: var(--ui-bg-input, #0F1116);
+  border: 1px solid var(--ui-border-default, rgba(255, 255, 255, 0.08));
+  color: var(--ui-text-primary, #F3F4F6);
+  border-radius: 8px;
+  padding: 10px 14px;
+  font-size: 13px;
+  font-family: inherit;
+  transition: all 0.15s ease;
+  width: 100%;
+}
+
+.input:focus,
+.select:focus {
+  outline: none;
+  border-color: var(--ui-accent-primary, #6366F1);
+  box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.15);
+}
+
+.helperText {
+  font-size: 12px;
+  color: var(--ui-text-muted, #606775);
+}
+
+/* ── Plugin Selection Cards ───────────────────────────────────────────────── */
+.pluginGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 14px;
+}
+
+.pluginCard {
+  border: 1px solid var(--ui-border-default, rgba(255, 255, 255, 0.08));
+  background: var(--ui-bg-surface-raised, #161920);
+  border-radius: 10px;
+  padding: 16px;
+  cursor: pointer;
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  position: relative;
+}
+
+.pluginCard:hover {
+  border-color: rgba(99, 102, 241, 0.4);
+  transform: translateY(-2px);
+}
+
+.pluginCardSelected {
+  border-color: var(--ui-accent-primary, #6366F1);
+  background: rgba(99, 102, 241, 0.06);
+  box-shadow: 0 0 0 1px var(--ui-accent-primary, #6366F1);
+}
+
+.pluginCardTop {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+}
+
+.pluginIcon {
+  font-size: 28px;
+}
+
+.pluginCheckbox {
+  width: 18px;
+  height: 18px;
+  accent-color: var(--ui-accent-primary, #6366F1);
+}
+
+.pluginName {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--ui-text-primary, #F3F4F6);
+  margin: 0;
+}
+
+.pluginDesc {
+  font-size: 12px;
+  color: var(--ui-text-secondary, #9CA3AF);
+  margin: 0;
+  line-height: 1.4;
+}
+
+.planSelector {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding-top: 8px;
+  border-top: 1px solid var(--ui-border-subtle, rgba(255, 255, 255, 0.05));
+  font-size: 12px;
+}
+
+/* ── Live Progress Section ────────────────────────────────────────────────── */
+.progressContainer {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.progressHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.badgeLive {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 600;
+  background: rgba(99, 102, 241, 0.15);
+  color: var(--ui-accent-brand, #818CF8);
+  border: 1px solid rgba(99, 102, 241, 0.3);
+}
+
+.pulseDot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #6366F1;
+  animation: pulse 1.5s infinite;
+}
+
+@keyframes pulse {
+  0% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(99, 102, 241, 0.7); }
+  70% { transform: scale(1); box-shadow: 0 0 0 6px rgba(99, 102, 241, 0); }
+  100% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(99, 102, 241, 0); }
+}
+
+.progressBarContainer {
+  width: 100%;
+  height: 8px;
+  background: rgba(255, 255, 255, 0.06);
+  border-radius: 999px;
+  overflow: hidden;
+  position: relative;
+}
+
+.progressBarFill {
+  height: 100%;
+  background: linear-gradient(90deg, #6366F1 0%, #10B981 100%);
+  border-radius: 999px;
+  transition: width 0.35s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+/* ── Steps Timeline ───────────────────────────────────────────────────────── */
+.stepList {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.stepItem {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 16px;
+  border-radius: 8px;
+  background: var(--ui-bg-surface-raised, #161920);
+  border: 1px solid var(--ui-border-default, rgba(255, 255, 255, 0.06));
+  transition: all 0.15s ease;
+}
+
+.stepItemRunning {
+  border-color: rgba(99, 102, 241, 0.5);
+  background: rgba(99, 102, 241, 0.08);
+  box-shadow: 0 0 12px rgba(99, 102, 241, 0.15);
+}
+
+.stepItemCompleted {
+  border-color: rgba(16, 185, 129, 0.3);
+  background: rgba(16, 185, 129, 0.04);
+}
+
+.stepItemFailed {
+  border-color: rgba(239, 68, 68, 0.5);
+  background: rgba(239, 68, 68, 0.08);
+}
+
+.stepLeft {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.stepStatusIcon {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.stepStatusPending {
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--ui-text-muted, #606775);
+}
+
+.stepStatusRunning {
+  background: #6366F1;
+  color: #FFFFFF;
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+.stepStatusCompleted {
+  background: #10B981;
+  color: #FFFFFF;
+}
+
+.stepStatusFailed {
+  background: #EF4444;
+  color: #FFFFFF;
+}
+
+.stepName {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ui-text-primary, #F3F4F6);
+}
+
+.stepDuration {
+  font-size: 12px;
+  font-family: var(--font-mono, monospace);
+  color: var(--ui-text-muted, #606775);
+}
+
+/* ── Secret Card (Synchronously returned in 202) ─────────────────────────── */
+.secretCard {
+  background: linear-gradient(135deg, rgba(200, 107, 60, 0.1) 0%, rgba(99, 102, 241, 0.1) 100%);
+  border: 1px solid rgba(200, 107, 60, 0.4);
+  border-radius: 12px;
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  box-shadow: 0 0 24px rgba(200, 107, 60, 0.15);
+}
+
+.secretHeader {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+  font-weight: 700;
+  color: #FBBF24;
+}
+
+.secretBox {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: #0A0C10;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 8px;
+  padding: 10px 14px;
+  font-family: var(--font-mono, monospace);
+  font-size: 14px;
+  color: #34D399;
+  letter-spacing: 0.05em;
+  word-break: break-all;
+}
+
+/* ── Action Buttons ───────────────────────────────────────────────────────── */
+.btn {
+  appearance: none;
+  cursor: pointer;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  padding: 10px 18px;
+  border-radius: 8px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  text-decoration: none;
+  transition: all 0.15s ease;
+  border: 1px solid transparent;
+}
+
+.btnPrimary {
+  background: var(--ui-accent-primary, #6366F1);
+  color: #FFFFFF !important;
+}
+
+.btnPrimary:hover:not(:disabled) {
+  filter: brightness(1.1);
+  transform: translateY(-1px);
+}
+
+.btnPrimary:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.btnSecondary {
+  background: var(--ui-bg-surface-raised, #161920);
+  border-color: var(--ui-border-default, rgba(255, 255, 255, 0.1));
+  color: var(--ui-text-primary, #F3F4F6);
+}
+
+.btnSecondary:hover {
+  background: var(--ui-bg-surface-hover, #1B1E27);
+  border-color: rgba(255, 255, 255, 0.2);
+}
+
+.btnDanger {
+  background: rgba(239, 68, 68, 0.15);
+  border-color: rgba(239, 68, 68, 0.4);
+  color: #EF4444;
+}
+
+.btnDanger:hover {
+  background: rgba(239, 68, 68, 0.25);
+}
+
+.btnRow {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}

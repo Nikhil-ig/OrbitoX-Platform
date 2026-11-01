@@ -94,7 +94,12 @@ const TENANT_RE = /^org\/[a-zA-Z0-9_.-]+\/project\/[a-zA-Z0-9_.-]+\/environment\
 
 export function canonicalizePluginId(pluginId: string): string {
   const trimmed = (pluginId || '').trim();
-  if (trimmed === 'restaurant' || trimmed === '@orbitox-io/restaurant' || trimmed === '@orbitox/restaurant') {
+  if (
+    trimmed === 'restaurant' ||
+    trimmed === 'restaurant-os' ||
+    trimmed === '@orbitox-io/restaurant' ||
+    trimmed === '@orbitox/restaurant'
+  ) {
     return '@orbitox/restaurant';
   }
   if (trimmed === 'crm' || trimmed === '@orbitox-io/crm' || trimmed === '@orbitox/crm') {
@@ -108,6 +113,7 @@ export function canonicalizePluginId(pluginId: string): string {
     trimmed === '@orbitox-io/hms' ||
     trimmed === '@orbitox/hms' ||
     trimmed === 'hospital' ||
+    trimmed === 'hospital-os' ||
     trimmed === '@orbitox-io/hospital' ||
     trimmed === '@orbitox/hospital'
   ) {
@@ -956,10 +962,17 @@ export class PlatformRepository {
 
   static recordAuditEvent(event: Record<string, any>): Record<string, any> {
     this.initialize();
+    const operatorId = event.operatorId || event.actorId || event.actor || event.actorEmail || 'system:orchestrator';
     const record = {
       id: `audit_${crypto.randomUUID()}`,
       createdAt: new Date().toISOString(),
       ...event,
+      actorId: operatorId,
+      operatorId,
+      metadata: {
+        operatorId,
+        ...(event.metadata || {}),
+      },
     };
     this.auditLogs = [record, ...this.auditLogs].slice(0, 10000);
     this.saveImmediate();
@@ -1331,18 +1344,34 @@ export class PlatformRepository {
     this.initialize();
     const canonical = canonicalizePluginId(pluginId);
     const targetTenantId = tenantId?.trim();
-    let resolvedTenantId = targetTenantId;
-    if (!TENANT_RE.test(targetTenantId)) {
+    const candidateIds = new Set<string>([targetTenantId]);
+
+    const tenantMatch = /^org\/([^/]+)\/project\/([^/]+)\/environment\/([^/]+)$/.exec(targetTenantId);
+    if (tenantMatch) {
+      const [, orgPart, projPart, envPart] = tenantMatch;
+      const proj = projPart
+        ? this.projects.find((p) => p.id === projPart || p.slug === projPart.toLowerCase())
+        : undefined;
+      const org = proj ? this.getOrganization(proj.organizationId) : undefined;
+      if (proj && org) {
+        if (envPart) {
+          candidateIds.add(`org/${org.slug}/project/${proj.slug}/environment/${envPart}`);
+          candidateIds.add(`org/${org.id}/project/${proj.id}/environment/${envPart}`);
+        }
+        candidateIds.add(`org/${org.slug}/project/${proj.slug}/environment/production`);
+      }
+    } else {
       const proj = this.getProject(targetTenantId);
       const org = proj ? this.getOrganization(proj.organizationId) : undefined;
       if (proj && org) {
-        resolvedTenantId = `org/${org.slug}/project/${proj.slug}/environment/production`;
+        candidateIds.add(`org/${org.slug}/project/${proj.slug}/environment/production`);
+        candidateIds.add(`org/${org.id}/project/${proj.id}/environment/production`);
       }
     }
-    // Requirement 4: Look installations up by tenantId only, and remove the OR runtimeTenantId match
+
     return this.pluginInstallations.find(
       (p) =>
-        (p.tenantId === targetTenantId || p.tenantId === resolvedTenantId) &&
+        candidateIds.has(p.tenantId) &&
         (canonicalizePluginId(p.pluginId) === canonical ||
           p.pluginId === pluginId ||
           p.pluginId === canonical.replace(/^@orbitox\//, ''))

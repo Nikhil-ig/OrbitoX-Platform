@@ -46,9 +46,11 @@ export const SELF_GUARDED_API_PREFIXES: readonly string[] = [
     '/api/v1/hms/',
     '/api/v1/hrms/',
     '/api/v1/inventory/',
+    '/api/v1/operations',
     '/api/v1/pos/',
     '/api/v1/restaurant/',
     '/api/v1/school/',
+    '/api/v1/tenants',
 ] as const;
 
 export function isNextInternalStatic(pathname: string): boolean {

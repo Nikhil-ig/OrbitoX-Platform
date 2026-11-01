@@ -71,7 +71,7 @@ export class ProvisioningSaga {
       { id: '7', name: 'finalize_active', status: 'PENDING' },
     ];
 
-    // Placeholder tenant ID updated immediately upon Step 2 entity creation
+    // W3: Canonical tenant ID matching project creation and TENANT_RE
     const initialTenantId = `org/${org.id}/project/${cleanSlug}/environment/${environmentSlug}`;
 
     const operation: PlatformOperationRecord = {
@@ -231,6 +231,25 @@ export class ProvisioningSaga {
 
         await operationStore.updateOperation(operationId, { tenantId });
 
+        try {
+          await platformRepository.recordPlatformAdminAudit({
+            action: 'TENANT_ENTITY_CREATED',
+            entityType: 'TENANT',
+            entityId: tenantId,
+            actorId: options.operatorId || 'orchestrator',
+            organizationId: org.id,
+            projectId: project?.id,
+            environmentId: targetEnv?.id,
+            requestId: options.requestId,
+            metadata: {
+              operationId,
+              tenantId,
+              slug: cleanSlug,
+              operatorId: options.operatorId || 'orchestrator',
+            },
+          });
+        } catch {}
+
         await updateStep('2', 'COMPLETED', {
           completedAt: new Date().toISOString(),
           durationMs: Math.round(performance.now() - t2),
@@ -315,6 +334,25 @@ export class ProvisioningSaga {
               },
             },
           });
+
+          try {
+            await platformRepository.recordPlatformAdminAudit({
+              action: 'TENANT_KEY_ISSUED',
+              entityType: 'API_KEY',
+              entityId: keyId,
+              actorId: options.operatorId || 'orchestrator',
+              organizationId: org.id,
+              projectId: project.id,
+              environmentId: targetEnv.id,
+              requestId: options.requestId,
+              metadata: {
+                operationId,
+                tenantId,
+                keyPrefix: prefix,
+                operatorId: options.operatorId || 'orchestrator',
+              },
+            });
+          } catch {}
 
           await updateStep('4', 'COMPLETED', {
             completedAt: new Date().toISOString(),
@@ -532,6 +570,7 @@ export class ProvisioningSaga {
             metadata: {
               operationId,
               plugins: input.plugins.map((p) => p.id),
+              operatorId: options.operatorId || 'orchestrator',
             },
           });
         } catch {}
@@ -739,6 +778,22 @@ export class ProvisioningSaga {
       status: 'CANCELLED',
       error: 'Operation cancelled by operator. Succeeded plugins compensated via deprovision.',
     });
+
+    try {
+      await platformRepository.recordPlatformAdminAudit({
+        action: 'TENANT_OPERATION_CANCELLED',
+        entityType: 'TENANT_OPERATION',
+        entityId: operationId,
+        actorId: op.operatorId || 'orchestrator',
+        organizationId: op.organizationId,
+        requestId: op.requestId || undefined,
+        metadata: {
+          operationId,
+          tenantId,
+          operatorId: op.operatorId || 'orchestrator',
+        },
+      });
+    } catch {}
 
     return true;
   }
