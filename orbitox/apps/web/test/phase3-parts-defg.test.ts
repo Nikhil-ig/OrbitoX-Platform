@@ -1065,7 +1065,7 @@ describe('Phase 3 Parts D–G: Rights, Licensing, Enforcement, Webhooks & SDK', 
       assert.equal(verified, true, 'Config signed with pinned k1 must verify');
     });
 
-    it('rejects unsigned configuration and preserves previous configuration', async () => {
+    it('rejects all configurations when no keys are pinned (no keys → reject)', () => {
       const client = new ControlClient({
         manifest: {
           projectId: 'proj_pilot_01',
@@ -1079,47 +1079,15 @@ describe('Phase 3 Parts D–G: Rights, Licensing, Enforcement, Webhooks & SDK', 
           apis: [],
           planReferences: [],
           environmentMetadata: { defaultEnvironment: 'production', supportedEnvironments: ['production'] },
-          platformController: { controlPlaneUrl: 'http://localhost:3005', syncIntervalSeconds: 30, requireSignedConfig: true },
+          platformController: { controlPlaneUrl: 'http://localhost:3005', syncIntervalSeconds: 30 },
           capabilities: [],
         },
-        pinnedPublicKeys: { k1: k1.publicKey },
-      });
-
-      const unsignedConfig: any = {
-        configVersion: 101,
-        revisionNumber: 3,
-        projectId: 'proj_pilot_01',
-        features: { orders: true, hacked: true },
-        signature: '', // Unsigned!
-      };
-
-      const verified = client.verifyConfigSignature(unsignedConfig);
-      assert.equal(verified, false, 'Unsigned configuration must be rejected');
-    });
-
-    it('rejects tampered or forged signature and preserves previous configuration', () => {
-      const client = new ControlClient({
-        manifest: {
-          projectId: 'proj_pilot_01',
-          slug: 'pilot',
-          name: 'Pilot OS',
-          type: 'restaurant-os',
-          version: '1.0.0',
-          runtime: { type: 'standalone', entrypoint: 'src/server.ts', defaultPort: 4010, healthEndpoint: '/health' },
-          enabledPlugins: [],
-          enabledFeatures: ['orders'],
-          apis: [],
-          planReferences: [],
-          environmentMetadata: { defaultEnvironment: 'production', supportedEnvironments: ['production'] },
-          platformController: { controlPlaneUrl: 'http://localhost:3005', syncIntervalSeconds: 30, requireSignedConfig: true },
-          capabilities: [],
-        },
-        pinnedPublicKeys: { k1: k1.publicKey },
+        // No pinned keys provided!
       });
 
       const config: SignedRuntimeConfiguration = {
-        configVersion: 102,
-        revisionNumber: 4,
+        configVersion: 100,
+        revisionNumber: 2,
         projectId: 'proj_pilot_01',
         environment: 'production',
         issuedAt: new Date().toISOString(),
@@ -1129,19 +1097,227 @@ describe('Phase 3 Parts D–G: Rights, Licensing, Enforcement, Webhooks & SDK', 
         apiPolicies: {},
         mcpTools: [],
         desiredState: {},
-        signature: '',
+        signature: 'valid_looking_signature',
       };
 
-      // Attacker signs with unpinned key
-      config.signature = signConfigWithEd25519(config, attacker.privateKey, 'k1');
-      assert.equal(client.verifyConfigSignature(config), false, 'Attacker signature must be rejected');
+      assert.equal(client.verifyConfigSignature(config), false, 'No pinned keys must reject all configs');
+      assert.equal(client.applyConfiguration(config), false, 'applyConfiguration must fail when no keys pinned');
+    });
 
-      // Tampered payload with k1 signature
-      const validSig = signConfigWithEd25519(config, k1.privateKey, 'k1');
+    it('rejects random string signature (random string → reject)', () => {
+      const client = new ControlClient({
+        manifest: {
+          projectId: 'proj_pilot_01',
+          slug: 'pilot',
+          name: 'Pilot OS',
+          type: 'restaurant-os',
+          version: '1.0.0',
+          runtime: { type: 'standalone', entrypoint: 'src/server.ts', defaultPort: 4010, healthEndpoint: '/health' },
+          enabledPlugins: [],
+          enabledFeatures: ['orders'],
+          apis: [],
+          planReferences: [],
+          environmentMetadata: { defaultEnvironment: 'production', supportedEnvironments: ['production'] },
+          platformController: { controlPlaneUrl: 'http://localhost:3005', syncIntervalSeconds: 30 },
+          capabilities: [],
+        },
+        pinnedPublicKeys: { k1: k1.publicKey },
+      });
+
+      const config: SignedRuntimeConfiguration = {
+        configVersion: 100,
+        revisionNumber: 2,
+        projectId: 'proj_pilot_01',
+        environment: 'production',
+        issuedAt: new Date().toISOString(),
+        expiresAt: new Date(Date.now() + 86400 * 1000).toISOString(),
+        features: { orders: true },
+        entitlements: {},
+        apiPolicies: {},
+        mcpTools: [],
+        desiredState: {},
+        signature: 'completely_random_unparseable_garbage_signature',
+      };
+
+      assert.equal(client.verifyConfigSignature(config), false, 'Random garbage signature must be rejected');
+    });
+
+    it('accepts validly signed configuration and updates currentConfig', () => {
+      const client = new ControlClient({
+        manifest: {
+          projectId: 'proj_pilot_01',
+          slug: 'pilot',
+          name: 'Pilot OS',
+          type: 'restaurant-os',
+          version: '1.0.0',
+          runtime: { type: 'standalone', entrypoint: 'src/server.ts', defaultPort: 4010, healthEndpoint: '/health' },
+          enabledPlugins: [],
+          enabledFeatures: ['orders'],
+          apis: [],
+          planReferences: [],
+          environmentMetadata: { defaultEnvironment: 'production', supportedEnvironments: ['production'] },
+          platformController: { controlPlaneUrl: 'http://localhost:3005', syncIntervalSeconds: 30 },
+          capabilities: [],
+        },
+        pinnedPublicKeys: { k1: k1.publicKey },
+      });
+
+      const config: SignedRuntimeConfiguration = {
+        configVersion: 100,
+        revisionNumber: 2,
+        projectId: 'proj_pilot_01',
+        environment: 'production',
+        issuedAt: new Date().toISOString(),
+        expiresAt: new Date(Date.now() + 86400 * 1000).toISOString(),
+        features: { orders: true, kds: true },
+        entitlements: {},
+        apiPolicies: {},
+        mcpTools: [],
+        desiredState: {},
+        signature: '',
+      };
+      config.signature = signConfigWithEd25519(config, k1.privateKey, 'k1');
+
+      const applied = client.applyConfiguration(config);
+      assert.equal(applied, true);
+      assert.deepEqual(client.getCurrentConfig(), config);
+    });
+
+    it('rejects tampered payload, forged signature, and keeps last good config in force', () => {
+      const client = new ControlClient({
+        manifest: {
+          projectId: 'proj_pilot_01',
+          slug: 'pilot',
+          name: 'Pilot OS',
+          type: 'restaurant-os',
+          version: '1.0.0',
+          runtime: { type: 'standalone', entrypoint: 'src/server.ts', defaultPort: 4010, healthEndpoint: '/health' },
+          enabledPlugins: [],
+          enabledFeatures: ['orders'],
+          apis: [],
+          planReferences: [],
+          environmentMetadata: { defaultEnvironment: 'production', supportedEnvironments: ['production'] },
+          platformController: { controlPlaneUrl: 'http://localhost:3005', syncIntervalSeconds: 30 },
+          capabilities: [],
+        },
+        pinnedPublicKeys: { k1: k1.publicKey },
+      });
+
+      // 1. Apply a legitimate initial configuration
+      const initialConfig: SignedRuntimeConfiguration = {
+        configVersion: 100,
+        revisionNumber: 1,
+        projectId: 'proj_pilot_01',
+        environment: 'production',
+        issuedAt: new Date().toISOString(),
+        expiresAt: new Date(Date.now() + 86400 * 1000).toISOString(),
+        features: { orders: true, legitimate: true },
+        entitlements: {},
+        apiPolicies: {},
+        mcpTools: [],
+        desiredState: {},
+        signature: '',
+      };
+      initialConfig.signature = signConfigWithEd25519(initialConfig, k1.privateKey, 'k1');
+      assert.equal(client.applyConfiguration(initialConfig), true);
+      assert.deepEqual(client.getCurrentConfig(), initialConfig);
+
+      // 2. Attacker attempts to apply config signed with unpinned key
+      const forgedConfig: SignedRuntimeConfiguration = {
+        ...initialConfig,
+        revisionNumber: 2,
+        features: { orders: true, hacked: true },
+        signature: '',
+      };
+      forgedConfig.signature = signConfigWithEd25519(forgedConfig, attacker.privateKey, 'k1');
+      assert.equal(client.applyConfiguration(forgedConfig), false);
+      assert.deepEqual(client.getCurrentConfig(), initialConfig, 'Last good config remains active after forged sig');
+
+      // 3. Attacker tampers payload with legitimate k1 signature
+      const validSig = signConfigWithEd25519(initialConfig, k1.privateKey, 'k1');
       const parts = validSig.split('.');
-      const tamperedBody = Buffer.from(JSON.stringify({ projectId: 'other_proj' })).toString('base64url');
-      config.signature = `${parts[0]}.${tamperedBody}.${parts[2]}`;
-      assert.equal(client.verifyConfigSignature(config), false, 'Tampered payload must be rejected');
+      const tamperedBody = Buffer.from(JSON.stringify({ projectId: 'other_proj', revisionNumber: 999 })).toString('base64url');
+      const tamperedConfig: SignedRuntimeConfiguration = {
+        ...initialConfig,
+        revisionNumber: 999,
+        signature: `${parts[0]}.${tamperedBody}.${parts[2]}`,
+      };
+      assert.equal(client.applyConfiguration(tamperedConfig), false);
+      assert.deepEqual(client.getCurrentConfig(), initialConfig, 'Last good config remains active after tampered payload');
+    });
+
+    it('insecureDevMode: true is strictly prohibited outside NODE_ENV=development', () => {
+      const origEnv = process.env.NODE_ENV;
+      try {
+        process.env.NODE_ENV = 'production';
+        assert.throws(
+          () =>
+            new ControlClient({
+              manifest: {
+                projectId: 'proj_pilot_01',
+                slug: 'pilot',
+                name: 'Pilot OS',
+                type: 'restaurant-os',
+                version: '1.0.0',
+                runtime: { type: 'standalone', entrypoint: 'src/server.ts', defaultPort: 4010, healthEndpoint: '/health' },
+                enabledPlugins: [],
+                enabledFeatures: [],
+                apis: [],
+                planReferences: [],
+                environmentMetadata: { defaultEnvironment: 'production', supportedEnvironments: ['production'] },
+                capabilities: [],
+              },
+              insecureDevMode: true,
+            }),
+          /SECURITY_VIOLATION: insecureDevMode is strictly prohibited outside NODE_ENV=development/
+        );
+      } finally {
+        process.env.NODE_ENV = origEnv;
+      }
+    });
+
+    it('insecureDevMode: true allows unsigned config only when NODE_ENV=development', () => {
+      const origEnv = process.env.NODE_ENV;
+      try {
+        process.env.NODE_ENV = 'development';
+        const client = new ControlClient({
+          manifest: {
+            projectId: 'proj_pilot_01',
+            slug: 'pilot',
+            name: 'Pilot OS',
+            type: 'restaurant-os',
+            version: '1.0.0',
+            runtime: { type: 'standalone', entrypoint: 'src/server.ts', defaultPort: 4010, healthEndpoint: '/health' },
+            enabledPlugins: [],
+            enabledFeatures: [],
+            apis: [],
+            planReferences: [],
+            environmentMetadata: { defaultEnvironment: 'development', supportedEnvironments: ['development'] },
+            capabilities: [],
+          },
+          insecureDevMode: true,
+        });
+
+        const devConfig: SignedRuntimeConfiguration = {
+          configVersion: 1,
+          revisionNumber: 1,
+          projectId: 'proj_pilot_01',
+          environment: 'development',
+          issuedAt: new Date().toISOString(),
+          expiresAt: new Date(Date.now() + 86400 * 1000).toISOString(),
+          features: { dev: true },
+          entitlements: {},
+          apiPolicies: {},
+          mcpTools: [],
+          desiredState: {},
+          signature: 'dev_mock_signature',
+        };
+
+        assert.equal(client.verifyConfigSignature(devConfig), true);
+        assert.equal(client.applyConfiguration(devConfig), true);
+      } finally {
+        process.env.NODE_ENV = origEnv;
+      }
     });
   });
 });

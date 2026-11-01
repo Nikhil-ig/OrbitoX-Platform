@@ -821,11 +821,19 @@ export class RuntimeControllerService {
     const issuedAt = new Date().toISOString();
     const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
 
+    const features = state.features || { dine_qr: true, dag_prep_scheduler: true, companion_join: true, realtime_kds: true };
+    const entitlements = this.resolveLiveEntitlements(projectId, state);
+    const stateHash = crypto.createHash('sha256').update(JSON.stringify({
+      features,
+      entitlements,
+      desiredState: state,
+    })).digest('hex');
+
     const payloadToSign = `${projectId}:${configVersion}:${revisionNumber}:${issuedAt}:${JSON.stringify(state)}`;
     let signature: string;
     if (RuntimeControllerService.ed25519PrivateKey) {
       const header = Buffer.from(JSON.stringify({ alg: 'EdDSA', kid: RuntimeControllerService.ed25519Kid, typ: 'orbitox-cfg' })).toString('base64url');
-      const body = Buffer.from(JSON.stringify({ projectId, configVersion, revisionNumber, issuedAt })).toString('base64url');
+      const body = Buffer.from(JSON.stringify({ projectId, configVersion, revisionNumber, issuedAt, stateHash })).toString('base64url');
       const sig = crypto.sign(null, Buffer.from(`${header}.${body}`), RuntimeControllerService.ed25519PrivateKey);
       signature = `${header}.${body}.${Buffer.from(sig).toString('base64url')}`;
     } else {

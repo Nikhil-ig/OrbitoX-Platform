@@ -37,6 +37,7 @@ export interface ControlClientOptions {
   apiKey?: string;
   pinnedPublicKeys?: Record<string, crypto.KeyObject | string>;
   trustedKeys?: Record<string, crypto.KeyObject | string>;
+  insecureDevMode?: boolean;
   onConfigUpdated?: (newConfig: SignedRuntimeConfiguration) => void;
   onCommandReceived?: (command: ControlCommand) => Promise<{ success: boolean; result?: any; error?: string }>;
 }
@@ -46,6 +47,7 @@ export class ControlClient {
   public readonly controlPlaneUrl: string;
   public readonly runtimePort: number;
   public apiKey?: string;
+  public readonly insecureDevMode: boolean;
 
   public readonly project: ProjectClient;
   public readonly config: ConfigurationClient;
@@ -72,15 +74,38 @@ export class ControlClient {
 
   constructor(options: ControlClientOptions) {
     this.manifest = options.manifest;
-    this.controlPlaneUrl = options.controlPlaneUrl || options.manifest.platformController.controlPlaneUrl || 'http://localhost:3005';
-    this.runtimePort = options.runtimePort || options.manifest.runtime.defaultPort;
+    this.controlPlaneUrl = options.controlPlaneUrl || options.manifest.platformController?.controlPlaneUrl || 'http://localhost:3005';
+    this.runtimePort = options.runtimePort || options.manifest.runtime?.defaultPort || 4000;
     this.apiKey = options.apiKey;
     this.onConfigUpdated = options.onConfigUpdated;
     this.onCommandReceived = options.onCommandReceived;
 
-    const rawKeys = options.pinnedPublicKeys || options.trustedKeys;
+    this.insecureDevMode = Boolean(options.insecureDevMode);
+    if (this.insecureDevMode && process.env.NODE_ENV !== 'development') {
+      throw new Error('SECURITY_VIOLATION: insecureDevMode is strictly prohibited outside NODE_ENV=development');
+    }
+
+    // Key discovery: options -> manifest -> environment (NEVER from runtime platform)
+    const rawKeys =
+      options.pinnedPublicKeys ||
+      options.trustedKeys ||
+      (options.manifest.platformController as any)?.pinnedPublicKeys;
+
     if (rawKeys) {
       this.setPinnedPublicKeys(rawKeys);
+    } else if (typeof process !== 'undefined') {
+      const envKeys = process.env.ORBITOX_CONTROL_PLANE_PUBLIC_KEYS?.trim();
+      const envSingleKey = process.env.ORBITOX_CONTROL_PLANE_PUBLIC_KEY?.trim();
+      if (envKeys) {
+        try {
+          const parsed = JSON.parse(envKeys);
+          this.setPinnedPublicKeys(parsed);
+        } catch {
+          console.error('[RuntimeSDK] Failed to parse ORBITOX_CONTROL_PLANE_PUBLIC_KEYS JSON');
+        }
+      } else if (envSingleKey) {
+        this.setPinnedPublicKeys({ default: envSingleKey });
+      }
     }
 
     this.clientConfig = {
@@ -112,18 +137,38 @@ export class ControlClient {
     }
   }
 
+  public applyConfiguration(signedConfig: SignedRuntimeConfiguration): boolean {
+    const isValid = this.verifyConfigSignature(signedConfig);
+    if (!isValid) {
+      console.error(
+        `[RuntimeSDK] Configuration signature verification failed for project "${this.manifest.projectId}". Keeping last good config.`
+      );
+      return false;
+    }
+
+    this.currentConfig = signedConfig;
+    if (signedConfig.features) this.features.setFeatures(signedConfig.features);
+    if (signedConfig.entitlements) this.entitlements.setEntitlements(signedConfig.entitlements);
+    if (this.onConfigUpdated) this.onConfigUpdated(signedConfig);
+    return true;
+  }
+
   /**
    * Verifies configuration signature against pinned Ed25519 public keys.
+   * Mandatory: If no keys are pinned, all configs are refused unless insecureDevMode in development.
    */
   public verifyConfigSignature(config: SignedRuntimeConfiguration): boolean {
-    if (!config || !config.signature || typeof config.signature !== 'string') {
+    if (!config || !config.signature || typeof config.signature !== 'string' || !config.signature.trim()) {
       return false;
     }
 
     const keys = Object.values(this.pinnedPublicKeys);
     if (keys.length === 0) {
-      // If no keys pinned, only accept if requireSignedConfig is not set to true
-      return !this.manifest.platformController?.requireSignedConfig;
+      // Mandatory verification: no keys means reject every config
+      if (this.insecureDevMode && process.env.NODE_ENV === 'development') {
+        return true;
+      }
+      return false;
     }
 
     const sig = config.signature.trim();
@@ -131,21 +176,33 @@ export class ControlClient {
     // 1. Compact JWS token format: header.payload.signature
     if (sig.includes('.')) {
       const parts = sig.split('.');
-      const p0 = parts[0];
-      const p1 = parts[1];
-      const p2 = parts[2];
-      if (parts.length === 3 && p0 && p1 && p2) {
+      if (parts.length === 3 && parts[0] && parts[1] && parts[2]) {
         try {
-          const header = JSON.parse(Buffer.from(p0, 'base64url').toString('utf8'));
+          const header = JSON.parse(Buffer.from(parts[0], 'base64url').toString('utf8'));
           if (header.alg !== 'EdDSA') return false;
+
+          const claims = JSON.parse(Buffer.from(parts[1], 'base64url').toString('utf8'));
+          if (claims.projectId && claims.projectId !== config.projectId) return false;
+          if (claims.configVersion && claims.configVersion !== config.configVersion) return false;
+          if (claims.revisionNumber && claims.revisionNumber !== config.revisionNumber) return false;
+
+          if (claims.stateHash) {
+            const actualHash = crypto.createHash('sha256').update(JSON.stringify({
+              features: config.features,
+              entitlements: config.entitlements,
+              desiredState: config.desiredState,
+            })).digest('hex');
+            if (claims.stateHash !== actualHash) return false;
+          }
+
           const targetKey = header.kid ? this.pinnedPublicKeys[header.kid] : undefined;
           const candidateKeys = targetKey ? [targetKey] : keys;
           for (const k of candidateKeys) {
             const ok = crypto.verify(
               null,
-              Buffer.from(`${p0}.${p1}`),
+              Buffer.from(`${parts[0]}.${parts[1]}`),
               k,
-              Buffer.from(p2, 'base64url')
+              Buffer.from(parts[2], 'base64url')
             );
             if (ok) return true;
           }
@@ -220,7 +277,6 @@ export class ControlClient {
 
     const data: RuntimeRegistrationResponse = await res.json();
     this.controlSessionId = data.controlSessionId;
-    this.currentConfig = data.signedConfig;
     this.desiredRevision = data.desiredRevision || 1;
     this.appliedRevision = this.desiredRevision;
 
@@ -229,11 +285,10 @@ export class ControlClient {
       this.clientConfig.apiKey = data.projectKey;
     }
 
-    if (this.currentConfig) {
-      this.features.setFeatures(this.currentConfig.features);
-      this.entitlements.setEntitlements(this.currentConfig.entitlements);
-      if (this.onConfigUpdated) {
-        this.onConfigUpdated(this.currentConfig);
+    if (data.signedConfig) {
+      const ok = this.applyConfiguration(data.signedConfig);
+      if (!ok) {
+        console.warn(`[RuntimeSDK] Initial signedConfig in registerRuntime failed signature verification. Rejected.`);
       }
     }
 
@@ -274,35 +329,22 @@ export class ControlClient {
 
     const signedConfig: SignedRuntimeConfiguration = await res.json();
 
-    // Verify config signature against pinned Ed25519 public keys before applying
-    const isValid = this.verifyConfigSignature(signedConfig);
-    if (!isValid) {
-      console.error(
-        `[RuntimeSDK] Configuration signature verification failed for project "${this.manifest.projectId}". Keeping last good config.`
-      );
+    const ok = this.applyConfiguration(signedConfig);
+    if (!ok) {
       if (this.currentConfig) {
         return this.currentConfig;
       }
       throw new Error(`INVALID_CONFIG_SIGNATURE: Unsigned or invalid signature for project ${this.manifest.projectId}`);
     }
 
-    this.currentConfig = signedConfig;
-
     if (signedConfig.revisionNumber && signedConfig.revisionNumber !== this.appliedRevision) {
       this.appliedRevision = signedConfig.revisionNumber;
       await this.config.acknowledgeRevision(this.appliedRevision, this.manifest.projectId, 'SUCCESS');
     }
 
-    this.features.setFeatures(signedConfig.features);
-    this.entitlements.setEntitlements(signedConfig.entitlements);
-
     try {
       await this.entitlements.fetchEntitlements();
     } catch {}
-
-    if (this.onConfigUpdated) {
-      this.onConfigUpdated(signedConfig);
-    }
 
     return signedConfig;
   }
