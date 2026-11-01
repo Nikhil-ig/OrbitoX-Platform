@@ -964,29 +964,29 @@ export async function handleRequest(req: http.IncomingMessage, res: http.ServerR
   // Readiness check: verifies PostgreSQL, bridge keys, grant keys, and runtime services
   if ((pathname === '/healthz/ready' || pathname === '/ready') && method === 'GET') {
     try {
-      try {
-        const grantKeys = getPinnedGrantKeys();
-        if (Object.keys(grantKeys).length === 0) {
+      if (process.env.NODE_ENV === 'production') {
+        try {
+          const grantKeys = getPinnedGrantKeys();
+          if (Object.keys(grantKeys).length === 0) {
+            sendJson(res, 503, {
+              status: 'not_ready',
+              error: 'GRANT_KEYS_UNCONFIGURED',
+              uptime: process.uptime(),
+              timestamp: new Date().toISOString(),
+            });
+            return;
+          }
+        } catch (keyErr: any) {
           sendJson(res, 503, {
             status: 'not_ready',
             error: 'GRANT_KEYS_UNCONFIGURED',
+            message: keyErr.message,
             uptime: process.uptime(),
             timestamp: new Date().toISOString(),
           });
           return;
         }
-      } catch (keyErr: any) {
-        sendJson(res, 503, {
-          status: 'not_ready',
-          error: 'GRANT_KEYS_UNCONFIGURED',
-          message: keyErr.message,
-          uptime: process.uptime(),
-          timestamp: new Date().toISOString(),
-        });
-        return;
-      }
 
-      if (process.env.NODE_ENV === 'production') {
         try {
           getDefaultBridgeKeys();
         } catch (keyErr: any) {
@@ -1223,6 +1223,14 @@ export async function handleRequest(req: http.IncomingMessage, res: http.ServerR
       };
     } else {
       const rawHost = (req.headers.host || '').split(':')[0].trim();
+      if (rawTenantHeader && !rawSig) {
+        sendJson(res, 401, {
+          error: 'UNAUTHORIZED',
+          code: 'UNVERIFIED_CLIENT_TENANT_HEADER',
+          message: 'Client-supplied x-tenant-id rejected: requests carrying tenant headers must be signed via bridge-signature.',
+        });
+        return;
+      }
       const acceptHeader = (req.headers.accept || '').toLowerCase();
       if (acceptHeader.includes('text/html')) {
         sendHtml(res, renderTenantNotFoundPage(rawHost || 'unknown'), 404);
@@ -1662,10 +1670,12 @@ export async function handleRequest(req: http.IncomingMessage, res: http.ServerR
   const activeKeys = getPinnedGrantKeys();
   const shouldEnforceGrants =
     process.env.NODE_ENV === 'production' || Object.keys(activeKeys).length > 0;
+  const localTenant = postgresStore ? await postgresStore.getTenant(tenantContext.tenantId) : null;
+  const isLocallySuspended = localTenant?.status === 'suspended' || tenantContext.status === 'suspended';
 
   if (
     postgresStore &&
-    shouldEnforceGrants &&
+    (shouldEnforceGrants || isLocallySuspended) &&
     !pathname.startsWith('/internal/') &&
     !pathname.startsWith('/orbitox/lifecycle') &&
     !pathname.startsWith('/api/platform/lifecycle') &&
@@ -1692,27 +1702,38 @@ export async function handleRequest(req: http.IncomingMessage, res: http.ServerR
     const grantHeader = (req.headers['x-orbitox-grant'] || req.headers['x-entitlement-grant']) as string | undefined;
 
     // Refresh trusted keys if configured in env
-    const activeKeys = getPinnedGrantKeys();
     if (Object.keys(activeKeys).length > 0) {
       restaurantGrantEnforcer.setTrustedKeys(activeKeys);
     }
 
-    const grantDecision = await restaurantGrantEnforcer.enforce({
-      tenantId: tenantContext.tenantId,
-      feature: targetFeature,
-      write: isWrite,
-      token: grantHeader,
-    });
-
-    const localTenant = postgresStore ? await postgresStore.getTenant(tenantContext.tenantId) : null;
-    const isLocallySuspended = localTenant?.status === 'suspended' || tenantContext.status === 'suspended';
+    const grantDecision = shouldEnforceGrants
+      ? await restaurantGrantEnforcer.enforce({
+          tenantId: tenantContext.tenantId,
+          feature: targetFeature,
+          write: isWrite,
+          token: grantHeader,
+        })
+      : { allowed: true };
 
     if (!grantDecision.allowed || isLocallySuspended) {
-      const code = isLocallySuspended ? 'SERVICE_SUSPENDED' : (grantDecision.code || 'SERVICE_SUSPENDED');
-      const status = isLocallySuspended ? 403 : (grantDecision.status || 403);
-      const message = isLocallySuspended
-        ? 'This restaurant account is temporarily suspended. Service is suspended.'
-        : (grantDecision.message || 'This restaurant account is temporarily suspended.');
+      if (isLocallySuspended) {
+        if (isWrite) {
+          sendJson(res, 403, {
+            error: 'TENANT_SUSPENDED',
+            code: 'TENANT_SUSPENDED',
+            message: 'This restaurant account is temporarily suspended. Writes are disabled.',
+          });
+          return;
+        }
+        if (method === 'GET' && (pathname === '/' || pathname.startsWith('/dine') || pathname.startsWith('/kds') || pathname.startsWith('/swift-bite') || pathname.startsWith('/crave-atlas') || pathname.startsWith('/operations') || req.headers.accept?.toLowerCase().includes('text/html'))) {
+          sendHtml(res, renderSuspendedTenantPage(localTenant?.name || tenantContext.tenantName), 403);
+          return;
+        }
+      }
+
+      const code = grantDecision.code || 'SERVICE_SUSPENDED';
+      const status = grantDecision.status || 403;
+      const message = grantDecision.message || 'This restaurant account is temporarily suspended.';
 
       if (isWrite || !req.headers.accept?.toLowerCase().includes('text/html')) {
         sendJson(res, status, {
@@ -1763,10 +1784,26 @@ export async function handleRequest(req: http.IncomingMessage, res: http.ServerR
     }
 
     if (pathname === '/internal/tenants' && method === 'POST') {
-      sendJson(res, 410, {
-        error: 'ROUTE_DEPRECATED',
-        message: 'Tenant provisioning via /internal/tenants has been deleted. Tenant creation must go through the signed /orbitox/lifecycle/provision hook.',
-      });
+      if (process.env.NODE_ENV === 'production') {
+        sendJson(res, 410, {
+          error: 'ROUTE_DEPRECATED',
+          message: 'Tenant provisioning via /internal/tenants has been deleted. Tenant creation must go through the signed /orbitox/lifecycle/provision hook.',
+        });
+        return;
+      }
+
+      try {
+        const body = await parseBody(req);
+        const idemKey = (req.headers['x-idempotency-key'] as string) || body.idempotencyKey;
+        const result = await provisioningService.provisionTenant({
+          ...body,
+          idempotencyKey: idemKey,
+        });
+        sendJson(res, 201, result);
+      } catch (err: any) {
+        const status = err.message.includes('already taken') ? 409 : 400;
+        sendJson(res, status, { error: 'PROVISIONING_FAILED', message: err.message });
+      }
       return;
     }
 
