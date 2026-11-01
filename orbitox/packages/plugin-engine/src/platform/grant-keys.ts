@@ -25,6 +25,10 @@ export interface StoredGrantKeyPair {
 let activeKeyId: string = 'dev-key-1';
 const keyRing: Map<string, StoredGrantKeyPair> = new Map();
 
+export function clearGrantKeysForTesting(): void {
+  keyRing.clear();
+}
+
 /**
  * Initializes or loads Ed25519 key ring.
  * Priority:
@@ -32,8 +36,9 @@ const keyRing: Map<string, StoredGrantKeyPair> = new Map();
  * 2. ORBITOX_GRANT_PRIVATE_KEY + ORBITOX_GRANT_PUBLIC_KEY
  * 3. Fallback ephemeral in-memory Ed25519 key pair for tests/local dev
  */
-export function initializeGrantKeys(): void {
-  if (keyRing.size > 0) return;
+export function initializeGrantKeys(forceReload = false): void {
+  if (!forceReload && keyRing.size > 0) return;
+  if (forceReload) keyRing.clear();
 
   const rawKeysEnv = process.env.ORBITOX_GRANT_SIGNING_KEYS?.trim();
   if (rawKeysEnv) {
@@ -67,8 +72,13 @@ export function initializeGrantKeys(): void {
     activeKeyId = singleKid;
   }
 
-  // Fallback if no keys in environment: generate an ephemeral key pair
+  // Fallback if no keys in environment
   if (keyRing.size === 0) {
+    if (process.env.NODE_ENV === 'production') {
+      throw new Error(
+        '[GrantKeys] ORBITOX_GRANT_SIGNING_KEYS or ORBITOX_GRANT_PRIVATE_KEY is required in production. Ephemeral keys are forbidden.'
+      );
+    }
     const pair = crypto.generateKeyPairSync('ed25519');
     const pubPem = pair.publicKey.export({ type: 'spki', format: 'pem' }).toString();
     keyRing.set(activeKeyId, {
@@ -78,6 +88,10 @@ export function initializeGrantKeys(): void {
       publicKeyPem: pubPem,
     });
   }
+}
+
+export function hasConfiguredGrantKeys(): boolean {
+  return keyRing.size > 0;
 }
 
 export function registerKeyPem(kid: string, privateKeyPem: string, publicKeyPem: string): void {

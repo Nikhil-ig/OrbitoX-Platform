@@ -5,6 +5,8 @@ import path from 'node:path';
 const PORT = 3680;
 const serverScript = path.resolve(__dirname, '../.next/standalone/apps/web/server.js');
 
+const sweepGrantPair = crypto.generateKeyPairSync('ed25519');
+
 // Throwaway secrets generated at runtime - NEVER printed or logged
 const env: NodeJS.ProcessEnv = {
   ...process.env,
@@ -21,6 +23,13 @@ const env: NodeJS.ProcessEnv = {
   PLATFORM_AUDIT_DATABASE_URL: process.env.PLATFORM_AUDIT_DATABASE_URL || 'postgresql://orbitox_platform_admin_audit:test_audit_pass@127.0.0.1:5432/orbitox_phase2',
   HMS_AUDIT_DATABASE_URL: process.env.HMS_AUDIT_DATABASE_URL || 'postgresql://hms_audit_reader:test_audit_reader_pass@127.0.0.1:5432/orbitox_phase2',
   OUTBOX_RELAY_DATABASE_URL: process.env.OUTBOX_RELAY_DATABASE_URL || 'postgresql://orbitox_outbox_relay:test_relay_pass@127.0.0.1:5432/orbitox_phase2',
+  RAZORPAY_WEBHOOK_SECRET: crypto.randomBytes(32).toString('hex'),
+  ORBITOX_GRANT_SIGNING_KEYS: JSON.stringify({
+    k1: {
+      privateKey: sweepGrantPair.privateKey.export({ type: 'pkcs8', format: 'pem' }).toString(),
+      publicKey: sweepGrantPair.publicKey.export({ type: 'spki', format: 'pem' }).toString(),
+    },
+  }),
 };
 
 async function run() {

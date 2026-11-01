@@ -18,6 +18,7 @@ export async function register() {
       { name: 'ORBITOX_RUNTIME_TOKEN', desc: 'Internal inter-service runtime communication token' },
       { name: 'ORBITOX_CONTROL_SECRET', desc: 'Master HMAC signing secret for internal principal tokens' },
       { name: 'ORBITOX_GUEST_SECRET', desc: 'Cryptographic secret for ephemeral guest session signing' },
+      { name: 'RAZORPAY_WEBHOOK_SECRET', desc: 'HMAC SHA-256 secret for authenticating incoming billing webhook events' },
     ];
 
     for (const secret of requiredSecrets) {
@@ -27,6 +28,13 @@ export async function register() {
       } else if (value.length < 32) {
         problems.push(`${secret.name} must be at least 32 characters (found ${value.length})`);
       }
+    }
+
+    // Grant signing keys validation (required in production per Phase 3 G5)
+    const grantKeysJson = process.env.ORBITOX_GRANT_SIGNING_KEYS?.trim();
+    const grantPrivKey = process.env.ORBITOX_GRANT_PRIVATE_KEY?.trim();
+    if (!grantKeysJson && !grantPrivKey) {
+      problems.push('ORBITOX_GRANT_SIGNING_KEYS or ORBITOX_GRANT_PRIVATE_KEY is not set (Production grant issuance requires configured Ed25519 signing keys)');
     }
 
     // Pepper validation (ORBITOX_SERVER_PEPPERS or legacy ORBITOX_SERVER_PEPPER)

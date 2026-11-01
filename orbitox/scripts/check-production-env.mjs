@@ -60,6 +60,11 @@ const REQUIRED_SECRETS = [
     minLen: 32,
     purpose: 'Server-side cryptographic pepper combined with raw API keys prior to SHA-256 verifier derivation',
   },
+  {
+    name: 'RAZORPAY_WEBHOOK_SECRET',
+    minLen: 32,
+    purpose: 'HMAC SHA-256 secret for authenticating incoming billing webhook events from Razorpay',
+  },
 ];
 
 const OPTIONAL_RECOMMENDED = [
@@ -122,6 +127,16 @@ if (isProduction) {
           : 'Insert-only connection for organization/project platform audit events',
       });
     }
+  }
+
+  const grantKeysJson = process.env.ORBITOX_GRANT_SIGNING_KEYS?.trim();
+  const grantPrivKey = process.env.ORBITOX_GRANT_PRIVATE_KEY?.trim();
+  if (!grantKeysJson && !grantPrivKey) {
+    errors.push({
+      name: 'ORBITOX_GRANT_SIGNING_KEYS / ORBITOX_GRANT_PRIVATE_KEY',
+      reason: 'NOT SET',
+      purpose: 'Configured Ed25519 signing keys for issuing platform grants',
+    });
   }
 }
 

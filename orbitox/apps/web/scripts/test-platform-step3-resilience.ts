@@ -42,6 +42,10 @@ function seededRandom(): number {
 const activeChildren: Set<ChildProcess> = new Set();
 const activeSplitters: Set<http.Server> = new Set();
 
+const step3GrantPair = crypto.generateKeyPairSync('ed25519');
+const step3GrantPrivPem = step3GrantPair.privateKey.export({ type: 'pkcs8', format: 'pem' }).toString();
+const step3GrantPubPem = step3GrantPair.publicKey.export({ type: 'spki', format: 'pem' }).toString();
+
 function spawnServer(port: number, envOverrides: Record<string, string> = {}): ChildProcess {
   const standaloneScript = path.resolve(__dirname, '../.next/standalone/apps/web/server.js');
   const child = spawn(process.execPath, [standaloneScript], {
@@ -57,6 +61,10 @@ function spawnServer(port: number, envOverrides: Record<string, string> = {}): C
       ORBITOX_CONTROL_SECRET: 'test_control_secret_super_secret_32_chars_min',
       ORBITOX_GUEST_SECRET: 'test_guest_secret_super_secret_32_chars_min',
       ORBITOX_SERVER_PEPPER: 'test_server_pepper_super_secret_32_chars_min',
+      RAZORPAY_WEBHOOK_SECRET: crypto.randomBytes(32).toString('hex'),
+      ORBITOX_GRANT_SIGNING_KEYS: JSON.stringify({
+        k1: { privateKey: step3GrantPrivPem, publicKey: step3GrantPubPem },
+      }),
       DATABASE_URL: boundedUrl(databaseUrl!),
       APP_DATABASE_URL: boundedUrl(runtimeUrl!),
       PLATFORM_AUDIT_DATABASE_URL: boundedUrl(auditUrl!),

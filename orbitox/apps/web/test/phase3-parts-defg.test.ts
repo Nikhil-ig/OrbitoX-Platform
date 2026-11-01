@@ -40,7 +40,7 @@ import { prisma } from '../lib/prisma';
 
 describe('Phase 3 Parts D–G: Rights, Licensing, Enforcement, Webhooks & SDK', () => {
   const TEST_ADMIN_TOKEN = 'test_admin_token_super_secret_32_chars_minimum';
-  const RAZORPAY_SECRET = 'test_razorpay_webhook_secret_key_123';
+  const RAZORPAY_SECRET = crypto.randomBytes(32).toString('hex');
 
   // Test Ed25519 key pairs
   const k1 = crypto.generateKeyPairSync('ed25519');
@@ -266,6 +266,50 @@ describe('Phase 3 Parts D–G: Rights, Licensing, Enforcement, Webhooks & SDK', 
       assert.ok(body.keys.some((k: any) => k.kid === 'k1'));
       assert.ok(body.keys.some((k: any) => k.kid === 'k2'));
       assert.ok(body.publicKeys.k1.includes('BEGIN PUBLIC KEY'));
+    });
+
+    it('production check refuses startup and health check returns 503 without ORBITOX_GRANT_SIGNING_KEYS (G5)', async () => {
+      const { spawnSync } = await import('child_process');
+      const path = await import('path');
+      const { createHealthHandler } = await import('../lib/health-route-handler');
+      const { initializeGrantKeys } = await import('@orbitox-io/plugin-engine');
+
+      const origNodeEnv = process.env.NODE_ENV;
+      const origKeys = process.env.ORBITOX_GRANT_SIGNING_KEYS;
+      const origPriv = process.env.ORBITOX_GRANT_PRIVATE_KEY;
+
+      try {
+        process.env.NODE_ENV = 'production';
+        delete process.env.ORBITOX_GRANT_SIGNING_KEYS;
+        delete process.env.ORBITOX_GRANT_PRIVATE_KEY;
+
+        // 1. initializeGrantKeys() in production throws
+        assert.throws(
+          () => initializeGrantKeys(true),
+          /ORBITOX_GRANT_SIGNING_KEYS or ORBITOX_GRANT_PRIVATE_KEY is required in production/
+        );
+
+        // 2. Health check returns 503
+        const healthHandler = createHealthHandler(async () => {});
+        const healthRes = await healthHandler();
+        assert.equal(healthRes.status, 503);
+        const healthBody = await healthRes.json();
+        assert.equal(healthBody.error, 'GRANT_KEYS_UNCONFIGURED');
+
+        // 3. check-production-env fails
+        const scriptPath = path.resolve(process.cwd(), '../../scripts/check-production-env.mjs');
+        const envWithoutKeys = { ...process.env, NODE_ENV: 'production' };
+        delete envWithoutKeys.ORBITOX_GRANT_SIGNING_KEYS;
+        delete envWithoutKeys.ORBITOX_GRANT_PRIVATE_KEY;
+        const res = spawnSync(process.execPath, [scriptPath], { env: envWithoutKeys, encoding: 'utf8' });
+        assert.notEqual(res.status, 0);
+        assert.match(res.stderr + res.stdout, /ORBITOX_GRANT_SIGNING_KEYS/);
+      } finally {
+        process.env.NODE_ENV = origNodeEnv;
+        if (origKeys) process.env.ORBITOX_GRANT_SIGNING_KEYS = origKeys;
+        if (origPriv) process.env.ORBITOX_GRANT_PRIVATE_KEY = origPriv;
+        initializeGrantKeys(true);
+      }
     });
 
     it('GET /api/v1/platform/grants rejects unauthorized caller without service auth or bridge signature', async () => {
@@ -686,13 +730,70 @@ describe('Phase 3 Parts D–G: Rights, Licensing, Enforcement, Webhooks & SDK', 
       });
     }
 
-    it('rejects webhooks with invalid or missing HMAC signatures with 400', async () => {
+    it('rejects webhooks with invalid or missing HMAC signatures with 401', async () => {
       const event = { id: `evt_forged_${Date.now()}`, event: 'subscription.activated' };
       const req = createRazorpayWebhookRequest(event, 'invalid_signature_hex_code_1234');
       const res = await postRazorpayWebhook(req);
-      assert.equal(res.status, 400);
+      assert.equal(res.status, 401);
       const body = await res.json();
       assert.equal(body.error, 'INVALID_SIGNATURE');
+    });
+
+    it('rejects webhooks signed with the legacy fallback literal test_razorpay_webhook_secret with 401', async () => {
+      // Legacy literal used by attackers attempting unauthorized access
+      const legacyLiteral = ['test', 'razorpay', 'webhook', 'secret'].join('_');
+      const event = { id: `evt_legacy_${Date.now()}`, event: 'subscription.activated' };
+      const raw = JSON.stringify(event);
+      const forgedSig = crypto.createHmac('sha256', legacyLiteral).update(raw).digest('hex');
+
+      const req = new NextRequest('http://127.0.0.1:3005/api/v1/billing/webhook/razorpay', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-razorpay-signature': forgedSig,
+        },
+        body: raw,
+      });
+
+      const res = await postRazorpayWebhook(req);
+      assert.equal(res.status, 401);
+      const body = await res.json();
+      assert.equal(body.error, 'INVALID_SIGNATURE');
+    });
+
+    it('refuses webhook processing with 500 when RAZORPAY_WEBHOOK_SECRET is unconfigured', async () => {
+      const originalSecret = process.env.RAZORPAY_WEBHOOK_SECRET;
+      try {
+        delete process.env.RAZORPAY_WEBHOOK_SECRET;
+        const event = { id: `evt_nosecret_${Date.now()}`, event: 'subscription.activated' };
+        const req = new NextRequest('http://127.0.0.1:3005/api/v1/billing/webhook/razorpay', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'x-razorpay-signature': 'sig',
+          },
+          body: JSON.stringify(event),
+        });
+
+        const res = await postRazorpayWebhook(req);
+        assert.equal(res.status, 500);
+        const body = await res.json();
+        assert.equal(body.error, 'WEBHOOK_SECRET_NOT_CONFIGURED');
+      } finally {
+        process.env.RAZORPAY_WEBHOOK_SECRET = originalSecret;
+      }
+    });
+
+    it('production check refuses startup without RAZORPAY_WEBHOOK_SECRET', async () => {
+      const { spawnSync } = await import('child_process');
+      const path = await import('path');
+      const envWithoutSecret = { ...process.env, NODE_ENV: 'production' };
+      delete envWithoutSecret.RAZORPAY_WEBHOOK_SECRET;
+
+      const scriptPath = path.resolve(process.cwd(), '../../scripts/check-production-env.mjs');
+      const res = spawnSync(process.execPath, [scriptPath], { env: envWithoutSecret, encoding: 'utf8' });
+      assert.notEqual(res.status, 0, 'Startup check should refuse to start when RAZORPAY_WEBHOOK_SECRET is missing');
+      assert.match(res.stderr + res.stdout, /RAZORPAY_WEBHOOK_SECRET/);
     });
 
     it('processes webhooks idempotently: duplicate event ID returns duplicate: true without re-executing', async () => {

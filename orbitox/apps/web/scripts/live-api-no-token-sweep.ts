@@ -78,6 +78,10 @@ async function run() {
   const hmsAuditUrl = process.env.HMS_AUDIT_DATABASE_URL || 'postgresql://hms_audit_reader:test_audit_reader_pass@127.0.0.1:5432/orbitox_phase2';
   const outboxRelayUrl = process.env.OUTBOX_RELAY_DATABASE_URL || 'postgresql://orbitox_outbox_relay:test_relay_pass@127.0.0.1:5432/orbitox_phase2';
 
+  const grantPair = crypto.generateKeyPairSync('ed25519');
+  const grantPrivPem = grantPair.privateKey.export({ type: 'pkcs8', format: 'pem' }).toString();
+  const grantPubPem = grantPair.publicKey.export({ type: 'spki', format: 'pem' }).toString();
+
   const env: NodeJS.ProcessEnv = {
     ...process.env,
     PORT: String(PORT),
@@ -88,6 +92,10 @@ async function run() {
     ORBITOX_CONTROL_SECRET: crypto.randomBytes(32).toString('hex'),
     ORBITOX_GUEST_SECRET: crypto.randomBytes(32).toString('hex'),
     ORBITOX_SERVER_PEPPER: serverPepper,
+    RAZORPAY_WEBHOOK_SECRET: crypto.randomBytes(32).toString('hex'),
+    ORBITOX_GRANT_SIGNING_KEYS: JSON.stringify({
+      k1: { privateKey: grantPrivPem, publicKey: grantPubPem },
+    }),
     DATABASE_URL: databaseUrl,
     APP_DATABASE_URL: runtimeUrl,
     PLATFORM_AUDIT_DATABASE_URL: auditUrl,

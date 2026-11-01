@@ -68,6 +68,10 @@ const controlSecret = crypto.randomBytes(32).toString('hex');
 const guestSecret = crypto.randomBytes(32).toString('hex');
 const serverPepper = crypto.randomBytes(32).toString('hex');
 
+const step4GrantPair = crypto.generateKeyPairSync('ed25519');
+const step4GrantPrivPem = step4GrantPair.privateKey.export({ type: 'pkcs8', format: 'pem' }).toString();
+const step4GrantPubPem = step4GrantPair.publicKey.export({ type: 'spki', format: 'pem' }).toString();
+
 function spawnServer(port: number, envOverrides: Record<string, string> = {}): ChildProcess {
   const standaloneScript = path.resolve(__dirname, '../.next/standalone/apps/web/server.js');
   const child = spawn(process.execPath, [standaloneScript], {
@@ -83,6 +87,10 @@ function spawnServer(port: number, envOverrides: Record<string, string> = {}): C
       ORBITOX_CONTROL_SECRET: controlSecret,
       ORBITOX_GUEST_SECRET: guestSecret,
       ORBITOX_SERVER_PEPPER: serverPepper,
+      RAZORPAY_WEBHOOK_SECRET: crypto.randomBytes(32).toString('hex'),
+      ORBITOX_GRANT_SIGNING_KEYS: JSON.stringify({
+        k1: { privateKey: step4GrantPrivPem, publicKey: step4GrantPubPem },
+      }),
       DATABASE_URL: boundedUrl(databaseUrl),
       APP_DATABASE_URL: boundedUrl(runtimeUrl),
       PLATFORM_AUDIT_DATABASE_URL: boundedUrl(auditUrl),
