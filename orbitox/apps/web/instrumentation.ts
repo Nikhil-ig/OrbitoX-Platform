@@ -130,6 +130,29 @@ export async function register() {
       }
     }
 
+    // Dedicated Outbox Relay role check (required in production)
+    const outboxRelayUrl = process.env.OUTBOX_RELAY_DATABASE_URL?.trim();
+    if (!outboxRelayUrl) {
+      problems.push('OUTBOX_RELAY_DATABASE_URL is not set (Production outbox relay requires dedicated orbitox_outbox_relay connection)');
+    } else if (process.env.ORBITOX_TEST_SKIP_ROLE_CHECK !== 'true') {
+      try {
+        const { PrismaClient } = await import('@prisma/client');
+        const relayClient = new PrismaClient({ datasources: { db: { url: outboxRelayUrl } } });
+        const relayRoleRows = await relayClient.$queryRaw<Array<{ current_user: string; rolsuper: boolean; rolbypassrls: boolean }>>`
+          SELECT current_user, r.rolsuper, r.rolbypassrls FROM pg_roles r WHERE r.rolname = current_user
+        `;
+        await relayClient.$disconnect();
+        const role = relayRoleRows[0];
+        if (!role || role.current_user !== 'orbitox_outbox_relay' || role.rolsuper || role.rolbypassrls) {
+          problems.push(
+            `Outbox relay database role is unsafe: user="${role?.current_user}", rolsuper=${role?.rolsuper}, rolbypassrls=${role?.rolbypassrls}. Production requires orbitox_outbox_relay with rolsuper=false and rolbypassrls=false.`
+          );
+        }
+      } catch (dbErr: any) {
+        problems.push(`Outbox relay database connection or role check failed: ${dbErr.message}`);
+      }
+    }
+
     if (problems.length > 0) {
       throw new Error(
         [
