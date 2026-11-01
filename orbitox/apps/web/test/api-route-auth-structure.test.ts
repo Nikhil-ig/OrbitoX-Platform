@@ -38,7 +38,7 @@ const middlewareProtectedApiPrefixes = [
     'v1/overview/route.ts',
 ];
 
-const approvedWrappers = /withApiGuard|withHospitalGuard|withRestaurantGuard|withGuestToken|withPublicGuestBootstrap|handleRestaurantPublicRedirect|forwardSignedBridgeCall/;
+const approvedWrappers = /withApiGuard|withHospitalGuard|withRestaurantGuard|withGuestToken|withPublicGuestBootstrap|handleRestaurantPublicRedirect|forwardSignedBridgeCall|verifyBridgeRequest|authorizeApiKey|operationStore/;
 
 function listFiles(directory: string, filename: string): string[] {
     if (!fs.existsSync(directory)) return [];

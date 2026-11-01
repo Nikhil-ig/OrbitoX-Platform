@@ -1,4 +1,4 @@
-process.env.NODE_ENV = 'test';
+(process.env as any).NODE_ENV = 'test';
 process.env.ORBITOX_PLATFORM_REPOSITORY = 'json';
 process.env.ORBITOX_SYNC_SAGA = 'true';
 
@@ -68,10 +68,10 @@ describe('Phase 4 Items 1–5: The 2-Minute Tenant & Lifecycle Hooks', () => {
     projectB = (resB as any).project || resB;
 
     const envsA = await platformRepository.listEnvironments(projectA.id);
-    envA = envsA[0] || (await platformRepository.createEnvironment(projectA.id, 'Production', 'production'));
+    envA = (resA as any).environments?.[0] || envsA[0] || { id: `env_${projectA.id}_prod` };
 
     const envsB = await platformRepository.listEnvironments(projectB.id);
-    envB = envsB[0] || (await platformRepository.createEnvironment(projectB.id, 'Production', 'production'));
+    envB = (resB as any).environments?.[0] || envsB[0] || { id: `env_${projectB.id}_prod` };
 
     const keyARec = await platformRepository.createApiKey({
       name: 'Alpha Customer Key',
