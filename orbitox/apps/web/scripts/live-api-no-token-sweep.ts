@@ -96,6 +96,9 @@ async function run() {
     ORBITOX_GRANT_SIGNING_KEYS: JSON.stringify({
       k1: { privateKey: grantPrivPem, publicKey: grantPubPem },
     }),
+    ORBITOX_GRANT_PUBLIC_KEYS: JSON.stringify({
+      k1: grantPubPem,
+    }),
     DATABASE_URL: databaseUrl,
     APP_DATABASE_URL: runtimeUrl,
     PLATFORM_AUDIT_DATABASE_URL: auditUrl,
@@ -190,7 +193,10 @@ async function run() {
   // Await server readiness
   const start = Date.now();
   let ready = false;
-  while (Date.now() - start < 20000) {
+  while (Date.now() - start < 60000) {
+    if (child.exitCode !== null) {
+      throw new Error(`Standalone server exited prematurely with code ${child.exitCode}.\nServer output:\n${serverLogs}`);
+    }
     try {
       const res = await fetch(`http://127.0.0.1:${PORT}/api/health`);
       if (res.status === 200) {

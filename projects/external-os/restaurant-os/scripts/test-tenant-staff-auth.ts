@@ -14,6 +14,7 @@
  * 10. Durable revocation check in Postgres.
  */
 
+process.env.NODE_ENV = process.env.NODE_ENV || 'test';
 if (!process.env.DATABASE_URL) {
   process.env.DATABASE_URL = 'postgresql://apple@localhost:5432/restaurant_os';
 }
@@ -37,7 +38,6 @@ import {
   issueDeviceToken,
   withTenantRlsTransaction,
 } from '../packages/domain';
-import { handleRequest } from '../src/server';
 
 const DATABASE_URL = process.env.DATABASE_URL;
 const prisma = new PrismaClient({ datasources: { db: { url: DATABASE_URL } } });
@@ -133,6 +133,7 @@ async function runStaffAuthSuite() {
   const HOST_B = `${TENANT_B_SLUG}.restaurantos.local`;
 
   // Start HTTP Server
+  const { handleRequest } = await import('../src/server');
   const server = http.createServer(handleRequest);
   await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', () => resolve()));
   const address = server.address() as any;

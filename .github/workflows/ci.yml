@@ -177,6 +177,8 @@ jobs:
     defaults:
       run:
         working-directory: projects/external-os/restaurant-os
+    env:
+      NODE_ENV: test
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4

@@ -5,6 +5,7 @@
  * Outputs `PORT_READY:<port>` when HTTP listener is ready.
  */
 
+process.env.NODE_ENV = process.env.NODE_ENV || 'test';
 process.env.RESTAURANTOS_DISABLE_AUTOLISTEN = 'true';
 if (!process.env.DATABASE_URL) {
   if (process.env.CI) {
@@ -14,11 +15,18 @@ if (!process.env.DATABASE_URL) {
 }
 
 import * as http from 'http';
-import { handleRequest } from '../src/server';
 
-const server = http.createServer(handleRequest);
+async function main() {
+  const { handleRequest } = await import('../src/server');
+  const server = http.createServer(handleRequest);
 
-server.listen(0, '127.0.0.1', () => {
-  const addr = server.address() as any;
-  console.log(`PORT_READY:${addr.port}`);
+  server.listen(0, '127.0.0.1', () => {
+    const addr = server.address() as any;
+    console.log(`PORT_READY:${addr.port}`);
+  });
+}
+
+main().catch((err) => {
+  console.error(err);
+  process.exit(1);
 });
