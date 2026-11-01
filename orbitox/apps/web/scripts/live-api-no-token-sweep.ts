@@ -62,7 +62,8 @@ function convertRouteToUrl(filePath: string): string {
     .replace(/\[serviceId\]/g, 'crm')
     .replace(/\[keyId\]/g, 'test-key-c2-123')
     .replace(/\[locator\]/g, '7Kp9xQ8m2L')
-    .replace(/\[id\]/g, 'test-id-c2-123');
+    .replace(/\[id\]/g, 'test-id-c2-123')
+    .replace(/\[action\]/g, 'provision');
   return url;
 }
 

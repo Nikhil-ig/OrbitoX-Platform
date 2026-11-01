@@ -318,6 +318,7 @@ jobs:
         working-directory: projects/external-os/restaurant-os
         run: pnpm exec tsx scripts/test-restaurant-bridge-and-lifecycle.ts
         env:
+          NODE_ENV: test
           DATABASE_URL: postgresql://postgres:postgrespassword@127.0.0.1:5432/restaurant_os
           APP_DATABASE_URL: postgresql://restaurantos_app:test_app_pass_123@127.0.0.1:5432/restaurant_os
 
@@ -325,6 +326,7 @@ jobs:
         working-directory: projects/external-os/restaurant-os
         run: pnpm exec tsx scripts/test-restaurant-2servers.ts
         env:
+          NODE_ENV: test
           DATABASE_URL: postgresql://postgres:postgrespassword@127.0.0.1:5432/restaurant_os
           APP_DATABASE_URL: postgresql://restaurantos_app:test_app_pass_123@127.0.0.1:5432/restaurant_os
 
@@ -332,6 +334,7 @@ jobs:
         working-directory: projects/external-os/restaurant-os
         run: pnpm exec tsx scripts/test-restaurant-cross-tenant.ts
         env:
+          NODE_ENV: test
           DATABASE_URL: postgresql://postgres:postgrespassword@127.0.0.1:5432/restaurant_os
           APP_DATABASE_URL: postgresql://restaurantos_app:test_app_pass_123@127.0.0.1:5432/restaurant_os
 
@@ -339,6 +342,7 @@ jobs:
         working-directory: projects/external-os/restaurant-os
         run: pnpm exec tsx scripts/test-restaurant-crash-durability.ts
         env:
+          NODE_ENV: test
           DATABASE_URL: postgresql://postgres:postgrespassword@127.0.0.1:5432/restaurant_os
           APP_DATABASE_URL: postgresql://restaurantos_app:test_app_pass_123@127.0.0.1:5432/restaurant_os
 
@@ -346,6 +350,7 @@ jobs:
         working-directory: orbitox
         run: pnpm --filter web exec tsx --test test/restaurant-lifecycle-bridge-e2e.test.ts
         env:
+          NODE_ENV: test
           DATABASE_URL: postgresql://postgres:postgrespassword@127.0.0.1:5432/restaurant_os
           APP_DATABASE_URL: postgresql://restaurantos_app:test_app_pass_123@127.0.0.1:5432/restaurant_os
 
@@ -431,6 +436,9 @@ jobs:
       - name: Run full web suite against explicit JSON test adapter
         run: pnpm --filter web test
         env:
+          NODE_ENV: test
+          ORBITOX_ADMIN_TOKEN: phase2-ci-admin-token-for-web-tests
+          ORBITOX_SERVER_PEPPER: phase2-ci-server-pepper-for-web-tests-32
           DATABASE_URL: postgresql://postgres:postgrespassword@127.0.0.1:5432/orbitox_phase2
           TEST_DATABASE_URL: postgresql://postgres:postgrespassword@127.0.0.1:5432/orbitox_phase2
           APP_DATABASE_URL: postgresql://orbitox_runtime:phase2-ci-${{ github.run_id }}-${{ github.run_attempt }}@127.0.0.1:5432/orbitox_phase2
