@@ -23,10 +23,10 @@ describe('🪐 Phase 5: @orbitox-io/cli Suite', () => {
   });
 
   it('2. Secret Masking: ensures secrets are never printed back in full', () => {
-    const rawKey = 'orb_live_abcdef0123456789abcdef01';
+    const rawKey = 'orb_test_abcdef0123456789abcdef01';
     const masked = maskApiKey(rawKey);
 
-    assert.strictEqual(masked, 'orb_live••••••••ef01');
+    assert.strictEqual(masked, 'orb_test••••••••ef01');
     assert.ok(!masked.includes('abcdef0123456789'), 'Raw key body must be masked');
     assert.ok(masked.includes('••••••••'), 'Mask characters must be present');
   });
@@ -35,7 +35,7 @@ describe('🪐 Phase 5: @orbitox-io/cli Suite', () => {
     assert.throws(
       () => {
         execSync(
-          `node "${cliBin}" tenants create --plugin=crm --key=orb_live_test_key`,
+          `node "${cliBin}" tenants create --plugin=crm --key=orb_test_key`,
           { encoding: 'utf8', stdio: 'pipe' }
         );
       },
@@ -51,14 +51,14 @@ describe('🪐 Phase 5: @orbitox-io/cli Suite', () => {
   });
 
   it('4. Config resolution: prioritizes CLI flags over environment variables', () => {
-    process.env.ORBITOX_API_KEY = 'orb_live_env_key_1111';
+    process.env.ORBITOX_API_KEY = 'orb_test_env_key_1111';
     process.env.ORBITOX_URL = 'http://127.0.0.1:9999';
 
-    const explicitKey = resolveApiKey('orb_live_explicit_key_2222');
-    assert.strictEqual(explicitKey, 'orb_live_explicit_key_2222');
+    const explicitKey = resolveApiKey('orb_test_explicit_key_2222');
+    assert.strictEqual(explicitKey, 'orb_test_explicit_key_2222');
 
     const envKey = resolveApiKey();
-    assert.strictEqual(envKey, 'orb_live_env_key_1111');
+    assert.strictEqual(envKey, 'orb_test_env_key_1111');
 
     const explicitUrl = resolveUrl('http://127.0.0.1:4444');
     assert.strictEqual(explicitUrl, 'http://127.0.0.1:4444');
