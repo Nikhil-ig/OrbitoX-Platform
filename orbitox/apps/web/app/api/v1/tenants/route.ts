@@ -4,7 +4,41 @@ import { provisioningSaga } from '@/lib/tenant-provisioning/provisioning-saga';
 import { TenantProvisionRequest } from '@/lib/tenant-provisioning/types';
 import { isSamplePackage } from '@/lib/sample-plugins';
 
-export async function GET(_req: NextRequest) {
+export async function GET(req: NextRequest) {
+  const authHeader = req.headers.get('authorization') || '';
+  const apiKeyHeader = req.headers.get('x-api-key') || '';
+  const adminTokenHeader = req.headers.get('x-admin-token') || '';
+  const rawKey = authHeader.replace(/^Bearer\s+/i, '').trim() || apiKeyHeader.trim() || adminTokenHeader.trim();
+
+  if (!rawKey) {
+    return NextResponse.json(
+      { error: 'UNAUTHORIZED', message: 'API key required via Authorization or x-api-key header' },
+      { status: 401 }
+    );
+  }
+
+  const configuredAdmin = (process.env.ORBITOX_ADMIN_TOKEN || '').trim();
+  const isAdmin = configuredAdmin && rawKey === configuredAdmin;
+
+  if (!isAdmin) {
+    let authRecord;
+    try {
+      authRecord = await platformRepository.authorizeApiKey(rawKey);
+    } catch {
+      return NextResponse.json(
+        { error: 'UNAUTHORIZED', message: 'Invalid or revoked customer API key' },
+        { status: 401 }
+      );
+    }
+
+    if (!authRecord || !authRecord.key || !authRecord.project) {
+      return NextResponse.json(
+        { error: 'UNAUTHORIZED', message: 'Invalid customer API key' },
+        { status: 401 }
+      );
+    }
+  }
+
   try {
     const packages = await platformRepository.listPackages();
     // Item 8 (3): Catalogue-driven installable plugins filter (only HospitalOS and RestaurantOS; CRM excluded)
