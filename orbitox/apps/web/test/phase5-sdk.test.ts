@@ -220,7 +220,7 @@ describe('🪐 Phase 5: @orbitox-io/sdk Integration & Real Server Suite', () => 
   });
 
   it('1. Secret scrubbing: redacts live tokens, passwords, and authorization headers', () => {
-    const rawSecret = 'orb_live_abcdef1234567890abcdef123456';
+    const rawSecret = 'orb_test_abcdef1234567890abcdef123456';
     const scrubbed = scrubSecrets(`Error communicating with key ${rawSecret} and Bearer myTokenSecret123`);
     assert.ok(!scrubbed.includes('abcdef1234567890'), 'Secret must not be present in scrubbed output');
     assert.ok(scrubbed.includes('••••••••'), 'Scrubbed output must contain mask characters');
@@ -230,7 +230,7 @@ describe('🪐 Phase 5: @orbitox-io/sdk Integration & Real Server Suite', () => 
   it('2. Typed errors: properly classifies 401, 403, 404, 429, 503 without leaking secrets', async () => {
     const client = createOrbitoXClient({
       baseUrl: `http://127.0.0.1:${port}`,
-      apiKey: 'orb_live_invalid_bad_key_12345678',
+      apiKey: 'orb_test_invalid_bad_key_12345678',
     });
 
     // 401 Unauthorized check

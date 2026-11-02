@@ -21,7 +21,7 @@ npx @orbitox-io/cli tenants provision \
   --name "St. Jude Medical" \
   --slug "st-jude-clinic" \
   --plugins "hospital-os" \
-  --api-key "orb_live_your_platform_key" \
+  --api-key "$ORBITOX_API_KEY" \
   --wait
 ```
 
@@ -37,10 +37,10 @@ npx @orbitox-io/cli tenants provision \
 To suspend or resume:
 ```bash
 # Suspend tenant
-npx @orbitox-io/cli tenants suspend org/cmvzh.../project/st-jude-clinic/environment/production --api-key "orb_live_..."
+npx @orbitox-io/cli tenants suspend org/cmvzh.../project/st-jude-clinic/environment/production --api-key "$ORBITOX_API_KEY"
 
 # Resume tenant
-npx @orbitox-io/cli tenants resume org/cmvzh.../project/st-jude-clinic/environment/production --api-key "orb_live_..."
+npx @orbitox-io/cli tenants resume org/cmvzh.../project/st-jude-clinic/environment/production --api-key "$ORBITOX_API_KEY"
 ```
 
 ---
@@ -110,8 +110,8 @@ main().catch(console.error);
 ### Step 1: Dispatch Provisioning Request (Async 202 Accepted)
 ```bash
 curl -i -X POST http://127.0.0.1:3005/api/v1/tenants \
-  -H "Authorization: Bearer orb_live_your_platform_key" \
-  -H "Idempotency-Key: idem_req_99214a" \
+  -H "Authorization: Bearer $ORBITOX_API_KEY" \
+  -H "Idempotency-Key: $IDEMPOTENCY_KEY" \
   -H "Content-Type: application/json" \
   -d '{
     "name": "Bistro Deluxe",
@@ -130,7 +130,7 @@ curl -i -X POST http://127.0.0.1:3005/api/v1/tenants \
   "apiKey": {
     "id": "key_41b9c...",
     "prefix": "orb_live_",
-    "secret": "orb_live_SecretTokenReturnedOnceSynchronously"
+    "secret": "orb_live_••••••••••••••••••••••••••••••••"
   }
 }
 ```
@@ -138,7 +138,7 @@ curl -i -X POST http://127.0.0.1:3005/api/v1/tenants \
 ### Step 2: Poll Operation Progress
 ```bash
 curl -X GET http://127.0.0.1:3005/api/v1/operations/op_98ab42c940 \
-  -H "Authorization: Bearer orb_live_your_platform_key"
+  -H "Authorization: Bearer $ORBITOX_API_KEY"
 ```
 
 Once `status === "ACTIVE"`, all plugins, schemas, RLS boundaries, and SLA gates are fully active.

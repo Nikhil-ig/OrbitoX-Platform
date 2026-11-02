@@ -83,8 +83,8 @@ describe('OpenAPI Route Parity & Drift CI Tests (Phase 5 Item 4)', () => {
     const specPaths = Object.keys(platformSpec.paths);
 
     // Identify public tenant & operations Next.js route files
-    const tenantsDir = path.join(appApiDir, 'v1/tenants');
-    const operationsDir = path.join(appApiDir, 'v1/operations');
+    const tenantsDir = path.join(appApiDir, 'v1', 'tenants');
+    const operationsDir = path.join(appApiDir, 'v1', 'operations');
     const tenantFiles = findFilesRecursive(tenantsDir, /^route\.ts$/);
     const operationFiles = findFilesRecursive(operationsDir, /^route\.ts$/);
     const platformRouteFiles = [...tenantFiles, ...operationFiles];
