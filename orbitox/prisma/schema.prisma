@@ -2159,6 +2159,8 @@ model PlatformOperation {
   organizationId String
   idempotencyKey String?
   status         String    @default("PROVISIONING")
+  leaseOwner     String?
+  leaseExpiresAt DateTime?
   steps          Json      @default("[]")
   request        Json      @default("{}")
   result         Json?
@@ -2172,6 +2174,7 @@ model PlatformOperation {
   @@index([organizationId])
   @@index([tenantId])
   @@index([status])
+  @@index([leaseExpiresAt])
   @@unique([organizationId, idempotencyKey])
 }
 

@@ -19,6 +19,7 @@ export type ProvisioningSagaStartResult = PlatformOperationRecord & {
 };
 
 export class ProvisioningSaga {
+  readonly workerInstanceId = `worker_${process.pid}_${randomUUID().slice(0, 8)}`;
   private inFlightResumes = new Set<string>();
   /**
    * Initializes and executes the durable 7-step tenant provisioning workflow.
@@ -412,10 +413,25 @@ export class ProvisioningSaga {
     org: any,
     cleanSlug: string,
     environmentSlug: string,
-    options: { operatorId?: string; requestId?: string; idempotencyKey?: string }
+    options: { operatorId?: string; requestId?: string; idempotencyKey?: string; workerId?: string }
   ): Promise<void> {
     const op = await operationStore.getOperation(operationId);
     if (!op || op.status === 'CANCELLED' || op.status === 'FAILED') return;
+
+    // F1: Acquire distributed lease before running asynchronous steps 5–7
+    const workerId = options.workerId || this.workerInstanceId;
+    const claimed = await operationStore.claimOperationLease(operationId, workerId, 30);
+    if (!claimed) {
+      console.log(`[ProvisioningSaga] Operation ${operationId} lease not acquired (held by another worker); skipping.`);
+      return;
+    }
+
+    // Maintain 10-second heartbeat while executing asynchronous steps
+    const heartbeatTimer = setInterval(async () => {
+      try {
+        await operationStore.heartbeatOperationLease(operationId, workerId, 30);
+      } catch {}
+    }, 10000);
 
     let currentSteps = [...op.steps];
     const updateStep = async (
@@ -440,7 +456,8 @@ export class ProvisioningSaga {
         const t5 = performance.now();
         await updateStep('5', 'RUNNING', { startedAt: new Date().toISOString() });
 
-        const step5DelayMs = Number(process.env.TEST_STEP5_DELAY_MS || 0);
+        // F2: Honour TEST_STEP5_DELAY_MS only when NODE_ENV === 'test'
+        const step5DelayMs = process.env.NODE_ENV === 'test' ? Number(process.env.TEST_STEP5_DELAY_MS || 0) : 0;
         if (step5DelayMs > 0) {
           await new Promise((r) => setTimeout(r, step5DelayMs));
         }
@@ -645,6 +662,9 @@ export class ProvisioningSaga {
         status: 'FAILED',
         error: errMsg,
       });
+    } finally {
+      clearInterval(heartbeatTimer);
+      await operationStore.releaseOperationLease(operationId, workerId);
     }
   }
 
@@ -658,7 +678,7 @@ export class ProvisioningSaga {
     orgId: string,
     cleanSlug: string,
     environmentSlug: string,
-    options: { operatorId?: string; requestId?: string; idempotencyKey?: string }
+    options: { operatorId?: string; requestId?: string; idempotencyKey?: string; workerId?: string }
   ): Promise<void> {
     const org = await platformRepository.getOrganization(orgId);
     if (!org) {
@@ -733,11 +753,21 @@ export class ProvisioningSaga {
   }
 
   /**
-   * Resumes an interrupted or unfinished workflow (crash recovery).
+   * Resumes an interrupted or unfinished workflow (crash recovery with distributed lease).
    */
-  async resumeWorkflow(operationId: string): Promise<PlatformOperationRecord | null> {
+  async resumeWorkflow(
+    operationId: string,
+    options: { workerId?: string } = {}
+  ): Promise<PlatformOperationRecord | null> {
     const op = await operationStore.getOperation(operationId);
     if (!op || op.status === 'ACTIVE' || op.status === 'CANCELLED') return op;
+
+    const workerId = options.workerId || this.workerInstanceId;
+    const claimed = await operationStore.claimOperationLease(operationId, workerId, 30);
+    if (!claimed) {
+      console.log(`[ProvisioningSaga] Operation ${operationId} lease could not be claimed by ${workerId}; active lease held.`);
+      return op;
+    }
 
     if (this.inFlightResumes.has(operationId)) {
       return op;
@@ -768,6 +798,7 @@ export class ProvisioningSaga {
           operatorId: op.operatorId || 'orchestrator',
           requestId: op.requestId || randomUUID(),
           idempotencyKey: op.idempotencyKey || undefined,
+          workerId,
         }
       );
 

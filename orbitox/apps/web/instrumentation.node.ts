@@ -188,8 +188,8 @@ export async function registerNode() {
       try {
         const { operationStore } = await import('@/lib/tenant-provisioning/operation-store');
         const { provisioningSaga } = await import('@/lib/tenant-provisioning/provisioning-saga');
-        const pendingOps = await operationStore.listOperations({ status: 'PROVISIONING' });
-        for (const op of pendingOps) {
+        const resumableOps = await operationStore.listResumableOperations();
+        for (const op of resumableOps) {
           console.log(`[OrbitoX Crash Recovery] Resuming interrupted operation ${op.id} on startup...`);
           provisioningSaga.resumeWorkflow(op.id).catch((err) => {
             console.error(`[OrbitoX Crash Recovery] Failed to resume operation ${op.id}:`, err);

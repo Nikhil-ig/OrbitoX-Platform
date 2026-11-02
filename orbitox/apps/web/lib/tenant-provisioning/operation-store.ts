@@ -79,6 +79,32 @@ function sanitizeOperationResult(result: any): any {
   return clone;
 }
 
+function rowToRecord(row: any): PlatformOperationRecord {
+  return {
+    id: row.id,
+    type: row.type,
+    tenantId: row.tenantId,
+    organizationId: row.organizationId,
+    idempotencyKey: row.idempotencyKey,
+    status: row.status,
+    leaseOwner: row.leaseOwner,
+    leaseExpiresAt: row.leaseExpiresAt
+      ? (row.leaseExpiresAt instanceof Date ? row.leaseExpiresAt.toISOString() : String(row.leaseExpiresAt))
+      : null,
+    steps: (typeof row.steps === 'string' ? JSON.parse(row.steps) : row.steps) || [],
+    request: (typeof row.request === 'string' ? JSON.parse(row.request) : row.request) || {},
+    result: (typeof row.result === 'string' ? JSON.parse(row.result) : row.result) || null,
+    error: row.error,
+    operatorId: row.operatorId,
+    requestId: row.requestId,
+    createdAt: row.createdAt instanceof Date ? row.createdAt.toISOString() : String(row.createdAt),
+    updatedAt: row.updatedAt instanceof Date ? row.updatedAt.toISOString() : String(row.updatedAt),
+    completedAt: row.completedAt
+      ? (row.completedAt instanceof Date ? row.completedAt.toISOString() : String(row.completedAt))
+      : null,
+  };
+}
+
 export class OperationStore {
   async createOperation(op: PlatformOperationRecord): Promise<PlatformOperationRecord> {
     const nowIso = new Date().toISOString();
@@ -101,6 +127,8 @@ export class OperationStore {
             organizationId: sanitizedOp.organizationId,
             idempotencyKey: sanitizedOp.idempotencyKey,
             status: sanitizedOp.status,
+            leaseOwner: sanitizedOp.leaseOwner || null,
+            leaseExpiresAt: sanitizedOp.leaseExpiresAt ? new Date(sanitizedOp.leaseExpiresAt) : null,
             steps: sanitizedOp.steps as any,
             request: sanitizedOp.request as any,
             result: sanitizedOp.result as any,
@@ -128,23 +156,7 @@ export class OperationStore {
           where: { id },
         });
         if (row) {
-          return {
-            id: row.id,
-            type: row.type,
-            tenantId: row.tenantId,
-            organizationId: row.organizationId,
-            idempotencyKey: row.idempotencyKey,
-            status: row.status,
-            steps: (row.steps as unknown as OperationStep[]) || [],
-            request: (row.request as Record<string, any>) || {},
-            result: (row.result as Record<string, any>) || null,
-            error: row.error,
-            operatorId: row.operatorId,
-            requestId: row.requestId,
-            createdAt: row.createdAt.toISOString(),
-            updatedAt: row.updatedAt.toISOString(),
-            completedAt: row.completedAt ? row.completedAt.toISOString() : null,
-          };
+          return rowToRecord(row);
         }
       } catch (err: any) {
         // fallback to memory
@@ -165,23 +177,7 @@ export class OperationStore {
           where: { organizationId, idempotencyKey },
         });
         if (row) {
-          return {
-            id: row.id,
-            type: row.type,
-            tenantId: row.tenantId,
-            organizationId: row.organizationId,
-            idempotencyKey: row.idempotencyKey,
-            status: row.status,
-            steps: (row.steps as unknown as OperationStep[]) || [],
-            request: (row.request as Record<string, any>) || {},
-            result: (row.result as Record<string, any>) || null,
-            error: row.error,
-            operatorId: row.operatorId,
-            requestId: row.requestId,
-            createdAt: row.createdAt.toISOString(),
-            updatedAt: row.updatedAt.toISOString(),
-            completedAt: row.completedAt ? row.completedAt.toISOString() : null,
-          };
+          return rowToRecord(row);
         }
       } catch (err: any) {
         // fallback to memory
@@ -227,6 +223,10 @@ export class OperationStore {
             ...(updates.steps ? { steps: updates.steps as any } : {}),
             ...(updates.result !== undefined ? { result: sanitizedResult as any } : {}),
             ...(updates.error !== undefined ? { error: updates.error } : {}),
+            ...(updates.leaseOwner !== undefined ? { leaseOwner: updates.leaseOwner } : {}),
+            ...(updates.leaseExpiresAt !== undefined
+              ? { leaseExpiresAt: updates.leaseExpiresAt ? new Date(updates.leaseExpiresAt) : null }
+              : {}),
             updatedAt: new Date(merged.updatedAt),
             ...(merged.completedAt ? { completedAt: new Date(merged.completedAt) } : {}),
           },
@@ -237,6 +237,145 @@ export class OperationStore {
     }
 
     return merged;
+  }
+
+  /**
+   * Distributed Lease: claims an operation with an atomic conditional update.
+   * Only succeeds if leaseExpiresAt is NULL or in the past (lease has expired).
+   */
+  async claimOperationLease(
+    id: string,
+    leaseOwner: string,
+    ttlSeconds: number = 30
+  ): Promise<boolean> {
+    if (process.env.ORBITOX_PLATFORM_REPOSITORY !== 'json') {
+      try {
+        const rows = await (prisma as any).$queryRaw<Array<{ id: string }>>`
+          UPDATE "PlatformOperation"
+          SET "leaseOwner" = ${leaseOwner},
+              "leaseExpiresAt" = NOW() + (${ttlSeconds} * INTERVAL '1 second'),
+              "updatedAt" = NOW()
+          WHERE "id" = ${id}
+            AND ("leaseExpiresAt" IS NULL OR "leaseExpiresAt" < NOW())
+          RETURNING id
+        `;
+        const claimed = Array.isArray(rows) && rows.length > 0;
+        if (claimed) {
+          const mem = memoryOperations.get(id);
+          if (mem) {
+            mem.leaseOwner = leaseOwner;
+            mem.leaseExpiresAt = new Date(Date.now() + ttlSeconds * 1000).toISOString();
+          }
+          return true;
+        }
+        return false;
+      } catch (err: any) {
+        // Fallback to memory
+      }
+    }
+
+    const mem = memoryOperations.get(id);
+    if (mem) {
+      const now = Date.now();
+      const expiresAt = mem.leaseExpiresAt ? new Date(mem.leaseExpiresAt).getTime() : 0;
+      if (!mem.leaseExpiresAt || expiresAt < now) {
+        mem.leaseOwner = leaseOwner;
+        mem.leaseExpiresAt = new Date(now + ttlSeconds * 1000).toISOString();
+        return true;
+      }
+      return false;
+    }
+    return false;
+  }
+
+  /**
+   * Distributed Lease: heartbeats an existing lease ownership.
+   */
+  async heartbeatOperationLease(
+    id: string,
+    leaseOwner: string,
+    ttlSeconds: number = 30
+  ): Promise<boolean> {
+    if (process.env.ORBITOX_PLATFORM_REPOSITORY !== 'json') {
+      try {
+        const rows = await (prisma as any).$queryRaw<Array<{ id: string }>>`
+          UPDATE "PlatformOperation"
+          SET "leaseExpiresAt" = NOW() + (${ttlSeconds} * INTERVAL '1 second'),
+              "updatedAt" = NOW()
+          WHERE "id" = ${id}
+            AND "leaseOwner" = ${leaseOwner}
+          RETURNING id
+        `;
+        const renewed = Array.isArray(rows) && rows.length > 0;
+        if (renewed) {
+          const mem = memoryOperations.get(id);
+          if (mem) {
+            mem.leaseExpiresAt = new Date(Date.now() + ttlSeconds * 1000).toISOString();
+          }
+          return true;
+        }
+        return false;
+      } catch (err: any) {
+        // Fallback to memory
+      }
+    }
+
+    const mem = memoryOperations.get(id);
+    if (mem && mem.leaseOwner === leaseOwner) {
+      mem.leaseExpiresAt = new Date(Date.now() + ttlSeconds * 1000).toISOString();
+      return true;
+    }
+    return false;
+  }
+
+  /**
+   * Distributed Lease: explicitly releases a held lease.
+   */
+  async releaseOperationLease(
+    id: string,
+    leaseOwner: string
+  ): Promise<void> {
+    if (process.env.ORBITOX_PLATFORM_REPOSITORY !== 'json') {
+      try {
+        await (prisma as any).$executeRaw`
+          UPDATE "PlatformOperation"
+          SET "leaseOwner" = NULL,
+              "leaseExpiresAt" = NULL,
+              "updatedAt" = NOW()
+          WHERE "id" = ${id}
+            AND "leaseOwner" = ${leaseOwner}
+        `;
+      } catch {}
+    }
+    const mem = memoryOperations.get(id);
+    if (mem && mem.leaseOwner === leaseOwner) {
+      mem.leaseOwner = null;
+      mem.leaseExpiresAt = null;
+    }
+  }
+
+  /**
+   * Distributed Lease: lists operations eligible for resumption (status PROVISIONING with expired or null lease).
+   */
+  async listResumableOperations(): Promise<PlatformOperationRecord[]> {
+    if (process.env.ORBITOX_PLATFORM_REPOSITORY !== 'json') {
+      try {
+        const rows = await (prisma as any).$queryRaw<Array<any>>`
+          SELECT * FROM "PlatformOperation"
+          WHERE "status" = 'PROVISIONING'
+            AND ("leaseExpiresAt" IS NULL OR "leaseExpiresAt" < NOW())
+          ORDER BY "createdAt" ASC
+        `;
+        if (Array.isArray(rows) && rows.length > 0) {
+          return rows.map((r: any) => rowToRecord(r));
+        }
+      } catch {}
+    }
+
+    const now = Date.now();
+    return Array.from(memoryOperations.values())
+      .filter((o) => o.status === 'PROVISIONING' && (!o.leaseExpiresAt || new Date(o.leaseExpiresAt).getTime() < now))
+      .sort((a, b) => (b.createdAt > a.createdAt ? 1 : -1));
   }
 
   async listOperations(filter?: { organizationId?: string; status?: string }): Promise<PlatformOperationRecord[]> {
@@ -251,23 +390,7 @@ export class OperationStore {
           take: 50,
         });
         if (rows && rows.length > 0) {
-          return rows.map((row: any) => ({
-            id: row.id,
-            type: row.type,
-            tenantId: row.tenantId,
-            organizationId: row.organizationId,
-            idempotencyKey: row.idempotencyKey,
-            status: row.status,
-            steps: (row.steps as unknown as OperationStep[]) || [],
-            request: (row.request as Record<string, any>) || {},
-            result: (row.result as Record<string, any>) || null,
-            error: row.error,
-            operatorId: row.operatorId,
-            requestId: row.requestId,
-            createdAt: row.createdAt.toISOString(),
-            updatedAt: row.updatedAt.toISOString(),
-            completedAt: row.completedAt ? row.completedAt.toISOString() : null,
-          }));
+          return rows.map((row: any) => rowToRecord(row));
         }
       } catch (err: any) {
         // fallback to memory
