@@ -1,5 +1,4 @@
 import { signBridgeRequest, getDefaultBridgeKeys } from '@orbitox-io/bridge';
-import { POST as hospitalLifecycleHandler } from '@/app/api/hospital/lifecycle/[action]/route';
 import { NextRequest } from 'next/server';
 
 export interface PluginLifecycleResponse {
@@ -80,6 +79,7 @@ export class PluginLifecycleClient {
               },
               body: bodyStr,
             });
+            const { POST: hospitalLifecycleHandler } = await import('@/app/api/hospital/lifecycle/[action]/route');
             const res = await hospitalLifecycleHandler(req, {
               params: Promise.resolve({ action }),
             });

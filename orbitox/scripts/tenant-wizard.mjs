@@ -21,7 +21,7 @@ Usage:
 Options:
   --name <name>       Tenant name (default: "Metro Medical Center")
   --slug <slug>       Tenant slug (default: auto-generated)
-  --plugin <plugin>   Plugin identifier (hospital-os | restaurant-os | crm)
+  --plugin <plugin>   Plugin identifier (hospital-os | restaurant-os)
   --plan <plan>       Plan tier (starter | pro | enterprise)
   --key <secret>      Customer API key (or set ORBITOX_CUSTOMER_API_KEY)
   --url <url>         Target server URL (default: http://127.0.0.1:3005)
@@ -42,6 +42,17 @@ const pluginId = parseArg('--plugin', 'hospital-os');
 const planTier = parseArg('--plan', 'starter');
 const apiKey = parseArg('--key', process.env.ORBITOX_CUSTOMER_API_KEY || '');
 const serverUrl = parseArg('--url', baseUrl);
+
+// Item 8 (3): Catalogue-driven installable plugins enforcement; CRM must not be offered while disabled
+const installablePlugins = ['hospital-os', 'restaurant-os'];
+if (!installablePlugins.includes(pluginId.toLowerCase())) {
+  if (pluginId.toLowerCase() === 'crm') {
+    console.error(`\n❌ [Wizard] Plugin "crm" is not installable while disabled (pending multi-tenant rebuild). Installable plugins: ${installablePlugins.join(', ')}\n`);
+  } else {
+    console.error(`\n❌ [Wizard] Plugin "${pluginId}" is not installable. Installable plugins: ${installablePlugins.join(', ')}\n`);
+  }
+  process.exit(1);
+}
 
 console.log('\n🪐 ==============================================================');
 console.log('       ORBITOX TENANT PROVISIONING CONSOLE WIZARD');

@@ -19,6 +19,7 @@ export type ProvisioningSagaStartResult = PlatformOperationRecord & {
 };
 
 export class ProvisioningSaga {
+  private inFlightResumes = new Set<string>();
   /**
    * Initializes and executes the durable 7-step tenant provisioning workflow.
    * Steps 1-4 execute synchronously so API credentials and canonical tenant ID
@@ -207,6 +208,7 @@ export class ProvisioningSaga {
             planTier: input.plugins[0]?.plan || 'starter',
             technicalLead: 'Orbitox Orchestrator',
             contactEmail: `${cleanSlug}@orbitox.io`,
+            enabledServices: input.plugins.map((p) => canonicalizePluginId(p.id)),
             plugins: input.plugins.map((p) => ({
               pluginId: canonicalizePluginId(p.id),
               planId: p.plan || 'starter',
@@ -438,6 +440,11 @@ export class ProvisioningSaga {
         const t5 = performance.now();
         await updateStep('5', 'RUNNING', { startedAt: new Date().toISOString() });
 
+        const step5DelayMs = Number(process.env.TEST_STEP5_DELAY_MS || 0);
+        if (step5DelayMs > 0) {
+          await new Promise((r) => setTimeout(r, step5DelayMs));
+        }
+
         const pluginResults = await Promise.all(
           input.plugins.map(async (plugin) => {
             const canonical = canonicalizePluginId(plugin.id);
@@ -605,6 +612,7 @@ export class ProvisioningSaga {
       // Mark operation ACTIVE (W1: NO secret in result!)
       await operationStore.updateOperation(operationId, {
         status: 'ACTIVE',
+        steps: currentSteps,
         result: {
           tenantId,
           organizationId: org.id,
@@ -731,33 +739,42 @@ export class ProvisioningSaga {
     const op = await operationStore.getOperation(operationId);
     if (!op || op.status === 'ACTIVE' || op.status === 'CANCELLED') return op;
 
-    const req = op.request as any;
-    const orgId = op.organizationId;
-    const cleanSlug = req.slug;
-    const environmentSlug = req.environment || 'production';
+    if (this.inFlightResumes.has(operationId)) {
+      return op;
+    }
+    this.inFlightResumes.add(operationId);
 
-    await this.executeWorkflow(
-      operationId,
-      {
-        name: req.name,
-        slug: cleanSlug,
-        organizationId: orgId,
-        environment: environmentSlug,
-        plugins: req.plugins || [],
-        region: req.region,
-      },
-      op.tenantId,
-      orgId,
-      cleanSlug,
-      environmentSlug,
-      {
-        operatorId: op.operatorId || 'orchestrator',
-        requestId: op.requestId || randomUUID(),
-        idempotencyKey: op.idempotencyKey || undefined,
-      }
-    );
+    try {
+      const req = op.request as any;
+      const orgId = op.organizationId;
+      const cleanSlug = req.slug;
+      const environmentSlug = req.environment || 'production';
 
-    return await operationStore.getOperation(operationId);
+      await this.executeWorkflow(
+        operationId,
+        {
+          name: req.name,
+          slug: cleanSlug,
+          organizationId: orgId,
+          environment: environmentSlug,
+          plugins: req.plugins || [],
+          region: req.region,
+        },
+        op.tenantId,
+        orgId,
+        cleanSlug,
+        environmentSlug,
+        {
+          operatorId: op.operatorId || 'orchestrator',
+          requestId: op.requestId || randomUUID(),
+          idempotencyKey: op.idempotencyKey || undefined,
+        }
+      );
+
+      return await operationStore.getOperation(operationId);
+    } finally {
+      this.inFlightResumes.delete(operationId);
+    }
   }
 
   /**

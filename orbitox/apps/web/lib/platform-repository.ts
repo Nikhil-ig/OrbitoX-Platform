@@ -566,7 +566,7 @@ function toKeyCreateData(key: PlatformApiKeyRecord): Prisma.PlatformApiKeyCreate
 
 function makeProjectData(input: CreateProjectInput, slug: string, projectId: string): Prisma.PlatformProjectCreateInput {
     const plan = (input.plan || input.planTier || 'starter').toLowerCase();
-    const services = input.enabledServices || input.initialPackages || [];
+    const services = input.enabledServices || input.initialPackages || (input.plugins ? input.plugins.map((p: any) => p.pluginId || p.id) : []);
     const quota = input.apiCallQuota || PLAN_DEFAULT_QUOTAS[plan] || 100000;
     const rateLimit = input.rateLimitPerMin || PLAN_DEFAULT_RATE_LIMITS[plan] || 60;
     const now = new Date();
@@ -1635,6 +1635,14 @@ export function createPrismaPlatformRepository(
                         entitlementRevision: { increment: 1 },
                     },
                 });
+
+                for (const tId of Array.from(new Set([tenantId, existing.tenantId]))) {
+                    await tx.pluginGrantRevision.upsert({
+                        where: { tenantId_pluginId: { tenantId: tId, pluginId: canonical } },
+                        create: { tenantId: tId, pluginId: canonical, highestRevision: row.entitlementRevision },
+                        update: { highestRevision: row.entitlementRevision },
+                    }).catch(() => {});
+                }
 
                 await tx.$queryRaw`SELECT set_config('app.current_tenant_id', ${tenantId}, true)`;
                 await tx.platformOutboxMessage.create({

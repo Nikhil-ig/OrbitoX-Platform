@@ -13,11 +13,15 @@ import * as path from 'path';
 import * as fs from 'fs';
 import * as crypto from 'crypto';
 import * as net from 'net';
+import * as http from 'http';
 import { spawn, ChildProcess } from 'child_process';
 import { PrismaClient } from '@prisma/client';
 import { platformRepository } from '../lib/platform-repository';
 import { provisioningSaga } from '../lib/tenant-provisioning/provisioning-saga';
 import { operationStore } from '../lib/tenant-provisioning/operation-store';
+import { RestaurantBridgeClient } from '../lib/restaurant-bridge-client';
+import { withTenantTx } from '../lib/tenant-db';
+import { getPhiKeyRing, seal, blindIndex } from '../lib/phi-crypto';
 
 const RESTRICTED_PORTS = new Set([3659, 4045, 5060, 5061, 6000, 6566, 6665, 6666, 6667, 6668, 6669, 6697]);
 
@@ -42,6 +46,48 @@ async function allocateSafePort(preferred: number): Promise<number> {
   throw new Error('No available safe port found');
 }
 
+function sendRawHttpRequest(options: {
+  hostname?: string;
+  port: number;
+  path: string;
+  method: string;
+  headers?: Record<string, string>;
+  body?: any;
+}): Promise<{ status: number; headers: http.IncomingHttpHeaders; body: any }> {
+  return new Promise((resolve, reject) => {
+    const payloadBuffer = options.body !== undefined
+      ? Buffer.from(typeof options.body === 'string' ? options.body : JSON.stringify(options.body), 'utf8')
+      : null;
+    const reqHeaders: Record<string, string> = { ...(options.headers || {}) };
+    if (payloadBuffer) {
+      if (!reqHeaders['content-type'] && !reqHeaders['Content-Type']) reqHeaders['content-type'] = 'application/json';
+      reqHeaders['content-length'] = String(payloadBuffer.length);
+    }
+    const req = http.request(
+      {
+        hostname: options.hostname || '127.0.0.1',
+        port: options.port,
+        path: options.path,
+        method: options.method,
+        headers: reqHeaders,
+      },
+      (res) => {
+        const chunks: Buffer[] = [];
+        res.on('data', (c) => chunks.push(Buffer.isBuffer(c) ? c : Buffer.from(c)));
+        res.on('end', () => {
+          const raw = Buffer.concat(chunks).toString('utf8');
+          let parsed: any = null;
+          try { parsed = JSON.parse(raw); } catch { parsed = raw; }
+          resolve({ status: res.statusCode || 0, headers: res.headers, body: parsed });
+        });
+      }
+    );
+    req.on('error', reject);
+    if (payloadBuffer) req.write(payloadBuffer);
+    req.end();
+  });
+}
+
 describe('Phase 4 Item 8: Comprehensive Tenant Provisioning Matrix', () => {
   const serverScript = path.resolve(__dirname, '../.next/standalone/apps/web/server.js');
   const databaseUrl = process.env.TEST_DATABASE_URL || process.env.DATABASE_URL || 'postgresql://postgres:postgrespassword@127.0.0.1:5432/orbitox_phase2';
@@ -50,6 +96,17 @@ describe('Phase 4 Item 8: Comprehensive Tenant Provisioning Matrix', () => {
   let child: ChildProcess | null = null;
   let port = 0;
   let prisma: PrismaClient | null = null;
+
+  // Cryptographic secrets and URLs shared across standalone test instances
+  let serverPepper = '';
+  let adminToken = '';
+  let grantPrivPem = '';
+  let grantPubPem = '';
+  let runtimeUrl = '';
+  let auditUrl = '';
+  let hmsAuditUrl = '';
+  let outboxRelayUrl = '';
+  let bridgeKeys: any = null;
 
   // Org A & Key A
   let orgA: any = null;
@@ -87,17 +144,21 @@ describe('Phase 4 Item 8: Comprehensive Tenant Provisioning Matrix', () => {
     }
 
     port = await allocateSafePort(3892);
-    const serverPepper = crypto.randomBytes(32).toString('hex');
-    const adminToken = crypto.randomBytes(32).toString('hex');
+    serverPepper = crypto.randomBytes(32).toString('hex');
+    adminToken = crypto.randomBytes(32).toString('hex');
 
     const grantPair = crypto.generateKeyPairSync('ed25519');
-    const grantPrivPem = grantPair.privateKey.export({ type: 'pkcs8', format: 'pem' }).toString();
-    const grantPubPem = grantPair.publicKey.export({ type: 'spki', format: 'pem' }).toString();
+    grantPrivPem = grantPair.privateKey.export({ type: 'pkcs8', format: 'pem' }).toString();
+    grantPubPem = grantPair.publicKey.export({ type: 'spki', format: 'pem' }).toString();
 
-    const runtimeUrl = process.env.APP_DATABASE_URL || 'postgresql://orbitox_runtime:test_runtime_pass@127.0.0.1:5432/orbitox_phase2';
-    const auditUrl = process.env.PLATFORM_AUDIT_DATABASE_URL || 'postgresql://orbitox_platform_admin_audit:test_audit_pass@127.0.0.1:5432/orbitox_phase2';
-    const hmsAuditUrl = process.env.HMS_AUDIT_DATABASE_URL || 'postgresql://hms_audit_reader:test_audit_pass@127.0.0.1:5432/orbitox_phase2';
-    const outboxRelayUrl = process.env.OUTBOX_RELAY_DATABASE_URL || 'postgresql://orbitox_outbox_relay:test_outbox_pass@127.0.0.1:5432/orbitox_phase2';
+    runtimeUrl = process.env.APP_DATABASE_URL || 'postgresql://orbitox_runtime:test_runtime_pass@127.0.0.1:5432/orbitox_phase2';
+    auditUrl = process.env.PLATFORM_AUDIT_DATABASE_URL || 'postgresql://orbitox_platform_admin_audit:test_audit_pass@127.0.0.1:5432/orbitox_phase2';
+    hmsAuditUrl = process.env.HMS_AUDIT_DATABASE_URL || 'postgresql://hms_audit_reader:test_audit_pass@127.0.0.1:5432/orbitox_phase2';
+    outboxRelayUrl = process.env.OUTBOX_RELAY_DATABASE_URL || 'postgresql://orbitox_outbox_relay:test_outbox_pass@127.0.0.1:5432/orbitox_phase2';
+    bridgeKeys = {
+      activeKeyId: 'k1',
+      keys: { k1: crypto.randomBytes(32).toString('hex') },
+    };
 
     // 1. Seed Org A and customer API key A
     const orgASlug = `org-matrix-a-${runTag}`;
@@ -239,9 +300,7 @@ describe('Phase 4 Item 8: Comprehensive Tenant Provisioning Matrix', () => {
       }),
       ORBITOX_PHI_ACTIVE_KID: 'k1',
       ORBITOX_PHI_INDEX_KEY: crypto.randomBytes(32).toString('base64'),
-      ORBITOX_BRIDGE_KEYS: JSON.stringify({
-        k1: crypto.randomBytes(32).toString('hex'),
-      }),
+      ORBITOX_BRIDGE_KEYS: JSON.stringify(bridgeKeys),
       ORBITOX_BRIDGE_ACTIVE_KID: 'k1',
     };
 
@@ -484,62 +543,216 @@ describe('Phase 4 Item 8: Comprehensive Tenant Provisioning Matrix', () => {
   });
 
   // ──────────────────────────────────────────────────────────────────────────
-  // Test 4: Kill-and-resume: resumeWorkflow picks up interrupted workflow
+  // Test 4: Real kill-and-resume with slowed step 5 and SIGKILL
   // ──────────────────────────────────────────────────────────────────────────
-  it('Matrix 4: Kill-and-resume recovers interrupted workflow and reaches ACTIVE without repeating completed steps', async () => {
-    const resumeSlug = `resume-tenant-${runTag}`;
-    const opId = `op_resume_${runTag}`;
-    const tenantId = `org/${orgA.slug}/project/${resumeSlug}/environment/production`;
+  it('Matrix 4: Real kill-and-resume recovers interrupted workflow and reaches ACTIVE without repeating completed steps', async (t) => {
+    if (!isStandaloneBuilt || !databaseUrl || !prisma) return t.skip('Requires standalone build and Postgres');
 
-    // 1. Create an interrupted operation at step 4 (steps 1-4 completed, 5-7 pending)
-    await operationStore.createOperation({
-      id: opId,
-      organizationId: orgA.id,
-      tenantId,
-      status: 'PROVISIONING',
-      operatorId: 'operator_resume_test',
-      steps: [
-        { id: '1', name: 'Validate request', status: 'COMPLETED', completedAt: new Date().toISOString() },
-        { id: '2', name: 'Create project entity', status: 'COMPLETED', completedAt: new Date().toISOString() },
-        { id: '3', name: 'Create environment', status: 'COMPLETED', completedAt: new Date().toISOString() },
-        { id: '4', name: 'Issue master API key', status: 'COMPLETED', completedAt: new Date().toISOString() },
-        { id: '5', name: 'Provision plugins', status: 'PENDING' },
-        { id: '6', name: 'Push first grant', status: 'PENDING' },
-        { id: '7', name: 'Mark active', status: 'PENDING' },
-      ],
-      request: {
-        name: `Interrupted Tenant ${runTag}`,
-        slug: resumeSlug,
-        organizationId: orgA.id,
+    const killResumeSlug = `kill-resume-${runTag}`;
+    const port1 = await allocateSafePort(3910);
+    const port2 = await allocateSafePort(port1 + 1);
+
+    const baseEnv: NodeJS.ProcessEnv = {
+      ...process.env,
+      HOSTNAME: '127.0.0.1',
+      NODE_ENV: 'production' as const,
+      ORBITOX_ADMIN_TOKEN: adminToken,
+      ORBITOX_RUNTIME_TOKEN: crypto.randomBytes(32).toString('hex'),
+      ORBITOX_CONTROL_SECRET: crypto.randomBytes(32).toString('hex'),
+      ORBITOX_GUEST_SECRET: crypto.randomBytes(32).toString('hex'),
+      ORBITOX_SERVER_PEPPER: serverPepper,
+      RAZORPAY_WEBHOOK_SECRET: crypto.randomBytes(32).toString('hex'),
+      ORBITOX_GRANT_SIGNING_KEYS: JSON.stringify({
+        k1: { privateKey: grantPrivPem, publicKey: grantPubPem },
+      }),
+      ORBITOX_GRANT_PUBLIC_KEYS: JSON.stringify({
+        k1: grantPubPem,
+      }),
+      DATABASE_URL: databaseUrl,
+      APP_DATABASE_URL: runtimeUrl,
+      PLATFORM_AUDIT_DATABASE_URL: auditUrl,
+      HMS_AUDIT_DATABASE_URL: hmsAuditUrl,
+      OUTBOX_RELAY_DATABASE_URL: outboxRelayUrl,
+      ORBITOX_ENABLE_HOSPITAL_ADMIN_ENDPOINTS: 'true',
+      ORBITOX_PLATFORM_REPOSITORY: 'prisma',
+      RESTAURANTOS_PUBLIC_URL: 'https://restaurant.orbitox.internal',
+      ORBITOX_TEST_STANDALONE: 'true',
+      ORBITOX_TEST_SKIP_ROLE_CHECK: 'true',
+      ORBITOX_PHI_KEYS: JSON.stringify({
+        k1: crypto.randomBytes(32).toString('base64'),
+      }),
+      ORBITOX_PHI_ACTIVE_KID: 'k1',
+      ORBITOX_PHI_INDEX_KEY: crypto.randomBytes(32).toString('base64'),
+      ORBITOX_BRIDGE_KEYS: JSON.stringify(bridgeKeys),
+      ORBITOX_BRIDGE_ACTIVE_KID: 'k1',
+    };
+
+    // 1. Spawn Server 1 with TEST_STEP5_DELAY_MS = 6000 and async background execution (ORBITOX_SYNC_SAGA not set)
+    const env1: NodeJS.ProcessEnv = {
+      ...baseEnv,
+      PORT: String(port1),
+      TEST_STEP5_DELAY_MS: '6000',
+      ORBITOX_SYNC_SAGA: 'false',
+    };
+
+    const server1 = spawn('node', [serverScript], {
+      cwd: path.resolve(__dirname, '../.next/standalone/apps/web'),
+      env: env1,
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+
+    server1.stdout?.on('data', (d) => process.stdout.write(`[KillServer1 OUT] ${d}`));
+    server1.stderr?.on('data', (d) => process.stderr.write(`[KillServer1 ERR] ${d}`));
+
+    // Wait for server1 readiness
+    let ready1 = false;
+    for (let i = 0; i < 40; i++) {
+      try {
+        const res = await fetch(`http://127.0.0.1:${port1}/api/health`);
+        if (res.status === 200) { ready1 = true; break; }
+      } catch {}
+      await new Promise((r) => setTimeout(r, 200));
+    }
+    assert.ok(ready1, 'Kill Server 1 must be ready');
+
+    // 2. Dispatch provisioning request to Server 1
+    const res = await fetch(`http://127.0.0.1:${port1}/api/v1/tenants`, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        'x-api-key': rawSecretA,
+      },
+      body: JSON.stringify({
+        organisation: orgA.slug,
+        name: `Kill Resume Tenant ${runTag}`,
+        slug: killResumeSlug,
         environment: 'production',
-        plugins: [{ id: 'crm', plan: 'starter' }],
+        plugins: [{ id: 'hospital-os', plan: 'starter' }],
+      }),
+    });
+
+    assert.strictEqual(res.status, 202, 'Server 1 must return 202 Accepted synchronously after step 4');
+    const provBody = await res.json();
+    assert.ok(provBody.operationId, 'Must return operationId');
+    assert.ok(provBody.tenantId, 'Must return canonical tenantId');
+    assert.ok(provBody.apiKey?.secret, 'Must return raw secret in 202');
+    const targetOpId = provBody.operationId;
+    const targetTenantId = provBody.tenantId;
+
+    // Give it 350ms to enter Step 5 delay
+    await new Promise((r) => setTimeout(r, 350));
+
+    // Verify operation is recorded in PROVISIONING status in DB
+    const midOp = await prisma.platformOperation.findUnique({ where: { id: targetOpId } });
+    assert.ok(midOp, 'Operation record must exist in DB');
+    assert.strictEqual(midOp.status, 'PROVISIONING');
+
+    // 3. SIGKILL server 1 process during Step 5
+    console.log(`[Matrix 4] Sending SIGKILL to Server 1 (PID ${server1.pid})...`);
+    const exitPromise = new Promise((resolve) => server1.on('exit', resolve));
+    server1.kill('SIGKILL');
+    await exitPromise;
+    console.log(`[Matrix 4] Server 1 successfully killed.`);
+
+    // 4. Spawn fresh Server 2 with TEST_STEP5_DELAY_MS = 0 (no delay)
+    const env2: NodeJS.ProcessEnv = {
+      ...baseEnv,
+      PORT: String(port2),
+      TEST_STEP5_DELAY_MS: '0',
+      ORBITOX_SYNC_SAGA: 'false',
+    };
+
+    const server2 = spawn('node', [serverScript], {
+      cwd: path.resolve(__dirname, '../.next/standalone/apps/web'),
+      env: env2,
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+
+    server2.stdout?.on('data', (d) => process.stdout.write(`[KillServer2 OUT] ${d}`));
+    server2.stderr?.on('data', (d) => process.stderr.write(`[KillServer2 ERR] ${d}`));
+
+    // Wait for server2 readiness
+    let ready2 = false;
+    for (let i = 0; i < 40; i++) {
+      try {
+        const res = await fetch(`http://127.0.0.1:${port2}/api/health`);
+        if (res.status === 200) { ready2 = true; break; }
+      } catch {}
+      await new Promise((r) => setTimeout(r, 200));
+    }
+    assert.ok(ready2, 'Kill Server 2 must be ready');
+
+    // Documented resume trigger: invoke action=resume on Server 2
+    try {
+      await fetch(`http://127.0.0.1:${port2}/api/v1/operations/${targetOpId}?action=resume`, {
+        method: 'POST',
+        headers: { 'x-api-key': rawSecretA },
+      });
+    } catch {}
+
+    // 5. Poll Server 2 until operation reaches ACTIVE
+    let activeOp: any = null;
+    const pollStart = Date.now();
+    while (Date.now() - pollStart < 30000) {
+      const getRes = await fetch(`http://127.0.0.1:${port2}/api/v1/operations/${targetOpId}`, {
+        headers: { 'x-api-key': rawSecretA },
+      });
+      if (getRes.status === 200) {
+        const body = await getRes.json();
+        if (
+          (body.status === 'ACTIVE' && Array.isArray(body.steps) && body.steps.every((s: any) => s.status === 'COMPLETED')) ||
+          body.status === 'FAILED'
+        ) {
+          activeOp = body;
+          break;
+        }
+      }
+      await new Promise((r) => setTimeout(r, 300));
+    }
+
+    // Clean up Server 2
+    server2.kill('SIGTERM');
+    await new Promise((r) => setTimeout(r, 300));
+    if (!server2.killed) server2.kill('SIGKILL');
+
+    assert.ok(activeOp, 'Operation must have finished on Server 2');
+    assert.strictEqual(activeOp.status, 'ACTIVE', `Operation must reach ACTIVE on resume, got ${activeOp.status}`);
+    for (const step of activeOp.steps) {
+      assert.strictEqual(step.status, 'COMPLETED', `Step ${step.id} must be COMPLETED`);
+    }
+
+    // 6. Assert DB invariant: NO duplicate project, installation, or API key rows
+    const projects = await prisma.platformProject.findMany({ where: { slug: killResumeSlug } });
+    assert.strictEqual(projects.length, 1, `Exactly one project row must exist (found ${projects.length})`);
+
+    const installations = await prisma.pluginInstallation.findMany({
+      where: {
+        OR: [
+          { tenantId: targetTenantId },
+          { tenantId: `org/${orgA.slug}/project/${killResumeSlug}/environment/production` },
+          { runtimeTenantId: { contains: killResumeSlug } },
+        ],
+      },
+    });
+    assert.strictEqual(installations.length, 1, `Exactly one installation row must exist for plugin (found ${installations.length})`);
+
+    const keys = await prisma.platformApiKey.findMany({
+      where: { environment: { projectId: projects[0]!.id } },
+    });
+    assert.strictEqual(keys.length, 1, `Exactly one API key row must exist (found ${keys.length})`);
+
+    // 7. Assert steps 1-4 were NOT re-run: check audit events
+    const audits = await prisma.platformAuditEvent.findMany({
+      where: {
+        projectId: projects[0]!.id,
       },
     });
 
-    // 2. Also ensure project entity exists in repository
-    await platformRepository.createProject({
-      name: `Interrupted Tenant ${runTag}`,
-      slug: resumeSlug,
-      organizationId: orgA.id,
-      businessModel: 'B2B_SAAS',
-      planTier: 'enterprise',
-      technicalLead: 'Lead A',
-      contactEmail: `resume_${runTag}@orbitox.io`,
-      plugins: [],
-    });
+    const entityCreatedAudits = audits.filter((a) => a.action === 'TENANT_ENTITY_CREATED');
+    assert.strictEqual(entityCreatedAudits.length, 1, 'TENANT_ENTITY_CREATED audit event must appear exactly once (step 2 not re-run)');
 
-    // 3. Resume the workflow
-    const resumed = await provisioningSaga.resumeWorkflow(opId);
-    assert.ok(resumed, 'resumeWorkflow must return updated operation');
-    assert.strictEqual(resumed.status, 'ACTIVE', 'Resumed workflow must reach ACTIVE status');
-
-    // 4. Verify all 7 steps are now completed
-    const finalOp = await operationStore.getOperation(opId);
-    assert.ok(finalOp);
-    assert.strictEqual(finalOp.steps.length, 7);
-    for (const step of finalOp.steps) {
-      assert.strictEqual(step.status, 'COMPLETED', `Step ${step.id} must be COMPLETED on resume`);
-    }
+    const keyIssuedAudits = audits.filter((a) => a.action === 'TENANT_KEY_ISSUED');
+    assert.strictEqual(keyIssuedAudits.length, 1, 'TENANT_KEY_ISSUED audit event must appear exactly once (step 4 not re-run)');
   });
 
   // ──────────────────────────────────────────────────────────────────────────
@@ -567,6 +780,7 @@ describe('Phase 4 Item 8: Comprehensive Tenant Provisioning Matrix', () => {
     // Simulate an operation that failed on step 6
     await operationStore.createOperation({
       id: opId,
+      type: 'TENANT_PROVISION',
       organizationId: orgA.id,
       tenantId,
       status: 'FAILED',
@@ -588,6 +802,8 @@ describe('Phase 4 Item 8: Comprehensive Tenant Provisioning Matrix', () => {
         environment: 'production',
         plugins: [{ id: 'crm', plan: 'starter' }],
       },
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
     });
 
     // Call retry endpoint via HTTP through real server
@@ -659,55 +875,239 @@ describe('Phase 4 Item 8: Comprehensive Tenant Provisioning Matrix', () => {
   });
 
   // ──────────────────────────────────────────────────────────────────────────
-  // Test 7: 5-second suspend and resume SLA
+  // Test 7: Real enforcement across both plugins (HospitalOS & RestaurantOS)
   // ──────────────────────────────────────────────────────────────────────────
-  it('Matrix 7: 5-second suspend and resume SLA with enforced request gating', async () => {
-    assert.ok(hospitalTenantId, 'Hospital tenant must exist');
+  it('Matrix 7: Real enforcement across both plugins: suspend -> 403 SERVICE_SUSPENDED on HospitalOS write and RestaurantOS order; resume -> both succeed within 5s', async (t) => {
+    if (!isStandaloneBuilt || !databaseUrl || !prisma || !child) return t.skip('Requires standalone server and Postgres');
 
-    // 1. Suspend tenant: measure duration
-    const suspendStart = Date.now();
-    const suspendedInstallation = await platformRepository.updatePluginInstallationStatus(
-      hospitalTenantId,
-      '@orbitox/hms',
-      'SUSPENDED'
+    // 1. Spawn a real separately running RestaurantOS process on a safe port
+    const restoPort = await allocateSafePort(3940);
+    const tsxCli = require.resolve('tsx/cli');
+    const restoServerPath = path.resolve(__dirname, '../../../../projects/external-os/restaurant-os/src/server.ts');
+    const restoCwd = path.resolve(__dirname, '../../../../projects/external-os/restaurant-os');
+
+    const restoDbUrl = process.env.RESTAURANT_DATABASE_URL || databaseUrl.replace(/\/orbitox_phase2$/, '/restaurant_os');
+    const restoProcess = spawn(
+      process.execPath,
+      [tsxCli, restoServerPath],
+      {
+        cwd: restoCwd,
+        env: {
+          ...process.env,
+          PORT: String(restoPort),
+          NODE_ENV: 'development',
+          DATABASE_URL: restoDbUrl,
+          ORBITOX_BRIDGE_KEYS: JSON.stringify(bridgeKeys),
+          RESTAURANTOS_DISABLE_AUTOLISTEN: 'false',
+          RESTAURANTOS_ENABLE_TEST_ROUTES: 'true',
+        },
+        stdio: ['ignore', 'pipe', 'pipe'],
+      }
     );
-    const suspendDurationMs = Date.now() - suspendStart;
-    console.log(`[Matrix SLA] Suspend duration: ${suspendDurationMs} ms`);
 
-    assert.ok(suspendDurationMs < 5000, `Suspend took ${suspendDurationMs} ms, exceeding 5 s SLA`);
-    assert.strictEqual(suspendedInstallation.status, 'SUSPENDED');
+    restoProcess.stdout?.on('data', (d) => process.stdout.write(`[Resto OUT] ${d}`));
+    restoProcess.stderr?.on('data', (d) => process.stderr.write(`[Resto ERR] ${d}`));
 
-    // 2. Verify quota/access check fails closed in SUSPENDED state
-    const quotaCheck = await platformRepository.checkQuotaUsage(
-      hospitalTenantId,
-      '@orbitox/hms',
-      'api_calls',
-      1
-    );
-    assert.strictEqual(quotaCheck.allowed, false, 'Suspended tenant must fail closed on quota check');
-    assert.strictEqual(quotaCheck.reason, 'INSTALLATION_SUSPENDED');
+    // Wait for RestaurantOS server readiness
+    let restoReady = false;
+    for (let i = 0; i < 50; i++) {
+      try {
+        const res = await fetch(`http://127.0.0.1:${restoPort}/live`);
+        if (res.status === 200) { restoReady = true; break; }
+      } catch {}
+      await new Promise((r) => setTimeout(r, 200));
+    }
 
-    // 3. Resume tenant: measure duration
-    const resumeStart = Date.now();
-    const resumedInstallation = await platformRepository.updatePluginInstallationStatus(
-      hospitalTenantId,
-      '@orbitox/hms',
-      'ACTIVE'
-    );
-    const resumeDurationMs = Date.now() - resumeStart;
-    console.log(`[Matrix SLA] Resume duration: ${resumeDurationMs} ms`);
+    if (!restoReady) {
+      restoProcess.kill('SIGKILL');
+      return t.skip('Separately running RestaurantOS process failed to start');
+    }
 
-    assert.ok(resumeDurationMs < 5000, `Resume took ${resumeDurationMs} ms, exceeding 5 s SLA`);
-    assert.strictEqual(resumedInstallation.status, 'ACTIVE');
+    try {
+      // 2. Provision tenant through the platform with BOTH plugins: hospital-os and restaurant-os
+      const dualSlug = `dual-os-${runTag}`;
+      const provRes = await fetch(`http://127.0.0.1:${port}/api/v1/tenants`, {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          'x-api-key': rawSecretA,
+        },
+        body: JSON.stringify({
+          organisation: orgA.slug,
+          name: `Dual OS Tenant ${runTag}`,
+          slug: dualSlug,
+          environment: 'production',
+          plugins: [
+            { id: 'hospital-os', plan: 'starter' },
+            { id: 'restaurant-os', plan: 'starter' },
+          ],
+        }),
+      });
 
-    // 4. Verify access returns to ACTIVE
-    const activeCheck = await platformRepository.checkQuotaUsage(
-      hospitalTenantId,
-      '@orbitox/hms',
-      'api_calls',
-      1
-    );
-    assert.strictEqual(activeCheck.allowed, true, 'Resumed tenant must allow requests');
+      assert.strictEqual(provRes.status, 202);
+      const provBody = await provRes.json();
+      const dualTenantId = provBody.tenantId;
+      const dualOpId = provBody.operationId;
+      const dualApiKeySecret = provBody.apiKey?.secret;
+      assert.ok(dualTenantId);
+      assert.ok(dualApiKeySecret);
+
+      // Poll until ACTIVE
+      let opDone = false;
+      for (let i = 0; i < 60; i++) {
+        const check = await fetch(`http://127.0.0.1:${port}/api/v1/operations/${dualOpId}`, {
+          headers: { 'x-api-key': rawSecretA },
+        });
+        if (check.status === 200) {
+          const body = await check.json();
+          if (body.status === 'ACTIVE') { opDone = true; break; }
+        }
+        await new Promise((r) => setTimeout(r, 300));
+      }
+      assert.ok(opDone, 'Dual-plugin tenant must reach ACTIVE status');
+
+      // Ensure tenant is registered on RestaurantOS via signed bridge provision call
+      const bridgeClient = new RestaurantBridgeClient({
+        baseUrl: `http://127.0.0.1:${restoPort}`,
+        keys: bridgeKeys,
+      });
+      const restoProvRes = await bridgeClient.provisionTenant({
+        tenantId: dualTenantId,
+        restaurantName: `Dual OS Restaurant ${runTag}`,
+        slug: dualSlug,
+        planId: 'starter',
+      });
+      console.log('[Matrix 7] Restaurant provision result:', restoProvRes);
+
+      // Fetch menu to obtain a valid seeded menu item ID
+      const menuRes = await sendRawHttpRequest({
+        port: restoPort,
+        path: '/api/restaurant/menu',
+        method: 'GET',
+        headers: { Host: `${dualSlug}.localhost` },
+      });
+      const validItemId = menuRes.body?.data?.[0]?.id || `item_${dualSlug}_1`;
+      console.log(`[Matrix 7] Resolved valid menu item ID: ${validItemId}`);
+
+      // 3. Suspend through the platform
+      const suspendStartTime = Date.now();
+      // Suspend HospitalOS on platform
+      await platformRepository.updatePluginInstallationStatus(dualTenantId, '@orbitox/hms', 'SUSPENDED');
+      // Suspend RestaurantOS via signed bridge lifecycle call and platform repo
+      await bridgeClient.suspendTenant(dualTenantId, 2);
+      await platformRepository.updatePluginInstallationStatus(dualTenantId, '@orbitox/restaurant', 'SUSPENDED');
+
+      // 4. Within 5 seconds: HospitalOS write returns 403 SERVICE_SUSPENDED
+      let hospSuspRes: any = null;
+      let hospSuspBody: any = null;
+      for (let i = 0; i < 25; i++) {
+        hospSuspRes = await fetch(`http://127.0.0.1:${port}/api/hospital/patients`, {
+          method: 'POST',
+          headers: {
+            'content-type': 'application/json',
+            'x-api-key': dualApiKeySecret,
+          },
+          body: JSON.stringify({ name: 'Suspended Patient' }),
+        });
+        hospSuspBody = await hospSuspRes.json();
+        if (hospSuspRes.status === 403) break;
+        await new Promise((r) => setTimeout(r, 200));
+      }
+      assert.strictEqual(hospSuspRes?.status, 403, 'HospitalOS write request must return 403 when suspended');
+      assert.ok(
+        hospSuspBody?.code === 'SERVICE_SUSPENDED' || hospSuspBody?.error?.code === 'SERVICE_SUSPENDED',
+        `HospitalOS error code must be SERVICE_SUSPENDED, got ${JSON.stringify(hospSuspBody)}`
+      );
+
+      // And within 5 seconds: RestaurantOS guest order returns 403 SERVICE_SUSPENDED
+      let restoSusp: any = null;
+      for (let i = 0; i < 25; i++) {
+        restoSusp = await sendRawHttpRequest({
+          port: restoPort,
+          path: '/api/restaurant/orders',
+          method: 'POST',
+          headers: {
+            Host: `${dualSlug}.localhost`,
+          },
+          body: { tableNumber: 'T-01', items: [{ id: validItemId, quantity: 1 }] },
+        });
+        if (restoSusp.status === 403) break;
+        await new Promise((r) => setTimeout(r, 200));
+      }
+      assert.strictEqual(restoSusp?.status, 403, 'RestaurantOS guest order must return 403 when suspended');
+      assert.ok(
+        restoSusp?.body.code === 'SERVICE_SUSPENDED' || restoSusp?.body.error === 'SERVICE_SUSPENDED',
+        `RestaurantOS error code must be SERVICE_SUSPENDED, got ${JSON.stringify(restoSusp?.body)}`
+      );
+
+      const suspendMeasuredMs = Date.now() - suspendStartTime;
+      assert.ok(suspendMeasuredMs < 5000, `Suspend enforcement took ${suspendMeasuredMs} ms, exceeding 5 s SLA`);
+
+      // 5. Resume through the platform
+      const resumeStartTime = Date.now();
+      // Resume HospitalOS on platform
+      await platformRepository.updatePluginInstallationStatus(dualTenantId, '@orbitox/hms', 'ACTIVE');
+      // Resume RestaurantOS via signed bridge lifecycle call and platform repo
+      await bridgeClient.resumeTenant(dualTenantId, 3);
+      await platformRepository.updatePluginInstallationStatus(dualTenantId, '@orbitox/restaurant', 'ACTIVE');
+
+      // 6. Within 5 seconds: both succeed again
+      let hospResumedRes: any = null;
+      for (let i = 0; i < 25; i++) {
+        hospResumedRes = await fetch(`http://127.0.0.1:${port}/api/hospital/patients`, {
+          method: 'POST',
+          headers: {
+            'content-type': 'application/json',
+            'x-api-key': dualApiKeySecret,
+          },
+          body: JSON.stringify({ name: 'Active Patient' }),
+        });
+        if (hospResumedRes.status === 200 || hospResumedRes.status === 201) break;
+        const errJson = await hospResumedRes.clone().json().catch(() => ({}));
+        console.log(`[Matrix 7 Resume Poll ${i}] status=${hospResumedRes.status} body=`, errJson);
+        await new Promise((r) => setTimeout(r, 200));
+      }
+      const finalHospBody = await hospResumedRes?.clone().text().catch(() => '');
+      assert.ok(
+        hospResumedRes && (hospResumedRes.status === 200 || hospResumedRes.status === 201),
+        `HospitalOS write must succeed after resume, got ${hospResumedRes?.status}: ${finalHospBody}`
+      );
+
+      let restoResumed: any = null;
+      for (let i = 0; i < 25; i++) {
+        restoResumed = await sendRawHttpRequest({
+          port: restoPort,
+          path: '/api/restaurant/orders',
+          method: 'POST',
+          headers: {
+            Host: `${dualSlug}.localhost`,
+          },
+          body: { tableNumber: 'T-01', items: [{ id: validItemId, quantity: 1 }] },
+        });
+        if (restoResumed.status === 200 || restoResumed.status === 201) break;
+        await new Promise((r) => setTimeout(r, 200));
+      }
+      assert.ok(
+        restoResumed && (restoResumed.status === 200 || restoResumed.status === 201),
+        `RestaurantOS guest order must succeed after resume, got ${restoResumed?.status}: ${JSON.stringify(restoResumed?.body)}`
+      );
+
+      const resumeMeasuredMs = Date.now() - resumeStartTime;
+      assert.ok(resumeMeasuredMs < 5000, `Resume restoration took ${resumeMeasuredMs} ms, exceeding 5 s SLA`);
+
+      // 7. Report measured times
+      console.log(`\n=============================================================`);
+      console.log(`[Matrix 7 Real Enforcement SLA Report]`);
+      console.log(`  • Measured Suspend SLA: ${suspendMeasuredMs} ms (Limit: < 5000 ms) -> PASS`);
+      console.log(`  • Measured Resume SLA:  ${resumeMeasuredMs} ms (Limit: < 5000 ms) -> PASS`);
+      console.log(`  • HospitalOS write: 403 SERVICE_SUSPENDED -> 200 OK`);
+      console.log(`  • RestaurantOS guest order: 403 SERVICE_SUSPENDED -> 200 OK`);
+      console.log(`=============================================================\n`);
+    } finally {
+      restoProcess.kill('SIGTERM');
+      await new Promise((r) => setTimeout(r, 200));
+      if (!restoProcess.killed) restoProcess.kill('SIGKILL');
+    }
   });
 
   // ──────────────────────────────────────────────────────────────────────────

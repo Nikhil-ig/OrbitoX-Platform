@@ -10,7 +10,7 @@ import { isIpAllowed, resolveClientIp } from './ip-guard';
 import {
   extractPresentedCredential,
   verifyAdminTokenSync,
-  verifyInternalAuthTokenSync,
+  getInternalSecret,
 } from './auth-pipeline';
 import {
   INITIAL_SERVICES,
@@ -49,6 +49,17 @@ function scheduleMonthlyUsageReset(): void {
     scheduleMonthlyUsageReset();
   }, Math.min(resetAt - now.getTime(), 2_000_000_000));
   timer.unref();
+}
+
+function verifyInternalAuthTokenSync(principal: string, signature: string, timestamp: string): boolean {
+  if (!principal || !signature || !timestamp) return false;
+  const ts = parseInt(timestamp, 10);
+  if (isNaN(ts) || Math.abs(Date.now() - ts) > 60000) return false;
+
+  const payload = `${principal}:${ts}`;
+  const expected = crypto.createHmac('sha256', getInternalSecret()).update(payload).digest('hex');
+  if (signature.length !== expected.length) return false;
+  return crypto.timingSafeEqual(Buffer.from(signature, 'hex'), Buffer.from(expected, 'hex'));
 }
 
 // In-memory sliding window rate limiter

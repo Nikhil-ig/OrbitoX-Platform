@@ -717,7 +717,7 @@ export class PlatformRepository {
     const projectId = `proj_${slug}_${Date.now().toString(36)}`;
 
     const planKey = (input.plan || input.planTier || 'starter').toLowerCase();
-    const enabledServices = input.enabledServices || input.initialPackages || [];
+    const enabledServices = input.enabledServices || input.initialPackages || (input.plugins ? input.plugins.map((p: any) => p.pluginId || p.id) : []);
     const quota = input.apiCallQuota || PLAN_DEFAULT_QUOTAS[planKey] || 100000;
     const rateLimit = input.rateLimitPerMin || PLAN_DEFAULT_RATE_LIMITS[planKey] || 60;
 

@@ -43,15 +43,6 @@ const DEFAULT_PLUGINS: PluginOption[] = [
     plan: 'starter',
     availablePlans: ['starter', 'growth', 'pro'],
   },
-  {
-    id: 'crm',
-    name: 'OrbitoX CRM',
-    icon: '💼',
-    description: 'Multi-tenant customer relationship engine, lead tracking, and pipelines.',
-    selected: false,
-    plan: 'starter',
-    availablePlans: ['starter', 'growth'],
-  },
 ];
 
 export default function TenantProvisioningWizardPage() {
@@ -63,6 +54,38 @@ export default function TenantProvisioningWizardPage() {
   const [region, setRegion] = useState('ap-south-1');
   const [apiKey, setApiKey] = useState('');
   const [plugins, setPlugins] = useState<PluginOption[]>(DEFAULT_PLUGINS);
+
+  // Dynamically load installable plugins from platform catalogue (Item 8 (3))
+  useEffect(() => {
+    async function loadCatalogue() {
+      try {
+        const res = await fetch('/api/v1/tenants');
+        if (res.ok) {
+          const data = await res.json();
+          if (Array.isArray(data.plugins) && data.plugins.length > 0) {
+            // Offer only plugins where installable is true; CRM must not be offered while disabled
+            const valid = data.plugins
+              .filter((p: any) => p.installable !== false && p.id !== 'crm')
+              .map((p: any, idx: number) => ({
+                id: p.id,
+                name: p.name,
+                icon: p.icon || '📦',
+                description: p.description || '',
+                selected: idx === 0,
+                plan: p.plan || 'starter',
+                availablePlans: p.availablePlans || ['starter', 'growth'],
+              }));
+            if (valid.length > 0) {
+              setPlugins(valid);
+            }
+          }
+        }
+      } catch (err) {
+        // Fallback to installable defaults (HospitalOS and RestaurantOS)
+      }
+    }
+    loadCatalogue();
+  }, []);
 
   // Workflow State
   const [submitting, setSubmitting] = useState(false);

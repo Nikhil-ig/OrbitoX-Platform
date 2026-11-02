@@ -1722,8 +1722,8 @@ export async function handleRequest(req: http.IncomingMessage, res: http.ServerR
       if (isLocallySuspended) {
         if (isWrite) {
           sendJson(res, 403, {
-            error: 'TENANT_SUSPENDED',
-            code: 'TENANT_SUSPENDED',
+            error: 'SERVICE_SUSPENDED',
+            code: 'SERVICE_SUSPENDED',
             message: 'This restaurant account is temporarily suspended. Writes are disabled.',
           });
           return;

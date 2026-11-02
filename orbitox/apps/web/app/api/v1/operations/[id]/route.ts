@@ -208,6 +208,29 @@ export async function POST(
     return NextResponse.json(sanitizeOperation(retried));
   }
 
+  if (action === 'resume') {
+    try {
+      await platformRepository.recordPlatformAdminAudit({
+        action: 'TENANT_OPERATION_RESUMED',
+        entityType: 'TENANT_OPERATION',
+        entityId: id,
+        actorId: operatorId,
+        organizationId: op.organizationId,
+        requestId: req.headers.get('x-request-id') || `req_${Date.now()}`,
+        metadata: { operationId: id, operatorId },
+      });
+    } catch {}
+
+    const resumed = await provisioningSaga.resumeWorkflow(id);
+    if (!resumed) {
+      return NextResponse.json(
+        { error: 'NOT_FOUND', message: `Operation ${id} not found for resume` },
+        { status: 404 }
+      );
+    }
+    return NextResponse.json(sanitizeOperation(resumed));
+  }
+
   if (action === 'cancel') {
     try {
       await platformRepository.recordPlatformAdminAudit({
@@ -233,7 +256,7 @@ export async function POST(
   }
 
   return NextResponse.json(
-    { error: 'BAD_REQUEST', message: `Unknown operation action "${action}". Supported: retry, cancel.` },
+    { error: 'BAD_REQUEST', message: `Unknown operation action "${action}". Supported: retry, resume, cancel.` },
     { status: 400 }
   );
 }

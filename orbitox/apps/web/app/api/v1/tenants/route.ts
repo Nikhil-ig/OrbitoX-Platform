@@ -2,6 +2,46 @@ import { NextRequest, NextResponse } from 'next/server';
 import { platformRepository } from '@/lib/platform-repository';
 import { provisioningSaga } from '@/lib/tenant-provisioning/provisioning-saga';
 import { TenantProvisionRequest } from '@/lib/tenant-provisioning/types';
+import { isSamplePackage } from '@/lib/sample-plugins';
+
+export async function GET(_req: NextRequest) {
+  try {
+    const packages = await platformRepository.listPackages();
+    // Item 8 (3): Catalogue-driven installable plugins filter (only HospitalOS and RestaurantOS; CRM excluded)
+    const plugins = packages
+      .map((pkg) => {
+        const isSample = isSamplePackage(pkg.packageId) || isSamplePackage(pkg.id);
+        const installable = !isSample;
+        const canonical = pkg.packageId.replace(/^@orbitox\//, '').toLowerCase();
+        const id = canonical === 'hms' ? 'hospital-os' : canonical === 'restaurant' ? 'restaurant-os' : canonical;
+        const isHospital = id === 'hospital-os' || id === 'hms';
+        const isRestaurant = id === 'restaurant-os' || id === 'restaurant';
+        return {
+          id,
+          packageId: pkg.packageId,
+          name: isHospital ? 'HospitalOS' : isRestaurant ? 'RestaurantOS' : pkg.name,
+          icon: isHospital ? '🏥' : isRestaurant ? '🍷' : '📦',
+          description: (pkg as any).description || (isHospital ? 'Clinical management, wards, beds, and strict patient PHI cryptographic isolation.' : isRestaurant ? 'Hospitality ERP, spatial floor plans, tables, KDS, and dining sessions.' : ''),
+          installable,
+          installabilityStatus: installable ? 'AVAILABLE' : 'NOT_INSTALLABLE',
+          selected: isHospital,
+          plan: 'starter',
+          availablePlans: isHospital ? ['starter', 'growth', 'enterprise'] : isRestaurant ? ['starter', 'growth', 'pro'] : ['starter'],
+        };
+      })
+      .filter((p) => p.installable && (p.id === 'hospital-os' || p.id === 'restaurant-os'));
+
+    return NextResponse.json({
+      success: true,
+      plugins,
+    });
+  } catch (err: any) {
+    return NextResponse.json(
+      { success: false, error: err.message },
+      { status: 500 }
+    );
+  }
+}
 
 export async function POST(req: NextRequest) {
   // 1. Authenticate customer API key (self-guarded)

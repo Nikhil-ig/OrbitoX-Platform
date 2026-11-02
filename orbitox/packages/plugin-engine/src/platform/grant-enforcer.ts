@@ -111,8 +111,19 @@ export class PluginGrantEnforcer {
         return { allowed: false, status: 403, code: 'UNAUTHORIZED', message: `Invalid grant: ${err.message}` };
       }
     } else {
-      const cached = this.cache.get(tenantId);
-      const isExpired = !cached || cached.expiresAtMs <= now;
+      let cached = this.cache.get(tenantId);
+      let isStale = false;
+      if (cached && this.revisions) {
+        try {
+          const revKey = `orbitox-ent|${this.audience}|${tenantId}`;
+          const currentRev = await this.revisions.highest(revKey);
+          if (currentRev > (cached.claims.rev || 0)) {
+            isStale = true;
+            this.cache.delete(tenantId);
+          }
+        } catch {}
+      }
+      const isExpired = !cached || cached.expiresAtMs <= now || isStale;
 
       if (!isExpired && cached) {
         claims = cached.claims;

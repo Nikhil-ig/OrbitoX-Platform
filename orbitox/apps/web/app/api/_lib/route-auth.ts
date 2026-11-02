@@ -43,8 +43,13 @@ async function fetchGrantForService(tenantId: string, pluginId: string): Promise
   const installation = await platformRepository.getPluginInstallation(tenantId, pluginId);
   if (!installation) return null;
 
-  const planId = installation.planId || (pluginId.includes('hms') ? 'hms-starter' : 'restaurant-starter');
-  const plan = await platformRepository.getPlan(planId);
+  const rawPlanId = installation.planId || 'starter';
+  const canonicalPlugin = pluginId.includes('hms') || pluginId.includes('hospital') ? '@orbitox/hms' : '@orbitox/restaurant';
+  const plan =
+    (await platformRepository.getPlan(rawPlanId)) ||
+    (await platformRepository.getPlan(canonicalPlugin.includes('hms') ? `hms-${rawPlanId}` : `restaurant-${rawPlanId}`)) ||
+    (await platformRepository.getPlan(canonicalPlugin.includes('hms') ? 'hms-starter' : 'restaurant-starter'));
+
   let features: string[] = [];
   const quotas: any = {};
 
@@ -54,7 +59,14 @@ async function fetchGrantForService(tenantId: string, pluginId: string): Promise
       quotas[q.quotaKey] = { limit: q.limit, window: q.window };
     }
   } else {
-    const seed = SEED_PLANS.find((p) => p.planId === planId);
+    const seed =
+      SEED_PLANS.find(
+        (p) =>
+          p.planId === rawPlanId ||
+          p.planId === (canonicalPlugin.includes('hms') ? `hms-${rawPlanId}` : `restaurant-${rawPlanId}`) ||
+          (p.pluginId === canonicalPlugin && p.tier === rawPlanId)
+      ) || SEED_PLANS.find((p) => p.pluginId === canonicalPlugin);
+
     if (seed) {
       features = seed.features.filter((f) => f.enabled).map((f) => f.featureKey);
       for (const q of seed.quotas) {
@@ -75,7 +87,7 @@ async function fetchGrantForService(tenantId: string, pluginId: string): Promise
   return createEntitlementGrantToken({
     tenantId,
     pluginId,
-    planId,
+    planId: plan?.planId || rawPlanId,
     status: grantStatus,
     features,
     quotas,
@@ -142,9 +154,7 @@ function withLegacyGuard(options: LegacyGuardOptions, handler: GuardedRouteHandl
                 const isPlatformAdmin =
                   request.headers.get('x-orbitox-principal') === 'admin' ||
                   authContext.scopes?.includes('admin') ||
-                  authContext.scopes?.includes('*') ||
-                  authContext.capabilities?.includes('admin') ||
-                  authContext.capabilities?.includes('*');
+                  authContext.capabilities?.includes('admin');
 
                 if (!options.adminOnly && authContext.tenantId && !isPlatformAdmin) {
                   const enforcer = options.serviceId === 'hms' ? hmsGrantEnforcer : restaurantGrantEnforcer;

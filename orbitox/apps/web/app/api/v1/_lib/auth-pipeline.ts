@@ -1,5 +1,3 @@
-import * as nodeCrypto from 'crypto';
-
 const encoder = new TextEncoder();
 
 export function getAdminToken(): string {
@@ -40,9 +38,11 @@ export async function safeEqual(a: string, b: string): Promise<boolean> {
  */
 export function safeEqualSync(a: string, b: string): boolean {
   if (!a || !b) return false;
-  const ha = nodeCrypto.createHash('sha256').update(a).digest();
-  const hb = nodeCrypto.createHash('sha256').update(b).digest();
-  return nodeCrypto.timingSafeEqual(ha, hb);
+  let diff = a.length ^ b.length;
+  for (let i = 0; i < a.length; i++) {
+    diff |= a.charCodeAt(i) ^ b.charCodeAt(i % b.length);
+  }
+  return diff === 0;
 }
 
 /**
@@ -107,18 +107,4 @@ export async function createInternalAuthToken(principal: 'admin' | 'runtime'): P
     .map((b) => b.toString(16).padStart(2, '0'))
     .join('');
   return { signature, timestamp: ts };
-}
-
-/**
- * Synchronous verification of the internal authentication token
- */
-export function verifyInternalAuthTokenSync(principal: string, signature: string, timestamp: string): boolean {
-  if (!principal || !signature || !timestamp) return false;
-  const ts = parseInt(timestamp, 10);
-  if (isNaN(ts) || Math.abs(Date.now() - ts) > 60000) return false;
-
-  const payload = `${principal}:${ts}`;
-  const expected = nodeCrypto.createHmac('sha256', getInternalSecret()).update(payload).digest('hex');
-  if (signature.length !== expected.length) return false;
-  return nodeCrypto.timingSafeEqual(Buffer.from(signature, 'hex'), Buffer.from(expected, 'hex'));
 }
