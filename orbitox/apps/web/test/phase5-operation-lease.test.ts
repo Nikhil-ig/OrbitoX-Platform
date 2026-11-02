@@ -7,13 +7,14 @@ process.env.OUTBOX_RELAY_DATABASE_URL = process.env.OUTBOX_RELAY_DATABASE_URL ||
 (process.env as any).NODE_ENV = 'test';
 process.env.ORBITOX_SYNC_SAGA = 'true';
 
-import { describe, it, before } from 'node:test';
+import { describe, it, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import crypto from 'node:crypto';
 import { platformRepository } from '../lib/platform-repository';
 import { operationStore } from '../lib/tenant-provisioning/operation-store';
 import { provisioningSaga } from '../lib/tenant-provisioning/provisioning-saga';
 import { PlatformOperationRecord } from '../lib/tenant-provisioning/types';
+import { prisma } from '../lib/prisma';
 
 describe('Phase 5 Fix 1: Distributed Operation Lease & Crash Recovery Concurrency', () => {
   let testOrg: any;
@@ -170,5 +171,16 @@ describe('Phase 5 Fix 1: Distributed Operation Lease & Crash Recovery Concurrenc
     // Clean up
     const winnerWorker = server1Claim ? 'server-instance-1' : 'server-instance-2';
     await operationStore.releaseOperationLease(opId, winnerWorker);
+  });
+
+  after(async () => {
+    if (testOrg) {
+      await (prisma as any).platformOperation.deleteMany({
+        where: { organizationId: testOrg.id },
+      }).catch(() => {});
+      await (prisma as any).platformOrganization.delete({
+        where: { id: testOrg.id },
+      }).catch(() => {});
+    }
   });
 });

@@ -221,7 +221,7 @@ export async function POST(
       });
     } catch {}
 
-    const resumed = await provisioningSaga.resumeWorkflow(id);
+    const resumed = await provisioningSaga.resumeWorkflow(id, { force: true });
     if (!resumed) {
       return NextResponse.json(
         { error: 'NOT_FOUND', message: `Operation ${id} not found for resume` },

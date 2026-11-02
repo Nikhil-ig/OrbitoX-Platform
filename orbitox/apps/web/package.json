@@ -37,6 +37,7 @@
     "@orbitox/runtime": "workspace:*",
     "@orbitox/school": "workspace:*",
     "@orbitox/sdk": "workspace:*",
+    "@orbitox-io/sdk": "workspace:*",
     "@orbitox/types": "workspace:*",
     "@orbitox/ui": "workspace:*",
     "@prisma/client": "^6.19.0",

@@ -22,8 +22,9 @@ export class PluginLifecycleClient {
     payload: Record<string, any>,
     options: { idempotencyKey?: string; retries?: number; timeoutMs?: number } = {}
   ): Promise<PluginLifecycleResponse> {
-    const isHospital = pluginId.includes('hospital') || pluginId.includes('hms');
-    const isRestaurant = pluginId.includes('restaurant') || pluginId.includes('pos');
+    const safeId = String(pluginId || '');
+    const isHospital = safeId.includes('hospital') || safeId.includes('hms');
+    const isRestaurant = safeId.includes('restaurant') || safeId.includes('pos');
 
     const canonicalPlugin = isHospital ? '@orbitox/hms' : isRestaurant ? '@orbitox/restaurant' : pluginId;
     const bridgeKeys = getDefaultBridgeKeys();

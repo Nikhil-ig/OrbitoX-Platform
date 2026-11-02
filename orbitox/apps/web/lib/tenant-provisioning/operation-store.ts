@@ -246,8 +246,10 @@ export class OperationStore {
   async claimOperationLease(
     id: string,
     leaseOwner: string,
-    ttlSeconds: number = 30
+    ttlSeconds: number = 30,
+    options: { force?: boolean } = {}
   ): Promise<boolean> {
+    const isForce = Boolean(options.force);
     if (process.env.ORBITOX_PLATFORM_REPOSITORY !== 'json') {
       try {
         const rows = await (prisma as any).$queryRaw<Array<{ id: string }>>`
@@ -256,7 +258,7 @@ export class OperationStore {
               "leaseExpiresAt" = NOW() + (${ttlSeconds} * INTERVAL '1 second'),
               "updatedAt" = NOW()
           WHERE "id" = ${id}
-            AND ("leaseExpiresAt" IS NULL OR "leaseExpiresAt" < NOW())
+            AND (${isForce} = true OR "leaseOwner" = ${leaseOwner} OR "leaseExpiresAt" IS NULL OR "leaseExpiresAt" < NOW())
           RETURNING id
         `;
         const claimed = Array.isArray(rows) && rows.length > 0;
@@ -278,7 +280,7 @@ export class OperationStore {
     if (mem) {
       const now = Date.now();
       const expiresAt = mem.leaseExpiresAt ? new Date(mem.leaseExpiresAt).getTime() : 0;
-      if (!mem.leaseExpiresAt || expiresAt < now) {
+      if (isForce || mem.leaseOwner === leaseOwner || !mem.leaseExpiresAt || expiresAt < now) {
         mem.leaseOwner = leaseOwner;
         mem.leaseExpiresAt = new Date(now + ttlSeconds * 1000).toISOString();
         return true;

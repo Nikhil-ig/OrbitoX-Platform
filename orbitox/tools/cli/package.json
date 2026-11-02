@@ -16,6 +16,9 @@
   "scripts": {
     "build": "tsc -p tsconfig.json"
   },
+  "dependencies": {
+    "@orbitox-io/sdk": "workspace:*"
+  },
   "devDependencies": {
     "@orbitox/tsconfig": "workspace:*",
     "@types/node": "^20.0.0",

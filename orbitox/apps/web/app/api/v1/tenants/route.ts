@@ -161,13 +161,24 @@ export async function POST(req: NextRequest) {
 
   const operatorId = authRecord.key.keyId || authRecord.key.name || authRecord.key.id;
 
+  const normalizedPlugins = body.plugins.map((p: any) => {
+    if (typeof p === 'string') {
+      return { id: p, plan: 'starter' };
+    }
+    return {
+      id: p.id || p.pluginId || p.packageId,
+      plan: p.plan || p.planId || 'starter',
+      config: p.config,
+    };
+  });
+
   // 4. Start durable provisioning saga with exact stored organization ID
   const input: TenantProvisionRequest = {
     organizationId: targetOrgId,
     name: body.name.trim(),
     slug: body.slug.trim().toLowerCase(),
     environment: (body.environment || 'production').trim().toLowerCase(),
-    plugins: body.plugins,
+    plugins: normalizedPlugins,
     region: body.region || 'ap-south-1',
   };
 

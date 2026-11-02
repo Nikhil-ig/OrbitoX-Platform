@@ -13,6 +13,9 @@ import { commandVerify } from './commands/verify';
 import { commandLicense } from './commands/license';
 import { commandSetup } from './commands/setup';
 import { commandAdd } from './commands/add';
+import { commandLogin } from './commands/login';
+import { commandTenants } from './commands/tenants';
+import { commandOperations } from './commands/operations';
 
 const VERSION = '3.2.0';
 
@@ -25,6 +28,14 @@ const commandArgs = args.slice(1);
 if (!command || command === 'help' || command === '--help') {
   console.log(`
 Usage: orbitox <command> [options]
+
+Tenant Provisioning & Management:
+  login [options]             Authenticate and store API key securely in keychain/config
+  tenants create [options]    Provision tenant with live saga tracking (--wait)
+  tenants get <id>            Fetch tenant details and installed plugins
+  tenants suspend <id>        Suspend tenant across all installed plugins
+  tenants resume <id>         Resume tenant access across all installed plugins
+  operations get <id>         Fetch operation status and step execution details
 
 Quick Onboarding & Developer Experience:
   setup [options]         1-Command registry auth setup & keypair generation
@@ -49,17 +60,29 @@ Security & Packaging:
   help                    Show this help message
 
 Examples:
-  orbitox setup --token=ghp_yourTokenHere
-  orbitox add crm
-  orbitox package crm --key=keys/private.pem
-  orbitox verify crm --publicKey=keys/public.pem
-  orbitox license issue --to="Acme Hospital" --domain="acme.orbito.com" --key=keys/private.pem
+  orbitox login --key=orb_live_...
+  orbitox tenants create --name="Apollo Clinic" --plugin=hospital-os --wait
+  orbitox tenants suspend ten_123
+  orbitox tenants resume ten_123
+  orbitox operations get op_abc
 `);
   process.exit(0);
 }
 
 
 switch (command) {
+  case 'login':
+    commandLogin(commandArgs);
+    break;
+
+  case 'tenants':
+    commandTenants(commandArgs[0] || 'help', commandArgs.slice(1));
+    break;
+
+  case 'operations':
+    commandOperations(commandArgs[0] || 'help', commandArgs.slice(1));
+    break;
+
   case 'create':
     commandCreate(commandArgs);
     break;

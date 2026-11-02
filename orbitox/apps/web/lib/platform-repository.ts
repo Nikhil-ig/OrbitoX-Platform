@@ -675,21 +675,34 @@ export function createPrismaPlatformRepository(
                 })
                 : null;
             if (proj && proj.organization) {
+                candidates.add(proj.id);
+                candidates.add(proj.slug);
                 const env = proj.environments?.find(
                     (e: any) => e.id === envPart || (envPart && e.slug.toLowerCase() === envPart.toLowerCase())
                 );
                 candidates.add(`org/${proj.organization.slug}/project/${proj.slug}/environment/${env?.slug || envPart || 'production'}`);
                 candidates.add(`org/${proj.organization.id}/project/${proj.id}/environment/${env?.id || envPart || 'production'}`);
                 candidates.add(`org/${proj.organization.slug}/project/${proj.slug}/environment/production`);
+                candidates.add(`org/${proj.organization.id}/project/${proj.id}/environment/production`);
+                for (const e of proj.environments || []) {
+                    candidates.add(`org/${proj.organization.slug}/project/${proj.slug}/environment/${e.slug}`);
+                    candidates.add(`org/${proj.organization.id}/project/${proj.id}/environment/${e.id}`);
+                }
             }
         } else {
             const proj = await client.platformProject.findFirst({
                 where: { OR: [{ id: trimmedTenantId }, { slug: trimmedTenantId.toLowerCase() }] },
-                include: { organization: true },
+                include: { organization: true, environments: true },
             });
             if (proj && proj.organization) {
+                candidates.add(proj.id);
+                candidates.add(proj.slug);
                 candidates.add(`org/${proj.organization.slug}/project/${proj.slug}/environment/production`);
                 candidates.add(`org/${proj.organization.id}/project/${proj.id}/environment/production`);
+                for (const env of proj.environments || []) {
+                    candidates.add(`org/${proj.organization.slug}/project/${proj.slug}/environment/${env.slug}`);
+                    candidates.add(`org/${proj.organization.id}/project/${proj.id}/environment/${env.id}`);
+                }
             }
         }
         return Array.from(candidates);

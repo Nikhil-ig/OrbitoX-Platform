@@ -456,8 +456,9 @@ export class ProvisioningSaga {
         const t5 = performance.now();
         await updateStep('5', 'RUNNING', { startedAt: new Date().toISOString() });
 
-        // F2: Honour TEST_STEP5_DELAY_MS only when NODE_ENV === 'test'
-        const step5DelayMs = process.env.NODE_ENV === 'test' ? Number(process.env.TEST_STEP5_DELAY_MS || 0) : 0;
+        // F2: Honour TEST_STEP5_DELAY_MS only in test environments (NODE_ENV === 'test' or ORBITOX_TEST_STANDALONE === 'true')
+        const isTestEnv = process.env.NODE_ENV === 'test' || process.env.ORBITOX_TEST_STANDALONE === 'true';
+        const step5DelayMs = isTestEnv ? Number(process.env.TEST_STEP5_DELAY_MS || 0) : 0;
         if (step5DelayMs > 0) {
           await new Promise((r) => setTimeout(r, step5DelayMs));
         }
@@ -757,13 +758,13 @@ export class ProvisioningSaga {
    */
   async resumeWorkflow(
     operationId: string,
-    options: { workerId?: string } = {}
+    options: { workerId?: string; force?: boolean } = {}
   ): Promise<PlatformOperationRecord | null> {
     const op = await operationStore.getOperation(operationId);
     if (!op || op.status === 'ACTIVE' || op.status === 'CANCELLED') return op;
 
     const workerId = options.workerId || this.workerInstanceId;
-    const claimed = await operationStore.claimOperationLease(operationId, workerId, 30);
+    const claimed = await operationStore.claimOperationLease(operationId, workerId, 30, { force: options.force });
     if (!claimed) {
       console.log(`[ProvisioningSaga] Operation ${operationId} lease could not be claimed by ${workerId}; active lease held.`);
       return op;

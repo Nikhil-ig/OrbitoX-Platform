@@ -108,6 +108,9 @@ importers:
       '@orbitox-io/plugin-engine':
         specifier: workspace:*
         version: link:../../packages/plugin-engine
+      '@orbitox-io/sdk':
+        specifier: workspace:*
+        version: link:../../packages/sdk
       '@orbitox/commerce':
         specifier: workspace:*
         version: link:../../packages/compat-commerce
@@ -1143,6 +1146,10 @@ importers:
         version: 5.9.3
 
   tools/cli:
+    dependencies:
+      '@orbitox-io/sdk':
+        specifier: workspace:*
+        version: link:../../packages/sdk
     devDependencies:
       '@orbitox/tsconfig':
         specifier: workspace:*
