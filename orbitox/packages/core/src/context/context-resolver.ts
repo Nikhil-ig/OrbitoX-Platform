@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { ContextResolutionMethod, ContextResolutionResult } from '@orbitox/types';
+import { ContextResolutionMethod, ContextResolutionResult } from '@orbitox-io/types';
 
 @Injectable()
 export class ContextResolver {

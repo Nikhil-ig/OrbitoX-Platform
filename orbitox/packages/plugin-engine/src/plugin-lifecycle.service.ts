@@ -1,5 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { PermissionRegistry, EventBusService, ActionRegistry } from '@orbitox/core';
+import { PermissionRegistry, EventBusService, ActionRegistry } from '@orbitox-io/core';
 import { PluginLoaderService } from './plugin-loader.service';
 import { MenuRegistry } from './registries/menu.registry';
 import { PageRegistry } from './registries/page.registry';

@@ -1,7 +1,7 @@
 import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import * as crypto from 'crypto';
-import { PlatformEvent } from '@orbitox/types';
-import { SchedulerService } from '@orbitox/core';
+import { PlatformEvent } from '@orbitox-io/types';
+import { SchedulerService } from '@orbitox-io/core';
 
 export interface WebhookEndpoint {
   id: string;

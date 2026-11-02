@@ -2,7 +2,7 @@ import {
   defineOrbitoXPlugin,
   OrbitoXPlugin,
   PluginRequestContext,
-} from '@orbitox/plugin-engine';
+} from '@orbitox-io/plugin-engine';
 import { HeadlessCrmService } from './domain/lead-actions';
 import { LeadStateMachine } from './domain/lead-state-machine';
 import { LeadStatus } from './domain/types';

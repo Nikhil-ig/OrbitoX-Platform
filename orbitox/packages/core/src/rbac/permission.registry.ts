@@ -1,5 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { Permission } from '@orbitox/types';
+import { Permission } from '@orbitox-io/types';
 
 @Injectable()
 export class PermissionRegistry {

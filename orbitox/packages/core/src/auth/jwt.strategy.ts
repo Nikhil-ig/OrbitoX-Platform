@@ -1,7 +1,7 @@
 import { Injectable, UnauthorizedException } from '@nestjs/common';
 import { PassportStrategy } from '@nestjs/passport';
 import { ExtractJwt, Strategy } from 'passport-jwt';
-import { JwtPayload } from '@orbitox/types';
+import { JwtPayload } from '@orbitox-io/types';
 import { SecretsService } from '../security/secrets.service';
 import { SessionService } from './session.service';
 

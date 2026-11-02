@@ -5,8 +5,8 @@
  * Contexts are: Platform > Organisation > Tenant > Branch > Sub-Entity
  */
 
-import { ContextService, Context } from '@orbitox/core';
-import { CreateContextPayload, PlatformContextType } from '@orbitox/core';
+import { ContextService, Context } from '@orbitox-io/core';
+import { CreateContextPayload, PlatformContextType } from '@orbitox-io/core';
 
 export class ContextFacade {
   constructor(private readonly svc: ContextService) {}

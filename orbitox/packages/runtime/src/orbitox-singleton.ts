@@ -4,7 +4,7 @@
  * The single entry point to the entire OrbitoX platform.
  * 
  * Usage:
- *   import { orbitox } from '@orbitox/runtime';
+ *   import { orbitox } from '@orbitox-io/runtime';
  * 
  *   // Optional: configure once at app startup
  *   orbitox.configure({ mode: 'strict', redis: { host: 'redis', port: 6379 } });

@@ -18,10 +18,10 @@
     "test": "jest --passWithNoTests"
   },
   "dependencies": {
-    "@orbitox/core": "workspace:*",
-    "@orbitox/sdk": "workspace:*",
-    "@orbitox/types": "workspace:*",
-    "@orbitox/plugin-engine": "workspace:*"
+    "@orbitox-io/core": "workspace:*",
+    "@orbitox-io/sdk": "workspace:*",
+    "@orbitox-io/types": "workspace:*",
+    "@orbitox-io/plugin-engine": "workspace:*"
   },
   "devDependencies": {
     "@orbitox/tsconfig": "workspace:*",

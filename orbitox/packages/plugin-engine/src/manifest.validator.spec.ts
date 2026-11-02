@@ -1,5 +1,5 @@
 import { ManifestValidator } from './manifest.validator';
-import { PluginManifest } from '@orbitox/sdk';
+import { PluginManifest } from '@orbitox-io/sdk';
 import { BadRequestException } from '@nestjs/common';
 
 describe('ManifestValidator', () => {

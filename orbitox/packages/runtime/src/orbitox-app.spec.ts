@@ -1,6 +1,6 @@
 import http from 'http';
 import { createOrbitoXApp } from './orbitox-app';
-import { defineOrbitoXPlugin } from '@orbitox/plugin-engine';
+import { defineOrbitoXPlugin } from '@orbitox-io/plugin-engine';
 
 describe('Hardened createOrbitoXApp', () => {
   const originalEnv = process.env.NODE_ENV;
@@ -45,7 +45,7 @@ describe('Hardened createOrbitoXApp', () => {
     const mockPlugin = defineOrbitoXPlugin({
       manifest: {
         id: 'billing-pos',
-        name: '@orbitox/billing-pos',
+        name: '@orbitox-io/billing-pos',
         version: '1.0.0',
         displayName: 'Billing & POS Engine',
         entitlements: {

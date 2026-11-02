@@ -1,5 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { AgenticAction } from '@orbitox/sdk';
+import { AgenticAction } from '@orbitox-io/sdk';
 
 @Injectable()
 export class ActionRegistry {

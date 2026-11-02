@@ -1,5 +1,5 @@
 import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
-import { Role } from '@orbitox/types';
+import { Role } from '@orbitox-io/types';
 import { v4 as uuidv4 } from 'uuid';
 
 export interface CreateRoleDto {

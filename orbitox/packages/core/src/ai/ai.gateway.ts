@@ -3,7 +3,7 @@ import { AIGatewayRequest, AICapability } from './types';
 import { CapabilityEngine } from '../capability/capability.engine';
 import { AuditService } from '../audit/audit.service';
 import { ActionRegistry } from './action.registry';
-import { AgenticAction } from '@orbitox/sdk';
+import { AgenticAction } from '@orbitox-io/sdk';
 
 @Injectable()
 export class AIGateway {

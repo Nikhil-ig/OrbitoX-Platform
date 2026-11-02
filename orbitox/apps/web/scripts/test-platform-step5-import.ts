@@ -92,6 +92,7 @@ function spawnServer(port: number, envOverrides: Record<string, string> = {}): C
       OUTBOX_RELAY_DATABASE_URL: boundedUrl(outboxRelayUrl),
       MAINTENANCE_DATABASE_URL: boundedUrl(maintenanceUrl),
       ORBITOX_TEST_STANDALONE: 'true',
+      ORBITOX_TEST_SKIP_ROLE_CHECK: 'true',
       ORBITOX_ENABLE_CRM_PLUGIN: 'true',
       ...envOverrides,
     },

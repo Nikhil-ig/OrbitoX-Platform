@@ -11,7 +11,7 @@
  * - Date-range rollouts
  */
 
-import { FeatureFlagService } from '@orbitox/core';
+import { FeatureFlagService } from '@orbitox-io/core';
 
 export class FeaturesFacade {
   constructor(private readonly svc: FeatureFlagService) {}

@@ -82,6 +82,9 @@ export const POST = withHospitalGuard(async (req: NextRequest, _routeContext, au
             console.error('[HMS Security] Failed to record lockout audit alert:', auditErr);
           }
         }
+      } else {
+        // Timing attack defense: execute equivalent transaction to equalize latency with recordFailure
+        await withTenantTx(prisma, authContext.tenantId, (tx) => tx.query('SELECT 1'));
       }
 
       console.warn(

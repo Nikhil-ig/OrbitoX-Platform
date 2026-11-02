@@ -1,5 +1,5 @@
 import { FileService } from './file.service';
-import { StorageService } from '@orbitox/core';
+import { StorageService } from '@orbitox-io/core';
 
 describe('FileService', () => {
   let service: FileService;

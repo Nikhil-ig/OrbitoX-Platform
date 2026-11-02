@@ -4,7 +4,7 @@ import { withTenantTx } from '@/lib/tenant-db';
 import { prisma } from '@/lib/prisma';
 import { mapDbError, errorBody } from '@/lib/db-errors';
 import { getPhiKeyRing } from '@/lib/phi-crypto';
-import { findPatientIdsByPhone, createPatient } from '@/lib/hms-repository';
+import { findPatientIdsByPhone, createPatient, generateMrn } from '@/lib/hms-repository';
 import { idempotent } from '@/lib/idempotency';
 
 const injected503Keys = new Set<string>();
@@ -37,29 +37,48 @@ export const GET = withHospitalGuard(async (req: NextRequest, _routeContext, aut
 
 export const POST = withHospitalGuard(async (req: NextRequest, _routeContext, authContext) => {
   try {
+    // Entitlement grant enforcement verification: grant must exist
+    if (!authContext.grant) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: {
+            code: 'FORBIDDEN',
+            message: 'Signed entitlement grant missing; enforcement did not run.',
+          },
+        },
+        { status: 403 }
+      );
+    }
+
     const body = await req.json();
     const ring = getPhiKeyRing();
 
-    const patientQuota = authContext.grant?.quotas?.patients?.limit ?? body.quotaLimit;
+    // Use signed grant only. Never read limits from request body.
+    const patientQuota = typeof authContext.grant.quotas?.patients?.limit === 'number'
+      ? authContext.grant.quotas.patients.limit
+      : undefined;
     const idempotencyKey = req.headers.get('idempotency-key') || req.headers.get('x-idempotency-key') || undefined;
 
     const result = await withTenantTx(prisma, authContext.tenantId, async (tx) => {
+      const patientInput = {
+        mrn: body.mrn || generateMrn(),
+        name: body.name,
+        phone: body.phone,
+        dateOfBirth: body.dateOfBirth,
+        ageBand: body.ageBand,
+        gender: body.gender,
+        bloodGroup: body.bloodGroup,
+        allergies: body.allergies,
+        emergencyContact: body.emergencyContact,
+      };
+
       if (idempotencyKey) {
         const idemRes = await idempotent(tx, 'hospital.patient.create', idempotencyKey, body, async () => {
           const patient = await createPatient(
             tx,
             ring,
-            {
-              mrn: body.mrn || `MRN-${Date.now().toString(36).toUpperCase()}`,
-              name: body.name,
-              phone: body.phone,
-              dateOfBirth: body.dateOfBirth,
-              ageBand: body.ageBand,
-              gender: body.gender,
-              bloodGroup: body.bloodGroup,
-              allergies: body.allergies,
-              emergencyContact: body.emergencyContact,
-            },
+            patientInput,
             patientQuota
           );
           return { status: 201, body: patient };
@@ -70,17 +89,7 @@ export const POST = withHospitalGuard(async (req: NextRequest, _routeContext, au
       return await createPatient(
         tx,
         ring,
-        {
-          mrn: body.mrn || `MRN-${Date.now().toString(36).toUpperCase()}`,
-          name: body.name,
-          phone: body.phone,
-          dateOfBirth: body.dateOfBirth,
-          ageBand: body.ageBand,
-          gender: body.gender,
-          bloodGroup: body.bloodGroup,
-          allergies: body.allergies,
-          emergencyContact: body.emergencyContact,
-        },
+        patientInput,
         patientQuota
       );
     });

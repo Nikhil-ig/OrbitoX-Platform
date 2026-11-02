@@ -491,4 +491,58 @@ describe('🪐 Phase 5: @orbitox-io/sdk Integration & Real Server Suite', () => 
     assert.strictEqual(idemRows[0].responseStatus, 201, 'TenantIdempotencyKey responseStatus must be 201');
     console.log('[SDK Test] Verified TenantIdempotencyKey table row persisted with responseStatus 201.');
   });
+
+  it('6. MRN Concurrency: 50 parallel creates without MRN produce 50 patients with unique MRNs and no collisions', async () => {
+    if (!isStandaloneBuilt || !prisma) {
+      console.log('Skipping standalone server test (standalone bundle or DATABASE_URL missing)');
+      return;
+    }
+
+    const client = createOrbitoXClient({
+      baseUrl: `http://127.0.0.1:${port}`,
+      apiKey: rawCustomerKey,
+    });
+
+    const concSlug = `sdk-conc-${crypto.randomBytes(4).toString('hex')}`;
+    const createRes = await client.tenants.create(
+      {
+        name: `MRN Concurrency Clinic ${concSlug}`,
+        slug: concSlug,
+        organizationId: customerOrg.id,
+        environment: 'production',
+        plugins: ['hospital-os'],
+      },
+      { waitUntilReady: true }
+    );
+    assert.ok(createRes.apiKey?.secret, 'Issued API key secret must be present');
+    const tenantId = createRes.tenantId;
+    const tenantApiKey = createRes.apiKey.secret;
+    const hospital = client.plugin('hospital-os').forTenant(tenantId, { apiKey: tenantApiKey });
+
+    console.log(`[SDK Test] Executing 50 parallel patient creations without MRN on tenant ${tenantId}...`);
+
+    const results = await Promise.all(
+      Array.from({ length: 50 }, (_, i) =>
+        hospital.patients.create({
+          name: `Parallel Patient ${i + 1}`,
+        })
+      )
+    );
+
+    assert.strictEqual(results.length, 50, 'All 50 creations must resolve successfully');
+    const mrns = new Set(results.map((r) => r.mrn));
+    const ids = new Set(results.map((r) => r.id));
+
+    assert.strictEqual(ids.size, 50, 'All 50 patients must have unique IDs');
+    assert.strictEqual(mrns.size, 50, 'All 50 patients must have unique MRNs without collisions');
+
+    // Verify format matches regex ^[A-Z0-9-]{4,32}$
+    for (const mrn of mrns) {
+      assert.match(mrn, /^MRN-[A-Z0-9]+-[A-F0-9]{10}$/, `MRN must match generated format: ${mrn}`);
+    }
+
+    const listed = await hospital.patients.list();
+    assert.ok(listed.length >= 50, `Listed count must be at least 50, got ${listed.length}`);
+    console.log(`[SDK Test] Successfully verified 50 parallel creations -> 50 distinct patients with 0 MRN collisions.`);
+  });
 });

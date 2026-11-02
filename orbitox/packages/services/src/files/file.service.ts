@@ -1,5 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { StorageService } from '@orbitox/core';
+import { StorageService } from '@orbitox-io/core';
 
 @Injectable()
 export class FileService {

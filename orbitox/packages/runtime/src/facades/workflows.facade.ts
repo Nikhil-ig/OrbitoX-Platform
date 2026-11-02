@@ -21,8 +21,8 @@
  * });
  */
 
-import { WorkflowService } from '@orbitox/core';
-import { WorkflowDefinition, WorkflowStep, WorkflowTrigger } from '@orbitox/core';
+import { WorkflowService } from '@orbitox-io/core';
+import { WorkflowDefinition, WorkflowStep, WorkflowTrigger } from '@orbitox-io/core';
 import { WorkflowBuilder } from '../builders/workflow.builder';
 
 export class WorkflowsFacade {

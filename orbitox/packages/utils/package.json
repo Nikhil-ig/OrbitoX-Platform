@@ -18,7 +18,7 @@
     "type-check": "tsc --noEmit"
   },
   "dependencies": {
-    "@orbitox/types": "workspace:*"
+    "@orbitox-io/types": "workspace:*"
   },
   "devDependencies": {
     "@types/node": "^20",

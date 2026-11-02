@@ -1,7 +1,7 @@
 import { ContextFacade } from '../facades/context.facade';
 import { BillingFacade } from '../facades/billing.facade';
 import { FeaturesFacade } from '../facades/features.facade';
-import { PlatformContextType, Context } from '@orbitox/core';
+import { PlatformContextType, Context } from '@orbitox-io/core';
 
 export class TenantBuilder {
   private _parentId?: string;

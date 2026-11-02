@@ -1,6 +1,6 @@
 import { Injectable, UnauthorizedException } from '@nestjs/common';
 import { JwtService as NestJwtService } from '@nestjs/jwt';
-import { JwtPayload } from '@orbitox/types';
+import { JwtPayload } from '@orbitox-io/types';
 import { SecretsService } from '../security/secrets.service';
 import { v4 as uuidv4 } from 'uuid';
 

@@ -1,5 +1,5 @@
 import { createParamDecorator, ExecutionContext } from '@nestjs/common';
-import { RequestContext } from '@orbitox/types';
+import { RequestContext } from '@orbitox-io/types';
 
 /**
  * Injects the current RequestContext into controller methods.

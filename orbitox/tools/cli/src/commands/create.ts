@@ -202,12 +202,20 @@ function generatePackageJson(appName: string, template: string, installMode: str
   }
 
   if (installMode === 'file' && packDir && fs.existsSync(packDir)) {
-    const tarballs = fs.readdirSync(packDir).filter(f => f.startsWith('orbitox-') && f.endsWith('.tgz'));
+    const tarballs = fs.readdirSync(packDir).filter(f => f.endsWith('.tgz'));
     for (const t of tarballs) {
-      const match = t.match(/^orbitox-([a-z-]+)-\d+\.\d+\.\d+.*\.tgz$/);
+      let match = t.match(/^orbitox-io-([a-z-]+)-\d+\.\d+\.\d+.*\.tgz$/);
       if (match && match[1]) {
-        const pkgName = `@orbitox/${match[1]}`;
-        dependencies[pkgName] = `file:${path.resolve(packDir, t)}`;
+        const name = match[1];
+        dependencies[`@orbitox-io/${name}`] = `file:${path.resolve(packDir, t)}`;
+        dependencies[`@orbitox/${name}`] = `file:${path.resolve(packDir, t)}`;
+      } else {
+        match = t.match(/^orbitox-([a-z-]+)-\d+\.\d+\.\d+.*\.tgz$/);
+        if (match && match[1]) {
+          const name = match[1];
+          dependencies[`@orbitox-io/${name}`] = `file:${path.resolve(packDir, t)}`;
+          dependencies[`@orbitox/${name}`] = `file:${path.resolve(packDir, t)}`;
+        }
       }
     }
   }

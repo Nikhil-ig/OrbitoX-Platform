@@ -1,5 +1,5 @@
 import { IsString, IsNotEmpty, IsOptional, MaxLength, Matches, IsEnum } from 'class-validator';
-import { ContextType, PlatformContextType } from '@orbitox/types';
+import { ContextType, PlatformContextType } from '@orbitox-io/types';
 
 export class CreateContextDto {
   @IsString()

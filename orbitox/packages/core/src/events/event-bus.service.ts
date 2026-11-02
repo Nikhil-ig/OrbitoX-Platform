@@ -1,6 +1,6 @@
 import { Injectable, OnModuleInit, OnModuleDestroy, Logger } from '@nestjs/common';
 import { Queue, Worker, QueueEvents } from 'bullmq';
-import { PlatformEvent } from '@orbitox/types';
+import { PlatformEvent } from '@orbitox-io/types';
 import { v4 as uuidv4 } from 'uuid';
 
 export interface EventOptions {

@@ -1,5 +1,5 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
-import { Invoice } from '@orbitox/types';
+import { Invoice } from '@orbitox-io/types';
 import { v4 as uuidv4 } from 'uuid';
 
 @Injectable()

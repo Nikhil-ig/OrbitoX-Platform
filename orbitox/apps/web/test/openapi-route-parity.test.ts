@@ -41,7 +41,9 @@ function extractExportedMethods(fileContent: string): string[] {
   const exportRegex = /export\s+(?:async\s+)?function\s+(GET|POST|PATCH|PUT|DELETE|HEAD|OPTIONS)\b/g;
   let match;
   while ((match = exportRegex.exec(fileContent)) !== null) {
-    methods.push(match[1].toLowerCase());
+    if (match[1]) {
+      methods.push(match[1].toLowerCase());
+    }
   }
   return methods;
 }
@@ -185,7 +187,7 @@ describe('OpenAPI Route Parity & Drift CI Tests (Phase 5 Item 4)', () => {
       const serverContent = fs.readFileSync(serverFile, 'utf8');
       for (const specPath of specPaths) {
         // Strip parameterized segment e.g. /api/restaurant/orders/{id} -> /api/restaurant/orders
-        const prefix = specPath.split('/{')[0];
+        const prefix = specPath.split('/{')[0] || '';
         assert.ok(
           serverContent.includes(prefix),
           `Restaurant route prefix ${prefix} (from ${specPath}) not found in restaurant-os server.ts`

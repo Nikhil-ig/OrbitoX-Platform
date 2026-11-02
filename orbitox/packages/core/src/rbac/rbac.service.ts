@@ -1,7 +1,7 @@
 import { Injectable, ForbiddenException } from '@nestjs/common';
 import { RoleService } from './role.service';
 import { PolicyEngine, PolicyDecision } from './policy.engine';
-import { PermissionCheck } from '@orbitox/types';
+import { PermissionCheck } from '@orbitox-io/types';
 import { PlatformLoggerService } from '../logger/logger.service';
 
 @Injectable()

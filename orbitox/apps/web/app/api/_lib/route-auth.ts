@@ -156,7 +156,7 @@ function withLegacyGuard(options: LegacyGuardOptions, handler: GuardedRouteHandl
                   authContext.scopes?.includes('admin') ||
                   authContext.capabilities?.includes('admin');
 
-                if (!options.adminOnly && authContext.tenantId && !isPlatformAdmin) {
+                if (!options.adminOnly && authContext.tenantId) {
                   const enforcer = options.serviceId === 'hms' ? hmsGrantEnforcer : restaurantGrantEnforcer;
                   enforcer.setTrustedKeys(getPublicGrantKeys());
 
@@ -172,7 +172,7 @@ function withLegacyGuard(options: LegacyGuardOptions, handler: GuardedRouteHandl
                     token: grantToken,
                   });
 
-                  if (!decision.allowed) {
+                  if (!decision.allowed && !isPlatformAdmin) {
                     return NextResponse.json(
                       {
                         success: false,
@@ -185,7 +185,14 @@ function withLegacyGuard(options: LegacyGuardOptions, handler: GuardedRouteHandl
                     );
                   }
 
-                  (authContext as any).grant = decision.claims;
+                  (authContext as any).grant = decision.claims || (isPlatformAdmin ? {
+                    tenantId: authContext.tenantId,
+                    pluginId: options.serviceId === 'hms' ? '@orbitox/hms' : '@orbitox/restaurant',
+                    planId: 'admin-override',
+                    status: 'ACTIVE',
+                    features: ['*'],
+                    quotas: {},
+                  } : undefined);
                 }
 
                 return handler(guardedRequest, routeContext, authContext);

@@ -24,8 +24,14 @@ async function outbox(tx: TenantTx, topic: string, payload: Record<string, strin
   await tx.query(`SELECT pg_notify('orbitox_outbox', current_setting('app.current_tenant_id'))::text`);
 }
 
+export function generateMrn(): string {
+  const stamp = Date.now().toString(36).toUpperCase();
+  const rand = crypto.randomBytes(5).toString('hex').toUpperCase();
+  return `MRN-${stamp}-${rand}`;
+}
+
 export interface NewPatient {
-  mrn: string;
+  mrn?: string;
   name: string;
   phone?: string;
   dateOfBirth?: string;
@@ -34,7 +40,6 @@ export interface NewPatient {
   bloodGroup?: string;
   allergies?: string;
   emergencyContact?: string;
-  quotaLimit?: number;
 }
 
 export async function createPatient(
@@ -45,7 +50,7 @@ export async function createPatient(
 ): Promise<{ id: string; mrn: string }> {
   if (!p.name?.trim()) throw new HttpError(422, 'INVALID_INPUT', 'name required');
 
-  const effectiveQuotaLimit = quotaLimit ?? p.quotaLimit;
+  const effectiveQuotaLimit = quotaLimit;
   if (effectiveQuotaLimit !== undefined) {
     // P4: Hard quotas enforced inside plugin's own database in the same transaction as the write.
     // 1. Transaction-scoped advisory lock serializes parallel transactions for this tenant's quota.
@@ -63,6 +68,7 @@ export async function createPatient(
   }
 
   const id = newId('pat');
+  const mrn = p.mrn?.trim() || generateMrn();
   const ref = (column: string) => ({ tenantId: tx.tenantId, column, rowId: id });
   const s = (v: string | undefined, col: string) => (v == null || v === '' ? null : seal(ring, v, ref(col)));
   await tx.query(
@@ -71,7 +77,7 @@ export async function createPatient(
      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)`,
     [
       id,
-      p.mrn,
+      mrn,
       s(p.name, 'name'),
       blindIndex(ring, p.name, 'name', tx.tenantId, 'name'),
       s(p.phone, 'phone'),
@@ -85,7 +91,7 @@ export async function createPatient(
     ],
   );
   await outbox(tx, 'hms.patient.created', { id });
-  return { id, mrn: p.mrn };
+  return { id, mrn };
 }
 
 /** Exact phone search without plaintext: returns ids + MRN only. */

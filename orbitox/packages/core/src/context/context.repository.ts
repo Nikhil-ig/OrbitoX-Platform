@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { Context, ContextType } from '@orbitox/types';
+import { Context, ContextType } from '@orbitox-io/types';
 
 /**
  * Mock DB Repository for Context.

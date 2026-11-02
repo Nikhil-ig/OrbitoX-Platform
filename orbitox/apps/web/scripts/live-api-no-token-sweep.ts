@@ -115,6 +115,7 @@ async function run() {
     ORBITOX_ENABLE_CRM_PLUGIN: 'true',
     ORBITOX_ENABLE_COMMERCE_PLUGIN: 'true',
     ORBITOX_TEST_STANDALONE: 'true',
+    ORBITOX_TEST_SKIP_ROLE_CHECK: 'true',
     ORBITOX_PHI_KEYS: JSON.stringify({
       k1: crypto.randomBytes(32).toString('base64'),
     }),

@@ -1,5 +1,5 @@
 import * as crypto from 'crypto';
-import { EventBusService } from '@orbitox/core';
+import { EventBusService } from '@orbitox-io/core';
 import { PosOrder, AddToCartPayload, OrderStatus, PaymentMethod } from './types';
 import { PosStateMachine } from './pos-state-machine';
 

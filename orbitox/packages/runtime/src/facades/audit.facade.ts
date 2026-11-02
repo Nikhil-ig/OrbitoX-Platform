@@ -7,7 +7,7 @@
  * Required for GDPR, SOC2, HIPAA compliance.
  */
 
-import { AuditService } from '@orbitox/core';
+import { AuditService } from '@orbitox-io/core';
 
 export interface AuditEntry {
   action: string;

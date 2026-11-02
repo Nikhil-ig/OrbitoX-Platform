@@ -5,7 +5,15 @@
  */
 export async function register() {
   if (process.env.NEXT_RUNTIME === 'nodejs') {
-    const { registerNode } = await import('./instrumentation.node');
-    await registerNode();
+    let registerNode: any;
+    try {
+      ({ registerNode } = await import('./instrumentation.node'));
+    } catch {
+      const tsTarget = './instrumentation.node' + '.ts';
+      ({ registerNode } = await (import(/* webpackIgnore: true */ tsTarget) as Promise<any>));
+    }
+    if (registerNode) {
+      await registerNode();
+    }
   }
 }

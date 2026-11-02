@@ -1,4 +1,4 @@
-import { PaginationQuery, PaginationMeta, PaginatedResult } from '@orbitox/types';
+import { PaginationQuery, PaginationMeta, PaginatedResult } from '@orbitox-io/types';
 
 /**
  * Normalizes pagination parameters with safe defaults

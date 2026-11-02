@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { PlatformEvent } from '@orbitox/types';
+import { PlatformEvent } from '@orbitox-io/types';
 
 @Injectable()
 export class EventStoreService {

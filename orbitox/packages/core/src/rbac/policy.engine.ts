@@ -1,5 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { PermissionCheck } from '@orbitox/types';
+import { PermissionCheck } from '@orbitox-io/types';
 import { AbacEvaluator, UserContext, ResourceContext } from './abac-evaluator';
 
 export enum PolicyDecision {

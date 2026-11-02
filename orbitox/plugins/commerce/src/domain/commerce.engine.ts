@@ -24,7 +24,6 @@ import { AIAutopilotEngine } from './engines/ai/ai-autopilot.engine';
 import { CustomComponentEngine } from './engines/component/custom-component.engine';
 import { FlowEngine } from './engines/logic/flow.engine';
 import { TemplateEngine } from './engines/template/template.engine';
-import { generateCommerceSeedData } from './seed/commerce.seed';
 
 /**
  * OrbitoX Commerce Engine Master Kernel
@@ -61,15 +60,13 @@ export class CommerceEngine {
   readonly autopilot: AIAutopilotEngine;
 
   constructor() {
-    const seed = generateCommerceSeedData();
-
-    this.stores = new StoreEngine(seed.stores);
+    this.stores = new StoreEngine();
     this.themes = new ThemeEngine();
     this.components = ComponentRegistry;
     this.customComponents = new CustomComponentEngine();
-    this.pages = new PageBuilderEngine(seed.pages);
+    this.pages = new PageBuilderEngine();
     this.templates = new TemplateEngine(this.themes, this.pages, this.stores);
-    this.products = new ProductEngine(seed.products, seed.categories, seed.collections);
+    this.products = new ProductEngine();
     this.discounts = new DiscountEngine();
     this.shipping = new ShippingEngine();
     this.cart = new CartEngine(this.products, this.discounts);

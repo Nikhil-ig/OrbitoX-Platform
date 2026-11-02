@@ -10,7 +10,7 @@ import {
   OrbitoXPlugin,
   PluginRequestContext,
   PluginClock,
-} from '@orbitox/plugin-engine';
+} from '@orbitox-io/plugin-engine';
 import { PosRepository } from './domain/pos-repository';
 import { PosService } from './services/pos.service';
 import { PricingEngine } from './domain/pricing-quote';

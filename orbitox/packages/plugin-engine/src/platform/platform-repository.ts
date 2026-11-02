@@ -21,7 +21,7 @@ import {
   PluginInstallationRecord,
   PluginInstallationStatus,
   ProvisionPluginInstallationInput,
-} from '@orbitox/types';
+} from '@orbitox-io/types';
 import { PlatformKeyEngine, GeneratedKeyResult } from '../security/platform-key-engine';
 import { CredentialVault } from '../security/credential-vault';
 import {

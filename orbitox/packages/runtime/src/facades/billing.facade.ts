@@ -5,7 +5,7 @@
  * Backed by PlanService + SubscriptionService (Stripe-ready).
  */
 
-import { PlanService } from '@orbitox/core';
+import { PlanService } from '@orbitox-io/core';
 import { PlanBuilder } from '../builders/plan.builder';
 
 export class BillingFacade {
