@@ -1,5 +1,5 @@
 {
-  "name": "@orbitox/hms",
+  "name": "@orbitox-io/hms",
   "version": "1.0.0",
   "description": "Headless HMS & Patient Care Domain Core package providing UI-agnostic actions, triage state machines, and hooks.",
   "main": "./dist/index.js",

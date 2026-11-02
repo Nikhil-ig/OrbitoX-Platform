@@ -1,10 +1,10 @@
 {
-  "name": "@orbitox-io/celebrations",
+  "name": "@orbitox/celebrations",
   "version": "1.0.0",
-  "description": "Compatibility alias forwarding to @orbitox/celebrations",
+  "description": "Deprecated compatibility alias forwarding to @orbitox-io/celebrations",
   "main": "./index.js",
   "types": "./index.d.ts",
   "dependencies": {
-    "@orbitox/celebrations": "workspace:*"
+    "@orbitox-io/celebrations": "workspace:*"
   }
 }

@@ -1,0 +1,10 @@
+{
+  "name": "@orbitox/hrms",
+  "version": "1.0.0",
+  "description": "Deprecated compatibility alias forwarding to @orbitox-io/hrms",
+  "main": "./index.js",
+  "types": "./index.d.ts",
+  "dependencies": {
+    "@orbitox-io/hrms": "workspace:*"
+  }
+}

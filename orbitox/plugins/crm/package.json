@@ -1,5 +1,5 @@
 {
-  "name": "@orbitox/crm",
+  "name": "@orbitox-io/crm",
   "version": "1.0.0",
   "description": "Headless CRM domain core package providing UI-agnostic business actions, state machines, and hooks.",
   "main": "./dist/index.js",

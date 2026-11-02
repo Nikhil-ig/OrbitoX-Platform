@@ -1,5 +1,5 @@
 {
-  "name": "@orbitox/hrms",
+  "name": "@orbitox-io/hrms",
   "version": "1.0.0",
   "description": "Headless HRMS & Employee Lifecycle Domain Core package providing UI-agnostic actions, state machines, and hooks.",
   "main": "./dist/index.js",

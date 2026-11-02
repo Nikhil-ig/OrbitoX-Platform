@@ -1,5 +1,5 @@
 {
-  "name": "@orbitox/finance",
+  "name": "@orbitox-io/finance",
   "version": "1.0.0",
   "description": "Headless Finance & Invoicing Domain Core package providing UI-agnostic actions, ledger state machines, and hooks.",
   "main": "./dist/index.js",

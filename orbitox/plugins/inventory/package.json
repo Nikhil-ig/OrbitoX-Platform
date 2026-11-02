@@ -1,5 +1,5 @@
 {
-  "name": "@orbitox/inventory",
+  "name": "@orbitox-io/inventory",
   "version": "1.0.0",
   "description": "Headless Inventory & Stock Domain Core package providing UI-agnostic actions, stock state machines, and hooks.",
   "main": "./dist/index.js",

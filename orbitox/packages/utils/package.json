@@ -1,5 +1,5 @@
 {
-  "name": "@orbitox/utils",
+  "name": "@orbitox-io/utils",
   "version": "1.0.0",
   "description": "OrbitoX Core Utilities",
   "main": "dist/index.js",

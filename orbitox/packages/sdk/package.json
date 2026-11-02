@@ -1,5 +1,5 @@
 {
-  "name": "@orbitox/sdk",
+  "name": "@orbitox-io/sdk",
   "version": "1.0.0",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",

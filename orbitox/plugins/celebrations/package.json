@@ -1,5 +1,5 @@
 {
-  "name": "@orbitox/celebrations",
+  "name": "@orbitox-io/celebrations",
   "version": "1.0.0",
   "description": "Headless Digital Invitations & Celebration Experience Engine — occasion-agnostic, configuration-driven platform for creating beautiful digital invitations and celebration experiences.",
   "main": "./dist/index.js",

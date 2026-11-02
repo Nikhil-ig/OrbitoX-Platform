@@ -1,5 +1,5 @@
 {
-  "name": "@orbitox/commerce",
+  "name": "@orbitox-io/commerce",
   "version": "1.0.0",
   "private": false,
   "main": "dist/index.js",

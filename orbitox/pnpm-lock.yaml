@@ -37,25 +37,25 @@ importers:
         version: 2.1.2(gsap@3.15.0)(react@19.2.8)
       '@orbitox-io/celebrations':
         specifier: workspace:*
-        version: link:../../packages/compat-celebrations
+        version: link:../../plugins/celebrations
       '@orbitox-io/crm':
         specifier: workspace:*
-        version: link:../../packages/compat-crm
+        version: link:../../plugins/crm
       '@orbitox-io/importer-core':
         specifier: workspace:*
-        version: link:../../packages/compat-importer-core
+        version: link:../../packages/importer-core
       '@orbitox-io/plugin-engine':
         specifier: workspace:*
-        version: link:../../packages/compat-plugin-engine
+        version: link:../../packages/plugin-engine
       '@orbitox/sdk':
         specifier: workspace:*
-        version: link:../../packages/sdk
+        version: link:../../packages/compat-sdk
       '@orbitox/types':
         specifier: workspace:*
-        version: link:../../packages/types
+        version: link:../../packages/compat-types
       '@orbitox/ui':
         specifier: workspace:*
-        version: link:../../packages/ui
+        version: link:../../packages/compat-ui
       '@types/three':
         specifier: ^0.186.0
         version: 0.186.0
@@ -107,43 +107,43 @@ importers:
         version: link:../../packages/bridge
       '@orbitox-io/plugin-engine':
         specifier: workspace:*
-        version: link:../../packages/compat-plugin-engine
+        version: link:../../packages/plugin-engine
       '@orbitox/commerce':
         specifier: workspace:*
-        version: link:../../plugins/commerce
+        version: link:../../packages/compat-commerce
       '@orbitox/core':
         specifier: workspace:*
-        version: link:../../packages/core
+        version: link:../../packages/compat-core
       '@orbitox/crm':
         specifier: workspace:*
-        version: link:../../plugins/crm
+        version: link:../../packages/compat-crm
       '@orbitox/external-project-engine':
         specifier: workspace:*
-        version: link:../../plugins/external-project-engine
+        version: link:../../packages/compat-external-project-engine
       '@orbitox/external-runtime-sdk':
         specifier: workspace:*
-        version: link:../../packages/external-runtime-sdk
+        version: link:../../packages/compat-external-runtime-sdk
       '@orbitox/plugin-engine':
         specifier: workspace:*
-        version: link:../../packages/plugin-engine
+        version: link:../../packages/compat-plugin-engine
       '@orbitox/pos':
         specifier: workspace:*
-        version: link:../../plugins/pos
+        version: link:../../packages/compat-pos
       '@orbitox/runtime':
         specifier: workspace:*
-        version: link:../../packages/runtime
+        version: link:../../packages/compat-runtime
       '@orbitox/school':
         specifier: workspace:*
-        version: link:../../plugins/school
+        version: link:../../packages/compat-school
       '@orbitox/sdk':
         specifier: workspace:*
-        version: link:../../packages/sdk
+        version: link:../../packages/compat-sdk
       '@orbitox/types':
         specifier: workspace:*
-        version: link:../../packages/types
+        version: link:../../packages/compat-types
       '@orbitox/ui':
         specifier: workspace:*
-        version: link:../../packages/ui
+        version: link:../../packages/compat-ui
       '@prisma/client':
         specifier: ^6.19.0
         version: 6.19.3(prisma@6.19.3(typescript@5.9.3))(typescript@5.9.3)
@@ -194,29 +194,137 @@ importers:
         specifier: ~5.9.3
         version: 5.9.3
 
+  packages/compat-bridge:
+    dependencies:
+      '@orbitox-io/bridge':
+        specifier: workspace:*
+        version: link:../bridge
+
   packages/compat-celebrations:
     dependencies:
-      '@orbitox/celebrations':
+      '@orbitox-io/celebrations':
         specifier: workspace:*
         version: link:../../plugins/celebrations
 
+  packages/compat-cli:
+    dependencies:
+      '@orbitox-io/cli':
+        specifier: workspace:*
+        version: link:../../tools/cli
+
+  packages/compat-commerce:
+    dependencies:
+      '@orbitox-io/commerce':
+        specifier: workspace:*
+        version: link:../../plugins/commerce
+
+  packages/compat-core:
+    dependencies:
+      '@orbitox-io/core':
+        specifier: workspace:*
+        version: link:../core
+
   packages/compat-crm:
     dependencies:
-      '@orbitox/crm':
+      '@orbitox-io/crm':
         specifier: workspace:*
         version: link:../../plugins/crm
 
+  packages/compat-external-project-engine:
+    dependencies:
+      '@orbitox-io/external-project-engine':
+        specifier: workspace:*
+        version: link:../../plugins/external-project-engine
+
+  packages/compat-external-runtime-sdk:
+    dependencies:
+      '@orbitox-io/external-runtime-sdk':
+        specifier: workspace:*
+        version: link:../external-runtime-sdk
+
+  packages/compat-finance:
+    dependencies:
+      '@orbitox-io/finance':
+        specifier: workspace:*
+        version: link:../../plugins/finance
+
+  packages/compat-hms:
+    dependencies:
+      '@orbitox-io/hms':
+        specifier: workspace:*
+        version: link:../../plugins/hms
+
+  packages/compat-hrms:
+    dependencies:
+      '@orbitox-io/hrms':
+        specifier: workspace:*
+        version: link:../../plugins/hrms
+
   packages/compat-importer-core:
     dependencies:
-      '@orbitox/importer-core':
+      '@orbitox-io/importer-core':
         specifier: workspace:*
         version: link:../importer-core
 
+  packages/compat-inventory:
+    dependencies:
+      '@orbitox-io/inventory':
+        specifier: workspace:*
+        version: link:../../plugins/inventory
+
   packages/compat-plugin-engine:
     dependencies:
-      '@orbitox/plugin-engine':
+      '@orbitox-io/plugin-engine':
         specifier: workspace:*
         version: link:../plugin-engine
+
+  packages/compat-pos:
+    dependencies:
+      '@orbitox-io/pos':
+        specifier: workspace:*
+        version: link:../../plugins/pos
+
+  packages/compat-runtime:
+    dependencies:
+      '@orbitox-io/runtime':
+        specifier: workspace:*
+        version: link:../runtime
+
+  packages/compat-school:
+    dependencies:
+      '@orbitox-io/school':
+        specifier: workspace:*
+        version: link:../../plugins/school
+
+  packages/compat-sdk:
+    dependencies:
+      '@orbitox-io/sdk':
+        specifier: workspace:*
+        version: link:../sdk
+
+  packages/compat-services:
+    dependencies:
+      '@orbitox-io/services':
+        specifier: workspace:*
+        version: link:../services
+
+  packages/compat-types:
+    dependencies:
+      '@orbitox-io/types':
+        specifier: workspace:*
+        version: link:../types
+
+  packages/compat-ui:
+    dependencies:
+      '@orbitox-io/ui':
+        specifier: workspace:*
+        version: link:../ui
+
+  packages/compat-utils:
+    dependencies:
+      '@orbitox-io/utils':
+        specifier: workspace:*
+        version: link:../utils
 
   packages/config/eslint:
     dependencies:
@@ -269,13 +377,13 @@ importers:
         version: 12.0.0(@nestjs/common@12.0.1(class-transformer@0.5.1)(class-validator@0.14.4)(reflect-metadata@0.2.2)(rxjs@7.8.2))(passport@0.7.0)
       '@orbitox/sdk':
         specifier: workspace:*
-        version: link:../sdk
+        version: link:../compat-sdk
       '@orbitox/types':
         specifier: workspace:*
-        version: link:../types
+        version: link:../compat-types
       '@orbitox/utils':
         specifier: workspace:*
-        version: link:../utils
+        version: link:../compat-utils
       bcrypt:
         specifier: ^6.0.0
         version: 6.0.0
@@ -372,7 +480,7 @@ importers:
     dependencies:
       '@orbitox/types':
         specifier: workspace:*
-        version: link:../types
+        version: link:../compat-types
     devDependencies:
       '@orbitox/eslint-config':
         specifier: workspace:*
@@ -409,10 +517,10 @@ importers:
         version: 12.0.1(@nestjs/common@12.0.1(class-transformer@0.5.1)(class-validator@0.14.4)(reflect-metadata@0.2.2)(rxjs@7.8.2))(reflect-metadata@0.2.2)(rxjs@7.8.2)
       '@orbitox/core':
         specifier: workspace:*
-        version: link:../core
+        version: link:../compat-core
       '@orbitox/types':
         specifier: workspace:*
-        version: link:../types
+        version: link:../compat-types
       '@prisma/client':
         specifier: ^6.19.0
         version: 6.19.3(prisma@6.19.3(typescript@5.9.3))(typescript@5.9.3)
@@ -449,16 +557,16 @@ importers:
         version: 12.0.1(class-transformer@0.5.1)(class-validator@0.14.4)(reflect-metadata@0.2.2)(rxjs@7.8.2)
       '@orbitox/core':
         specifier: workspace:*
-        version: link:../core
+        version: link:../compat-core
       '@orbitox/external-runtime-sdk':
         specifier: workspace:*
-        version: link:../external-runtime-sdk
+        version: link:../compat-external-runtime-sdk
       '@orbitox/plugin-engine':
         specifier: workspace:*
-        version: link:../plugin-engine
+        version: link:../compat-plugin-engine
       '@orbitox/sdk':
         specifier: workspace:*
-        version: link:../sdk
+        version: link:../compat-sdk
       express:
         specifier: ^5.2.1
         version: 5.2.1
@@ -492,7 +600,7 @@ importers:
         version: 12.0.1(class-transformer@0.5.1)(class-validator@0.14.4)(reflect-metadata@0.2.2)(rxjs@7.8.2)
       '@orbitox/types':
         specifier: workspace:*
-        version: link:../types
+        version: link:../compat-types
       reflect-metadata:
         specifier: ^0.2.2
         version: 0.2.2
@@ -538,13 +646,13 @@ importers:
         version: 12.0.1(@nestjs/common@12.0.1(class-transformer@0.5.1)(class-validator@0.14.4)(reflect-metadata@0.2.2)(rxjs@7.8.2))(reflect-metadata@0.2.2)(rxjs@7.8.2)
       '@orbitox/core':
         specifier: workspace:*
-        version: link:../core
+        version: link:../compat-core
       '@orbitox/types':
         specifier: workspace:*
-        version: link:../types
+        version: link:../compat-types
       '@orbitox/utils':
         specifier: workspace:*
-        version: link:../utils
+        version: link:../compat-utils
     devDependencies:
       '@orbitox/eslint-config':
         specifier: workspace:*
@@ -584,10 +692,10 @@ importers:
     dependencies:
       '@orbitox/sdk':
         specifier: workspace:*
-        version: link:../sdk
+        version: link:../compat-sdk
       '@orbitox/types':
         specifier: workspace:*
-        version: link:../types
+        version: link:../compat-types
       lucide-react:
         specifier: ^1.43.0
         version: 1.43.0(react@19.2.8)
@@ -633,7 +741,7 @@ importers:
     dependencies:
       '@orbitox/types':
         specifier: workspace:*
-        version: link:../types
+        version: link:../compat-types
     devDependencies:
       '@types/node':
         specifier: ^20
@@ -646,7 +754,7 @@ importers:
     dependencies:
       '@orbitox-io/crm':
         specifier: workspace:*
-        version: link:../../packages/compat-crm
+        version: link:../crm
     devDependencies:
       '@orbitox/jest-config':
         specifier: workspace:*
@@ -677,16 +785,16 @@ importers:
     dependencies:
       '@orbitox/core':
         specifier: workspace:*
-        version: link:../../packages/core
+        version: link:../../packages/compat-core
       '@orbitox/sdk':
         specifier: workspace:*
-        version: link:../../packages/sdk
+        version: link:../../packages/compat-sdk
       '@orbitox/types':
         specifier: workspace:*
-        version: link:../../packages/types
+        version: link:../../packages/compat-types
       '@orbitox/utils':
         specifier: workspace:*
-        version: link:../../packages/utils
+        version: link:../../packages/compat-utils
     devDependencies:
       '@orbitox/tsconfig':
         specifier: workspace:*
@@ -711,13 +819,13 @@ importers:
         version: 12.0.1(class-transformer@0.5.1)(class-validator@0.14.4)(reflect-metadata@0.2.2)(rxjs@7.8.2)
       '@orbitox/commerce':
         specifier: workspace:*
-        version: link:..
+        version: link:../../../packages/compat-commerce
       '@orbitox/core':
         specifier: workspace:*
-        version: link:../../../packages/core
+        version: link:../../../packages/compat-core
       '@orbitox/sdk':
         specifier: workspace:*
-        version: link:../../../packages/sdk
+        version: link:../../../packages/compat-sdk
     devDependencies:
       '@orbitox/tsconfig':
         specifier: workspace:*
@@ -730,7 +838,7 @@ importers:
     dependencies:
       '@orbitox/plugin-engine':
         specifier: workspace:*
-        version: link:../../packages/plugin-engine
+        version: link:../../packages/compat-plugin-engine
     devDependencies:
       '@orbitox/jest-config':
         specifier: workspace:*
@@ -764,10 +872,10 @@ importers:
         version: 12.0.1(class-transformer@0.5.1)(class-validator@0.14.4)(reflect-metadata@0.2.2)(rxjs@7.8.2)
       '@orbitox/core':
         specifier: workspace:*
-        version: link:../../../packages/core
+        version: link:../../../packages/compat-core
       '@orbitox/sdk':
         specifier: workspace:*
-        version: link:../../../packages/sdk
+        version: link:../../../packages/compat-sdk
     devDependencies:
       '@orbitox/tsconfig':
         specifier: workspace:*
@@ -780,13 +888,13 @@ importers:
     dependencies:
       '@orbitox/core':
         specifier: workspace:*
-        version: link:../../packages/core
+        version: link:../../packages/compat-core
       '@orbitox/external-runtime-sdk':
         specifier: workspace:*
-        version: link:../../packages/external-runtime-sdk
+        version: link:../../packages/compat-external-runtime-sdk
       '@orbitox/types':
         specifier: workspace:*
-        version: link:../../packages/types
+        version: link:../../packages/compat-types
     devDependencies:
       '@orbitox/tsconfig':
         specifier: workspace:*
@@ -802,10 +910,10 @@ importers:
     dependencies:
       '@orbitox/types':
         specifier: workspace:*
-        version: link:../../packages/types
+        version: link:../../packages/compat-types
       '@orbitox/utils':
         specifier: workspace:*
-        version: link:../../packages/utils
+        version: link:../../packages/compat-utils
     devDependencies:
       '@types/node':
         specifier: ^20.0.0
@@ -827,10 +935,10 @@ importers:
         version: 12.0.1(class-transformer@0.5.1)(class-validator@0.14.4)(reflect-metadata@0.2.2)(rxjs@7.8.2)
       '@orbitox/core':
         specifier: workspace:*
-        version: link:../../../packages/core
+        version: link:../../../packages/compat-core
       '@orbitox/sdk':
         specifier: workspace:*
-        version: link:../../../packages/sdk
+        version: link:../../../packages/compat-sdk
     devDependencies:
       '@orbitox/tsconfig':
         specifier: workspace:*
@@ -843,10 +951,10 @@ importers:
     dependencies:
       '@orbitox/types':
         specifier: workspace:*
-        version: link:../../packages/types
+        version: link:../../packages/compat-types
       '@orbitox/utils':
         specifier: workspace:*
-        version: link:../../packages/utils
+        version: link:../../packages/compat-utils
     devDependencies:
       '@types/node':
         specifier: ^20.0.0
@@ -868,10 +976,10 @@ importers:
         version: 12.0.1(class-transformer@0.5.1)(class-validator@0.14.4)(reflect-metadata@0.2.2)(rxjs@7.8.2)
       '@orbitox/core':
         specifier: workspace:*
-        version: link:../../../packages/core
+        version: link:../../../packages/compat-core
       '@orbitox/sdk':
         specifier: workspace:*
-        version: link:../../../packages/sdk
+        version: link:../../../packages/compat-sdk
     devDependencies:
       '@orbitox/tsconfig':
         specifier: workspace:*
@@ -884,10 +992,10 @@ importers:
     dependencies:
       '@orbitox/types':
         specifier: workspace:*
-        version: link:../../packages/types
+        version: link:../../packages/compat-types
       '@orbitox/utils':
         specifier: workspace:*
-        version: link:../../packages/utils
+        version: link:../../packages/compat-utils
     devDependencies:
       '@types/node':
         specifier: ^20.0.0
@@ -909,10 +1017,10 @@ importers:
         version: 12.0.1(class-transformer@0.5.1)(class-validator@0.14.4)(reflect-metadata@0.2.2)(rxjs@7.8.2)
       '@orbitox/core':
         specifier: workspace:*
-        version: link:../../../packages/core
+        version: link:../../../packages/compat-core
       '@orbitox/sdk':
         specifier: workspace:*
-        version: link:../../../packages/sdk
+        version: link:../../../packages/compat-sdk
     devDependencies:
       '@orbitox/tsconfig':
         specifier: workspace:*
@@ -925,10 +1033,10 @@ importers:
     dependencies:
       '@orbitox/types':
         specifier: workspace:*
-        version: link:../../packages/types
+        version: link:../../packages/compat-types
       '@orbitox/utils':
         specifier: workspace:*
-        version: link:../../packages/utils
+        version: link:../../packages/compat-utils
     devDependencies:
       '@types/node':
         specifier: ^20.0.0
@@ -950,10 +1058,10 @@ importers:
         version: 12.0.1(class-transformer@0.5.1)(class-validator@0.14.4)(reflect-metadata@0.2.2)(rxjs@7.8.2)
       '@orbitox/core':
         specifier: workspace:*
-        version: link:../../../packages/core
+        version: link:../../../packages/compat-core
       '@orbitox/sdk':
         specifier: workspace:*
-        version: link:../../../packages/sdk
+        version: link:../../../packages/compat-sdk
     devDependencies:
       '@orbitox/tsconfig':
         specifier: workspace:*
@@ -966,11 +1074,11 @@ importers:
     dependencies:
       '@orbitox/sdk':
         specifier: workspace:*
-        version: link:../../packages/sdk
+        version: link:../../packages/compat-sdk
     devDependencies:
       '@orbitox-io/plugin-engine':
         specifier: workspace:*
-        version: link:../../packages/compat-plugin-engine
+        version: link:../../packages/plugin-engine
       tsx:
         specifier: ^4.23.7
         version: 4.23.15
@@ -982,16 +1090,16 @@ importers:
     dependencies:
       '@orbitox/core':
         specifier: workspace:*
-        version: link:../../packages/core
+        version: link:../../packages/compat-core
       '@orbitox/plugin-engine':
         specifier: workspace:*
-        version: link:../../packages/plugin-engine
+        version: link:../../packages/compat-plugin-engine
       '@orbitox/sdk':
         specifier: workspace:*
-        version: link:../../packages/sdk
+        version: link:../../packages/compat-sdk
       '@orbitox/types':
         specifier: workspace:*
-        version: link:../../packages/types
+        version: link:../../packages/compat-types
     devDependencies:
       '@orbitox/jest-config':
         specifier: workspace:*
@@ -1019,13 +1127,13 @@ importers:
     dependencies:
       '@orbitox/core':
         specifier: workspace:*
-        version: link:../../packages/core
+        version: link:../../packages/compat-core
       '@orbitox/sdk':
         specifier: workspace:*
-        version: link:../../packages/sdk
+        version: link:../../packages/compat-sdk
       '@orbitox/types':
         specifier: workspace:*
-        version: link:../../packages/types
+        version: link:../../packages/compat-types
     devDependencies:
       '@orbitox/tsconfig':
         specifier: workspace:*

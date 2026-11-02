@@ -1,5 +1,5 @@
 {
-  "name": "@orbitox/runtime",
+  "name": "@orbitox-io/runtime",
   "version": "1.0.0",
   "description": "OrbitoX Zero-Complexity Runtime",
   "main": "./dist/index.js",

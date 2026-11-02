@@ -1,0 +1,10 @@
+{
+  "name": "@orbitox/sdk",
+  "version": "1.0.0",
+  "description": "Deprecated compatibility alias forwarding to @orbitox-io/sdk",
+  "main": "./index.js",
+  "types": "./index.d.ts",
+  "dependencies": {
+    "@orbitox-io/sdk": "workspace:*"
+  }
+}

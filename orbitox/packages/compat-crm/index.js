@@ -1,1 +1,2 @@
-module.exports = require('@orbitox/crm');
+/** @deprecated Use @orbitox-io/crm instead. */
+module.exports = require('@orbitox-io/crm');

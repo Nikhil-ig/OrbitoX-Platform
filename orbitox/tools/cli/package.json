@@ -1,5 +1,5 @@
 {
-  "name": "@orbitox/cli",
+  "name": "@orbitox-io/cli",
   "version": "1.0.0",
   "main": "./dist/bin.js",
   "bin": {

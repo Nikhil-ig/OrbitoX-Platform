@@ -1,1 +1,2 @@
-module.exports = require('@orbitox/importer-core');
+/** @deprecated Use @orbitox-io/importer-core instead. */
+module.exports = require('@orbitox-io/importer-core');

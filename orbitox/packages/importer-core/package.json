@@ -1,5 +1,5 @@
 {
-  "name": "@orbitox/importer-core",
+  "name": "@orbitox-io/importer-core",
   "version": "1.0.0",
   "description": "OrbitoX Universal Import Engine — Canonical Import IR, Adapters, Semantic Inference, and SceneGraph Compiler",
   "main": "./dist/index.js",

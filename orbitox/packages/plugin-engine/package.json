@@ -1,5 +1,5 @@
 {
-  "name": "@orbitox/plugin-engine",
+  "name": "@orbitox-io/plugin-engine",
   "version": "1.0.0",
   "description": "OrbitoX Plugin Engine — Smart MultiTenantEngine, In-Memory TTL Caching, Custom Domain Router, Security, and Plugin Registries",
   "main": "./dist/index.js",
