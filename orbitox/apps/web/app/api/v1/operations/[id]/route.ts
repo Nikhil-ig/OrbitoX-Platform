@@ -201,8 +201,8 @@ export async function POST(
     const retried = await provisioningSaga.retryOperation(id);
     if (!retried) {
       return NextResponse.json(
-        { error: 'NOT_FOUND', message: `Operation ${id} not found for retry` },
-        { status: 404 }
+        { error: 'CONFLICT', code: 'OPERATION_LOCKED', message: `Operation ${id} cannot be retried: locked by active server lease` },
+        { status: 409 }
       );
     }
     return NextResponse.json(sanitizeOperation(retried));
@@ -221,14 +221,37 @@ export async function POST(
       });
     } catch {}
 
-    const resumed = await provisioningSaga.resumeWorkflow(id, { force: true });
+    const resumed = await provisioningSaga.resumeWorkflow(id);
     if (!resumed) {
       return NextResponse.json(
-        { error: 'NOT_FOUND', message: `Operation ${id} not found for resume` },
-        { status: 404 }
+        { error: 'CONFLICT', code: 'OPERATION_LOCKED', message: `Operation ${id} cannot be resumed: locked by active server lease` },
+        { status: 409 }
       );
     }
     return NextResponse.json(sanitizeOperation(resumed));
+  }
+
+  if (action === 'admin-force-lease') {
+    if (!isPlatformAdmin) {
+      return NextResponse.json(
+        { error: 'FORBIDDEN', message: 'Admin lease override requires platform:admin capability' },
+        { status: 403 }
+      );
+    }
+    try {
+      await platformRepository.recordPlatformAdminAudit({
+        action: 'ADMIN_OPERATION_LEASE_OVERRIDDEN',
+        entityType: 'TENANT_OPERATION',
+        entityId: id,
+        actorId: operatorId,
+        organizationId: op.organizationId,
+        requestId: req.headers.get('x-request-id') || `req_${Date.now()}`,
+        metadata: { operationId: id, operatorId, previousOwner: op.leaseOwner, force: true },
+      });
+    } catch {}
+
+    const forced = await operationStore.claimOperationLease(id, operatorId, 30, { force: true });
+    return NextResponse.json({ success: forced, operationId: id, leaseOwner: operatorId, forced: true });
   }
 
   if (action === 'cancel') {

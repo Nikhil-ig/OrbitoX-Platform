@@ -246,16 +246,21 @@ export class OperationStore {
   async claimOperationLease(
     id: string,
     leaseOwner: string,
-    ttlSeconds: number = 30,
+    ttlSeconds?: number,
     options: { force?: boolean } = {}
   ): Promise<boolean> {
     const isForce = Boolean(options.force);
+    const effectiveTtl = ttlSeconds ?? (
+      process.env.OPERATION_LEASE_TTL_SECONDS
+        ? Number(process.env.OPERATION_LEASE_TTL_SECONDS)
+        : (process.env.NODE_ENV === 'test' ? 2 : 30)
+    );
     if (process.env.ORBITOX_PLATFORM_REPOSITORY !== 'json') {
       try {
         const rows = await (prisma as any).$queryRaw<Array<{ id: string }>>`
           UPDATE "PlatformOperation"
           SET "leaseOwner" = ${leaseOwner},
-              "leaseExpiresAt" = NOW() + (${ttlSeconds} * INTERVAL '1 second'),
+              "leaseExpiresAt" = NOW() + (${effectiveTtl} * INTERVAL '1 second'),
               "updatedAt" = NOW()
           WHERE "id" = ${id}
             AND (${isForce} = true OR "leaseOwner" = ${leaseOwner} OR "leaseExpiresAt" IS NULL OR "leaseExpiresAt" < NOW())
@@ -266,7 +271,7 @@ export class OperationStore {
           const mem = memoryOperations.get(id);
           if (mem) {
             mem.leaseOwner = leaseOwner;
-            mem.leaseExpiresAt = new Date(Date.now() + ttlSeconds * 1000).toISOString();
+            mem.leaseExpiresAt = new Date(Date.now() + effectiveTtl * 1000).toISOString();
           }
           return true;
         }
@@ -282,7 +287,7 @@ export class OperationStore {
       const expiresAt = mem.leaseExpiresAt ? new Date(mem.leaseExpiresAt).getTime() : 0;
       if (isForce || mem.leaseOwner === leaseOwner || !mem.leaseExpiresAt || expiresAt < now) {
         mem.leaseOwner = leaseOwner;
-        mem.leaseExpiresAt = new Date(now + ttlSeconds * 1000).toISOString();
+        mem.leaseExpiresAt = new Date(now + effectiveTtl * 1000).toISOString();
         return true;
       }
       return false;
@@ -296,13 +301,18 @@ export class OperationStore {
   async heartbeatOperationLease(
     id: string,
     leaseOwner: string,
-    ttlSeconds: number = 30
+    ttlSeconds?: number
   ): Promise<boolean> {
+    const effectiveTtl = ttlSeconds ?? (
+      process.env.OPERATION_LEASE_TTL_SECONDS
+        ? Number(process.env.OPERATION_LEASE_TTL_SECONDS)
+        : (process.env.NODE_ENV === 'test' ? 2 : 30)
+    );
     if (process.env.ORBITOX_PLATFORM_REPOSITORY !== 'json') {
       try {
         const rows = await (prisma as any).$queryRaw<Array<{ id: string }>>`
           UPDATE "PlatformOperation"
-          SET "leaseExpiresAt" = NOW() + (${ttlSeconds} * INTERVAL '1 second'),
+          SET "leaseExpiresAt" = NOW() + (${effectiveTtl} * INTERVAL '1 second'),
               "updatedAt" = NOW()
           WHERE "id" = ${id}
             AND "leaseOwner" = ${leaseOwner}
@@ -312,7 +322,7 @@ export class OperationStore {
         if (renewed) {
           const mem = memoryOperations.get(id);
           if (mem) {
-            mem.leaseExpiresAt = new Date(Date.now() + ttlSeconds * 1000).toISOString();
+            mem.leaseExpiresAt = new Date(Date.now() + effectiveTtl * 1000).toISOString();
           }
           return true;
         }
@@ -324,7 +334,7 @@ export class OperationStore {
 
     const mem = memoryOperations.get(id);
     if (mem && mem.leaseOwner === leaseOwner) {
-      mem.leaseExpiresAt = new Date(Date.now() + ttlSeconds * 1000).toISOString();
+      mem.leaseExpiresAt = new Date(Date.now() + effectiveTtl * 1000).toISOString();
       return true;
     }
     return false;

@@ -147,7 +147,7 @@ describe('🪐 Phase 5: @orbitox-io/sdk Integration & Real Server Suite', () => 
       ...process.env,
       PORT: String(port),
       HOSTNAME: '127.0.0.1',
-      NODE_ENV: 'production' as const,
+      NODE_ENV: 'test' as const,
       ORBITOX_ADMIN_TOKEN: adminToken,
       ORBITOX_RUNTIME_TOKEN: crypto.randomBytes(32).toString('hex'),
       ORBITOX_CONTROL_SECRET: crypto.randomBytes(32).toString('hex'),
@@ -422,5 +422,73 @@ describe('🪐 Phase 5: @orbitox-io/sdk Integration & Real Server Suite', () => 
     }
     assert.ok(resumeRecovered, 'Patient creation must succeed after tenant resume');
     console.log('[SDK Test] Resume recovery verified: 200 OK.');
+  });
+
+  it('5. TenantIdempotencyKey & Safe Retry: a 503 injected after commit, then an SDK retry, gives one patient, not two', async () => {
+    const client = createOrbitoXClient({
+      baseUrl: `http://127.0.0.1:${port}`,
+      apiKey: rawCustomerKey,
+    });
+
+    const idemSlug = `sdk-idem-${crypto.randomBytes(4).toString('hex')}`;
+    // 1. Create a dedicated tenant for idempotency testing
+    const createRes = await client.tenants.create(
+      {
+        name: `Idempotency Clinic ${idemSlug}`,
+        slug: idemSlug,
+        organizationId: customerOrg.id,
+        environment: 'production',
+        plugins: ['hospital-os'],
+      },
+      { waitUntilReady: true }
+    );
+    assert.ok(createRes.apiKey?.secret, 'Issued API key secret must be present');
+    const tenantId = createRes.tenantId;
+    const tenantApiKey = createRes.apiKey.secret;
+    const hospital = client.plugin('hospital-os').forTenant(tenantId, { apiKey: tenantApiKey });
+
+    // 2. Count existing patients (should be 0)
+    const initialPatients = await hospital.patients.list();
+    const initialCount = initialPatients.length;
+
+    // 3. Unique idempotency key and payload
+    const idempotencyKey = `idem_safe_retry_${crypto.randomBytes(8).toString('hex')}`;
+    const patientName = `Idem Patient ${crypto.randomBytes(4).toString('hex')}`;
+
+    console.log(`[SDK Test] Executing create with injected 503 and Idempotency-Key=${idempotencyKey}...`);
+
+    // 4. Call patients.create with x-test-inject-post-commit-503: once
+    // Server commits patient and TenantIdempotencyKey in tx, then returns 503.
+    // SDK automatically intercepts 503 and retries with the SAME idempotency key.
+    // Server replays the committed response from TenantIdempotencyKey table without creating a duplicate.
+    const createdPatient = await hospital.patients.create(
+      { name: patientName },
+      {
+        idempotencyKey,
+        headers: { 'x-test-inject-post-commit-503': 'once' },
+      }
+    );
+
+    assert.ok(createdPatient.id, 'Patient must be returned by SDK retry');
+    console.log(`[SDK Test] Patient successfully returned after retry: ${createdPatient.id}`);
+
+    // 5. Query patients list - exactly ONE patient must exist, not two!
+    const finalPatients = await hospital.patients.list();
+    assert.strictEqual(
+      finalPatients.length,
+      initialCount + 1,
+      `Exactly one patient must be created after 503 retry, found ${finalPatients.length} (expected ${initialCount + 1})`
+    );
+
+    // 6. Verify TenantIdempotencyKey record in PostgreSQL
+    const idemRows = await (prisma as any).tenantIdempotencyKey.findMany({
+      where: {
+        tenantId,
+        key: idempotencyKey,
+      },
+    });
+    assert.strictEqual(idemRows.length, 1, 'TenantIdempotencyKey record must exist in DB');
+    assert.strictEqual(idemRows[0].responseStatus, 201, 'TenantIdempotencyKey responseStatus must be 201');
+    console.log('[SDK Test] Verified TenantIdempotencyKey table row persisted with responseStatus 201.');
   });
 });

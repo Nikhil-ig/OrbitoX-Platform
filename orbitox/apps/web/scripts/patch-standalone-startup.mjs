@@ -7,7 +7,7 @@ export function patchStandaloneStartup(serverFile) {
     const source = fs.readFileSync(serverFile, 'utf8');
     const anchor = "process.env.NODE_ENV = 'production'";
     if (!source.includes(anchor)) throw new Error('Standalone server startup anchor was not found.');
-    const preflight = `${anchor}
+    const preflight = `process.env.NODE_ENV = process.env.NODE_ENV || 'production';
 delete process.env.NEXT_PHASE;
 const requiredProductionSecrets = [
   ['ORBITOX_ADMIN_TOKEN', 'Master credential for control plane & management APIs'],

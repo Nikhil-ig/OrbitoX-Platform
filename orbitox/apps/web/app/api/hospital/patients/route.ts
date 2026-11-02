@@ -5,6 +5,9 @@ import { prisma } from '@/lib/prisma';
 import { mapDbError, errorBody } from '@/lib/db-errors';
 import { getPhiKeyRing } from '@/lib/phi-crypto';
 import { findPatientIdsByPhone, createPatient } from '@/lib/hms-repository';
+import { idempotent } from '@/lib/idempotency';
+
+const injected503Keys = new Set<string>();
 
 export const GET = withHospitalGuard(async (req: NextRequest, _routeContext, authContext) => {
   try {
@@ -38,8 +41,32 @@ export const POST = withHospitalGuard(async (req: NextRequest, _routeContext, au
     const ring = getPhiKeyRing();
 
     const patientQuota = authContext.grant?.quotas?.patients?.limit ?? body.quotaLimit;
+    const idempotencyKey = req.headers.get('idempotency-key') || req.headers.get('x-idempotency-key') || undefined;
 
     const result = await withTenantTx(prisma, authContext.tenantId, async (tx) => {
+      if (idempotencyKey) {
+        const idemRes = await idempotent(tx, 'hospital.patient.create', idempotencyKey, body, async () => {
+          const patient = await createPatient(
+            tx,
+            ring,
+            {
+              mrn: body.mrn || `MRN-${Date.now().toString(36).toUpperCase()}`,
+              name: body.name,
+              phone: body.phone,
+              dateOfBirth: body.dateOfBirth,
+              ageBand: body.ageBand,
+              gender: body.gender,
+              bloodGroup: body.bloodGroup,
+              allergies: body.allergies,
+              emergencyContact: body.emergencyContact,
+            },
+            patientQuota
+          );
+          return { status: 201, body: patient };
+        });
+        return idemRes.body;
+      }
+
       return await createPatient(
         tx,
         ring,
@@ -57,6 +84,17 @@ export const POST = withHospitalGuard(async (req: NextRequest, _routeContext, au
         patientQuota
       );
     });
+
+    // Test fault injection hook (NODE_ENV === 'test' only)
+    if (process.env.NODE_ENV === 'test' && req.headers.get('x-test-inject-post-commit-503') === 'once') {
+      if (idempotencyKey && !injected503Keys.has(idempotencyKey)) {
+        injected503Keys.add(idempotencyKey);
+        return NextResponse.json(
+          { error: 'SERVICE_UNAVAILABLE', message: 'Injected 503 fault after commit' },
+          { status: 503 }
+        );
+      }
+    }
 
     return NextResponse.json({ success: true, data: result }, { status: 201 });
   } catch (err: any) {

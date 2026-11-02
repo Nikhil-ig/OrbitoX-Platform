@@ -97,13 +97,13 @@ export class RestaurantOsClient {
 
     create: async (
       input: OrderCreateInput,
-      options: { idempotencyKey?: string } = {}
+      options: { idempotencyKey?: string; headers?: Record<string, string> } = {}
     ): Promise<OrderRecord> => {
       const res = await this.transport.request<{ success?: boolean; data?: OrderRecord; order?: OrderRecord }>({
         method: 'POST',
         path: this.resolvePath('/api/restaurant/orders'),
         body: input,
-        headers: this.headers,
+        headers: { ...this.headers, ...(options.headers || {}) },
         idempotencyKey: options.idempotencyKey,
       });
       return (res.data || res.order || res) as OrderRecord;

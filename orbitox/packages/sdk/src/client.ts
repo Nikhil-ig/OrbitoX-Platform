@@ -60,8 +60,8 @@ export class OrbitoXClient {
     const canonical = pluginName.replace(/^@orbitox(-io)?\//, '').toLowerCase();
 
     return {
-      forTenant: (tenantId: string, opts: { apiKey?: string } = {}) => {
-        const customHeaders: Record<string, string> = {};
+      forTenant: (tenantId: string, opts: { apiKey?: string; headers?: Record<string, string> } = {}) => {
+        const customHeaders: Record<string, string> = { ...(opts.headers || {}) };
         if (opts.apiKey) {
           customHeaders['x-api-key'] = opts.apiKey;
           customHeaders['Authorization'] = `Bearer ${opts.apiKey}`;

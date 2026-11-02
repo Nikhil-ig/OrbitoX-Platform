@@ -3065,7 +3065,10 @@ export async function handleRequest(req: http.IncomingMessage, res: http.ServerR
   if (pathname === '/api/restaurant/orders' && method === 'POST') {
     const identity = requestIdentity;
     const body = await parseBody(req);
-    const idempotencyKey = (req.headers['x-idempotency-key'] as string) || body.idempotencyKey;
+    const idempotencyKey =
+      (req.headers['x-idempotency-key'] as string) ||
+      (req.headers['idempotency-key'] as string) ||
+      body.idempotencyKey;
 
     checkTestKillPoint(req, 'pre-commit');
 

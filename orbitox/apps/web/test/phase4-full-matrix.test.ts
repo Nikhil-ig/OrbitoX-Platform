@@ -555,7 +555,7 @@ describe('Phase 4 Item 8: Comprehensive Tenant Provisioning Matrix', () => {
     const baseEnv: NodeJS.ProcessEnv = {
       ...process.env,
       HOSTNAME: '127.0.0.1',
-      NODE_ENV: 'production' as const,
+      NODE_ENV: 'test' as const,
       ORBITOX_ADMIN_TOKEN: adminToken,
       ORBITOX_RUNTIME_TOKEN: crypto.randomBytes(32).toString('hex'),
       ORBITOX_CONTROL_SECRET: crypto.randomBytes(32).toString('hex'),
@@ -578,6 +578,7 @@ describe('Phase 4 Item 8: Comprehensive Tenant Provisioning Matrix', () => {
       RESTAURANTOS_PUBLIC_URL: 'https://restaurant.orbitox.internal',
       ORBITOX_TEST_STANDALONE: 'true',
       ORBITOX_TEST_SKIP_ROLE_CHECK: 'true',
+      OPERATION_LEASE_TTL_SECONDS: '2',
       ORBITOX_PHI_KEYS: JSON.stringify({
         k1: crypto.randomBytes(32).toString('base64'),
       }),
@@ -683,12 +684,19 @@ describe('Phase 4 Item 8: Comprehensive Tenant Provisioning Matrix', () => {
     assert.ok(ready2, 'Kill Server 2 must be ready');
 
     // Documented resume trigger: invoke action=resume on Server 2
-    try {
-      await fetch(`http://127.0.0.1:${port2}/api/v1/operations/${targetOpId}?action=resume`, {
-        method: 'POST',
-        headers: { 'x-api-key': rawSecretA },
-      });
-    } catch {}
+    // As Server 1 was killed, its 2s lease naturally expires; retry until Server 2 successfully claims it
+    for (let attempt = 0; attempt < 20; attempt++) {
+      try {
+        const resumeRes = await fetch(`http://127.0.0.1:${port2}/api/v1/operations/${targetOpId}?action=resume`, {
+          method: 'POST',
+          headers: { 'x-api-key': rawSecretA },
+        });
+        if (resumeRes.status === 200) {
+          break;
+        }
+      } catch {}
+      await new Promise((r) => setTimeout(r, 250));
+    }
 
     // 5. Poll Server 2 until operation reaches ACTIVE
     let activeOp: any = null;

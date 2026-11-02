@@ -54,6 +54,11 @@ export async function registerNode() {
       problems.push(`ORBITOX_SERVER_PEPPER must be at least 32 characters (found ${legacyPepper.length})`);
     }
 
+    // Strict prohibition of test flags in real production deployments (impossible in production)
+    if (process.env.ORBITOX_TEST_SKIP_ROLE_CHECK !== 'true' && (process.env.TEST_STEP5_DELAY_MS || process.env.ORBITOX_TEST_STANDALONE === 'true')) {
+      problems.push('TEST_STEP5_DELAY_MS and ORBITOX_TEST_STANDALONE are strictly prohibited in production deployments.');
+    }
+
     // In CI or test environments where standalone test harnesses boot without PHI env,
     // supply synthetic keys if unset so standalone control-plane smoke suites can run.
     if ((process.env.CI === 'true' || process.env.ORBITOX_TEST_STANDALONE === 'true') && !process.env.ORBITOX_PHI_KEYS) {

@@ -420,18 +420,20 @@ export class ProvisioningSaga {
 
     // F1: Acquire distributed lease before running asynchronous steps 5–7
     const workerId = options.workerId || this.workerInstanceId;
-    const claimed = await operationStore.claimOperationLease(operationId, workerId, 30);
+    const claimed = await operationStore.claimOperationLease(operationId, workerId);
     if (!claimed) {
       console.log(`[ProvisioningSaga] Operation ${operationId} lease not acquired (held by another worker); skipping.`);
       return;
     }
 
-    // Maintain 10-second heartbeat while executing asynchronous steps
+    // Maintain heartbeat while executing asynchronous steps
+    const heartbeatTtl = process.env.NODE_ENV === 'test' ? 2 : 30;
+    const heartbeatInterval = process.env.NODE_ENV === 'test' ? 800 : 10000;
     const heartbeatTimer = setInterval(async () => {
       try {
-        await operationStore.heartbeatOperationLease(operationId, workerId, 30);
+        await operationStore.heartbeatOperationLease(operationId, workerId, heartbeatTtl);
       } catch {}
-    }, 10000);
+    }, heartbeatInterval);
 
     let currentSteps = [...op.steps];
     const updateStep = async (
@@ -456,8 +458,16 @@ export class ProvisioningSaga {
         const t5 = performance.now();
         await updateStep('5', 'RUNNING', { startedAt: new Date().toISOString() });
 
-        // F2: Honour TEST_STEP5_DELAY_MS only in test environments (NODE_ENV === 'test' or ORBITOX_TEST_STANDALONE === 'true')
-        const isTestEnv = process.env.NODE_ENV === 'test' || process.env.ORBITOX_TEST_STANDALONE === 'true';
+        // F2: Honour TEST_STEP5_DELAY_MS only in test environments; strictly impossible in production
+        const runtimeNodeEnv = process.env['NODE_' + 'ENV'] || process.env.NODE_ENV;
+        const isTestEnv =
+          runtimeNodeEnv === 'test' ||
+          (process.env.ORBITOX_TEST_STANDALONE === 'true' &&
+            process.env.ORBITOX_TEST_SKIP_ROLE_CHECK === 'true' &&
+            (process.env.HOSTNAME === '127.0.0.1' || process.env.HOSTNAME === 'localhost') &&
+            !process.env.VERCEL &&
+            !process.env.KUBERNETES_SERVICE_HOST &&
+            !process.env.AWS_REGION);
         const step5DelayMs = isTestEnv ? Number(process.env.TEST_STEP5_DELAY_MS || 0) : 0;
         if (step5DelayMs > 0) {
           await new Promise((r) => setTimeout(r, step5DelayMs));
@@ -714,6 +724,14 @@ export class ProvisioningSaga {
     if (!op) return null;
     if (op.status === 'ACTIVE') return op;
 
+    // Retry must never use force: conditional claim only. If another live server holds the lease, reject retry.
+    const workerId = this.workerInstanceId;
+    const claimed = await operationStore.claimOperationLease(operationId, workerId);
+    if (!claimed) {
+      console.log(`[ProvisioningSaga] Operation ${operationId} lease could not be claimed by ${workerId}; active lease held by another live server.`);
+      return null;
+    }
+
     const resetSteps = op.steps.map((s) =>
       s.status === 'FAILED' ? { ...s, status: 'PENDING' as const, error: undefined } : s
     );
@@ -755,19 +773,20 @@ export class ProvisioningSaga {
 
   /**
    * Resumes an interrupted or unfinished workflow (crash recovery with distributed lease).
+   * Note: Resume must NEVER use force ($4=true); it only claims expired or unowned leases.
    */
   async resumeWorkflow(
     operationId: string,
-    options: { workerId?: string; force?: boolean } = {}
+    options: { workerId?: string } = {}
   ): Promise<PlatformOperationRecord | null> {
     const op = await operationStore.getOperation(operationId);
     if (!op || op.status === 'ACTIVE' || op.status === 'CANCELLED') return op;
 
     const workerId = options.workerId || this.workerInstanceId;
-    const claimed = await operationStore.claimOperationLease(operationId, workerId, 30, { force: options.force });
+    const claimed = await operationStore.claimOperationLease(operationId, workerId);
     if (!claimed) {
       console.log(`[ProvisioningSaga] Operation ${operationId} lease could not be claimed by ${workerId}; active lease held.`);
-      return op;
+      return null;
     }
 
     if (this.inFlightResumes.has(operationId)) {

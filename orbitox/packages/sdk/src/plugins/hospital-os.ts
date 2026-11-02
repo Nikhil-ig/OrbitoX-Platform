@@ -91,13 +91,13 @@ export class HospitalOsClient {
 
     create: async (
       input: PatientCreateInput,
-      options: { idempotencyKey?: string } = {}
+      options: { idempotencyKey?: string; headers?: Record<string, string> } = {}
     ): Promise<PatientRecord> => {
       const res = await this.transport.request<{ success: boolean; data: PatientRecord }>({
         method: 'POST',
         path: '/api/hospital/patients',
         body: input,
-        headers: this.headers,
+        headers: { ...this.headers, ...(options.headers || {}) },
         idempotencyKey: options.idempotencyKey,
       });
       return res.data;
@@ -116,13 +116,13 @@ export class HospitalOsClient {
 
     create: async (
       input: AppointmentCreateInput,
-      options: { idempotencyKey?: string } = {}
+      options: { idempotencyKey?: string; headers?: Record<string, string> } = {}
     ): Promise<AppointmentRecord> => {
       const res = await this.transport.request<{ success: boolean; data: AppointmentRecord }>({
         method: 'POST',
         path: '/api/hospital/appointments',
         body: input,
-        headers: this.headers,
+        headers: { ...this.headers, ...(options.headers || {}) },
         idempotencyKey: options.idempotencyKey,
       });
       return res.data;

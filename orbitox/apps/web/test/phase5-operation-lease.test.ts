@@ -110,12 +110,12 @@ describe('Phase 5 Fix 1: Distributed Operation Lease & Crash Recovery Concurrenc
       'Active operation on Server A must NOT appear in Server B resumable list'
     );
 
-    // If Server B directly attempts resumeWorkflow, it must safely skip
-    let serverBExecutionRan = false;
+    // If Server B directly attempts resumeWorkflow, it must safely reject and return null
     const resumeResult = await provisioningSaga.resumeWorkflow(opId, { workerId: 'server-B-boot' });
-    assert.ok(resumeResult, 'Resume call must return operation');
+    assert.strictEqual(resumeResult, null, 'Resume call must return null when active lease is held by another server');
+    const opInDb = await operationStore.getOperation(opId);
     assert.strictEqual(
-      resumeResult.leaseOwner,
+      opInDb?.leaseOwner,
       'server-A-live',
       'Lease ownership must remain with Server A'
     );
@@ -171,6 +171,43 @@ describe('Phase 5 Fix 1: Distributed Operation Lease & Crash Recovery Concurrenc
     // Clean up
     const winnerWorker = server1Claim ? 'server-instance-1' : 'server-instance-2';
     await operationStore.releaseOperationLease(opId, winnerWorker);
+  });
+
+  it('retry on an operation leased by another live server does not take it over', async () => {
+    const opId = `op_retry_held_${crypto.randomBytes(6).toString('hex')}`;
+    const op: PlatformOperationRecord = {
+      id: opId,
+      type: 'TENANT_PROVISION',
+      tenantId: `org/${testOrg.id}/project/p-retry/environment/production`,
+      organizationId: testOrg.id,
+      status: 'PROVISIONING',
+      leaseOwner: 'server-live-A',
+      leaseExpiresAt: new Date(Date.now() + 60000).toISOString(), // Live lease: expires in 60s
+      steps: [
+        { id: '1', name: 'Step 1', status: 'COMPLETED' },
+        { id: '2', name: 'Step 2', status: 'COMPLETED' },
+        { id: '3', name: 'Step 3', status: 'COMPLETED' },
+        { id: '4', name: 'Step 4', status: 'COMPLETED' },
+        { id: '5', name: 'Step 5', status: 'FAILED', error: 'Transient network failure' },
+      ],
+      request: { name: 'Retry Lease Op', slug: 'p-retry', plugins: [] },
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+    await operationStore.createOperation(op);
+
+    // Server B attempts to retry the operation while Server A holds the live lease
+    const retryResult = await provisioningSaga.retryOperation(opId);
+    assert.strictEqual(retryResult, null, 'retryOperation must return null when active lease is held by another worker');
+
+    // Verify DB record: leaseOwner remains server-live-A and step 5 remains FAILED
+    const opInDb = await operationStore.getOperation(opId);
+    assert.ok(opInDb);
+    assert.strictEqual(opInDb.leaseOwner, 'server-live-A', 'Lease owner must not be overwritten');
+    assert.strictEqual(opInDb.steps.find((s) => s.id === '5')?.status, 'FAILED', 'Step status must not be modified by unauthorized retry');
+
+    // Clean up
+    await operationStore.releaseOperationLease(opId, 'server-live-A');
   });
 
   after(async () => {
