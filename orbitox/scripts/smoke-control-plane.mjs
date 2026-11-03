@@ -28,7 +28,8 @@ const { ControlClient } = require('../packages/external-runtime-sdk/dist/index.j
 const bearer = (t) => ({ Authorization: `Bearer ${t}` });
 const json = { 'Content-Type': 'application/json' };
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-const status = async (path, init) => (await fetch(BASE + path, init)).status;
+const response = (path, init) => fetch(BASE + path, { redirect: 'manual', ...init });
+const status = async (path, init) => (await response(path, init)).status;
 
 let passed = 0;
 const failures = [];
@@ -39,6 +40,16 @@ function check(name, ok, detail = '') {
 async function expectStatus(name, want, path, init) {
   const got = await status(path, init);
   check(name, got === want, `want ${want}, got ${got}`);
+}
+async function expectLoginRedirect(path, init) {
+  const res = await response(path, init);
+  const location = res.headers.get('location');
+  const loginPath = location ? new URL(location, BASE).pathname : undefined;
+  check(
+    `GET ${path} redirects anonymous caller to login`,
+    res.status === 307 && loginPath === '/platform/login',
+    `want 307 to /platform/login, got ${res.status} ${location || ''}`.trim(),
+  );
 }
 
 const suffix = randomBytes(3).toString('hex');
@@ -52,8 +63,13 @@ await expectStatus('GET /api/health is public', 200, '/api/health');
 console.log('\nAdmin surface rejects anonymous callers');
 for (const path of [
   '/platform', '/platform/restaurants', '/platform/fleet', '/platform/plans', '/platform/connect', '/platform/settings', '/admin',
-  '/api/v1/platform/restaurants', '/api/v1/fleet', '/api/v1/overview', '/api/v1/system/settings', '/api/v1/system/cluster',
   '/hms', '/hrms', '/crm', '/finance', '/commerce', '/store'
+]) {
+  await expectLoginRedirect(path);
+}
+for (const path of [
+  '/api/v1/platform/restaurants', '/api/v1/fleet', '/api/v1/overview',
+  '/api/v1/system/settings', '/api/v1/system/cluster'
 ]) {
   await expectStatus(`GET ${path} -> 401`, 401, path);
 }
@@ -84,7 +100,7 @@ for (const path of ['/hms', '/hrms', '/crm', '/finance', '/commerce', '/store'])
 
 console.log('\nRuntime token cannot escalate to admin');
 await expectStatus('runtime token on /api/v1/fleet -> 401', 401, '/api/v1/fleet', { headers: bearer(RUNTIME) });
-await expectStatus('runtime token on /platform/fleet -> 401', 401, '/platform/fleet', { headers: bearer(RUNTIME) });
+await expectLoginRedirect('/platform/fleet', { headers: bearer(RUNTIME) });
 await expectStatus('runtime token on non-runtime project route -> 401', 401, `/api/v1/projects/${projectId}/environments`, { headers: bearer(RUNTIME) });
 await expectStatus('runtime token DELETE on a runtime route -> 403', 403, `/api/v1/projects/${projectId}/bridge`, { method: 'DELETE', headers: bearer(RUNTIME) });
 await expectStatus('runtime ISSUE command -> 403', 403, `/api/v1/projects/${projectId}/commands`, {

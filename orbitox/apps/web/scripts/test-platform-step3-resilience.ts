@@ -65,6 +65,7 @@ const step3GrantPubPem = step3GrantPair.publicKey
   .export({ type: 'spki', format: 'pem' })
   .toString();
 const step3PublicOrigin = 'https://console.orbitox.test';
+const step3ServerPepper = crypto.randomBytes(32).toString('hex');
 
 function spawnServer(port: number, envOverrides: Record<string, string> = {}): ChildProcess {
   const standaloneScript = path.resolve(__dirname, '../.next/standalone/apps/web/server.js');
@@ -80,7 +81,7 @@ function spawnServer(port: number, envOverrides: Record<string, string> = {}): C
       ORBITOX_RUNTIME_TOKEN: crypto.randomBytes(32).toString('hex'),
       ORBITOX_CONTROL_SECRET: crypto.randomBytes(32).toString('hex'),
       ORBITOX_GUEST_SECRET: crypto.randomBytes(32).toString('hex'),
-      ORBITOX_SERVER_PEPPER: crypto.randomBytes(32).toString('hex'),
+      ORBITOX_SERVER_PEPPER: step3ServerPepper,
       ORBITOX_MFA_ENCRYPTION_KEY:
         process.env.ORBITOX_MFA_ENCRYPTION_KEY || crypto.randomBytes(32).toString('base64'),
       ORBITOX_ACCOUNT_TOKEN_ENCRYPTION_KEY:
