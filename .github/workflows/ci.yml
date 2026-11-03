@@ -100,6 +100,9 @@ jobs:
         env:
           MAINTENANCE_DATABASE_URL: postgresql://orbitox_maintenance:phase2-maint-smoke-${{ github.run_id }}-${{ github.run_attempt }}@127.0.0.1:5432/orbitox_smoke
 
+      - name: Build workspace packages
+        run: pnpm exec turbo run build --filter='web^...'
+
       - name: Verify Phase 6 identity privileges and MFA protections
         run: |
           pnpm exec tsx --tsconfig apps/web/tsconfig.json --test apps/web/test/phase6-role-privileges.test.ts apps/web/test/phase6-account-auth.test.ts
@@ -112,9 +115,6 @@ jobs:
           PLATFORM_AUDIT_DATABASE_URL: postgresql://orbitox_platform_admin_audit:phase2-audit-smoke-${{ github.run_id }}-${{ github.run_attempt }}@127.0.0.1:5432/orbitox_smoke
           MAINTENANCE_DATABASE_URL: postgresql://orbitox_maintenance:phase2-maint-smoke-${{ github.run_id }}-${{ github.run_attempt }}@127.0.0.1:5432/orbitox_smoke
           ORBITOX_BREACHED_PASSWORD_API: off
-
-      - name: Build workspace packages
-        run: pnpm exec turbo run build --filter='web^...'
 
       - name: Type-check monorepo packages & control plane
         run: pnpm exec turbo run type-check

@@ -64,6 +64,7 @@ const step3GrantPrivPem = step3GrantPair.privateKey
 const step3GrantPubPem = step3GrantPair.publicKey
   .export({ type: 'spki', format: 'pem' })
   .toString();
+const step3PublicOrigin = 'https://console.orbitox.test';
 
 function spawnServer(port: number, envOverrides: Record<string, string> = {}): ChildProcess {
   const standaloneScript = path.resolve(__dirname, '../.next/standalone/apps/web/server.js');
@@ -86,7 +87,7 @@ function spawnServer(port: number, envOverrides: Record<string, string> = {}): C
         process.env.ORBITOX_ACCOUNT_TOKEN_ENCRYPTION_KEY ||
         crypto.randomBytes(32).toString('base64'),
       ORBITOX_ADMIN_TOKEN_SCOPES: 'GET:/api/*,POST:/api/*,PUT:/api/*,PATCH:/api/*,DELETE:/api/*',
-      ORBITOX_PUBLIC_BASE_URL: 'https://console.orbitox.test',
+      ORBITOX_PUBLIC_BASE_URL: step3PublicOrigin,
       RAZORPAY_WEBHOOK_SECRET: crypto.randomBytes(32).toString('hex'),
       ORBITOX_GRANT_SIGNING_KEYS: JSON.stringify({
         k1: { privateKey: step3GrantPrivPem, publicKey: step3GrantPubPem },
@@ -336,13 +337,10 @@ async function main() {
 
     const headers = new Headers(init?.headers);
     headers.delete('authorization');
-    headers.set('host', requestUrl.host);
-    headers.set('x-forwarded-host', requestUrl.host);
-    headers.set('x-forwarded-proto', requestUrl.protocol.slice(0, -1));
     return globalThis.fetch(input, {
       ...init,
       headers: await currentOperatorHeaders(
-        requestUrl.origin,
+        step3PublicOrigin,
         Object.fromEntries(headers.entries()),
       ),
     });
