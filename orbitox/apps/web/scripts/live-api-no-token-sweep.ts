@@ -6,6 +6,7 @@ import * as fs from 'node:fs';
 import net from 'node:net';
 import { PrismaClient } from '@prisma/client';
 import { fileURLToPath } from 'node:url';
+import { hashAccountPassword } from '../lib/phase6-account-security';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -272,11 +273,19 @@ async function run() {
     '/api/v1/restaurant/orders',
   ]);
   const publicCustomerAuthStatuses: Readonly<Record<string, number>> = {
+    '/api/v1/customer/auth/login': 401,
     '/api/v1/customer/auth/signup': 422,
     '/api/v1/customer/auth/verify-email': 400,
     '/api/v1/customer/auth/password-reset/request': 202,
     '/api/v1/customer/auth/password-reset/consume': 400,
     '/api/v1/customer/auth/accept-invite': 400,
+  };
+  const protectedCustomerAuthMethods: Readonly<Record<string, string>> = {
+    '/api/v1/customer/auth/logout': 'POST',
+    '/api/v1/customer/auth/me': 'GET',
+    '/api/v1/customer/auth/mfa/setup': 'POST',
+    '/api/v1/customer/auth/mfa/confirm': 'POST',
+    '/api/v1/customer/auth/reauth': 'POST',
   };
 
   let passed = 0;
@@ -294,9 +303,14 @@ async function run() {
     const urlPath = convertRouteToUrl(file);
     if (urlPath.startsWith('/api/v1/customer/auth/')) {
       const expectedStatus = publicCustomerAuthStatuses[urlPath];
+      const protectedMethod = protectedCustomerAuthMethods[urlPath];
       assert.ok(
-        expectedStatus !== undefined && methods.length === 1 && methods[0] === 'POST',
-        `Customer auth route ${urlPath} must be explicitly classified as a single POST route`,
+        (expectedStatus !== undefined && methods.length === 1 && methods[0] === 'POST') ||
+          (protectedMethod !== undefined &&
+            expectedStatus === undefined &&
+            methods.length === 1 &&
+            methods[0] === protectedMethod),
+        `Customer auth route ${urlPath} must be explicitly classified as public or session-protected`,
       );
     }
 
@@ -305,6 +319,7 @@ async function run() {
       const expectedPublicAuthStatus =
         method === 'POST' ? publicCustomerAuthStatuses[urlPath] : undefined;
       const isPublicCustomerAuth = expectedPublicAuthStatus !== undefined;
+      const isProtectedCustomerAuth = protectedCustomerAuthMethods[urlPath] === method;
       const isWebhook = urlPath.startsWith('/api/v1/billing/webhook');
       const isRestaurantRedirect =
         urlPath.startsWith('/api/restaurant/') || urlPath.startsWith('/api/v1/restaurant/');
@@ -314,9 +329,11 @@ async function run() {
           : '200 / 2xx'
         : isPublicCustomerAuth
           ? `exactly ${expectedPublicAuthStatus} for invalid unauthenticated input`
-          : isWebhook
-            ? '400 / 401 / 403'
-            : '401 / 403 / 404';
+          : isProtectedCustomerAuth
+            ? '401 or 403 without a customer session'
+            : isWebhook
+              ? '400 / 401 / 403'
+              : '401 / 403 / 404';
       const isSessionsJoin = urlPath === '/api/restaurant/sessions/join';
 
       try {
@@ -346,6 +363,8 @@ async function run() {
             (isRestaurantRedirect && (status === 404 || status === 422 || status === 503));
         } else if (isPublicCustomerAuth) {
           isPass = status === expectedPublicAuthStatus;
+        } else if (isProtectedCustomerAuth) {
+          isPass = status === 401 || status === 403;
         } else if (isWebhook) {
           isPass = status === 400 || status === 401 || status === 403;
         } else {
@@ -359,16 +378,18 @@ async function run() {
           ? 'Explicit Public Route'
           : isPublicCustomerAuth
             ? 'Explicit Public Customer Auth Route'
-            : isWebhook
-              ? 'Webhook Signature Guard'
-              : urlPath.startsWith('/api/v1/admin/') ||
-                  urlPath.startsWith('/api/v1/platform/') ||
-                  urlPath.startsWith('/api/v1/projects/') ||
-                  urlPath.startsWith('/api/v1/system/') ||
-                  urlPath.startsWith('/api/v1/fleet/') ||
-                  urlPath.startsWith('/api/v1/overview/')
-                ? 'Middleware Control-Plane'
-                : 'Route Self-Guarded (withApiGuard)';
+            : isProtectedCustomerAuth
+              ? 'Customer Session Required'
+              : isWebhook
+                ? 'Webhook Signature Guard'
+                : urlPath.startsWith('/api/v1/admin/') ||
+                    urlPath.startsWith('/api/v1/platform/') ||
+                    urlPath.startsWith('/api/v1/projects/') ||
+                    urlPath.startsWith('/api/v1/system/') ||
+                    urlPath.startsWith('/api/v1/fleet/') ||
+                    urlPath.startsWith('/api/v1/overview/')
+                  ? 'Middleware Control-Plane'
+                  : 'Route Self-Guarded (withApiGuard)';
 
         console.log(
           `| \`${relFile}\` | **${method}** | \`${urlPath}\` | **${status}** | ${expectedDesc} | ${isPass ? 'PASS' : 'FAIL'} | ${guardType} |`,
@@ -388,7 +409,7 @@ async function run() {
     data: {
       email: existingResetEmail,
       emailVerifiedAt: new Date(),
-      passwordHash: 'sweep-existing-password-hash',
+      passwordHash: await hashAccountPassword('sweep-existing-password'),
     },
     select: { id: true },
   });
@@ -421,6 +442,31 @@ async function run() {
   } finally {
     await prisma.accountEmailOutbox.deleteMany({ where: { recipient: existingResetEmail } });
     await prisma.customerUser.delete({ where: { id: existingResetUser.id } });
+  }
+
+  try {
+    const requestLogin = async (email: string, password: string) => {
+      const response = await fetch(`http://127.0.0.1:${PORT}/api/v1/customer/auth/login`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ email, password }),
+      });
+      return { status: response.status, body: await response.json() };
+    };
+    const existingAccountResponse = await requestLogin(existingResetEmail, 'wrong-password');
+    const missingAccountResponse = await requestLogin(missingResetEmail, 'wrong-password');
+    assert.equal(existingAccountResponse.status, 401);
+    assert.deepEqual(existingAccountResponse, missingAccountResponse);
+    passed++;
+    console.log(
+      'PASS login returns identical 401 status and response body for wrong-password and nonexistent-account requests',
+    );
+  } catch (error) {
+    failed++;
+    console.error(
+      'FAIL login response differs for wrong-password and nonexistent-account requests:',
+      error,
+    );
   }
 
   // Part 2: Wrong-Scope Key Sweep (Fix C2 requirement)

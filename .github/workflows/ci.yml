@@ -103,7 +103,7 @@ jobs:
       - name: Verify Phase 6 identity privileges and MFA protections
         run: |
           pnpm exec tsx --tsconfig apps/web/tsconfig.json --test apps/web/test/phase6-role-privileges.test.ts apps/web/test/phase6-account-auth.test.ts
-          pnpm exec tsx --test --test-concurrency=1 apps/web/test/hms-auth-security.test.ts
+          pnpm exec tsx --tsconfig apps/web/tsconfig.json --test --test-concurrency=1 apps/web/test/hms-auth-security.test.ts
         env:
           NODE_ENV: test
           DATABASE_URL: postgresql://postgres:postgrespassword@127.0.0.1:5432/orbitox_smoke

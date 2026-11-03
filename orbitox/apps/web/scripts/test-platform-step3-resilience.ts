@@ -257,7 +257,7 @@ async function main() {
   console.log(`PRNG Seed: 0x${RANDOM_SEED.toString(16).toUpperCase()} | PostgreSQL 16 Target`);
   console.log('======================================================================\n');
 
-  await currentOperatorHeaders(3300);
+  await currentOperatorHeaders('http://127.0.0.1:3300');
 
   const RESILIENCE_ITERS = parseInt(process.env.RESILIENCE_ITERS || '20', 10);
   const MID_OP_ITERS = parseInt(process.env.MID_OP_ITERS || '50', 10);
@@ -310,7 +310,7 @@ async function main() {
   }
 
   async function currentOperatorHeaders(
-    port: number,
+    origin: string,
     headers: Record<string, string> = {},
   ): Promise<Record<string, string>> {
     if (!operatorSession || Date.now() - operatorSessionCreatedAt > 4 * 60 * 1000) {
@@ -320,7 +320,7 @@ async function main() {
       operatorSession = await createTestOperatorSession(owner);
       operatorSessionCreatedAt = Date.now();
     }
-    return testOperatorHeaders(operatorSession, `http://127.0.0.1:${port}`, headers);
+    return testOperatorHeaders(operatorSession, origin, headers);
   }
 
   async function fetch(
@@ -336,10 +336,13 @@ async function main() {
 
     const headers = new Headers(init?.headers);
     headers.delete('authorization');
+    headers.set('host', requestUrl.host);
+    headers.set('x-forwarded-host', requestUrl.host);
+    headers.set('x-forwarded-proto', requestUrl.protocol.slice(0, -1));
     return globalThis.fetch(input, {
       ...init,
       headers: await currentOperatorHeaders(
-        Number(requestUrl.port),
+        requestUrl.origin,
         Object.fromEntries(headers.entries()),
       ),
     });
