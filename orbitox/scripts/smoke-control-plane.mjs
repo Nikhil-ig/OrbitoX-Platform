@@ -41,12 +41,12 @@ async function expectStatus(name, want, path, init) {
   const got = await status(path, init);
   check(name, got === want, `want ${want}, got ${got}`);
 }
-async function expectLoginRedirect(path, init) {
+async function expectLoginRedirect(name, path, init) {
   const res = await response(path, init);
   const location = res.headers.get('location');
   const loginPath = location ? new URL(location, BASE).pathname : undefined;
   check(
-    `GET ${path} redirects anonymous caller to login`,
+    name,
     res.status === 307 && loginPath === '/platform/login',
     `want 307 to /platform/login, got ${res.status} ${location || ''}`.trim(),
   );
@@ -65,7 +65,7 @@ for (const path of [
   '/platform', '/platform/restaurants', '/platform/fleet', '/platform/plans', '/platform/connect', '/platform/settings', '/admin',
   '/hms', '/hrms', '/crm', '/finance', '/commerce', '/store'
 ]) {
-  await expectLoginRedirect(path);
+  await expectLoginRedirect(`GET ${path} redirects anonymous caller to login`, path);
 }
 for (const path of [
   '/api/v1/platform/restaurants', '/api/v1/fleet', '/api/v1/overview',
@@ -85,22 +85,28 @@ await expectStatus('GET /api/v1/fleet with Basic', 200, '/api/v1/fleet', {
 });
 await expectStatus('GET /api/v1/overview with Bearer', 200, '/api/v1/overview', { headers: bearer(ADMIN) });
 await expectStatus('GET /api/v1/system/settings with Bearer', 200, '/api/v1/system/settings', { headers: bearer(ADMIN) });
-await expectStatus('GET /platform with Bearer', 200, '/platform', { headers: bearer(ADMIN) });
-await expectStatus('GET /platform/restaurants with Bearer', 200, '/platform/restaurants', { headers: bearer(ADMIN) });
-await expectStatus('GET /platform/fleet with Bearer', 200, '/platform/fleet', { headers: bearer(ADMIN) });
-await expectStatus('GET /platform/plans with Bearer', 200, '/platform/plans', { headers: bearer(ADMIN) });
-await expectStatus('GET /platform/connect with Bearer', 200, '/platform/connect', { headers: bearer(ADMIN) });
-await expectStatus('GET /platform/settings with Bearer', 200, '/platform/settings', { headers: bearer(ADMIN) });
 await expectStatus('GET /api/v1/platform/restaurants/check-slug with Bearer', 200, '/api/v1/platform/restaurants/check-slug?slug=smoke-test-bistro', { headers: bearer(ADMIN) });
 
-console.log('\nProtected demo surfaces work with admin Bearer');
-for (const path of ['/hms', '/hrms', '/crm', '/finance', '/commerce', '/store']) {
-  await expectStatus(`GET ${path} with Bearer -> 200`, 200, path, { headers: bearer(ADMIN) });
+console.log('\nAPI-scoped admin token cannot access operator pages');
+for (const path of [
+  '/platform', '/platform/restaurants', '/platform/fleet', '/platform/plans',
+  '/platform/connect', '/platform/settings', '/hms', '/hrms', '/crm', '/finance',
+  '/commerce', '/store'
+]) {
+  await expectLoginRedirect(
+    `API-scoped admin token on ${path} redirects to operator login`,
+    path,
+    { headers: bearer(ADMIN) },
+  );
 }
 
 console.log('\nRuntime token cannot escalate to admin');
 await expectStatus('runtime token on /api/v1/fleet -> 401', 401, '/api/v1/fleet', { headers: bearer(RUNTIME) });
-await expectLoginRedirect('/platform/fleet', { headers: bearer(RUNTIME) });
+await expectLoginRedirect(
+  'runtime token on /platform/fleet redirects to operator login',
+  '/platform/fleet',
+  { headers: bearer(RUNTIME) },
+);
 await expectStatus('runtime token on non-runtime project route -> 401', 401, `/api/v1/projects/${projectId}/environments`, { headers: bearer(RUNTIME) });
 await expectStatus('runtime token DELETE on a runtime route -> 403', 403, `/api/v1/projects/${projectId}/bridge`, { method: 'DELETE', headers: bearer(RUNTIME) });
 await expectStatus('runtime ISSUE command -> 403', 403, `/api/v1/projects/${projectId}/commands`, {
@@ -294,7 +300,11 @@ try {
 
   await expectStatus('GET /api/v1/projects/{id} -> 200', 200, `/api/v1/projects/${projectId}`, { headers: bearer(ADMIN) });
   await expectStatus('GET /api/v1/projects/{id}/activity -> 200', 200, `/api/v1/projects/${projectId}/activity`, { headers: bearer(ADMIN) });
-  await expectStatus('GET /platform/projects/{id} with Bearer -> 200', 200, `/platform/projects/${projectId}`, { headers: bearer(ADMIN) });
+  await expectLoginRedirect(
+    'API-scoped admin token on project UI details redirects to operator login',
+    `/platform/projects/${projectId}`,
+    { headers: bearer(ADMIN) },
+  );
 
   console.log('\nRestaurantOS Pilot Registration & Fleet Smoke Check');
   const restaurantManifest = {
