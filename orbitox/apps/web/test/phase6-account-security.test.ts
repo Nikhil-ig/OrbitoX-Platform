@@ -122,8 +122,8 @@ describe('Phase 6 account security primitives', () => {
   it('round-trips encrypted TOTP and email payloads; TOTP secrets are never persisted as plaintext', () => {
     const previousMfa = process.env.ORBITOX_MFA_ENCRYPTION_KEY;
     const previousEmail = process.env.ORBITOX_ACCOUNT_TOKEN_ENCRYPTION_KEY;
-    process.env.ORBITOX_MFA_ENCRYPTION_KEY = Buffer.alloc(32, 7).toString('base64');
-    process.env.ORBITOX_ACCOUNT_TOKEN_ENCRYPTION_KEY = Buffer.alloc(32, 8).toString('base64');
+    process.env.ORBITOX_MFA_ENCRYPTION_KEY = crypto.randomBytes(32).toString('base64');
+    process.env.ORBITOX_ACCOUNT_TOKEN_ENCRYPTION_KEY = crypto.randomBytes(32).toString('base64');
     try {
       const secret = generateTotpSecret();
       const sealed = sealTotpSecret(secret);

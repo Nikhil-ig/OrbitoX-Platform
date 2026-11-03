@@ -463,7 +463,6 @@ export class ProvisioningSaga {
         const isTestEnv =
           runtimeNodeEnv === 'test' ||
           (process.env.ORBITOX_TEST_STANDALONE === 'true' &&
-            process.env.ORBITOX_TEST_SKIP_ROLE_CHECK === 'true' &&
             (process.env.HOSTNAME === '127.0.0.1' || process.env.HOSTNAME === 'localhost') &&
             !process.env.VERCEL &&
             !process.env.KUBERNETES_SERVICE_HOST &&

@@ -80,9 +80,12 @@ function spawnServer(port: number, envOverrides: Record<string, string> = {}): C
       ORBITOX_RUNTIME_TOKEN: runtimeToken,
       ORBITOX_CONTROL_SECRET: controlSecret,
       ORBITOX_GUEST_SECRET: guestSecret,
-      ORBITOX_SERVER_PEPPER: envOverrides.ORBITOX_SERVER_PEPPER || 'step5-server-pepper-32-chars-minimum-entropy',
-      ORBITOX_MFA_ENCRYPTION_KEY: Buffer.alloc(32, 3).toString('base64'),
-      ORBITOX_ACCOUNT_TOKEN_ENCRYPTION_KEY: Buffer.alloc(32, 4).toString('base64'),
+      ORBITOX_SERVER_PEPPER:
+        envOverrides.ORBITOX_SERVER_PEPPER ||
+        process.env.ORBITOX_SERVER_PEPPER ||
+        crypto.randomBytes(32).toString('hex'),
+      ORBITOX_MFA_ENCRYPTION_KEY: process.env.ORBITOX_MFA_ENCRYPTION_KEY || crypto.randomBytes(32).toString('base64'),
+      ORBITOX_ACCOUNT_TOKEN_ENCRYPTION_KEY: process.env.ORBITOX_ACCOUNT_TOKEN_ENCRYPTION_KEY || crypto.randomBytes(32).toString('base64'),
       ORBITOX_ADMIN_TOKEN_SCOPES: 'GET:/api/*,POST:/api/*,PUT:/api/*,PATCH:/api/*,DELETE:/api/*',
       ORBITOX_PUBLIC_BASE_URL: 'https://console.orbitox.test',
       RAZORPAY_WEBHOOK_SECRET: crypto.randomBytes(32).toString('hex'),
@@ -95,8 +98,6 @@ function spawnServer(port: number, envOverrides: Record<string, string> = {}): C
       HMS_AUDIT_DATABASE_URL: boundedUrl(hmsAuditUrl),
       OUTBOX_RELAY_DATABASE_URL: boundedUrl(outboxRelayUrl),
       MAINTENANCE_DATABASE_URL: boundedUrl(maintenanceUrl),
-      ORBITOX_TEST_STANDALONE: 'true',
-      ORBITOX_TEST_SKIP_ROLE_CHECK: 'true',
       ORBITOX_ENABLE_CRM_PLUGIN: 'true',
       ...envOverrides,
     },
@@ -219,7 +220,7 @@ async function main() {
     ],
     projects: [
       { id: `proj_${validOrgSlug}`, slug: `proj-${validOrgSlug}`, name: 'Valid Project', organizationId: `org_${validOrgSlug}`, businessModel: 'B2B_SAAS', plan: 'starter' },
-      // Intentional duplicate slug collision on Project to trigger unique constraint abort
+      // Same slug with a different ID must abort this organization's import.
       { id: `proj_${corruptOrgSlug}`, slug: `proj-${validOrgSlug}`, name: 'Corrupt Project Colliding', organizationId: `org_${corruptOrgSlug}`, businessModel: 'B2B_SAAS', plan: 'starter' },
     ],
     environments: [
@@ -228,6 +229,7 @@ async function main() {
     ],
     apiKeys: [
       { id: `key_${validOrgSlug}`, keyId: `k_${validOrgSlug}`, name: 'Valid Key', environmentId: `env_${validOrgSlug}`, authVerifier: crypto.createHash('sha256').update('v').digest('hex') },
+      { id: `key_${corruptOrgSlug}`, keyId: `k_${corruptOrgSlug}`, name: 'Corrupt Key', environmentId: `env_${corruptOrgSlug}`, authVerifier: crypto.createHash('sha256').update('c').digest('hex') },
     ],
     credentials: [], packages: [], packageVersions: [], packageInstallations: [], domains: [], quotaPolicies: [], rateLimitPolicies: [], auditLogs: [],
   };
@@ -243,12 +245,28 @@ async function main() {
 
     assert.equal(errorReport.organizationsImported, 1, 'Exactly 1 organization must succeed');
     assert.equal(errorReport.organizationsFailed, 1, 'Exactly 1 organization must fail and roll back');
+    assert.equal(
+      errorReport.orgResults.find((result) => result.slug === corruptOrgSlug)?.error,
+      `Project slug "proj-${validOrgSlug}" is already assigned to a different project ID.`,
+      'The corrupt organization must fail specifically on the conflicting project slug.',
+    );
 
     const validInDb = await owner.platformOrganization.findUnique({ where: { slug: validOrgSlug } });
     assert.notEqual(validInDb, null, 'Valid organization must be committed in PostgreSQL');
 
     const corruptInDb = await owner.platformOrganization.findUnique({ where: { slug: corruptOrgSlug } });
     assert.equal(corruptInDb, null, 'Corrupted organization must NOT exist in PostgreSQL (clean rollback)');
+    assert.equal(
+      await owner.platformProject.count({ where: { OR: [{ id: `proj_${corruptOrgSlug}` }, { organizationId: `org_${corruptOrgSlug}` }] } }),
+      0,
+      'Corrupted project rows must not remain after rollback.',
+    );
+    assert.equal(await owner.projectEnvironment.count({ where: { id: `env_${corruptOrgSlug}` } }), 0);
+    assert.equal(
+      await owner.platformApiKey.count({ where: { OR: [{ id: `key_${corruptOrgSlug}` }, { keyId: `k_${corruptOrgSlug}` }] } }),
+      0,
+      'Corrupted API key rows must not remain after rollback.',
+    );
 
     console.log('✔ All-or-nothing transaction verified: valid org committed, corrupted org rolled back with zero leftover rows.\n');
   } finally {

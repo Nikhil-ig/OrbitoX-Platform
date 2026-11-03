@@ -4,7 +4,6 @@ process.env.APP_DATABASE_URL = process.env.APP_DATABASE_URL || 'postgresql://orb
 process.env.PLATFORM_AUDIT_DATABASE_URL = process.env.PLATFORM_AUDIT_DATABASE_URL || 'postgresql://orbitox_platform_admin_audit:test_audit_pass@127.0.0.1:5432/orbitox_phase2';
 process.env.HMS_AUDIT_DATABASE_URL = process.env.HMS_AUDIT_DATABASE_URL || 'postgresql://hms_audit_reader:test_audit_pass@127.0.0.1:5432/orbitox_phase2';
 process.env.OUTBOX_RELAY_DATABASE_URL = process.env.OUTBOX_RELAY_DATABASE_URL || 'postgresql://orbitox_outbox_relay:test_outbox_pass@127.0.0.1:5432/orbitox_phase2';
-process.env.ORBITOX_TEST_SKIP_ROLE_CHECK = 'true';
 process.env.ORBITOX_PLATFORM_REPOSITORY = 'prisma';
 
 import { describe, it, before, after } from 'node:test';
@@ -297,7 +296,6 @@ describe('Phase 4 Item 8: Comprehensive Tenant Provisioning Matrix', () => {
       ORBITOX_PLATFORM_REPOSITORY: 'prisma',
       RESTAURANTOS_PUBLIC_URL: 'https://restaurant.orbitox.internal',
       ORBITOX_TEST_STANDALONE: 'true',
-      ORBITOX_TEST_SKIP_ROLE_CHECK: 'true',
       ORBITOX_SYNC_SAGA: 'true',
       ORBITOX_PHI_KEYS: JSON.stringify({
         k1: crypto.randomBytes(32).toString('base64'),
@@ -585,7 +583,6 @@ describe('Phase 4 Item 8: Comprehensive Tenant Provisioning Matrix', () => {
       ORBITOX_PLATFORM_REPOSITORY: 'prisma',
       RESTAURANTOS_PUBLIC_URL: 'https://restaurant.orbitox.internal',
       ORBITOX_TEST_STANDALONE: 'true',
-      ORBITOX_TEST_SKIP_ROLE_CHECK: 'true',
       OPERATION_LEASE_TTL_SECONDS: '2',
       ORBITOX_PHI_KEYS: JSON.stringify({
         k1: crypto.randomBytes(32).toString('base64'),

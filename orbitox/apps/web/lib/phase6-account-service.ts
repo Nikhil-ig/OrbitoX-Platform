@@ -6,7 +6,7 @@ import type {
   CustomerMembershipRole,
   AccountTokenPurpose,
 } from '@prisma/client';
-import { prisma } from '@/lib/prisma';
+import { prisma } from './prisma';
 import {
   ACCOUNT_SESSION_ABSOLUTE_MS,
   ACCOUNT_SESSION_IDLE_MS,

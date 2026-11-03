@@ -94,16 +94,15 @@ For AES keys, use `openssl rand -base64 32`.
 
 ---
 
-### F. Strictly Gated Test Flags (Prohibited in Production Deployments)
+### F. Local Test-Harness Flags
 
 > [!CAUTION]
-> The following variables are strictly prohibited in production. Setting any of them in a production deployment causes the control plane to refuse startup with a fatal boot error.
+> These flags are intended only for local standalone test harnesses. They never disable startup role checks; production database-role validation remains mandatory.
 
 | Variable | Permitted Environments | Purpose |
 |----------|------------------------|---------|
-| `TEST_STEP5_DELAY_MS` | `NODE_ENV === 'test'` only | Injects artificial latency into step 5 of tenant provisioning to test concurrency / kill-and-resume. |
-| `ORBITOX_TEST_STANDALONE` | `NODE_ENV === 'test'` only | Enables standalone test harness execution. |
-| `ORBITOX_TEST_SKIP_ROLE_CHECK` | Local Test Suites only | Bypasses PostgreSQL non-superuser role check in test containers. |
+| `TEST_STEP5_DELAY_MS` | Loopback standalone test harness only | Injects artificial latency into step 5 of tenant provisioning to test concurrency / kill-and-resume. |
+| `ORBITOX_TEST_STANDALONE` | Local standalone test harness only | Enables standalone test harness execution. |
 
 ---
 

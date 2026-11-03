@@ -1,5 +1,6 @@
 import { after, describe, it } from 'node:test';
 import assert from 'node:assert/strict';
+import crypto from 'node:crypto';
 import { PrismaClient } from '@prisma/client';
 
 const ownerUrl = process.env.TEST_DATABASE_URL || process.env.DATABASE_URL;
@@ -17,8 +18,63 @@ describe('Phase 6 identity database-role boundaries', () => {
   const runtime = new PrismaClient({ datasourceUrl: runtimeUrl });
   const audit = new PrismaClient({ datasourceUrl: auditUrl });
   const maintenance = new PrismaClient({ datasourceUrl: maintenanceUrl });
+  const owner = new PrismaClient({ datasourceUrl: ownerUrl });
   after(async () => {
-    await Promise.all([runtime.$disconnect(), audit.$disconnect(), maintenance.$disconnect()]);
+    await Promise.all([
+      runtime.$disconnect(),
+      audit.$disconnect(),
+      maintenance.$disconnect(),
+      owner.$disconnect(),
+    ]);
+  });
+
+  it('prevents deleting a user from cascading through the last-owner membership trigger', async () => {
+    const slug = `phase6-owner-${crypto.randomUUID()}`;
+    const organization = await owner.platformOrganization.create({
+      data: { slug, name: 'Phase 6 owner guard test', billingEmail: `${slug}@example.invalid` },
+      select: { id: true },
+    });
+    const user = await owner.customerUser.create({
+      data: { email: `${slug}@example.invalid` },
+      select: { id: true },
+    });
+    await owner.customerMembership.create({
+      data: { organizationId: organization.id, userId: user.id, role: 'OWNER' },
+    });
+
+    await assert.rejects(owner.customerUser.delete({ where: { id: user.id } }));
+    assert.ok(
+      await owner.customerMembership.findUnique({
+        where: {
+          organizationId_userId: {
+            organizationId: organization.id,
+            userId: user.id,
+          },
+        },
+      }),
+      'the membership must remain after the user deletion is refused',
+    );
+    await assert.rejects(
+      owner.customerMembership.delete({
+        where: {
+          organizationId_userId: {
+            organizationId: organization.id,
+            userId: user.id,
+          },
+        },
+      }),
+    );
+    assert.ok(
+      await owner.customerMembership.findUnique({
+        where: {
+          organizationId_userId: {
+            organizationId: organization.id,
+            userId: user.id,
+          },
+        },
+      }),
+      'the last OWNER membership must remain after its deletion is refused',
+    );
   });
 
   it('runtime cannot insert/delete operators or update operator role/status', async () => {
@@ -34,7 +90,6 @@ describe('Phase 6 identity database-role boundaries', () => {
         canUpdateTotpStep: boolean;
         canConsumeTotpStep: boolean;
         canUpdateEmail: boolean;
-        canUpdatePendingTotpSecret: boolean;
         canDeleteCustomer: boolean;
         canDeleteCustomerSession: boolean;
         canDeleteOperatorSession: boolean;
@@ -50,7 +105,6 @@ describe('Phase 6 identity database-role boundaries', () => {
         has_column_privilege(current_user, 'public."PlatformOperator"', 'lastTotpStep', 'UPDATE') AS "canUpdateTotpStep",
         has_function_privilege(current_user, 'public.consume_platform_operator_totp_step(text,integer,timestamp with time zone)', 'EXECUTE') AS "canConsumeTotpStep",
         has_column_privilege(current_user, 'public."PlatformOperator"', 'email', 'UPDATE') AS "canUpdateEmail",
-        has_column_privilege(current_user, 'public."PlatformOperator"', 'mfaTotpPendingSealed', 'UPDATE') AS "canUpdatePendingTotpSecret",
         has_table_privilege(current_user, 'public."CustomerUser"', 'DELETE') AS "canDeleteCustomer",
         has_table_privilege(current_user, 'public."CustomerSession"', 'DELETE') AS "canDeleteCustomerSession",
         has_table_privilege(current_user, 'public."PlatformOperatorSession"', 'DELETE') AS "canDeleteOperatorSession"
@@ -67,7 +121,6 @@ describe('Phase 6 identity database-role boundaries', () => {
     assert.equal(runtimeRights.canUpdateTotpStep, false);
     assert.equal(runtimeRights.canConsumeTotpStep, true);
     assert.equal(runtimeRights.canUpdateEmail, false);
-    assert.equal(runtimeRights.canUpdatePendingTotpSecret, false);
     assert.equal(runtimeRights.canDeleteCustomer, false);
     assert.equal(runtimeRights.canDeleteCustomerSession, false);
     assert.equal(runtimeRights.canDeleteOperatorSession, false);

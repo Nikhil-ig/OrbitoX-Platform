@@ -173,7 +173,6 @@ describe('🪐 Phase 5: @orbitox-io/sdk Integration & Real Server Suite', () => 
       ORBITOX_PLATFORM_REPOSITORY: 'prisma',
       RESTAURANTOS_PUBLIC_URL: 'https://restaurant.orbitox.internal',
       ORBITOX_TEST_STANDALONE: 'true',
-      ORBITOX_TEST_SKIP_ROLE_CHECK: 'true',
       ORBITOX_SYNC_SAGA: 'true',
       ORBITOX_PHI_KEYS: JSON.stringify({
         k1: crypto.randomBytes(32).toString('base64'),
