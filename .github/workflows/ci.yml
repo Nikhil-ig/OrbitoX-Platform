@@ -100,6 +100,12 @@ jobs:
         env:
           MAINTENANCE_DATABASE_URL: postgresql://orbitox_maintenance:phase2-maint-smoke-${{ github.run_id }}-${{ github.run_attempt }}@127.0.0.1:5432/orbitox_smoke
 
+      - name: Capture CI owner test TOTP secret
+        run: |
+          secret="$(sed -n '/Enroll this TOTP secret now; it will not be shown again:/{n;p;}' "$RUNNER_TEMP/operator-bootstrap.stdout")"
+          test -n "$secret"
+          echo "ORBITOX_OPERATOR_TEST_TOTP_SECRET=$secret" >> "$GITHUB_ENV"
+
       - name: Build workspace packages
         run: pnpm exec turbo run build --filter='web^...'
 

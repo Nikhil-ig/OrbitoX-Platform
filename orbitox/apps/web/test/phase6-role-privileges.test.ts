@@ -77,6 +77,53 @@ describe('Phase 6 identity database-role boundaries', () => {
     );
   });
 
+  it('only maintenance can close an organization and closure removes its memberships', async () => {
+    const slug = `phase6-close-${crypto.randomUUID()}`;
+    const organization = await owner.platformOrganization.create({
+      data: { slug, name: 'Phase 6 organization closure test', billingEmail: `${slug}@example.invalid` },
+      select: { id: true },
+    });
+    const user = await owner.customerUser.create({
+      data: { email: `${slug}@example.invalid` },
+      select: { id: true },
+    });
+    await owner.customerMembership.create({
+      data: { organizationId: organization.id, userId: user.id, role: 'OWNER' },
+    });
+
+    const runtimeRights = await runtime.$queryRaw<
+      Array<{ canDeleteOrganization: boolean; canCallCloseFunction: boolean; canReadClosureContext: boolean }>
+    >`
+      SELECT
+        has_table_privilege(current_user, 'public."PlatformOrganization"', 'DELETE') AS "canDeleteOrganization",
+        has_function_privilege(current_user, 'public.close_customer_organization(text)', 'EXECUTE') AS "canCallCloseFunction",
+        has_table_privilege(current_user, 'public."CustomerOrganizationClosureContext"', 'SELECT') AS "canReadClosureContext"
+    `;
+    assert.deepEqual(runtimeRights[0], {
+      canDeleteOrganization: false,
+      canCallCloseFunction: false,
+      canReadClosureContext: false,
+    });
+    await assert.rejects(
+      runtime.$queryRaw`SELECT public.close_customer_organization(${organization.id})`,
+      (error: unknown) => isPermissionDenied(error),
+    );
+    await assert.rejects(
+      runtime.$executeRaw`DELETE FROM public."PlatformOrganization" WHERE "id" = ${organization.id}`,
+      (error: unknown) => isPermissionDenied(error),
+    );
+
+    const closed = await maintenance.$queryRaw<Array<{ closed: boolean }>>`
+      SELECT public.close_customer_organization(${organization.id}) AS closed
+    `;
+    assert.equal(closed[0]?.closed, true);
+    assert.equal(
+      await owner.customerMembership.count({ where: { organizationId: organization.id } }),
+      0,
+    );
+    assert.equal(await owner.platformOrganization.findUnique({ where: { id: organization.id } }), null);
+  });
+
   it('runtime cannot insert/delete operators or update operator role/status', async () => {
     const privileges = await runtime.$queryRaw<
       Array<{

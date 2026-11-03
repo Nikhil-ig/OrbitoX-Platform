@@ -1481,6 +1481,13 @@ model PlatformOrganization {
   @@index([slug])
 }
 
+model CustomerOrganizationClosureContext {
+  transactionId  BigInt @db.BigInt
+  organizationId String @db.Text
+
+  @@id([transactionId, organizationId])
+}
+
 model PlatformOperator {
   id                    String               @id @default(cuid())
   email                 String

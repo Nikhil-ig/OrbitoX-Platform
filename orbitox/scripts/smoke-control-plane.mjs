@@ -12,11 +12,15 @@
  * Requires the SDK to be built (`pnpm turbo run build --filter=@orbitox/external-runtime-sdk`).
  */
 import { createRequire } from 'node:module';
-import { randomBytes } from 'node:crypto';
+import { createHmac, randomBytes } from 'node:crypto';
 
 const BASE = (process.env.ORBITOX_URL || 'http://localhost:3005').replace(/\/$/, '');
 const ADMIN = process.env.ORBITOX_ADMIN_TOKEN;
 const RUNTIME = process.env.ORBITOX_RUNTIME_TOKEN;
+const OPERATOR_EMAIL = process.env.ORBITOX_OPERATOR_INITIAL_EMAIL;
+const OPERATOR_PASSWORD = process.env.ORBITOX_OPERATOR_INITIAL_PASSWORD;
+const OPERATOR_TOTP_SECRET = process.env.ORBITOX_OPERATOR_TEST_TOTP_SECRET;
+const PUBLIC_BASE_URL = process.env.ORBITOX_PUBLIC_BASE_URL || BASE;
 if (!ADMIN || !RUNTIME) {
   console.error('Set ORBITOX_ADMIN_TOKEN and ORBITOX_RUNTIME_TOKEN to run the smoke test.');
   process.exit(2);
@@ -50,6 +54,56 @@ async function expectLoginRedirect(name, path, init) {
     res.status === 307 && loginPath === '/platform/login',
     `want 307 to /platform/login, got ${res.status} ${location || ''}`.trim(),
   );
+}
+
+function currentTotpCode(secret, now = Date.now()) {
+  const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';
+  let bits = '';
+  for (const char of secret.replace(/=+$/, '')) {
+    const digit = alphabet.indexOf(char);
+    if (digit < 0) throw new Error('Invalid bootstrap TOTP secret.');
+    bits += digit.toString(2).padStart(5, '0');
+  }
+  const bytes = [];
+  for (let offset = 0; offset + 8 <= bits.length; offset += 8) {
+    bytes.push(Number.parseInt(bits.slice(offset, offset + 8), 2));
+  }
+  const counter = Buffer.alloc(8);
+  counter.writeBigUInt64BE(BigInt(Math.floor(now / 30_000)));
+  const digest = createHmac('sha1', Buffer.from(bytes)).update(counter).digest();
+  const offset = digest[digest.length - 1] & 0x0f;
+  const binary = digest.readUInt32BE(offset) & 0x7fffffff;
+  return String(binary % 1_000_000).padStart(6, '0');
+}
+
+async function checkSignedInOperatorPages() {
+  if (!OPERATOR_EMAIL || !OPERATOR_PASSWORD || !OPERATOR_TOTP_SECRET) {
+    check('bootstrap operator credentials and test TOTP secret are configured', false);
+    return;
+  }
+  const login = await response('/api/v1/platform/auth/login', {
+    method: 'POST',
+    headers: { ...json, origin: PUBLIC_BASE_URL },
+    body: JSON.stringify({
+      email: OPERATOR_EMAIL,
+      password: OPERATOR_PASSWORD,
+      totpCode: currentTotpCode(OPERATOR_TOTP_SECRET),
+    }),
+  });
+  const cookies = login.headers.getSetCookie?.()
+    .map((cookie) => cookie.split(';', 1)[0])
+    .filter(Boolean) || [];
+  check(
+    'bootstrap PLATFORM_OWNER completes MFA login',
+    login.status === 200 && cookies.some((cookie) => cookie.startsWith('orbitox_operator_session=')),
+    `got ${login.status}`,
+  );
+  if (login.status !== 200 || cookies.length === 0) return;
+
+  const headers = { cookie: cookies.join('; ') };
+  for (const path of ['/platform', '/platform/fleet', `/platform/projects/${projectId}`]) {
+    await expectStatus(`signed-in operator can access ${path}`, 200, path, { headers });
+  }
 }
 
 const suffix = randomBytes(3).toString('hex');
@@ -305,6 +359,9 @@ try {
     `/platform/projects/${projectId}`,
     { headers: bearer(ADMIN) },
   );
+
+  console.log('\nSigned-in operator can access protected pages');
+  await checkSignedInOperatorPages();
 
   console.log('\nRestaurantOS Pilot Registration & Fleet Smoke Check');
   const restaurantManifest = {

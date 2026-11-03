@@ -56,6 +56,7 @@ const globalTableAllowlist = new Set([
   'CelebrationPricingPlan',
   'PlatformIdempotencyRecord',
   'PlatformOrganization',
+  'CustomerOrganizationClosureContext',
   'PlatformOperator',
   'PlatformOperatorSession',
   'PlatformOperatorBackupCode',
