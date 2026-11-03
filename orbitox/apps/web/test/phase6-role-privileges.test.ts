@@ -21,7 +21,7 @@ describe('Phase 6 identity database-role boundaries', () => {
     await Promise.all([runtime.$disconnect(), audit.$disconnect(), maintenance.$disconnect()]);
   });
 
-  it('limits runtime operator changes and denies runtime identity deletion', async () => {
+  it('runtime cannot insert/delete operators or update operator role/status', async () => {
     const privileges = await runtime.$queryRaw<
       Array<{
         role: string;
@@ -77,7 +77,15 @@ describe('Phase 6 identity database-role boundaries', () => {
       (error: unknown) => isPermissionDenied(error),
     );
     await assert.rejects(
+      runtime.$executeRaw`UPDATE public."PlatformOperator" SET "status" = 'DISABLED' WHERE false`,
+      (error: unknown) => isPermissionDenied(error),
+    );
+    await assert.rejects(
       runtime.$executeRaw`INSERT INTO public."PlatformOperator" ("id", "email", "passwordHash", "role", "mfaTotpSealed") VALUES ('phase6-role-test', 'role-test@example.invalid', 'hash', 'OPERATOR', 'sealed')`,
+      (error: unknown) => isPermissionDenied(error),
+    );
+    await assert.rejects(
+      runtime.$executeRaw`DELETE FROM public."PlatformOperator" WHERE false`,
       (error: unknown) => isPermissionDenied(error),
     );
     await assert.rejects(
@@ -94,7 +102,7 @@ describe('Phase 6 identity database-role boundaries', () => {
     );
   });
 
-  it('denies the audit writer all identity-table access while permitting maintenance provisioning', async () => {
+  it('audit writer has no privileges on any identity table', async () => {
     const identityTables = [
       'PlatformOperator',
       'PlatformOperatorSession',

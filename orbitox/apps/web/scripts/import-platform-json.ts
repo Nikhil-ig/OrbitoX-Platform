@@ -555,6 +555,11 @@ export async function runPlatformJsonImporter(
               });
 
               if (existingProj) {
+                if (existingProj.id !== proj.id) {
+                  throw new Error(
+                    `Project slug "${proj.slug}" is already assigned to a different project ID.`,
+                  );
+                }
                 // S5-1: DO NOT UPDATE! Never overwrite live usage, quota, or status!
                 projectsSkippedInOrg++;
                 recon.projects.skipped++;

@@ -87,6 +87,10 @@ function spawnServer(port: number, envOverrides: Record<string, string> = {}): C
       ORBITOX_CONTROL_SECRET: controlSecret,
       ORBITOX_GUEST_SECRET: guestSecret,
       ORBITOX_SERVER_PEPPER: serverPepper,
+      ORBITOX_MFA_ENCRYPTION_KEY: Buffer.alloc(32, 3).toString('base64'),
+      ORBITOX_ACCOUNT_TOKEN_ENCRYPTION_KEY: Buffer.alloc(32, 4).toString('base64'),
+      ORBITOX_ADMIN_TOKEN_SCOPES: 'GET:/api/*,POST:/api/*,PUT:/api/*,PATCH:/api/*,DELETE:/api/*',
+      ORBITOX_PUBLIC_BASE_URL: 'https://console.orbitox.test',
       RAZORPAY_WEBHOOK_SECRET: crypto.randomBytes(32).toString('hex'),
       ORBITOX_GRANT_SIGNING_KEYS: JSON.stringify({
         k1: { privateKey: step4GrantPrivPem, publicKey: step4GrantPubPem },

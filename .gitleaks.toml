@@ -20,7 +20,8 @@ regexes = [
   '''key_live_mednet_unverified_67890''',
   '''__orbitox_preflight_vector__''',
   '''stn_sec_tandoor_ldh_99x7''',
-  '''e3fd2fa74174360f0984a7b9c9cd04e4059d3e57'''
+  '''e3fd2fa74174360f0984a7b9c9cd04e4059d3e57''',
+  '''GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ'''
 ]
 paths = [
   # Local ephemeral dependencies, build outputs, and Git metadata (all in .gitignore)
@@ -86,5 +87,4 @@ id = "literal-razorpay-webhook-secret"
 description = "Banned hardcoded Razorpay webhook secret literal"
 regex = '''test_razorpay_webhook_secret'''
 tags = ["key", "billing", "razorpay", "secret"]
-
 

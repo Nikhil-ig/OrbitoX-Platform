@@ -36,7 +36,7 @@ describe('Phase 6 account authentication under PostgreSQL runtime privileges', (
     await Promise.all([owner.$disconnect(), prisma.$disconnect()]);
   });
 
-  it('atomically records all 20 parallel wrong-password attempts', async () => {
+  it('20 parallel wrong passwords persist failedLogins = 20', async () => {
     const user = await createCustomer();
     const results = await Promise.all(
       Array.from({ length: 20 }, () =>
@@ -56,7 +56,7 @@ describe('Phase 6 account authentication under PostgreSQL runtime privileges', (
     assert.ok(persisted.lockedUntil && persisted.lockedUntil > new Date());
   });
 
-  it('counts invalid customer MFA codes and locks the account', async () => {
+  it('six wrong customer TOTP codes lock the account', async () => {
     const secret = generateTotpSecret();
     const user = await createCustomer({ secret });
     const code = invalidTotpCode(secret);
@@ -80,7 +80,7 @@ describe('Phase 6 account authentication under PostgreSQL runtime privileges', (
     assert.ok(persisted.lockedUntil && persisted.lockedUntil > new Date());
   });
 
-  it('accepts a customer TOTP step once and rejects replay', async () => {
+  it('accepts a customer TOTP code once and refuses reuse', async () => {
     const secret = generateTotpSecret();
     const user = await createCustomer({ secret });
     const code = totpCode(secret);
@@ -97,7 +97,7 @@ describe('Phase 6 account authentication under PostgreSQL runtime privileges', (
     assert.ok(persisted.lastTotpStep !== null);
   });
 
-  it('counts invalid operator MFA codes and locks the account', async () => {
+  it('six wrong operator TOTP codes lock the account', async () => {
     const { operator, secret } = await createOperator();
     const code = invalidTotpCode(secret);
     const attempts = await Promise.all(
@@ -119,7 +119,7 @@ describe('Phase 6 account authentication under PostgreSQL runtime privileges', (
     assert.ok(persisted.lockedUntil && persisted.lockedUntil > new Date());
   });
 
-  it('rejects reused operator TOTP and backup codes, including parallel backup-code consumers', async () => {
+  it('refuses reused operator TOTP and backup codes, including parallel use', async () => {
     const totpOperator = await createOperator();
     const code = totpCode(totpOperator.secret);
     const firstTotp = await loginOperator({

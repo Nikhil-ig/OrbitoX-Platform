@@ -55,6 +55,11 @@ jobs:
           pnpm exec prisma migrate deploy --schema prisma/schema.prisma
           pnpm exec prisma migrate diff --from-url "$DATABASE_URL" --to-schema-datamodel prisma/schema.prisma --exit-code
           PGPASSWORD=postgrespassword psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -v app_role_password="$APP_DB_PASSWORD" -v maintenance_role_password="$MAINTENANCE_DB_PASSWORD" -v platform_admin_audit_password="$PLATFORM_ADMIN_AUDIT_DB_PASSWORD" -v hms_audit_reader_password="$HMS_AUDIT_DB_PASSWORD" -v outbox_relay_password="$OUTBOX_RELAY_DB_PASSWORD" -f scripts/configure-step1-runtime-role.sql
+          PGPASSWORD=postgrespassword psql "$DATABASE_URL" -v ON_ERROR_STOP=1 <<'SQL'
+          INSERT INTO public."PlatformOperator" ("id", "email", "passwordHash", "role", "status", "mfaTotpSealed")
+          VALUES ('ci-startup-owner', 'ci-startup-owner@example.invalid', 'ci-only-unusable-password-hash', 'PLATFORM_OWNER', 'ACTIVE', 'ci-only-unusable-mfa-secret')
+          ON CONFLICT ("id") DO UPDATE SET "status" = 'ACTIVE';
+          SQL
         env:
           DATABASE_URL: postgresql://postgres:postgrespassword@127.0.0.1:5432/orbitox_smoke
           APP_DB_PASSWORD: phase2-smoke-${{ github.run_id }}-${{ github.run_attempt }}
@@ -109,6 +114,10 @@ jobs:
           export ORBITOX_CONTROL_SECRET="$(openssl rand -hex 32)"
           export ORBITOX_GUEST_SECRET="$(openssl rand -hex 32)"
           export ORBITOX_SERVER_PEPPER="$(openssl rand -hex 32)"
+          export ORBITOX_MFA_ENCRYPTION_KEY="$(openssl rand -base64 32)"
+          export ORBITOX_ACCOUNT_TOKEN_ENCRYPTION_KEY="$(openssl rand -base64 32)"
+          export ORBITOX_ADMIN_TOKEN_SCOPES="GET:/api/*,POST:/api/*,PUT:/api/*,PATCH:/api/*,DELETE:/api/*"
+          export ORBITOX_PUBLIC_BASE_URL="https://console.orbitox.test"
           export ORBITOX_PHI_KEY="$(openssl rand -base64 32)"
           export ORBITOX_PHI_KEYS="{\"k1\":\"$ORBITOX_PHI_KEY\"}"
           export ORBITOX_PHI_ACTIVE_KID="k1"
@@ -548,6 +557,11 @@ jobs:
           pnpm exec prisma generate --schema prisma/schema.prisma
           pnpm exec prisma migrate deploy --schema prisma/schema.prisma
           PGPASSWORD=postgrespassword psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -v app_role_password="$APP_DB_PASSWORD" -v maintenance_role_password="$MAINTENANCE_DB_PASSWORD" -v platform_admin_audit_password="$PLATFORM_ADMIN_AUDIT_DB_PASSWORD" -v hms_audit_reader_password="$HMS_AUDIT_DB_PASSWORD" -v outbox_relay_password="$OUTBOX_RELAY_DB_PASSWORD" -f scripts/configure-step1-runtime-role.sql
+          PGPASSWORD=postgrespassword psql "$DATABASE_URL" -v ON_ERROR_STOP=1 <<'SQL'
+          INSERT INTO public."PlatformOperator" ("id", "email", "passwordHash", "role", "status", "mfaTotpSealed")
+          VALUES ('ci-startup-owner', 'ci-startup-owner@example.invalid', 'ci-only-unusable-password-hash', 'PLATFORM_OWNER', 'ACTIVE', 'ci-only-unusable-mfa-secret')
+          ON CONFLICT ("id") DO UPDATE SET "status" = 'ACTIVE';
+          SQL
         env:
           DATABASE_URL: postgresql://postgres:postgrespassword@127.0.0.1:5432/orbitox_phase2
           APP_DB_PASSWORD: phase2-ci-${{ github.run_id }}-${{ github.run_attempt }}
@@ -642,6 +656,11 @@ jobs:
           pnpm exec prisma generate --schema prisma/schema.prisma
           pnpm exec prisma migrate deploy --schema prisma/schema.prisma
           PGPASSWORD=postgrespassword psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -v app_role_password="$APP_DB_PASSWORD" -v maintenance_role_password="$MAINTENANCE_DB_PASSWORD" -v platform_admin_audit_password="$PLATFORM_ADMIN_AUDIT_DB_PASSWORD" -v hms_audit_reader_password="$HMS_AUDIT_DB_PASSWORD" -v outbox_relay_password="$OUTBOX_RELAY_DB_PASSWORD" -f scripts/configure-step1-runtime-role.sql
+          PGPASSWORD=postgrespassword psql "$DATABASE_URL" -v ON_ERROR_STOP=1 <<'SQL'
+          INSERT INTO public."PlatformOperator" ("id", "email", "passwordHash", "role", "status", "mfaTotpSealed")
+          VALUES ('ci-startup-owner', 'ci-startup-owner@example.invalid', 'ci-only-unusable-password-hash', 'PLATFORM_OWNER', 'ACTIVE', 'ci-only-unusable-mfa-secret')
+          ON CONFLICT ("id") DO UPDATE SET "status" = 'ACTIVE';
+          SQL
         env:
           DATABASE_URL: postgresql://postgres:postgrespassword@127.0.0.1:5432/orbitox_phase2
           APP_DB_PASSWORD: phase2-ci-${{ github.run_id }}-${{ github.run_attempt }}
