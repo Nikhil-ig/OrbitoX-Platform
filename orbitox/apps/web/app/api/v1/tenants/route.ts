@@ -3,24 +3,27 @@ import { platformRepository } from '@/lib/platform-repository';
 import { provisioningSaga } from '@/lib/tenant-provisioning/provisioning-saga';
 import { TenantProvisionRequest } from '@/lib/tenant-provisioning/types';
 import { isSamplePackage } from '@/lib/sample-plugins';
+import { getOperatorSession, OPERATOR_SESSION_COOKIE } from '@/lib/phase6-account-service';
+import { operatorRoleAllows } from '@/lib/operator-route-policy';
+import { verifyAdminTokenForRequestSync } from '../_lib/auth-pipeline';
 
 export async function GET(req: NextRequest) {
   const authHeader = req.headers.get('authorization') || '';
   const apiKeyHeader = req.headers.get('x-api-key') || '';
   const adminTokenHeader = req.headers.get('x-admin-token') || '';
   const rawKey = authHeader.replace(/^Bearer\s+/i, '').trim() || apiKeyHeader.trim() || adminTokenHeader.trim();
+  const operator = await getOperatorSession(req.cookies.get(OPERATOR_SESSION_COOKIE)?.value);
+  const isOperator = Boolean(operator && operatorRoleAllows(operator.role, 'SUPPORT_READONLY'));
+  const isAutomation = verifyAdminTokenForRequestSync(rawKey, req.nextUrl.pathname, req.method);
 
-  if (!rawKey) {
+  if (!rawKey && !isOperator) {
     return NextResponse.json(
       { error: 'UNAUTHORIZED', message: 'API key required via Authorization or x-api-key header' },
       { status: 401 }
     );
   }
 
-  const configuredAdmin = (process.env.ORBITOX_ADMIN_TOKEN || '').trim();
-  const isAdmin = configuredAdmin && rawKey === configuredAdmin;
-
-  if (!isAdmin) {
+  if (!isOperator && !isAutomation) {
     let authRecord;
     try {
       authRecord = await platformRepository.authorizeApiKey(rawKey);

@@ -115,6 +115,7 @@ describe('Sample-Data Plugins Elimination & Isolation (Phase 2b-5)', () => {
   it('marks sample plugins as installable: false in the platform catalogue', async () => {
     const ADMIN_TOKEN = 'test_admin_token_super_secret_32_chars_minimum';
     process.env.ORBITOX_ADMIN_TOKEN = ADMIN_TOKEN;
+    process.env.ORBITOX_ADMIN_TOKEN_SCOPES = 'GET:/api/v1/platform/packages';
 
     const req = new NextRequest('http://localhost:3005/api/v1/platform/packages', {
       headers: { authorization: `Bearer ${ADMIN_TOKEN}` },
@@ -155,6 +156,7 @@ describe('Sample-Data Plugins Elimination & Isolation (Phase 2b-5)', () => {
   it('prohibits direct installation of sample packages at repository/API layer', async () => {
     const ADMIN_TOKEN = 'test_admin_token_super_secret_32_chars_minimum';
     process.env.ORBITOX_ADMIN_TOKEN = ADMIN_TOKEN;
+    process.env.ORBITOX_ADMIN_TOKEN_SCOPES = 'POST:/api/v1/platform/packages';
 
     const req = new NextRequest('http://localhost:3005/api/v1/platform/packages', {
       method: 'POST',

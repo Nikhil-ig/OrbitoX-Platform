@@ -5,7 +5,13 @@ import {
   createInternalAuthToken,
   getAdminToken,
   getRuntimeToken,
+  adminTokenAllowsRequest,
 } from './app/api/v1/_lib/auth-pipeline';
+import {
+  getOperatorSession,
+  OPERATOR_SESSION_COOKIE,
+} from './lib/phase6-account-service';
+import { operatorRoleAllows, requiredOperatorRole, requiresRecentReauthentication } from './lib/operator-route-policy';
 
 import {
   isStaticAsset,
@@ -16,8 +22,8 @@ import {
 /**
  * Access control for the OrbitoX control plane. Two credentials, two roles:
  *
- *  ORBITOX_ADMIN_TOKEN    -> "admin": people and tools that manage the platform
- *                            (admin UI, management APIs, issuing commands).
+ *  operator session      -> "admin": named people with an explicit role and MFA.
+ *  ORBITOX_ADMIN_TOKEN   -> "admin": automation only, limited by method/path scopes.
  *  ORBITOX_RUNTIME_TOKEN  -> "runtime": apps connected through the SDK. It only opens
  *                            the narrow set of endpoints a runtime needs (see RUNTIME_RULES),
  *                            so a leaked runtime token can never open the admin UI.
@@ -32,6 +38,7 @@ import {
  * 4. Everything else is control plane and MUST present authentic admin or runtime credentials.
  */
 export const config = {
+  runtime: 'nodejs',
   matcher: [
     '/((?!_next/static|_next/image|favicon.ico).*)',
   ],
@@ -63,17 +70,24 @@ function deny(req: NextRequest, status: 401 | 403 | 503, message: string): NextR
   return new NextResponse(message, { status, headers: { ...headers, 'Content-Type': 'text/plain; charset=utf-8' } });
 }
 
-async function allow(req: NextRequest, principal: Principal, credential?: string | null): Promise<NextResponse> {
+async function allow(
+  req: NextRequest,
+  principal: Principal,
+  credential?: string | null,
+  operatorId?: string,
+): Promise<NextResponse> {
   const headers = new Headers(req.headers);
   // Strip any client-supplied internal or principal headers before setting verified ones
   headers.delete('x-orbitox-principal');
   headers.delete('x-orbitox-internal-sig');
   headers.delete('x-orbitox-internal-ts');
+  headers.delete('x-orbitox-operator-id');
 
-  const { signature, timestamp } = await createInternalAuthToken(principal);
+  const { signature, timestamp } = await createInternalAuthToken(principal, operatorId);
   headers.set('x-orbitox-principal', principal);
   headers.set('x-orbitox-internal-sig', signature);
   headers.set('x-orbitox-internal-ts', timestamp);
+  if (operatorId) headers.set('x-orbitox-operator-id', operatorId);
 
   if (credential) {
     headers.set('x-orbitox-credential', credential);
@@ -116,10 +130,12 @@ export async function middleware(req: NextRequest) {
   const endpoint = runtimeEndpoint(req.nextUrl.pathname);
 
   const presented = extractPresentedCredential(req);
-  if (presented) {
-    if (adminToken && (await safeEqual(presented, adminToken))) {
+  if (presented && adminToken && adminTokenAllowsRequest(req.nextUrl.pathname, req.method)) {
+    if (await safeEqual(presented, adminToken)) {
       return allow(req, 'admin', presented);
     }
+  }
+  if (presented) {
     if (endpoint) {
       const isProjectKey = presented.startsWith('orb_proj_');
       const isSharedToken = Boolean(runtimeToken && (await safeEqual(presented, runtimeToken)));
@@ -137,17 +153,63 @@ export async function middleware(req: NextRequest) {
     if (!endpoint && !adminToken) return allow(req, 'admin');
   } else {
     // Production & secure development fail closed with a clear reason when config is missing
-    if (!adminToken && !endpoint) {
-      return deny(req, 503, 'Control plane is locked: ORBITOX_ADMIN_TOKEN is not configured.');
-    }
     if (endpoint && !runtimeToken && !adminToken) {
       return deny(req, 503, 'Control plane is locked: ORBITOX_RUNTIME_TOKEN is not configured.');
     }
   }
 
-  return deny(req, 401, 'Authentication required.');
+  if (endpoint) return deny(req, 401, 'Authentication required.');
+
+  const rawSession = req.cookies.get(OPERATOR_SESSION_COOKIE)?.value;
+  if (!rawSession) {
+    if (req.nextUrl.pathname.startsWith('/api/')) return deny(req, 401, 'Operator session required.');
+    const loginUrl = req.nextUrl.clone();
+    loginUrl.pathname = '/platform/login';
+    loginUrl.searchParams.set('next', `${req.nextUrl.pathname}${req.nextUrl.search}`);
+    return NextResponse.redirect(loginUrl);
+  }
+  const operator = await getOperatorSession(rawSession);
+  if (!operator) {
+    if (req.nextUrl.pathname.startsWith('/api/')) return deny(req, 401, 'Operator session required.');
+    const loginUrl = req.nextUrl.clone();
+    loginUrl.pathname = '/platform/login';
+    loginUrl.searchParams.set('next', `${req.nextUrl.pathname}${req.nextUrl.search}`);
+    return NextResponse.redirect(loginUrl);
+  }
+
+  if (!['GET', 'HEAD', 'OPTIONS'].includes(req.method.toUpperCase()) && !sameOrigin(req)) {
+    return deny(req, 403, 'A same-origin request is required for operator actions.');
+  }
+
+  const requiredRole = requiredOperatorRole(req.nextUrl.pathname, req.method) ?? 'SUPPORT_READONLY';
+  if (!operatorRoleAllows(operator.role, requiredRole)) {
+    return deny(req, 403, 'Your operator role cannot access this route.');
+  }
+  if (requiresRecentReauthentication(req.nextUrl.pathname, req.method)) {
+    const reauthAt = operator.reauthenticatedAt?.getTime();
+    if (!reauthAt || Date.now() - reauthAt > 5 * 60 * 1000) {
+      if (req.nextUrl.pathname.startsWith('/api/')) {
+        return NextResponse.json(
+          { success: false, error: { code: 'REAUTH_REQUIRED', message: 'Re-authenticate before this sensitive action.' } },
+          { status: 403, headers: { 'Cache-Control': 'no-store' } },
+        );
+      }
+      return deny(req, 403, 'Re-authenticate before this sensitive action.');
+    }
+  }
+  return allow(req, 'admin', undefined, operator.operatorId);
 }
 
 function rawEnvIsTest(env: string): boolean {
   return env === 'test';
+}
+
+function sameOrigin(req: NextRequest): boolean {
+  const origin = req.headers.get('origin');
+  if (!origin) return false;
+  try {
+    return new URL(origin).origin === req.nextUrl.origin;
+  } catch {
+    return false;
+  }
 }

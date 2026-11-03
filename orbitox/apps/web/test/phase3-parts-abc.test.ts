@@ -38,6 +38,7 @@ describe('Phase 3 Parts A–C: Rights, Licensing & Entitlement Engine', () => {
 
   before(async () => {
     process.env.ORBITOX_ADMIN_TOKEN = TEST_ADMIN_TOKEN;
+    process.env.ORBITOX_ADMIN_TOKEN_SCOPES = 'DELETE:/api/v1/platform/plans/*,PATCH:/api/v1/platform/plans/*';
     process.env.PLATFORM_ADMIN_TOKEN = TEST_ADMIN_TOKEN;
     await platformRepository.ensurePlanCatalogueSeeded();
     const orgs = await platformRepository.listOrganizations();

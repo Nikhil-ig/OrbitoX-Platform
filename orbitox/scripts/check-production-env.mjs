@@ -61,6 +61,16 @@ const REQUIRED_SECRETS = [
     purpose: 'Server-side cryptographic pepper combined with raw API keys prior to SHA-256 verifier derivation',
   },
   {
+    name: 'ORBITOX_MFA_ENCRYPTION_KEY',
+    minLen: 43,
+    purpose: 'Base64-encoded 32-byte AES key protecting operator and customer TOTP secrets',
+  },
+  {
+    name: 'ORBITOX_ACCOUNT_TOKEN_ENCRYPTION_KEY',
+    minLen: 43,
+    purpose: 'Base64-encoded 32-byte AES key protecting queued single-use account links',
+  },
+  {
     name: 'RAZORPAY_WEBHOOK_SECRET',
     minLen: 32,
     purpose: 'HMAC SHA-256 secret for authenticating incoming billing webhook events from Razorpay',
@@ -114,6 +124,53 @@ for (const secret of REQUIRED_SECRETS) {
       purpose: secret.purpose,
     });
   }
+}
+
+const tokenScopes = process.env.ORBITOX_ADMIN_TOKEN_SCOPES?.split(',').map((scope) => scope.trim()).filter(Boolean) || [];
+if (tokenScopes.length === 0) {
+  errors.push({
+    name: 'ORBITOX_ADMIN_TOKEN_SCOPES',
+    reason: 'NOT SET (the automation token must be restricted to explicit method/path scopes)',
+    purpose: 'Comma-separated METHOD:/path scopes; no wildcard method or global path is accepted',
+  });
+} else if (tokenScopes.some((scope) => {
+  const separator = scope.indexOf(':');
+  const method = scope.slice(0, separator);
+  const pathname = scope.slice(separator + 1);
+  return separator < 0 ||
+    !['GET', 'HEAD', 'POST', 'PUT', 'PATCH', 'DELETE'].includes(method) ||
+    !pathname.startsWith('/') ||
+    pathname === '/*' ||
+    (pathname.includes('*') && !pathname.endsWith('/*')) ||
+    pathname.startsWith('//');
+})) {
+  errors.push({
+    name: 'ORBITOX_ADMIN_TOKEN_SCOPES',
+    reason: 'Contains an invalid method/path scope',
+    purpose: 'Use exact paths or a trailing /* under an explicit API prefix',
+  });
+}
+
+for (const name of ['ORBITOX_MFA_ENCRYPTION_KEY', 'ORBITOX_ACCOUNT_TOKEN_ENCRYPTION_KEY']) {
+  const value = process.env[name]?.trim();
+  if (value && Buffer.from(value, 'base64').length !== 32) {
+    errors.push({
+      name,
+      reason: 'Must decode to exactly 32 bytes',
+      purpose: 'AES-256-GCM key for account security data',
+    });
+  }
+}
+
+const publicBaseUrl = process.env.ORBITOX_PUBLIC_BASE_URL?.trim();
+try {
+  if (!publicBaseUrl || new URL(publicBaseUrl).protocol !== 'https:') throw new Error();
+} catch {
+  errors.push({
+    name: 'ORBITOX_PUBLIC_BASE_URL',
+    reason: 'Must be configured as a canonical HTTPS URL',
+    purpose: 'Origin for email verification, password reset, and invitation links',
+  });
 }
 
 if (isProduction) {

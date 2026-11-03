@@ -9,7 +9,7 @@ import {
 import { isIpAllowed, resolveClientIp } from './ip-guard';
 import {
   extractPresentedCredential,
-  verifyAdminTokenSync,
+  verifyAdminTokenForRequestSync,
   getInternalSecret,
 } from './auth-pipeline';
 import {
@@ -24,6 +24,7 @@ import {
 import { platformRepository } from '@/lib/platform-repository';
 import type { PlatformProject } from '@orbitox/types';
 import { isSamplePlugin, isSamplePluginEnabled, SamplePluginId } from '@/lib/sample-plugins';
+import { withOperatorActor } from '@/lib/operator-actor-context';
 
 export { PlatformRepository };
 
@@ -51,12 +52,17 @@ function scheduleMonthlyUsageReset(): void {
   timer.unref();
 }
 
-function verifyInternalAuthTokenSync(principal: string, signature: string, timestamp: string): boolean {
+function verifyInternalAuthTokenSync(
+  principal: string,
+  signature: string,
+  timestamp: string,
+  actorId?: string | null,
+): boolean {
   if (!principal || !signature || !timestamp) return false;
   const ts = parseInt(timestamp, 10);
   if (isNaN(ts) || Math.abs(Date.now() - ts) > 60000) return false;
 
-  const payload = `${principal}:${ts}`;
+  const payload = actorId ? `${principal}:${ts}:${actorId}` : `${principal}:${ts}`;
   const expected = crypto.createHmac('sha256', getInternalSecret()).update(payload).digest('hex');
   if (signature.length !== expected.length) return false;
   return crypto.timingSafeEqual(Buffer.from(signature, 'hex'), Buffer.from(expected, 'hex'));
@@ -636,18 +642,29 @@ export function withApiGuard<T = any>(
     const forwardedPrincipal = req.headers.get('x-orbitox-principal');
     const internalSig = req.headers.get('x-orbitox-internal-sig');
     const internalTs = req.headers.get('x-orbitox-internal-ts');
+    const operatorId = req.headers.get('x-orbitox-operator-id');
     const isInternalAdmin = Boolean(
       forwardedPrincipal === 'admin' &&
       internalSig &&
       internalTs &&
+      operatorId &&
+      verifyInternalAuthTokenSync('admin', internalSig, internalTs, operatorId)
+    );
+    const isInternalAutomation = Boolean(
+      forwardedPrincipal === 'admin' &&
+      internalSig &&
+      internalTs &&
+      !operatorId &&
       verifyInternalAuthTokenSync('admin', internalSig, internalTs)
     );
 
     // Mode B: Direct admin credential verification (Bearer, Basic, or x-admin-token)
     const presentedCred = extractPresentedCredential(req);
-    const isDirectAdmin = Boolean(presentedCred && verifyAdminTokenSync(presentedCred));
+    const isDirectAdmin = Boolean(
+      presentedCred && verifyAdminTokenForRequestSync(presentedCred, req.nextUrl.pathname, req.method),
+    );
 
-    const hasAdminSession = isInternalAdmin || isDirectAdmin;
+    const hasAdminSession = isInternalAdmin || isInternalAutomation || isDirectAdmin;
 
     // 3. Extract API Key - strictly from headers (x-api-key or non-admin Authorization: Bearer <key>)
     const xApiKey = req.headers.get('x-api-key')?.trim();
@@ -1203,6 +1220,7 @@ export function withApiGuard<T = any>(
       serviceId,
       apiKey: rawApiKey,
       credential: matchedKey ? rawApiKey : hasAdminSession ? presentedCred || req.headers.get('x-orbitox-credential') || undefined : undefined,
+      operatorId: isInternalAdmin ? operatorId || undefined : undefined,
       keyPrefix: matchedKey?.keyPrefix,
       environment: matchedKey?.environment || 'production',
       scopes: matchedKey?.scopes || ['*'],
@@ -1261,7 +1279,7 @@ export function withApiGuard<T = any>(
     }
 
     try {
-      const response = await handler(req, context);
+      const response = await withOperatorActor(context.operatorId, () => handler(req, context));
       const latencyMs = Math.max(1, Math.round(performance.now() - startTime));
 
       if (projectUsageReserved && project && (response.status < 200 || response.status >= 300)) {

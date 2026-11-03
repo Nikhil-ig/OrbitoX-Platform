@@ -97,7 +97,7 @@ export default function PlatformOverviewPage() {
     try {
       const res = await fetch('/api/v1/overview', { signal: controller.signal, cache: 'no-store' });
       if (!res.ok) {
-        throw new Error(res.status === 401 ? 'Not authorised. Sign in with the admin token.' : `Request failed (${res.status})`);
+        throw new Error(res.status === 401 ? 'Not authorised. Sign in with your operator account.' : `Request failed (${res.status})`);
       }
       const body = (await res.json()) as { success: boolean; data?: OverviewData; error?: { message?: string } };
       if (!body.success || !body.data) throw new Error(body.error?.message ?? 'Unexpected response');

@@ -47,6 +47,7 @@ describe('Phase 1 & 1.5 Security, Unified Auth & Licensed Customer Test Suite', 
   let suiteDataDir: string;
   let suiteOrganizationId: string;
   let previousAdminToken: string | undefined;
+  let previousAdminTokenScopes: string | undefined;
   let previousServerPepper: string | undefined;
   let validAdminKeySecret: string;
   let validCustomerKeySecret: string;
@@ -56,8 +57,10 @@ describe('Phase 1 & 1.5 Security, Unified Auth & Licensed Customer Test Suite', 
 
   beforeEach(async () => {
     previousAdminToken = process.env.ORBITOX_ADMIN_TOKEN;
+    previousAdminTokenScopes = process.env.ORBITOX_ADMIN_TOKEN_SCOPES;
     previousServerPepper = process.env.ORBITOX_SERVER_PEPPER;
     process.env.ORBITOX_ADMIN_TOKEN = TEST_ADMIN_TOKEN;
+    process.env.ORBITOX_ADMIN_TOKEN_SCOPES = 'GET:/api/v1/*,POST:/api/v1/*,PUT:/api/v1/*,PATCH:/api/v1/*,DELETE:/api/v1/*';
     process.env.ORBITOX_SERVER_PEPPER = 'test_pepper_32_characters_minimum_len';
     if (platformRepository.isPrismaBacked()) {
       suiteDataDir = '';
@@ -219,6 +222,8 @@ describe('Phase 1 & 1.5 Security, Unified Auth & Licensed Customer Test Suite', 
     }
     if (previousAdminToken === undefined) delete process.env.ORBITOX_ADMIN_TOKEN;
     else process.env.ORBITOX_ADMIN_TOKEN = previousAdminToken;
+    if (previousAdminTokenScopes === undefined) delete process.env.ORBITOX_ADMIN_TOKEN_SCOPES;
+    else process.env.ORBITOX_ADMIN_TOKEN_SCOPES = previousAdminTokenScopes;
     if (previousServerPepper === undefined) delete process.env.ORBITOX_SERVER_PEPPER;
     else process.env.ORBITOX_SERVER_PEPPER = previousServerPepper;
   });

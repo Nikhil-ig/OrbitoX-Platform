@@ -7,10 +7,10 @@
  *    would allow requests like /admin/projects/abc.png or /crm/leads/1.txt to bypass authentication.
  * 2. Explicit Public Routes: Minimal, strictly audited endpoints that require no auth
  *    (/api/health, /api/v1/openapi.json, diner bootstrap, shopper storefronts).
- * 3. Self-Guarded Routes: Customer microservice APIs that enforce their own fail-closed
- *    guards (withApiGuard, withHospitalGuard, withGuestToken).
+ * 3. Self-Guarded Routes: Customer and customer-account APIs that enforce their own
+ *    fail-closed guards (withApiGuard, withHospitalGuard, withCustomerAuth, withGuestToken).
  * 4. Control Plane Surface: Everything else (admin UI pages, management APIs, fleet, overview).
- *    Protected fail-closed by middleware with ORBITOX_ADMIN_TOKEN or ORBITOX_RUNTIME_TOKEN.
+ *    Protected fail-closed by middleware with operator sessions/MFA or scoped automation credentials.
  */
 
 /**
@@ -41,6 +41,7 @@ export const SELF_GUARDED_API_PREFIXES: readonly string[] = [
     '/api/hospital/',
     '/api/restaurant/',
     '/api/v1/commerce/',
+    '/api/v1/customer/',
     '/api/v1/crm/',
     '/api/v1/finance/',
     '/api/v1/hms/',
@@ -67,6 +68,7 @@ export function isStaticAsset(pathname: string): boolean {
 }
 
 export function isExplicitPublicRoute(pathname: string): boolean {
+    if (pathname === '/platform/login' || pathname === '/api/v1/platform/auth/login') return true;
     // Exact public control plane diagnostics & public keys
     if (pathname === '/api/health' || pathname === '/api/v1/openapi.json' || pathname === '/api/v1/platform/grant-keys') return true;
 

@@ -15,9 +15,13 @@ describe('Production startup secret validation', () => {
         process.env.NEXT_RUNTIME = 'nodejs';
         process.env.NEXT_PHASE = 'phase-production-build';
         process.env.ORBITOX_ADMIN_TOKEN = 'admin_secret_32_characters_minimum_000';
+        process.env.ORBITOX_ADMIN_TOKEN_SCOPES = 'GET:/api/v1/overview';
         process.env.ORBITOX_RUNTIME_TOKEN = 'runtime_secret_32_characters_minimum_0';
         process.env.ORBITOX_CONTROL_SECRET = 'control_secret_32_characters_minimum_';
         process.env.ORBITOX_GUEST_SECRET = 'guest_secret_32_characters_minimum_00';
+        process.env.ORBITOX_MFA_ENCRYPTION_KEY = Buffer.alloc(32, 1).toString('base64');
+        process.env.ORBITOX_ACCOUNT_TOKEN_ENCRYPTION_KEY = Buffer.alloc(32, 2).toString('base64');
+        process.env.ORBITOX_PUBLIC_BASE_URL = 'https://console.orbitox.io';
         delete process.env.ORBITOX_SERVER_PEPPER;
 
         try {
@@ -72,9 +76,13 @@ describe('Production startup secret validation', () => {
                 NODE_ENV: 'production',
                 NEXT_PHASE: 'phase-production-build',
                 ORBITOX_ADMIN_TOKEN: 'admin_secret_32_characters_minimum_000',
+                ORBITOX_ADMIN_TOKEN_SCOPES: 'GET:/api/v1/overview',
                 ORBITOX_RUNTIME_TOKEN: 'runtime_secret_32_characters_minimum_0',
                 ORBITOX_CONTROL_SECRET: 'control_secret_32_characters_minimum_',
                 ORBITOX_GUEST_SECRET: 'guest_secret_32_characters_minimum_00',
+                ORBITOX_MFA_ENCRYPTION_KEY: Buffer.alloc(32, 1).toString('base64'),
+                ORBITOX_ACCOUNT_TOKEN_ENCRYPTION_KEY: Buffer.alloc(32, 2).toString('base64'),
+                ORBITOX_PUBLIC_BASE_URL: 'https://console.orbitox.io',
                 ORBITOX_SERVER_PEPPER: '',
             },
         });
@@ -90,9 +98,13 @@ describe('Production startup secret validation', () => {
         process.env.NEXT_RUNTIME = 'nodejs';
         delete process.env.NEXT_PHASE;
         process.env.ORBITOX_ADMIN_TOKEN = 'admin_secret_32_characters_minimum_000';
+        process.env.ORBITOX_ADMIN_TOKEN_SCOPES = 'GET:/api/v1/overview';
         process.env.ORBITOX_RUNTIME_TOKEN = 'runtime_secret_32_characters_minimum_0';
         process.env.ORBITOX_CONTROL_SECRET = 'control_secret_32_characters_minimum_';
         process.env.ORBITOX_GUEST_SECRET = 'guest_secret_32_characters_minimum_00';
+        process.env.ORBITOX_MFA_ENCRYPTION_KEY = Buffer.alloc(32, 1).toString('base64');
+        process.env.ORBITOX_ACCOUNT_TOKEN_ENCRYPTION_KEY = Buffer.alloc(32, 2).toString('base64');
+        process.env.ORBITOX_PUBLIC_BASE_URL = 'https://console.orbitox.io';
         process.env.ORBITOX_SERVER_PEPPER = 'server_pepper_32_characters_minimum_';
         process.env.DATABASE_URL = 'postgresql://postgres:postgrespassword@127.0.0.1:5432/orbitox_phase2';
         delete process.env.APP_DATABASE_URL;
@@ -117,9 +129,13 @@ describe('Production startup secret validation', () => {
         process.env.NEXT_RUNTIME = 'nodejs';
         delete process.env.NEXT_PHASE;
         process.env.ORBITOX_ADMIN_TOKEN = 'admin_secret_32_characters_minimum_000';
+        process.env.ORBITOX_ADMIN_TOKEN_SCOPES = 'GET:/api/v1/overview';
         process.env.ORBITOX_RUNTIME_TOKEN = 'runtime_secret_32_characters_minimum_0';
         process.env.ORBITOX_CONTROL_SECRET = 'control_secret_32_characters_minimum_';
         process.env.ORBITOX_GUEST_SECRET = 'guest_secret_32_characters_minimum_00';
+        process.env.ORBITOX_MFA_ENCRYPTION_KEY = Buffer.alloc(32, 1).toString('base64');
+        process.env.ORBITOX_ACCOUNT_TOKEN_ENCRYPTION_KEY = Buffer.alloc(32, 2).toString('base64');
+        process.env.ORBITOX_PUBLIC_BASE_URL = 'https://console.orbitox.io';
         process.env.ORBITOX_SERVER_PEPPER = 'server_pepper_32_characters_minimum_';
         process.env.DATABASE_URL = 'postgresql://postgres:postgrespassword@127.0.0.1:5432/orbitox_phase2';
         process.env.APP_DATABASE_URL = 'postgresql://orbitox_runtime:pwd@127.0.0.1:5432/orbitox_phase2';

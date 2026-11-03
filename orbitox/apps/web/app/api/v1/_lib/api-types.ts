@@ -44,6 +44,7 @@ export interface ApiRequestContext {
   sub?: string;
   apiKey?: string;
   credential?: string;
+  operatorId?: string;
   keyPrefix?: string;
   environment?: 'production' | 'staging' | 'sandbox' | string;
   scopes: string[];
@@ -55,4 +56,3 @@ export interface ApiRequestContext {
   requestId: string;
   startTime: number;
 }
-

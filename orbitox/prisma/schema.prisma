@@ -1390,6 +1390,27 @@ enum PlatformProjectStatus {
   DEPROVISIONING
 }
 
+enum PlatformOperatorRole {
+  PLATFORM_OWNER
+  OPERATOR
+  SUPPORT_READONLY
+  BILLING
+}
+
+enum CustomerMembershipRole {
+  OWNER
+  ADMIN
+  MEMBER
+  BILLING
+}
+
+enum AccountTokenPurpose {
+  VERIFY_EMAIL
+  RESET_PASSWORD
+  INVITE
+  EMAIL_CHANGE
+}
+
 enum EnvironmentTier {
   DEVELOPMENT
   STAGING
@@ -1454,8 +1475,158 @@ model PlatformOrganization {
   updatedAt       DateTime          @updatedAt
 
   projects        PlatformProject[]
+  customerMemberships CustomerMembership[]
+  accountTokens   AccountToken[]
 
   @@index([slug])
+}
+
+model PlatformOperator {
+  id                    String               @id @default(cuid())
+  email                 String
+  passwordHash          String
+  role                  PlatformOperatorRole
+  status                String               @default("ACTIVE")
+  mfaTotpSealed         String
+  failedLogins          Int                  @default(0)
+  failureWindowStartedAt DateTime?            @db.Timestamptz
+  lockedUntil           DateTime?             @db.Timestamptz
+  createdAt             DateTime              @default(now()) @db.Timestamptz
+  updatedAt             DateTime              @updatedAt @db.Timestamptz
+
+  sessions              PlatformOperatorSession[]
+  backupCodes           PlatformOperatorBackupCode[]
+
+  @@index([status])
+}
+
+model PlatformOperatorSession {
+  id                String    @id @default(cuid())
+  operatorId        String
+  tokenHash         String    @unique
+  csrfTokenHash     String
+  createdAt         DateTime  @default(now()) @db.Timestamptz
+  lastSeenAt        DateTime  @default(now()) @db.Timestamptz
+  idleExpiresAt     DateTime  @db.Timestamptz
+  absoluteExpiresAt DateTime  @db.Timestamptz
+  reauthenticatedAt DateTime? @db.Timestamptz
+  revokedAt         DateTime? @db.Timestamptz
+  ipAddress         String?
+  userAgent         String?
+
+  operator PlatformOperator @relation(fields: [operatorId], references: [id], onDelete: Cascade)
+
+  @@index([operatorId, revokedAt])
+  @@index([idleExpiresAt])
+}
+
+model PlatformOperatorBackupCode {
+  operatorId String    @db.Text
+  codeHash   String    @db.Text
+  createdAt  DateTime  @default(now()) @db.Timestamptz
+  usedAt     DateTime? @db.Timestamptz
+
+  operator PlatformOperator @relation(fields: [operatorId], references: [id], onDelete: Cascade)
+
+  @@id([operatorId, codeHash])
+  @@index([operatorId, usedAt])
+}
+
+model CustomerUser {
+  id                    String    @id @default(cuid())
+  email                 String
+  emailVerifiedAt       DateTime? @db.Timestamptz
+  passwordHash          String?
+  mfaTotpSealed         String?
+  mfaTotpPendingSealed  String?
+  status                String    @default("ACTIVE")
+  failedLogins          Int       @default(0)
+  failureWindowStartedAt DateTime? @db.Timestamptz
+  lockedUntil           DateTime? @db.Timestamptz
+  createdAt             DateTime  @default(now()) @db.Timestamptz
+  updatedAt             DateTime  @updatedAt @db.Timestamptz
+
+  memberships CustomerMembership[]
+  tokens      AccountToken[]
+  sessions    CustomerSession[]
+
+  @@index([status])
+}
+
+model CustomerMembership {
+  organizationId String                 @db.Text
+  userId         String                 @db.Text
+  role           CustomerMembershipRole
+  createdAt      DateTime               @default(now()) @db.Timestamptz
+
+  organization PlatformOrganization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  user         CustomerUser         @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([organizationId, userId])
+  @@index([userId, role])
+}
+
+model AccountToken {
+  tokenHash      String            @id
+  purpose        AccountTokenPurpose
+  userId         String?
+  organizationId String?
+  email          String
+  role           CustomerMembershipRole?
+  expiresAt      DateTime          @db.Timestamptz
+  usedAt         DateTime?         @db.Timestamptz
+  createdAt      DateTime          @default(now()) @db.Timestamptz
+
+  user         CustomerUser? @relation(fields: [userId], references: [id], onDelete: Cascade)
+  organization PlatformOrganization? @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([userId, purpose, usedAt])
+  @@index([expiresAt])
+}
+
+model CustomerSession {
+  id                String    @id @default(cuid())
+  userId            String
+  tokenHash         String    @unique
+  csrfTokenHash     String
+  createdAt         DateTime  @default(now()) @db.Timestamptz
+  lastSeenAt        DateTime  @default(now()) @db.Timestamptz
+  idleExpiresAt     DateTime  @db.Timestamptz
+  absoluteExpiresAt DateTime  @db.Timestamptz
+  reauthenticatedAt DateTime? @db.Timestamptz
+  revokedAt         DateTime? @db.Timestamptz
+  ipAddress         String?
+  userAgent         String?
+
+  user CustomerUser @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, revokedAt])
+  @@index([idleExpiresAt])
+}
+
+model AccountAuthRateLimitBucket {
+  scopeType    String
+  scopeId      String
+  windowStart  DateTime @db.Timestamptz
+  requestCount Int      @default(0)
+  expiresAt    DateTime @db.Timestamptz
+
+  @@id([scopeType, scopeId, windowStart])
+  @@index([expiresAt])
+}
+
+model AccountEmailOutbox {
+  id              String    @id @default(cuid())
+  recipient       String
+  template        String
+  encryptedPayload String
+  status          String    @default("PENDING")
+  retryCount      Int       @default(0)
+  lastError       String?
+  createdAt       DateTime  @default(now()) @db.Timestamptz
+  dispatchedAt    DateTime? @db.Timestamptz
+
+  @@index([status, createdAt])
 }
 
 model PlatformProject {
@@ -2177,6 +2348,3 @@ model PlatformOperation {
   @@index([leaseExpiresAt])
   @@unique([organizationId, idempotencyKey])
 }
-
-
-

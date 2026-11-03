@@ -13,10 +13,12 @@ export async function registerNode() {
   if (isProduction) {
     const problems: string[] = [];
     const requiredSecrets = [
-      { name: 'ORBITOX_ADMIN_TOKEN', desc: 'Master credential for control plane & management APIs' },
+      { name: 'ORBITOX_ADMIN_TOKEN', desc: 'Automation-only control-plane service credential' },
       { name: 'ORBITOX_RUNTIME_TOKEN', desc: 'Internal inter-service runtime communication token' },
       { name: 'ORBITOX_CONTROL_SECRET', desc: 'Master HMAC signing secret for internal principal tokens' },
       { name: 'ORBITOX_GUEST_SECRET', desc: 'Cryptographic secret for ephemeral guest session signing' },
+      { name: 'ORBITOX_MFA_ENCRYPTION_KEY', desc: 'Base64-encoded AES-256 key for encrypted MFA secrets' },
+      { name: 'ORBITOX_ACCOUNT_TOKEN_ENCRYPTION_KEY', desc: 'Base64-encoded AES-256 key for encrypted account email tokens' },
       { name: 'RAZORPAY_WEBHOOK_SECRET', desc: 'HMAC SHA-256 secret for authenticating incoming billing webhook events' },
     ];
 
@@ -26,6 +28,21 @@ export async function registerNode() {
         problems.push(`${secret.name} is not set (${secret.desc})`);
       } else if (value.length < 32) {
         problems.push(`${secret.name} must be at least 32 characters (found ${value.length})`);
+      }
+    }
+    if (!process.env.ORBITOX_ADMIN_TOKEN_SCOPES?.split(',').some((scope) => scope.trim())) {
+      problems.push('ORBITOX_ADMIN_TOKEN_SCOPES is not set (automation access must be explicitly scoped by method and path)');
+    }
+    const publicBaseUrl = process.env.ORBITOX_PUBLIC_BASE_URL?.trim();
+    try {
+      if (!publicBaseUrl || new URL(publicBaseUrl).protocol !== 'https:') throw new Error();
+    } catch {
+      problems.push('ORBITOX_PUBLIC_BASE_URL must be a canonical HTTPS URL for account links');
+    }
+    for (const keyName of ['ORBITOX_MFA_ENCRYPTION_KEY', 'ORBITOX_ACCOUNT_TOKEN_ENCRYPTION_KEY']) {
+      const encoded = process.env[keyName]?.trim();
+      if (encoded && Buffer.from(encoded, 'base64').length !== 32) {
+        problems.push(`${keyName} must be a base64-encoded 32-byte key`);
       }
     }
 
@@ -113,6 +130,12 @@ export async function registerNode() {
           problems.push(
             `Database role is unsafe: user="${role?.current_user}", rolsuper=${role?.rolsuper}, rolbypassrls=${role?.rolbypassrls}. Production requires orbitox_runtime with rolsuper=false and rolbypassrls=false.`
           );
+        }
+        const activeOwners = await prisma.platformOperator.count({
+          where: { role: 'PLATFORM_OWNER', status: 'ACTIVE' },
+        });
+        if (activeOwners < 1) {
+          problems.push('No active PLATFORM_OWNER operator exists. Provision one with the operator:bootstrap command.');
         }
       } catch (dbErr: any) {
         problems.push(`Database connection or role check failed: ${dbErr.message}`);

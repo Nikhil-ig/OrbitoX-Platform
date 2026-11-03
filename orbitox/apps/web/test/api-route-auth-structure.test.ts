@@ -10,6 +10,7 @@ import {
     PROTECTED_PAGE_PREFIXES,
     SELF_GUARDED_API_PREFIXES,
 } from '../lib/route-classification';
+import { requiredOperatorRole } from '../lib/operator-route-policy';
 import { middleware } from '../middleware';
 import { NextRequest } from 'next/server';
 
@@ -38,7 +39,7 @@ const middlewareProtectedApiPrefixes = [
     'v1/overview/route.ts',
 ];
 
-const approvedWrappers = /withApiGuard|withHospitalGuard|withRestaurantGuard|withGuestToken|withPublicGuestBootstrap|handleRestaurantPublicRedirect|forwardSignedBridgeCall|verifyBridgeRequest|authorizeApiKey|operationStore/;
+const approvedWrappers = /withApiGuard|withHospitalGuard|withRestaurantGuard|withCustomerAuth|registerCustomer|verifyCustomerEmail|loginCustomer|requestCustomerPasswordReset|resetCustomerPassword|acceptCustomerInvite|getCustomerSession|withGuestToken|withPublicGuestBootstrap|handleRestaurantPublicRedirect|forwardSignedBridgeCall|verifyBridgeRequest|authorizeApiKey|operationStore/;
 
 function listFiles(directory: string, filename: string): string[] {
     if (!fs.existsSync(directory)) return [];
@@ -71,8 +72,16 @@ describe('Route & Page Security Boundary Architecture', () => {
             );
 
             if (isControlPlane) {
-                // Control-plane routes are gated by middleware with ORBITOX_ADMIN_TOKEN / RUNTIME_TOKEN
-                // (and may optionally apply withApiGuard for defense-in-depth)
+                // Every control-plane method must resolve to an explicit operator role policy.
+                const urlPath = `/api/${routePath.replace(/\/route\.ts$/, '')}`;
+                if (!isExplicitPublicRoute(urlPath)) {
+                    const methods = Array.from(source.matchAll(/export\s+(?:async\s+)?function\s+(GET|POST|PUT|PATCH|DELETE|HEAD)\b|export\s+const\s+(GET|POST|PUT|PATCH|DELETE|HEAD)\s*=/g))
+                        .map((match) => match[1] || match[2])
+                        .filter((method): method is string => Boolean(method));
+                    if (methods.length === 0 || methods.some((method) => !requiredOperatorRole(urlPath, method))) {
+                        violations.push(`${routePath} (missing explicit operator role policy for an exported method)`);
+                    }
+                }
                 continue;
             }
 
@@ -121,8 +130,9 @@ describe('Route & Page Security Boundary Architecture', () => {
             const isShopperStorefront = /^\/store\/\[storeSlug\](\/.*)?$/.test(urlPath);
             // Diner customer UI pages
             const isDinerUi = urlPath === '/dine' || urlPath.startsWith('/dine/');
+            const isOperatorLogin = urlPath === '/platform/login';
 
-            const isClassifiedPublic = isShopperStorefront || isDinerUi;
+            const isClassifiedPublic = isShopperStorefront || isDinerUi || isOperatorLogin;
 
             if (isClassifiedPublic) {
                 // Verify that route classification recognizes sample runtime paths as public
@@ -210,14 +220,15 @@ describe('Route & Page Security Boundary Architecture', () => {
                     `Dynamic route ${testPath} must NEVER be classified as explicit public`
                 );
 
-                // 3. Must be intercepted and denied fail-closed by middleware without auth
+                // 3. Must be intercepted and sent to operator sign-in without auth
                 const req = new NextRequest(`http://127.0.0.1:3000${testPath}`);
                 const res = await middleware(req);
                 assert.equal(
                     res.status,
-                    401,
-                    `Unauthenticated request to ${testPath} must return 401 Unauthorized from middleware`
+                    307,
+                    `Unauthenticated request to ${testPath} must redirect to operator sign-in`
                 );
+                assert.equal(new URL(res.headers.get('location')!).pathname, '/platform/login');
             }
         }
     });
@@ -276,5 +287,3 @@ describe('Route & Page Security Boundary Architecture', () => {
         assert.deepEqual(violations, [], `Found in-memory restaurant runtime references: ${violations.join(', ')}`);
     });
 });
-
-

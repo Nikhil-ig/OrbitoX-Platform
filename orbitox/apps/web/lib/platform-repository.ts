@@ -1,5 +1,6 @@
 import * as crypto from 'crypto';
 import { Prisma, PrismaClient } from '@prisma/client';
+import { currentOperatorActor } from './operator-actor-context';
 import {
     EnvironmentQuotaPolicyRecord,
     KeyLifecycleState,
@@ -2571,28 +2572,32 @@ const extraMethods = {
         return { legacy: PlatformRepository.listApiKeys().length };
     },
     recordPlatformAdminAudit: async (event: PlatformAdminAuditInput): Promise<string> => {
-        if (prismaIsRequired()) return getPrismaRepository().recordPlatformAdminAudit(event);
+        const operatorId = event.actorId || currentOperatorActor();
+        const attributedEvent = operatorId ? { ...event, actorId: operatorId } : event;
+        if (prismaIsRequired()) return getPrismaRepository().recordPlatformAdminAudit(attributedEvent);
         const auditId = `audit_${crypto.randomUUID()}`;
-        const operatorId = event.actorId || event.actorEmail || 'system:orchestrator';
+        const auditActorId = attributedEvent.actorId || attributedEvent.actorEmail || 'system:orchestrator';
         PlatformRepository.recordAuditEvent({
-            ...event,
-            actorId: operatorId,
-            operatorId,
-            metadata: { operatorId, ...(event.metadata as any || {}) },
+            ...attributedEvent,
+            actorId: auditActorId,
+            operatorId: auditActorId,
+            metadata: { operatorId: auditActorId, ...(attributedEvent.metadata as any || {}) },
             id: auditId,
             status: 'COMMITTED',
         });
         return auditId;
     },
     createPlatformAdminAuditIntent: async (event: PlatformAdminAuditIntentInput): Promise<string> => {
-        if (prismaIsRequired()) return getPrismaRepository().createPlatformAdminAuditIntent(event);
+        const operatorId = event.actorId || currentOperatorActor();
+        const attributedEvent = operatorId ? { ...event, actorId: operatorId } : event;
+        if (prismaIsRequired()) return getPrismaRepository().createPlatformAdminAuditIntent(attributedEvent);
         const id = `audit_${crypto.randomUUID()}`;
-        const operatorId = event.actorId || event.actorEmail || 'system:orchestrator';
+        const auditActorId = attributedEvent.actorId || attributedEvent.actorEmail || 'system:orchestrator';
         PlatformRepository.recordAuditEvent({
-            ...event,
-            actorId: operatorId,
-            operatorId,
-            metadata: { operatorId, ...(event.metadata as any || {}) },
+            ...attributedEvent,
+            actorId: auditActorId,
+            operatorId: auditActorId,
+            metadata: { operatorId: auditActorId, ...(attributedEvent.metadata as any || {}) },
             id,
             status: 'PENDING',
             failureReason: undefined,

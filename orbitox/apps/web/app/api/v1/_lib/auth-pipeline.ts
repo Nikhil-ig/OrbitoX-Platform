@@ -89,12 +89,53 @@ export function verifyAdminTokenSync(presented: string | null | undefined): bool
   return safeEqualSync(presented, adminToken);
 }
 
+export function adminTokenAllowsRequest(pathname: string, method: string): boolean {
+  const configured = process.env.ORBITOX_ADMIN_TOKEN_SCOPES || '';
+  const normalizedMethod = method.toUpperCase();
+  return configured.split(',').some((rawScope) => {
+    const scope = rawScope.trim();
+    const separator = scope.indexOf(':');
+    if (separator <= 0) return false;
+    const scopedMethod = scope.slice(0, separator).trim().toUpperCase();
+    const scopedPath = scope.slice(separator + 1).trim();
+    if (
+      !['GET', 'HEAD', 'POST', 'PUT', 'PATCH', 'DELETE'].includes(scopedMethod) ||
+      !scopedPath.startsWith('/') ||
+      scopedPath === '/*' ||
+      (scopedPath.includes('*') && !scopedPath.endsWith('/*'))
+    ) return false;
+    if (scopedMethod !== normalizedMethod) return false;
+    return scopedPath.endsWith('/*')
+      ? pathname.startsWith(scopedPath.slice(0, -1))
+      : pathname === scopedPath;
+  });
+}
+
+export async function verifyAdminTokenForRequest(
+  presented: string | null | undefined,
+  pathname: string,
+  method: string,
+): Promise<boolean> {
+  return adminTokenAllowsRequest(pathname, method) && verifyAdminToken(presented);
+}
+
+export function verifyAdminTokenForRequestSync(
+  presented: string | null | undefined,
+  pathname: string,
+  method: string,
+): boolean {
+  return adminTokenAllowsRequest(pathname, method) && verifyAdminTokenSync(presented);
+}
+
 /**
  * Generates an internal cryptographic token proving the request was verified by middleware
  */
-export async function createInternalAuthToken(principal: 'admin' | 'runtime'): Promise<{ signature: string; timestamp: string }> {
+export async function createInternalAuthToken(
+  principal: 'admin' | 'runtime',
+  actorId?: string,
+): Promise<{ signature: string; timestamp: string }> {
   const ts = Date.now().toString();
-  const payload = `${principal}:${ts}`;
+  const payload = actorId ? `${principal}:${ts}:${actorId}` : `${principal}:${ts}`;
   const key = await crypto.subtle.importKey(
     'raw',
     encoder.encode(getInternalSecret()),

@@ -31,18 +31,31 @@ In production (`NODE_ENV=production` or unset), the control plane executes stric
 
 | Variable | Required | Minimum Length | Description |
 |----------|----------|----------------|-------------|
-| `ORBITOX_ADMIN_TOKEN` | **Yes** | 32 chars | Master credential for control plane, admin UI, and management APIs |
+| `ORBITOX_ADMIN_TOKEN` | **Yes** | 32 chars | Automation-only service credential; never used for a person's browser session |
+| `ORBITOX_ADMIN_TOKEN_SCOPES` | **Yes** | `METHOD:/path` | Comma-separated explicit method/path allowlist. No scopes means deny all; global `/*` is rejected. |
 | `ORBITOX_RUNTIME_TOKEN` | **Yes** | 32 chars | Inter-service internal runtime communication and mesh synchronization token |
 | `ORBITOX_CONTROL_SECRET` | **Yes** | 32 chars | HMAC signing secret for trusted internal principal token propagation |
 | `ORBITOX_GUEST_SECRET` | **Yes** | 32 chars | Signing secret for ephemeral diner and guest session tokens |
 | `ORBITOX_SERVER_PEPPERS` | **Yes** | Valid JSON | JSON map of `{id: secret}` for SHA-256 API key verifier hashing (min 32 chars per secret) |
 | `ORBITOX_SERVER_PEPPER` | Legacy | 32 chars | Fallback single pepper if `ORBITOX_SERVER_PEPPERS` is not set |
+| `ORBITOX_MFA_ENCRYPTION_KEY` | **Yes** | Base64, 32 bytes | AES-256-GCM key for operator and customer TOTP secrets |
+| `ORBITOX_ACCOUNT_TOKEN_ENCRYPTION_KEY` | **Yes** | Base64, 32 bytes | AES-256-GCM key for single-use account links queued for email |
+| `ORBITOX_PUBLIC_BASE_URL` | **Yes** | HTTPS URL | Canonical origin for verification, reset, and invite links |
 | `RAZORPAY_WEBHOOK_SECRET` | **Yes** | 32 chars | HMAC SHA-256 secret for authenticating incoming billing webhooks from Razorpay |
 
 *Generate strong 32-character secrets using:*
 ```bash
 openssl rand -hex 32
 ```
+For AES keys, use `openssl rand -base64 32`.
+
+### B.1 Operator and customer accounts
+
+- People sign in at `/platform/login` with an operator account and TOTP or a single-use backup code. Sessions use `HttpOnly`, `Secure` in production, `SameSite=Lax` cookies with a 12-hour absolute lifetime and 30-minute idle lifetime.
+- After applying the account migration, provision the first `PLATFORM_OWNER` from a secure shell with `ORBITOX_OPERATOR_INITIAL_EMAIL`, `ORBITOX_OPERATOR_INITIAL_PASSWORD`, and `ORBITOX_MFA_ENCRYPTION_KEY` set in the environment, then run `pnpm --filter web operator:bootstrap`. The command prints the TOTP enrollment secret and backup codes once; transfer them to the operator securely and remove the bootstrap password from the shell environment.
+- Operator roles are `PLATFORM_OWNER`, `OPERATOR`, `SUPPORT_READONLY`, and `BILLING`. Mutating admin APIs are role-gated; sensitive actions additionally require re-authentication within five minutes.
+- Customer sessions use `HttpOnly`, `Secure` in production, `SameSite=Strict` cookies and require Origin validation plus a double-submit CSRF token for writes. Passwords require 12 characters and a breach check; MFA enrollment is mandatory for organization owners and admins.
+- Customer verification/reset/invite tokens are 256-bit, hash-only in `AccountToken`, purpose-bound, single-use, and expire after 24 hours, 30 minutes, and 7 days respectively. Email payloads hold encrypted links until the transactional email worker is configured.
 
 ---
 
