@@ -1,3 +1,4 @@
+import assert from 'node:assert/strict';
 import { spawn, ChildProcess } from 'node:child_process';
 import crypto from 'node:crypto';
 import path from 'node:path';
@@ -270,13 +271,13 @@ async function run() {
     '/api/v1/restaurant/menu',
     '/api/v1/restaurant/orders',
   ]);
-  const publicCustomerAuthStatuses = new Map([
-    ['/api/v1/customer/auth/accept-invite', 400],
-    ['/api/v1/customer/auth/password-reset/consume', 400],
-    ['/api/v1/customer/auth/password-reset/request', 202],
-    ['/api/v1/customer/auth/signup', 422],
-    ['/api/v1/customer/auth/verify-email', 400],
-  ]);
+  const publicCustomerAuthStatuses: Readonly<Record<string, number>> = {
+    '/api/v1/customer/auth/signup': 422,
+    '/api/v1/customer/auth/verify-email': 400,
+    '/api/v1/customer/auth/password-reset/request': 202,
+    '/api/v1/customer/auth/password-reset/consume': 400,
+    '/api/v1/customer/auth/accept-invite': 400,
+  };
 
   let passed = 0;
   let failed = 0;
@@ -291,11 +292,18 @@ async function run() {
     const relFile = path.relative(apiDir, file);
     const methods = parseMethods(file);
     const urlPath = convertRouteToUrl(file);
+    if (urlPath.startsWith('/api/v1/customer/auth/')) {
+      const expectedStatus = publicCustomerAuthStatuses[urlPath];
+      assert.ok(
+        expectedStatus !== undefined && methods.length === 1 && methods[0] === 'POST',
+        `Customer auth route ${urlPath} must be explicitly classified as a single POST route`,
+      );
+    }
 
     for (const method of methods) {
       const isPublic = publicRoutes.has(urlPath);
       const expectedPublicAuthStatus =
-        method === 'POST' ? publicCustomerAuthStatuses.get(urlPath) : undefined;
+        method === 'POST' ? publicCustomerAuthStatuses[urlPath] : undefined;
       const isPublicCustomerAuth = expectedPublicAuthStatus !== undefined;
       const isWebhook = urlPath.startsWith('/api/v1/billing/webhook');
       const isRestaurantRedirect =
@@ -372,6 +380,47 @@ async function run() {
         );
       }
     }
+  }
+
+  const existingResetEmail = `sweep-reset-${crypto.randomUUID()}@example.invalid`;
+  const missingResetEmail = `missing-${crypto.randomUUID()}@example.invalid`;
+  const existingResetUser = await prisma.customerUser.create({
+    data: {
+      email: existingResetEmail,
+      emailVerifiedAt: new Date(),
+      passwordHash: 'sweep-existing-password-hash',
+    },
+    select: { id: true },
+  });
+  try {
+    const requestReset = async (email: string) => {
+      const response = await fetch(
+        `http://127.0.0.1:${PORT}/api/v1/customer/auth/password-reset/request`,
+        {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ email }),
+        },
+      );
+      return { status: response.status, body: await response.json() };
+    };
+    const existingAccountResponse = await requestReset(existingResetEmail);
+    const missingAccountResponse = await requestReset(missingResetEmail);
+    assert.equal(existingAccountResponse.status, 202);
+    assert.deepEqual(existingAccountResponse, missingAccountResponse);
+    passed++;
+    console.log(
+      'PASS password-reset/request returns identical 202 status and response body for existing and missing emails',
+    );
+  } catch (error) {
+    failed++;
+    console.error(
+      'FAIL password-reset/request response differs for existing and missing emails:',
+      error,
+    );
+  } finally {
+    await prisma.accountEmailOutbox.deleteMany({ where: { recipient: existingResetEmail } });
+    await prisma.customerUser.delete({ where: { id: existingResetUser.id } });
   }
 
   // Part 2: Wrong-Scope Key Sweep (Fix C2 requirement)
