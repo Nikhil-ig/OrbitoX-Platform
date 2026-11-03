@@ -1,13 +1,16 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
+import crypto from 'node:crypto';
 import { PlatformRepository } from '@orbitox-io/plugin-engine';
 import {
   ACCOUNT_TOKEN_TTL_SECONDS,
+  assertPasswordNotBreached,
   assertValidPassword,
   buildAccountLink,
   decryptAccountEmailPayload,
   encryptAccountEmailPayload,
   generateTotpSecret,
+  getTotpStep,
   hashAccountPassword,
   hashAccountToken,
   hashBackupCode,
@@ -21,7 +24,11 @@ import {
 import { adminTokenAllowsRequest } from '../app/api/v1/_lib/auth-pipeline';
 import { currentOperatorActor, withOperatorActor } from '../lib/operator-actor-context';
 import { platformRepository } from '../lib/platform-repository';
-import { operatorRoleAllows, requiredOperatorRole, requiresRecentReauthentication } from '../lib/operator-route-policy';
+import {
+  operatorRoleAllows,
+  requiredOperatorRole,
+  requiresRecentReauthentication,
+} from '../lib/operator-route-policy';
 
 describe('Phase 6 account security primitives', () => {
   it('creates 256-bit purpose-bound tokens with the specified lifetimes and hash-only identifiers', () => {
@@ -54,6 +61,64 @@ describe('Phase 6 account security primitives', () => {
     assert.equal(await verifyAccountPassword(password, 'malformed'), false);
   });
 
+  it('blocks bundled common passwords and uses the local list when the breach API is disabled or unavailable', async () => {
+    const previousMode = process.env.ORBITOX_BREACHED_PASSWORD_API;
+    const previousFetch = globalThis.fetch;
+    const previousError = console.error;
+    let fetchCalled = false;
+    let alert: unknown;
+    try {
+      process.env.ORBITOX_BREACHED_PASSWORD_API = 'off';
+      globalThis.fetch = async () => {
+        fetchCalled = true;
+        throw new Error('The local check should avoid the external service.');
+      };
+      await assert.rejects(assertPasswordNotBreached('123456'), /Choose a password/);
+      assert.equal(fetchCalled, false);
+
+      process.env.ORBITOX_BREACHED_PASSWORD_API = 'on';
+      globalThis.fetch = async () => {
+        throw new TypeError('network unavailable');
+      };
+      console.error = (message?: unknown) => {
+        alert = JSON.parse(String(message));
+      };
+      await assert.doesNotReject(
+        assertPasswordNotBreached('phase6 fallback-only password phrase 9482'),
+      );
+      assert.equal(
+        (alert as { event?: string }).event,
+        'account_security.breached_password_api_fallback',
+      );
+      assert.equal((alert as { reason?: string }).reason, 'unavailable');
+      assert.equal((alert as { severity?: string }).severity, 'HIGH');
+    } finally {
+      restoreEnv('ORBITOX_BREACHED_PASSWORD_API', previousMode);
+      globalThis.fetch = previousFetch;
+      console.error = previousError;
+    }
+  });
+
+  it('still blocks k-anonymity matches when the breach API is reachable', async () => {
+    const previousMode = process.env.ORBITOX_BREACHED_PASSWORD_API;
+    const previousFetch = globalThis.fetch;
+    const password = 'phase6-hibp-confirmed-test-password-9321';
+    try {
+      process.env.ORBITOX_BREACHED_PASSWORD_API = 'on';
+      const sha1 = crypto.createHash('sha1').update(password).digest('hex').toUpperCase();
+      const prefix = sha1.slice(0, 5);
+      const suffix = sha1.slice(5);
+      globalThis.fetch = async (input) => {
+        assert.equal(String(input), `https://api.pwnedpasswords.com/range/${prefix}`);
+        return new Response(`${suffix}:1\r\n`);
+      };
+      await assert.rejects(assertPasswordNotBreached(password), /Choose a password/);
+    } finally {
+      restoreEnv('ORBITOX_BREACHED_PASSWORD_API', previousMode);
+      globalThis.fetch = previousFetch;
+    }
+  });
+
   it('round-trips encrypted TOTP and email payloads; TOTP secrets are never persisted as plaintext', () => {
     const previousMfa = process.env.ORBITOX_MFA_ENCRYPTION_KEY;
     const previousEmail = process.env.ORBITOX_ACCOUNT_TOKEN_ENCRYPTION_KEY;
@@ -77,12 +142,19 @@ describe('Phase 6 account security primitives', () => {
   it('verifies RFC 6238 TOTP codes and issues single-use backup code material', () => {
     const rfcSecret = 'GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ';
     assert.equal(verifyTotp(rfcSecret, '287082', 59_000), true);
+    assert.equal(getTotpStep(rfcSecret, '287082', 59_000), 1);
     assert.equal(verifyTotp(rfcSecret, '287083', 59_000), false);
     const codes = makeBackupCodes();
     assert.equal(codes.length, 10);
     assert.equal(new Set(codes).size, 10);
-    assert.equal(hashBackupCode('operator-1', codes[0]!), hashBackupCode('operator-1', codes[0]!.replace(/-/g, '')));
-    assert.notEqual(hashBackupCode('operator-1', codes[0]!), hashBackupCode('operator-2', codes[0]!));
+    assert.equal(
+      hashBackupCode('operator-1', codes[0]!),
+      hashBackupCode('operator-1', codes[0]!.replace(/-/g, '')),
+    );
+    assert.notEqual(
+      hashBackupCode('operator-1', codes[0]!),
+      hashBackupCode('operator-2', codes[0]!),
+    );
   });
 
   it('restricts automation tokens to configured HTTP method and path scopes', () => {
@@ -101,7 +173,10 @@ describe('Phase 6 account security primitives', () => {
   it('maps all platform role tiers and detects dangerous actions for re-authentication', () => {
     assert.equal(requiredOperatorRole('/api/v1/overview', 'GET'), 'SUPPORT_READONLY');
     assert.equal(requiredOperatorRole('/api/v1/admin/projects', 'POST'), 'OPERATOR');
-    assert.equal(requiredOperatorRole('/api/v1/admin/projects/1/suspend', 'POST'), 'PLATFORM_OWNER');
+    assert.equal(
+      requiredOperatorRole('/api/v1/admin/projects/1/suspend', 'POST'),
+      'PLATFORM_OWNER',
+    );
     assert.equal(requiredOperatorRole('/api/v1/admin/billing/invoices', 'GET'), 'BILLING');
     assert.equal(operatorRoleAllows('OPERATOR', 'SUPPORT_READONLY'), true);
     assert.equal(operatorRoleAllows('SUPPORT_READONLY', 'OPERATOR'), false);
@@ -123,12 +198,16 @@ describe('Phase 6 account security primitives', () => {
     PlatformRepository.setPersistenceEnabled(false);
     const auditMarker = `phase6-actor-${Date.now()}`;
     try {
-      await withOperatorActor('operator-123', () => platformRepository.recordPlatformAdminAudit({
-        action: 'phase6.test.operator_audit',
-        entityType: 'test',
-        entityId: auditMarker,
-      }));
-      const event = PlatformRepository.listAuditEvents().find((audit) => audit.entityId === auditMarker);
+      await withOperatorActor('operator-123', () =>
+        platformRepository.recordPlatformAdminAudit({
+          action: 'phase6.test.operator_audit',
+          entityType: 'test',
+          entityId: auditMarker,
+        }),
+      );
+      const event = PlatformRepository.listAuditEvents().find(
+        (audit) => audit.entityId === auditMarker,
+      );
       assert.equal(event?.actorId, 'operator-123');
       assert.equal(event?.operatorId, 'operator-123');
     } finally {

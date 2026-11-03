@@ -33,6 +33,10 @@ export async function registerNode() {
     if (!process.env.ORBITOX_ADMIN_TOKEN_SCOPES?.split(',').some((scope) => scope.trim())) {
       problems.push('ORBITOX_ADMIN_TOKEN_SCOPES is not set (automation access must be explicitly scoped by method and path)');
     }
+    const breachedPasswordApi = (process.env.ORBITOX_BREACHED_PASSWORD_API || 'on').trim().toLowerCase();
+    if (!['on', 'off'].includes(breachedPasswordApi)) {
+      problems.push('ORBITOX_BREACHED_PASSWORD_API must be set to "on" or "off" when configured');
+    }
     const publicBaseUrl = process.env.ORBITOX_PUBLIC_BASE_URL?.trim();
     try {
       if (!publicBaseUrl || new URL(publicBaseUrl).protocol !== 'https:') throw new Error();

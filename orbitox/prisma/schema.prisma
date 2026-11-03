@@ -1491,6 +1491,7 @@ model PlatformOperator {
   failedLogins          Int                  @default(0)
   failureWindowStartedAt DateTime?            @db.Timestamptz
   lockedUntil           DateTime?             @db.Timestamptz
+  lastTotpStep          Int?
   createdAt             DateTime              @default(now()) @db.Timestamptz
   updatedAt             DateTime              @updatedAt @db.Timestamptz
 
@@ -1543,6 +1544,7 @@ model CustomerUser {
   failedLogins          Int       @default(0)
   failureWindowStartedAt DateTime? @db.Timestamptz
   lockedUntil           DateTime? @db.Timestamptz
+  lastTotpStep          Int?
   createdAt             DateTime  @default(now()) @db.Timestamptz
   updatedAt             DateTime  @updatedAt @db.Timestamptz
 

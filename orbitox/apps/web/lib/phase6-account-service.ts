@@ -1,10 +1,13 @@
 import crypto from 'node:crypto';
-import type { Prisma, PlatformOperatorRole, CustomerMembershipRole, AccountTokenPurpose } from '@prisma/client';
+import type {
+  Prisma,
+  PrismaClient,
+  PlatformOperatorRole,
+  CustomerMembershipRole,
+  AccountTokenPurpose,
+} from '@prisma/client';
 import { prisma } from '@/lib/prisma';
 import {
-  ACCOUNT_LOCKOUT_BASE_MS,
-  ACCOUNT_LOCKOUT_DECAY_MS,
-  ACCOUNT_LOCKOUT_THRESHOLD,
   ACCOUNT_SESSION_ABSOLUTE_MS,
   ACCOUNT_SESSION_IDLE_MS,
   assertPasswordNotBreached,
@@ -13,6 +16,7 @@ import {
   buildAccountLink,
   encryptAccountEmailPayload,
   generateTotpSecret,
+  getTotpStep,
   hashAccountPassword,
   hashAccountToken,
   hashBackupCode,
@@ -22,7 +26,6 @@ import {
   unsealTotpSecret,
   uniformAccountResponse,
   verifyAccountPassword,
-  verifyTotp,
 } from './phase6-account-security';
 
 type Tx = Prisma.TransactionClient;
@@ -41,7 +44,11 @@ export interface CustomerSessionContext {
   emailVerified: boolean;
   mfaEnabled: boolean;
   mfaSetupRequired: boolean;
-  memberships: Array<{ organizationId: string; organizationName: string; role: CustomerMembershipRole }>;
+  memberships: Array<{
+    organizationId: string;
+    organizationName: string;
+    role: CustomerMembershipRole;
+  }>;
   csrfTokenHash: string;
   reauthenticatedAt: Date | null;
 }
@@ -71,7 +78,10 @@ export async function registerCustomer(input: {
 }): Promise<ReturnType<typeof uniformAccountResponse>> {
   const email = assertValidEmail(input.email);
   assertValidPassword(input.password);
-  if ([...input.organizationName.trim()].length < 2 || [...input.organizationName.trim()].length > 120) {
+  if (
+    [...input.organizationName.trim()].length < 2 ||
+    [...input.organizationName.trim()].length > 120
+  ) {
     throw new Error('Organization name must contain 2 to 120 characters.');
   }
   await assertPasswordNotBreached(input.password);
@@ -131,10 +141,18 @@ export async function verifyCustomerEmail(rawToken: string): Promise<boolean> {
   });
 }
 
-export async function requestCustomerPasswordReset(emailInput: string, baseUrl: string): Promise<void> {
+export async function requestCustomerPasswordReset(
+  emailInput: string,
+  baseUrl: string,
+): Promise<void> {
   const email = assertValidEmail(emailInput);
   const user = await prisma.customerUser.findFirst({
-    where: { email, status: { not: 'DELETED' }, emailVerifiedAt: { not: null }, passwordHash: { not: null } },
+    where: {
+      email,
+      status: { not: 'DELETED' },
+      emailVerifiedAt: { not: null },
+      passwordHash: { not: null },
+    },
     select: { id: true },
   });
   if (!user) return;
@@ -149,7 +167,13 @@ export async function requestCustomerPasswordReset(emailInput: string, baseUrl: 
       data: { usedAt: new Date() },
     });
     await tx.accountToken.create({
-      data: { tokenHash: token.tokenHash, purpose: token.purpose, userId: user.id, email, expiresAt: token.expiresAt },
+      data: {
+        tokenHash: token.tokenHash,
+        purpose: token.purpose,
+        userId: user.id,
+        email,
+        expiresAt: token.expiresAt,
+      },
     });
     await tx.accountEmailOutbox.create({
       data: { recipient: email, template: 'RESET_PASSWORD', encryptedPayload },
@@ -194,7 +218,9 @@ export async function inviteCustomerMember(input: {
   });
   if (!organization) throw new Error('Organization not found.');
   const actorMembership = await prisma.customerMembership.findUnique({
-    where: { organizationId_userId: { organizationId: organization.id, userId: input.actorUserId } },
+    where: {
+      organizationId_userId: { organizationId: organization.id, userId: input.actorUserId },
+    },
     select: { role: true },
   });
   if (!actorMembership || !['OWNER', 'ADMIN'].includes(actorMembership.role)) {
@@ -252,7 +278,8 @@ export async function acceptCustomerInvite(input: {
   const passwordHash = input.password ? await hashAccountPassword(input.password) : null;
   return prisma.$transaction(async (tx) => {
     const token = await consumeAccountToken(tx, input.rawToken, 'INVITE');
-    if (!token?.userId || !token.organizationId || !token.role || token.role === 'OWNER') return null;
+    if (!token?.userId || !token.organizationId || !token.role || token.role === 'OWNER')
+      return null;
     const user = await tx.customerUser.findUnique({
       where: { id: token.userId },
       select: { id: true, email: true, passwordHash: true, status: true },
@@ -281,62 +308,82 @@ export async function loginCustomer(input: {
   userAgent?: string;
 }) {
   const email = assertValidEmail(input.email);
+  const user = await prisma.customerUser.findFirst({
+    where: { email, status: { not: 'DELETED' } },
+    select: { id: true, passwordHash: true, status: true, lockedUntil: true },
+  });
+  const candidateHash = user?.passwordHash ?? (await dummyPasswordHash);
+  const passwordValid = await verifyAccountPassword(input.password, candidateHash);
+  const now = new Date();
+  if (!user || (user.lockedUntil && user.lockedUntil > now)) {
+    return { ok: false as const, reason: 'INVALID_CREDENTIALS' as const };
+  }
+  if (!passwordValid || user.status !== 'ACTIVE') {
+    if (!passwordValid && user.status === 'ACTIVE') {
+      await prisma.$transaction((tx) => recordCustomerLoginFailure(tx, user.id, now));
+    }
+    return { ok: false as const, reason: 'INVALID_CREDENTIALS' as const };
+  }
+
   return prisma.$transaction(async (tx) => {
-    const user = await tx.customerUser.findFirst({
-      where: { email, status: { not: 'DELETED' } },
+    const account = await tx.customerUser.findUnique({
+      where: { id: user.id },
       select: {
         id: true,
         email: true,
         emailVerifiedAt: true,
-        passwordHash: true,
         mfaTotpSealed: true,
         status: true,
-        failedLogins: true,
-        failureWindowStartedAt: true,
         lockedUntil: true,
       },
     });
-    const candidateHash = user?.passwordHash ?? (await dummyPasswordHash);
-    const passwordValid = await verifyAccountPassword(input.password, candidateHash);
-    const now = new Date();
-    if (!user) return { ok: false as const, reason: 'INVALID_CREDENTIALS' as const };
-    if (user.lockedUntil && user.lockedUntil > now) {
+    if (
+      !account ||
+      account.status !== 'ACTIVE' ||
+      (account.lockedUntil && account.lockedUntil > now)
+    ) {
       return { ok: false as const, reason: 'INVALID_CREDENTIALS' as const };
     }
-    if (!passwordValid || user.status !== 'ACTIVE') {
-      if (!passwordValid && user.status === 'ACTIVE') await recordCustomerLoginFailure(tx, user, now);
-      return { ok: false as const, reason: 'INVALID_CREDENTIALS' as const };
-    }
-    if (!user.emailVerifiedAt) return { ok: false as const, reason: 'EMAIL_NOT_VERIFIED' as const };
+    if (!account.emailVerifiedAt)
+      return { ok: false as const, reason: 'EMAIL_NOT_VERIFIED' as const };
 
     const memberships = await tx.customerMembership.findMany({
-      where: { userId: user.id },
+      where: { userId: account.id },
       select: { role: true },
     });
-    const mfaRequired = memberships.some((membership) => ['OWNER', 'ADMIN'].includes(membership.role));
-    if (user.mfaTotpSealed) {
-      const secret = unsealTotpSecret(user.mfaTotpSealed);
-      if (!input.totpCode || !verifyTotp(secret, input.totpCode)) {
-        return { ok: false as const, reason: 'MFA_REQUIRED' as const };
+    const mfaRequired = memberships.some((membership) =>
+      ['OWNER', 'ADMIN'].includes(membership.role),
+    );
+    if (account.mfaTotpSealed) {
+      const step = getTotpStep(unsealTotpSecret(account.mfaTotpSealed), input.totpCode || '');
+      const validTotp = step !== null && (await consumeCustomerTotpStep(tx, account.id, step, now));
+      if (!validTotp) {
+        await recordCustomerLoginFailure(tx, account.id, now);
+        return { ok: false as const, reason: 'INVALID_CREDENTIALS' as const };
       }
     }
-    const session = await createCustomerSession(tx, user.id, input);
+    const session = await createCustomerSession(tx, account.id, input);
     await tx.customerUser.update({
-      where: { id: user.id },
+      where: { id: account.id },
       data: { failedLogins: 0, failureWindowStartedAt: null, lockedUntil: null },
     });
     return {
       ok: true as const,
-      userId: user.id,
-      email: user.email,
-      mfaSetupRequired: mfaRequired && !user.mfaTotpSealed,
+      userId: account.id,
+      email: account.email,
+      mfaSetupRequired: mfaRequired && !account.mfaTotpSealed,
       ...session,
     };
   });
 }
 
-export async function setupCustomerMfa(userId: string): Promise<{ secret: string; otpauthUrl: string }> {
-  const user = await prisma.customerUser.findUnique({ where: { id: userId }, select: { email: true } });
+export async function setupCustomerMfa(
+  userId: string,
+): Promise<{ secret: string; otpauthUrl: string }> {
+  const user = await prisma.customerUser.findUnique({
+    where: { id: userId },
+    select: { email: true },
+  });
   if (!user) throw new Error('Customer account not found.');
   const secret = generateTotpSecret();
   await prisma.customerUser.update({
@@ -355,12 +402,22 @@ export async function confirmCustomerMfa(userId: string, code: string): Promise<
     where: { id: userId },
     select: { mfaTotpPendingSealed: true },
   });
-  if (!user?.mfaTotpPendingSealed || !verifyTotp(unsealTotpSecret(user.mfaTotpPendingSealed), code)) return false;
-  await prisma.customerUser.update({
-    where: { id: userId },
-    data: { mfaTotpSealed: user.mfaTotpPendingSealed, mfaTotpPendingSealed: null },
-  });
-  return true;
+  if (!user?.mfaTotpPendingSealed) return false;
+  const step = getTotpStep(unsealTotpSecret(user.mfaTotpPendingSealed), code);
+  if (step === null) return false;
+  const now = new Date();
+  const updated = await prisma.$queryRaw<Array<{ id: string }>>`
+    UPDATE "CustomerUser"
+    SET "mfaTotpSealed" = "mfaTotpPendingSealed",
+        "mfaTotpPendingSealed" = NULL,
+        "lastTotpStep" = ${step},
+        "updatedAt" = ${now}
+    WHERE "id" = ${userId}
+      AND "mfaTotpPendingSealed" = ${user.mfaTotpPendingSealed}
+      AND COALESCE("lastTotpStep", -1) < ${step}
+    RETURNING "id"
+  `;
+  return updated.length === 1;
 }
 
 export async function reauthenticateCustomer(
@@ -372,15 +429,27 @@ export async function reauthenticateCustomer(
     where: { id: session.userId },
     select: { passwordHash: true, mfaTotpSealed: true, status: true },
   });
-  if (!user || user.status !== 'ACTIVE' || !user.passwordHash || !(await verifyAccountPassword(password, user.passwordHash))) {
+  if (
+    !user ||
+    user.status !== 'ACTIVE' ||
+    !user.passwordHash ||
+    !(await verifyAccountPassword(password, user.passwordHash))
+  ) {
     return false;
   }
-  if (user.mfaTotpSealed && (!totpCode || !verifyTotp(unsealTotpSecret(user.mfaTotpSealed), totpCode))) return false;
-  await prisma.customerSession.updateMany({
-    where: { id: session.id, userId: session.userId, revokedAt: null },
-    data: { reauthenticatedAt: new Date() },
+  const now = new Date();
+  return prisma.$transaction(async (tx) => {
+    if (user.mfaTotpSealed) {
+      const step = getTotpStep(unsealTotpSecret(user.mfaTotpSealed), totpCode || '');
+      if (step === null || !(await consumeCustomerTotpStep(tx, session.userId, step, now)))
+        return false;
+    }
+    const updated = await tx.customerSession.updateMany({
+      where: { id: session.id, userId: session.userId, revokedAt: null },
+      data: { reauthenticatedAt: now },
+    });
+    return updated.count === 1;
   });
-  return true;
 }
 
 export async function transferCustomerOwnership(input: {
@@ -388,32 +457,52 @@ export async function transferCustomerOwnership(input: {
   currentOwnerId: string;
   newOwnerId: string;
 }): Promise<void> {
-  if (input.currentOwnerId === input.newOwnerId) throw new Error('Choose a different organization member.');
+  if (input.currentOwnerId === input.newOwnerId)
+    throw new Error('Choose a different organization member.');
   await prisma.$transaction(async (tx) => {
     const [current, next] = await Promise.all([
       tx.customerMembership.findUnique({
-        where: { organizationId_userId: { organizationId: input.organizationId, userId: input.currentOwnerId } },
+        where: {
+          organizationId_userId: {
+            organizationId: input.organizationId,
+            userId: input.currentOwnerId,
+          },
+        },
         select: { role: true },
       }),
       tx.customerMembership.findUnique({
-        where: { organizationId_userId: { organizationId: input.organizationId, userId: input.newOwnerId } },
+        where: {
+          organizationId_userId: { organizationId: input.organizationId, userId: input.newOwnerId },
+        },
         select: { role: true },
       }),
     ]);
-    if (current?.role !== 'OWNER') throw new Error('Only the current organization owner can transfer ownership.');
+    if (current?.role !== 'OWNER')
+      throw new Error('Only the current organization owner can transfer ownership.');
     if (!next) throw new Error('The new owner must already be an organization member.');
     await tx.customerMembership.update({
-      where: { organizationId_userId: { organizationId: input.organizationId, userId: input.newOwnerId } },
+      where: {
+        organizationId_userId: { organizationId: input.organizationId, userId: input.newOwnerId },
+      },
       data: { role: 'OWNER' },
     });
     await tx.customerMembership.update({
-      where: { organizationId_userId: { organizationId: input.organizationId, userId: input.currentOwnerId } },
+      where: {
+        organizationId_userId: {
+          organizationId: input.organizationId,
+          userId: input.currentOwnerId,
+        },
+      },
       data: { role: 'ADMIN' },
     });
   });
 }
 
-export async function createCustomerSession(tx: Tx, userId: string, metadata: { ipAddress: string; userAgent?: string }) {
+export async function createCustomerSession(
+  tx: Tx,
+  userId: string,
+  metadata: { ipAddress: string; userAgent?: string },
+) {
   const tokens = newSessionTokens();
   const now = Date.now();
   const expiresAt = new Date(now + ACCOUNT_SESSION_IDLE_MS);
@@ -439,12 +528,20 @@ export async function createCustomerSessionForUser(
   return prisma.$transaction((tx) => createCustomerSession(tx, userId, metadata));
 }
 
-export async function getCustomerSession(rawToken: string | undefined): Promise<CustomerSessionContext | null> {
+export async function getCustomerSession(
+  rawToken: string | undefined,
+): Promise<CustomerSessionContext | null> {
   if (!rawToken || !/^[A-Za-z0-9_-]{43}$/.test(rawToken)) return null;
   const tokenHash = crypto.createHash('sha256').update(rawToken).digest('hex');
   const session = await prisma.customerSession.findUnique({
     where: { tokenHash },
-    include: { user: { include: { memberships: { include: { organization: { select: { id: true, name: true } } } } } } },
+    include: {
+      user: {
+        include: {
+          memberships: { include: { organization: { select: { id: true, name: true } } } },
+        },
+      },
+    },
   });
   const now = new Date();
   if (
@@ -460,10 +557,14 @@ export async function getCustomerSession(rawToken: string | undefined): Promise<
     where: { id: session.id, revokedAt: null },
     data: {
       lastSeenAt: now,
-      idleExpiresAt: new Date(Math.min(now.getTime() + ACCOUNT_SESSION_IDLE_MS, session.absoluteExpiresAt.getTime())),
+      idleExpiresAt: new Date(
+        Math.min(now.getTime() + ACCOUNT_SESSION_IDLE_MS, session.absoluteExpiresAt.getTime()),
+      ),
     },
   });
-  const isOwnerOrAdmin = session.user.memberships.some((membership) => ['OWNER', 'ADMIN'].includes(membership.role));
+  const isOwnerOrAdmin = session.user.memberships.some((membership) =>
+    ['OWNER', 'ADMIN'].includes(membership.role),
+  );
   return {
     id: session.id,
     userId: session.userId,
@@ -481,7 +582,9 @@ export async function getCustomerSession(rawToken: string | undefined): Promise<
   };
 }
 
-export async function getOperatorSession(rawToken: string | undefined): Promise<OperatorSessionContext | null> {
+export async function getOperatorSession(
+  rawToken: string | undefined,
+): Promise<OperatorSessionContext | null> {
   if (!rawToken || !/^[A-Za-z0-9_-]{43}$/.test(rawToken)) return null;
   const tokenHash = crypto.createHash('sha256').update(rawToken).digest('hex');
   const session = await prisma.platformOperatorSession.findUnique({
@@ -495,13 +598,16 @@ export async function getOperatorSession(rawToken: string | undefined): Promise<
     session.operator.status !== 'ACTIVE' ||
     session.idleExpiresAt <= now ||
     session.absoluteExpiresAt <= now
-  ) return null;
+  )
+    return null;
   if (now.getTime() - session.lastSeenAt.getTime() > 60_000) {
     await prisma.platformOperatorSession.updateMany({
       where: { id: session.id, revokedAt: null },
       data: {
         lastSeenAt: now,
-        idleExpiresAt: new Date(Math.min(now.getTime() + ACCOUNT_SESSION_IDLE_MS, session.absoluteExpiresAt.getTime())),
+        idleExpiresAt: new Date(
+          Math.min(now.getTime() + ACCOUNT_SESSION_IDLE_MS, session.absoluteExpiresAt.getTime()),
+        ),
       },
     });
   }
@@ -523,39 +629,54 @@ export async function loginOperator(input: {
   userAgent?: string;
 }) {
   const email = assertValidEmail(input.email);
+  const operator = await prisma.platformOperator.findFirst({
+    where: { email, status: 'ACTIVE' },
+    select: { id: true, passwordHash: true, lockedUntil: true },
+  });
+  const passwordHash = operator?.passwordHash ?? (await dummyPasswordHash);
+  const passwordValid = await verifyAccountPassword(input.password, passwordHash);
+  const now = new Date();
+  if (!operator || (operator.lockedUntil && operator.lockedUntil > now))
+    return { ok: false as const };
+  if (!passwordValid) {
+    await prisma.$transaction((tx) => recordOperatorLoginFailure(tx, operator.id, now));
+    return { ok: false as const };
+  }
   return prisma.$transaction(async (tx) => {
-    const operator = await tx.platformOperator.findFirst({
-      where: { email, status: 'ACTIVE' },
+    const account = await tx.platformOperator.findUnique({
+      where: { id: operator.id },
       select: {
         id: true,
         email: true,
         passwordHash: true,
         mfaTotpSealed: true,
         role: true,
-        failedLogins: true,
-        failureWindowStartedAt: true,
+        status: true,
         lockedUntil: true,
       },
     });
-    const passwordHash = operator?.passwordHash ?? (await dummyPasswordHash);
-    const passwordValid = await verifyAccountPassword(input.password, passwordHash);
-    const now = new Date();
-    if (!operator) return { ok: false as const };
-    if (operator.lockedUntil && operator.lockedUntil > now) return { ok: false as const };
-    if (!passwordValid) {
-      await recordOperatorLoginFailure(tx, operator, now);
+    if (
+      !account ||
+      account.status !== 'ACTIVE' ||
+      (account.lockedUntil && account.lockedUntil > now)
+    ) {
       return { ok: false as const };
     }
-    const secret = unsealTotpSecret(operator.mfaTotpSealed);
-    if (!verifyTotp(secret, input.totpCode)) {
-      const consumedBackupCode = await consumeOperatorBackupCode(tx, operator.id, input.totpCode);
-      if (!consumedBackupCode) return { ok: false as const };
+    const secret = unsealTotpSecret(account.mfaTotpSealed);
+    const step = getTotpStep(secret, input.totpCode);
+    let validMfa = step !== null && (await consumeOperatorTotpStep(tx, account.id, step, now));
+    if (!validMfa) {
+      validMfa = await consumeOperatorBackupCode(tx, account.id, input.totpCode);
+    }
+    if (!validMfa) {
+      await recordOperatorLoginFailure(tx, account.id, now);
+      return { ok: false as const };
     }
     const tokens = newSessionTokens();
     const absoluteExpiresAt = new Date(now.getTime() + ACCOUNT_SESSION_ABSOLUTE_MS);
     await tx.platformOperatorSession.create({
       data: {
-        operatorId: operator.id,
+        operatorId: account.id,
         tokenHash: tokens.sessionTokenHash,
         csrfTokenHash: tokens.csrfTokenHash,
         idleExpiresAt: new Date(now.getTime() + ACCOUNT_SESSION_IDLE_MS),
@@ -565,10 +686,17 @@ export async function loginOperator(input: {
       },
     });
     await tx.platformOperator.update({
-      where: { id: operator.id },
+      where: { id: account.id },
       data: { failedLogins: 0, failureWindowStartedAt: null, lockedUntil: null },
     });
-    return { ok: true as const, operatorId: operator.id, email: operator.email, role: operator.role, absoluteExpiresAt, ...tokens };
+    return {
+      ok: true as const,
+      operatorId: account.id,
+      email: account.email,
+      role: account.role,
+      absoluteExpiresAt,
+      ...tokens,
+    };
   });
 }
 
@@ -581,21 +709,32 @@ export async function reauthenticateOperator(
     where: { id: session.operatorId },
     select: { passwordHash: true, mfaTotpSealed: true, status: true },
   });
-  if (!operator || operator.status !== 'ACTIVE' || !(await verifyAccountPassword(password, operator.passwordHash))) return false;
-  let validMfa = verifyTotp(unsealTotpSecret(operator.mfaTotpSealed), totpCode);
-  if (!validMfa) {
-    validMfa = await prisma.$transaction((tx) => consumeOperatorBackupCode(tx, session.operatorId, totpCode));
-  }
-  if (!validMfa) return false;
-  await prisma.platformOperatorSession.updateMany({
-    where: { id: session.id, operatorId: session.operatorId, revokedAt: null },
-    data: { reauthenticatedAt: new Date() },
+  if (
+    !operator ||
+    operator.status !== 'ACTIVE' ||
+    !(await verifyAccountPassword(password, operator.passwordHash))
+  )
+    return false;
+  const now = new Date();
+  return prisma.$transaction(async (tx) => {
+    const step = getTotpStep(unsealTotpSecret(operator.mfaTotpSealed), totpCode);
+    let validMfa =
+      step !== null && (await consumeOperatorTotpStep(tx, session.operatorId, step, now));
+    if (!validMfa) validMfa = await consumeOperatorBackupCode(tx, session.operatorId, totpCode);
+    if (!validMfa) return false;
+    const updated = await tx.platformOperatorSession.updateMany({
+      where: { id: session.id, operatorId: session.operatorId, revokedAt: null },
+      data: { reauthenticatedAt: now },
+    });
+    return updated.count === 1;
   });
-  return true;
 }
 
 export async function revokeCustomerSession(sessionId: string): Promise<void> {
-  await prisma.customerSession.updateMany({ where: { id: sessionId, revokedAt: null }, data: { revokedAt: new Date() } });
+  await prisma.customerSession.updateMany({
+    where: { id: sessionId, revokedAt: null },
+    data: { revokedAt: new Date() },
+  });
 }
 
 export async function revokeOperatorSession(sessionId: string): Promise<void> {
@@ -613,7 +752,9 @@ export async function consumeAuthRateLimit(input: {
   const emailScope = input.email ? hashRateLimitEmail(input.email) : undefined;
   const scopes = [
     { type: 'ip', id: input.ipAddress, limit: input.action === 'login' ? 30 : 10 },
-    ...(emailScope ? [{ type: 'email', id: emailScope, limit: input.action === 'login' ? 10 : 5 }] : []),
+    ...(emailScope
+      ? [{ type: 'email', id: emailScope, limit: input.action === 'login' ? 10 : 5 }]
+      : []),
   ];
   const now = new Date();
   const start = new Date(Math.floor(now.getTime() / 60_000) * 60_000);
@@ -621,8 +762,20 @@ export async function consumeAuthRateLimit(input: {
     let denied = false;
     for (const scope of scopes) {
       const row = await tx.accountAuthRateLimitBucket.upsert({
-        where: { scopeType_scopeId_windowStart: { scopeType: scope.type, scopeId: scope.id, windowStart: start } },
-        create: { scopeType: scope.type, scopeId: scope.id, windowStart: start, expiresAt: new Date(start.getTime() + 2 * 60_000), requestCount: 1 },
+        where: {
+          scopeType_scopeId_windowStart: {
+            scopeType: scope.type,
+            scopeId: scope.id,
+            windowStart: start,
+          },
+        },
+        create: {
+          scopeType: scope.type,
+          scopeId: scope.id,
+          windowStart: start,
+          expiresAt: new Date(start.getTime() + 2 * 60_000),
+          requestCount: 1,
+        },
         update: { requestCount: { increment: 1 } },
         select: { requestCount: true },
       });
@@ -630,21 +783,27 @@ export async function consumeAuthRateLimit(input: {
     }
     return denied;
   });
-  return { allowed: !blocked, retryAfterSeconds: Math.max(1, Math.ceil((start.getTime() + 60_000 - now.getTime()) / 1000)) };
+  return {
+    allowed: !blocked,
+    retryAfterSeconds: Math.max(1, Math.ceil((start.getTime() + 60_000 - now.getTime()) / 1000)),
+  };
 }
 
-export async function addOperator(input: {
-  email: string;
-  password: string;
-  role: PlatformOperatorRole;
-  totpSecret: string;
-  backupCodes: string[];
-}) {
+export async function addOperator(
+  input: {
+    email: string;
+    password: string;
+    role: PlatformOperatorRole;
+    totpSecret: string;
+    backupCodes: string[];
+  },
+  database: Pick<PrismaClient, '$transaction'> = prisma,
+) {
   const email = assertValidEmail(input.email);
   assertValidPassword(input.password);
   await assertPasswordNotBreached(input.password);
   const passwordHash = await hashAccountPassword(input.password);
-  return prisma.$transaction(async (tx) => {
+  return database.$transaction(async (tx) => {
     const operator = await tx.platformOperator.create({
       data: {
         email,
@@ -691,44 +850,81 @@ async function consumeAccountToken(tx: Tx, rawToken: string, purpose: AccountTok
   return tx.accountToken.findUnique({ where: { tokenHash } });
 }
 
-async function recordCustomerLoginFailure(
+async function recordCustomerLoginFailure(tx: Tx, userId: string, now: Date) {
+  await incrementAccountLoginFailure(tx, 'CustomerUser', userId, now);
+}
+
+async function recordOperatorLoginFailure(tx: Tx, operatorId: string, now: Date) {
+  await incrementAccountLoginFailure(tx, 'PlatformOperator', operatorId, now);
+}
+
+async function incrementAccountLoginFailure(
   tx: Tx,
-  user: { id: string; failedLogins: number; failureWindowStartedAt: Date | null },
+  table: 'CustomerUser' | 'PlatformOperator',
+  id: string,
   now: Date,
-) {
-  const state = nextFailureState(user.failedLogins, user.failureWindowStartedAt, now);
-  await tx.customerUser.update({
-    where: { id: user.id },
-    data: { failedLogins: state.failedLogins, failureWindowStartedAt: state.windowStartedAt, lockedUntil: state.lockedUntil },
-  });
+): Promise<void> {
+  const expired = `"failureWindowStartedAt" IS NULL OR "failureWindowStartedAt" <= $2 - INTERVAL '24 hours'`;
+  const nextCount = `CASE WHEN ${expired} THEN 1 ELSE "failedLogins" + 1 END`;
+  await tx.$executeRawUnsafe(
+    `
+    UPDATE "${table}"
+    SET "failedLogins" = ${nextCount},
+        "failureWindowStartedAt" = CASE WHEN ${expired} THEN $2 ELSE "failureWindowStartedAt" END,
+        "lockedUntil" = CASE
+          WHEN (${nextCount}) < 5 THEN NULL
+          ELSE $2 + LEAST(
+            INTERVAL '16 hours',
+            INTERVAL '15 minutes' * POWER(
+              2::double precision,
+              GREATEST(0, LEAST(6, (${nextCount}) - 5))
+            )
+          )
+        END,
+        "updatedAt" = $2
+    WHERE "id" = $1
+  `,
+    id,
+    now,
+  );
 }
 
-async function recordOperatorLoginFailure(
+async function consumeCustomerTotpStep(
   tx: Tx,
-  operator: { id: string; failedLogins: number; failureWindowStartedAt: Date | null },
+  userId: string,
+  step: number,
   now: Date,
-) {
-  const state = nextFailureState(operator.failedLogins, operator.failureWindowStartedAt, now);
-  await tx.platformOperator.update({
-    where: { id: operator.id },
-    data: { failedLogins: state.failedLogins, failureWindowStartedAt: state.windowStartedAt, lockedUntil: state.lockedUntil },
-  });
+): Promise<boolean> {
+  const updated = await tx.$queryRaw<Array<{ id: string }>>`
+    UPDATE "CustomerUser"
+    SET "lastTotpStep" = ${step}, "updatedAt" = ${now}
+    WHERE "id" = ${userId} AND COALESCE("lastTotpStep", -1) < ${step}
+    RETURNING "id"
+  `;
+  return updated.length === 1;
 }
 
-function nextFailureState(failures: number, windowStartedAt: Date | null, now: Date) {
-  const expired = !windowStartedAt || now.getTime() - windowStartedAt.getTime() >= ACCOUNT_LOCKOUT_DECAY_MS;
-  const failedLogins = expired ? 1 : failures + 1;
-  const delay = failedLogins < ACCOUNT_LOCKOUT_THRESHOLD
-    ? null
-    : Math.min(16 * 60 * 60 * 1000, ACCOUNT_LOCKOUT_BASE_MS * 2 ** (failedLogins - ACCOUNT_LOCKOUT_THRESHOLD));
-  return {
-    failedLogins,
-    windowStartedAt: expired ? now : windowStartedAt,
-    lockedUntil: delay === null ? null : new Date(now.getTime() + delay),
-  };
+async function consumeOperatorTotpStep(
+  tx: Tx,
+  operatorId: string,
+  step: number,
+  now: Date,
+): Promise<boolean> {
+  const updated = await tx.$queryRaw<Array<{ consumed: boolean }>>`
+    SELECT public.consume_platform_operator_totp_step(
+      ${operatorId},
+      ${step},
+      ${now}
+    ) AS consumed
+  `;
+  return updated[0]?.consumed === true;
 }
 
-async function consumeOperatorBackupCode(tx: Tx, operatorId: string, rawCode: string): Promise<boolean> {
+async function consumeOperatorBackupCode(
+  tx: Tx,
+  operatorId: string,
+  rawCode: string,
+): Promise<boolean> {
   let codeHash: string;
   try {
     codeHash = hashBackupCode(operatorId, rawCode);
@@ -745,9 +941,14 @@ async function consumeOperatorBackupCode(tx: Tx, operatorId: string, rawCode: st
 function hashRateLimitEmail(email: string): string {
   const key = process.env.ORBITOX_SERVER_PEPPER || process.env.ORBITOX_CONTROL_SECRET;
   if (!key && process.env.NODE_ENV === 'production') {
-    throw new Error('ORBITOX_SERVER_PEPPER or ORBITOX_CONTROL_SECRET is required for account rate limits.');
+    throw new Error(
+      'ORBITOX_SERVER_PEPPER or ORBITOX_CONTROL_SECRET is required for account rate limits.',
+    );
   }
-  return crypto.createHmac('sha256', key || 'local-account-rate-limit-only').update(email.trim().toLowerCase()).digest('hex');
+  return crypto
+    .createHmac('sha256', key || 'local-account-rate-limit-only')
+    .update(email.trim().toLowerCase())
+    .digest('hex');
 }
 
 function isUniqueConstraintError(error: unknown): boolean {

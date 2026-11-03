@@ -38,7 +38,8 @@ const REQUIRED_SECRETS = [
   {
     name: 'ORBITOX_ADMIN_TOKEN',
     minLen: 32,
-    purpose: 'Master credential for control plane, admin UI, and management APIs (Bearer or Basic auth)',
+    purpose:
+      'Master credential for control plane, admin UI, and management APIs (Bearer or Basic auth)',
   },
   {
     name: 'ORBITOX_RUNTIME_TOKEN',
@@ -48,17 +49,20 @@ const REQUIRED_SECRETS = [
   {
     name: 'ORBITOX_CONTROL_SECRET',
     minLen: 32,
-    purpose: 'Master HMAC signing secret for trusted internal principal propagation and control-plane commands',
+    purpose:
+      'Master HMAC signing secret for trusted internal principal propagation and control-plane commands',
   },
   {
     name: 'ORBITOX_GUEST_SECRET',
     minLen: 32,
-    purpose: 'Cryptographic secret used to sign and verify ephemeral guest/anonymous session tokens',
+    purpose:
+      'Cryptographic secret used to sign and verify ephemeral guest/anonymous session tokens',
   },
   {
     name: 'ORBITOX_SERVER_PEPPER',
     minLen: 32,
-    purpose: 'Server-side cryptographic pepper combined with raw API keys prior to SHA-256 verifier derivation',
+    purpose:
+      'Server-side cryptographic pepper combined with raw API keys prior to SHA-256 verifier derivation',
   },
   {
     name: 'ORBITOX_MFA_ENCRYPTION_KEY',
@@ -91,11 +95,15 @@ const OPTIONAL_RECOMMENDED = [
 console.log('='.repeat(80));
 console.log('🪐 OrbitoX Production Environment Configuration Check');
 console.log('='.repeat(80));
-console.log(`Node Environment (NODE_ENV) : ${process.env.NODE_ENV || '(empty -> defaults to production)'}`);
+console.log(
+  `Node Environment (NODE_ENV) : ${process.env.NODE_ENV || '(empty -> defaults to production)'}`,
+);
 
 const nodeEnv = (process.env.NODE_ENV || '').trim();
 const isProduction = nodeEnv === 'production' || !nodeEnv;
-console.log(`Security Posture           : ${isProduction ? 'PRODUCTION (Strict Fail-Closed)' : 'DEVELOPMENT'}`);
+console.log(
+  `Security Posture           : ${isProduction ? 'PRODUCTION (Strict Fail-Closed)' : 'DEVELOPMENT'}`,
+);
 console.log('-'.repeat(80));
 
 const errors = [];
@@ -126,28 +134,46 @@ for (const secret of REQUIRED_SECRETS) {
   }
 }
 
-const tokenScopes = process.env.ORBITOX_ADMIN_TOKEN_SCOPES?.split(',').map((scope) => scope.trim()).filter(Boolean) || [];
+const tokenScopes =
+  process.env.ORBITOX_ADMIN_TOKEN_SCOPES?.split(',')
+    .map((scope) => scope.trim())
+    .filter(Boolean) || [];
 if (tokenScopes.length === 0) {
   errors.push({
     name: 'ORBITOX_ADMIN_TOKEN_SCOPES',
     reason: 'NOT SET (the automation token must be restricted to explicit method/path scopes)',
     purpose: 'Comma-separated METHOD:/path scopes; no wildcard method or global path is accepted',
   });
-} else if (tokenScopes.some((scope) => {
-  const separator = scope.indexOf(':');
-  const method = scope.slice(0, separator);
-  const pathname = scope.slice(separator + 1);
-  return separator < 0 ||
-    !['GET', 'HEAD', 'POST', 'PUT', 'PATCH', 'DELETE'].includes(method) ||
-    !pathname.startsWith('/') ||
-    pathname === '/*' ||
-    (pathname.includes('*') && !pathname.endsWith('/*')) ||
-    pathname.startsWith('//');
-})) {
+} else if (
+  tokenScopes.some((scope) => {
+    const separator = scope.indexOf(':');
+    const method = scope.slice(0, separator);
+    const pathname = scope.slice(separator + 1);
+    return (
+      separator < 0 ||
+      !['GET', 'HEAD', 'POST', 'PUT', 'PATCH', 'DELETE'].includes(method) ||
+      !pathname.startsWith('/') ||
+      pathname === '/*' ||
+      (pathname.includes('*') && !pathname.endsWith('/*')) ||
+      pathname.startsWith('//')
+    );
+  })
+) {
   errors.push({
     name: 'ORBITOX_ADMIN_TOKEN_SCOPES',
     reason: 'Contains an invalid method/path scope',
     purpose: 'Use exact paths or a trailing /* under an explicit API prefix',
+  });
+}
+
+const breachedPasswordApi = (process.env.ORBITOX_BREACHED_PASSWORD_API || 'on')
+  .trim()
+  .toLowerCase();
+if (!['on', 'off'].includes(breachedPasswordApi)) {
+  errors.push({
+    name: 'ORBITOX_BREACHED_PASSWORD_API',
+    reason: 'Must be set to "on" or "off"',
+    purpose: 'Controls the optional k-anonymity breach-password range API',
   });
 }
 
@@ -179,9 +205,10 @@ if (isProduction) {
       errors.push({
         name,
         reason: 'NOT SET',
-        purpose: name === 'APP_DATABASE_URL'
-          ? 'Restricted non-owner runtime connection for control-plane persistence'
-          : 'Insert-only connection for organization/project platform audit events',
+        purpose:
+          name === 'APP_DATABASE_URL'
+            ? 'Restricted non-owner runtime connection for control-plane persistence'
+            : 'Insert-only connection for organization/project platform audit events',
       });
     }
   }
@@ -223,6 +250,8 @@ if (errors.length > 0) {
   console.error('  Or initialize your local development environment: node scripts/init-env.mjs\n');
   process.exit(1);
 } else {
-  console.log('\n🎉 SUCCESS: All required production secrets are configured with sufficient entropy.\n');
+  console.log(
+    '\n🎉 SUCCESS: All required production secrets are configured with sufficient entropy.\n',
+  );
   process.exit(0);
 }

@@ -1,4 +1,5 @@
 import crypto from 'node:crypto';
+import localBreachedPasswordHashes from './data/breached-password-hashes.json';
 
 export type AccountTokenPurpose = 'VERIFY_EMAIL' | 'RESET_PASSWORD' | 'INVITE' | 'EMAIL_CHANGE';
 
@@ -46,32 +47,57 @@ export function assertValidPassword(password: string): void {
 
 export async function assertPasswordNotBreached(password: string): Promise<void> {
   const sha1 = crypto.createHash('sha1').update(password, 'utf8').digest('hex').toUpperCase();
+  if (localBreachedPasswordHashes.includes(sha1)) {
+    throw new Error('Choose a password that has not appeared in a data breach.');
+  }
+  const apiMode = (process.env.ORBITOX_BREACHED_PASSWORD_API || 'on').trim().toLowerCase();
+  if (!['on', 'off'].includes(apiMode)) {
+    throw new Error('ORBITOX_BREACHED_PASSWORD_API must be set to "on" or "off".');
+  }
+  if (apiMode === 'off') {
+    reportBreachedPasswordApiFallback('disabled');
+    return;
+  }
+
   const prefix = sha1.slice(0, 5);
   const suffix = sha1.slice(5);
   const abort = new AbortController();
   const timeout = setTimeout(() => abort.abort(), 3000);
-  let response: Response;
-  let body: string;
   try {
-    response = await fetch(`https://api.pwnedpasswords.com/range/${prefix}`, {
+    const response = await fetch(`https://api.pwnedpasswords.com/range/${prefix}`, {
       headers: { 'Add-Padding': 'true' },
       cache: 'no-store',
       signal: abort.signal,
     });
     if (!response.ok) throw new Error(`Password breach check failed with HTTP ${response.status}.`);
-    body = await response.text();
+    const records = (await response.text()).split(/\r?\n/);
+    const breached = records.some((record) => {
+      const [candidate, count] = record.trim().split(':');
+      return candidate?.toUpperCase() === suffix && Number(count) > 0;
+    });
+    if (breached) throw new Error('Choose a password that has not appeared in a data breach.');
   } catch (error) {
-    if (error instanceof Error && error.message.startsWith('Password breach check failed')) throw error;
-    throw new Error('Password breach check is unavailable; try again later.', { cause: error });
+    if (
+      error instanceof Error &&
+      error.message === 'Choose a password that has not appeared in a data breach.'
+    ) {
+      throw error;
+    }
+    reportBreachedPasswordApiFallback('unavailable');
   } finally {
     clearTimeout(timeout);
   }
-  const records = body.split(/\r?\n/);
-  const breached = records.some((record) => {
-    const [candidate, count] = record.trim().split(':');
-    return candidate?.toUpperCase() === suffix && Number(count) > 0;
-  });
-  if (breached) throw new Error('Choose a password that has not appeared in a data breach.');
+}
+
+function reportBreachedPasswordApiFallback(reason: 'disabled' | 'unavailable'): void {
+  console.error(
+    JSON.stringify({
+      event: 'account_security.breached_password_api_fallback',
+      severity: 'HIGH',
+      reason,
+      timestamp: new Date().toISOString(),
+    }),
+  );
 }
 
 export async function hashAccountPassword(password: string): Promise<string> {
@@ -154,7 +180,12 @@ export function sealTotpSecret(secret: string): string {
   const iv = crypto.randomBytes(12);
   const cipher = crypto.createCipheriv('aes-256-gcm', key, iv);
   const ciphertext = Buffer.concat([cipher.update(secret, 'utf8'), cipher.final()]);
-  return ['v1', iv.toString('base64url'), cipher.getAuthTag().toString('base64url'), ciphertext.toString('base64url')].join('.');
+  return [
+    'v1',
+    iv.toString('base64url'),
+    cipher.getAuthTag().toString('base64url'),
+    ciphertext.toString('base64url'),
+  ].join('.');
 }
 
 export function unsealTotpSecret(sealed: string): string {
@@ -162,9 +193,16 @@ export function unsealTotpSecret(sealed: string): string {
   if (version !== 'v1' || !ivText || !tagText || !ciphertextText || extra.length > 0) {
     throw new Error('Invalid encrypted TOTP secret.');
   }
-  const decipher = crypto.createDecipheriv('aes-256-gcm', getMfaEncryptionKey(), Buffer.from(ivText, 'base64url'));
+  const decipher = crypto.createDecipheriv(
+    'aes-256-gcm',
+    getMfaEncryptionKey(),
+    Buffer.from(ivText, 'base64url'),
+  );
   decipher.setAuthTag(Buffer.from(tagText, 'base64url'));
-  return Buffer.concat([decipher.update(Buffer.from(ciphertextText, 'base64url')), decipher.final()]).toString('utf8');
+  return Buffer.concat([
+    decipher.update(Buffer.from(ciphertextText, 'base64url')),
+    decipher.final(),
+  ]).toString('utf8');
 }
 
 function getMfaEncryptionKey(): Buffer {
@@ -178,26 +216,38 @@ function getMfaEncryptionKey(): Buffer {
 }
 
 export function verifyTotp(secret: string, code: string, now = Date.now()): boolean {
-  if (!/^\d{6}$/.test(code)) return false;
+  return getTotpStep(secret, code, now) !== null;
+}
+
+export function getTotpStep(secret: string, code: string, now = Date.now()): number | null {
+  if (!/^\d{6}$/.test(code)) return null;
   const key = decodeBase32(secret);
   const step = Math.floor(now / 30_000);
-  for (const offset of [-1, 0, 1]) {
-    if (step + offset < 0) continue;
+  for (const candidateStep of [step, step - 1, step + 1]) {
+    if (candidateStep < 0) continue;
     const counter = Buffer.alloc(8);
-    counter.writeBigUInt64BE(BigInt(step + offset));
+    counter.writeBigUInt64BE(BigInt(candidateStep));
     const digest = crypto.createHmac('sha1', key).update(counter).digest();
     const index = digest[digest.length - 1]! & 0x0f;
     const binary = digest.readUInt32BE(index) & 0x7fffffff;
     const expected = String(binary % 1_000_000).padStart(6, '0');
-    if (crypto.timingSafeEqual(Buffer.from(expected), Buffer.from(code))) return true;
+    if (crypto.timingSafeEqual(Buffer.from(expected), Buffer.from(code))) return candidateStep;
   }
-  return false;
+  return null;
 }
 
 export function makeBackupCodes(count = 10): string[] {
-  return Array.from({ length: count }, () =>
-    crypto.randomBytes(9).toString('base64url').toUpperCase().replace(/[-_]/g, '').match(/.{1,4}/g)!.join('-'),
-  );
+  const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+  return Array.from({ length: count }, () => {
+    let value = '';
+    while (value.length < 12) {
+      for (const byte of crypto.randomBytes(16)) {
+        if (byte < 252) value += alphabet[byte % alphabet.length];
+        if (value.length === 12) break;
+      }
+    }
+    return value.match(/.{1,4}/g)!.join('-');
+  });
 }
 
 export function hashBackupCode(operatorId: string, code: string): string {
@@ -221,8 +271,16 @@ export function encryptAccountEmailPayload(payload: unknown): string {
   const key = getAccountTokenEncryptionKey();
   const iv = crypto.randomBytes(12);
   const cipher = crypto.createCipheriv('aes-256-gcm', key, iv);
-  const ciphertext = Buffer.concat([cipher.update(JSON.stringify(payload), 'utf8'), cipher.final()]);
-  return ['v1', iv.toString('base64url'), cipher.getAuthTag().toString('base64url'), ciphertext.toString('base64url')].join('.');
+  const ciphertext = Buffer.concat([
+    cipher.update(JSON.stringify(payload), 'utf8'),
+    cipher.final(),
+  ]);
+  return [
+    'v1',
+    iv.toString('base64url'),
+    cipher.getAuthTag().toString('base64url'),
+    ciphertext.toString('base64url'),
+  ].join('.');
 }
 
 export function decryptAccountEmailPayload<T>(sealed: string): T {
@@ -230,7 +288,11 @@ export function decryptAccountEmailPayload<T>(sealed: string): T {
   if (version !== 'v1' || !ivText || !tagText || !ciphertextText || extra.length > 0) {
     throw new Error('Invalid encrypted account email payload.');
   }
-  const decipher = crypto.createDecipheriv('aes-256-gcm', getAccountTokenEncryptionKey(), Buffer.from(ivText, 'base64url'));
+  const decipher = crypto.createDecipheriv(
+    'aes-256-gcm',
+    getAccountTokenEncryptionKey(),
+    Buffer.from(ivText, 'base64url'),
+  );
   decipher.setAuthTag(Buffer.from(tagText, 'base64url'));
   const cleartext = Buffer.concat([
     decipher.update(Buffer.from(ciphertextText, 'base64url')),
@@ -241,7 +303,8 @@ export function decryptAccountEmailPayload<T>(sealed: string): T {
 
 function getAccountTokenEncryptionKey(): Buffer {
   const encoded = process.env.ORBITOX_ACCOUNT_TOKEN_ENCRYPTION_KEY;
-  if (!encoded) throw new Error('ORBITOX_ACCOUNT_TOKEN_ENCRYPTION_KEY is required to queue account emails.');
+  if (!encoded)
+    throw new Error('ORBITOX_ACCOUNT_TOKEN_ENCRYPTION_KEY is required to queue account emails.');
   const key = Buffer.from(encoded, 'base64');
   if (!/^[A-Za-z0-9+/]{43}=$/.test(encoded) || key.length !== 32) {
     throw new Error('ORBITOX_ACCOUNT_TOKEN_ENCRYPTION_KEY must be a base64-encoded 32-byte key.');
