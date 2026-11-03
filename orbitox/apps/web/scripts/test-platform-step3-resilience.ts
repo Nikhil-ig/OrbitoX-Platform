@@ -10,6 +10,12 @@ import {
   REQUIRED_PLATFORM_MIGRATIONS,
 } from '../lib/platform-database-readiness';
 import { classifyDatabaseError } from '../app/api/v1/_lib/api-guard';
+import {
+  createTestOperatorSession,
+  deleteTestOperatorSession,
+  testOperatorHeaders,
+  type TestOperatorSession,
+} from './test-operator-session';
 
 const databaseUrl = process.env.TEST_DATABASE_URL || process.env.DATABASE_URL;
 const runtimeUrl = process.env.APP_DATABASE_URL;
@@ -48,6 +54,8 @@ function seededRandom(): number {
 
 const activeChildren: Set<ChildProcess> = new Set();
 const activeSplitters: Set<http.Server> = new Set();
+let operatorSession: TestOperatorSession | undefined;
+let operatorSessionCreatedAt = 0;
 
 const step3GrantPair = crypto.generateKeyPairSync('ed25519');
 const step3GrantPrivPem = step3GrantPair.privateKey
@@ -223,6 +231,9 @@ async function cleanupAll(): Promise<void> {
       s.close();
     } catch {}
   }
+  if (operatorSession) {
+    await deleteTestOperatorSession(owner, operatorSession.operatorId).catch(() => {});
+  }
   await Promise.all([
     owner.$disconnect().catch(() => {}),
     runtime.$disconnect().catch(() => {}),
@@ -245,6 +256,8 @@ async function main() {
   console.log('🪐 OrbitoX Phase 2, Step 3: PostgreSQL Crash & Transaction Safety Harness');
   console.log(`PRNG Seed: 0x${RANDOM_SEED.toString(16).toUpperCase()} | PostgreSQL 16 Target`);
   console.log('======================================================================\n');
+
+  await currentOperatorHeaders(3300);
 
   const RESILIENCE_ITERS = parseInt(process.env.RESILIENCE_ITERS || '20', 10);
   const MID_OP_ITERS = parseInt(process.env.MID_OP_ITERS || '50', 10);
@@ -294,6 +307,42 @@ async function main() {
     } finally {
       await killProcess(child);
     }
+  }
+
+  async function currentOperatorHeaders(
+    port: number,
+    headers: Record<string, string> = {},
+  ): Promise<Record<string, string>> {
+    if (!operatorSession || Date.now() - operatorSessionCreatedAt > 4 * 60 * 1000) {
+      if (operatorSession) {
+        await deleteTestOperatorSession(owner, operatorSession.operatorId);
+      }
+      operatorSession = await createTestOperatorSession(owner);
+      operatorSessionCreatedAt = Date.now();
+    }
+    return testOperatorHeaders(operatorSession, `http://127.0.0.1:${port}`, headers);
+  }
+
+  async function fetch(
+    input: Parameters<typeof globalThis.fetch>[0],
+    init?: RequestInit,
+  ): Promise<Response> {
+    const requestUrl = new URL(
+      typeof input === 'string' || input instanceof URL ? input : input.url,
+    );
+    if (!requestUrl.pathname.startsWith('/api/v1/admin/')) {
+      return globalThis.fetch(input, init);
+    }
+
+    const headers = new Headers(init?.headers);
+    headers.delete('authorization');
+    return globalThis.fetch(input, {
+      ...init,
+      headers: await currentOperatorHeaders(
+        Number(requestUrl.port),
+        Object.fromEntries(headers.entries()),
+      ),
+    });
   }
 
   async function createAdminKey(

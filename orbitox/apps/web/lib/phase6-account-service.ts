@@ -410,11 +410,11 @@ export async function confirmCustomerMfa(userId: string, code: string): Promise<
     UPDATE "CustomerUser"
     SET "mfaTotpSealed" = "mfaTotpPendingSealed",
         "mfaTotpPendingSealed" = NULL,
-        "lastTotpStep" = ${step},
+        "lastTotpStep" = ${step}::integer,
         "updatedAt" = ${now}
     WHERE "id" = ${userId}
       AND "mfaTotpPendingSealed" = ${user.mfaTotpPendingSealed}
-      AND COALESCE("lastTotpStep", -1) < ${step}
+      AND COALESCE("lastTotpStep", -1) < ${step}::integer
     RETURNING "id"
   `;
   return updated.length === 1;
@@ -897,8 +897,8 @@ async function consumeCustomerTotpStep(
 ): Promise<boolean> {
   const updated = await tx.$queryRaw<Array<{ id: string }>>`
     UPDATE "CustomerUser"
-    SET "lastTotpStep" = ${step}, "updatedAt" = ${now}
-    WHERE "id" = ${userId} AND COALESCE("lastTotpStep", -1) < ${step}
+    SET "lastTotpStep" = ${step}::integer, "updatedAt" = ${now}
+    WHERE "id" = ${userId} AND COALESCE("lastTotpStep", -1) < ${step}::integer
     RETURNING "id"
   `;
   return updated.length === 1;
@@ -912,9 +912,9 @@ async function consumeOperatorTotpStep(
 ): Promise<boolean> {
   const updated = await tx.$queryRaw<Array<{ consumed: boolean }>>`
     SELECT public.consume_platform_operator_totp_step(
-      ${operatorId},
-      ${step},
-      ${now}
+      ${operatorId}::text,
+      ${step}::integer,
+      ${now}::timestamptz
     ) AS consumed
   `;
   return updated[0]?.consumed === true;

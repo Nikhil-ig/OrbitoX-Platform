@@ -119,7 +119,7 @@ describe('Phase 6 account authentication under PostgreSQL runtime privileges', (
     assert.ok(persisted.lockedUntil && persisted.lockedUntil > new Date());
   });
 
-  it('refuses reused operator TOTP and backup codes, including parallel use', async () => {
+  it('operator login accepts a valid TOTP once and refuses reuse through Prisma', async () => {
     const totpOperator = await createOperator();
     const code = totpCode(totpOperator.secret);
     const firstTotp = await loginOperator({
@@ -136,15 +136,15 @@ describe('Phase 6 account authentication under PostgreSQL runtime privileges', (
     });
     assert.equal(firstTotp.ok, true);
     assert.equal(replayedTotp.ok, false);
-    assert.ok(
-      (
-        await owner.platformOperator.findUniqueOrThrow({
-          where: { id: totpOperator.operator.id },
-          select: { lastTotpStep: true },
-        })
-      ).lastTotpStep !== null,
-    );
+    const persistedOperator = await owner.platformOperator.findUniqueOrThrow({
+      where: { id: totpOperator.operator.id },
+      select: { failedLogins: true, lastTotpStep: true },
+    });
+    assert.ok(persistedOperator.lastTotpStep !== null);
+    assert.equal(persistedOperator.failedLogins, 1);
+  });
 
+  it('refuses reused and parallel backup codes', async () => {
     const reusedBackup = await createOperator();
     const firstBackup = await loginOperator({
       email: reusedBackup.operator.email,

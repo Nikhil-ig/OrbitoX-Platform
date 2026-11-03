@@ -9,7 +9,9 @@ import { fileURLToPath } from 'node:url';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-const RESTRICTED_PORTS = new Set([3659, 4045, 5060, 5061, 6000, 6566, 6665, 6666, 6667, 6668, 6669, 6697]);
+const RESTRICTED_PORTS = new Set([
+  3659, 4045, 5060, 5061, 6000, 6566, 6665, 6666, 6667, 6668, 6669, 6697,
+]);
 
 async function allocateSafePort(preferred: number): Promise<number> {
   let port = preferred;
@@ -51,9 +53,10 @@ function findRoutes(dir: string): string[] {
 
 function parseMethods(filePath: string): string[] {
   const code = fs.readFileSync(filePath, 'utf8');
-  return ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'].filter((m) =>
-    new RegExp(`export\\s+(async\\s+)?function\\s+${m}\\b`).test(code) ||
-    new RegExp(`export\\s+const\\s+${m}\\b`).test(code)
+  return ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'].filter(
+    (m) =>
+      new RegExp(`export\\s+(async\\s+)?function\\s+${m}\\b`).test(code) ||
+      new RegExp(`export\\s+const\\s+${m}\\b`).test(code),
   );
 }
 
@@ -77,11 +80,22 @@ async function run() {
 
   const adminToken = crypto.randomBytes(32).toString('hex');
   const serverPepper = crypto.randomBytes(32).toString('hex');
-  const databaseUrl = process.env.TEST_DATABASE_URL || process.env.DATABASE_URL || 'postgresql://apple@127.0.0.1:5432/orbitox_phase2';
-  const runtimeUrl = process.env.APP_DATABASE_URL || 'postgresql://orbitox_runtime:test_runtime_pass@127.0.0.1:5432/orbitox_phase2';
-  const auditUrl = process.env.PLATFORM_AUDIT_DATABASE_URL || 'postgresql://orbitox_platform_admin_audit:test_audit_pass@127.0.0.1:5432/orbitox_phase2';
-  const hmsAuditUrl = process.env.HMS_AUDIT_DATABASE_URL || 'postgresql://hms_audit_reader:test_audit_reader_pass@127.0.0.1:5432/orbitox_phase2';
-  const outboxRelayUrl = process.env.OUTBOX_RELAY_DATABASE_URL || 'postgresql://orbitox_outbox_relay:test_relay_pass@127.0.0.1:5432/orbitox_phase2';
+  const databaseUrl =
+    process.env.TEST_DATABASE_URL ||
+    process.env.DATABASE_URL ||
+    'postgresql://apple@127.0.0.1:5432/orbitox_phase2';
+  const runtimeUrl =
+    process.env.APP_DATABASE_URL ||
+    'postgresql://orbitox_runtime:test_runtime_pass@127.0.0.1:5432/orbitox_phase2';
+  const auditUrl =
+    process.env.PLATFORM_AUDIT_DATABASE_URL ||
+    'postgresql://orbitox_platform_admin_audit:test_audit_pass@127.0.0.1:5432/orbitox_phase2';
+  const hmsAuditUrl =
+    process.env.HMS_AUDIT_DATABASE_URL ||
+    'postgresql://hms_audit_reader:test_audit_reader_pass@127.0.0.1:5432/orbitox_phase2';
+  const outboxRelayUrl =
+    process.env.OUTBOX_RELAY_DATABASE_URL ||
+    'postgresql://orbitox_outbox_relay:test_relay_pass@127.0.0.1:5432/orbitox_phase2';
 
   const grantPair = crypto.generateKeyPairSync('ed25519');
   const grantPrivPem = grantPair.privateKey.export({ type: 'pkcs8', format: 'pem' }).toString();
@@ -136,7 +150,10 @@ async function run() {
   const rawReadOnlySecret = `orb_live_${crypto.randomBytes(24).toString('hex')}`;
   const keyPrefix = rawReadOnlySecret.slice(0, 14);
   const secretFingerprint = crypto.createHash('sha256').update(rawReadOnlySecret).digest('hex');
-  const authVerifier = crypto.createHmac('sha256', serverPepper).update(rawReadOnlySecret).digest('hex');
+  const authVerifier = crypto
+    .createHmac('sha256', serverPepper)
+    .update(rawReadOnlySecret)
+    .digest('hex');
 
   // Seed other organization for cross-org testing
   const otherOrg = await prisma.platformOrganization.create({
@@ -204,15 +221,21 @@ async function run() {
   });
 
   let serverLogs = '';
-  child.stdout?.on('data', (d) => { serverLogs += d.toString(); });
-  child.stderr?.on('data', (d) => { serverLogs += d.toString(); });
+  child.stdout?.on('data', (d) => {
+    serverLogs += d.toString();
+  });
+  child.stderr?.on('data', (d) => {
+    serverLogs += d.toString();
+  });
 
   // Await server readiness
   const start = Date.now();
   let ready = false;
   while (Date.now() - start < 60000) {
     if (child.exitCode !== null) {
-      throw new Error(`Standalone server exited prematurely with code ${child.exitCode}.\nServer output:\n${serverLogs}`);
+      throw new Error(
+        `Standalone server exited prematurely with code ${child.exitCode}.\nServer output:\n${serverLogs}`,
+      );
     }
     try {
       const res = await fetch(`http://127.0.0.1:${PORT}/api/health`);
@@ -227,7 +250,9 @@ async function run() {
   if (!ready) {
     child.kill('SIGKILL');
     await prisma.$disconnect();
-    throw new Error(`Standalone server failed to become ready on port ${PORT}.\nServer output:\n${serverLogs}`);
+    throw new Error(
+      `Standalone server failed to become ready on port ${PORT}.\nServer output:\n${serverLogs}`,
+    );
   }
 
   const routeFiles = findRoutes(apiDir);
@@ -245,12 +270,21 @@ async function run() {
     '/api/v1/restaurant/menu',
     '/api/v1/restaurant/orders',
   ]);
+  const publicCustomerAuthStatuses = new Map([
+    ['/api/v1/customer/auth/accept-invite', 400],
+    ['/api/v1/customer/auth/password-reset/consume', 400],
+    ['/api/v1/customer/auth/password-reset/request', 202],
+    ['/api/v1/customer/auth/signup', 422],
+    ['/api/v1/customer/auth/verify-email', 400],
+  ]);
 
   let passed = 0;
   let failed = 0;
 
   console.log('\n### Part 1: Live Unauthenticated Sweep of Every API Route File (All Methods)\n');
-  console.log('| Route File | Method | URL Path | Status | Expected | Pass/Fail | Security Guard Type |');
+  console.log(
+    '| Route File | Method | URL Path | Status | Expected | Pass/Fail | Security Guard Type |',
+  );
   console.log('|---|---|---|---|---|---|---|');
 
   for (const file of routeFiles) {
@@ -260,13 +294,21 @@ async function run() {
 
     for (const method of methods) {
       const isPublic = publicRoutes.has(urlPath);
+      const expectedPublicAuthStatus =
+        method === 'POST' ? publicCustomerAuthStatuses.get(urlPath) : undefined;
+      const isPublicCustomerAuth = expectedPublicAuthStatus !== undefined;
       const isWebhook = urlPath.startsWith('/api/v1/billing/webhook');
-      const isRestaurantRedirect = urlPath.startsWith('/api/restaurant/') || urlPath.startsWith('/api/v1/restaurant/');
+      const isRestaurantRedirect =
+        urlPath.startsWith('/api/restaurant/') || urlPath.startsWith('/api/v1/restaurant/');
       const expectedDesc = isPublic
-        ? (isRestaurantRedirect ? '308 Redirect' : '200 / 2xx')
-        : isWebhook
-          ? '400 / 401 / 403'
-          : '401 / 403 / 404';
+        ? isRestaurantRedirect
+          ? '308 Redirect'
+          : '200 / 2xx'
+        : isPublicCustomerAuth
+          ? `exactly ${expectedPublicAuthStatus} for invalid unauthenticated input`
+          : isWebhook
+            ? '400 / 401 / 403'
+            : '401 / 403 / 404';
       const isSessionsJoin = urlPath === '/api/restaurant/sessions/join';
 
       try {
@@ -290,7 +332,12 @@ async function run() {
 
         let isPass = false;
         if (isPublic) {
-          isPass = (status >= 200 && status < 300) || status === 308 || (isRestaurantRedirect && (status === 404 || status === 422 || status === 503));
+          isPass =
+            (status >= 200 && status < 300) ||
+            status === 308 ||
+            (isRestaurantRedirect && (status === 404 || status === 422 || status === 503));
+        } else if (isPublicCustomerAuth) {
+          isPass = status === expectedPublicAuthStatus;
         } else if (isWebhook) {
           isPass = status === 400 || status === 401 || status === 403;
         } else {
@@ -302,24 +349,26 @@ async function run() {
 
         const guardType = isPublic
           ? 'Explicit Public Route'
-          : isWebhook
-            ? 'Webhook Signature Guard'
-            : urlPath.startsWith('/api/v1/admin/') ||
-              urlPath.startsWith('/api/v1/platform/') ||
-              urlPath.startsWith('/api/v1/projects/') ||
-              urlPath.startsWith('/api/v1/system/') ||
-              urlPath.startsWith('/api/v1/fleet/') ||
-              urlPath.startsWith('/api/v1/overview/')
-              ? 'Middleware Control-Plane'
-              : 'Route Self-Guarded (withApiGuard)';
+          : isPublicCustomerAuth
+            ? 'Explicit Public Customer Auth Route'
+            : isWebhook
+              ? 'Webhook Signature Guard'
+              : urlPath.startsWith('/api/v1/admin/') ||
+                  urlPath.startsWith('/api/v1/platform/') ||
+                  urlPath.startsWith('/api/v1/projects/') ||
+                  urlPath.startsWith('/api/v1/system/') ||
+                  urlPath.startsWith('/api/v1/fleet/') ||
+                  urlPath.startsWith('/api/v1/overview/')
+                ? 'Middleware Control-Plane'
+                : 'Route Self-Guarded (withApiGuard)';
 
         console.log(
-          `| \`${relFile}\` | **${method}** | \`${urlPath}\` | **${status}** | ${expectedDesc} | ${isPass ? 'PASS' : 'FAIL'} | ${guardType} |`
+          `| \`${relFile}\` | **${method}** | \`${urlPath}\` | **${status}** | ${expectedDesc} | ${isPass ? 'PASS' : 'FAIL'} | ${guardType} |`,
         );
       } catch (err: any) {
         failed++;
         console.log(
-          `| \`${relFile}\` | **${method}** | \`${urlPath}\` | **ERROR** | ${expectedDesc} | FAIL (${err.message}) | Error |`
+          `| \`${relFile}\` | **${method}** | \`${urlPath}\` | **ERROR** | ${expectedDesc} | FAIL (${err.message}) | Error |`,
         );
       }
     }
@@ -327,7 +376,9 @@ async function run() {
 
   // Part 2: Wrong-Scope Key Sweep (Fix C2 requirement)
   console.log('\n### Part 2: Wrong-Scope Authenticated Key Sweep\n');
-  console.log('| Test Scenario | Method | URL Path | Presented Scope | Required Scope | Status | Expected | Pass/Fail |');
+  console.log(
+    '| Test Scenario | Method | URL Path | Presented Scope | Required Scope | Status | Expected | Pass/Fail |',
+  );
   console.log('|---|---|---|---|---|---|---|---|');
 
   const wrongScopeTests: Array<{
@@ -427,19 +478,23 @@ async function run() {
       else failed++;
 
       console.log(
-        `| ${t.scenario} | **${t.method}** | \`${t.urlPath}\` | \`${t.scope}\` | \`${t.required}\` | **${actualStatus}** (${actualCode}) | ${t.expectedStatus} (${t.expectedCode}) | ${isPass ? 'PASS' : 'FAIL'} |`
+        `| ${t.scenario} | **${t.method}** | \`${t.urlPath}\` | \`${t.scope}\` | \`${t.required}\` | **${actualStatus}** (${actualCode}) | ${t.expectedStatus} (${t.expectedCode}) | ${isPass ? 'PASS' : 'FAIL'} |`,
       );
     } catch (err: any) {
       failed++;
       console.log(
-        `| ${t.scenario} | **${t.method}** | \`${t.urlPath}\` | \`${t.scope}\` | \`${t.required}\` | **ERROR** | ${t.expectedStatus} | FAIL (${err.message}) |`
+        `| ${t.scenario} | **${t.method}** | \`${t.urlPath}\` | \`${t.scope}\` | \`${t.required}\` | **ERROR** | ${t.expectedStatus} | FAIL (${err.message}) |`,
       );
     }
   }
 
   // Part 3: Real Standalone Server Tenant Provisioning Gate (Fix N1 requirement)
-  console.log('\n### Part 3: Real Standalone Server Tenant Provisioning Gate (Fix N1 requirement)\n');
-  console.log('| Test Scenario | Method | URL Path | Presented Auth | Expected Status | Status | Pass/Fail |');
+  console.log(
+    '\n### Part 3: Real Standalone Server Tenant Provisioning Gate (Fix N1 requirement)\n',
+  );
+  console.log(
+    '| Test Scenario | Method | URL Path | Presented Auth | Expected Status | Status | Pass/Fail |',
+  );
   console.log('|---|---|---|---|---|---|---|');
 
   // 1. No key -> 401
@@ -447,14 +502,23 @@ async function run() {
     const res = await fetch(`http://127.0.0.1:${PORT}/api/v1/tenants`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ name: 'No Auth Tenant', slug: 'no-auth-tenant', plugins: [{ id: 'hospital-os', plan: 'starter' }] }),
+      body: JSON.stringify({
+        name: 'No Auth Tenant',
+        slug: 'no-auth-tenant',
+        plugins: [{ id: 'hospital-os', plan: 'starter' }],
+      }),
     });
     const isPass = res.status === 401;
-    if (isPass) passed++; else failed++;
-    console.log(`| No API key presented | **POST** | \`/api/v1/tenants\` | None | 401 | **${res.status}** | ${isPass ? 'PASS' : 'FAIL'} |`);
+    if (isPass) passed++;
+    else failed++;
+    console.log(
+      `| No API key presented | **POST** | \`/api/v1/tenants\` | None | 401 | **${res.status}** | ${isPass ? 'PASS' : 'FAIL'} |`,
+    );
   } catch (err: any) {
     failed++;
-    console.log(`| No API key presented | **POST** | \`/api/v1/tenants\` | None | 401 | **ERROR** (${err.message}) | FAIL |`);
+    console.log(
+      `| No API key presented | **POST** | \`/api/v1/tenants\` | None | 401 | **ERROR** (${err.message}) | FAIL |`,
+    );
   }
 
   // 2. Cross-org key -> 403
@@ -465,14 +529,24 @@ async function run() {
         'content-type': 'application/json',
         'x-api-key': rawReadOnlySecret,
       },
-      body: JSON.stringify({ organisation: otherOrg.slug, name: 'Cross Org Tenant', slug: 'cross-org-tenant', plugins: [{ id: 'hospital-os', plan: 'starter' }] }),
+      body: JSON.stringify({
+        organisation: otherOrg.slug,
+        name: 'Cross Org Tenant',
+        slug: 'cross-org-tenant',
+        plugins: [{ id: 'hospital-os', plan: 'starter' }],
+      }),
     });
     const isPass = res.status === 403;
-    if (isPass) passed++; else failed++;
-    console.log(`| Key from another organisation | **POST** | \`/api/v1/tenants\` | Key (Org ${org.slug}) | 403 | **${res.status}** | ${isPass ? 'PASS' : 'FAIL'} |`);
+    if (isPass) passed++;
+    else failed++;
+    console.log(
+      `| Key from another organisation | **POST** | \`/api/v1/tenants\` | Key (Org ${org.slug}) | 403 | **${res.status}** | ${isPass ? 'PASS' : 'FAIL'} |`,
+    );
   } catch (err: any) {
     failed++;
-    console.log(`| Key from another organisation | **POST** | \`/api/v1/tenants\` | Key (Org ${org.slug}) | 403 | **ERROR** (${err.message}) | FAIL |`);
+    console.log(
+      `| Key from another organisation | **POST** | \`/api/v1/tenants\` | Key (Org ${org.slug}) | 403 | **ERROR** (${err.message}) | FAIL |`,
+    );
   }
 
   // 3. Customer API key creates tenant with 202
@@ -483,16 +557,26 @@ async function run() {
         'content-type': 'application/json',
         'x-api-key': rawReadOnlySecret,
       },
-      body: JSON.stringify({ organisation: org.slug, name: 'Standalone Sweep Tenant', slug: `sweep-tenant-${Date.now()}`, plugins: [{ id: 'hospital-os', plan: 'starter' }] }),
+      body: JSON.stringify({
+        organisation: org.slug,
+        name: 'Standalone Sweep Tenant',
+        slug: `sweep-tenant-${Date.now()}`,
+        plugins: [{ id: 'hospital-os', plan: 'starter' }],
+      }),
     });
     const resJson = await res.json().catch(() => ({}));
     const hasSecret = Boolean(resJson.apiKey && resJson.apiKey.secret);
     const isPass = res.status === 202 && hasSecret;
-    if (isPass) passed++; else failed++;
-    console.log(`| Customer API key creates tenant | **POST** | \`/api/v1/tenants\` | Key (Org ${org.slug}) | 202 + apiKey.secret | **${res.status}** (secret: ${hasSecret}) | ${isPass ? 'PASS' : 'FAIL'} |`);
+    if (isPass) passed++;
+    else failed++;
+    console.log(
+      `| Customer API key creates tenant | **POST** | \`/api/v1/tenants\` | Key (Org ${org.slug}) | 202 + apiKey.secret | **${res.status}** (secret: ${hasSecret}) | ${isPass ? 'PASS' : 'FAIL'} |`,
+    );
   } catch (err: any) {
     failed++;
-    console.log(`| Customer API key creates tenant | **POST** | \`/api/v1/tenants\` | Key (Org ${org.slug}) | 202 + apiKey.secret | **ERROR** (${err.message}) | FAIL |`);
+    console.log(
+      `| Customer API key creates tenant | **POST** | \`/api/v1/tenants\` | Key (Org ${org.slug}) | 202 + apiKey.secret | **ERROR** (${err.message}) | FAIL |`,
+    );
   }
 
   console.log(`\n======================================================`);
