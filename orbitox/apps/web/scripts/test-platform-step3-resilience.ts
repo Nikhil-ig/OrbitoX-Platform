@@ -5,17 +5,24 @@ import http from 'node:http';
 import path from 'node:path';
 import { PrismaClient } from '@prisma/client';
 import { Client } from 'pg';
-import { assertPlatformDatabaseReady, REQUIRED_PLATFORM_MIGRATIONS } from '../lib/platform-database-readiness';
+import {
+  assertPlatformDatabaseReady,
+  REQUIRED_PLATFORM_MIGRATIONS,
+} from '../lib/platform-database-readiness';
 import { classifyDatabaseError } from '../app/api/v1/_lib/api-guard';
 
 const databaseUrl = process.env.TEST_DATABASE_URL || process.env.DATABASE_URL;
 const runtimeUrl = process.env.APP_DATABASE_URL;
 const auditUrl = process.env.PLATFORM_AUDIT_DATABASE_URL;
 const maintenanceUrl = process.env.MAINTENANCE_DATABASE_URL;
-const hmsAuditUrl = process.env.HMS_AUDIT_DATABASE_URL || 'postgresql://hms_audit_reader:test_audit_reader_pass@127.0.0.1:5432/orbitox_phase2';
+const hmsAuditUrl =
+  process.env.HMS_AUDIT_DATABASE_URL ||
+  'postgresql://hms_audit_reader:test_audit_reader_pass@127.0.0.1:5432/orbitox_phase2';
 
 if (!databaseUrl || !runtimeUrl || !auditUrl || !maintenanceUrl) {
-  throw new Error('TEST_DATABASE_URL (or DATABASE_URL), APP_DATABASE_URL, PLATFORM_AUDIT_DATABASE_URL, and MAINTENANCE_DATABASE_URL are required.');
+  throw new Error(
+    'TEST_DATABASE_URL (or DATABASE_URL), APP_DATABASE_URL, PLATFORM_AUDIT_DATABASE_URL, and MAINTENANCE_DATABASE_URL are required.',
+  );
 }
 
 function boundedUrl(connectionString: string): string {
@@ -32,7 +39,7 @@ const runtime = new PrismaClient({ datasources: { db: { url: boundedUrl(runtimeU
 const audit = new PrismaClient({ datasources: { db: { url: boundedUrl(auditUrl) } } });
 const maintenance = new PrismaClient({ datasources: { db: { url: boundedUrl(maintenanceUrl) } } });
 
-const RANDOM_SEED = 0x57E93;
+const RANDOM_SEED = 0x57e93;
 let prngState = RANDOM_SEED;
 function seededRandom(): number {
   prngState = (prngState * 1664525 + 1013904223) % 4294967296;
@@ -43,8 +50,12 @@ const activeChildren: Set<ChildProcess> = new Set();
 const activeSplitters: Set<http.Server> = new Set();
 
 const step3GrantPair = crypto.generateKeyPairSync('ed25519');
-const step3GrantPrivPem = step3GrantPair.privateKey.export({ type: 'pkcs8', format: 'pem' }).toString();
-const step3GrantPubPem = step3GrantPair.publicKey.export({ type: 'spki', format: 'pem' }).toString();
+const step3GrantPrivPem = step3GrantPair.privateKey
+  .export({ type: 'pkcs8', format: 'pem' })
+  .toString();
+const step3GrantPubPem = step3GrantPair.publicKey
+  .export({ type: 'spki', format: 'pem' })
+  .toString();
 
 function spawnServer(port: number, envOverrides: Record<string, string> = {}): ChildProcess {
   const standaloneScript = path.resolve(__dirname, '../.next/standalone/apps/web/server.js');
@@ -61,8 +72,11 @@ function spawnServer(port: number, envOverrides: Record<string, string> = {}): C
       ORBITOX_CONTROL_SECRET: crypto.randomBytes(32).toString('hex'),
       ORBITOX_GUEST_SECRET: crypto.randomBytes(32).toString('hex'),
       ORBITOX_SERVER_PEPPER: crypto.randomBytes(32).toString('hex'),
-      ORBITOX_MFA_ENCRYPTION_KEY: process.env.ORBITOX_MFA_ENCRYPTION_KEY || crypto.randomBytes(32).toString('base64'),
-      ORBITOX_ACCOUNT_TOKEN_ENCRYPTION_KEY: process.env.ORBITOX_ACCOUNT_TOKEN_ENCRYPTION_KEY || crypto.randomBytes(32).toString('base64'),
+      ORBITOX_MFA_ENCRYPTION_KEY:
+        process.env.ORBITOX_MFA_ENCRYPTION_KEY || crypto.randomBytes(32).toString('base64'),
+      ORBITOX_ACCOUNT_TOKEN_ENCRYPTION_KEY:
+        process.env.ORBITOX_ACCOUNT_TOKEN_ENCRYPTION_KEY ||
+        crypto.randomBytes(32).toString('base64'),
       ORBITOX_ADMIN_TOKEN_SCOPES: 'GET:/api/*,POST:/api/*,PUT:/api/*,PATCH:/api/*,DELETE:/api/*',
       ORBITOX_PUBLIC_BASE_URL: 'https://console.orbitox.test',
       RAZORPAY_WEBHOOK_SECRET: crypto.randomBytes(32).toString('hex'),
@@ -74,7 +88,10 @@ function spawnServer(port: number, envOverrides: Record<string, string> = {}): C
       PLATFORM_AUDIT_DATABASE_URL: boundedUrl(auditUrl!),
       MAINTENANCE_DATABASE_URL: boundedUrl(maintenanceUrl!),
       HMS_AUDIT_DATABASE_URL: boundedUrl(hmsAuditUrl),
-      OUTBOX_RELAY_DATABASE_URL: boundedUrl(process.env.OUTBOX_RELAY_DATABASE_URL || 'postgresql://orbitox_outbox_relay:test_relay_pass@127.0.0.1:5432/orbitox_phase2'),
+      OUTBOX_RELAY_DATABASE_URL: boundedUrl(
+        process.env.OUTBOX_RELAY_DATABASE_URL ||
+          'postgresql://orbitox_outbox_relay:test_relay_pass@127.0.0.1:5432/orbitox_phase2',
+      ),
       ORBITOX_ENABLE_CRM_PLUGIN: 'true',
       ...envOverrides,
     },
@@ -82,8 +99,12 @@ function spawnServer(port: number, envOverrides: Record<string, string> = {}): C
   });
 
   (child as any).serverLogs = '';
-  child.stdout?.on('data', (c) => { (child as any).serverLogs += c.toString(); });
-  child.stderr?.on('data', (c) => { (child as any).serverLogs += c.toString(); });
+  child.stdout?.on('data', (c) => {
+    (child as any).serverLogs += c.toString();
+  });
+  child.stderr?.on('data', (c) => {
+    (child as any).serverLogs += c.toString();
+  });
 
   activeChildren.add(child);
   child.on('exit', () => activeChildren.delete(child));
@@ -96,7 +117,9 @@ async function waitForServer(child: ChildProcess, port: number, timeoutMs = 2500
   let lastBody: string | undefined;
   while (Date.now() - start < timeoutMs) {
     if (child.exitCode !== null) {
-      throw new Error(`Server on port ${port} exited prematurely with code ${child.exitCode}:\n${(child as any).serverLogs}`);
+      throw new Error(
+        `Server on port ${port} exited prematurely with code ${child.exitCode}:\n${(child as any).serverLogs}`,
+      );
     }
     try {
       const res = await fetch(`http://127.0.0.1:${port}/api/health`);
@@ -108,7 +131,9 @@ async function waitForServer(child: ChildProcess, port: number, timeoutMs = 2500
     }
     await new Promise((r) => setTimeout(r, 100));
   }
-  throw new Error(`Server on port ${port} did not become ready within ${timeoutMs}ms (lastStatus=${lastStatus}, lastBody=${lastBody}). Logs:\n${(child as any).serverLogs}`);
+  throw new Error(
+    `Server on port ${port} did not become ready within ${timeoutMs}ms (lastStatus=${lastStatus}, lastBody=${lastBody}). Logs:\n${(child as any).serverLogs}`,
+  );
 }
 
 async function killProcess(child: ChildProcess): Promise<void> {
@@ -151,7 +176,9 @@ function createRoundRobinSplitter(ports: number[]): Promise<{ server: http.Serve
 
       proxyReq.on('error', (err) => {
         res.writeHead(503, { 'content-type': 'application/json' });
-        res.end(JSON.stringify({ error: { code: 'SPLITTER_TARGET_UNAVAILABLE', message: err.message } }));
+        res.end(
+          JSON.stringify({ error: { code: 'SPLITTER_TARGET_UNAVAILABLE', message: err.message } }),
+        );
       });
 
       req.pipe(proxyReq);
@@ -182,7 +209,9 @@ interface TestReportEntry {
 const reportEntries: TestReportEntry[] = [];
 function recordReport(entry: TestReportEntry) {
   reportEntries.push(entry);
-  console.log(`[${entry.status}] ${entry.category} - ${entry.operation} (${entry.iterations} iters, ${entry.killPoint}): ${entry.dbStateVerified}`);
+  console.log(
+    `[${entry.status}] ${entry.category} - ${entry.operation} (${entry.iterations} iters, ${entry.killPoint}): ${entry.dbStateVerified}`,
+  );
 }
 
 async function cleanupAll(): Promise<void> {
@@ -190,7 +219,9 @@ async function cleanupAll(): Promise<void> {
     await killProcess(child);
   }
   for (const s of activeSplitters) {
-    try { s.close(); } catch {}
+    try {
+      s.close();
+    } catch {}
   }
   await Promise.all([
     owner.$disconnect().catch(() => {}),
@@ -200,8 +231,14 @@ async function cleanupAll(): Promise<void> {
   ]);
 }
 
-process.on('SIGINT', async () => { await cleanupAll(); process.exit(1); });
-process.on('SIGTERM', async () => { await cleanupAll(); process.exit(1); });
+process.on('SIGINT', async () => {
+  await cleanupAll();
+  process.exit(1);
+});
+process.on('SIGTERM', async () => {
+  await cleanupAll();
+  process.exit(1);
+});
 
 async function main() {
   console.log('======================================================================');
@@ -211,13 +248,21 @@ async function main() {
 
   const RESILIENCE_ITERS = parseInt(process.env.RESILIENCE_ITERS || '20', 10);
   const MID_OP_ITERS = parseInt(process.env.MID_OP_ITERS || '50', 10);
-  console.log(`Configured Iterations: RESILIENCE_ITERS=${RESILIENCE_ITERS}, MID_OP_ITERS=${MID_OP_ITERS}\n`);
+  console.log(
+    `Configured Iterations: RESILIENCE_ITERS=${RESILIENCE_ITERS}, MID_OP_ITERS=${MID_OP_ITERS}\n`,
+  );
 
   // Verify PostgreSQL durability settings (Item 9)
   console.log('Checking PostgreSQL durability configuration...');
-  const [syncCommit] = await owner.$queryRaw<Array<{ setting: string }>>`SELECT setting FROM pg_settings WHERE name = 'synchronous_commit'`;
-  const [fsyncSetting] = await owner.$queryRaw<Array<{ setting: string }>>`SELECT setting FROM pg_settings WHERE name = 'fsync'`;
-  const [walLevelSetting] = await owner.$queryRaw<Array<{ setting: string }>>`SELECT setting FROM pg_settings WHERE name = 'wal_level'`;
+  const [syncCommit] = await owner.$queryRaw<
+    Array<{ setting: string }>
+  >`SELECT setting FROM pg_settings WHERE name = 'synchronous_commit'`;
+  const [fsyncSetting] = await owner.$queryRaw<
+    Array<{ setting: string }>
+  >`SELECT setting FROM pg_settings WHERE name = 'fsync'`;
+  const [walLevelSetting] = await owner.$queryRaw<
+    Array<{ setting: string }>
+  >`SELECT setting FROM pg_settings WHERE name = 'wal_level'`;
   console.log(`  synchronous_commit: ${syncCommit?.setting}`);
   console.log(`  fsync:              ${fsyncSetting?.setting}`);
   console.log(`  wal_level:          ${walLevelSetting?.setting}`);
@@ -228,7 +273,9 @@ async function main() {
   // -------------------------------------------------------------------------
   console.log('\n--- Section 1: Post-Response kill -9 Durability (20+ Iterations Each) ---');
 
-  const RESTRICTED_PORTS = new Set([3659, 4045, 5060, 5061, 6000, 6566, 6665, 6666, 6667, 6668, 6669, 6697, 6699]);
+  const RESTRICTED_PORTS = new Set([
+    3659, 4045, 5060, 5061, 6000, 6566, 6665, 6666, 6667, 6668, 6669, 6697, 6699,
+  ]);
   let basePort = 3300;
   function allocatePort(): number {
     let p = basePort++;
@@ -255,7 +302,7 @@ async function main() {
     keyName: string,
     environment = 'production',
     serviceId = 'crm',
-    scopes = ['crm:read', 'crm:write', 'admin']
+    scopes = ['crm:read', 'crm:write', 'admin'],
   ): Promise<{ id: string; keyId: string; rawSecret: string }> {
     const res = await fetch(`http://127.0.0.1:${port}/api/v1/admin/api-keys`, {
       method: 'POST',
@@ -306,13 +353,15 @@ async function main() {
         technicalLead: 'Lead',
         contactEmail: `lead-${suffix}@example.com`,
         environments: {
-          create: [{
-            id: `env_pr_${suffix}`,
-            slug: 'production',
-            name: 'Prod',
-            type: 'PRODUCTION',
-            isProduction: true,
-          }],
+          create: [
+            {
+              id: `env_pr_${suffix}`,
+              slug: 'production',
+              name: 'Prod',
+              type: 'PRODUCTION',
+              isProduction: true,
+            },
+          ],
         },
       },
     });
@@ -378,13 +427,15 @@ async function main() {
         technicalLead: 'Lead',
         contactEmail: `lead-${suffix}@example.com`,
         environments: {
-          create: [{
-            id: `env_rv_${suffix}`,
-            slug: 'production',
-            name: 'Prod',
-            type: 'PRODUCTION',
-            isProduction: true,
-          }],
+          create: [
+            {
+              id: `env_rv_${suffix}`,
+              slug: 'production',
+              name: 'Prod',
+              type: 'PRODUCTION',
+              isProduction: true,
+            },
+          ],
         },
       },
     });
@@ -460,13 +511,15 @@ async function main() {
         technicalLead: 'Lead',
         contactEmail: `lead-${suffix}@example.com`,
         environments: {
-          create: [{
-            id: `env_rot_${suffix}`,
-            slug: 'production',
-            name: 'Prod',
-            type: 'PRODUCTION',
-            isProduction: true,
-          }],
+          create: [
+            {
+              id: `env_rot_${suffix}`,
+              slug: 'production',
+              name: 'Prod',
+              type: 'PRODUCTION',
+              isProduction: true,
+            },
+          ],
         },
       },
     });
@@ -483,14 +536,17 @@ async function main() {
         oldKeyId = keyInfo.id;
 
         // Rotate with zero grace window
-        const rotRes = await fetch(`http://127.0.0.1:${port}/api/v1/admin/api-keys/${oldKeyId}/rotate`, {
-          method: 'POST',
-          headers: {
-            authorization: 'Bearer test_admin_token_super_secret_32_chars_minimum',
-            'content-type': 'application/json',
+        const rotRes = await fetch(
+          `http://127.0.0.1:${port}/api/v1/admin/api-keys/${oldKeyId}/rotate`,
+          {
+            method: 'POST',
+            headers: {
+              authorization: 'Bearer test_admin_token_super_secret_32_chars_minimum',
+              'content-type': 'application/json',
+            },
+            body: JSON.stringify({ graceWindowDays: 0 }),
           },
-          body: JSON.stringify({ graceWindowDays: 0 }),
-        });
+        );
         assert.equal(rotRes.status, 200);
         const rotData = await rotRes.json();
         newRawSecret = rotData.data.rawSecret;
@@ -498,7 +554,11 @@ async function main() {
 
       // Verify on DB: old key is SUSPENDED, new key is ACTIVE
       const dbOldKey = await owner.platformApiKey.findUnique({ where: { id: oldKeyId } });
-      assert.equal(dbOldKey?.status, 'SUSPENDED', 'Correction B2.7: Zero-grace rotation sets status to SUSPENDED');
+      assert.equal(
+        dbOldKey?.status,
+        'SUSPENDED',
+        'Correction B2.7: Zero-grace rotation sets status to SUSPENDED',
+      );
 
       // Verify on new server: old key rejected with 403 KEY_DISABLED, new key accepted with 200
       await withFreshServer(async (port) => {
@@ -558,13 +618,15 @@ async function main() {
         technicalLead: 'Lead',
         contactEmail: `lead-${suffix}@example.com`,
         environments: {
-          create: [{
-            id: `env_grc_${suffix}`,
-            slug: 'production',
-            name: 'Prod',
-            type: 'PRODUCTION',
-            isProduction: true,
-          }],
+          create: [
+            {
+              id: `env_grc_${suffix}`,
+              slug: 'production',
+              name: 'Prod',
+              type: 'PRODUCTION',
+              isProduction: true,
+            },
+          ],
         },
       },
     });
@@ -580,14 +642,17 @@ async function main() {
         oldRawSecret = keyInfo.rawSecret;
         oldKeyId = keyInfo.id;
 
-        const rotRes = await fetch(`http://127.0.0.1:${port}/api/v1/admin/api-keys/${oldKeyId}/rotate`, {
-          method: 'POST',
-          headers: {
-            authorization: 'Bearer test_admin_token_super_secret_32_chars_minimum',
-            'content-type': 'application/json',
+        const rotRes = await fetch(
+          `http://127.0.0.1:${port}/api/v1/admin/api-keys/${oldKeyId}/rotate`,
+          {
+            method: 'POST',
+            headers: {
+              authorization: 'Bearer test_admin_token_super_secret_32_chars_minimum',
+              'content-type': 'application/json',
+            },
+            body: JSON.stringify({ graceWindowDays: 7 }),
           },
-          body: JSON.stringify({ graceWindowDays: 7 }),
-        });
+        );
         assert.equal(rotRes.status, 200);
         const rotData = await rotRes.json();
         newRawSecret = rotData.data.rawSecret;
@@ -655,13 +720,15 @@ async function main() {
           technicalLead: 'Lead',
           contactEmail: `lead-${suffix}-${i}@example.com`,
           environments: {
-            create: [{
-              id: `env_susp_${suffix}_${i}`,
-              slug: 'production',
-              name: 'Prod',
-              type: 'PRODUCTION',
-              isProduction: true,
-            }],
+            create: [
+              {
+                id: `env_susp_${suffix}_${i}`,
+                slug: 'production',
+                name: 'Prod',
+                type: 'PRODUCTION',
+                isProduction: true,
+              },
+            ],
           },
         },
       });
@@ -738,13 +805,15 @@ async function main() {
           technicalLead: 'Lead',
           contactEmail: `lead-${suffix}-${i}@example.com`,
           environments: {
-            create: [{
-              id: `env_ent_${suffix}_${i}`,
-              slug: 'production',
-              name: 'Prod',
-              type: 'PRODUCTION',
-              isProduction: true,
-            }],
+            create: [
+              {
+                id: `env_ent_${suffix}_${i}`,
+                slug: 'production',
+                name: 'Prod',
+                type: 'PRODUCTION',
+                isProduction: true,
+              },
+            ],
           },
         },
       });
@@ -823,13 +892,15 @@ async function main() {
           technicalLead: 'Lead',
           contactEmail: `lead-${suffix}-${i}@example.com`,
           environments: {
-            create: [{
-              id: `env_qta_${suffix}_${i}`,
-              slug: 'production',
-              name: 'Prod',
-              type: 'PRODUCTION',
-              isProduction: true,
-            }],
+            create: [
+              {
+                id: `env_qta_${suffix}_${i}`,
+                slug: 'production',
+                name: 'Prod',
+                type: 'PRODUCTION',
+                isProduction: true,
+              },
+            ],
           },
         },
       });
@@ -907,26 +978,31 @@ async function main() {
           technicalLead: 'Lead',
           contactEmail: `lead-${suffix}-${i}@example.com`,
           environments: {
-            create: [{
-              id: `env_usg_${suffix}_${i}`,
-              slug: 'production',
-              name: 'Prod',
-              type: 'PRODUCTION',
-              isProduction: true,
-            }],
+            create: [
+              {
+                id: `env_usg_${suffix}_${i}`,
+                slug: 'production',
+                name: 'Prod',
+                type: 'PRODUCTION',
+                isProduction: true,
+              },
+            ],
           },
         },
       });
 
       await withFreshServer(async (port) => {
-        const resetRes = await fetch(`http://127.0.0.1:${port}/api/v1/admin/projects/${proj.id}/usage`, {
-          method: 'POST',
-          headers: {
-            authorization: 'Bearer test_admin_token_super_secret_32_chars_minimum',
-            'content-type': 'application/json',
+        const resetRes = await fetch(
+          `http://127.0.0.1:${port}/api/v1/admin/projects/${proj.id}/usage`,
+          {
+            method: 'POST',
+            headers: {
+              authorization: 'Bearer test_admin_token_super_secret_32_chars_minimum',
+              'content-type': 'application/json',
+            },
+            body: JSON.stringify({ action: 'reset' }),
           },
-          body: JSON.stringify({ action: 'reset' }),
-        });
+        );
         if (resetRes.status !== 200) {
           const text = await resetRes.text();
           console.error(`RESET USAGE FAILED with status ${resetRes.status}:`, text);
@@ -987,7 +1063,10 @@ async function main() {
             enabledServices: ['crm'],
           }),
         });
-        assert.ok(provRes.status === 200 || provRes.status === 201, `Provisioning status was ${provRes.status}`);
+        assert.ok(
+          provRes.status === 200 || provRes.status === 201,
+          `Provisioning status was ${provRes.status}`,
+        );
         const data = await provRes.json();
         rootKeySecret = data.data.apiKey.rawKey;
       });
@@ -1012,7 +1091,9 @@ async function main() {
 
       // Cleanup
       await owner.platformApiKey.deleteMany({ where: { environment: { projectId: project.id } } });
-      await owner.environmentQuotaPolicy.deleteMany({ where: { environmentId: { in: project.environments.map(e => e.id) } } });
+      await owner.environmentQuotaPolicy.deleteMany({
+        where: { environmentId: { in: project.environments.map((e) => e.id) } },
+      });
       await owner.projectEnvironment.deleteMany({ where: { projectId: project.id } });
       await owner.platformProject.delete({ where: { id: project.id } });
       await owner.platformOrganization.delete({ where: { id: project.organizationId } });
@@ -1060,9 +1141,12 @@ async function main() {
         },
         (err: any) => {
           const msg = String(err?.message || '');
-          return msg.includes('only orbitox_maintenance may recover stale audit intents') || msg.includes('permission denied');
+          return (
+            msg.includes('only orbitox_maintenance may recover stale audit intents') ||
+            msg.includes('permission denied')
+          );
         },
-        'orbitox_runtime MUST NOT be permitted to recover stale audit intents'
+        'orbitox_runtime MUST NOT be permitted to recover stale audit intents',
       );
 
       // Run recovery function as orbitox_maintenance (MUST succeed)
@@ -1074,13 +1158,19 @@ async function main() {
 
       // Verify row transitioned to FAILED with recovery message
       const check = await owner.platformAuditEvent.findUnique({ where: { id: staleId } });
-      assert.equal(check?.status, 'FAILED', `Stale intent ${staleId} must be transitioned to FAILED`);
+      assert.equal(
+        check?.status,
+        'FAILED',
+        `Stale intent ${staleId} must be transitioned to FAILED`,
+      );
       assert.ok(
         check?.failureReason?.includes('interrupted before the usage transaction committed'),
-        'Failure reason must indicate interrupted transaction recovery'
+        'Failure reason must indicate interrupted transaction recovery',
       );
 
-      await owner.$executeRawUnsafe(`DELETE FROM public."PlatformAuditEvent" WHERE "id" = '${staleId}';`);
+      await owner.$executeRawUnsafe(
+        `DELETE FROM public."PlatformAuditEvent" WHERE "id" = '${staleId}';`,
+      );
     }
 
     recordReport({
@@ -1092,7 +1182,8 @@ async function main() {
       diedAfterCommit: 0,
       retriesOrDiscarded: 0,
       dbStateVerified: 'Stale PENDING intents transitioned to FAILED with reason in PostgreSQL',
-      apiResultVerified: 'recover_stale_platform_audit_intents() successfully cleans interrupted rows',
+      apiResultVerified:
+        'recover_stale_platform_audit_intents() successfully cleans interrupted rows',
       status: 'PASS',
     });
   }
@@ -1103,10 +1194,15 @@ async function main() {
   console.log('\n--- Section 2: Deterministic Mid-Operation Stall & SIGKILL (Correction B1.2) ---');
 
   // Helper to wait for a database query to enter lock-wait state
-  async function waitForTransactionLockWait(querySubstring: string, timeoutMs = 8000): Promise<number> {
+  async function waitForTransactionLockWait(
+    querySubstring: string,
+    timeoutMs = 8000,
+  ): Promise<number> {
     const start = Date.now();
     while (Date.now() - start < timeoutMs) {
-      const waiting = await owner.$queryRaw<Array<{ pid: number; query: string; wait_event: string }>>`
+      const waiting = await owner.$queryRaw<
+        Array<{ pid: number; query: string; wait_event: string }>
+      >`
         SELECT pid, query, wait_event
         FROM pg_stat_activity
         WHERE wait_event_type = 'Lock'
@@ -1119,7 +1215,9 @@ async function main() {
       }
       await new Promise((r) => setTimeout(r, 10));
     }
-    throw new Error(`Transaction matching "${querySubstring}" did not enter Lock wait within ${timeoutMs}ms.`);
+    throw new Error(
+      `Transaction matching "${querySubstring}" did not enter Lock wait within ${timeoutMs}ms.`,
+    );
   }
 
   // 2.1 Deterministic Stall on Rotate (after new key insert, before old key update)
@@ -1145,13 +1243,15 @@ async function main() {
         technicalLead: 'Lead',
         contactEmail: `lead-${suffix}@example.com`,
         environments: {
-          create: [{
-            id: `env_stall_rot_${suffix}`,
-            slug: 'production',
-            name: 'Prod',
-            type: 'PRODUCTION',
-            isProduction: true,
-          }],
+          create: [
+            {
+              id: `env_stall_rot_${suffix}`,
+              slug: 'production',
+              name: 'Prod',
+              type: 'PRODUCTION',
+              isProduction: true,
+            },
+          ],
         },
       },
     });
@@ -1175,7 +1275,9 @@ async function main() {
 
       try {
         await locker.query('BEGIN');
-        await locker.query('SELECT "id" FROM "ProjectEnvironment" WHERE "id" = $1 FOR UPDATE', [`env_stall_rot_${suffix}`]);
+        await locker.query('SELECT "id" FROM "ProjectEnvironment" WHERE "id" = $1 FOR UPDATE', [
+          `env_stall_rot_${suffix}`,
+        ]);
 
         // Launch rotate HTTP request in background without awaiting completion
         fetch(`http://127.0.0.1:${port}/api/v1/admin/api-keys/${oldKeyId}/rotate`, {
@@ -1201,11 +1303,17 @@ async function main() {
       }
 
       // Read database after kill to verify atomicity
-      const postKillKeys = await owner.platformApiKey.findMany({ where: { environment: { projectId: proj.id } } });
+      const postKillKeys = await owner.platformApiKey.findMany({
+        where: { environment: { projectId: proj.id } },
+      });
       // Exactly 1 key should exist (the original key). No half-inserted replacement key!
       assert.equal(postKillKeys.length, i + 1);
       const originalKey = postKillKeys.find((k) => k.id === oldKeyId);
-      assert.equal(originalKey?.status, 'ACTIVE', 'Original key must remain ACTIVE after aborted rotate');
+      assert.equal(
+        originalKey?.status,
+        'ACTIVE',
+        'Original key must remain ACTIVE after aborted rotate',
+      );
     }
 
     recordReport({
@@ -1279,7 +1387,11 @@ async function main() {
 
       // Check database: PlatformProject row MUST NOT exist (rolled back completely!)
       const foundProject = await owner.platformProject.findUnique({ where: { slug: targetSlug } });
-      assert.equal(foundProject, null, 'Project row must be rolled back; zero partial projects survive');
+      assert.equal(
+        foundProject,
+        null,
+        'Project row must be rolled back; zero partial projects survive',
+      );
       const orphanEnvs = await owner.projectEnvironment.findMany({ where: { slug: targetSlug } });
       assert.equal(orphanEnvs.length, 0);
     }
@@ -1321,13 +1433,15 @@ async function main() {
         technicalLead: 'Lead',
         contactEmail: `lead-${suffix}@example.com`,
         environments: {
-          create: [{
-            id: `env_stall_usg_${suffix}`,
-            slug: 'production',
-            name: 'Prod',
-            type: 'PRODUCTION',
-            isProduction: true,
-          }],
+          create: [
+            {
+              id: `env_stall_usg_${suffix}`,
+              slug: 'production',
+              name: 'Prod',
+              type: 'PRODUCTION',
+              isProduction: true,
+            },
+          ],
         },
       },
     });
@@ -1344,7 +1458,9 @@ async function main() {
 
       try {
         await locker.query('BEGIN');
-        await locker.query('SELECT "id" FROM "PlatformProject" WHERE "id" = $1 FOR UPDATE', [proj.id]);
+        await locker.query('SELECT "id" FROM "PlatformProject" WHERE "id" = $1 FOR UPDATE', [
+          proj.id,
+        ]);
 
         // Launch usage update transaction (NO client-supplied auditIntentId, S3-4 compliant!)
         fetch(`http://127.0.0.1:${port}/api/v1/admin/projects/${proj.id}/usage`, {
@@ -1371,7 +1487,11 @@ async function main() {
 
       // Check database: usage transaction rolled back to 50n!
       const dbProj = await owner.platformProject.findUnique({ where: { id: proj.id } });
-      assert.equal(dbProj?.monthlyApiCalls, 50n, 'Usage must roll back to 50n when interrupted before commit');
+      assert.equal(
+        dbProj?.monthlyApiCalls,
+        50n,
+        'Usage must roll back to 50n when interrupted before commit',
+      );
     }
 
     recordReport({
@@ -1532,7 +1652,11 @@ async function main() {
       const matchingProjects = await owner.platformProject.findMany({
         where: { slug: { startsWith: targetSlug } },
       });
-      assert.equal(matchingProjects.length, 1, 'Exactly one project row exists; retry did not create second project');
+      assert.equal(
+        matchingProjects.length,
+        1,
+        'Exactly one project row exists; retry did not create second project',
+      );
     });
 
     recordReport({
@@ -1551,7 +1675,9 @@ async function main() {
     // Cleanup
     const createdProject = await owner.platformProject.findUnique({ where: { slug: targetSlug } });
     if (createdProject) {
-      await owner.platformApiKey.deleteMany({ where: { environment: { projectId: createdProject.id } } });
+      await owner.platformApiKey.deleteMany({
+        where: { environment: { projectId: createdProject.id } },
+      });
       await owner.projectEnvironment.deleteMany({ where: { projectId: createdProject.id } });
       await owner.platformProject.delete({ where: { id: createdProject.id } });
       await owner.platformOrganization.delete({ where: { id: createdProject.organizationId } });
@@ -1561,7 +1687,9 @@ async function main() {
   // -------------------------------------------------------------------------
   // SECTION 4 & B2.6: Two Servers Behind A Splitter (No Process-Local Caching)
   // -------------------------------------------------------------------------
-  console.log('\n--- Section 4: Two Servers Behind Splitter for Immediate Effect (Correction B2.6) ---');
+  console.log(
+    '\n--- Section 4: Two Servers Behind Splitter for Immediate Effect (Correction B2.6) ---',
+  );
   {
     const portA = allocatePort();
     const portB = allocatePort();
@@ -1569,7 +1697,10 @@ async function main() {
     const serverB = spawnServer(portB);
     await Promise.all([waitForServer(serverA, portA), waitForServer(serverB, portB)]);
 
-    const { server: splitterServer, port: splitterPort } = await createRoundRobinSplitter([portA, portB]);
+    const { server: splitterServer, port: splitterPort } = await createRoundRobinSplitter([
+      portA,
+      portB,
+    ]);
 
     const suffix = randomUUID();
     const org = await owner.platformOrganization.create({
@@ -1592,13 +1723,15 @@ async function main() {
         technicalLead: 'Lead',
         contactEmail: `lead-${suffix}@example.com`,
         environments: {
-          create: [{
-            id: `env_split_${suffix}`,
-            slug: 'production',
-            name: 'Prod',
-            type: 'PRODUCTION',
-            isProduction: true,
-          }],
+          create: [
+            {
+              id: `env_split_${suffix}`,
+              slug: 'production',
+              name: 'Prod',
+              type: 'PRODUCTION',
+              isProduction: true,
+            },
+          ],
         },
       },
     });
@@ -1609,8 +1742,12 @@ async function main() {
     const keyId = keyInfo.id;
 
     // Both servers accept the key
-    const preCheck1 = await fetch(`http://127.0.0.1:${portA}/api/v1/crm/leads`, { headers: { 'x-api-key': rawSecret } });
-    const preCheck2 = await fetch(`http://127.0.0.1:${portB}/api/v1/crm/leads`, { headers: { 'x-api-key': rawSecret } });
+    const preCheck1 = await fetch(`http://127.0.0.1:${portA}/api/v1/crm/leads`, {
+      headers: { 'x-api-key': rawSecret },
+    });
+    const preCheck2 = await fetch(`http://127.0.0.1:${portB}/api/v1/crm/leads`, {
+      headers: { 'x-api-key': rawSecret },
+    });
     assert.equal(preCheck1.status, 200);
     assert.equal(preCheck2.status, 200);
 
@@ -1624,14 +1761,20 @@ async function main() {
     // IMMEDIATELY (0 sleep) blast 50 concurrent requests through the round-robin splitter
     // Exactly half of these hit Server B, which never saw the revocation request!
     const blastPromises = Array.from({ length: 50 }, () =>
-      fetch(`http://127.0.0.1:${splitterPort}/api/v1/crm/leads`, { headers: { 'x-api-key': rawSecret } })
+      fetch(`http://127.0.0.1:${splitterPort}/api/v1/crm/leads`, {
+        headers: { 'x-api-key': rawSecret },
+      }),
     );
     const blastResults = await Promise.all(blastPromises);
 
     const allowedCount = blastResults.filter((r) => r.status === 200).length;
     const deniedCount = blastResults.filter((r) => r.status === 403).length;
 
-    assert.equal(allowedCount, 0, 'Zero requests may be allowed by Server B after revocation on Server A');
+    assert.equal(
+      allowedCount,
+      0,
+      'Zero requests may be allowed by Server B after revocation on Server A',
+    );
     assert.equal(deniedCount, 50, 'All 50 requests across both servers must be rejected with 403');
 
     recordReport({
@@ -1643,7 +1786,8 @@ async function main() {
       diedAfterCommit: 0,
       retriesOrDiscarded: 0,
       dbStateVerified: 'Key status = REVOKED in PostgreSQL',
-      apiResultVerified: '0/50 allowed, 50/50 returned 403 KEY_DISABLED across both server processes',
+      apiResultVerified:
+        '0/50 allowed, 50/50 returned 403 KEY_DISABLED across both server processes',
       status: 'PASS',
     });
 
@@ -1672,7 +1816,11 @@ async function main() {
     await withFreshServer(async (port) => {
       // 1. Baseline healthy health check (200)
       const healthRes = await fetch(`http://127.0.0.1:${port}/api/health`);
-      assert.equal(healthRes.status, 200, 'Health endpoint must return 200 when partition runway >= 3');
+      assert.equal(
+        healthRes.status,
+        200,
+        'Health endpoint must return 200 when partition runway >= 3',
+      );
       const healthData = await healthRes.json();
       assert.equal(healthData.ok, true);
 
@@ -1687,7 +1835,11 @@ async function main() {
       try {
         // Health endpoint MUST return 503 while migration is tampered/rolled back
         const tamperedRes = await fetch(`http://127.0.0.1:${port}/api/health`);
-        assert.equal(tamperedRes.status, 503, 'Health endpoint must return 503 when a required migration is rolled back or tampered');
+        assert.equal(
+          tamperedRes.status,
+          503,
+          'Health endpoint must return 503 when a required migration is rolled back or tampered',
+        );
         const tamperedBody = await tamperedRes.json();
         assert.equal(tamperedBody.ok, false);
       } finally {
@@ -1701,7 +1853,11 @@ async function main() {
 
       // 4. Verify health returns 200 on the SAME server WITHOUT restart
       const restoredRes = await fetch(`http://127.0.0.1:${port}/api/health`);
-      assert.equal(restoredRes.status, 200, 'Health endpoint must return 200 without restart once migration is restored');
+      assert.equal(
+        restoredRes.status,
+        200,
+        'Health endpoint must return 200 without restart once migration is restored',
+      );
       const restoredBody = await restoredRes.json();
       assert.equal(restoredBody.ok, true);
     });
@@ -1710,7 +1866,11 @@ async function main() {
     const [readyCheckForThreshold] = await runtime.$queryRaw<Array<{ ready: boolean }>>`
       SELECT public.platform_rate_limit_partitions_ready(2000) AS ready
     `;
-    assert.equal(readyCheckForThreshold?.ready, false, 'Demanding 2000 future days must report ready = false');
+    assert.equal(
+      readyCheckForThreshold?.ready,
+      false,
+      'Demanding 2000 future days must report ready = false',
+    );
 
     // Missing / tampered migration check (S3-3 unit logic verification)
     await assert.rejects(
@@ -1721,7 +1881,7 @@ async function main() {
         ]);
       },
       (err: any) => err.message.includes('not at the required migration version'),
-      'assertPlatformDatabaseReady must fail when a required migration is missing or tampered'
+      'assertPlatformDatabaseReady must fail when a required migration is missing or tampered',
     );
 
     recordReport({
@@ -1733,7 +1893,8 @@ async function main() {
       diedAfterCommit: 0,
       retriesOrDiscarded: 0,
       dbStateVerified: 'platform_rate_limit_partitions_ready(3) returns true; migrations verified',
-      apiResultVerified: 'Health endpoint returns 200 when healthy; fails with 503 on missing migration',
+      apiResultVerified:
+        'Health endpoint returns 200 when healthy; fails with 503 on missing migration',
       status: 'PASS',
     });
   }
@@ -1760,7 +1921,9 @@ async function main() {
     if (container) {
       console.log(`Executing container SIGKILL crash on ${container}...`);
       // Start an uncommitted transaction from a separate client
-      const uncommittedClient = new PrismaClient({ datasources: { db: { url: boundedUrl(databaseUrl!) } } });
+      const uncommittedClient = new PrismaClient({
+        datasources: { db: { url: boundedUrl(databaseUrl!) } },
+      });
       await uncommittedClient.$connect();
       await uncommittedClient.$executeRaw`BEGIN`;
       await uncommittedClient.$executeRaw`
@@ -1779,24 +1942,35 @@ async function main() {
       for (let i = 0; i < 30; i++) {
         try {
           const check = await owner.$queryRaw<Array<{ ready: boolean }>>`SELECT true as ready`;
-          if (check.length > 0) { recovered = true; break; }
+          if (check.length > 0) {
+            recovered = true;
+            break;
+          }
         } catch {}
         await new Promise((r) => setTimeout(r, 500));
       }
       assert.ok(recovered, 'PostgreSQL did not recover after container restart');
 
       // Assert: durable row committed before crash survived!
-      const durableRow = await owner.platformOrganization.findUnique({ where: { id: durableOrg.id } });
+      const durableRow = await owner.platformOrganization.findUnique({
+        where: { id: durableOrg.id },
+      });
       assert.ok(durableRow, 'Committed row must survive crash (fsync + synchronous_commit = on)');
 
       // Assert: uncommitted row rolled back cleanly during WAL REDO!
-      const uncommittedRow = await owner.platformOrganization.findUnique({ where: { id: `org_uncommitted_${suffix}` } });
+      const uncommittedRow = await owner.platformOrganization.findUnique({
+        where: { id: `org_uncommitted_${suffix}` },
+      });
       assert.equal(uncommittedRow, null, 'Uncommitted transaction must not survive crash recovery');
 
       await uncommittedClient.$disconnect().catch(() => {});
     } else {
-      console.log('Skipping physical container SIGKILL (POSTGRES_CONTAINER not provided in environment).');
-      console.log('PostgreSQL WAL durability settings validated: synchronous_commit=on, fsync=on, wal_level=replica.');
+      console.log(
+        'Skipping physical container SIGKILL (POSTGRES_CONTAINER not provided in environment).',
+      );
+      console.log(
+        'PostgreSQL WAL durability settings validated: synchronous_commit=on, fsync=on, wal_level=replica.',
+      );
     }
 
     recordReport({
@@ -1894,7 +2068,9 @@ async function main() {
   // -------------------------------------------------------------------------
   // SECTION 9: Database Failure Resilience & Transient Error Discipline (S3-3)
   // -------------------------------------------------------------------------
-  console.log('\n--- Section 9: Database Failure Resilience & Transient Error Discipline (S3-3) ---');
+  console.log(
+    '\n--- Section 9: Database Failure Resilience & Transient Error Discipline (S3-3) ---',
+  );
   {
     const suffix = randomUUID();
     const org = await owner.platformOrganization.create({
@@ -1917,13 +2093,15 @@ async function main() {
         technicalLead: 'Lead',
         contactEmail: `lead-dbfail-${suffix}@example.com`,
         environments: {
-          create: [{
-            id: `env_dbfail_${suffix}`,
-            slug: 'production',
-            name: 'Prod',
-            type: 'PRODUCTION',
-            isProduction: true,
-          }],
+          create: [
+            {
+              id: `env_dbfail_${suffix}`,
+              slug: 'production',
+              name: 'Prod',
+              type: 'PRODUCTION',
+              isProduction: true,
+            },
+          ],
         },
       },
     });
@@ -1962,7 +2140,11 @@ async function main() {
       });
       assert.equal(lockRes.status, 503, 'Must return 503 during lock timeout');
       const lockBody = await lockRes.json();
-      assert.equal(lockBody.error?.code, 'LOCK_TIMEOUT', 'Must return explicit LOCK_TIMEOUT error code');
+      assert.equal(
+        lockBody.error?.code,
+        'LOCK_TIMEOUT',
+        'Must return explicit LOCK_TIMEOUT error code',
+      );
       assert.equal(lockRes.headers.get('x-orbitox-error-code'), 'LOCK_TIMEOUT');
       assert.equal(lockRes.headers.get('retry-after'), '1');
 
@@ -1975,11 +2157,17 @@ async function main() {
       const recoverRes1 = await fetch(`http://127.0.0.1:${port}/api/v1/crm/leads`, {
         headers: { 'x-api-key': rawSecret },
       });
-      assert.equal(recoverRes1.status, 200, 'Server must immediately recover with 200 after lock release without restart');
+      assert.equal(
+        recoverRes1.status,
+        200,
+        'Server must immediately recover with 200 after lock release without restart',
+      );
       await owner.$executeRawUnsafe(`ALTER ROLE orbitox_runtime RESET lock_timeout;`);
 
       // 2. Statement Timeout: Set statement_timeout to 150ms and hold row lock so update statement times out
-      console.log('Testing Statement Timeout (503 STATEMENT_TIMEOUT) and recovery without restart...');
+      console.log(
+        'Testing Statement Timeout (503 STATEMENT_TIMEOUT) and recovery without restart...',
+      );
       await owner.$executeRawUnsafe(`ALTER ROLE orbitox_runtime SET statement_timeout = '150ms';`);
       const stmtPort = allocatePort();
       const stmtChild = spawnServer(stmtPort);
@@ -2004,7 +2192,11 @@ async function main() {
         });
         assert.equal(stmtRes.status, 503, 'Must return 503 during statement timeout');
         const stmtBody = await stmtRes.json();
-        assert.equal(stmtBody.error?.code, 'STATEMENT_TIMEOUT', 'Must return explicit STATEMENT_TIMEOUT error code');
+        assert.equal(
+          stmtBody.error?.code,
+          'STATEMENT_TIMEOUT',
+          'Must return explicit STATEMENT_TIMEOUT error code',
+        );
         assert.equal(stmtRes.headers.get('x-orbitox-error-code'), 'STATEMENT_TIMEOUT');
         assert.equal(stmtRes.headers.get('retry-after'), '1');
 
@@ -2021,17 +2213,30 @@ async function main() {
         const stmtRecoverRes = await fetch(`http://127.0.0.1:${stmtPort}/api/v1/crm/leads`, {
           headers: { 'x-api-key': rawSecret },
         });
-        assert.equal(stmtRecoverRes.status, 200, 'Server must immediately recover with 200 after statement timeout without restart');
+        assert.equal(
+          stmtRecoverRes.status,
+          200,
+          'Server must immediately recover with 200 after statement timeout without restart',
+        );
       } finally {
         await killProcess(stmtChild);
-        await owner.$executeRawUnsafe(`ALTER ROLE orbitox_runtime RESET statement_timeout;`).catch(() => {});
+        await owner
+          .$executeRawUnsafe(`ALTER ROLE orbitox_runtime RESET statement_timeout;`)
+          .catch(() => {});
       }
 
       // 3. Pool Exhaustion classification check & real HTTP mapping
       console.log('Testing Pool Exhaustion error classification (503 POOL_EXHAUSTED)...');
-      const poolErr = { code: 'P2024', message: 'Timed out fetching a new connection from the connection pool' };
+      const poolErr = {
+        code: 'P2024',
+        message: 'Timed out fetching a new connection from the connection pool',
+      };
       const classified = classifyDatabaseError(poolErr);
-      assert.equal(classified.code, 'POOL_EXHAUSTED', 'Prisma P2024 must classify as POOL_EXHAUSTED');
+      assert.equal(
+        classified.code,
+        'POOL_EXHAUSTED',
+        'Prisma P2024 must classify as POOL_EXHAUSTED',
+      );
 
       const poolPort = allocatePort();
       const poolChild = spawnServer(poolPort, {
@@ -2055,15 +2260,22 @@ async function main() {
         diedBeforeCommit: 0,
         diedAfterCommit: 0,
         retriesOrDiscarded: 0,
-        dbStateVerified: 'Bounded pool (connection_limit=1, pool_timeout=1) classified as POOL_EXHAUSTED',
+        dbStateVerified:
+          'Bounded pool (connection_limit=1, pool_timeout=1) classified as POOL_EXHAUSTED',
         apiResultVerified: 'Maps to 503 Retry-After with error-code header POOL_EXHAUSTED',
         status: 'PASS',
       });
     } finally {
       await killProcess(child);
-      await owner.$executeRawUnsafe(`ALTER ROLE orbitox_runtime RESET lock_timeout;`).catch(() => {});
-      await owner.$executeRawUnsafe(`ALTER ROLE orbitox_runtime RESET statement_timeout;`).catch(() => {});
-      await owner.platformApiKey.deleteMany({ where: { environment: { projectId: proj.id } } }).catch(() => {});
+      await owner
+        .$executeRawUnsafe(`ALTER ROLE orbitox_runtime RESET lock_timeout;`)
+        .catch(() => {});
+      await owner
+        .$executeRawUnsafe(`ALTER ROLE orbitox_runtime RESET statement_timeout;`)
+        .catch(() => {});
+      await owner.platformApiKey
+        .deleteMany({ where: { environment: { projectId: proj.id } } })
+        .catch(() => {});
       await owner.projectEnvironment.deleteMany({ where: { projectId: proj.id } }).catch(() => {});
       await owner.platformProject.delete({ where: { id: proj.id } }).catch(() => {});
       await owner.platformOrganization.delete({ where: { id: org.id } }).catch(() => {});
@@ -2078,7 +2290,8 @@ async function main() {
       diedAfterCommit: 0,
       retriesOrDiscarded: 0,
       dbStateVerified: 'No corrupted records or leaks; row locks released cleanly',
-      apiResultVerified: 'Returns 503 with explicit code (LOCK_TIMEOUT / STATEMENT_TIMEOUT) and recovers without server restart',
+      apiResultVerified:
+        'Returns 503 with explicit code (LOCK_TIMEOUT / STATEMENT_TIMEOUT) and recovers without server restart',
       status: 'PASS',
     });
   }
@@ -2086,19 +2299,33 @@ async function main() {
   // -------------------------------------------------------------------------
   // FINAL TEST REPORT & EVIDENCE TABLE (Correction B2.10)
   // -------------------------------------------------------------------------
-  console.log('\n========================================================================================');
+  console.log(
+    '\n========================================================================================',
+  );
   console.log('📊 STEP 3 RESILIENCE HARNESS FINAL AUDIT REPORT');
-  console.log('========================================================================================\n');
+  console.log(
+    '========================================================================================\n',
+  );
 
-  console.log('| Category | Operation | Kill Point | Iters | Died Pre-Commit | Died Post-Commit | Discarded | DB State Verified | Result |');
+  console.log(
+    '| Category | Operation | Kill Point | Iters | Died Pre-Commit | Died Post-Commit | Discarded | DB State Verified | Result |',
+  );
   console.log('|---|---|---|---|---|---|---|---|---|');
   for (const e of reportEntries) {
-    console.log(`| ${e.category} | ${e.operation} | ${e.killPoint} | ${e.iterations} | ${e.diedBeforeCommit} | ${e.diedAfterCommit} | ${e.retriesOrDiscarded} | ${e.dbStateVerified} | ${e.status} |`);
+    console.log(
+      `| ${e.category} | ${e.operation} | ${e.killPoint} | ${e.iterations} | ${e.diedBeforeCommit} | ${e.diedAfterCommit} | ${e.retriesOrDiscarded} | ${e.dbStateVerified} | ${e.status} |`,
+    );
   }
 
-  console.log('\n========================================================================================');
-  console.log(`All Step 3 resilience tests PASSED (${reportEntries.length}/${reportEntries.length} sections green).`);
-  console.log('========================================================================================\n');
+  console.log(
+    '\n========================================================================================',
+  );
+  console.log(
+    `All Step 3 resilience tests PASSED (${reportEntries.length}/${reportEntries.length} sections green).`,
+  );
+  console.log(
+    '========================================================================================\n',
+  );
 }
 
 main()
