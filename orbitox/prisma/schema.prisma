@@ -1568,6 +1568,9 @@ model CustomerMembership {
   @@index([userId, role])
 }
 
+// Migration 20261103000000 creates the partial index AccountToken_user_purpose
+// on ("userId", "purpose") WHERE "usedAt" IS NULL; Prisma cannot describe it.
+// Reject any generated migration that drops this index.
 model AccountToken {
   tokenHash      String            @id
   purpose        AccountTokenPurpose
