@@ -66,7 +66,13 @@ function convertRouteToUrl(filePath: string): string {
   const rel = path.relative(apiDir, filePath);
   let url = '/api/' + rel.replace(/\/route\.ts$/, '');
   url = url
+    .replace(/\[organizationId\]/g, 'sweep-organization-id')
     .replace(/\[projectId\]/g, 'test-proj-c2-123')
+    .replace(/\[environmentId\]/g, 'sweep-environment-id')
+    .replace(/\[subscriptionId\]/g, 'sub_sweep123')
+    .replace(/\[userId\]/g, 'sweep-user-id')
+    .replace(/\[operationId\]/g, 'sweep-operation-id')
+    .replace(/\[provider\]/g, 'resend')
     .replace(/\[providerId\]/g, 'test-prov-c2-123')
     .replace(/\[serviceId\]/g, 'crm')
     .replace(/\[keyId\]/g, 'test-key-c2-123')
@@ -113,7 +119,13 @@ async function run() {
     ORBITOX_CONTROL_SECRET: crypto.randomBytes(32).toString('hex'),
     ORBITOX_GUEST_SECRET: crypto.randomBytes(32).toString('hex'),
     ORBITOX_SERVER_PEPPER: serverPepper,
+    RAZORPAY_KEY_ID: 'rzp_test_sweep',
+    RAZORPAY_KEY_SECRET: crypto.randomBytes(32).toString('hex'),
     RAZORPAY_WEBHOOK_SECRET: crypto.randomBytes(32).toString('hex'),
+    ORBITOX_EMAIL_PROVIDER: 'resend',
+    ORBITOX_EMAIL_FROM: 'no-reply@example.invalid',
+    RESEND_API_KEY: 'test-resend-token',
+    ORBITOX_EMAIL_WEBHOOK_SECRET: `whsec_${crypto.randomBytes(32).toString('base64')}`,
     ORBITOX_GRANT_SIGNING_KEYS: JSON.stringify({
       k1: { privateKey: grantPrivPem, publicKey: grantPubPem },
     }),
@@ -301,16 +313,22 @@ async function run() {
     const relFile = path.relative(apiDir, file);
     const methods = parseMethods(file);
     const urlPath = convertRouteToUrl(file);
-    if (urlPath.startsWith('/api/v1/customer/auth/')) {
+    const isCustomerAuth = urlPath.startsWith('/api/v1/customer/auth/');
+    const isCustomerDashboard = urlPath.startsWith('/api/v1/customer/organizations/');
+    const isEmailWebhook = urlPath.startsWith('/api/v1/customer/email/webhooks/');
+    if (urlPath.startsWith('/api/v1/customer/')) {
       const expectedStatus = publicCustomerAuthStatuses[urlPath];
       const protectedMethod = protectedCustomerAuthMethods[urlPath];
       assert.ok(
-        (expectedStatus !== undefined && methods.length === 1 && methods[0] === 'POST') ||
+        (isCustomerAuth &&
+          ((expectedStatus !== undefined && methods.length === 1 && methods[0] === 'POST') ||
           (protectedMethod !== undefined &&
             expectedStatus === undefined &&
             methods.length === 1 &&
-            methods[0] === protectedMethod),
-        `Customer auth route ${urlPath} must be explicitly classified as public or session-protected`,
+            methods[0] === protectedMethod))) ||
+          (isCustomerDashboard && methods.length > 0) ||
+          (isEmailWebhook && methods.length === 1 && methods[0] === 'POST'),
+        `Customer route ${urlPath} must be explicitly classified as public auth, session-protected, or signed webhook`,
       );
     }
 
@@ -320,7 +338,9 @@ async function run() {
         method === 'POST' ? publicCustomerAuthStatuses[urlPath] : undefined;
       const isPublicCustomerAuth = expectedPublicAuthStatus !== undefined;
       const isProtectedCustomerAuth = protectedCustomerAuthMethods[urlPath] === method;
-      const isWebhook = urlPath.startsWith('/api/v1/billing/webhook');
+      const isWebhook =
+        urlPath.startsWith('/api/v1/billing/webhook') ||
+        urlPath.startsWith('/api/v1/customer/email/webhooks/');
       const isRestaurantRedirect =
         urlPath.startsWith('/api/restaurant/') || urlPath.startsWith('/api/v1/restaurant/');
       const expectedDesc = isPublic
@@ -331,6 +351,8 @@ async function run() {
           ? `exactly ${expectedPublicAuthStatus} for invalid unauthenticated input`
           : isProtectedCustomerAuth
             ? '401 or 403 without a customer session'
+            : isCustomerDashboard
+              ? '401 or 403 without a customer session'
             : isWebhook
               ? '400 / 401 / 403'
               : '401 / 403 / 404';
@@ -365,6 +387,8 @@ async function run() {
           isPass = status === expectedPublicAuthStatus;
         } else if (isProtectedCustomerAuth) {
           isPass = status === 401 || status === 403;
+        } else if (isCustomerDashboard) {
+          isPass = status === 401 || status === 403;
         } else if (isWebhook) {
           isPass = status === 400 || status === 401 || status === 403;
         } else {
@@ -380,6 +404,8 @@ async function run() {
             ? 'Explicit Public Customer Auth Route'
             : isProtectedCustomerAuth
               ? 'Customer Session Required'
+              : isCustomerDashboard
+                ? 'Customer Session Required'
               : isWebhook
                 ? 'Webhook Signature Guard'
                 : urlPath.startsWith('/api/v1/admin/') ||

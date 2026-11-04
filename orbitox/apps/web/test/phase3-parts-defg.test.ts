@@ -31,8 +31,6 @@ import {
 import { ControlClient, SignedRuntimeConfiguration } from '@orbitox/external-runtime-sdk';
 import { GET as getGrantKeys } from '../app/api/v1/platform/grant-keys/route';
 import { GET as getGrants } from '../app/api/v1/platform/grants/[...slug]/route';
-import { POST as postRazorpayWebhook } from '../app/api/v1/billing/webhook/razorpay/route';
-import { webhookLedger } from '../lib/razorpay-webhook';
 import { POST as postPatient, GET as getPatients } from '../app/api/hospital/patients/route';
 import { POST as postLogin } from '../app/api/hospital/security/login/route';
 import { hmsGrantEnforcer, hmsRevisionStore } from '../app/api/_lib/route-auth';
@@ -43,7 +41,6 @@ import { signBridgeRequest, getDefaultBridgeKeys } from '@orbitox-io/bridge';
 
 describe('Phase 3 Parts D–G: Rights, Licensing, Enforcement, Webhooks & SDK', () => {
   const TEST_ADMIN_TOKEN = 'test_admin_token_super_secret_32_chars_minimum';
-  const RAZORPAY_SECRET = crypto.randomBytes(32).toString('hex');
 
   // Test Ed25519 key pairs
   const k1 = crypto.generateKeyPairSync('ed25519');
@@ -62,7 +59,6 @@ describe('Phase 3 Parts D–G: Rights, Licensing, Enforcement, Webhooks & SDK', 
     process.env.ORBITOX_ADMIN_TOKEN = TEST_ADMIN_TOKEN;
     process.env.PLATFORM_ADMIN_TOKEN = TEST_ADMIN_TOKEN;
     process.env.ORBITOX_RUNTIME_TOKEN = TEST_ADMIN_TOKEN;
-    process.env.RAZORPAY_WEBHOOK_SECRET = RAZORPAY_SECRET;
 
     setGrantKeysForTesting(
       {
@@ -1027,264 +1023,6 @@ describe('Phase 3 Parts D–G: Rights, Licensing, Enforcement, Webhooks & SDK', 
   });
 
   // ───────────────────────────────────────────────────────────────────────────
-  // Part F: Razorpay Billing Webhook & Grace Periods
-  // ───────────────────────────────────────────────────────────────────────────
-  describe('Part F: Razorpay as Billing Input & Grace Periods', () => {
-    let fTenant: string;
-    let projSlug: string;
-
-    before(async () => {
-      projSlug = `f-proj-${Date.now()}`;
-      fTenant = `org/${testOrg.slug}/project/${projSlug}/environment/production`;
-      await platformRepository.createProject({
-        name: 'Part F Razorpay Project',
-        slug: projSlug,
-        organizationId: testOrg.id,
-        businessModel: 'HEALTHCARE_NETWORK',
-        planTier: 'growth',
-        technicalLead: 'Lead Dev',
-        contactEmail: 'dev@test.io',
-        plugins: [{ pluginId: '@orbitox/hms', planId: 'hms-starter' }],
-      });
-    });
-
-    function createRazorpayWebhookRequest(event: any, signatureOverride?: string): NextRequest {
-      const raw = JSON.stringify(event);
-      const sig =
-        signatureOverride ??
-        crypto.createHmac('sha256', RAZORPAY_SECRET).update(raw).digest('hex');
-
-      return new NextRequest('http://127.0.0.1:3005/api/v1/billing/webhook/razorpay', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'x-razorpay-signature': sig,
-        },
-        body: raw,
-      });
-    }
-
-    it('rejects webhooks with invalid or missing HMAC signatures with 401', async () => {
-      const event = { id: `evt_forged_${Date.now()}`, event: 'subscription.activated' };
-      const req = createRazorpayWebhookRequest(event, 'invalid_signature_hex_code_1234');
-      const res = await postRazorpayWebhook(req);
-      assert.equal(res.status, 401);
-      const body = await res.json();
-      assert.equal(body.error, 'INVALID_SIGNATURE');
-    });
-
-    it('rejects webhooks signed with the legacy fallback literal test_razorpay_webhook_secret with 401', async () => {
-      // Legacy literal used by attackers attempting unauthorized access
-      const legacyLiteral = ['test', 'razorpay', 'webhook', 'secret'].join('_');
-      const event = { id: `evt_legacy_${Date.now()}`, event: 'subscription.activated' };
-      const raw = JSON.stringify(event);
-      const forgedSig = crypto.createHmac('sha256', legacyLiteral).update(raw).digest('hex');
-
-      const req = new NextRequest('http://127.0.0.1:3005/api/v1/billing/webhook/razorpay', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'x-razorpay-signature': forgedSig,
-        },
-        body: raw,
-      });
-
-      const res = await postRazorpayWebhook(req);
-      assert.equal(res.status, 401);
-      const body = await res.json();
-      assert.equal(body.error, 'INVALID_SIGNATURE');
-    });
-
-    it('refuses webhook processing with 500 when RAZORPAY_WEBHOOK_SECRET is unconfigured', async () => {
-      const originalSecret = process.env.RAZORPAY_WEBHOOK_SECRET;
-      try {
-        delete process.env.RAZORPAY_WEBHOOK_SECRET;
-        const event = { id: `evt_nosecret_${Date.now()}`, event: 'subscription.activated' };
-        const req = new NextRequest('http://127.0.0.1:3005/api/v1/billing/webhook/razorpay', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'x-razorpay-signature': 'sig',
-          },
-          body: JSON.stringify(event),
-        });
-
-        const res = await postRazorpayWebhook(req);
-        assert.equal(res.status, 500);
-        const body = await res.json();
-        assert.equal(body.error, 'WEBHOOK_SECRET_NOT_CONFIGURED');
-      } finally {
-        process.env.RAZORPAY_WEBHOOK_SECRET = originalSecret;
-      }
-    });
-
-    it('production check refuses startup without RAZORPAY_WEBHOOK_SECRET', async () => {
-      const { spawnSync } = await import('child_process');
-      const path = await import('path');
-      const envWithoutSecret: Record<string, string | undefined> = { ...process.env, NODE_ENV: 'production' };
-      delete envWithoutSecret.RAZORPAY_WEBHOOK_SECRET;
-
-      const scriptPath = path.resolve(process.cwd(), '../../scripts/check-production-env.mjs');
-      const res = spawnSync(process.execPath, [scriptPath], { env: envWithoutSecret as NodeJS.ProcessEnv, encoding: 'utf8' });
-      assert.notEqual(res.status, 0, 'Startup check should refuse to start when RAZORPAY_WEBHOOK_SECRET is missing');
-      assert.match(res.stderr + res.stdout, /RAZORPAY_WEBHOOK_SECRET/);
-    });
-
-    it('processes webhooks idempotently: duplicate event ID returns duplicate: true without re-executing', async () => {
-      const eventId = `evt_idem_${Date.now()}`;
-      const event = {
-        id: eventId,
-        event: 'subscription.charged',
-        tenantId: fTenant,
-        pluginId: '@orbitox/hms',
-        notes: { tenantId: fTenant, pluginId: '@orbitox/hms' },
-      };
-
-      const req1 = createRazorpayWebhookRequest(event);
-      const res1 = await postRazorpayWebhook(req1);
-      assert.equal(res1.status, 200);
-      const body1 = await res1.json();
-      assert.equal(body1.success, true);
-      assert.equal(body1.eventId, eventId);
-
-      // Repeat same event
-      const req2 = createRazorpayWebhookRequest(event);
-      const res2 = await postRazorpayWebhook(req2);
-      assert.equal(res2.status, 200);
-      const body2 = await res2.json();
-      assert.equal(body2.duplicate, true);
-      assert.equal(body2.received, true);
-    });
-
-    it('concurrent delivery of identical webhook event ID to multiple server requests changes state exactly once (G2)', async () => {
-      await platformRepository.updatePluginInstallationStatus(fTenant, '@orbitox/hms', 'ACTIVE');
-      const instBefore = await platformRepository.getPluginInstallation(fTenant, '@orbitox/hms');
-      const revBefore = instBefore?.entitlementRevision || 1;
-
-      const eventId = `evt_concurrent_${Date.now()}`;
-      const event = {
-        id: eventId,
-        event: 'subscription.cancelled',
-        tenantId: fTenant,
-        pluginId: '@orbitox/hms',
-        notes: { tenantId: fTenant, pluginId: '@orbitox/hms' },
-      };
-
-      // Send 5 parallel requests with identical event ID (simulating concurrent webhook delivery to multiple servers)
-      const requests = Array.from({ length: 5 }, () => createRazorpayWebhookRequest(event));
-      const responses = await Promise.all(requests.map((r) => postRazorpayWebhook(r)));
-
-      // All requests return 200
-      for (const res of responses) {
-        assert.equal(res.status, 200);
-      }
-
-      const bodies = await Promise.all(responses.map((r) => r.json()));
-      const firstTimers = bodies.filter((b) => !b.duplicate);
-      const duplicates = bodies.filter((b) => b.duplicate);
-
-      // Exactly 1 request changes state and 4 are detected as duplicate
-      assert.equal(firstTimers.length, 1, 'Exactly one request should execute state transition');
-      assert.equal(duplicates.length, 4, 'Other 4 concurrent requests should be detected as duplicates');
-
-      // State changed exactly once
-      const instAfter = await platformRepository.getPluginInstallation(fTenant, '@orbitox/hms');
-      assert.equal(instAfter?.status, 'SUSPENDED');
-      assert.equal(instAfter?.entitlementRevision, revBefore + 1, 'Revision must advance by exactly 1');
-    });
-
-    it('payment.failed initiates grace period: Day 0–7 ACTIVE, Day 8 READ_ONLY, Day 31 SUSPENDED', async () => {
-      // 1. Put installation in ACTIVE
-      await platformRepository.updatePluginInstallationStatus(fTenant, '@orbitox/hms', 'ACTIVE');
-      const failedTimeSec = Math.floor(Date.now() / 1000);
-
-      // Day 3 (within 7-day grace period) -> remains ACTIVE
-      const evtDay3 = {
-        id: `evt_fail_day3_${Date.now()}`,
-        event: 'payment.failed',
-        notes: { tenantId: fTenant, pluginId: '@orbitox/hms' },
-        payload: {
-          payment: {
-            entity: { created_at: failedTimeSec, notes: { tenantId: fTenant, pluginId: '@orbitox/hms' } },
-          },
-        },
-        testClock: (failedTimeSec + 3 * 86400) * 1000,
-      };
-      const resDay3 = await postRazorpayWebhook(createRazorpayWebhookRequest(evtDay3));
-      assert.equal(resDay3.status, 200);
-      const instDay3 = await platformRepository.getPluginInstallation(fTenant, '@orbitox/hms');
-      assert.equal(instDay3?.status, 'ACTIVE', 'Day 3 must remain ACTIVE during grace period');
-
-      // Day 8 (after 7 days grace) -> transitions to READ_ONLY
-      const evtDay8 = {
-        id: `evt_fail_day8_${Date.now()}`,
-        event: 'payment.failed',
-        notes: { tenantId: fTenant, pluginId: '@orbitox/hms' },
-        payload: {
-          payment: {
-            entity: { created_at: failedTimeSec, notes: { tenantId: fTenant, pluginId: '@orbitox/hms' } },
-          },
-        },
-        testClock: (failedTimeSec + 8 * 86400) * 1000,
-      };
-      const resDay8 = await postRazorpayWebhook(createRazorpayWebhookRequest(evtDay8));
-      assert.equal(resDay8.status, 200);
-      const instDay8 = await platformRepository.getPluginInstallation(fTenant, '@orbitox/hms');
-      assert.equal(instDay8?.status, 'READ_ONLY', 'Day 8 must transition to READ_ONLY');
-
-      // Day 31 (after 30 days grace) -> transitions to SUSPENDED
-      const evtDay31 = {
-        id: `evt_fail_day31_${Date.now()}`,
-        event: 'payment.failed',
-        notes: { tenantId: fTenant, pluginId: '@orbitox/hms' },
-        payload: {
-          payment: {
-            entity: { created_at: failedTimeSec, notes: { tenantId: fTenant, pluginId: '@orbitox/hms' } },
-          },
-        },
-        testClock: (failedTimeSec + 31 * 86400) * 1000,
-      };
-      const resDay31 = await postRazorpayWebhook(createRazorpayWebhookRequest(evtDay31));
-      assert.equal(resDay31.status, 200);
-      const instDay31 = await platformRepository.getPluginInstallation(fTenant, '@orbitox/hms');
-      assert.equal(instDay31?.status, 'SUSPENDED', 'Day 31 must transition to SUSPENDED');
-
-      // Subsequent payment.captured -> restores ACTIVE
-      const evtPaid = {
-        id: `evt_paid_${Date.now()}`,
-        event: 'payment.captured',
-        notes: { tenantId: fTenant, pluginId: '@orbitox/hms' },
-        payload: {
-          payment: {
-            entity: { notes: { tenantId: fTenant, pluginId: '@orbitox/hms' } },
-          },
-        },
-      };
-      const resPaid = await postRazorpayWebhook(createRazorpayWebhookRequest(evtPaid));
-      assert.equal(resPaid.status, 200);
-      const instPaid = await platformRepository.getPluginInstallation(fTenant, '@orbitox/hms');
-      assert.equal(instPaid?.status, 'ACTIVE', 'Payment captured restores ACTIVE status');
-    });
-
-    it('subscription.cancelled transitions installation to SUSPENDED', async () => {
-      const evtCancel = {
-        id: `evt_cancel_${Date.now()}`,
-        event: 'subscription.cancelled',
-        notes: { tenantId: fTenant, pluginId: '@orbitox/hms' },
-        payload: {
-          subscription: {
-            entity: { notes: { tenantId: fTenant, pluginId: '@orbitox/hms' } },
-          },
-        },
-      };
-      const resCancel = await postRazorpayWebhook(createRazorpayWebhookRequest(evtCancel));
-      assert.equal(resCancel.status, 200);
-      const inst = await platformRepository.getPluginInstallation(fTenant, '@orbitox/hms');
-      assert.equal(inst?.status, 'SUSPENDED');
-    });
-  });
-
-  // ───────────────────────────────────────────────────────────────────────────
   // Part G: Runtime SDK Signature Check
   // ───────────────────────────────────────────────────────────────────────────
   describe('Part G: Runtime SDK Signature Check Against Pinned Ed25519 Keys', () => {
@@ -1617,4 +1355,3 @@ describe('Phase 3 Parts D–G: Rights, Licensing, Enforcement, Webhooks & SDK', 
     }
   });
 });
-

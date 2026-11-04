@@ -3,6 +3,8 @@
  * In production it refuses to boot with missing or weak secrets, so a
  * misconfigured deployment fails loudly at startup instead of at first request.
  */
+import { assertEmailProviderConfiguration } from './lib/account-email';
+
 export async function registerNode() {
   // Build validation must not depend on a runtime-controlled environment variable.
   if (
@@ -35,8 +37,16 @@ export async function registerNode() {
         desc: 'Base64-encoded AES-256 key for encrypted account email tokens',
       },
       {
+        name: 'ORBITOX_EMAIL_WEBHOOK_SECRET',
+        desc: 'Resend whsec_ signing secret for Svix-verified bounce/complaint webhooks',
+      },
+      {
         name: 'RAZORPAY_WEBHOOK_SECRET',
         desc: 'HMAC SHA-256 secret for authenticating incoming billing webhook events',
+      },
+      {
+        name: 'RAZORPAY_KEY_SECRET',
+        desc: 'Secret key for authenticated Razorpay subscription API calls',
       },
     ];
 
@@ -47,6 +57,11 @@ export async function registerNode() {
       } else if (value.length < 32) {
         problems.push(`${secret.name} must be at least 32 characters (found ${value.length})`);
       }
+    }
+    try {
+      assertEmailProviderConfiguration(process.env);
+    } catch (error) {
+      problems.push(error instanceof Error ? error.message : 'Email provider configuration is invalid.');
     }
     if (!process.env.ORBITOX_ADMIN_TOKEN_SCOPES?.split(',').some((scope) => scope.trim())) {
       problems.push(
@@ -64,6 +79,9 @@ export async function registerNode() {
       if (!publicBaseUrl || new URL(publicBaseUrl).protocol !== 'https:') throw new Error();
     } catch {
       problems.push('ORBITOX_PUBLIC_BASE_URL must be a canonical HTTPS URL for account links');
+    }
+    if (!/^rzp_(test|live)_[A-Za-z0-9]+$/.test(process.env.RAZORPAY_KEY_ID?.trim() || '')) {
+      problems.push('RAZORPAY_KEY_ID must be a valid Razorpay test or live key id');
     }
     for (const keyName of ['ORBITOX_MFA_ENCRYPTION_KEY', 'ORBITOX_ACCOUNT_TOKEN_ENCRYPTION_KEY']) {
       const encoded = process.env[keyName]?.trim();

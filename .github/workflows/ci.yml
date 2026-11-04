@@ -90,6 +90,10 @@ jobs:
           echo "ORBITOX_PUBLIC_BASE_URL=https://console.orbitox.test" >> "$GITHUB_ENV"
           echo "ORBITOX_OPERATOR_INITIAL_EMAIL=ci-startup-owner@example.invalid" >> "$GITHUB_ENV"
           echo "ORBITOX_BREACHED_PASSWORD_API=off" >> "$GITHUB_ENV"
+          echo "ORBITOX_EMAIL_PROVIDER=resend" >> "$GITHUB_ENV"
+          echo "ORBITOX_EMAIL_FROM=no-reply@example.invalid" >> "$GITHUB_ENV"
+          echo "RESEND_API_KEY=ci-test-key" >> "$GITHUB_ENV"
+          echo "ORBITOX_EMAIL_WEBHOOK_SECRET=whsec_$(openssl rand -base64 32)" >> "$GITHUB_ENV"
 
       - name: Bootstrap CI owner through operator:bootstrap
         run: |
@@ -154,6 +158,8 @@ jobs:
           export ORBITOX_PHI_KEYS="{\"k1\":\"$ORBITOX_PHI_KEY\"}"
           export ORBITOX_PHI_ACTIVE_KID="k1"
           export ORBITOX_PHI_INDEX_KEY="$(openssl rand -base64 32)"
+          export RAZORPAY_KEY_ID="rzp_test_smoke"
+          export RAZORPAY_KEY_SECRET="$(openssl rand -hex 32)"
           export RAZORPAY_WEBHOOK_SECRET="$(openssl rand -hex 32)"
           export ORBITOX_GRANT_SIGNING_KEYS="$(node -e 'const { generateKeyPairSync } = require("crypto"); const p = generateKeyPairSync("ed25519"); console.log(JSON.stringify({ k1: { privateKey: p.privateKey.export({type:"pkcs8",format:"pem"}), publicKey: p.publicKey.export({type:"spki",format:"pem"}) } }))')"
           cp -r apps/web/.next/static apps/web/.next/standalone/apps/web/.next/static
@@ -170,6 +176,9 @@ jobs:
           PLATFORM_AUDIT_DATABASE_URL: postgresql://orbitox_platform_admin_audit:phase2-audit-smoke-${{ github.run_id }}-${{ github.run_attempt }}@127.0.0.1:5432/orbitox_smoke
           HMS_AUDIT_DATABASE_URL: postgresql://hms_audit_reader:phase2-auditreader-smoke-${{ github.run_id }}-${{ github.run_attempt }}@127.0.0.1:5432/orbitox_smoke
           OUTBOX_RELAY_DATABASE_URL: postgresql://orbitox_outbox_relay:phase2-relay-smoke-${{ github.run_id }}-${{ github.run_attempt }}@127.0.0.1:5432/orbitox_smoke
+
+      - name: Sweep every API route without a customer or API session
+        run: pnpm --filter web test:api-no-token-sweep
 
   pack-and-verify:
     name: Package Tarball & External Install Smoke

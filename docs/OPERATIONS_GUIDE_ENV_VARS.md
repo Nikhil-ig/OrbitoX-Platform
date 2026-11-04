@@ -42,7 +42,15 @@ In production (`NODE_ENV=production` or unset), the control plane executes stric
 | `ORBITOX_ACCOUNT_TOKEN_ENCRYPTION_KEY` | **Yes** | Base64, 32 bytes | AES-256-GCM key for single-use account links queued for email |
 | `ORBITOX_PUBLIC_BASE_URL` | **Yes** | HTTPS URL | Canonical origin for verification, reset, and invite links |
 | `ORBITOX_BREACHED_PASSWORD_API` | No | `on` or `off` | Defaults to `on`; uses the HIBP k-anonymity range API when reachable and falls back to the bundled SHA-1 hash list on outages. `off` enforces the bundled list only. Configure the log pipeline to page on JSON events with `event=account_security.breached_password_api_fallback` and `severity=HIGH`; the event is written to stderr whenever local-only enforcement is used. |
+| `RAZORPAY_KEY_ID` | **Yes in production** | `rzp_test_*` or `rzp_live_*` | Public key id used by the subscription API and checkout client |
+| `RAZORPAY_KEY_SECRET` | **Yes in production** | 32 chars | Secret key for authenticated Razorpay subscription API requests |
 | `RAZORPAY_WEBHOOK_SECRET` | **Yes** | 32 chars | HMAC SHA-256 secret for authenticating incoming billing webhooks from Razorpay |
+| `ORBITOX_EMAIL_PROVIDER` | **Yes in production** | `resend` | Development defaults to LogOnly; production currently requires Resend for delivery and webhook support |
+| `ORBITOX_EMAIL_FROM` | **Yes in production** | Email address | Verified sending address for the configured provider |
+| `ORBITOX_EMAIL_WEBHOOK_SECRET` | **Yes** | Resend `whsec_` signing secret | Resend/Svix key for authenticating raw bounce/complaint webhook requests |
+| `RESEND_API_KEY` | **Yes in production** | Secret | Resend API key |
+| `POSTMARK_SERVER_TOKEN` | Development/testing only | Secret | Postmark adapter token; production currently requires Resend |
+| `OUTBOX_RELAY_DATABASE_URL` | **Yes in production** | `orbitox_outbox_relay` role | Dedicated process connection for the transactional email worker and platform outbox relay |
 
 *Generate strong 32-character secrets using:*
 ```bash
@@ -57,6 +65,10 @@ For AES keys, use `openssl rand -base64 32`.
 - Operator roles are `PLATFORM_OWNER`, `OPERATOR`, `SUPPORT_READONLY`, and `BILLING`. Mutating admin APIs are role-gated; sensitive actions additionally require re-authentication within five minutes.
 - Customer sessions use `HttpOnly`, `Secure` in production, `SameSite=Strict` cookies and require Origin validation plus a double-submit CSRF token for writes. Passwords require 12 characters and a breach check; MFA enrollment is mandatory for organization owners and admins.
 - Customer verification/reset/invite tokens are 256-bit, hash-only in `AccountToken`, purpose-bound, single-use, and expire after 24 hours, 30 minutes, and 7 days respectively. Email payloads hold encrypted links until the transactional email worker is configured.
+- The email worker runs separately from web requests: `pnpm --filter web email:worker`. Schedule it continuously or at short intervals using `OUTBOX_RELAY_DATABASE_URL`; it claims with `SKIP LOCKED`, retries at most five attempts with exponential backoff, and never logs message content.
+- Schedule `pnpm --filter web billing:grace-sweep` daily with both `APP_DATABASE_URL` and `MAINTENANCE_DATABASE_URL`. The maintenance role owns a singleton lease; state transitions are applied by the runtime role so audit and entitlement outbox writes remain tenant-scoped.
+- Direct payment-method updates are not available in the customer billing API. Razorpay's documented subscription API does not provide a direct payment-method update operation; do not present this as supported or substitute a plan change until a provider-supported customer authorization flow is approved.
+- Configure Resend's bounce/complaint webhook to `/api/v1/customer/email/webhooks/resend` and copy its signing secret to `ORBITOX_EMAIL_WEBHOOK_SECRET`. The endpoint verifies the raw body with the `svix-id`, `svix-timestamp`, and `svix-signature` headers, including a five-minute timestamp window and durable event deduplication. Verify SPF, DKIM, and DMARC for the configured sending domain before enabling delivery.
 
 ---
 

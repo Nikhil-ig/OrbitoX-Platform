@@ -23,7 +23,13 @@ const env: NodeJS.ProcessEnv = {
   PLATFORM_AUDIT_DATABASE_URL: process.env.PLATFORM_AUDIT_DATABASE_URL || 'postgresql://orbitox_platform_admin_audit:test_audit_pass@127.0.0.1:5432/orbitox_phase2',
   HMS_AUDIT_DATABASE_URL: process.env.HMS_AUDIT_DATABASE_URL || 'postgresql://hms_audit_reader:test_audit_reader_pass@127.0.0.1:5432/orbitox_phase2',
   OUTBOX_RELAY_DATABASE_URL: process.env.OUTBOX_RELAY_DATABASE_URL || 'postgresql://orbitox_outbox_relay:test_relay_pass@127.0.0.1:5432/orbitox_phase2',
+  RAZORPAY_KEY_ID: 'rzp_test_sweep',
+  RAZORPAY_KEY_SECRET: crypto.randomBytes(32).toString('hex'),
   RAZORPAY_WEBHOOK_SECRET: crypto.randomBytes(32).toString('hex'),
+  ORBITOX_EMAIL_PROVIDER: 'resend',
+  ORBITOX_EMAIL_FROM: 'no-reply@example.invalid',
+  RESEND_API_KEY: 'test-resend-token',
+  ORBITOX_EMAIL_WEBHOOK_SECRET: `whsec_${crypto.randomBytes(32).toString('base64')}`,
   ORBITOX_GRANT_SIGNING_KEYS: JSON.stringify({
     k1: {
       privateKey: sweepGrantPair.privateKey.export({ type: 'pkcs8', format: 'pem' }).toString(),

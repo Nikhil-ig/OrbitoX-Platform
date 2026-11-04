@@ -85,6 +85,10 @@ const globalTableAllowlist = new Set([
   'PlanFeature',
   'PlanQuota',
   'BillingWebhookEvent',
+  'BillingPlanMap',
+  'BillingSubscription',
+  'BillingUnknownEvent',
+  'BillingWebhookAlertMetric',
   'PluginGrantRevision',
   'PlatformOperation',
 ]);

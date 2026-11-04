@@ -1636,8 +1636,111 @@ model AccountEmailOutbox {
   lastError       String?
   createdAt       DateTime  @default(now()) @db.Timestamptz
   dispatchedAt    DateTime? @db.Timestamptz
+  claimedAt       DateTime? @db.Timestamptz
+  claimToken      String?
+  nextAttemptAt   DateTime  @default(now()) @db.Timestamptz
 
   @@index([status, createdAt])
+  @@index([nextAttemptAt])
+}
+
+model AccountEmailSuppression {
+  email       String   @id
+  reason      String
+  provider    String
+  suppressedAt DateTime @default(now()) @db.Timestamptz
+}
+
+model AccountEmailWebhookEvent {
+  eventId    String   @id
+  provider   String
+  eventType  String
+  receivedAt DateTime @default(now()) @db.Timestamptz
+}
+
+model BillingGraceSweepLease {
+  id            String   @id @default("global")
+  leaseOwner    String
+  leaseExpiresAt DateTime @db.Timestamptz
+  updatedAt     DateTime @default(now()) @db.Timestamptz
+}
+
+model PlatformPluginUsage {
+  tenantId      String   @db.Text
+  projectId     String   @db.Text
+  environmentId String   @db.Text
+  pluginId      String   @db.Text
+  period        String   @db.Text
+  requestCount  BigInt   @default(0)
+  updatedAt     DateTime @default(now()) @updatedAt @db.Timestamptz
+
+  @@id([tenantId, pluginId, period])
+  @@index([projectId, environmentId, period])
+}
+
+model BillingProviderCache {
+  cacheKey       String   @id
+  tenantId       String   @db.Text
+  subscriptionId String   @db.Text
+  payload        Json
+  expiresAt      DateTime @db.Timestamptz
+  updatedAt      DateTime @default(now()) @updatedAt @db.Timestamptz
+
+  @@index([tenantId, expiresAt])
+}
+
+model BillingPlanMap {
+  razorpayPlanId String   @id
+  pluginId       String
+  internalPlanId String
+  amountMinor   Int
+  currency      String
+  period        String
+  interval      Int
+  active        Boolean  @default(true)
+  createdAt     DateTime @default(now()) @db.Timestamptz
+
+  subscriptions BillingSubscription[]
+
+  @@index([pluginId, internalPlanId])
+}
+
+model BillingSubscription {
+  razorpaySubscriptionId String   @id
+  organizationId         String
+  tenantId               String
+  pluginId               String
+  razorpayPlanId         String
+  status                 String   @default("created")
+  currentStart           DateTime? @db.Timestamptz
+  currentEnd             DateTime? @db.Timestamptz
+  graceStartedAt         DateTime? @db.Timestamptz
+  lastEventAt            Int      @default(0)
+  cancelAtPeriodEnd      Boolean  @default(false)
+  createdAt              DateTime @default(now()) @db.Timestamptz
+  updatedAt              DateTime @default(now()) @updatedAt @db.Timestamptz
+
+  planMap BillingPlanMap @relation(fields: [razorpayPlanId], references: [razorpayPlanId], onDelete: NoAction, onUpdate: NoAction)
+
+  @@index([organizationId])
+  @@index([tenantId, pluginId])
+}
+
+model BillingUnknownEvent {
+  eventId        String   @id
+  subscriptionId String
+  eventType      String
+  reason         String
+  payload        Json
+  receivedAt     DateTime @default(now()) @db.Timestamptz
+
+  @@index([subscriptionId, receivedAt])
+}
+
+model BillingWebhookAlertMetric {
+  name      String   @id
+  count     BigInt   @default(0)
+  lastAt    DateTime @default(now()) @db.Timestamptz
 }
 
 model PlatformProject {
@@ -1838,6 +1941,7 @@ model PluginInstallation {
   pluginId            String
   runtimeTenantId     String
   status              String   @default("ACTIVE")
+  statusReason        String?
   entitlementRevision Int      @default(1)
   planId              String?
   config              Json     @default("{}")

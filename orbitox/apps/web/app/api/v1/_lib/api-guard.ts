@@ -25,6 +25,8 @@ import { platformRepository } from '@/lib/platform-repository';
 import type { PlatformProject } from '@orbitox/types';
 import { isSamplePlugin, isSamplePluginEnabled, SamplePluginId } from '@/lib/sample-plugins';
 import { withOperatorActor } from '@/lib/operator-actor-context';
+import { prisma } from '@/lib/prisma';
+import { billingEnforcementState } from '@/lib/phase6-razorpay-billing';
 
 export { PlatformRepository };
 
@@ -1066,6 +1068,62 @@ export function withApiGuard<T = any>(
         );
       }
 
+      const environmentId = matchedKey?.environmentId;
+      const billingTenantId = project.organizationId && typeof environmentId === 'string'
+        ? `org/${project.organizationId}/project/${project.id}/environment/${environmentId}`
+        : null;
+      if (billingTenantId) {
+        const pluginIds = [serviceId, `@orbitox/${serviceId}`, `@orbitox-io/${serviceId}`];
+        const subscription = await prisma.billingSubscription.findFirst({
+          where: { tenantId: billingTenantId, pluginId: { in: pluginIds } },
+          orderBy: { updatedAt: 'desc' },
+          select: {
+            status: true,
+            currentEnd: true,
+            graceStartedAt: true,
+            planMap: { select: { internalPlanId: true } },
+          },
+        });
+        prismaRepositoryUsed = true;
+        guardDatabaseOperations += 1;
+        if (subscription) {
+          const plan = await prisma.plan.findUnique({
+            where: { planId: subscription.planMap.internalPlanId },
+            select: { gracePeriodDays: true, suspensionGraceDays: true },
+          });
+          guardDatabaseOperations += 1;
+          const now = Math.floor(Date.now() / 1000);
+          const state = billingEnforcementState({
+            status: subscription.status,
+            currentEnd: subscription.currentEnd ? Math.floor(subscription.currentEnd.getTime() / 1000) : null,
+            graceStartedAt: subscription.graceStartedAt
+              ? Math.floor(subscription.graceStartedAt.getTime() / 1000)
+              : null,
+          }, {
+            readOnlyAfterDays: plan?.gracePeriodDays ?? 0,
+            suspendAfterDays: plan?.suspensionGraceDays ?? 0,
+          }, now);
+          const isWrite = !['GET', 'HEAD', 'OPTIONS'].includes(req.method.toUpperCase());
+          if (state === 'SUSPENDED' || (state === 'READ_ONLY' && isWrite)) {
+            const latencyMs = Math.round(performance.now() - startTime);
+            return NextResponse.json<ApiResponse>(
+              {
+                success: false,
+                error: {
+                  code: 'PAYMENT_REQUIRED',
+                  message: state === 'READ_ONLY'
+                    ? 'This subscription is read-only. Update billing to restore write access.'
+                    : 'This subscription is suspended. Update billing to restore access.',
+                  details: { billingState: state },
+                },
+                meta: { tenantId, serviceId, latencyMs, timestamp: new Date().toISOString(), requestId },
+              },
+              { status: 402, headers: { 'x-orbitox-billing-state': state.toLowerCase() } },
+            );
+          }
+        }
+      }
+
       // 8.4 Fail-closed quota gate: missing or 0 quota uses plan default, never unlimited unless plan is unlimited
       effectiveProjectQuota = project.apiCallQuota || PLAN_DEFAULT_QUOTAS[project.plan?.toLowerCase() || 'starter'] || 100000;
     }
@@ -1303,6 +1361,51 @@ export function withApiGuard<T = any>(
       // Record key usage and platform environment quota
       // Fix C1: Bookkeeping failures after a 2xx must not change the successful response to a 503
       const isBillableResponse = response.status >= 200 && response.status < 300;
+      if (
+        matchedKey &&
+        isPlatformKeyRecord &&
+        isBillableResponse &&
+        project?.organizationId &&
+        matchedKey.environmentId &&
+        !['system', 'admin', 'platform'].includes(serviceId)
+      ) {
+        const usageTenantId =
+          `org/${project.organizationId}/project/${project.id}/environment/${matchedKey.environmentId}`;
+        const usagePeriod = new Date().toISOString().slice(0, 7);
+        try {
+          await prisma.$transaction(async (tx) => {
+            await tx.$queryRaw`SELECT set_config('app.current_tenant_id', ${usageTenantId}, true)`;
+            await tx.platformPluginUsage.upsert({
+              where: {
+                tenantId_pluginId_period: {
+                  tenantId: usageTenantId,
+                  pluginId: serviceId,
+                  period: usagePeriod,
+                },
+              },
+              create: {
+                tenantId: usageTenantId,
+                projectId: project.id,
+                environmentId: matchedKey.environmentId,
+                pluginId: serviceId,
+                period: usagePeriod,
+                requestCount: 1n,
+              },
+              update: { requestCount: { increment: 1n }, updatedAt: new Date() },
+            });
+          });
+          prismaRepositoryUsed = true;
+          guardDatabaseOperations += 1;
+          guardDatabaseWrites += 1;
+        } catch (usageError) {
+          PlatformApiState.recordTelemetry({
+            tenantId: project.slug || 'unknown',
+            facade: 'AuthorizationRepository',
+            level: 'ERROR',
+            message: `Plugin usage bookkeeping failed after successful response: ${usageError instanceof Error ? usageError.message : 'unknown error'}`,
+          });
+        }
+      }
       if (matchedKey && isPlatformKeyRecord && isBillableResponse) {
         try {
           await platformRepository.recordKeyUsage(matchedKey.id, clientIp);

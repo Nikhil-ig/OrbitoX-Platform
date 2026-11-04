@@ -21,6 +21,8 @@
     "platform:import": "pnpm run prisma:generate && pnpm exec tsx scripts/import-platform-json.ts",
     "test:api-no-token-sweep": "pnpm exec tsx scripts/live-api-no-token-sweep.ts",
     "recover:platform-audit-intents": "pnpm exec tsx scripts/recover-platform-audit-intents.ts",
+    "email:worker": "pnpm exec tsx scripts/account-email-worker.ts",
+    "billing:grace-sweep": "pnpm exec tsx scripts/billing-grace-sweep.ts",
     "operator:bootstrap": "pnpm exec tsx scripts/bootstrap-platform-operator.ts",
     "start": "node ../../scripts/check-production-env.mjs && next start -p 3005",
     "lint": "next lint"

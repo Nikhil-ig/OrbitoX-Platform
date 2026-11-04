@@ -39,7 +39,7 @@ const middlewareProtectedApiPrefixes = [
     'v1/overview/route.ts',
 ];
 
-const approvedWrappers = /withApiGuard|withHospitalGuard|withRestaurantGuard|withCustomerAuth|registerCustomer|verifyCustomerEmail|loginCustomer|requestCustomerPasswordReset|resetCustomerPassword|acceptCustomerInvite|getCustomerSession|withGuestToken|withPublicGuestBootstrap|handleRestaurantPublicRedirect|forwardSignedBridgeCall|verifyBridgeRequest|authorizeApiKey|operationStore/;
+const approvedWrappers = /withApiGuard|withHospitalGuard|withRestaurantGuard|withCustomerAuth|registerCustomer|verifyCustomerEmail|loginCustomer|requestCustomerPasswordReset|resetCustomerPassword|acceptCustomerInvite|getCustomerSession|withGuestToken|withPublicGuestBootstrap|handleRestaurantPublicRedirect|forwardSignedBridgeCall|verifyBridgeRequest|authorizeApiKey|verifyResendWebhookSignature|operationStore/;
 
 function listFiles(directory: string, filename: string): string[] {
     if (!fs.existsSync(directory)) return [];

@@ -124,6 +124,159 @@ describe('Phase 6 identity database-role boundaries', () => {
     assert.equal(await owner.platformOrganization.findUnique({ where: { id: organization.id } }), null);
   });
 
+  it('runtime billing grants exclude deletes and immutable subscription fields', async () => {
+    const rights = await runtime.$queryRaw<
+      Array<{
+        planSelect: boolean;
+        planDelete: boolean;
+        planUpdateActive: boolean;
+        planUpdatePrice: boolean;
+        subscriptionSelect: boolean;
+        subscriptionInsert: boolean;
+        subscriptionDelete: boolean;
+        subscriptionUpdateStatus: boolean;
+        subscriptionUpdateTenant: boolean;
+        subscriptionUpdateOrganization: boolean;
+        unknownInsert: boolean;
+        unknownUpdate: boolean;
+        unknownDelete: boolean;
+        alertInsert: boolean;
+        alertUpdate: boolean;
+        alertDelete: boolean;
+        webhookSelect: boolean;
+        webhookInsert: boolean;
+        webhookUpdate: boolean;
+        webhookDelete: boolean;
+        webhookUpdateProcessedAt: boolean;
+        webhookUpdatePayload: boolean;
+        usageSelect: boolean;
+        usageInsert: boolean;
+        usageUpdate: boolean;
+        usageDelete: boolean;
+        cacheSelect: boolean;
+        cacheInsert: boolean;
+        cacheUpdate: boolean;
+        cacheDelete: boolean;
+        leaseSelect: boolean;
+        leaseInsert: boolean;
+        leaseUpdate: boolean;
+        leaseDelete: boolean;
+        emailOutboxInsert: boolean;
+        emailOutboxSelect: boolean;
+        suppressionSelect: boolean;
+        suppressionInsert: boolean;
+        suppressionUpdate: boolean;
+        suppressionDelete: boolean;
+        emailEventInsert: boolean;
+        emailEventUpdate: boolean;
+      }>
+    >`
+      SELECT
+        has_table_privilege(current_user, 'public."BillingPlanMap"', 'SELECT') AS "planSelect",
+        has_table_privilege(current_user, 'public."BillingPlanMap"', 'DELETE') AS "planDelete",
+        has_column_privilege(current_user, 'public."BillingPlanMap"', 'active', 'UPDATE') AS "planUpdateActive",
+        has_column_privilege(current_user, 'public."BillingPlanMap"', 'amountMinor', 'UPDATE') AS "planUpdatePrice",
+        has_table_privilege(current_user, 'public."BillingSubscription"', 'SELECT') AS "subscriptionSelect",
+        has_table_privilege(current_user, 'public."BillingSubscription"', 'INSERT') AS "subscriptionInsert",
+        has_table_privilege(current_user, 'public."BillingSubscription"', 'DELETE') AS "subscriptionDelete",
+        has_column_privilege(current_user, 'public."BillingSubscription"', 'status', 'UPDATE') AS "subscriptionUpdateStatus",
+        has_column_privilege(current_user, 'public."BillingSubscription"', 'tenantId', 'UPDATE') AS "subscriptionUpdateTenant",
+        has_column_privilege(current_user, 'public."BillingSubscription"', 'organizationId', 'UPDATE') AS "subscriptionUpdateOrganization",
+        has_table_privilege(current_user, 'public."BillingUnknownEvent"', 'INSERT') AS "unknownInsert",
+        has_table_privilege(current_user, 'public."BillingUnknownEvent"', 'UPDATE') AS "unknownUpdate",
+        has_table_privilege(current_user, 'public."BillingUnknownEvent"', 'DELETE') AS "unknownDelete",
+        has_table_privilege(current_user, 'public."BillingWebhookAlertMetric"', 'INSERT') AS "alertInsert",
+        has_table_privilege(current_user, 'public."BillingWebhookAlertMetric"', 'UPDATE') AS "alertUpdate",
+        has_table_privilege(current_user, 'public."BillingWebhookAlertMetric"', 'DELETE') AS "alertDelete",
+        has_table_privilege(current_user, 'public."BillingWebhookEvent"', 'SELECT') AS "webhookSelect",
+        has_table_privilege(current_user, 'public."BillingWebhookEvent"', 'INSERT') AS "webhookInsert",
+        has_table_privilege(current_user, 'public."BillingWebhookEvent"', 'UPDATE') AS "webhookUpdate",
+        has_table_privilege(current_user, 'public."BillingWebhookEvent"', 'DELETE') AS "webhookDelete",
+        has_column_privilege(current_user, 'public."BillingWebhookEvent"', 'processedAt', 'UPDATE') AS "webhookUpdateProcessedAt",
+        has_column_privilege(current_user, 'public."BillingWebhookEvent"', 'payload', 'UPDATE') AS "webhookUpdatePayload",
+        has_table_privilege(current_user, 'public."PlatformPluginUsage"', 'SELECT') AS "usageSelect",
+        has_table_privilege(current_user, 'public."PlatformPluginUsage"', 'INSERT') AS "usageInsert",
+        has_table_privilege(current_user, 'public."PlatformPluginUsage"', 'UPDATE') AS "usageUpdate",
+        has_table_privilege(current_user, 'public."PlatformPluginUsage"', 'DELETE') AS "usageDelete",
+        has_table_privilege(current_user, 'public."BillingProviderCache"', 'SELECT') AS "cacheSelect",
+        has_table_privilege(current_user, 'public."BillingProviderCache"', 'INSERT') AS "cacheInsert",
+        has_table_privilege(current_user, 'public."BillingProviderCache"', 'UPDATE') AS "cacheUpdate",
+        has_table_privilege(current_user, 'public."BillingProviderCache"', 'DELETE') AS "cacheDelete",
+        has_table_privilege(current_user, 'public."BillingGraceSweepLease"', 'SELECT') AS "leaseSelect",
+        has_table_privilege(current_user, 'public."BillingGraceSweepLease"', 'INSERT') AS "leaseInsert",
+        has_table_privilege(current_user, 'public."BillingGraceSweepLease"', 'UPDATE') AS "leaseUpdate",
+        has_table_privilege(current_user, 'public."BillingGraceSweepLease"', 'DELETE') AS "leaseDelete",
+        has_table_privilege(current_user, 'public."AccountEmailOutbox"', 'INSERT') AS "emailOutboxInsert",
+        has_table_privilege(current_user, 'public."AccountEmailOutbox"', 'SELECT') AS "emailOutboxSelect",
+        has_table_privilege(current_user, 'public."AccountEmailSuppression"', 'SELECT') AS "suppressionSelect",
+        has_table_privilege(current_user, 'public."AccountEmailSuppression"', 'INSERT') AS "suppressionInsert",
+        has_table_privilege(current_user, 'public."AccountEmailSuppression"', 'UPDATE') AS "suppressionUpdate",
+        has_table_privilege(current_user, 'public."AccountEmailSuppression"', 'DELETE') AS "suppressionDelete",
+        has_table_privilege(current_user, 'public."AccountEmailWebhookEvent"', 'INSERT') AS "emailEventInsert",
+        has_table_privilege(current_user, 'public."AccountEmailWebhookEvent"', 'UPDATE') AS "emailEventUpdate"
+    `;
+    assert.deepEqual(rights[0], {
+      planSelect: true,
+      planDelete: false,
+      planUpdateActive: true,
+      planUpdatePrice: false,
+      subscriptionSelect: true,
+      subscriptionInsert: true,
+      subscriptionDelete: false,
+      subscriptionUpdateStatus: true,
+      subscriptionUpdateTenant: false,
+      subscriptionUpdateOrganization: false,
+      unknownInsert: true,
+      unknownUpdate: false,
+      unknownDelete: false,
+      alertInsert: true,
+      alertUpdate: true,
+      alertDelete: false,
+      webhookSelect: true,
+      webhookInsert: true,
+      webhookUpdate: true,
+      webhookDelete: false,
+      webhookUpdateProcessedAt: true,
+      webhookUpdatePayload: false,
+      usageSelect: true,
+      usageInsert: true,
+      usageUpdate: true,
+      usageDelete: false,
+      cacheSelect: true,
+      cacheInsert: true,
+      cacheUpdate: true,
+      cacheDelete: false,
+      leaseSelect: false,
+      leaseInsert: false,
+      leaseUpdate: false,
+      leaseDelete: false,
+      emailOutboxInsert: true,
+      emailOutboxSelect: false,
+      suppressionSelect: true,
+      suppressionInsert: true,
+      suppressionUpdate: false,
+      suppressionDelete: false,
+      emailEventInsert: true,
+      emailEventUpdate: false,
+    });
+
+    const maintenanceRights = await maintenance.$queryRaw<
+      Array<{ leaseSelect: boolean; leaseInsert: boolean; leaseUpdate: boolean; leaseDelete: boolean }>
+    >`
+      SELECT
+        has_table_privilege(current_user, 'public."BillingGraceSweepLease"', 'SELECT') AS "leaseSelect",
+        has_table_privilege(current_user, 'public."BillingGraceSweepLease"', 'INSERT') AS "leaseInsert",
+        has_table_privilege(current_user, 'public."BillingGraceSweepLease"', 'UPDATE') AS "leaseUpdate",
+        has_table_privilege(current_user, 'public."BillingGraceSweepLease"', 'DELETE') AS "leaseDelete"
+    `;
+    assert.deepEqual(maintenanceRights[0], {
+      leaseSelect: true,
+      leaseInsert: true,
+      leaseUpdate: true,
+      leaseDelete: false,
+    });
+  });
+
   it('runtime cannot insert/delete operators or update operator role/status', async () => {
     const privileges = await runtime.$queryRaw<
       Array<{

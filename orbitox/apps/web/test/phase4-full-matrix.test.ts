@@ -280,7 +280,13 @@ describe('Phase 4 Item 8: Comprehensive Tenant Provisioning Matrix', () => {
       ORBITOX_MFA_ENCRYPTION_KEY: crypto.randomBytes(32).toString('base64'),
       ORBITOX_ACCOUNT_TOKEN_ENCRYPTION_KEY: crypto.randomBytes(32).toString('base64'),
       ORBITOX_PUBLIC_BASE_URL: 'https://console.orbitox.test',
+      RAZORPAY_KEY_ID: 'rzp_test_matrix',
+      RAZORPAY_KEY_SECRET: crypto.randomBytes(32).toString('hex'),
       RAZORPAY_WEBHOOK_SECRET: crypto.randomBytes(32).toString('hex'),
+      ORBITOX_EMAIL_PROVIDER: 'resend',
+      ORBITOX_EMAIL_FROM: 'no-reply@example.invalid',
+      RESEND_API_KEY: 'test-resend-token',
+      ORBITOX_EMAIL_WEBHOOK_SECRET: `whsec_${crypto.randomBytes(32).toString('base64')}`,
       ORBITOX_GRANT_SIGNING_KEYS: JSON.stringify({
         k1: { privateKey: grantPrivPem, publicKey: grantPubPem },
       }),

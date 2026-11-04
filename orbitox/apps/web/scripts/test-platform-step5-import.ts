@@ -110,7 +110,13 @@ function spawnServer(port: number, envOverrides: Record<string, string> = {}): C
         crypto.randomBytes(32).toString('base64'),
       ORBITOX_ADMIN_TOKEN_SCOPES: 'GET:/api/*,POST:/api/*,PUT:/api/*,PATCH:/api/*,DELETE:/api/*',
       ORBITOX_PUBLIC_BASE_URL: 'https://console.orbitox.test',
+      RAZORPAY_KEY_ID: 'rzp_test_step5',
+      RAZORPAY_KEY_SECRET: crypto.randomBytes(32).toString('hex'),
       RAZORPAY_WEBHOOK_SECRET: crypto.randomBytes(32).toString('hex'),
+      ORBITOX_EMAIL_PROVIDER: 'resend',
+      ORBITOX_EMAIL_FROM: 'no-reply@example.invalid',
+      RESEND_API_KEY: 'test-resend-token',
+      ORBITOX_EMAIL_WEBHOOK_SECRET: `whsec_${crypto.randomBytes(32).toString('base64')}`,
       ORBITOX_GRANT_SIGNING_KEYS: JSON.stringify({
         k1: { privateKey: step5GrantPrivPem, publicKey: step5GrantPubPem },
       }),

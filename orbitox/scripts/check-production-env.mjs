@@ -75,9 +75,19 @@ const REQUIRED_SECRETS = [
     purpose: 'Base64-encoded 32-byte AES key protecting queued single-use account links',
   },
   {
+    name: 'ORBITOX_EMAIL_WEBHOOK_SECRET',
+    minLen: 32,
+    purpose: 'Resend whsec_ signing secret for Svix-verified bounce and complaint webhooks',
+  },
+  {
     name: 'RAZORPAY_WEBHOOK_SECRET',
     minLen: 32,
     purpose: 'HMAC SHA-256 secret for authenticating incoming billing webhook events from Razorpay',
+  },
+  {
+    name: 'RAZORPAY_KEY_SECRET',
+    minLen: 32,
+    purpose: 'Secret key for authenticated Razorpay subscription API calls',
   },
 ];
 
@@ -92,6 +102,49 @@ const OPTIONAL_RECOMMENDED = [
   },
 ];
 
+const errors = [];
+const successes = [];
+
+const emailProvider = process.env.ORBITOX_EMAIL_PROVIDER?.trim().toLowerCase();
+if (emailProvider !== 'resend') {
+  errors.push({
+    name: 'ORBITOX_EMAIL_PROVIDER',
+    reason: 'Production currently requires resend; log-only and other providers are unsupported',
+    purpose: 'Transactional email delivery and signed suppression webhooks',
+  });
+} else {
+  for (const name of ['ORBITOX_EMAIL_FROM', 'RESEND_API_KEY']) {
+    if (!process.env[name]?.trim()) {
+      errors.push({
+        name,
+        reason: 'NOT SET',
+        purpose: `Required for the configured ${emailProvider} email provider`,
+      });
+    }
+  }
+  const secret = process.env.ORBITOX_EMAIL_WEBHOOK_SECRET?.trim() || '';
+  const encodedKey = secret.startsWith('whsec_') ? secret.slice('whsec_'.length) : '';
+  const signingKey = Buffer.from(encodedKey, 'base64');
+  if (
+    !/^whsec_[A-Za-z0-9+/]+={0,2}$/.test(secret) ||
+    signingKey.length < 32 ||
+    signingKey.toString('base64') !== encodedKey
+  ) {
+    errors.push({
+      name: 'ORBITOX_EMAIL_WEBHOOK_SECRET',
+      reason: 'Must be a valid Resend whsec_ signing secret containing at least 32 decoded bytes',
+      purpose: 'Svix signature verification for Resend bounce and complaint webhooks',
+    });
+  }
+}
+if (!/^rzp_(test|live)_[A-Za-z0-9]+$/.test(process.env.RAZORPAY_KEY_ID?.trim() || '')) {
+  errors.push({
+    name: 'RAZORPAY_KEY_ID',
+    reason: 'Must be a valid Razorpay test or live key id',
+    purpose: 'Public identifier for authenticated Razorpay billing API calls',
+  });
+}
+
 console.log('='.repeat(80));
 console.log('🪐 OrbitoX Production Environment Configuration Check');
 console.log('='.repeat(80));
@@ -105,9 +158,6 @@ console.log(
   `Security Posture           : ${isProduction ? 'PRODUCTION (Strict Fail-Closed)' : 'DEVELOPMENT'}`,
 );
 console.log('-'.repeat(80));
-
-const errors = [];
-const successes = [];
 
 for (const secret of REQUIRED_SECRETS) {
   const val = process.env[secret.name]?.trim();
