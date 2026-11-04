@@ -18,6 +18,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as zlib from 'zlib';
 import { PrismaClient } from '@prisma/client';
+import { SEED_PLANS } from '@orbitox-io/plugin-engine';
 
 interface RestoreOptions {
   filePath?: string;
@@ -91,6 +92,16 @@ export async function restoreTenantFromFile(options: RestoreOptions) {
   if (!tenant || !tenant.id || !tenant.slug || !tenant.name) {
     throw new Error('Invalid tenant export: missing root tenant metadata (id, slug, or name).');
   }
+  const planId = tenant.planId === 'starter'
+    ? 'restaurant-starter'
+    : tenant.planId === 'pro'
+      ? 'restaurant-pro'
+      : tenant.planId;
+  if (!SEED_PLANS.some(
+    (plan) => plan.planId === planId && plan.pluginId === '@orbitox/restaurant' && plan.status === 'ACTIVE',
+  )) {
+    throw new Error(`Invalid RestaurantOS catalogue plan ID "${tenant.planId}".`);
+  }
 
   console.log(`🔍 Backup Metadata:`);
   console.log(`   Export Version: ${exportVersion || 'unspecified'}`);
@@ -98,7 +109,7 @@ export async function restoreTenantFromFile(options: RestoreOptions) {
   console.log(`   Tenant ID:      ${tenant.id}`);
   console.log(`   Tenant Name:    ${tenant.name}`);
   console.log(`   Tenant Slug:    ${tenant.slug}`);
-  console.log(`   Plan ID:        ${tenant.planId || 'starter'}`);
+  console.log(`   Plan ID:        ${planId}`);
 
   const counts = {
     branches: (tenant.branches || []).length,
@@ -155,7 +166,7 @@ export async function restoreTenantFromFile(options: RestoreOptions) {
             name: tenant.name,
             slug: tenant.slug,
             status: tenant.status || 'active',
-            planId: tenant.planId || 'starter',
+            planId,
             currency: tenant.currency || 'INR',
             timezone: tenant.timezone || 'Asia/Kolkata',
             gstin: tenant.gstin || null,
@@ -166,7 +177,7 @@ export async function restoreTenantFromFile(options: RestoreOptions) {
             name: tenant.name,
             slug: tenant.slug,
             status: tenant.status || 'active',
-            planId: tenant.planId || 'starter',
+            planId,
             currency: tenant.currency || 'INR',
             timezone: tenant.timezone || 'Asia/Kolkata',
             gstin: tenant.gstin || null,

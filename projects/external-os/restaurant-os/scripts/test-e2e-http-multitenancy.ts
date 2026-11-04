@@ -205,7 +205,7 @@ async function runBlackBoxHttpMultiTenantSuite() {
       name: 'Alpha Trattoria',
       slug: `alpha-${RUN_ID}`,
       ownerName: 'Owner Alpha',
-      planId: 'pro',
+      planId: 'restaurant-pro',
       currency: 'INR',
     };
     const tenantBData = {
@@ -213,7 +213,7 @@ async function runBlackBoxHttpMultiTenantSuite() {
       name: 'Beta Brasserie',
       slug: `beta-${RUN_ID}`,
       ownerName: 'Owner Beta',
-      planId: 'starter',
+      planId: 'restaurant-starter',
       currency: 'INR',
     };
 

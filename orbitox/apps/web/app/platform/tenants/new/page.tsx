@@ -11,7 +11,13 @@ interface PluginOption {
   description: string;
   selected: boolean;
   plan: string;
-  availablePlans: string[];
+  availablePlans: PlanOption[];
+}
+
+interface PlanOption {
+  planId: string;
+  name: string;
+  tier: string;
 }
 
 interface OperationStep {
@@ -31,8 +37,8 @@ const DEFAULT_PLUGINS: PluginOption[] = [
     icon: '🏥',
     description: 'Clinical management, wards, beds, and strict patient PHI cryptographic isolation.',
     selected: true,
-    plan: 'starter',
-    availablePlans: ['starter', 'growth', 'enterprise'],
+    plan: '',
+    availablePlans: [],
   },
   {
     id: 'restaurant-os',
@@ -40,8 +46,8 @@ const DEFAULT_PLUGINS: PluginOption[] = [
     icon: '🍷',
     description: 'Hospitality ERP, spatial floor plans, tables, KDS, and dining sessions.',
     selected: false,
-    plan: 'starter',
-    availablePlans: ['starter', 'growth', 'pro'],
+    plan: '',
+    availablePlans: [],
   },
 ];
 
@@ -54,34 +60,42 @@ export default function TenantProvisioningWizardPage() {
   const [region, setRegion] = useState('ap-south-1');
   const [apiKey, setApiKey] = useState('');
   const [plugins, setPlugins] = useState<PluginOption[]>(DEFAULT_PLUGINS);
+  const [catalogueError, setCatalogueError] = useState<string | null>(null);
+  const [catalogueLoading, setCatalogueLoading] = useState(true);
 
   // Dynamically load installable plugins from platform catalogue (Item 8 (3))
   useEffect(() => {
     async function loadCatalogue() {
       try {
         const res = await fetch('/api/v1/tenants');
-        if (res.ok) {
-          const data = await res.json();
-          if (Array.isArray(data.plugins) && data.plugins.length > 0) {
-            // Offer only plugins where installable is true; CRM must not be offered while disabled
-            const valid = data.plugins
-              .filter((p: any) => p.installable !== false && p.id !== 'crm')
-              .map((p: any, idx: number) => ({
-                id: p.id,
-                name: p.name,
-                icon: p.icon || '📦',
-                description: p.description || '',
-                selected: idx === 0,
-                plan: p.plan || 'starter',
-                availablePlans: p.availablePlans || ['starter', 'growth'],
-              }));
-            if (valid.length > 0) {
-              setPlugins(valid);
-            }
+        if (!res.ok) {
+          throw new Error(`Catalogue request failed with HTTP ${res.status}.`);
+        }
+        const data = await res.json();
+        if (Array.isArray(data.plugins) && data.plugins.length > 0) {
+          const valid = data.plugins
+            .filter((p: any) => p.installable !== false && p.id !== 'crm')
+            .map((p: any, idx: number) => ({
+              id: p.id,
+              name: p.name,
+              icon: p.icon || '📦',
+              description: p.description || '',
+              selected: idx === 0,
+              plan: '',
+              availablePlans: Array.isArray(p.availablePlans) ? p.availablePlans : [],
+            }));
+          if (valid.length > 0) {
+            setPlugins(valid);
+          } else {
+            throw new Error('No installable plugins are available in the catalogue.');
           }
+        } else {
+          throw new Error('The plugin catalogue returned no installable plugins.');
         }
       } catch (err) {
-        // Fallback to installable defaults (HospitalOS and RestaurantOS)
+        setCatalogueError(err instanceof Error ? err.message : 'Unable to load the plugin catalogue.');
+      } finally {
+        setCatalogueLoading(false);
       }
     }
     loadCatalogue();
@@ -140,6 +154,11 @@ export default function TenantProvisioningWizardPage() {
 
     if (selectedPlugins.length === 0) {
       setErrorMessage('Please select at least one plugin to provision.');
+      setSubmitting(false);
+      return;
+    }
+    if (selectedPlugins.some((plugin) => !plugin.plan)) {
+      setErrorMessage('Choose an active catalogue plan for each selected plugin.');
       setSubmitting(false);
       return;
     }
@@ -398,10 +417,14 @@ export default function TenantProvisioningWizardPage() {
                       className={styles.select}
                       style={{ width: 'auto', padding: '4px 8px', fontSize: '11px' }}
                       value={plugin.plan}
+                      disabled={plugin.availablePlans.length === 0}
                       onChange={(e) => setPluginPlan(plugin.id, e.target.value)}
                     >
-                      {plugin.availablePlans.map((plan) => (
-                        <option key={plan} value={plan}>{plan.toUpperCase()}</option>
+                      <option value="">Choose catalogue plan</option>
+                      {plugin.availablePlans.map((plan: PlanOption) => (
+                        <option key={plan.planId} value={plan.planId}>
+                          {plan.tier.toUpperCase()} - {plan.name}
+                        </option>
                       ))}
                     </select>
                   </div>
@@ -416,12 +439,23 @@ export default function TenantProvisioningWizardPage() {
             </div>
           )}
 
+          {(catalogueError || catalogueLoading) && (
+            <div style={{ color: catalogueError ? '#EF4444' : '#6B7280', fontSize: '13px' }}>
+              {catalogueError || 'Loading the active plugin plans...'}
+            </div>
+          )}
+
           <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '12px' }}>
             <button
               id="provision-tenant-btn"
               type="submit"
               className={`${styles.btn} ${styles.btnPrimary}`}
-              disabled={submitting}
+              disabled={
+                submitting ||
+                catalogueLoading ||
+                Boolean(catalogueError) ||
+                plugins.some((plugin) => plugin.selected && !plugin.plan)
+              }
             >
               {submitting ? 'Initiating Saga...' : '🚀 Provision Tenant (POST /api/v1/tenants)'}
             </button>

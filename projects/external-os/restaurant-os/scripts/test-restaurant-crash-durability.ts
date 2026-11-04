@@ -169,7 +169,7 @@ before(async () => {
     tenantId: TEST_TENANT,
     restaurantName: 'Crash Durability Grill',
     slug: `crash-${runId}`,
-    planId: 'growth',
+    planId: 'restaurant-starter',
   });
   testBranchId = pRes.branchId;
 

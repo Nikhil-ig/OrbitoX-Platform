@@ -13,6 +13,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { PrismaClient } from '@prisma/client';
 import { deriveTenantSigningSecret } from './security';
+import { SEED_PLANS } from '@orbitox-io/plugin-engine';
 
 export type OnboardingStepKey =
   | 'CLAIM_INVITE'
@@ -461,29 +462,46 @@ export class OwnerSelfService {
       select: { planId: true },
     });
 
-    const planKey = (tenant?.planId || 'starter').toLowerCase();
-    const limits = PLAN_TIER_LIMITS[planKey] || PLAN_TIER_LIMITS.starter;
+    const cataloguePlan = SEED_PLANS.find(
+      (plan) =>
+        plan.planId === tenant?.planId &&
+        plan.pluginId === '@orbitox/restaurant' &&
+        plan.status === 'ACTIVE',
+    );
+    const planKey = cataloguePlan?.tier;
+    const limits = planKey ? PLAN_TIER_LIMITS[planKey] : undefined;
 
     let current = 0;
     let max = 10;
 
     if (resource === 'TABLES') {
       current = await this.prisma.tableFloor.count({ where: { tenantId } });
-      max = limits.maxTables;
+      max = limits?.maxTables ?? 0;
     } else if (resource === 'MENU_ITEMS') {
       current = await this.prisma.menuItem.count({ where: { tenantId, isArchived: false } });
-      max = limits.maxMenuItems;
+      max = limits?.maxMenuItems ?? 0;
     } else if (resource === 'ORDERS') {
       // Count orders created this calendar month
       const startOfMonth = new Date(new Date().getFullYear(), new Date().getMonth(), 1);
       current = await this.prisma.restaurantOrder.count({
         where: { tenantId, createdAt: { gte: startOfMonth } },
       });
-      max = limits.maxMonthlyOrders;
+      max = limits?.maxMonthlyOrders ?? 0;
+    }
+
+    if (!limits) {
+      return {
+        allowed: false,
+        current,
+        max,
+        percentage: 100,
+        warning: true,
+        error: `PLAN_NOT_CONFIGURED: Tenant has no active RestaurantOS catalogue plan.`,
+      };
     }
 
     const projected = current + requestedCount;
-    const percentage = Math.round((current / max) * 100);
+    const percentage = max === 0 ? 100 : Math.round((current / max) * 100);
     const warning = percentage >= 80;
 
     if (projected > max) {

@@ -208,16 +208,19 @@ export class RestaurantBridgeClient {
     tenantId: string;
     restaurantName: string;
     slug: string;
-    planId?: string;
+    planId: string;
     revision?: number;
     idempotencyKey?: string;
   }): Promise<LifecycleResult> {
+    if (!input.planId) {
+      throw new Error('A catalogue plan ID is required to provision a RestaurantOS tenant.');
+    }
     const idempotencyKey = input.idempotencyKey || `idem_prov_${crypto.randomBytes(8).toString('hex')}`;
     const payload = {
       tenantId: input.tenantId,
       restaurantName: input.restaurantName,
       slug: input.slug,
-      planId: input.planId || 'growth',
+      planId: input.planId,
       revision: input.revision ?? 1,
       idempotencyKey,
     };
@@ -231,7 +234,7 @@ export class RestaurantBridgeClient {
         pluginId: '@orbitox/restaurant',
         runtimeTenantId: input.tenantId,
         status: 'FAILED',
-        planId: input.planId || 'growth',
+        planId: input.planId,
         entitlementRevision: input.revision ?? 1,
       });
       throw sendErr;
@@ -243,7 +246,7 @@ export class RestaurantBridgeClient {
       pluginId: '@orbitox/restaurant',
       runtimeTenantId: input.tenantId,
       status: installationStatus,
-      planId: input.planId || 'growth',
+      planId: input.planId,
       entitlementRevision: input.revision ?? 1,
     });
     await this.recordInstallationResult(input.tenantId, 'PROVISION', res);

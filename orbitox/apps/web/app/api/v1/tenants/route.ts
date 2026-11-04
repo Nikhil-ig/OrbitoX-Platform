@@ -1,11 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { platformRepository } from '@/lib/platform-repository';
-import { provisioningSaga } from '@/lib/tenant-provisioning/provisioning-saga';
+import {
+  ProvisioningValidationError,
+  provisioningSaga,
+} from '@/lib/tenant-provisioning/provisioning-saga';
 import { TenantProvisionRequest } from '@/lib/tenant-provisioning/types';
 import { isSamplePackage } from '@/lib/sample-plugins';
 import { getOperatorSession, OPERATOR_SESSION_COOKIE } from '@/lib/phase6-account-service';
 import { operatorRoleAllows } from '@/lib/operator-route-policy';
 import { verifyAdminTokenForRequestSync } from '../_lib/auth-pipeline';
+import { canonicalizePluginId } from '@orbitox-io/plugin-engine';
 
 export async function GET(req: NextRequest) {
   const authHeader = req.headers.get('authorization') || '';
@@ -45,14 +49,17 @@ export async function GET(req: NextRequest) {
   try {
     const packages = await platformRepository.listPackages();
     // Item 8 (3): Catalogue-driven installable plugins filter (only HospitalOS and RestaurantOS; CRM excluded)
-    const plugins = packages
-      .map((pkg) => {
+    const plugins = (await Promise.all(packages.map(async (pkg) => {
         const isSample = isSamplePackage(pkg.packageId) || isSamplePackage(pkg.id);
         const installable = !isSample;
-        const canonical = pkg.packageId.replace(/^@orbitox\//, '').toLowerCase();
+        const canonicalPluginId = canonicalizePluginId(pkg.packageId);
+        const canonical = canonicalPluginId.replace(/^@orbitox\//, '').toLowerCase();
         const id = canonical === 'hms' ? 'hospital-os' : canonical === 'restaurant' ? 'restaurant-os' : canonical;
         const isHospital = id === 'hospital-os' || id === 'hms';
         const isRestaurant = id === 'restaurant-os' || id === 'restaurant';
+        const availablePlans = (await platformRepository.listPlans(canonicalPluginId))
+          .filter((plan) => plan.status === 'ACTIVE')
+          .map(({ planId, name, tier }) => ({ planId, name, tier }));
         return {
           id,
           packageId: pkg.packageId,
@@ -62,11 +69,14 @@ export async function GET(req: NextRequest) {
           installable,
           installabilityStatus: installable ? 'AVAILABLE' : 'NOT_INSTALLABLE',
           selected: isHospital,
-          plan: 'starter',
-          availablePlans: isHospital ? ['starter', 'growth', 'enterprise'] : isRestaurant ? ['starter', 'growth', 'pro'] : ['starter'],
+          availablePlans,
         };
-      })
-      .filter((p) => p.installable && (p.id === 'hospital-os' || p.id === 'restaurant-os'));
+      })))
+      .filter((p) =>
+        p.installable &&
+        p.availablePlans.length > 0 &&
+        (p.id === 'hospital-os' || p.id === 'restaurant-os')
+      );
 
     return NextResponse.json({
       success: true,
@@ -200,11 +210,12 @@ export async function POST(req: NextRequest) {
 
   const normalizedPlugins = body.plugins.map((p: any) => {
     if (typeof p === 'string') {
-      return { id: p, plan: 'starter' };
+      return { id: p };
     }
+    if (!p || typeof p !== 'object' || Array.isArray(p)) return { id: '' };
     return {
       id: p.id || p.pluginId || p.packageId,
-      plan: p.plan || p.planId || 'starter',
+      plan: p.plan ?? p.planId,
       config: p.config,
     };
   });
@@ -230,10 +241,10 @@ export async function POST(req: NextRequest) {
     console.error('[POST /api/v1/tenants error]:', err?.message || err);
     return NextResponse.json(
       {
-        error: 'PROVISIONING_FAILED',
+        error: err instanceof ProvisioningValidationError ? err.code : 'PROVISIONING_FAILED',
         message: err?.message || 'Provisioning workflow encountered a fatal step error',
       },
-      { status: 500 }
+      { status: err instanceof ProvisioningValidationError ? 400 : 500 }
     );
   }
 

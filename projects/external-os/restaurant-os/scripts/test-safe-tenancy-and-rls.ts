@@ -103,6 +103,7 @@ async function runSafeTenancyAndRlsTestSuite() {
     ownerName: 'Alpha Owner',
     ownerEmail: `owner@${slugAlpha}.test`,
     templateId: 'tmpl_starter_bistro',
+    planId: 'restaurant-starter',
   });
 
   const tenantBeta = await provisioning.provisionTenant({
@@ -111,6 +112,7 @@ async function runSafeTenancyAndRlsTestSuite() {
     ownerName: 'Beta Owner',
     ownerEmail: `owner@${slugBeta}.test`,
     templateId: 'tmpl_starter_bistro',
+    planId: 'restaurant-starter',
   });
 
   console.log(`  Provisioned Tenant Alpha: ${tenantAlpha.tenantId} (${tenantAlpha.slug})`);

@@ -5,6 +5,7 @@ import {
   PluginGrantEnforcer,
   getPublicGrantKeys,
   createEntitlementGrantToken,
+  canonicalizePluginId,
   InstallationStatus,
   ServiceStatus,
   MemoryRevisionStore,
@@ -44,11 +45,8 @@ export async function fetchGrantForService(tenantId: string, pluginId: string): 
   if (!installation) return null;
 
   const rawPlanId = installation.planId;
-  const canonicalPlugin = pluginId.includes('hms') || pluginId.includes('hospital') ? '@orbitox/hms' : '@orbitox/restaurant';
-  const plan = rawPlanId
-    ? (await platformRepository.getPlan(rawPlanId)) ||
-      (await platformRepository.getPlan(canonicalPlugin === '@orbitox/hms' ? `hms-${rawPlanId}` : `restaurant-${rawPlanId}`))
-    : undefined;
+  const canonicalPlugin = canonicalizePluginId(pluginId);
+  const plan = rawPlanId ? await platformRepository.getPlan(rawPlanId) : undefined;
   if (!plan || plan.pluginId !== canonicalPlugin) {
     console.error('Refusing to issue an entitlement grant for an unknown or mismatched plan.', {
       tenantId,

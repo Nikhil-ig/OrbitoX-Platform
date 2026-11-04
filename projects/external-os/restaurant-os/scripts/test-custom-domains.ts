@@ -143,6 +143,7 @@ async function runCustomDomainsTestSuite() {
     ownerName: 'Owner One',
     ownerEmail: `owner1@${slug1}.test`,
     templateId: 'tmpl_starter_bistro',
+    planId: 'restaurant-starter',
   });
 
   const tenant2 = await provisioning.provisionTenant({
@@ -151,6 +152,7 @@ async function runCustomDomainsTestSuite() {
     ownerName: 'Owner Two',
     ownerEmail: `owner2@${slug2}.test`,
     templateId: 'tmpl_starter_bistro',
+    planId: 'restaurant-starter',
   });
 
   const mockDns = new MockDnsResolver();

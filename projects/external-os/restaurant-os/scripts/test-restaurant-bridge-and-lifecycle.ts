@@ -281,13 +281,32 @@ describe('RestaurantOS Contract v2 Lifecycle Hooks', () => {
   const resumePath = '/orbitox/lifecycle/resume';
   const planPath = '/orbitox/lifecycle/plan-changed';
 
+  it('refuses signed provisioning without a catalogue plan', async () => {
+    const payload = {
+      tenantId: lifecycleTenant,
+      restaurantName: 'Missing Plan Bistro',
+      slug: `missing-plan-${crypto.randomBytes(3).toString('hex')}`,
+    };
+    const signedHeaders = signBridgeRequest(keys, {
+      method: 'POST',
+      pathWithQuery: provPath,
+      tenantId: lifecycleTenant,
+      principal: TEST_PRINCIPAL,
+      body: JSON.stringify(payload),
+    });
+
+    const res = await sendRequest('POST', provPath, signedHeaders, payload);
+    assert.equal(res.status, 400);
+    assert.equal(res.body.error, 'INVALID_PLAN_ID');
+  });
+
   it('7. provision creates tenant branch, menu skeleton, and tables with 256-bit QR tokens stored as hashes only', async () => {
     const idemKey = `idem_prov_${crypto.randomBytes(8).toString('hex')}`;
     const payload = {
       tenantId: lifecycleTenant,
       restaurantName: 'Grand Culinary Palace',
       slug: `grand-${crypto.randomBytes(3).toString('hex')}`,
-      planId: 'growth',
+      planId: 'restaurant-starter',
       revision: 1,
       idempotencyKey: idemKey,
     };
@@ -328,7 +347,7 @@ describe('RestaurantOS Contract v2 Lifecycle Hooks', () => {
     const payload = {
       tenantId: lifecycleTenant,
       restaurantName: 'Grand Culinary Palace',
-      planId: 'growth',
+      planId: 'restaurant-starter',
       revision: 1,
       idempotencyKey: idemKey2,
     };
@@ -423,7 +442,7 @@ describe('RestaurantOS Contract v2 Lifecycle Hooks', () => {
     const idemKey = `idem_plan_${Date.now()}`;
     const payload = {
       tenantId: lifecycleTenant,
-      planId: 'enterprise',
+      planId: 'restaurant-pro',
       revision: 4,
       idempotencyKey: idemKey,
     };
@@ -438,13 +457,13 @@ describe('RestaurantOS Contract v2 Lifecycle Hooks', () => {
 
     const res = await sendRequest('POST', planPath, signedHeaders, payload);
     assert.equal(res.status, 200);
-    assert.equal(res.body.planId, 'enterprise');
+    assert.equal(res.body.planId, 'restaurant-pro');
     assert.equal(res.body.revision, 4);
 
     // Call with older revision (rev 2 < current rev 4) -> ignored
     const olderPayload = {
       tenantId: lifecycleTenant,
-      planId: 'starter',
+      planId: 'restaurant-starter',
       revision: 2,
       idempotencyKey: `idem_old_${Date.now()}`,
     };
@@ -463,7 +482,7 @@ describe('RestaurantOS Contract v2 Lifecycle Hooks', () => {
     // Call with same idempotency key -> replayed
     const replayPayload = {
       tenantId: lifecycleTenant,
-      planId: 'enterprise',
+      planId: 'restaurant-pro',
       revision: 4,
       idempotencyKey: idemKey,
     };

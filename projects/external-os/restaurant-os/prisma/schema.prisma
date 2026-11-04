@@ -16,7 +16,7 @@ model Tenant {
   name             String   // e.g. "Orbitox Bistro Pilot"
   slug             String   @unique // e.g. "bistro-pilot"
   status           String   @default("active") // "trial", "active", "suspended", "cancelled"
-  planId           String   @default("starter") // "starter", "growth", "pro", "enterprise"
+  planId           String   // Active RestaurantOS catalogue plan ID, e.g. "restaurant-starter"
   orbitoxProjectId String?  // e.g. "restaurant-os-pilot"
   currency         String   @default("INR")
   timezone         String   @default("Asia/Kolkata")
@@ -541,4 +541,3 @@ model PluginGrantRevision {
   @@id([tenantId, pluginId])
   @@index([tenantId])
 }
-

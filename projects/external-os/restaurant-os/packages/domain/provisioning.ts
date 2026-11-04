@@ -12,6 +12,7 @@ import { getCleanStarterTemplate, StarterTemplate } from './templates';
 import { generateSeats, SeatRecord } from './index';
 import { hashStaffSecretSync, hashPin, issueStaffToken } from './security';
 import { withTenantRlsTransaction } from './tenancy';
+import { SEED_PLANS } from '@orbitox-io/plugin-engine';
 
 export const RESERVED_SLUGS = new Set([
   'www',
@@ -126,7 +127,7 @@ export interface ProvisionTenantInput {
   currency?: string;
   timezone?: string;
   gstin?: string;
-  planId?: string;
+  planId: string;
   status?: string;
   entitlementRevision?: number;
   idempotencyKey?: string;
@@ -177,10 +178,20 @@ export class TenantProvisioningService {
       throw new Error(`Invalid slug: ${slugValidation.error}`);
     }
 
+    const cataloguePlan = SEED_PLANS.find(
+      (plan) =>
+        plan.planId === input.planId &&
+        plan.pluginId === '@orbitox/restaurant' &&
+        plan.status === 'ACTIVE',
+    );
+    if (!cataloguePlan) {
+      throw new Error(`Invalid RestaurantOS catalogue plan ID "${input.planId}".`);
+    }
+
     const cleanSlug = input.slug.trim().toLowerCase();
     const tenantId = input.tenantId || `tenant_${cleanSlug}`;
     const template: StarterTemplate = getCleanStarterTemplate(input.templateId);
-    const planId = input.planId || 'starter';
+    const planId = cataloguePlan.planId;
     const currency = input.currency || 'INR';
     const timezone = input.timezone || 'Asia/Kolkata';
     const locale = input.locale || 'en-IN';
@@ -701,6 +712,18 @@ export class TenantProvisioningService {
       currency?: string;
     }
   ): Promise<any> {
+    if (
+      updates.planId !== undefined &&
+      !SEED_PLANS.some(
+        (plan) =>
+          plan.planId === updates.planId &&
+          plan.pluginId === '@orbitox/restaurant' &&
+          plan.status === 'ACTIVE',
+      )
+    ) {
+      throw new Error(`Invalid RestaurantOS catalogue plan ID "${updates.planId}".`);
+    }
+
     return this.prisma.tenant.update({
       where: { id: tenantId },
       data: updates,

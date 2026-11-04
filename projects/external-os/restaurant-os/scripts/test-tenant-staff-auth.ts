@@ -121,12 +121,14 @@ async function runStaffAuthSuite() {
     slug: TENANT_A_SLUG,
     ownerEmail: 'alpha.owner@test.local',
     ownerName: 'Alpha Owner',
+    planId: 'restaurant-starter',
   });
   const tenantB = await provisioning.provisionTenant({
     restaurantName: 'Auth Beta Diner',
     slug: TENANT_B_SLUG,
     ownerEmail: 'beta.owner@test.local',
     ownerName: 'Beta Owner',
+    planId: 'restaurant-starter',
   });
 
   const HOST_A = `${TENANT_A_SLUG}.restaurantos.local`;
@@ -427,6 +429,7 @@ async function runStaffAuthSuite() {
       slug: TENANT_G_SLUG,
       ownerEmail: 'gamma.owner@test.local',
       ownerName: 'Gamma Owner',
+      planId: 'restaurant-starter',
     });
     const HOST_G = `${TENANT_G_SLUG}.restaurantos.local`;
 

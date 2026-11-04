@@ -155,7 +155,7 @@ describe('Phase 4 Items 1–5: The 2-Minute Tenant & Lifecycle Hooks', () => {
           organisation: orgB.slug,
           name: 'Unauthorized Beta Tenant',
           slug: 'unauthorized-beta',
-          plugins: [{ id: 'hospital-os', plan: 'starter' }],
+          plugins: [{ id: 'hospital-os', plan: 'hms-starter' }],
         }),
       });
 
@@ -183,7 +183,7 @@ describe('Phase 4 Items 1–5: The 2-Minute Tenant & Lifecycle Hooks', () => {
           name: `City General Hospital ${runTag}`,
           slug: tenantSlug,
           environment: 'production',
-          plugins: [{ id: 'hospital-os', plan: 'pro', config: { bedCount: 100 } }],
+          plugins: [{ id: 'hospital-os', plan: 'hms-pro', config: { bedCount: 100 } }],
         }),
       });
 
@@ -226,7 +226,7 @@ describe('Phase 4 Items 1–5: The 2-Minute Tenant & Lifecycle Hooks', () => {
             organisation: orgA.slug,
             name: 'HSM Failure Hospital',
             slug: failSlug,
-            plugins: [{ id: 'hospital-os', plan: 'starter' }],
+            plugins: [{ id: 'hospital-os', plan: 'hms-starter' }],
           }),
         });
 
@@ -322,7 +322,7 @@ describe('Phase 4 Items 1–5: The 2-Minute Tenant & Lifecycle Hooks', () => {
           organisation: orgPunct1.id,
           name: `Tenant 1 ${runId}`,
           slug: `t1-${runId}`,
-          plugins: [{ id: 'hospital-os', plan: 'starter' }],
+          plugins: [{ id: 'hospital-os', plan: 'hms-starter' }],
         }),
       });
       const resp1 = await postTenants(req1);
@@ -340,7 +340,7 @@ describe('Phase 4 Items 1–5: The 2-Minute Tenant & Lifecycle Hooks', () => {
           organisation: orgPunct2.id,
           name: `Tenant 2 ${runId}`,
           slug: `t2-${runId}`,
-          plugins: [{ id: 'hospital-os', plan: 'starter' }],
+          plugins: [{ id: 'hospital-os', plan: 'hms-starter' }],
         }),
       });
       const resp2 = await postTenants(req2);
@@ -374,7 +374,7 @@ describe('Phase 4 Items 1–5: The 2-Minute Tenant & Lifecycle Hooks', () => {
           organisation: missingOrgId,
           name: 'Should Fail Hospital',
           slug: `should-fail-${crypto.randomBytes(3).toString('hex')}`,
-          plugins: [{ id: 'hospital-os', plan: 'starter' }],
+          plugins: [{ id: 'hospital-os', plan: 'hms-starter' }],
         }),
       });
 
@@ -401,7 +401,7 @@ describe('Phase 4 Items 1–5: The 2-Minute Tenant & Lifecycle Hooks', () => {
           name: `Env Check Hospital ${runTag}`,
           slug,
           environment: 'production',
-          plugins: [{ id: 'hospital-os', plan: 'starter' }],
+          plugins: [{ id: 'hospital-os', plan: 'hms-starter' }],
         }),
       });
 
@@ -442,7 +442,7 @@ describe('Phase 4 Items 1–5: The 2-Minute Tenant & Lifecycle Hooks', () => {
         name: `Metro Diner ${runTag}`,
         slug: tenantSlug,
         environment: 'production',
-        plugins: [{ id: 'restaurant-os', plan: 'standard' }],
+        plugins: [{ id: 'restaurant-os', plan: 'restaurant-starter' }],
       };
 
       // Call 1
@@ -494,7 +494,7 @@ describe('Phase 4 Items 1–5: The 2-Minute Tenant & Lifecycle Hooks', () => {
         request: {
           name: 'Cancel Test',
           slug: 'cancel-test',
-          plugins: [{ id: 'hospital-os', plan: 'starter' }],
+          plugins: [{ id: 'hospital-os', plan: 'hms-starter' }],
         },
         operatorId: 'tester',
         createdAt: new Date().toISOString(),
@@ -542,7 +542,7 @@ describe('Phase 4 Items 1–5: The 2-Minute Tenant & Lifecycle Hooks', () => {
           organisation: orgA.slug,
           name: `Audit Security Hospital ${runTag}`,
           slug: tenantSlug,
-          plugins: [{ id: 'hospital-os', plan: 'pro' }],
+          plugins: [{ id: 'hospital-os', plan: 'hms-pro' }],
         }),
       });
 
@@ -614,7 +614,7 @@ describe('Phase 4 Items 1–5: The 2-Minute Tenant & Lifecycle Hooks', () => {
           organisation: orgA.slug,
           name: `Security Zero Secret ${runTag}`,
           slug: tenantSlug,
-          plugins: [{ id: 'hospital-os', plan: 'starter' }],
+          plugins: [{ id: 'hospital-os', plan: 'hms-starter' }],
         }),
       });
 
@@ -690,6 +690,30 @@ describe('Phase 4 Items 1–5: The 2-Minute Tenant & Lifecycle Hooks', () => {
       assert.equal(res.status, 401);
       const json = await res.json();
       assert.equal(json.code, 'BRIDGE_SIGNATURE_REQUIRED');
+    });
+
+    it('refuses a signed provision request without a catalogue plan', async () => {
+      const pathWithQuery = '/api/hospital/lifecycle/provision';
+      const body = JSON.stringify({ tenantId: testTenantId, revision: 1 });
+      const signedHeaders = signBridgeRequest(bridgeKeys, {
+        method: 'POST',
+        pathWithQuery,
+        tenantId: testTenantId,
+        principal: { sub: '@orbitox/hms', scopes: ['lifecycle', '@orbitox/hms'] },
+        body,
+      });
+      const req = new NextRequest(`http://127.0.0.1:3005${pathWithQuery}`, {
+        method: 'POST',
+        headers: { ...signedHeaders, 'Content-Type': 'application/json' },
+        body,
+      });
+
+      const res = await hospitalLifecycleHandler(req, {
+        params: Promise.resolve({ action: 'provision' }),
+      });
+      assert.equal(res.status, 400);
+      assert.equal((await res.json()).error, 'INVALID_PROVISIONING_REQUEST');
+      assert.equal(await platformRepository.getPluginInstallation(testTenantId, '@orbitox/hms'), undefined);
     });
 
     it('executes signed "provision" lifecycle hook and seeds default clinical structure and roles', async () => {

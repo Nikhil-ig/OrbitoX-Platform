@@ -364,7 +364,7 @@ describe('Standalone Server Customer Tenant Provisioning Gate (N1)', () => {
       body: JSON.stringify({
         name: 'Unauthenticated Hospital',
         slug: 'unauth-hosp',
-        plugins: [{ id: 'hospital-os', plan: 'starter' }],
+        plugins: [{ id: 'hospital-os', plan: 'hms-starter' }],
       }),
     });
 
@@ -413,7 +413,7 @@ describe('Standalone Server Customer Tenant Provisioning Gate (N1)', () => {
         organisation: orgA.slug,
         name: `Standalone Hospital ${runTag}`,
         slug: tenantSlug,
-        plugins: [{ id: 'hospital-os', plan: 'starter' }],
+        plugins: [{ id: 'hospital-os', plan: 'hms-starter' }],
       }),
     });
 

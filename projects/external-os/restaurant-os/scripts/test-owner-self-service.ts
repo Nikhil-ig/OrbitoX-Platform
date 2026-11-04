@@ -164,7 +164,7 @@ async function main() {
     restaurantName: 'Self-Service Test Bistro',
     slug: testSlug,
     templateId: 'tmpl_starter_bistro',
-    planId: 'starter',
+    planId: 'restaurant-starter',
     ownerEmail: `owner-${testSuffix}@testbistro.com`,
     ownerName: 'Owner Test',
     currency: 'INR',
@@ -409,7 +409,7 @@ async function main() {
   // Growth plan upgrade unlocks limit
   await prisma.tenant.update({
     where: { id: provisionResult.tenantId },
-    data: { planId: 'growth' },
+    data: { planId: 'restaurant-pro' },
   });
   const checkGrowth = await ownerService.checkPlanLimits(provisionResult.tenantId, 'TABLES', 1);
   assert(checkGrowth.allowed === true, 'After upgrading to growth plan, table creation is allowed');
@@ -419,7 +419,7 @@ async function main() {
   // Reset to starter plan for subsequent tests
   await prisma.tenant.update({
     where: { id: provisionResult.tenantId },
-    data: { planId: 'starter' },
+    data: { planId: 'restaurant-starter' },
   });
 
   // ─────────────────────────────────────────────────────────────────────────────

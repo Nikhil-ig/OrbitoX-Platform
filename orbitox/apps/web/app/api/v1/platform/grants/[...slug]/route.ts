@@ -2,11 +2,10 @@ import { NextRequest, NextResponse } from 'next/server';
 import {
   canonicalizePluginId,
   createEntitlementGrantToken,
-  ServiceStatus,
-  SEED_PLANS,
 } from '@orbitox-io/plugin-engine';
 import { getDefaultBridgeKeys, verifyBridgeRequest, MemoryNonceStore } from '@orbitox-io/bridge';
 import { platformRepository } from '@/lib/platform-repository';
+import { grantStatusForInstallation } from '@/app/api/_lib/route-auth';
 
 const bridgeNonceStore = new MemoryNonceStore();
 
@@ -128,40 +127,37 @@ export async function GET(
     }
 
     // 4. Map installation status to Grant ServiceStatus
-    let grantStatus: ServiceStatus = 'ACTIVE';
-    if (installation.status === 'READ_ONLY') {
-      grantStatus = 'READ_ONLY';
-    } else if (['SUSPENDED', 'DEPROVISIONING', 'ARCHIVED', 'FAILED'].includes(installation.status)) {
-      grantStatus = 'SUSPENDED';
-    } else if (installation.status === 'ACTIVE') {
-      grantStatus = 'ACTIVE';
-    }
+    const grantStatus = grantStatusForInstallation(installation.status);
 
     // 5. Lookup Plan, features, and quotas
     let features: string[] = [];
     let quotas: Record<string, { limit: number; window: 'day' | 'month' | 'none' }> = {};
-    const planId = installation.planId || (canonicalPlugin.includes('hms') ? 'hms-starter' : 'restaurant-starter');
+    const planId = installation.planId;
+    if (!planId) {
+      return NextResponse.json(
+        { success: false, error: 'PLAN_NOT_CONFIGURED' },
+        { status: 409 }
+      );
+    }
 
     const plan = await platformRepository.getPlan(planId);
-    if (plan) {
-      features = plan.features.filter((f) => f.enabled).map((f) => f.featureKey);
-      for (const q of plan.quotas) {
-        quotas[q.quotaKey] = {
-          limit: q.limit,
-          window: q.window as any,
-        };
-      }
-    } else {
-      const seedPlan = SEED_PLANS.find((p) => p.planId === planId);
-      if (seedPlan) {
-        features = seedPlan.features.filter((f) => f.enabled).map((f) => f.featureKey);
-        for (const q of seedPlan.quotas) {
-          quotas[q.quotaKey] = {
-            limit: q.limit,
-            window: q.window as any,
-          };
-        }
-      }
+    if (!plan || plan.pluginId !== canonicalPlugin) {
+      console.error('Refusing to issue a grant for a missing or mismatched catalogue plan.', {
+        tenantId,
+        pluginId: canonicalPlugin,
+        planId,
+      });
+      return NextResponse.json(
+        { success: false, error: 'PLAN_NOT_FOUND' },
+        { status: 409 }
+      );
+    }
+    features = plan.features.filter((f) => f.enabled).map((f) => f.featureKey);
+    for (const q of plan.quotas) {
+      quotas[q.quotaKey] = {
+        limit: q.limit,
+        window: q.window as any,
+      };
     }
 
     // 6. Mint 15-minute token

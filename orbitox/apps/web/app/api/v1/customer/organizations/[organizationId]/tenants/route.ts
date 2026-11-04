@@ -5,7 +5,10 @@ import {
   getCustomerOrganizationRole,
   noStoreHeaders,
 } from '@/lib/customer-dashboard';
-import { provisioningSaga } from '@/lib/tenant-provisioning/provisioning-saga';
+import {
+  ProvisioningValidationError,
+  provisioningSaga,
+} from '@/lib/tenant-provisioning/provisioning-saga';
 import type { TenantProvisionPluginInput } from '@/lib/tenant-provisioning/types';
 import { prisma } from '@/lib/prisma';
 
@@ -142,6 +145,12 @@ export const POST = withCustomerAuth<RouteContext>(async (request: NextRequest, 
     }, { status: 202, headers: noStoreHeaders() });
   } catch (error) {
     console.error('Customer tenant provisioning failed.', error);
+    if (error instanceof ProvisioningValidationError) {
+      return NextResponse.json(
+        { ok: false, error: error.code, message: error.message },
+        { status: 422, headers: noStoreHeaders() },
+      );
+    }
     return NextResponse.json({ ok: false, error: 'TENANT_PROVISIONING_FAILED' }, { status: 422, headers: noStoreHeaders() });
   }
 }, { write: true });

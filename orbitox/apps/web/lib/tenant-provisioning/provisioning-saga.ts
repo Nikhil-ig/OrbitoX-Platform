@@ -3,6 +3,7 @@ import { platformRepository } from '@/lib/platform-repository';
 import { createEntitlementGrantToken, canonicalizePluginId } from '@orbitox-io/plugin-engine';
 import {
   TenantProvisionRequest,
+  TenantProvisionPluginInput,
   PlatformOperationRecord,
   OperationStep,
 } from './types';
@@ -17,6 +18,77 @@ export type ProvisioningSagaStartResult = PlatformOperationRecord & {
     secret: string;
   };
 };
+
+export class ProvisioningValidationError extends Error {
+  readonly code = 'INVALID_PROVISIONING_REQUEST';
+
+  constructor(message: string) {
+    super(message);
+    this.name = 'ProvisioningValidationError';
+  }
+}
+
+type ResolvedProvisionPlugin = TenantProvisionPluginInput & {
+  id: string;
+  plan: string;
+  planTier: string;
+};
+
+type ResolvedProvisionRequest = Omit<TenantProvisionRequest, 'plugins'> & {
+  plugins: ResolvedProvisionPlugin[];
+};
+
+export async function validateProvisioningPlugins(
+  plugins: TenantProvisionPluginInput[],
+  listPlans: (pluginId: string) => ReturnType<typeof platformRepository.listPlans> =
+    (pluginId) => platformRepository.listPlans(pluginId),
+): Promise<ResolvedProvisionPlugin[]> {
+  if (!Array.isArray(plugins) || plugins.length === 0) {
+    throw new ProvisioningValidationError('At least one plugin with a catalogue plan is required.');
+  }
+
+  const resolved: ResolvedProvisionPlugin[] = [];
+  const seenPluginIds = new Set<string>();
+  const plansByPlugin = new Map<string, Awaited<ReturnType<typeof listPlans>>>();
+
+  for (const plugin of plugins) {
+    const pluginId = typeof plugin?.id === 'string' ? plugin.id.trim() : '';
+    const planId = typeof plugin?.plan === 'string' ? plugin.plan.trim() : '';
+    if (!pluginId) {
+      throw new ProvisioningValidationError('Each plugin requires an id.');
+    }
+    if (!planId) {
+      throw new ProvisioningValidationError(`A catalogue plan is required for plugin "${pluginId}".`);
+    }
+
+    const canonicalPluginId = canonicalizePluginId(pluginId);
+    if (seenPluginIds.has(canonicalPluginId)) {
+      throw new ProvisioningValidationError(`Plugin "${canonicalPluginId}" was requested more than once.`);
+    }
+    seenPluginIds.add(canonicalPluginId);
+
+    let cataloguePlans = plansByPlugin.get(canonicalPluginId);
+    if (!cataloguePlans) {
+      cataloguePlans = await listPlans(canonicalPluginId);
+      plansByPlugin.set(canonicalPluginId, cataloguePlans);
+    }
+    const plan = cataloguePlans.find(
+      (candidate) =>
+        candidate.planId === planId &&
+        candidate.pluginId === canonicalPluginId &&
+        candidate.status === 'ACTIVE',
+    );
+    if (!plan) {
+      throw new ProvisioningValidationError(
+        `Plan "${planId}" is not an active catalogue plan for plugin "${canonicalPluginId}".`,
+      );
+    }
+
+    resolved.push({ ...plugin, id: pluginId, plan: plan.planId, planTier: plan.tier });
+  }
+
+  return resolved;
+}
 
 export class ProvisioningSaga {
   readonly workerInstanceId = `worker_${process.pid}_${randomUUID().slice(0, 8)}`;
@@ -34,6 +106,10 @@ export class ProvisioningSaga {
       requestId?: string;
     } = {}
   ): Promise<ProvisioningSagaStartResult> {
+    const validatedInput: ResolvedProvisionRequest = {
+      ...input,
+      plugins: await validateProvisioningPlugins(input.plugins),
+    };
     const rawOrg = (input.organizationId || input.organization || '').trim();
     if (!rawOrg) {
       throw new Error('Field "organizationId" is required for tenant provisioning');
@@ -89,7 +165,7 @@ export class ProvisioningSaga {
         slug: cleanSlug,
         organizationId: org.id,
         environment: environmentSlug,
-        plugins: input.plugins,
+        plugins: validatedInput.plugins.map(({ id, plan, config }) => ({ id, plan, config })),
         region: input.region || 'ap-south-1',
       },
       result: null,
@@ -106,7 +182,7 @@ export class ProvisioningSaga {
     // Execute steps 1-4 synchronously
     const { tenantId, rawApiKey } = await this.executeSyncSteps(
       operationId,
-      input,
+      validatedInput,
       org,
       cleanSlug,
       environmentSlug,
@@ -116,7 +192,7 @@ export class ProvisioningSaga {
     // Launch steps 5-7 asynchronously in background (or await in test/sync mode)
     const asyncPromise = this.executeAsyncSteps(
       operationId,
-      input,
+      validatedInput,
       tenantId,
       org,
       cleanSlug,
@@ -142,7 +218,7 @@ export class ProvisioningSaga {
    */
   async executeSyncSteps(
     operationId: string,
-    input: TenantProvisionRequest,
+    input: ResolvedProvisionRequest,
     org: any,
     cleanSlug: string,
     environmentSlug: string,
@@ -206,13 +282,13 @@ export class ProvisioningSaga {
             slug: cleanSlug,
             organizationId: org.id,
             businessModel: 'B2B_SAAS',
-            planTier: input.plugins[0]?.plan || 'starter',
+            planTier: input.plugins[0]!.planTier,
             technicalLead: 'Orbitox Orchestrator',
             contactEmail: `${cleanSlug}@orbitox.io`,
             enabledServices: input.plugins.map((p) => canonicalizePluginId(p.id)),
             plugins: input.plugins.map((p) => ({
               pluginId: canonicalizePluginId(p.id),
-              planId: p.plan || 'starter',
+              planId: p.plan,
             })),
           });
           project = (createRes as any).project || createRes;
@@ -408,7 +484,7 @@ export class ProvisioningSaga {
    */
   async executeAsyncSteps(
     operationId: string,
-    input: TenantProvisionRequest,
+    input: ResolvedProvisionRequest,
     tenantId: string,
     org: any,
     cleanSlug: string,
@@ -481,7 +557,7 @@ export class ProvisioningSaga {
               tenantId,
               {
                 revision: 1,
-                planId: plugin.plan || 'starter',
+                planId: plugin.plan,
                 config: plugin.config || {},
                 name: input.name,
                 slug: cleanSlug,
@@ -495,7 +571,7 @@ export class ProvisioningSaga {
                 tenantId,
                 pluginId: canonical,
                 runtimeTenantId: tenantId,
-                planId: plugin.plan || 'starter',
+                planId: plugin.plan,
                 config: plugin.config || {},
                 entitlementRevision: 1,
               });
@@ -506,7 +582,7 @@ export class ProvisioningSaga {
                   tenantId,
                   pluginId: canonical,
                   runtimeTenantId: tenantId,
-                  planId: plugin.plan || 'starter',
+                  planId: plugin.plan,
                   config: plugin.config || {},
                   entitlementRevision: 1,
                 });
@@ -557,7 +633,7 @@ export class ProvisioningSaga {
           const grantToken = createEntitlementGrantToken({
             tenantId,
             pluginId: canonical,
-            planId: plugin.plan || 'starter',
+            planId: plugin.plan,
             status: 'ACTIVE',
             features: ['*'],
             quotas: {},
@@ -569,7 +645,7 @@ export class ProvisioningSaga {
             plugin.id,
             'plan-changed',
             tenantId,
-            { revision: 1, planId: plugin.plan || 'starter', grantToken },
+            { revision: 1, planId: plugin.plan, grantToken },
             { retries: 1, timeoutMs: 5000 }
           );
         }
@@ -621,7 +697,7 @@ export class ProvisioningSaga {
             status: 'ACTIVE',
             plugins: input.plugins.map((p) => ({
               id: p.id,
-              plan: p.plan || 'starter',
+              plan: p.plan,
               status: 'ACTIVE',
             })),
           },
@@ -647,7 +723,7 @@ export class ProvisioningSaga {
           status: 'ACTIVE',
           plugins: input.plugins.map((p) => ({
             id: p.id,
-            plan: p.plan || 'starter',
+            plan: p.plan,
             status: 'ACTIVE',
           })),
           apiKey: existingApiKey ? {
@@ -690,6 +766,10 @@ export class ProvisioningSaga {
     environmentSlug: string,
     options: { operatorId?: string; requestId?: string; idempotencyKey?: string; workerId?: string }
   ): Promise<void> {
+    const validatedInput: ResolvedProvisionRequest = {
+      ...input,
+      plugins: await validateProvisioningPlugins(input.plugins),
+    };
     const org = await platformRepository.getOrganization(orgId);
     if (!org) {
       throw new Error(`Organization "${orgId}" not found for operation ${operationId}`);
@@ -697,7 +777,7 @@ export class ProvisioningSaga {
 
     const { tenantId: resolvedTenantId } = await this.executeSyncSteps(
       operationId,
-      input,
+      validatedInput,
       org,
       cleanSlug,
       environmentSlug,
@@ -706,7 +786,7 @@ export class ProvisioningSaga {
 
     await this.executeAsyncSteps(
       operationId,
-      input,
+      validatedInput,
       resolvedTenantId,
       org,
       cleanSlug,

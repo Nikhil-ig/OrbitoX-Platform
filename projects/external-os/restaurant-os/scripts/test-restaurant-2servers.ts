@@ -245,7 +245,7 @@ before(async () => {
     tenantId: TEST_TENANT,
     restaurantName: 'The Distributed Hearth',
     slug: `dist-resto-${crypto.randomBytes(3).toString('hex')}`,
-    planId: 'growth',
+    planId: 'restaurant-starter',
     revision: 1,
     idempotencyKey: `idem_prov_${crypto.randomBytes(6).toString('hex')}`,
   };

@@ -141,7 +141,7 @@ describe('Platform <-> RestaurantOS Lifecycle Bridge E2E (Phase 2b-4 B5)', () =>
       tenantId: TEST_TENANT,
       restaurantName: 'The E2E Grand Bistro',
       slug: `grand-bistro-${runId}`,
-      planId: 'growth',
+      planId: 'restaurant-starter',
     });
 
     assert.equal(result.ok, true, `Expected ok: true, got ${JSON.stringify(result)}`);
@@ -152,7 +152,7 @@ describe('Platform <-> RestaurantOS Lifecycle Bridge E2E (Phase 2b-4 B5)', () =>
     assert.equal(dbRes.rows.length, 1);
     assert.equal(dbRes.rows[0].id, TEST_TENANT);
     assert.equal(dbRes.rows[0].status.toLowerCase(), 'active');
-    assert.equal(dbRes.rows[0].planId, 'growth');
+    assert.equal(dbRes.rows[0].planId, 'restaurant-starter');
   });
 
   it('2. Platform suspends project -> RestaurantOS marks suspended and write mutations return 403 within 5s', async (t) => {
@@ -217,21 +217,21 @@ describe('Platform <-> RestaurantOS Lifecycle Bridge E2E (Phase 2b-4 B5)', () =>
       return;
     }
 
-    const planRes = await bridgeClient.changePlan(TEST_TENANT, 'enterprise', 5);
+    const planRes = await bridgeClient.changePlan(TEST_TENANT, 'restaurant-pro', 5);
     assert.equal(planRes.ok, true, `Expected ok on plan change, got ${JSON.stringify(planRes)}`);
     assert.equal(planRes.statusCode, 200);
 
     const dbRes = await pool.query('SELECT "planId", "entitlementRevision" FROM "Tenant" WHERE "id" = $1', [TEST_TENANT]);
-    assert.equal(dbRes.rows[0].planId, 'enterprise');
+    assert.equal(dbRes.rows[0].planId, 'restaurant-pro');
     assert.equal(dbRes.rows[0].entitlementRevision, 5);
 
     // Sending an older revision (e.g. revision 3) must be ignored / return 200 with current state
-    const olderRes = await bridgeClient.changePlan(TEST_TENANT, 'starter', 3);
+    const olderRes = await bridgeClient.changePlan(TEST_TENANT, 'restaurant-starter', 3);
     assert.equal(olderRes.ok, true);
     assert.equal(olderRes.statusCode, 200);
 
     const dbCheck = await pool.query('SELECT "planId", "entitlementRevision" FROM "Tenant" WHERE "id" = $1', [TEST_TENANT]);
-    assert.equal(dbCheck.rows[0].planId, 'enterprise', 'Older plan revision must not overwrite higher revision');
+    assert.equal(dbCheck.rows[0].planId, 'restaurant-pro', 'Older plan revision must not overwrite higher revision');
     assert.equal(dbCheck.rows[0].entitlementRevision, 5);
   });
 

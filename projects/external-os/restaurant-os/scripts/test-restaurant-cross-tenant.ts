@@ -126,7 +126,7 @@ before(async () => {
     tenantId: TENANT_A,
     restaurantName: 'Tenant Alpha Bistro',
     slug: `alpha-${runId}`,
-    planId: 'growth',
+    planId: 'restaurant-starter',
   });
 
   // 2. Provision Tenant B
@@ -134,7 +134,7 @@ before(async () => {
     tenantId: TENANT_B,
     restaurantName: 'Tenant Beta Smokehouse',
     slug: `beta-${runId}`,
-    planId: 'growth',
+    planId: 'restaurant-starter',
   });
 
   tenantBBranchId = provB.branchId;

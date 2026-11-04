@@ -5,6 +5,7 @@ import { prisma } from '@/lib/prisma';
 import { ensureDefaultRoles } from '@/lib/hms-auth';
 import { platformRepository } from '@/lib/platform-repository';
 import { hmsGrantEnforcer } from '@/app/api/_lib/route-auth';
+import { ProvisioningValidationError, validateProvisioningPlugins } from '@/lib/tenant-provisioning/provisioning-saga';
 
 const bridgeNonceStore = new MemoryNonceStore();
 
@@ -117,6 +118,22 @@ export async function POST(
   // 3. Dispatch lifecycle action
   switch (action) {
     case 'provision': {
+      let planId: string;
+      try {
+        const [validatedPlugin] = await validateProvisioningPlugins([{
+          id: '@orbitox/hms',
+          plan: body.planId ?? body.plan,
+        }]);
+        if (!validatedPlugin) throw new ProvisioningValidationError('A catalogue plan is required.');
+        planId = validatedPlugin.plan;
+      } catch (error) {
+        if (!(error instanceof ProvisioningValidationError)) throw error;
+        return NextResponse.json(
+          { error: error.code, message: error.message },
+          { status: 400 }
+        );
+      }
+
       // Seed default clinical structure inside tenant transaction
       let seeded = false;
       try {
@@ -158,7 +175,6 @@ export async function POST(
         console.warn('[HospitalOS Lifecycle] Database seeding note:', err?.message || err);
       }
 
-      const planId = body.planId || body.plan || 'hms-starter';
       await platformRepository.provisionPluginInstallation({
         tenantId: targetTenantId,
         pluginId: '@orbitox/hms',
@@ -207,7 +223,22 @@ export async function POST(
 
     case 'plan-changed':
     case 'planChanged': {
-      const newPlanId = body.planId || body.plan || 'hms-starter';
+      let newPlanId: string;
+      try {
+        const [validatedPlugin] = await validateProvisioningPlugins([{
+          id: '@orbitox/hms',
+          plan: body.planId ?? body.plan,
+        }]);
+        if (!validatedPlugin) throw new ProvisioningValidationError('A catalogue plan is required.');
+        newPlanId = validatedPlugin.plan;
+      } catch (error) {
+        if (!(error instanceof ProvisioningValidationError)) throw error;
+        return NextResponse.json(
+          { error: error.code, message: error.message },
+          { status: 400 }
+        );
+      }
+
       await platformRepository.changePluginInstallationPlan(
         targetTenantId,
         '@orbitox/hms',

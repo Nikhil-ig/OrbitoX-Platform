@@ -88,6 +88,7 @@ import {
   PluginGrantEnforcer,
   PostgresRevisionStore,
   MemoryRevisionStore,
+  SEED_PLANS,
 } from '@orbitox-io/plugin-engine';
 import {
   renderShell,
@@ -917,6 +918,12 @@ function checkTestKillPoint(req: http.IncomingMessage, stage: 'pre-commit' | 'po
   }
 }
 
+function isActiveRestaurantCataloguePlan(planId: unknown): planId is string {
+  return typeof planId === 'string' && SEED_PLANS.some(
+    (plan) => plan.planId === planId && plan.pluginId === '@orbitox/restaurant' && plan.status === 'ACTIVE',
+  );
+}
+
 export async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse): Promise<void> {
   const parsedUrl = url.parse(req.url || '', true);
   const pathname = parsedUrl.pathname || '/';
@@ -1318,12 +1325,21 @@ export async function handleRequest(req: http.IncomingMessage, res: http.ServerR
         return;
       }
 
+      const planId = body.planId;
+      if (!isActiveRestaurantCataloguePlan(planId)) {
+        sendJson(res, 400, {
+          error: 'INVALID_PLAN_ID',
+          message: 'A valid active RestaurantOS catalogue plan ID is required.',
+        });
+        return;
+      }
+
       const cleanSlug = body.slug || targetTenantId.replace(/^org\/[^/]+\/project\/[^/]+\/environment\//, '').replace(/^tenant_/, '').replace(/[^a-z0-9-]/g, '-').slice(0, 30);
       const provResult = await provisioningService.provisionTenant({
         tenantId: targetTenantId,
         restaurantName: body.restaurantName || body.name || `Restaurant ${cleanSlug}`,
         slug: cleanSlug,
-        planId: body.planId || 'starter',
+        planId,
         entitlementRevision: Math.max(1, incomingRevision),
         idempotencyKey,
       });
@@ -1433,7 +1449,14 @@ export async function handleRequest(req: http.IncomingMessage, res: http.ServerR
         sendJson(res, 404, { error: 'TENANT_NOT_FOUND', code: 'TENANT_NOT_FOUND', message: `Tenant ${targetTenantId} not found` });
         return;
       }
-      const newPlanId = body.planId || body.newPlanId || existingTenant.planId;
+      const newPlanId = body.planId ?? body.newPlanId;
+      if (!isActiveRestaurantCataloguePlan(newPlanId)) {
+        sendJson(res, 400, {
+          error: 'INVALID_PLAN_ID',
+          message: 'A valid active RestaurantOS catalogue plan ID is required.',
+        });
+        return;
+      }
       if (postgresStore?.prisma) {
         await postgresStore.prisma.tenant.update({
           where: { id: existingTenant.id },
@@ -1454,6 +1477,7 @@ export async function handleRequest(req: http.IncomingMessage, res: http.ServerR
           },
         }).catch(() => {});
       }
+
       restaurantGrantEnforcer.invalidate(existingTenant.id);
       restaurantGrantEnforcer.invalidate(targetTenantId);
       invalidateTenantResolutionCache(existingTenant.id);

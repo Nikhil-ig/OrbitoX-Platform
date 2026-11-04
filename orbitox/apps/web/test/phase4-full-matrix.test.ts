@@ -388,8 +388,7 @@ describe('Phase 4 Item 8: Comprehensive Tenant Provisioning Matrix', () => {
         slug: hospitalSlug,
         environment: 'production',
         plugins: [
-          { id: 'hospital-os', plan: 'enterprise' },
-          { id: 'crm', plan: 'starter' },
+          { id: 'hospital-os', plan: 'hms-pro' },
         ],
       }),
     });
@@ -456,8 +455,7 @@ describe('Phase 4 Item 8: Comprehensive Tenant Provisioning Matrix', () => {
         slug: restaurantSlug,
         environment: 'production',
         plugins: [
-          { id: 'restaurant-os', plan: 'starter' },
-          { id: 'crm', plan: 'starter' },
+          { id: 'restaurant-os', plan: 'restaurant-starter' },
         ],
       }),
     });
@@ -513,7 +511,7 @@ describe('Phase 4 Item 8: Comprehensive Tenant Provisioning Matrix', () => {
       name: `Idem Tenant ${runTag}`,
       slug: `idem-tenant-${runTag}`,
       environment: 'production',
-      plugins: [{ id: 'crm', plan: 'starter' }],
+      plugins: [{ id: 'hospital-os', plan: 'hms-starter' }],
     };
 
     // First request
@@ -639,7 +637,7 @@ describe('Phase 4 Item 8: Comprehensive Tenant Provisioning Matrix', () => {
         name: `Kill Resume Tenant ${runTag}`,
         slug: killResumeSlug,
         environment: 'production',
-        plugins: [{ id: 'hospital-os', plan: 'starter' }],
+        plugins: [{ id: 'hospital-os', plan: 'hms-starter' }],
       }),
     });
 
@@ -819,7 +817,7 @@ describe('Phase 4 Item 8: Comprehensive Tenant Provisioning Matrix', () => {
         slug: retrySlug,
         organizationId: orgA.id,
         environment: 'production',
-        plugins: [{ id: 'crm', plan: 'starter' }],
+        plugins: [{ id: 'hospital-os', plan: 'hms-starter' }],
       },
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
@@ -861,7 +859,7 @@ describe('Phase 4 Item 8: Comprehensive Tenant Provisioning Matrix', () => {
         organisation: orgA.slug,
         name: 'Infiltration Tenant',
         slug: `infil-tenant-${runTag}`,
-        plugins: [{ id: 'crm', plan: 'starter' }],
+        plugins: [{ id: 'hospital-os', plan: 'hms-starter' }],
       }),
     });
     assert.strictEqual(resCreate.status, 403, 'Key B must be rejected 403 when creating tenant in Org A');
@@ -957,8 +955,8 @@ describe('Phase 4 Item 8: Comprehensive Tenant Provisioning Matrix', () => {
           slug: dualSlug,
           environment: 'production',
           plugins: [
-            { id: 'hospital-os', plan: 'starter' },
-            { id: 'restaurant-os', plan: 'starter' },
+            { id: 'hospital-os', plan: 'hms-starter' },
+            { id: 'restaurant-os', plan: 'restaurant-starter' },
           ],
         }),
       });
@@ -994,7 +992,7 @@ describe('Phase 4 Item 8: Comprehensive Tenant Provisioning Matrix', () => {
         tenantId: dualTenantId,
         restaurantName: `Dual OS Restaurant ${runTag}`,
         slug: dualSlug,
-        planId: 'starter',
+        planId: 'restaurant-starter',
       });
       console.log('[Matrix 7] Restaurant provision result:', restoProvRes);
 

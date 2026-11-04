@@ -13,17 +13,19 @@ describe('Phase 6 entitlement grant construction', () => {
     assert.equal(grantStatusForInstallation('READ_ONLY'), 'READ_ONLY');
   });
 
-  it('refuses to issue a grant for an unknown plan instead of using a seed plan', async () => {
+  it('refuses unknown, bare, and mismatched plans instead of guessing or using a seed plan', async () => {
     const id = crypto.randomUUID().replaceAll('-', '');
-    const tenantId = `org/org_${id}/project/project_${id}/environment/environment_${id}`;
-    await platformRepository.provisionPluginInstallation({
-      tenantId,
-      runtimeTenantId: tenantId,
-      pluginId: '@orbitox/hms',
-      status: 'ACTIVE',
-      planId: `unknown-${id}`,
-    });
+    for (const [index, planId] of [`unknown-${id}`, 'starter', 'restaurant-starter'].entries()) {
+      const tenantId = `org/org_${id}/project/project_${id}_${index}/environment/environment_${id}`;
+      await platformRepository.provisionPluginInstallation({
+        tenantId,
+        runtimeTenantId: tenantId,
+        pluginId: '@orbitox/hms',
+        status: 'ACTIVE',
+        planId,
+      });
 
-    assert.equal(await fetchGrantForService(tenantId, '@orbitox/hms'), null);
+      assert.equal(await fetchGrantForService(tenantId, '@orbitox/hms'), null);
+    }
   });
 });
