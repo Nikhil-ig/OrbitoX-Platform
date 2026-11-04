@@ -5,7 +5,7 @@ import {
   PluginGrantEnforcer,
   getPublicGrantKeys,
   createEntitlementGrantToken,
-  SEED_PLANS,
+  InstallationStatus,
   ServiceStatus,
   MemoryRevisionStore,
   PostgresRevisionStore,
@@ -39,61 +39,81 @@ export const restaurantRevisionStore =
     ? new MemoryRevisionStore()
     : new PostgresRevisionStore(prisma);
 
-async function fetchGrantForService(tenantId: string, pluginId: string): Promise<string | null> {
+export async function fetchGrantForService(tenantId: string, pluginId: string): Promise<string | null> {
   const installation = await platformRepository.getPluginInstallation(tenantId, pluginId);
   if (!installation) return null;
 
-  const rawPlanId = installation.planId || 'starter';
+  const rawPlanId = installation.planId;
   const canonicalPlugin = pluginId.includes('hms') || pluginId.includes('hospital') ? '@orbitox/hms' : '@orbitox/restaurant';
-  const plan =
-    (await platformRepository.getPlan(rawPlanId)) ||
-    (await platformRepository.getPlan(canonicalPlugin.includes('hms') ? `hms-${rawPlanId}` : `restaurant-${rawPlanId}`)) ||
-    (await platformRepository.getPlan(canonicalPlugin.includes('hms') ? 'hms-starter' : 'restaurant-starter'));
-
-  let features: string[] = [];
-  const quotas: any = {};
-
-  if (plan) {
-    features = plan.features.filter((f) => f.enabled).map((f) => f.featureKey);
-    for (const q of plan.quotas) {
-      quotas[q.quotaKey] = { limit: q.limit, window: q.window };
-    }
-  } else {
-    const seed =
-      SEED_PLANS.find(
-        (p) =>
-          p.planId === rawPlanId ||
-          p.planId === (canonicalPlugin.includes('hms') ? `hms-${rawPlanId}` : `restaurant-${rawPlanId}`) ||
-          (p.pluginId === canonicalPlugin && p.tier === rawPlanId)
-      ) || SEED_PLANS.find((p) => p.pluginId === canonicalPlugin);
-
-    if (seed) {
-      features = seed.features.filter((f) => f.enabled).map((f) => f.featureKey);
-      for (const q of seed.quotas) {
-        quotas[q.quotaKey] = { limit: q.limit, window: q.window };
-      }
-    }
+  const plan = rawPlanId
+    ? (await platformRepository.getPlan(rawPlanId)) ||
+      (await platformRepository.getPlan(canonicalPlugin === '@orbitox/hms' ? `hms-${rawPlanId}` : `restaurant-${rawPlanId}`))
+    : undefined;
+  if (!plan || plan.pluginId !== canonicalPlugin) {
+    console.error('Refusing to issue an entitlement grant for an unknown or mismatched plan.', {
+      tenantId,
+      pluginId,
+      planId: rawPlanId,
+    });
+    return null;
   }
 
-  let grantStatus: ServiceStatus = 'ACTIVE';
-  if (installation.status === 'READ_ONLY') {
-    grantStatus = 'READ_ONLY';
-  } else if (['SUSPENDED', 'DEPROVISIONING', 'ARCHIVED', 'FAILED'].includes(installation.status)) {
-    grantStatus = 'SUSPENDED';
-  } else if (installation.status === 'ACTIVE') {
-    grantStatus = 'ACTIVE';
+  const features = plan.features.filter((feature) => feature.enabled).map((feature) => feature.featureKey);
+  const quotas: Record<string, { limit: number; window: 'month' | 'none' | 'day' }> = {};
+  for (const quota of plan.quotas) {
+    quotas[quota.quotaKey] = { limit: quota.limit, window: quota.window };
   }
+  const grantStatus = grantStatusForInstallation(installation.status);
 
   return createEntitlementGrantToken({
     tenantId,
     pluginId,
-    planId: plan?.planId || rawPlanId,
+    planId: plan.planId,
     status: grantStatus,
     features,
     quotas,
     revision: installation.entitlementRevision || 1,
     ttlSeconds: 900,
   });
+}
+
+export function grantStatusForInstallation(status: string): ServiceStatus {
+  if (!isInstallationStatus(status)) {
+    console.error('Unknown plugin installation status; issuing a suspended entitlement grant.', { status });
+    return 'SUSPENDED';
+  }
+  switch (status) {
+    case 'ACTIVE':
+      return 'ACTIVE';
+    case 'READ_ONLY':
+      return 'READ_ONLY';
+    case 'REQUESTED':
+    case 'PROVISIONING':
+    case 'SUSPENDED':
+    case 'DEPROVISIONING':
+    case 'ARCHIVED':
+    case 'FAILED':
+      return 'SUSPENDED';
+    default:
+      return assertNever(status);
+  }
+}
+
+function isInstallationStatus(status: string): status is InstallationStatus {
+  return [
+    'REQUESTED',
+    'PROVISIONING',
+    'ACTIVE',
+    'READ_ONLY',
+    'SUSPENDED',
+    'DEPROVISIONING',
+    'ARCHIVED',
+    'FAILED',
+  ].includes(status);
+}
+
+function assertNever(value: never): never {
+  throw new Error(`Unhandled plugin installation status: ${value}`);
 }
 
 export const hmsGrantEnforcer = new PluginGrantEnforcer({

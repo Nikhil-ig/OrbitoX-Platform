@@ -21,6 +21,8 @@ import { spawn, ChildProcess } from 'child_process';
 import { Pool } from 'pg';
 import { RestaurantBridgeClient } from '../lib/restaurant-bridge-client';
 import { getDefaultBridgeKeys, signBridgeRequest } from '@orbitox-io/bridge';
+import { fetchGrantForService } from '../app/api/_lib/route-auth';
+import { rotateGrantSigningKey } from '@orbitox-io/plugin-engine';
 import { NextRequest } from 'next/server';
 import { forwardSignedBridgeCall } from '../app/api/restaurant/_lib/restaurant-routing';
 import { platformRepository } from '../lib/platform-repository';
@@ -40,6 +42,9 @@ const TEST_ORG = `org-bridge-${runId}`;
 const TEST_PROJECT = `proj-bistro-${runId}`;
 const TEST_TENANT = `org/${TEST_ORG}/project/${TEST_PROJECT}/environment/prod`;
 const bridgeKeys = getDefaultBridgeKeys();
+const grantKeyPair = crypto.generateKeyPairSync('ed25519');
+const grantPrivateKeyPem = grantKeyPair.privateKey.export({ type: 'pkcs8', format: 'pem' }).toString();
+const grantPublicKeyPem = grantKeyPair.publicKey.export({ type: 'spki', format: 'pem' }).toString();
 
 const restoCwd = path.resolve(__dirname, '../../../../projects/external-os/restaurant-os');
 const isRestoInstalled = fs.existsSync(path.resolve(restoCwd, 'node_modules/@prisma/client'));
@@ -77,6 +82,7 @@ before(async () => {
   }
 
   // 1. Start independent cross-process RestaurantOS server
+  rotateGrantSigningKey('phase6-m1', grantPrivateKeyPem, grantPublicKeyPem);
   restaurantPort = await getFreePort();
   const serverPath = path.resolve(__dirname, '../../../../projects/external-os/restaurant-os/src/server.ts');
   const tsxCli = require.resolve('tsx/cli');
@@ -92,6 +98,7 @@ before(async () => {
         NODE_ENV: 'development',
         DATABASE_URL: databaseUrl,
         ORBITOX_BRIDGE_KEYS: JSON.stringify(bridgeKeys),
+        ORBITOX_GRANT_PUBLIC_KEYS: JSON.stringify({ 'phase6-m1': grantPublicKeyPem }),
         RESTAURANTOS_DISABLE_AUTOLISTEN: 'false',
         RESTAURANTOS_ENABLE_TEST_ROUTES: 'true',
       },
@@ -243,7 +250,7 @@ describe('Platform <-> RestaurantOS Lifecycle Bridge E2E (Phase 2b-4 B5)', () =>
       tenantId: kdsTenant,
       restaurantName: 'The KDS Bistro',
       slug: `kds-bistro-${kdsRunId}`,
-      planId: 'growth',
+      planId: 'restaurant-starter',
     });
     assert.equal(provRes.ok, true, `Provision failed: ${JSON.stringify(provRes)}`);
 
@@ -252,6 +259,54 @@ describe('Platform <-> RestaurantOS Lifecycle Bridge E2E (Phase 2b-4 B5)', () =>
     assert.ok(installation, 'PluginInstallation row must be created upon provisioning');
     assert.equal(installation.status, 'ACTIVE');
     assert.equal(installation.runtimeTenantId, kdsTenant);
+
+    async function callRestaurantRuntime(method: 'GET' | 'POST', path: string, body?: unknown) {
+      const bodyText = body === undefined ? '' : JSON.stringify(body);
+      const grantToken = await fetchGrantForService(kdsTenant, '@orbitox/restaurant');
+      assert.ok(grantToken, 'A mapped plan must produce a RestaurantOS grant');
+      const signedHeaders = signBridgeRequest(bridgeKeys, {
+        method,
+        pathWithQuery: path,
+        tenantId: kdsTenant,
+        principal: { sub: 'phase6-billing-e2e', scopes: ['tenant:admin', 'platform:superuser'] },
+        body: bodyText,
+      });
+      return fetch(`http://127.0.0.1:${restaurantPort}${path}`, {
+        method,
+        headers: {
+          ...signedHeaders,
+          'x-orbitox-grant': grantToken,
+          ...(bodyText ? { 'content-type': 'application/json' } : {}),
+        },
+        body: bodyText || undefined,
+      });
+    }
+
+    // READ_ONLY grants preserve reads and refuse real RestaurantOS writes.
+    await platformRepository.updatePluginInstallationStatus(kdsTenant, '@orbitox/restaurant', 'READ_ONLY');
+    assert.equal((await callRestaurantRuntime('GET', '/api/restaurant/orders')).status, 200);
+    const readOnlyWrite = await callRestaurantRuntime('POST', '/api/restaurant/menu/items', {
+      name: `Read-only item ${kdsRunId}`,
+      category: 'Test',
+    });
+    assert.equal(readOnlyWrite.status, 402);
+    assert.equal((await readOnlyWrite.json()).code, 'PAYMENT_REQUIRED');
+
+    // SUSPENDED grants refuse both read and write routes.
+    await platformRepository.updatePluginInstallationStatus(kdsTenant, '@orbitox/restaurant', 'SUSPENDED');
+    assert.equal((await callRestaurantRuntime('GET', '/api/restaurant/orders')).status, 403);
+    assert.equal((await callRestaurantRuntime('POST', '/api/restaurant/menu/items', {
+      name: `Suspended item ${kdsRunId}`,
+      category: 'Test',
+    })).status, 403);
+
+    // A higher-revision ACTIVE grant, as issued after a charged subscription, restores writes.
+    await platformRepository.updatePluginInstallationStatus(kdsTenant, '@orbitox/restaurant', 'ACTIVE');
+    const chargedWrite = await callRestaurantRuntime('POST', '/api/restaurant/menu/items', {
+      name: `Charged item ${kdsRunId}`,
+      category: 'Test',
+    });
+    assert.equal(chargedWrite.status, 201, await chargedWrite.text());
 
     // 2. KDS call works (GET /api/restaurant/kds via forwardSignedBridgeCall)
     const req1 = new NextRequest(`http://127.0.0.1:${restaurantPort}/api/restaurant/kds`);
@@ -295,4 +350,3 @@ describe('Platform <-> RestaurantOS Lifecycle Bridge E2E (Phase 2b-4 B5)', () =>
     } catch {}
   });
 });
-

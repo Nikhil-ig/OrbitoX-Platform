@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { fetchGrantForService } from '@/app/api/_lib/route-auth';
 import { signBridgeRequest, getDefaultBridgeKeys, TENANT_RE } from '@orbitox-io/bridge';
 import { platformRepository } from '@/lib/platform-repository';
 
@@ -239,6 +240,20 @@ export async function forwardSignedBridgeCall(
   const upstreamHeaders: Record<string, string> = {
     ...signedHeaders,
   };
+  const grantToken = await fetchGrantForService(rawTenant, '@orbitox/restaurant');
+  if (!grantToken) {
+    return NextResponse.json(
+      {
+        success: false,
+        error: {
+          code: 'ENTITLEMENT_GRANT_UNAVAILABLE',
+          message: 'A valid RestaurantOS entitlement grant could not be issued.',
+        },
+      },
+      { status: 403 }
+    );
+  }
+  upstreamHeaders['x-orbitox-grant'] = grantToken;
   const contentType = request.headers.get('content-type');
   if (contentType) upstreamHeaders['content-type'] = contentType;
 
