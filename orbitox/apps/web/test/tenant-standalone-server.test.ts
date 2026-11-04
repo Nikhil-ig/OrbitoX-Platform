@@ -44,6 +44,11 @@ describe('Standalone Server Customer Tenant Provisioning Gate (N1)', () => {
   let projB: any = null;
   let envA: any = null;
   let envB: any = null;
+  let billingPlanId = '';
+  let billingRazorpayPlanId = '';
+  let billingSubscriptionId = '';
+  let billingTenantId = '';
+  let webhookSecret = '';
   let keyRecordA: any = null;
   let keyRecordB: any = null;
   let rawSecretA = '';
@@ -95,7 +100,7 @@ describe('Standalone Server Customer Tenant Provisioning Gate (N1)', () => {
         businessModel: 'B2B',
         technicalLead: 'Lead A',
         contactEmail: `org-a-${runId}@test.orbitox.io`,
-        enabledServices: ['crm'],
+        enabledServices: ['crm', 'hms'],
         planTier: 'growth',
         plan: 'growth',
         apiCallQuota: 50000,
@@ -108,6 +113,59 @@ describe('Standalone Server Customer Tenant Provisioning Gate (N1)', () => {
         slug: 'production',
         projectId: projA.id,
         isProduction: true,
+      },
+    });
+
+    billingPlanId = `standalone-hms-${runId}`;
+    billingRazorpayPlanId = `plan_${runId}`;
+    billingSubscriptionId = `sub_${runId}`;
+    billingTenantId = `org/${orgA.id}/project/${projA.id}/environment/${envA.id}`;
+    await prisma.plugin.upsert({
+      where: { pluginId: '@orbitox/hms' },
+      create: { pluginId: '@orbitox/hms', name: 'HospitalOS' },
+      update: {},
+    });
+    await prisma.plan.create({
+      data: {
+        planId: billingPlanId,
+        pluginId: '@orbitox/hms',
+        name: 'Standalone HospitalOS billing test',
+        tier: 'starter',
+        gracePeriodDays: 7,
+        suspensionGraceDays: 30,
+      },
+    });
+    await prisma.billingPlanMap.create({
+      data: {
+        razorpayPlanId: billingRazorpayPlanId,
+        pluginId: '@orbitox/hms',
+        internalPlanId: billingPlanId,
+        amountMinor: 100,
+        currency: 'INR',
+        period: 'monthly',
+        interval: 1,
+      },
+    });
+    await prisma.pluginInstallation.create({
+      data: {
+        tenantId: billingTenantId,
+        runtimeTenantId: billingTenantId,
+        pluginId: '@orbitox/hms',
+        status: 'READ_ONLY',
+        entitlementRevision: 1,
+        planId: billingPlanId,
+      },
+    });
+    await prisma.billingSubscription.create({
+      data: {
+        razorpaySubscriptionId: billingSubscriptionId,
+        organizationId: orgA.id,
+        tenantId: billingTenantId,
+        pluginId: '@orbitox/hms',
+        razorpayPlanId: billingRazorpayPlanId,
+        status: 'paused',
+        lastEventAt: BigInt(Math.floor(Date.now() / 1000) - 10),
+        currentEnd: new Date(Date.now() + 40 * 86_400_000),
       },
     });
 
@@ -125,8 +183,8 @@ describe('Standalone Server Customer Tenant Provisioning Gate (N1)', () => {
         secretFingerprint: secretFingerprintA,
         maskedDisplay: `${keyPrefixA}...`,
         environmentId: envA.id,
-        capabilities: ['crm:read', 'crm:write'],
-        tenantScope: [projA.slug],
+        capabilities: ['crm:read', 'crm:write', 'hms:read', 'hms:write', '*'],
+        tenantScope: [projA.slug, billingTenantId],
         rateLimitPerMin: 600,
         status: 'ACTIVE',
         createdBy: 'test_operator',
@@ -204,7 +262,7 @@ describe('Standalone Server Customer Tenant Provisioning Gate (N1)', () => {
       ORBITOX_PUBLIC_BASE_URL: 'https://console.orbitox.test',
       RAZORPAY_KEY_ID: 'rzp_test_standalone',
       RAZORPAY_KEY_SECRET: crypto.randomBytes(32).toString('hex'),
-      RAZORPAY_WEBHOOK_SECRET: crypto.randomBytes(32).toString('hex'),
+      RAZORPAY_WEBHOOK_SECRET: webhookSecret = crypto.randomBytes(32).toString('hex'),
       ORBITOX_EMAIL_PROVIDER: 'resend',
       ORBITOX_EMAIL_FROM: 'no-reply@example.invalid',
       RESEND_API_KEY: 'test-resend-token',
@@ -272,6 +330,13 @@ describe('Standalone Server Customer Tenant Provisioning Gate (N1)', () => {
   after(async () => {
     if (prisma) {
       try {
+        if (billingTenantId) {
+          await prisma.hmsPatient.deleteMany({ where: { tenantId: billingTenantId } });
+          await prisma.billingSubscription.deleteMany({ where: { razorpaySubscriptionId: billingSubscriptionId } });
+          await prisma.pluginInstallation.deleteMany({ where: { tenantId: billingTenantId, pluginId: '@orbitox/hms' } });
+          await prisma.billingPlanMap.deleteMany({ where: { razorpayPlanId: billingRazorpayPlanId } });
+          await prisma.plan.deleteMany({ where: { planId: billingPlanId } });
+        }
         if (keyRecordA) await prisma.platformApiKey.delete({ where: { id: keyRecordA.id } });
         if (keyRecordB) await prisma.platformApiKey.delete({ where: { id: keyRecordB.id } });
         if (envA) await prisma.projectEnvironment.delete({ where: { id: envA.id } });
@@ -368,5 +433,80 @@ describe('Standalone Server Customer Tenant Provisioning Gate (N1)', () => {
     // Verify Location header points to /api/v1/operations/:id
     const location = res.headers.get('Location');
     assert.equal(location, `/api/v1/operations/${json.operationId}`);
+  });
+
+  it('enforces HMS billing states on real HTTP routes and restores writes after subscription.charged', async (t) => {
+    if (!child) return t.skip('Standalone server not running');
+
+    const url = `http://127.0.0.1:${port}/api/v1/hms/patients`;
+    const read = () => fetch(url, {
+      headers: { 'x-api-key': rawSecretA, 'x-tenant-id': billingTenantId },
+    });
+    const write = () => fetch(url, {
+      method: 'POST',
+      headers: {
+        'x-api-key': rawSecretA,
+        'x-tenant-id': billingTenantId,
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({
+        name: 'Billing Gate Patient',
+        mrn: `MRN-BILLING-${crypto.randomBytes(6).toString('hex').toUpperCase()}`,
+        ageBand: '18-39',
+      }),
+    });
+
+    const readOnlyRead = await read();
+    assert.equal(readOnlyRead.status, 200, await readOnlyRead.text());
+    const readOnlyWrite = await write();
+    assert.equal(readOnlyWrite.status, 402, 'READ_ONLY refuses HospitalOS writes');
+    assert.equal((await readOnlyWrite.json()).error.code, 'PAYMENT_REQUIRED');
+
+    const suspendedAt = Math.floor(Date.now() / 1000);
+    await prisma!.billingSubscription.update({
+      where: { razorpaySubscriptionId: billingSubscriptionId },
+      data: {
+        status: 'pending',
+        graceStartedAt: new Date((suspendedAt - 31 * 86_400) * 1000),
+        lastEventAt: BigInt(suspendedAt - 10),
+      },
+    });
+    assert.equal((await read()).status, 402, 'SUSPENDED refuses HospitalOS reads');
+    assert.equal((await write()).status, 402, 'SUSPENDED refuses HospitalOS writes');
+
+    const event = {
+      id: `evt_standalone_${crypto.randomUUID()}`,
+      event: 'subscription.charged',
+      created_at: suspendedAt,
+      payload: {
+        subscription: {
+          entity: {
+            id: billingSubscriptionId,
+            status: 'active',
+            plan_id: billingRazorpayPlanId,
+            current_start: suspendedAt,
+            current_end: suspendedAt + 40 * 86_400,
+          },
+        },
+      },
+    };
+    const rawEvent = JSON.stringify(event);
+    const webhook = await fetch(`http://127.0.0.1:${port}/api/v1/billing/webhook/razorpay`, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        'x-razorpay-signature': crypto.createHmac('sha256', webhookSecret).update(rawEvent).digest('hex'),
+      },
+      body: rawEvent,
+    });
+    const webhookBody = await webhook.json();
+    assert.equal(webhook.status, 200, JSON.stringify(webhookBody));
+    assert.equal(webhookBody.applied, true);
+    assert.equal((await prisma!.pluginInstallation.findUniqueOrThrow({
+      where: { tenantId_pluginId: { tenantId: billingTenantId, pluginId: '@orbitox/hms' } },
+    })).status, 'ACTIVE');
+    assert.equal((await read()).status, 200, 'subscription.charged restores HospitalOS reads');
+    const activeWrite = await write();
+    assert.equal(activeWrite.status, 201, await activeWrite.text());
   });
 });
