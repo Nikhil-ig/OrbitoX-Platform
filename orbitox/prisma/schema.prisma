@@ -1641,7 +1641,6 @@ model AccountEmailOutbox {
   nextAttemptAt   DateTime  @default(now()) @db.Timestamptz
 
   @@index([status, createdAt])
-  @@index([nextAttemptAt])
 }
 
 model AccountEmailSuppression {
@@ -1679,13 +1678,14 @@ model PlatformPluginUsage {
 }
 
 model BillingProviderCache {
-  cacheKey       String   @id
+  cacheKey       String   @db.Text
   tenantId       String   @db.Text
   subscriptionId String   @db.Text
   payload        Json
   expiresAt      DateTime @db.Timestamptz
   updatedAt      DateTime @default(now()) @updatedAt @db.Timestamptz
 
+  @@id([tenantId, cacheKey])
   @@index([tenantId, expiresAt])
 }
 
@@ -1715,7 +1715,7 @@ model BillingSubscription {
   currentStart           DateTime? @db.Timestamptz
   currentEnd             DateTime? @db.Timestamptz
   graceStartedAt         DateTime? @db.Timestamptz
-  lastEventAt            Int      @default(0)
+  lastEventAt            BigInt   @default(0)
   cancelAtPeriodEnd      Boolean  @default(false)
   createdAt              DateTime @default(now()) @db.Timestamptz
   updatedAt              DateTime @default(now()) @updatedAt @db.Timestamptz

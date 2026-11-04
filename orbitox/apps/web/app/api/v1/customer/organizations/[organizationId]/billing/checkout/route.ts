@@ -112,7 +112,7 @@ export const POST = withCustomerAuth<RouteContext>(async (request, session, cont
           status: 'created',
           currentStart: unixSecondsToDate(razorpaySubscription.current_start),
           currentEnd: unixSecondsToDate(razorpaySubscription.current_end),
-          lastEventAt: 0,
+          lastEventAt: 0n,
         },
       });
       await tx.tenantIdempotencyKey.update({

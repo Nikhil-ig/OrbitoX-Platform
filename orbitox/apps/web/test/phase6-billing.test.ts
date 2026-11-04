@@ -23,7 +23,7 @@ function row(overrides: Partial<BillingSubscriptionSnapshot> = {}): BillingSubsc
     currentStart: null,
     currentEnd: t0 + 30 * 86_400,
     graceStartedAt: null,
-    lastEventAt: t0 - 10,
+    lastEventAt: BigInt(t0 - 10),
     ...overrides,
   };
 }
@@ -110,6 +110,21 @@ describe('Phase 6 billing event decisions', () => {
     assert.equal(decideBillingEvent(event('subscription.pending', t0 - 20), row(), policy).apply, false);
   });
 
+  it('orders epoch timestamps beyond the 32-bit limit without losing precision', () => {
+    const first = decideBillingEvent(
+      event('subscription.charged', 2_200_000_000),
+      row({ lastEventAt: 2_199_999_999n }),
+      policy,
+    );
+    const second = decideBillingEvent(
+      event('subscription.charged', 2_200_000_001),
+      row({ lastEventAt: 2_200_000_000n }),
+      policy,
+    );
+    assert.equal(first.apply, true);
+    assert.equal(second.apply, true);
+  });
+
   it('starts grace once and advances through ACTIVE, READ_ONLY and SUSPENDED', () => {
     const pending = decideBillingEvent(event('subscription.pending', t0), row(), policy);
     assert.equal(pending.graceStartedAt, t0);
@@ -120,7 +135,7 @@ describe('Phase 6 billing event decisions', () => {
     assert.equal(
       decideBillingEvent(
         event('subscription.pending', t0 + 8 * 86_400),
-        row({ graceStartedAt: t0, lastEventAt: t0 }),
+        row({ graceStartedAt: t0, lastEventAt: BigInt(t0) }),
         policy,
       ).graceStartedAt,
       t0,

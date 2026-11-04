@@ -11,11 +11,11 @@ export async function queueAccountEmail(
 ): Promise<void> {
   const recipient = assertValidEmail(input.recipient);
   const encryptedPayload = encryptAccountEmailPayload(input.data);
-  await transaction.accountEmailOutbox.create({
-    data: {
+  await transaction.accountEmailOutbox.createMany({
+    data: [{
       recipient,
       template: input.template,
       encryptedPayload,
-    },
+    }],
   });
 }

@@ -107,7 +107,7 @@ describe('Phase 6 durable Razorpay webhook', () => {
         razorpayPlanId,
         status: 'active',
         currentEnd: new Date(Date.now() + 40 * 86_400_000),
-        lastEventAt: Math.floor(Date.now() / 1000) - 10,
+        lastEventAt: BigInt(Math.floor(Date.now() / 1000) - 10),
       },
     });
   });
@@ -120,7 +120,7 @@ describe('Phase 6 durable Razorpay webhook', () => {
         status: 'active',
         currentEnd: new Date((latestEventAt + 40 * 86_400) * 1000),
         graceStartedAt: null,
-        lastEventAt: latestEventAt - 10,
+        lastEventAt: BigInt(latestEventAt - 10),
       },
     });
     await withRuntimeTenant((tx) => tx.pluginInstallation.update({
@@ -170,6 +170,21 @@ describe('Phase 6 durable Razorpay webhook', () => {
     assert.equal((await runtime.billingSubscription.findUniqueOrThrow({
       where: { razorpaySubscriptionId: subscriptionId },
     })).graceStartedAt?.getTime(), latestEventAt * 1000);
+  });
+
+  it('applies consecutive webhook timestamps beyond the 32-bit epoch limit', async () => {
+    for (const createdAt of [2_200_000_000, 2_200_000_001]) {
+      const event = subscriptionEvent('subscription.charged', createdAt, subscriptionId);
+      const response = await postRazorpayWebhook(createRequest(event));
+      assert.equal(response.status, 200);
+      assert.equal((await response.json()).applied, true);
+      assert.equal(
+        (await runtime.billingSubscription.findUniqueOrThrow({
+          where: { razorpaySubscriptionId: subscriptionId },
+        })).lastEventAt,
+        BigInt(createdAt),
+      );
+    }
   });
 
   it('does not trust notes to apply an unknown subscription to another tenant', async () => {
@@ -227,7 +242,7 @@ describe('Phase 6 durable Razorpay webhook', () => {
     });
     assert.equal(persisted.status, 'active');
     assert.equal(persisted.graceStartedAt, null);
-    assert.equal(persisted.lastEventAt, latestEventAt - 10);
+    assert.equal(persisted.lastEventAt, BigInt(latestEventAt - 10));
     assert.equal(await owner.accountEmailOutbox.count({
       where: { recipient: `billing-${run}@example.invalid`, template: 'PAYMENT_FAILED' },
     }), 1);
@@ -303,7 +318,7 @@ describe('Phase 6 durable Razorpay webhook', () => {
         subscription: {
           entity: {
             id,
-            status: type.split('.')[1],
+              status: type === 'subscription.charged' ? 'active' : type.split('.')[1],
             plan_id: razorpayPlanId,
             current_end: latestEventAt + 40 * 86_400,
             ...entity,

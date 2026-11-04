@@ -9,7 +9,7 @@ export interface BillingSubscriptionSnapshot {
   currentStart: number | null;
   currentEnd: number | null;
   graceStartedAt: number | null;
-  lastEventAt: number;
+  lastEventAt: bigint;
 }
 
 export interface GracePolicy {
@@ -108,7 +108,7 @@ export function decideBillingEvent(
   if (!sub?.id) return { apply: false, reason: 'NO_SUBSCRIPTION_ENTITY' };
   if (!row) return { apply: false, reason: 'UNKNOWN_SUBSCRIPTION' };
   if (sub.id !== row.razorpaySubscriptionId) return { apply: false, reason: 'SUBSCRIPTION_MISMATCH' };
-  if (!Number.isSafeInteger(createdAt) || createdAt <= row.lastEventAt) {
+  if (!Number.isSafeInteger(createdAt) || BigInt(createdAt) <= row.lastEventAt) {
     return { apply: false, reason: 'STALE_OR_DUPLICATE' };
   }
   if (

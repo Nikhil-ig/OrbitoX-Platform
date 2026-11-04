@@ -17,7 +17,7 @@ type LockedSubscription = {
   currentStart: Date | null;
   currentEnd: Date | null;
   graceStartedAt: Date | null;
-  lastEventAt: number;
+  lastEventAt: bigint;
   organizationId: string;
   tenantId: string;
   pluginId: string;
@@ -121,7 +121,7 @@ export async function POST(request: NextRequest): Promise<Response> {
       }
       if (event.event === 'payment.failed') {
         const eventAt = Number(event.created_at);
-        if (!Number.isSafeInteger(eventAt) || eventAt <= subscription.lastEventAt) {
+        if (!Number.isSafeInteger(eventAt) || BigInt(eventAt) <= subscription.lastEventAt) {
           await markWebhookProcessed(tx, event.id!, { applied: false, reason: 'STALE_PAYMENT_FAILURE' });
           return { duplicate: false as const, applied: false, reason: 'STALE_PAYMENT_FAILURE' };
         }
@@ -136,6 +136,7 @@ export async function POST(request: NextRequest): Promise<Response> {
             data: {},
           });
         }
+        await tx.$queryRaw`SELECT set_config('app.current_tenant_id', ${subscription.tenantId}, true)`;
         await tx.platformAuditEvent.create({
           data: {
             actorId: null,
@@ -233,7 +234,7 @@ export async function POST(request: NextRequest): Promise<Response> {
           graceStartedAt: decision.graceStartedAt === undefined
             ? undefined
             : toDate(decision.graceStartedAt),
-          lastEventAt: event.created_at!,
+          lastEventAt: BigInt(event.created_at!),
           cancelAtPeriodEnd: event.event === 'subscription.cancelled' ||
               event.event === 'subscription.completed'
             ? true

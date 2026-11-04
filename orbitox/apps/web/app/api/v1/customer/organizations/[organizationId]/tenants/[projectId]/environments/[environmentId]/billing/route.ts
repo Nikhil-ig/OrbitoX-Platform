@@ -52,7 +52,7 @@ export const GET = withCustomerAuth<RouteContext>(async (_request, session, cont
     if (!subscription) return { subscription: null, cached: null as Prisma.JsonValue | null };
     const cacheKey = cacheKeyFor(subscription.razorpaySubscriptionId);
     const cache = await tx.billingProviderCache.findUnique({
-      where: { cacheKey },
+      where: { tenantId_cacheKey: { tenantId, cacheKey } },
       select: { payload: true, expiresAt: true, subscriptionId: true },
     });
     return {
@@ -91,7 +91,12 @@ export const GET = withCustomerAuth<RouteContext>(async (_request, session, cont
       await prisma.$transaction(async (tx) => {
         await tx.$queryRaw`SELECT set_config('app.current_tenant_id', ${tenantId}, true)`;
         await tx.billingProviderCache.upsert({
-          where: { cacheKey: cacheKeyFor(billing.subscription!.razorpaySubscriptionId) },
+          where: {
+            tenantId_cacheKey: {
+              tenantId,
+              cacheKey: cacheKeyFor(billing.subscription!.razorpaySubscriptionId),
+            },
+          },
           create: {
             cacheKey: cacheKeyFor(billing.subscription!.razorpaySubscriptionId),
             tenantId,
