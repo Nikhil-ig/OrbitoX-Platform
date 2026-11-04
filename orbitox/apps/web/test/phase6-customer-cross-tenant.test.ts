@@ -122,7 +122,7 @@ describe('Phase 6 customer dashboard tenant isolation', () => {
     const discovered = await discoverRoutes(customerRouteRoot);
     const organizationRoutes = discovered
       .filter((file) => file.startsWith('organizations/'))
-      .map((file) => file.slice('organizations/'.length));
+      .map((file) => file.slice('organizations/[organizationId]/'.length));
     const nonDashboardRoutes = discovered.filter((file) => !file.startsWith('organizations/'));
     assert.deepEqual(organizationRoutes, routeCases.map(({ file }) => file).sort());
     assert.deepEqual(nonDashboardRoutes, nonDashboardCustomerRoutes);
@@ -213,7 +213,9 @@ describe('Phase 6 customer dashboard tenant isolation', () => {
 
     let covered = 0;
     for (const routeCase of routeCases) {
-      const routeModule = await import(pathToFileURL(resolve(organizationRouteRoot, routeCase.file)).href);
+      const routeModule = await import(pathToFileURL(
+        resolve(organizationRouteRoot, '[organizationId]', routeCase.file),
+      ).href);
       for (const method of routeCase.methods) {
         const handler = routeModule[method] as unknown;
         assert.equal(typeof handler, 'function', `${routeCase.file} must export ${method}`);
