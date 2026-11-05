@@ -112,7 +112,7 @@ describe('Phase 4 Items 1–5: The 2-Minute Tenant & Lifecycle Hooks', () => {
           organisation: orgA.slug,
           name: 'City General Hospital',
           slug: 'city-general',
-          plugins: [{ id: 'hospital-os', plan: 'standard' }],
+          plugins: [{ id: 'hospital-os', plan: 'hms-starter' }],
         }),
       });
 
