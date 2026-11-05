@@ -56,7 +56,7 @@ const globalTableAllowlist = new Set([
   'CelebrationPricingPlan',
   'PlatformIdempotencyRecord',
   'PlatformOrganization',
-  'CustomerOrganizationClosureContext',
+  'CustomerOrganizationClosureContext', // Transaction-scoped guard context is accessed only by its security-definer closure function.
   'PlatformOperator',
   'PlatformOperatorSession',
   'PlatformOperatorBackupCode',
@@ -85,10 +85,13 @@ const globalTableAllowlist = new Set([
   'PlanFeature',
   'PlanQuota',
   'BillingWebhookEvent',
-  'BillingPlanMap',
-  'BillingSubscription',
-  'BillingUnknownEvent',
-  'BillingWebhookAlertMetric',
+  'BillingPlanMap', // Platform-wide plan catalogue mappings are not tenant-owned.
+  'BillingSubscription', // Platform billing lifecycle records are scoped by application checks and billing grants.
+  'BillingUnknownEvent', // Provider events without a tenant mapping are retained in a global quarantine ledger.
+  'BillingWebhookAlertMetric', // Webhook failure counters aggregate platform-wide provider events.
+  'AccountEmailSuppression', // Address-level suppression must apply across all tenants.
+  'AccountEmailWebhookEvent', // Provider webhook event IDs are globally deduplicated.
+  'BillingGraceSweepLease', // A single lease coordinates the platform-wide grace sweep.
   'PluginGrantRevision',
   'PlatformOperation',
 ]);
