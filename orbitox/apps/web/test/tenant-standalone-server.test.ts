@@ -387,7 +387,7 @@ describe('Standalone Server Customer Tenant Provisioning Gate (N1)', () => {
         organisation: orgA.slug,
         name: 'Cross Org Tenant',
         slug: 'cross-org-tenant',
-        plugins: [{ id: 'hospital-os', plan: 'starter' }],
+        plugins: [{ id: 'hospital-os', plan: 'hms-starter' }],
       }),
     });
 

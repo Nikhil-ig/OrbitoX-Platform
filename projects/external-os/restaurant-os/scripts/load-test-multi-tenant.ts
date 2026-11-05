@@ -96,7 +96,7 @@ async function main() {
             slug,
             name: `Performance Bistro #${pad}`,
             status: 'active',
-            planId: idx % 3 === 0 ? 'pro' : idx % 2 === 0 ? 'growth' : 'starter',
+            planId: idx % 3 === 0 ? 'restaurant-pro' : 'restaurant-starter',
             currency: 'INR',
             timezone: 'Asia/Kolkata',
             branches: {

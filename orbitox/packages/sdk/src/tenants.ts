@@ -82,11 +82,14 @@ export class TenantsResource {
       if (typeof p === 'string') {
         const canonical = p.replace(/^@orbitox\//, '').toLowerCase();
         const id = canonical === 'hms' ? 'hospital-os' : canonical === 'restaurant' ? 'restaurant-os' : canonical;
-        return { id, pluginId: id, plan: 'starter', planId: 'starter' };
+        return { id, pluginId: id };
       }
-      const id = (p as any).id || (p as any).pluginId;
-      const plan = (p as any).plan || (p as any).planId || 'starter';
-      return { id, pluginId: id, plan, planId: plan, config: p.config };
+      return {
+        id: p.pluginId,
+        pluginId: p.pluginId,
+        ...(p.planId ? { plan: p.planId, planId: p.planId } : {}),
+        config: p.config,
+      };
     });
 
     const payload = {

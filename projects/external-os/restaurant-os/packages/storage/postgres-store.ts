@@ -84,6 +84,7 @@ export class PostgresRestaurantStore {
     id: string;
     name: string;
     slug: string;
+    planId: string;
     status?: string;
     orbitoxProjectId?: string;
     gstin?: string;
@@ -101,6 +102,7 @@ export class PostgresRestaurantStore {
         id: tenant.id,
         name: tenant.name,
         slug: tenant.slug,
+        planId: tenant.planId,
         status: tenant.status || 'active',
         orbitoxProjectId: tenant.orbitoxProjectId,
         gstin: tenant.gstin,

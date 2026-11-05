@@ -69,12 +69,22 @@ async function run() {
   await prisma.tenant.upsert({
     where: { id: TEST_TENANT },
     update: {},
-    create: { id: TEST_TENANT, name: 'Pilot Bistro', slug: 'bistro-pilot' },
+    create: {
+      id: TEST_TENANT,
+      name: 'Pilot Bistro',
+      slug: 'bistro-pilot',
+      planId: 'restaurant-starter',
+    },
   });
   await prisma.tenant.upsert({
     where: { id: PEER_TENANT },
     update: {},
-    create: { id: PEER_TENANT, name: 'Beta Grill', slug: 'beta-grill' },
+    create: {
+      id: PEER_TENANT,
+      name: 'Beta Grill',
+      slug: 'beta-grill',
+      planId: 'restaurant-starter',
+    },
   });
 
   // ─────────────────────────────────────────────────────────────

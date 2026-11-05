@@ -166,6 +166,7 @@ export async function runMigration(options?: {
       id: tenantId,
       name: tenantName,
       slug: tenantSlug,
+      planId: 'restaurant-starter',
       status: 'active',
       orbitoxProjectId: 'restaurant-os-pilot',
       gstin: '03AAAAA0000A1Z5',

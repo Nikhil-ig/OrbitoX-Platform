@@ -626,7 +626,7 @@ async function run() {
       body: JSON.stringify({
         name: 'No Auth Tenant',
         slug: 'no-auth-tenant',
-        plugins: [{ id: 'hospital-os', plan: 'starter' }],
+        plugins: [{ id: 'hospital-os', plan: 'hms-starter' }],
       }),
     });
     const isPass = res.status === 401;
@@ -654,7 +654,7 @@ async function run() {
         organisation: otherOrg.slug,
         name: 'Cross Org Tenant',
         slug: 'cross-org-tenant',
-        plugins: [{ id: 'hospital-os', plan: 'starter' }],
+        plugins: [{ id: 'hospital-os', plan: 'hms-starter' }],
       }),
     });
     const isPass = res.status === 403;
@@ -682,7 +682,7 @@ async function run() {
         organisation: org.slug,
         name: 'Standalone Sweep Tenant',
         slug: `sweep-tenant-${Date.now()}`,
-        plugins: [{ id: 'hospital-os', plan: 'starter' }],
+        plugins: [{ id: 'hospital-os', plan: 'hms-starter' }],
       }),
     });
     const resJson = await res.json().catch(() => ({}));
