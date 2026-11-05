@@ -2232,91 +2232,53 @@ export function createPrismaPlatformRepository(
             });
         },
         async ensurePlanCatalogueSeeded(): Promise<void> {
-            for (const p of SEED_PLUGINS) {
-                await client.plugin.upsert({
-                    where: { pluginId: p.pluginId },
-                    create: {
-                        id: `plug_${crypto.randomUUID()}`,
-                        pluginId: p.pluginId,
-                        name: p.name,
-                        description: p.description || null,
-                        version: p.version || '1.0.0',
-                        status: p.status || 'ACTIVE',
-                    },
-                    update: {
-                        name: p.name,
-                        description: p.description || null,
-                        version: p.version || '1.0.0',
-                        status: p.status || 'ACTIVE',
-                    },
-                });
-            }
+            const planIds = SEED_PLANS.map((plan) => plan.planId);
+            const [plugins, plans, features, quotas] = await Promise.all([
+                client.plugin.findMany({
+                    where: { pluginId: { in: SEED_PLUGINS.map((plugin) => plugin.pluginId) } },
+                    select: { pluginId: true },
+                }),
+                client.plan.findMany({
+                    where: { planId: { in: planIds } },
+                    select: { planId: true },
+                }),
+                client.planFeature.findMany({
+                    where: { planId: { in: planIds } },
+                    select: { planId: true, featureKey: true },
+                }),
+                client.planQuota.findMany({
+                    where: { planId: { in: planIds } },
+                    select: { planId: true, quotaKey: true },
+                }),
+            ]);
 
-            for (const pl of SEED_PLANS) {
-                await client.plan.upsert({
-                    where: { planId: pl.planId },
-                    create: {
-                        id: `plan_${crypto.randomUUID()}`,
-                        planId: pl.planId,
-                        pluginId: pl.pluginId,
-                        name: pl.name,
-                        description: pl.description || null,
-                        tier: pl.tier,
-                        priceMinor: pl.priceMinor,
-                        currency: pl.currency,
-                        billingInterval: pl.billingInterval,
-                        gracePeriodDays: pl.gracePeriodDays,
-                        suspensionGraceDays: pl.suspensionGraceDays,
-                        status: pl.status,
-                    },
-                    update: {
-                        name: pl.name,
-                        description: pl.description || null,
-                        tier: pl.tier,
-                        priceMinor: pl.priceMinor,
-                        currency: pl.currency,
-                        billingInterval: pl.billingInterval,
-                        gracePeriodDays: pl.gracePeriodDays,
-                        suspensionGraceDays: pl.suspensionGraceDays,
-                        status: pl.status,
-                    },
-                });
+            const availablePlugins = new Set(plugins.map((plugin) => plugin.pluginId));
+            const availablePlans = new Set(plans.map((plan) => plan.planId));
+            const availableFeatures = new Set(features.map((feature) => `${feature.planId}:${feature.featureKey}`));
+            const availableQuotas = new Set(quotas.map((quota) => `${quota.planId}:${quota.quotaKey}`));
+            const missing = [
+                ...SEED_PLUGINS
+                    .filter((plugin) => !availablePlugins.has(plugin.pluginId))
+                    .map((plugin) => `plugin:${plugin.pluginId}`),
+                ...SEED_PLANS
+                    .filter((plan) => !availablePlans.has(plan.planId))
+                    .map((plan) => `plan:${plan.planId}`),
+                ...SEED_PLANS.flatMap((plan) =>
+                    plan.features
+                        .filter((feature) => !availableFeatures.has(`${plan.planId}:${feature.featureKey}`))
+                        .map((feature) => `feature:${plan.planId}:${feature.featureKey}`),
+                ),
+                ...SEED_PLANS.flatMap((plan) =>
+                    plan.quotas
+                        .filter((quota) => !availableQuotas.has(`${plan.planId}:${quota.quotaKey}`))
+                        .map((quota) => `quota:${plan.planId}:${quota.quotaKey}`),
+                ),
+            ];
 
-                for (const f of pl.features) {
-                    await client.planFeature.upsert({
-                        where: { planId_featureKey: { planId: pl.planId, featureKey: f.featureKey } },
-                        create: {
-                            id: `pf_${crypto.randomUUID()}`,
-                            planId: pl.planId,
-                            featureKey: f.featureKey,
-                            description: f.description || null,
-                            enabled: f.enabled,
-                        },
-                        update: {
-                            description: f.description || null,
-                            enabled: f.enabled,
-                        },
-                    });
-                }
-
-                for (const q of pl.quotas) {
-                    await client.planQuota.upsert({
-                        where: { planId_quotaKey: { planId: pl.planId, quotaKey: q.quotaKey } },
-                        create: {
-                            id: `pq_${crypto.randomUUID()}`,
-                            planId: pl.planId,
-                            quotaKey: q.quotaKey,
-                            limit: q.limit,
-                            window: q.window,
-                            unit: q.unit,
-                        },
-                        update: {
-                            limit: q.limit,
-                            window: q.window,
-                            unit: q.unit,
-                        },
-                    });
-                }
+            if (missing.length > 0) {
+                throw new Error(
+                    `Plan catalogue is missing migration-managed rows: ${missing.join(', ')}. Apply the platform Prisma migrations before serving requests.`,
+                );
             }
         },
         async listOutboxMessages(status?: string): Promise<PlatformOutboxRecord[]> {
