@@ -26,6 +26,18 @@ import * as crypto from 'crypto';
 import { PrismaClient } from '@prisma/client';
 import { signBridgeRequest, getDefaultBridgeKeys } from '../packages/domain/bridge-auth';
 
+function hasCatalogueCheckError(error: unknown): boolean {
+  if (!error || typeof error !== 'object') return false;
+  const knownError = error as {
+    code?: unknown;
+    meta?: { code?: unknown; message?: unknown };
+  };
+  return knownError.code === 'P2010' &&
+    knownError.meta?.code === '23514' &&
+    typeof knownError.meta.message === 'string' &&
+    knownError.meta.message.includes('Tenant_planId_catalogue_format_check');
+}
+
 let handleRequest: (req: http.IncomingMessage, res: http.ServerResponse) => Promise<void>;
 let closeRuntimeServer: () => Promise<void>;
 
@@ -106,28 +118,37 @@ async function sendRequest(
 }
 
 describe('RestaurantOS catalogue plan database constraint', () => {
-  it('rejects unknown and non-RestaurantOS plan IDs', async () => {
+  it('rejects unknown plan IDs with the catalogue format check', async () => {
     const run = crypto.randomUUID().replaceAll('-', '');
 
     await assert.rejects(
-      prisma.tenant.create({
-        data: {
-          id: `org/plan-check-${run}/project/p1/environment/prod`,
-          name: 'Invalid Plan Tenant',
-          slug: `invalid-plan-${run}`,
-          planId: 'growth',
-        },
-      }),
+      prisma.$executeRaw`
+        INSERT INTO "Tenant" ("id", "name", "slug", "planId")
+        VALUES (
+          ${`org/plan-check-${run}/project/p1/environment/prod`},
+          ${'Invalid Plan Tenant'},
+          ${`invalid-plan-${run}`},
+          ${'growth'}
+        )
+      `,
+      hasCatalogueCheckError,
     );
+  });
+
+  it('rejects plans from another plugin with the catalogue format check', async () => {
+    const run = crypto.randomUUID().replaceAll('-', '');
+
     await assert.rejects(
-      prisma.tenant.create({
-        data: {
-          id: `org/plan-check-hms-${run}/project/p1/environment/prod`,
-          name: 'Wrong Plugin Plan Tenant',
-          slug: `wrong-plugin-plan-${run}`,
-          planId: 'hms-starter',
-        },
-      }),
+      prisma.$executeRaw`
+        INSERT INTO "Tenant" ("id", "name", "slug", "planId")
+        VALUES (
+          ${`org/plan-check-hms-${run}/project/p1/environment/prod`},
+          ${'Wrong Plugin Plan Tenant'},
+          ${`wrong-plugin-plan-${run}`},
+          ${'hms-starter'}
+        )
+      `,
+      hasCatalogueCheckError,
     );
   });
 });
