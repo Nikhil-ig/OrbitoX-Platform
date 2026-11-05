@@ -17,12 +17,14 @@ if (process.env.ORBITOX_PLATFORM_REPOSITORY === 'prisma') {
     const ownerUrl = process.env.TEST_DATABASE_URL || process.env.DATABASE_URL;
     const relayUrl = process.env.OUTBOX_RELAY_DATABASE_URL;
     const runtimeUrl = process.env.APP_DATABASE_URL;
-    if (!ownerUrl || !relayUrl || !runtimeUrl) {
-      throw new Error('TEST_DATABASE_URL/DATABASE_URL, APP_DATABASE_URL and OUTBOX_RELAY_DATABASE_URL are required.');
+    const maintenanceUrl = process.env.MAINTENANCE_DATABASE_URL;
+    if (!ownerUrl || !relayUrl || !runtimeUrl || !maintenanceUrl) {
+      throw new Error('TEST_DATABASE_URL/DATABASE_URL, APP_DATABASE_URL, MAINTENANCE_DATABASE_URL and OUTBOX_RELAY_DATABASE_URL are required.');
     }
     const owner = new PrismaClient({ datasourceUrl: ownerUrl });
     const relay = new PrismaClient({ datasourceUrl: relayUrl });
     const runtime = new PrismaClient({ datasourceUrl: runtimeUrl });
+    const maintenance = new PrismaClient({ datasourceUrl: maintenanceUrl });
     const recipients = Array.from(
       { length: ACCOUNT_EMAIL_TEMPLATE_NAMES.length + 3 },
       () => `email-${crypto.randomUUID()}@example.invalid`,
@@ -49,11 +51,10 @@ if (process.env.ORBITOX_PLATFORM_REPOSITORY === 'prisma') {
       });
       await owner.accountEmailOutbox.deleteMany({ where: { recipient: signupEmail } });
       if (signupUser) {
-        await owner.customerMembership.deleteMany({ where: { userId: signupUser.id } });
+        for (const membership of signupUser.memberships) {
+          await maintenance.$queryRaw`SELECT public.close_customer_organization(${membership.organizationId})`;
+        }
         await owner.customerUser.delete({ where: { id: signupUser.id } });
-        await owner.platformOrganization.deleteMany({
-          where: { id: { in: signupUser.memberships.map((membership) => membership.organizationId) } },
-        });
       }
       await owner.accountEmailOutbox.deleteMany({ where: { id: { in: ids } } });
       await owner.accountEmailSuppression.deleteMany({
@@ -64,7 +65,12 @@ if (process.env.ORBITOX_PLATFORM_REPOSITORY === 'prisma') {
       });
       if (previousBreachApiMode === undefined) delete process.env.ORBITOX_BREACHED_PASSWORD_API;
       else process.env.ORBITOX_BREACHED_PASSWORD_API = previousBreachApiMode;
-      await Promise.all([owner.$disconnect(), relay.$disconnect(), runtime.$disconnect()]);
+      await Promise.all([
+        owner.$disconnect(),
+        relay.$disconnect(),
+        runtime.$disconnect(),
+        maintenance.$disconnect(),
+      ]);
     });
 
     it('registers a customer as orbitox_runtime and queues the verification email without SELECT', async () => {
