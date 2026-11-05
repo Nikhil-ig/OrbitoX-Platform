@@ -1948,6 +1948,8 @@ model PluginInstallation {
   createdAt           DateTime @default(now())
   updatedAt           DateTime @updatedAt
 
+  plan                Plan?    @relation(fields: [planId], references: [planId], onDelete: Restrict, onUpdate: Restrict)
+
   @@unique([tenantId, pluginId])
   @@unique([runtimeTenantId, pluginId])
   @@index([tenantId])
@@ -1989,6 +1991,7 @@ model Plan {
   plugin              Plugin        @relation(fields: [pluginId], references: [pluginId], onDelete: Cascade)
   features            PlanFeature[]
   quotas              PlanQuota[]
+  installations       PluginInstallation[]
 
   @@index([pluginId])
   @@index([planId])
