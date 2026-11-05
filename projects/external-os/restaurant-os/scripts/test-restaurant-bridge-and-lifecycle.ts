@@ -123,12 +123,13 @@ describe('RestaurantOS catalogue plan database constraint', () => {
 
     await assert.rejects(
       prisma.$executeRaw`
-        INSERT INTO "Tenant" ("id", "name", "slug", "planId")
+        INSERT INTO "Tenant" ("id", "name", "slug", "planId", "updatedAt")
         VALUES (
           ${`org/plan-check-${run}/project/p1/environment/prod`},
           ${'Invalid Plan Tenant'},
           ${`invalid-plan-${run}`},
-          ${'growth'}
+          ${'growth'},
+          CURRENT_TIMESTAMP
         )
       `,
       hasCatalogueCheckError,
@@ -140,12 +141,13 @@ describe('RestaurantOS catalogue plan database constraint', () => {
 
     await assert.rejects(
       prisma.$executeRaw`
-        INSERT INTO "Tenant" ("id", "name", "slug", "planId")
+        INSERT INTO "Tenant" ("id", "name", "slug", "planId", "updatedAt")
         VALUES (
           ${`org/plan-check-hms-${run}/project/p1/environment/prod`},
           ${'Wrong Plugin Plan Tenant'},
           ${`wrong-plugin-plan-${run}`},
-          ${'hms-starter'}
+          ${'hms-starter'},
+          CURRENT_TIMESTAMP
         )
       `,
       hasCatalogueCheckError,
