@@ -105,6 +105,33 @@ async function sendRequest(
   };
 }
 
+describe('RestaurantOS catalogue plan database constraint', () => {
+  it('rejects unknown and non-RestaurantOS plan IDs', async () => {
+    const run = crypto.randomUUID().replaceAll('-', '');
+
+    await assert.rejects(
+      prisma.tenant.create({
+        data: {
+          id: `org/plan-check-${run}/project/p1/environment/prod`,
+          name: 'Invalid Plan Tenant',
+          slug: `invalid-plan-${run}`,
+          planId: 'growth',
+        },
+      }),
+    );
+    await assert.rejects(
+      prisma.tenant.create({
+        data: {
+          id: `org/plan-check-hms-${run}/project/p1/environment/prod`,
+          name: 'Wrong Plugin Plan Tenant',
+          slug: `wrong-plugin-plan-${run}`,
+          planId: 'hms-starter',
+        },
+      }),
+    );
+  });
+});
+
 describe('RestaurantOS Bridge Auth & Zero-Trust Verification', () => {
   it('1. accepts a validly signed bridge request with tenant and principal', async () => {
     const path = '/healthz/ready';
