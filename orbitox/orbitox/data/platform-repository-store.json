@@ -1,0 +1,763 @@
+{
+  "organizations": [
+    {
+      "id": "org_omnilogistics_mw37k3mq",
+      "slug": "omnilogistics",
+      "name": "OmniLogistics Platform Corp",
+      "billingEmail": "billing@omnideliver.global",
+      "complianceTier": "SOC2",
+      "status": "ACTIVE",
+      "createdAt": "2026-11-05T07:12:18.530Z",
+      "updatedAt": "2026-11-05T07:12:18.530Z"
+    },
+    {
+      "id": "org_mednet_trust_mw37k3mq",
+      "slug": "mednet-trust",
+      "name": "MedNet Regional Healthcare Trust",
+      "billingEmail": "treasury@mednet.health",
+      "complianceTier": "HIPAA",
+      "status": "ACTIVE",
+      "createdAt": "2026-11-05T07:12:18.530Z",
+      "updatedAt": "2026-11-05T07:12:18.530Z"
+    },
+    {
+      "id": "org_aura_luxury_mw37k3mq",
+      "slug": "aura-luxury",
+      "name": "Aura Luxury Brands Ltd",
+      "billingEmail": "finance@aura-luxury.com",
+      "complianceTier": "PCI_DSS",
+      "status": "ACTIVE",
+      "createdAt": "2026-11-05T07:12:18.530Z",
+      "updatedAt": "2026-11-05T07:12:18.530Z"
+    }
+  ],
+  "projects": [
+    {
+      "id": "proj_omnideliver_mw37k3mr",
+      "slug": "omnideliver",
+      "name": "OmniDeliver Global Network",
+      "organizationId": "org_omnilogistics_mw37k3mq",
+      "businessModel": "O2O2B2B2C",
+      "planTier": "hyperscale",
+      "plan": "hyperscale",
+      "enabledServices": [
+        "@orbitox/restaurant",
+        "@orbitox/pos",
+        "@orbitox/commerce",
+        "@orbitox/crm",
+        "@orbitox/finance",
+        "@orbitox/inventory"
+      ],
+      "apiCallQuota": 100000000,
+      "monthlyApiCalls": 0,
+      "rateLimitPerMin": 30000,
+      "status": "ACTIVE",
+      "technicalLead": "Sophia Martinez, VP Infrastructure",
+      "contactEmail": "platform@omnideliver.global",
+      "createdAt": "2026-11-05T07:12:18.531Z",
+      "updatedAt": "2026-11-05T07:12:18.531Z"
+    },
+    {
+      "id": "proj_mednet-health_mw37k3mt",
+      "slug": "mednet-health",
+      "name": "MedNet Health Alliance",
+      "organizationId": "org_mednet_trust_mw37k3mq",
+      "businessModel": "HEALTHCARE_NETWORK",
+      "planTier": "enterprise",
+      "plan": "enterprise",
+      "enabledServices": [
+        "@orbitox/hms",
+        "@orbitox/inventory",
+        "@orbitox/finance",
+        "@orbitox/hrms"
+      ],
+      "apiCallQuota": 25000000,
+      "monthlyApiCalls": 0,
+      "rateLimitPerMin": 6000,
+      "status": "ACTIVE",
+      "technicalLead": "Dr. Michael Chen, Chief Medical Informaticist",
+      "contactEmail": "security@mednet.health",
+      "createdAt": "2026-11-05T07:12:18.533Z",
+      "updatedAt": "2026-11-05T07:12:18.533Z"
+    },
+    {
+      "id": "proj_aura-luxury_mw37k3mt",
+      "slug": "aura-luxury",
+      "name": "Aura Luxury Brands",
+      "organizationId": "org_aura_luxury_mw37k3mq",
+      "businessModel": "D2C",
+      "planTier": "growth",
+      "plan": "growth",
+      "enabledServices": [
+        "@orbitox/commerce",
+        "@orbitox/crm",
+        "@orbitox/inventory"
+      ],
+      "apiCallQuota": 1000000,
+      "monthlyApiCalls": 0,
+      "rateLimitPerMin": 300,
+      "status": "ACTIVE",
+      "technicalLead": "Alexander Vance, Head of Engineering",
+      "contactEmail": "devops@aura-luxury.com",
+      "createdAt": "2026-11-05T07:12:18.533Z",
+      "updatedAt": "2026-11-05T07:12:18.533Z"
+    }
+  ],
+  "environments": [
+    {
+      "id": "env_proj_omnideliver_mw37k3mr_prod",
+      "projectId": "proj_omnideliver_mw37k3mr",
+      "slug": "production",
+      "name": "Production Main",
+      "type": "PRODUCTION",
+      "isProduction": true,
+      "status": "ACTIVE",
+      "requireMtls": false,
+      "strictIpAllowlist": false,
+      "enforceFourEyes": true,
+      "createdAt": "2026-11-05T07:12:18.532Z",
+      "updatedAt": "2026-11-05T07:12:18.532Z"
+    },
+    {
+      "id": "env_proj_omnideliver_mw37k3mr_stage",
+      "projectId": "proj_omnideliver_mw37k3mr",
+      "slug": "staging",
+      "name": "Staging QA",
+      "type": "STAGING",
+      "isProduction": false,
+      "status": "ACTIVE",
+      "requireMtls": false,
+      "strictIpAllowlist": false,
+      "enforceFourEyes": false,
+      "createdAt": "2026-11-05T07:12:18.532Z",
+      "updatedAt": "2026-11-05T07:12:18.532Z"
+    },
+    {
+      "id": "env_proj_omnideliver_mw37k3mr_dev",
+      "projectId": "proj_omnideliver_mw37k3mr",
+      "slug": "development",
+      "name": "Development Sandbox",
+      "type": "DEVELOPMENT",
+      "isProduction": false,
+      "status": "ACTIVE",
+      "requireMtls": false,
+      "strictIpAllowlist": false,
+      "enforceFourEyes": false,
+      "createdAt": "2026-11-05T07:12:18.532Z",
+      "updatedAt": "2026-11-05T07:12:18.532Z"
+    },
+    {
+      "id": "env_proj_mednet-health_mw37k3mt_prod",
+      "projectId": "proj_mednet-health_mw37k3mt",
+      "slug": "production",
+      "name": "Production Main",
+      "type": "PRODUCTION",
+      "isProduction": true,
+      "status": "ACTIVE",
+      "requireMtls": false,
+      "strictIpAllowlist": false,
+      "enforceFourEyes": true,
+      "createdAt": "2026-11-05T07:12:18.533Z",
+      "updatedAt": "2026-11-05T07:12:18.533Z"
+    },
+    {
+      "id": "env_proj_mednet-health_mw37k3mt_stage",
+      "projectId": "proj_mednet-health_mw37k3mt",
+      "slug": "staging",
+      "name": "Staging QA",
+      "type": "STAGING",
+      "isProduction": false,
+      "status": "ACTIVE",
+      "requireMtls": false,
+      "strictIpAllowlist": false,
+      "enforceFourEyes": false,
+      "createdAt": "2026-11-05T07:12:18.533Z",
+      "updatedAt": "2026-11-05T07:12:18.533Z"
+    },
+    {
+      "id": "env_proj_mednet-health_mw37k3mt_dev",
+      "projectId": "proj_mednet-health_mw37k3mt",
+      "slug": "development",
+      "name": "Development Sandbox",
+      "type": "DEVELOPMENT",
+      "isProduction": false,
+      "status": "ACTIVE",
+      "requireMtls": false,
+      "strictIpAllowlist": false,
+      "enforceFourEyes": false,
+      "createdAt": "2026-11-05T07:12:18.533Z",
+      "updatedAt": "2026-11-05T07:12:18.533Z"
+    },
+    {
+      "id": "env_proj_aura-luxury_mw37k3mt_prod",
+      "projectId": "proj_aura-luxury_mw37k3mt",
+      "slug": "production",
+      "name": "Production Main",
+      "type": "PRODUCTION",
+      "isProduction": true,
+      "status": "ACTIVE",
+      "requireMtls": false,
+      "strictIpAllowlist": false,
+      "enforceFourEyes": true,
+      "createdAt": "2026-11-05T07:12:18.533Z",
+      "updatedAt": "2026-11-05T07:12:18.533Z"
+    },
+    {
+      "id": "env_proj_aura-luxury_mw37k3mt_stage",
+      "projectId": "proj_aura-luxury_mw37k3mt",
+      "slug": "staging",
+      "name": "Staging QA",
+      "type": "STAGING",
+      "isProduction": false,
+      "status": "ACTIVE",
+      "requireMtls": false,
+      "strictIpAllowlist": false,
+      "enforceFourEyes": false,
+      "createdAt": "2026-11-05T07:12:18.533Z",
+      "updatedAt": "2026-11-05T07:12:18.533Z"
+    },
+    {
+      "id": "env_proj_aura-luxury_mw37k3mt_dev",
+      "projectId": "proj_aura-luxury_mw37k3mt",
+      "slug": "development",
+      "name": "Development Sandbox",
+      "type": "DEVELOPMENT",
+      "isProduction": false,
+      "status": "ACTIVE",
+      "requireMtls": false,
+      "strictIpAllowlist": false,
+      "enforceFourEyes": false,
+      "createdAt": "2026-11-05T07:12:18.533Z",
+      "updatedAt": "2026-11-05T07:12:18.533Z"
+    }
+  ],
+  "apiKeys": [
+    {
+      "id": "key_1793862738538_991430",
+      "keyId": "key_live_mw37k3mv_f64be77e",
+      "name": "OmniDeliver Primary Gateway Key",
+      "environmentId": "env_proj_omnideliver_mw37k3mr_prod",
+      "projectId": "proj_omnideliver_mw37k3mr",
+      "keyType": "PROJECT_SCOPED",
+      "keyPrefix": "orb_live_",
+      "secretFingerprint": "SHA256: 0840:BBD0...9D8B",
+      "authVerifier": "eae5a6d9e60afb07ab5d44ecfbfe888eb165cbab5042c014ed3cb4dcc568a68d",
+      "maskedDisplay": "orb_live_••••••••OD8Q",
+      "status": "ACTIVE",
+      "capabilities": [
+        "restaurant.orders.read",
+        "restaurant.orders.create",
+        "restaurant.kds.fire",
+        "pos.checkout.process"
+      ],
+      "ipAllowlist": [
+        "198.51.100.0/24"
+      ],
+      "rateLimitPerMin": 10000,
+      "riskScore": 35,
+      "riskLevel": "MEDIUM",
+      "riskFactors": [
+        {
+          "code": "PRODUCTION_ACCESS",
+          "weight": 15,
+          "message": "Key has live production environment execution authority."
+        },
+        {
+          "code": "NO_EXPIRATION",
+          "weight": 20,
+          "message": "Key is non-expiring with indefinite lifetime."
+        }
+      ],
+      "issuedAt": "2026-11-05T07:12:18.538Z",
+      "activatedAt": "2026-11-05T07:12:18.538Z",
+      "createdBy": "admin@omnideliver.global",
+      "version": 1
+    },
+    {
+      "id": "key_1793862738539_c72927",
+      "keyId": "key_live_mw37k3mz_0bfef82c",
+      "name": "MedNet Inpatient Triage Feed",
+      "environmentId": "env_proj_mednet-health_mw37k3mt_prod",
+      "projectId": "proj_mednet-health_mw37k3mt",
+      "keyType": "SERVICE_MACHINE",
+      "keyPrefix": "orb_live_",
+      "secretFingerprint": "SHA256: 24AD:6528...EE76",
+      "authVerifier": "f58df63137eabcea0c8066510064d013405e96ff1e248b21b143c1be60b9c3b8",
+      "maskedDisplay": "orb_live_••••••••Ab73",
+      "status": "ACTIVE",
+      "capabilities": [
+        "hms.patients.read",
+        "hms.triage.execute",
+        "hms.beds.allocate"
+      ],
+      "ipAllowlist": [
+        "203.0.113.42/32"
+      ],
+      "rateLimitPerMin": 4000,
+      "riskScore": 35,
+      "riskLevel": "MEDIUM",
+      "riskFactors": [
+        {
+          "code": "PRODUCTION_ACCESS",
+          "weight": 15,
+          "message": "Key has live production environment execution authority."
+        },
+        {
+          "code": "NO_EXPIRATION",
+          "weight": 20,
+          "message": "Key is non-expiring with indefinite lifetime."
+        }
+      ],
+      "issuedAt": "2026-11-05T07:12:18.539Z",
+      "activatedAt": "2026-11-05T07:12:18.539Z",
+      "createdBy": "sysadmin@mednet.health",
+      "version": 1
+    }
+  ],
+  "credentials": [
+    {
+      "id": "cred_1793862738545_4980c2",
+      "name": "Stripe Corporate Live Gateway",
+      "provider": "stripe",
+      "environmentId": "env_proj_omnideliver_mw37k3mr_prod",
+      "projectId": "proj_omnideliver_mw37k3mr",
+      "envelope": {
+        "version": 1,
+        "kekIdentifier": "kms:us-east-1:orbitox-master-kek-v1",
+        "encryptedDek": "LgpdolBa28d7Umh7H640bYZesbvujE5b0UY/lE9LSh4=",
+        "dekIv": "6er2Uzl4JXEo87la",
+        "dekTag": "109ngEhiDZ32tB98WTsYLQ==",
+        "initializationVector": "Z9Yl+DtRtr8GyiNW",
+        "authenticationTag": "YOrhTMFfzGnmLpfL2PI3ig==",
+        "encryptedCiphertext": "YjrjwTbGzcZkcKGJJnOr/sjC1W/DeMGM1JMchlNI8yw2KHlF",
+        "secretFingerprint": "SHA256: 7BA2:BC42...FD6E"
+      },
+      "secretFingerprint": "SHA256: 7BA2:BC42...FD6E",
+      "maskedDisplay": "••••••••4812",
+      "health": "HEALTHY",
+      "lastRotatedAt": "2026-11-05T07:12:18.545Z",
+      "nextRotationDueAt": "2027-02-03T07:12:18.545Z",
+      "ownerEmail": "finance@omnideliver.global",
+      "createdAt": "2026-11-05T07:12:18.545Z",
+      "updatedAt": "2026-11-05T07:12:18.545Z"
+    }
+  ],
+  "packages": [
+    {
+      "id": "pkg_restaurant",
+      "packageId": "@orbitox/restaurant",
+      "name": "Restaurant & Kitchen OS",
+      "category": "Hospitality",
+      "publisher": "OrbitoX Core Labs",
+      "currentStableVersion": "2.2.0",
+      "signingPublicKeyPem": "-----BEGIN PUBLIC KEY-----\nMCowBQYDK2VwAyEAOrbitoXCoreSignedKey2026MasterNodeMeshRelease=\n-----END PUBLIC KEY-----",
+      "isCore": true,
+      "createdAt": "2025-01-01T00:00:00Z",
+      "updatedAt": "2026-10-01T00:00:00Z"
+    },
+    {
+      "id": "pkg_pos",
+      "packageId": "@orbitox/pos",
+      "name": "Point of Sale (POS)",
+      "category": "Retail",
+      "publisher": "OrbitoX Core Labs",
+      "currentStableVersion": "1.4.0",
+      "signingPublicKeyPem": "-----BEGIN PUBLIC KEY-----\nMCowBQYDK2VwAyEAOrbitoXCoreSignedKey2026MasterNodeMeshRelease=\n-----END PUBLIC KEY-----",
+      "isCore": true,
+      "createdAt": "2025-01-01T00:00:00Z",
+      "updatedAt": "2026-10-01T00:00:00Z"
+    },
+    {
+      "id": "pkg_commerce",
+      "packageId": "@orbitox/commerce",
+      "name": "Commerce & Store Engine",
+      "category": "Commerce",
+      "publisher": "OrbitoX Core Labs",
+      "currentStableVersion": "2.1.0",
+      "signingPublicKeyPem": "-----BEGIN PUBLIC KEY-----\nMCowBQYDK2VwAyEAOrbitoXCoreSignedKey2026MasterNodeMeshRelease=\n-----END PUBLIC KEY-----",
+      "isCore": true,
+      "createdAt": "2025-01-01T00:00:00Z",
+      "updatedAt": "2026-10-01T00:00:00Z"
+    },
+    {
+      "id": "pkg_crm",
+      "packageId": "@orbitox/crm",
+      "name": "CRM & Deal Pipeline",
+      "category": "Sales",
+      "publisher": "OrbitoX Core Labs",
+      "currentStableVersion": "1.0.1",
+      "signingPublicKeyPem": "-----BEGIN PUBLIC KEY-----\nMCowBQYDK2VwAyEAOrbitoXCoreSignedKey2026MasterNodeMeshRelease=\n-----END PUBLIC KEY-----",
+      "isCore": true,
+      "createdAt": "2025-01-01T00:00:00Z",
+      "updatedAt": "2026-10-01T00:00:00Z"
+    },
+    {
+      "id": "pkg_finance",
+      "packageId": "@orbitox/finance",
+      "name": "Finance & Ledger Engine",
+      "category": "Finance",
+      "publisher": "OrbitoX Core Labs",
+      "currentStableVersion": "2.0.0",
+      "signingPublicKeyPem": "-----BEGIN PUBLIC KEY-----\nMCowBQYDK2VwAyEAOrbitoXCoreSignedKey2026MasterNodeMeshRelease=\n-----END PUBLIC KEY-----",
+      "isCore": true,
+      "createdAt": "2025-01-01T00:00:00Z",
+      "updatedAt": "2026-10-01T00:00:00Z"
+    },
+    {
+      "id": "pkg_inventory",
+      "packageId": "@orbitox/inventory",
+      "name": "Inventory & Stock Logistics",
+      "category": "Supply Chain",
+      "publisher": "OrbitoX Core Labs",
+      "currentStableVersion": "1.5.0",
+      "signingPublicKeyPem": "-----BEGIN PUBLIC KEY-----\nMCowBQYDK2VwAyEAOrbitoXCoreSignedKey2026MasterNodeMeshRelease=\n-----END PUBLIC KEY-----",
+      "isCore": true,
+      "createdAt": "2025-01-01T00:00:00Z",
+      "updatedAt": "2026-10-01T00:00:00Z"
+    },
+    {
+      "id": "pkg_hms",
+      "packageId": "@orbitox/hms",
+      "name": "Hospital Management System (HMS)",
+      "category": "Healthcare",
+      "publisher": "OrbitoX Clinical Group",
+      "currentStableVersion": "2.4.0",
+      "signingPublicKeyPem": "-----BEGIN PUBLIC KEY-----\nMCowBQYDK2VwAyEAOrbitoXCoreSignedKey2026MasterNodeMeshRelease=\n-----END PUBLIC KEY-----",
+      "isCore": true,
+      "createdAt": "2025-01-01T00:00:00Z",
+      "updatedAt": "2026-10-01T00:00:00Z"
+    },
+    {
+      "id": "pkg_hrms",
+      "packageId": "@orbitox/hrms",
+      "name": "HRMS & Workforce Suite",
+      "category": "HR",
+      "publisher": "OrbitoX Core Labs",
+      "currentStableVersion": "1.2.0",
+      "signingPublicKeyPem": "-----BEGIN PUBLIC KEY-----\nMCowBQYDK2VwAyEAOrbitoXCoreSignedKey2026MasterNodeMeshRelease=\n-----END PUBLIC KEY-----",
+      "isCore": true,
+      "createdAt": "2025-01-01T00:00:00Z",
+      "updatedAt": "2026-10-01T00:00:00Z"
+    },
+    {
+      "id": "pkg_school",
+      "packageId": "@orbitox/school",
+      "name": "School & Campus OS",
+      "category": "Education",
+      "publisher": "OrbitoX Academy",
+      "currentStableVersion": "1.1.0",
+      "signingPublicKeyPem": "-----BEGIN PUBLIC KEY-----\nMCowBQYDK2VwAyEAOrbitoXCoreSignedKey2026MasterNodeMeshRelease=\n-----END PUBLIC KEY-----",
+      "isCore": true,
+      "createdAt": "2025-01-01T00:00:00Z",
+      "updatedAt": "2026-10-01T00:00:00Z"
+    }
+  ],
+  "packageVersions": [
+    {
+      "id": "ver_pkg_restaurant_2_2_0",
+      "packageId": "@orbitox/restaurant",
+      "version": "2.2.0",
+      "tarballSha256": "32e5a07e7c3c589fd3ae75baacd5bf109fd725db914a3397a50a8aeb89213ca0",
+      "manifestHash": "1d4fed4d62d8cd9c3a092fb06140e658f5b0e90a0bf1f9eb15822f8f3748f2d2",
+      "signerId": "orbitox-release-mesh-certified",
+      "signature": "ed25519_cert_sig_ef120069861cfcd24aa39e3b6d0df80f",
+      "minPlatformVersion": "1.0.0",
+      "releaseNotes": "Production certified release 2.2.0",
+      "releasedAt": "2026-09-15T00:00:00Z"
+    },
+    {
+      "id": "ver_pkg_pos_1_4_0",
+      "packageId": "@orbitox/pos",
+      "version": "1.4.0",
+      "tarballSha256": "c5d015053879f9ac8474b640addab3d70bfd7601144749f9763c2e9b46398d6c",
+      "manifestHash": "1e6ee148e478f74db547925754bc35946f0d8760ad1f0739a2557e4f7b04a6a8",
+      "signerId": "orbitox-release-mesh-certified",
+      "signature": "ed25519_cert_sig_fbd46e9401b0677129004af86aecd1a7",
+      "minPlatformVersion": "1.0.0",
+      "releaseNotes": "Production certified release 1.4.0",
+      "releasedAt": "2026-09-15T00:00:00Z"
+    },
+    {
+      "id": "ver_pkg_commerce_2_1_0",
+      "packageId": "@orbitox/commerce",
+      "version": "2.1.0",
+      "tarballSha256": "97f3664f1416c12eb80961087f95af39356d5ce12ee86dbd844398fd6560e218",
+      "manifestHash": "a46da91a7134a11bfc0168f0500529fe31233d98ad77916b5b4c833393a7c99b",
+      "signerId": "orbitox-release-mesh-certified",
+      "signature": "ed25519_cert_sig_90d3ff3d2205035407e2c7de780d7fa3",
+      "minPlatformVersion": "1.0.0",
+      "releaseNotes": "Production certified release 2.1.0",
+      "releasedAt": "2026-09-15T00:00:00Z"
+    },
+    {
+      "id": "ver_pkg_crm_1_0_1",
+      "packageId": "@orbitox/crm",
+      "version": "1.0.1",
+      "tarballSha256": "c81af7b430685e376955bafd4c6df5bad5837e6a1b9564b1d1e9e6b029775576",
+      "manifestHash": "38580cafcfb1108f7379e62305a9f869fe1e975b6635f96c6abdc9427eacfe3a",
+      "signerId": "orbitox-release-mesh-certified",
+      "signature": "ed25519_cert_sig_332af926e773983ef58da939f0009e83",
+      "minPlatformVersion": "1.0.0",
+      "releaseNotes": "Production certified release 1.0.1",
+      "releasedAt": "2026-09-15T00:00:00Z"
+    },
+    {
+      "id": "ver_pkg_finance_2_0_0",
+      "packageId": "@orbitox/finance",
+      "version": "2.0.0",
+      "tarballSha256": "4c320ae7862b5263fc6d1f0d2bcd11256ea066533f6e79d2d2f1f69aafa27c09",
+      "manifestHash": "65b3d73f130c19b9b9dc953f171aac1c6f0f6f96d66265b4b060319212051f4b",
+      "signerId": "orbitox-release-mesh-certified",
+      "signature": "ed25519_cert_sig_a1e2230c6270a26bc3ead1b8c63a3825",
+      "minPlatformVersion": "1.0.0",
+      "releaseNotes": "Production certified release 2.0.0",
+      "releasedAt": "2026-09-15T00:00:00Z"
+    },
+    {
+      "id": "ver_pkg_inventory_1_5_0",
+      "packageId": "@orbitox/inventory",
+      "version": "1.5.0",
+      "tarballSha256": "7f40ec0ea0e749bb228063793ac337eb8029cdb3554de568389e33bae1834cc1",
+      "manifestHash": "b22e8f85cd9bd83258e83ded6a53b88909e4b5bbbdd0a818a1a3e80fac52fc0a",
+      "signerId": "orbitox-release-mesh-certified",
+      "signature": "ed25519_cert_sig_9769d72d80bbcc0a4b47c09ba7a3b689",
+      "minPlatformVersion": "1.0.0",
+      "releaseNotes": "Production certified release 1.5.0",
+      "releasedAt": "2026-09-15T00:00:00Z"
+    },
+    {
+      "id": "ver_pkg_hms_2_4_0",
+      "packageId": "@orbitox/hms",
+      "version": "2.4.0",
+      "tarballSha256": "8225b530074e49bc7610ecb4ddd54e64ebe3578d71e5618eb61fcd1751f001bd",
+      "manifestHash": "4ea2af5eadf82fa5f88c1ade5b536f9434ea66925f2f1e64359e159db6dd23f0",
+      "signerId": "orbitox-release-mesh-certified",
+      "signature": "ed25519_cert_sig_c5586780e6e1eae662e33ac7b650f7df",
+      "minPlatformVersion": "1.0.0",
+      "releaseNotes": "Production certified release 2.4.0",
+      "releasedAt": "2026-09-15T00:00:00Z"
+    },
+    {
+      "id": "ver_pkg_hrms_1_2_0",
+      "packageId": "@orbitox/hrms",
+      "version": "1.2.0",
+      "tarballSha256": "d51a0e012eac1454217376400f07ebb0ec747c6e0c2d03208620d1b51632dfa7",
+      "manifestHash": "a9e4edfc5d9984cbe6193453515527d588e60ab4d20c7ab40c1c603041e9660a",
+      "signerId": "orbitox-release-mesh-certified",
+      "signature": "ed25519_cert_sig_f1863173342e54897f9f7d32dadb6d6f",
+      "minPlatformVersion": "1.0.0",
+      "releaseNotes": "Production certified release 1.2.0",
+      "releasedAt": "2026-09-15T00:00:00Z"
+    },
+    {
+      "id": "ver_pkg_school_1_1_0",
+      "packageId": "@orbitox/school",
+      "version": "1.1.0",
+      "tarballSha256": "36a587d304b8a4b9ecd3fb799d707ab8c3d3e8a848f25db7b4994d303f277893",
+      "manifestHash": "ef0d1cbfa05c788dc09308bfb2d33c6ef615ceaf26004b9ad613c259f029e332",
+      "signerId": "orbitox-release-mesh-certified",
+      "signature": "ed25519_cert_sig_e5771b4a7852d5a47055896641cb1caa",
+      "minPlatformVersion": "1.0.0",
+      "releaseNotes": "Production certified release 1.1.0",
+      "releasedAt": "2026-09-15T00:00:00Z"
+    }
+  ],
+  "packageInstallations": [
+    {
+      "id": "install_env_proj_omnideliver_mw37k3mr_prod__orbitox_restaurant",
+      "environmentId": "env_proj_omnideliver_mw37k3mr_prod",
+      "packageId": "@orbitox/restaurant",
+      "installedVersionId": "ver_pkg_restaurant_2_2_0",
+      "status": "ACTIVE",
+      "configOverrides": {},
+      "installedAt": "2026-11-05T07:12:18.532Z",
+      "updatedAt": "2026-11-05T07:12:18.532Z"
+    },
+    {
+      "id": "install_env_proj_omnideliver_mw37k3mr_prod__orbitox_pos",
+      "environmentId": "env_proj_omnideliver_mw37k3mr_prod",
+      "packageId": "@orbitox/pos",
+      "installedVersionId": "ver_pkg_pos_1_4_0",
+      "status": "ACTIVE",
+      "configOverrides": {},
+      "installedAt": "2026-11-05T07:12:18.532Z",
+      "updatedAt": "2026-11-05T07:12:18.532Z"
+    },
+    {
+      "id": "install_env_proj_omnideliver_mw37k3mr_prod__orbitox_commerce",
+      "environmentId": "env_proj_omnideliver_mw37k3mr_prod",
+      "packageId": "@orbitox/commerce",
+      "installedVersionId": "ver_pkg_commerce_2_1_0",
+      "status": "ACTIVE",
+      "configOverrides": {},
+      "installedAt": "2026-11-05T07:12:18.532Z",
+      "updatedAt": "2026-11-05T07:12:18.532Z"
+    },
+    {
+      "id": "install_env_proj_omnideliver_mw37k3mr_prod__orbitox_crm",
+      "environmentId": "env_proj_omnideliver_mw37k3mr_prod",
+      "packageId": "@orbitox/crm",
+      "installedVersionId": "ver_pkg_crm_1_0_1",
+      "status": "ACTIVE",
+      "configOverrides": {},
+      "installedAt": "2026-11-05T07:12:18.532Z",
+      "updatedAt": "2026-11-05T07:12:18.532Z"
+    },
+    {
+      "id": "install_env_proj_omnideliver_mw37k3mr_prod__orbitox_finance",
+      "environmentId": "env_proj_omnideliver_mw37k3mr_prod",
+      "packageId": "@orbitox/finance",
+      "installedVersionId": "ver_pkg_finance_2_0_0",
+      "status": "ACTIVE",
+      "configOverrides": {},
+      "installedAt": "2026-11-05T07:12:18.532Z",
+      "updatedAt": "2026-11-05T07:12:18.532Z"
+    },
+    {
+      "id": "install_env_proj_omnideliver_mw37k3mr_prod__orbitox_inventory",
+      "environmentId": "env_proj_omnideliver_mw37k3mr_prod",
+      "packageId": "@orbitox/inventory",
+      "installedVersionId": "ver_pkg_inventory_1_5_0",
+      "status": "ACTIVE",
+      "configOverrides": {},
+      "installedAt": "2026-11-05T07:12:18.532Z",
+      "updatedAt": "2026-11-05T07:12:18.532Z"
+    },
+    {
+      "id": "install_env_proj_mednet-health_mw37k3mt_prod__orbitox_hms",
+      "environmentId": "env_proj_mednet-health_mw37k3mt_prod",
+      "packageId": "@orbitox/hms",
+      "installedVersionId": "ver_pkg_hms_2_4_0",
+      "status": "ACTIVE",
+      "configOverrides": {},
+      "installedAt": "2026-11-05T07:12:18.533Z",
+      "updatedAt": "2026-11-05T07:12:18.533Z"
+    },
+    {
+      "id": "install_env_proj_mednet-health_mw37k3mt_prod__orbitox_inventory",
+      "environmentId": "env_proj_mednet-health_mw37k3mt_prod",
+      "packageId": "@orbitox/inventory",
+      "installedVersionId": "ver_pkg_inventory_1_5_0",
+      "status": "ACTIVE",
+      "configOverrides": {},
+      "installedAt": "2026-11-05T07:12:18.533Z",
+      "updatedAt": "2026-11-05T07:12:18.533Z"
+    },
+    {
+      "id": "install_env_proj_mednet-health_mw37k3mt_prod__orbitox_finance",
+      "environmentId": "env_proj_mednet-health_mw37k3mt_prod",
+      "packageId": "@orbitox/finance",
+      "installedVersionId": "ver_pkg_finance_2_0_0",
+      "status": "ACTIVE",
+      "configOverrides": {},
+      "installedAt": "2026-11-05T07:12:18.533Z",
+      "updatedAt": "2026-11-05T07:12:18.533Z"
+    },
+    {
+      "id": "install_env_proj_mednet-health_mw37k3mt_prod__orbitox_hrms",
+      "environmentId": "env_proj_mednet-health_mw37k3mt_prod",
+      "packageId": "@orbitox/hrms",
+      "installedVersionId": "ver_pkg_hrms_1_2_0",
+      "status": "ACTIVE",
+      "configOverrides": {},
+      "installedAt": "2026-11-05T07:12:18.533Z",
+      "updatedAt": "2026-11-05T07:12:18.533Z"
+    },
+    {
+      "id": "install_env_proj_aura-luxury_mw37k3mt_prod__orbitox_commerce",
+      "environmentId": "env_proj_aura-luxury_mw37k3mt_prod",
+      "packageId": "@orbitox/commerce",
+      "installedVersionId": "ver_pkg_commerce_2_1_0",
+      "status": "ACTIVE",
+      "configOverrides": {},
+      "installedAt": "2026-11-05T07:12:18.533Z",
+      "updatedAt": "2026-11-05T07:12:18.533Z"
+    },
+    {
+      "id": "install_env_proj_aura-luxury_mw37k3mt_prod__orbitox_crm",
+      "environmentId": "env_proj_aura-luxury_mw37k3mt_prod",
+      "packageId": "@orbitox/crm",
+      "installedVersionId": "ver_pkg_crm_1_0_1",
+      "status": "ACTIVE",
+      "configOverrides": {},
+      "installedAt": "2026-11-05T07:12:18.533Z",
+      "updatedAt": "2026-11-05T07:12:18.533Z"
+    },
+    {
+      "id": "install_env_proj_aura-luxury_mw37k3mt_prod__orbitox_inventory",
+      "environmentId": "env_proj_aura-luxury_mw37k3mt_prod",
+      "packageId": "@orbitox/inventory",
+      "installedVersionId": "ver_pkg_inventory_1_5_0",
+      "status": "ACTIVE",
+      "configOverrides": {},
+      "installedAt": "2026-11-05T07:12:18.533Z",
+      "updatedAt": "2026-11-05T07:12:18.533Z"
+    }
+  ],
+  "pluginInstallations": [],
+  "plugins": [],
+  "plans": [],
+  "outboxMessages": [],
+  "domains": [
+    {
+      "id": "dom_1793862738534_c2508a",
+      "environmentId": "env_proj_omnideliver_mw37k3mr_prod",
+      "domainName": "api.omnideliver.global",
+      "isApex": false,
+      "verificationStatus": "VERIFIED",
+      "cnameTarget": "cname.orbitox.io",
+      "tlsCertificateStatus": "ISSUED",
+      "sslExpiresAt": "2027-01-29T07:12:18.534Z",
+      "edgeLatencyMs": 8,
+      "createdAt": "2026-11-05T07:12:18.534Z",
+      "verifiedAt": "2026-11-05T07:12:18.534Z"
+    },
+    {
+      "id": "dom_1793862738534_8a1e37",
+      "environmentId": "env_proj_mednet-health_mw37k3mt_prod",
+      "domainName": "portal.mednet.health",
+      "isApex": false,
+      "verificationStatus": "VERIFIED",
+      "cnameTarget": "cname.orbitox.io",
+      "tlsCertificateStatus": "ISSUED",
+      "sslExpiresAt": "2027-01-29T07:12:18.534Z",
+      "edgeLatencyMs": 8,
+      "createdAt": "2026-11-05T07:12:18.534Z",
+      "verifiedAt": "2026-11-05T07:12:18.534Z"
+    }
+  ],
+  "quotaPolicies": [
+    {
+      "id": "quota_env_proj_omnideliver_mw37k3mr_prod",
+      "environmentId": "env_proj_omnideliver_mw37k3mr_prod",
+      "monthlyCallLimit": 10000000,
+      "monthlyCallsUsed": 0,
+      "storageQuotaGb": 500,
+      "storageUsedGb": 0,
+      "warningThreshold": 80,
+      "updatedAt": "2026-11-05T07:12:18.532Z"
+    },
+    {
+      "id": "quota_env_proj_mednet-health_mw37k3mt_prod",
+      "environmentId": "env_proj_mednet-health_mw37k3mt_prod",
+      "monthlyCallLimit": 10000000,
+      "monthlyCallsUsed": 0,
+      "storageQuotaGb": 500,
+      "storageUsedGb": 0,
+      "warningThreshold": 80,
+      "updatedAt": "2026-11-05T07:12:18.533Z"
+    },
+    {
+      "id": "quota_env_proj_aura-luxury_mw37k3mt_prod",
+      "environmentId": "env_proj_aura-luxury_mw37k3mt_prod",
+      "monthlyCallLimit": 10000000,
+      "monthlyCallsUsed": 0,
+      "storageQuotaGb": 500,
+      "storageUsedGb": 0,
+      "warningThreshold": 80,
+      "updatedAt": "2026-11-05T07:12:18.533Z"
+    }
+  ],
+  "rateLimitPolicies": [],
+  "auditLogs": []
+}
