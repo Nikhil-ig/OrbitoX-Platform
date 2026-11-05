@@ -10,31 +10,51 @@ import {
   type EmailProvider,
 } from '../lib/account-email';
 import { encryptAccountEmailPayload } from '../lib/phase6-account-security';
+import { registerCustomer } from '../lib/phase6-account-service';
 
 if (process.env.ORBITOX_PLATFORM_REPOSITORY === 'prisma') {
   describe('Phase 6 account email worker database behavior', () => {
     const ownerUrl = process.env.TEST_DATABASE_URL || process.env.DATABASE_URL;
     const relayUrl = process.env.OUTBOX_RELAY_DATABASE_URL;
-    if (!ownerUrl || !relayUrl) {
-      throw new Error('TEST_DATABASE_URL/DATABASE_URL and OUTBOX_RELAY_DATABASE_URL are required.');
+    const runtimeUrl = process.env.APP_DATABASE_URL;
+    if (!ownerUrl || !relayUrl || !runtimeUrl) {
+      throw new Error('TEST_DATABASE_URL/DATABASE_URL, APP_DATABASE_URL and OUTBOX_RELAY_DATABASE_URL are required.');
     }
     const owner = new PrismaClient({ datasourceUrl: ownerUrl });
     const relay = new PrismaClient({ datasourceUrl: relayUrl });
+    const runtime = new PrismaClient({ datasourceUrl: runtimeUrl });
     const recipients = Array.from(
-      { length: ACCOUNT_EMAIL_TEMPLATE_NAMES.length + 2 },
+      { length: ACCOUNT_EMAIL_TEMPLATE_NAMES.length + 3 },
       () => `email-${crypto.randomUUID()}@example.invalid`,
     );
+    const signupEmail = `signup-${crypto.randomUUID()}@example.invalid`;
     const ids: string[] = [];
     const webhookEventIds: string[] = [];
+    const previousBreachApiMode = process.env.ORBITOX_BREACHED_PASSWORD_API;
 
     before(async () => {
       process.env.ORBITOX_ACCOUNT_TOKEN_ENCRYPTION_KEY = crypto.randomBytes(32).toString('base64');
       process.env.ORBITOX_EMAIL_WEBHOOK_SECRET = `whsec_${crypto.randomBytes(32).toString('base64')}`;
       const role = await relay.$queryRaw<Array<{ role: string }>>`SELECT current_user AS role`;
       assert.equal(role[0]?.role, 'orbitox_outbox_relay');
+      const runtimeRole = await runtime.$queryRaw<Array<{ role: string }>>`SELECT current_user AS role`;
+      assert.equal(runtimeRole[0]?.role, 'orbitox_runtime');
+      process.env.ORBITOX_BREACHED_PASSWORD_API = 'off';
     });
 
     after(async () => {
+      const signupUser = await owner.customerUser.findFirst({
+        where: { email: signupEmail },
+        select: { id: true, memberships: { select: { organizationId: true } } },
+      });
+      await owner.accountEmailOutbox.deleteMany({ where: { recipient: signupEmail } });
+      if (signupUser) {
+        await owner.customerMembership.deleteMany({ where: { userId: signupUser.id } });
+        await owner.customerUser.delete({ where: { id: signupUser.id } });
+        await owner.platformOrganization.deleteMany({
+          where: { id: { in: signupUser.memberships.map((membership) => membership.organizationId) } },
+        });
+      }
       await owner.accountEmailOutbox.deleteMany({ where: { id: { in: ids } } });
       await owner.accountEmailSuppression.deleteMany({
         where: { email: { in: recipients } },
@@ -42,7 +62,24 @@ if (process.env.ORBITOX_PLATFORM_REPOSITORY === 'prisma') {
       await owner.accountEmailWebhookEvent.deleteMany({
         where: { eventId: { in: webhookEventIds } },
       });
-      await Promise.all([owner.$disconnect(), relay.$disconnect()]);
+      if (previousBreachApiMode === undefined) delete process.env.ORBITOX_BREACHED_PASSWORD_API;
+      else process.env.ORBITOX_BREACHED_PASSWORD_API = previousBreachApiMode;
+      await Promise.all([owner.$disconnect(), relay.$disconnect(), runtime.$disconnect()]);
+    });
+
+    it('registers a customer as orbitox_runtime and queues the verification email without SELECT', async () => {
+      const response = await registerCustomer({
+        email: signupEmail,
+        password: `Account-test-${crypto.randomUUID()}`,
+        organizationName: 'Signup Outbox Test',
+        baseUrl: 'https://console.orbitox.test',
+      }, runtime);
+
+      assert.equal(response.status, 202);
+      assert.equal(response.body.ok, true);
+      assert.equal(await owner.accountEmailOutbox.count({
+        where: { recipient: signupEmail, template: 'VERIFY_EMAIL' },
+      }), 1);
     });
 
     it('sends each claimed message once across three concurrent workers', async () => {

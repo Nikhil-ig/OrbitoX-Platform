@@ -75,7 +75,7 @@ export async function registerCustomer(input: {
   password: string;
   organizationName: string;
   baseUrl: string;
-}): Promise<ReturnType<typeof uniformAccountResponse>> {
+}, database: PrismaClient = prisma): Promise<ReturnType<typeof uniformAccountResponse>> {
   const email = assertValidEmail(input.email);
   assertValidPassword(input.password);
   if (
@@ -91,7 +91,7 @@ export async function registerCustomer(input: {
   const encryptedPayload = encryptAccountEmailPayload({ link });
 
   try {
-    await prisma.$transaction(async (tx) => {
+    await database.$transaction(async (tx) => {
       const existing = await tx.customerUser.findFirst({
         where: { email, status: { not: 'DELETED' } },
         select: { id: true },
@@ -119,8 +119,8 @@ export async function registerCustomer(input: {
           expiresAt: token.expiresAt,
         },
       });
-      await tx.accountEmailOutbox.create({
-        data: { recipient: email, template: 'VERIFY_EMAIL', encryptedPayload },
+      await tx.accountEmailOutbox.createMany({
+        data: [{ recipient: email, template: 'VERIFY_EMAIL', encryptedPayload }],
       });
     });
   } catch (error) {
@@ -175,8 +175,8 @@ export async function requestCustomerPasswordReset(
         expiresAt: token.expiresAt,
       },
     });
-    await tx.accountEmailOutbox.create({
-      data: { recipient: email, template: 'RESET_PASSWORD', encryptedPayload },
+    await tx.accountEmailOutbox.createMany({
+      data: [{ recipient: email, template: 'RESET_PASSWORD', encryptedPayload }],
     });
   });
 }
@@ -260,8 +260,8 @@ export async function inviteCustomerMember(input: {
         expiresAt: token.expiresAt,
       },
     });
-    await tx.accountEmailOutbox.create({
-      data: { recipient: email, template: 'INVITE', encryptedPayload },
+    await tx.accountEmailOutbox.createMany({
+      data: [{ recipient: email, template: 'INVITE', encryptedPayload }],
     });
   });
 }
