@@ -1994,9 +1994,9 @@ async function main() {
       // Restart database
       execFileSync('docker', ['start', container]);
 
-      // Wait for PostgreSQL WAL recovery
+      // Wait for PostgreSQL WAL recovery (allow up to 60s for container start and WAL REDO under runner load)
       let recovered = false;
-      for (let i = 0; i < 30; i++) {
+      for (let i = 0; i < 120; i++) {
         try {
           const check = await owner.$queryRaw<Array<{ ready: boolean }>>`SELECT true as ready`;
           if (check.length > 0) {
