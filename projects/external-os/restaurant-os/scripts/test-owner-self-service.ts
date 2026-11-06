@@ -595,7 +595,7 @@ async function main() {
     const now = new Date();
     const orderItemsJson = [{ id: 'item_butter_chicken', name: 'Butter Chicken', quantity: 1, unitPriceMinor: 54000, station: 'CURRY_LINE' }];
     const batchOrders = [];
-    for (let i = 0; i < 400; i++) {
+    for (let i = 0; i < 800; i++) {
       batchOrders.push({
         id: `ord_quota_${testSuffix}_${i}`,
         tenantId: provisionResult.tenantId,
@@ -631,9 +631,9 @@ async function main() {
     assert(orderWarningRes.status === 201, 'Order submitted successfully at 80% quota (HTTP 201)');
     assert(orderWarningRes.headers['x-quota-warning'] === '80%', 'Order response contains x-quota-warning: 80%');
 
-    // Add remaining 100 orders to hit 500 (100% quota)
+    // Add remaining 200 orders to hit 1000 (100% quota)
     const blockOrders = [];
-    for (let i = 400; i < 500; i++) {
+    for (let i = 800; i < 1000; i++) {
       blockOrders.push({
         id: `ord_quota_${testSuffix}_${i}`,
         tenantId: provisionResult.tenantId,
