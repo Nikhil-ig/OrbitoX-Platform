@@ -20,13 +20,15 @@ import {
   PlatformRepository,
   hasCapability,
   PLAN_DEFAULT_QUOTAS,
+  verifyGrant,
+  getPublicGrantKeys,
+  EntitlementClaims,
 } from '@orbitox-io/plugin-engine';
 import { platformRepository } from '@/lib/platform-repository';
 import type { PlatformProject } from '@orbitox/types';
 import { isSamplePlugin, isSamplePluginEnabled, SamplePluginId } from '@/lib/sample-plugins';
 import { withOperatorActor } from '@/lib/operator-actor-context';
 import { prisma } from '@/lib/prisma';
-import { billingEnforcementState } from '@/lib/phase6-razorpay-billing';
 
 export { PlatformRepository };
 
@@ -699,6 +701,8 @@ export function withApiGuard<T = any>(
     let guardDatabaseOperations = 0;
     let guardDatabaseWrites = 0;
     let prismaRepositoryUsed = false;
+    let grantToken: string | undefined;
+    let grantStatus: string | undefined;
 
     if (rawApiKey) {
       let lookup;
@@ -1068,56 +1072,58 @@ export function withApiGuard<T = any>(
         );
       }
 
-      const environmentId = matchedKey?.environmentId;
-      const billingTenantId = project.organizationId && typeof environmentId === 'string'
-        ? `org/${project.organizationId}/project/${project.id}/environment/${environmentId}`
-        : null;
-      if (billingTenantId) {
-        const pluginIds = [serviceId, `@orbitox/${serviceId}`, `@orbitox-io/${serviceId}`];
-        const subscription = await prisma.billingSubscription.findFirst({
-          where: { tenantId: billingTenantId, pluginId: { in: pluginIds } },
-          orderBy: { updatedAt: 'desc' },
-          select: {
-            status: true,
-            currentEnd: true,
-            graceStartedAt: true,
-            planMap: { select: { internalPlanId: true } },
-          },
-        });
-        if (subscription) {
-          const plan = await prisma.plan.findUnique({
-            where: { planId: subscription.planMap.internalPlanId },
-            select: { gracePeriodDays: true, suspensionGraceDays: true },
+      // Enforce billing state from the installation status in the grant (set by webhook and grace sweep)
+      grantToken =
+        req.headers.get('x-orbitox-grant') ||
+        req.headers.get('x-grant-token') ||
+        req.headers.get('x-entitlement-grant') ||
+        undefined;
+
+      grantStatus =
+        (req as any).grant?.status ||
+        (req as any).claims?.status ||
+        req.headers.get('x-orbitox-billing-state')?.toUpperCase();
+
+      if (!grantStatus && grantToken) {
+        try {
+          const canonicalService = serviceId.startsWith('@') ? serviceId : `@orbitox/${serviceId}`;
+          const claims = await verifyGrant<EntitlementClaims>(grantToken, {
+            type: 'orbitox-ent',
+            audience: canonicalService,
+            trustedKeys: getPublicGrantKeys(),
           });
-          const now = Math.floor(Date.now() / 1000);
-          const state = billingEnforcementState({
-            status: subscription.status,
-            currentEnd: subscription.currentEnd ? Math.floor(subscription.currentEnd.getTime() / 1000) : null,
-            graceStartedAt: subscription.graceStartedAt
-              ? Math.floor(subscription.graceStartedAt.getTime() / 1000)
-              : null,
-          }, {
-            readOnlyAfterDays: plan?.gracePeriodDays ?? 0,
-            suspendAfterDays: plan?.suspensionGraceDays ?? 0,
-          }, now);
-          const isWrite = !['GET', 'HEAD', 'OPTIONS'].includes(req.method.toUpperCase());
-          if (state === 'SUSPENDED' || (state === 'READ_ONLY' && isWrite)) {
-            const latencyMs = Math.round(performance.now() - startTime);
-            return NextResponse.json<ApiResponse>(
-              {
-                success: false,
-                error: {
-                  code: 'PAYMENT_REQUIRED',
-                  message: state === 'READ_ONLY'
-                    ? 'This subscription is read-only. Update billing to restore write access.'
-                    : 'This subscription is suspended. Update billing to restore access.',
-                  details: { billingState: state },
-                },
-                meta: { tenantId, serviceId, latencyMs, timestamp: new Date().toISOString(), requestId },
+          grantStatus = claims.status;
+        } catch {
+          try {
+            const claims = await verifyGrant<EntitlementClaims>(grantToken, {
+              type: 'orbitox-ent',
+              audience: serviceId,
+              trustedKeys: getPublicGrantKeys(),
+            });
+            grantStatus = claims.status;
+          } catch {}
+        }
+      }
+
+      if (grantStatus) {
+        const isWrite = !['GET', 'HEAD', 'OPTIONS'].includes(req.method.toUpperCase());
+        const state = grantStatus.toUpperCase();
+        if (state === 'SUSPENDED' || (state === 'READ_ONLY' && isWrite)) {
+          const latencyMs = Math.round(performance.now() - startTime);
+          return NextResponse.json<ApiResponse>(
+            {
+              success: false,
+              error: {
+                code: 'PAYMENT_REQUIRED',
+                message: state === 'READ_ONLY'
+                  ? 'This subscription is read-only. Update billing to restore write access.'
+                  : 'This subscription is suspended. Update billing to restore access.',
+                details: { billingState: state },
               },
-              { status: 402, headers: { 'x-orbitox-billing-state': state.toLowerCase() } },
-            );
-          }
+              meta: { tenantId, serviceId, latencyMs, timestamp: new Date().toISOString(), requestId },
+            },
+            { status: 402, headers: { 'x-orbitox-billing-state': state.toLowerCase() } },
+          );
         }
       }
 
@@ -1364,7 +1370,8 @@ export function withApiGuard<T = any>(
         isBillableResponse &&
         project?.organizationId &&
         matchedKey.environmentId &&
-        !['system', 'admin', 'platform'].includes(serviceId)
+        !['system', 'admin', 'platform'].includes(serviceId) &&
+        (grantStatus !== undefined || grantToken !== undefined || (req as any).grant !== undefined)
       ) {
         const usageTenantId =
           `org/${project.organizationId}/project/${project.id}/environment/${matchedKey.environmentId}`;
@@ -1391,6 +1398,9 @@ export function withApiGuard<T = any>(
               update: { requestCount: { increment: 1n }, updatedAt: new Date() },
             });
           });
+          prismaRepositoryUsed = true;
+          guardDatabaseOperations += 1;
+          guardDatabaseWrites += 1;
         } catch (usageError) {
           PlatformApiState.recordTelemetry({
             tenantId: project.slug || 'unknown',
