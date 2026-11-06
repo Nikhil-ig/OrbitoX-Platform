@@ -191,8 +191,8 @@ export class PlatformRepository {
   private static packageVersions: PackageVersionRecord[] = [];
   private static packageInstallations: PackageInstallationRecord[] = [];
   private static pluginInstallations: PluginInstallationRecord[] = [];
-  private static plugins: PluginCatalogueItem[] = [];
-  private static plans: PlanCatalogueRecord[] = [];
+  private static plugins: PluginCatalogueItem[] = [...SEED_PLUGINS];
+  private static plans: PlanCatalogueRecord[] = [...SEED_PLANS];
   private static outboxMessages: PlatformOutboxRecord[] = [];
   private static domains: ProjectDomainRecord[] = [];
   private static quotaPolicies: EnvironmentQuotaPolicyRecord[] = [];
@@ -617,8 +617,8 @@ export class PlatformRepository {
     this.packageVersions = [];
     this.packageInstallations = [];
     this.pluginInstallations = [];
-    this.plugins = [];
-    this.plans = [];
+    this.plugins = [...SEED_PLUGINS];
+    this.plans = [...SEED_PLANS];
     this.outboxMessages = [];
     this.domains = [];
     this.quotaPolicies = [];
@@ -841,7 +841,7 @@ export class PlatformRepository {
           pluginId: canonical,
           runtimeTenantId: canonicalTenantId,
           status: (input.status as any) || 'ACTIVE',
-          planId: p.planId || planKey,
+          planId: p.planId || undefined,
           config: p.config || {},
         });
       }
@@ -2042,6 +2042,9 @@ export class PlatformRepository {
   // ─────────────────────────────────────────────────────────────
 
   private static seedDefaults(): void {
+    this.plugins = [...SEED_PLUGINS];
+    this.plans = [...SEED_PLANS];
+
     // 1. Organizations
     const orgOmni = this.createOrganization({
       slug: 'omnilogistics',
