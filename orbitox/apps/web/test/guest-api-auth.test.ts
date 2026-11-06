@@ -177,6 +177,21 @@ describe('Restaurant Traffic Routing & Demolition of In-Memory Runtime (Phase 2b
             const canonicalDot = 'org/platform/project/bistro-dot/environment/production';
             const canonicalUnderscore = 'org/platform/project/bistro-underscore/environment/production';
 
+            await platformRepository.provisionPluginInstallation({
+                tenantId: 'bistro.one',
+                pluginId: '@orbitox/restaurant',
+                planId: 'restaurant-starter',
+                runtimeTenantId: canonicalDot,
+                status: 'ACTIVE',
+            });
+            await platformRepository.provisionPluginInstallation({
+                tenantId: 'bistro_one',
+                pluginId: '@orbitox/restaurant',
+                planId: 'restaurant-starter',
+                runtimeTenantId: canonicalUnderscore,
+                status: 'ACTIVE',
+            });
+
             registerRestaurantTenantLink('bistro.one', canonicalDot);
             registerRestaurantTenantLink('bistro_one', canonicalUnderscore);
 
