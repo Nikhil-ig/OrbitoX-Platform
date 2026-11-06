@@ -1084,14 +1084,11 @@ export function withApiGuard<T = any>(
             planMap: { select: { internalPlanId: true } },
           },
         });
-        prismaRepositoryUsed = true;
-        guardDatabaseOperations += 1;
         if (subscription) {
           const plan = await prisma.plan.findUnique({
             where: { planId: subscription.planMap.internalPlanId },
             select: { gracePeriodDays: true, suspensionGraceDays: true },
           });
-          guardDatabaseOperations += 1;
           const now = Math.floor(Date.now() / 1000);
           const state = billingEnforcementState({
             status: subscription.status,
@@ -1394,9 +1391,6 @@ export function withApiGuard<T = any>(
               update: { requestCount: { increment: 1n }, updatedAt: new Date() },
             });
           });
-          prismaRepositoryUsed = true;
-          guardDatabaseOperations += 1;
-          guardDatabaseWrites += 1;
         } catch (usageError) {
           PlatformApiState.recordTelemetry({
             tenantId: project.slug || 'unknown',
