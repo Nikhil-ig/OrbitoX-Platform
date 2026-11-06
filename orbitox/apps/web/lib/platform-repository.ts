@@ -800,13 +800,13 @@ export function createPrismaPlatformRepository(
 
                 // Rule 1: Create PluginInstallation rows ONLY from an explicit plugin/entitlement/plan request.
                 // Remove businessModel guessing completely. A business type never grants a plugin.
-                const pluginsToInstall: Array<{ pluginId: string; planId?: string; config?: Record<string, any> }> = [];
+                const pluginsToInstall: Array<{ pluginId: string; planId?: string | null; config?: Record<string, any> }> = [];
                 if (input.plugins && Array.isArray(input.plugins)) {
                     for (const p of input.plugins) {
                         if (p && p.pluginId) {
                             pluginsToInstall.push({
                                 pluginId: canonicalizePluginId(p.pluginId),
-                                planId: p.planId || input.plan || input.planTier,
+                                planId: p.planId ? p.planId.toLowerCase() : null,
                                 config: p.config || {},
                             });
                         }
@@ -821,7 +821,7 @@ export function createPrismaPlatformRepository(
                         if (!pluginsToInstall.some((p) => p.pluginId === canonical)) {
                             pluginsToInstall.push({
                                 pluginId: canonical,
-                                planId: input.plan || input.planTier || 'starter',
+                                planId: null,
                                 config: {},
                             });
                         }
