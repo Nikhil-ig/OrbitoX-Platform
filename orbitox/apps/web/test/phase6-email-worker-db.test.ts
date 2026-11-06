@@ -86,6 +86,7 @@ if (process.env.ORBITOX_PLATFORM_REPOSITORY === 'prisma') {
       assert.equal(await owner.accountEmailOutbox.count({
         where: { recipient: signupEmail, template: 'VERIFY_EMAIL' },
       }), 1);
+      await owner.accountEmailOutbox.deleteMany({ where: { recipient: signupEmail } });
     });
 
     it('sends each claimed message once across three concurrent workers', async () => {
