@@ -10,6 +10,7 @@ import { createEntitlementGrantToken, PlatformRepository } from '@orbitox-io/plu
 describe('withApiGuard Billing State Enforcement & Query Budget', () => {
   let createdOrgId: string;
   let createdProjectId: string;
+  let createdEnvId: string;
   let apiKeySecret: string;
   let tenantId: string;
   let suffix: string;
@@ -38,6 +39,7 @@ describe('withApiGuard Billing State Enforcement & Query Budget', () => {
     });
     createdProjectId = proj.project.id;
     const env = proj.environments.find((e) => e.slug === 'production') || proj.environments[0]!;
+    createdEnvId = env.id;
     tenantId = `org/${org.slug}/project/${proj.project.slug}/environment/${env.slug}`;
 
     const existingInst = await platformRepository.getPluginInstallation(tenantId, '@orbitox/crm');
@@ -206,8 +208,12 @@ describe('withApiGuard Billing State Enforcement & Query Budget', () => {
 
       // 7. A billable request without any header increments PlatformPluginUsage
       if (platformRepository.isPrismaBacked()) {
-        const usageRecords = await prisma.platformPluginUsage.findMany({
-          where: { pluginId: 'crm', projectId: createdProjectId },
+        const usageTenantId = `org/${createdOrgId}/project/${createdProjectId}/environment/${createdEnvId}`;
+        const usageRecords = await prisma.$transaction(async (tx) => {
+          await tx.$queryRaw`SELECT set_config('app.current_tenant_id', ${usageTenantId}, true)`;
+          return tx.platformPluginUsage.findMany({
+            where: { pluginId: 'crm', projectId: createdProjectId },
+          });
         });
         assert.ok(usageRecords.length > 0, 'Expected PlatformPluginUsage record to be created');
         assert.ok(usageRecords[0]!.requestCount >= 1n, 'Expected PlatformPluginUsage requestCount to be incremented');
@@ -220,8 +226,9 @@ describe('withApiGuard Billing State Enforcement & Query Budget', () => {
 
   it('refuses request when no installation exists for a plugin service', async () => {
     if (platformRepository.isPrismaBacked()) {
-      await prisma.pluginInstallation.deleteMany({
+      await prisma.pluginInstallation.updateMany({
         where: { tenantId, pluginId: { in: ['@orbitox/crm', 'crm'] } },
+        data: { tenantId: `${tenantId}-uninstalled`, runtimeTenantId: `${tenantId}-uninstalled` },
       });
     } else {
       const allInst = (PlatformRepository as any).pluginInstallations || [];
