@@ -15,7 +15,7 @@ export const GET = withApiGuard(
     const providersObj = PlatformApiState.getProviders();
     const allProviders = Object.values(providersObj).flat();
     const activeProviders = allProviders.filter((p) => p.status === 'active').length;
-    const apiKeys = PlatformApiState.getApiKeys();
+    const apiKeys = await PlatformApiState.getApiKeys();
     const activeApiKeys = apiKeys.filter((k) => k.status === 'active').length;
 
     const data = {

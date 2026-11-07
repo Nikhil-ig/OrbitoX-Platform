@@ -3,15 +3,40 @@
   "compilerOptions": {
     "baseUrl": ".",
     "paths": {
-      "@/*": ["./*"],
-      "@orbitox-io/celebrations": ["../../plugins/celebrations/src/index.ts"],
-      "@orbitox-io/celebrations/*": ["../../plugins/celebrations/src/*"],
-      "@orbitox-io/crm": ["../../plugins/crm/src/index.ts"],
-      "@orbitox-io/crm/*": ["../../plugins/crm/src/*"],
-      "@orbitox-io/importer-core": ["../../packages/importer-core/src/index.ts"],
-      "@orbitox-io/importer-core/*": ["../../packages/importer-core/src/*"]
+      "@/*": [
+        "./*"
+      ],
+      "@orbitox-io/celebrations": [
+        "../../plugins/celebrations/src/client.ts"
+      ],
+      "@orbitox-io/celebrations/server": [
+        "../../plugins/celebrations/src/server.ts"
+      ],
+      "@orbitox-io/celebrations/*": [
+        "../../plugins/celebrations/src/*"
+      ],
+      "@orbitox-io/crm": [
+        "../../plugins/crm/src/index.ts"
+      ],
+      "@orbitox-io/crm/*": [
+        "../../plugins/crm/src/*"
+      ],
+      "@orbitox-io/importer-core": [
+        "../../packages/importer-core/src/index.ts"
+      ],
+      "@orbitox-io/importer-core/*": [
+        "../../packages/importer-core/src/*"
+      ]
     }
   },
-  "include": ["next-env.d.ts", "**/*.ts", "**/*.tsx", ".next/types/**/*.ts"],
-  "exclude": ["node_modules", "components/_archived"]
+  "include": [
+    "next-env.d.ts",
+    "**/*.ts",
+    "**/*.tsx",
+    ".next/types/**/*.ts"
+  ],
+  "exclude": [
+    "node_modules",
+    "components/_archived"
+  ]
 }

@@ -22,7 +22,7 @@ import {
   EventBusService,
   AIGateway,
   PiiService,
-} from '@orbitox/core';
+} from '@orbitox-io/core';
 
 export interface OrbitoXConfig {
   /**

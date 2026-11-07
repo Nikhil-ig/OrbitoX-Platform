@@ -56,6 +56,13 @@ export class RuntimeControllerService {
   private static store: PersistentControlStore = PersistentControlStore.getInstance();
   private store: PersistentControlStore = PersistentControlStore.getInstance();
   private static cachedSigningKey: string | null = null;
+  public static ed25519PrivateKey: crypto.KeyObject | null = null;
+  public static ed25519Kid = 'k1';
+
+  public static setEd25519SigningKey(key: crypto.KeyObject | string, kid = 'k1'): void {
+    this.ed25519PrivateKey = typeof key === 'string' ? crypto.createPrivateKey(key) : key;
+    this.ed25519Kid = kid;
+  }
 
   /**
    * HMAC key that signs every config/command sent to client runtimes.
@@ -814,8 +821,24 @@ export class RuntimeControllerService {
     const issuedAt = new Date().toISOString();
     const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
 
+    const features = state.features || { dine_qr: true, dag_prep_scheduler: true, companion_join: true, realtime_kds: true };
+    const entitlements = this.resolveLiveEntitlements(projectId, state);
+    const stateHash = crypto.createHash('sha256').update(JSON.stringify({
+      features,
+      entitlements,
+      desiredState: state,
+    })).digest('hex');
+
     const payloadToSign = `${projectId}:${configVersion}:${revisionNumber}:${issuedAt}:${JSON.stringify(state)}`;
-    const signature = crypto.createHmac('sha256', RuntimeControllerService.secretSigningKey).update(payloadToSign).digest('hex');
+    let signature: string;
+    if (RuntimeControllerService.ed25519PrivateKey) {
+      const header = Buffer.from(JSON.stringify({ alg: 'EdDSA', kid: RuntimeControllerService.ed25519Kid, typ: 'orbitox-cfg' })).toString('base64url');
+      const body = Buffer.from(JSON.stringify({ projectId, configVersion, revisionNumber, issuedAt, stateHash })).toString('base64url');
+      const sig = crypto.sign(null, Buffer.from(`${header}.${body}`), RuntimeControllerService.ed25519PrivateKey);
+      signature = `${header}.${body}.${Buffer.from(sig).toString('base64url')}`;
+    } else {
+      signature = crypto.createHmac('sha256', RuntimeControllerService.secretSigningKey).update(payloadToSign).digest('hex');
+    }
 
     return {
       configVersion,

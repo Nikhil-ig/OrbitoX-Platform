@@ -43,7 +43,14 @@ export interface PlatformProject {
     organizationId: string;
     businessModel: BusinessModelType;
     planTier: PlanTier;
+    plan?: string;
     status: ProjectLifecycleStatus;
+    enabledServices?: string[];
+    apiCallQuota?: number;
+    monthlyApiCalls?: number;
+    currentBillingPeriod?: string;
+    previousMonthlyApiCalls?: number;
+    rateLimitPerMin?: number;
     technicalLead: string;
     contactEmail: string;
     createdAt: string;
@@ -74,6 +81,7 @@ export interface PlatformApiKeyRecord {
     keyPrefix: string;
     secretFingerprint: string;
     authVerifier: string;
+    verifierPepperId?: string;
     maskedDisplay: string;
     status: KeyLifecycleState;
     capabilities: string[];

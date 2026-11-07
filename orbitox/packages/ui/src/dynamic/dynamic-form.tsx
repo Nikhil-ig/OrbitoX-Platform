@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, Suspense } from 'react';
-import type { UiFormSchema, FieldMetadata } from '@orbitox/sdk';
+import type { UiFormSchema, FieldMetadata } from '@orbitox-io/sdk';
 
 export interface DynamicFormProps {
   schema: UiFormSchema;

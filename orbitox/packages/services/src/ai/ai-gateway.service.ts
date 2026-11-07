@@ -2,7 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { LlmRouterService, LlmProvider } from './llm-router.service';
 import { PromptLibraryService } from './prompt-library.service';
 import { TemplateService } from '../notifications/template.service';
-import { PiiService, MeteringService } from '@orbitox/core';
+import { PiiService, MeteringService } from '@orbitox-io/core';
 
 @Injectable()
 export class AiGatewayService {

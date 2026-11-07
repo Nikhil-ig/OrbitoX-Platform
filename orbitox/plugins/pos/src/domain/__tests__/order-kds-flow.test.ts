@@ -130,7 +130,7 @@ async function runOrderKdsIntegrationTest() {
     quote,
     cartItems: cart,
     catalogItems: catalogMap,
-    idempotencyKey: 'idemp_order_12345',
+    idempotencyKey: 'idem-test-01',
   });
 
   assert(order.commercialState === 'SUBMITTED', 'Order initially in SUBMITTED commercial state');
@@ -151,7 +151,7 @@ async function runOrderKdsIntegrationTest() {
     quote,
     cartItems: cart,
     catalogItems: catalogMap,
-    idempotencyKey: 'idemp_order_12345', // Exact same key and payload
+    idempotencyKey: 'idem-test-01', // Exact same key and payload
   });
   assert(duplicateOrder.id === order.id, 'Idempotent retry returns identical order record without duplication');
 
@@ -167,7 +167,7 @@ async function runOrderKdsIntegrationTest() {
       quote,
       cartItems: [{ itemId: 'item_mango_lassi', quantity: 5, selectedModifierIds: [] }],
       catalogItems: catalogMap,
-      idempotencyKey: 'idemp_order_12345', // Reused key with different cart
+      idempotencyKey: 'idem-test-01', // Reused key with different cart
     });
   } catch {
     payloadConflictCaught = true;

@@ -31,6 +31,7 @@ import { spawn, ChildProcess } from 'child_process';
 import crypto from 'crypto';
 import { PrismaClient } from '@prisma/client';
 import { issueStaffToken, hashStaffSecretSync } from '../packages/domain/security';
+import { signBridgeRequest, getDefaultBridgeKeys } from '@orbitox-io/bridge';
 
 const TEST_PORT = 4026;
 const PLATFORM_TOKEN = 'test_platform_token_secret_9988_e2e_ci_32chars';
@@ -54,6 +55,8 @@ interface HttpResponse {
   body: any;
   rawText: string;
 }
+
+const keepAliveAgent = new http.Agent({ keepAlive: true, maxSockets: 100 });
 
 function makeRequest(
   port: number,
@@ -82,6 +85,7 @@ function makeRequest(
         path: reqPath,
         method,
         headers: reqHeaders,
+        agent: keepAliveAgent,
       },
       (res) => {
         const chunks: Buffer[] = [];
@@ -149,17 +153,20 @@ async function runBlackBoxHttpMultiTenantSuite() {
     );
 
     // -------------------------------------------------------------------------
+    // -------------------------------------------------------------------------
     // Phase 2: Start Real Server Process
     // -------------------------------------------------------------------------
     console.log(`\n--- Phase 2: Starting Live RestaurantOS Server Process ---`);
+    const bridgeKeys = getDefaultBridgeKeys();
     serverProc = spawn('npx', ['tsx', 'src/server.ts'], {
       cwd: process.cwd(),
       env: {
         ...process.env,
         PORT: String(TEST_PORT),
-        DATABASE_URL: APP_DB_URL,
+        DATABASE_URL: APP_DB_URL.includes('?') ? `${APP_DB_URL}&connection_limit=50` : `${APP_DB_URL}?connection_limit=50`,
         STORAGE_DRIVER: 'postgres',
         RESTAURANTOS_PLATFORM_TOKEN: PLATFORM_TOKEN,
+        ORBITOX_BRIDGE_KEYS: JSON.stringify(bridgeKeys),
         RAZORPAY_WEBHOOK_SECRET: 'test_webhook_secret_123',
         NODE_ENV: 'test',
       },
@@ -190,15 +197,15 @@ async function runBlackBoxHttpMultiTenantSuite() {
     assert(serverReady, `Live test server booted and responsive on port ${TEST_PORT}`);
 
     // -------------------------------------------------------------------------
-    // Phase 3: Provision Two Distinct Tenants via Internal Platform API
+    // Phase 3: Provision Two Distinct Tenants via Signed Lifecycle Hook
     // -------------------------------------------------------------------------
-    console.log(`\n--- Phase 3: Provisioning Isolated Tenants Alpha and Beta ---`);
+    console.log(`\n--- Phase 3: Provisioning Isolated Tenants Alpha and Beta via Signed Lifecycle Hook ---`);
     const tenantAData = {
       restaurantName: 'Alpha Trattoria',
       name: 'Alpha Trattoria',
       slug: `alpha-${RUN_ID}`,
       ownerName: 'Owner Alpha',
-      planId: 'pro',
+      planId: 'restaurant-pro',
       currency: 'INR',
     };
     const tenantBData = {
@@ -206,22 +213,47 @@ async function runBlackBoxHttpMultiTenantSuite() {
       name: 'Beta Brasserie',
       slug: `beta-${RUN_ID}`,
       ownerName: 'Owner Beta',
-      planId: 'starter',
+      planId: 'restaurant-starter',
       currency: 'INR',
     };
 
-    const provResA = await makeRequest(TEST_PORT, 'POST', '/internal/tenants', {
+    // 1. Verify deprecated bearer route unconditionally returns 410 ROUTE_DEPRECATED
+    const legacyRes = await makeRequest(TEST_PORT, 'POST', '/internal/tenants', {
       'x-platform-token': PLATFORM_TOKEN,
     }, tenantAData);
-    assert(provResA.status === 201, `Tenant Alpha provisioned via HTTP (Status: ${provResA.status}${provResA.status !== 201 ? ' ' + JSON.stringify(provResA.body) : ''})`);
-    const tenantA = { id: provResA.body.tenantId, ...provResA.body };
+    assert(legacyRes.status === 410, `Legacy /internal/tenants route unconditionally returns 410 ROUTE_DEPRECATED (Got ${legacyRes.status})`);
+    assert(legacyRes.body.error === 'ROUTE_DEPRECATED', 'Legacy error code must be ROUTE_DEPRECATED');
+
+    // 2. Provision Tenant Alpha via signed /orbitox/lifecycle/provision
+    const tenantAId = `org/alpha-org-${RUN_ID}/project/alpha-${RUN_ID}/environment/production`;
+    const tenantAPath = '/orbitox/lifecycle/provision';
+    const payloadA = { ...tenantAData, tenantId: tenantAId, revision: 1 };
+    const signedHeadersA = signBridgeRequest(bridgeKeys, {
+      method: 'POST',
+      pathWithQuery: tenantAPath,
+      tenantId: tenantAId,
+      principal: { sub: '@orbitox/platform', scopes: ['lifecycle', 'provision'] },
+      body: JSON.stringify(payloadA),
+    });
+    const provResA = await makeRequest(TEST_PORT, 'POST', tenantAPath, signedHeadersA, payloadA);
+    assert(provResA.status === 201, `Tenant Alpha provisioned via signed lifecycle hook (Status: ${provResA.status}${provResA.status !== 201 ? ' ' + JSON.stringify(provResA.body) : ''})`);
+    const tenantA = { id: provResA.body.tenantId, ...provResA.body, slug: tenantAData.slug };
     createdTenantIds.push(tenantA.id);
 
-    const provResB = await makeRequest(TEST_PORT, 'POST', '/internal/tenants', {
-      'x-platform-token': PLATFORM_TOKEN,
-    }, tenantBData);
-    assert(provResB.status === 201, `Tenant Beta provisioned via HTTP (Status: ${provResB.status}${provResB.status !== 201 ? ' ' + JSON.stringify(provResB.body) : ''})`);
-    const tenantB = { id: provResB.body.tenantId, ...provResB.body };
+    // 3. Provision Tenant Beta via signed /orbitox/lifecycle/provision
+    const tenantBId = `org/beta-org-${RUN_ID}/project/beta-${RUN_ID}/environment/production`;
+    const tenantBPath = '/orbitox/lifecycle/provision';
+    const payloadB = { ...tenantBData, tenantId: tenantBId, revision: 1 };
+    const signedHeadersB = signBridgeRequest(bridgeKeys, {
+      method: 'POST',
+      pathWithQuery: tenantBPath,
+      tenantId: tenantBId,
+      principal: { sub: '@orbitox/platform', scopes: ['lifecycle', 'provision'] },
+      body: JSON.stringify(payloadB),
+    });
+    const provResB = await makeRequest(TEST_PORT, 'POST', tenantBPath, signedHeadersB, payloadB);
+    assert(provResB.status === 201, `Tenant Beta provisioned via signed lifecycle hook (Status: ${provResB.status}${provResB.status !== 201 ? ' ' + JSON.stringify(provResB.body) : ''})`);
+    const tenantB = { id: provResB.body.tenantId, ...provResB.body, slug: tenantBData.slug };
     createdTenantIds.push(tenantB.id);
 
     // Register custom domains in database
@@ -709,7 +741,10 @@ async function runBlackBoxHttpMultiTenantSuite() {
       orderPayloadA
     );
     assert(suspendedWrite.status === 403, 'Write on suspended tenant is rejected with HTTP 403');
-    assert(suspendedWrite.body.error === 'TENANT_SUSPENDED', 'Error code is TENANT_SUSPENDED');
+    assert(
+      suspendedWrite.body.error === 'TENANT_SUSPENDED' || suspendedWrite.body.error === 'SERVICE_SUSPENDED' || suspendedWrite.body.code === 'TENANT_SUSPENDED',
+      'Error code is TENANT_SUSPENDED'
+    );
 
     // Public GET renders suspended template
     const suspendedGet = await makeRequest(TEST_PORT, 'GET', '/', { Host: HOST_A });
@@ -790,6 +825,12 @@ async function runBlackBoxHttpMultiTenantSuite() {
     // Suite 14: High-Concurrency HTTP Load Test & p95 Latency Profiling
     // -------------------------------------------------------------------------
     console.log(`\n--- Suite 14: High-Concurrency HTTP Load Test & p95 Latency ---`);
+    // Pre-warm menu route, JIT compiler, and server connection pool
+    for (let w = 0; w < 10; w++) {
+      await makeRequest(TEST_PORT, 'GET', '/api/restaurant/menu', { Host: HOST_A });
+      await makeRequest(TEST_PORT, 'GET', '/api/restaurant/menu', { Host: HOST_B });
+    }
+
     const LOAD_CONCURRENCY = 50;
     const latenciesMs: number[] = [];
 

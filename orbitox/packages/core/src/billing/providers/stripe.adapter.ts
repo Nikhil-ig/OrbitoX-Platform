@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { PaymentProvider } from '@orbitox/types';
+import { PaymentProvider } from '@orbitox-io/types';
 import { SecretsService } from '../../security/secrets.service';
 // import Stripe from 'stripe';
 

@@ -1,5 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { EventBusService } from '@orbitox/core';
+import { EventBusService } from '@orbitox-io/core';
 import { TemplateService } from './template.service';
 import { SendGridAdapter } from './providers/sendgrid.adapter';
 import { TwilioSmsAdapter } from './providers/twilio-sms.adapter';

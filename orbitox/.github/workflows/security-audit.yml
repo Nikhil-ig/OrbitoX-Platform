@@ -53,6 +53,13 @@ jobs:
             exit 1
           fi
 
+          # Scan for accidental hardcoded production PHI keys or raw secret tokens
+          echo "Scanning for hardcoded PHI secrets or tokens..."
+          if git grep -EI "ORBITOX_PHI_KEYS=.*[a-zA-Z0-9+/]{40}" -- ':!*.md' ':!apps/web/test' ':!*reference-pack*' ; then
+            echo "❌ CRITICAL: Accidental hardcoded PHI secret detected!"
+            exit 1
+          fi
+
       - name: Run Plugin Engine Security Tests
         run: |
           pnpm --filter @orbitox/plugin-engine test

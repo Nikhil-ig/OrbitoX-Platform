@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { CelebrationsInterconnect } from '@orbitox-io/celebrations';
+import { CelebrationsInterconnect } from '@orbitox-io/celebrations/server';
 
 export async function POST(req: Request) {
   try {

@@ -1,5 +1,5 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
-import { Plan } from '@orbitox/types';
+import { Plan } from '@orbitox-io/types';
 import { v4 as uuidv4 } from 'uuid';
 
 export interface CreatePlanDto {

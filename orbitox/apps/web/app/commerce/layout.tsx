@@ -32,8 +32,13 @@ import {
   IconChevronRight,
   IconPlus,
 } from '@/components/commerce/builder/studio-icons';
+import { isSamplePluginEnabled } from '@/lib/sample-plugins';
+import { PluginComingSoon } from '@/components/plugin-coming-soon';
 
 export default function CommerceAdminLayout({ children }: { children: React.ReactNode }) {
+  if (!isSamplePluginEnabled('commerce')) {
+    return <PluginComingSoon pluginId="commerce" name="Commerce & Store Engine" />;
+  }
   const pathname = usePathname();
   const { currentTheme } = useTheme();
   const { stores, activeStore, setActiveStore, createStore } = useCommerceStores();

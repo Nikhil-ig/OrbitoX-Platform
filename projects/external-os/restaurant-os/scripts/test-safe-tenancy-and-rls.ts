@@ -11,6 +11,9 @@
  * 7. Route Authorization Matrix (Public vs Staff vs Manager vs Platform-Service).
  */
 
+process.env.NODE_ENV = process.env.NODE_ENV || 'test';
+process.env.RESTAURANTOS_BASE_DOMAIN = 'orbitox.live';
+
 import * as http from 'http';
 import * as crypto from 'crypto';
 import { PrismaClient } from '@prisma/client';
@@ -25,7 +28,10 @@ import {
   withTenantRlsTransaction,
 } from '../packages/domain';
 
-const DATABASE_URL = process.env.DATABASE_URL || 'postgresql://apple@localhost:5432/restaurant_os';
+if (!process.env.DATABASE_URL) {
+  process.env.DATABASE_URL = 'postgresql://apple@localhost:5432/restaurant_os';
+}
+const DATABASE_URL = process.env.DATABASE_URL;
 const TEST_PLATFORM_TOKEN = 'test_platform_token_secret_key_1234567890123456';
 const prisma = new PrismaClient({ datasources: { db: { url: DATABASE_URL } } });
 
@@ -97,6 +103,7 @@ async function runSafeTenancyAndRlsTestSuite() {
     ownerName: 'Alpha Owner',
     ownerEmail: `owner@${slugAlpha}.test`,
     templateId: 'tmpl_starter_bistro',
+    planId: 'restaurant-starter',
   });
 
   const tenantBeta = await provisioning.provisionTenant({
@@ -105,6 +112,7 @@ async function runSafeTenancyAndRlsTestSuite() {
     ownerName: 'Beta Owner',
     ownerEmail: `owner@${slugBeta}.test`,
     templateId: 'tmpl_starter_bistro',
+    planId: 'restaurant-starter',
   });
 
   console.log(`  Provisioned Tenant Alpha: ${tenantAlpha.tenantId} (${tenantAlpha.slug})`);

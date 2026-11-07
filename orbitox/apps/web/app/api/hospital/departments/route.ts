@@ -1,14 +1,23 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { ORBITOX_BACKEND_URL } from '../_init';
+import { withHospitalGuard } from '@/app/api/_lib/route-auth';
+import { withTenantTx } from '@/lib/tenant-db';
+import { prisma } from '@/lib/prisma';
+import { mapDbError, errorBody } from '@/lib/db-errors';
 
-export async function GET(req: NextRequest) {
+export const GET = withHospitalGuard(async (_req: NextRequest, _routeContext, authContext) => {
   try {
-    const res = await fetch(`${ORBITOX_BACKEND_URL}/api/hospital/departments`, {
-      cache: 'no-store'
+    const data = await withTenantTx(prisma, authContext.tenantId, async (tx) => {
+      const { rows } = await tx.query(
+        `SELECT "id", "name", "createdAt"
+         FROM "HmsDepartment"
+         ORDER BY "name" ASC`
+      );
+      return rows;
     });
-    const data = await res.json();
-    return NextResponse.json(data);
+
+    return NextResponse.json({ success: true, data });
   } catch (err: any) {
-    return NextResponse.json({ success: false, error: err.message }, { status: 502 });
+    const apiErr = mapDbError(err);
+    return NextResponse.json(errorBody(apiErr, authContext.requestId), { status: apiErr.status });
   }
-}
+});

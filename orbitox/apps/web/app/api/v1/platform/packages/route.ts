@@ -1,39 +1,50 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { withApiGuard } from '@/app/api/v1/_lib/api-guard';
 import { ApiResponse, ApiRequestContext } from '@/app/api/v1/_lib/api-types';
-import { PlatformRepository } from '@orbitox-io/plugin-engine';
 import { auditService } from '@/app/api/v1/_lib/platform-governance';
+import { platformRepository } from '@/lib/platform-repository';
+import { isSamplePackage } from '@/lib/sample-plugins';
 
 export const GET = withApiGuard(
   {
     serviceId: 'platform',
     serviceName: 'Platform Packages Service',
-    allowPublic: true,
+    routeClass: 'platform-admin',
+    allowPublic: false,
+    requiredScopes: ['admin', 'platform.packages'],
   },
   async (req: NextRequest, ctx: ApiRequestContext) => {
-    PlatformRepository.initialize();
     const url = new URL(req.url);
     const category = url.searchParams.get('category') || undefined;
 
-    let packages = PlatformRepository.listPackages();
+    let packages = await platformRepository.listPackages();
     if (category) {
       packages = packages.filter((p) => p.category.toLowerCase() === category.toLowerCase());
     }
 
-    const enriched = packages.map((pkg) => {
-      const versions = PlatformRepository.listPackageVersions(pkg.packageId);
-      const installations = PlatformRepository.listInstallations().filter(
-        (i) => i.packageId === pkg.packageId || i.packageId === pkg.id
-      );
+    const enriched = await Promise.all(packages.map(async (pkg) => {
+      const [versions, installations] = await Promise.all([
+        platformRepository.listPackageVersions(pkg.packageId),
+        platformRepository.listInstallations(),
+      ]);
+      const packageInstallations = installations.filter((i) => i.packageId === pkg.packageId || i.packageId === pkg.id);
+
+      const isSample = isSamplePackage(pkg.packageId) || isSamplePackage(pkg.id);
 
       return {
         ...pkg,
         versions,
-        installationsCount: installations.length,
+        installationsCount: packageInstallations.length,
         hasEd25519Signature: Boolean(pkg.signingPublicKeyPem),
         integrityStatus: 'VERIFIED',
+        installable: !isSample,
+        isInstallable: !isSample,
+        installabilityStatus: isSample ? 'NOT_INSTALLABLE' : 'AVAILABLE',
+        installabilityReason: isSample
+          ? 'Sample-data plugin: must be rebuilt to HospitalOS multi-tenant standard (dedicated schema, RLS, tests) before installation.'
+          : 'Production-ready with verified schema and tests.',
       };
-    });
+    }));
 
     return NextResponse.json<ApiResponse>({
       success: true,
@@ -59,6 +70,20 @@ export const POST = withApiGuard(
       const body = await req.json();
       const { environmentId, packageId, versionId, configOverrides } = body;
 
+      if (packageId && isSamplePackage(packageId)) {
+        return NextResponse.json<ApiResponse>(
+          {
+            success: false,
+            error: {
+              code: 'PACKAGE_NOT_INSTALLABLE',
+              message: `Package [${packageId}] cannot be installed: sample-data plugin pending HospitalOS multi-tenant rebuild with dedicated schema, RLS, and tests.`,
+            },
+            meta: { latencyMs: 1, timestamp: new Date().toISOString(), requestId: ctx.requestId },
+          },
+          { status: 400 }
+        );
+      }
+
       if (!environmentId || !packageId || !versionId) {
         return NextResponse.json<ApiResponse>(
           {
@@ -73,7 +98,7 @@ export const POST = withApiGuard(
         );
       }
 
-      const installation = PlatformRepository.installPackage(
+      const installation = await platformRepository.installPackage(
         environmentId,
         packageId,
         versionId,
@@ -92,6 +117,15 @@ export const POST = withApiGuard(
           packageId,
           versionId,
         },
+      });
+      await platformRepository.recordPlatformAdminAudit({
+        action: 'PACKAGE_INSTALLED',
+        entityType: 'PACKAGE_INSTALLATION',
+        entityId: installation.id,
+        environmentId,
+        actorId: ctx.apiKey || 'platform_admin',
+        reason: `Installed ${packageId} ${versionId}`,
+        metadata: { environmentId, packageId, versionId },
       });
 
       return NextResponse.json<ApiResponse>({

@@ -188,10 +188,10 @@ async getLeads(): Promise<Lead[]> {
 
 ```bash
 # .env file committed to the repo
-DATABASE_URL=postgresql://admin:SuperSecret123@prod-db.company.com:5432/orbitox
-STRIPE_SECRET_KEY=sk_live_abc123...
-JWT_PRIVATE_KEY=-----BEGIN RSA PRIVATE KEY-----...
-OPENAI_API_KEY=sk-proj-abc...
+DATABASE_URL=postgresql://<DB_USER>:<DB_PASSWORD>@prod-db.company.com:5432/orbitox
+STRIPE_SECRET_KEY=<STRIPE_SECRET_KEY>
+JWT_PRIVATE_KEY=<RSA_PRIVATE_KEY>
+OPENAI_API_KEY=<OPENAI_API_KEY>
 ```
 
 **Why it's catastrophic:**

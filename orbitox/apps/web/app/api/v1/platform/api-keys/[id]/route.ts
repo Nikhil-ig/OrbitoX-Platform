@@ -1,21 +1,21 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { withApiGuard } from '@/app/api/v1/_lib/api-guard';
 import { ApiResponse, ApiRequestContext } from '@/app/api/v1/_lib/api-types';
-import { PlatformRepository } from '@orbitox-io/plugin-engine';
 import { auditService } from '@/app/api/v1/_lib/platform-governance';
+import { platformRepository } from '@/lib/platform-repository';
 
 export const GET = withApiGuard(
   {
     serviceId: 'platform',
     serviceName: 'Platform Keys Service',
-    allowPublic: true,
+    routeClass: 'platform-admin',
+    requiredScopes: ['platform.keys.read', 'admin'],
   },
   async (req: NextRequest, ctx: ApiRequestContext) => {
-    PlatformRepository.initialize();
     const url = new URL(req.url);
     const id = url.pathname.split('/').pop() || '';
 
-    const key = PlatformRepository.getApiKey(id);
+    const key = await platformRepository.getApiKey(id);
     if (!key) {
       return NextResponse.json<ApiResponse>(
         {
@@ -27,13 +27,16 @@ export const GET = withApiGuard(
       );
     }
 
-    const project = PlatformRepository.getProject(key.projectId);
-    const environment = PlatformRepository.getEnvironment(key.environmentId);
+    const [project, environment] = await Promise.all([
+      platformRepository.getProject(key.projectId),
+      platformRepository.getEnvironment(key.environmentId),
+    ]);
+    const { authVerifier, rawSecret, rawKey, ...safeKey } = key as any;
 
     return NextResponse.json<ApiResponse>({
       success: true,
       data: {
-        ...key,
+        ...safeKey,
         projectName: project?.name,
         projectSlug: project?.slug,
         environmentName: environment?.name,
@@ -61,7 +64,7 @@ export const PATCH = withApiGuard(
       const id = url.pathname.split('/').pop() || '';
       const body = await req.json();
 
-      const existing = PlatformRepository.getApiKey(id);
+      const existing = await platformRepository.getApiKey(id);
       if (!existing) {
         return NextResponse.json<ApiResponse>(
           {
@@ -74,7 +77,7 @@ export const PATCH = withApiGuard(
       }
 
       if (body.status) {
-        const updated = PlatformRepository.setKeyStatus(existing.id, body.status, body.reason);
+        const updated = await platformRepository.setKeyStatus(existing.id, body.status, body.reason);
         await auditService.log({
           action: 'API_KEY_STATUS_CHANGED',
           entityType: 'PLATFORM_KEY',
@@ -84,6 +87,16 @@ export const PATCH = withApiGuard(
           reason: body.reason || `Status changed from ${existing.status} to ${body.status}`,
           oldValue: { status: existing.status },
           newValue: { status: body.status },
+        });
+        await platformRepository.recordPlatformAdminAudit({
+          action: 'API_KEY_STATUS_CHANGED',
+          entityType: 'PLATFORM_KEY',
+          entityId: existing.id,
+          projectId: existing.projectId,
+          environmentId: existing.environmentId,
+          actorId: ctx.apiKey || 'platform_admin',
+          reason: body.reason || `Status changed from ${existing.status} to ${body.status}`,
+          metadata: { oldStatus: existing.status, newStatus: body.status },
         });
 
         return NextResponse.json<ApiResponse>({

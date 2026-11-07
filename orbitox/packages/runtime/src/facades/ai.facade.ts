@@ -14,7 +14,7 @@
  * - classify()  — classify text into given categories
  */
 
-import { AIGateway } from '@orbitox/core';
+import { AIGateway } from '@orbitox-io/core';
 
 export interface AIOptions {
   model?: string;

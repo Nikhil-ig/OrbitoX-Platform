@@ -130,54 +130,70 @@ export async function resolveTenantFromHost(
   }
 
   if (candidateSlug && !reservedWords.has(candidateSlug)) {
+    if (process.env.STORAGE_DRIVER === 'json' || process.env.RESTAURANT_STORE_PATH) {
+      const context: ActiveTenantContext = {
+        tenantId: `tenant_${candidateSlug}`,
+        tenantSlug: candidateSlug,
+        tenantName: candidateSlug === 'bistro' ? 'OrbitoX Bistro & Bar' : `Restaurant ${candidateSlug}`,
+        orbitoxProjectId: `restaurant-os-${candidateSlug}`,
+        status: 'active',
+      };
+      tenantResolutionCache.set(rawHost, { context, expiresAt: Date.now() + CACHE_TTL_MS });
+      return context;
+    }
+
+    if (process.env.DATABASE_URL) {
+      try {
+        const tenant = await prisma.tenant.findFirst({
+          where: {
+            OR: [{ slug: candidateSlug }, { id: `tenant_${candidateSlug}` }],
+          },
+        });
+
+        if (tenant) {
+          const context: ActiveTenantContext = {
+            tenantId: tenant.id,
+            tenantSlug: tenant.slug,
+            tenantName: tenant.name,
+            orbitoxProjectId: tenant.orbitoxProjectId || `restaurant-os-${tenant.slug}`,
+            status: tenant.status,
+          };
+          tenantResolutionCache.set(rawHost, { context, expiresAt: Date.now() + CACHE_TTL_MS });
+          return context;
+        }
+      } catch (err: any) {
+        console.warn(`[Tenancy] Failed to query tenant for host ${rawHost}:`, err.message);
+      }
+    }
+  }
+
+  // Pattern B: Verified Custom Domain in TenantDomain table
+  if (process.env.DATABASE_URL) {
     try {
-      const tenant = await prisma.tenant.findFirst({
+      const customDomain = await prisma.tenantDomain.findFirst({
         where: {
-          OR: [{ slug: candidateSlug }, { id: `tenant_${candidateSlug}` }],
+          domain: rawHost,
+          verificationStatus: 'VERIFIED',
+        },
+        include: {
+          tenant: true,
         },
       });
 
-      if (tenant) {
+      if (customDomain && customDomain.tenant) {
         const context: ActiveTenantContext = {
-          tenantId: tenant.id,
-          tenantSlug: tenant.slug,
-          tenantName: tenant.name,
-          orbitoxProjectId: tenant.orbitoxProjectId || `restaurant-os-${tenant.slug}`,
-          status: tenant.status,
+          tenantId: customDomain.tenant.id,
+          tenantSlug: customDomain.tenant.slug,
+          tenantName: customDomain.tenant.name,
+          orbitoxProjectId: customDomain.tenant.orbitoxProjectId || `restaurant-os-${customDomain.tenant.slug}`,
+          status: customDomain.tenant.status,
         };
         tenantResolutionCache.set(rawHost, { context, expiresAt: Date.now() + CACHE_TTL_MS });
         return context;
       }
     } catch (err: any) {
-      console.warn(`[Tenancy] Failed to query tenant for host ${rawHost}:`, err.message);
+      console.warn(`[Tenancy] Failed to query custom domain for ${rawHost}:`, err.message);
     }
-  }
-
-  // Pattern B: Verified Custom Domain in TenantDomain table
-  try {
-    const customDomain = await prisma.tenantDomain.findFirst({
-      where: {
-        domain: rawHost,
-        verificationStatus: 'VERIFIED',
-      },
-      include: {
-        tenant: true,
-      },
-    });
-
-    if (customDomain && customDomain.tenant) {
-      const context: ActiveTenantContext = {
-        tenantId: customDomain.tenant.id,
-        tenantSlug: customDomain.tenant.slug,
-        tenantName: customDomain.tenant.name,
-        orbitoxProjectId: customDomain.tenant.orbitoxProjectId || `restaurant-os-${customDomain.tenant.slug}`,
-        status: customDomain.tenant.status,
-      };
-      tenantResolutionCache.set(rawHost, { context, expiresAt: Date.now() + CACHE_TTL_MS });
-      return context;
-    }
-  } catch (err: any) {
-    console.warn(`[Tenancy] Failed to query custom domain for ${rawHost}:`, err.message);
   }
 
   return null;

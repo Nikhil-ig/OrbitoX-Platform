@@ -1,6 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { withApiGuard, PlatformApiState } from '../../_lib/api-guard';
-import { hospitalStore } from '@/app/api/hospital/_store';
+import { withTenantTx } from '@/lib/tenant-db';
+import { prisma } from '@/lib/prisma';
+import { mapDbError, errorBody } from '@/lib/db-errors';
+import { getPhiKeyRing } from '@/lib/phi-crypto';
+import { createPatient } from '@/lib/hms-repository';
 
 export const GET = withApiGuard(
   {
@@ -8,38 +12,31 @@ export const GET = withApiGuard(
     serviceName: 'Hospital Management System',
   },
   async (req: NextRequest, ctx) => {
-    const { searchParams } = new URL(req.url);
-    const status = searchParams.get('status');
-    const category = searchParams.get('category');
-    const search = searchParams.get('search')?.toLowerCase();
+    try {
+      const data = await withTenantTx(prisma, ctx.tenantId, async (tx) => {
+        const { rows } = await tx.query(
+          `SELECT "id", "mrn", "ageBand", "gender", "bloodGroup", "triageLevel", "createdAt"
+           FROM "HmsPatient"
+           ORDER BY "createdAt" DESC
+           LIMIT 50`
+        );
+        return rows;
+      });
 
-    let patients = hospitalStore.getPatients();
-
-    if (status && status !== 'all') {
-      patients = patients.filter((p) => p.status === status);
+      return NextResponse.json({
+        success: true,
+        data,
+        meta: {
+          tenantId: ctx.tenantId,
+          serviceId: 'hms',
+          total: data.length,
+          timestamp: new Date().toISOString(),
+        },
+      });
+    } catch (err: any) {
+      const apiErr = mapDbError(err);
+      return NextResponse.json(errorBody(apiErr, ctx.requestId), { status: apiErr.status });
     }
-    if (category && category !== 'all') {
-      patients = patients.filter((p) => p.category === category);
-    }
-    if (search) {
-      patients = patients.filter(
-        (p) =>
-          p.name.toLowerCase().includes(search) ||
-          p.id.toLowerCase().includes(search) ||
-          p.diagnosis.toLowerCase().includes(search)
-      );
-    }
-
-    return NextResponse.json({
-      success: true,
-      data: patients,
-      meta: {
-        tenantId: ctx.tenantId,
-        serviceId: 'hms',
-        total: patients.length,
-        timestamp: new Date().toISOString(),
-      },
-    });
   }
 );
 
@@ -55,32 +52,40 @@ export const POST = withApiGuard(
       if (!body.name) {
         return NextResponse.json(
           { success: false, error: { code: 'INVALID_INPUT', message: 'Patient name is required.' } },
-          { status: 400 }
+          { status: 422 }
         );
       }
+      const ring = getPhiKeyRing();
 
-      const newPatient = hospitalStore.addPatient({
-        ...body,
-        contextId: ctx.tenantId,
+      const newPatient = await withTenantTx(prisma, ctx.tenantId, async (tx) => {
+        return await createPatient(tx, ring, {
+          mrn: body.mrn || `MRN-${Date.now().toString(36).toUpperCase()}`,
+          name: body.name,
+          phone: body.phone,
+          dateOfBirth: body.dateOfBirth,
+          ageBand: body.ageBand,
+          gender: body.gender,
+          bloodGroup: body.bloodGroup,
+          allergies: body.allergies,
+          emergencyContact: body.emergencyContact,
+        });
       });
 
       PlatformApiState.recordTelemetry({
         tenantId: ctx.tenantId,
         facade: 'EventsFacade',
         level: 'INFO',
-        message: `Registered patient [${newPatient.name}] (${newPatient.id}) into HMS Triage Level ${newPatient.triageLevel}.`,
+        message: `Registered patient (${newPatient.id}) with MRN ${newPatient.mrn}.`,
       });
 
       return NextResponse.json({
         success: true,
         data: newPatient,
-        message: `Patient ${newPatient.name} registered successfully.`,
-      });
+        message: `Patient registered successfully.`,
+      }, { status: 201 });
     } catch (err: any) {
-      return NextResponse.json(
-        { success: false, error: { code: 'BAD_REQUEST', message: err.message } },
-        { status: 400 }
-      );
+      const apiErr = mapDbError(err);
+      return NextResponse.json(errorBody(apiErr, ctx.requestId), { status: apiErr.status });
     }
   }
 );

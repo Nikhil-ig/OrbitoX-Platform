@@ -1,4 +1,4 @@
-import { ApiResponse, PaginationMeta } from '@orbitox/types';
+import { ApiResponse, PaginationMeta } from '@orbitox-io/types';
 
 /**
  * Static helpers for generating standard API responses (Rule B5)

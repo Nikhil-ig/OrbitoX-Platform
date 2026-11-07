@@ -145,7 +145,7 @@ All requests to `/api/v1/*` pass through `withApiGuard`. The gateway enforces:
 ### cURL:
 ```bash
 curl -X GET "http://localhost:3005/api/v1/commerce/products" \
-  -H "x-api-key: orb_live_omni_7f9c2d1b4e8a" \
+  -H "x-api-key: <YOUR_PROJECT_API_KEY>" \
   -H "x-tenant-id: omnideliver"
 ```
 
@@ -156,7 +156,7 @@ import axios from 'axios';
 const api = axios.create({
   baseURL: 'http://localhost:3005/api/v1',
   headers: {
-    'x-api-key': 'orb_live_omni_7f9c2d1b4e8a',
+    'x-api-key': '<YOUR_PROJECT_API_KEY>',
     'x-tenant-id': 'omnideliver',
   },
 });
@@ -175,7 +175,7 @@ import requests
 r = requests.get(
     "http://localhost:3005/api/v1/commerce/products",
     headers={
-        "x-api-key": "orb_live_omni_7f9c2d1b4e8a",
+        "x-api-key": "<YOUR_PROJECT_API_KEY>",
         "x-tenant-id": "omnideliver"
     }
 )

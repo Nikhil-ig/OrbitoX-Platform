@@ -19,12 +19,13 @@ const nextConfig: NextConfig = {
     "@orbitox/pos",
     "@orbitox/school",
   ],
-  webpack: (config, { isServer }) => {
-    if (!isServer) {
+  webpack: (config, { isServer, nextRuntime }) => {
+    if (!isServer || nextRuntime === 'edge') {
       config.resolve.fallback = {
         ...config.resolve.fallback,
         dns: false,
         net: false,
+        crypto: false,
       };
     }
     return config;

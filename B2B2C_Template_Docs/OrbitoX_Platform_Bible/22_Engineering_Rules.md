@@ -247,10 +247,10 @@ ALTER TABLE crm.leads
 
 ```typescript
 // ❌ BLOCK — secret in code
-const STRIPE_KEY = 'sk_live_abc123...';
+const STRIPE_KEY = '<STRIPE_SECRET_KEY>';
 
 // ❌ BLOCK — secret in committed .env
-STRIPE_KEY=sk_live_abc123  // in .env committed to git
+STRIPE_KEY=<STRIPE_SECRET_KEY>  // in .env committed to git
 
 // ✅ REQUIRED
 const stripeKey = await secretsService.get('billing/stripe/secret_key');

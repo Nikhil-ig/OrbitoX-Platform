@@ -13,6 +13,19 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { PrismaClient } from '@prisma/client';
 import { deriveTenantSigningSecret } from './security';
+import { SEED_PLANS, type PlanCatalogueRecord } from '@orbitox-io/plugin-engine';
+
+export function getRestaurantPlanQuotaLimit(
+  plan: PlanCatalogueRecord | undefined,
+  resource: 'TABLES' | 'MENU_ITEMS' | 'ORDERS',
+): number | undefined {
+  const quotaKey = {
+    TABLES: 'tables',
+    MENU_ITEMS: 'menu_items',
+    ORDERS: 'orders',
+  }[resource];
+  return plan?.quotas.find((quota) => quota.quotaKey === quotaKey)?.limit;
+}
 
 export type OnboardingStepKey =
   | 'CLAIM_INVITE'
@@ -40,63 +53,11 @@ export interface OnboardingState {
   updatedAt: string;
 }
 
-export interface PlanLimits {
-  maxTables: number;
-  maxMenuItems: number;
-  maxMonthlyOrders: number;
-  customDomainAllowed: boolean;
-  kdsAllowed: boolean;
-}
-
-export const PLAN_TIER_LIMITS: Record<string, PlanLimits> = {
-  starter: {
-    maxTables: 10,
-    maxMenuItems: 30,
-    maxMonthlyOrders: 500,
-    customDomainAllowed: false,
-    kdsAllowed: false,
-  },
-  plan_starter: {
-    maxTables: 10,
-    maxMenuItems: 30,
-    maxMonthlyOrders: 500,
-    customDomainAllowed: false,
-    kdsAllowed: false,
-  },
-  growth: {
-    maxTables: 30,
-    maxMenuItems: 100,
-    maxMonthlyOrders: 2500,
-    customDomainAllowed: true,
-    kdsAllowed: true,
-  },
-  plan_growth: {
-    maxTables: 30,
-    maxMenuItems: 100,
-    maxMonthlyOrders: 2500,
-    customDomainAllowed: true,
-    kdsAllowed: true,
-  },
-  enterprise: {
-    maxTables: 9999,
-    maxMenuItems: 9999,
-    maxMonthlyOrders: 999999,
-    customDomainAllowed: true,
-    kdsAllowed: true,
-  },
-  plan_enterprise: {
-    maxTables: 9999,
-    maxMenuItems: 9999,
-    maxMonthlyOrders: 999999,
-    customDomainAllowed: true,
-    kdsAllowed: true,
-  },
-};
-
 let sharedPrisma: PrismaClient | null = null;
 function getPrisma(): PrismaClient {
   if (!sharedPrisma) {
-    const dbUrl = process.env.DATABASE_URL || 'postgresql://apple@localhost:5432/restaurant_os';
+    const dbUrl = process.env.DATABASE_URL;
+    if (!dbUrl) throw new Error('DATABASE_URL is required for RestaurantOS owner self-service.');
     sharedPrisma = new PrismaClient({
       datasources: { db: { url: dbUrl } },
       log: process.env.NODE_ENV === 'development' ? ['error', 'warn'] : ['error'],
@@ -461,46 +422,59 @@ export class OwnerSelfService {
       select: { planId: true },
     });
 
-    const planKey = (tenant?.planId || 'starter').toLowerCase();
-    const limits = PLAN_TIER_LIMITS[planKey] || PLAN_TIER_LIMITS.starter;
+    const cataloguePlan = SEED_PLANS.find(
+      (plan) =>
+        plan.planId === tenant?.planId &&
+        plan.pluginId === '@orbitox/restaurant' &&
+        plan.status === 'ACTIVE',
+    );
+    const max = getRestaurantPlanQuotaLimit(cataloguePlan, resource);
 
     let current = 0;
-    let max = 10;
+    const limit = max ?? 0;
 
     if (resource === 'TABLES') {
       current = await this.prisma.tableFloor.count({ where: { tenantId } });
-      max = limits.maxTables;
     } else if (resource === 'MENU_ITEMS') {
       current = await this.prisma.menuItem.count({ where: { tenantId, isArchived: false } });
-      max = limits.maxMenuItems;
     } else if (resource === 'ORDERS') {
       // Count orders created this calendar month
       const startOfMonth = new Date(new Date().getFullYear(), new Date().getMonth(), 1);
       current = await this.prisma.restaurantOrder.count({
         where: { tenantId, createdAt: { gte: startOfMonth } },
       });
-      max = limits.maxMonthlyOrders;
     }
 
-    const projected = current + requestedCount;
-    const percentage = Math.round((current / max) * 100);
-    const warning = percentage >= 80;
-
-    if (projected > max) {
+    if (!cataloguePlan || max === undefined) {
       return {
         allowed: false,
         current,
-        max,
+        max: limit,
+        percentage: 100,
+        warning: true,
+        error: `PLAN_NOT_CONFIGURED: Active RestaurantOS plan ${tenant?.planId ?? '(missing)'} has no ${resource.toLowerCase()} quota.`,
+      };
+    }
+
+    const projected = current + requestedCount;
+    const percentage = limit === 0 ? 100 : Math.round((current / limit) * 100);
+    const warning = percentage >= 80;
+
+    if (projected > limit) {
+      return {
+        allowed: false,
+        current,
+        max: limit,
         percentage,
         warning: true,
-        error: `PLAN_LIMIT_EXCEEDED: Tenant is on the ${planKey} tier with a limit of ${max} ${resource}. Current count: ${current}. Upgrade your plan to expand quota.`,
+        error: `PLAN_LIMIT_EXCEEDED: Tenant is on plan ${cataloguePlan.planId} with a limit of ${limit} ${resource}. Current count: ${current}. Upgrade your plan to expand quota.`,
       };
     }
 
     return {
       allowed: true,
       current,
-      max,
+      max: limit,
       percentage,
       warning,
     };

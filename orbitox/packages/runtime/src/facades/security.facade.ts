@@ -10,7 +10,7 @@
  *   orbitox.security.addPolicy('ip-restrict', async (check) => { ... });
  */
 
-import { RbacService, PolicyEngine, PolicyDecision, AbacPolicyRule, AbacEvaluator, PiiService } from '@orbitox/core';
+import { RbacService, PolicyEngine, PolicyDecision, AbacPolicyRule, AbacEvaluator, PiiService } from '@orbitox-io/core';
 import { PolicyBuilder } from '../builders/policy.builder';
 
 export class SecurityFacade {

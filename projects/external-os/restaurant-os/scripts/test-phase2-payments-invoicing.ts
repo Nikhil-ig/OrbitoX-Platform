@@ -69,12 +69,22 @@ async function run() {
   await prisma.tenant.upsert({
     where: { id: TEST_TENANT },
     update: {},
-    create: { id: TEST_TENANT, name: 'Pilot Bistro', slug: 'bistro-pilot' },
+    create: {
+      id: TEST_TENANT,
+      name: 'Pilot Bistro',
+      slug: 'bistro-pilot',
+      planId: 'restaurant-starter',
+    },
   });
   await prisma.tenant.upsert({
     where: { id: PEER_TENANT },
     update: {},
-    create: { id: PEER_TENANT, name: 'Beta Grill', slug: 'beta-grill' },
+    create: {
+      id: PEER_TENANT,
+      name: 'Beta Grill',
+      slug: 'beta-grill',
+      planId: 'restaurant-starter',
+    },
   });
 
   // ─────────────────────────────────────────────────────────────
@@ -84,7 +94,7 @@ async function run() {
 
   const webhookSecret = 'rzp_sec_test_secret_998877';
   const adapter = new RazorpayPaymentGatewayAdapter({
-    keyId: 'rzp_test_1234567890',
+    keyId: 'mock-rzp-key-01',
     keySecret: 'sec_test_abcdef',
     webhookSecret,
   });

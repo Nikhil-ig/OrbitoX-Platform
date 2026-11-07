@@ -3,7 +3,7 @@ import { DiscoveryModule, DiscoveryService, Reflector } from '@nestjs/core';
 import { EventBusService } from './event-bus.service';
 import { EventStoreService } from './event-store.service';
 import { EVENT_SUBSCRIBER_KEY, EventSubscriberMetadata } from './event.decorator';
-import { PlatformEvent } from '@orbitox/types';
+import { PlatformEvent } from '@orbitox-io/types';
 
 @Global()
 @Module({

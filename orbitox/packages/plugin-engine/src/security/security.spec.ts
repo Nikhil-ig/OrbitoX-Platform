@@ -92,6 +92,22 @@ describe('Security & IP Protection Engine', () => {
       expect(result.errors.some((e) => e.includes('expired'))).toBe(true);
     });
 
+    it('should reject unparseable or invalid expiration dates', () => {
+      const invalidDateToken = LicenseEnforcer.issueLicenseToken(
+        {
+          licenseId: 'lic_bad_date',
+          issuedTo: 'Test Corp',
+          issuedAt: new Date().toISOString(),
+          expiresAt: 'not-a-valid-date-string',
+        },
+        rsaKeyPair.privateKey
+      );
+
+      const result = LicenseEnforcer.verifyLicenseToken(invalidDateToken, rsaKeyPair.publicKey);
+      expect(result.valid).toBe(false);
+      expect(result.errors.some((e) => e.includes('Invalid license expiration date format'))).toBe(true);
+    });
+
     it('should reject unauthorized domains', () => {
       const token = LicenseEnforcer.issueLicenseToken(
         {

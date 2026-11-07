@@ -1,5 +1,5 @@
 import { Module } from '@nestjs/common';
-import { SchedulerModule } from '@orbitox/core';
+import { SchedulerModule } from '@orbitox-io/core';
 import { WebhookService } from './webhook.service';
 
 @Module({

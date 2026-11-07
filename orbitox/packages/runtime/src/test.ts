@@ -252,7 +252,7 @@ async function run() {
   console.log('IDOR Attack Neutralized with Silent 404:', idor404Passed);
 
   // Test 3: Cache Key Namespace Isolation
-  const { buildCacheKey } = require('@orbitox/core');
+  const { buildCacheKey } = require('@orbitox-io/core');
   const cacheKey = buildCacheKey('tenant_123', 'rules', 'billing');
   console.log('Multi-Tier Cache Key Namespace Isolated:', cacheKey === 'context:tenant_123:billing:rules');
 

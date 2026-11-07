@@ -20,11 +20,11 @@ import {
   OwnerSelfService,
   OnboardingStepKey,
   ALL_ONBOARDING_STEPS,
-  PLAN_TIER_LIMITS,
   issueStaffToken,
 } from '../packages/domain';
 
-const DATABASE_URL = process.env.DATABASE_URL || 'postgresql://apple@localhost:5432/restaurant_os';
+const DATABASE_URL = process.env.DATABASE_URL;
+if (!DATABASE_URL) throw new Error('DATABASE_URL is required to run the owner self-service test.');
 const TEST_PLATFORM_TOKEN = 'test_platform_token_secret_key_1234567890123456';
 const prisma = new PrismaClient({ datasources: { db: { url: DATABASE_URL } } });
 
@@ -164,7 +164,7 @@ async function main() {
     restaurantName: 'Self-Service Test Bistro',
     slug: testSlug,
     templateId: 'tmpl_starter_bistro',
-    planId: 'starter',
+    planId: 'restaurant-starter',
     ownerEmail: `owner-${testSuffix}@testbistro.com`,
     ownerName: 'Owner Test',
     currency: 'INR',
@@ -356,16 +356,16 @@ async function main() {
   // ─────────────────────────────────────────────────────────────────────────────
   console.log('\n--- Suite 4: Plan Limits & Quota Enforcement Engine ---');
 
-  // Starter limits: 10 tables, 500 monthly orders
+  // Catalogue starter limits: 15 tables and 1,000 monthly orders
   const checkInitialTables = await ownerService.checkPlanLimits(provisionResult.tenantId, 'TABLES');
   assert(checkInitialTables.allowed === true, 'Initial table count (3 from starter template) within quota');
-  assert(checkInitialTables.max === 10, 'Starter plan max tables is 10');
+  assert(checkInitialTables.max === 15, 'Starter plan max tables is 15');
   assert(checkInitialTables.warning === false, 'Below 80% quota emits warning: false');
 
-  // Test 80% soft warning (8 tables on starter plan = 80%)
-  // Seed tables to reach 8
+  // Test 80% soft warning (12 tables on starter plan = 80%)
+  // Seed tables to reach 12
   const currentTablesCount = await prisma.tableFloor.count({ where: { tenantId: provisionResult.tenantId } });
-  for (let i = currentTablesCount; i < 8; i++) {
+  for (let i = currentTablesCount; i < 12; i++) {
     await prisma.tableFloor.create({
       data: {
         id: `tbl_${testSuffix}_${i}`,
@@ -385,8 +385,8 @@ async function main() {
   assert(check80Percent.warning === true, '80% quota: warning flag is true');
   assert(check80Percent.percentage === 80, `Percentage is 80% (${check80Percent.current}/${check80Percent.max})`);
 
-  // Fill up to 10 tables (100% quota)
-  for (let i = 8; i < 10; i++) {
+  // Fill up to 15 tables (100% quota)
+  for (let i = 12; i < 15; i++) {
     await prisma.tableFloor.create({
       data: {
         id: `tbl_${testSuffix}_${i}`,
@@ -401,25 +401,25 @@ async function main() {
     });
   }
 
-  // Attempting to add 1 table when already at 10/10 must fail
+  // Attempting to add 1 table when already at 15/15 must fail
   const check100Percent = await ownerService.checkPlanLimits(provisionResult.tenantId, 'TABLES', 1);
   assert(check100Percent.allowed === false, '100% quota exceeded: allowed is false');
   assert(check100Percent.error?.includes('PLAN_LIMIT_EXCEEDED'), 'Error mentions PLAN_LIMIT_EXCEEDED');
 
-  // Growth plan upgrade unlocks limit
+  // Pro plan uses its catalogue quota
   await prisma.tenant.update({
     where: { id: provisionResult.tenantId },
-    data: { planId: 'growth' },
+    data: { planId: 'restaurant-pro' },
   });
-  const checkGrowth = await ownerService.checkPlanLimits(provisionResult.tenantId, 'TABLES', 1);
-  assert(checkGrowth.allowed === true, 'After upgrading to growth plan, table creation is allowed');
-  assert(checkGrowth.max === 30, 'Growth plan max tables expanded to 30');
-  assert(checkGrowth.warning === false, '10/30 (33%) is well below 80% warning threshold');
+  const checkPro = await ownerService.checkPlanLimits(provisionResult.tenantId, 'TABLES', 1);
+  assert(checkPro.allowed === true, 'After upgrading to Pro, table creation is allowed');
+  assert(checkPro.max === 200, 'Pro plan max tables is 200 from the catalogue');
+  assert(checkPro.warning === false, '15/200 is below the 80% warning threshold');
 
   // Reset to starter plan for subsequent tests
   await prisma.tenant.update({
     where: { id: provisionResult.tenantId },
-    data: { planId: 'starter' },
+    data: { planId: 'restaurant-starter' },
   });
 
   // ─────────────────────────────────────────────────────────────────────────────
@@ -595,7 +595,7 @@ async function main() {
     const now = new Date();
     const orderItemsJson = [{ id: 'item_butter_chicken', name: 'Butter Chicken', quantity: 1, unitPriceMinor: 54000, station: 'CURRY_LINE' }];
     const batchOrders = [];
-    for (let i = 0; i < 400; i++) {
+    for (let i = 0; i < 800; i++) {
       batchOrders.push({
         id: `ord_quota_${testSuffix}_${i}`,
         tenantId: provisionResult.tenantId,
@@ -631,9 +631,9 @@ async function main() {
     assert(orderWarningRes.status === 201, 'Order submitted successfully at 80% quota (HTTP 201)');
     assert(orderWarningRes.headers['x-quota-warning'] === '80%', 'Order response contains x-quota-warning: 80%');
 
-    // Add remaining 100 orders to hit 500 (100% quota)
+    // Add remaining 200 orders to hit 1000 (100% quota)
     const blockOrders = [];
-    for (let i = 400; i < 500; i++) {
+    for (let i = 800; i < 1000; i++) {
       blockOrders.push({
         id: `ord_quota_${testSuffix}_${i}`,
         tenantId: provisionResult.tenantId,

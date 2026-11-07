@@ -81,7 +81,7 @@ Created 09_RISKS.md
 
 > **Classification:** Principal Architecture & Systems Engineering Report  
 > **Status:** Discovery & Audit Complete · Implementation Plan Established  
-> **Documentation Artifacts:** Detailed specifications created under [`docs/implementation/`](file:///Users/apple/Documents/Office/company/Orbito/OrbitoX%20Platform/docs/implementation/) (Docs 00–09).
+> **Documentation Artifacts:** Detailed specifications created under [`docs/implementation/`](./) (Docs 00–09).
 
 ---
 

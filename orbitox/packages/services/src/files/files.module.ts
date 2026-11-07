@@ -1,5 +1,5 @@
 import { Module } from '@nestjs/common';
-import { StorageModule } from '@orbitox/core';
+import { StorageModule } from '@orbitox-io/core';
 import { FileService } from './file.service';
 
 @Module({

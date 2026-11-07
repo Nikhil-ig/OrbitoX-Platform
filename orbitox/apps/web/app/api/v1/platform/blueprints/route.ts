@@ -7,7 +7,9 @@ export const GET = withApiGuard(
   {
     serviceId: 'platform',
     serviceName: 'Platform Blueprint Service',
-    allowPublic: true,
+    routeClass: 'platform-admin',
+    allowPublic: false,
+    requiredScopes: ['admin', 'platform.blueprints'],
   },
   async (_req: NextRequest, ctx: ApiRequestContext) => {
     const list = blueprint.listBlueprints();
@@ -27,7 +29,9 @@ export const POST = withApiGuard(
   {
     serviceId: 'platform',
     serviceName: 'Platform Blueprint Service',
-    allowPublic: true,
+    routeClass: 'platform-admin',
+    allowPublic: false,
+    requiredScopes: ['admin', 'platform.blueprints'],
   },
   async (req: NextRequest, ctx: ApiRequestContext) => {
     try {

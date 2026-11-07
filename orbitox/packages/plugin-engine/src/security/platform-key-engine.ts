@@ -32,16 +32,105 @@ export interface GeneratedKeyResult {
 
 const BASE62_CHARS = '0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ';
 
-function bufferToBase62(buffer: Buffer): string {
+/**
+ * Rejection sampling for unbiased Base62 entropy.
+ * 248 is the highest multiple of 62 <= 256 (62 * 4 = 248).
+ * Bytes >= 248 are rejected to eliminate modulo bias.
+ */
+export function generateUnbiasedBase62(length: number): string {
+  let result = '';
+  while (result.length < length) {
+    const bytesNeeded = length - result.length;
+    const buf = crypto.randomBytes(bytesNeeded + 8);
+    for (let i = 0; i < buf.length && result.length < length; i++) {
+      const b = buf[i]!;
+      if (b < 248) {
+        result += BASE62_CHARS[b % 62];
+      }
+    }
+  }
+  return result;
+}
+
+export function bufferToBase62(buffer: Buffer): string {
   let result = '';
   for (let i = 0; i < buffer.length; i++) {
-    result += BASE62_CHARS[buffer[i]! % BASE62_CHARS.length];
+    const b = buffer[i]!;
+    if (b < 248) {
+      result += BASE62_CHARS[b % 62];
+    } else {
+      let sample: number;
+      do {
+        sample = crypto.randomBytes(1)[0]!;
+      } while (sample >= 248);
+      result += BASE62_CHARS[sample % 62];
+    }
   }
   return result;
 }
 
 export class PlatformKeyEngine {
-  private static readonly DEFAULT_PEPPER = 'orbitox-cluster-server-pepper-v3-zero-trust';
+  private static readonly DEFAULT_DEV_PEPPER = 'orbitox-cluster-server-pepper-v3-zero-trust';
+
+  /**
+   * Resolves the authoritative active pepper.
+   * In production, ORBITOX_SERVER_PEPPER must be explicitly provided via env.
+   * If missing in production, throws a fatal security exception.
+   */
+  static getActivePepper(serverPepper?: string): string {
+    if (serverPepper) return serverPepper;
+
+    const envPepper = typeof process !== 'undefined' ? process.env?.ORBITOX_SERVER_PEPPER : undefined;
+    if (envPepper) return envPepper;
+
+    const isProd = typeof process !== 'undefined' && process.env?.NODE_ENV === 'production';
+
+    if (isProd) {
+      throw new Error(
+        'SECURITY CRITICAL: ORBITOX_SERVER_PEPPER environment variable is required in production. Startup aborted.'
+      );
+    }
+
+    return this.DEFAULT_DEV_PEPPER;
+  }
+
+  /**
+   * Resolves all candidate peppers for verification to support secret rotation with key versioning.
+   */
+  static resolveCandidatePeppers(serverPepper?: string, keyVersion?: string): string[] {
+    const candidates = new Set<string>();
+
+    if (serverPepper) {
+      candidates.add(serverPepper);
+    }
+
+    if (typeof process !== 'undefined' && process.env?.ORBITOX_SERVER_PEPPERS) {
+      try {
+        const parsed = JSON.parse(process.env.ORBITOX_SERVER_PEPPERS);
+        if (keyVersion && parsed[keyVersion]) {
+          candidates.add(parsed[keyVersion]);
+        }
+        for (const p of Object.values(parsed)) {
+          if (typeof p === 'string' && p) candidates.add(p);
+        }
+      } catch {
+        const list = process.env.ORBITOX_SERVER_PEPPERS.split(',').map((s) => s.trim()).filter(Boolean);
+        list.forEach((p) => candidates.add(p));
+      }
+    }
+
+    if (typeof process !== 'undefined' && process.env?.ORBITOX_SERVER_PEPPER_SECONDARY) {
+      candidates.add(process.env.ORBITOX_SERVER_PEPPER_SECONDARY);
+    }
+
+    try {
+      candidates.add(this.getActivePepper(serverPepper));
+    } catch (e) {
+      if (candidates.size === 0) throw e;
+    }
+
+    return Array.from(candidates);
+  }
 
   /**
    * Generates a complete, cryptographically secure machine API key.
@@ -49,20 +138,20 @@ export class PlatformKeyEngine {
    */
   static generateKey(
     environment: 'production' | 'staging' | 'development' | string = 'production',
-    serverPepper?: string
+    serverPepper?: string,
+    keyVersion?: string
   ): GeneratedKeyResult {
     const envNormalized =
       environment === 'production'
         ? 'live'
         : environment === 'staging'
-        ? 'stage'
-        : 'test';
+          ? 'stage'
+          : 'test';
 
     const keyPrefix = `orb_${envNormalized}_`;
 
-    // 256 bits of high-entropy CSPRNG bytes
-    const randomEntropy = crypto.randomBytes(32);
-    const secretEntropy = bufferToBase62(randomEntropy);
+    // 256 bits of high-entropy CSPRNG bytes via unbiased rejection sampling
+    const secretEntropy = generateUnbiasedBase62(32);
     const rawSecret = `${keyPrefix}${secretEntropy}`;
 
     // Public Key Identifier
@@ -72,7 +161,7 @@ export class PlatformKeyEngine {
     const secretFingerprint = this.computeFingerprint(rawSecret);
 
     // Authentication Verifier: HMAC-SHA-256(pepper, rawSecret)
-    const authVerifier = this.computeAuthVerifier(rawSecret, serverPepper);
+    const authVerifier = this.computeAuthVerifier(rawSecret, serverPepper, keyVersion);
 
     // Masked Display representation
     const maskedDisplay = this.createMaskedDisplay(rawSecret);
@@ -106,32 +195,40 @@ export class PlatformKeyEngine {
   /**
    * Computes HMAC-SHA-256 authentication verifier for database storage.
    */
-  static computeAuthVerifier(rawSecret: string, serverPepper?: string): string {
-    const pepper =
-      serverPepper ||
-      (typeof process !== 'undefined' ? process.env?.ORBITOX_SERVER_PEPPER : undefined) ||
-      this.DEFAULT_PEPPER;
-
+  static computeAuthVerifier(rawSecret: string, serverPepper?: string, keyVersion?: string): string {
+    const pepper = this.getActivePepper(serverPepper);
     return crypto.createHmac('sha256', pepper).update(rawSecret).digest('hex');
   }
 
   /**
    * Performs constant-time comparison to verify incoming raw secret against stored verifier.
-   * Prevents timing attacks.
+   * Supports candidate peppers during secret rotation and key versioning.
    */
-  static verifySecret(incomingSecret: string, storedVerifier: string, serverPepper?: string): boolean {
+  static verifySecret(
+    incomingSecret: string,
+    storedVerifier: string,
+    serverPepper?: string,
+    keyVersion?: string
+  ): boolean {
     if (!incomingSecret || !storedVerifier) return false;
 
-    try {
-      const candidateVerifier = this.computeAuthVerifier(incomingSecret, serverPepper);
-      const bufA = Buffer.from(candidateVerifier, 'hex');
-      const bufB = Buffer.from(storedVerifier, 'hex');
+    const candidatePeppers = this.resolveCandidatePeppers(serverPepper, keyVersion);
 
-      if (bufA.length !== bufB.length) return false;
-      return crypto.timingSafeEqual(bufA, bufB);
-    } catch {
-      return false;
+    for (const pepper of candidatePeppers) {
+      try {
+        const candidateVerifier = crypto.createHmac('sha256', pepper).update(incomingSecret).digest('hex');
+        const bufA = Buffer.from(candidateVerifier, 'hex');
+        const bufB = Buffer.from(storedVerifier, 'hex');
+
+        if (bufA.length === bufB.length && crypto.timingSafeEqual(bufA, bufB)) {
+          return true;
+        }
+      } catch {
+        continue;
+      }
     }
+
+    return false;
   }
 
   /**

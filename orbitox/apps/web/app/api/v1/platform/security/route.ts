@@ -2,17 +2,20 @@ import { NextRequest, NextResponse } from 'next/server';
 import { withApiGuard } from '@/app/api/v1/_lib/api-guard';
 import { ApiResponse, ApiRequestContext } from '@/app/api/v1/_lib/api-types';
 import { auditService } from '@/app/api/v1/_lib/platform-governance';
-import { PlatformRepository } from '@orbitox-io/plugin-engine';
+import { platformRepository } from '@/lib/platform-repository';
 
 export const GET = withApiGuard(
   {
     serviceId: 'platform',
     serviceName: 'Platform Security Posture Service',
-    allowPublic: true,
+    routeClass: 'platform-admin',
+    requiredScopes: ['platform.security.read', 'admin'],
   },
   async (req: NextRequest, ctx: ApiRequestContext) => {
-    const keys = await PlatformRepository.listApiKeys();
-    const credentials = await PlatformRepository.listCredentials();
+    const [keys, credentials] = await Promise.all([
+      platformRepository.listApiKeys(),
+      platformRepository.listCredentials(),
+    ]);
     const verification = auditService.verifyChain();
 
     const defensePillars = [

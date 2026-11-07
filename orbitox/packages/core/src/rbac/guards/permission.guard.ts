@@ -3,7 +3,7 @@ import { Reflector } from '@nestjs/core';
 import { PERMISSION_KEY } from '../decorators/require-permission.decorator';
 import { RbacService } from '../rbac.service';
 import { Request } from 'express';
-import { JwtPayload, PermissionCheck } from '@orbitox/types';
+import { JwtPayload, PermissionCheck } from '@orbitox-io/types';
 
 @Injectable()
 export class PermissionGuard implements CanActivate {

@@ -756,4 +756,4 @@ startHospitalPlatform().catch(console.error);
 ## 🎉 Next Steps
 You are now ready to build production-grade healthcare applications with OrbitoX!
 - Check out the **[Architecture Specification (Doc 13)](./13_USECASE_HOSPITAL_SAAS.md)** for in-depth permission evaluation diagrams and state machines.
-- Review the executable test suite in **[`packages/runtime/src/test-e2e.ts`](file:///Users/apple/Documents/Office/company/Orbito/OrbitoX Platform/orbitox/packages/runtime/src/test-e2e.ts)**.
+- Review the executable test suite in **[`packages/runtime/src/test-e2e.ts`](../orbitox/packages/runtime/src/test-e2e.ts)**.

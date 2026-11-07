@@ -20,6 +20,7 @@ export type ProjectLifecycleStatus =
   | 'PROVISIONING'
   | 'ACTIVE'
   | 'DEGRADED'
+  | 'THROTTLED'
   | 'SUSPENDED'
   | 'ARCHIVED'
   | 'DEPROVISIONING';
@@ -103,7 +104,17 @@ export interface PlatformProject {
   organizationId: string;
   businessModel: BusinessModelType;
   planTier: PlanTier;
+  plan?: string;
+  planLabel?: string;
   status: ProjectLifecycleStatus;
+  enabledServices?: string[];
+  apiCallQuota?: number;
+  monthlyApiCalls?: number;
+  currentBillingPeriod?: string;
+  previousMonthlyApiCalls?: number;
+  rateLimitPerMin?: number;
+  customDomain?: string;
+  storageQuotaGb?: number;
   technicalLead: string;
   contactEmail: string;
   createdAt: string;
@@ -140,13 +151,14 @@ export interface PlatformApiKeyRecord {
   keyPrefix: string; // e.g. orb_live_proj_
   secretFingerprint: string; // SHA-256(rawSecret).hex (first 16 chars)
   authVerifier: string; // HMAC-SHA-256(pepper, rawSecret).hex
+  verifierPepperId?: string; // Active pepper ID at key creation (for rotation tracking)
   maskedDisplay: string; // orb_live_••••••••0zE
   status: KeyLifecycleState;
   capabilities: string[];
   ipAllowlist: string[];
   rateLimitPerMin: number;
   tenantScope?: string[]; // Specific tenant IDs allowed; if empty, matches bound project
-  
+
   riskScore: number; // 0 to 100
   riskLevel: RiskLevel;
   riskFactors: StructuredRiskFactor[];
@@ -236,6 +248,38 @@ export interface PackageInstallationRecord {
   configOverrides: Record<string, any>;
   installedAt: string;
   updatedAt: string;
+}
+
+export type PluginInstallationStatus =
+  | 'REQUESTED'
+  | 'PROVISIONING'
+  | 'ACTIVE'
+  | 'READ_ONLY'
+  | 'SUSPENDED'
+  | 'DEPROVISIONING'
+  | 'ARCHIVED';
+
+export interface PluginInstallationRecord {
+  id: string;
+  tenantId: string;
+  pluginId: string;
+  runtimeTenantId: string;
+  status: PluginInstallationStatus | string;
+  entitlementRevision: number;
+  planId?: string | null;
+  config: Record<string, any>;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ProvisionPluginInstallationInput {
+  tenantId: string;
+  pluginId: string;
+  runtimeTenantId: string;
+  status?: PluginInstallationStatus | string;
+  entitlementRevision?: number;
+  planId?: string | null;
+  config?: Record<string, any>;
 }
 
 // ─────────────────────────────────────────────────────────────

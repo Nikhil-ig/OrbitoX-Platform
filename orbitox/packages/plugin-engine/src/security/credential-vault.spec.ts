@@ -7,7 +7,7 @@ describe('CredentialVault (Two-Tier AES-256-GCM Envelope Encryption)', () => {
 
   describe('Envelope Encryption & Decryption', () => {
     it('should encrypt and decrypt external secret accurately', () => {
-      const plaintextSecret = 'sk_test_51M0872abcdefghijklmnopqrstuvwxyz123456';
+      const plaintextSecret = 'sandbox_test_envelope_token_abcdefghijklmnopqrstuvwxyz123456';
       
       const envelope = CredentialVault.encryptSecret(plaintextSecret, {
         kekId: 'kms:us-east-1:test-kek-v1',
@@ -91,7 +91,7 @@ describe('CredentialVault (Two-Tier AES-256-GCM Envelope Encryption)', () => {
 
   describe('Display Masking & Fingerprints', () => {
     it('should mask various secret provider prefixes safely', () => {
-      expect(CredentialVault.maskSecret('sk_live_1234567890abcdef')).toBe('sk_live_••••••••cdef');
+      expect(CredentialVault.maskSecret('sk_live_test_dummy_key')).toBe('sk_live_••••••••_key');
       expect(CredentialVault.maskSecret('AKIAIOSFODNN7EXAMPLE')).toBe('AKIA••••••••MPLE');
       expect(CredentialVault.maskSecret('ghp_abcdefghijklmnopqrstuvwxyz123456')).toBe('ghp_••••••••3456');
     });

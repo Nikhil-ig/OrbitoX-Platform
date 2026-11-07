@@ -42,7 +42,7 @@ services:
       STAFF_AUTH_SECRET: "${STAFF_AUTH_SECRET:-CHANGE_ME_STAFF_AUTH_SECRET_32_CHARS_MIN}"
       ORBITOX_CONTROL_PLANE_URL: "${ORBITOX_CONTROL_PLANE_URL:-http://host.docker.internal:3005}"
       ORBITOX_RUNTIME_TOKEN: "${ORBITOX_RUNTIME_TOKEN:-CHANGE_ME_RUNTIME_TOKEN}"
-      ORBITOX_PROJECT_ID: "restaurant-os-fleet"
+      ORBITOX_PROJECT_ID: "restaurant-os"
     volumes:
       - restaurantos_data:/app/data
 

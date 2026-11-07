@@ -81,6 +81,11 @@ export function ProjectProvisionModal({ isOpen, onClose, defaultModel = 'O2O2B2B
   };
 
   const handleToggleService = (serviceId: string) => {
+    const pkg = AVAILABLE_PACKAGES.find((p) => p.id === serviceId);
+    if (pkg && pkg.installable === false) {
+      showToast('Not Installable: This sample-data plugin is pending rebuild to HospitalOS multi-tenant standards (dedicated schema, RLS, and tests).');
+      return;
+    }
     if (selectedServices.includes(serviceId)) {
       if (selectedServices.length > 1) {
         setSelectedServices(selectedServices.filter((s) => s !== serviceId));
@@ -203,15 +208,15 @@ export function ProjectProvisionModal({ isOpen, onClose, defaultModel = 'O2O2B2B
   };
 
   const AVAILABLE_PACKAGES = [
-    { id: 'restaurant', name: 'Restaurant & Kitchen OS', pkg: '@orbitox/restaurant', icon: <UtensilsIcon size={16} />, color: '#F59E0B' },
-    { id: 'pos', name: 'Omnichannel POS Register', pkg: '@orbitox/pos', icon: <StoreIcon size={16} />, color: '#14B8A6' },
-    { id: 'commerce', name: 'Commerce & Store Engine', pkg: '@orbitox/commerce', icon: <ShoppingBagIcon size={16} />, color: '#A855F7' },
-    { id: 'crm', name: 'CRM & Sales Pipeline', pkg: '@orbitox/crm', icon: <BriefcaseIcon size={16} />, color: '#3B82F6' },
-    { id: 'finance', name: 'Finance & Ledger Engine', pkg: '@orbitox/finance', icon: <ZapIcon size={16} />, color: '#10B981' },
-    { id: 'inventory', name: 'Inventory & Logistics', pkg: '@orbitox/inventory', icon: <PackageIcon size={16} />, color: '#EC4899' },
-    { id: 'hms', name: 'Hospital Management (HMS)', pkg: '@orbitox/hms', icon: <HospitalIcon size={16} />, color: '#EF4444' },
-    { id: 'hrms', name: 'HRMS & Workforce Suite', pkg: '@orbitox/hrms', icon: <CpuIcon size={16} />, color: '#8B5CF6' },
-    { id: 'school', name: 'School & Campus OS', pkg: '@orbitox/school', icon: <GraduationCapIcon size={16} />, color: '#6366F1' },
+    { id: 'restaurant', name: 'Restaurant & Kitchen OS', pkg: '@orbitox/restaurant', icon: <UtensilsIcon size={16} />, color: '#F59E0B', installable: true },
+    { id: 'pos', name: 'Omnichannel POS Register', pkg: '@orbitox/pos', icon: <StoreIcon size={16} />, color: '#14B8A6', installable: true },
+    { id: 'commerce', name: 'Commerce & Store Engine', pkg: '@orbitox/commerce', icon: <ShoppingBagIcon size={16} />, color: '#A855F7', installable: false, badge: 'Not Installable' },
+    { id: 'crm', name: 'CRM & Sales Pipeline', pkg: '@orbitox/crm', icon: <BriefcaseIcon size={16} />, color: '#3B82F6', installable: false, badge: 'Not Installable' },
+    { id: 'finance', name: 'Finance & Ledger Engine', pkg: '@orbitox/finance', icon: <ZapIcon size={16} />, color: '#10B981', installable: false, badge: 'Not Installable' },
+    { id: 'inventory', name: 'Inventory & Logistics', pkg: '@orbitox/inventory', icon: <PackageIcon size={16} />, color: '#EC4899', installable: false, badge: 'Not Installable' },
+    { id: 'hms', name: 'Hospital Management (HMS)', pkg: '@orbitox/hms', icon: <HospitalIcon size={16} />, color: '#EF4444', installable: true },
+    { id: 'hrms', name: 'HRMS & Workforce Suite', pkg: '@orbitox/hrms', icon: <CpuIcon size={16} />, color: '#8B5CF6', installable: false, badge: 'Not Installable' },
+    { id: 'school', name: 'School & Campus OS', pkg: '@orbitox/school', icon: <GraduationCapIcon size={16} />, color: '#6366F1', installable: false, badge: 'Not Installable' },
   ];
 
   return (
@@ -636,7 +641,14 @@ export function ProjectProvisionModal({ isOpen, onClose, defaultModel = 'O2O2B2B
                       </div>
 
                       <div>
-                        <div style={{ fontSize: '13px', fontWeight: 800, color: '#FFFFFF' }}>{pkg.name}</div>
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                          <div style={{ fontSize: '13px', fontWeight: 800, color: '#FFFFFF' }}>{pkg.name}</div>
+                          {pkg.badge && (
+                            <span style={{ fontSize: '9.5px', fontWeight: 800, padding: '2px 6px', borderRadius: '6px', background: 'rgba(239, 68, 68, 0.2)', color: '#F87171', border: '1px solid rgba(239, 68, 68, 0.3)' }}>
+                              {pkg.badge}
+                            </span>
+                          )}
+                        </div>
                         <div style={{ fontSize: '11px', color: '#9AA7C2', fontFamily: 'monospace', marginTop: '2px' }}>
                           {pkg.pkg}
                         </div>

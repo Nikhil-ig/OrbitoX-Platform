@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { withApiGuard, PlatformApiState } from '../../../_lib/api-guard';
 import { PLAN_TIER_PRESETS } from '@/app/admin/data/mock-data';
+import { platformRepository } from '@/lib/platform-repository';
+import { restaurantBridgeClient } from '@/lib/restaurant-bridge-client';
 
 export const GET = withApiGuard(
   {
@@ -13,7 +15,7 @@ export const GET = withApiGuard(
     const parts = pathname.split('/');
     const projectId = parts[parts.length - 1];
 
-    const project = PlatformApiState.getProject(projectId!);
+    const project = await platformRepository.getProject(projectId!);
     if (!project) {
       return NextResponse.json(
         { success: false, error: { code: 'NOT_FOUND', message: `Project ${projectId} not found.` } },
@@ -22,9 +24,7 @@ export const GET = withApiGuard(
     }
 
     // Also fetch associated API keys
-    const keys = PlatformApiState.getApiKeys().filter(
-      (k) => k.providerId === project.id || (project.primaryApiKeyPrefix && k.keyPrefix?.startsWith(project.primaryApiKeyPrefix))
-    );
+    const keys = await platformRepository.listApiKeys({ projectId: project.id });
 
     return NextResponse.json({
       success: true,
@@ -48,7 +48,7 @@ export const PATCH = withApiGuard(
       const parts = pathname.split('/');
       const projectId = parts[parts.length - 1];
 
-      const project = PlatformApiState.getProject(projectId!);
+      const project = await platformRepository.getProject(projectId!);
       if (!project) {
         return NextResponse.json(
           { success: false, error: { code: 'NOT_FOUND', message: `Project ${projectId} not found.` } },
@@ -57,8 +57,38 @@ export const PATCH = withApiGuard(
       }
 
       const body = await req.json();
+      const editableFields = new Set([
+        'plan',
+        'apiCallQuota',
+        'rateLimitPerMin',
+        'storageQuotaGb',
+        'enabledServices',
+        'status',
+        'customDomain',
+      ]);
+      const unsupportedFields = Object.keys(body).filter((field) => !editableFields.has(field));
+      if (unsupportedFields.length > 0) {
+        return NextResponse.json(
+          {
+            success: false,
+            error: {
+              code: 'UNSUPPORTED_FIELDS',
+              message: `Project fields cannot be updated here: ${unsupportedFields.join(', ')}. Use the dedicated usage action to change monthly usage.`,
+              details: { fields: unsupportedFields },
+            },
+          },
+          { status: 400 }
+        );
+      }
+
       const updates: any = {};
 
+      if (body.plan && !PLAN_TIER_PRESETS[body.plan]) {
+        return NextResponse.json(
+          { success: false, error: { code: 'INVALID_PLAN', message: `Unknown plan: ${body.plan}.` } },
+          { status: 400 }
+        );
+      }
       if (body.plan && PLAN_TIER_PRESETS[body.plan]) {
         updates.plan = body.plan;
         updates.planLabel = PLAN_TIER_PRESETS[body.plan]!.name;
@@ -67,12 +97,47 @@ export const PATCH = withApiGuard(
       if (typeof body.rateLimitPerMin === 'number') updates.rateLimitPerMin = body.rateLimitPerMin;
       if (typeof body.storageQuotaGb === 'number') updates.storageQuotaGb = body.storageQuotaGb;
       if (Array.isArray(body.enabledServices)) updates.enabledServices = body.enabledServices;
-      if (body.status && ['active', 'throttled', 'suspended'].includes(body.status)) {
-        updates.status = body.status;
+      if (body.status && ['active', 'throttled', 'suspended'].includes(String(body.status).toLowerCase())) {
+        updates.status = String(body.status).toLowerCase();
       }
-      if (body.customDomain) updates.customDomain = body.customDomain;
+      if (body.customDomain !== undefined) updates.customDomain = body.customDomain;
 
-      const updated = PlatformApiState.updateProject(project.id, updates);
+      if (Object.keys(updates).length === 0) {
+        return NextResponse.json(
+          { success: false, error: { code: 'EMPTY_UPDATE', message: 'At least one supported project field is required.' } },
+          { status: 400 }
+        );
+      }
+
+      const updated = await platformRepository.updateProject(project.id, updates);
+
+      // Propagate project suspension/resumption to connected RestaurantOS runtime
+      if (updates.status === 'suspended' || updates.status === 'active') {
+        try {
+          const envs = await platformRepository.listEnvironments(project.id);
+          for (const env of envs) {
+            const tenantId = `org/${project.organizationId}/project/${project.slug}/environment/${env.name}`;
+            if (updates.status === 'suspended') {
+              await restaurantBridgeClient.suspendTenant(tenantId, 1);
+            } else if (updates.status === 'active') {
+              await restaurantBridgeClient.resumeTenant(tenantId, 1);
+            }
+          }
+        } catch (lifecycleErr) {
+          console.warn('[Project Update] Failed to propagate lifecycle to RestaurantOS:', lifecycleErr);
+        }
+      }
+
+      await platformRepository.recordPlatformAdminAudit({
+        action: 'PROJECT_UPDATED',
+        entityType: 'PLATFORM_PROJECT',
+        entityId: project.id,
+        organizationId: project.organizationId,
+        projectId: project.id,
+        actorId: 'platform-admin',
+        reason: `Updated project configuration: ${Object.keys(updates).join(', ')}`,
+        metadata: updates,
+      });
 
       PlatformApiState.recordTelemetry({
         tenantId: project.slug,
@@ -106,7 +171,7 @@ export const DELETE = withApiGuard(
     const parts = pathname.split('/');
     const projectId = parts[parts.length - 1];
 
-    const project = PlatformApiState.getProject(projectId!);
+    const project = await platformRepository.getProject(projectId!);
     if (!project) {
       return NextResponse.json(
         { success: false, error: { code: 'NOT_FOUND', message: `Project ${projectId} not found.` } },
@@ -114,7 +179,16 @@ export const DELETE = withApiGuard(
       );
     }
 
-    PlatformApiState.deleteProject(project.id);
+    await platformRepository.deleteProject(project.id);
+    await platformRepository.recordPlatformAdminAudit({
+      action: 'PROJECT_DELETED',
+      entityType: 'PLATFORM_PROJECT',
+      entityId: project.id,
+      organizationId: project.organizationId,
+      projectId: project.id,
+      actorId: 'platform-admin',
+      reason: `Deprovisioned project ${project.name}`,
+    });
 
     PlatformApiState.recordTelemetry({
       tenantId: project.slug,

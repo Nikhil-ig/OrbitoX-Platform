@@ -32,6 +32,7 @@ function makeRequest(method, urlPath, headers = {}, body = null) {
     const url = new URL(urlPath, BASE_URL);
     const payload = body ? JSON.stringify(body) : null;
     const reqHeaders = {
+      Host: 'bistro.orbitox.live',
       ...headers,
     };
     if (payload) {
@@ -43,6 +44,7 @@ function makeRequest(method, urlPath, headers = {}, body = null) {
       {
         method,
         headers: reqHeaders,
+        agent: false,
       },
       (res) => {
         let data = '';
@@ -71,7 +73,7 @@ let STAFF_HEADERS = {
 };
 
 async function authenticateStaff() {
-  const loginRes = await makeRequest('POST', '/api/restaurant/auth/token', {}, { pin: '8899', branchId: 'branch_ldh' });
+  const loginRes = await makeRequest('POST', '/api/restaurant/auth/token', {}, { staffId: 'staff_mgr_ldh', password: 'ManagerSecret123!', branchId: 'branch_ldh' });
   if (loginRes.status === 200 && loginRes.json && loginRes.json.data && loginRes.json.data.token) {
     STAFF_HEADERS.Authorization = 'Bearer ' + loginRes.json.data.token;
     console.log('  🔑 Obtained authentic cryptographic manager token');
@@ -86,7 +88,16 @@ async function runMilestone2CoreTests() {
     harness = await startIsolatedServer({ prefix: 'm2-core', port: 4082 });
     BASE_URL = harness.url;
   }
-  await authenticateStaff();
+  try {
+    await authenticateStaff();
+  } catch (err) {
+    if (harness) {
+      console.error('\n--- SERVER STDERR OUTPUT ---');
+      console.error(harness.getStderr());
+      console.error('--- END SERVER STDERR ---\n');
+    }
+    throw err;
+  }
 
   try {
     // ─────────────────────────────────────────────────────────────────────────
@@ -267,13 +278,16 @@ async function runMilestone2CoreTests() {
     }
 
     console.log(`\n🎉 All ${passedChecks}/${totalChecks} Milestone 2 Core Integration checks passed!`);
-  } catch (err) {
-    console.error('\n💥 Milestone 2 Core Integration Tests failed:', err);
-    process.exit(1);
-  } finally {
     if (harness) {
       await harness.stop();
     }
+    process.exit(0);
+  } catch (err) {
+    console.error('\n💥 Milestone 2 Core Integration Tests failed:', err);
+    if (harness) {
+      try { await harness.stop(); } catch {}
+    }
+    process.exit(1);
   }
 }
 

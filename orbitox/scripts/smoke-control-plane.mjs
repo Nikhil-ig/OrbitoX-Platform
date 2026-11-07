@@ -12,11 +12,15 @@
  * Requires the SDK to be built (`pnpm turbo run build --filter=@orbitox/external-runtime-sdk`).
  */
 import { createRequire } from 'node:module';
-import { randomBytes } from 'node:crypto';
+import { createHmac, randomBytes } from 'node:crypto';
 
 const BASE = (process.env.ORBITOX_URL || 'http://localhost:3005').replace(/\/$/, '');
 const ADMIN = process.env.ORBITOX_ADMIN_TOKEN;
 const RUNTIME = process.env.ORBITOX_RUNTIME_TOKEN;
+const OPERATOR_EMAIL = process.env.ORBITOX_OPERATOR_INITIAL_EMAIL;
+const OPERATOR_PASSWORD = process.env.ORBITOX_OPERATOR_INITIAL_PASSWORD;
+const OPERATOR_TOTP_SECRET = process.env.ORBITOX_OPERATOR_TEST_TOTP_SECRET;
+const PUBLIC_BASE_URL = process.env.ORBITOX_PUBLIC_BASE_URL || BASE;
 if (!ADMIN || !RUNTIME) {
   console.error('Set ORBITOX_ADMIN_TOKEN and ORBITOX_RUNTIME_TOKEN to run the smoke test.');
   process.exit(2);
@@ -28,7 +32,8 @@ const { ControlClient } = require('../packages/external-runtime-sdk/dist/index.j
 const bearer = (t) => ({ Authorization: `Bearer ${t}` });
 const json = { 'Content-Type': 'application/json' };
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-const status = async (path, init) => (await fetch(BASE + path, init)).status;
+const response = (path, init) => fetch(BASE + path, { redirect: 'manual', ...init });
+const status = async (path, init) => (await response(path, init)).status;
 
 let passed = 0;
 const failures = [];
@@ -39,6 +44,66 @@ function check(name, ok, detail = '') {
 async function expectStatus(name, want, path, init) {
   const got = await status(path, init);
   check(name, got === want, `want ${want}, got ${got}`);
+}
+async function expectLoginRedirect(name, path, init) {
+  const res = await response(path, init);
+  const location = res.headers.get('location');
+  const loginPath = location ? new URL(location, BASE).pathname : undefined;
+  check(
+    name,
+    res.status === 307 && loginPath === '/platform/login',
+    `want 307 to /platform/login, got ${res.status} ${location || ''}`.trim(),
+  );
+}
+
+function currentTotpCode(secret, now = Date.now()) {
+  const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';
+  let bits = '';
+  for (const char of secret.replace(/=+$/, '')) {
+    const digit = alphabet.indexOf(char);
+    if (digit < 0) throw new Error('Invalid bootstrap TOTP secret.');
+    bits += digit.toString(2).padStart(5, '0');
+  }
+  const bytes = [];
+  for (let offset = 0; offset + 8 <= bits.length; offset += 8) {
+    bytes.push(Number.parseInt(bits.slice(offset, offset + 8), 2));
+  }
+  const counter = Buffer.alloc(8);
+  counter.writeBigUInt64BE(BigInt(Math.floor(now / 30_000)));
+  const digest = createHmac('sha1', Buffer.from(bytes)).update(counter).digest();
+  const offset = digest[digest.length - 1] & 0x0f;
+  const binary = digest.readUInt32BE(offset) & 0x7fffffff;
+  return String(binary % 1_000_000).padStart(6, '0');
+}
+
+async function checkSignedInOperatorPages() {
+  if (!OPERATOR_EMAIL || !OPERATOR_PASSWORD || !OPERATOR_TOTP_SECRET) {
+    check('bootstrap operator credentials and test TOTP secret are configured', false);
+    return;
+  }
+  const login = await response('/api/v1/platform/auth/login', {
+    method: 'POST',
+    headers: { ...json, origin: PUBLIC_BASE_URL },
+    body: JSON.stringify({
+      email: OPERATOR_EMAIL,
+      password: OPERATOR_PASSWORD,
+      totpCode: currentTotpCode(OPERATOR_TOTP_SECRET),
+    }),
+  });
+  const cookies = login.headers.getSetCookie?.()
+    .map((cookie) => cookie.split(';', 1)[0])
+    .filter(Boolean) || [];
+  check(
+    'bootstrap PLATFORM_OWNER completes MFA login',
+    login.status === 200 && cookies.some((cookie) => cookie.startsWith('orbitox_operator_session=')),
+    `got ${login.status}`,
+  );
+  if (login.status !== 200 || cookies.length === 0) return;
+
+  const headers = { cookie: cookies.join('; ') };
+  for (const path of ['/platform', '/platform/fleet', `/platform/projects/${projectId}`]) {
+    await expectStatus(`signed-in operator can access ${path}`, 200, path, { headers });
+  }
 }
 
 const suffix = randomBytes(3).toString('hex');
@@ -52,13 +117,20 @@ await expectStatus('GET /api/health is public', 200, '/api/health');
 console.log('\nAdmin surface rejects anonymous callers');
 for (const path of [
   '/platform', '/platform/restaurants', '/platform/fleet', '/platform/plans', '/platform/connect', '/platform/settings', '/admin',
-  '/api/v1/platform/restaurants', '/api/v1/fleet', '/api/v1/overview', '/api/v1/system/settings', '/api/v1/system/cluster',
   '/hms', '/hrms', '/crm', '/finance', '/commerce', '/store'
+]) {
+  await expectLoginRedirect(`GET ${path} redirects anonymous caller to login`, path);
+}
+for (const path of [
+  '/api/v1/platform/restaurants', '/api/v1/fleet', '/api/v1/overview',
+  '/api/v1/system/settings', '/api/v1/system/cluster'
 ]) {
   await expectStatus(`GET ${path} -> 401`, 401, path);
 }
 await expectStatus('GET /api/v1/projects/anon/plans -> 401', 401, `/api/v1/projects/${projectId}/plans`);
 await expectStatus('POST /api/v1/projects/factory -> 401', 401, '/api/v1/projects/factory', { method: 'POST', headers: json, body: '{}' });
+await expectStatus('POST /api/v1/tenants -> 401', 401, '/api/v1/tenants', { method: 'POST', headers: json, body: '{}' });
+await expectStatus('GET /api/v1/operations/anon -> 401', 401, '/api/v1/operations/anon_123');
 
 console.log('\nAdmin token works (Bearer and Basic)');
 await expectStatus('GET /api/v1/fleet with Bearer', 200, '/api/v1/fleet', { headers: bearer(ADMIN) });
@@ -67,22 +139,28 @@ await expectStatus('GET /api/v1/fleet with Basic', 200, '/api/v1/fleet', {
 });
 await expectStatus('GET /api/v1/overview with Bearer', 200, '/api/v1/overview', { headers: bearer(ADMIN) });
 await expectStatus('GET /api/v1/system/settings with Bearer', 200, '/api/v1/system/settings', { headers: bearer(ADMIN) });
-await expectStatus('GET /platform with Bearer', 200, '/platform', { headers: bearer(ADMIN) });
-await expectStatus('GET /platform/restaurants with Bearer', 200, '/platform/restaurants', { headers: bearer(ADMIN) });
-await expectStatus('GET /platform/fleet with Bearer', 200, '/platform/fleet', { headers: bearer(ADMIN) });
-await expectStatus('GET /platform/plans with Bearer', 200, '/platform/plans', { headers: bearer(ADMIN) });
-await expectStatus('GET /platform/connect with Bearer', 200, '/platform/connect', { headers: bearer(ADMIN) });
-await expectStatus('GET /platform/settings with Bearer', 200, '/platform/settings', { headers: bearer(ADMIN) });
 await expectStatus('GET /api/v1/platform/restaurants/check-slug with Bearer', 200, '/api/v1/platform/restaurants/check-slug?slug=smoke-test-bistro', { headers: bearer(ADMIN) });
 
-console.log('\nProtected demo surfaces work with admin Bearer');
-for (const path of ['/hms', '/hrms', '/crm', '/finance', '/commerce', '/store']) {
-  await expectStatus(`GET ${path} with Bearer -> 200`, 200, path, { headers: bearer(ADMIN) });
+console.log('\nAPI-scoped admin token cannot access operator pages');
+for (const path of [
+  '/platform', '/platform/restaurants', '/platform/fleet', '/platform/plans',
+  '/platform/connect', '/platform/settings', '/hms', '/hrms', '/crm', '/finance',
+  '/commerce', '/store'
+]) {
+  await expectLoginRedirect(
+    `API-scoped admin token on ${path} redirects to operator login`,
+    path,
+    { headers: bearer(ADMIN) },
+  );
 }
 
 console.log('\nRuntime token cannot escalate to admin');
 await expectStatus('runtime token on /api/v1/fleet -> 401', 401, '/api/v1/fleet', { headers: bearer(RUNTIME) });
-await expectStatus('runtime token on /platform/fleet -> 401', 401, '/platform/fleet', { headers: bearer(RUNTIME) });
+await expectLoginRedirect(
+  'runtime token on /platform/fleet redirects to operator login',
+  '/platform/fleet',
+  { headers: bearer(RUNTIME) },
+);
 await expectStatus('runtime token on non-runtime project route -> 401', 401, `/api/v1/projects/${projectId}/environments`, { headers: bearer(RUNTIME) });
 await expectStatus('runtime token DELETE on a runtime route -> 403', 403, `/api/v1/projects/${projectId}/bridge`, { method: 'DELETE', headers: bearer(RUNTIME) });
 await expectStatus('runtime ISSUE command -> 403', 403, `/api/v1/projects/${projectId}/commands`, {
@@ -276,7 +354,14 @@ try {
 
   await expectStatus('GET /api/v1/projects/{id} -> 200', 200, `/api/v1/projects/${projectId}`, { headers: bearer(ADMIN) });
   await expectStatus('GET /api/v1/projects/{id}/activity -> 200', 200, `/api/v1/projects/${projectId}/activity`, { headers: bearer(ADMIN) });
-  await expectStatus('GET /platform/projects/{id} with Bearer -> 200', 200, `/platform/projects/${projectId}`, { headers: bearer(ADMIN) });
+  await expectLoginRedirect(
+    'API-scoped admin token on project UI details redirects to operator login',
+    `/platform/projects/${projectId}`,
+    { headers: bearer(ADMIN) },
+  );
+
+  console.log('\nSigned-in operator can access protected pages');
+  await checkSignedInOperatorPages();
 
   console.log('\nRestaurantOS Pilot Registration & Fleet Smoke Check');
   const restaurantManifest = {

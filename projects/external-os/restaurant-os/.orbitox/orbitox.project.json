@@ -1,7 +1,7 @@
 {
-  "projectId": "project_restaurant_os",
+  "projectId": "restaurant-os",
   "slug": "restaurant-os",
-  "name": "OrbitoX RestaurantOS (Independent Runtime)",
+  "name": "OrbitoX RestaurantOS",
   "type": "restaurant-os",
   "version": "1.0.0",
   "runtime": {

@@ -3215,3 +3215,5 @@ export * from './provisioning';
 export * from './domains';
 export * from './owner-self-service';
 export * from './security-self-check';
+export * from './bridge-auth';
+export * from './postgres-event-listener';

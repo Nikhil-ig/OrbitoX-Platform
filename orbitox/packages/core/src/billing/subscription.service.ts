@@ -1,5 +1,5 @@
 import { Injectable, Inject, NotFoundException } from '@nestjs/common';
-import { Subscription, PaymentProvider } from '@orbitox/types';
+import { Subscription, PaymentProvider } from '@orbitox-io/types';
 import { EventBusService } from '../events/event-bus.service';
 import { v4 as uuidv4 } from 'uuid';
 

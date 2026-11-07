@@ -1,5 +1,5 @@
 import { Module } from '@nestjs/common';
-import { RbacModule, EventsModule } from '@orbitox/core';
+import { RbacModule, EventsModule } from '@orbitox-io/core';
 import { ManifestValidator } from './manifest.validator';
 import { PluginLoaderService } from './plugin-loader.service';
 import { PluginLifecycleService } from './plugin-lifecycle.service';

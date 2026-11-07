@@ -235,7 +235,7 @@ The snapshot structure is validated by `@orbitox-io/plugin-engine`:
     "apiKeys": [
       {
         "id": "key-omni-01",
-        "rawKey": "orb_live_omni_7f9a2b8c4d1e",
+        "rawKey": "<SAMPLE_PROJECT_API_KEY>",
         "maskedKey": "orb_live_omni_************4d1e",
         "status": "active"
       }

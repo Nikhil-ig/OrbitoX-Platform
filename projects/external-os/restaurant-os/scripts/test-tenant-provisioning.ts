@@ -121,13 +121,25 @@ async function runProvisioningTestSuite() {
   const tenantSlug = `atelier-${uniqueSuffix}`;
   const restaurantName = `Atelier Maison ${uniqueSuffix}`;
 
+  let invalidPlanRejected = false;
+  try {
+    await provisioning.provisionTenant({
+      restaurantName: 'Invalid Plan Bistro',
+      slug: `invalid-plan-${uniqueSuffix}`,
+      planId: 'starter',
+    });
+  } catch (error) {
+    invalidPlanRejected = error instanceof Error && error.message.includes('catalogue plan ID');
+  }
+  assert(invalidPlanRejected, 'Bare tier names are refused before tenant creation');
+
   const provisionResult = await provisioning.provisionTenant({
     restaurantName,
     slug: tenantSlug,
     ownerName: 'Chef Julien Laurent',
     ownerEmail: `julien@${tenantSlug}.com`,
     templateId: 'tmpl_starter_bistro',
-    planId: 'growth',
+    planId: 'restaurant-pro',
     currency: 'INR',
     timezone: 'Asia/Kolkata',
     gstin: '07AAAAA0000A1Z5',
@@ -135,7 +147,7 @@ async function runProvisioningTestSuite() {
 
   assert(provisionResult.tenantId === `tenant_${tenantSlug}`, 'Provisioned tenant ID matches convention');
   assert(provisionResult.status === 'trial', 'New tenant starts in TRIAL status');
-  assert(provisionResult.planId === 'growth', 'Assigned subscription plan is recorded');
+  assert(provisionResult.planId === 'restaurant-pro', 'Full catalogue plan ID is recorded');
   assert(provisionResult.subdomainUrl.includes(tenantSlug), 'Subdomain URL generated correctly');
   assert(provisionResult.inviteUrl.includes('/accept-invite?token='), 'Single-use invite URL returned');
   assert(Boolean(provisionResult.inviteToken), 'Raw invite token returned for owner delivery');
@@ -204,6 +216,7 @@ async function runProvisioningTestSuite() {
       restaurantName: 'Duplicate Attempt',
       slug: tenantSlug,
       ownerName: 'Chef Copy',
+      planId: 'restaurant-starter',
     });
   } catch (err: any) {
     collisionFailed = err.message.includes('already taken');
@@ -219,11 +232,13 @@ async function runProvisioningTestSuite() {
       restaurantName: 'Concurrent Alpha',
       slug: slugAlpha,
       ownerName: 'Alpha Owner',
+      planId: 'restaurant-starter',
     }),
     provisioning.provisionTenant({
       restaurantName: 'Concurrent Beta',
       slug: slugBeta,
       ownerName: 'Beta Owner',
+      planId: 'restaurant-starter',
     }),
   ]);
 
@@ -349,6 +364,7 @@ async function runProvisioningTestSuite() {
     slug: idemSlug,
     ownerName: 'Idem Owner',
     idempotencyKey: idemKey,
+    planId: 'restaurant-starter',
   });
 
   const idemRes2 = await provisioning.provisionTenant({
@@ -356,6 +372,7 @@ async function runProvisioningTestSuite() {
     slug: idemSlug,
     ownerName: 'Idem Owner',
     idempotencyKey: idemKey,
+    planId: 'restaurant-starter',
   });
 
   assert(
@@ -460,7 +477,7 @@ async function runProvisioningTestSuite() {
         slug: httpSlug,
         ownerName: 'Chef Antoine',
         templateId: 'tmpl_starter_bistro',
-        planId: 'starter',
+        planId: 'restaurant-starter',
       }
     );
     assert(createRes.status === 201, 'POST /internal/tenants with platform token returns 201 Created');

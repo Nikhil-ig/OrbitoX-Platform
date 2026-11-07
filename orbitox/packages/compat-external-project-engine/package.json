@@ -1,0 +1,10 @@
+{
+  "name": "@orbitox/external-project-engine",
+  "version": "1.0.0",
+  "description": "Deprecated compatibility alias forwarding to @orbitox-io/external-project-engine",
+  "main": "./index.js",
+  "types": "./index.d.ts",
+  "dependencies": {
+    "@orbitox-io/external-project-engine": "workspace:*"
+  }
+}

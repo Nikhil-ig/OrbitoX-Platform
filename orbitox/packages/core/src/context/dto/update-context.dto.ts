@@ -1,5 +1,5 @@
 import { IsString, IsOptional, MaxLength, Matches, IsEnum } from 'class-validator';
-import { ContextStatus } from '@orbitox/types';
+import { ContextStatus } from '@orbitox-io/types';
 
 export class UpdateContextDto {
   @IsString()

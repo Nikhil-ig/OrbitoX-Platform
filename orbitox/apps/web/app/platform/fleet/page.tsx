@@ -143,7 +143,7 @@ function FleetPageContent() {
     try {
       const res = await fetch('/api/v1/fleet', { signal: controller.signal, cache: 'no-store' });
       if (!res.ok) {
-        throw new Error(res.status === 401 ? 'Not authorised. Sign in with the admin token.' : `Request failed (${res.status})`);
+        throw new Error(res.status === 401 ? 'Not authorised. Sign in with your operator account.' : `Request failed (${res.status})`);
       }
       const body = (await res.json()) as { success: boolean; data?: FleetSnapshot; error?: { message?: string } };
       if (!body.success || !body.data) throw new Error(body.error?.message ?? 'Unexpected response');
@@ -332,13 +332,16 @@ function FleetPageContent() {
           <button type="button" className={styles.btn} onClick={() => void load()}>
             Refresh
           </button>
+          <Link href="/platform/connect?mode=template" className={`${styles.btn} ${styles.btnPrimary}`}>
+            + Create from Template
+          </Link>
           <button
             type="button"
-            className={`${styles.btn} ${styles.btnPrimary}`}
+            className={styles.btn}
             onClick={() => void handleBulkHealthCheck()}
             disabled={isIssuingBulk || visible.length === 0}
           >
-            Run Health Check on Visible ({visible.length})
+            Health Check ({visible.length})
           </button>
         </div>
       </header>

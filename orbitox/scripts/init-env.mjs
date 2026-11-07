@@ -15,7 +15,14 @@ const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 const examplePath = join(root, '.env.example');
 const envPath = join(root, '.env');
 
-const SECRETS = ['ORBITOX_ADMIN_TOKEN', 'ORBITOX_RUNTIME_TOKEN', 'ORBITOX_CONTROL_SECRET', 'ORBITOX_GUEST_SECRET', 'POSTGRES_PASSWORD'];
+const SECRETS = [
+  'ORBITOX_ADMIN_TOKEN',
+  'ORBITOX_RUNTIME_TOKEN',
+  'ORBITOX_CONTROL_SECRET',
+  'ORBITOX_GUEST_SECRET',
+  'ORBITOX_SERVER_PEPPER',
+  'POSTGRES_PASSWORD',
+];
 
 const created = !existsSync(envPath);
 let text = readFileSync(created ? examplePath : envPath, 'utf8');

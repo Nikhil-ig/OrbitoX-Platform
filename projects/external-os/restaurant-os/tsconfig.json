@@ -7,7 +7,12 @@
     "esModuleInterop": true,
     "skipLibCheck": true,
     "types": ["node"],
-    "strict": false
+    "strict": false,
+    "baseUrl": ".",
+    "paths": {
+      "@orbitox-io/plugin-engine": ["../../../orbitox/packages/plugin-engine/src"],
+      "@orbitox/plugin-engine": ["../../../orbitox/packages/plugin-engine/src"]
+    }
   },
   "include": ["src/**/*"]
 }

@@ -78,6 +78,7 @@ export const POST = withApiGuard(
   {
     serviceId: 'crm',
     serviceName: 'CRM & Sales Pipeline',
+    requiredScopes: ['crm:write'],
   },
   async (req: NextRequest, ctx) => {
     try {
@@ -129,6 +130,7 @@ export const PATCH = withApiGuard(
   {
     serviceId: 'crm',
     serviceName: 'CRM & Sales Pipeline',
+    requiredScopes: ['crm:write'],
   },
   async (req: NextRequest, ctx) => {
     try {

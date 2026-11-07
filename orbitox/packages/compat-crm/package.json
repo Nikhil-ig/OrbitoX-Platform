@@ -1,0 +1,10 @@
+{
+  "name": "@orbitox/crm",
+  "version": "1.0.0",
+  "description": "Deprecated compatibility alias forwarding to @orbitox-io/crm",
+  "main": "./index.js",
+  "types": "./index.d.ts",
+  "dependencies": {
+    "@orbitox-io/crm": "workspace:*"
+  }
+}

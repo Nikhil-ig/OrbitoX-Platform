@@ -192,7 +192,7 @@ export default function PlatformSettingsPage() {
           </li>
           <li>
             <strong>Rotating <code>ORBITOX_ADMIN_TOKEN</code>:</strong>
-            <div>Update <code>ORBITOX_ADMIN_TOKEN</code> in your environment / volume and restart the control plane server. You will be prompted to re-authenticate with the new password.</div>
+            <div>This credential is for automation only, never for a person’s browser session. Set explicit method/path entries in <code>ORBITOX_ADMIN_TOKEN_SCOPES</code>, rotate the token in the secret manager, then restart the control plane. People sign in with their operator account and required MFA.</div>
           </li>
           <li>
             <strong>Rotating <code>ORBITOX_RUNTIME_TOKEN</code> (Client apps):</strong>

@@ -1,51 +1,79 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { ORBITOX_BACKEND_URL } from '../_init';
+import { withHospitalGuard } from '@/app/api/_lib/route-auth';
+import { withTenantTx } from '@/lib/tenant-db';
+import { prisma } from '@/lib/prisma';
+import { mapDbError, errorBody, HttpError } from '@/lib/db-errors';
 
-export async function GET(req: NextRequest) {
+export const GET = withHospitalGuard(async (_req: NextRequest, _routeContext, authContext) => {
   try {
-    const contextId = req.headers.get('x-context-id') || '';
-    const res = await fetch(`${ORBITOX_BACKEND_URL}/api/hospital/treatments`, {
-      headers: contextId ? { 'x-context-id': contextId } : {},
-      cache: 'no-store'
+    const data = await withTenantTx(prisma, authContext.tenantId, async (tx) => {
+      const { rows } = await tx.query(
+        `SELECT "id", "patientId", "orderedById", "testType" as "code", "status", "updatedAt"
+         FROM "HmsLabOrder"
+         ORDER BY "updatedAt" DESC
+         LIMIT 50`
+      );
+      return rows;
     });
-    const data = await res.json();
-    return NextResponse.json(data);
-  } catch (err: any) {
-    return NextResponse.json({ success: false, error: err.message }, { status: 502 });
-  }
-}
 
-export async function POST(req: NextRequest) {
-  try {
-    const body = await req.json();
-    const contextId = req.headers.get('x-context-id') || '';
-    const res = await fetch(`${ORBITOX_BACKEND_URL}/api/hospital/treatments`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        ...(contextId ? { 'x-context-id': contextId } : {})
-      },
-      body: JSON.stringify(body)
-    });
-    const data = await res.json();
-    return NextResponse.json(data, { status: res.status });
+    return NextResponse.json({ success: true, data });
   } catch (err: any) {
-    return NextResponse.json({ success: false, error: err.message }, { status: 502 });
+    const apiErr = mapDbError(err);
+    return NextResponse.json(errorBody(apiErr, authContext.requestId), { status: apiErr.status });
   }
-}
+});
 
-export async function PATCH(req: NextRequest) {
+export const POST = withHospitalGuard(async (req: NextRequest, _routeContext, authContext) => {
   try {
     const body = await req.json();
-    const { treatmentId, action, staffId } = body;
-    const res = await fetch(`${ORBITOX_BACKEND_URL}/api/hospital/treatments/${treatmentId}/${action}`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ staffId })
+
+    if (!body.patientId || !body.code) {
+      throw new HttpError(422, 'INVALID_INPUT', 'patientId and code are required');
+    }
+
+    const data = await withTenantTx(prisma, authContext.tenantId, async (tx) => {
+      const id = body.id || `trt_${Date.now().toString(36)}`;
+      const orderedById = body.orderedById || authContext.sub || 'staff_doctor';
+
+      const { rows } = await tx.query(
+        `INSERT INTO "HmsLabOrder" ("id", "patientId", "orderedById", "testType", "status")
+         VALUES ($1, $2, $3, $4, 'ORDERED')
+         RETURNING "id", "patientId", "orderedById", "testType" as "code", "status", "updatedAt"`,
+        [id, body.patientId, orderedById, body.code]
+      );
+      return rows[0];
     });
-    const data = await res.json();
-    return NextResponse.json(data, { status: res.status });
+
+    return NextResponse.json({ success: true, data }, { status: 201 });
   } catch (err: any) {
-    return NextResponse.json({ success: false, error: err.message }, { status: 502 });
+    const apiErr = mapDbError(err);
+    return NextResponse.json(errorBody(apiErr, authContext.requestId), { status: apiErr.status });
   }
-}
+});
+
+export const PATCH = withHospitalGuard(async (req: NextRequest, _routeContext, authContext) => {
+  try {
+    const body = await req.json();
+    const { treatmentId, action } = body;
+
+    if (!treatmentId) throw new HttpError(422, 'INVALID_INPUT', 'treatmentId required');
+
+    const data = await withTenantTx(prisma, authContext.tenantId, async (tx) => {
+      const newStatus = action === 'start' ? 'IN_PROGRESS' : action === 'complete' ? 'RESULTED' : 'IN_PROGRESS';
+      const { rows } = await tx.query(
+        `UPDATE "HmsLabOrder"
+         SET "status" = $2
+         WHERE "id" = $1
+         RETURNING "id", "status"`,
+        [treatmentId, newStatus]
+      );
+      if (!rows[0]) throw new HttpError(404, 'REFERENCE_NOT_FOUND', 'Treatment not found');
+      return rows[0];
+    });
+
+    return NextResponse.json({ success: true, data });
+  } catch (err: any) {
+    const apiErr = mapDbError(err);
+    return NextResponse.json(errorBody(apiErr, authContext.requestId), { status: apiErr.status });
+  }
+});

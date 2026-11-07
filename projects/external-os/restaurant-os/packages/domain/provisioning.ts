@@ -12,6 +12,7 @@ import { getCleanStarterTemplate, StarterTemplate } from './templates';
 import { generateSeats, SeatRecord } from './index';
 import { hashStaffSecretSync, hashPin, issueStaffToken } from './security';
 import { withTenantRlsTransaction } from './tenancy';
+import { SEED_PLANS } from '@orbitox-io/plugin-engine';
 
 export const RESERVED_SLUGS = new Set([
   'www',
@@ -87,7 +88,10 @@ export function verifyPlatformAuth(req: http.IncomingMessage): boolean {
     }
   }
 
-  const expectedToken = envToken || 'dev_platform_secret_token_restaurantos_secure_32ch';
+  const expectedToken = envToken;
+  if (!expectedToken) {
+    return false;
+  }
 
   const authHeader = req.headers['authorization'] || (req.headers['x-platform-token'] as string);
   if (!authHeader || typeof authHeader !== 'string') {
@@ -112,9 +116,10 @@ export function verifyPlatformAuth(req: http.IncomingMessage): boolean {
 }
 
 export interface ProvisionTenantInput {
+  tenantId?: string;
   restaurantName: string;
   slug: string;
-  ownerName: string;
+  ownerName?: string;
   ownerEmail?: string;
   ownerPhone?: string;
   templateId?: string;
@@ -122,7 +127,9 @@ export interface ProvisionTenantInput {
   currency?: string;
   timezone?: string;
   gstin?: string;
-  planId?: string;
+  planId: string;
+  status?: string;
+  entitlementRevision?: number;
   idempotencyKey?: string;
 }
 
@@ -171,10 +178,20 @@ export class TenantProvisioningService {
       throw new Error(`Invalid slug: ${slugValidation.error}`);
     }
 
+    const cataloguePlan = SEED_PLANS.find(
+      (plan) =>
+        plan.planId === input.planId &&
+        plan.pluginId === '@orbitox/restaurant' &&
+        plan.status === 'ACTIVE',
+    );
+    if (!cataloguePlan) {
+      throw new Error(`Invalid RestaurantOS catalogue plan ID "${input.planId}".`);
+    }
+
     const cleanSlug = input.slug.trim().toLowerCase();
-    const tenantId = `tenant_${cleanSlug}`;
+    const tenantId = input.tenantId || `tenant_${cleanSlug}`;
     const template: StarterTemplate = getCleanStarterTemplate(input.templateId);
-    const planId = input.planId || 'starter';
+    const planId = cataloguePlan.planId;
     const currency = input.currency || 'INR';
     const timezone = input.timezone || 'Asia/Kolkata';
     const locale = input.locale || 'en-IN';
@@ -194,14 +211,28 @@ export class TenantProvisioningService {
       }
     }
 
-    // 2. Check slug / tenant collision
+    // 2. Check slug / tenant collision - idempotent return if already provisioned
     const existingTenant = await this.prisma.tenant.findFirst({
       where: {
         OR: [{ id: tenantId }, { slug: cleanSlug }],
       },
     });
     if (existingTenant) {
-      throw new Error(`Tenant slug "${cleanSlug}" is already taken.`);
+      const branch = await this.prisma.branch.findFirst({ where: { tenantId: existingTenant.id } });
+      const tableCount = await this.prisma.tableFloor.count({ where: { tenantId: existingTenant.id } });
+      return {
+        tenantId: existingTenant.id,
+        slug: existingTenant.slug,
+        name: existingTenant.name,
+        planId: existingTenant.planId,
+        status: existingTenant.status,
+        subdomainUrl: `https://${existingTenant.slug}.${this.baseDomain}`,
+        inviteUrl: '',
+        inviteToken: '',
+        expiresAt: new Date(Date.now() + 72 * 3600 * 1000).toISOString(),
+        branchId: branch?.id || `branch_${cleanSlug}_main`,
+        tableCount,
+      };
     }
 
     // 3. Cryptographic single-use invite token
@@ -223,12 +254,14 @@ export class TenantProvisioningService {
           id: tenantId,
           name: restaurantName,
           slug: cleanSlug,
-          status: 'trial',
+          status: input.status || 'active',
           planId,
-          orbitoxProjectId: `restaurant-os-${cleanSlug}`,
+          orbitoxProjectId: input.tenantId || `restaurant-os-${cleanSlug}`,
           currency,
           timezone,
           gstin: input.gstin ? input.gstin.trim() : null,
+          entitlementRevision: input.entitlementRevision || 1,
+          lastLifecycleKey: input.idempotencyKey || null,
           onboardingState: {
             checklist: {
               setBranding: false,
@@ -299,10 +332,12 @@ export class TenantProvisioningService {
         },
       });
 
-      // 4d. Tables with unique QR locators
+      // 4d. Tables with random 256-bit QR tokens, stored as hashes only
       for (let i = 1; i <= template.defaultTableCount; i++) {
         const tableNum = `T-${i < 10 ? '0' + i : i}`;
-        const uniqueLocator = crypto.randomBytes(5).toString('base64url').slice(0, 8);
+        // Random 256-bit token for QR codes; only SHA-256 hash is stored
+        const rawTableToken = crypto.randomBytes(32).toString('base64url');
+        const tokenHash = crypto.createHash('sha256').update(`orbitox-table-token:v1:${rawTableToken}`).digest('hex');
         const col = (i - 1) % 4;
         const row = Math.floor((i - 1) / 4);
 
@@ -323,7 +358,7 @@ export class TenantProvisioningService {
             section: 'Main Dining Room',
             floorId,
             branchId,
-            locator: uniqueLocator,
+            locator: tokenHash,
             seats: generateSeats(4, i) as any,
           },
         });
@@ -411,7 +446,7 @@ export class TenantProvisioningService {
         data: {
           id: ownerStaffId,
           tenantId,
-          name: input.ownerName.trim(),
+          name: (input.ownerName || `${restaurantName} Owner`).trim(),
           role: 'OWNER',
           branchId,
           station: 'ALL',
@@ -677,6 +712,18 @@ export class TenantProvisioningService {
       currency?: string;
     }
   ): Promise<any> {
+    if (
+      updates.planId !== undefined &&
+      !SEED_PLANS.some(
+        (plan) =>
+          plan.planId === updates.planId &&
+          plan.pluginId === '@orbitox/restaurant' &&
+          plan.status === 'ACTIVE',
+      )
+    ) {
+      throw new Error(`Invalid RestaurantOS catalogue plan ID "${updates.planId}".`);
+    }
+
     return this.prisma.tenant.update({
       where: { id: tenantId },
       data: updates,

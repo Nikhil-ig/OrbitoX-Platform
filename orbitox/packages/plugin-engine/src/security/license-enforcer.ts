@@ -86,9 +86,13 @@ export class LicenseEnforcer {
     // 2. Check Expiration
     if (payload.expiresAt) {
       const expiry = new Date(payload.expiresAt).getTime();
-      const now = Date.now();
-      if (now > expiry) {
-        errors.push(`License expired on ${payload.expiresAt}`);
+      if (isNaN(expiry)) {
+        errors.push(`Invalid license expiration date format: "${payload.expiresAt}"`);
+      } else {
+        const now = Date.now();
+        if (now > expiry) {
+          errors.push(`License expired on ${payload.expiresAt}`);
+        }
       }
     }
 

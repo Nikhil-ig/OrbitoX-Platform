@@ -24,6 +24,7 @@ const navSections: NavSection[] = [
     title: 'Control Plane',
     items: [
       { id: 'overview', label: 'Overview', href: '/platform' },
+      { id: 'tenants', label: 'Tenants & Wizard', href: '/platform/tenants' },
       { id: 'restaurants', label: 'Restaurants', href: '/platform/restaurants' },
       { id: 'fleet', label: 'Fleet', href: '/platform/fleet' },
       { id: 'plans', label: 'Plans & Catalog', href: '/platform/plans' },

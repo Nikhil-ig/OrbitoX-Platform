@@ -14,6 +14,7 @@
 
 import * as http from 'http';
 import * as url from 'url';
+import { EventEmitter } from 'events';
 import { DomainEvent } from '../storage';
 import { resolveAllowedOrigin } from './security';
 import { tryGetActiveTenant } from './tenancy';
@@ -34,12 +35,13 @@ export interface ClientConnectionInfo {
   token?: string;
 }
 
-export class RealtimeEventBus {
+export class RealtimeEventBus extends EventEmitter {
   // Keyed by tenantId -> Map of active client responses
   private tenantClients: Map<string, Map<http.ServerResponse, ClientConnectionInfo>> = new Map();
   private pingInterval: NodeJS.Timeout | null = null;
 
   constructor() {
+    super();
     this.startHeartbeat();
   }
 
@@ -88,7 +90,7 @@ export class RealtimeEventBus {
       if (identity.tableNumber) scope.tableNumber = identity.tableNumber;
       if (identity.sessionId) scope.sessionId = identity.sessionId;
       if (identity.branchId) scope.branchId = identity.branchId;
-    } else if (identity && (identity.type === 'STAFF' || identity.type === 'ADMIN')) {
+    } else if (identity && (identity.type === 'STAFF' || identity.type === 'ADMIN' || identity.type === 'PLATFORM_BRIDGE')) {
       if (identity.branchId && identity.branchId !== '*') {
         scope.branchId = identity.branchId;
       }
@@ -159,6 +161,11 @@ export class RealtimeEventBus {
   }
 
   public broadcast(event: DomainEvent): void {
+    try {
+      this.emit(event.type, event);
+      this.emit('*', event);
+    } catch {}
+
     const eventTenantId = event.tenantId || (event.payload && event.payload.tenantId);
     if (!eventTenantId) {
       // Fail closed: Do NOT broadcast events without an identifiable tenantId
@@ -291,7 +298,7 @@ export class RealtimeEventBus {
     }
 
     // 2. Staff branch filtering
-    if (identity && (identity.type === 'STAFF' || identity.type === 'ADMIN')) {
+    if (identity && (identity.type === 'STAFF' || identity.type === 'ADMIN' || identity.type === 'PLATFORM_BRIDGE')) {
       if (identity.branchId && identity.branchId !== '*' && event.branchId) {
         if (event.branchId !== identity.branchId) {
           return false;

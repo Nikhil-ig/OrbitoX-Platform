@@ -80,7 +80,7 @@ export class RestaurantControlBridge {
     this.manifest = options?.manifest || {
       projectId,
       slug,
-      name: baseManifest.name || `RestaurantOS (${tenant.tenantName})`,
+      name: baseManifest.name || (tenant ? `RestaurantOS (${tenant.tenantName})` : 'RestaurantOS (Fleet)'),
       version: baseManifest.version || '1.0.0',
       type: 'restaurant-os',
       runtime: {

@@ -1,5 +1,5 @@
 import { Module } from '@nestjs/common';
-import { EventsModule } from '@orbitox/core';
+import { EventsModule } from '@orbitox-io/core';
 import { NotificationService } from './notification.service';
 import { TemplateService } from './template.service';
 import { SendGridAdapter } from './providers/sendgrid.adapter';
