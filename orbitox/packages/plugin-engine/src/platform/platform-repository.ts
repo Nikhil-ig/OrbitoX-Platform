@@ -829,8 +829,7 @@ export class PlatformRepository {
     const orgSlug = org.slug;
     const canonicalTenantId = TENANT_RE.test(slug)
       ? slug
-      : `org/${org.id}/project/${project.id}/environment/${prodEnv.id}`;
-    const runtimeSlugTenantId = `org/${orgSlug}/project/${slug}/environment/production`;
+      : `org/${orgSlug}/project/${slug}/environment/production`;
 
     // Part A: Create PluginInstallation rows ONLY from an explicit entitlement or plan
     // Remove the businessModel guessing; a business type never grants a plugin.
@@ -840,7 +839,7 @@ export class PlatformRepository {
         this.provisionPluginInstallation({
           tenantId: canonicalTenantId,
           pluginId: canonical,
-          runtimeTenantId: runtimeSlugTenantId,
+          runtimeTenantId: canonicalTenantId,
           status: (input.status as any) || 'ACTIVE',
           planId: p.planId || undefined,
           config: p.config || {},
@@ -857,7 +856,7 @@ export class PlatformRepository {
           this.provisionPluginInstallation({
             tenantId: canonicalTenantId,
             pluginId: canonical,
-            runtimeTenantId: runtimeSlugTenantId,
+            runtimeTenantId: canonicalTenantId,
             status: (input.status as any) || 'ACTIVE',
             planId: undefined,
             config: {},
