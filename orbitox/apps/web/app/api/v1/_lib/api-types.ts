@@ -51,6 +51,7 @@ export interface ApiRequestContext {
   capabilities?: string[];
   projectId?: string;
   environmentId?: string;
+  grant?: any;
   clientIp: string;
   userAgent: string;
   requestId: string;

@@ -22,7 +22,7 @@ import {
   PLAN_DEFAULT_QUOTAS,
   verifyGrant,
   getPublicGrantKeys,
-  EntitlementClaims,
+  type EntitlementClaims,
 } from '@orbitox-io/plugin-engine';
 import { platformRepository } from '@/lib/platform-repository';
 import type { PlatformProject } from '@orbitox/types';
@@ -1079,30 +1079,33 @@ export function withApiGuard<T = any>(
         req.headers.get('x-entitlement-grant') ||
         undefined;
 
-      grantStatus =
-        (req as any).grant?.status ||
-        (req as any).claims?.status ||
-        req.headers.get('x-orbitox-billing-state')?.toUpperCase();
-
-      if (!grantStatus && grantToken) {
-        try {
-          const canonicalService = serviceId.startsWith('@') ? serviceId : `@orbitox/${serviceId}`;
-          const claims = await verifyGrant<EntitlementClaims>(grantToken, {
-            type: 'orbitox-ent',
-            audience: canonicalService,
-            trustedKeys: getPublicGrantKeys(),
-          });
-          grantStatus = claims.status;
-        } catch {
+      if (grantToken) {
+        const candidateAudiences = [
+          serviceId.startsWith('@') ? serviceId : `@orbitox/${serviceId}`,
+          serviceId.startsWith('@') ? serviceId : `@orbitox-io/${serviceId}`,
+          serviceId,
+        ];
+        for (const aud of candidateAudiences) {
           try {
             const claims = await verifyGrant<EntitlementClaims>(grantToken, {
               type: 'orbitox-ent',
-              audience: serviceId,
+              audience: aud,
               trustedKeys: getPublicGrantKeys(),
             });
             grantStatus = claims.status;
-          } catch {}
+            (req as any).grant = claims;
+            break;
+          } catch {
+            // try next candidate audience
+          }
         }
+      }
+
+      if (!grantStatus) {
+        grantStatus =
+          (req as any).grant?.status ||
+          (req as any).claims?.status ||
+          req.headers.get('x-orbitox-billing-state')?.toUpperCase();
       }
 
       if (grantStatus) {
@@ -1288,6 +1291,7 @@ export function withApiGuard<T = any>(
       capabilities: matchedKey?.capabilities || matchedKey?.scopes || ['*'],
       projectId: project?.id,
       environmentId: matchedKey?.environmentId,
+      grant: (req as any).grant,
       clientIp,
       userAgent,
       requestId,
