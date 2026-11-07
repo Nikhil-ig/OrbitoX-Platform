@@ -15,9 +15,35 @@ describe('Phase 6 entitlement grant construction', () => {
 
   it('refuses unknown, bare, and mismatched plans instead of guessing or using a seed plan', async () => {
     const id = crypto.randomUUID().replaceAll('-', '');
-    for (const [index, planId] of [`unknown-${id}`, 'starter', 'restaurant-starter'].entries()) {
+    const isPrisma = process.env.ORBITOX_PLATFORM_REPOSITORY === 'prisma';
+
+    const testCases = [
+      { planId: `unknown-${id}`, expectedPattern: /PluginInstallation_planId_fkey/ },
+      { planId: 'starter', expectedPattern: /PluginInstallation_planId_fkey/ },
+      {
+        planId: 'restaurant-starter',
+        expectedPattern: /Plan restaurant-starter belongs to plugin @orbitox\/restaurant, not installation plugin @orbitox\/hms/,
+      },
+    ];
+
+    for (const [index, { planId, expectedPattern }] of testCases.entries()) {
       const tenantId = `org/org_${id}/project/project_${id}_${index}/environment/environment_${id}`;
-      try {
+
+      if (isPrisma) {
+        await assert.rejects(
+          platformRepository.provisionPluginInstallation({
+            tenantId,
+            runtimeTenantId: tenantId,
+            pluginId: '@orbitox/hms',
+            status: 'ACTIVE',
+            planId,
+          }),
+          (err: any) => {
+            const errString = String(err?.message || err || '');
+            return expectedPattern.test(errString);
+          },
+        );
+      } else {
         await platformRepository.provisionPluginInstallation({
           tenantId,
           runtimeTenantId: tenantId,
@@ -25,8 +51,6 @@ describe('Phase 6 entitlement grant construction', () => {
           status: 'ACTIVE',
           planId,
         });
-      } catch (err: any) {
-        // In PostgreSQL / Prisma, foreign key constraints or triggers reject invalid plans immediately at DB level
       }
 
       assert.equal(await fetchGrantForService(tenantId, '@orbitox/hms'), null);
