@@ -591,6 +591,31 @@ export async function runPlatformJsonImporter(
                     updatedAt: proj.updatedAt ? new Date(proj.updatedAt) : new Date(),
                   },
                 });
+
+                const canonicalTenantId = `org/${orgRecord.slug}/project/${proj.slug}/environment/production`;
+                const projectServices = Array.isArray(proj.enabledServices) ? proj.enabledServices : [];
+                for (const s of projectServices) {
+                  const canonical = s.startsWith('@') ? s : `@orbitox/${s}`;
+                  if (['@orbitox/restaurant', '@orbitox/hms', '@orbitox/crm', '@orbitox/pos'].includes(canonical)) {
+                    const existingInst = await tx.pluginInstallation.findFirst({
+                      where: { tenantId: canonicalTenantId, pluginId: canonical },
+                    });
+                    if (!existingInst) {
+                      await tx.pluginInstallation.create({
+                        data: {
+                          id: `pinst_${crypto.randomUUID()}`,
+                          tenantId: canonicalTenantId,
+                          pluginId: canonical,
+                          runtimeTenantId: canonicalTenantId,
+                          status: 'ACTIVE',
+                          planId: null,
+                          config: {},
+                        },
+                      });
+                    }
+                  }
+                }
+
                 projectsImportedInOrg++;
                 recon.projects.inserted++;
               }

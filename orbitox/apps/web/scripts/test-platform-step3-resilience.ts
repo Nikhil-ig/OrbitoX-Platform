@@ -40,7 +40,41 @@ function boundedUrl(connectionString: string): string {
   return url.toString();
 }
 
-const owner = new PrismaClient({ datasources: { db: { url: boundedUrl(databaseUrl) } } });
+const rawOwner = new PrismaClient({ datasources: { db: { url: boundedUrl(databaseUrl) } } });
+const owner = rawOwner.$extends({
+  query: {
+    platformProject: {
+      async create({ args, query }) {
+        const result = await query(args);
+        const data = args.data as any;
+        const services = Array.isArray(data.enabledServices) ? data.enabledServices : [];
+        if (services.length > 0) {
+          const org = await rawOwner.platformOrganization.findFirst({
+            where: { OR: [{ id: data.organizationId }, { slug: data.organizationId }] },
+          });
+          const orgSlug = org?.slug || data.organizationId;
+          const envSlug = data.environments?.create?.[0]?.slug || 'production';
+          const canonicalTenantId = `org/${orgSlug}/project/${data.slug}/environment/${envSlug}`;
+          for (const s of services) {
+            const canonical = s.startsWith('@') ? s : `@orbitox/${s}`;
+            await rawOwner.pluginInstallation.create({
+              data: {
+                id: `pinst_${randomUUID()}`,
+                tenantId: canonicalTenantId,
+                pluginId: canonical,
+                runtimeTenantId: canonicalTenantId,
+                status: 'ACTIVE',
+                planId: null,
+                config: {},
+              },
+            }).catch(() => {});
+          }
+        }
+        return result;
+      },
+    },
+  },
+}) as unknown as PrismaClient;
 const runtime = new PrismaClient({ datasources: { db: { url: boundedUrl(runtimeUrl) } } });
 const audit = new PrismaClient({ datasources: { db: { url: boundedUrl(auditUrl) } } });
 const maintenance = new PrismaClient({ datasources: { db: { url: boundedUrl(maintenanceUrl) } } });

@@ -5,16 +5,18 @@ import { NextRequest, NextResponse } from 'next/server';
 import { withApiGuard } from '../app/api/v1/_lib/api-guard';
 import { platformRepository } from '../lib/platform-repository';
 import { prisma } from '../lib/prisma';
-import { createEntitlementGrantToken } from '@orbitox-io/plugin-engine';
+import { createEntitlementGrantToken, PlatformRepository } from '@orbitox-io/plugin-engine';
 
 describe('withApiGuard Billing State Enforcement & Query Budget', () => {
   let createdOrgId: string;
   let createdProjectId: string;
+  let envId: string;
   let apiKeySecret: string;
   let tenantId: string;
-  const suffix = crypto.randomUUID().slice(0, 8);
+  let suffix: string;
 
   beforeEach(async () => {
+    suffix = crypto.randomUUID().slice(0, 8);
     process.env.ORBITOX_SERVER_PEPPER = `test-pepper-${suffix}`;
     const org = await platformRepository.createOrganization({
       slug: `billing-test-org-${suffix}`,
@@ -37,7 +39,19 @@ describe('withApiGuard Billing State Enforcement & Query Budget', () => {
     });
     createdProjectId = proj.project.id;
     const env = proj.environments.find((e) => e.slug === 'production') || proj.environments[0]!;
+    envId = env.id;
     tenantId = `org/${org.slug}/project/${proj.project.slug}/environment/${env.slug}`;
+
+    const existingInst = await platformRepository.getPluginInstallation(tenantId, '@orbitox/crm');
+    if (!existingInst) {
+      await platformRepository.provisionPluginInstallation({
+        tenantId,
+        runtimeTenantId: tenantId,
+        pluginId: '@orbitox/crm',
+        status: 'ACTIVE',
+        planId: 'crm-starter',
+      });
+    }
 
     const key = await platformRepository.createApiKey({
       name: `Billing Test Key ${suffix}`,
@@ -54,24 +68,24 @@ describe('withApiGuard Billing State Enforcement & Query Budget', () => {
     // Clean up if needed
   });
 
-  it('enforces ACTIVE, READ_ONLY, and SUSPENDED from grant token with zero per-request billing queries', async () => {
+  it('enforces ACTIVE, READ_ONLY, and SUSPENDED server-side from installation status with zero billing queries', async () => {
     let billingSubscriptionQueries = 0;
     let planQueries = 0;
 
-    // Spy on prisma.billingSubscription.findFirst and prisma.plan.findUnique
     const originalFindFirst = prisma.billingSubscription.findFirst;
     const originalFindUnique = prisma.plan.findUnique;
 
-    (prisma.billingSubscription as any).findFirst = async (...args: any[]) => {
-      billingSubscriptionQueries += 1;
-      return originalFindFirst.apply(prisma.billingSubscription, args as any);
-    };
-    (prisma.plan as any).findUnique = async (...args: any[]) => {
-      planQueries += 1;
-      return originalFindUnique.apply(prisma.plan, args as any);
-    };
-
     try {
+      (prisma.billingSubscription as any).findFirst = async (...args: any[]) => {
+        billingSubscriptionQueries++;
+        return originalFindFirst ? (originalFindFirst as any).apply(prisma.billingSubscription, args) : null;
+      };
+
+      (prisma.plan as any).findUnique = async (...args: any[]) => {
+        planQueries++;
+        return originalFindUnique ? (originalFindUnique as any).apply(prisma.plan, args) : null;
+      };
+
       const getHandler = withApiGuard(
         { serviceId: 'crm', serviceName: 'CRM Service', requiredScopes: ['crm:read'] },
         async (_req, ctx) => NextResponse.json({ success: true, method: 'GET', tenantId: ctx.tenantId }),
@@ -82,7 +96,70 @@ describe('withApiGuard Billing State Enforcement & Query Budget', () => {
         async (_req, ctx) => NextResponse.json({ success: true, method: 'POST', tenantId: ctx.tenantId }),
       );
 
-      const activeToken = createEntitlementGrantToken({
+      // 1. ACTIVE: GET allowed (200), POST allowed (200) without any grant header
+      const activeGetRes = await getHandler(
+        new NextRequest('http://localhost/api/v1/crm/leads', {
+          method: 'GET',
+          headers: { 'x-api-key': apiKeySecret },
+        }),
+      );
+      assert.equal(activeGetRes.status, 200);
+
+      const activePostRes = await postHandler(
+        new NextRequest('http://localhost/api/v1/crm/leads', {
+          method: 'POST',
+          headers: { 'x-api-key': apiKeySecret },
+        }),
+      );
+      assert.equal(activePostRes.status, 200);
+
+      // 2. READ_ONLY installation, no grant header: POST -> 402, GET -> 200
+      await platformRepository.updatePluginInstallationStatus(tenantId, '@orbitox/crm', 'READ_ONLY');
+
+      const roGetRes = await getHandler(
+        new NextRequest('http://localhost/api/v1/crm/leads', {
+          method: 'GET',
+          headers: { 'x-api-key': apiKeySecret },
+        }),
+      );
+      assert.equal(roGetRes.status, 200);
+
+      const roPostRes = await postHandler(
+        new NextRequest('http://localhost/api/v1/crm/leads', {
+          method: 'POST',
+          headers: { 'x-api-key': apiKeySecret },
+        }),
+      );
+      assert.equal(roPostRes.status, 402);
+      assert.equal(roPostRes.headers.get('x-orbitox-billing-state'), 'read_only');
+      const roBody = await roPostRes.json();
+      assert.equal(roBody.error?.code, 'PAYMENT_REQUIRED');
+
+      // 3. SUSPENDED installation, no grant header: GET -> 402, POST -> 402
+      await platformRepository.updatePluginInstallationStatus(tenantId, '@orbitox/crm', 'SUSPENDED');
+
+      const suspGetRes = await getHandler(
+        new NextRequest('http://localhost/api/v1/crm/leads', {
+          method: 'GET',
+          headers: { 'x-api-key': apiKeySecret },
+        }),
+      );
+      assert.equal(suspGetRes.status, 402);
+      assert.equal(suspGetRes.headers.get('x-orbitox-billing-state'), 'suspended');
+      const suspGetBody = await suspGetRes.json();
+      assert.equal(suspGetBody.error?.code, 'PAYMENT_REQUIRED');
+
+      const suspPostRes = await postHandler(
+        new NextRequest('http://localhost/api/v1/crm/leads', {
+          method: 'POST',
+          headers: { 'x-api-key': apiKeySecret },
+        }),
+      );
+      assert.equal(suspPostRes.status, 402);
+      assert.equal(suspPostRes.headers.get('x-orbitox-billing-state'), 'suspended');
+
+      // 4. Client sending a forged or ACTIVE grant header for a SUSPENDED installation -> still 402 (headers ignored)
+      const forgedActiveToken = createEntitlementGrantToken({
         tenantId,
         pluginId: '@orbitox/crm',
         planId: 'crm-starter',
@@ -92,83 +169,32 @@ describe('withApiGuard Billing State Enforcement & Query Budget', () => {
         revision: 1,
       });
 
-      const readOnlyToken = createEntitlementGrantToken({
-        tenantId,
-        pluginId: '@orbitox/crm',
-        planId: 'crm-starter',
-        status: 'READ_ONLY',
-        features: ['*'],
-        quotas: {},
-        revision: 1,
-      });
-
-      const suspendedToken = createEntitlementGrantToken({
-        tenantId,
-        pluginId: '@orbitox/crm',
-        planId: 'crm-starter',
-        status: 'SUSPENDED',
-        features: ['*'],
-        quotas: {},
-        revision: 1,
-      });
-
-      // 1. ACTIVE: GET allowed (200), POST allowed (200)
-      const activeGetRes = await getHandler(
-        new NextRequest('http://localhost/api/v1/crm/leads', {
-          method: 'GET',
-          headers: { 'x-api-key': apiKeySecret, 'x-orbitox-grant': activeToken },
-        }),
-      );
-      assert.equal(activeGetRes.status, 200);
-
-      const activePostRes = await postHandler(
+      const forgedRes = await postHandler(
         new NextRequest('http://localhost/api/v1/crm/leads', {
           method: 'POST',
-          headers: { 'x-api-key': apiKeySecret, 'x-orbitox-grant': activeToken },
+          headers: {
+            'x-api-key': apiKeySecret,
+            'x-orbitox-grant': forgedActiveToken,
+            'x-grant-token': forgedActiveToken,
+            'x-orbitox-billing-state': 'ACTIVE',
+          },
         }),
       );
-      assert.equal(activePostRes.status, 200);
+      assert.equal(forgedRes.status, 402);
+      assert.equal(forgedRes.headers.get('x-orbitox-billing-state'), 'suspended');
 
-      // 2. READ_ONLY: GET allowed (200), POST blocked (402 PAYMENT_REQUIRED)
-      const roGetRes = await getHandler(
-        new NextRequest('http://localhost/api/v1/crm/leads', {
-          method: 'GET',
-          headers: { 'x-api-key': apiKeySecret, 'x-orbitox-grant': readOnlyToken },
-        }),
-      );
-      assert.equal(roGetRes.status, 200);
+      // 5. After subscription.charged -> the write works again (restored to ACTIVE server-side)
+      await platformRepository.updatePluginInstallationStatus(tenantId, '@orbitox/crm', 'ACTIVE');
 
-      const roPostRes = await postHandler(
-        new NextRequest('http://localhost/api/v1/crm/leads', {
-          method: 'POST',
-          headers: { 'x-api-key': apiKeySecret, 'x-orbitox-grant': readOnlyToken },
-        }),
-      );
-      assert.equal(roPostRes.status, 402);
-      assert.equal(roPostRes.headers.get('x-orbitox-billing-state'), 'read_only');
-      const roBody = await roPostRes.json();
-      assert.equal(roBody.error?.code, 'PAYMENT_REQUIRED');
-
-      // 3. SUSPENDED: GET blocked (402 PAYMENT_REQUIRED), POST blocked (402 PAYMENT_REQUIRED)
-      const suspGetRes = await getHandler(
-        new NextRequest('http://localhost/api/v1/crm/leads', {
-          method: 'GET',
-          headers: { 'x-api-key': apiKeySecret, 'x-orbitox-grant': suspendedToken },
-        }),
-      );
-      assert.equal(suspGetRes.status, 402);
-      assert.equal(suspGetRes.headers.get('x-orbitox-billing-state'), 'suspended');
-
-      const suspPostRes = await postHandler(
+      const restoredPostRes = await postHandler(
         new NextRequest('http://localhost/api/v1/crm/leads', {
           method: 'POST',
-          headers: { 'x-api-key': apiKeySecret, 'x-orbitox-grant': suspendedToken },
+          headers: { 'x-api-key': apiKeySecret },
         }),
       );
-      assert.equal(suspPostRes.status, 402);
-      assert.equal(suspPostRes.headers.get('x-orbitox-billing-state'), 'suspended');
+      assert.equal(restoredPostRes.status, 200);
 
-      // 4. Zero billing queries assertion: no findFirst or findUnique executed per-request
+      // 6. Zero per-request billing queries assertion
       assert.equal(
         billingSubscriptionQueries,
         0,
@@ -179,9 +205,75 @@ describe('withApiGuard Billing State Enforcement & Query Budget', () => {
         0,
         `Expected 0 plan queries in withApiGuard, got ${planQueries}`,
       );
+
+      // 7. A billable request without any header increments PlatformPluginUsage
+      if (platformRepository.isPrismaBacked()) {
+        const usageTenantId = `org/${createdOrgId}/project/${createdProjectId}/environment/${envId}`;
+        const usageRecords = await prisma.$transaction(async (tx) => {
+          await tx.$queryRaw`SELECT set_config('app.current_tenant_id', ${usageTenantId}, true)`;
+          return tx.platformPluginUsage.findMany({
+            where: { pluginId: 'crm', projectId: createdProjectId },
+          });
+        });
+        assert.ok(usageRecords.length > 0, 'Expected PlatformPluginUsage record to be created');
+        assert.ok(usageRecords[0]!.requestCount >= 1n, 'Expected PlatformPluginUsage requestCount to be incremented');
+      }
     } finally {
       prisma.billingSubscription.findFirst = originalFindFirst;
       prisma.plan.findUnique = originalFindUnique;
     }
+  });
+
+  it('refuses request when no installation exists or status is unknown for a plugin service', async () => {
+    // 1. Unknown status -> 402 PAYMENT_REQUIRED
+    if (platformRepository.isPrismaBacked()) {
+      await prisma.pluginInstallation.updateMany({
+        where: { tenantId, pluginId: { in: ['@orbitox/crm', 'crm'] } },
+        data: { status: 'UNKNOWN_STATUS' },
+      });
+    } else {
+      const allInst = (PlatformRepository as any).pluginInstallations || [];
+      const inst = allInst.find((p: any) => p.tenantId === tenantId && (p.pluginId === '@orbitox/crm' || p.pluginId === 'crm'));
+      if (inst) inst.status = 'UNKNOWN_STATUS';
+    }
+
+    const handler = withApiGuard(
+      { serviceId: 'crm', serviceName: 'CRM Service', requiredScopes: ['crm:read'] },
+      async (_req, ctx) => NextResponse.json({ success: true, tenantId: ctx.tenantId }),
+    );
+
+    const unknownRes = await handler(
+      new NextRequest('http://localhost/api/v1/crm/leads', {
+        method: 'GET',
+        headers: { 'x-api-key': apiKeySecret },
+      }),
+    );
+    assert.equal(unknownRes.status, 402);
+    const unknownBody = await unknownRes.json();
+    assert.equal(unknownBody.error?.code, 'PAYMENT_REQUIRED');
+    assert.equal(unknownRes.headers.get('x-orbitox-billing-state'), 'suspended');
+
+    // 2. Missing installation -> 402 PAYMENT_REQUIRED
+    if (platformRepository.isPrismaBacked()) {
+      await prisma.pluginInstallation.updateMany({
+        where: { tenantId, pluginId: { in: ['@orbitox/crm', 'crm'] } },
+        data: { tenantId: `${tenantId}-uninstalled` },
+      });
+    } else {
+      const allInst = (PlatformRepository as any).pluginInstallations || [];
+      const inst = allInst.find((p: any) => p.tenantId === tenantId && (p.pluginId === '@orbitox/crm' || p.pluginId === 'crm'));
+      if (inst) inst.tenantId = `${tenantId}-uninstalled`;
+    }
+
+    const missingRes = await handler(
+      new NextRequest('http://localhost/api/v1/crm/leads', {
+        method: 'GET',
+        headers: { 'x-api-key': apiKeySecret },
+      }),
+    );
+    assert.equal(missingRes.status, 402);
+    const missingBody = await missingRes.json();
+    assert.equal(missingBody.error?.code, 'PAYMENT_REQUIRED');
+    assert.equal(missingRes.headers.get('x-orbitox-billing-state'), 'suspended');
   });
 });

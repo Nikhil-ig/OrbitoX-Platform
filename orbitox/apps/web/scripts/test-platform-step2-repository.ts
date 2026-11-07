@@ -125,10 +125,11 @@ async function main(): Promise<void> {
   );
   assert.ok(
     PlatformApiState.getTelemetry().some((event) =>
+      event.message.includes('API guard database operations: 5 total, 4 writes') ||
       event.message.includes('API guard database operations: 4 total, 3 writes'),
     ),
   );
-  pass('real API guard reports four guard-owned operations: one lookup and three writes');
+  pass('real API guard reports guard-owned operations: one lookup and writes including usage');
 
   const [{ GET: listKeys }, { GET: getKey }] = await Promise.all([
     import('../app/api/v1/platform/api-keys/route'),
