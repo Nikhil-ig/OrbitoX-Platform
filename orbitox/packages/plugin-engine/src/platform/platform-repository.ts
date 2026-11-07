@@ -829,7 +829,8 @@ export class PlatformRepository {
     const orgSlug = org.slug;
     const canonicalTenantId = TENANT_RE.test(slug)
       ? slug
-      : `org/${orgSlug}/project/${slug}/environment/production`;
+      : `org/${org.id}/project/${project.id}/environment/${prodEnv.id}`;
+    const runtimeSlugTenantId = `org/${orgSlug}/project/${slug}/environment/production`;
 
     // Part A: Create PluginInstallation rows ONLY from an explicit entitlement or plan
     // Remove the businessModel guessing; a business type never grants a plugin.
@@ -839,7 +840,7 @@ export class PlatformRepository {
         this.provisionPluginInstallation({
           tenantId: canonicalTenantId,
           pluginId: canonical,
-          runtimeTenantId: canonicalTenantId,
+          runtimeTenantId: runtimeSlugTenantId,
           status: (input.status as any) || 'ACTIVE',
           planId: p.planId || undefined,
           config: p.config || {},
@@ -847,6 +848,7 @@ export class PlatformRepository {
       }
     }
 
+    // Explicit initial packages and enabled services provision plan-less installations without entitlement grants (matches Prisma repository).
     const explicitPackages = [...(input.initialPackages || []), ...(input.enabledServices || [])];
     for (const pkg of explicitPackages) {
       const canonical = canonicalizePluginId(pkg);
@@ -855,7 +857,7 @@ export class PlatformRepository {
           this.provisionPluginInstallation({
             tenantId: canonicalTenantId,
             pluginId: canonical,
-            runtimeTenantId: canonicalTenantId,
+            runtimeTenantId: runtimeSlugTenantId,
             status: (input.status as any) || 'ACTIVE',
             planId: undefined,
             config: {},
@@ -1381,6 +1383,11 @@ export class PlatformRepository {
       const proj = this.getProject(targetTenantId);
       const org = proj ? this.getOrganization(proj.organizationId) : undefined;
       if (proj && org) {
+        const prodEnv = this.environments.find((e) => e.projectId === proj.id && (e.isProduction || e.slug === 'production'));
+        if (prodEnv) {
+          candidateIds.add(`org/${org.id}/project/${proj.id}/environment/${prodEnv.id}`);
+          candidateIds.add(`org/${org.slug}/project/${proj.slug}/environment/${prodEnv.id}`);
+        }
         candidateIds.add(`org/${org.slug}/project/${proj.slug}/environment/production`);
         candidateIds.add(`org/${org.id}/project/${proj.id}/environment/production`);
       }
@@ -1388,7 +1395,7 @@ export class PlatformRepository {
 
     return this.pluginInstallations.find(
       (p) =>
-        candidateIds.has(p.tenantId) &&
+        (candidateIds.has(p.tenantId) || (p.runtimeTenantId && candidateIds.has(p.runtimeTenantId))) &&
         (canonicalizePluginId(p.pluginId) === canonical ||
           p.pluginId === pluginId ||
           p.pluginId === canonical.replace(/^@orbitox\//, ''))
