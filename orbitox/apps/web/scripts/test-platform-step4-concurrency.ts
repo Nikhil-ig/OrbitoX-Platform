@@ -328,6 +328,21 @@ async function main() {
   console.log('Goal: N quota billable requests: exactly N accepted, all others 429, ZERO overshoot (>=20 runs).');
   console.log('--------------------------------------------------------------------------------\n');
 
+  async function provisionActiveCrm(orgId: string, projectId: string, envId: string) {
+    const tenantId = `org/${orgId}/project/${projectId}/environment/${envId}`;
+    await owner.pluginInstallation.create({
+      data: {
+        id: `pinst_${crypto.randomUUID()}`,
+        tenantId,
+        pluginId: '@orbitox/crm',
+        runtimeTenantId: tenantId,
+        status: 'ACTIVE',
+        planId: null,
+        config: {},
+      },
+    });
+  }
+
   const QUOTA_N = 20;
   const CONCURRENT_REQUESTS = 50;
   const QUOTA_RUNS = 20;
@@ -369,6 +384,7 @@ async function main() {
         isProduction: true,
       },
     });
+    await provisionActiveCrm(org.id, project.id, env.id);
 
     const key = await owner.platformApiKey.create({
       data: {
@@ -421,6 +437,9 @@ async function main() {
     );
 
     // Clean up run project
+    await owner.pluginInstallation.deleteMany({
+      where: { tenantId: `org/${org.id}/project/${project.id}/environment/${env.id}` },
+    });
     await owner.platformApiKey.delete({ where: { id: key.id } });
     await owner.projectEnvironment.delete({ where: { id: env.id } });
     await owner.platformProject.delete({ where: { id: project.id } });
@@ -470,6 +489,7 @@ async function main() {
       isProduction: true,
     },
   });
+  await provisionActiveCrm(org.id, rlProject.id, rlEnv.id);
 
   const rlKey = await owner.platformApiKey.create({
     data: {
@@ -532,6 +552,7 @@ async function main() {
       isProduction: true,
     },
   });
+  await provisionActiveCrm(org.id, burstProject.id, burstEnv.id);
   const burstSecret = `orb_live_${crypto.randomBytes(24).toString('hex')}`;
   const burstPrefix = burstSecret.slice(0, 14);
   const burstKey = await owner.platformApiKey.create({
@@ -593,6 +614,7 @@ async function main() {
       isProduction: true,
     },
   });
+  await provisionActiveCrm(org.id, killProject.id, killEnv.id);
   const killSecret = `orb_live_${crypto.randomBytes(24).toString('hex')}`;
   const killPrefix = killSecret.slice(0, 14);
   const killKey = await owner.platformApiKey.create({
@@ -673,6 +695,7 @@ async function main() {
   const perKeyEnv = await owner.projectEnvironment.create({
     data: { name: 'Production', slug: 'production', projectId: perKeyProject.id, isProduction: true },
   });
+  await provisionActiveCrm(org.id, perKeyProject.id, perKeyEnv.id);
   const KEY_LIMIT_K = 10;
   const pkSecret = `orb_live_${crypto.randomBytes(24).toString('hex')}`;
   const pkPrefix = pkSecret.slice(0, 14);
@@ -732,6 +755,7 @@ async function main() {
   const comboEnv = await owner.projectEnvironment.create({
     data: { name: 'Production', slug: 'production', projectId: comboProject.id, isProduction: true },
   });
+  await provisionActiveCrm(org.id, comboProject.id, comboEnv.id);
   // Key A with strict limit = 5
   const keyASecret = `orb_live_${crypto.randomBytes(24).toString('hex')}`;
   const keyAPrefix = keyASecret.slice(0, 14);
@@ -822,6 +846,7 @@ async function main() {
   const ipEnv = await owner.projectEnvironment.create({
     data: { name: 'Production', slug: 'production', projectId: ipProject.id, isProduction: true },
   });
+  await provisionActiveCrm(org.id, ipProject.id, ipEnv.id);
   const ipSecret = `orb_live_${crypto.randomBytes(24).toString('hex')}`;
   const ipPrefix = ipSecret.slice(0, 14);
   const ipKey = await owner.platformApiKey.create({
@@ -1144,6 +1169,7 @@ async function main() {
       isProduction: true,
     },
   });
+  await provisionActiveCrm(org.id, benchProject.id, benchEnv.id);
 
   const benchKey = await owner.platformApiKey.create({
     data: {

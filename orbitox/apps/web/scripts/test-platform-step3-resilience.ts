@@ -421,6 +421,28 @@ async function main() {
     };
   }
 
+  async function createResilienceProject(data: any) {
+    const proj = await owner.platformProject.create({
+      data,
+      include: { environments: true },
+    });
+    for (const env of proj.environments || []) {
+      const tenantId = `org/${proj.organizationId}/project/${proj.id}/environment/${env.id}`;
+      await owner.pluginInstallation.create({
+        data: {
+          id: `pinst_${randomUUID()}`,
+          tenantId,
+          pluginId: '@orbitox/crm',
+          runtimeTenantId: tenantId,
+          status: 'ACTIVE',
+          planId: null,
+          config: {},
+        },
+      });
+    }
+    return proj;
+  }
+
   // 1.1 Key Creation
   {
     const suffix = randomUUID();
@@ -432,7 +454,7 @@ async function main() {
         billingEmail: `pr-${suffix}@example.com`,
       },
     });
-    const proj = await owner.platformProject.create({
+    const proj = await createResilienceProject({
       data: {
         id: `proj_pr_${suffix}`,
         slug: `proj-pr-${suffix}`,
@@ -506,7 +528,7 @@ async function main() {
         billingEmail: `rv-${suffix}@example.com`,
       },
     });
-    const proj = await owner.platformProject.create({
+    const proj = await createResilienceProject({
       data: {
         id: `proj_rv_${suffix}`,
         slug: `proj-rv-${suffix}`,
@@ -590,7 +612,7 @@ async function main() {
         billingEmail: `rot-${suffix}@example.com`,
       },
     });
-    const proj = await owner.platformProject.create({
+    const proj = await createResilienceProject({
       data: {
         id: `proj_rot_${suffix}`,
         slug: `proj-rot-${suffix}`,
@@ -697,7 +719,7 @@ async function main() {
         billingEmail: `grc-${suffix}@example.com`,
       },
     });
-    const proj = await owner.platformProject.create({
+    const proj = await createResilienceProject({
       data: {
         id: `proj_grc_${suffix}`,
         slug: `proj-grc-${suffix}`,
@@ -799,7 +821,7 @@ async function main() {
           billingEmail: `susp-${suffix}-${i}@example.com`,
         },
       });
-      const proj = await owner.platformProject.create({
+      const proj = await createResilienceProject({
         data: {
           id: `proj_susp_${suffix}_${i}`,
           slug: `proj-susp-${suffix}-${i}`,
@@ -884,7 +906,7 @@ async function main() {
           billingEmail: `ent-${suffix}-${i}@example.com`,
         },
       });
-      const proj = await owner.platformProject.create({
+      const proj = await createResilienceProject({
         data: {
           id: `proj_ent_${suffix}_${i}`,
           slug: `proj-ent-${suffix}-${i}`,
@@ -969,7 +991,7 @@ async function main() {
           billingEmail: `qta-${suffix}-${i}@example.com`,
         },
       });
-      const proj = await owner.platformProject.create({
+      const proj = await createResilienceProject({
         data: {
           id: `proj_qta_${suffix}_${i}`,
           slug: `proj-qta-${suffix}-${i}`,
@@ -1056,7 +1078,7 @@ async function main() {
           billingEmail: `usg-${suffix}-${i}@example.com`,
         },
       });
-      const proj = await owner.platformProject.create({
+      const proj = await createResilienceProject({
         data: {
           id: `proj_usg_${suffix}_${i}`,
           slug: `proj-usg-${suffix}-${i}`,
@@ -1322,7 +1344,7 @@ async function main() {
         billingEmail: `stall-rot-${suffix}@example.com`,
       },
     });
-    const proj = await owner.platformProject.create({
+    const proj = await createResilienceProject({
       data: {
         id: `proj_stall_rot_${suffix}`,
         slug: `proj-stall-rot-${suffix}`,
@@ -1512,7 +1534,7 @@ async function main() {
         billingEmail: `stall-usg-${suffix}@example.com`,
       },
     });
-    const proj = await owner.platformProject.create({
+    const proj = await createResilienceProject({
       data: {
         id: `proj_stall_usg_${suffix}`,
         slug: `proj-stall-usg-${suffix}`,
@@ -1802,7 +1824,7 @@ async function main() {
         billingEmail: `split-${suffix}@example.com`,
       },
     });
-    const proj = await owner.platformProject.create({
+    const proj = await createResilienceProject({
       data: {
         id: `proj_split_${suffix}`,
         slug: `proj-split-${suffix}`,
@@ -2172,7 +2194,7 @@ async function main() {
         billingEmail: `dbfail-${suffix}@example.com`,
       },
     });
-    const proj = await owner.platformProject.create({
+    const proj = await createResilienceProject({
       data: {
         id: `proj_dbfail_${suffix}`,
         slug: `proj-dbfail-${suffix}`,

@@ -592,26 +592,30 @@ export async function runPlatformJsonImporter(
                   },
                 });
 
-                const canonicalTenantId = `org/${orgRecord.slug}/project/${proj.slug}/environment/production`;
+                const projectEnvs = orgEnvs.filter((e) => e.projectId === proj.id);
+                const envsToSeed = projectEnvs.length > 0 ? projectEnvs : [{ id: 'production' }];
                 const projectServices = Array.isArray(proj.enabledServices) ? proj.enabledServices : [];
-                for (const s of projectServices) {
-                  const canonical = s.startsWith('@') ? s : `@orbitox/${s}`;
-                  if (['@orbitox/restaurant', '@orbitox/hms', '@orbitox/crm', '@orbitox/pos'].includes(canonical)) {
-                    const existingInst = await tx.pluginInstallation.findFirst({
-                      where: { tenantId: canonicalTenantId, pluginId: canonical },
-                    });
-                    if (!existingInst) {
-                      await tx.pluginInstallation.create({
-                        data: {
-                          id: `pinst_${crypto.randomUUID()}`,
-                          tenantId: canonicalTenantId,
-                          pluginId: canonical,
-                          runtimeTenantId: canonicalTenantId,
-                          status: 'ACTIVE',
-                          planId: null,
-                          config: {},
-                        },
+                for (const envItem of envsToSeed) {
+                  const canonicalTenantId = `org/${orgRecord.id}/project/${proj.id}/environment/${envItem.id}`;
+                  for (const s of projectServices) {
+                    const canonical = s.startsWith('@') ? s : `@orbitox/${s}`;
+                    if (['@orbitox/restaurant', '@orbitox/hms', '@orbitox/crm', '@orbitox/pos'].includes(canonical)) {
+                      const existingInst = await tx.pluginInstallation.findFirst({
+                        where: { tenantId: canonicalTenantId, pluginId: canonical },
                       });
+                      if (!existingInst) {
+                        await tx.pluginInstallation.create({
+                          data: {
+                            id: `pinst_${crypto.randomUUID()}`,
+                            tenantId: canonicalTenantId,
+                            pluginId: canonical,
+                            runtimeTenantId: canonicalTenantId,
+                            status: 'ACTIVE',
+                            planId: null,
+                            config: {},
+                          },
+                        });
+                      }
                     }
                   }
                 }

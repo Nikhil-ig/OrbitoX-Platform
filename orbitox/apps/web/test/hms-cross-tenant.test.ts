@@ -487,6 +487,22 @@ describe('HospitalOS & HMS Cross-Tenant Generator Suite (Phase 2b-3)', () => {
     });
     apiKeySecret = crossKeyRes.rawSecret;
 
+    // Phase 6C-6E fail-closed billing: provision active installations for test tenants
+    await platformRepository.provisionPluginInstallation({
+      tenantId: TENANT_A,
+      runtimeTenantId: TENANT_A,
+      pluginId: '@orbitox/hms',
+      status: 'ACTIVE',
+      planId: 'hms-starter',
+    });
+    await platformRepository.provisionPluginInstallation({
+      tenantId: TENANT_B,
+      runtimeTenantId: TENANT_B,
+      pluginId: '@orbitox/hms',
+      status: 'ACTIVE',
+      planId: 'hms-starter',
+    });
+
     // Seed Tenant B
     await withTenantTx(pool, TENANT_B, async (tx) => {
       // Seed Dept, Ward, Bed
