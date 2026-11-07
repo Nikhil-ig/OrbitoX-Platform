@@ -231,9 +231,15 @@ describe('withApiGuard Billing State Enforcement & Query Budget', () => {
         data: { tenantId: `${tenantId}-uninstalled`, runtimeTenantId: `${tenantId}-uninstalled` },
       });
     } else {
-      const allInst = (PlatformRepository as any).pluginInstallations || [];
-      const idx = allInst.findIndex((p: any) => p.tenantId === tenantId && p.pluginId === '@orbitox/crm');
-      if (idx !== -1) allInst.splice(idx, 1);
+      const allInst: any[] = (PlatformRepository as any).pluginInstallations || [];
+      const toRemove = allInst.filter((p: any) =>
+        (p.tenantId === tenantId || p.tenantId?.includes(createdProjectId) || p.tenantId?.includes(suffix)) &&
+        (p.pluginId === '@orbitox/crm' || p.pluginId === 'crm')
+      );
+      for (const inst of toRemove) {
+        const idx = allInst.indexOf(inst);
+        if (idx !== -1) allInst.splice(idx, 1);
+      }
     }
 
     const handler = withApiGuard(

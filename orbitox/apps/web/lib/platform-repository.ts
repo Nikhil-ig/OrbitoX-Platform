@@ -2608,8 +2608,13 @@ const extraMethods = {
         const targetTenantId = typeof serviceOrOptions === 'object' ? serviceOrOptions?.tenantId : undefined;
         if (serviceId && !['system', 'admin', 'platform'].includes(serviceId) && project) {
             const canonical = canonicalizePluginId(serviceId);
+            const org = PlatformRepository.getOrganization(project.organizationId);
             const keyTenantId = `org/${project.organizationId}/project/${project.id}/environment/${environment?.id || 'production'}`;
+            const slugTenantId = org
+                ? `org/${org.slug}/project/${project.slug}/environment/${environment?.slug || 'production'}`
+                : `org/${project.organizationId}/project/${project.slug}/environment/${environment?.slug || 'production'}`;
             let reqTenantId: string | null = keyTenantId;
+            let reqSlugTenantId: string | null = slugTenantId;
             if (targetTenantId) {
                 const allowedTenantScope: string[] = key?.tenantScope || [];
                 const isPermitted =
@@ -2619,17 +2624,22 @@ const extraMethods = {
                     targetTenantId === project.id;
                 if (!isPermitted) {
                     reqTenantId = null;
+                    reqSlugTenantId = null;
                 } else if (targetTenantId === project.slug || targetTenantId === project.id) {
                     reqTenantId = keyTenantId;
+                    reqSlugTenantId = slugTenantId;
                 } else {
                     reqTenantId = targetTenantId;
+                    reqSlugTenantId = null;
                 }
             }
             if (reqTenantId) {
                 const allInst = PlatformRepository.listPluginInstallations();
                 const matchedInst = allInst.filter(
                     (p) => canonicalizePluginId(p.pluginId) === canonical &&
-                           (p.tenantId === reqTenantId || p.runtimeTenantId === reqTenantId)
+                           (p.tenantId === reqTenantId ||
+                            p.runtimeTenantId === reqTenantId ||
+                            (reqSlugTenantId && (p.tenantId === reqSlugTenantId || p.runtimeTenantId === reqSlugTenantId)))
                 );
                 if (matchedInst.length > 0) {
                     const rank = (s: string) => {

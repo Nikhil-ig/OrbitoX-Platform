@@ -422,7 +422,7 @@ async function main() {
   }
 
   async function createResilienceProject(args: any) {
-    const proj = await owner.platformProject.create({
+    const proj: any = await owner.platformProject.create({
       ...args,
       include: { environments: true },
     });
