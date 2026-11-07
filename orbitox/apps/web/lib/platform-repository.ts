@@ -797,7 +797,8 @@ export function createPrismaPlatformRepository(
                     throw error;
                 }
 
-                const canonicalTenantId = `org/${org.slug}/project/${slug}/environment/production`;
+                const prodEnv = row.environments.find((e) => e.slug === 'production') || row.environments[0]!;
+                const canonicalTenantId = `org/${org.id}/project/${row.id}/environment/${prodEnv.id}`;
 
                 // Rule 1: Create PluginInstallation rows ONLY from an explicit plugin/entitlement/plan request.
                 // Remove businessModel guessing completely. A business type never grants a plugin.
@@ -1265,10 +1266,6 @@ export function createPrismaPlatformRepository(
 
             if (isPluginService) {
                 const canonical = canonicalizePluginId(serviceId);
-                const rawService = serviceId;
-                const shortService = canonical.replace(/^@orbitox\//, '');
-                const ioService = `@orbitox-io/${shortService}`;
-                const pluginCandidates = [canonical, rawService, shortService, ioService];
 
                 rows = await client.$queryRaw<Array<{ key_data: RawRow; project_data: RawRow; environment_data: RawRow; installation_status?: string | null }>>`
                     SELECT to_jsonb(k) AS key_data,
@@ -1278,38 +1275,52 @@ export function createPrismaPlatformRepository(
                     FROM "PlatformApiKey" k
                     JOIN "ProjectEnvironment" e ON e."id" = k."environmentId"
                     JOIN "PlatformProject" p ON p."id" = e."projectId"
-                    LEFT JOIN "PlatformOrganization" o ON o."id" = p."organizationId"
                     LEFT JOIN LATERAL (
                         SELECT pi."status"
                         FROM "PluginInstallation" pi
-                        WHERE pi."pluginId" = ANY(${pluginCandidates}::text[])
+                        WHERE pi."pluginId" = ${canonical}
                           AND (
-                              pi."tenantId" = 'org/' || p."organizationId" || '/project/' || p."id" || '/environment/' || e."id"
-                              OR pi."tenantId" = 'org/' || COALESCE(o."slug", p."organizationId") || '/project/' || p."slug" || '/environment/' || e."slug"
-                              OR pi."tenantId" = 'org/' || p."organizationId" || '/project/' || p."slug" || '/environment/' || e."slug"
-                              OR pi."tenantId" = 'org/' || COALESCE(o."slug", p."organizationId") || '/project/' || p."id" || '/environment/' || e."id"
-                              OR pi."tenantId" = 'org/' || COALESCE(o."slug", p."organizationId") || '/project/' || p."slug" || '/environment/production'
-                              OR pi."tenantId" = 'org/' || p."organizationId" || '/project/' || p."id" || '/environment/production'
-                              OR pi."tenantId" = p."id"
-                              OR pi."tenantId" = p."slug"
-                              OR (k."tenantScope" IS NOT NULL AND pi."tenantId" = ANY(k."tenantScope"))
-                              OR pi."runtimeTenantId" = 'org/' || p."organizationId" || '/project/' || p."id" || '/environment/' || e."id"
-                              OR pi."runtimeTenantId" = 'org/' || COALESCE(o."slug", p."organizationId") || '/project/' || p."slug" || '/environment/' || e."slug"
-                              OR pi."runtimeTenantId" = 'org/' || p."organizationId" || '/project/' || p."slug" || '/environment/' || e."slug"
-                              OR pi."runtimeTenantId" = 'org/' || COALESCE(o."slug", p."organizationId") || '/project/' || p."id" || '/environment/' || e."id"
-                              OR pi."runtimeTenantId" = 'org/' || COALESCE(o."slug", p."organizationId") || '/project/' || p."slug" || '/environment/production'
-                              OR pi."runtimeTenantId" = 'org/' || p."organizationId" || '/project/' || p."id" || '/environment/production'
-                              OR pi."runtimeTenantId" = p."id"
-                              OR pi."runtimeTenantId" = p."slug"
-                              OR (k."tenantScope" IS NOT NULL AND pi."runtimeTenantId" = ANY(k."tenantScope"))
-                              ${targetTenantId ? Prisma.sql`OR pi."tenantId" = ${targetTenantId} OR pi."runtimeTenantId" = ${targetTenantId}` : Prisma.empty}
+                              pi."tenantId" = CASE
+                                  WHEN ${targetTenantId ? true : false} THEN
+                                      CASE
+                                          WHEN NOT (
+                                              k."tenantScope" IS NOT NULL AND (
+                                                  '*' = ANY(k."tenantScope")
+                                                  OR ${targetTenantId || ''} = ANY(k."tenantScope")
+                                                  OR ${targetTenantId || ''} = p."slug"
+                                                  OR ${targetTenantId || ''} = p."id"
+                                              )
+                                          ) THEN NULL
+                                          WHEN ${targetTenantId || ''} = p."slug" OR ${targetTenantId || ''} = p."id"
+                                              THEN 'org/' || p."organizationId" || '/project/' || p."id" || '/environment/' || e."id"
+                                          ELSE ${targetTenantId || ''}
+                                      END
+                                  ELSE 'org/' || p."organizationId" || '/project/' || p."id" || '/environment/' || e."id"
+                              END
+                              OR pi."runtimeTenantId" = CASE
+                                  WHEN ${targetTenantId ? true : false} THEN
+                                      CASE
+                                          WHEN NOT (
+                                              k."tenantScope" IS NOT NULL AND (
+                                                  '*' = ANY(k."tenantScope")
+                                                  OR ${targetTenantId || ''} = ANY(k."tenantScope")
+                                                  OR ${targetTenantId || ''} = p."slug"
+                                                  OR ${targetTenantId || ''} = p."id"
+                                              )
+                                          ) THEN NULL
+                                          WHEN ${targetTenantId || ''} = p."slug" OR ${targetTenantId || ''} = p."id"
+                                              THEN 'org/' || p."organizationId" || '/project/' || p."id" || '/environment/' || e."id"
+                                          ELSE ${targetTenantId || ''}
+                                      END
+                                  ELSE 'org/' || p."organizationId" || '/project/' || p."id" || '/environment/' || e."id"
+                              END
                           )
                         ORDER BY
                           CASE
-                            WHEN pi."status" = 'ACTIVE' THEN 1
+                            WHEN pi."status" = 'SUSPENDED' THEN 1
                             WHEN pi."status" = 'READ_ONLY' THEN 2
-                            WHEN pi."status" = 'SUSPENDED' THEN 3
-                            ELSE 4
+                            WHEN pi."status" = 'ACTIVE' THEN 3
+                            ELSE 0
                           END,
                           pi."updatedAt" DESC
                         LIMIT 1
@@ -2597,30 +2608,40 @@ const extraMethods = {
         const targetTenantId = typeof serviceOrOptions === 'object' ? serviceOrOptions?.tenantId : undefined;
         if (serviceId && !['system', 'admin', 'platform'].includes(serviceId) && project) {
             const canonical = canonicalizePluginId(serviceId);
-            const org = project.organizationId ? PlatformRepository.getOrganization(project.organizationId) : undefined;
-            const candidates = new Set<string>([
-                ...(targetTenantId ? [targetTenantId] : []),
-                ...(key?.tenantScope || []),
-                `org/${project.organizationId}/project/${project.id}/environment/${environment?.id || 'production'}`,
-                `org/${project.organizationId}/project/${project.slug}/environment/${environment?.slug || 'production'}`,
-                ...(org ? [
-                    `org/${org.slug}/project/${project.slug}/environment/${environment?.slug || 'production'}`,
-                    `org/${org.slug}/project/${project.id}/environment/${environment?.id || 'production'}`,
-                    `org/${org.slug}/project/${project.slug}/environment/production`,
-                    `org/${org.id}/project/${project.id}/environment/production`,
-                ] : []),
-                project.slug,
-                project.id,
-            ]);
-            const allInst = PlatformRepository.listPluginInstallations();
-            const matchedInst = allInst.filter(
-                (p) => (canonicalizePluginId(p.pluginId) === canonical || p.pluginId === serviceId) &&
-                       (candidates.has(p.tenantId) || (p.runtimeTenantId && candidates.has(p.runtimeTenantId)))
-            );
-            if (matchedInst.length > 0) {
-                const rank = (s: string) => s === 'ACTIVE' ? 1 : s === 'READ_ONLY' ? 2 : s === 'SUSPENDED' ? 3 : 4;
-                matchedInst.sort((a, b) => rank(a.status) - rank(b.status));
-                installationStatus = matchedInst[0]!.status;
+            const keyTenantId = `org/${project.organizationId}/project/${project.id}/environment/${environment?.id || 'production'}`;
+            let reqTenantId: string | null = keyTenantId;
+            if (targetTenantId) {
+                const allowedTenantScope: string[] = key?.tenantScope || [];
+                const isPermitted =
+                    (allowedTenantScope.length > 0 &&
+                        (allowedTenantScope.includes('*') || allowedTenantScope.includes(targetTenantId))) ||
+                    targetTenantId === project.slug ||
+                    targetTenantId === project.id;
+                if (!isPermitted) {
+                    reqTenantId = null;
+                } else if (targetTenantId === project.slug || targetTenantId === project.id) {
+                    reqTenantId = keyTenantId;
+                } else {
+                    reqTenantId = targetTenantId;
+                }
+            }
+            if (reqTenantId) {
+                const allInst = PlatformRepository.listPluginInstallations();
+                const matchedInst = allInst.filter(
+                    (p) => canonicalizePluginId(p.pluginId) === canonical &&
+                           (p.tenantId === reqTenantId || p.runtimeTenantId === reqTenantId)
+                );
+                if (matchedInst.length > 0) {
+                    const rank = (s: string) => {
+                        const status = (s || '').toUpperCase();
+                        if (status === 'SUSPENDED') return 1;
+                        if (status === 'READ_ONLY') return 2;
+                        if (status === 'ACTIVE') return 3;
+                        return 0;
+                    };
+                    matchedInst.sort((a, b) => rank(a.status) - rank(b.status));
+                    installationStatus = matchedInst[0]!.status;
+                }
             }
         }
         return { key, project, environment, queryCount: 0, source: 'legacy', installationStatus };

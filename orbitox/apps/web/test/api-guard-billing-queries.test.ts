@@ -40,7 +40,7 @@ describe('withApiGuard Billing State Enforcement & Query Budget', () => {
     createdProjectId = proj.project.id;
     const env = proj.environments.find((e) => e.slug === 'production') || proj.environments[0]!;
     createdEnvId = env.id;
-    tenantId = `org/${org.slug}/project/${proj.project.slug}/environment/${env.slug}`;
+    tenantId = `org/${org.id}/project/${proj.project.id}/environment/${env.id}`;
 
     const existingInst = await platformRepository.getPluginInstallation(tenantId, '@orbitox/crm');
     if (!existingInst) {
@@ -250,5 +250,346 @@ describe('withApiGuard Billing State Enforcement & Query Budget', () => {
     assert.equal(res.status, 402);
     const body = await res.json();
     assert.equal(body.error?.code, 'PAYMENT_REQUIRED');
+  });
+
+  it('enforces environment-specific status: production ACTIVE (200) and staging SUSPENDED (402)', async () => {
+    const org = await platformRepository.createOrganization({
+      slug: `g4-env-org-${suffix}`,
+      name: `G4 Env Org ${suffix}`,
+      billingEmail: `g4-env-${suffix}@example.test`,
+    });
+    const proj = await platformRepository.createProject({
+      name: `G4 Env Project ${suffix}`,
+      slug: `g4-env-proj-${suffix}`,
+      organizationId: org.id,
+      businessModel: 'B2B_SAAS',
+      planTier: 'starter',
+      plan: 'starter',
+      technicalLead: 'G4 Test',
+      contactEmail: `g4-env-${suffix}@example.test`,
+      enabledServices: ['crm'],
+      apiCallQuota: 1000,
+    });
+    const prodEnv = proj.environments.find((e) => e.slug === 'production')!;
+    const stageEnv = proj.environments.find((e) => e.slug === 'staging')!;
+
+    const prodTenantId = `org/${org.id}/project/${proj.project.id}/environment/${prodEnv.id}`;
+    const stageTenantId = `org/${org.id}/project/${proj.project.id}/environment/${stageEnv.id}`;
+
+    const existingProdInst = await platformRepository.getPluginInstallation(prodTenantId, '@orbitox/crm');
+    if (existingProdInst) {
+      await platformRepository.updatePluginInstallationStatus(prodTenantId, '@orbitox/crm', 'ACTIVE');
+    } else {
+      await platformRepository.provisionPluginInstallation({
+        tenantId: prodTenantId,
+        runtimeTenantId: prodTenantId,
+        pluginId: '@orbitox/crm',
+        status: 'ACTIVE',
+        planId: 'crm-starter',
+      });
+    }
+
+    await platformRepository.provisionPluginInstallation({
+      tenantId: stageTenantId,
+      runtimeTenantId: stageTenantId,
+      pluginId: '@orbitox/crm',
+      status: 'SUSPENDED',
+      planId: 'crm-starter',
+    });
+
+    const prodKey = await platformRepository.createApiKey({
+      name: `Prod Key ${suffix}`,
+      environmentId: prodEnv.id,
+      projectId: proj.project.id,
+      capabilities: ['crm:read'],
+      tenantScope: [proj.project.slug],
+      createdBy: 'test-g4',
+    });
+
+    const stageKey = await platformRepository.createApiKey({
+      name: `Stage Key ${suffix}`,
+      environmentId: stageEnv.id,
+      projectId: proj.project.id,
+      capabilities: ['crm:read'],
+      tenantScope: [proj.project.slug],
+      createdBy: 'test-g4',
+    });
+
+    const handler = withApiGuard(
+      { serviceId: 'crm', serviceName: 'CRM Service', requiredScopes: ['crm:read'] },
+      async (_req, ctx) => NextResponse.json({ success: true, tenantId: ctx.tenantId }),
+    );
+
+    const stageRes = await handler(
+      new NextRequest('http://localhost/api/v1/crm/leads', {
+        method: 'GET',
+        headers: { 'x-api-key': stageKey.rawSecret },
+      }),
+    );
+    assert.equal(stageRes.status, 402);
+    const stageBody = await stageRes.json();
+    assert.equal(stageBody.error?.code, 'PAYMENT_REQUIRED');
+
+    const prodRes = await handler(
+      new NextRequest('http://localhost/api/v1/crm/leads', {
+        method: 'GET',
+        headers: { 'x-api-key': prodKey.rawSecret },
+      }),
+    );
+    assert.equal(prodRes.status, 200);
+  });
+
+  it('rejects with 402 when canonical installation is SUSPENDED despite stale ACTIVE slug-based duplicate', async () => {
+    const org = await platformRepository.createOrganization({
+      slug: `g4-stale-org-${suffix}`,
+      name: `G4 Stale Org ${suffix}`,
+      billingEmail: `g4-stale-${suffix}@example.test`,
+    });
+    const proj = await platformRepository.createProject({
+      name: `G4 Stale Project ${suffix}`,
+      slug: `g4-stale-proj-${suffix}`,
+      organizationId: org.id,
+      businessModel: 'B2B_SAAS',
+      planTier: 'starter',
+      plan: 'starter',
+      technicalLead: 'G4 Test',
+      contactEmail: `g4-stale-${suffix}@example.test`,
+      enabledServices: ['crm'],
+      apiCallQuota: 1000,
+    });
+    const prodEnv = proj.environments.find((e) => e.slug === 'production')!;
+    const canonicalTenantId = `org/${org.id}/project/${proj.project.id}/environment/${prodEnv.id}`;
+    const slugBasedTenantId = `org/${org.slug}/project/${proj.project.slug}/environment/production`;
+
+    const existingCanonical = await platformRepository.getPluginInstallation(canonicalTenantId, '@orbitox/crm');
+    if (existingCanonical) {
+      await platformRepository.updatePluginInstallationStatus(canonicalTenantId, '@orbitox/crm', 'SUSPENDED');
+    } else {
+      await platformRepository.provisionPluginInstallation({
+        tenantId: canonicalTenantId,
+        runtimeTenantId: canonicalTenantId,
+        pluginId: '@orbitox/crm',
+        status: 'SUSPENDED',
+        planId: 'crm-starter',
+      });
+    }
+
+    // 2. Inject stale duplicate with old slug-based tenant ID as ACTIVE
+    if (platformRepository.isPrismaBacked()) {
+      await prisma.pluginInstallation.create({
+        data: {
+          id: `pinst_stale_${suffix}`,
+          tenantId: slugBasedTenantId,
+          runtimeTenantId: slugBasedTenantId,
+          pluginId: '@orbitox/crm',
+          status: 'ACTIVE',
+          planId: 'crm-starter',
+        },
+      });
+    } else {
+      (PlatformRepository as any).pluginInstallations.push({
+        id: `pinst_stale_${suffix}`,
+        tenantId: slugBasedTenantId,
+        runtimeTenantId: slugBasedTenantId,
+        pluginId: '@orbitox/crm',
+        status: 'ACTIVE',
+        planId: 'crm-starter',
+        entitlementRevision: 1,
+        config: {},
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      });
+    }
+
+    const key = await platformRepository.createApiKey({
+      name: `Stale Test Key ${suffix}`,
+      environmentId: prodEnv.id,
+      projectId: proj.project.id,
+      capabilities: ['crm:read'],
+      tenantScope: [proj.project.slug],
+      createdBy: 'test-g4',
+    });
+
+    const handler = withApiGuard(
+      { serviceId: 'crm', serviceName: 'CRM Service', requiredScopes: ['crm:read'] },
+      async (_req, ctx) => NextResponse.json({ success: true, tenantId: ctx.tenantId }),
+    );
+
+    const res = await handler(
+      new NextRequest('http://localhost/api/v1/crm/leads', {
+        method: 'GET',
+        headers: { 'x-api-key': key.rawSecret },
+      }),
+    );
+    assert.equal(res.status, 402);
+    const body = await res.json();
+    assert.equal(body.error?.code, 'PAYMENT_REQUIRED');
+  });
+
+  it('broad [*] key gets targeted tenant status when x-tenant-id is provided, and own environment status when omitted', async () => {
+    const orgA = await platformRepository.createOrganization({
+      slug: `g4-star-org-a-${suffix}`,
+      name: `G4 Star Org A ${suffix}`,
+      billingEmail: `g4-star-a-${suffix}@example.test`,
+    });
+    const projA = await platformRepository.createProject({
+      name: `G4 Star Project A ${suffix}`,
+      slug: `g4-star-proj-a-${suffix}`,
+      organizationId: orgA.id,
+      businessModel: 'B2B_SAAS',
+      planTier: 'starter',
+      plan: 'starter',
+      technicalLead: 'G4 Test',
+      contactEmail: `g4-star-a-${suffix}@example.test`,
+      enabledServices: ['crm'],
+      apiCallQuota: 1000,
+    });
+    const envA = projA.environments.find((e) => e.slug === 'production')!;
+    const tenantA = `org/${orgA.id}/project/${projA.project.id}/environment/${envA.id}`;
+
+    const existingA = await platformRepository.getPluginInstallation(tenantA, '@orbitox/crm');
+    if (existingA) {
+      await platformRepository.updatePluginInstallationStatus(tenantA, '@orbitox/crm', 'ACTIVE');
+    } else {
+      await platformRepository.provisionPluginInstallation({
+        tenantId: tenantA,
+        runtimeTenantId: tenantA,
+        pluginId: '@orbitox/crm',
+        status: 'ACTIVE',
+        planId: 'crm-starter',
+      });
+    }
+
+    const orgB = await platformRepository.createOrganization({
+      slug: `g4-star-org-b-${suffix}`,
+      name: `G4 Star Org B ${suffix}`,
+      billingEmail: `g4-star-b-${suffix}@example.test`,
+    });
+    const projB = await platformRepository.createProject({
+      name: `G4 Star Project B ${suffix}`,
+      slug: `g4-star-proj-b-${suffix}`,
+      organizationId: orgB.id,
+      businessModel: 'B2B_SAAS',
+      planTier: 'starter',
+      plan: 'starter',
+      technicalLead: 'G4 Test',
+      contactEmail: `g4-star-b-${suffix}@example.test`,
+      enabledServices: ['crm'],
+      apiCallQuota: 1000,
+    });
+    const envB = projB.environments.find((e) => e.slug === 'production')!;
+    const tenantB = `org/${orgB.id}/project/${projB.project.id}/environment/${envB.id}`;
+
+    const existingB = await platformRepository.getPluginInstallation(tenantB, '@orbitox/crm');
+    if (existingB) {
+      await platformRepository.updatePluginInstallationStatus(tenantB, '@orbitox/crm', 'SUSPENDED');
+    } else {
+      await platformRepository.provisionPluginInstallation({
+        tenantId: tenantB,
+        runtimeTenantId: tenantB,
+        pluginId: '@orbitox/crm',
+        status: 'SUSPENDED',
+        planId: 'crm-starter',
+      });
+    }
+
+    const broadKey = await platformRepository.createApiKey({
+      name: `Broad Key ${suffix}`,
+      environmentId: envA.id,
+      projectId: projA.project.id,
+      capabilities: ['crm:read'],
+      tenantScope: ['*'],
+      createdBy: 'test-g4',
+    });
+
+    const handler = withApiGuard(
+      { serviceId: 'crm', serviceName: 'CRM Service', requiredScopes: ['crm:read'] },
+      async (_req, ctx) => NextResponse.json({ success: true, tenantId: ctx.tenantId }),
+    );
+
+    const resB = await handler(
+      new NextRequest('http://localhost/api/v1/crm/leads', {
+        method: 'GET',
+        headers: {
+          'x-api-key': broadKey.rawSecret,
+          'x-tenant-id': tenantB,
+        },
+      }),
+    );
+    assert.equal(resB.status, 402);
+    const bodyB = await resB.json();
+    assert.equal(bodyB.error?.code, 'PAYMENT_REQUIRED');
+
+    const resA = await handler(
+      new NextRequest('http://localhost/api/v1/crm/leads', {
+        method: 'GET',
+        headers: {
+          'x-api-key': broadKey.rawSecret,
+        },
+      }),
+    );
+    assert.equal(resA.status, 200);
+  });
+
+  it('returns 403 TENANT_SCOPE_VIOLATION before any billing decision when requesting a tenant outside scope', async () => {
+    const org = await platformRepository.createOrganization({
+      slug: `g4-scope-org-${suffix}`,
+      name: `G4 Scope Org ${suffix}`,
+      billingEmail: `g4-scope-${suffix}@example.test`,
+    });
+    const proj = await platformRepository.createProject({
+      name: `G4 Scope Project ${suffix}`,
+      slug: `g4-scope-proj-${suffix}`,
+      organizationId: org.id,
+      businessModel: 'B2B_SAAS',
+      planTier: 'starter',
+      plan: 'starter',
+      technicalLead: 'G4 Test',
+      contactEmail: `g4-scope-${suffix}@example.test`,
+      enabledServices: ['crm'],
+      apiCallQuota: 1000,
+    });
+    const env = proj.environments.find((e) => e.slug === 'production')!;
+    const canonicalTenantId = `org/${org.id}/project/${proj.project.id}/environment/${env.id}`;
+
+    const existing = await platformRepository.getPluginInstallation(canonicalTenantId, '@orbitox/crm');
+    if (existing) {
+      await platformRepository.updatePluginInstallationStatus(canonicalTenantId, '@orbitox/crm', 'ACTIVE');
+    } else {
+      await platformRepository.provisionPluginInstallation({
+        tenantId: canonicalTenantId,
+        runtimeTenantId: canonicalTenantId,
+        pluginId: '@orbitox/crm',
+        status: 'ACTIVE',
+        planId: 'crm-starter',
+      });
+    }
+
+    const key = await platformRepository.createApiKey({
+      name: `Scoped Key ${suffix}`,
+      environmentId: env.id,
+      projectId: proj.project.id,
+      capabilities: ['crm:read'],
+      tenantScope: [proj.project.slug],
+      createdBy: 'test-g4',
+    });
+
+    const handler = withApiGuard(
+      { serviceId: 'crm', serviceName: 'CRM Service', requiredScopes: ['crm:read'] },
+      async (_req, ctx) => NextResponse.json({ success: true, tenantId: ctx.tenantId }),
+    );
+
+    const res = await handler(
+      new NextRequest('http://localhost/api/v1/crm/leads', {
+        method: 'GET',
+        headers: {
+          'x-api-key': key.rawSecret,
+          'x-tenant-id': 'unauthorized-other-tenant',
+        },
+      }),
+    );
+    assert.equal(res.status, 403);
+    const body = await res.json();
+    assert.equal(body.error?.code, 'TENANT_SCOPE_VIOLATION');
   });
 });
