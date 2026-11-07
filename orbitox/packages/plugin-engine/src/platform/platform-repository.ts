@@ -847,6 +847,23 @@ export class PlatformRepository {
       }
     }
 
+    const explicitPackages = [...(input.initialPackages || []), ...(input.enabledServices || [])];
+    for (const pkg of explicitPackages) {
+      const canonical = canonicalizePluginId(pkg);
+      if (['@orbitox/restaurant', '@orbitox/hms', '@orbitox/crm', '@orbitox/pos'].includes(canonical)) {
+        if (!this.pluginInstallations.some((p) => p.tenantId === canonicalTenantId && canonicalizePluginId(p.pluginId) === canonical)) {
+          this.provisionPluginInstallation({
+            tenantId: canonicalTenantId,
+            pluginId: canonical,
+            runtimeTenantId: canonicalTenantId,
+            status: (input.status as any) || 'ACTIVE',
+            planId: undefined,
+            config: {},
+          });
+        }
+      }
+    }
+
     this.persistCriticalChange();
     return { project, environments: [prodEnv, stgEnv, devEnv] };
   }

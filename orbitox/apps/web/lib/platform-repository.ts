@@ -57,6 +57,7 @@ export interface PlatformAuthorizationLookup {
     environment: ProjectEnvironment | null;
     queryCount: number;
     source: 'prisma' | 'legacy';
+    installationStatus?: string | null;
 }
 
 export interface PlatformAdminAuditInput {
@@ -93,7 +94,7 @@ export function getCurrentBillingPeriod(date = new Date()): string {
 
 export type AsyncPlatformRepository = AsyncMethods<typeof PlatformRepository> & {
     isPrismaBacked(): boolean;
-    authorizeApiKey(rawSecret: string): Promise<PlatformAuthorizationLookup>;
+    authorizeApiKey(rawSecret: string, serviceOrOptions?: string | { serviceId?: string; tenantId?: string }): Promise<PlatformAuthorizationLookup>;
     recordPlatformAdminAudit(event: PlatformAdminAuditInput): Promise<string>;
     createPlatformAdminAuditIntent(event: PlatformAdminAuditIntentInput): Promise<string>;
     setProjectUsageWithAuditIntent(
@@ -1248,7 +1249,7 @@ export function createPrismaPlatformRepository(
             }
             return rows[0] ? mapKey(rows[0]) : undefined;
         },
-        async authorizeApiKey(rawSecret: string): Promise<PlatformAuthorizationLookup> {
+        async authorizeApiKey(rawSecret: string, serviceOrOptions?: string | { serviceId?: string; tenantId?: string }): Promise<PlatformAuthorizationLookup> {
             let verifiers: string[];
             try {
                 const ring = loadPepperRing();
@@ -1256,16 +1257,79 @@ export function createPrismaPlatformRepository(
             } catch {
                 verifiers = [PlatformKeyEngine.computeAuthVerifier(rawSecret)];
             }
-            const rows = await client.$queryRaw<Array<{ key_data: RawRow; project_data: RawRow; environment_data: RawRow }>>`
-        SELECT to_jsonb(k) AS key_data,
-               to_jsonb(p) AS project_data,
-               to_jsonb(e) AS environment_data
-        FROM "PlatformApiKey" k
-        JOIN "ProjectEnvironment" e ON e."id" = k."environmentId"
-        JOIN "PlatformProject" p ON p."id" = e."projectId"
-        WHERE k."authVerifier" = ANY(${verifiers}::text[])
-        LIMIT 2
-      `;
+            const serviceId = typeof serviceOrOptions === 'string' ? serviceOrOptions : serviceOrOptions?.serviceId;
+            const targetTenantId = typeof serviceOrOptions === 'object' ? serviceOrOptions?.tenantId : undefined;
+            const isPluginService = serviceId && !['system', 'admin', 'platform'].includes(serviceId);
+
+            let rows: Array<{ key_data: RawRow; project_data: RawRow; environment_data: RawRow; installation_status?: string | null }>;
+
+            if (isPluginService) {
+                const canonical = canonicalizePluginId(serviceId);
+                const rawService = serviceId;
+                const shortService = canonical.replace(/^@orbitox\//, '');
+                const ioService = `@orbitox-io/${shortService}`;
+                const pluginCandidates = [canonical, rawService, shortService, ioService];
+
+                rows = await client.$queryRaw<Array<{ key_data: RawRow; project_data: RawRow; environment_data: RawRow; installation_status?: string | null }>>`
+                    SELECT to_jsonb(k) AS key_data,
+                           to_jsonb(p) AS project_data,
+                           to_jsonb(e) AS environment_data,
+                           pi.status AS installation_status
+                    FROM "PlatformApiKey" k
+                    JOIN "ProjectEnvironment" e ON e."id" = k."environmentId"
+                    JOIN "PlatformProject" p ON p."id" = e."projectId"
+                    LEFT JOIN "PlatformOrganization" o ON o."id" = p."organizationId"
+                    LEFT JOIN LATERAL (
+                        SELECT pi."status"
+                        FROM "PluginInstallation" pi
+                        WHERE pi."pluginId" = ANY(${pluginCandidates}::text[])
+                          AND (
+                              pi."tenantId" = 'org/' || p."organizationId" || '/project/' || p."id" || '/environment/' || e."id"
+                              OR pi."tenantId" = 'org/' || COALESCE(o."slug", p."organizationId") || '/project/' || p."slug" || '/environment/' || e."slug"
+                              OR pi."tenantId" = 'org/' || p."organizationId" || '/project/' || p."slug" || '/environment/' || e."slug"
+                              OR pi."tenantId" = 'org/' || COALESCE(o."slug", p."organizationId") || '/project/' || p."id" || '/environment/' || e."id"
+                              OR pi."tenantId" = 'org/' || COALESCE(o."slug", p."organizationId") || '/project/' || p."slug" || '/environment/production'
+                              OR pi."tenantId" = 'org/' || p."organizationId" || '/project/' || p."id" || '/environment/production'
+                              OR pi."tenantId" = p."id"
+                              OR pi."tenantId" = p."slug"
+                              OR (k."tenantScope" IS NOT NULL AND pi."tenantId" = ANY(k."tenantScope"))
+                              OR pi."runtimeTenantId" = 'org/' || p."organizationId" || '/project/' || p."id" || '/environment/' || e."id"
+                              OR pi."runtimeTenantId" = 'org/' || COALESCE(o."slug", p."organizationId") || '/project/' || p."slug" || '/environment/' || e."slug"
+                              OR pi."runtimeTenantId" = 'org/' || p."organizationId" || '/project/' || p."slug" || '/environment/' || e."slug"
+                              OR pi."runtimeTenantId" = 'org/' || COALESCE(o."slug", p."organizationId") || '/project/' || p."id" || '/environment/' || e."id"
+                              OR pi."runtimeTenantId" = 'org/' || COALESCE(o."slug", p."organizationId") || '/project/' || p."slug" || '/environment/production'
+                              OR pi."runtimeTenantId" = 'org/' || p."organizationId" || '/project/' || p."id" || '/environment/production'
+                              OR pi."runtimeTenantId" = p."id"
+                              OR pi."runtimeTenantId" = p."slug"
+                              OR (k."tenantScope" IS NOT NULL AND pi."runtimeTenantId" = ANY(k."tenantScope"))
+                              ${targetTenantId ? Prisma.sql`OR pi."tenantId" = ${targetTenantId} OR pi."runtimeTenantId" = ${targetTenantId}` : Prisma.empty}
+                          )
+                        ORDER BY
+                          CASE
+                            WHEN pi."status" = 'ACTIVE' THEN 1
+                            WHEN pi."status" = 'READ_ONLY' THEN 2
+                            WHEN pi."status" = 'SUSPENDED' THEN 3
+                            ELSE 4
+                          END,
+                          pi."updatedAt" DESC
+                        LIMIT 1
+                    ) pi ON true
+                    WHERE k."authVerifier" = ANY(${verifiers}::text[])
+                    LIMIT 2
+                `;
+            } else {
+                rows = await client.$queryRaw<Array<{ key_data: RawRow; project_data: RawRow; environment_data: RawRow; installation_status?: string | null }>>`
+                    SELECT to_jsonb(k) AS key_data,
+                           to_jsonb(p) AS project_data,
+                           to_jsonb(e) AS environment_data,
+                           NULL::text AS installation_status
+                    FROM "PlatformApiKey" k
+                    JOIN "ProjectEnvironment" e ON e."id" = k."environmentId"
+                    JOIN "PlatformProject" p ON p."id" = e."projectId"
+                    WHERE k."authVerifier" = ANY(${verifiers}::text[])
+                    LIMIT 2
+                `;
+            }
             if (rows.length > 1) {
                 throw new Error('verifier collision');
             }
@@ -1276,6 +1340,7 @@ export function createPrismaPlatformRepository(
                 environment: row ? toEnvironment(row.environment_data) : null,
                 queryCount: 1,
                 source: 'prisma',
+                installationStatus: row?.installation_status ?? null,
             };
         },
         async getApiKeyPepperDistribution(): Promise<Record<string, number>> {
@@ -2521,13 +2586,44 @@ const jsonRateLimitBuckets = new Map<string, number>();
 
 const extraMethods = {
     isPrismaBacked: () => prismaIsRequired(),
-    authorizeApiKey: async (rawSecret: string): Promise<PlatformAuthorizationLookup> => {
-        if (prismaIsRequired()) return getPrismaRepository().authorizeApiKey(rawSecret);
+    authorizeApiKey: async (rawSecret: string, serviceOrOptions?: string | { serviceId?: string; tenantId?: string }): Promise<PlatformAuthorizationLookup> => {
+        if (prismaIsRequired()) return getPrismaRepository().authorizeApiKey(rawSecret, serviceOrOptions);
         const key = PlatformRepository.findKeyByRawSecret(rawSecret) || null;
         const environment = key && key.environmentId ? PlatformRepository.getEnvironment(key.environmentId) || null : null;
         const projectId = key?.projectId || environment?.projectId;
         const project = projectId ? PlatformRepository.getProject(projectId) || null : null;
-        return { key, project, environment, queryCount: 0, source: 'legacy' };
+        let installationStatus: string | null = null;
+        const serviceId = typeof serviceOrOptions === 'string' ? serviceOrOptions : serviceOrOptions?.serviceId;
+        const targetTenantId = typeof serviceOrOptions === 'object' ? serviceOrOptions?.tenantId : undefined;
+        if (serviceId && !['system', 'admin', 'platform'].includes(serviceId) && project) {
+            const canonical = canonicalizePluginId(serviceId);
+            const org = project.organizationId ? PlatformRepository.getOrganization(project.organizationId) : undefined;
+            const candidates = new Set<string>([
+                ...(targetTenantId ? [targetTenantId] : []),
+                ...(key?.tenantScope || []),
+                `org/${project.organizationId}/project/${project.id}/environment/${environment?.id || 'production'}`,
+                `org/${project.organizationId}/project/${project.slug}/environment/${environment?.slug || 'production'}`,
+                ...(org ? [
+                    `org/${org.slug}/project/${project.slug}/environment/${environment?.slug || 'production'}`,
+                    `org/${org.slug}/project/${project.id}/environment/${environment?.id || 'production'}`,
+                    `org/${org.slug}/project/${project.slug}/environment/production`,
+                    `org/${org.id}/project/${project.id}/environment/production`,
+                ] : []),
+                project.slug,
+                project.id,
+            ]);
+            const allInst = PlatformRepository.listPluginInstallations();
+            const matchedInst = allInst.filter(
+                (p) => (canonicalizePluginId(p.pluginId) === canonical || p.pluginId === serviceId) &&
+                       (candidates.has(p.tenantId) || (p.runtimeTenantId && candidates.has(p.runtimeTenantId)))
+            );
+            if (matchedInst.length > 0) {
+                const rank = (s: string) => s === 'ACTIVE' ? 1 : s === 'READ_ONLY' ? 2 : s === 'SUSPENDED' ? 3 : 4;
+                matchedInst.sort((a, b) => rank(a.status) - rank(b.status));
+                installationStatus = matchedInst[0]!.status;
+            }
+        }
+        return { key, project, environment, queryCount: 0, source: 'legacy', installationStatus };
     },
     getApiKeyPepperDistribution: async (): Promise<Record<string, number>> => {
         if (prismaIsRequired()) return getPrismaRepository().getApiKeyPepperDistribution();

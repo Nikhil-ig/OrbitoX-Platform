@@ -20,9 +20,6 @@ import {
   PlatformRepository,
   hasCapability,
   PLAN_DEFAULT_QUOTAS,
-  verifyGrant,
-  getPublicGrantKeys,
-  type EntitlementClaims,
 } from '@orbitox-io/plugin-engine';
 import { platformRepository } from '@/lib/platform-repository';
 import type { PlatformProject } from '@orbitox/types';
@@ -701,13 +698,17 @@ export function withApiGuard<T = any>(
     let guardDatabaseOperations = 0;
     let guardDatabaseWrites = 0;
     let prismaRepositoryUsed = false;
-    let grantToken: string | undefined;
-    let grantStatus: string | undefined;
+    let lookup: any = null;
+
+    const clientHeaderTenant =
+      req.headers.get('x-tenant-id')?.trim() || req.headers.get('x-context-id')?.trim() || '';
 
     if (rawApiKey) {
-      let lookup;
       try {
-        lookup = await platformRepository.authorizeApiKey(rawApiKey);
+        lookup = await platformRepository.authorizeApiKey(rawApiKey, {
+          serviceId,
+          tenantId: clientHeaderTenant || undefined,
+        });
       } catch (err: any) {
         const classified = classifyDatabaseError(err);
         const errorCode = classified.code === 'DATABASE_UNAVAILABLE' ? 'AUTHENTICATION_UNAVAILABLE' : classified.code;
@@ -934,9 +935,6 @@ export function withApiGuard<T = any>(
     let tenantId = 'default';
     let project: any = authorizedProject;
 
-    const clientHeaderTenant =
-      req.headers.get('x-tenant-id')?.trim() || req.headers.get('x-context-id')?.trim() || '';
-
     if (matchedKey) {
       const allowedTenantScope: string[] = matchedKey.tenantScope || [];
       const projectId = matchedKey.projectId;
@@ -1072,62 +1070,61 @@ export function withApiGuard<T = any>(
         );
       }
 
-      // Enforce billing state from the installation status in the grant (set by webhook and grace sweep)
-      grantToken =
-        req.headers.get('x-orbitox-grant') ||
-        req.headers.get('x-grant-token') ||
-        req.headers.get('x-entitlement-grant') ||
-        undefined;
+      // 8.4 Enforce billing state from installation status (loaded server-side in authorization query)
+      const installationStatus = (lookup?.installationStatus || '').toUpperCase();
+      const isWrite = !['GET', 'HEAD', 'OPTIONS'].includes(req.method.toUpperCase());
 
-      if (grantToken) {
-        const candidateAudiences = [
-          serviceId.startsWith('@') ? serviceId : `@orbitox/${serviceId}`,
-          serviceId.startsWith('@') ? serviceId : `@orbitox-io/${serviceId}`,
-          serviceId,
-        ];
-        for (const aud of candidateAudiences) {
-          try {
-            const claims = await verifyGrant<EntitlementClaims>(grantToken, {
-              type: 'orbitox-ent',
-              audience: aud,
-              trustedKeys: getPublicGrantKeys(),
-            });
-            grantStatus = claims.status;
-            (req as any).grant = claims;
-            break;
-          } catch {
-            // try next candidate audience
-          }
-        }
-      }
-
-      if (!grantStatus) {
-        grantStatus =
-          (req as any).grant?.status ||
-          (req as any).claims?.status ||
-          req.headers.get('x-orbitox-billing-state')?.toUpperCase();
-      }
-
-      if (grantStatus) {
-        const isWrite = !['GET', 'HEAD', 'OPTIONS'].includes(req.method.toUpperCase());
-        const state = grantStatus.toUpperCase();
-        if (state === 'SUSPENDED' || (state === 'READ_ONLY' && isWrite)) {
-          const latencyMs = Math.round(performance.now() - startTime);
-          return NextResponse.json<ApiResponse>(
-            {
-              success: false,
-              error: {
-                code: 'PAYMENT_REQUIRED',
-                message: state === 'READ_ONLY'
-                  ? 'This subscription is read-only. Update billing to restore write access.'
-                  : 'This subscription is suspended. Update billing to restore access.',
-                details: { billingState: state },
-              },
-              meta: { tenantId, serviceId, latencyMs, timestamp: new Date().toISOString(), requestId },
+      // Rules:
+      // - SUSPENDED → 402 for all methods
+      // - READ_ONLY → 402 for writes, continue for reads
+      // - ACTIVE → continue
+      // - No installation for a plugin service, or an unknown status → refuse, never allow (402 PAYMENT_REQUIRED)
+      if (!installationStatus) {
+        const latencyMs = Math.round(performance.now() - startTime);
+        return NextResponse.json<ApiResponse>(
+          {
+            success: false,
+            error: {
+              code: 'PAYMENT_REQUIRED',
+              message: 'No active installation found for this service. Update billing to restore access.',
+              details: { billingState: 'SUSPENDED' },
             },
-            { status: 402, headers: { 'x-orbitox-billing-state': state.toLowerCase() } },
-          );
-        }
+            meta: { tenantId, serviceId, latencyMs, timestamp: new Date().toISOString(), requestId },
+          },
+          { status: 402, headers: { 'x-orbitox-billing-state': 'suspended' } },
+        );
+      }
+
+      if (installationStatus === 'SUSPENDED' || (installationStatus !== 'ACTIVE' && installationStatus !== 'READ_ONLY')) {
+        const latencyMs = Math.round(performance.now() - startTime);
+        return NextResponse.json<ApiResponse>(
+          {
+            success: false,
+            error: {
+              code: 'PAYMENT_REQUIRED',
+              message: 'This subscription is suspended. Update billing to restore access.',
+              details: { billingState: 'SUSPENDED' },
+            },
+            meta: { tenantId, serviceId, latencyMs, timestamp: new Date().toISOString(), requestId },
+          },
+          { status: 402, headers: { 'x-orbitox-billing-state': 'suspended' } },
+        );
+      }
+
+      if (installationStatus === 'READ_ONLY' && isWrite) {
+        const latencyMs = Math.round(performance.now() - startTime);
+        return NextResponse.json<ApiResponse>(
+          {
+            success: false,
+            error: {
+              code: 'PAYMENT_REQUIRED',
+              message: 'This subscription is read-only. Update billing to restore write access.',
+              details: { billingState: 'READ_ONLY' },
+            },
+            meta: { tenantId, serviceId, latencyMs, timestamp: new Date().toISOString(), requestId },
+          },
+          { status: 402, headers: { 'x-orbitox-billing-state': 'read_only' } },
+        );
       }
 
       // 8.4 Fail-closed quota gate: missing or 0 quota uses plan default, never unlimited unless plan is unlimited
@@ -1374,8 +1371,7 @@ export function withApiGuard<T = any>(
         isBillableResponse &&
         project?.organizationId &&
         matchedKey.environmentId &&
-        !['system', 'admin', 'platform'].includes(serviceId) &&
-        (grantStatus !== undefined || grantToken !== undefined || (req as any).grant !== undefined)
+        !['system', 'admin', 'platform'].includes(serviceId)
       ) {
         const usageTenantId =
           `org/${project.organizationId}/project/${project.id}/environment/${matchedKey.environmentId}`;
