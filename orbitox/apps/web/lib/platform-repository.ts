@@ -788,7 +788,7 @@ export function createPrismaPlatformRepository(
                 try {
                     row = await tx.platformProject.create({
                         data: makeProjectData(input, slug, projectId),
-                        include: { environments: { orderBy: { slug: 'asc' } } },
+                        include: { environments: { orderBy: { isProduction: 'desc' } } },
                     });
                 } catch (error) {
                     if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {

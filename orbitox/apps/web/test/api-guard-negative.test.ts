@@ -119,9 +119,10 @@ describe('Phase 1 & 1.5 Security, Unified Auth & Licensed Customer Test Suite', 
       apiCallQuota: 5000000,
     });
 
+    const prodEnv = customerProjRes.environments.find((e: any) => e.slug === 'production') || customerProjRes.environments[0]!;
     const customerKeyRes = await platformRepository.createApiKey({
       name: 'Omega Customer Key',
-      environmentId: customerProjRes.environments[0]!.id,
+      environmentId: prodEnv.id,
       projectId: customerProjRes.project.id,
       capabilities: ['crm:read', 'crm:write'],
       tenantScope: ['tenant-omega'],
@@ -132,7 +133,7 @@ describe('Phase 1 & 1.5 Security, Unified Auth & Licensed Customer Test Suite', 
     // 3. Create revoked key
     const revokedKeyRes = await platformRepository.createApiKey({
       name: 'Revoked Key',
-      environmentId: customerProjRes.environments[0]!.id,
+      environmentId: prodEnv.id,
       projectId: customerProjRes.project.id,
       capabilities: ['crm:read'],
       createdBy: 'test_suite',
@@ -195,9 +196,10 @@ describe('Phase 1 & 1.5 Security, Unified Auth & Licensed Customer Test Suite', 
     });
     restaurantPosProjectId = restPosRes.project.id;
 
+    const prodEnvRest = restPosRes.environments.find((e: any) => e.slug === 'production') || restPosRes.environments[0]!;
     const restPosKey = await platformRepository.createApiKey({
       name: 'Bistro API Key',
-      environmentId: restPosRes.environments[0]!.id,
+      environmentId: prodEnvRest.id,
       projectId: restPosRes.project.id,
       capabilities: ['restaurant:order', 'pos:terminal'],
       tenantScope: ['bistro360'],

@@ -49,7 +49,7 @@ describe('withApiGuard Billing State Enforcement & Query Budget', () => {
         runtimeTenantId: tenantId,
         pluginId: '@orbitox/crm',
         status: 'ACTIVE',
-        planId: 'crm-starter',
+        planId: null,
       });
     }
 
@@ -291,7 +291,7 @@ describe('withApiGuard Billing State Enforcement & Query Budget', () => {
         runtimeTenantId: prodTenantId,
         pluginId: '@orbitox/crm',
         status: 'ACTIVE',
-        planId: 'crm-starter',
+        planId: null,
       });
     }
 
@@ -300,7 +300,7 @@ describe('withApiGuard Billing State Enforcement & Query Budget', () => {
       runtimeTenantId: stageTenantId,
       pluginId: '@orbitox/crm',
       status: 'SUSPENDED',
-      planId: 'crm-starter',
+      planId: null,
     });
 
     const prodKey = await platformRepository.createApiKey({
@@ -376,7 +376,7 @@ describe('withApiGuard Billing State Enforcement & Query Budget', () => {
         runtimeTenantId: canonicalTenantId,
         pluginId: '@orbitox/crm',
         status: 'SUSPENDED',
-        planId: 'crm-starter',
+        planId: null,
       });
     }
 
@@ -389,7 +389,7 @@ describe('withApiGuard Billing State Enforcement & Query Budget', () => {
           runtimeTenantId: slugBasedTenantId,
           pluginId: '@orbitox/crm',
           status: 'ACTIVE',
-          planId: 'crm-starter',
+          planId: null,
         },
       });
     } else {
@@ -399,7 +399,7 @@ describe('withApiGuard Billing State Enforcement & Query Budget', () => {
         runtimeTenantId: slugBasedTenantId,
         pluginId: '@orbitox/crm',
         status: 'ACTIVE',
-        planId: 'crm-starter',
+        planId: null,
         entitlementRevision: 1,
         config: {},
         createdAt: new Date().toISOString(),
@@ -462,7 +462,7 @@ describe('withApiGuard Billing State Enforcement & Query Budget', () => {
         runtimeTenantId: tenantA,
         pluginId: '@orbitox/crm',
         status: 'ACTIVE',
-        planId: 'crm-starter',
+        planId: null,
       });
     }
 
@@ -495,7 +495,7 @@ describe('withApiGuard Billing State Enforcement & Query Budget', () => {
         runtimeTenantId: tenantB,
         pluginId: '@orbitox/crm',
         status: 'SUSPENDED',
-        planId: 'crm-starter',
+        planId: null,
       });
     }
 
@@ -567,7 +567,7 @@ describe('withApiGuard Billing State Enforcement & Query Budget', () => {
         runtimeTenantId: canonicalTenantId,
         pluginId: '@orbitox/crm',
         status: 'ACTIVE',
-        planId: 'crm-starter',
+        planId: null,
       });
     }
 

@@ -108,7 +108,10 @@ describe('Phase 3 Parts A–C: Rights, Licensing & Entitlement Engine', () => {
         ],
       });
 
-      const canonicalTenantId = `org/${testOrg.slug}/project/${projSlug}/environment/production`;
+      const prodEnv = res.environments.find((e: any) => e.slug === 'production') || res.environments[0]!;
+      const canonicalTenantId = platformRepository.isPrismaBacked()
+        ? `org/${testOrg.id}/project/${res.project.id}/environment/${prodEnv.id}`
+        : `org/${testOrg.slug}/project/${projSlug}/environment/production`;
       const inst = await platformRepository.getPluginInstallation(canonicalTenantId, '@orbitox/restaurant');
       assert.ok(inst, 'Installation must exist');
       assert.strictEqual(inst.tenantId, canonicalTenantId, 'tenantId must store canonical platform tenant ID');
