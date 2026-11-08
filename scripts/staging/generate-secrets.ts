@@ -1,4 +1,5 @@
 import * as crypto from 'node:crypto';
+import * as path from 'node:path';
 import { execFileSync } from 'node:child_process';
 import {
   PLATFORM_SERVICE_CONTRACTS,
@@ -22,6 +23,7 @@ import {
  * - Blind --rotate of all secrets or stateful/keyed secrets is STRICTLY REFUSED.
  *   Stateless secrets may be rotated via --rotate=<NAME>.
  *   Keyed secrets rotate additively via --add-key=<NAME>.
+ *   Database role passwords rotate only via --database --force-rotate-database.
  * ─────────────────────────────────────────────────────────────
  */
 
@@ -46,6 +48,66 @@ export const KEYED_ROTATABLE_SECRETS = [
   'ORBITOX_BRIDGE_KEYS',
   'ORBITOX_SERVER_PEPPER',
 ] as const;
+
+export interface DatabaseRoleConfig {
+  role: string;
+  secretUrlName: string;
+  structuredSecretName: string;
+  dbType: 'platform' | 'restaurant_os';
+  defaultDbName: string;
+}
+
+export const DATABASE_ROLES: DatabaseRoleConfig[] = [
+  {
+    role: 'orbitox_migrator',
+    secretUrlName: 'MIGRATOR_DATABASE_URL',
+    structuredSecretName: 'db/orbitox_migrator',
+    dbType: 'platform',
+    defaultDbName: 'orbitox_platform_staging',
+  },
+  {
+    role: 'orbitox_runtime',
+    secretUrlName: 'APP_DATABASE_URL',
+    structuredSecretName: 'db/orbitox_runtime',
+    dbType: 'platform',
+    defaultDbName: 'orbitox_platform_staging',
+  },
+  {
+    role: 'orbitox_maintenance',
+    secretUrlName: 'MAINTENANCE_DATABASE_URL',
+    structuredSecretName: 'db/orbitox_maintenance',
+    dbType: 'platform',
+    defaultDbName: 'orbitox_platform_staging',
+  },
+  {
+    role: 'orbitox_outbox_relay',
+    secretUrlName: 'OUTBOX_RELAY_DATABASE_URL',
+    structuredSecretName: 'db/orbitox_outbox_relay',
+    dbType: 'platform',
+    defaultDbName: 'orbitox_platform_staging',
+  },
+  {
+    role: 'orbitox_platform_admin_audit',
+    secretUrlName: 'PLATFORM_ADMIN_AUDIT_DATABASE_URL',
+    structuredSecretName: 'db/orbitox_platform_admin_audit',
+    dbType: 'platform',
+    defaultDbName: 'orbitox_platform_staging',
+  },
+  {
+    role: 'hms_audit_reader',
+    secretUrlName: 'HMS_AUDIT_DATABASE_URL',
+    structuredSecretName: 'db/hms_audit_reader',
+    dbType: 'platform',
+    defaultDbName: 'orbitox_platform_staging',
+  },
+  {
+    role: 'restaurantos_app',
+    secretUrlName: 'RESTAURANT_OS_DATABASE_URL',
+    structuredSecretName: 'db/restaurantos_app',
+    dbType: 'restaurant_os',
+    defaultDbName: 'restaurant_os_staging',
+  },
+];
 
 export interface GeneratedSecretDef {
   name: string;
@@ -380,12 +442,121 @@ export function handleAdditiveKeyRotation(options: {
   throw new Error(`Unsupported --add-key target: ${name}`);
 }
 
+export function runDatabaseCredentialGenerator(options: {
+  environment?: string;
+  region?: string;
+  dbHost?: string;
+  restaurantDbHost?: string;
+  dbPort?: number;
+  dryRun?: boolean;
+  forceRotateDatabase?: boolean;
+  awsCliRunner?: AwsCliRunner;
+}): { name: string; action: 'dry-run' | 'set' | 'skipped' | 'rotated' | 'error'; detail?: string }[] {
+  const env = options.environment || 'staging';
+  const region = options.region || 'ap-south-1';
+  const port = options.dbPort || 5432;
+  const runner = options.awsCliRunner || createDefaultRunner();
+  const results: { name: string; action: 'dry-run' | 'set' | 'skipped' | 'rotated' | 'error'; detail?: string }[] = [];
+
+  let platformHost = options.dbHost;
+  let rosHost = options.restaurantDbHost || options.dbHost;
+
+  if (!platformHost && !options.dryRun) {
+    try {
+      const tfOut = execFileSync('terraform', ['output', '-raw', 'rds_address'], {
+        cwd: path.resolve(__dirname, '../../infra'),
+        encoding: 'utf8',
+      }).trim();
+      if (tfOut && !tfOut.includes('No outputs found') && !tfOut.includes('Warning')) {
+        platformHost = tfOut;
+      }
+    } catch {}
+  }
+  if (!platformHost) {
+    platformHost = `orbitox-${env}-pg16.internal`;
+  }
+  if (!rosHost) {
+    rosHost = platformHost;
+  }
+
+  for (const cfg of DATABASE_ROLES) {
+    const host = cfg.dbType === 'restaurant_os' ? rosHost : platformHost;
+    const dbname = cfg.defaultDbName.replace('_staging', `_${env}`);
+    const structuredId = `orbitox/${env}/${cfg.structuredSecretName}`;
+    const urlId = `orbitox/${env}/${cfg.secretUrlName}`;
+
+    if (options.dryRun) {
+      results.push({ name: cfg.structuredSecretName, action: 'dry-run', detail: `Structured role credentials for ${cfg.role}` });
+      results.push({ name: cfg.secretUrlName, action: 'dry-run', detail: `Composed database URL for ${cfg.role}` });
+      console.log(`[DRY-RUN] ${structuredId}: would generate password and structured JSON`);
+      console.log(`[DRY-RUN] ${urlId}: would generate composed postgresql:// connection URL`);
+      continue;
+    }
+
+    if (!options.forceRotateDatabase) {
+      // Check if both secrets already exist
+      const checkStructured = runner(['secretsmanager', 'get-secret-value', '--secret-id', structuredId, '--region', region, '--output', 'json']);
+      const checkUrl = runner(['secretsmanager', 'get-secret-value', '--secret-id', urlId, '--region', region, '--output', 'json']);
+
+      if (checkStructured.status === 0 && checkUrl.status === 0) {
+        results.push({ name: cfg.structuredSecretName, action: 'skipped' });
+        results.push({ name: cfg.secretUrlName, action: 'skipped' });
+        console.log(`${cfg.role}: credentials already exist (skipped, use --force-rotate-database to replace)`);
+        continue;
+      }
+    }
+
+    // Generate fresh strong random password
+    const password = crypto.randomBytes(24).toString('hex');
+
+    const structuredPayload = JSON.stringify({
+      username: cfg.role,
+      password,
+      host,
+      port,
+      dbname,
+      sslmode: 'require',
+    });
+
+    const composedUrl = `postgresql://${cfg.role}:${password}@${host}:${port}/${dbname}?sslmode=require`;
+
+    // Put structured secret via stdin
+    const putStruct = runner(
+      ['secretsmanager', 'put-secret-value', '--secret-id', structuredId, '--secret-string', 'file:///dev/stdin', '--region', region],
+      structuredPayload,
+    );
+
+    // Put URL secret via stdin
+    const putUrl = runner(
+      ['secretsmanager', 'put-secret-value', '--secret-id', urlId, '--secret-string', 'file:///dev/stdin', '--region', region],
+      composedUrl,
+    );
+
+    if (putStruct.status === 0 && putUrl.status === 0) {
+      const act = options.forceRotateDatabase ? 'rotated' : 'set';
+      results.push({ name: cfg.structuredSecretName, action: act });
+      results.push({ name: cfg.secretUrlName, action: act });
+      console.log(`${cfg.role}: ${act} credentials (${structuredId} + ${urlId})`);
+    } else {
+      results.push({ name: cfg.role, action: 'error', detail: 'Failed to write database secrets to Secrets Manager' });
+      console.error(`${cfg.role}: error setting database secrets`);
+    }
+  }
+
+  return results;
+}
+
 export function runSecretGenerator(options: {
   environment?: string;
   region?: string;
   dryRun?: boolean;
   rotate?: string | boolean;
   addKey?: string;
+  database?: boolean;
+  dbHost?: string;
+  restaurantDbHost?: string;
+  dbPort?: number;
+  forceRotateDatabase?: boolean;
   awsCliRunner?: AwsCliRunner;
 }): { name: string; action: 'dry-run' | 'set' | 'skipped' | 'rotated' | 'added-key' | 'error'; detail?: string }[] {
   const env = options.environment || 'staging';
@@ -393,6 +564,20 @@ export function runSecretGenerator(options: {
   const secretNames = getExpectedSecretNames();
   const results: { name: string; action: 'dry-run' | 'set' | 'skipped' | 'rotated' | 'added-key' | 'error'; detail?: string }[] = [];
   const runner = options.awsCliRunner || createDefaultRunner();
+
+  // If database mode is requested
+  if (options.database) {
+    return runDatabaseCredentialGenerator({
+      environment: env,
+      region,
+      dbHost: options.dbHost,
+      restaurantDbHost: options.restaurantDbHost,
+      dbPort: options.dbPort,
+      dryRun: options.dryRun,
+      forceRotateDatabase: options.forceRotateDatabase,
+      awsCliRunner: runner,
+    });
+  }
 
   // Validate --rotate option
   if (options.rotate !== undefined && options.rotate !== false) {
@@ -512,6 +697,8 @@ export function runSecretGenerator(options: {
 if (require.main === module || process.argv[1]?.endsWith('generate-secrets.ts')) {
   const args = process.argv.slice(2);
   const dryRun = args.includes('--dry-run');
+  const database = args.includes('--database');
+  const forceRotateDatabase = args.includes('--force-rotate-database');
 
   let rotate: string | boolean | undefined;
   const rotateArg = args.find((a) => a === '--rotate' || a.startsWith('--rotate='));
@@ -533,9 +720,13 @@ if (require.main === module || process.argv[1]?.endsWith('generate-secrets.ts'))
   const environment = envIndex !== -1 && args[envIndex + 1] ? args[envIndex + 1] : 'staging';
   const regionIndex = args.indexOf('--region');
   const region = regionIndex !== -1 && args[regionIndex + 1] ? args[regionIndex + 1] : 'ap-south-1';
+  const hostIndex = args.indexOf('--db-host');
+  const dbHost = hostIndex !== -1 && args[hostIndex + 1] ? args[hostIndex + 1] : undefined;
+  const rosHostIndex = args.indexOf('--restaurant-db-host');
+  const restaurantDbHost = rosHostIndex !== -1 && args[rosHostIndex + 1] ? args[rosHostIndex + 1] : undefined;
 
   try {
-    runSecretGenerator({ dryRun, rotate, addKey, environment, region });
+    runSecretGenerator({ dryRun, rotate, addKey, database, dbHost, restaurantDbHost, forceRotateDatabase, environment, region });
   } catch (err: any) {
     console.error('Fatal error in secret generation:', err.message);
     process.exit(1);

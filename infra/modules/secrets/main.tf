@@ -83,7 +83,14 @@ locals {
     "ORBITOX_EMAIL_WEBHOOK_SECRET",
     "ORBITOX_BRIDGE_KEYS",
     "ORBITOX_BRIDGE_ACTIVE_KID",
-    "ORBITOX_GRANT_PUBLIC_KEYS"
+    "ORBITOX_GRANT_PUBLIC_KEYS",
+    "db/orbitox_migrator",
+    "db/orbitox_runtime",
+    "db/orbitox_maintenance",
+    "db/orbitox_outbox_relay",
+    "db/orbitox_platform_admin_audit",
+    "db/hms_audit_reader",
+    "db/restaurantos_app"
   ]
 }
 

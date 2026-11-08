@@ -73,9 +73,19 @@ if (migrateResult.status !== 0) {
 
 console.log('✓ Prisma migrations deployed successfully.');
 
+function getPasswordFromUrl(urlStr) {
+  if (!urlStr) return null;
+  try {
+    const parsed = new URL(urlStr);
+    return parsed.password ? decodeURIComponent(parsed.password) : null;
+  } catch {
+    return null;
+  }
+}
+
 // Run post-migration role enablement as orbitox_migrator
 async function enableRoles() {
-  console.log('🔐 Enabling application roles (orbitox_runtime, maintenance, outbox_relay)...');
+  console.log('🔐 Enabling application roles and synchronizing passwords (orbitox_runtime, maintenance, outbox_relay)...');
   const client = new Client({ connectionString: migratorUrl });
   await client.connect();
 
@@ -88,11 +98,26 @@ async function enableRoles() {
       'hms_audit_reader'
     ];
 
+    const rolePasswordMap = {
+      orbitox_runtime: getPasswordFromUrl(process.env.APP_DATABASE_URL),
+      orbitox_maintenance: getPasswordFromUrl(process.env.MAINTENANCE_DATABASE_URL),
+      orbitox_outbox_relay: getPasswordFromUrl(process.env.OUTBOX_RELAY_DATABASE_URL),
+      orbitox_platform_admin_audit: getPasswordFromUrl(process.env.PLATFORM_ADMIN_AUDIT_DATABASE_URL || process.env.PLATFORM_AUDIT_DATABASE_URL),
+      hms_audit_reader: getPasswordFromUrl(process.env.HMS_AUDIT_DATABASE_URL),
+    };
+
     for (const role of rolesToEnable) {
       const res = await client.query('SELECT 1 FROM pg_roles WHERE rolname = $1', [role]);
       if (res.rowCount > 0) {
-        await client.query(`ALTER ROLE ${role} WITH LOGIN`);
-        console.log(`  ✓ Enabled LOGIN for ${role}`);
+        const pwd = rolePasswordMap[role];
+        if (pwd) {
+          const escapedPwd = pwd.replace(/'/g, "''");
+          await client.query(`ALTER ROLE ${role} WITH LOGIN PASSWORD '${escapedPwd}'`);
+          console.log(`  ✓ Enabled LOGIN and synchronized password for ${role}`);
+        } else {
+          await client.query(`ALTER ROLE ${role} WITH LOGIN`);
+          console.log(`  ✓ Enabled LOGIN for ${role}`);
+        }
       } else {
         console.log(`  ℹ Role ${role} not found, skipping LOGIN grant.`);
       }

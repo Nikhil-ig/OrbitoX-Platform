@@ -322,4 +322,111 @@ describe('Phase 6F B0: Staging Secret Generator Verification', () => {
     assert.equal(updatedBridge.activeKeyId, 'k2', 'Must update activeKeyId to k2');
     assert.equal(mockStorage.get('orbitox/staging/ORBITOX_BRIDGE_ACTIVE_KID'), 'k2');
   });
+
+  it('B0-4 MEDIUM: --database mode generates structured secrets and composed URLs for all 7 roles', () => {
+    const mockStorage = new Map<string, string>();
+    const recordedInvocations: { args: string[]; stdin?: string }[] = [];
+
+    const mockRunner = (args: string[], stdin?: string) => {
+      recordedInvocations.push({ args: [...args], stdin });
+      const subcmd = args[1];
+      const idIdx = args.indexOf('--secret-id');
+      const secretId = idIdx !== -1 ? args[idIdx + 1] : undefined;
+      if (!secretId) return { stdout: '', status: 1 };
+
+      if (subcmd === 'get-secret-value') {
+        if (mockStorage.has(secretId)) {
+          return {
+            stdout: JSON.stringify({ SecretString: mockStorage.get(secretId) }),
+            status: 0,
+          };
+        }
+        return { stdout: '', status: 1 };
+      }
+
+      if (subcmd === 'put-secret-value') {
+        if (stdin) {
+          mockStorage.set(secretId, stdin);
+        }
+        return { stdout: JSON.stringify({ VersionId: 'v1' }), status: 0 };
+      }
+
+      return { stdout: '', status: 0 };
+    };
+
+    // 1. Dry run
+    const dryRunResults = runSecretGenerator({
+      database: true,
+      dryRun: true,
+      dbHost: 'pg.orbitox.internal',
+      awsCliRunner: mockRunner,
+    });
+    assert.equal(dryRunResults.length, 14); // 7 roles * 2 (structured + url)
+    assert.ok(dryRunResults.every((r) => r.action === 'dry-run'));
+
+    // 2. Real run generating database credentials
+    const realResults = runSecretGenerator({
+      database: true,
+      dryRun: false,
+      dbHost: 'staging-rds.orbitox.internal',
+      restaurantDbHost: 'staging-ros-rds.orbitox.internal',
+      awsCliRunner: mockRunner,
+    });
+    assert.equal(realResults.length, 14);
+    assert.ok(realResults.every((r) => r.action === 'set'));
+
+    // Verify structured secret format
+    const runtimeStructRaw = mockStorage.get('orbitox/staging/db/orbitox_runtime');
+    assert.ok(runtimeStructRaw, 'Must have written db/orbitox_runtime structured secret');
+    const runtimeStruct = JSON.parse(runtimeStructRaw);
+    assert.equal(runtimeStruct.username, 'orbitox_runtime');
+    assert.equal(runtimeStruct.host, 'staging-rds.orbitox.internal');
+    assert.equal(runtimeStruct.port, 5432);
+    assert.equal(runtimeStruct.dbname, 'orbitox_platform_staging');
+    assert.equal(runtimeStruct.sslmode, 'require');
+    assert.ok(typeof runtimeStruct.password === 'string' && runtimeStruct.password.length >= 32);
+
+    // Verify composed URL matches structured password exactly
+    const runtimeUrlRaw = mockStorage.get('orbitox/staging/APP_DATABASE_URL');
+    assert.ok(runtimeUrlRaw, 'Must have written APP_DATABASE_URL');
+    assert.equal(
+      runtimeUrlRaw,
+      `postgresql://orbitox_runtime:${runtimeStruct.password}@staging-rds.orbitox.internal:5432/orbitox_platform_staging?sslmode=require`,
+    );
+
+    // Verify restaurantos_app uses restaurant host and database
+    const rosStructRaw = mockStorage.get('orbitox/staging/db/restaurantos_app');
+    assert.ok(rosStructRaw);
+    const rosStruct = JSON.parse(rosStructRaw);
+    assert.equal(rosStruct.host, 'staging-ros-rds.orbitox.internal');
+    assert.equal(rosStruct.dbname, 'restaurant_os_staging');
+
+    const rosUrlRaw = mockStorage.get('orbitox/staging/RESTAURANT_OS_DATABASE_URL');
+    assert.ok(rosUrlRaw);
+    assert.equal(
+      rosUrlRaw,
+      `postgresql://restaurantos_app:${rosStruct.password}@staging-ros-rds.orbitox.internal:5432/restaurant_os_staging?sslmode=require`,
+    );
+
+    // 3. Idempotency: Second run skips already populated database credentials
+    const secondRun = runSecretGenerator({
+      database: true,
+      dryRun: false,
+      dbHost: 'staging-rds.orbitox.internal',
+      awsCliRunner: mockRunner,
+    });
+    assert.ok(secondRun.every((r) => r.action === 'skipped'));
+
+    // 4. Force rotate updates passwords
+    const rotateRun = runSecretGenerator({
+      database: true,
+      dryRun: false,
+      forceRotateDatabase: true,
+      dbHost: 'staging-rds.orbitox.internal',
+      awsCliRunner: mockRunner,
+    });
+    assert.ok(rotateRun.every((r) => r.action === 'rotated'));
+    const rotatedStruct = JSON.parse(mockStorage.get('orbitox/staging/db/orbitox_runtime')!);
+    assert.notEqual(rotatedStruct.password, runtimeStruct.password);
+  });
 });
