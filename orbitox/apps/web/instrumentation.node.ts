@@ -246,13 +246,9 @@ export async function registerNode() {
       }
     }
 
-    // Dedicated Outbox Relay role check (required in production)
+    // Dedicated Outbox Relay role check (checked when provided, e.g. in outbox worker or integrated runner)
     const outboxRelayUrl = process.env.OUTBOX_RELAY_DATABASE_URL?.trim();
-    if (!outboxRelayUrl) {
-      problems.push(
-        'OUTBOX_RELAY_DATABASE_URL is not set (Production outbox relay requires dedicated orbitox_outbox_relay connection)',
-      );
-    } else {
+    if (outboxRelayUrl) {
       try {
         const { PrismaClient } = await import('@prisma/client');
         const relayClient = new PrismaClient({ datasources: { db: { url: outboxRelayUrl } } });

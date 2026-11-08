@@ -22,6 +22,7 @@ END
 $$;
 
 ALTER ROLE orbitox_migrator PASSWORD :'migrator_password';
+ALTER ROLE orbitox_migrator SET createrole_self_grant = 'set';
 
 -- 2. Grant role membership with SET TRUE so master user can switch context if needed
 DO $$

@@ -69,6 +69,12 @@ variable "public_base_url" {
   default     = "https://staging.orbitox.io"
 }
 
+variable "email_from" {
+  type        = string
+  description = "Default from address for transactional emails"
+  default     = "noreply@mail.staging.orbitox.io"
+}
+
 variable "tags" {
   type        = map(string)
   description = "Common tags for all compute resources"

@@ -184,17 +184,23 @@ resource "aws_iam_policy" "web_secrets_access" {
         Resource = [
           var.secrets_map["APP_DATABASE_URL"],
           var.secrets_map["PLATFORM_ADMIN_AUDIT_DATABASE_URL"],
+          var.secrets_map["HMS_AUDIT_DATABASE_URL"],
           var.secrets_map["SESSION_SECRET"],
-          var.secrets_map["ORBITOX_ACCOUNT_TOKEN_ENCRYPTION_KEY"],
-          var.secrets_map["ORBITOX_PHI_ENCRYPTION_KEYS"],
+          var.secrets_map["ORBITOX_ADMIN_TOKEN"],
+          var.secrets_map["ORBITOX_RUNTIME_TOKEN"],
+          var.secrets_map["ORBITOX_CONTROL_SECRET"],
+          var.secrets_map["ORBITOX_GUEST_SECRET"],
+          var.secrets_map["ORBITOX_SERVER_PEPPER"],
           var.secrets_map["ORBITOX_MFA_ENCRYPTION_KEY"],
-          var.secrets_map["ORBITOX_API_KEY_PEPPER_RING"],
-          var.secrets_map["ORBITOX_BRIDGE_SECRET"],
+          var.secrets_map["ORBITOX_ACCOUNT_TOKEN_ENCRYPTION_KEY"],
+          var.secrets_map["ORBITOX_PHI_KEYS"],
+          var.secrets_map["ORBITOX_PHI_INDEX_KEY"],
           var.secrets_map["ORBITOX_GRANT_SIGNING_KEYS"],
+          var.secrets_map["ORBITOX_EMAIL_WEBHOOK_SECRET"],
+          var.secrets_map["RESEND_API_KEY"],
           var.secrets_map["RAZORPAY_KEY_ID"],
           var.secrets_map["RAZORPAY_KEY_SECRET"],
-          var.secrets_map["RAZORPAY_WEBHOOK_SECRET"],
-          var.secrets_map["SVIX_WEBHOOK_SECRET"]
+          var.secrets_map["RAZORPAY_WEBHOOK_SECRET"]
         ]
       },
       {
@@ -250,7 +256,8 @@ resource "aws_iam_policy" "email_secrets_access" {
         Resource = [
           var.secrets_map["OUTBOX_RELAY_DATABASE_URL"],
           var.secrets_map["RESEND_API_KEY"],
-          var.secrets_map["RESEND_WEBHOOK_SIGNING_SECRET"]
+          var.secrets_map["ORBITOX_EMAIL_WEBHOOK_SECRET"],
+          var.secrets_map["ORBITOX_ACCOUNT_TOKEN_ENCRYPTION_KEY"]
         ]
       },
       {
@@ -267,7 +274,7 @@ resource "aws_iam_role_policy_attachment" "email_secrets_attach" {
   policy_arn = aws_iam_policy.email_secrets_access.arn
 }
 
-# 3. Worker Sweep Execution Role (Only maintenance database secret)
+# 3. Worker Sweep Execution Role (Only maintenance and runtime database secrets)
 resource "aws_iam_role" "sweep_execution_role" {
   name = "orbitox-${var.environment}-ecs-sweep-execution-role"
 
@@ -295,7 +302,7 @@ resource "aws_iam_role_policy_attachment" "sweep_execution_standard" {
 
 resource "aws_iam_policy" "sweep_secrets_access" {
   name        = "orbitox-${var.environment}-ecs-sweep-secrets-policy"
-  description = "Allows worker-sweep to decrypt and read ONLY maintenance database secret"
+  description = "Allows worker-sweep to decrypt and read runtime and maintenance database secrets"
 
   policy = jsonencode({
     Version = "2012-10-17"
@@ -304,6 +311,7 @@ resource "aws_iam_policy" "sweep_secrets_access" {
         Effect   = "Allow"
         Action   = ["secretsmanager:GetSecretValue"]
         Resource = [
+          var.secrets_map["APP_DATABASE_URL"],
           var.secrets_map["MAINTENANCE_DATABASE_URL"]
         ]
       },
@@ -471,8 +479,7 @@ resource "aws_iam_policy" "restaurant_os_secrets_access" {
         Effect   = "Allow"
         Action   = ["secretsmanager:GetSecretValue"]
         Resource = [
-          var.secrets_map["RESTAURANT_OS_DATABASE_URL"],
-          var.secrets_map["ORBITOX_BRIDGE_SECRET"]
+          var.secrets_map["RESTAURANT_OS_DATABASE_URL"]
         ]
       },
       {
@@ -519,22 +526,33 @@ resource "aws_ecs_task_definition" "web" {
         { name = "PORT", value = "3005" },
         { name = "HOSTNAME", value = "0.0.0.0" },
         { name = "ORBITOX_PUBLIC_BASE_URL", value = var.public_base_url },
-        { name = "ORBITOX_PLATFORM_REPOSITORY", value = "prisma" }
+        { name = "ORBITOX_PLATFORM_REPOSITORY", value = "prisma" },
+        { name = "ORBITOX_ADMIN_TOKEN_SCOPES", value = "GET:/api/*,POST:/api/*,PUT:/api/*,PATCH:/api/*,DELETE:/api/*" },
+        { name = "ORBITOX_BREACHED_PASSWORD_API", value = "off" },
+        { name = "ORBITOX_EMAIL_PROVIDER", value = "resend" },
+        { name = "ORBITOX_EMAIL_FROM", value = var.email_from },
+        { name = "ORBITOX_PHI_ACTIVE_KID", value = "v1" }
       ]
       secrets = [
         { name = "APP_DATABASE_URL", valueFrom = var.secrets_map["APP_DATABASE_URL"] },
         { name = "PLATFORM_ADMIN_AUDIT_DATABASE_URL", valueFrom = var.secrets_map["PLATFORM_ADMIN_AUDIT_DATABASE_URL"] },
+        { name = "HMS_AUDIT_DATABASE_URL", valueFrom = var.secrets_map["HMS_AUDIT_DATABASE_URL"] },
         { name = "SESSION_SECRET", valueFrom = var.secrets_map["SESSION_SECRET"] },
-        { name = "ORBITOX_ACCOUNT_TOKEN_ENCRYPTION_KEY", valueFrom = var.secrets_map["ORBITOX_ACCOUNT_TOKEN_ENCRYPTION_KEY"] },
-        { name = "ORBITOX_PHI_ENCRYPTION_KEYS", valueFrom = var.secrets_map["ORBITOX_PHI_ENCRYPTION_KEYS"] },
+        { name = "ORBITOX_ADMIN_TOKEN", valueFrom = var.secrets_map["ORBITOX_ADMIN_TOKEN"] },
+        { name = "ORBITOX_RUNTIME_TOKEN", valueFrom = var.secrets_map["ORBITOX_RUNTIME_TOKEN"] },
+        { name = "ORBITOX_CONTROL_SECRET", valueFrom = var.secrets_map["ORBITOX_CONTROL_SECRET"] },
+        { name = "ORBITOX_GUEST_SECRET", valueFrom = var.secrets_map["ORBITOX_GUEST_SECRET"] },
+        { name = "ORBITOX_SERVER_PEPPER", valueFrom = var.secrets_map["ORBITOX_SERVER_PEPPER"] },
         { name = "ORBITOX_MFA_ENCRYPTION_KEY", valueFrom = var.secrets_map["ORBITOX_MFA_ENCRYPTION_KEY"] },
-        { name = "ORBITOX_API_KEY_PEPPER_RING", valueFrom = var.secrets_map["ORBITOX_API_KEY_PEPPER_RING"] },
-        { name = "ORBITOX_BRIDGE_SECRET", valueFrom = var.secrets_map["ORBITOX_BRIDGE_SECRET"] },
+        { name = "ORBITOX_ACCOUNT_TOKEN_ENCRYPTION_KEY", valueFrom = var.secrets_map["ORBITOX_ACCOUNT_TOKEN_ENCRYPTION_KEY"] },
+        { name = "ORBITOX_PHI_KEYS", valueFrom = var.secrets_map["ORBITOX_PHI_KEYS"] },
+        { name = "ORBITOX_PHI_INDEX_KEY", valueFrom = var.secrets_map["ORBITOX_PHI_INDEX_KEY"] },
         { name = "ORBITOX_GRANT_SIGNING_KEYS", valueFrom = var.secrets_map["ORBITOX_GRANT_SIGNING_KEYS"] },
+        { name = "ORBITOX_EMAIL_WEBHOOK_SECRET", valueFrom = var.secrets_map["ORBITOX_EMAIL_WEBHOOK_SECRET"] },
+        { name = "RESEND_API_KEY", valueFrom = var.secrets_map["RESEND_API_KEY"] },
         { name = "RAZORPAY_KEY_ID", valueFrom = var.secrets_map["RAZORPAY_KEY_ID"] },
         { name = "RAZORPAY_KEY_SECRET", valueFrom = var.secrets_map["RAZORPAY_KEY_SECRET"] },
-        { name = "RAZORPAY_WEBHOOK_SECRET", valueFrom = var.secrets_map["RAZORPAY_WEBHOOK_SECRET"] },
-        { name = "SVIX_WEBHOOK_SECRET", valueFrom = var.secrets_map["SVIX_WEBHOOK_SECRET"] }
+        { name = "RAZORPAY_WEBHOOK_SECRET", valueFrom = var.secrets_map["RAZORPAY_WEBHOOK_SECRET"] }
       ]
       logConfiguration = {
         logDriver = "awslogs"
@@ -574,15 +592,18 @@ resource "aws_ecs_task_definition" "worker_email" {
       name      = "worker-email"
       image     = var.web_image_digest
       essential = true
-      command   = ["node", "scripts/start-outbox-worker.js"]
+      command   = ["node", "scripts/account-email-worker.js"]
       environment = [
         { name = "NODE_ENV", value = "production" },
-        { name = "ORBITOX_PLATFORM_REPOSITORY", value = "prisma" }
+        { name = "ORBITOX_PLATFORM_REPOSITORY", value = "prisma" },
+        { name = "ORBITOX_EMAIL_PROVIDER", value = "resend" },
+        { name = "ORBITOX_EMAIL_FROM", value = var.email_from }
       ]
       secrets = [
         { name = "OUTBOX_RELAY_DATABASE_URL", valueFrom = var.secrets_map["OUTBOX_RELAY_DATABASE_URL"] },
         { name = "RESEND_API_KEY", valueFrom = var.secrets_map["RESEND_API_KEY"] },
-        { name = "RESEND_WEBHOOK_SIGNING_SECRET", valueFrom = var.secrets_map["RESEND_WEBHOOK_SIGNING_SECRET"] }
+        { name = "ORBITOX_EMAIL_WEBHOOK_SECRET", valueFrom = var.secrets_map["ORBITOX_EMAIL_WEBHOOK_SECRET"] },
+        { name = "ORBITOX_ACCOUNT_TOKEN_ENCRYPTION_KEY", valueFrom = var.secrets_map["ORBITOX_ACCOUNT_TOKEN_ENCRYPTION_KEY"] }
       ]
       logConfiguration = {
         logDriver = "awslogs"
@@ -615,12 +636,13 @@ resource "aws_ecs_task_definition" "worker_sweep" {
       name      = "worker-sweep"
       image     = var.web_image_digest
       essential = true
-      command   = ["node", "-e", "import('./lib/billing-grace-sweep.js').then(m => m.sweepBillingGrace())"]
+      command   = ["node", "scripts/billing-grace-sweep.js"]
       environment = [
         { name = "NODE_ENV", value = "production" },
         { name = "ORBITOX_PLATFORM_REPOSITORY", value = "prisma" }
       ]
       secrets = [
+        { name = "APP_DATABASE_URL", valueFrom = var.secrets_map["APP_DATABASE_URL"] },
         { name = "MAINTENANCE_DATABASE_URL", valueFrom = var.secrets_map["MAINTENANCE_DATABASE_URL"] }
       ]
       logConfiguration = {
@@ -656,20 +678,18 @@ resource "aws_ecs_task_definition" "restaurant_os" {
       essential = true
       portMappings = [
         {
-          containerPort = 3000
-          hostPort      = 3000
+          containerPort = 4010
+          hostPort      = 4010
           protocol      = "tcp"
         }
       ]
       environment = [
         { name = "NODE_ENV", value = "production" },
-        { name = "PORT", value = "3000" },
-        { name = "ORBITOX_CONTROL_PLANE_URL", value = var.public_base_url }
+        { name = "PORT", value = "4010" },
+        { name = "HOSTNAME", value = "0.0.0.0" }
       ]
       secrets = [
-        { name = "DATABASE_URL", valueFrom = var.secrets_map["RESTAURANT_OS_DATABASE_URL"] },
-        { name = "APP_DATABASE_URL", valueFrom = var.secrets_map["RESTAURANT_OS_DATABASE_URL"] },
-        { name = "ORBITOX_BRIDGE_SECRET", valueFrom = var.secrets_map["ORBITOX_BRIDGE_SECRET"] }
+        { name = "DATABASE_URL", valueFrom = var.secrets_map["RESTAURANT_OS_DATABASE_URL"] }
       ]
       logConfiguration = {
         logDriver = "awslogs"

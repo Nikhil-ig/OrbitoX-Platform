@@ -57,6 +57,8 @@ BEGIN
 END
 $$;
 
+GRANT CREATE ON SCHEMA public TO orbitox_audit_resolver;
 ALTER FUNCTION public.resolve_platform_audit_intent(TEXT, TEXT, TEXT, BIGINT) OWNER TO orbitox_audit_resolver;
+REVOKE CREATE ON SCHEMA public FROM orbitox_audit_resolver;
 REVOKE ALL ON FUNCTION public.resolve_platform_audit_intent(TEXT, TEXT, TEXT, BIGINT) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.resolve_platform_audit_intent(TEXT, TEXT, TEXT, BIGINT) TO orbitox_runtime;
