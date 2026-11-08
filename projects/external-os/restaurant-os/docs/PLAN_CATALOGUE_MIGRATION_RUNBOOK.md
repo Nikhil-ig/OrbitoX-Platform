@@ -17,3 +17,11 @@ pnpm exec prisma migrate deploy --schema prisma/schema.prisma
 ```
 
 If a later foreign-key or plugin-match migration fails instead, resolve that specific failed migration name after repairing the reported rows, then deploy again.
+
+## Tenant ID and Runtime Tenant ID Repair (Migration 20261105030000)
+
+When migrating or repairing legacy installations:
+- `runtimeTenantId` is the external plugin runtime's own key (e.g. `ros-tenant-legacy-42` in RestaurantOS).
+- Legacy imports must map `runtimeTenantId` via the importer, together with the RestaurantOS side, and never by database migrations.
+- Future repair migrations must leave external runtime IDs alone to prevent breaking tenant mapping across the bridge.
+
