@@ -7,71 +7,45 @@
  * Connects exclusively via `MIGRATOR_DATABASE_URL` (orbitox_migrator).
  * 1. Applies all Prisma migrations via `prisma migrate deploy`.
  * 2. Executes post-migration role enablement (ALTER ROLE ... WITH LOGIN).
+ *
+ * Security: Client-side SCRAM-SHA-256 verifiers (PBKDF2-SHA256, 4096 iter)
+ * ensure raw passwords never appear in PostgreSQL statement logs or CloudWatch (B0-6).
  * ─────────────────────────────────────────────────────────────
  */
 
 const { spawnSync } = require('child_process');
+const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
 const { Client } = require('pg');
 
-const migratorUrl = process.env.MIGRATOR_DATABASE_URL || process.env.DATABASE_URL;
-if (!migratorUrl) {
-  console.error('❌ MIGRATOR_DATABASE_URL (or DATABASE_URL) is required.');
-  process.exit(1);
+/**
+ * Computes standard PostgreSQL client-side SCRAM-SHA-256 verifier.
+ * Format: SCRAM-SHA-256$4096:<salt_base64>$<StoredKey_base64>:<ServerKey_base64>
+ */
+function computeScramSha256Verifier(password, salt = crypto.randomBytes(16), iterations = 4096) {
+  if (typeof password !== 'string' || !password) {
+    throw new Error('Password must be a non-empty string to compute SCRAM-SHA-256 verifier.');
+  }
+  if (password.startsWith('SCRAM-SHA-256$')) {
+    return password;
+  }
+  const saltedPassword = crypto.pbkdf2Sync(password, salt, iterations, 32, 'sha256');
+  const clientKey = crypto.createHmac('sha256', saltedPassword).update('Client Key').digest();
+  const storedKey = crypto.createHash('sha256').update(clientKey).digest();
+  const serverKey = crypto.createHmac('sha256', saltedPassword).update('Server Key').digest();
+  return `SCRAM-SHA-256$${iterations}:${salt.toString('base64')}$${storedKey.toString('base64')}:${serverKey.toString('base64')}`;
 }
 
-// Locate schema.prisma
-const candidateSchemaPaths = [
-  path.resolve(process.cwd(), 'prisma/schema.prisma'),
-  path.resolve(process.cwd(), '../../prisma/schema.prisma'),
-  path.resolve(__dirname, '../../../prisma/schema.prisma'),
-  path.resolve('/repo/prisma/schema.prisma'),
-  path.resolve('/app/prisma/schema.prisma')
-];
-
-let schemaPath = candidateSchemaPaths.find(p => fs.existsSync(p));
-if (!schemaPath) {
-  console.error('❌ Could not locate prisma/schema.prisma in any known path:', candidateSchemaPaths);
-  process.exit(1);
+/**
+ * Formulates the ALTER ROLE query with the computed SCRAM-SHA-256 verifier.
+ * Guarantees plaintext passwords never reach the database query text.
+ */
+function buildAlterRolePasswordStatement(role, password) {
+  const verifier = computeScramSha256Verifier(password);
+  const escapedVerifier = verifier.replace(/'/g, "''");
+  return `ALTER ROLE ${role} WITH LOGIN PASSWORD '${escapedVerifier}'`;
 }
-
-console.log('========================================================');
-console.log('🚀 RUNNING ORBITOX PRIVATE STAGING MIGRATION TASK (Phase 6F)');
-console.log('========================================================');
-console.log('📍 Schema Path:', schemaPath);
-
-// Locate prisma CLI binary
-const candidatePrismaCli = [
-  path.resolve(process.cwd(), 'node_modules/prisma/build/index.js'),
-  path.resolve(process.cwd(), '../../node_modules/prisma/build/index.js'),
-  path.resolve(__dirname, '../../../node_modules/prisma/build/index.js'),
-  path.resolve('/repo/node_modules/prisma/build/index.js'),
-  path.resolve('/app/node_modules/prisma/build/index.js')
-];
-
-let prismaCli = candidatePrismaCli.find(p => fs.existsSync(p));
-
-console.log('📦 Executing prisma migrate deploy...');
-const migrateResult = spawnSync(process.execPath, [
-  prismaCli || 'npx prisma',
-  'migrate',
-  'deploy',
-  `--schema=${schemaPath}`
-], {
-  env: {
-    ...process.env,
-    DATABASE_URL: migratorUrl
-  },
-  stdio: 'inherit'
-});
-
-if (migrateResult.status !== 0) {
-  console.error('❌ prisma migrate deploy failed with exit code:', migrateResult.status);
-  process.exit(migrateResult.status || 1);
-}
-
-console.log('✓ Prisma migrations deployed successfully.');
 
 function getPasswordFromUrl(urlStr) {
   if (!urlStr) return null;
@@ -84,8 +58,8 @@ function getPasswordFromUrl(urlStr) {
 }
 
 // Run post-migration role enablement as orbitox_migrator
-async function enableRoles() {
-  console.log('🔐 Enabling application roles and synchronizing passwords (orbitox_runtime, maintenance, outbox_relay)...');
+async function enableRoles(migratorUrl) {
+  console.log('🔐 Enabling application roles and synchronizing SCRAM-SHA-256 passwords...');
   const client = new Client({ connectionString: migratorUrl });
   await client.connect();
 
@@ -111,9 +85,9 @@ async function enableRoles() {
       if (res.rowCount > 0) {
         const pwd = rolePasswordMap[role];
         if (pwd) {
-          const escapedPwd = pwd.replace(/'/g, "''");
-          await client.query(`ALTER ROLE ${role} WITH LOGIN PASSWORD '${escapedPwd}'`);
-          console.log(`  ✓ Enabled LOGIN and synchronized password for ${role}`);
+          const sql = buildAlterRolePasswordStatement(role, pwd);
+          await client.query(sql);
+          console.log(`  ✓ Enabled LOGIN and synchronized SCRAM password for ${role}`);
         } else {
           await client.query(`ALTER ROLE ${role} WITH LOGIN`);
           console.log(`  ✓ Enabled LOGIN for ${role}`);
@@ -131,8 +105,79 @@ async function enableRoles() {
   }
 }
 
-enableRoles().catch(err => {
-  console.error('❌ Failed to enable application roles:', err);
-  process.exit(1);
-});
+async function main() {
+  const migratorUrl = process.env.MIGRATOR_DATABASE_URL || process.env.DATABASE_URL;
+  if (!migratorUrl) {
+    console.error('❌ MIGRATOR_DATABASE_URL (or DATABASE_URL) is required.');
+    process.exit(1);
+  }
 
+  // Locate schema.prisma
+  const candidateSchemaPaths = [
+    path.resolve(process.cwd(), 'prisma/schema.prisma'),
+    path.resolve(process.cwd(), '../../prisma/schema.prisma'),
+    path.resolve(__dirname, '../../../prisma/schema.prisma'),
+    path.resolve('/repo/prisma/schema.prisma'),
+    path.resolve('/app/prisma/schema.prisma')
+  ];
+
+  const schemaPath = candidateSchemaPaths.find(p => fs.existsSync(p));
+  if (!schemaPath) {
+    console.error('❌ Could not locate prisma/schema.prisma in any known path:', candidateSchemaPaths);
+    process.exit(1);
+  }
+
+  console.log('========================================================');
+  console.log('🚀 RUNNING ORBITOX PRIVATE STAGING MIGRATION TASK (Phase 6F)');
+  console.log('========================================================');
+  console.log('📍 Schema Path:', schemaPath);
+
+  // Locate prisma CLI binary
+  const candidatePrismaCli = [
+    path.resolve(process.cwd(), 'node_modules/prisma/build/index.js'),
+    path.resolve(process.cwd(), '../../node_modules/prisma/build/index.js'),
+    path.resolve(__dirname, '../../../node_modules/prisma/build/index.js'),
+    path.resolve('/repo/node_modules/prisma/build/index.js'),
+    path.resolve('/app/node_modules/prisma/build/index.js')
+  ];
+
+  const prismaCli = candidatePrismaCli.find(p => fs.existsSync(p));
+
+  console.log('📦 Executing prisma migrate deploy...');
+  const migrateResult = spawnSync(process.execPath, [
+    prismaCli || 'npx prisma',
+    'migrate',
+    'deploy',
+    `--schema=${schemaPath}`
+  ], {
+    env: {
+      ...process.env,
+      DATABASE_URL: migratorUrl
+    },
+    stdio: 'inherit'
+  });
+
+  if (migrateResult.status !== 0) {
+    console.error('❌ prisma migrate deploy failed with exit code:', migrateResult.status);
+    process.exit(migrateResult.status || 1);
+  }
+
+  console.log('✓ Prisma migrations deployed successfully.');
+
+  await enableRoles(migratorUrl);
+}
+
+if (require.main === module) {
+  main().catch(err => {
+    console.error('❌ Failed to run migration task:', err);
+    process.exit(1);
+  });
+}
+
+module.exports = {
+  computeScramSha256Verifier,
+  buildAlterRolePasswordStatement,
+  getPasswordFromUrl,
+  enableRoles,
+  main,
+};

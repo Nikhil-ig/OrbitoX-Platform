@@ -63,11 +63,16 @@ resource "aws_security_group" "rds" {
 resource "aws_db_parameter_group" "pg16" {
   name        = "orbitox-${var.environment}-pg16-params"
   family      = "postgres16"
-  description = "Parameter group for OrbitoX PostgreSQL 16 with mandatory SSL"
+  description = "Parameter group for OrbitoX PostgreSQL 16 with mandatory SSL and sanitized logging"
 
   parameter {
     name  = "rds.force_ssl"
     value = "1"
+  }
+
+  parameter {
+    name  = "log_statement"
+    value = "none"
   }
 
   tags = merge(var.tags, {
