@@ -163,6 +163,35 @@ describe('Production startup secret validation', () => {
     }
   });
 
+  it('rejects startup in production when ORBITOX_ENABLE_DEMO_SEED is set to true', async () => {
+    const environment = { ...process.env };
+    Reflect.set(process.env, 'NODE_ENV', 'production');
+    process.env.NEXT_RUNTIME = 'nodejs';
+    process.env.ORBITOX_ADMIN_TOKEN = 'admin_secret_32_characters_minimum_000';
+    process.env.ORBITOX_ADMIN_TOKEN_SCOPES = 'GET:/api/v1/overview';
+    process.env.ORBITOX_RUNTIME_TOKEN = 'runtime_secret_32_characters_minimum_0';
+    process.env.ORBITOX_CONTROL_SECRET = 'control_secret_32_characters_minimum_';
+    process.env.ORBITOX_GUEST_SECRET = 'guest_secret_32_characters_minimum_00';
+    process.env.ORBITOX_MFA_ENCRYPTION_KEY = crypto.randomBytes(32).toString('base64');
+    process.env.ORBITOX_ACCOUNT_TOKEN_ENCRYPTION_KEY = crypto.randomBytes(32).toString('base64');
+    process.env.ORBITOX_PUBLIC_BASE_URL = 'https://console.orbitox.io';
+    process.env.ORBITOX_SERVER_PEPPER = 'pepper_secret_32_characters_minimum_00';
+    process.env.ORBITOX_ENABLE_DEMO_SEED = 'true';
+
+    try {
+      await assert.rejects(register(), (error: Error) => {
+        assert.match(error.message, /ORBITOX_ENABLE_DEMO_SEED is strictly prohibited in production deployments/);
+        assert.match(error.message, /OrbitoX cannot start: invalid production configuration/);
+        return true;
+      });
+    } finally {
+      for (const key of Object.keys(process.env)) {
+        if (!(key in environment)) delete process.env[key];
+      }
+      Object.assign(process.env, environment);
+    }
+  });
+
   it('returns 503 DATABASE_ROLE_UNSAFE from /api/health when connected role has superuser or bypassrls', async () => {
     const { createHealthHandler } = await import('../lib/health-route-handler');
     const { REQUIRED_PLATFORM_MIGRATIONS, assertPlatformDatabaseReady } =

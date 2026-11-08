@@ -2,127 +2,146 @@ import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
+import * as ts from 'typescript';
 import { PLATFORM_SERVICE_CONTRACTS } from '../lib/platform-service-contracts';
 
 /**
  * ─────────────────────────────────────────────────────────────
- * OrbitoX Service Environment & Secret Contract Verification (B0-3)
+ * OrbitoX Service Environment & Secret Static Contract Verification (B0-5)
  * ─────────────────────────────────────────────────────────────
- * Statically collects environment variables read across each service's
- * runtime code paths and enforces strict 1:1 parity between:
- * 1. Variables read by code
- * 2. Variables defined in PLATFORM_SERVICE_CONTRACTS
- * 3. Variables injected in Terraform ECS Task Definitions
+ * Uses the TypeScript Compiler API AST parser to reliably extract
+ * environment variable reads across each service's code paths.
+ * Enforces strict bidirectional parity:
+ * 1. (codeReads − ignore) === contract (no undeclared code reads; no unused contract variables)
+ * 2. contract === terraform (1:1 parity with ECS Task Definitions)
  * ─────────────────────────────────────────────────────────────
  */
 
-// Explicit, commented ignore list of non-production, dev-only, test-only, and framework internals
-const GLOBAL_DEV_TEST_IGNORE = new Set([
+// Web service ignore list: development fallbacks, ambient cloud runtime indicators, and client SDKs
+const GLOBAL_DEV_TEST_IGNORE: ReadonlyMap<string, string> = new Map([
   // Development / Local Test Fallbacks & Overrides
-  'ALLOW_UNAUTHENTICATED_DEV_MODE', // Bypass auth in local mock testing
-  'APP_BASE_URL',                  // Legacy dev fallback for ORBITOX_PUBLIC_BASE_URL
-  'DATABASE_URL',                 // Local dev fallback when dedicated role URLs are not supplied
-  'DEBUG',                        // Debug log toggle
-  'LOG_LEVEL',                    // Log level verbosity
-  'OPERATION_LEASE_TTL_SECONDS',  // Dynamic lease tuning with built-in default
-  'ORBITOX_DATA_DIR',             // Local dev file store directory
-  'ORBITOX_ENABLE_HOSPITAL_ADMIN_ENDPOINTS', // Feature toggle for experimental dev endpoints
-  'ORBITOX_SYNC_SAGA',            // Test harness synchronous saga flag
-  'ORBITOX_TEST_STANDALONE',       // Local standalone test harness flag
-  'TEST_STEP5_DELAY_MS',          // Test harness latency injection flag
-  'TRUSTED_PROXIES',              // Reverse proxy trust list
-  'TRUST_PROXY',                  // Reverse proxy trust toggle
+  ['ALLOW_UNAUTHENTICATED_DEV_MODE', 'Dev/test mock authorization bypass; disabled in production.'],
+  ['APP_BASE_URL', 'Dev-only alias for ORBITOX_PUBLIC_BASE_URL.'],
+  ['DATABASE_URL', 'Dev fallback connection string superseded by dedicated role URLs (APP_DATABASE_URL, etc.).'],
+  ['DEBUG', 'Verbose debug logging toggle for local debugging.'],
+  ['LOG_LEVEL', 'Runtime log level tuning override with built-in default.'],
+  ['OPERATION_LEASE_TTL_SECONDS', 'Test harness operation lease duration override with built-in default.'],
+  ['ORBITOX_DATA_DIR', 'Local filesystem data store path used only in offline JSON mode.'],
+  ['ORBITOX_ENABLE_HOSPITAL_ADMIN_ENDPOINTS', 'Feature toggle for experimental development administrative routes.'],
+  ['ORBITOX_SYNC_SAGA', 'Test harness flag to execute distributed saga transactions synchronously.'],
+  ['ORBITOX_TEST_STANDALONE', 'Standalone local test runner flag bypassing external dependencies.'],
+  ['TEST_STEP5_DELAY_MS', 'Test harness latency injection flag; strictly prohibited at production startup.'],
+  ['TRUST_PROXY', 'Boolean convenience toggle superseded by explicit CIDR matching in TRUSTED_PROXIES.'],
+  ['ORBITOX_ENABLE_DEMO_SEED', 'Dev-only database seeding toggle; strictly rejected at production startup.'],
+  ['HOSPITALOS_URL', 'Dev-only route override; HospitalOS executes in-process via Next.js route handlers in production.'],
 
   // Ambient Infrastructure / Cloud Environment Variables
-  'AWS_ACCESS_KEY_ID',            // Dev credentials; ECS Fargate uses IAM task role
-  'AWS_SECRET_ACCESS_KEY',        // Dev credentials; ECS Fargate uses IAM task role
-  'AWS_SESSION_TOKEN',            // Dev credentials; ECS Fargate uses IAM task role
-  'AWS_REGION',                   // Provided automatically by AWS ECS Fargate execution environment
-  'KUBERNETES_SERVICE_HOST',       // Platform detection heuristic
-  'VERCEL',                       // Platform detection heuristic
+  ['AWS_ACCESS_KEY_ID', 'Ambient AWS credentials for local dev/testing; staging ECS tasks authenticate via IAM Task Role.'],
+  ['AWS_SECRET_ACCESS_KEY', 'Ambient AWS credentials for local dev/testing; staging ECS tasks authenticate via IAM Task Role.'],
+  ['AWS_SESSION_TOKEN', 'Ambient AWS credentials for local dev/testing; staging ECS tasks authenticate via IAM Task Role.'],
+  ['AWS_REGION', 'Injected automatically into the container environment by AWS ECS Fargate runtime.'],
+  ['KUBERNETES_SERVICE_HOST', 'Ambient container orchestration platform detector used in standalone health probes.'],
+  ['VERCEL', 'Ambient cloud platform detector used for edge build/deployment compatibility.'],
 
   // Next.js Framework Internal Variables
-  'NEXT_PHASE',                   // Next.js build-phase indicator
-  'NEXT_RUNTIME',                 // Next.js runtime environment (nodejs/edge)
+  ['NEXT_PHASE', 'Next.js compiler internal phase indicator stripped before standalone runtime launch.'],
+  ['NEXT_RUNTIME', 'Next.js server runtime indicator (nodejs vs edge).'],
+
+  // Cluster Test Harness & Docker Compose
+  ['CLUSTER_MODE', 'Docker compose multi-node cluster test harness flag; staging ECS uses standalone scaling.'],
+  ['ORBITOX_DEPLOYMENT_MODE', 'Docker compose cluster test harness flag; staging ECS uses standalone scaling.'],
+  ['NODE_ID', 'Docker compose cluster node identifier; staging ECS uses AWS Fargate task metadata.'],
+  ['ORBITOX_LICENSE', 'Legacy admin system endpoint license override; OrbitoX Platform uses embedded license verification.'],
+  ['ORBITOX_PUBLIC_KEY', 'Local CLI package release verification key override; production packages use embedded root keys.'],
 
   // Client SDK and Out-of-Scope Service Endpoints
-  'AZURE_OPENAI_API_KEY',         // External plugin optional integration
-  'AZURE_OPENAI_MODEL',           // External plugin optional integration
-  'GEMINI_API_KEY',               // External plugin optional integration
-  'GEMINI_MODEL',                 // External plugin optional integration
-  'GOOGLE_AI_API_KEY',            // External plugin optional integration
-  'OPENAI_API_KEY',               // External plugin optional integration
-  'OPENAI_MODEL',                 // External plugin optional integration
-  'ORBITOX_API_KEY',              // Client-side SDK credential
-  'ORBITOX_CUSTOMER_API_KEY',     // Client-side SDK credential
-  'ORBITOX_BACKEND_URL',          // Dev fallback URL for local multi-service testing
-  'ORBITOX_CONTROL_PLANE_PUBLIC_KEY', // Client SDK grant verification key
-  'ORBITOX_CONTROL_PLANE_PUBLIC_KEYS', // Client SDK grant verification key
-  'ORBITOX_CONTROL_PLANE_URL',    // Dev fallback URL for local multi-service testing
-  'ORBITOX_DISABLE_AUTO_RESUME',  // Test runner flag
-  'ORBITOX_DISABLE_KEY_USAGE_THROTTLE', // Test runner flag
-  'ORBITOX_DISABLE_SAMPLE_PLUGINS',     // Test runner flag
-  'ORBITOX_DOMAIN',               // 1-line bootstrapper domain parameter
-  'ORBITOX_GRANT_KEY_ID',         // Legacy grant key ID fallback
-  'ORBITOX_GRANT_PRIVATE_KEY',    // Legacy single grant private key fallback
-  'ORBITOX_GRANT_PUBLIC_KEY',     // Single public key fallback (superseded by ORBITOX_GRANT_PUBLIC_KEYS)
-  'ORBITOX_INTERNAL_SECRET',      // Legacy internal token secret (superseded by ORBITOX_CONTROL_SECRET)
-  'ORBITOX_LICENSE_KEY',          // 1-line bootstrapper license parameter
-  'ORBITOX_SERVER_PEPPERS',       // Pepper ring multi-key map (superseded by ORBITOX_SERVER_PEPPER)
-  'ORBITOX_SERVER_PEPPER_ACTIVE', // Pepper ring active key ID
-  'ORBITOX_SERVER_PEPPER_SECONDARY', // Legacy dual pepper fallback
-  'ORBITOX_URL',                  // Client SDK endpoint URL
-  'ORBITOX_WEBHOOK_SECRET',       // Mock sample plugin webhook secret
-  'ORBITOX_WEBHOOK_URL',          // Mock sample plugin webhook URL
-  'OUTBOX_RELAY_DATABASE_URL',    // Handled by dedicated worker_email service
-  'PLATFORM_AUDIT_DATABASE_URL',  // Legacy alias for PLATFORM_ADMIN_AUDIT_DATABASE_URL
-  'POSTMARK_SERVER_TOKEN',        // Alternative email provider option
-  'REDIS_HOST',                   // Optional Redis cache setting
-  'REDIS_PORT',                   // Optional Redis cache setting
-  'REDIS_URL',                    // Optional Redis cache setting
-  'RESTAURANTOS_PLATFORM_TOKEN',  // Test authentication token
-  'RESTAURANTOS_PUBLIC_URL',      // Dev routing URL
-  'RESTAURANTOS_RUNTIME_URL',     // Dev routing URL
-  'RESTAURANTOS_URL',             // Dev routing URL
-  'RESTAURANT_STORE_URL',         // Dev routing URL
-  'RESTAURANT_URL',               // Dev routing URL
-  'S3_BUCKET_NAME',               // S3 storage bucket name (Phase 6G ObjectStore)
-  'JWT_PRIVATE_KEY',              // Legacy test fixture
-  'JWT_PUBLIC_KEY',               // Legacy test fixture
+  ['AZURE_OPENAI_API_KEY', 'Third-party AI model provider credential for external integrations.'],
+  ['AZURE_OPENAI_MODEL', 'Third-party AI model configuration for external integrations.'],
+  ['GEMINI_API_KEY', 'Third-party AI model provider credential for external integrations.'],
+  ['GEMINI_MODEL', 'Third-party AI model configuration for external integrations.'],
+  ['GOOGLE_AI_API_KEY', 'Third-party AI model provider credential for external integrations.'],
+  ['OPENAI_API_KEY', 'Third-party AI model provider credential for external integrations.'],
+  ['OPENAI_MODEL', 'Third-party AI model configuration for external integrations.'],
+  ['ORBITOX_API_KEY', 'External client SDK authentication header credential.'],
+  ['ORBITOX_CUSTOMER_API_KEY', 'External client SDK authentication header credential.'],
+  ['ORBITOX_BACKEND_URL', 'Client SDK routing endpoint override for local multi-service development.'],
+  ['ORBITOX_CONTROL_PLANE_PUBLIC_KEY', 'Client SDK single key fallback for standalone runtimes to verify control plane grants.'],
+  ['ORBITOX_CONTROL_PLANE_PUBLIC_KEYS', 'Client SDK key ring fallback for standalone runtimes to verify control plane grants.'],
+  ['ORBITOX_CONTROL_PLANE_URL', 'Client SDK routing endpoint override for local multi-service development.'],
+  ['ORBITOX_DISABLE_AUTO_RESUME', 'Test runner flag to disable automatic tenant saga recovery.'],
+  ['ORBITOX_DISABLE_KEY_USAGE_THROTTLE', 'Test runner flag to disable key usage throttling during stress tests.'],
+  ['ORBITOX_DISABLE_SAMPLE_PLUGINS', 'Test runner flag to bypass sample plugin registration.'],
+  ['ORBITOX_DOMAIN', '1-line bootstrapper domain configuration parameter for embedded apps.'],
+  ['ORBITOX_GRANT_KEY_ID', 'Legacy single grant key identifier superseded by ORBITOX_GRANT_SIGNING_KEYS.'],
+  ['ORBITOX_GRANT_PRIVATE_KEY', 'Legacy single grant private key superseded by ORBITOX_GRANT_SIGNING_KEYS.'],
+  ['ORBITOX_GRANT_PUBLIC_KEY', 'Legacy single grant public key superseded by ORBITOX_GRANT_PUBLIC_KEYS.'],
+  ['ORBITOX_INTERNAL_SECRET', 'Legacy token signing secret superseded by ORBITOX_CONTROL_SECRET.'],
+  ['ORBITOX_LICENSE_KEY', '1-line bootstrapper license parameter for embedded library applications.'],
+  ['ORBITOX_SERVER_PEPPERS', 'Multi-key pepper ring JSON superseded in staging by single active ORBITOX_SERVER_PEPPER.'],
+  ['ORBITOX_SERVER_PEPPER_ACTIVE', 'Pepper ring active key identifier fallback.'],
+  ['ORBITOX_SERVER_PEPPER_SECONDARY', 'Pepper ring secondary key fallback.'],
+  ['ORBITOX_URL', 'External client SDK endpoint configuration.'],
+  ['ORBITOX_WEBHOOK_SECRET', 'Mock sample plugin webhook verification secret for local test cases.'],
+  ['ORBITOX_WEBHOOK_URL', 'Mock sample plugin webhook destination URL for local test cases.'],
+  ['OUTBOX_RELAY_DATABASE_URL', 'Dedicated database connection string used exclusively by worker_email task.'],
+  ['PLATFORM_AUDIT_DATABASE_URL', 'Legacy connection string alias superseded by PLATFORM_ADMIN_AUDIT_DATABASE_URL.'],
+  ['POSTMARK_SERVER_TOKEN', 'Unused email provider option; production email delivery is standardized on Resend.'],
+  ['REDIS_HOST', 'Optional Redis cache hostname used only when distributed clustering is enabled.'],
+  ['REDIS_PORT', 'Optional Redis cache port used only when distributed clustering is enabled.'],
+  ['REDIS_URL', 'Optional Redis cache connection string used only when distributed clustering is enabled.'],
+  ['RESTAURANTOS_PLATFORM_TOKEN', 'Dev mock token for local cross-service bridge invocation tests.'],
+  ['RESTAURANTOS_PUBLIC_URL', 'Dev routing URL for external OS microservice testing.'],
+  ['RESTAURANTOS_RUNTIME_URL', 'Dev routing URL for external OS microservice testing.'],
+  ['RESTAURANTOS_URL', 'Dev routing URL for external OS microservice testing.'],
+  ['RESTAURANT_STORE_URL', 'Dev routing URL for external OS microservice testing.'],
+  ['RESTAURANT_URL', 'Dev routing URL for external OS microservice testing.'],
+  ['S3_BUCKET_NAME', 'S3 ObjectStore storage bucket name (used in Phase 6G ObjectStore).'],
+  ['JWT_PRIVATE_KEY', 'Test fixture cryptographic key used in local token generation tests.'],
+  ['JWT_PUBLIC_KEY', 'Test fixture cryptographic key used in local token generation tests.'],
 ]);
 
-const RESTAURANT_OS_DEV_TEST_IGNORE = new Set([
-  'ALLOW_DANGEROUS_RESET',        // Forbidden in production (strictly checked at startup)
-  'JWT_SECRET',                   // Legacy token secret fallback
-  'STAFF_AUTH_SECRET',            // Dev station auth fallback
-  'STAFF_JWT_SECRET',             // Dev station auth fallback
-  'ORBITOX_PROJECT_ID',           // Client request header fallback
-  'ORBITOX_PROJECT_SLUG',         // Client request header fallback
-  'ORBITOX_RUNTIME_TOKEN',        // Platform-to-runtime token fallback (superseded by HMAC bridge)
-  'ORBITOX_API_KEY',              // Client SDK credential
-  'ORBITOX_BACKEND_URL',          // Dev callback URL
-  'ORBITOX_CONTROL_PLANE_URL',    // Dev callback URL
-  'ORBITOX_GRANT_PUBLIC_KEY',     // Single public key fallback (superseded by ORBITOX_GRANT_PUBLIC_KEYS)
-  'PUBLIC_ORIGIN',                // Optional origin override
-  'RESTAURANTOS_ORIGIN',          // Optional origin override
-  'RESTAURANTOS_ALLOWED_ORIGINS', // Optional CORS list override
-  'RESTAURANTOS_BASE_DOMAIN',     // Base domain override
-  'RESTAURANTOS_CNAME_TARGET',    // CNAME target override
-  'RESTAURANTOS_DISABLE_AUTOLISTEN', // Test runner flag to prevent auto-listen
-  'RESTAURANTOS_ENABLE_TEST_ROUTES',  // Test route injection toggle
-  'RESTAURANTOS_PLATFORM_TOKEN',  // Dev test token
-  'RESTAURANT_GSTIN',             // Invoice header setting with UNREGISTERED fallback
-  'RESTAURANT_STATION_SECRETS',   // Offline station cache secrets
-  'RELOAD_STATION_SECRETS',       // Offline station cache reload toggle
-  'RESTAURANT_STORE_PATH',        // Dev filesystem JSON storage path
-  'STORAGE_DRIVER',               // Dev storage driver toggle (prod requires postgres)
-  'TENANT_PAYMENT_SECRET',        // Tenant payment signing secret (derived on demand)
-  'TRUSTED_PROXIES',              // Reverse proxy trust setting
-  'VERBOSE_LOGS',                 // Log verbosity toggle
-  'RAZORPAY_BASE_URL',            // Diner direct payment gateway
-  'RAZORPAY_KEY_ID',              // Diner direct payment gateway
-  'RAZORPAY_KEY_SECRET',          // Diner direct payment gateway
-  'RAZORPAY_WEBHOOK_SECRET',      // Diner direct payment gateway
+// Worker Email service ignore list: ambient AWS credentials and alternative providers
+const WORKER_EMAIL_DEV_TEST_IGNORE: ReadonlyMap<string, string> = new Map([
+  ['AWS_ACCESS_KEY_ID', 'Dev credentials for SES; ECS Fargate uses IAM task role.'],
+  ['AWS_SECRET_ACCESS_KEY', 'Dev credentials for SES; ECS Fargate uses IAM task role.'],
+  ['AWS_SESSION_TOKEN', 'Dev credentials for SES; ECS Fargate uses IAM task role.'],
+  ['AWS_REGION', 'Injected automatically into the container environment by AWS ECS Fargate runtime.'],
+  ['POSTMARK_SERVER_TOKEN', 'Unused email provider option; production email delivery is standardized on Resend.'],
+]);
+
+// RestaurantOS service ignore list: dev routes, offline station caches, and client header fallbacks
+const RESTAURANT_OS_DEV_TEST_IGNORE: ReadonlyMap<string, string> = new Map([
+  ['ALLOW_DANGEROUS_RESET', 'Dev/test state purge endpoint toggle; strictly forbidden and rejected at startup.'],
+  ['JWT_SECRET', 'Legacy dev token fallback superseded by HMAC bridge signature verification.'],
+  ['STAFF_AUTH_SECRET', 'Dev station auth fallback superseded by HMAC bridge tokens.'],
+  ['STAFF_JWT_SECRET', 'Dev station auth fallback superseded by HMAC bridge tokens.'],
+  ['ORBITOX_PROJECT_ID', 'Client request header fallback parameter.'],
+  ['ORBITOX_PROJECT_SLUG', 'Client request header fallback parameter.'],
+  ['ORBITOX_RUNTIME_TOKEN', 'Legacy inter-service token superseded by cryptographic HMAC bridge (ORBITOX_BRIDGE_KEYS).'],
+  ['ORBITOX_API_KEY', 'External client SDK authentication header credential.'],
+  ['ORBITOX_BACKEND_URL', 'Dev callback URL override for local multi-service development.'],
+  ['ORBITOX_CONTROL_PLANE_URL', 'Dev callback URL override for local multi-service development.'],
+  ['ORBITOX_GRANT_PUBLIC_KEY', 'Legacy single grant public key superseded by ORBITOX_GRANT_PUBLIC_KEYS.'],
+  ['PUBLIC_ORIGIN', 'Optional web origin override for local cross-origin browser testing.'],
+  ['RESTAURANTOS_ORIGIN', 'Optional web origin override for local cross-origin browser testing.'],
+  ['RESTAURANTOS_ALLOWED_ORIGINS', 'Optional CORS allowed origins override for local multi-service testing.'],
+  ['RESTAURANTOS_BASE_DOMAIN', 'Base domain override for local multi-tenant subdomain testing.'],
+  ['RESTAURANTOS_CNAME_TARGET', 'DNS CNAME verification target override for custom domain testing.'],
+  ['RESTAURANTOS_DISABLE_AUTOLISTEN', 'Test runner harness flag to prevent HTTP server binding during unit tests.'],
+  ['RESTAURANTOS_ENABLE_TEST_ROUTES', 'Test route injection toggle disabled in production.'],
+  ['RESTAURANTOS_PLATFORM_TOKEN', 'Dev mock token for local cross-service bridge invocation tests.'],
+  ['RESTAURANT_GSTIN', 'Invoice tax registration header with built-in default (UNREGISTERED).'],
+  ['RESTAURANT_STATION_SECRETS', 'Offline station POS cache secrets for localized kiosk operations.'],
+  ['RELOAD_STATION_SECRETS', 'Hot reload trigger for offline station POS cache.'],
+  ['RESTAURANT_STORE_PATH', 'Local filesystem JSON storage path for dev mode without database.'],
+  ['STORAGE_DRIVER', 'Dev storage driver toggle (json vs postgres); production enforces PostgreSQL.'],
+  ['TENANT_PAYMENT_SECRET', 'Dynamic diner checkout signing secret derived on demand from tenant credentials.'],
+  ['TRUSTED_PROXIES', 'Reverse proxy trust setting with built-in loopback defaults.'],
+  ['VERBOSE_LOGS', 'Verbose debug logging toggle for local debugging.'],
+  ['RAZORPAY_BASE_URL', 'Diner direct payment gateway endpoint override for mock test harness.'],
+  ['RAZORPAY_KEY_ID', 'Diner direct payment gateway credential handled at tenant level.'],
+  ['RAZORPAY_KEY_SECRET', 'Diner direct payment gateway credential handled at tenant level.'],
+  ['RAZORPAY_WEBHOOK_SECRET', 'Diner direct payment gateway credential handled at tenant level.'],
 ]);
 
 function scanDirectory(dir: string): string[] {
@@ -143,27 +162,63 @@ function scanDirectory(dir: string): string[] {
   return results;
 }
 
+function isProcessEnv(node: ts.Node): boolean {
+  return ts.isPropertyAccessExpression(node) &&
+    ts.isIdentifier(node.expression) &&
+    node.expression.text === 'process' &&
+    node.name.text === 'env';
+}
+
+/**
+ * Extracts environment variable access via TypeScript AST parsing.
+ * Eliminates all regex artifacts and matches only genuine property/element
+ * access on `process.env` or typed ProcessEnv parameters.
+ */
 function extractEnvReads(filePaths: string[]): Set<string> {
   const vars = new Set<string>();
-  const patterns = [
-    /process\.env\.([A-Za-z0-9_]+)/g,
-    /process\.env\[['"]([A-Za-z0-9_]+)['"]\]/g,
-    /\benv\.([A-Za-z0-9_]+)/g,
-    /\benv\[['"]([A-Za-z0-9_]+)['"]\]/g,
-    /getEnv\(['"]([A-Za-z0-9_]+)['"]\)/g,
-    /name:\s*['"]([A-Z0-9_]+)['"]/g,
-  ];
-
   for (const fp of filePaths) {
+    if (!fs.existsSync(fp)) continue;
     const content = fs.readFileSync(fp, 'utf8');
-    for (const pat of patterns) {
-      let match;
-      while ((match = pat.exec(content)) !== null) {
-        if (match[1]) {
-          vars.add(match[1]);
+    const sourceFile = ts.createSourceFile(fp, content, ts.ScriptTarget.Latest, true);
+
+    function visit(node: ts.Node) {
+      // 1. process.env.NAME
+      if (ts.isPropertyAccessExpression(node) && isProcessEnv(node.expression)) {
+        vars.add(node.name.text);
+      }
+      // 2. process.env['NAME'] or process.env["NAME"]
+      if (ts.isElementAccessExpression(node) && isProcessEnv(node.expression)) {
+        if (node.argumentExpression && ts.isStringLiteral(node.argumentExpression)) {
+          vars.add(node.argumentExpression.text);
         }
       }
+      // 3. const { A, B: C } = process.env
+      if (ts.isVariableDeclaration(node) && node.initializer && isProcessEnv(node.initializer) && ts.isObjectBindingPattern(node.name)) {
+        for (const el of node.name.elements) {
+          if (el.propertyName && ts.isIdentifier(el.propertyName)) {
+            vars.add(el.propertyName.text);
+          } else if (el.propertyName && ts.isStringLiteral(el.propertyName)) {
+            vars.add(el.propertyName.text);
+          } else if (ts.isIdentifier(el.name)) {
+            vars.add(el.name.text);
+          }
+        }
+      }
+      // 4. env.NAME or env['NAME'] where env is a helper ProcessEnv parameter
+      if (ts.isPropertyAccessExpression(node) && ts.isIdentifier(node.expression) && node.expression.text === 'env') {
+        if (/^[A-Z0-9_]+$/.test(node.name.text)) {
+          vars.add(node.name.text);
+        }
+      }
+      if (ts.isElementAccessExpression(node) && ts.isIdentifier(node.expression) && node.expression.text === 'env') {
+        if (node.argumentExpression && ts.isStringLiteral(node.argumentExpression) && /^[A-Z0-9_]+$/.test(node.argumentExpression.text)) {
+          vars.add(node.argumentExpression.text);
+        }
+      }
+      ts.forEachChild(node, visit);
     }
+
+    visit(sourceFile);
   }
   return vars;
 }
@@ -205,12 +260,12 @@ function parseTerraformTaskDefinition(mainTfContent: string, taskFamilySnippet: 
   return { environment: envVars.sort(), secrets: secretVars.sort() };
 }
 
-describe('Phase 6F B0-3: Service Environment & Secret Static Code Contract Verification', () => {
+describe('Phase 6F B0-5: Service Environment & Secret Static Code Contract Verification', () => {
   const repoRoot = path.resolve(__dirname, '../../../..');
   const mainTfPath = path.resolve(repoRoot, 'infra/modules/compute/main.tf');
   const mainTfContent = fs.readFileSync(mainTfPath, 'utf8');
 
-  it('verifies static code env reads match contract and terraform for web service', () => {
+  it('verifies exact bidirectional parity between code reads, contract, and terraform for web service', () => {
     const webFiles = [
       ...scanDirectory(path.resolve(repoRoot, 'orbitox/apps/web/app')),
       ...scanDirectory(path.resolve(repoRoot, 'orbitox/apps/web/lib')),
@@ -229,10 +284,17 @@ describe('Phase 6F B0-3: Service Environment & Secret Static Code Contract Verif
     const tf = parseTerraformTaskDefinition(mainTfContent, 'family                   = "orbitox-${var.environment}-web"');
     const tfAll = [...tf.environment, ...tf.secrets].sort();
 
+    const ignoredBreakdown = Array.from(rawReads)
+      .filter((v) => GLOBAL_DEV_TEST_IGNORE.has(v))
+      .sort()
+      .map((v) => `  - ${v}: ${GLOBAL_DEV_TEST_IGNORE.get(v)}`);
+
     console.log('\n=================== SERVICE: WEB ===================');
-    console.log('Code Runtime Reads (excl. dev/test ignore):', prodCodeReads);
+    console.log('Total Raw AST Code Reads:', rawReads.size);
+    console.log('Production Code Reads (codeReads - ignore):', prodCodeReads);
     console.log('Contract (platform-service-contracts.ts):', contractAll);
     console.log('Terraform Task Definition (compute/main.tf):', tfAll);
+    console.log('Ignored Dev/Ambient Variables with Reasons:\n' + ignoredBreakdown.join('\n'));
     console.log('====================================================\n');
 
     // 1. Every contract variable must be read by code
@@ -243,48 +305,63 @@ describe('Phase 6F B0-3: Service Environment & Secret Static Code Contract Verif
       );
     }
 
-    // 2. Parity between contract and terraform
+    // 2. Strict bidirectional equality: (codeReads - ignore) === contract
+    assert.deepEqual(prodCodeReads, contractAll, 'All production web code reads must exactly match the contract');
+
+    // 3. 1:1 parity between contract and terraform
     assert.deepEqual(contractAll, tfAll, 'Contract and Terraform must match exactly for web');
   });
 
-  it('verifies static code env reads match contract and terraform for worker_email service', () => {
+  it('verifies exact bidirectional parity between code reads, contract, and terraform for worker_email service', () => {
     const emailFiles = [
       path.resolve(repoRoot, 'orbitox/apps/web/scripts/account-email-worker.ts'),
       path.resolve(repoRoot, 'orbitox/apps/web/lib/account-email-worker.ts'),
       path.resolve(repoRoot, 'orbitox/apps/web/lib/account-email.ts'),
-      path.resolve(repoRoot, 'orbitox/apps/web/lib/phase6-account-security.ts'),
+      path.resolve(repoRoot, 'orbitox/apps/web/lib/account-email-payload.ts'),
     ];
 
     const rawReads = extractEnvReads(emailFiles);
+    const prodCodeReads = Array.from(rawReads).filter((v) => !WORKER_EMAIL_DEV_TEST_IGNORE.has(v)).sort();
+
     const contract = PLATFORM_SERVICE_CONTRACTS.worker_email;
     const contractAll = [...contract.environment, ...contract.secrets].sort();
 
     const tf = parseTerraformTaskDefinition(mainTfContent, 'family                   = "orbitox-${var.environment}-worker-email"');
     const tfAll = [...tf.environment, ...tf.secrets].sort();
 
+    const ignoredBreakdown = Array.from(rawReads)
+      .filter((v) => WORKER_EMAIL_DEV_TEST_IGNORE.has(v))
+      .sort()
+      .map((v) => `  - ${v}: ${WORKER_EMAIL_DEV_TEST_IGNORE.get(v)}`);
+
     console.log('\n================ SERVICE: WORKER_EMAIL ================');
-    console.log('Code Runtime Reads:', Array.from(rawReads).sort());
+    console.log('Total Raw AST Code Reads:', rawReads.size);
+    console.log('Production Code Reads (codeReads - ignore):', prodCodeReads);
     console.log('Contract:', contractAll);
     console.log('Terraform Task Definition:', tfAll);
+    console.log('Ignored Dev/Ambient Variables with Reasons:\n' + ignoredBreakdown.join('\n'));
     console.log('=======================================================\n');
 
-    for (const name of contract.secrets) {
+    for (const name of contractAll) {
       assert.ok(
         rawReads.has(name),
-        `Secret "${name}" is not read in worker_email runtime code`,
+        `Contract variable "${name}" is not read in worker_email runtime code`,
       );
     }
 
+    assert.deepEqual(prodCodeReads, contractAll, 'All production worker_email code reads must exactly match the contract');
     assert.deepEqual(contractAll, tfAll, 'Contract and Terraform must match exactly for worker_email');
   });
 
-  it('verifies static code env reads match contract and terraform for worker_sweep service', () => {
+  it('verifies exact bidirectional parity between code reads, contract, and terraform for worker_sweep service', () => {
     const sweepFiles = [
       path.resolve(repoRoot, 'orbitox/apps/web/scripts/billing-grace-sweep.ts'),
       path.resolve(repoRoot, 'orbitox/apps/web/lib/billing-grace-sweep.ts'),
     ];
 
     const rawReads = extractEnvReads(sweepFiles);
+    const prodCodeReads = Array.from(rawReads).sort();
+
     const contract = PLATFORM_SERVICE_CONTRACTS.worker_sweep;
     const contractAll = [...contract.environment, ...contract.secrets].sort();
 
@@ -292,33 +369,35 @@ describe('Phase 6F B0-3: Service Environment & Secret Static Code Contract Verif
     const tfAll = [...tf.environment, ...tf.secrets].sort();
 
     console.log('\n================ SERVICE: WORKER_SWEEP ================');
-    console.log('Code Runtime Reads:', Array.from(rawReads).sort());
+    console.log('Total Raw AST Code Reads:', rawReads.size);
+    console.log('Production Code Reads (codeReads - ignore):', prodCodeReads);
     console.log('Contract:', contractAll);
     console.log('Terraform Task Definition:', tfAll);
+    console.log('Ignored Dev/Ambient Variables with Reasons: None (100% pure parity)');
     console.log('=======================================================\n');
 
-    for (const name of contract.secrets) {
+    for (const name of contractAll) {
       assert.ok(
         rawReads.has(name),
-        `Secret "${name}" is not read in worker_sweep runtime code`,
+        `Contract variable "${name}" is not read in worker_sweep runtime code`,
       );
     }
 
+    assert.deepEqual(prodCodeReads, contractAll, 'All production worker_sweep code reads must exactly match the contract');
     assert.deepEqual(contractAll, tfAll, 'Contract and Terraform must match exactly for worker_sweep');
   });
 
-  it('verifies static code env reads match contract and terraform for restaurant_os service', () => {
+  it('verifies exact bidirectional parity between code reads, contract, and terraform for restaurant_os service', () => {
     const rosFiles = [
       ...scanDirectory(path.resolve(repoRoot, 'projects/external-os/restaurant-os/src')),
       ...scanDirectory(path.resolve(repoRoot, 'projects/external-os/restaurant-os/packages')),
+      ...scanDirectory(path.resolve(repoRoot, 'orbitox/packages/bridge/src')),
     ];
 
     const rawReads = extractEnvReads(rosFiles);
-    // Include bridge package reads as restaurant_os relies on @orbitox-io/bridge
-    const bridgeFiles = scanDirectory(path.resolve(repoRoot, 'orbitox/packages/bridge/src'));
-    for (const v of extractEnvReads(bridgeFiles)) {
-      rawReads.add(v);
-    }
+    const prodCodeReads = Array.from(rawReads)
+      .filter((v) => !RESTAURANT_OS_DEV_TEST_IGNORE.has(v))
+      .sort();
 
     const contract = PLATFORM_SERVICE_CONTRACTS.restaurant_os;
     const contractAll = [...contract.environment, ...contract.secrets].sort();
@@ -326,10 +405,17 @@ describe('Phase 6F B0-3: Service Environment & Secret Static Code Contract Verif
     const tf = parseTerraformTaskDefinition(mainTfContent, 'family                   = "orbitox-${var.environment}-restaurant-os"');
     const tfAll = [...tf.environment, ...tf.secrets].sort();
 
+    const ignoredBreakdown = Array.from(rawReads)
+      .filter((v) => RESTAURANT_OS_DEV_TEST_IGNORE.has(v))
+      .sort()
+      .map((v) => `  - ${v}: ${RESTAURANT_OS_DEV_TEST_IGNORE.get(v)}`);
+
     console.log('\n=============== SERVICE: RESTAURANT_OS ===============');
-    console.log('Code Runtime Reads (excl. dev/test ignore):', Array.from(rawReads).filter((v) => !RESTAURANT_OS_DEV_TEST_IGNORE.has(v) && (!GLOBAL_DEV_TEST_IGNORE.has(v) || v === 'DATABASE_URL')).sort());
+    console.log('Total Raw AST Code Reads:', rawReads.size);
+    console.log('Production Code Reads (codeReads - ignore):', prodCodeReads);
     console.log('Contract:', contractAll);
     console.log('Terraform Task Definition:', tfAll);
+    console.log('Ignored Dev/Ambient Variables with Reasons:\n' + ignoredBreakdown.join('\n'));
     console.log('======================================================\n');
 
     for (const name of contractAll) {
@@ -339,6 +425,7 @@ describe('Phase 6F B0-3: Service Environment & Secret Static Code Contract Verif
       );
     }
 
+    assert.deepEqual(prodCodeReads, contractAll, 'All production restaurant_os code reads must exactly match the contract');
     assert.deepEqual(contractAll, tfAll, 'Contract and Terraform must match exactly for restaurant_os');
   });
 });

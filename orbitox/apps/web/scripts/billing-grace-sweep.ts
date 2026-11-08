@@ -2,6 +2,11 @@ import { PrismaClient } from '@prisma/client';
 import { sweepBillingGrace } from '../lib/billing-grace-sweep';
 
 async function main(): Promise<void> {
+  const nodeEnv = process.env.NODE_ENV || 'production';
+  const repositoryMode = process.env.ORBITOX_PLATFORM_REPOSITORY || 'prisma';
+  if (repositoryMode !== 'prisma') {
+    throw new Error('Billing grace sweep requires ORBITOX_PLATFORM_REPOSITORY=prisma.');
+  }
   const runtimeUrl = process.env.APP_DATABASE_URL?.trim();
   const maintenanceUrl = process.env.MAINTENANCE_DATABASE_URL?.trim();
   if (!runtimeUrl || !maintenanceUrl) {

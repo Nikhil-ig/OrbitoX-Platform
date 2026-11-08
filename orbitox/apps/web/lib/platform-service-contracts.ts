@@ -25,6 +25,7 @@ export const PLATFORM_SERVICE_CONTRACTS = {
       'ORBITOX_EMAIL_PROVIDER',
       'ORBITOX_EMAIL_FROM',
       'ORBITOX_PHI_ACTIVE_KID',
+      'TRUSTED_PROXIES',
     ],
     secrets: [
       'APP_DATABASE_URL',

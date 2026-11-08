@@ -541,7 +541,8 @@ resource "aws_ecs_task_definition" "web" {
         { name = "ORBITOX_BREACHED_PASSWORD_API", value = "off" },
         { name = "ORBITOX_EMAIL_PROVIDER", value = "resend" },
         { name = "ORBITOX_EMAIL_FROM", value = var.email_from },
-        { name = "ORBITOX_PHI_ACTIVE_KID", value = "v1" }
+        { name = "ORBITOX_PHI_ACTIVE_KID", value = "v1" },
+        { name = "TRUSTED_PROXIES", value = "10.0.0.0/16" }
       ]
       secrets = [
         { name = "APP_DATABASE_URL", valueFrom = var.secrets_map["APP_DATABASE_URL"] },

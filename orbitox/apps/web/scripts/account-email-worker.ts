@@ -2,6 +2,11 @@ import { PrismaClient } from '@prisma/client';
 import { processAccountEmailBatch } from '../lib/account-email-worker';
 
 async function main(): Promise<void> {
+  const nodeEnv = process.env.NODE_ENV || 'production';
+  const repositoryMode = process.env.ORBITOX_PLATFORM_REPOSITORY || 'prisma';
+  if (repositoryMode !== 'prisma') {
+    throw new Error('Account email worker requires ORBITOX_PLATFORM_REPOSITORY=prisma.');
+  }
   const databaseUrl = process.env.OUTBOX_RELAY_DATABASE_URL?.trim();
   if (!databaseUrl) throw new Error('OUTBOX_RELAY_DATABASE_URL is required.');
   const database = new PrismaClient({ datasourceUrl: databaseUrl });

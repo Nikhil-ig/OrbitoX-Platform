@@ -142,6 +142,9 @@ export async function registerNode() {
     if (process.env.TEST_STEP5_DELAY_MS && !loopbackStandaloneHarness) {
       problems.push('TEST_STEP5_DELAY_MS is strictly prohibited in production deployments.');
     }
+    if (process.env.ORBITOX_ENABLE_DEMO_SEED === 'true') {
+      problems.push('ORBITOX_ENABLE_DEMO_SEED is strictly prohibited in production deployments.');
+    }
 
     // PHI encryption keys validation (required in production)
     const phiSecrets = [

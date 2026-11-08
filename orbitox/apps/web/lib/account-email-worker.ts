@@ -5,7 +5,7 @@ import {
   EmailProviderError,
   type EmailProvider,
 } from './account-email';
-import { decryptAccountEmailPayload } from './phase6-account-security';
+import { decryptAccountEmailPayload } from './account-email-payload';
 
 const maximumAttempts = 5;
 const claimLeaseMs = 15 * 60 * 1000;
