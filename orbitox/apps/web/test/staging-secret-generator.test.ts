@@ -141,9 +141,46 @@ describe('Phase 6F B0: Staging Secret Generator Verification', () => {
     }
   });
 
-  it('idempotency: skips already-set secrets without --rotate, and updates with --rotate', () => {
+  it('B0-2 HIGH security: bare --rotate or rotating stateful/keyed secrets is refused', () => {
+    let writeAttempts = 0;
+    const mockRunner = (args: string[]) => {
+      if (args[1] === 'put-secret-value') {
+        writeAttempts++;
+      }
+      return { stdout: '', status: 0 };
+    };
+
+    // 1. Bare --rotate (true) must be refused
+    assert.throws(
+      () => runSecretGenerator({ rotate: true, awsCliRunner: mockRunner }),
+      /Blind rotation of all secrets is strictly prohibited/,
+    );
+    assert.equal(writeAttempts, 0);
+
+    // 2. Rotating stateful encryption key must be refused
+    assert.throws(
+      () => runSecretGenerator({ rotate: 'ORBITOX_PHI_KEYS', awsCliRunner: mockRunner }),
+      /Keyed secrets must be rotated additively via --add-key=ORBITOX_PHI_KEYS/,
+    );
+    assert.throws(
+      () => runSecretGenerator({ rotate: 'ORBITOX_MFA_ENCRYPTION_KEY', awsCliRunner: mockRunner }),
+      /Doing so would permanently break decryption/,
+    );
+    assert.throws(
+      () => runSecretGenerator({ rotate: 'ORBITOX_ACCOUNT_TOKEN_ENCRYPTION_KEY', awsCliRunner: mockRunner }),
+      /Doing so would permanently break decryption/,
+    );
+    assert.throws(
+      () => runSecretGenerator({ rotate: 'ORBITOX_PHI_INDEX_KEY', awsCliRunner: mockRunner }),
+      /Doing so would permanently break decryption/,
+    );
+    assert.equal(writeAttempts, 0);
+  });
+
+  it('B0-2 HIGH security: explicit --rotate=NAME allows rotating only stateless secrets', () => {
     const mockStorage = new Map<string, string>();
-    mockStorage.set('orbitox/staging/SESSION_SECRET', 'existing_value_32_characters_minimum');
+    mockStorage.set('orbitox/staging/SESSION_SECRET', 'old_session_secret_32_characters_minimum');
+    mockStorage.set('orbitox/staging/ORBITOX_ADMIN_TOKEN', 'old_admin_token_32_characters_minimum');
 
     const mockRunner = (args: string[], stdin?: string) => {
       const subcmd = args[1];
@@ -171,24 +208,108 @@ describe('Phase 6F B0: Staging Secret Generator Verification', () => {
       return { stdout: '', status: 0 };
     };
 
-    // Run without rotate: SESSION_SECRET should be skipped
-    const run1 = runSecretGenerator({
+    // Rotate ONLY SESSION_SECRET
+    const results = runSecretGenerator({
       dryRun: false,
-      rotate: false,
+      rotate: 'SESSION_SECRET',
       awsCliRunner: mockRunner,
     });
 
-    const sessionRes1 = run1.find((r) => r.name === 'SESSION_SECRET');
-    assert.equal(sessionRes1?.action, 'skipped');
+    const sessionRes = results.find((r) => r.name === 'SESSION_SECRET');
+    assert.equal(sessionRes?.action, 'rotated');
 
-    // Run with rotate: SESSION_SECRET should be rotated
-    const run2 = runSecretGenerator({
-      dryRun: false,
-      rotate: true,
+    // ORBITOX_ADMIN_TOKEN was already set and should be skipped
+    const adminRes = results.find((r) => r.name === 'ORBITOX_ADMIN_TOKEN');
+    assert.equal(adminRes?.action, 'skipped');
+    assert.equal(mockStorage.get('orbitox/staging/ORBITOX_ADMIN_TOKEN'), 'old_admin_token_32_characters_minimum');
+  });
+
+  it('B0-2 HIGH security: --add-key additively rotates keyed secrets preserving all historical keys', () => {
+    const mockStorage = new Map<string, string>();
+    
+    // Seed initial PHI keys
+    const initialPhiKeys = JSON.stringify({ 'phi-key-2026-1': 'aW5pdGlhbF9waGlfa2V5XzMyX2J5dGVzX2xlbg==' });
+    mockStorage.set('orbitox/staging/ORBITOX_PHI_KEYS', initialPhiKeys);
+
+    // Seed initial grant keys
+    const initialGrantKeys = JSON.stringify({
+      k1: {
+        privateKey: '-----BEGIN PRIVATE KEY-----\nMIIEvgIBADANBgkqhkiG9w0BAQEFAASCBKgwggSkAgEAAoIBAQC...\n-----END PRIVATE KEY-----',
+        publicKey: '-----BEGIN PUBLIC KEY-----\nMIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA...\n-----END PUBLIC KEY-----',
+      },
+    });
+    mockStorage.set('orbitox/staging/ORBITOX_GRANT_SIGNING_KEYS', initialGrantKeys);
+
+    // Seed initial bridge keys
+    const initialBridgeKeys = JSON.stringify({
+      activeKeyId: 'k1',
+      keys: {
+        k1: 'initial_bridge_key_hex_string_32_bytes_at_least_1234567890',
+      },
+    });
+    mockStorage.set('orbitox/staging/ORBITOX_BRIDGE_KEYS', initialBridgeKeys);
+
+    const mockRunner = (args: string[], stdin?: string) => {
+      const subcmd = args[1];
+      const idIdx = args.indexOf('--secret-id');
+      const secretId = idIdx !== -1 ? args[idIdx + 1] : undefined;
+      if (!secretId) return { stdout: '', status: 1 };
+
+      if (subcmd === 'get-secret-value') {
+        if (mockStorage.has(secretId)) {
+          return {
+            stdout: JSON.stringify({ SecretString: mockStorage.get(secretId) }),
+            status: 0,
+          };
+        }
+        return { stdout: '', status: 1 };
+      }
+
+      if (subcmd === 'put-secret-value') {
+        if (stdin) {
+          mockStorage.set(secretId, stdin);
+        }
+        return { stdout: JSON.stringify({ VersionId: 'v1' }), status: 0 };
+      }
+
+      return { stdout: '', status: 0 };
+    };
+
+    // 1. Add key to ORBITOX_PHI_KEYS
+    const phiResult = runSecretGenerator({
+      addKey: 'ORBITOX_PHI_KEYS',
       awsCliRunner: mockRunner,
     });
+    assert.equal(phiResult[0].action, 'added-key');
+    const updatedPhi = JSON.parse(mockStorage.get('orbitox/staging/ORBITOX_PHI_KEYS')!);
+    assert.ok(updatedPhi['phi-key-2026-1'], 'Must preserve original key phi-key-2026-1');
+    assert.ok(updatedPhi['phi-key-2026-2'], 'Must add new key phi-key-2026-2');
 
-    const sessionRes2 = run2.find((r) => r.name === 'SESSION_SECRET');
-    assert.equal(sessionRes2?.action, 'rotated');
+    // 2. Add key to ORBITOX_GRANT_SIGNING_KEYS
+    const grantResult = runSecretGenerator({
+      addKey: 'ORBITOX_GRANT_SIGNING_KEYS',
+      awsCliRunner: mockRunner,
+    });
+    assert.equal(grantResult[0].action, 'added-key');
+    const updatedGrant = JSON.parse(mockStorage.get('orbitox/staging/ORBITOX_GRANT_SIGNING_KEYS')!);
+    assert.ok(updatedGrant.k1, 'Must preserve original key k1');
+    assert.ok(updatedGrant.k2, 'Must add new key k2');
+    // Check public keys was synced
+    const updatedPublic = JSON.parse(mockStorage.get('orbitox/staging/ORBITOX_GRANT_PUBLIC_KEYS')!);
+    assert.ok(updatedPublic.k1?.publicKey, 'Must contain k1 public key');
+    assert.ok(updatedPublic.k2?.publicKey, 'Must contain k2 public key');
+    assert.equal(updatedPublic.k1?.privateKey, undefined, 'Must NEVER contain private keys in grant public keys');
+
+    // 3. Add key to ORBITOX_BRIDGE_KEYS
+    const bridgeResult = runSecretGenerator({
+      addKey: 'ORBITOX_BRIDGE_KEYS',
+      awsCliRunner: mockRunner,
+    });
+    assert.equal(bridgeResult[0].action, 'added-key');
+    const updatedBridge = JSON.parse(mockStorage.get('orbitox/staging/ORBITOX_BRIDGE_KEYS')!);
+    assert.ok(updatedBridge.keys.k1, 'Must preserve original bridge key k1');
+    assert.ok(updatedBridge.keys.k2, 'Must add new bridge key k2');
+    assert.equal(updatedBridge.activeKeyId, 'k2', 'Must update activeKeyId to k2');
+    assert.equal(mockStorage.get('orbitox/staging/ORBITOX_BRIDGE_ACTIVE_KID'), 'k2');
   });
 });
