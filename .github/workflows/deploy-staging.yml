@@ -1,0 +1,215 @@
+name: Deploy Staging (Phase 6F)
+
+on:
+  workflow_dispatch:
+    inputs:
+      force_deploy:
+        description: 'Force deployment without git push'
+        required: false
+        type: boolean
+        default: false
+  push:
+    branches:
+      - feat/compose-saas
+      - main
+    paths:
+      - 'orbitox/**'
+      - 'prisma/**'
+      - 'infra/**'
+      - 'scripts/**'
+      - '.github/workflows/deploy-staging.yml'
+
+permissions:
+  id-token: write # Required for AWS OIDC authentication (Zero static keys)
+  contents: read
+
+concurrency:
+  group: deploy-staging
+  cancel-in-progress: false
+
+jobs:
+  build-and-scan:
+    name: Build & Vulnerability Scan (Trivy / ECR)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    outputs:
+      web_image_digest: ${{ steps.push-web.outputs.digest }}
+    steps:
+      - name: Checkout source tree
+        uses: actions/checkout@v5
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Configure AWS Credentials via OIDC
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_STAGING_DEPLOY_ROLE_ARN || 'arn:aws:iam::123456789012:role/orbitox-staging-github-actions-deploy-role' }}
+          aws-region: ap-south-1
+
+      - name: Log in to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Build Web Application Container Image
+        id: build-web
+        run: |
+          ECR_REGISTRY="${{ steps.login-ecr.outputs.registry }}"
+          IMAGE_TAG="${{ github.sha }}"
+          FULL_TAG="$ECR_REGISTRY/orbitox/staging/web:$IMAGE_TAG"
+          echo "Building $FULL_TAG from orbitox monorepo root..."
+          docker build \
+            -f orbitox/apps/web/Dockerfile \
+            -t "$FULL_TAG" \
+            orbitox
+          echo "image_tag=$FULL_TAG" >> "$GITHUB_OUTPUT"
+
+      - name: Scan Web Image for High/Critical Vulnerabilities (Trivy)
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: ${{ steps.build-web.outputs.image_tag }}
+          format: 'table'
+          exit-code: '1'
+          ignore-unfixed: true
+          severity: 'CRITICAL,HIGH'
+
+      - name: Push Web Image to ECR by Digest
+        id: push-web
+        run: |
+          FULL_TAG="${{ steps.build-web.outputs.image_tag }}"
+          docker push "$FULL_TAG"
+          DIGEST=$(docker inspect --format='{{index .RepoDigests 0}}' "$FULL_TAG")
+          echo "Pushed immutable digest: $DIGEST"
+          echo "digest=$DIGEST" >> "$GITHUB_OUTPUT"
+
+  migrate-and-verify:
+    name: Staging Migration & Step 1 RLS/Role Inventory
+    needs: build-and-scan
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Checkout source tree
+        uses: actions/checkout@v5
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v5
+        with:
+          version: 9.15.0
+
+      - name: Set up Node.js 22
+        uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: orbitox/pnpm-lock.yaml
+
+      - name: Configure AWS Credentials via OIDC
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_STAGING_DEPLOY_ROLE_ARN || 'arn:aws:iam::123456789012:role/orbitox-staging-github-actions-deploy-role' }}
+          aws-region: ap-south-1
+
+      - name: Retrieve Database Credentials from AWS Secrets Manager
+        id: secrets
+        run: |
+          export DATABASE_URL=$(aws secretsmanager get-secret-value --secret-id orbitox/staging/DATABASE_URL --query SecretString --output text)
+          export APP_DATABASE_URL=$(aws secretsmanager get-secret-value --secret-id orbitox/staging/APP_DATABASE_URL --query SecretString --output text)
+          export MAINTENANCE_DATABASE_URL=$(aws secretsmanager get-secret-value --secret-id orbitox/staging/MAINTENANCE_DATABASE_URL --query SecretString --output text)
+          export OUTBOX_RELAY_DATABASE_URL=$(aws secretsmanager get-secret-value --secret-id orbitox/staging/OUTBOX_RELAY_DATABASE_URL --query SecretString --output text)
+          export PLATFORM_ADMIN_AUDIT_DATABASE_URL=$(aws secretsmanager get-secret-value --secret-id orbitox/staging/PLATFORM_ADMIN_AUDIT_DATABASE_URL --query SecretString --output text)
+          export HMS_AUDIT_DATABASE_URL=$(aws secretsmanager get-secret-value --secret-id orbitox/staging/HMS_AUDIT_DATABASE_URL --query SecretString --output text)
+          echo "::add-mask::$DATABASE_URL"
+          echo "::add-mask::$APP_DATABASE_URL"
+          echo "::add-mask::$MAINTENANCE_DATABASE_URL"
+          echo "::add-mask::$OUTBOX_RELAY_DATABASE_URL"
+          echo "::add-mask::$PLATFORM_ADMIN_AUDIT_DATABASE_URL"
+          echo "::add-mask::$HMS_AUDIT_DATABASE_URL"
+          echo "DATABASE_URL=$DATABASE_URL" >> "$GITHUB_ENV"
+          echo "APP_DATABASE_URL=$APP_DATABASE_URL" >> "$GITHUB_ENV"
+          echo "MAINTENANCE_DATABASE_URL=$MAINTENANCE_DATABASE_URL" >> "$GITHUB_ENV"
+          echo "OUTBOX_RELAY_DATABASE_URL=$OUTBOX_RELAY_DATABASE_URL" >> "$GITHUB_ENV"
+          echo "PLATFORM_ADMIN_AUDIT_DATABASE_URL=$PLATFORM_ADMIN_AUDIT_DATABASE_URL" >> "$GITHUB_ENV"
+          echo "HMS_AUDIT_DATABASE_URL=$HMS_AUDIT_DATABASE_URL" >> "$GITHUB_ENV"
+
+      - name: Install dependencies
+        working-directory: orbitox
+        run: pnpm install --frozen-lockfile --ignore-scripts
+
+      - name: Deploy Prisma Migrations as orbitox_migrator
+        working-directory: orbitox
+        run: pnpm exec prisma migrate deploy --schema prisma/schema.prisma
+
+      - name: Execute Idempotent RDS Role Bootstrap
+        run: |
+          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f scripts/rds-bootstrap-roles.sql
+
+      - name: Run Step 1 RLS/Role Inventory Test on Staging RDS
+        working-directory: orbitox/apps/web
+        run: |
+          pnpm exec tsx scripts/test-platform-step1-db.ts
+
+  deploy-ecs:
+    name: Rolling ECS Fargate Deployment & Health Gate
+    needs: [build-and-scan, migrate-and-verify]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Configure AWS Credentials via OIDC
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_STAGING_DEPLOY_ROLE_ARN || 'arn:aws:iam::123456789012:role/orbitox-staging-github-actions-deploy-role' }}
+          aws-region: ap-south-1
+
+      - name: Update ECS Task Definition with Scanned Image Digest
+        id: update-task-def
+        run: |
+          CLUSTER_NAME="orbitox-staging-cluster"
+          SERVICE_NAME="orbitox-staging-web-service"
+          NEW_DIGEST="${{ needs.build-and-scan.outputs.web_image_digest }}"
+
+          echo "Fetching current task definition for $SERVICE_NAME..."
+          TASK_DEF=$(aws ecs describe-services --cluster "$CLUSTER_NAME" --services "$SERVICE_NAME" --query "services[0].taskDefinition" --output text)
+          aws ecs describe-task-definition --task-definition "$TASK_DEF" --query "taskDefinition" > current-task-def.json
+
+          echo "Updating container image to $NEW_DIGEST..."
+          jq --arg IMG "$NEW_DIGEST" \
+             '.containerDefinitions[0].image = $IMG | del(.taskDefinitionArn, .revision, .status, .requiresAttributes, .compatibilities, .registeredAt, .registeredBy)' \
+             current-task-def.json > new-task-def.json
+
+          NEW_TASK_DEF_ARN=$(aws ecs register-task-definition --cli-input-json file://new-task-def.json --query "taskDefinition.taskDefinitionArn" --output text)
+          echo "Registered new task definition: $NEW_TASK_DEF_ARN"
+          echo "new_task_def_arn=$NEW_TASK_DEF_ARN" >> "$GITHUB_OUTPUT"
+
+      - name: Rolling Deploy to ECS with Health Check Gate
+        run: |
+          CLUSTER_NAME="orbitox-staging-cluster"
+          SERVICE_NAME="orbitox-staging-web-service"
+          NEW_TASK_DEF="${{ steps.update-task-def.outputs.new_task_def_arn }}"
+
+          echo "Deploying $NEW_TASK_DEF to $SERVICE_NAME..."
+          aws ecs update-service \
+            --cluster "$CLUSTER_NAME" \
+            --service "$SERVICE_NAME" \
+            --task-definition "$NEW_TASK_DEF" \
+            --force-new-deployment
+
+          echo "Waiting for ECS service stability (automatic rollback on failure)..."
+          aws ecs wait services-stable \
+            --cluster "$CLUSTER_NAME" \
+            --services "$SERVICE_NAME"
+
+      - name: Verify Live Staging Health Check
+        run: |
+          echo "Verifying live staging health endpoint..."
+          HEALTH_URL="https://staging.orbitox.io/health"
+          for i in $(seq 1 12); do
+            STATUS=$(curl -s -o /dev/null -w "%{http_code}" "$HEALTH_URL" || true)
+            echo "Attempt $i: $HEALTH_URL returned HTTP $STATUS"
+            if [ "$STATUS" = "200" ]; then
+              echo "Staging deployment is healthy!"
+              exit 0
+            fi
+            sleep 5
+          done
+          echo "Staging health verification timed out."
+          exit 1

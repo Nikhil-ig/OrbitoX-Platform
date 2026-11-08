@@ -1,0 +1,8 @@
+aws_region           = "ap-south-1"
+environment          = "staging"
+domain_name          = "staging.orbitox.io"
+wildcard_domain_name = "*.staging.orbitox.io"
+db_master_username   = "orbitox_admin"
+db_master_password   = "REPLACE_WITH_SECURE_GENERATED_SECRET"
+web_image_digest     = "123456789012.dkr.ecr.ap-south-1.amazonaws.com/orbitox/staging/web@sha256:0000000000000000000000000000000000000000000000000000000000000000"
+restaurant_os_image_digest = "123456789012.dkr.ecr.ap-south-1.amazonaws.com/orbitox/staging/restaurant-os@sha256:0000000000000000000000000000000000000000000000000000000000000000"

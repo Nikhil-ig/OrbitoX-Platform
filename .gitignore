@@ -68,3 +68,10 @@ packages/storage/test_*.json
 .gemini/
 **/.tempmediaStorage/
 phase6-fix/
+
+# Terraform
+**/.terraform/
+*.tfstate
+*.tfstate.*
+*.tfvars
+!*.tfvars.example

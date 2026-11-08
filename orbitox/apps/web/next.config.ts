@@ -19,6 +19,14 @@ const nextConfig: NextConfig = {
     "@orbitox/pos",
     "@orbitox/school",
   ],
+  async rewrites() {
+    return [
+      {
+        source: '/health',
+        destination: '/api/health',
+      },
+    ];
+  },
   webpack: (config, { isServer, nextRuntime }) => {
     if (!isServer || nextRuntime === 'edge') {
       config.resolve.fallback = {

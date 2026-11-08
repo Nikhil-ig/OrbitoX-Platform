@@ -18,6 +18,7 @@ import {
   isExplicitPublicRoute,
   isSelfGuardedApiRoute,
 } from './lib/route-classification';
+import { applySecurityHeaders } from './lib/security-headers';
 
 /**
  * Access control for the OrbitoX control plane. Two credentials, two roles:
@@ -101,7 +102,7 @@ function runtimeEndpoint(pathname: string): string | null {
   return m && m[1] && m[1] in RUNTIME_RULES ? m[1] : null;
 }
 
-export async function middleware(req: NextRequest) {
+async function handleMiddleware(req: NextRequest): Promise<NextResponse> {
   const pathname = req.nextUrl.pathname;
 
   // 1. Static files bypass middleware
@@ -214,4 +215,9 @@ function sameOrigin(req: NextRequest): boolean {
   } catch {
     return false;
   }
+}
+
+export async function middleware(req: NextRequest): Promise<NextResponse> {
+  const res = await handleMiddleware(req);
+  return applySecurityHeaders(res);
 }
