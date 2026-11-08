@@ -938,6 +938,7 @@ jobs:
             -f ../scripts/rds-enable-roles.sql
       - name: Run Step 1 Role and RLS inventory under restricted roles
         run: |
+          pnpm exec prisma generate --schema prisma/schema.prisma
           node apps/web/scripts/run-staging-inventory.js
         env:
           DATABASE_URL: postgresql://orbitox_migrator:migrator_test_password@127.0.0.1:5432/orbitox_staging_sim
