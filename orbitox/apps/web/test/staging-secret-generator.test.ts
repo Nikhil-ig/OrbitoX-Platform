@@ -84,6 +84,16 @@ describe('Phase 6F B0: Staging Secret Generator Verification', () => {
         const parsed = JSON.parse(val);
         assert.ok(parsed.k1.privateKey.includes('BEGIN PRIVATE KEY'));
         assert.ok(parsed.k1.publicKey.includes('BEGIN PUBLIC KEY'));
+      } else if (name === 'ORBITOX_GRANT_PUBLIC_KEYS') {
+        const parsed = JSON.parse(val);
+        assert.ok(parsed.k1.publicKey.includes('BEGIN PUBLIC KEY'));
+        assert.equal(parsed.k1.privateKey, undefined);
+      } else if (name === 'ORBITOX_BRIDGE_KEYS') {
+        const parsed = JSON.parse(val);
+        assert.equal(parsed.activeKeyId, 'k1');
+        assert.ok(typeof parsed.keys.k1 === 'string' && parsed.keys.k1.length >= 32);
+      } else if (name === 'ORBITOX_BRIDGE_ACTIVE_KID') {
+        assert.match(val, /^[a-zA-Z0-9_-]+$/);
       } else {
         assert.ok(val.length >= 32, `Secret "${name}" length must be at least 32 (got ${val.length})`);
       }
@@ -128,7 +138,7 @@ describe('Phase 6F B0: Staging Secret Generator Verification', () => {
 
       // stdin must contain the non-empty secret value
       assert.ok(call.stdin, 'Secret value must be supplied via stdin');
-      assert.ok(typeof call.stdin === 'string' && call.stdin.length >= 32);
+      assert.ok(typeof call.stdin === 'string' && call.stdin.length > 0);
 
       // argv must NEVER contain the secret value
       for (const arg of call.args) {
@@ -280,7 +290,7 @@ describe('Phase 6F B0: Staging Secret Generator Verification', () => {
       addKey: 'ORBITOX_PHI_KEYS',
       awsCliRunner: mockRunner,
     });
-    assert.equal(phiResult[0].action, 'added-key');
+    assert.equal(phiResult[0]?.action, 'added-key');
     const updatedPhi = JSON.parse(mockStorage.get('orbitox/staging/ORBITOX_PHI_KEYS')!);
     assert.ok(updatedPhi['phi-key-2026-1'], 'Must preserve original key phi-key-2026-1');
     assert.ok(updatedPhi['phi-key-2026-2'], 'Must add new key phi-key-2026-2');
@@ -290,7 +300,7 @@ describe('Phase 6F B0: Staging Secret Generator Verification', () => {
       addKey: 'ORBITOX_GRANT_SIGNING_KEYS',
       awsCliRunner: mockRunner,
     });
-    assert.equal(grantResult[0].action, 'added-key');
+    assert.equal(grantResult[0]?.action, 'added-key');
     const updatedGrant = JSON.parse(mockStorage.get('orbitox/staging/ORBITOX_GRANT_SIGNING_KEYS')!);
     assert.ok(updatedGrant.k1, 'Must preserve original key k1');
     assert.ok(updatedGrant.k2, 'Must add new key k2');
@@ -305,7 +315,7 @@ describe('Phase 6F B0: Staging Secret Generator Verification', () => {
       addKey: 'ORBITOX_BRIDGE_KEYS',
       awsCliRunner: mockRunner,
     });
-    assert.equal(bridgeResult[0].action, 'added-key');
+    assert.equal(bridgeResult[0]?.action, 'added-key');
     const updatedBridge = JSON.parse(mockStorage.get('orbitox/staging/ORBITOX_BRIDGE_KEYS')!);
     assert.ok(updatedBridge.keys.k1, 'Must preserve original bridge key k1');
     assert.ok(updatedBridge.keys.k2, 'Must add new bridge key k2');

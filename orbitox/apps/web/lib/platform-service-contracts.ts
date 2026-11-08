@@ -46,6 +46,8 @@ export const PLATFORM_SERVICE_CONTRACTS = {
       'RAZORPAY_KEY_ID',
       'RAZORPAY_KEY_SECRET',
       'RAZORPAY_WEBHOOK_SECRET',
+      'ORBITOX_BRIDGE_KEYS',
+      'ORBITOX_BRIDGE_ACTIVE_KID',
     ],
   },
   worker_email: {
@@ -80,6 +82,9 @@ export const PLATFORM_SERVICE_CONTRACTS = {
     ],
     secrets: [
       'DATABASE_URL',
+      'ORBITOX_BRIDGE_KEYS',
+      'ORBITOX_BRIDGE_ACTIVE_KID',
+      'ORBITOX_GRANT_PUBLIC_KEYS',
     ],
   },
 } as const;

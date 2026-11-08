@@ -10,3 +10,4 @@ REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 # Run using node and tsx
 cd "$REPO_ROOT/orbitox"
 exec pnpm exec tsx "$REPO_ROOT/scripts/staging/generate-secrets.ts" "$@"
+

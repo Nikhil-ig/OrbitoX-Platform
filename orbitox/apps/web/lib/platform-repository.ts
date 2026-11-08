@@ -2579,10 +2579,10 @@ let outboxRelayClient: PrismaClient | null = null;
 function getPrismaRepository(): ReturnType<typeof createPrismaPlatformRepository> {
     if (prismaRepository) return prismaRepository;
     const runtimeUrl = process.env.APP_DATABASE_URL || (!prismaIsRequired() ? process.env.DATABASE_URL : undefined);
-    const auditUrl = process.env.PLATFORM_AUDIT_DATABASE_URL;
+    const auditUrl = process.env.PLATFORM_ADMIN_AUDIT_DATABASE_URL || process.env.PLATFORM_AUDIT_DATABASE_URL;
     const relayUrl = process.env.OUTBOX_RELAY_DATABASE_URL || (process.env.NODE_ENV !== 'production' ? auditUrl || runtimeUrl : undefined);
     if (!runtimeUrl) throw new Error('DATABASE_URL is required for the platform repository.');
-    if (!auditUrl) throw new Error('PLATFORM_AUDIT_DATABASE_URL is required for platform-admin audit writes.');
+    if (!auditUrl) throw new Error('PLATFORM_ADMIN_AUDIT_DATABASE_URL (or PLATFORM_AUDIT_DATABASE_URL) is required for platform-admin audit writes.');
     if (process.env.NODE_ENV === 'production' && !process.env.OUTBOX_RELAY_DATABASE_URL) {
         throw new Error('OUTBOX_RELAY_DATABASE_URL is required for the outbox relay role in production.');
     }

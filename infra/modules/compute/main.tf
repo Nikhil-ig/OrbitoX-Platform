@@ -200,7 +200,9 @@ resource "aws_iam_policy" "web_secrets_access" {
           var.secrets_map["RESEND_API_KEY"],
           var.secrets_map["RAZORPAY_KEY_ID"],
           var.secrets_map["RAZORPAY_KEY_SECRET"],
-          var.secrets_map["RAZORPAY_WEBHOOK_SECRET"]
+          var.secrets_map["RAZORPAY_WEBHOOK_SECRET"],
+          var.secrets_map["ORBITOX_BRIDGE_KEYS"],
+          var.secrets_map["ORBITOX_BRIDGE_ACTIVE_KID"]
         ]
       },
       {
@@ -479,7 +481,10 @@ resource "aws_iam_policy" "restaurant_os_secrets_access" {
         Effect   = "Allow"
         Action   = ["secretsmanager:GetSecretValue"]
         Resource = [
-          var.secrets_map["RESTAURANT_OS_DATABASE_URL"]
+          var.secrets_map["RESTAURANT_OS_DATABASE_URL"],
+          var.secrets_map["ORBITOX_BRIDGE_KEYS"],
+          var.secrets_map["ORBITOX_BRIDGE_ACTIVE_KID"],
+          var.secrets_map["ORBITOX_GRANT_PUBLIC_KEYS"]
         ]
       },
       {
@@ -552,7 +557,9 @@ resource "aws_ecs_task_definition" "web" {
         { name = "RESEND_API_KEY", valueFrom = var.secrets_map["RESEND_API_KEY"] },
         { name = "RAZORPAY_KEY_ID", valueFrom = var.secrets_map["RAZORPAY_KEY_ID"] },
         { name = "RAZORPAY_KEY_SECRET", valueFrom = var.secrets_map["RAZORPAY_KEY_SECRET"] },
-        { name = "RAZORPAY_WEBHOOK_SECRET", valueFrom = var.secrets_map["RAZORPAY_WEBHOOK_SECRET"] }
+        { name = "RAZORPAY_WEBHOOK_SECRET", valueFrom = var.secrets_map["RAZORPAY_WEBHOOK_SECRET"] },
+        { name = "ORBITOX_BRIDGE_KEYS", valueFrom = var.secrets_map["ORBITOX_BRIDGE_KEYS"] },
+        { name = "ORBITOX_BRIDGE_ACTIVE_KID", valueFrom = var.secrets_map["ORBITOX_BRIDGE_ACTIVE_KID"] }
       ]
       logConfiguration = {
         logDriver = "awslogs"
@@ -689,7 +696,10 @@ resource "aws_ecs_task_definition" "restaurant_os" {
         { name = "HOSTNAME", value = "0.0.0.0" }
       ]
       secrets = [
-        { name = "DATABASE_URL", valueFrom = var.secrets_map["RESTAURANT_OS_DATABASE_URL"] }
+        { name = "DATABASE_URL", valueFrom = var.secrets_map["RESTAURANT_OS_DATABASE_URL"] },
+        { name = "ORBITOX_BRIDGE_KEYS", valueFrom = var.secrets_map["ORBITOX_BRIDGE_KEYS"] },
+        { name = "ORBITOX_BRIDGE_ACTIVE_KID", valueFrom = var.secrets_map["ORBITOX_BRIDGE_ACTIVE_KID"] },
+        { name = "ORBITOX_GRANT_PUBLIC_KEYS", valueFrom = var.secrets_map["ORBITOX_GRANT_PUBLIC_KEYS"] }
       ]
       logConfiguration = {
         logDriver = "awslogs"

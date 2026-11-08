@@ -120,6 +120,7 @@ import {
 } from '../packages/ui';
 
 const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 4010;
+const HOSTNAME = process.env.HOSTNAME || '0.0.0.0';
 
 export const isProductionEnvironment =
   process.env.NODE_ENV !== 'development' && process.env.NODE_ENV !== 'test';
@@ -7792,7 +7793,7 @@ if (
   process.env.RESTAURANTOS_DISABLE_AUTOLISTEN !== 'true' &&
   !process.argv.includes('--test')
 ) {
-server.listen(PORT, async () => {
+server.listen(PORT, HOSTNAME, async () => {
   if (postgresStore?.prisma) {
     try {
       console.log('🔒 Executing Database Security Self-Check (RLS & non-superuser role enforcement)...');

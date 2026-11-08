@@ -90,6 +90,13 @@ export async function registerNode() {
       }
     }
 
+    // Web session secret validation (Phase 6F B0-3)
+    const sessionSecret = process.env.SESSION_SECRET?.trim();
+    if (sessionSecret && sessionSecret.length < 32) {
+      problems.push(`SESSION_SECRET must be at least 32 characters (found ${sessionSecret.length})`);
+    }
+    const serverPort = process.env.PORT || '3005';
+
     // Grant signing keys validation (required in production per Phase 3 G5)
     const grantKeysJson = process.env.ORBITOX_GRANT_SIGNING_KEYS?.trim();
     const grantPrivKey = process.env.ORBITOX_GRANT_PRIVATE_KEY?.trim();
