@@ -23,12 +23,34 @@ output "web_service_name" {
   value       = aws_ecs_service.web.name
 }
 
-output "execution_role_arn" {
-  description = "The ARN of the ECS task execution role"
-  value       = aws_iam_role.execution_role.arn
+output "web_service_arn" {
+  description = "The ARN of the web ECS service"
+  value       = aws_ecs_service.web.id
+}
+
+output "migrate_task_definition_family" {
+  description = "Family of the one-off DB migration task definition"
+  value       = aws_ecs_task_definition.migrate.family
+}
+
+output "inventory_task_definition_family" {
+  description = "Family of the one-off Step 1 inventory task definition"
+  value       = aws_ecs_task_definition.inventory.family
 }
 
 output "task_role_arn" {
   description = "The ARN of the ECS task role"
   value       = aws_iam_role.task_role.arn
+}
+
+output "execution_role_arns" {
+  description = "List of all ECS execution role ARNs"
+  value = [
+    aws_iam_role.web_execution_role.arn,
+    aws_iam_role.email_execution_role.arn,
+    aws_iam_role.sweep_execution_role.arn,
+    aws_iam_role.migrate_execution_role.arn,
+    aws_iam_role.inventory_execution_role.arn,
+    aws_iam_role.restaurant_os_execution_role.arn
+  ]
 }

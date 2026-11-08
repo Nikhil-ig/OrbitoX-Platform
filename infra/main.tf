@@ -7,6 +7,17 @@ terraform {
       version = "~> 5.0"
     }
   }
+
+  # ─────────────────────────────────────────────────────────────
+  # Remote S3 Backend with State Locking (H3 Fix)
+  # ─────────────────────────────────────────────────────────────
+  backend "s3" {
+    bucket         = "orbitox-staging-terraform-state"
+    key            = "staging/terraform.tfstate"
+    region         = "ap-south-1"
+    encrypt        = true
+    dynamodb_table = "orbitox-staging-terraform-locks"
+  }
 }
 
 provider "aws" {
@@ -75,28 +86,31 @@ module "compute" {
 }
 
 # ─────────────────────────────────────────────────────────────
-# 5. Database Module: RDS PostgreSQL 16 Multi-AZ with force_ssl
+# 5. Database Module: RDS PostgreSQL 16 Multi-AZ (manage_master_user_password)
 # ─────────────────────────────────────────────────────────────
 
 module "database" {
-  source                  = "./modules/database"
-  environment             = var.environment
-  vpc_id                  = module.network.vpc_id
-  database_subnet_ids     = module.network.database_subnet_ids
-  ecs_security_group_id   = module.compute.ecs_security_group_id
-  database_name           = "orbitox_${var.environment}"
-  master_username         = var.db_master_username
-  master_password         = var.db_master_password
-  backup_retention_period = var.environment == "staging" ? 7 : 35
-  tags                    = var.tags
+  source                      = "./modules/database"
+  environment                 = var.environment
+  vpc_id                      = module.network.vpc_id
+  database_subnet_ids         = module.network.database_subnet_ids
+  ecs_security_group_id       = module.compute.ecs_security_group_id
+  database_name               = "orbitox_${var.environment}"
+  restaurant_os_database_name = "restaurant_os_${var.environment}"
+  master_username             = var.db_master_username
+  backup_retention_period     = var.environment == "staging" ? 7 : 35
+  tags                        = var.tags
 }
 
 # ─────────────────────────────────────────────────────────────
-# 6. CI/CD OIDC Module: GitHub Actions Deploy Role & ECR
+# 6. CI/CD OIDC Module: GitHub Actions Deploy Role & ECR (Scoped M1/H2)
 # ─────────────────────────────────────────────────────────────
 
 module "cicd_oidc" {
-  source      = "./modules/cicd_oidc"
-  environment = var.environment
-  tags        = var.tags
+  source                       = "./modules/cicd_oidc"
+  environment                  = var.environment
+  cluster_arn                  = module.compute.cluster_arn
+  web_service_arn              = module.compute.web_service_arn
+  task_and_execution_role_arns = concat(module.compute.execution_role_arns, [module.compute.task_role_arn])
+  tags                         = var.tags
 }

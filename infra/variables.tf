@@ -28,12 +28,6 @@ variable "db_master_username" {
   default     = "orbitox_admin"
 }
 
-variable "db_master_password" {
-  type        = string
-  description = "Master administrative password for RDS PostgreSQL 16"
-  sensitive   = true
-}
-
 variable "web_image_digest" {
   type        = string
   description = "Immutable digest for the web image (repo@sha256:...)"

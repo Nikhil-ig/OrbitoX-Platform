@@ -48,16 +48,16 @@ variable "database_name" {
   default     = "orbitox_staging"
 }
 
+variable "restaurant_os_database_name" {
+  type        = string
+  description = "Name of the RestaurantOS PostgreSQL database (isolated storage)"
+  default     = "restaurant_os_staging"
+}
+
 variable "master_username" {
   type        = string
   description = "Master administrative username for RDS instance"
   default     = "orbitox_admin"
-}
-
-variable "master_password" {
-  type        = string
-  description = "Master password for RDS instance (managed via Secrets Manager)"
-  sensitive   = true
 }
 
 variable "tags" {

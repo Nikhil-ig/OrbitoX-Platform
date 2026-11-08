@@ -77,7 +77,7 @@ resource "aws_db_parameter_group" "pg16" {
 }
 
 # ─────────────────────────────────────────────────────────────
-# RDS PostgreSQL 16 Multi-AZ Instance
+# RDS PostgreSQL 16 Multi-AZ Instance (Control Plane)
 # ─────────────────────────────────────────────────────────────
 
 resource "aws_db_instance" "main" {
@@ -94,7 +94,7 @@ resource "aws_db_instance" "main" {
 
   db_name                     = var.database_name
   username                    = var.master_username
-  password                    = var.master_password
+  manage_master_user_password = true
   port                        = 5432
   publicly_accessible         = false
 
@@ -119,5 +119,53 @@ resource "aws_db_instance" "main" {
   tags = merge(var.tags, {
     Name        = "orbitox-${var.environment}-pg16"
     Environment = var.environment
+    Service     = "control-plane"
+  })
+}
+
+# ─────────────────────────────────────────────────────────────
+# RDS PostgreSQL 16 Multi-AZ Instance (RestaurantOS - Isolated Storage)
+# ─────────────────────────────────────────────────────────────
+
+resource "aws_db_instance" "restaurant_os" {
+  identifier                  = "orbitox-${var.environment}-restaurant-os-pg16"
+  engine                      = "postgres"
+  engine_version              = "16.4"
+  instance_class              = var.instance_class
+  multi_az                    = true
+  allocated_storage           = var.allocated_storage
+  max_allocated_storage       = var.max_allocated_storage
+  storage_type                = "gp3"
+  storage_encrypted           = true
+  kms_key_id                  = aws_kms_key.rds.arn
+
+  db_name                     = var.restaurant_os_database_name
+  username                    = "restaurant_os_admin"
+  manage_master_user_password = true
+  port                        = 5432
+  publicly_accessible         = false
+
+  db_subnet_group_name        = aws_db_subnet_group.rds.name
+  vpc_security_group_ids      = [aws_security_group.rds.id]
+  parameter_group_name        = aws_db_parameter_group.pg16.name
+
+  backup_retention_period     = var.backup_retention_period
+  backup_window               = "19:00-20:00"
+  maintenance_window          = "Sun:20:30-Sun:21:30"
+  auto_minor_version_upgrade  = true
+  deletion_protection         = true
+
+  performance_insights_enabled          = true
+  performance_insights_retention_period = 7
+  performance_insights_kms_key_id       = aws_kms_key.rds.arn
+
+  copy_tags_to_snapshot       = true
+  skip_final_snapshot         = false
+  final_snapshot_identifier   = "orbitox-${var.environment}-restaurant-os-final-snapshot"
+
+  tags = merge(var.tags, {
+    Name        = "orbitox-${var.environment}-restaurant-os-pg16"
+    Environment = var.environment
+    Service     = "restaurant-os"
   })
 }

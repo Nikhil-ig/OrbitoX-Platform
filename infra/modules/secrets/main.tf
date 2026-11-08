@@ -53,17 +53,19 @@ resource "aws_kms_alias" "secrets" {
 }
 
 # ─────────────────────────────────────────────────────────────
-# Granular Secrets (One Secret Per Sensitive Value)
+# Granular Secrets (One Secret Per Sensitive Value - Phase 6F H1 Fix)
 # ─────────────────────────────────────────────────────────────
 
 locals {
   secret_names = [
-    "DATABASE_URL",
+    "MIGRATOR_DATABASE_URL",
     "APP_DATABASE_URL",
     "MAINTENANCE_DATABASE_URL",
     "OUTBOX_RELAY_DATABASE_URL",
     "PLATFORM_ADMIN_AUDIT_DATABASE_URL",
     "HMS_AUDIT_DATABASE_URL",
+    "RESTAURANT_OS_DATABASE_URL",
+    "SESSION_SECRET",
     "ORBITOX_ACCOUNT_TOKEN_ENCRYPTION_KEY",
     "ORBITOX_PHI_ENCRYPTION_KEYS",
     "ORBITOX_MFA_ENCRYPTION_KEY",

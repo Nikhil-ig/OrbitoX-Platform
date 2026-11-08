@@ -47,6 +47,8 @@ RUN groupadd --system orbitox && useradd --system --gid orbitox orbitox \
     && mkdir -p /data && chown orbitox:orbitox /data
 COPY --from=build --chown=orbitox:orbitox /repo/apps/web/.next/standalone ./
 COPY --from=build --chown=orbitox:orbitox /repo/apps/web/.next/static ./apps/web/.next/static
+COPY --from=build --chown=orbitox:orbitox /repo/prisma ./prisma
+COPY --from=build --chown=orbitox:orbitox /repo/apps/web/scripts ./scripts
 USER orbitox
 VOLUME ["/data"]
 EXPOSE 3005

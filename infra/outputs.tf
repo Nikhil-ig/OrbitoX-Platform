@@ -4,13 +4,18 @@ output "vpc_id" {
 }
 
 output "rds_endpoint" {
-  description = "RDS PostgreSQL 16 connection endpoint"
+  description = "RDS PostgreSQL 16 connection endpoint (Control Plane)"
   value       = module.database.db_endpoint
 }
 
 output "rds_address" {
-  description = "RDS PostgreSQL 16 hostname"
+  description = "RDS PostgreSQL 16 hostname (Control Plane)"
   value       = module.database.db_address
+}
+
+output "restaurant_os_rds_endpoint" {
+  description = "RDS PostgreSQL 16 connection endpoint (RestaurantOS isolated database)"
+  value       = module.database.restaurant_os_db_endpoint
 }
 
 output "alb_dns_name" {

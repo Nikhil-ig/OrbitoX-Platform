@@ -54,7 +54,7 @@ resource "aws_security_group" "ecs" {
 }
 
 # ─────────────────────────────────────────────────────────────
-# CloudWatch Log Groups
+# CloudWatch Log Groups (365-day retention)
 # ─────────────────────────────────────────────────────────────
 
 resource "aws_cloudwatch_log_group" "web" {
@@ -97,60 +97,29 @@ resource "aws_cloudwatch_log_group" "restaurant_os" {
   })
 }
 
-# ─────────────────────────────────────────────────────────────
-# IAM Roles & Policies for ECS Execution & Tasks
-# ─────────────────────────────────────────────────────────────
-
-resource "aws_iam_role" "execution_role" {
-  name = "orbitox-${var.environment}-ecs-execution-role"
-
-  assume_role_policy = jsonencode({
-    Version = "2012-10-17"
-    Statement = [
-      {
-        Action    = "sts:AssumeRole"
-        Effect    = "Allow"
-        Principal = { Service = "ecs-tasks.amazonaws.com" }
-      }
-    ]
-  })
+resource "aws_cloudwatch_log_group" "db_migrate" {
+  name              = "/ecs/orbitox-${var.environment}-db-migrate"
+  retention_in_days = 365
 
   tags = merge(var.tags, {
-    Name        = "orbitox-${var.environment}-ecs-execution-role"
+    Name        = "orbitox-${var.environment}-db-migrate-logs"
     Environment = var.environment
   })
 }
 
-resource "aws_iam_role_policy_attachment" "execution_standard" {
-  role       = aws_iam_role.execution_role.name
-  policy_arn = "arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy"
-}
+resource "aws_cloudwatch_log_group" "db_inventory" {
+  name              = "/ecs/orbitox-${var.environment}-db-inventory"
+  retention_in_days = 365
 
-resource "aws_iam_policy" "secrets_access" {
-  name        = "orbitox-${var.environment}-ecs-secrets-policy"
-  description = "Allows ECS tasks to pull required application secrets from Secrets Manager and decrypt via KMS"
-
-  policy = jsonencode({
-    Version = "2012-10-17"
-    Statement = [
-      {
-        Effect   = "Allow"
-        Action   = ["secretsmanager:GetSecretValue"]
-        Resource = values(var.secrets_map)
-      },
-      {
-        Effect   = "Allow"
-        Action   = ["kms:Decrypt"]
-        Resource = [var.secrets_kms_key_arn]
-      }
-    ]
+  tags = merge(var.tags, {
+    Name        = "orbitox-${var.environment}-db-inventory-logs"
+    Environment = var.environment
   })
 }
 
-resource "aws_iam_role_policy_attachment" "execution_secrets" {
-  role       = aws_iam_role.execution_role.name
-  policy_arn = aws_iam_policy.secrets_access.arn
-}
+# ─────────────────────────────────────────────────────────────
+# Standard Task Role (App Runtime Actions)
+# ─────────────────────────────────────────────────────────────
 
 resource "aws_iam_role" "task_role" {
   name = "orbitox-${var.environment}-ecs-task-role"
@@ -173,6 +142,354 @@ resource "aws_iam_role" "task_role" {
 }
 
 # ─────────────────────────────────────────────────────────────
+# Helper: Macro for creating dedicated execution roles per service (H1)
+# ─────────────────────────────────────────────────────────────
+
+# 1. Web Execution Role (Only runtime database and public web secrets)
+resource "aws_iam_role" "web_execution_role" {
+  name = "orbitox-${var.environment}-ecs-web-execution-role"
+
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Action    = "sts:AssumeRole"
+        Effect    = "Allow"
+        Principal = { Service = "ecs-tasks.amazonaws.com" }
+      }
+    ]
+  })
+
+  tags = merge(var.tags, {
+    Name        = "orbitox-${var.environment}-ecs-web-execution-role"
+    Environment = var.environment
+  })
+}
+
+resource "aws_iam_role_policy_attachment" "web_execution_standard" {
+  role       = aws_iam_role.web_execution_role.name
+  policy_arn = "arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy"
+}
+
+resource "aws_iam_policy" "web_secrets_access" {
+  name        = "orbitox-${var.environment}-ecs-web-secrets-policy"
+  description = "Allows web ECS task to decrypt and read ONLY runtime secrets (NO schema owner access)"
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect   = "Allow"
+        Action   = ["secretsmanager:GetSecretValue"]
+        Resource = [
+          var.secrets_map["APP_DATABASE_URL"],
+          var.secrets_map["PLATFORM_ADMIN_AUDIT_DATABASE_URL"],
+          var.secrets_map["SESSION_SECRET"],
+          var.secrets_map["ORBITOX_ACCOUNT_TOKEN_ENCRYPTION_KEY"],
+          var.secrets_map["ORBITOX_PHI_ENCRYPTION_KEYS"],
+          var.secrets_map["ORBITOX_MFA_ENCRYPTION_KEY"],
+          var.secrets_map["ORBITOX_API_KEY_PEPPER_RING"],
+          var.secrets_map["ORBITOX_BRIDGE_SECRET"],
+          var.secrets_map["ORBITOX_GRANT_SIGNING_KEYS"],
+          var.secrets_map["RAZORPAY_KEY_ID"],
+          var.secrets_map["RAZORPAY_KEY_SECRET"],
+          var.secrets_map["RAZORPAY_WEBHOOK_SECRET"],
+          var.secrets_map["SVIX_WEBHOOK_SECRET"]
+        ]
+      },
+      {
+        Effect   = "Allow"
+        Action   = ["kms:Decrypt"]
+        Resource = [var.secrets_kms_key_arn]
+      }
+    ]
+  })
+}
+
+resource "aws_iam_role_policy_attachment" "web_secrets_attach" {
+  role       = aws_iam_role.web_execution_role.name
+  policy_arn = aws_iam_policy.web_secrets_access.arn
+}
+
+# 2. Worker Email Execution Role (Only outbox relay and Resend secrets)
+resource "aws_iam_role" "email_execution_role" {
+  name = "orbitox-${var.environment}-ecs-email-execution-role"
+
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Action    = "sts:AssumeRole"
+        Effect    = "Allow"
+        Principal = { Service = "ecs-tasks.amazonaws.com" }
+      }
+    ]
+  })
+
+  tags = merge(var.tags, {
+    Name        = "orbitox-${var.environment}-ecs-email-execution-role"
+    Environment = var.environment
+  })
+}
+
+resource "aws_iam_role_policy_attachment" "email_execution_standard" {
+  role       = aws_iam_role.email_execution_role.name
+  policy_arn = "arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy"
+}
+
+resource "aws_iam_policy" "email_secrets_access" {
+  name        = "orbitox-${var.environment}-ecs-email-secrets-policy"
+  description = "Allows worker-email to decrypt and read ONLY outbox relay and Resend secrets"
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect   = "Allow"
+        Action   = ["secretsmanager:GetSecretValue"]
+        Resource = [
+          var.secrets_map["OUTBOX_RELAY_DATABASE_URL"],
+          var.secrets_map["RESEND_API_KEY"],
+          var.secrets_map["RESEND_WEBHOOK_SIGNING_SECRET"]
+        ]
+      },
+      {
+        Effect   = "Allow"
+        Action   = ["kms:Decrypt"]
+        Resource = [var.secrets_kms_key_arn]
+      }
+    ]
+  })
+}
+
+resource "aws_iam_role_policy_attachment" "email_secrets_attach" {
+  role       = aws_iam_role.email_execution_role.name
+  policy_arn = aws_iam_policy.email_secrets_access.arn
+}
+
+# 3. Worker Sweep Execution Role (Only maintenance database secret)
+resource "aws_iam_role" "sweep_execution_role" {
+  name = "orbitox-${var.environment}-ecs-sweep-execution-role"
+
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Action    = "sts:AssumeRole"
+        Effect    = "Allow"
+        Principal = { Service = "ecs-tasks.amazonaws.com" }
+      }
+    ]
+  })
+
+  tags = merge(var.tags, {
+    Name        = "orbitox-${var.environment}-ecs-sweep-execution-role"
+    Environment = var.environment
+  })
+}
+
+resource "aws_iam_role_policy_attachment" "sweep_execution_standard" {
+  role       = aws_iam_role.sweep_execution_role.name
+  policy_arn = "arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy"
+}
+
+resource "aws_iam_policy" "sweep_secrets_access" {
+  name        = "orbitox-${var.environment}-ecs-sweep-secrets-policy"
+  description = "Allows worker-sweep to decrypt and read ONLY maintenance database secret"
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect   = "Allow"
+        Action   = ["secretsmanager:GetSecretValue"]
+        Resource = [
+          var.secrets_map["MAINTENANCE_DATABASE_URL"]
+        ]
+      },
+      {
+        Effect   = "Allow"
+        Action   = ["kms:Decrypt"]
+        Resource = [var.secrets_kms_key_arn]
+      }
+    ]
+  })
+}
+
+resource "aws_iam_role_policy_attachment" "sweep_secrets_attach" {
+  role       = aws_iam_role.sweep_execution_role.name
+  policy_arn = aws_iam_policy.sweep_secrets_access.arn
+}
+
+# 4. Migrate Task Execution Role (Only migrator database secret)
+resource "aws_iam_role" "migrate_execution_role" {
+  name = "orbitox-${var.environment}-ecs-migrate-execution-role"
+
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Action    = "sts:AssumeRole"
+        Effect    = "Allow"
+        Principal = { Service = "ecs-tasks.amazonaws.com" }
+      }
+    ]
+  })
+
+  tags = merge(var.tags, {
+    Name        = "orbitox-${var.environment}-ecs-migrate-execution-role"
+    Environment = var.environment
+  })
+}
+
+resource "aws_iam_role_policy_attachment" "migrate_execution_standard" {
+  role       = aws_iam_role.migrate_execution_role.name
+  policy_arn = "arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy"
+}
+
+resource "aws_iam_policy" "migrate_secrets_access" {
+  name        = "orbitox-${var.environment}-ecs-migrate-secrets-policy"
+  description = "Allows one-off migration task to access ONLY the migrator database secret"
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect   = "Allow"
+        Action   = ["secretsmanager:GetSecretValue"]
+        Resource = [
+          var.secrets_map["MIGRATOR_DATABASE_URL"]
+        ]
+      },
+      {
+        Effect   = "Allow"
+        Action   = ["kms:Decrypt"]
+        Resource = [var.secrets_kms_key_arn]
+      }
+    ]
+  })
+}
+
+resource "aws_iam_role_policy_attachment" "migrate_secrets_attach" {
+  role       = aws_iam_role.migrate_execution_role.name
+  policy_arn = aws_iam_policy.migrate_secrets_access.arn
+}
+
+# 5. Inventory Task Execution Role (Role URLs needed for Step 1 inventory)
+resource "aws_iam_role" "inventory_execution_role" {
+  name = "orbitox-${var.environment}-ecs-inventory-execution-role"
+
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Action    = "sts:AssumeRole"
+        Effect    = "Allow"
+        Principal = { Service = "ecs-tasks.amazonaws.com" }
+      }
+    ]
+  })
+
+  tags = merge(var.tags, {
+    Name        = "orbitox-${var.environment}-ecs-inventory-execution-role"
+    Environment = var.environment
+  })
+}
+
+resource "aws_iam_role_policy_attachment" "inventory_execution_standard" {
+  role       = aws_iam_role.inventory_execution_role.name
+  policy_arn = "arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy"
+}
+
+resource "aws_iam_policy" "inventory_secrets_access" {
+  name        = "orbitox-${var.environment}-ecs-inventory-secrets-policy"
+  description = "Allows Step 1 inventory task to access role database URLs to verify RLS"
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect   = "Allow"
+        Action   = ["secretsmanager:GetSecretValue"]
+        Resource = [
+          var.secrets_map["MIGRATOR_DATABASE_URL"],
+          var.secrets_map["APP_DATABASE_URL"],
+          var.secrets_map["MAINTENANCE_DATABASE_URL"],
+          var.secrets_map["OUTBOX_RELAY_DATABASE_URL"],
+          var.secrets_map["PLATFORM_ADMIN_AUDIT_DATABASE_URL"],
+          var.secrets_map["HMS_AUDIT_DATABASE_URL"]
+        ]
+      },
+      {
+        Effect   = "Allow"
+        Action   = ["kms:Decrypt"]
+        Resource = [var.secrets_kms_key_arn]
+      }
+    ]
+  })
+}
+
+resource "aws_iam_role_policy_attachment" "inventory_secrets_attach" {
+  role       = aws_iam_role.inventory_execution_role.name
+  policy_arn = aws_iam_policy.inventory_secrets_access.arn
+}
+
+# 6. RestaurantOS Execution Role (Isolated DB & bridge secret)
+resource "aws_iam_role" "restaurant_os_execution_role" {
+  name = "orbitox-${var.environment}-ecs-ros-execution-role"
+
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Action    = "sts:AssumeRole"
+        Effect    = "Allow"
+        Principal = { Service = "ecs-tasks.amazonaws.com" }
+      }
+    ]
+  })
+
+  tags = merge(var.tags, {
+    Name        = "orbitox-${var.environment}-ecs-ros-execution-role"
+    Environment = var.environment
+  })
+}
+
+resource "aws_iam_role_policy_attachment" "restaurant_os_execution_standard" {
+  role       = aws_iam_role.restaurant_os_execution_role.name
+  policy_arn = "arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy"
+}
+
+resource "aws_iam_policy" "restaurant_os_secrets_access" {
+  name        = "orbitox-${var.environment}-ecs-ros-secrets-policy"
+  description = "Allows RestaurantOS ECS task to access ONLY its own isolated database secret"
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect   = "Allow"
+        Action   = ["secretsmanager:GetSecretValue"]
+        Resource = [
+          var.secrets_map["RESTAURANT_OS_DATABASE_URL"],
+          var.secrets_map["ORBITOX_BRIDGE_SECRET"]
+        ]
+      },
+      {
+        Effect   = "Allow"
+        Action   = ["kms:Decrypt"]
+        Resource = [var.secrets_kms_key_arn]
+      }
+    ]
+  })
+}
+
+resource "aws_iam_role_policy_attachment" "restaurant_os_secrets_attach" {
+  role       = aws_iam_role.restaurant_os_execution_role.name
+  policy_arn = aws_iam_policy.restaurant_os_secrets_access.arn
+}
+
+# ─────────────────────────────────────────────────────────────
 # Task Definitions (Images pulled by DIGEST, never plain tag)
 # ─────────────────────────────────────────────────────────────
 
@@ -182,7 +499,7 @@ resource "aws_ecs_task_definition" "web" {
   requires_compatibilities = ["FARGATE"]
   cpu                      = var.web_cpu
   memory                   = var.web_memory
-  execution_role_arn       = aws_iam_role.execution_role.arn
+  execution_role_arn       = aws_iam_role.web_execution_role.arn
   task_role_arn            = aws_iam_role.task_role.arn
 
   container_definitions = jsonencode([
@@ -205,12 +522,9 @@ resource "aws_ecs_task_definition" "web" {
         { name = "ORBITOX_PLATFORM_REPOSITORY", value = "prisma" }
       ]
       secrets = [
-        { name = "DATABASE_URL", valueFrom = var.secrets_map["DATABASE_URL"] },
         { name = "APP_DATABASE_URL", valueFrom = var.secrets_map["APP_DATABASE_URL"] },
-        { name = "MAINTENANCE_DATABASE_URL", valueFrom = var.secrets_map["MAINTENANCE_DATABASE_URL"] },
-        { name = "OUTBOX_RELAY_DATABASE_URL", valueFrom = var.secrets_map["OUTBOX_RELAY_DATABASE_URL"] },
         { name = "PLATFORM_ADMIN_AUDIT_DATABASE_URL", valueFrom = var.secrets_map["PLATFORM_ADMIN_AUDIT_DATABASE_URL"] },
-        { name = "HMS_AUDIT_DATABASE_URL", valueFrom = var.secrets_map["HMS_AUDIT_DATABASE_URL"] },
+        { name = "SESSION_SECRET", valueFrom = var.secrets_map["SESSION_SECRET"] },
         { name = "ORBITOX_ACCOUNT_TOKEN_ENCRYPTION_KEY", valueFrom = var.secrets_map["ORBITOX_ACCOUNT_TOKEN_ENCRYPTION_KEY"] },
         { name = "ORBITOX_PHI_ENCRYPTION_KEYS", valueFrom = var.secrets_map["ORBITOX_PHI_ENCRYPTION_KEYS"] },
         { name = "ORBITOX_MFA_ENCRYPTION_KEY", valueFrom = var.secrets_map["ORBITOX_MFA_ENCRYPTION_KEY"] },
@@ -220,10 +534,7 @@ resource "aws_ecs_task_definition" "web" {
         { name = "RAZORPAY_KEY_ID", valueFrom = var.secrets_map["RAZORPAY_KEY_ID"] },
         { name = "RAZORPAY_KEY_SECRET", valueFrom = var.secrets_map["RAZORPAY_KEY_SECRET"] },
         { name = "RAZORPAY_WEBHOOK_SECRET", valueFrom = var.secrets_map["RAZORPAY_WEBHOOK_SECRET"] },
-        { name = "RESEND_API_KEY", valueFrom = var.secrets_map["RESEND_API_KEY"] },
-        { name = "RESEND_WEBHOOK_SIGNING_SECRET", valueFrom = var.secrets_map["RESEND_WEBHOOK_SIGNING_SECRET"] },
-        { name = "SVIX_WEBHOOK_SECRET", valueFrom = var.secrets_map["SVIX_WEBHOOK_SECRET"] },
-        { name = "ORBITOX_ADMIN_TOKEN", valueFrom = var.secrets_map["ORBITOX_ADMIN_TOKEN"] }
+        { name = "SVIX_WEBHOOK_SECRET", valueFrom = var.secrets_map["SVIX_WEBHOOK_SECRET"] }
       ]
       logConfiguration = {
         logDriver = "awslogs"
@@ -255,7 +566,7 @@ resource "aws_ecs_task_definition" "worker_email" {
   requires_compatibilities = ["FARGATE"]
   cpu                      = 512
   memory                   = 1024
-  execution_role_arn       = aws_iam_role.execution_role.arn
+  execution_role_arn       = aws_iam_role.email_execution_role.arn
   task_role_arn            = aws_iam_role.task_role.arn
 
   container_definitions = jsonencode([
@@ -269,7 +580,6 @@ resource "aws_ecs_task_definition" "worker_email" {
         { name = "ORBITOX_PLATFORM_REPOSITORY", value = "prisma" }
       ]
       secrets = [
-        { name = "DATABASE_URL", valueFrom = var.secrets_map["DATABASE_URL"] },
         { name = "OUTBOX_RELAY_DATABASE_URL", valueFrom = var.secrets_map["OUTBOX_RELAY_DATABASE_URL"] },
         { name = "RESEND_API_KEY", valueFrom = var.secrets_map["RESEND_API_KEY"] },
         { name = "RESEND_WEBHOOK_SIGNING_SECRET", valueFrom = var.secrets_map["RESEND_WEBHOOK_SIGNING_SECRET"] }
@@ -297,7 +607,7 @@ resource "aws_ecs_task_definition" "worker_sweep" {
   requires_compatibilities = ["FARGATE"]
   cpu                      = 512
   memory                   = 1024
-  execution_role_arn       = aws_iam_role.execution_role.arn
+  execution_role_arn       = aws_iam_role.sweep_execution_role.arn
   task_role_arn            = aws_iam_role.task_role.arn
 
   container_definitions = jsonencode([
@@ -311,7 +621,6 @@ resource "aws_ecs_task_definition" "worker_sweep" {
         { name = "ORBITOX_PLATFORM_REPOSITORY", value = "prisma" }
       ]
       secrets = [
-        { name = "DATABASE_URL", valueFrom = var.secrets_map["DATABASE_URL"] },
         { name = "MAINTENANCE_DATABASE_URL", valueFrom = var.secrets_map["MAINTENANCE_DATABASE_URL"] }
       ]
       logConfiguration = {
@@ -337,7 +646,7 @@ resource "aws_ecs_task_definition" "restaurant_os" {
   requires_compatibilities = ["FARGATE"]
   cpu                      = 512
   memory                   = 1024
-  execution_role_arn       = aws_iam_role.execution_role.arn
+  execution_role_arn       = aws_iam_role.restaurant_os_execution_role.arn
   task_role_arn            = aws_iam_role.task_role.arn
 
   container_definitions = jsonencode([
@@ -358,9 +667,9 @@ resource "aws_ecs_task_definition" "restaurant_os" {
         { name = "ORBITOX_CONTROL_PLANE_URL", value = var.public_base_url }
       ]
       secrets = [
-        { name = "ORBITOX_BRIDGE_SECRET", valueFrom = var.secrets_map["ORBITOX_BRIDGE_SECRET"] },
-        { name = "RAZORPAY_KEY_ID", valueFrom = var.secrets_map["RAZORPAY_KEY_ID"] },
-        { name = "RAZORPAY_KEY_SECRET", valueFrom = var.secrets_map["RAZORPAY_KEY_SECRET"] }
+        { name = "DATABASE_URL", valueFrom = var.secrets_map["RESTAURANT_OS_DATABASE_URL"] },
+        { name = "APP_DATABASE_URL", valueFrom = var.secrets_map["RESTAURANT_OS_DATABASE_URL"] },
+        { name = "ORBITOX_BRIDGE_SECRET", valueFrom = var.secrets_map["ORBITOX_BRIDGE_SECRET"] }
       ]
       logConfiguration = {
         logDriver = "awslogs"
@@ -375,6 +684,97 @@ resource "aws_ecs_task_definition" "restaurant_os" {
 
   tags = merge(var.tags, {
     Name        = "orbitox-${var.environment}-restaurant-os-task"
+    Environment = var.environment
+  })
+}
+
+# ─────────────────────────────────────────────────────────────
+# One-Off Task Definition: DB Migration & Role Enablement (B2 Fix)
+# ─────────────────────────────────────────────────────────────
+
+resource "aws_ecs_task_definition" "migrate" {
+  family                   = "orbitox-${var.environment}-db-migrate"
+  network_mode             = "awsvpc"
+  requires_compatibilities = ["FARGATE"]
+  cpu                      = 512
+  memory                   = 1024
+  execution_role_arn       = aws_iam_role.migrate_execution_role.arn
+  task_role_arn            = aws_iam_role.task_role.arn
+
+  container_definitions = jsonencode([
+    {
+      name      = "db-migrate"
+      image     = var.web_image_digest
+      essential = true
+      command   = ["node", "scripts/run-staging-migration.js"]
+      environment = [
+        { name = "NODE_ENV", value = "production" }
+      ]
+      secrets = [
+        { name = "DATABASE_URL", valueFrom = var.secrets_map["MIGRATOR_DATABASE_URL"] },
+        { name = "MIGRATOR_DATABASE_URL", valueFrom = var.secrets_map["MIGRATOR_DATABASE_URL"] }
+      ]
+      logConfiguration = {
+        logDriver = "awslogs"
+        options = {
+          "awslogs-group"         = aws_cloudwatch_log_group.db_migrate.name
+          "awslogs-region"        = data.aws_region.current.name
+          "awslogs-stream-prefix" = "db-migrate"
+        }
+      }
+    }
+  ])
+
+  tags = merge(var.tags, {
+    Name        = "orbitox-${var.environment}-db-migrate-task"
+    Environment = var.environment
+  })
+}
+
+# ─────────────────────────────────────────────────────────────
+# One-Off Task Definition: Step 1 RLS/Role Inventory Verification (B2 Fix)
+# ─────────────────────────────────────────────────────────────
+
+resource "aws_ecs_task_definition" "inventory" {
+  family                   = "orbitox-${var.environment}-db-inventory"
+  network_mode             = "awsvpc"
+  requires_compatibilities = ["FARGATE"]
+  cpu                      = 512
+  memory                   = 1024
+  execution_role_arn       = aws_iam_role.inventory_execution_role.arn
+  task_role_arn            = aws_iam_role.task_role.arn
+
+  container_definitions = jsonencode([
+    {
+      name      = "db-inventory"
+      image     = var.web_image_digest
+      essential = true
+      command   = ["node", "scripts/run-staging-inventory.js"]
+      environment = [
+        { name = "NODE_ENV", value = "production" }
+      ]
+      secrets = [
+        { name = "DATABASE_URL", valueFrom = var.secrets_map["MIGRATOR_DATABASE_URL"] },
+        { name = "TEST_DATABASE_URL", valueFrom = var.secrets_map["MIGRATOR_DATABASE_URL"] },
+        { name = "APP_DATABASE_URL", valueFrom = var.secrets_map["APP_DATABASE_URL"] },
+        { name = "MAINTENANCE_DATABASE_URL", valueFrom = var.secrets_map["MAINTENANCE_DATABASE_URL"] },
+        { name = "OUTBOX_RELAY_DATABASE_URL", valueFrom = var.secrets_map["OUTBOX_RELAY_DATABASE_URL"] },
+        { name = "PLATFORM_ADMIN_AUDIT_DATABASE_URL", valueFrom = var.secrets_map["PLATFORM_ADMIN_AUDIT_DATABASE_URL"] },
+        { name = "HMS_AUDIT_DATABASE_URL", valueFrom = var.secrets_map["HMS_AUDIT_DATABASE_URL"] }
+      ]
+      logConfiguration = {
+        logDriver = "awslogs"
+        options = {
+          "awslogs-group"         = aws_cloudwatch_log_group.db_inventory.name
+          "awslogs-region"        = data.aws_region.current.name
+          "awslogs-stream-prefix" = "db-inventory"
+        }
+      }
+    }
+  ])
+
+  tags = merge(var.tags, {
+    Name        = "orbitox-${var.environment}-db-inventory-task"
     Environment = var.environment
   })
 }
@@ -493,7 +893,7 @@ resource "aws_iam_role_policy" "events_run_task" {
       {
         Effect   = "Allow"
         Action   = ["iam:PassRole"]
-        Resource = [aws_iam_role.execution_role.arn, aws_iam_role.task_role.arn]
+        Resource = [aws_iam_role.sweep_execution_role.arn, aws_iam_role.task_role.arn]
       }
     ]
   })

@@ -58,7 +58,8 @@ resource "aws_iam_openid_connect_provider" "github" {
 }
 
 # ─────────────────────────────────────────────────────────────
-# GitHub Actions Deployment Role (Zero Long-Lived Credentials)
+# GitHub Actions Deployment Role (Zero Long-Lived Credentials - H2 Fix)
+# Bounded strictly to repo + environment (repo:Nikhil-ig/OrbitoX-Platform:environment:staging)
 # ─────────────────────────────────────────────────────────────
 
 resource "aws_iam_role" "github_actions_deploy" {
@@ -76,9 +77,7 @@ resource "aws_iam_role" "github_actions_deploy" {
         Condition = {
           StringEquals = {
             "token.actions.githubusercontent.com:aud" = "sts.amazonaws.com"
-          }
-          StringLike = {
-            "token.actions.githubusercontent.com:sub" = "repo:${var.github_repository}:*"
+            "token.actions.githubusercontent.com:sub" = "repo:${var.github_repository}:environment:${var.environment}"
           }
         }
       }
@@ -91,9 +90,13 @@ resource "aws_iam_role" "github_actions_deploy" {
   })
 }
 
+# ─────────────────────────────────────────────────────────────
+# Deploy Policy Scoped Strictly to Cluster, Services & Roles (M1 Fix)
+# ─────────────────────────────────────────────────────────────
+
 resource "aws_iam_policy" "deploy_permissions" {
   name        = "orbitox-${var.environment}-deploy-policy"
-  description = "Permissions for GitHub Actions to push images and update ECS services"
+  description = "Scoped permissions for GitHub Actions staging deploy pipeline"
 
   policy = jsonencode({
     Version = "2012-10-17"
@@ -128,27 +131,55 @@ resource "aws_iam_policy" "deploy_permissions" {
         ]
       },
       {
-        Sid    = "ECSDeploy"
+        Sid    = "ECSClusterAndServiceDeploy"
         Effect = "Allow"
         Action = [
           "ecs:DescribeServices",
-          "ecs:UpdateService",
+          "ecs:UpdateService"
+        ]
+        Resource = [
+          var.web_service_arn
+        ]
+      },
+      {
+        Sid    = "ECSTaskOperations"
+        Effect = "Allow"
+        Action = [
           "ecs:DescribeTaskDefinition",
           "ecs:RegisterTaskDefinition",
           "ecs:DescribeTasks",
           "ecs:ListTasks",
           "ecs:RunTask"
         ]
-        Resource = "*"
+        Resource = [
+          var.cluster_arn,
+          "arn:aws:ecs:${data.aws_region.current.name}:${data.aws_caller_identity.current.account_id}:task-definition/orbitox-${var.environment}-*:*",
+          "arn:aws:ecs:${data.aws_region.current.name}:${data.aws_caller_identity.current.account_id}:task/orbitox-${var.environment}-cluster/*"
+        ]
       },
       {
-        Sid    = "IAMPassRole"
+        Sid    = "IAMPassRoleToECS"
         Effect = "Allow"
         Action = [
           "iam:PassRole"
         ]
+        Resource = var.task_and_execution_role_arns
+        Condition = {
+          StringEquals = {
+            "iam:PassedToService" = "ecs-tasks.amazonaws.com"
+          }
+        }
+      },
+      {
+        Sid    = "CloudWatchLogsTaskInspection"
+        Effect = "Allow"
+        Action = [
+          "logs:GetLogEvents",
+          "logs:FilterLogEvents",
+          "logs:DescribeLogStreams"
+        ]
         Resource = [
-          "arn:aws:iam::${data.aws_caller_identity.current.account_id}:role/orbitox-${var.environment}-*"
+          "arn:aws:logs:${data.aws_region.current.name}:${data.aws_caller_identity.current.account_id}:log-group:/ecs/orbitox-${var.environment}-*:*"
         ]
       }
     ]

@@ -30,6 +30,7 @@ concurrency:
 jobs:
   build-and-scan:
     name: Build & Vulnerability Scan (Trivy / ECR)
+    environment: staging # Bounded strictly to repo:Nikhil-ig/OrbitoX-Platform:environment:staging (H2)
     runs-on: ubuntu-24.04
     timeout-minutes: 25
     outputs:
@@ -83,74 +84,113 @@ jobs:
           echo "digest=$DIGEST" >> "$GITHUB_OUTPUT"
 
   migrate-and-verify:
-    name: Staging Migration & Step 1 RLS/Role Inventory
+    name: Staging Migration & Step 1 RLS/Role Inventory (Private ECS Tasks)
     needs: build-and-scan
+    environment: staging # Bounded strictly to repo:Nikhil-ig/OrbitoX-Platform:environment:staging (H2)
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:
-      - name: Checkout source tree
-        uses: actions/checkout@v5
-
-      - name: Set up pnpm
-        uses: pnpm/action-setup@v5
-        with:
-          version: 9.15.0
-
-      - name: Set up Node.js 22
-        uses: actions/setup-node@v6
-        with:
-          node-version: 22
-          cache: pnpm
-          cache-dependency-path: orbitox/pnpm-lock.yaml
-
       - name: Configure AWS Credentials via OIDC
         uses: aws-actions/configure-aws-credentials@v4
         with:
           role-to-assume: ${{ secrets.AWS_STAGING_DEPLOY_ROLE_ARN || 'arn:aws:iam::123456789012:role/orbitox-staging-github-actions-deploy-role' }}
           aws-region: ap-south-1
 
-      - name: Retrieve Database Credentials from AWS Secrets Manager
-        id: secrets
+      - name: Fetch Private Subnets and ECS Security Group
+        id: network
         run: |
-          export DATABASE_URL=$(aws secretsmanager get-secret-value --secret-id orbitox/staging/DATABASE_URL --query SecretString --output text)
-          export APP_DATABASE_URL=$(aws secretsmanager get-secret-value --secret-id orbitox/staging/APP_DATABASE_URL --query SecretString --output text)
-          export MAINTENANCE_DATABASE_URL=$(aws secretsmanager get-secret-value --secret-id orbitox/staging/MAINTENANCE_DATABASE_URL --query SecretString --output text)
-          export OUTBOX_RELAY_DATABASE_URL=$(aws secretsmanager get-secret-value --secret-id orbitox/staging/OUTBOX_RELAY_DATABASE_URL --query SecretString --output text)
-          export PLATFORM_ADMIN_AUDIT_DATABASE_URL=$(aws secretsmanager get-secret-value --secret-id orbitox/staging/PLATFORM_ADMIN_AUDIT_DATABASE_URL --query SecretString --output text)
-          export HMS_AUDIT_DATABASE_URL=$(aws secretsmanager get-secret-value --secret-id orbitox/staging/HMS_AUDIT_DATABASE_URL --query SecretString --output text)
-          echo "::add-mask::$DATABASE_URL"
-          echo "::add-mask::$APP_DATABASE_URL"
-          echo "::add-mask::$MAINTENANCE_DATABASE_URL"
-          echo "::add-mask::$OUTBOX_RELAY_DATABASE_URL"
-          echo "::add-mask::$PLATFORM_ADMIN_AUDIT_DATABASE_URL"
-          echo "::add-mask::$HMS_AUDIT_DATABASE_URL"
-          echo "DATABASE_URL=$DATABASE_URL" >> "$GITHUB_ENV"
-          echo "APP_DATABASE_URL=$APP_DATABASE_URL" >> "$GITHUB_ENV"
-          echo "MAINTENANCE_DATABASE_URL=$MAINTENANCE_DATABASE_URL" >> "$GITHUB_ENV"
-          echo "OUTBOX_RELAY_DATABASE_URL=$OUTBOX_RELAY_DATABASE_URL" >> "$GITHUB_ENV"
-          echo "PLATFORM_ADMIN_AUDIT_DATABASE_URL=$PLATFORM_ADMIN_AUDIT_DATABASE_URL" >> "$GITHUB_ENV"
-          echo "HMS_AUDIT_DATABASE_URL=$HMS_AUDIT_DATABASE_URL" >> "$GITHUB_ENV"
+          CLUSTER_NAME="orbitox-staging-cluster"
+          echo "Retrieving network configuration from $CLUSTER_NAME..."
+          SERVICE_JSON=$(aws ecs describe-services --cluster "$CLUSTER_NAME" --services "orbitox-staging-web-service" --query "services[0].networkConfiguration.awsvpcConfiguration")
+          SUBNETS=$(echo "$SERVICE_JSON" | jq -r '.subnets | join(",")')
+          SG=$(echo "$SERVICE_JSON" | jq -r '.securityGroups[0]')
+          echo "subnets=$SUBNETS" >> "$GITHUB_OUTPUT"
+          echo "security_group=$SG" >> "$GITHUB_OUTPUT"
 
-      - name: Install dependencies
-        working-directory: orbitox
-        run: pnpm install --frozen-lockfile --ignore-scripts
-
-      - name: Deploy Prisma Migrations as orbitox_migrator
-        working-directory: orbitox
-        run: pnpm exec prisma migrate deploy --schema prisma/schema.prisma
-
-      - name: Execute Idempotent RDS Role Bootstrap
+      # B2 Fix: Run migrations as one-off private ECS task (zero database credentials on runner)
+      - name: Run Staging Migration as One-Off Private ECS Task
+        id: run-migration
         run: |
-          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f scripts/rds-bootstrap-roles.sql
+          CLUSTER_NAME="orbitox-staging-cluster"
+          SUBNETS="${{ steps.network.outputs.subnets }}"
+          SG="${{ steps.network.outputs.security_group }}"
+          TASK_DEF_FAMILY="orbitox-staging-db-migrate"
 
-      - name: Run Step 1 RLS/Role Inventory Test on Staging RDS
-        working-directory: orbitox/apps/web
+          echo "Launching one-off migration task in private subnets..."
+          TASK_ARN=$(aws ecs run-task \
+            --cluster "$CLUSTER_NAME" \
+            --task-definition "$TASK_DEF_FAMILY" \
+            --launch-type FARGATE \
+            --network-configuration "awsvpcConfiguration={subnets=[$SUBNETS],securityGroups=[$SG],assignPublicIp=DISABLED}" \
+            --query "tasks[0].taskArn" --output text)
+
+          echo "Migration task launched: $TASK_ARN"
+          echo "Waiting for migration task completion..."
+          aws ecs wait tasks-stopped --cluster "$CLUSTER_NAME" --tasks "$TASK_ARN"
+
+          TASK_DESC=$(aws ecs describe-tasks --cluster "$CLUSTER_NAME" --tasks "$TASK_ARN")
+          EXIT_CODE=$(echo "$TASK_DESC" | jq -r '.tasks[0].containers[0].exitCode')
+          STOP_REASON=$(echo "$TASK_DESC" | jq -r '.tasks[0].stoppedReason // "None"')
+          echo "Migration task finished with exit code: $EXIT_CODE (Stop reason: $STOP_REASON)"
+
+          TASK_ID=$(basename "$TASK_ARN")
+          LOG_STREAM="db-migrate/db-migrate/$TASK_ID"
+          echo "=== CloudWatch Task Logs ($LOG_STREAM) ==="
+          aws logs get-log-events \
+            --log-group-name "/ecs/orbitox-staging-db-migrate" \
+            --log-stream-name "$LOG_STREAM" \
+            --query "events[*].message" --output text || echo "Log stream not yet flushed"
+
+          if [ "$EXIT_CODE" != "0" ]; then
+            echo "❌ Migration task failed with exit code $EXIT_CODE"
+            exit 1
+          fi
+          echo "✓ Migration task completed successfully."
+
+      # B2 Fix: Run Step 1 RLS/Role Inventory test as one-off private ECS task
+      - name: Run Step 1 RLS/Role Inventory Verification as One-Off Private ECS Task
+        id: run-inventory
         run: |
-          pnpm exec tsx scripts/test-platform-step1-db.ts
+          CLUSTER_NAME="orbitox-staging-cluster"
+          SUBNETS="${{ steps.network.outputs.subnets }}"
+          SG="${{ steps.network.outputs.security_group }}"
+          TASK_DEF_FAMILY="orbitox-staging-db-inventory"
+
+          echo "Launching one-off inventory verification task in private subnets..."
+          TASK_ARN=$(aws ecs run-task \
+            --cluster "$CLUSTER_NAME" \
+            --task-definition "$TASK_DEF_FAMILY" \
+            --launch-type FARGATE \
+            --network-configuration "awsvpcConfiguration={subnets=[$SUBNETS],securityGroups=[$SG],assignPublicIp=DISABLED}" \
+            --query "tasks[0].taskArn" --output text)
+
+          echo "Inventory task launched: $TASK_ARN"
+          echo "Waiting for inventory task completion..."
+          aws ecs wait tasks-stopped --cluster "$CLUSTER_NAME" --tasks "$TASK_ARN"
+
+          TASK_DESC=$(aws ecs describe-tasks --cluster "$CLUSTER_NAME" --tasks "$TASK_ARN")
+          EXIT_CODE=$(echo "$TASK_DESC" | jq -r '.tasks[0].containers[0].exitCode')
+          STOP_REASON=$(echo "$TASK_DESC" | jq -r '.tasks[0].stoppedReason // "None"')
+          echo "Inventory task finished with exit code: $EXIT_CODE (Stop reason: $STOP_REASON)"
+
+          TASK_ID=$(basename "$TASK_ARN")
+          LOG_STREAM="db-inventory/db-inventory/$TASK_ID"
+          echo "=== CloudWatch Task Logs ($LOG_STREAM) ==="
+          aws logs get-log-events \
+            --log-group-name "/ecs/orbitox-staging-db-inventory" \
+            --log-stream-name "$LOG_STREAM" \
+            --query "events[*].message" --output text || echo "Log stream not yet flushed"
+
+          if [ "$EXIT_CODE" != "0" ]; then
+            echo "❌ Step 1 Inventory task failed with exit code $EXIT_CODE"
+            exit 1
+          fi
+          echo "✓ Step 1 Inventory task completed successfully."
 
   deploy-ecs:
     name: Rolling ECS Fargate Deployment & Health Gate
     needs: [build-and-scan, migrate-and-verify]
+    environment: staging # Bounded strictly to repo:Nikhil-ig/OrbitoX-Platform:environment:staging (H2)
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:
