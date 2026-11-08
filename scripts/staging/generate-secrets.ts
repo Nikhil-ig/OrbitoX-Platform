@@ -136,17 +136,20 @@ export function runSecretGenerator(options: {
     // Generate value in memory (NEVER logged or saved to file)
     const secretValue = generator();
 
-    // Store in Secrets Manager
-    const putRes = runner([
-      'secretsmanager',
-      'put-secret-value',
-      '--secret-id',
-      secretId,
-      '--secret-string',
+    // Store in Secrets Manager via stdin to prevent leaking secret values in process argv/ps
+    const putRes = runner(
+      [
+        'secretsmanager',
+        'put-secret-value',
+        '--secret-id',
+        secretId,
+        '--secret-string',
+        'file:///dev/stdin',
+        '--region',
+        region,
+      ],
       secretValue,
-      '--region',
-      region,
-    ]);
+    );
 
     if (putRes.status === 0) {
       const action = options.rotate ? 'rotated' : 'set';
@@ -178,3 +181,4 @@ if (require.main === module || process.argv[1]?.endsWith('generate-secrets.ts'))
     process.exit(1);
   }
 }
+

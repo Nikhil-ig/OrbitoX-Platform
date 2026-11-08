@@ -90,11 +90,62 @@ describe('Phase 6F B0: Staging Secret Generator Verification', () => {
     }
   });
 
+  it('B0-1 HIGH security: secret values are passed via stdin and NEVER in process argv', () => {
+    const recordedInvocations: { args: string[]; stdin?: string }[] = [];
+
+    const mockRunner = (args: string[], stdin?: string) => {
+      recordedInvocations.push({ args: [...args], stdin });
+      const subcmd = args[1];
+      if (subcmd === 'get-secret-value') {
+        return { stdout: '', status: 1 }; // not set
+      }
+      if (subcmd === 'put-secret-value') {
+        return { stdout: JSON.stringify({ VersionId: 'v1' }), status: 0 };
+      }
+      return { stdout: '', status: 0 };
+    };
+
+    const results = runSecretGenerator({
+      dryRun: false,
+      awsCliRunner: mockRunner,
+    });
+
+    assert.ok(results.length > 0);
+    assert.ok(recordedInvocations.length > 0);
+
+    const putCalls = recordedInvocations.filter((c) => c.args.includes('put-secret-value'));
+    assert.ok(putCalls.length > 0, 'Must have executed put-secret-value calls');
+
+    for (const call of putCalls) {
+      // Must use file:///dev/stdin
+      const strIdx = call.args.indexOf('--secret-string');
+      assert.notEqual(strIdx, -1, 'Must specify --secret-string flag');
+      assert.equal(
+        call.args[strIdx + 1],
+        'file:///dev/stdin',
+        '--secret-string must be file:///dev/stdin to avoid leaking secrets in argv',
+      );
+
+      // stdin must contain the non-empty secret value
+      assert.ok(call.stdin, 'Secret value must be supplied via stdin');
+      assert.ok(typeof call.stdin === 'string' && call.stdin.length >= 32);
+
+      // argv must NEVER contain the secret value
+      for (const arg of call.args) {
+        assert.equal(
+          arg.includes(call.stdin),
+          false,
+          `argv element "${arg}" must NEVER contain secret value "${call.stdin}"`,
+        );
+      }
+    }
+  });
+
   it('idempotency: skips already-set secrets without --rotate, and updates with --rotate', () => {
     const mockStorage = new Map<string, string>();
     mockStorage.set('orbitox/staging/SESSION_SECRET', 'existing_value_32_characters_minimum');
 
-    const mockRunner = (args: string[]) => {
+    const mockRunner = (args: string[], stdin?: string) => {
       const subcmd = args[1];
       const idIdx = args.indexOf('--secret-id');
       const secretId = idIdx !== -1 ? args[idIdx + 1] : undefined;
@@ -111,10 +162,8 @@ describe('Phase 6F B0: Staging Secret Generator Verification', () => {
       }
 
       if (subcmd === 'put-secret-value') {
-        const strIdx = args.indexOf('--secret-string');
-        const value = strIdx !== -1 ? args[strIdx + 1] : '';
-        if (value) {
-          mockStorage.set(secretId, value);
+        if (stdin) {
+          mockStorage.set(secretId, stdin);
         }
         return { stdout: JSON.stringify({ VersionId: 'v1' }), status: 0 };
       }
