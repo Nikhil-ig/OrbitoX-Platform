@@ -83,3 +83,49 @@ export const PLATFORM_SERVICE_CONTRACTS = {
     ],
   },
 } as const;
+
+/**
+ * External secrets supplied directly by third-party services and manually entered by the owner.
+ */
+export const EXTERNAL_PROVIDER_SECRETS = [
+  'RAZORPAY_KEY_ID',
+  'RAZORPAY_KEY_SECRET',
+  'RAZORPAY_WEBHOOK_SECRET',
+  'RESEND_API_KEY',
+] as const;
+
+/**
+ * Infrastructure connection strings provisioned by AWS RDS and database bootstrap scripts.
+ */
+export const DATABASE_URL_SECRETS = [
+  'APP_DATABASE_URL',
+  'PLATFORM_ADMIN_AUDIT_DATABASE_URL',
+  'HMS_AUDIT_DATABASE_URL',
+  'OUTBOX_RELAY_DATABASE_URL',
+  'MAINTENANCE_DATABASE_URL',
+  'DATABASE_URL',
+] as const;
+
+/**
+ * All secrets excluded from automated in-memory random generation.
+ */
+export const EXTERNAL_SECRETS = [
+  ...EXTERNAL_PROVIDER_SECRETS,
+  ...DATABASE_URL_SECRETS,
+] as const;
+
+/**
+ * Computes all non-external, random application secrets required across all service contracts.
+ */
+export function getGeneratedSecretNames(): string[] {
+  const allSecrets = new Set<string>();
+  for (const service of Object.values(PLATFORM_SERVICE_CONTRACTS)) {
+    for (const secret of service.secrets) {
+      allSecrets.add(secret);
+    }
+  }
+  const excludedSet = new Set<string>(EXTERNAL_SECRETS);
+  return Array.from(allSecrets)
+    .filter((s) => !excludedSet.has(s))
+    .sort();
+}
