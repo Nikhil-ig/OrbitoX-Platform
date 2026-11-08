@@ -1,10 +1,10 @@
 -- ─────────────────────────────────────────────────────────────
 -- OrbitoX AWS RDS PostgreSQL 16 Post-Migration Role Enablement (Phase 6F)
 -- ─────────────────────────────────────────────────────────────
--- Run as `orbitox_migrator` (schema owner and creator of the roles).
--- Migrations create roles as NOLOGIN to enforce atomic deployment.
--- This script enables LOGIN and sets passwords securely from Secrets Manager.
--- Idempotent on every deployment.
+-- Executed strictly AFTER `prisma migrate deploy` has created the roles.
+-- Run as `orbitox_migrator` (which holds CREATEROLE and database ownership).
+-- Enables LOGIN on application roles created by migrations without using
+-- superuser-only clauses (NOSUPERUSER, NOBYPASSRLS).
 -- ─────────────────────────────────────────────────────────────
 
 \set ON_ERROR_STOP on
@@ -29,9 +29,27 @@ BEGIN
 END
 $$;
 
+-- Optionally assign role passwords if provided via psql variables
+\if :{?runtime_password}
 ALTER ROLE orbitox_runtime PASSWORD :'runtime_password';
-ALTER ROLE orbitox_maintenance PASSWORD :'maintenance_password';
-ALTER ROLE orbitox_outbox_relay PASSWORD :'outbox_relay_password';
-ALTER ROLE orbitox_platform_admin_audit PASSWORD :'platform_admin_audit_password';
-ALTER ROLE hms_audit_reader PASSWORD :'hms_audit_reader_password';
+\elif :{?app_role_password}
+ALTER ROLE orbitox_runtime PASSWORD :'app_role_password';
+\endif
 
+\if :{?maintenance_password}
+ALTER ROLE orbitox_maintenance PASSWORD :'maintenance_password';
+\elif :{?maintenance_role_password}
+ALTER ROLE orbitox_maintenance PASSWORD :'maintenance_role_password';
+\endif
+
+\if :{?outbox_relay_password}
+ALTER ROLE orbitox_outbox_relay PASSWORD :'outbox_relay_password';
+\endif
+
+\if :{?platform_admin_audit_password}
+ALTER ROLE orbitox_platform_admin_audit PASSWORD :'platform_admin_audit_password';
+\endif
+
+\if :{?hms_audit_reader_password}
+ALTER ROLE hms_audit_reader PASSWORD :'hms_audit_reader_password';
+\endif

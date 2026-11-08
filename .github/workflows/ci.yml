@@ -912,6 +912,8 @@ jobs:
               END IF;
             END
             \$\$;
+            -- In AWS RDS, the master admin is the owner of the target database
+            ALTER DATABASE orbitox_staging_sim OWNER TO rds_master;
           "
       - name: Run RDS bootstrap script as rds_master
         run: |
@@ -928,8 +930,8 @@ jobs:
         run: |
           PGPASSWORD=migrator_test_password psql -h 127.0.0.1 -U orbitox_migrator -d orbitox_staging_sim \
             -v ON_ERROR_STOP=1 \
-            -v app_role_password="app_runtime_test_password" \
-            -v maintenance_role_password="maint_test_password" \
+            -v runtime_password="app_runtime_test_password" \
+            -v maintenance_password="maint_test_password" \
             -v platform_admin_audit_password="audit_test_password" \
             -v hms_audit_reader_password="auditreader_test_password" \
             -v outbox_relay_password="relay_test_password" \
