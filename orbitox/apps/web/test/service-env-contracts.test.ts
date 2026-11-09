@@ -27,7 +27,7 @@ const GLOBAL_DEV_TEST_IGNORE: ReadonlyMap<string, string> = new Map([
   ['LOG_LEVEL', 'Runtime log level tuning override with built-in default.'],
   ['OPERATION_LEASE_TTL_SECONDS', 'Test harness operation lease duration override with built-in default.'],
   ['ORBITOX_DATA_DIR', 'Local filesystem data store path used only in offline JSON mode.'],
-  ['ORBITOX_ENABLE_HOSPITAL_ADMIN_ENDPOINTS', 'Feature toggle for experimental development administrative routes.'],
+  ['ORBITOX_ENABLE_HOSPITAL_ADMIN_ENDPOINTS', 'Dev-only administrative toggle; strictly prohibited and rejected at production startup.'],
   ['ORBITOX_SYNC_SAGA', 'Test harness flag to execute distributed saga transactions synchronously.'],
   ['ORBITOX_TEST_STANDALONE', 'Standalone local test runner flag bypassing external dependencies.'],
   ['TEST_STEP5_DELAY_MS', 'Test harness latency injection flag; strictly prohibited at production startup.'],
