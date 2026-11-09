@@ -25,9 +25,11 @@ import {
   computeFiscalYear,
   formatInvoiceNumber,
   SAC_RESTAURANT_SERVICES,
-  DEFAULT_PILOT_GSTIN,
 } from '../packages/domain/invoicing';
 import { withTenantContext } from '../packages/domain/tenancy';
+
+// Test fixture GSTIN
+const TEST_PILOT_GSTIN = '27AAPFU0939F1ZV';
 
 const DATABASE_URL = process.env.DATABASE_URL || 'postgresql://apple@localhost:5432/restaurant_os';
 const prisma = new PrismaClient({ datasources: { db: { url: DATABASE_URL } } });
@@ -211,13 +213,18 @@ async function run() {
       order: mockOrder,
       sequenceNumber: 1,
       tenantId: TEST_TENANT,
+      tenantBrand: {
+        gstin: TEST_PILOT_GSTIN,
+        restaurantName: 'OrbitoX Pilot Bistro',
+        address: '123 Pilot St, Mumbai',
+      },
       customerPhone: '+919876543210',
       date: new Date('2026-10-24T12:00:00Z'),
     });
 
     assert.strictEqual(invoice.invoiceNumber, 'INV-202627-000001');
     assert.strictEqual(invoice.tenantId, TEST_TENANT);
-    assert.strictEqual(invoice.gstin, DEFAULT_PILOT_GSTIN);
+    assert.strictEqual(invoice.gstin, TEST_PILOT_GSTIN);
     assert.strictEqual(invoice.subtotalMinor, 88000);
 
     // 5% of 88000 = 4400 (split: CGST 2200 + SGST 2200)
@@ -611,8 +618,8 @@ async function run() {
 
   await test('5.2 Indian GST statutory SAC Code 996331 is verified', async () => {
     assert.strictEqual(SAC_RESTAURANT_SERVICES, '996331');
-    assert.strictEqual(typeof DEFAULT_PILOT_GSTIN, 'string');
-    assert.strictEqual(DEFAULT_PILOT_GSTIN.length, 15);
+    assert.strictEqual(typeof TEST_PILOT_GSTIN, 'string');
+    assert.strictEqual(TEST_PILOT_GSTIN.length, 15);
   });
 
   console.log('\n=============================================================');

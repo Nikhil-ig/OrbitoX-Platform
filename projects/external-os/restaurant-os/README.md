@@ -158,6 +158,6 @@ The gatekeeper permits certificate generation **only** if the domain exists in t
 - [x] **Packaging**: Multi-stage `Dockerfile` and `docker-compose.yml` validated.
 - [ ] **Operator Action**: Set live Razorpay keys (`RAZORPAY_KEY_ID`, `RAZORPAY_KEY_SECRET`) in `.env`.
 - [ ] **Operator Action**: Configure webhook URL `https://<domain>/api/restaurant/payments/webhook` with `RAZORPAY_WEBHOOK_SECRET` in Razorpay Dashboard.
-- [ ] **Operator Action**: Confirm restaurant legal entity GSTIN matches `RESTAURANT_GSTIN`.
+- [ ] **Operator Action**: Configure restaurant legal entity name, address, and Indian GSTIN in tenant brand settings.
 - [ ] **Operator Action**: Configure local ESC/POS network thermal printer IP in integration settings.
 - [ ] **Operator Action**: Provision manager and floor staff PIN credentials via staff portal.

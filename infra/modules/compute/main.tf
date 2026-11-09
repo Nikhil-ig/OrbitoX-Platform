@@ -707,8 +707,7 @@ resource "aws_ecs_task_definition" "restaurant_os" {
         { name = "RESTAURANTOS_BASE_DOMAIN", value = "staging.orbitox.io" },
         { name = "RESTAURANTOS_CNAME_TARGET", value = "cname.staging.orbitox.io" },
         { name = "TRUSTED_PROXIES", value = "10.0.0.0/16" },
-        { name = "RESTAURANTOS_ALLOWED_ORIGINS", value = "https://staging.orbitox.io,https://*.staging.orbitox.io" },
-        { name = "RESTAURANT_GSTIN", value = "27AAPFU0939F1ZV" }
+        { name = "RESTAURANTOS_ALLOWED_ORIGINS", value = "https://staging.orbitox.io,https://*.staging.orbitox.io" }
       ]
       secrets = [
         { name = "DATABASE_URL", valueFrom = var.secrets_map["RESTAURANT_OS_DATABASE_URL"] },

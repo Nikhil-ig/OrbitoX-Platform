@@ -3747,10 +3747,13 @@ export async function handleRequest(req: http.IncomingMessage, res: http.ServerR
           if (!invoiceRecord) {
             const { fiscalYear } = computeFiscalYear();
             const seq = await repo.getNextInvoiceSequence(fiscalYear);
+            const tenantBrand = await repo.getTenantBrand();
             invoiceRecord = buildGSTInvoice({
               order,
               sequenceNumber: seq,
               tenantId: tid,
+              tenantBrand,
+              branch: currentBranch,
             });
             await repo.saveInvoice(invoiceRecord);
             eventBus.broadcast({
@@ -3961,19 +3964,35 @@ export async function handleRequest(req: http.IncomingMessage, res: http.ServerR
 
     const { fiscalYear } = computeFiscalYear();
     const seq = await repo.getNextInvoiceSequence(fiscalYear);
-    const invoiceRecord = buildGSTInvoice({
-      order,
-      sequenceNumber: seq,
-      tenantId: tid,
-      gstin: body.gstin,
-      customerPhone: body.customerPhone,
-      customerEmail: body.customerEmail,
-      customerGstin: body.customerGstin,
-    });
+    const tenantBrand = await repo.getTenantBrand();
+    try {
+      const invoiceRecord = buildGSTInvoice({
+        order,
+        sequenceNumber: seq,
+        tenantId: tid,
+        gstin: body.gstin,
+        legalEntityName: body.legalEntityName,
+        restaurantName: body.restaurantName,
+        address: body.address,
+        tenantBrand,
+        branch: currentBranch,
+        unregisteredInvoiceMode: body.unregisteredInvoiceMode,
+        customerPhone: body.customerPhone,
+        customerEmail: body.customerEmail,
+        customerGstin: body.customerGstin,
+      });
 
-    await repo.saveInvoice(invoiceRecord);
-    sendJson(res, 201, { success: true, data: invoiceRecord });
-    return;
+      await repo.saveInvoice(invoiceRecord);
+      sendJson(res, 201, { success: true, data: invoiceRecord });
+      return;
+    } catch (invErr: any) {
+      sendJson(res, 400, {
+        error: invErr.code || 'GSTIN_REQUIRED',
+        code: invErr.code || 'GSTIN_REQUIRED',
+        message: invErr.message,
+      });
+      return;
+    }
   }
 
   // 6g. Level 4 Refund Governance Endpoint

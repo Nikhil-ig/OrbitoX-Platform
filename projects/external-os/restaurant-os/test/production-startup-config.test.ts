@@ -24,7 +24,6 @@ const VALID_PROD_ENV: Record<string, string> = {
   RESTAURANT_STATION_SECRETS: JSON.stringify({
     stn_sec_1234567890abcdef1234567890abcdef: { station: 'EXPO', branchId: 'staging-main', isPrivileged: true },
   }),
-  RESTAURANT_GSTIN: '27AAPFU0939F1ZV',
   ORBITOX_BRIDGE_KEYS: JSON.stringify({
     activeKeyId: 'k1',
     keys: { k1: 'bridge_secret_32_chars_minimum_length_hex_string' },
@@ -255,63 +254,12 @@ describe('Phase 6F B0-8 / B0-9: RestaurantOS Production Startup Configuration & 
     }
   });
 
-  it('B0-9: refuses to issue GST invoice in production without a valid 15-character Indian GSTIN', () => {
-    // 1. Missing GSTIN in production startup
-    const envNoGstin = { ...VALID_PROD_ENV };
-    delete envNoGstin.RESTAURANT_GSTIN;
-    assert.throws(
-      () => assertRestaurantOsProductionConfig(envNoGstin),
-      /RESTAURANT_GSTIN must be a valid 15-character Indian GSTIN/
-    );
-
-    // 2. Malformed GSTIN in production startup
-    const envBadGstin = { ...VALID_PROD_ENV, RESTAURANT_GSTIN: 'INVALID_GSTIN_123' };
-    assert.throws(
-      () => assertRestaurantOsProductionConfig(envBadGstin),
-      /RESTAURANT_GSTIN must be a valid 15-character Indian GSTIN/
-    );
-
-    // 3. Invoicing buildGSTInvoice in production
-    const origEnv = { ...process.env };
-    try {
-      process.env.NODE_ENV = 'production';
-      delete process.env.RESTAURANT_GSTIN;
-
-      const dummyOrder: any = {
-        id: 'ord_1',
-        tableId: 't1',
-        status: 'PAID',
-        items: [{ id: 'it_1', name: 'Paneer Tikka', unitPriceMinor: 25000, quantity: 1 }],
-      };
-
-      // Missing GSTIN throws
-      assert.throws(
-        () => buildGSTInvoice({ order: dummyOrder, tenantId: 'tenant-1' }),
-        /A valid 15-character Indian GSTIN is required to issue tax invoices in production/
-      );
-
-      // Default 'UNREGISTERED' is rejected in production
-      process.env.RESTAURANT_GSTIN = 'UNREGISTERED';
-      assert.throws(
-        () => buildGSTInvoice({ order: dummyOrder, tenantId: 'tenant-1' }),
-        /A valid 15-character Indian GSTIN is required to issue tax invoices in production/
-      );
-
-      // Valid Indian GSTIN succeeds
-      process.env.RESTAURANT_GSTIN = '27AAPFU0939F1ZV';
-      const invoice = buildGSTInvoice({ order: dummyOrder, tenantId: 'tenant-1' });
-      assert.equal(invoice.gstin, '27AAPFU0939F1ZV');
-      assert.equal(invoice.taxMinor > 0, true);
-
-      // Explicit per-tenant GSTIN overrides environment GSTIN
-      const perTenantInvoice = buildGSTInvoice({
-        order: dummyOrder,
-        tenantId: 'tenant-1',
-        gstin: '06AAACH7409R1ZZ',
-      });
-      assert.equal(perTenantInvoice.gstin, '06AAACH7409R1ZZ');
-    } finally {
-      process.env = origEnv;
-    }
+  it('B0-11: does not require RESTAURANT_GSTIN in production environment variables (per-tenant data isolation)', () => {
+    // RESTAURANT_GSTIN is per-tenant data in database brand settings, not container environment
+    const prodEnv = { ...VALID_PROD_ENV };
+    delete (prodEnv as any).RESTAURANT_GSTIN;
+    assert.doesNotThrow(() => {
+      assertRestaurantOsProductionConfig(prodEnv);
+    });
   });
 });

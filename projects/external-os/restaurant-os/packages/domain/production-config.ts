@@ -64,18 +64,12 @@ export function assertRestaurantOsProductionConfig(
     }
   }
 
-  // 8. RESTAURANT_GSTIN
-  const gstin = env.RESTAURANT_GSTIN?.trim();
-  if (!gstin || !GSTIN_REGEX.test(gstin)) {
-    problems.push(`RESTAURANT_GSTIN must be a valid 15-character Indian GSTIN (found "${gstin || ''}")`);
-  }
-
-  // 9. ORBITOX_BRIDGE_KEYS
+  // 8. ORBITOX_BRIDGE_KEYS
   if (!env.ORBITOX_BRIDGE_KEYS || !env.ORBITOX_BRIDGE_KEYS.trim()) {
     problems.push('ORBITOX_BRIDGE_KEYS is not set (Platform-to-runtime bridge authentication requires keys)');
   }
 
-  // 10. ORBITOX_GRANT_PUBLIC_KEYS
+  // 9. ORBITOX_GRANT_PUBLIC_KEYS
   if (!env.ORBITOX_GRANT_PUBLIC_KEYS || !env.ORBITOX_GRANT_PUBLIC_KEYS.trim()) {
     problems.push('ORBITOX_GRANT_PUBLIC_KEYS is not set (Plugin entitlement verification requires public keys)');
   }
@@ -86,3 +80,4 @@ export function assertRestaurantOsProductionConfig(
     );
   }
 }
+

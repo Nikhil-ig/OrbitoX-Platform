@@ -35,7 +35,6 @@ services:
       NODE_ENV: "${NODE_ENV:-production}"
       DATABASE_URL: "postgresql://restaurantos_app:${APP_DB_PASSWORD:-CHANGE_ME_APP_PASSWORD}@postgres:5432/${POSTGRES_DB:-restaurant_os}?schema=public"
       MIGRATION_DATABASE_URL: "postgresql://${POSTGRES_USER:-restaurantos_admin}:${POSTGRES_PASSWORD:-CHANGE_ME_ROOT_PASSWORD}@postgres:5432/${POSTGRES_DB:-restaurant_os}?schema=public"
-      RESTAURANT_GSTIN: "${RESTAURANT_GSTIN:-27AAPFU0939F1ZV}"
       RAZORPAY_KEY_ID: "${RAZORPAY_KEY_ID:-rzp_test_change_me}"
       RAZORPAY_KEY_SECRET: "${RAZORPAY_KEY_SECRET:-CHANGE_ME_KEY_SECRET}"
       RAZORPAY_WEBHOOK_SECRET: "${RAZORPAY_WEBHOOK_SECRET:-CHANGE_ME_WEBHOOK_SECRET}"

@@ -13,7 +13,17 @@ import { getActiveTenant } from './tenancy';
 
 export const SAC_RESTAURANT_SERVICES = '996331';
 export const SAC_DESCRIPTION = 'Services provided by restaurants, cafes, and other eating establishments';
-export const DEFAULT_PILOT_GSTIN = '27AAPFU0939F1ZV'; // Valid Maharashtra GSTIN format for pilot
+
+export type UnregisteredInvoiceMode = 'refuse' | 'bill_of_supply' | 'receipt';
+
+export interface TenantBrandSettings {
+  restaurantName?: string;
+  legalEntityName?: string;
+  gstin?: string;
+  address?: string;
+  unregisteredInvoiceMode?: UnregisteredInvoiceMode;
+  [key: string]: any;
+}
 
 export interface InvoiceItem {
   id: string;
@@ -53,7 +63,11 @@ export interface InvoiceRecord {
   invoiceNumber: string;
   fiscalYear: string;
   sequenceNumber: number;
-  gstin: string;
+  gstin?: string;
+  invoiceType?: 'TAX_INVOICE' | 'BILL_OF_SUPPLY' | 'RECEIPT';
+  restaurantName?: string;
+  legalEntityName?: string;
+  address?: string;
   subtotalMinor: number;
   taxMinor: number;
   totalMinor: number;
@@ -116,6 +130,16 @@ export interface BuildInvoiceParams {
   };
   sequenceNumber: number;
   gstin?: string;
+  legalEntityName?: string;
+  restaurantName?: string;
+  address?: string;
+  tenantBrand?: TenantBrandSettings;
+  branch?: {
+    address?: string;
+    city?: string;
+    [key: string]: any;
+  };
+  unregisteredInvoiceMode?: UnregisteredInvoiceMode;
   tenantId?: string;
   customerPhone?: string;
   customerEmail?: string;
@@ -127,18 +151,68 @@ export const GSTIN_REGEX = /^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z]{1}[1-9A-Z]{1}Z[0-9A-Z
 
 /**
  * Builds a certified Indian GST-compliant invoice record from an order.
+ * All taxpayer data (GSTIN, legal entity name, address) is read strictly from tenant settings.
+ * Refuses tax invoice issuance with GSTIN_REQUIRED if GSTIN is missing or invalid in any environment.
  */
 export function buildGSTInvoice(params: BuildInvoiceParams): InvoiceRecord {
   const tid = params.tenantId || getActiveTenant().tenantId;
-  const rawGstin = params.gstin || process.env.RESTAURANT_GSTIN;
-  if (process.env.NODE_ENV === 'production') {
-    if (!rawGstin || !GSTIN_REGEX.test(rawGstin.trim())) {
-      throw new Error(
-        `A valid 15-character Indian GSTIN is required to issue tax invoices in production. Got: "${rawGstin || ''}"`
+
+  // Read GSTIN, legal entity name and address strictly from tenant's own settings (brand / params)
+  const brand = params.tenantBrand;
+  const rawGstin = (params.gstin || brand?.gstin || '').trim();
+  const restaurantName = (params.restaurantName || brand?.restaurantName || '').trim();
+  const legalEntityName = (params.legalEntityName || brand?.legalEntityName || restaurantName).trim();
+  const branchAddress = (
+    params.address ||
+    (params.branch?.address ? `${params.branch.address}${params.branch.city ? `, ${params.branch.city}` : ''}` : brand?.address) ||
+    ''
+  ).trim();
+
+  const mode: UnregisteredInvoiceMode = params.unregisteredInvoiceMode || brand?.unregisteredInvoiceMode || 'refuse';
+  const isGstinValid = rawGstin.length > 0 && GSTIN_REGEX.test(rawGstin);
+
+  let invoiceType: 'TAX_INVOICE' | 'BILL_OF_SUPPLY' | 'RECEIPT';
+  let effectiveGstin: string;
+  let isTaxExempt = false;
+
+  if (isGstinValid) {
+    if (!legalEntityName) {
+      const err = new Error('Legal entity name is required to issue a tax invoice. Configure tenant legal entity name in brand settings.');
+      (err as any).code = 'LEGAL_ENTITY_REQUIRED';
+      throw err;
+    }
+    if (!branchAddress) {
+      const err = new Error('Address is required to issue a tax invoice. Configure restaurant branch or brand address.');
+      (err as any).code = 'ADDRESS_REQUIRED';
+      throw err;
+    }
+    invoiceType = 'TAX_INVOICE';
+    effectiveGstin = rawGstin;
+  } else {
+    // Missing or invalid GSTIN
+    if (mode === 'refuse') {
+      const err = new Error(
+        !rawGstin
+          ? 'GSTIN is required to issue a tax invoice. Configure tenant GSTIN or select an allowed unregistered invoice mode (bill_of_supply or receipt).'
+          : `Invalid Indian GSTIN format: "${rawGstin}". Must be a valid 15-character statutory GSTIN.`
       );
+      (err as any).code = 'GSTIN_REQUIRED';
+      throw err;
+    } else if (mode === 'bill_of_supply') {
+      invoiceType = 'BILL_OF_SUPPLY';
+      effectiveGstin = rawGstin || 'UNREGISTERED';
+      isTaxExempt = true;
+    } else if (mode === 'receipt') {
+      invoiceType = 'RECEIPT';
+      effectiveGstin = '';
+      isTaxExempt = true;
+    } else {
+      const err = new Error(`Unsupported unregistered invoice mode: "${mode}"`);
+      (err as any).code = 'GSTIN_REQUIRED';
+      throw err;
     }
   }
-  const gstin = rawGstin || 'UNREGISTERED';
+
   const date = params.date || new Date();
   const { fiscalYear, code } = computeFiscalYear(date);
   const invoiceNumber = formatInvoiceNumber(code, params.sequenceNumber);
@@ -155,7 +229,7 @@ export function buildGSTInvoice(params: BuildInvoiceParams): InvoiceRecord {
       quantity: qty,
       unitPriceMinor: it.unitPriceMinor,
       totalMinor: itemTotal,
-      taxRate: '5%',
+      taxRate: isTaxExempt ? '0%' : '5%',
     };
   });
 
@@ -164,20 +238,20 @@ export function buildGSTInvoice(params: BuildInvoiceParams): InvoiceRecord {
     subtotalMinor = params.order.subtotalMinor;
   }
 
-  // 5% Restaurant GST split equally into 2.5% CGST and 2.5% SGST
-  const cgstMinor = Math.round((subtotalMinor * 250) / 10000);
-  const sgstMinor = Math.round((subtotalMinor * 250) / 10000);
+  // 5% Restaurant GST split equally into 2.5% CGST and 2.5% SGST (0% if exempt / bill of supply / receipt)
+  const cgstMinor = isTaxExempt ? 0 : Math.round((subtotalMinor * 250) / 10000);
+  const sgstMinor = isTaxExempt ? 0 : Math.round((subtotalMinor * 250) / 10000);
   const taxMinor = cgstMinor + sgstMinor;
   const totalMinor = subtotalMinor + taxMinor;
 
   const taxBreakdown: TaxBreakdown = {
     sacCode: SAC_RESTAURANT_SERVICES,
     sacDescription: SAC_DESCRIPTION,
-    cgstBasisPoints: 250,
-    cgstRate: '2.5%',
+    cgstBasisPoints: isTaxExempt ? 0 : 250,
+    cgstRate: isTaxExempt ? '0%' : '2.5%',
     cgstMinor,
-    sgstBasisPoints: 250,
-    sgstRate: '2.5%',
+    sgstBasisPoints: isTaxExempt ? 0 : 250,
+    sgstRate: isTaxExempt ? '0%' : '2.5%',
     sgstMinor,
     totalTaxMinor: taxMinor,
   };
@@ -197,7 +271,11 @@ export function buildGSTInvoice(params: BuildInvoiceParams): InvoiceRecord {
     invoiceNumber,
     fiscalYear,
     sequenceNumber: params.sequenceNumber,
-    gstin,
+    gstin: effectiveGstin,
+    invoiceType,
+    restaurantName: restaurantName || undefined,
+    legalEntityName: legalEntityName || undefined,
+    address: branchAddress || undefined,
     subtotalMinor,
     taxMinor,
     totalMinor,
@@ -218,11 +296,20 @@ export function renderPrintableInvoiceHtml(
   brand?: any,
   branch?: any
 ): string {
-  const restaurantName = brand?.restaurantName || 'OrbitoX Bistro';
-  const legalEntityName = brand?.legalEntityName || restaurantName;
-  const gstin = invoice.gstin || brand?.gstin || '27AAPFU0939F1ZV';
-  const branchAddress = branch?.address ? `${branch.address}, ${branch?.city || ''}` : (brand?.address || 'Main Promenade, Sector 14');
+  const restaurantName = invoice.restaurantName || brand?.restaurantName || '';
+  const legalEntityName = invoice.legalEntityName || brand?.legalEntityName || restaurantName;
+  const gstin = invoice.gstin || brand?.gstin || '';
+  const branchAddress = invoice.address || (branch?.address ? `${branch.address}${branch?.city ? `, ${branch.city}` : ''}` : (brand?.address || ''));
   const currencySymbol = invoice.currency === 'INR' ? '₹' : (invoice.currency || '₹');
+  const invoiceType = invoice.invoiceType || (gstin && gstin !== 'UNREGISTERED' ? 'TAX_INVOICE' : 'RECEIPT');
+
+  if (invoiceType === 'TAX_INVOICE' && (!gstin || !GSTIN_REGEX.test(gstin))) {
+    const err = new Error(`GSTIN is required to render tax invoice. Got: "${gstin || ''}"`);
+    (err as any).code = 'GSTIN_REQUIRED';
+    throw err;
+  }
+
+  const documentTitle = invoiceType === 'TAX_INVOICE' ? 'TAX INVOICE' : invoiceType === 'BILL_OF_SUPPLY' ? 'BILL OF SUPPLY' : 'COMMERCIAL RECEIPT';
 
   const items = invoice.itemBreakdown || [];
   const tax = invoice.taxBreakdown || {
@@ -256,7 +343,7 @@ export function renderPrintableInvoiceHtml(
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <title>Tax Invoice · ${invoice.invoiceNumber}</title>
+  <title>${documentTitle} · ${invoice.invoiceNumber}</title>
   <style>
     @page {
       size: A4 portrait;
@@ -394,7 +481,7 @@ export function renderPrintableInvoiceHtml(
 <body>
   <div class="no-print-bar">
     <a href="/operations/orders" style="color: #6B7280; text-decoration: none; font-size: 14px; font-weight: 600;">← Back to Operations</a>
-    <button class="btn-print" onclick="window.print()">🖨️ Print Tax Invoice</button>
+    <button class="btn-print" onclick="window.print()">🖨️ Print ${documentTitle}</button>
   </div>
 
   <div class="invoice-card">
@@ -402,13 +489,13 @@ export function renderPrintableInvoiceHtml(
       <tr>
         <td style="vertical-align: top;">
           ${brand?.logoUrl ? `<img src="${brand.logoUrl}" alt="${restaurantName}" style="max-height: 48px; margin-bottom: 8px; display: block;" />` : ''}
-          <h1 style="margin: 0; font-size: 24px; font-weight: 800; color: #111827;">${restaurantName}</h1>
-          <div style="font-size: 13px; color: #4B5563; margin-top: 4px;">${legalEntityName}</div>
-          <div style="font-size: 13px; color: #6B7280; margin-top: 2px;">${branchAddress}</div>
-          <div style="font-size: 13px; font-weight: 700; color: #1F2937; margin-top: 6px;">GSTIN: <span style="font-family: monospace;">${gstin}</span></div>
+          ${restaurantName ? `<h1 style="margin: 0; font-size: 24px; font-weight: 800; color: #111827;">${restaurantName}</h1>` : ''}
+          ${legalEntityName ? `<div style="font-size: 13px; color: #4B5563; margin-top: 4px;">${legalEntityName}</div>` : ''}
+          ${branchAddress ? `<div style="font-size: 13px; color: #6B7280; margin-top: 2px;">${branchAddress}</div>` : ''}
+          ${gstin ? `<div style="font-size: 13px; font-weight: 700; color: #1F2937; margin-top: 6px;">GSTIN: <span style="font-family: monospace;">${gstin}</span></div>` : ''}
         </td>
         <td style="vertical-align: top; text-align: right;">
-          <div style="font-size: 20px; font-weight: 800; color: #C86B3C; letter-spacing: 0.05em;">TAX INVOICE</div>
+          <div style="font-size: 20px; font-weight: 800; color: #C86B3C; letter-spacing: 0.05em;">${documentTitle}</div>
           <div style="font-size: 15px; font-weight: 700; color: #111827; margin-top: 6px; font-family: monospace;">${invoice.invoiceNumber}</div>
           <div style="font-size: 12px; color: #6B7280; margin-top: 4px;">Date: ${invoiceDate}</div>
           <div style="font-size: 12px; color: #6B7280;">FY: ${invoice.fiscalYear || '2026-2027'}</div>
@@ -474,8 +561,8 @@ export function renderPrintableInvoiceHtml(
     </div>
 
     <div class="compliance-footer">
-      <div>Tax Category: SAC 996331 — Restaurant & Food Hospitality Services (5% Composite GST).</div>
-      <div style="margin-top: 4px;">Thank you for dining with ${restaurantName}! This is a computer generated invoice requiring no physical signature.</div>
+      <div>${invoiceType === 'TAX_INVOICE' ? 'Tax Category: SAC 996331 — Restaurant & Food Hospitality Services (5% Composite GST).' : invoiceType === 'BILL_OF_SUPPLY' ? 'Composition taxable person / Unregistered establishment, not eligible to collect tax on supplies.' : 'Standard Commercial Receipt — not a tax invoice.'}</div>
+      <div style="margin-top: 4px;">Thank you for dining with ${restaurantName || 'us'}! This is a computer generated invoice requiring no physical signature.</div>
     </div>
   </div>
 </body>
