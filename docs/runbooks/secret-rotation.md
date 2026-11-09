@@ -13,7 +13,7 @@ The staging generator CLI (`scripts/staging/generate-secrets.sh`) provides autom
 |---|---|---|---|
 | **Stateless Application Secrets** | `SESSION_SECRET`, `ORBITOX_ADMIN_TOKEN`, `ORBITOX_RUNTIME_TOKEN`, `ORBITOX_CONTROL_SECRET`, `ORBITOX_GUEST_SECRET`, `ORBITOX_EMAIL_WEBHOOK_SECRET` | `--rotate=<NAME>` | Blind replacement allowed. In-flight requests with old token fail once services reload. |
 | **Keyed Secrets (Decryption / Signing)** | `ORBITOX_PHI_KEYS`, `ORBITOX_GRANT_SIGNING_KEYS`, `ORBITOX_BRIDGE_KEYS` | `--add-key=<NAME>` | **Additive only**. New key is appended and set as active; historical keys are preserved so previously encrypted data remains readable. Never blind-rotate. |
-| **API Key Pepper Ring** | `ORBITOX_SERVER_PEPPER` | `--add-key=ORBITOX_SERVER_PEPPER` | **Additive only**. Appends a new pepper into the pepper ring (max 4). Dual-verification ensures existing keys still match. |
+| **API Key Pepper Ring** | `ORBITOX_SERVER_PEPPERS` | `--add-key=ORBITOX_SERVER_PEPPERS` | **Additive only**. Appends a new pepper into the pepper ring (max 4). Dual-verification ensures existing keys still match. Active pepper remains unchanged until explicitly promoted via `--activate=ORBITOX_SERVER_PEPPERS --kid=<id>`. |
 | **Stateful Persistent Encryption Keys** | `ORBITOX_MFA_ENCRYPTION_KEY`, `ORBITOX_ACCOUNT_TOKEN_ENCRYPTION_KEY`, `ORBITOX_PHI_INDEX_KEY` | **Re-encryption Migration** | **Blind rotation strictly refused**. Requires batch re-wrap job across all tenant rows before updating key. |
 | **Database Role Credentials** | `orbitox_migrator`, `orbitox_runtime`, `orbitox_maintenance`, `orbitox_outbox_relay`, `orbitox_platform_admin_audit`, `hms_audit_reader`, `restaurantos_app` | `--database --force-rotate-database` | **Strict Deployment Requirement**: Database password rotation generates new passwords in AWS Secrets Manager and **MUST be immediately deployed alongside the ECS migration enable task (`scripts/run-staging-migration.js`)**. The enable task connects as `orbitox_migrator` and executes `ALTER ROLE <role> WITH LOGIN PASSWORD '<new_password>'` using the newly generated secret values to prevent authentication lockout. |
 
@@ -40,6 +40,12 @@ The staging generator CLI (`scripts/staging/generate-secrets.sh`) provides autom
 
 # Add new HMAC bridge key
 ./scripts/staging/generate-secrets.sh --add-key=ORBITOX_BRIDGE_KEYS
+
+# Add new pepper to pepper ring (preserves active pepper until promoted)
+./scripts/staging/generate-secrets.sh --add-key=ORBITOX_SERVER_PEPPERS
+
+# Promote new pepper to active for new key issuance
+./scripts/staging/generate-secrets.sh --activate=ORBITOX_SERVER_PEPPERS --kid=p2
 ```
 
 ### C. Rotating Database Role Credentials

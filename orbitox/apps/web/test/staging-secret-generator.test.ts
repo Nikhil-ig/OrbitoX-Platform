@@ -12,6 +12,21 @@ import {
   getExpectedSecretNames,
   SECRET_GENERATORS,
 } from '../../../../scripts/staging/generate-secrets';
+import { loadPepperRing, activeVerifier, whichPepper } from '../lib/pepper';
+import { PhiKeyRing, seal, open } from '../lib/phi-crypto';
+import {
+  createEntitlementGrantToken,
+  initializeGrantKeys,
+  getPublicGrantKeys,
+  clearGrantKeysForTesting,
+} from '../../../../orbitox/packages/plugin-engine/src/platform/grant-keys';
+import { verifyGrant } from '../../../../orbitox/packages/plugin-engine/src/platform/entitlement-token';
+import {
+  getDefaultBridgeKeys,
+  signBridgeRequest,
+  verifyBridgeRequest,
+  MemoryNonceStore,
+} from '../../../../orbitox/packages/bridge/src';
 
 describe('Phase 6F B0: Staging Secret Generator Verification', () => {
   it('dry-run mode lists the exact names it would set without writing secrets', () => {
@@ -77,9 +92,16 @@ describe('Phase 6F B0: Staging Secret Generator Verification', () => {
         assert.equal(raw.length, 32, `${name} must decode to exactly 32 bytes`);
       } else if (name === 'ORBITOX_PHI_KEYS') {
         const parsed = JSON.parse(val);
-        assert.ok(parsed['phi-key-2026-1'], 'Must contain phi-key-2026-1');
-        const raw = Buffer.from(parsed['phi-key-2026-1'], 'base64');
+        const key = parsed.v1 || parsed['phi-key-2026-1'];
+        assert.ok(key, 'Must contain v1 or phi-key-2026-1');
+        const raw = Buffer.from(key, 'base64');
         assert.equal(raw.length, 32, 'PHI key must decode to 32 bytes');
+      } else if (name === 'ORBITOX_SERVER_PEPPERS') {
+        const parsed = JSON.parse(val);
+        assert.ok(parsed.p1, 'Must contain pepper p1');
+        assert.ok(typeof parsed.p1 === 'string' && parsed.p1.length >= 32);
+      } else if (name === 'ORBITOX_SERVER_PEPPER_ACTIVE') {
+        assert.equal(val, 'p1');
       } else if (name === 'ORBITOX_GRANT_SIGNING_KEYS') {
         const parsed = JSON.parse(val);
         assert.ok(parsed.k1.privateKey.includes('BEGIN PRIVATE KEY'));
@@ -171,6 +193,10 @@ describe('Phase 6F B0: Staging Secret Generator Verification', () => {
     assert.throws(
       () => runSecretGenerator({ rotate: 'ORBITOX_PHI_KEYS', awsCliRunner: mockRunner }),
       /Keyed secrets must be rotated additively via --add-key=ORBITOX_PHI_KEYS/,
+    );
+    assert.throws(
+      () => runSecretGenerator({ rotate: 'ORBITOX_SERVER_PEPPERS', awsCliRunner: mockRunner }),
+      /Keyed secrets must be rotated additively via --add-key=ORBITOX_SERVER_PEPPERS/,
     );
     assert.throws(
       () => runSecretGenerator({ rotate: 'ORBITOX_MFA_ENCRYPTION_KEY', awsCliRunner: mockRunner }),
@@ -321,6 +347,29 @@ describe('Phase 6F B0: Staging Secret Generator Verification', () => {
     assert.ok(updatedBridge.keys.k2, 'Must add new bridge key k2');
     assert.equal(updatedBridge.activeKeyId, 'k2', 'Must update activeKeyId to k2');
     assert.equal(mockStorage.get('orbitox/staging/ORBITOX_BRIDGE_ACTIVE_KID'), 'k2');
+
+    // 4. Add key to ORBITOX_SERVER_PEPPERS (preserves active pepper p1 until explicit activation)
+    mockStorage.set('orbitox/staging/ORBITOX_SERVER_PEPPERS', JSON.stringify({ p1: 'a'.repeat(64) }));
+    mockStorage.set('orbitox/staging/ORBITOX_SERVER_PEPPER_ACTIVE', 'p1');
+
+    const pepperResult = runSecretGenerator({
+      addKey: 'ORBITOX_SERVER_PEPPERS',
+      awsCliRunner: mockRunner,
+    });
+    assert.equal(pepperResult[0]?.action, 'added-key');
+    const updatedPeppers = JSON.parse(mockStorage.get('orbitox/staging/ORBITOX_SERVER_PEPPERS')!);
+    assert.ok(updatedPeppers.p1, 'Must preserve p1');
+    assert.ok(updatedPeppers.p2, 'Must add p2');
+    assert.equal(mockStorage.get('orbitox/staging/ORBITOX_SERVER_PEPPER_ACTIVE'), 'p1', 'Active pepper must remain p1 until explicit activation');
+
+    // 5. Explicit --activate promotes p2 to active
+    const activateResult = runSecretGenerator({
+      activate: 'ORBITOX_SERVER_PEPPERS',
+      kid: 'p2',
+      awsCliRunner: mockRunner,
+    });
+    assert.equal(activateResult[0]?.action, 'activated');
+    assert.equal(mockStorage.get('orbitox/staging/ORBITOX_SERVER_PEPPER_ACTIVE'), 'p2');
   });
 
   it('B0-4 MEDIUM: --database mode generates structured secrets and composed URLs for all 7 roles', () => {
@@ -428,5 +477,343 @@ describe('Phase 6F B0: Staging Secret Generator Verification', () => {
     assert.ok(rotateRun.every((r) => r.action === 'rotated'));
     const rotatedStruct = JSON.parse(mockStorage.get('orbitox/staging/db/orbitox_runtime')!);
     assert.notEqual(rotatedStruct.password, runtimeStruct.password);
+  });
+
+  it('B0-7: Real-loader round-trip through loadPepperRing asserts dual-verification and active key promotion', () => {
+    const mockStorage = new Map<string, string>();
+    const mockRunner = (args: string[], stdin?: string) => {
+      const subcmd = args[1];
+      const idIdx = args.indexOf('--secret-id');
+      const secretId = idIdx !== -1 ? args[idIdx + 1] : undefined;
+      if (!secretId) return { stdout: '', status: 1 };
+      if (subcmd === 'get-secret-value') {
+        if (mockStorage.has(secretId)) {
+          return { stdout: JSON.stringify({ SecretString: mockStorage.get(secretId) }), status: 0 };
+        }
+        return { stdout: '', status: 1 };
+      }
+      if (subcmd === 'put-secret-value') {
+        if (stdin) mockStorage.set(secretId, stdin);
+        return { stdout: JSON.stringify({ VersionId: 'v1' }), status: 0 };
+      }
+      return { stdout: '', status: 0 };
+    };
+
+    // 1. Initial generation of pepper ring and active kid
+    runSecretGenerator({ dryRun: false, awsCliRunner: mockRunner });
+    const initialRingJson = mockStorage.get('orbitox/staging/ORBITOX_SERVER_PEPPERS')!;
+    const initialActiveKid = mockStorage.get('orbitox/staging/ORBITOX_SERVER_PEPPER_ACTIVE')!;
+    assert.ok(initialRingJson, 'Must have generated ORBITOX_SERVER_PEPPERS');
+    assert.equal(initialActiveKid, 'p1');
+
+    // 2. Load ring via real loadPepperRing loader
+    const env1 = {
+      ORBITOX_SERVER_PEPPERS: initialRingJson,
+      ORBITOX_SERVER_PEPPER_ACTIVE: initialActiveKid,
+    };
+    const ring1 = loadPepperRing(env1);
+    assert.equal(ring1.active, 'p1');
+
+    // 3. Derive verifier for an API key using the active pepper
+    const rawApiKey = 'ak_live_restaurant_pilot_secret_1234567890abcdef';
+    const { verifier: oldVerifier, pepperId: oldPepperId } = activeVerifier(ring1, rawApiKey);
+    assert.equal(oldPepperId, 'p1');
+    assert.equal(whichPepper(ring1, rawApiKey, oldVerifier), 'p1');
+
+    // 4. Run --add-key=ORBITOX_SERVER_PEPPERS (without activate)
+    runSecretGenerator({ addKey: 'ORBITOX_SERVER_PEPPERS', awsCliRunner: mockRunner });
+    const updatedRingJson = mockStorage.get('orbitox/staging/ORBITOX_SERVER_PEPPERS')!;
+    const updatedActiveKid = mockStorage.get('orbitox/staging/ORBITOX_SERVER_PEPPER_ACTIVE')!;
+    assert.equal(updatedActiveKid, 'p1', 'Active pepper must remain p1 until explicit confirmation');
+
+    // 5. Load ring again: old key still verifies with p1
+    const env2 = {
+      ORBITOX_SERVER_PEPPERS: updatedRingJson,
+      ORBITOX_SERVER_PEPPER_ACTIVE: updatedActiveKid,
+    };
+    const ring2 = loadPepperRing(env2);
+    assert.equal(ring2.active, 'p1');
+    assert.equal(whichPepper(ring2, rawApiKey, oldVerifier), 'p1');
+
+    // 6. Run explicit confirmation --activate=ORBITOX_SERVER_PEPPERS --kid=p2
+    runSecretGenerator({ activate: 'ORBITOX_SERVER_PEPPERS', kid: 'p2', awsCliRunner: mockRunner });
+    assert.equal(mockStorage.get('orbitox/staging/ORBITOX_SERVER_PEPPER_ACTIVE'), 'p2');
+
+    // 7. Load ring again: active is now p2, old key STILL verifies with p1, new key verifies with p2
+    const env3 = {
+      ORBITOX_SERVER_PEPPERS: updatedRingJson,
+      ORBITOX_SERVER_PEPPER_ACTIVE: 'p2',
+    };
+    const ring3 = loadPepperRing(env3);
+    assert.equal(ring3.active, 'p2');
+    // Old key still verifies!
+    assert.equal(whichPepper(ring3, rawApiKey, oldVerifier), 'p1');
+
+    // New key is hashed with active pepper p2
+    const newApiKey = 'ak_live_hospital_suite_new_key_abcdef1234567890';
+    const { verifier: newVerifier, pepperId: newPepperId } = activeVerifier(ring3, newApiKey);
+    assert.equal(newPepperId, 'p2');
+    assert.equal(whichPepper(ring3, newApiKey, newVerifier), 'p2');
+  });
+
+  it('B0-7: Real-loader round-trip through PhiKeyRing.fromEnv asserts old ciphertext decrypts after --add-key', () => {
+    const mockStorage = new Map<string, string>();
+    const mockRunner = (args: string[], stdin?: string) => {
+      const subcmd = args[1];
+      const idIdx = args.indexOf('--secret-id');
+      const secretId = idIdx !== -1 ? args[idIdx + 1] : undefined;
+      if (!secretId) return { stdout: '', status: 1 };
+      if (subcmd === 'get-secret-value') {
+        if (mockStorage.has(secretId)) {
+          return { stdout: JSON.stringify({ SecretString: mockStorage.get(secretId) }), status: 0 };
+        }
+        return { stdout: '', status: 1 };
+      }
+      if (subcmd === 'put-secret-value') {
+        if (stdin) mockStorage.set(secretId, stdin);
+        return { stdout: JSON.stringify({ VersionId: 'v1' }), status: 0 };
+      }
+      return { stdout: '', status: 0 };
+    };
+
+    // 1. Initial generation
+    runSecretGenerator({ dryRun: false, awsCliRunner: mockRunner });
+    const initialPhiKeys = mockStorage.get('orbitox/staging/ORBITOX_PHI_KEYS')!;
+    const initialIndexKey = mockStorage.get('orbitox/staging/ORBITOX_PHI_INDEX_KEY')!;
+
+    // 2. Load initial ring through real loader
+    const env1 = {
+      ORBITOX_PHI_KEYS: initialPhiKeys,
+      ORBITOX_PHI_ACTIVE_KID: 'v1',
+      ORBITOX_PHI_INDEX_KEY: initialIndexKey,
+    };
+    const ring1 = PhiKeyRing.fromEnv(env1);
+
+    // 3. Encrypt PHI field with ring1
+    const fieldRef = { tenantId: 'org/demo/project/prod/environment/staging', table: 'Patient', column: 'name', rowId: 'row-1' };
+    const cleartext = 'Patient Sensitive Medical PHI Record 42';
+    const sealed1 = seal(ring1, cleartext, fieldRef);
+    assert.equal(open(ring1, sealed1, fieldRef), cleartext);
+
+    // 4. Run --add-key=ORBITOX_PHI_KEYS
+    runSecretGenerator({ addKey: 'ORBITOX_PHI_KEYS', awsCliRunner: mockRunner });
+    const updatedPhiKeys = mockStorage.get('orbitox/staging/ORBITOX_PHI_KEYS')!;
+    const parsedUpdated = JSON.parse(updatedPhiKeys);
+    assert.ok(parsedUpdated.v1, 'Must preserve v1');
+    assert.ok(parsedUpdated.v2, 'Must add v2');
+
+    // 5. Load updated ring through real loader with activeKid = 'v2'
+    const env2 = {
+      ORBITOX_PHI_KEYS: updatedPhiKeys,
+      ORBITOX_PHI_ACTIVE_KID: 'v2',
+      ORBITOX_PHI_INDEX_KEY: initialIndexKey,
+    };
+    const ring2 = PhiKeyRing.fromEnv(env2);
+
+    // 6. Old ciphertext decrypts perfectly with ring2
+    assert.equal(open(ring2, sealed1, fieldRef), cleartext);
+
+    // 7. New ciphertext encrypts with v2 and decrypts with ring2
+    const cleartext2 = 'New Patient Lab Result Record 99';
+    const sealed2 = seal(ring2, cleartext2, fieldRef);
+    assert.equal(open(ring2, sealed2, fieldRef), cleartext2);
+  });
+
+  it('B0-7: Real-loader round-trip through createEntitlementGrantToken and verifyGrant asserts historical grant verification after --add-key', async () => {
+    const mockStorage = new Map<string, string>();
+    const mockRunner = (args: string[], stdin?: string) => {
+      const subcmd = args[1];
+      const idIdx = args.indexOf('--secret-id');
+      const secretId = idIdx !== -1 ? args[idIdx + 1] : undefined;
+      if (!secretId) return { stdout: '', status: 1 };
+      if (subcmd === 'get-secret-value') {
+        if (mockStorage.has(secretId)) {
+          return { stdout: JSON.stringify({ SecretString: mockStorage.get(secretId) }), status: 0 };
+        }
+        return { stdout: '', status: 1 };
+      }
+      if (subcmd === 'put-secret-value') {
+        if (stdin) mockStorage.set(secretId, stdin);
+        return { stdout: JSON.stringify({ VersionId: 'v1' }), status: 0 };
+      }
+      return { stdout: '', status: 0 };
+    };
+
+    // 1. Initial generation
+    runSecretGenerator({ dryRun: false, awsCliRunner: mockRunner });
+    const initialSigningKeys = mockStorage.get('orbitox/staging/ORBITOX_GRANT_SIGNING_KEYS')!;
+    const initialPublicKeys = mockStorage.get('orbitox/staging/ORBITOX_GRANT_PUBLIC_KEYS')!;
+
+    const origEnv = { ...process.env };
+    try {
+      Reflect.set(process.env, 'NODE_ENV', 'production');
+      process.env.ORBITOX_GRANT_SIGNING_KEYS = initialSigningKeys;
+      process.env.ORBITOX_GRANT_PUBLIC_KEYS = initialPublicKeys;
+
+      initializeGrantKeys(true);
+      const publicKeys1 = getPublicGrantKeys();
+
+      // 2. Sign grant with k1
+      const grantToken1 = createEntitlementGrantToken({
+        tenantId: 'org/demo/project/staging/environment/tenant-1',
+        pluginId: '@orbitox/restaurant',
+        planId: 'enterprise',
+        status: 'ACTIVE',
+        features: ['pos', 'kds', 'analytics'],
+        quotas: { orders: { limit: 10000, window: 'month' } },
+        revision: 1,
+      });
+
+      // 3. Verify grant with public keys
+      const claims1 = await verifyGrant<any>(grantToken1, {
+        type: 'orbitox-ent',
+        audience: '@orbitox/restaurant',
+        trustedKeys: publicKeys1,
+      });
+      assert.equal(claims1.plan, 'enterprise');
+      assert.equal(claims1.sub, 'org/demo/project/staging/environment/tenant-1');
+
+      // 4. Run --add-key=ORBITOX_GRANT_SIGNING_KEYS
+      runSecretGenerator({ addKey: 'ORBITOX_GRANT_SIGNING_KEYS', awsCliRunner: mockRunner });
+      const updatedSigningKeys = mockStorage.get('orbitox/staging/ORBITOX_GRANT_SIGNING_KEYS')!;
+      const updatedPublicKeys = mockStorage.get('orbitox/staging/ORBITOX_GRANT_PUBLIC_KEYS')!;
+
+      process.env.ORBITOX_GRANT_SIGNING_KEYS = updatedSigningKeys;
+      process.env.ORBITOX_GRANT_PUBLIC_KEYS = updatedPublicKeys;
+
+      initializeGrantKeys(true);
+      const publicKeys2 = getPublicGrantKeys();
+      assert.ok(publicKeys2.k1, 'Must retain k1 public key');
+      assert.ok(publicKeys2.k2, 'Must have k2 public key');
+
+      // 5. Old grant token signed with k1 still verifies with updated public keys
+      const claimsOld = await verifyGrant<any>(grantToken1, {
+        type: 'orbitox-ent',
+        audience: '@orbitox/restaurant',
+        trustedKeys: publicKeys2,
+      });
+      assert.equal(claimsOld.plan, 'enterprise');
+
+      // 6. New grant token signed with k2 verifies with updated public keys
+      const grantToken2 = createEntitlementGrantToken({
+        tenantId: 'org/demo/project/staging/environment/tenant-2',
+        pluginId: '@orbitox/restaurant',
+        planId: 'growth',
+        status: 'ACTIVE',
+        features: ['pos'],
+        quotas: {},
+        revision: 2,
+      });
+      const claimsNew = await verifyGrant<any>(grantToken2, {
+        type: 'orbitox-ent',
+        audience: '@orbitox/restaurant',
+        trustedKeys: publicKeys2,
+      });
+      assert.equal(claimsNew.plan, 'growth');
+    } finally {
+      process.env = origEnv;
+      clearGrantKeysForTesting();
+    }
+  });
+
+  it('B0-7: Real-loader round-trip through signBridgeRequest and verifyBridgeRequest asserts old signature verification after --add-key', async () => {
+    const mockStorage = new Map<string, string>();
+    const mockRunner = (args: string[], stdin?: string) => {
+      const subcmd = args[1];
+      const idIdx = args.indexOf('--secret-id');
+      const secretId = idIdx !== -1 ? args[idIdx + 1] : undefined;
+      if (!secretId) return { stdout: '', status: 1 };
+      if (subcmd === 'get-secret-value') {
+        if (mockStorage.has(secretId)) {
+          return { stdout: JSON.stringify({ SecretString: mockStorage.get(secretId) }), status: 0 };
+        }
+        return { stdout: '', status: 1 };
+      }
+      if (subcmd === 'put-secret-value') {
+        if (stdin) mockStorage.set(secretId, stdin);
+        return { stdout: JSON.stringify({ VersionId: 'v1' }), status: 0 };
+      }
+      return { stdout: '', status: 0 };
+    };
+
+    // 1. Initial generation
+    runSecretGenerator({ dryRun: false, awsCliRunner: mockRunner });
+    const initialBridgeKeys = mockStorage.get('orbitox/staging/ORBITOX_BRIDGE_KEYS')!;
+    const initialActiveKid = mockStorage.get('orbitox/staging/ORBITOX_BRIDGE_ACTIVE_KID')!;
+    assert.equal(initialActiveKid, 'k1');
+
+    const origEnv = { ...process.env };
+    try {
+      Reflect.set(process.env, 'NODE_ENV', 'production');
+      process.env.ORBITOX_BRIDGE_KEYS = initialBridgeKeys;
+      process.env.ORBITOX_BRIDGE_ACTIVE_KID = initialActiveKid;
+
+      // 2. Load bridge keys via getDefaultBridgeKeys real loader
+      const bridgeKeys1 = getDefaultBridgeKeys();
+      assert.equal(bridgeKeys1.activeKeyId, 'k1');
+
+      // 3. Sign outgoing platform request
+      const reqHeaders = signBridgeRequest(bridgeKeys1, {
+        method: 'POST',
+        pathWithQuery: '/orbitox/lifecycle/provision',
+        tenantId: 'org/demo/project/staging/environment/tenant-1',
+        principal: { sub: 'user_master_admin', scopes: ['tenant:admin'] },
+        body: JSON.stringify({ slug: 'mumbai-flagship-diner' }),
+      });
+      assert.equal(reqHeaders['bridge-key-id'], 'k1');
+
+      // 4. Verify request using verifyBridgeRequest real loader
+      const v1 = await verifyBridgeRequest(bridgeKeys1, new MemoryNonceStore(), {
+        method: 'POST',
+        pathWithQuery: '/orbitox/lifecycle/provision',
+        headers: reqHeaders,
+        rawBody: JSON.stringify({ slug: 'mumbai-flagship-diner' }),
+      });
+      assert.equal(v1.ok, true);
+
+      // 5. Run --add-key=ORBITOX_BRIDGE_KEYS
+      runSecretGenerator({ addKey: 'ORBITOX_BRIDGE_KEYS', awsCliRunner: mockRunner });
+      const updatedBridgeKeys = mockStorage.get('orbitox/staging/ORBITOX_BRIDGE_KEYS')!;
+      const updatedActiveKid = mockStorage.get('orbitox/staging/ORBITOX_BRIDGE_ACTIVE_KID')!;
+      assert.equal(updatedActiveKid, 'k2');
+
+      process.env.ORBITOX_BRIDGE_KEYS = updatedBridgeKeys;
+      process.env.ORBITOX_BRIDGE_ACTIVE_KID = updatedActiveKid;
+
+      // 6. Load updated bridge keys via real loader
+      const bridgeKeys2 = getDefaultBridgeKeys();
+      assert.equal(bridgeKeys2.activeKeyId, 'k2');
+      assert.ok(bridgeKeys2.keys.k1, 'Must retain k1');
+      assert.ok(bridgeKeys2.keys.k2, 'Must have k2');
+
+      // 7. Old request signed with k1 still verifies against bridgeKeys2
+      const vOld = await verifyBridgeRequest(bridgeKeys2, new MemoryNonceStore(), {
+        method: 'POST',
+        pathWithQuery: '/orbitox/lifecycle/provision',
+        headers: reqHeaders,
+        rawBody: JSON.stringify({ slug: 'mumbai-flagship-diner' }),
+      });
+      assert.equal(vOld.ok, true);
+
+      // 8. New request signed with k2 verifies against bridgeKeys2
+      const reqHeaders2 = signBridgeRequest(bridgeKeys2, {
+        method: 'PUT',
+        pathWithQuery: '/orbitox/lifecycle/status',
+        tenantId: 'org/demo/project/staging/environment/tenant-1',
+        principal: { sub: 'user_master_admin', scopes: ['tenant:admin'] },
+        body: JSON.stringify({ status: 'SUSPENDED' }),
+      });
+      assert.equal(reqHeaders2['bridge-key-id'], 'k2');
+
+      const vNew = await verifyBridgeRequest(bridgeKeys2, new MemoryNonceStore(), {
+        method: 'PUT',
+        pathWithQuery: '/orbitox/lifecycle/status',
+        headers: reqHeaders2,
+        rawBody: JSON.stringify({ status: 'SUSPENDED' }),
+      });
+      assert.equal(vNew.ok, true);
+    } finally {
+      process.env = origEnv;
+    }
   });
 });

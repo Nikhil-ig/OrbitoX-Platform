@@ -46,7 +46,7 @@ export const KEYED_ROTATABLE_SECRETS = [
   'ORBITOX_PHI_KEYS',
   'ORBITOX_GRANT_SIGNING_KEYS',
   'ORBITOX_BRIDGE_KEYS',
-  'ORBITOX_SERVER_PEPPER',
+  'ORBITOX_SERVER_PEPPERS',
 ] as const;
 
 export interface DatabaseRoleConfig {
@@ -157,7 +157,13 @@ export function generateGrantPublicKeys(signingKeysJson?: string): string {
 export function generatePhiKeys(): string {
   const key32 = crypto.randomBytes(32).toString('base64');
   return JSON.stringify({
-    'phi-key-2026-1': key32,
+    v1: key32,
+  });
+}
+
+export function generatePepperRing(): string {
+  return JSON.stringify({
+    p1: crypto.randomBytes(32).toString('hex'),
   });
 }
 
@@ -177,7 +183,8 @@ export const SECRET_GENERATORS: Record<string, () => string> = {
   ORBITOX_RUNTIME_TOKEN: () => crypto.randomBytes(32).toString('hex'),
   ORBITOX_CONTROL_SECRET: () => crypto.randomBytes(32).toString('hex'),
   ORBITOX_GUEST_SECRET: () => crypto.randomBytes(32).toString('hex'),
-  ORBITOX_SERVER_PEPPER: () => crypto.randomBytes(32).toString('hex'),
+  ORBITOX_SERVER_PEPPERS: generatePepperRing,
+  ORBITOX_SERVER_PEPPER_ACTIVE: () => 'p1',
   ORBITOX_MFA_ENCRYPTION_KEY: () => crypto.randomBytes(32).toString('base64'),
   ORBITOX_ACCOUNT_TOKEN_ENCRYPTION_KEY: () => crypto.randomBytes(32).toString('base64'),
   ORBITOX_PHI_INDEX_KEY: () => crypto.randomBytes(32).toString('base64'),
@@ -212,6 +219,7 @@ export function createDefaultRunner(): AwsCliRunner {
 
 export function handleAdditiveKeyRotation(options: {
   secretName: string;
+  activate?: boolean;
   environment?: string;
   region?: string;
   runner: AwsCliRunner;
@@ -256,7 +264,9 @@ export function handleAdditiveKeyRotation(options: {
         throw new Error('Existing ORBITOX_PHI_KEYS is not valid JSON.');
       }
     }
-    const newKid = `phi-key-2026-${Object.keys(keysMap).length + 1}`;
+    const count = Object.keys(keysMap).length + 1;
+    const hasVPrefix = Object.keys(keysMap).some((k) => k.startsWith('v'));
+    const newKid = hasVPrefix || Object.keys(keysMap).length === 0 ? `v${count}` : `phi-key-2026-${count}`;
     const newKey = crypto.randomBytes(32).toString('base64');
     keysMap[newKid] = newKey;
 
@@ -399,15 +409,14 @@ export function handleAdditiveKeyRotation(options: {
     return { name, action: 'added-key', detail: `Added key ${newKid} as active` };
   }
 
-  if (name === 'ORBITOX_SERVER_PEPPER') {
+  if (name === 'ORBITOX_SERVER_PEPPERS') {
     // Pepper-ring rotation
     let peppers: Record<string, string> = {};
     if (currentString) {
       try {
         peppers = JSON.parse(currentString);
       } catch {
-        // legacy raw string
-        peppers = { legacy: currentString };
+        peppers = { p1: currentString };
       }
     }
     if (Object.keys(peppers).length >= 4) {
@@ -435,11 +444,94 @@ export function handleAdditiveKeyRotation(options: {
       throw new Error(`Failed to update ${secretId} in Secrets Manager.`);
     }
 
-    console.log(`${name}: added pepper ${newId} to ring (preserved ${Object.keys(peppers).length - 1} existing peppers)`);
+    if (options.activate) {
+      const activeSecretId = `orbitox/${env}/ORBITOX_SERVER_PEPPER_ACTIVE`;
+      runner(
+        [
+          'secretsmanager',
+          'put-secret-value',
+          '--secret-id',
+          activeSecretId,
+          '--secret-string',
+          'file:///dev/stdin',
+          '--region',
+          region,
+        ],
+        newId,
+      );
+      console.log(`${name}: added pepper ${newId} to ring and activated it`);
+      return { name, action: 'added-key', detail: `Added pepper ${newId} and activated it` };
+    }
+
+    console.log(`${name}: added pepper ${newId} to ring (preserved ${Object.keys(peppers).length - 1} existing peppers, active pepper unchanged)`);
     return { name, action: 'added-key', detail: `Added pepper ${newId}` };
   }
 
   throw new Error(`Unsupported --add-key target: ${name}`);
+}
+
+export function handleActivateKey(options: {
+  secretName: string;
+  kid: string;
+  environment?: string;
+  region?: string;
+  runner: AwsCliRunner;
+}): { name: string; action: 'activated' | 'error'; detail: string } {
+  const env = options.environment || 'staging';
+  const region = options.region || 'ap-south-1';
+  const name = options.secretName;
+  const kid = options.kid;
+  const runner = options.runner;
+
+  if (name === 'ORBITOX_SERVER_PEPPERS') {
+    const pepperSecretId = `orbitox/${env}/ORBITOX_SERVER_PEPPERS`;
+    const checkRes = runner([
+      'secretsmanager',
+      'get-secret-value',
+      '--secret-id',
+      pepperSecretId,
+      '--region',
+      region,
+      '--output',
+      'json',
+    ]);
+    if (checkRes.status !== 0) {
+      throw new Error(`Failed to read ${pepperSecretId} from Secrets Manager.`);
+    }
+    let parsed: Record<string, string> = {};
+    try {
+      parsed = JSON.parse(JSON.parse(checkRes.stdout).SecretString);
+    } catch {
+      throw new Error(`Invalid JSON in ${pepperSecretId}`);
+    }
+    if (!parsed[kid]) {
+      throw new Error(
+        `Pepper ID "${kid}" does not exist in ${pepperSecretId}. Existing peppers: ${Object.keys(parsed).join(', ')}`,
+      );
+    }
+
+    const activeSecretId = `orbitox/${env}/ORBITOX_SERVER_PEPPER_ACTIVE`;
+    const putRes = runner(
+      [
+        'secretsmanager',
+        'put-secret-value',
+        '--secret-id',
+        activeSecretId,
+        '--secret-string',
+        'file:///dev/stdin',
+        '--region',
+        region,
+      ],
+      kid,
+    );
+    if (putRes.status !== 0) {
+      throw new Error(`Failed to update ${activeSecretId} in Secrets Manager.`);
+    }
+    console.log(`ORBITOX_SERVER_PEPPER_ACTIVE: activated pepper ID ${kid}`);
+    return { name: 'ORBITOX_SERVER_PEPPER_ACTIVE', action: 'activated', detail: `Activated pepper ID ${kid}` };
+  }
+
+  throw new Error(`Activation not supported for secret "${name}". Supported: ORBITOX_SERVER_PEPPERS`);
 }
 
 export function runDatabaseCredentialGenerator(options: {
@@ -552,17 +644,19 @@ export function runSecretGenerator(options: {
   dryRun?: boolean;
   rotate?: string | boolean;
   addKey?: string;
+  activate?: string | boolean;
+  kid?: string;
   database?: boolean;
   dbHost?: string;
   restaurantDbHost?: string;
   dbPort?: number;
   forceRotateDatabase?: boolean;
   awsCliRunner?: AwsCliRunner;
-}): { name: string; action: 'dry-run' | 'set' | 'skipped' | 'rotated' | 'added-key' | 'error'; detail?: string }[] {
+}): { name: string; action: 'dry-run' | 'set' | 'skipped' | 'rotated' | 'added-key' | 'activated' | 'error'; detail?: string }[] {
   const env = options.environment || 'staging';
   const region = options.region || 'ap-south-1';
   const secretNames = getExpectedSecretNames();
-  const results: { name: string; action: 'dry-run' | 'set' | 'skipped' | 'rotated' | 'added-key' | 'error'; detail?: string }[] = [];
+  const results: { name: string; action: 'dry-run' | 'set' | 'skipped' | 'rotated' | 'added-key' | 'activated' | 'error'; detail?: string }[] = [];
   const runner = options.awsCliRunner || createDefaultRunner();
 
   // If database mode is requested
@@ -577,6 +671,30 @@ export function runSecretGenerator(options: {
       forceRotateDatabase: options.forceRotateDatabase,
       awsCliRunner: runner,
     });
+  }
+
+  // Handle explicit --activate=<SECRET> --kid=<KID> if provided
+  if (typeof options.activate === 'string' && options.activate !== 'true' && options.kid) {
+    const actResult = handleActivateKey({
+      secretName: options.activate,
+      kid: options.kid,
+      environment: env,
+      region,
+      runner,
+    });
+    return [actResult];
+  }
+
+  // Handle --add-key option if provided
+  if (options.addKey) {
+    const addResult = handleAdditiveKeyRotation({
+      secretName: options.addKey,
+      activate: options.activate === true,
+      environment: env,
+      region,
+      runner,
+    });
+    return [addResult];
   }
 
   // Validate --rotate option
@@ -602,17 +720,6 @@ export function runSecretGenerator(options: {
       }
       throw new Error(`Secret "${target}" is not recognized or not eligible for rotation.`);
     }
-  }
-
-  // Handle --add-key option if provided
-  if (options.addKey) {
-    const addResult = handleAdditiveKeyRotation({
-      secretName: options.addKey,
-      environment: env,
-      region,
-      runner,
-    });
-    return [addResult];
   }
 
   if (options.dryRun) {
@@ -716,6 +823,22 @@ if (require.main === module || process.argv[1]?.endsWith('generate-secrets.ts'))
     addKey = addKeyArg.split('=')[1];
   }
 
+  let activate: string | boolean | undefined;
+  const activateArg = args.find((a) => a === '--activate' || a.startsWith('--activate='));
+  if (activateArg) {
+    if (activateArg === '--activate') {
+      activate = true;
+    } else {
+      activate = activateArg.split('=')[1];
+    }
+  }
+
+  let kid: string | undefined;
+  const kidArg = args.find((a) => a.startsWith('--kid='));
+  if (kidArg) {
+    kid = kidArg.split('=')[1];
+  }
+
   const envIndex = args.indexOf('--environment');
   const environment = envIndex !== -1 && args[envIndex + 1] ? args[envIndex + 1] : 'staging';
   const regionIndex = args.indexOf('--region');
@@ -726,7 +849,7 @@ if (require.main === module || process.argv[1]?.endsWith('generate-secrets.ts'))
   const restaurantDbHost = rosHostIndex !== -1 && args[rosHostIndex + 1] ? args[rosHostIndex + 1] : undefined;
 
   try {
-    runSecretGenerator({ dryRun, rotate, addKey, database, dbHost, restaurantDbHost, forceRotateDatabase, environment, region });
+    runSecretGenerator({ dryRun, rotate, addKey, activate, kid, database, dbHost, restaurantDbHost, forceRotateDatabase, environment, region });
   } catch (err: any) {
     console.error('Fatal error in secret generation:', err.message);
     process.exit(1);

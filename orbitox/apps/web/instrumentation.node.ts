@@ -106,12 +106,13 @@ export async function registerNode() {
       );
     }
 
-    // Pepper validation (ORBITOX_SERVER_PEPPERS or legacy ORBITOX_SERVER_PEPPER)
+    // Pepper ring validation (ORBITOX_SERVER_PEPPERS and ORBITOX_SERVER_PEPPER_ACTIVE in production)
     const rawPeppers = process.env.ORBITOX_SERVER_PEPPERS?.trim();
+    const activePepper = process.env.ORBITOX_SERVER_PEPPER_ACTIVE?.trim();
     const legacyPepper = process.env.ORBITOX_SERVER_PEPPER?.trim();
     if (!rawPeppers && !legacyPepper) {
       problems.push(
-        'ORBITOX_SERVER_PEPPER is not set (Server pepper for SHA-256 API key verifier derivation)',
+        'ORBITOX_SERVER_PEPPER is not set (ORBITOX_SERVER_PEPPERS JSON object or ORBITOX_SERVER_PEPPER required for SHA-256 API key verifier derivation)',
       );
     } else if (rawPeppers) {
       try {
@@ -123,6 +124,14 @@ export async function registerNode() {
           Object.keys(parsed).length === 0
         ) {
           problems.push('ORBITOX_SERVER_PEPPERS must be a non-empty JSON object of {id: secret}');
+        } else {
+          if (!activePepper) {
+            problems.push('ORBITOX_SERVER_PEPPER_ACTIVE is not set (must name the active pepper ID)');
+          } else if (!parsed[activePepper]) {
+            problems.push(
+              `ORBITOX_SERVER_PEPPER_ACTIVE "${activePepper}" not found in ORBITOX_SERVER_PEPPERS`,
+            );
+          }
         }
       } catch {
         problems.push('ORBITOX_SERVER_PEPPERS must be a JSON object of {id: secret}');
