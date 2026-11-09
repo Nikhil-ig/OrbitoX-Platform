@@ -102,6 +102,11 @@ describe('Phase 6F B0: Staging Secret Generator Verification', () => {
         assert.ok(typeof parsed.p1 === 'string' && parsed.p1.length >= 32);
       } else if (name === 'ORBITOX_SERVER_PEPPER_ACTIVE') {
         assert.equal(val, 'p1');
+      } else if (name === 'STAFF_AUTH_SECRET') {
+        assert.ok(val.length >= 32);
+      } else if (name === 'RESTAURANT_STATION_SECRETS') {
+        const parsed = JSON.parse(val);
+        assert.ok(Object.keys(parsed).length > 0);
       } else if (name === 'ORBITOX_GRANT_SIGNING_KEYS') {
         const parsed = JSON.parse(val);
         assert.ok(parsed.k1.privateKey.includes('BEGIN PRIVATE KEY'));
@@ -197,6 +202,10 @@ describe('Phase 6F B0: Staging Secret Generator Verification', () => {
     assert.throws(
       () => runSecretGenerator({ rotate: 'ORBITOX_SERVER_PEPPERS', awsCliRunner: mockRunner }),
       /Keyed secrets must be rotated additively via --add-key=ORBITOX_SERVER_PEPPERS/,
+    );
+    assert.throws(
+      () => runSecretGenerator({ rotate: 'STAFF_AUTH_SECRET', awsCliRunner: mockRunner }),
+      /cannot be blind-rotated/,
     );
     assert.throws(
       () => runSecretGenerator({ rotate: 'ORBITOX_MFA_ENCRYPTION_KEY', awsCliRunner: mockRunner }),

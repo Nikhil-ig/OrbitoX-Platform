@@ -112,7 +112,11 @@ export async function resolveTenantFromHost(
     return cached.context;
   }
 
-  const baseDomain = (process.env.RESTAURANTOS_BASE_DOMAIN || 'orbitox.live').toLowerCase();
+  const baseDomainEnv = process.env.RESTAURANTOS_BASE_DOMAIN;
+  if (process.env.NODE_ENV === 'production' && !baseDomainEnv) {
+    throw new Error('RESTAURANTOS_BASE_DOMAIN is required in production mode.');
+  }
+  const baseDomain = (baseDomainEnv || 'orbitox.live').toLowerCase();
   const reservedWords = new Set(['www', 'api', 'admin', 'app', 'platform', 'static', 'localhost']);
 
   // Pattern A: Subdomain of baseDomain, localhost, test domains, or direct slug match

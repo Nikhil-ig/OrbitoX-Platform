@@ -123,12 +123,22 @@ export interface BuildInvoiceParams {
   date?: Date;
 }
 
+export const GSTIN_REGEX = /^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z]{1}[1-9A-Z]{1}Z[0-9A-Z]{1}$/;
+
 /**
  * Builds a certified Indian GST-compliant invoice record from an order.
  */
 export function buildGSTInvoice(params: BuildInvoiceParams): InvoiceRecord {
   const tid = params.tenantId || getActiveTenant().tenantId;
-  const gstin = params.gstin || process.env.RESTAURANT_GSTIN || 'UNREGISTERED';
+  const rawGstin = params.gstin || process.env.RESTAURANT_GSTIN;
+  if (process.env.NODE_ENV === 'production') {
+    if (!rawGstin || !GSTIN_REGEX.test(rawGstin.trim())) {
+      throw new Error(
+        `A valid 15-character Indian GSTIN is required to issue tax invoices in production. Got: "${rawGstin || ''}"`
+      );
+    }
+  }
+  const gstin = rawGstin || 'UNREGISTERED';
   const date = params.date || new Date();
   const { fiscalYear, code } = computeFiscalYear(date);
   const invoiceNumber = formatInvoiceNumber(code, params.sequenceNumber);

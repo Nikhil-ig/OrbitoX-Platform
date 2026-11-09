@@ -165,7 +165,11 @@ export class TenantProvisioningService {
 
   constructor(prisma?: PrismaClient, baseDomain?: string) {
     this.prisma = prisma || getPrisma();
-    this.baseDomain = baseDomain || process.env.RESTAURANTOS_BASE_DOMAIN || 'orbitox.live';
+    const domain = baseDomain || process.env.RESTAURANTOS_BASE_DOMAIN;
+    if (process.env.NODE_ENV === 'production' && !domain) {
+      throw new Error('RESTAURANTOS_BASE_DOMAIN is required in production mode.');
+    }
+    this.baseDomain = domain || 'orbitox.live';
   }
 
   /**

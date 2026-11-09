@@ -40,6 +40,7 @@ export const STATEFUL_ENCRYPTION_SECRETS = [
   'ORBITOX_MFA_ENCRYPTION_KEY',
   'ORBITOX_ACCOUNT_TOKEN_ENCRYPTION_KEY',
   'ORBITOX_PHI_INDEX_KEY',
+  'STAFF_AUTH_SECRET',
 ] as const;
 
 export const KEYED_ROTATABLE_SECRETS = [
@@ -177,6 +178,15 @@ export function generateBridgeKeys(): string {
   });
 }
 
+export function generateRestaurantStationSecrets(): string {
+  return JSON.stringify({
+    [`stn_sec_${crypto.randomBytes(16).toString('hex')}`]: { station: 'TANDOOR', branchId: 'staging-main', isPrivileged: false },
+    [`stn_sec_${crypto.randomBytes(16).toString('hex')}`]: { station: 'CURRY_LINE', branchId: 'staging-main', isPrivileged: false },
+    [`stn_sec_${crypto.randomBytes(16).toString('hex')}`]: { station: 'EXPO', branchId: 'staging-main', isPrivileged: true },
+    [`stn_sec_${crypto.randomBytes(16).toString('hex')}`]: { station: 'BEVERAGE', branchId: 'staging-main', isPrivileged: false },
+  });
+}
+
 export const SECRET_GENERATORS: Record<string, () => string> = {
   SESSION_SECRET: () => crypto.randomBytes(32).toString('hex'),
   ORBITOX_ADMIN_TOKEN: () => crypto.randomBytes(32).toString('hex'),
@@ -194,6 +204,8 @@ export const SECRET_GENERATORS: Record<string, () => string> = {
   ORBITOX_BRIDGE_KEYS: generateBridgeKeys,
   ORBITOX_BRIDGE_ACTIVE_KID: () => 'k1',
   ORBITOX_EMAIL_WEBHOOK_SECRET: () => 'whsec_' + crypto.randomBytes(32).toString('base64'),
+  STAFF_AUTH_SECRET: () => crypto.randomBytes(32).toString('hex'),
+  RESTAURANT_STATION_SECRETS: generateRestaurantStationSecrets,
 };
 
 export function getExpectedSecretNames(): string[] {
@@ -708,6 +720,11 @@ export function runSecretGenerator(options: {
     }
     const target = options.rotate;
     if (!STATELESS_SECRETS.includes(target as any)) {
+      if (target === 'STAFF_AUTH_SECRET') {
+        throw new Error(
+          `Secret "${target}" cannot be blind-rotated. Doing so would invalidate active staff sessions and diner payment signatures across all tenants.`,
+        );
+      }
       if (KEYED_ROTATABLE_SECRETS.includes(target as any)) {
         throw new Error(
           `Secret "${target}" cannot be blind-rotated. Keyed secrets must be rotated additively via --add-key=${target}.`,

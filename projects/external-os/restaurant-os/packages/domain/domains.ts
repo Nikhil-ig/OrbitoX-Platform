@@ -112,10 +112,11 @@ export class CustomDomainService {
 
   constructor(prisma?: PrismaClient, cnameTarget?: string, resolver?: DnsResolver) {
     this.prisma = prisma || getPrisma();
-    this.cnameTarget =
-      cnameTarget ||
-      process.env.RESTAURANTOS_CNAME_TARGET ||
-      'cname.restaurantos.orbitox.io';
+    const target = cnameTarget || process.env.RESTAURANTOS_CNAME_TARGET;
+    if (process.env.NODE_ENV === 'production' && !target) {
+      throw new Error('RESTAURANTOS_CNAME_TARGET is required in production mode.');
+    }
+    this.cnameTarget = target || 'cname.restaurantos.orbitox.io';
     this.resolver = resolver || defaultDnsResolver;
   }
 

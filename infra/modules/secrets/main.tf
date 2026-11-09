@@ -85,6 +85,8 @@ locals {
     "ORBITOX_BRIDGE_KEYS",
     "ORBITOX_BRIDGE_ACTIVE_KID",
     "ORBITOX_GRANT_PUBLIC_KEYS",
+    "STAFF_AUTH_SECRET",
+    "RESTAURANT_STATION_SECRETS",
     "db/orbitox_migrator",
     "db/orbitox_runtime",
     "db/orbitox_maintenance",

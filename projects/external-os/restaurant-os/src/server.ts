@@ -232,8 +232,15 @@ export function getPinnedGrantKeys(): Record<string, crypto.KeyObject> {
   return {};
 }
 
-// C3: Refuse to start in production if PostgreSQL is unavailable
+import {
+  assertRestaurantOsProductionConfig,
+  GSTIN_REGEX,
+} from '../packages/domain/production-config';
+export { assertRestaurantOsProductionConfig, GSTIN_REGEX };
+
+// C3: Refuse to start in production if PostgreSQL is unavailable or configuration is invalid
 if (isProductionEnvironment) {
+  assertRestaurantOsProductionConfig(process.env);
   getPinnedGrantKeys(); // Startup validation: throws if unconfigured
   if (!postgresStore?.prisma) {
     console.error('🚨 [CRITICAL_SECURITY_VIOLATION] PostgreSQL revision store is required in production mode! Halting startup.');

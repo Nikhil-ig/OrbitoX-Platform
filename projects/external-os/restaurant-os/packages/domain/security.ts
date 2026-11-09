@@ -117,8 +117,8 @@ function resolvePersistentMachineSecret(): string {
  * In production mode, fails safe if a cryptographically weak or default key is detected.
  */
 export function getStaffAuthSecret(): string {
-  const envSecret = process.env.STAFF_AUTH_SECRET || process.env.STAFF_JWT_SECRET || process.env.JWT_SECRET;
   if (process.env.NODE_ENV === 'production') {
+    const envSecret = process.env.STAFF_AUTH_SECRET;
     if (
       !envSecret ||
       envSecret.length < 32 ||
@@ -127,11 +127,12 @@ export function getStaffAuthSecret(): string {
       envSecret === 'orbitox_hospitality_staff_vault_secret_key_v2_2026_test_only_0123456789abcdef'
     ) {
       throw new Error(
-        '🚨 [SECURITY FATAL] STAFF_AUTH_SECRET (or STAFF_JWT_SECRET / JWT_SECRET) must be configured with at least 32 cryptographically strong characters in production mode.'
+        '🚨 [SECURITY FATAL] STAFF_AUTH_SECRET must be configured with at least 32 cryptographically strong characters in production mode.'
       );
     }
     return envSecret;
   }
+  const envSecret = process.env.STAFF_AUTH_SECRET || process.env.STAFF_JWT_SECRET || process.env.JWT_SECRET;
   if (envSecret && envSecret.length >= 16) {
     return envSecret;
   }
@@ -263,6 +264,40 @@ export function verifyStaffSecret(
   return { valid: false, needsRehash: false };
 }
 
+function parseIPv4(ip: string): number | null {
+  const parts = ip.split('.');
+  if (parts.length !== 4) return null;
+  let num = 0;
+  for (const p of parts) {
+    const n = parseInt(p, 10);
+    if (isNaN(n) || n < 0 || n > 255) return null;
+    num = (num << 8) + n;
+  }
+  return num >>> 0;
+}
+
+export function isIpInCidr(ip: string, rule: string): boolean {
+  const trimmed = rule.trim();
+  if (trimmed === '*' || trimmed === '0.0.0.0/0') return true;
+  const [subnetStr, maskStr] = trimmed.split('/');
+  if (!subnetStr) return false;
+  const normIp = ip === '::1' || ip === '::ffff:127.0.0.1' ? '127.0.0.1' : ip.replace(/^::ffff:/, '');
+  const normSubnet = subnetStr === '::1' || subnetStr === '::ffff:127.0.0.1' ? '127.0.0.1' : subnetStr.replace(/^::ffff:/, '');
+  if (!maskStr) {
+    return normIp === normSubnet || ip === subnetStr;
+  }
+  const mask = parseInt(maskStr, 10);
+  if (isNaN(mask) || mask < 0 || mask > 32) return false;
+  const ip4 = parseIPv4(normIp);
+  const subnet4 = parseIPv4(normSubnet);
+  if (ip4 !== null && subnet4 !== null) {
+    if (mask === 0) return true;
+    const maskBits = (0xffffffff << (32 - mask)) >>> 0;
+    return (ip4 & maskBits) === (subnet4 & maskBits);
+  }
+  return false;
+}
+
 /**
  * Resolves the real client IP. Only honors x-forwarded-for if the direct peer
  * socket address matches a configured trusted proxy in TRUSTED_PROXIES.
@@ -270,21 +305,15 @@ export function verifyStaffSecret(
 export function resolveClientIp(req: http.IncomingMessage): string {
   const socketIp = req.socket?.remoteAddress || '127.0.0.1';
   const trustedProxiesEnv = process.env.TRUSTED_PROXIES;
+  if (process.env.NODE_ENV === 'production' && !trustedProxiesEnv) {
+    throw new Error('TRUSTED_PROXIES must be configured in production mode.');
+  }
   if (!trustedProxiesEnv) {
     // No trusted proxy configured -> Ignore x-forwarded-for to prevent attacker-controlled header spoofing
     return socketIp;
   }
   const trustedList = trustedProxiesEnv.split(',').map((p) => p.trim()).filter(Boolean);
-  const isTrusted = trustedList.some((t) => {
-    if (t === '*' || t === socketIp) return true;
-    if (
-      t === '127.0.0.1' &&
-      (socketIp === '127.0.0.1' || socketIp === '::ffff:127.0.0.1' || socketIp === '::1')
-    ) {
-      return true;
-    }
-    return false;
-  });
+  const isTrusted = trustedList.some((rule) => isIpInCidr(socketIp, rule));
 
   if (!isTrusted) {
     return socketIp;
@@ -868,20 +897,34 @@ export function loadPersistedStaffRevocations(tokens: string[], jtis: string[], 
  * Defaults safely to localhost / 127.0.0.1 / [::1].
  * Returns the permitted origin string to reflect, or null if disallowed.
  */
+export function matchWildcardOrigin(origin: string, pattern: string): boolean {
+  if (pattern === '*' || pattern === origin) return true;
+  if (!pattern.includes('*')) return false;
+  const escaped = pattern.split('*').map((part) => part.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('.*');
+  return new RegExp(`^${escaped}$`).test(origin);
+}
+
 export function resolveAllowedOrigin(req?: http.IncomingMessage): string | null {
   if (!req || !req.headers) return null;
   const origin = req.headers.origin;
   if (!origin || typeof origin !== 'string') return null;
 
   const envOrigins = process.env.RESTAURANTOS_ALLOWED_ORIGINS;
+  if (process.env.NODE_ENV === 'production' && !envOrigins) {
+    throw new Error('RESTAURANTOS_ALLOWED_ORIGINS is required in production mode.');
+  }
+
   if (envOrigins) {
     const list = envOrigins.split(',').map((s) => s.trim()).filter(Boolean);
-    if (list.includes('*')) return '*';
-    if (list.includes(origin)) return origin;
+    for (const pattern of list) {
+      if (matchWildcardOrigin(origin, pattern)) {
+        return origin;
+      }
+    }
     return null;
   }
 
-  // Default allowlist: localhost and loopback interfaces
+  // Default allowlist: localhost and loopback interfaces (dev/test only)
   try {
     const parsed = new URL(origin);
     if (
@@ -937,6 +980,10 @@ export function getRegisteredStationSecrets(): Record<
 
   // 1. From environment variable RESTAURANT_STATION_SECRETS
   const envSecrets = process.env.RESTAURANT_STATION_SECRETS;
+  if (process.env.NODE_ENV === 'production' && (!envSecrets || !envSecrets.trim())) {
+    throw new Error('RESTAURANT_STATION_SECRETS is required in production mode.');
+  }
+
   if (envSecrets) {
     try {
       const parsed = JSON.parse(envSecrets);
@@ -952,11 +999,20 @@ export function getRegisteredStationSecrets(): Record<
         }
       }
     }
-    cachedStationSecrets = configuredSecrets;
-    return configuredSecrets;
+    if (Object.keys(configuredSecrets).length > 0) {
+      cachedStationSecrets = configuredSecrets;
+      return configuredSecrets;
+    }
+    if (process.env.NODE_ENV === 'production') {
+      throw new Error('RESTAURANT_STATION_SECRETS must contain valid station secrets in production mode.');
+    }
   }
 
-  // 2. From persistent 0600 file .station_secrets.json
+  if (process.env.NODE_ENV === 'production') {
+    throw new Error('RESTAURANT_STATION_SECRETS is required in production mode.');
+  }
+
+  // 2. From persistent 0600 file .station_secrets.json (dev/test only)
   const secretFile = resolvePersistentStationSecretsFile();
   if (fs.existsSync(secretFile)) {
     try {

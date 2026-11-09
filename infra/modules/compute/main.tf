@@ -490,7 +490,9 @@ resource "aws_iam_policy" "restaurant_os_secrets_access" {
           var.secrets_map["RESTAURANT_OS_DATABASE_URL"],
           var.secrets_map["ORBITOX_BRIDGE_KEYS"],
           var.secrets_map["ORBITOX_BRIDGE_ACTIVE_KID"],
-          var.secrets_map["ORBITOX_GRANT_PUBLIC_KEYS"]
+          var.secrets_map["ORBITOX_GRANT_PUBLIC_KEYS"],
+          var.secrets_map["STAFF_AUTH_SECRET"],
+          var.secrets_map["RESTAURANT_STATION_SECRETS"]
         ]
       },
       {
@@ -701,13 +703,20 @@ resource "aws_ecs_task_definition" "restaurant_os" {
       environment = [
         { name = "NODE_ENV", value = "production" },
         { name = "PORT", value = "4010" },
-        { name = "HOSTNAME", value = "0.0.0.0" }
+        { name = "HOSTNAME", value = "0.0.0.0" },
+        { name = "RESTAURANTOS_BASE_DOMAIN", value = "staging.orbitox.io" },
+        { name = "RESTAURANTOS_CNAME_TARGET", value = "cname.staging.orbitox.io" },
+        { name = "TRUSTED_PROXIES", value = "10.0.0.0/16" },
+        { name = "RESTAURANTOS_ALLOWED_ORIGINS", value = "https://staging.orbitox.io,https://*.staging.orbitox.io" },
+        { name = "RESTAURANT_GSTIN", value = "27AAPFU0939F1ZV" }
       ]
       secrets = [
         { name = "DATABASE_URL", valueFrom = var.secrets_map["RESTAURANT_OS_DATABASE_URL"] },
         { name = "ORBITOX_BRIDGE_KEYS", valueFrom = var.secrets_map["ORBITOX_BRIDGE_KEYS"] },
         { name = "ORBITOX_BRIDGE_ACTIVE_KID", valueFrom = var.secrets_map["ORBITOX_BRIDGE_ACTIVE_KID"] },
-        { name = "ORBITOX_GRANT_PUBLIC_KEYS", valueFrom = var.secrets_map["ORBITOX_GRANT_PUBLIC_KEYS"] }
+        { name = "ORBITOX_GRANT_PUBLIC_KEYS", valueFrom = var.secrets_map["ORBITOX_GRANT_PUBLIC_KEYS"] },
+        { name = "STAFF_AUTH_SECRET", valueFrom = var.secrets_map["STAFF_AUTH_SECRET"] },
+        { name = "RESTAURANT_STATION_SECRETS", valueFrom = var.secrets_map["RESTAURANT_STATION_SECRETS"] }
       ]
       logConfiguration = {
         logDriver = "awslogs"
