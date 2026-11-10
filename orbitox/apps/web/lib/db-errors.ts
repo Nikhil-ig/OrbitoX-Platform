@@ -39,6 +39,7 @@ export const CONSTRAINT_ERRORS: Record<string, Omit<ApiError, 'retryable'>> = {
   HmsPayment_tenantId_idempotencyKey_key: { status: 409, code: 'PAYMENT_ALREADY_RECORDED' },
   HmsInvoice_paid_is_derived: { status: 422, code: 'INVOICE_PAID_IS_DERIVED' },
   HmsInvoice_total_locked: { status: 409, code: 'INVOICE_TOTAL_LOCKED' },
+  HmsPatient_processingStatus_restricted: { status: 409, code: 'PATIENT_PROCESSING_RESTRICTED' },
   HmsPatient_tenantId_mrn_key: { status: 409, code: 'MRN_EXISTS' },
   HmsStaff_tenantId_emailBlind_key: { status: 409, code: 'STAFF_EMAIL_EXISTS' },
 };

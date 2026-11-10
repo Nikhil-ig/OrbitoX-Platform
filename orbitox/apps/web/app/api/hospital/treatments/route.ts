@@ -61,6 +61,13 @@ export const PATCH = withHospitalGuard(async (req: NextRequest, _routeContext, a
     if (!treatmentId) throw new HttpError(422, 'INVALID_INPUT', 'treatmentId required');
 
     const data = await withTenantTx(prisma, authContext.tenantId, async (tx) => {
+      const existing = await tx.query<{ patientId: string }>(
+        `SELECT "patientId" FROM "HmsLabOrder" WHERE "id" = $1`,
+        [treatmentId]
+      );
+      if (!existing.rows[0]) throw new HttpError(404, 'REFERENCE_NOT_FOUND', 'Treatment not found');
+      await assertPatientActive(tx, existing.rows[0].patientId);
+
       const newStatus = action === 'start' ? 'IN_PROGRESS' : action === 'complete' ? 'RESULTED' : 'IN_PROGRESS';
       const { rows } = await tx.query(
         `UPDATE "HmsLabOrder"

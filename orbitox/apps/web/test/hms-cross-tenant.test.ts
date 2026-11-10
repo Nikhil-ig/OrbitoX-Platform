@@ -69,7 +69,13 @@ const ring = new PhiKeyRing({
   indexKey: crypto.randomBytes(32).toString('base64'),
 });
 
-function makeRequest(tenantId: string, urlPath: string, method = 'GET', body?: any): NextRequest {
+function makeRequest(
+  tenantId: string,
+  urlPath: string,
+  method = 'GET',
+  body?: any,
+  extraHeaders?: Record<string, string>,
+): NextRequest {
   const headers = new Headers();
   headers.set('authorization', `Bearer ${ADMIN_TOKEN}`);
   if (apiKeySecret) {
@@ -80,6 +86,11 @@ function makeRequest(tenantId: string, urlPath: string, method = 'GET', body?: a
   headers.set('x-orbitox-principal', 'admin');
   headers.set('x-forwarded-for', '127.0.0.1');
   if (body) headers.set('content-type', 'application/json');
+  if (extraHeaders) {
+    for (const [k, v] of Object.entries(extraHeaders)) {
+      headers.set(k, v);
+    }
+  }
 
   return new NextRequest(`http://localhost:3005${urlPath}`, {
     method,
@@ -142,6 +153,8 @@ describe('HospitalOS & HMS Cross-Tenant Generator Suite (Phase 2b-3)', () => {
     patientId: `pat_a_${runSuffix}`,
     mrn: `MRN-A-${runSuffix.toUpperCase()}`,
     invoiceId: `inv_a_${runSuffix}`,
+    sessionToken: '',
+    sessionId: '',
   };
 
   let bInitialRowCounts: Record<string, number> = {};
@@ -424,7 +437,13 @@ describe('HospitalOS & HMS Cross-Tenant Generator Suite (Phase 2b-3)', () => {
     'POST app/api/v1/hms/labs/route.ts': {
       description: 'V1 Create lab referencing Tenant B patient: rejected',
       expectedStatus: [404, 422],
-      run: (ctx) => createV1Lab(makeRequest(TENANT_A, '/api/v1/hms/labs', 'POST', { patientId: ctx.idsB.patientId, testType: 'CBC' })),
+      run: (ctx) => createV1Lab(makeRequest(
+        TENANT_A,
+        '/api/v1/hms/labs',
+        'POST',
+        { patientId: ctx.idsB.patientId, testType: 'CBC' },
+        { 'x-staff-session': ctx.idsA.sessionToken }
+      )),
     },
     'GET app/api/v1/hms/patients/route.ts': {
       description: 'V1 List patients: Tenant A sees 0 Tenant B patients',
@@ -593,6 +612,18 @@ describe('HospitalOS & HMS Cross-Tenant Generator Suite (Phase 2b-3)', () => {
       await tx.query(
         `INSERT INTO "HmsStaff"(id, "nameSealed", "emailBlind", role) VALUES ($1, $2, $3, 'DOCTOR')`,
         [idsA.staffId, nameSealedStaffA, emailBlindA]
+      );
+
+      await tx.query(
+        `INSERT INTO "HmsRole"(id, name, "isSystem") VALUES ('role_doctor', 'DOCTOR', true) ON CONFLICT DO NOTHING`
+      );
+      idsA.sessionId = `sess_cross_a_${runSuffix}`;
+      idsA.sessionToken = crypto.randomBytes(32).toString('hex');
+      const tokenHashA = crypto.createHash('sha256').update(idsA.sessionToken).digest('hex');
+      await tx.query(
+        `INSERT INTO "HmsStaffSession"("id", "staffId", "roleId", "tokenHash", "expiresAt", "absoluteExpiresAt")
+         VALUES ($1, $2, 'role_doctor', $3, now() + interval '30 minutes', now() + interval '12 hours')`,
+        [idsA.sessionId, idsA.staffId, tokenHashA]
       );
 
       const nameSealedPatA = seal(ring, 'Patient A Singh', { tenantId: TENANT_A, column: 'nameSealed', rowId: idsA.patientId });

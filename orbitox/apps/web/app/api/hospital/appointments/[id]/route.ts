@@ -3,6 +3,7 @@ import { withHospitalGuard } from '@/app/api/_lib/route-auth';
 import { withTenantTx } from '@/lib/tenant-db';
 import { prisma } from '@/lib/prisma';
 import { mapDbError, errorBody, HttpError } from '@/lib/db-errors';
+import { assertPatientActive } from '@/lib/hms-repository';
 
 export const PATCH = withHospitalGuard(async (req: NextRequest, { params }: { params: Promise<{ id: string }> }, authContext) => {
   try {
@@ -10,6 +11,13 @@ export const PATCH = withHospitalGuard(async (req: NextRequest, { params }: { pa
     const body = await req.json();
 
     const data = await withTenantTx(prisma, authContext.tenantId, async (tx) => {
+      const existing = await tx.query<{ patientId: string }>(
+        `SELECT "patientId" FROM "HmsAppointment" WHERE "id" = $1`,
+        [id]
+      );
+      if (!existing.rows[0]) throw new HttpError(404, 'REFERENCE_NOT_FOUND', 'Appointment not found');
+      await assertPatientActive(tx, existing.rows[0].patientId);
+
       const { rows } = await tx.query(
         `UPDATE "HmsAppointment"
          SET "status" = COALESCE($2, "status"),
@@ -35,6 +43,13 @@ export const DELETE = withHospitalGuard(async (_req: NextRequest, { params }: { 
 
     // Runtime role does not DELETE clinical rows (I8); soft-cancel appointment by setting status = 'CANCELLED'
     const data = await withTenantTx(prisma, authContext.tenantId, async (tx) => {
+      const existing = await tx.query<{ patientId: string }>(
+        `SELECT "patientId" FROM "HmsAppointment" WHERE "id" = $1`,
+        [id]
+      );
+      if (!existing.rows[0]) throw new HttpError(404, 'REFERENCE_NOT_FOUND', 'Appointment not found');
+      await assertPatientActive(tx, existing.rows[0].patientId);
+
       const { rows } = await tx.query(
         `UPDATE "HmsAppointment"
          SET "status" = 'CANCELLED'

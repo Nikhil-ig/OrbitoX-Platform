@@ -3,6 +3,7 @@ import { withHospitalGuard } from '@/app/api/_lib/route-auth';
 import { withTenantTx } from '@/lib/tenant-db';
 import { prisma } from '@/lib/prisma';
 import { mapDbError, errorBody, HttpError } from '@/lib/db-errors';
+import { assertPatientActive } from '@/lib/hms-repository';
 import { getPhiKeyRing, seal } from '@/lib/phi-crypto';
 
 export const POST = withHospitalGuard(async (
@@ -16,6 +17,13 @@ export const POST = withHospitalGuard(async (
     const ring = getPhiKeyRing();
 
     const data = await withTenantTx(prisma, authContext.tenantId, async (tx) => {
+      const orderRes = await tx.query<{ patientId: string }>(
+        `SELECT "patientId" FROM "HmsLabOrder" WHERE "id" = $1`,
+        [id]
+      );
+      if (!orderRes.rows[0]) throw new HttpError(404, 'REFERENCE_NOT_FOUND', 'Lab order not found');
+      await assertPatientActive(tx, orderRes.rows[0].patientId);
+
       if (body.action === 'verify') {
         const verifierId = body.verifierId || authContext.sub || 'staff_verifier';
         const { rows } = await tx.query(
@@ -24,7 +32,7 @@ export const POST = withHospitalGuard(async (
                "verifiedById" = $2,
                "verifiedAt" = now()
            WHERE "id" = $1
-           RETURNING "id", "status", "resultEnteredById", "verifiedById", "verifiedAt"`,
+           RETURNING "id", "status", "resultedById", "verifiedById", "verifiedAt"`,
           [id, verifierId]
         );
         if (!rows[0]) throw new HttpError(404, 'REFERENCE_NOT_FOUND', 'Lab order not found');

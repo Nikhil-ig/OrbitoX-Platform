@@ -3,6 +3,7 @@ import { withHospitalGuard } from '@/app/api/_lib/route-auth';
 import { withTenantTx } from '@/lib/tenant-db';
 import { prisma } from '@/lib/prisma';
 import { mapDbError, errorBody, HttpError } from '@/lib/db-errors';
+import { assertPatientActive } from '@/lib/hms-repository';
 
 export const POST = withHospitalGuard(async (req: NextRequest, _routeContext, authContext) => {
   try {
@@ -16,6 +17,7 @@ export const POST = withHospitalGuard(async (req: NextRequest, _routeContext, au
     }
 
     const data = await withTenantTx(prisma, authContext.tenantId, async (tx) => {
+      await assertPatientActive(tx, body.patientId);
       const id = body.id || `bg_${Date.now().toString(36)}`;
       const durationHours = Math.min(Math.max(1, body.durationHours || 1), 4);
 

@@ -3,6 +3,8 @@ import { withApiGuard, PlatformApiState } from '../../_lib/api-guard';
 import { withTenantTx } from '@/lib/tenant-db';
 import { prisma } from '@/lib/prisma';
 import { mapDbError, errorBody, HttpError } from '@/lib/db-errors';
+import { verifyStaffSession } from '@/lib/hms-auth';
+import { assertPatientActive } from '@/lib/hms-repository';
 
 export const GET = withApiGuard(
   {
@@ -53,9 +55,31 @@ export const POST = withApiGuard(
         throw new HttpError(422, 'INVALID_INPUT', 'patientId and testType are required');
       }
 
+      const staffToken = req.headers.get('x-staff-session') || req.headers.get('x-staff-token');
       const lab = await withTenantTx(prisma, ctx.tenantId, async (tx) => {
+        let orderedById: string;
+        if (staffToken) {
+          try {
+            const verified = await verifyStaffSession(tx, staffToken);
+            orderedById = verified.actor.staffId;
+          } catch {
+            throw new HttpError(401, 'STAFF_IDENTITY_REQUIRED', 'Valid staff session (x-staff-session) is required to order lab tests.');
+          }
+        } else if (ctx.sub?.trim()) {
+          const { rows: staffRows } = await tx.query<{ id: string }>(
+            `SELECT "id" FROM "HmsStaff" WHERE "id" = $1 LIMIT 1`,
+            [ctx.sub.trim()]
+          );
+          if (!staffRows[0]) {
+            throw new HttpError(401, 'STAFF_IDENTITY_REQUIRED', 'Authenticated staff identity does not match an active staff member.');
+          }
+          orderedById = staffRows[0].id;
+        } else {
+          throw new HttpError(401, 'STAFF_IDENTITY_REQUIRED', 'Authenticated staff identity is required; orderedById cannot be supplied in request body.');
+        }
+
+        await assertPatientActive(tx, body.patientId);
         const id = body.id || `lab_${Date.now().toString(36)}`;
-        const orderedById = body.orderedById || ctx.sub || 'staff_doctor';
 
         const { rows } = await tx.query(
           `INSERT INTO "HmsLabOrder" ("id", "patientId", "orderedById", "testType", "status")
@@ -70,7 +94,7 @@ export const POST = withApiGuard(
         tenantId: ctx.tenantId,
         facade: 'EventsFacade',
         level: 'INFO',
-        message: `Ordered lab diagnostic [${lab.testCode}] for patient [${lab.patientId}].`,
+        message: `Ordered lab diagnostic [${lab.testType}] for patient [${lab.patientId}].`,
       });
 
       return NextResponse.json({
