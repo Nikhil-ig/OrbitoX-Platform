@@ -1664,6 +1664,78 @@ model BillingGraceSweepLease {
   updatedAt     DateTime @default(now()) @db.Timestamptz
 }
 
+model DataRightsJob {
+  id                String    @id
+  kind              String
+  status            String    @default("QUEUED")
+  organizationId    String?
+  requestedByUserId String
+  leaseOwner        String?
+  leaseExpiresAt    DateTime? @db.Timestamptz
+  attempts          Int       @default(0)
+  maxAttempts       Int       @default(5)
+  checkpoint        Json      @default("{}")
+  result            Json?
+  lastError         String?
+  expiresAt         DateTime? @db.Timestamptz
+  purgedAt          DateTime? @db.Timestamptz
+  runAfter          DateTime  @default(now()) @db.Timestamptz
+  startedAt         DateTime? @db.Timestamptz
+  completedAt       DateTime? @db.Timestamptz
+  createdAt         DateTime  @default(now()) @db.Timestamptz
+  updatedAt         DateTime  @default(now()) @db.Timestamptz
+
+  downloadTokens DataExportDownloadToken[]
+
+  @@index([organizationId, kind, createdAt])
+  @@index([status, runAfter])
+}
+
+model DataExportDownloadToken {
+  id               String    @id
+  jobId            String
+  organizationId   String
+  tokenHash        String    @unique
+  objectKey        String
+  expiresAt        DateTime  @db.Timestamptz
+  consumedAt       DateTime? @db.Timestamptz
+  consumedByUserId String?
+  createdAt        DateTime  @default(now()) @db.Timestamptz
+
+  job DataRightsJob @relation(fields: [jobId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([organizationId, expiresAt])
+}
+
+model OrganizationDeletionRequest {
+  id                 String    @id
+  organizationId     String?
+  organizationDigest String
+  status             String    @default("SCHEDULED")
+  requestedByUserId  String
+  authorizedOwnerIds String[]  @default([])
+  suspendedKeyIds    String[]  @default([])
+  reason             String?
+  requestedAt        DateTime  @default(now()) @db.Timestamptz
+  scheduledFor       DateTime  @db.Timestamptz
+  cancelledAt        DateTime? @db.Timestamptz
+  cancelledByUserId  String?
+  completedAt        DateTime? @db.Timestamptz
+  certificate        Json?
+  checkpoint         Json      @default("{}")
+  updatedAt          DateTime  @default(now()) @db.Timestamptz
+
+  @@index([organizationDigest, status])
+  @@index([status, scheduledFor])
+}
+
+model DataRightsSweepLease {
+  id             String   @id @default("global")
+  leaseOwner     String
+  leaseExpiresAt DateTime @db.Timestamptz
+  updatedAt      DateTime @default(now()) @db.Timestamptz
+}
+
 model PlatformPluginUsage {
   tenantId      String   @db.Text
   projectId     String   @db.Text
@@ -2268,6 +2340,10 @@ model HmsPatient {
   allergiesSealed        String?
   emergencyContactSealed String?
   triageLevel            Int?     @db.SmallInt
+  processingStatus       String   @default("ACTIVE")
+  restrictedAt           DateTime? @db.Timestamptz
+  restrictedReason       String?
+  restrictedBy           String?
   createdAt              DateTime @default(now()) @db.Timestamptz
   updatedAt              DateTime @default(now()) @db.Timestamptz
   version                Int      @default(1)
@@ -2281,6 +2357,7 @@ model HmsPatient {
   @@id([tenantId, id])
   @@unique([tenantId, mrn])
   @@index([tenantId, nameBlind], map: "HmsPatient_nameBlind")
+  @@index([tenantId, processingStatus])
 }
 
 model HmsAdmission {

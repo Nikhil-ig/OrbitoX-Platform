@@ -447,6 +447,86 @@ describe('Phase 6 identity database-role boundaries', () => {
     assert.equal(maintenanceRightsRow.canInsertOperator, true);
     assert.equal(maintenanceRightsRow.canUpdateRole, true);
   });
+
+  it('enforces 6G data-rights runtime vs maintenance vs audit table boundaries', async () => {
+    const runtime6g = await runtime.$queryRaw<
+      Array<{
+        tableName: string;
+        canSelect: boolean;
+        canInsert: boolean;
+        canUpdate: boolean;
+        canDelete: boolean;
+      }>
+    >`
+      SELECT t.table_name AS "tableName",
+        has_table_privilege(current_user, format('public.%I', t.table_name), 'SELECT') AS "canSelect",
+        has_table_privilege(current_user, format('public.%I', t.table_name), 'INSERT') AS "canInsert",
+        has_table_privilege(current_user, format('public.%I', t.table_name), 'UPDATE') AS "canUpdate",
+        has_table_privilege(current_user, format('public.%I', t.table_name), 'DELETE') AS "canDelete"
+      FROM (VALUES
+        ('DataRightsJob'),
+        ('DataExportDownloadToken'),
+        ('OrganizationDeletionRequest'),
+        ('HmsPatient'),
+        ('HmsInvoice'),
+        ('HmsPhiAccessLog')
+      ) AS t(table_name)
+    `;
+    const byName = new Map(runtime6g.map((r) => [r.tableName, r]));
+    for (const tbl of ['DataRightsJob', 'DataExportDownloadToken', 'OrganizationDeletionRequest']) {
+      assert.deepEqual(
+        [byName.get(tbl)?.canSelect, byName.get(tbl)?.canInsert, byName.get(tbl)?.canUpdate, byName.get(tbl)?.canDelete],
+        [true, true, true, false],
+        `orbitox_runtime must not have DELETE on ${tbl}`,
+      );
+    }
+    assert.equal(byName.get('HmsPatient')?.canDelete, false);
+    assert.equal(byName.get('HmsInvoice')?.canDelete, false);
+    assert.equal(byName.get('HmsPhiAccessLog')?.canSelect, false);
+    assert.equal(byName.get('HmsPhiAccessLog')?.canDelete, false);
+
+    const maint6g = await maintenance.$queryRaw<
+      Array<{ tableName: string; canSelect: boolean; canDelete: boolean }>
+    >`
+      SELECT t.table_name AS "tableName",
+        has_table_privilege(current_user, format('public.%I', t.table_name), 'SELECT') AS "canSelect",
+        has_table_privilege(current_user, format('public.%I', t.table_name), 'DELETE') AS "canDelete"
+      FROM (VALUES
+        ('DataRightsJob'),
+        ('DataExportDownloadToken'),
+        ('OrganizationDeletionRequest'),
+        ('PlatformAuditEvent'),
+        ('HmsPatient'),
+        ('HmsInvoice'),
+        ('HmsPhiAccessLog')
+      ) AS t(table_name)
+    `;
+    for (const row of maint6g) {
+      assert.equal(row.canSelect, true, `maintenance must SELECT ${row.tableName}`);
+      assert.equal(row.canDelete, true, `maintenance must DELETE ${row.tableName} for Day-30 erasure`);
+    }
+
+    const audit6g = await audit.$queryRaw<
+      Array<{ tableName: string; anyPriv: boolean }>
+    >`
+      SELECT t.table_name AS "tableName",
+        (
+          has_table_privilege(current_user, format('public.%I', t.table_name), 'SELECT') OR
+          has_table_privilege(current_user, format('public.%I', t.table_name), 'INSERT') OR
+          has_table_privilege(current_user, format('public.%I', t.table_name), 'UPDATE') OR
+          has_table_privilege(current_user, format('public.%I', t.table_name), 'DELETE')
+        ) AS "anyPriv"
+      FROM (VALUES
+        ('DataRightsJob'),
+        ('DataExportDownloadToken'),
+        ('OrganizationDeletionRequest'),
+        ('HmsPhiAccessLog')
+      ) AS t(table_name)
+    `;
+    for (const row of audit6g) {
+      assert.equal(row.anyPriv, false, `platform audit role must have zero privs on ${row.tableName}`);
+    }
+  });
 });
 
 function isPermissionDenied(error: unknown): boolean {

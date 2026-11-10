@@ -92,6 +92,10 @@ const globalTableAllowlist = new Set([
   'AccountEmailSuppression', // Address-level suppression must apply across all tenants.
   'AccountEmailWebhookEvent', // Provider webhook event IDs are globally deduplicated.
   'BillingGraceSweepLease', // A single lease coordinates the platform-wide grace sweep.
+  'DataRightsJob', // Control-plane durable leased jobs coordinating multi-plugin export and Day-30 erasure.
+  'DataExportDownloadToken', // Org-scoped single-use hashed export download tokens checked by customer auth handlers.
+  'OrganizationDeletionRequest', // Control-plane 30-day deletion schedule and signed certificate store (organizationId cleared upon completion).
+  'DataRightsSweepLease', // A single lease coordinates the platform-wide 6G data-rights worker sweep.
   'PluginGrantRevision',
   'PlatformOperation',
 ]);
