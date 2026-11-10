@@ -223,7 +223,7 @@ export default function PlatformSettingsPage() {
           </a>
 
           <a
-            href="https://github.com/Nikhil-ig/OrbitoX-Platform/blob/main/docs/02_ARCHITECTURE.md"
+            href="https://github.com/Nikhil-ig/OrbitoX-Platform/blob/main/docs/architecture/02_ARCHITECTURE.md"
             target="_blank"
             rel="noopener noreferrer"
             className={styles.linkCard}
@@ -233,7 +233,7 @@ export default function PlatformSettingsPage() {
           </a>
 
           <a
-            href="https://github.com/Nikhil-ig/OrbitoX-Platform/blob/main/docs/SECURITY_CLEANUP.md"
+            href="https://github.com/Nikhil-ig/OrbitoX-Platform/blob/main/docs/security/SECURITY_CLEANUP.md"
             target="_blank"
             rel="noopener noreferrer"
             className={styles.linkCard}
@@ -243,7 +243,7 @@ export default function PlatformSettingsPage() {
           </a>
 
           <a
-            href="https://github.com/Nikhil-ig/OrbitoX-Platform/blob/main/docs/12_PRODUCTION_DEPLOYMENT.md"
+            href="https://github.com/Nikhil-ig/OrbitoX-Platform/blob/main/docs/runbooks/12_PRODUCTION_DEPLOYMENT.md"
             target="_blank"
             rel="noopener noreferrer"
             className={styles.linkCard}

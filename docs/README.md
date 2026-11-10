@@ -10,12 +10,12 @@
 | I want to... | Read |
 |---|---|
 | Run OrbitoX and connect my first project | [Root README](../README.md) |
-| Understand the architecture | [02_ARCHITECTURE.md](02_ARCHITECTURE.md) |
-| Deploy to production | [12_PRODUCTION_DEPLOYMENT.md](12_PRODUCTION_DEPLOYMENT.md) |
-| Onboard client projects, plans and quotas | [CLIENT_PROJECTS_AND_ECOSYSTEM_GUIDE.md](CLIENT_PROJECTS_AND_ECOSYSTEM_GUIDE.md) |
-| Rotate secrets and clean git history | [SECURITY_CLEANUP.md](SECURITY_CLEANUP.md) |
-| Read the full spec | [ORBITOX_MASTER_DOC.md](ORBITOX_MASTER_DOC.md), [ORBITOX_MASTER_ARCHITECTURE_AND_API_SPECIFICATION.md](ORBITOX_MASTER_ARCHITECTURE_AND_API_SPECIFICATION.md) |
-| Browse old plans and acceptance reports | [archive/](archive/) |
+| Understand the architecture | [architecture/02_ARCHITECTURE.md](architecture/02_ARCHITECTURE.md) |
+| Deploy to production | [runbooks/12_PRODUCTION_DEPLOYMENT.md](runbooks/12_PRODUCTION_DEPLOYMENT.md) |
+| Onboard client projects, plans and quotas | [architecture/CLIENT_PROJECTS_AND_ECOSYSTEM_GUIDE.md](architecture/CLIENT_PROJECTS_AND_ECOSYSTEM_GUIDE.md) |
+| Rotate secrets and clean git history | [security/SECURITY_CLEANUP.md](security/SECURITY_CLEANUP.md) |
+| Read the full spec | [architecture/ORBITOX_MASTER_DOC.md](architecture/ORBITOX_MASTER_DOC.md), [architecture/ORBITOX_MASTER_ARCHITECTURE_AND_API_SPECIFICATION.md](architecture/ORBITOX_MASTER_ARCHITECTURE_AND_API_SPECIFICATION.md) |
+| Browse program cleanup inventory & historical GO specs | [cleanup/inventory.md](cleanup/inventory.md), [history/](history/) |
 
 ---
 
@@ -65,24 +65,24 @@ mindmap
 
 | # | Topic & Guide | Focus Area | Key Visuals |
 | :-: | :--- | :--- | :--- |
-| **01** | [🚀 Getting Started](./01_GETTING_STARTED.md) | CLI, Scaffolding, Health Verification | Dev Journey Flowchart, Prerequisites Table |
-| **02** | [🏛️ Architecture & Kernel](./02_ARCHITECTURE.md) | Singleton, ServiceContainer, Facades | Class Diagram, Facade Matrix |
-| **03** | [🏢 Multi-Tenancy Graph](./03_MULTI_TENANCY.md) | O2O2B2B Context Trees, Vendor Mesh | Hierarchy Graph, Context Type Table |
-| **04** | [🛡️ Zero-Trust Security](./04_ZERO_TRUST_SECURITY.md) | RBAC + ABAC JSON-Logic + CBAC | 3-Layer Auth Flowchart, Mode Comparison Table |
-| **05** | [💳 Billing & Subscriptions](./05_BILLING_SUBSCRIPTIONS.md) | Plans, Entitlements, Lifecycle | Subscription State Machine, Tier Matrix |
-| **06** | [⚡ Event Bus & Queues](./06_EVENTS_QUEUES.md) | BullMQ, Redis, In-Memory | Redis Topology Flowchart, Event Patterns |
-| **07** | [🤖 AI Gateway](./07_AI_GATEWAY.md) | OpenAI, Gemini, ask/extract/classify | Provider Matrix, AI Routing Diagram |
-| **08** | [📋 Immutable Audit Trail](./08_AUDIT_TRAIL.md) | SHA-256 Hash Chains, Compliance | Hash-Chain Diagram, Compliance Table |
-| **09** | [🚩 Feature Flags](./09_FEATURE_FLAGS.md) | Context Overrides, Canary Rollouts | Priority Flowchart, Overrides Table |
-| **10** | [📦 Workflows & Automation](./10_WORKFLOWS.md) | Event Triggers, Background Actions | Workflow Sequence Diagram |
-| **11** | [🛠️ CLI & Scaffolding](./11_CLI_SCAFFOLDING.md) | Templates, Config, Auto-REST | Template Matrix, CLI Pipeline |
-| **12** | [🎯 Production Deployment](./12_PRODUCTION_DEPLOYMENT.md) | Hardening, Redis, AI Keys | Infrastructure Topology, Checklist |
-| **13** | [🏥 Hospital SaaS Blueprint](./13_USECASE_HOSPITAL_SAAS.md) | Clinical N-Tier, Bed State Machine, Peer Mesh | Context Topology, Permission Flow, Bed State Machine |
-| **14** | [🧑‍💻 Hospital Developer Guide](./14_HOSPITAL_SAAS_DEVELOPER_GUIDE.md) | Beginner-to-Pro Tutorial, TypeScript Types, Copy-Paste Server | Mental Model, 8-Step Tutorial, Runnable Code |
-| **15** | [🗄️ Database Architecture & Flow](./15_DATABASE_ARCHITECTURE_AND_FLOW.md) | Multi-Tenant Storage, Read/Write Sequences, Query Translation | Storage Models, Read Flow, Write Flow, Cache Namespaces |
-| **16** | [🪐 Client Projects & O2O2B2B2C Ecosystem](./16_CLIENT_PROJECTS_AND_O2O2B2B2C_ECOSYSTEM.md) | Zero-Code Plugins, Instant API Keys, Dynamic Quotas, O2O2B2B2C | Ecosystem Flowchart, Gateway Enforcement, Multi-Lang SDKs |
-| **17** | [🌐 Dual-Engine: Single & Multi-Server Architecture](./17_MULTI_SERVER_DISTRIBUTED_ARCHITECTURE_AND_CLIENT_PROVISIONING.md) | Dual-Engine Standalone & Clustered Mesh, Redis Pub/Sub, PgBouncer, Client Provisioning | Dual Topology Diagrams, Invalidation Sequence, Single vs Multi Matrix, Fallback Specs |
-| **18** | [🔄 Easy Switch & State Transfer (Standalone Guide)](./18_EASY_SWITCH_AND_STATE_TRANSFER_STANDALONE_GUIDE.md) | 1-Click / 1-Command Seamless Scale Down to Standalone Single Node, Zero Data Loss State Transfer | State Extraction Sequence, SHA-256 Snapshot Schema, 5-Phase Traffic Drain Stepper, CLI Integration |
+| **01** | [🚀 Getting Started](./runbooks/01_GETTING_STARTED.md) | CLI, Scaffolding, Health Verification | Dev Journey Flowchart, Prerequisites Table |
+| **02** | [🏛️ Architecture & Kernel](./architecture/02_ARCHITECTURE.md) | Singleton, ServiceContainer, Facades | Class Diagram, Facade Matrix |
+| **03** | [🏢 Multi-Tenancy Graph](./architecture/03_MULTI_TENANCY.md) | O2O2B2B Context Trees, Vendor Mesh | Hierarchy Graph, Context Type Table |
+| **04** | [🛡️ Zero-Trust Security](./security/04_ZERO_TRUST_SECURITY.md) | RBAC + ABAC JSON-Logic + CBAC | 3-Layer Auth Flowchart, Mode Comparison Table |
+| **05** | [💳 Billing & Subscriptions](./architecture/05_BILLING_SUBSCRIPTIONS.md) | Plans, Entitlements, Lifecycle | Subscription State Machine, Tier Matrix |
+| **06** | [⚡ Event Bus & Queues](./architecture/06_EVENTS_QUEUES.md) | BullMQ, Redis, In-Memory | Redis Topology Flowchart, Event Patterns |
+| **07** | [🤖 AI Gateway](./architecture/07_AI_GATEWAY.md) | OpenAI, Gemini, ask/extract/classify | Provider Matrix, AI Routing Diagram |
+| **08** | [📋 Immutable Audit Trail](./security/08_AUDIT_TRAIL.md) | SHA-256 Hash Chains, Compliance | Hash-Chain Diagram, Compliance Table |
+| **09** | [🚩 Feature Flags](./architecture/09_FEATURE_FLAGS.md) | Context Overrides, Canary Rollouts | Priority Flowchart, Overrides Table |
+| **10** | [📦 Workflows & Automation](./architecture/10_WORKFLOWS.md) | Event Triggers, Background Actions | Workflow Sequence Diagram |
+| **11** | [🛠️ CLI & Scaffolding](./runbooks/11_CLI_SCAFFOLDING.md) | Templates, Config, Auto-REST | Template Matrix, CLI Pipeline |
+| **12** | [🎯 Production Deployment](./runbooks/12_PRODUCTION_DEPLOYMENT.md) | Hardening, Redis, AI Keys | Infrastructure Topology, Checklist |
+| **13** | [🏥 Hospital SaaS Blueprint](./architecture/13_USECASE_HOSPITAL_SAAS.md) | Clinical N-Tier, Bed State Machine, Peer Mesh | Context Topology, Permission Flow, Bed State Machine |
+| **14** | [🧑‍💻 Hospital Developer Guide](./architecture/14_HOSPITAL_SAAS_DEVELOPER_GUIDE.md) | Beginner-to-Pro Tutorial, TypeScript Types, Copy-Paste Server | Mental Model, 8-Step Tutorial, Runnable Code |
+| **15** | [🗄️ Database Architecture & Flow](./architecture/15_DATABASE_ARCHITECTURE_AND_FLOW.md) | Multi-Tenant Storage, Read/Write Sequences, Query Translation | Storage Models, Read Flow, Write Flow, Cache Namespaces |
+| **16** | [🪐 Client Projects & O2O2B2B2C Ecosystem](./architecture/16_CLIENT_PROJECTS_AND_O2O2B2B2C_ECOSYSTEM.md) | Zero-Code Plugins, Instant API Keys, Dynamic Quotas, O2O2B2B2C | Ecosystem Flowchart, Gateway Enforcement, Multi-Lang SDKs |
+| **17** | [🌐 Dual-Engine: Single & Multi-Server Architecture](./architecture/17_MULTI_SERVER_DISTRIBUTED_ARCHITECTURE_AND_CLIENT_PROVISIONING.md) | Dual-Engine Standalone & Clustered Mesh, Redis Pub/Sub, PgBouncer, Client Provisioning | Dual Topology Diagrams, Invalidation Sequence, Single vs Multi Matrix, Fallback Specs |
+| **18** | [🔄 Easy Switch & State Transfer (Standalone Guide)](./architecture/18_EASY_SWITCH_AND_STATE_TRANSFER_STANDALONE_GUIDE.md) | 1-Click / 1-Command Seamless Scale Down to Standalone Single Node, Zero Data Loss State Transfer | State Extraction Sequence, SHA-256 Snapshot Schema, 5-Phase Traffic Drain Stepper, CLI Integration |
 
 ---
 
@@ -90,7 +90,7 @@ mindmap
 
 ```typescript
 import express from 'express';
-import { orbitox } from '@orbitox/runtime';
+import { orbitox } from '@orbitox-io/runtime';
 
 const app = express();
 
