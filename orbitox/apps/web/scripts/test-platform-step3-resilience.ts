@@ -98,6 +98,13 @@ const step3GrantPrivPem = step3GrantPair.privateKey
 const step3GrantPubPem = step3GrantPair.publicKey
   .export({ type: 'spki', format: 'pem' })
   .toString();
+const step3CertPair = crypto.generateKeyPairSync('ed25519');
+const step3CertKeysJson = JSON.stringify({
+  cert_k1: {
+    privateKey: step3CertPair.privateKey.export({ type: 'pkcs8', format: 'pem' }).toString(),
+    publicKey: step3CertPair.publicKey.export({ type: 'spki', format: 'pem' }).toString(),
+  },
+});
 const step3PublicOrigin = 'https://console.orbitox.test';
 const step3ServerPepper = crypto.randomBytes(32).toString('hex');
 
@@ -107,6 +114,7 @@ function spawnServer(port: number, envOverrides: Record<string, string> = {}): C
     cwd: path.resolve(__dirname, '..'),
     env: {
       ...process.env,
+      ORBITOX_DELETION_CERT_KEYS: process.env.ORBITOX_DELETION_CERT_KEYS || step3CertKeysJson,
       PORT: String(port),
       HOSTNAME: '127.0.0.1',
       NODE_ENV: 'production',

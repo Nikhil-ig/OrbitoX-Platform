@@ -105,6 +105,13 @@ const serverPepper = crypto.randomBytes(32).toString('hex');
 const step4GrantPair = crypto.generateKeyPairSync('ed25519');
 const step4GrantPrivPem = step4GrantPair.privateKey.export({ type: 'pkcs8', format: 'pem' }).toString();
 const step4GrantPubPem = step4GrantPair.publicKey.export({ type: 'spki', format: 'pem' }).toString();
+const step4CertPair = crypto.generateKeyPairSync('ed25519');
+const step4CertKeysJson = JSON.stringify({
+  cert_k1: {
+    privateKey: step4CertPair.privateKey.export({ type: 'pkcs8', format: 'pem' }).toString(),
+    publicKey: step4CertPair.publicKey.export({ type: 'spki', format: 'pem' }).toString(),
+  },
+});
 
 function spawnServer(port: number, envOverrides: Record<string, string> = {}): ChildProcess {
   const standaloneScript = path.resolve(__dirname, '../.next/standalone/apps/web/server.js');
@@ -112,6 +119,7 @@ function spawnServer(port: number, envOverrides: Record<string, string> = {}): C
     cwd: path.resolve(__dirname, '..'),
     env: {
       ...process.env,
+      ORBITOX_DELETION_CERT_KEYS: process.env.ORBITOX_DELETION_CERT_KEYS || step4CertKeysJson,
       PORT: String(port),
       HOSTNAME: '127.0.0.1',
       NODE_ENV: 'production',

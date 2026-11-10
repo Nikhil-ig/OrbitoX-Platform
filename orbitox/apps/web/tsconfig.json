@@ -4,7 +4,8 @@
     "baseUrl": ".",
     "paths": {
       "@/*": ["./*"],
-      "@orbitox/core/control-plane": ["../../packages/core/src/control-plane/index.ts"]
+      "@orbitox/core/control-plane": ["../../packages/core/src/control-plane/index.ts"],
+      "@orbitox/core/s3-client": ["../../packages/core/src/s3-client.ts"]
     }
   },
   "include": ["next-env.d.ts", "**/*.ts", "**/*.tsx", ".next/types/**/*.ts"],

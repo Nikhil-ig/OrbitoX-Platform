@@ -7,6 +7,10 @@ const nextConfig: NextConfig = {
   output: "standalone",
   // The app lives inside a pnpm monorepo, so file tracing must start at the workspace root.
   outputFileTracingRoot: path.join(__dirname, "../../"),
+  serverExternalPackages: [
+    "@aws-sdk/client-s3",
+    "@aws-sdk/s3-request-presigner",
+  ],
   transpilePackages: [
     "@orbitox/ui",
     "@orbitox/sdk",

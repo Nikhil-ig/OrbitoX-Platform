@@ -6,6 +6,7 @@ const PORT = 3680;
 const serverScript = path.resolve(__dirname, '../.next/standalone/apps/web/server.js');
 
 const sweepGrantPair = crypto.generateKeyPairSync('ed25519');
+const sweepCertPair = crypto.generateKeyPairSync('ed25519');
 
 // Throwaway secrets generated at runtime - NEVER printed or logged
 const env: NodeJS.ProcessEnv = {
@@ -13,6 +14,12 @@ const env: NodeJS.ProcessEnv = {
   PORT: String(PORT),
   HOSTNAME: '127.0.0.1',
   NODE_ENV: 'production' as const,
+  ORBITOX_DELETION_CERT_KEYS: JSON.stringify({
+    cert_k1: {
+      privateKey: sweepCertPair.privateKey.export({ type: 'pkcs8', format: 'pem' }).toString(),
+      publicKey: sweepCertPair.publicKey.export({ type: 'spki', format: 'pem' }).toString(),
+    },
+  }),
   ORBITOX_ADMIN_TOKEN: crypto.randomBytes(32).toString('hex'),
   ORBITOX_RUNTIME_TOKEN: crypto.randomBytes(32).toString('hex'),
   ORBITOX_CONTROL_SECRET: crypto.randomBytes(32).toString('hex'),

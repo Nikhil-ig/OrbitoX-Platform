@@ -1,6 +1,5 @@
 import crypto from 'node:crypto';
 import fs from 'node:fs/promises';
-import { createRequire } from 'node:module';
 import os from 'node:os';
 import path from 'node:path';
 
@@ -158,17 +157,15 @@ export class LocalObjectStore implements ObjectStore {
 }
 
 export function createAwsSdkS3Executor(region: string): S3CommandExecutor {
-  // Resolved through @orbitox/core so pnpm isolated node_modules sees @aws-sdk/client-s3.
-  const coreEntry = require.resolve('@orbitox/core');
-  const coreRequire = createRequire(coreEntry);
+  // Resolved through @orbitox/core/s3-client so pnpm isolated node_modules sees @aws-sdk/client-s3 without pulling NestJS.
   const {
     S3Client,
     PutObjectCommand,
     GetObjectCommand,
     DeleteObjectCommand,
     ListObjectsV2Command,
-  } = coreRequire('@aws-sdk/client-s3');
-  const { getSignedUrl } = coreRequire('@aws-sdk/s3-request-presigner');
+    getSignedUrl,
+  } = require('@orbitox/core/s3-client') as typeof import('@orbitox/core/s3-client');
 
   const client = new S3Client({ region });
 
