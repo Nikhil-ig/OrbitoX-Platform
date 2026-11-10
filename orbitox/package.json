@@ -11,7 +11,6 @@
     "smoke": "node scripts/smoke-control-plane.mjs",
     "build": "turbo run build",
     "dev": "turbo run dev",
-    "dev:celebrations": "pnpm --filter celebrations dev",
     "test": "turbo run test",
     "test:integration": "turbo run test:integration",
     "lint": "turbo run lint",
