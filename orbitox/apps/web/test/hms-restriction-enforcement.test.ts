@@ -622,4 +622,27 @@ describe('Phase 6G G-1: HMS Patient Processing Restriction Enforcement (Routes +
       `Allowed admission discharge exception failed: ${await dischargeRes.clone().text()}`,
     );
   });
+
+  it('G-8: fails closed when child write references a patient not visible in current tenant context', async () => {
+    let invisibleErr: any = null;
+    await withTenantTx(runtimePool, tenantId, async (tx) => {
+      try {
+        await tx.query(
+          `INSERT INTO public."HmsLabOrder"(id, "patientId", "orderedById", "testType", status) VALUES ($1, $2, $3, 'CRP', 'ORDERED')`,
+          [`lab_invis_${runSuffix}`, `pat_invisible_other_tenant_${runSuffix}`, ids.doctorId],
+        );
+      } catch (err) {
+        invisibleErr = err;
+      }
+    });
+    assert.ok(invisibleErr, 'Child write with non-visible patient must be refused');
+    assert.equal(
+      invisibleErr.constraint,
+      'HmsPatient_processingStatus_restricted',
+      `Trigger must fail closed before FK check when patient is invisible (got code=${invisibleErr.code}, constraint=${invisibleErr.constraint}, message=${invisibleErr.message})`,
+    );
+    const mapped = mapDbError(invisibleErr);
+    assert.equal(mapped.status, 409);
+    assert.equal(mapped.code, 'PATIENT_PROCESSING_RESTRICTED');
+  });
 });

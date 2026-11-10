@@ -76,10 +76,13 @@ eq   "prefix tenant org/a sees nothing"      "0" "org/a" "SELECT count(*) FROM \
 
 echo "== I2 composite FKs block cross-tenant references (even for superuser)"
 $PSQL_ADMIN -c "INSERT INTO \"HmsAdmission\"(\"tenantId\",id,\"patientId\",\"bedId\",\"attendingStaffId\") VALUES ('$A','x','pat1','bed1','doc1')" >/dev/null 2>&1 || true
-# pat1 exists in both tenants; prove a reference to a B-only id fails from A:
+# pat1/dep1 exist in both tenants; prove a cross-tenant reference fails even for superuser (G-8 trigger fails closed on missing/other-tenant patient, composite FK blocks B-only department):
 $PSQL_ADMIN -c "INSERT INTO \"HmsPatient\"(\"tenantId\",id,mrn,\"nameSealed\",\"nameBlind\") VALUES ('$B','onlyB','MRN-ONLYB','$SEALED','$BLIND')" >/dev/null 2>&1 || true
+$PSQL_ADMIN -c "INSERT INTO \"HmsDepartment\"(\"tenantId\",id,name) VALUES ('$B','onlyB_dep','B Only Dept')" >/dev/null 2>&1 || true
 out=$($PSQL_ADMIN -c "INSERT INTO \"HmsInvoice\"(\"tenantId\",id,\"patientId\",\"totalMinor\") VALUES ('$A','invX','onlyB',100)" 2>&1 || true)
-if echo "$out" | grep -q "foreign key"; then echo "PASS  A invoice cannot point at B-only patient"; pass=$((pass+1)); else echo "FAIL  cross-tenant FK -> $out"; fail=$((fail+1)); fi
+if echo "$out" | grep -qE "foreign key|clinical writes are blocked"; then echo "PASS  A invoice cannot point at B-only patient"; pass=$((pass+1)); else echo "FAIL  cross-tenant guard -> $out"; fail=$((fail+1)); fi
+out_fk=$($PSQL_ADMIN -c "INSERT INTO \"HmsWard\"(\"tenantId\",id,\"departmentId\",name) VALUES ('$A','wFK','onlyB_dep','Cross Tenant Ward')" 2>&1 || true)
+if echo "$out_fk" | grep -q "foreign key"; then echo "PASS  A ward cannot point at B-only department (composite FK)"; pass=$((pass+1)); else echo "FAIL  cross-tenant composite FK -> $out_fk"; fail=$((fail+1)); fi
 $PSQL_ADMIN -c "DELETE FROM \"HmsAdmission\" WHERE id='x'" >/dev/null 2>&1 || true
 
 echo "== I8 no deletes for runtime"
