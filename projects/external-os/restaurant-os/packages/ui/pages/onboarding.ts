@@ -28,49 +28,49 @@ export function renderOnboardingWorkspace(
     link: string;
     linkLabel: string;
   }> = [
-    {
-      key: 'CLAIM_INVITE',
-      title: 'Claim Owner Invite & License',
-      description: 'Cryptographic ownership handshake and tenant licensing established.',
-      link: '/white-label',
-      linkLabel: 'View Tenant Status',
-    },
-    {
-      key: 'SET_PIN',
-      title: 'Configure Staff Security PINs',
-      description: 'Set master 4-digit supervisor PIN and staff access codes.',
-      link: '/staff',
-      linkLabel: 'Manage Staff & PINs',
-    },
-    {
-      key: 'BRANDING_CONFIGURED',
-      title: 'Brand Theme, Logo & Visuals',
-      description: 'Upload high-res vector logo, accent palette, and custom favicon.',
-      link: '/white-label',
-      linkLabel: 'White-Label Branding',
-    },
-    {
-      key: 'MENU_CUSTOMIZED',
-      title: 'Menu Catalog & Pricing',
-      description: 'Customize dishes, modifier groups, and kitchen preparation stations.',
-      link: '/menu',
-      linkLabel: 'Open Menu Catalog',
-    },
-    {
-      key: 'TABLES_REVIEWED',
-      title: 'Tables Fleet & QR Stand Placards',
-      description: 'Verify spatial table layout, seat capacities, and print diner QR stands.',
-      link: '/operations/tables',
-      linkLabel: 'View Tables Fleet',
-    },
-    {
-      key: 'PAYMENTS_CONNECTED',
-      title: 'Razorpay Gateway & Statutory GST',
-      description: 'Configure encrypted live API keys and webhook for automated composite GST invoicing.',
-      link: '/white-label',
-      linkLabel: 'Connect Razorpay',
-    },
-  ];
+      {
+        key: 'CLAIM_INVITE',
+        title: 'Claim Owner Invite & License',
+        description: 'Cryptographic ownership handshake and tenant licensing established.',
+        link: '/white-label',
+        linkLabel: 'View Tenant Status',
+      },
+      {
+        key: 'SET_PIN',
+        title: 'Configure Staff Security PINs',
+        description: 'Set master 4-digit supervisor PIN and staff access codes.',
+        link: '/staff',
+        linkLabel: 'Manage Staff & PINs',
+      },
+      {
+        key: 'BRANDING_CONFIGURED',
+        title: 'Brand Theme, Logo & Visuals',
+        description: 'Upload high-res vector logo, accent palette, and custom favicon.',
+        link: '/white-label',
+        linkLabel: 'White-Label Branding',
+      },
+      {
+        key: 'MENU_CUSTOMIZED',
+        title: 'Menu Catalog & Pricing',
+        description: 'Customize dishes, modifier groups, and kitchen preparation stations.',
+        link: '/menu',
+        linkLabel: 'Open Menu Catalog',
+      },
+      {
+        key: 'TABLES_REVIEWED',
+        title: 'Tables Fleet & QR Stand Placards',
+        description: 'Verify spatial table layout, seat capacities, and print diner QR stands.',
+        link: '/operations/tables',
+        linkLabel: 'View Tables Fleet',
+      },
+      {
+        key: 'PAYMENTS_CONNECTED',
+        title: 'Razorpay Gateway & Statutory GST',
+        description: 'Configure encrypted live API keys and webhook for automated composite GST invoicing.',
+        link: '/white-label',
+        linkLabel: 'Connect Razorpay',
+      },
+    ];
 
   const percent = state?.percentComplete ?? 0;
   const isFullyOnboarded = state?.isFullyOnboarded ?? false;

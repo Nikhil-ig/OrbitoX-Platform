@@ -1749,13 +1749,13 @@ export class PostgresRestaurantRepository implements RestaurantRepository {
       const initialMessages = Array.isArray(ticket.messages) && ticket.messages.length > 0
         ? ticket.messages
         : ticket.initialMessage
-        ? [{
+          ? [{
             id: `msg_${Date.now()}`,
             sender: ticket.staffName || 'Staff',
             text: ticket.initialMessage,
             timestamp: new Date().toISOString(),
           }]
-        : [];
+          : [];
 
       await tx.supportTicket.upsert({
         where: { id: ticket.id },
@@ -2888,11 +2888,11 @@ export class JsonRestaurantRepository implements RestaurantRepository {
   async getInvoiceByOrderId() { return null; }
   async getInvoiceByNumber() { return null; }
   async getNextInvoiceSequence() { return 1; }
-  async saveInvoice() {}
+  async saveInvoice() { }
 
   async getPaymentSessionById() { return null; }
   async getPaymentSessionByOrderId() { return null; }
-  async savePaymentSession() {}
+  async savePaymentSession() { }
 
   async getResolvedMenuForBranch(branchId: string, includeArchived?: boolean) { return this.store.getResolvedMenuForBranch(branchId, includeArchived); }
   async createMenuItem(item: any) { return this.store.createMenuItem(item); }

@@ -21,23 +21,23 @@ import { resolveTenantDisplayName } from '../domain/tenancy';
 export interface ShellOptions {
   title?: string;
   activeNav:
-    | 'overview'
-    | 'floor'
-    | 'tables'
-    | 'orders'
-    | 'kitchen'
-    | 'menu'
-    | 'guests'
-    | 'reports'
-    | 'locations'
-    | 'floors'
-    | 'settings'
-    | 'marketplace'
-    | 'studio'
-    | 'whitelabel'
-    | 'staff'
-    | 'support'
-    | 'onboarding';
+  | 'overview'
+  | 'floor'
+  | 'tables'
+  | 'orders'
+  | 'kitchen'
+  | 'menu'
+  | 'guests'
+  | 'reports'
+  | 'locations'
+  | 'floors'
+  | 'settings'
+  | 'marketplace'
+  | 'studio'
+  | 'whitelabel'
+  | 'staff'
+  | 'support'
+  | 'onboarding';
   restaurantName?: string;
   tenantName?: string;
   currentBranchId?: string;
@@ -563,22 +563,22 @@ export function renderShell(contentHtml: string, options: ShellOptions): string 
 
         <nav class="nav-list">
           ${navSections
-            .map(
-              (sec) => `
+      .map(
+        (sec) => `
             <div style="font-size: 10px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: var(--color-stone); padding: 10px 10px 4px 10px; opacity: 0.7;">
               ${sec.title}
             </div>
             ${sec.items
-              .map(
-                (item) => `
+            .map(
+              (item) => `
               <a href="${item.href}" class="nav-item ${activeNav === item.key ? 'active' : ''}">
                 <span class="nav-icon">${item.icon}</span>
                 <span>${item.label}</span>
               </a>`
-              )
-              .join('')}`
             )
-            .join('')}
+            .join('')}`
+      )
+      .join('')}
         </nav>
       </div>
 
@@ -622,11 +622,11 @@ export function renderShell(contentHtml: string, options: ShellOptions): string 
             <div id="branch-menu" class="context-dropdown">
               <div class="dropdown-header">Select Location (${branches.length})</div>
               ${branches
-                .map((b) => {
-                  const bFloors = allFloors.filter((f) => f.branchId === b.id);
-                  const defaultFId = bFloors[0] ? bFloors[0].id : '';
-                  const targetUrl = windowTargetQuery({ branch: b.id, floor: defaultFId, service: serviceShift });
-                  return `
+      .map((b) => {
+        const bFloors = allFloors.filter((f) => f.branchId === b.id);
+        const defaultFId = bFloors[0] ? bFloors[0].id : '';
+        const targetUrl = windowTargetQuery({ branch: b.id, floor: defaultFId, service: serviceShift });
+        return `
                 <a href="${targetUrl}" class="dropdown-item ${b.id === currentBranch.id ? 'active' : ''}">
                   <div>
                     <strong>${b.name}</strong>
@@ -636,8 +636,8 @@ export function renderShell(contentHtml: string, options: ShellOptions): string 
                     ${b.status === 'OPERATIONAL' ? '● Live' : '○ Setup'}
                   </span>
                 </a>`;
-                })
-                .join('')}
+      })
+      .join('')}
               <div class="dropdown-divider"></div>
               <a href="/operations/locations?action=new${contextQuery}" class="dropdown-action">
                 <span style="display:inline-flex;align-items:center;">${icon('plus', { size: 12 })}</span> <span>Add New Branch...</span>
@@ -657,9 +657,9 @@ export function renderShell(contentHtml: string, options: ShellOptions): string 
             <div id="floor-menu" class="context-dropdown">
               <div class="dropdown-header">${currentBranch.name} Floors (${branchFloors.length})</div>
               ${branchFloors
-                .map((f) => {
-                  const targetUrl = windowTargetQuery({ branch: currentBranch.id, floor: f.id, service: serviceShift });
-                  return `
+      .map((f) => {
+        const targetUrl = windowTargetQuery({ branch: currentBranch.id, floor: f.id, service: serviceShift });
+        return `
                 <a href="${targetUrl}" class="dropdown-item ${f.id === currentFloor.id ? 'active' : ''}">
                   <div>
                     <strong>${f.name}</strong>
@@ -667,8 +667,8 @@ export function renderShell(contentHtml: string, options: ShellOptions): string 
                   </div>
                   <span style="font-size: 11px; font-weight: 700; color: var(--color-linen);">${f.capacity}p</span>
                 </a>`;
-                })
-                .join('')}
+      })
+      .join('')}
               <div class="dropdown-divider"></div>
               <a href="/operations/floors?action=new${contextQuery}" class="dropdown-action">
                 <span style="display:inline-flex;align-items:center;">${icon('plus', { size: 12 })}</span> <span>Add Service Area...</span>
@@ -688,15 +688,15 @@ export function renderShell(contentHtml: string, options: ShellOptions): string 
             <div id="service-menu" class="context-dropdown">
               <div class="dropdown-header">Service Shifts</div>
               ${['Dinner Service', 'Lunch Service', 'Late Night', 'Private Event']
-                .map((shift) => {
-                  const targetUrl = windowTargetQuery({ branch: currentBranch.id, floor: currentFloor.id, service: shift });
-                  return `
+      .map((shift) => {
+        const targetUrl = windowTargetQuery({ branch: currentBranch.id, floor: currentFloor.id, service: shift });
+        return `
                 <a href="${targetUrl}" class="dropdown-item ${shift === serviceShift ? 'active' : ''}">
                   <span>${shift}</span>
                   ${shift === serviceShift ? `<span style="color:var(--color-copper);display:inline-flex;align-items:center;">${icon('check', { size: 12 })}</span>` : ''}
                 </a>`;
-                })
-                .join('')}
+      })
+      .join('')}
             </div>
           </div>
         </div>

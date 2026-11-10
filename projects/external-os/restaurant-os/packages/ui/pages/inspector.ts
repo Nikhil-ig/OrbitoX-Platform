@@ -150,14 +150,13 @@ export function renderDeveloperInspector(
         <div>
           <div style="color: var(--color-stone); font-weight: 700;">Recent Events ────────────────</div>
           <div style="display: flex; flex-direction: column; gap: 2px;">
-            ${
-              events.slice(0, 6).map((e) => `
+            ${events.slice(0, 6).map((e) => `
                 <div style="display: flex; justify-content: space-between;">
                   <span style="color: var(--color-stone);">${new Date(e.timestamp).toLocaleTimeString()}</span>
                   <strong style="color: var(--color-linen);">${e.type}</strong>
                 </div>
               `).join('') || '<div style="color: var(--color-muted);">No events recorded</div>'
-            }
+    }
           </div>
         </div>
 
@@ -244,12 +243,11 @@ export function renderDeveloperInspector(
         </div>
 
         <div id="events-stream-list" style="flex: 1; overflow-y: auto; max-height: 380px; display: flex; flex-direction: column; gap: 6px; font-family: var(--font-mono); font-size: 11px;">
-          ${
-            events.length === 0
-              ? `<div style="padding: 20px; text-align: center; color: var(--color-stone);">No domain events recorded yet.</div>`
-              : events
-                  .map(
-                    (e) => `
+          ${events.length === 0
+      ? `<div style="padding: 20px; text-align: center; color: var(--color-stone);">No domain events recorded yet.</div>`
+      : events
+        .map(
+          (e) => `
             <div style="background: #0F1215; border: 1px solid var(--border-subtle); border-radius: 6px; padding: 8px 10px; display: flex; justify-content: space-between; align-items: center;">
               <div>
                 <span style="color: var(--color-copper); font-weight: 800;">#${e.sequence}</span>
@@ -260,9 +258,9 @@ export function renderDeveloperInspector(
                 ${new Date(e.timestamp).toLocaleTimeString()}
               </div>
             </div>`
-                  )
-                  .join('')
-          }
+        )
+        .join('')
+    }
         </div>
       </div>
     </div>
