@@ -1025,7 +1025,9 @@ jobs:
 
       - name: Run Phase 6G Data Rights Integration Suite (G1-G5)
         working-directory: orbitox
-        run: pnpm --filter web test:data-rights-6g
+        run: |
+          (cd ../projects/external-os/restaurant-os && pnpm exec tsx --test test/data-rights-model-coverage.test.ts)
+          pnpm --filter web test:data-rights-6g
         env:
           NODE_ENV: test
           DATABASE_URL: postgresql://postgres:postgrespassword@127.0.0.1:5432/orbitox_phase2

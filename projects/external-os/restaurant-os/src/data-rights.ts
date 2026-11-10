@@ -24,30 +24,473 @@ export interface RestaurantPrincipalRef {
   name?: string;
 }
 
-const TENANT_CASCADE_TABLES = [
-  'Branch',
-  'Floor',
-  'TableFloor',
-  'MenuCategory',
-  'MenuItem',
-  'BranchMenuOverride',
-  'RestaurantOrder',
-  'KitchenTask',
-  'ServiceRequest',
-  'DiningSession',
-  'Guest',
-  'StaffMember',
-  'StaffTokenRevocation',
-  'TenantBrandConfig',
-  'SupportTicket',
-  'DomainEvent',
-  'IdempotencyRecord',
-  'Invoice',
-  'RazorpayPaymentSession',
-  'OwnerInvite',
-  'TenantDomain',
-  'TenantPaymentConfig',
+export interface RestaurantModelDataRightsSpec {
+  model: string;
+  delegate?: string;
+  tenantScoped: boolean;
+  cascadeDeleted: boolean;
+  exportPolicy: 'INCLUDE' | 'EXCLUDE';
+  exclusionReason?: string;
+  exportColumns?: readonly string[];
+  omittedColumns?: readonly string[];
+  orderBy?: Record<string, 'asc' | 'desc'>;
+}
+
+/**
+ * Single source of truth for RestaurantOS data-rights export AND erasure.
+ * Every model in prisma/schema.prisma MUST appear here; automated tests assert
+ * complete schema coverage and non-empty reviewed exclusion reasons.
+ */
+export const RESTAURANT_MODEL_DATA_RIGHTS: readonly RestaurantModelDataRightsSpec[] = [
+  {
+    model: 'Tenant',
+    delegate: 'tenant',
+    tenantScoped: false,
+    cascadeDeleted: false,
+    exportPolicy: 'INCLUDE',
+    exportColumns: [
+      'id',
+      'name',
+      'slug',
+      'status',
+      'planId',
+      'orbitoxProjectId',
+      'currency',
+      'timezone',
+      'gstin',
+      'retentionUntil',
+      'onboardingState',
+      'entitlementRevision',
+      'createdAt',
+      'updatedAt',
+    ],
+    omittedColumns: ['lastLifecycleKey'],
+    orderBy: { id: 'asc' },
+  },
+  {
+    model: 'Branch',
+    delegate: 'branch',
+    tenantScoped: true,
+    cascadeDeleted: true,
+    exportPolicy: 'INCLUDE',
+    exportColumns: [
+      'id',
+      'tenantId',
+      'name',
+      'code',
+      'address',
+      'city',
+      'timezone',
+      'currency',
+      'status',
+      'serviceAreasCount',
+      'activeTablesCount',
+      'openingHours',
+      'phone',
+      'email',
+      'createdAt',
+      'updatedAt',
+    ],
+  },
+  {
+    model: 'Floor',
+    delegate: 'floor',
+    tenantScoped: true,
+    cascadeDeleted: true,
+    exportPolicy: 'INCLUDE',
+    exportColumns: [
+      'id',
+      'tenantId',
+      'branchId',
+      'name',
+      'type',
+      'capacity',
+      'activeLayout',
+      'status',
+      'tableIds',
+      'serviceLayouts',
+      'createdAt',
+      'updatedAt',
+    ],
+  },
+  {
+    model: 'TableFloor',
+    delegate: 'tableFloor',
+    tenantScoped: true,
+    cascadeDeleted: true,
+    exportPolicy: 'INCLUDE',
+    exportColumns: [
+      'id',
+      'tenantId',
+      'numericId',
+      'number',
+      'capacity',
+      'minimumSeats',
+      'status',
+      'x',
+      'y',
+      'width',
+      'height',
+      'rotation',
+      'shape',
+      'section',
+      'floorId',
+      'branchId',
+      'locator',
+      'seats',
+      'activeSessionId',
+      'activeBillMinor',
+      'serverName',
+      'turnTimeMinutes',
+      'mergedWithTableIds',
+      'mergedPartyLabel',
+      'createdAt',
+      'updatedAt',
+    ],
+  },
+  {
+    model: 'MenuCategory',
+    delegate: 'menuCategory',
+    tenantScoped: true,
+    cascadeDeleted: true,
+    exportPolicy: 'INCLUDE',
+    exportColumns: [
+      'id',
+      'tenantId',
+      'name',
+      'description',
+      'displayOrder',
+      'isArchived',
+      'color',
+      'createdAt',
+      'updatedAt',
+    ],
+  },
+  {
+    model: 'MenuItem',
+    delegate: 'menuItem',
+    tenantScoped: true,
+    cascadeDeleted: true,
+    exportPolicy: 'INCLUDE',
+    exportColumns: [
+      'id',
+      'tenantId',
+      'name',
+      'description',
+      'basePriceMinor',
+      'formattedPrice',
+      'category',
+      'categoryId',
+      'station',
+      'prepDurationMinutes',
+      'allergens',
+      'dietaryFlags',
+      'story',
+      'pairingSuggestions',
+      'isPopular',
+      'isSignature',
+      'isArchived',
+      'modifierGroups',
+      'imageUrl',
+      'hsnCode',
+      'createdAt',
+      'updatedAt',
+    ],
+  },
+  {
+    model: 'BranchMenuOverride',
+    delegate: 'branchMenuOverride',
+    tenantScoped: true,
+    cascadeDeleted: true,
+    exportPolicy: 'INCLUDE',
+    exportColumns: [
+      'id',
+      'tenantId',
+      'itemId',
+      'branchId',
+      'isAvailable',
+      'priceOverrideMinor',
+      'formattedPriceOverride',
+      'customPrepMinutes',
+      'createdAt',
+      'updatedAt',
+    ],
+  },
+  {
+    model: 'RestaurantOrder',
+    delegate: 'restaurantOrder',
+    tenantScoped: true,
+    cascadeDeleted: true,
+    exportPolicy: 'INCLUDE',
+    exportColumns: [
+      'id',
+      'tenantId',
+      'tableNumber',
+      'sessionId',
+      'branchId',
+      'guestName',
+      'status',
+      'items',
+      'subtotalMinor',
+      'taxMinor',
+      'totalMinor',
+      'currency',
+      'customer',
+      'idempotencyKey',
+      'paymentStatus',
+      'paymentSessionId',
+      'version',
+      'createdAt',
+      'updatedAt',
+    ],
+    omittedColumns: ['orderToken'],
+  },
+  {
+    model: 'KitchenTask',
+    delegate: 'kitchenTask',
+    tenantScoped: true,
+    cascadeDeleted: true,
+    exportPolicy: 'INCLUDE',
+    exportColumns: [
+      'id',
+      'tenantId',
+      'orderId',
+      'tableNumber',
+      'branchId',
+      'seatNumber',
+      'guestName',
+      'itemName',
+      'quantity',
+      'station',
+      'status',
+      'fireAt',
+      'targetServeAt',
+      'elapsedMinutes',
+      'slaMinutes',
+      'modifiers',
+      'course',
+      'fulfilledItemCount',
+      'version',
+      'createdAt',
+      'updatedAt',
+    ],
+  },
+  {
+    model: 'ServiceRequest',
+    delegate: 'serviceRequest',
+    tenantScoped: true,
+    cascadeDeleted: true,
+    exportPolicy: 'INCLUDE',
+    exportColumns: ['id', 'tenantId', 'tableNumber', 'branchId', 'floorId', 'type', 'status', 'requestedAt', 'note'],
+  },
+  {
+    model: 'DiningSession',
+    delegate: 'diningSession',
+    tenantScoped: true,
+    cascadeDeleted: true,
+    exportPolicy: 'INCLUDE',
+    exportColumns: [
+      'id',
+      'tenantId',
+      'tableNumber',
+      'branchId',
+      'floorId',
+      'hostName',
+      'status',
+      'openedAt',
+      'expiresAt',
+      'closedAt',
+      'settlement',
+    ],
+    omittedColumns: ['guestCapabilityTokens'],
+  },
+  {
+    model: 'Guest',
+    delegate: 'guest',
+    tenantScoped: true,
+    cascadeDeleted: true,
+    exportPolicy: 'INCLUDE',
+    exportColumns: [
+      'id',
+      'tenantId',
+      'name',
+      'tableNumber',
+      'seatId',
+      'seatLabel',
+      'role',
+      'joinTime',
+      'preferences',
+      'orderIds',
+      'totalSpendMinor',
+    ],
+  },
+  {
+    model: 'StaffMember',
+    delegate: 'staffMember',
+    tenantScoped: true,
+    cascadeDeleted: true,
+    exportPolicy: 'INCLUDE',
+    exportColumns: ['id', 'tenantId', 'name', 'role', 'branchId', 'station', 'status', 'permissions', 'createdAt', 'updatedAt'],
+    omittedColumns: ['salt', 'pinHash'],
+  },
+  {
+    model: 'StaffTokenRevocation',
+    delegate: 'staffTokenRevocation',
+    tenantScoped: true,
+    cascadeDeleted: true,
+    exportPolicy: 'INCLUDE',
+    exportColumns: ['id', 'tenantId', 'tokenJti', 'revokedAt', 'reason'],
+  },
+  {
+    model: 'TenantBrandConfig',
+    delegate: 'tenantBrandConfig',
+    tenantScoped: true,
+    cascadeDeleted: true,
+    exportPolicy: 'INCLUDE',
+    exportColumns: ['id', 'tenantId', 'config', 'createdAt', 'updatedAt'],
+  },
+  {
+    model: 'SupportTicket',
+    delegate: 'supportTicket',
+    tenantScoped: true,
+    cascadeDeleted: true,
+    exportPolicy: 'INCLUDE',
+    exportColumns: ['id', 'tenantId', 'branchId', 'title', 'status', 'priority', 'category', 'messages', 'createdAt', 'updatedAt'],
+  },
+  {
+    model: 'DomainEvent',
+    delegate: 'domainEvent',
+    tenantScoped: true,
+    cascadeDeleted: true,
+    exportPolicy: 'INCLUDE',
+    exportColumns: ['id', 'tenantId', 'sequence', 'type', 'timestamp', 'producer', 'branchId', 'floorId', 'tableNumber', 'payload'],
+  },
+  {
+    model: 'IdempotencyRecord',
+    delegate: 'idempotencyRecord',
+    tenantScoped: true,
+    cascadeDeleted: true,
+    exportPolicy: 'INCLUDE',
+    exportColumns: ['key', 'tenantId', 'result', 'createdAt', 'expiresAt'],
+    orderBy: { key: 'asc' },
+  },
+  {
+    model: 'Invoice',
+    delegate: 'invoice',
+    tenantScoped: true,
+    cascadeDeleted: true,
+    exportPolicy: 'INCLUDE',
+    exportColumns: [
+      'id',
+      'tenantId',
+      'orderId',
+      'invoiceNumber',
+      'fiscalYear',
+      'sequenceNumber',
+      'gstin',
+      'subtotalMinor',
+      'taxMinor',
+      'totalMinor',
+      'currency',
+      'itemBreakdown',
+      'taxBreakdown',
+      'customer',
+      'createdAt',
+    ],
+  },
+  {
+    model: 'RazorpayPaymentSession',
+    delegate: 'razorpayPaymentSession',
+    tenantScoped: true,
+    cascadeDeleted: true,
+    exportPolicy: 'INCLUDE',
+    exportColumns: [
+      'id',
+      'tenantId',
+      'orderId',
+      'tableNumber',
+      'amountMinor',
+      'currency',
+      'status',
+      'razorpayPaymentId',
+      'createdAt',
+      'updatedAt',
+    ],
+    omittedColumns: ['razorpaySignature'],
+  },
+  {
+    model: 'OwnerInvite',
+    delegate: 'ownerInvite',
+    tenantScoped: true,
+    cascadeDeleted: true,
+    exportPolicy: 'INCLUDE',
+    exportColumns: ['id', 'tenantId', 'staffMemberId', 'expiresAt', 'usedAt', 'createdAt'],
+    omittedColumns: ['tokenHash'],
+  },
+  {
+    model: 'TenantDomain',
+    delegate: 'tenantDomain',
+    tenantScoped: true,
+    cascadeDeleted: true,
+    exportPolicy: 'INCLUDE',
+    exportColumns: [
+      'id',
+      'tenantId',
+      'domain',
+      'verificationStatus',
+      'verifiedAt',
+      'sslStatus',
+      'lastCheckedAt',
+      'cnameTarget',
+      'createdAt',
+      'updatedAt',
+    ],
+    omittedColumns: ['verificationToken'],
+  },
+  {
+    model: 'TenantPaymentConfig',
+    tenantScoped: true,
+    cascadeDeleted: true,
+    exportPolicy: 'EXCLUDE',
+    exclusionReason:
+      'Contains AES-256-GCM encrypted payment gateway keys and webhook secrets; non-secret tax metadata (gstin) is exported via Tenant and Invoice.',
+  },
+  {
+    model: 'PluginGrantRevision',
+    delegate: 'pluginGrantRevision',
+    tenantScoped: true,
+    cascadeDeleted: false,
+    exportPolicy: 'INCLUDE',
+    exportColumns: ['tenantId', 'pluginId', 'highestRevision', 'updatedAt'],
+    orderBy: { pluginId: 'asc' },
+  },
+  {
+    model: 'BridgeNonce',
+    tenantScoped: false,
+    cascadeDeleted: false,
+    exportPolicy: 'EXCLUDE',
+    exclusionReason: 'Ephemeral platform bridge replay-protection nonces without tenantId or personal data.',
+  },
 ] as const;
+
+export const TENANT_CASCADE_TABLES = RESTAURANT_MODEL_DATA_RIGHTS.filter((m) => m.cascadeDeleted).map(
+  (m) => m.model,
+);
+
+export const RESTAURANT_NON_CASCADE_TENANT_TABLES = RESTAURANT_MODEL_DATA_RIGHTS.filter(
+  (m) => m.tenantScoped && !m.cascadeDeleted,
+).map((m) => m.model);
+
+export const RESTAURANT_EXPORTED_MODELS = RESTAURANT_MODEL_DATA_RIGHTS.filter(
+  (m) => m.exportPolicy === 'INCLUDE',
+).map((m) => m.model);
+
+export const RESTAURANT_REVIEWED_MODEL_EXCLUSIONS: Record<string, string> = Object.fromEntries(
+  RESTAURANT_MODEL_DATA_RIGHTS.filter((m) => m.exportPolicy === 'EXCLUDE' && m.exclusionReason).map((m) => [
+    m.model,
+    m.exclusionReason!,
+  ]),
+);
 
 function resolveAllowedCaller(scopes: string[] | undefined): boolean {
   if (!Array.isArray(scopes)) return false;
@@ -182,88 +625,27 @@ export async function exportRestaurantTenantData(
   const chunks = await withTenantRlsTransaction(prisma, tenantId, async (tx) => {
     const result: Array<{ table: string; columns: string[]; rows: Array<Record<string, unknown>> }> = [];
 
-    const tenantRow = await tx.tenant.findUnique({
-      where: { id: tenantId },
-      select: {
-        id: true,
-        name: true,
-        slug: true,
-        status: true,
-        planId: true,
-        orbitoxProjectId: true,
-        currency: true,
-        timezone: true,
-        gstin: true,
-        createdAt: true,
-        updatedAt: true,
-      },
-    });
-    if (tenantRow) {
+    for (const spec of RESTAURANT_MODEL_DATA_RIGHTS) {
+      if (spec.exportPolicy !== 'INCLUDE') continue;
+      if (!spec.delegate || !spec.exportColumns) {
+        throw new Error(`RestaurantOS data-rights export spec missing delegate/exportColumns for ${spec.model}`);
+      }
+      const client = (tx as Record<string, any>)[spec.delegate];
+      if (!client?.findMany) {
+        throw new Error(`Prisma delegate "${spec.delegate}" missing for model "${spec.model}"`);
+      }
+      const select = Object.fromEntries(spec.exportColumns.map((col) => [col, true]));
+      const rows = await client.findMany({
+        where: spec.model === 'Tenant' ? { id: tenantId } : { tenantId },
+        orderBy: spec.orderBy ?? { id: 'asc' },
+        select,
+      });
       result.push({
-        table: 'Tenant',
-        columns: Object.keys(tenantRow),
-        rows: normalizeRows([tenantRow as unknown as Record<string, unknown>]),
+        table: spec.model,
+        columns: [...spec.exportColumns],
+        rows: normalizeRows(rows as Array<Record<string, unknown>>),
       });
     }
-
-    const pushRows = (table: string, cols: string[], rows: Array<Record<string, unknown>>) => {
-      result.push({ table, columns: cols, rows: normalizeRows(rows) });
-    };
-
-    const branches = await tx.branch.findMany({ where: { tenantId }, orderBy: { id: 'asc' } });
-    pushRows(
-      'Branch',
-      ['id', 'tenantId', 'name', 'code', 'address', 'city', 'timezone', 'currency', 'status', 'phone', 'email', 'createdAt', 'updatedAt'],
-      branches as any,
-    );
-
-    const floors = await tx.floor.findMany({ where: { tenantId }, orderBy: { id: 'asc' } });
-    pushRows('Floor', ['id', 'tenantId', 'branchId', 'name', 'type', 'capacity', 'status', 'createdAt'], floors as any);
-
-    const tables = await tx.tableFloor.findMany({ where: { tenantId }, orderBy: { id: 'asc' } });
-    pushRows('TableFloor', ['id', 'tenantId', 'number', 'capacity', 'status', 'floorId', 'branchId', 'locator', 'createdAt'], tables as any);
-
-    const categories = await tx.menuCategory.findMany({ where: { tenantId }, orderBy: { id: 'asc' } });
-    pushRows('MenuCategory', ['id', 'tenantId', 'name', 'description', 'displayOrder', 'isArchived'], categories as any);
-
-    const menuItems = await tx.menuItem.findMany({ where: { tenantId }, orderBy: { id: 'asc' } });
-    pushRows('MenuItem', ['id', 'tenantId', 'name', 'description', 'basePriceMinor', 'category', 'station', 'isArchived'], menuItems as any);
-
-    const guests = await tx.guest.findMany({ where: { tenantId }, orderBy: { id: 'asc' } });
-    pushRows('Guest', ['id', 'tenantId', 'name', 'tableNumber', 'role', 'joinTime', 'preferences', 'orderIds', 'totalSpendMinor'], guests as any);
-
-    const staff = await tx.staffMember.findMany({
-      where: { tenantId },
-      orderBy: { id: 'asc' },
-      select: {
-        id: true,
-        tenantId: true,
-        name: true,
-        role: true,
-        branchId: true,
-        station: true,
-        status: true,
-        createdAt: true,
-        updatedAt: true,
-      },
-    });
-    pushRows('StaffMember', ['id', 'tenantId', 'name', 'role', 'branchId', 'station', 'status', 'createdAt', 'updatedAt'], staff as any);
-
-    const orders = await tx.restaurantOrder.findMany({ where: { tenantId }, orderBy: { id: 'asc' } });
-    pushRows('RestaurantOrder', ['id', 'tenantId', 'tableNumber', 'sessionId', 'branchId', 'guestName', 'status', 'items', 'subtotalMinor', 'taxMinor', 'totalMinor', 'currency', 'customer', 'paymentStatus', 'createdAt'], orders as any);
-
-    const invoices = await tx.invoice.findMany({ where: { tenantId }, orderBy: { id: 'asc' } });
-    pushRows('Invoice', ['id', 'tenantId', 'orderId', 'invoiceNumber', 'fiscalYear', 'gstin', 'subtotalMinor', 'taxMinor', 'totalMinor', 'currency', 'customer', 'createdAt'], invoices as any);
-
-    const tickets = await tx.supportTicket.findMany({ where: { tenantId }, orderBy: { id: 'asc' } });
-    pushRows('SupportTicket', ['id', 'tenantId', 'branchId', 'title', 'status', 'priority', 'category', 'messages', 'createdAt'], tickets as any);
-
-    const domains = await tx.tenantDomain.findMany({
-      where: { tenantId },
-      orderBy: { id: 'asc' },
-      select: { id: true, tenantId: true, domain: true, verificationStatus: true, sslStatus: true, verifiedAt: true, createdAt: true },
-    });
-    pushRows('TenantDomain', ['id', 'tenantId', 'domain', 'verificationStatus', 'sslStatus', 'verifiedAt', 'createdAt'], domains as any);
 
     return result;
   });
@@ -337,16 +719,17 @@ export async function eraseRestaurantTenantData(
       );
       counts[table] = Number(res[0]?.cnt ?? 0);
     }
-    const grantRevRes: Array<{ cnt: number }> = await tx.$queryRawUnsafe(
-      `SELECT count(*)::int AS cnt FROM public."PluginGrantRevision" WHERE "tenantId" = $1`,
-      tenantId,
-    );
-    counts.PluginGrantRevision = Number(grantRevRes[0]?.cnt ?? 0);
-
-    await tx.$executeRawUnsafe(
-      `DELETE FROM public."PluginGrantRevision" WHERE "tenantId" = $1`,
-      tenantId,
-    );
+    for (const table of RESTAURANT_NON_CASCADE_TENANT_TABLES) {
+      const nonCascadeRes: Array<{ cnt: number }> = await tx.$queryRawUnsafe(
+        `SELECT count(*)::int AS cnt FROM public."${table}" WHERE "tenantId" = $1`,
+        tenantId,
+      );
+      counts[table] = Number(nonCascadeRes[0]?.cnt ?? 0);
+      await tx.$executeRawUnsafe(
+        `DELETE FROM public."${table}" WHERE "tenantId" = $1`,
+        tenantId,
+      );
+    }
     const tenantDel = await tx.tenant.deleteMany({ where: { id: tenantId } });
     counts.Tenant = tenantDel.count;
     return counts;

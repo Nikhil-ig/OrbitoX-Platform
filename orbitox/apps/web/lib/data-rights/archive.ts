@@ -259,6 +259,66 @@ export function serializeRowsToJson(rows: ReadonlyArray<Record<string, unknown>>
   return Buffer.from(`${JSON.stringify(rows, null, 2)}\n`, 'utf8');
 }
 
+export const FORBIDDEN_EXPORT_COLUMNS = [
+  'passwordHash',
+  'pinHash',
+  'salt',
+  'mfaTotpSealed',
+  'mfaTotpPendingSealed',
+  'lastTotpStep',
+  'tokenHash',
+  'csrfTokenHash',
+  'sessionToken',
+  'sessionTokenHash',
+  'authVerifier',
+  'secretFingerprint',
+  'verifierPepperId',
+  'encryptedKeyId',
+  'encryptedKeySecret',
+  'encryptedWebhookSecret',
+  'verificationToken',
+  'guestCapabilityTokens',
+  'orderToken',
+  'razorpaySignature',
+  'rawSecret',
+  'privateKey',
+] as const;
+
+const FORBIDDEN_EXPORT_COLUMN_SET = new Set(FORBIDDEN_EXPORT_COLUMNS.map((c) => c.toLowerCase()));
+
+function scanObjectForForbiddenExportKeys(table: string, value: unknown): void {
+  if (!value || typeof value !== 'object') return;
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      scanObjectForForbiddenExportKeys(table, item);
+    }
+    return;
+  }
+  for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
+    if (FORBIDDEN_EXPORT_COLUMN_SET.has(k.toLowerCase())) {
+      throw new Error(`Refusing data export archive: forbidden secret key "${k}" detected in table "${table}".`);
+    }
+    if (v && typeof v === 'object') {
+      scanObjectForForbiddenExportKeys(table, v);
+    }
+  }
+}
+
+export function assertNoForbiddenExportColumns(
+  table: string,
+  columns: readonly string[],
+  rows: ReadonlyArray<Record<string, unknown>>,
+): void {
+  for (const col of columns) {
+    if (FORBIDDEN_EXPORT_COLUMN_SET.has(col.toLowerCase())) {
+      throw new Error(`Refusing data export archive: forbidden secret column "${col}" declared for table "${table}".`);
+    }
+  }
+  for (const row of rows) {
+    scanObjectForForbiddenExportKeys(table, row);
+  }
+}
+
 export function sanitizeSegment(value: string): string {
   return value.replace(/[^A-Za-z0-9._-]+/g, '_').replace(/^_+|_+$/g, '') || 'item';
 }
@@ -281,6 +341,7 @@ export function buildExportBundle(params: {
   const tables: ExportTableDescriptor[] = [];
 
   for (const item of params.tableData) {
+    assertNoForbiddenExportColumns(item.table, item.columns, item.rows);
     const baseDir = item.tenantId
       ? `tenants/${sanitizeSegment(item.tenantId)}/${sanitizeSegment(item.pluginId)}`
       : `platform/${sanitizeSegment(item.pluginId)}`;

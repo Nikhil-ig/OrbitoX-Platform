@@ -11,7 +11,9 @@ import {
   resolvePluginErasureMode,
 } from '@orbitox-io/plugin-engine';
 import {
+  assertNoForbiddenExportColumns,
   buildExportBundle,
+  FORBIDDEN_EXPORT_COLUMNS,
   readZipArchive,
   verifyExportArchive,
 } from '../lib/data-rights/archive';
@@ -322,5 +324,62 @@ describe('Phase 6G Foundations: Contract, ObjectStore, Export Bundle & Deletion 
     );
     assert.equal(failRun.status, 1);
     assert.match(failRun.stderr, /INVALID DELETION CERTIFICATE/);
+  });
+
+  it('G-2: refuses export archive generation if any forbidden secret column or JSON key is included', () => {
+    assert.ok(FORBIDDEN_EXPORT_COLUMNS.includes('passwordHash'));
+    assert.ok(FORBIDDEN_EXPORT_COLUMNS.includes('authVerifier'));
+    assert.ok(FORBIDDEN_EXPORT_COLUMNS.includes('encryptedKeySecret'));
+
+    for (const secretCol of [
+      'passwordHash',
+      'pinHash',
+      'salt',
+      'mfaTotpSealed',
+      'tokenHash',
+      'csrfTokenHash',
+      'authVerifier',
+      'secretFingerprint',
+      'encryptedKeyId',
+      'encryptedKeySecret',
+      'encryptedWebhookSecret',
+      'verificationToken',
+      'guestCapabilityTokens',
+      'orderToken',
+      'razorpaySignature',
+    ]) {
+      assert.throws(
+        () =>
+          buildExportBundle({
+            organizationId: 'org_sec_test',
+            jobId: 'job_sec_col',
+            generatedAt: new Date('2026-11-10T10:00:00.000Z'),
+            tenants: [],
+            tableData: [
+              {
+                tenantId: null,
+                pluginId: 'platform',
+                table: 'SyntheticLeakCheck',
+                columns: ['id', secretCol],
+                rows: [{ id: 'row_1', [secretCol]: 'leaked_secret_value' }],
+              },
+            ],
+          }),
+        /forbidden secret (?:column|key)/i,
+        `Declared forbidden column "${secretCol}" must throw`,
+      );
+
+      // Nested JSON object key must ALSO be blocked
+      assert.throws(
+        () =>
+          assertNoForbiddenExportColumns(
+            'SyntheticNestedCheck',
+            ['id', 'metadata'],
+            [{ id: 'row_1', metadata: { nested: { [secretCol]: 'nested_secret' } } }],
+          ),
+        /forbidden secret (?:column|key)/i,
+        `Nested forbidden JSON key "${secretCol}" must throw`,
+      );
+    }
   });
 });

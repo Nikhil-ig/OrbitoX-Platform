@@ -1,5 +1,5 @@
 import crypto from 'node:crypto';
-import type { Prisma, PrismaClient } from '@prisma/client';
+import { PrismaClient, type Prisma } from '@prisma/client';
 import {
   normalizeDataRightsPluginId,
   resolvePluginErasureMode,
@@ -17,6 +17,7 @@ import { HttpError } from '../db-errors';
 import { buildAccountLink, newAccountToken } from '../phase6-account-security';
 import { platformRepository } from '../platform-repository';
 import { prisma as defaultRuntimePrisma } from '../prisma';
+import { withTenantTx } from '../tenant-db';
 import { cancelRazorpaySubscription } from '../razorpay-client';
 import { buildExportBundle, type DataExportManifest } from './archive';
 import {
@@ -420,6 +421,418 @@ export async function processExportJobs(input: {
         table: 'ProjectEnvironment',
         columns: ['id', 'projectId', 'name', 'slug', 'type', 'isProduction', 'createdAt', 'updatedAt'],
         rows: envs.map((e) => serializePlainRow(e as unknown as Record<string, unknown>)),
+      });
+
+      const memberUserIds = [...new Set(memberships.map((m) => m.userId))];
+      const memberRolesByUserId = new Map<string, string[]>();
+      for (const m of memberships) {
+        const list = memberRolesByUserId.get(m.userId) ?? [];
+        list.push(m.role);
+        memberRolesByUserId.set(m.userId, list);
+      }
+      const [memberUsers, sessionStats] =
+        memberUserIds.length > 0
+          ? await Promise.all([
+              runtimePrisma.customerUser.findMany({
+                where: { id: { in: memberUserIds } },
+                select: {
+                  id: true,
+                  email: true,
+                  emailVerifiedAt: true,
+                  status: true,
+                  failedLogins: true,
+                  lockedUntil: true,
+                  createdAt: true,
+                  updatedAt: true,
+                },
+                orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
+              }),
+              runtimePrisma.customerSession.groupBy({
+                by: ['userId'],
+                where: { userId: { in: memberUserIds } },
+                _max: { createdAt: true, lastSeenAt: true },
+              }),
+            ])
+          : [[], []];
+      const sessionByUserId = new Map(
+        sessionStats.map((s) => [s.userId, { lastLoginAt: s._max.createdAt, lastSeenAt: s._max.lastSeenAt }]),
+      );
+      tableData.push({
+        tenantId: null,
+        pluginId: 'platform',
+        table: 'CustomerUser',
+        columns: ['id', 'email', 'role', 'status', 'emailVerifiedAt', 'failedLogins', 'lockedUntil', 'lastLoginAt', 'lastSeenAt', 'createdAt', 'updatedAt'],
+        rows: memberUsers.map((u) => {
+          const sess = sessionByUserId.get(u.id);
+          return serializePlainRow({
+            id: u.id,
+            email: u.email,
+            role: (memberRolesByUserId.get(u.id) ?? []).join(','),
+            status: u.status,
+            emailVerifiedAt: u.emailVerifiedAt,
+            failedLogins: u.failedLogins,
+            lockedUntil: u.lockedUntil,
+            lastLoginAt: sess?.lastLoginAt ?? null,
+            lastSeenAt: sess?.lastSeenAt ?? null,
+            createdAt: u.createdAt,
+            updatedAt: u.updatedAt,
+          });
+        }),
+      });
+
+      const envIds = envs.map((e) => e.id);
+      const apiKeys =
+        envIds.length > 0
+          ? await runtimePrisma.platformApiKey.findMany({
+              where: { environmentId: { in: envIds } },
+              select: {
+                id: true,
+                keyId: true,
+                name: true,
+                environmentId: true,
+                keyType: true,
+                keyPrefix: true,
+                maskedDisplay: true,
+                status: true,
+                capabilities: true,
+                ipAllowlist: true,
+                rateLimitPerMin: true,
+                tenantScope: true,
+                riskScore: true,
+                riskLevel: true,
+                issuedAt: true,
+                activatedAt: true,
+                expiresAt: true,
+                lastUsedAt: true,
+                lastUsedIp: true,
+                lastUsedRegion: true,
+                revokedAt: true,
+                revokeReason: true,
+                createdBy: true,
+                version: true,
+              },
+              orderBy: [{ issuedAt: 'asc' }, { id: 'asc' }],
+            })
+          : [];
+      tableData.push({
+        tenantId: null,
+        pluginId: 'platform',
+        table: 'PlatformApiKey',
+        columns: [
+          'id',
+          'keyId',
+          'name',
+          'environmentId',
+          'keyType',
+          'keyPrefix',
+          'maskedDisplay',
+          'status',
+          'capabilities',
+          'ipAllowlist',
+          'rateLimitPerMin',
+          'tenantScope',
+          'riskScore',
+          'riskLevel',
+          'issuedAt',
+          'activatedAt',
+          'expiresAt',
+          'lastUsedAt',
+          'lastUsedIp',
+          'lastUsedRegion',
+          'revokedAt',
+          'revokeReason',
+          'createdBy',
+          'version',
+        ],
+        rows: apiKeys.map((k) => serializePlainRow(k as unknown as Record<string, unknown>)),
+      });
+
+      const tenantIds = resolved.tenants.map((t) => t.tenantId);
+      const [installations, grantRevisions, subscriptions, dataRightsJobs, deletionRequests] = await Promise.all([
+        tenantIds.length > 0
+          ? runtimePrisma.pluginInstallation.findMany({
+              where: { OR: [{ tenantId: { in: tenantIds } }, { runtimeTenantId: { in: tenantIds } }] },
+              orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
+            })
+          : [],
+        tenantIds.length > 0
+          ? runtimePrisma.pluginGrantRevision.findMany({
+              where: { tenantId: { in: tenantIds } },
+              orderBy: [{ tenantId: 'asc' }, { pluginId: 'asc' }],
+            })
+          : [],
+        runtimePrisma.billingSubscription.findMany({
+          where: { organizationId },
+          include: {
+            planMap: {
+              select: {
+                internalPlanId: true,
+                amountMinor: true,
+                currency: true,
+                period: true,
+                interval: true,
+              },
+            },
+          },
+          orderBy: [{ createdAt: 'asc' }, { razorpaySubscriptionId: 'asc' }],
+        }),
+        runtimePrisma.dataRightsJob.findMany({
+          where: { organizationId },
+          select: {
+            id: true,
+            kind: true,
+            status: true,
+            organizationId: true,
+            requestedByUserId: true,
+            attempts: true,
+            maxAttempts: true,
+            result: true,
+            lastError: true,
+            expiresAt: true,
+            purgedAt: true,
+            runAfter: true,
+            startedAt: true,
+            completedAt: true,
+            createdAt: true,
+            updatedAt: true,
+          },
+          orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
+        }),
+        runtimePrisma.organizationDeletionRequest.findMany({
+          where: { OR: [{ organizationId }, { organizationDigest: digestOrganizationId(organizationId) }] },
+          select: {
+            id: true,
+            organizationId: true,
+            organizationDigest: true,
+            status: true,
+            requestedByUserId: true,
+            authorizedOwnerIds: true,
+            suspendedKeyIds: true,
+            reason: true,
+            requestedAt: true,
+            scheduledFor: true,
+            cancelledAt: true,
+            cancelledByUserId: true,
+            completedAt: true,
+            updatedAt: true,
+          },
+          orderBy: [{ requestedAt: 'asc' }, { id: 'asc' }],
+        }),
+      ]);
+
+      tableData.push({
+        tenantId: null,
+        pluginId: 'platform',
+        table: 'PluginInstallation',
+        columns: ['id', 'tenantId', 'pluginId', 'runtimeTenantId', 'status', 'statusReason', 'entitlementRevision', 'planId', 'config', 'createdAt', 'updatedAt'],
+        rows: installations.map((inst) => serializePlainRow(inst as unknown as Record<string, unknown>)),
+      });
+
+      tableData.push({
+        tenantId: null,
+        pluginId: 'platform',
+        table: 'PluginGrantRevision',
+        columns: ['tenantId', 'pluginId', 'highestRevision', 'updatedAt'],
+        rows: grantRevisions.map((rev) => serializePlainRow(rev as unknown as Record<string, unknown>)),
+      });
+
+      tableData.push({
+        tenantId: null,
+        pluginId: 'platform',
+        table: 'BillingSubscription',
+        columns: [
+          'razorpaySubscriptionId',
+          'organizationId',
+          'tenantId',
+          'pluginId',
+          'razorpayPlanId',
+          'internalPlanId',
+          'amountMinor',
+          'currency',
+          'period',
+          'interval',
+          'status',
+          'currentStart',
+          'currentEnd',
+          'graceStartedAt',
+          'lastEventAt',
+          'cancelAtPeriodEnd',
+          'createdAt',
+          'updatedAt',
+        ],
+        rows: subscriptions.map((sub) =>
+          serializePlainRow({
+            razorpaySubscriptionId: sub.razorpaySubscriptionId,
+            organizationId: sub.organizationId,
+            tenantId: sub.tenantId,
+            pluginId: sub.pluginId,
+            razorpayPlanId: sub.razorpayPlanId,
+            internalPlanId: sub.planMap?.internalPlanId ?? null,
+            amountMinor: sub.planMap?.amountMinor ?? null,
+            currency: sub.planMap?.currency ?? null,
+            period: sub.planMap?.period ?? null,
+            interval: sub.planMap?.interval ?? null,
+            status: sub.status,
+            currentStart: sub.currentStart,
+            currentEnd: sub.currentEnd,
+            graceStartedAt: sub.graceStartedAt,
+            lastEventAt: sub.lastEventAt,
+            cancelAtPeriodEnd: sub.cancelAtPeriodEnd,
+            createdAt: sub.createdAt,
+            updatedAt: sub.updatedAt,
+          }),
+        ),
+      });
+
+      const pluginUsageRows: Array<Record<string, unknown>> = [];
+      for (const tenant of resolved.tenants) {
+        const rows = await withTenantTx(runtimePrisma, tenant.tenantId, async (tx) => {
+          const { rows: usageRows } = await tx.query(
+            `SELECT "tenantId", "projectId", "environmentId", "pluginId", "period", "requestCount"::text AS "requestCount", "updatedAt"
+             FROM public."PlatformPluginUsage"
+             ORDER BY "period" ASC, "pluginId" ASC`,
+          );
+          return usageRows;
+        });
+        for (const r of rows) {
+          pluginUsageRows.push(serializePlainRow(r));
+        }
+      }
+      tableData.push({
+        tenantId: null,
+        pluginId: 'platform',
+        table: 'PlatformPluginUsage',
+        columns: ['tenantId', 'projectId', 'environmentId', 'pluginId', 'period', 'requestCount', 'updatedAt'],
+        rows: pluginUsageRows,
+      });
+
+      let auditRows: Array<Record<string, unknown>> = [];
+      let ownedMaintClient: PrismaClient | null = null;
+      try {
+        const maintClient =
+          input.maintenancePrisma ??
+          (process.env.MAINTENANCE_DATABASE_URL
+            ? (ownedMaintClient = new PrismaClient({ datasources: { db: { url: process.env.MAINTENANCE_DATABASE_URL } } }))
+            : null);
+
+        if (maintClient) {
+          auditRows = (
+            await maintClient.platformAuditEvent.findMany({
+              where: { organizationId },
+              select: {
+                id: true,
+                actorId: true,
+                actorEmail: true,
+                action: true,
+                entityType: true,
+                entityId: true,
+                organizationId: true,
+                projectId: true,
+                environmentId: true,
+                ipAddress: true,
+                requestId: true,
+                reason: true,
+                metadata: true,
+                status: true,
+                failureReason: true,
+                occurredAt: true,
+              },
+              orderBy: [{ occurredAt: 'asc' }, { id: 'asc' }],
+            })
+          ).map((ev) => serializePlainRow(ev as unknown as Record<string, unknown>));
+        } else {
+          for (const tenant of resolved.tenants) {
+            const rows = await withTenantTx(runtimePrisma, tenant.tenantId, async (tx) => {
+              const { rows: scopedAudit } = await tx.query(
+                `SELECT "id", "actorId", "actorEmail", "action", "entityType", "entityId", "organizationId",
+                        "projectId", "environmentId", "ipAddress", "requestId", "reason", "metadata", "status",
+                        "failureReason", "occurredAt"
+                 FROM public."PlatformAuditEvent"
+                 ORDER BY "occurredAt" ASC, "id" ASC`,
+              );
+              return scopedAudit;
+            });
+            for (const r of rows) {
+              auditRows.push(serializePlainRow(r));
+            }
+          }
+        }
+      } finally {
+        if (ownedMaintClient) {
+          await ownedMaintClient.$disconnect().catch(() => {});
+        }
+      }
+      tableData.push({
+        tenantId: null,
+        pluginId: 'platform',
+        table: 'PlatformAuditEvent',
+        columns: [
+          'id',
+          'actorId',
+          'actorEmail',
+          'action',
+          'entityType',
+          'entityId',
+          'organizationId',
+          'projectId',
+          'environmentId',
+          'ipAddress',
+          'requestId',
+          'reason',
+          'metadata',
+          'status',
+          'failureReason',
+          'occurredAt',
+        ],
+        rows: auditRows,
+      });
+
+      tableData.push({
+        tenantId: null,
+        pluginId: 'platform',
+        table: 'DataRightsJob',
+        columns: [
+          'id',
+          'kind',
+          'status',
+          'organizationId',
+          'requestedByUserId',
+          'attempts',
+          'maxAttempts',
+          'result',
+          'lastError',
+          'expiresAt',
+          'purgedAt',
+          'runAfter',
+          'startedAt',
+          'completedAt',
+          'createdAt',
+          'updatedAt',
+        ],
+        rows: dataRightsJobs.map((j) => serializePlainRow(j as unknown as Record<string, unknown>)),
+      });
+
+      tableData.push({
+        tenantId: null,
+        pluginId: 'platform',
+        table: 'OrganizationDeletionRequest',
+        columns: [
+          'id',
+          'organizationId',
+          'organizationDigest',
+          'status',
+          'requestedByUserId',
+          'authorizedOwnerIds',
+          'suspendedKeyIds',
+          'reason',
+          'requestedAt',
+          'scheduledFor',
+          'cancelledAt',
+          'cancelledByUserId',
+          'completedAt',
+          'updatedAt',
+        ],
+        rows: deletionRequests.map((reqRow) => serializePlainRow(reqRow as unknown as Record<string, unknown>)),
       });
 
       const exportContext: DataRightsContext = {

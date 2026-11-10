@@ -11,7 +11,11 @@ import { PrismaClient } from '@prisma/client';
 import { NextRequest } from 'next/server';
 import { Pool } from 'pg';
 import { signBridgeRequest } from '@orbitox-io/bridge';
-import { verifyExportArchive, readZipArchive } from '../lib/data-rights/archive';
+import {
+  FORBIDDEN_EXPORT_COLUMNS,
+  readZipArchive,
+  verifyExportArchive,
+} from '../lib/data-rights/archive';
 import {
   extractDeletionCertPublicKeys,
   verifyDeletionCertificate,
@@ -702,14 +706,112 @@ describe('Phase 6G G1-G5 End-to-End PostgreSQL Integration Suite', () => {
     const branchAId = brA.rows[0]?.id || `branch_a_${suffix}`;
     const branchBId = brB.rows[0]?.id || restBranchBId;
 
+    await withTenantTx(ownerPrisma, tenantA, async (tx) => {
+      await tx.query(
+        `INSERT INTO public."PlatformPluginUsage"("tenantId", "projectId", "environmentId", "pluginId", "period", "requestCount")
+         VALUES ($1, $2, $3, '@orbitox/hms', '2026-11', 42)`,
+        [tenantA, projAId, envAId],
+      );
+    });
+
     await restaurantPool.query(
       `INSERT INTO "Guest"(id, "tenantId", name, "tableNumber", role) VALUES ($1, $2, $3, 'T1', 'HOST')`,
       [restGuestAId, tenantA, canaryA.guestName],
     );
     await restaurantPool.query(
-      `INSERT INTO "RestaurantOrder"(id, "tenantId", "tableNumber", "sessionId", "branchId", "guestName", status, items, "subtotalMinor", "taxMinor", "totalMinor", customer, "updatedAt")
-       VALUES ($1, $2, 'T1', $3, $4, $5, 'PAID', '[]'::jsonb, 10000, 500, 10500, $6::jsonb, now())`,
-      [restOrderAId, tenantA, `sess_a_${suffix}`, branchAId, canaryA.guestName, JSON.stringify({ name: canaryA.guestName, email: canaryA.guestEmail })],
+      `INSERT INTO "RestaurantOrder"(id, "tenantId", "tableNumber", "sessionId", "branchId", "guestName", status, items, "subtotalMinor", "taxMinor", "totalMinor", "orderToken", customer, "updatedAt")
+       VALUES ($1, $2, 'T1', $3, $4, $5, 'PAID', '[]'::jsonb, 10000, 500, 10500, $7, $6::jsonb, now())`,
+      [restOrderAId, tenantA, `sess_a_${suffix}`, branchAId, canaryA.guestName, JSON.stringify({ name: canaryA.guestName, email: canaryA.guestEmail }), `ord_secret_tok_${suffix}`],
+    );
+
+    const floorARes = await restaurantPool.query<{ id: string }>(`SELECT id FROM "Floor" WHERE "tenantId"=$1 LIMIT 1`, [tenantA]);
+    const floorAId = floorARes.rows[0]?.id || `fl_a_${suffix}`;
+    const itemARes = await restaurantPool.query<{ id: string }>(`SELECT id FROM "MenuItem" WHERE "tenantId"=$1 LIMIT 1`, [tenantA]);
+    const itemAId = itemARes.rows[0]?.id || `item_a_${suffix}`;
+    const staffARes = await restaurantPool.query<{ id: string }>(`SELECT id FROM "StaffMember" WHERE "tenantId"=$1 LIMIT 1`, [tenantA]);
+    let staffAId = staffARes.rows[0]?.id;
+    if (!staffAId) {
+      staffAId = `stf_a_${suffix}`;
+      await restaurantPool.query(
+        `INSERT INTO "StaffMember"(id, "tenantId", name, role, "branchId", salt, "pinHash", status, "updatedAt")
+         VALUES ($1, $2, 'Chef Alpha', 'CHEF', $3, $4, $5, 'ACTIVE', now())`,
+        [staffAId, tenantA, branchAId, `salt_secret_${suffix}`, `pinhash_secret_${suffix}`],
+      );
+    }
+    if (floorARes.rows[0] && itemARes.rows[0]) {
+      await restaurantPool.query(
+        `INSERT INTO "BranchMenuOverride"(id, "tenantId", "itemId", "branchId", "isAvailable", "updatedAt")
+         VALUES ($1, $2, $3, $4, true, now())`,
+        [`ovr_a_${suffix}`, tenantA, itemAId, branchAId],
+      );
+    }
+    await restaurantPool.query(
+      `INSERT INTO "KitchenTask"(id, "tenantId", "orderId", "tableNumber", "branchId", "itemName", quantity, station, status, "updatedAt")
+       VALUES ($1, $2, $3, 'T1', $4, 'Paneer Tikka', 1, 'TANDOOR', 'QUEUED', now())`,
+      [`kt_a_${suffix}`, tenantA, restOrderAId, branchAId],
+    );
+    await restaurantPool.query(
+      `INSERT INTO "ServiceRequest"(id, "tenantId", "tableNumber", "branchId", "floorId", type, status)
+       VALUES ($1, $2, 'T1', $3, $4, 'WATER', 'PENDING')`,
+      [`sr_a_${suffix}`, tenantA, branchAId, floorAId],
+    );
+    await restaurantPool.query(
+      `INSERT INTO "DiningSession"(id, "tenantId", "tableNumber", "branchId", "floorId", "hostName", status, "guestCapabilityTokens")
+       VALUES ($1, $2, 'T1', $3, $4, $5, 'ACTIVE', $6::jsonb)`,
+      [`ds_a_${suffix}`, tenantA, branchAId, floorAId, canaryA.guestName, JSON.stringify([`cap_secret_tok_${suffix}`])],
+    );
+    await restaurantPool.query(
+      `INSERT INTO "StaffTokenRevocation"(id, "tenantId", "tokenJti", reason)
+       VALUES ($1, $2, $3, 'Rotation check')`,
+      [`rev_a_${suffix}`, tenantA, `jti_a_${suffix}`],
+    );
+    await restaurantPool.query(
+      `INSERT INTO "TenantBrandConfig"(id, "tenantId", config, "updatedAt")
+       VALUES ($1, $2, '{"brandName":"Bistro Alpha"}'::jsonb, now())
+       ON CONFLICT ("tenantId") DO NOTHING`,
+      [`brand_a_${suffix}`, tenantA],
+    );
+    await restaurantPool.query(
+      `INSERT INTO "SupportTicket"(id, "tenantId", "branchId", title, status, priority, category, messages, "updatedAt")
+       VALUES ($1, $2, $3, 'Printer Setup', 'OPEN', 'LOW', 'HARDWARE', '[]'::jsonb, now())`,
+      [`tkt_a_${suffix}`, tenantA, branchAId],
+    );
+    await restaurantPool.query(
+      `INSERT INTO "IdempotencyRecord"(key, "tenantId", result, "expiresAt")
+       VALUES ($1, $2, '{"ok":true}'::jsonb, now() + interval '1 day')`,
+      [`idem_rest_a_${suffix}`, tenantA],
+    );
+    await restaurantPool.query(
+      `INSERT INTO "Invoice"(id, "tenantId", "orderId", "invoiceNumber", "fiscalYear", "sequenceNumber", gstin, "subtotalMinor", "taxMinor", "totalMinor", "itemBreakdown", "taxBreakdown")
+       VALUES ($1, $2, $3, $4, '2026-2027', 1, '03AAAAA0000A1Z5', 10000, 500, 10500, '[]'::jsonb, '{}'::jsonb)`,
+      [`rinv_a_${suffix}`, tenantA, restOrderAId, `INV-A-${suffix}`],
+    );
+    await restaurantPool.query(
+      `INSERT INTO "RazorpayPaymentSession"(id, "tenantId", "orderId", "tableNumber", "amountMinor", status, "razorpaySignature", "updatedAt")
+       VALUES ($1, $2, $3, 'T1', 10500, 'captured', $4, now())`,
+      [`order_rzp_${suffix}`, tenantA, restOrderAId, `rzp_sig_secret_${suffix}`],
+    );
+    await restaurantPool.query(
+      `INSERT INTO "OwnerInvite"(id, "tenantId", "staffMemberId", "tokenHash", "expiresAt")
+       VALUES ($1, $2, $3, $4, now() + interval '1 day')`,
+      [`oinv_a_${suffix}`, tenantA, staffAId, `invite_hash_secret_${suffix}`],
+    );
+    await restaurantPool.query(
+      `INSERT INTO "TenantDomain"(id, "tenantId", domain, "verificationToken", "verificationStatus", "updatedAt")
+       VALUES ($1, $2, $3, $4, 'VERIFIED', now())`,
+      [`dom_a_${suffix}`, tenantA, `a-${suffix}.bistro.example`, `dom_verify_secret_${suffix}`],
+    );
+    await restaurantPool.query(
+      `INSERT INTO "TenantPaymentConfig"(id, "tenantId", "encryptedKeyId", "encryptedKeySecret", "encryptedWebhookSecret", gstin, "updatedAt")
+       VALUES ($1, $2, $3, $4, $5, '03AAAAA0000A1Z5', now())
+       ON CONFLICT ("tenantId") DO NOTHING`,
+      [
+        `tpc_a_${suffix}`,
+        tenantA,
+        `enc_keyid_secret_${suffix}`,
+        `enc_keysec_secret_${suffix}`,
+        `enc_whsec_secret_${suffix}`,
+      ],
     );
 
     await restaurantPool.query(
@@ -950,6 +1052,134 @@ describe('Phase 6G G1-G5 End-to-End PostgreSQL Integration Suite', () => {
 
     assert.ok(allArchiveText.includes(canaryA.patientName), 'Archive must include decrypted Org A HMS patient');
     assert.ok(allArchiveText.includes(canaryA.guestName), 'Archive must include Org A RestaurantOS guest');
+
+    // G-2: Verify ALL 13 Platform tables and ALL 23 exported RestaurantOS tables are present in manifest
+    const platformTablesInArchive = new Set(
+      manifest.tables.filter((t) => t.pluginId === 'platform').map((t) => t.table),
+    );
+    for (const expectedPlatformTable of [
+      'PlatformOrganization',
+      'CustomerMembership',
+      'CustomerUser',
+      'PlatformProject',
+      'ProjectEnvironment',
+      'PlatformApiKey',
+      'PluginInstallation',
+      'PluginGrantRevision',
+      'BillingSubscription',
+      'PlatformPluginUsage',
+      'PlatformAuditEvent',
+      'DataRightsJob',
+      'OrganizationDeletionRequest',
+    ]) {
+      assert.ok(
+        platformTablesInArchive.has(expectedPlatformTable),
+        `Expected platform table "${expectedPlatformTable}" in Org A export archive`,
+      );
+    }
+
+    const restaurantTablesInArchive = new Set(
+      manifest.tables.filter((t) => t.pluginId === '@orbitox/restaurant').map((t) => t.table),
+    );
+    for (const expectedRestTable of [
+      'Tenant',
+      'Branch',
+      'Floor',
+      'TableFloor',
+      'MenuCategory',
+      'MenuItem',
+      'BranchMenuOverride',
+      'RestaurantOrder',
+      'KitchenTask',
+      'ServiceRequest',
+      'DiningSession',
+      'Guest',
+      'StaffMember',
+      'StaffTokenRevocation',
+      'TenantBrandConfig',
+      'SupportTicket',
+      'DomainEvent',
+      'IdempotencyRecord',
+      'Invoice',
+      'RazorpayPaymentSession',
+      'OwnerInvite',
+      'TenantDomain',
+      'PluginGrantRevision',
+    ]) {
+      assert.ok(
+        restaurantTablesInArchive.has(expectedRestTable),
+        `Expected RestaurantOS table "${expectedRestTable}" in Org A export archive`,
+      );
+    }
+    assert.equal(
+      manifest.tables.some((t) => ['TenantPaymentConfig', 'HmsStaffCredential', 'HmsStaffSession'].includes(t.table)),
+      false,
+      'Secret credential/payment-config tables must never be exported',
+    );
+
+    // Verify seeded usage/member/API-key metadata appears while secret columns & values are completely absent
+    const customerUsersJson = JSON.parse(archiveMap.get('platform/platform/CustomerUser.json')!.toString('utf8'));
+    assert.ok(customerUsersJson.some((u: any) => u.email === ownerAEmail && u.lastLoginAt), 'CustomerUser export must include safe profile and lastLoginAt');
+    const apiKeysJson = JSON.parse(archiveMap.get('platform/platform/PlatformApiKey.json')!.toString('utf8'));
+    assert.equal(apiKeysJson.length, 1);
+    assert.equal(apiKeysJson[0].id, keyAId);
+    const usageJson = JSON.parse(archiveMap.get('platform/platform/PlatformPluginUsage.json')!.toString('utf8'));
+    assert.ok(usageJson.some((u: any) => u.requestCount === '42'));
+    const subsJson = JSON.parse(archiveMap.get('platform/platform/BillingSubscription.json')!.toString('utf8'));
+    assert.ok(subsJson.length >= 2);
+    const auditJson = JSON.parse(archiveMap.get('platform/platform/PlatformAuditEvent.json')!.toString('utf8'));
+    assert.ok(auditJson.length >= 1);
+
+    // G-2 secret column deny-list sweep across EVERY CSV header and EVERY JSON file key in the archive
+    const forbiddenSet = new Set(FORBIDDEN_EXPORT_COLUMNS.map((c) => c.toLowerCase()));
+    const scanJsonKeys = (val: unknown, filePath: string): void => {
+      if (!val || typeof val !== 'object') return;
+      if (Array.isArray(val)) {
+        for (const item of val) scanJsonKeys(item, filePath);
+        return;
+      }
+      for (const [k, v] of Object.entries(val as Record<string, unknown>)) {
+        assert.equal(
+          forbiddenSet.has(k.toLowerCase()),
+          false,
+          `Forbidden secret key "${k}" found in ${filePath}`,
+        );
+        if (v && typeof v === 'object') scanJsonKeys(v, filePath);
+      }
+    };
+    for (const [filePath, buf] of archiveMap.entries()) {
+      if (filePath.endsWith('.csv')) {
+        const headerLine = buf.toString('utf8').split(/\r?\n/, 1)[0] || '';
+        const headers = headerLine.split(',').map((h) => h.replace(/^"|"$/g, '').trim().toLowerCase());
+        for (const h of headers) {
+          assert.equal(
+            forbiddenSet.has(h),
+            false,
+            `Forbidden secret CSV header "${h}" found in ${filePath}`,
+          );
+        }
+      } else if (filePath.endsWith('.json') && filePath !== 'manifest.json') {
+        scanJsonKeys(JSON.parse(buf.toString('utf8')), filePath);
+      }
+    }
+    for (const secretSentinel of [
+      `ord_secret_tok_${suffix}`,
+      `salt_secret_${suffix}`,
+      `pinhash_secret_${suffix}`,
+      `cap_secret_tok_${suffix}`,
+      `rzp_sig_secret_${suffix}`,
+      `invite_hash_secret_${suffix}`,
+      `dom_verify_secret_${suffix}`,
+      `enc_keyid_secret_${suffix}`,
+      `enc_keysec_secret_${suffix}`,
+      `enc_whsec_secret_${suffix}`,
+    ]) {
+      assert.equal(
+        allArchiveText.includes(secretSentinel),
+        false,
+        `Secret sentinel value "${secretSentinel}" leaked into archive!`,
+      );
+    }
 
     const orgBIdentifiers = [
       orgBId,
