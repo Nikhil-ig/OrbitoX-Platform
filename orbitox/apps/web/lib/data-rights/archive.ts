@@ -271,6 +271,9 @@ export function serializeRowsToJson(rows: ReadonlyArray<Record<string, unknown>>
   return Buffer.from(`${JSON.stringify(rows, null, 2)}\n`, 'utf8');
 }
 
+export const SECRET_COLUMN_NAME_REGEX =
+  /hash|secret|token|sealed|salt|signature|password|pin|cipher|encrypted|nonce|otp|verifier|private/i;
+
 export const FORBIDDEN_EXPORT_COLUMNS = [
   'passwordHash',
   'pinHash',
@@ -280,21 +283,67 @@ export const FORBIDDEN_EXPORT_COLUMNS = [
   'lastTotpStep',
   'tokenHash',
   'csrfTokenHash',
+  'codeHash',
+  'capabilityTokenHash',
+  'requestTokenHash',
   'sessionToken',
   'sessionTokenHash',
   'authVerifier',
   'secretFingerprint',
   'verifierPepperId',
+  'encryptedDek',
+  'encryptedCiphertext',
+  'encryptedPayload',
   'encryptedKeyId',
   'encryptedKeySecret',
   'encryptedWebhookSecret',
+  'claimToken',
+  'strictLicenseToken',
   'verificationToken',
   'guestCapabilityTokens',
   'orderToken',
+  'tokens',
+  'accountTokens',
+  'downloadTokens',
+  'nonce',
   'razorpaySignature',
   'rawSecret',
   'privateKey',
 ] as const;
+
+/**
+ * Schema-audited allow-list of `Model.field` names matching `SECRET_COLUMN_NAME_REGEX`
+ * that are safe because they are non-secret identifiers/digests/flags or sealed-at-rest
+ * PHI decrypted intentionally into plain column names for authorized subject exports.
+ */
+export const REVIEWED_SECRET_COLUMN_ALLOWLIST: Readonly<Record<string, string>> = {
+  // Platform schema (orbitox/prisma/schema.prisma)
+  'Order.shippingAmount': 'Commerce shipping fee amount (regex false positive on "pin"); sample model slated for 7A-1 removal.',
+  'Order.shippingAddress': 'Commerce shipping postal address (regex false positive on "pin"); sample model slated for 7A-1 removal.',
+  'Order.shippingMethod': 'Commerce fulfillment method name (regex false positive on "pin"); sample model slated for 7A-1 removal.',
+  'CelebrationExperience.passwordProtection': 'Boolean access-control flag only (not the passwordHash itself); slated for 7A-1 removal.',
+  'CelebrationPricingPlan.passwordProtectionAllowed': 'Boolean plan capability flag only; slated for 7A-1 removal.',
+  'StudioProject.designTokens': 'Public UI styling theme JSON tokens, not authentication credentials; slated for 7A-1 removal.',
+  'RestaurantPricingQuote.inputHash': 'Deterministic pricing payload integrity hash (no secrets); quote verification metadata.',
+  'RestaurantPricingQuote.resultHash': 'Deterministic pricing quote output hash (no secrets); quote verification metadata.',
+  'PlatformIdempotencyRecord.requestHash': 'SHA-256 request body deduplication digest, not a credential or secret.',
+  'PackageVersion.manifestHash': 'Public plugin package manifest digest used for integrity verification, not a secret.',
+  'PackageVersion.signature': 'Public Ed25519 package release signature used for public-key verification, not a private secret.',
+  'HmsStaff.nameSealed': 'AES-256-GCM encrypted staff display name at rest; decrypted to plain "name" in authorized HMS export without credentials.',
+  'HmsPatient.nameSealed': 'AES-256-GCM PHI ciphertext at rest; decrypted with HmsPhiAccessLog into plain "name" for authorized DSR export.',
+  'HmsPatient.phoneSealed': 'AES-256-GCM PHI ciphertext at rest; decrypted with HmsPhiAccessLog into plain "phone" for authorized DSR export.',
+  'HmsPatient.dateOfBirthSealed': 'AES-256-GCM PHI ciphertext at rest; decrypted with HmsPhiAccessLog into plain "dateOfBirth" for authorized DSR export.',
+  'HmsPatient.allergiesSealed': 'AES-256-GCM PHI ciphertext at rest; decrypted with HmsPhiAccessLog into plain "allergies" for authorized DSR export.',
+  'HmsPatient.emergencyContactSealed': 'AES-256-GCM PHI ciphertext at rest; decrypted with HmsPhiAccessLog into plain "emergencyContact" for authorized DSR export.',
+  'HmsAdmission.notesSealed': 'AES-256-GCM PHI ciphertext at rest; decrypted with HmsPhiAccessLog into plain "notes" for authorized DSR export.',
+  'HmsAppointment.reasonSealed': 'AES-256-GCM PHI ciphertext at rest; decrypted into plain "reason" for authorized DSR export.',
+  'HmsLabOrder.resultSealed': 'AES-256-GCM PHI ciphertext at rest; decrypted with HmsPhiAccessLog into plain "result" for authorized DSR export.',
+  'TenantIdempotencyKey.requestHash': 'SHA-256 request body deduplication digest, not a credential or secret.',
+
+  // RestaurantOS schema (projects/external-os/restaurant-os/prisma/schema.prisma)
+  'MenuItem.isSignature': 'Boolean menu highlight flag ("chef signature dish"), not a cryptographic signature.',
+  'StaffTokenRevocation.tokenJti': 'Revocation audit UUID/JTI identifier (not the bearer token itself); explicitly exported by RestaurantOS.',
+};
 
 const FORBIDDEN_EXPORT_COLUMN_SET = new Set(FORBIDDEN_EXPORT_COLUMNS.map((c) => c.toLowerCase()));
 

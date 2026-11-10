@@ -17,6 +17,8 @@ import {
   escapeCsvCell,
   FORBIDDEN_EXPORT_COLUMNS,
   readZipArchive,
+  REVIEWED_SECRET_COLUMN_ALLOWLIST,
+  SECRET_COLUMN_NAME_REGEX,
   verifyExportArchive,
 } from '../lib/data-rights/archive';
 import {
@@ -680,6 +682,92 @@ describe('Phase 6G Foundations: Contract, ObjectStore, Export Bundle & Deletion 
       );
     } finally {
       process.env = origEnv;
+    }
+  });
+
+  it('G-11: every secret-like column across OrbitoX and RestaurantOS Prisma schemas is either denied or reviewed-allow-listed', async () => {
+    const repoRoot = path.resolve(__dirname, '../../../..');
+    const schemaPaths = [
+      path.resolve(repoRoot, 'orbitox/prisma/schema.prisma'),
+      path.resolve(repoRoot, 'projects/external-os/restaurant-os/prisma/schema.prisma'),
+    ];
+
+    const forbiddenSet = new Set(FORBIDDEN_EXPORT_COLUMNS.map((c) => c.toLowerCase()));
+    const unclassified: string[] = [];
+    const seenSchemaFields = new Set<string>();
+
+    for (const schemaPath of schemaPaths) {
+      const schemaText = await fs.readFile(schemaPath, 'utf8');
+      let currentModel: string | null = null;
+      for (const rawLine of schemaText.split(/\r?\n/)) {
+        const line = rawLine.trim();
+        const modelMatch = /^model\s+(\w+)\s+\{/.exec(line);
+        if (modelMatch) {
+          currentModel = modelMatch[1]!;
+          continue;
+        }
+        if (line === '}') {
+          currentModel = null;
+          continue;
+        }
+        if (!currentModel || !line || line.startsWith('//') || line.startsWith('@@')) continue;
+        const fieldMatch = /^(\w+)\s+\S+/.exec(line);
+        if (!fieldMatch) continue;
+        const fieldName = fieldMatch[1]!;
+        if (!SECRET_COLUMN_NAME_REGEX.test(fieldName)) continue;
+
+        const qualified = `${currentModel}.${fieldName}`;
+        seenSchemaFields.add(qualified);
+
+        const isForbidden = forbiddenSet.has(fieldName.toLowerCase());
+        const allowReason = REVIEWED_SECRET_COLUMN_ALLOWLIST[qualified];
+        if (!isForbidden && (!allowReason || allowReason.trim().length < 15)) {
+          unclassified.push(qualified);
+        }
+      }
+    }
+
+    assert.deepEqual(
+      unclassified,
+      [],
+      `Secret-like schema columns must be added to FORBIDDEN_EXPORT_COLUMNS or REVIEWED_SECRET_COLUMN_ALLOWLIST with a reason: ${unclassified.join(', ')}`,
+    );
+
+    // Ensure allow-list entries stay pruned and do not overlap with forbidden column names
+    const staleAllowEntries = Object.keys(REVIEWED_SECRET_COLUMN_ALLOWLIST).filter(
+      (k) => !seenSchemaFields.has(k),
+    );
+    assert.deepEqual(
+      staleAllowEntries,
+      [],
+      `REVIEWED_SECRET_COLUMN_ALLOWLIST contains deleted/unknown fields: ${staleAllowEntries.join(', ')}`,
+    );
+    for (const key of Object.keys(REVIEWED_SECRET_COLUMN_ALLOWLIST)) {
+      const col = key.split('.')[1]!;
+      assert.equal(
+        forbiddenSet.has(col.toLowerCase()),
+        false,
+        `Column "${key}" cannot be both in FORBIDDEN_EXPORT_COLUMNS and REVIEWED_SECRET_COLUMN_ALLOWLIST`,
+      );
+    }
+
+    // Spot-check that newly denied columns trigger assertNoForbiddenExportColumns
+    for (const newlyDenied of [
+      'tokens',
+      'accountTokens',
+      'encryptedDek',
+      'encryptedCiphertext',
+      'strictLicenseToken',
+      'codeHash',
+      'capabilityTokenHash',
+      'requestTokenHash',
+      'claimToken',
+      'encryptedPayload',
+    ]) {
+      assert.throws(
+        () => assertNoForbiddenExportColumns('AuditCheck', ['id', newlyDenied], [{ id: '1' }]),
+        /Refusing data export archive/,
+      );
     }
   });
 });
