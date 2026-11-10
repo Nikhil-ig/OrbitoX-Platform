@@ -10,7 +10,7 @@ import {
   RuntimeHeartbeatReport,
   RuntimeAuditReport,
   OrbitoxProjectManifest,
-} from '@orbitox-io/external-runtime-sdk';
+} from '@orbitox/external-runtime-sdk';
 import type {
   RuntimeSessionRecord,
   ProjectAuditEntry,

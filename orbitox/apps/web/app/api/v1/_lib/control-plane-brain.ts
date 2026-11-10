@@ -17,7 +17,7 @@ import {
   ChangeSetService,
   BlueprintService,
   ResourceEditorService,
-} from '@orbitox-io/core/control-plane';
+} from '@orbitox/core/control-plane';
 
 import { auditService, approvalEngine } from './platform-governance';
 import { platformRepository } from '@/lib/platform-repository';

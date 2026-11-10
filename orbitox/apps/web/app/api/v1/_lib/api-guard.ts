@@ -22,7 +22,7 @@ import {
   PLAN_DEFAULT_QUOTAS,
 } from '@orbitox-io/plugin-engine';
 import { platformRepository } from '@/lib/platform-repository';
-import type { PlatformProject } from '@orbitox-io/types';
+import type { PlatformProject } from '@orbitox/types';
 import { withOperatorActor } from '@/lib/operator-actor-context';
 import { prisma } from '@/lib/prisma';
 

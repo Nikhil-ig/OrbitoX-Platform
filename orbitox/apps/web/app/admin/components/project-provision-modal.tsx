@@ -632,6 +632,11 @@ export function ProjectProvisionModal({ isOpen, onClose, defaultModel = 'O2O2B2B
                       <div>
                         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                           <div style={{ fontSize: '13px', fontWeight: 800, color: '#FFFFFF' }}>{pkg.name}</div>
+                          {pkg.badge && (
+                            <span style={{ fontSize: '9.5px', fontWeight: 800, padding: '2px 6px', borderRadius: '6px', background: 'rgba(239, 68, 68, 0.2)', color: '#F87171', border: '1px solid rgba(239, 68, 68, 0.3)' }}>
+                              {pkg.badge}
+                            </span>
+                          )}
                         </div>
                         <div style={{ fontSize: '11px', color: '#9AA7C2', fontFamily: 'monospace', marginTop: '2px' }}>
                           {pkg.pkg}

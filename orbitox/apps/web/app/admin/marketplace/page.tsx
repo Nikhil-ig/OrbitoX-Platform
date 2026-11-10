@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState } from 'react';
-import { DynamicMarketplace, MarketplaceItemUI } from '@orbitox-io/ui';
+import { DynamicMarketplace, MarketplaceItemUI } from '@orbitox/ui';
 import { PackageIcon, PlusIcon } from '../components/icons';
 
 const initialItems: MarketplaceItemUI[] = [

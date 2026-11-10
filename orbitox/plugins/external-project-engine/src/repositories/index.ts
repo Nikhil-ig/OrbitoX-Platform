@@ -15,7 +15,7 @@ import {
   ControlCommand,
 } from '../types';
 import { PersistentControlStore } from '../services/control-store.service';
-import { ApiRegistrationMeta, CentralQuoteResponse } from '@orbitox-io/external-runtime-sdk';
+import { ApiRegistrationMeta, CentralQuoteResponse } from '@orbitox/external-runtime-sdk';
 
 const store = PersistentControlStore.getInstance();
 

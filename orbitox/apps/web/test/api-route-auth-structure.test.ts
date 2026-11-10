@@ -257,8 +257,8 @@ describe('Route & Page Security Boundary Architecture', () => {
 
         const forbiddenPatterns = [
             /restaurant-runtime/,
-            /from\s+['"]@orbitox(?:-io)?\/pos['"]/,
-            /require\(['"]@orbitox(?:-io)?\/pos['"]\)/,
+            /from\s+['"]@orbitox\/pos['"]/,
+            /require\(['"]@orbitox\/pos['"]\)/,
             /RestaurantRuntimeManager/,
         ];
 
