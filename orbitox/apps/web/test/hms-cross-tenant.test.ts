@@ -43,6 +43,7 @@ import { GET as getV1Beds, POST as createV1Bed } from '../app/api/v1/hms/beds/ro
 import { GET as getV1Labs, POST as createV1Lab } from '../app/api/v1/hms/labs/route';
 import { GET as getV1Patients, POST as createV1Patient } from '../app/api/v1/hms/patients/route';
 import { POST as advanceTriage } from '../app/api/v1/hms/triage/advance/route';
+import { POST as postV1HmsPrincipal } from '../app/api/v1/hms/data-rights/principal/route';
 
 process.env.APP_DATABASE_URL = process.env.APP_DATABASE_URL || 'postgresql://orbitox_runtime@127.0.0.1:5432/orbitox_phase2';
 process.env.PLATFORM_AUDIT_DATABASE_URL = process.env.PLATFORM_AUDIT_DATABASE_URL || 'postgresql://orbitox_platform_admin_audit@127.0.0.1:5432/orbitox_phase2';
@@ -440,6 +441,15 @@ describe('HospitalOS & HMS Cross-Tenant Generator Suite (Phase 2b-3)', () => {
       expectedStatus: 404,
       run: (ctx) => advanceTriage(makeRequest(TENANT_A, '/api/v1/hms/triage/advance', 'POST', { patientId: ctx.idsB.patientId, newTriageLevel: 3 })),
     },
+    'POST app/api/v1/hms/data-rights/principal/route.ts': {
+      description: 'V1 Principal data-rights on Tenant B patient from Tenant A: 404 (no leak)',
+      expectedStatus: 404,
+      run: (ctx) => postV1HmsPrincipal(makeRequest(TENANT_A, '/api/v1/hms/data-rights/principal', 'POST', {
+        action: 'export',
+        principal: { kind: 'patient', id: ctx.idsB.patientId },
+        reason: 'Cross-tenant DSR probe',
+      })),
+    },
     'POST app/api/hospital/security/staff/[id]/unlock/route.ts': {
       description: 'Unlock Tenant B staff from Tenant A: 404 (scoped to tenant)',
       expectedStatus: 404,
@@ -637,7 +647,7 @@ describe('HospitalOS & HMS Cross-Tenant Generator Suite (Phase 2b-3)', () => {
       }
     }
 
-    assert.equal(discovered.length, 52, 'Discovered route+methods must be exactly 52 across the 32 route files');
+    assert.equal(discovered.length, 53, 'Discovered route+methods must be exactly 53 across the 33 route files');
 
     for (const item of discovered) {
       assert.ok(

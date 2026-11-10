@@ -17,7 +17,11 @@ export const CUSTOMER_ROLE_ACTIONS = {
   rotateApiKey: ['OWNER', 'ADMIN'],
   revokeApiKey: ['OWNER'],
   requestExport: ['OWNER'],
+  downloadExport: ['OWNER'],
   requestDeletion: ['OWNER'],
+  cancelDeletion: ['OWNER'],
+  readDeletionCertificate: ['OWNER'],
+  principalDataRights: ['OWNER', 'ADMIN'],
 } as const satisfies Record<string, readonly CustomerMembershipRole[]>;
 
 export type CustomerDashboardAction = keyof typeof CUSTOMER_ROLE_ACTIONS;
@@ -37,7 +41,18 @@ export async function getCustomerOrganizationRole(
     where: { organizationId_userId: { organizationId, userId } },
     select: { role: true },
   });
-  return membership?.role ?? null;
+  if (!membership) return null;
+  if (membership.role !== 'OWNER') {
+    const pendingDeletion = await prisma.organizationDeletionRequest.findFirst({
+      where: {
+        organizationId,
+        status: { in: ['SCHEDULED', 'IN_PROGRESS'] },
+      },
+      select: { id: true },
+    });
+    if (pendingDeletion) return null;
+  }
+  return membership.role;
 }
 
 export function noStoreHeaders(): Record<string, string> {

@@ -34,13 +34,15 @@ const routeCases = [
   { file: 'billing/checkout/route.ts', methods: ['POST'] },
   { file: 'billing/subscriptions/[subscriptionId]/cancel/route.ts', methods: ['POST'] },
   { file: 'billing/subscriptions/[subscriptionId]/change-plan/route.ts', methods: ['POST'] },
-  { file: 'data/deletion/route.ts', methods: ['POST'] },
-  { file: 'data/export/route.ts', methods: ['POST'] },
+  { file: 'data/deletion/route.ts', methods: ['GET', 'POST', 'DELETE'] },
+  { file: 'data/export/download/route.ts', methods: ['POST'] },
+  { file: 'data/export/route.ts', methods: ['GET', 'POST'] },
   { file: 'invites/route.ts', methods: ['POST'] },
   { file: 'members/[userId]/route.ts', methods: ['DELETE'] },
   { file: 'members/route.ts', methods: ['GET', 'PATCH'] },
   { file: 'ownership-transfer/route.ts', methods: ['POST'] },
   { file: 'tenants/[projectId]/environments/[environmentId]/billing/route.ts', methods: ['GET'] },
+  { file: 'tenants/[projectId]/environments/[environmentId]/data/principal/route.ts', methods: ['POST'] },
   { file: 'tenants/[projectId]/environments/[environmentId]/route.ts', methods: ['GET'] },
   { file: 'tenants/[projectId]/environments/[environmentId]/usage/route.ts', methods: ['GET'] },
   { file: 'tenants/operations/[operationId]/retry/route.ts', methods: ['POST'] },
@@ -62,7 +64,10 @@ const writeActions: readonly CustomerDashboardAction[] = [
   'rotateApiKey',
   'revokeApiKey',
   'requestExport',
+  'downloadExport',
   'requestDeletion',
+  'cancelDeletion',
+  'principalDataRights',
 ];
 
 const nonDashboardCustomerRoutes = [
@@ -282,7 +287,11 @@ describe('Phase 6 customer dashboard tenant isolation', () => {
       rotateApiKey: ['OWNER', 'ADMIN'],
       revokeApiKey: ['OWNER'],
       requestExport: ['OWNER'],
+      downloadExport: ['OWNER'],
       requestDeletion: ['OWNER'],
+      cancelDeletion: ['OWNER'],
+      readDeletionCertificate: ['OWNER'],
+      principalDataRights: ['OWNER', 'ADMIN'],
     };
     const roles = ['MEMBER', 'BILLING', 'ADMIN', 'OWNER'] as const;
     for (const action of writeActions) {
@@ -331,6 +340,12 @@ describe('Phase 6 customer dashboard tenant isolation', () => {
     if (file.endsWith('/change-plan/route.ts')) return { razorpayPlanId: 'plan-private' };
     if (file === 'api-keys/route.ts') {
       return { environmentId: environmentBId, name: 'Private key B', capabilities: ['read'] };
+    }
+    if (file === 'data/export/download/route.ts') {
+      return { token: 'A'.repeat(43) };
+    }
+    if (file === 'tenants/[projectId]/environments/[environmentId]/data/principal/route.ts') {
+      return { pluginId: '@orbitox/hms', action: 'export', principal: { kind: 'patient', id: 'pat_x' }, reason: 'Cross-tenant check' };
     }
     return {};
   }

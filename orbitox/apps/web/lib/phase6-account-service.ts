@@ -349,8 +349,26 @@ export async function loginCustomer(input: {
 
     const memberships = await tx.customerMembership.findMany({
       where: { userId: account.id },
-      select: { role: true },
+      select: { organizationId: true, role: true },
     });
+    if (memberships.length > 0) {
+      const pendingDeletions = await tx.organizationDeletionRequest.findMany({
+        where: {
+          organizationId: { in: memberships.map((m) => m.organizationId) },
+          status: { in: ['SCHEDULED', 'IN_PROGRESS'] },
+        },
+        select: { organizationId: true },
+      });
+      if (pendingDeletions.length > 0) {
+        const pendingOrgIds = new Set(pendingDeletions.map((d) => d.organizationId));
+        const hasPermittedAccess = memberships.some(
+          (m) => m.role === 'OWNER' || !pendingOrgIds.has(m.organizationId),
+        );
+        if (!hasPermittedAccess) {
+          return { ok: false as const, reason: 'ORGANIZATION_DELETION_PENDING' as const };
+        }
+      }
+    }
     const mfaRequired = memberships.some((membership) =>
       ['OWNER', 'ADMIN'].includes(membership.role),
     );

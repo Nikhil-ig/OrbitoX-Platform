@@ -99,6 +99,7 @@ const GLOBAL_DEV_TEST_IGNORE: ReadonlyMap<string, string> = new Map([
   ['ORBITOX_OBJECT_STORE_KMS_KEY_ID', 'Optional AWS KMS key ARN/id override for S3 SSE-KMS exports in staging/production.'],
   ['ORBITOX_OBJECT_STORE_LOCAL_DIR', 'Local filesystem root directory override for LocalObjectStore in CI and tests.'],
   ['ORBITOX_BACKUP_RETENTION_DAYS', 'Optional PITR backup retention days override (default 35) for deletion certificates.'],
+  ['ORBITOX_PLUGIN_ERASURE_POLICY', 'Optional JSON map overriding default plugin DSR erasure modes (HMS=RESTRICT, RestaurantOS=DELETE).'],
   ['JWT_PRIVATE_KEY', 'Test fixture cryptographic key used in local token generation tests.'],
   ['JWT_PUBLIC_KEY', 'Test fixture cryptographic key used in local token generation tests.'],
 ]);

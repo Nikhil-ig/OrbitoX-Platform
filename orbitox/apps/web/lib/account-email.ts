@@ -35,10 +35,20 @@ const templates: Record<string, (data: Record<string, unknown>) => RenderedEmail
     subject: 'Your OrbitoX tenant is ready',
     text: 'Your tenant is ready to use. Sign in to your dashboard to continue.',
   }),
-  EXPORT_READY: () => ({
-    subject: 'Your OrbitoX export is ready',
-    text: 'Your requested export is ready. Sign in to your dashboard to download it.',
-  }),
+  EXPORT_READY: (data) => {
+    const link = typeof data.link === 'string' ? data.link : '';
+    if (link) {
+      if (!isHttpsLink(link)) throw new Error('Account email action link is missing or invalid.');
+      return {
+        subject: 'Your OrbitoX export is ready',
+        text: `Your requested export archive is ready. Download it once within 24 hours:\n${link}`,
+      };
+    }
+    return {
+      subject: 'Your OrbitoX export is ready',
+      text: 'Your requested export is ready. Sign in to your dashboard to download it.',
+    };
+  },
   DELETION_SCHEDULED: () => ({
     subject: 'Your OrbitoX deletion request is scheduled',
     text: 'Your data deletion request has been scheduled.',

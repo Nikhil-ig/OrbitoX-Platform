@@ -31,6 +31,12 @@ export async function POST(request: NextRequest) {
     userAgent: request.headers.get('user-agent') || undefined,
   });
   if (!result.ok) {
+    if (result.reason === 'ORGANIZATION_DELETION_PENDING') {
+      return NextResponse.json(
+        { ok: false, error: 'Organization deletion is scheduled; non-owner sign-in is disabled.' },
+        { status: 403, headers: noStore },
+      );
+    }
     const emailUnverified = result.reason === 'EMAIL_NOT_VERIFIED';
     return NextResponse.json(
       { ok: false, error: emailUnverified ? 'Verify your email before signing in.' : 'Invalid email, password, or verification code.' },
