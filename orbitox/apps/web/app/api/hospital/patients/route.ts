@@ -22,6 +22,7 @@ export const GET = withHospitalGuard(async (req: NextRequest, _routeContext, aut
       const { rows } = await tx.query(
         `SELECT "id", "mrn", "ageBand", "gender", "bloodGroup", "triageLevel", "createdAt"
          FROM "HmsPatient"
+         WHERE "processingStatus" = 'ACTIVE'
          ORDER BY "createdAt" DESC
          LIMIT 50`
       );

@@ -3,6 +3,7 @@ import { withApiGuard, PlatformApiState } from '../../../_lib/api-guard';
 import { withTenantTx } from '@/lib/tenant-db';
 import { prisma } from '@/lib/prisma';
 import { mapDbError, errorBody, HttpError } from '@/lib/db-errors';
+import { assertPatientActive } from '@/lib/hms-repository';
 
 export const POST = withApiGuard(
   {
@@ -19,11 +20,12 @@ export const POST = withApiGuard(
       }
 
       const updated = await withTenantTx(prisma, ctx.tenantId, async (tx) => {
+        await assertPatientActive(tx, patientId);
         const { rows } = await tx.query(
           `UPDATE "HmsPatient"
            SET "triageLevel" = $2,
                "updatedAt" = now()
-           WHERE "id" = $1
+           WHERE "id" = $1 AND "processingStatus" = 'ACTIVE'
            RETURNING "id", "mrn", "triageLevel", "updatedAt"`,
           [patientId, newTriageLevel]
         );

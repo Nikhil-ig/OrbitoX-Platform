@@ -94,13 +94,28 @@ export async function createPatient(
   return { id, mrn };
 }
 
-/** Exact phone search without plaintext: returns ids + MRN only. */
+/** Exact phone search without plaintext: returns active patient ids + MRN only. */
 export async function findPatientIdsByPhone(tx: TenantTx, ring: PhiKeyRing, phone: string) {
   const { rows } = await tx.query<{ id: string; mrn: string }>(
-    `SELECT "id","mrn" FROM "HmsPatient" WHERE "phoneBlind" = $1 ORDER BY "createdAt" LIMIT 20`,
+    `SELECT "id","mrn" FROM "HmsPatient" WHERE "phoneBlind" = $1 AND "processingStatus" = 'ACTIVE' ORDER BY "createdAt" LIMIT 20`,
     [blindIndex(ring, phone, 'phone', tx.tenantId, 'phone')],
   );
   return rows;
+}
+
+export async function assertPatientActive(tx: TenantTx, patientId: string): Promise<void> {
+  const { rows } = await tx.query<{ processingStatus: string }>(
+    `SELECT "processingStatus" FROM "HmsPatient" WHERE "id" = $1`,
+    [patientId],
+  );
+  if (!rows[0]) throw new HttpError(404, 'PATIENT_NOT_FOUND');
+  if (rows[0].processingStatus !== 'ACTIVE') {
+    throw new HttpError(
+      409,
+      'PATIENT_PROCESSING_RESTRICTED',
+      'Patient record is legally restricted; updates and clinical processing are blocked.',
+    );
+  }
 }
 
 const PHI_COLUMNS = {
@@ -140,8 +155,13 @@ export async function readPatientForPurpose(
     if (g.rowCount === 0) throw new HttpError(403, 'BREAK_GLASS_GRANT_REQUIRED');
   }
   const cols = q.fields.map((f) => `"${PHI_COLUMNS[f]}"`).join(','); // whitelist-derived, not user input
-  const { rows } = await tx.query(`SELECT "id","mrn",${cols} FROM "HmsPatient" WHERE "id"=$1`, [q.patientId]);
-  if (!rows[0]) throw new HttpError(404, 'PATIENT_NOT_FOUND'); // other tenants' ids look identical: 404
+  const { rows } = await tx.query(
+    `SELECT "id","mrn","processingStatus",${cols} FROM "HmsPatient" WHERE "id"=$1`,
+    [q.patientId],
+  );
+  if (!rows[0] || rows[0].processingStatus !== 'ACTIVE') {
+    throw new HttpError(404, 'PATIENT_NOT_FOUND'); // Restricted or other-tenant ids stay hidden from normal reads
+  }
   // Audit BEFORE returning data; if the insert fails the whole read fails.
   await tx.query(
     `INSERT INTO "HmsPhiAccessLog" ("actorId","patientId","columns","purpose","requestId") VALUES ($1,$2,$3,$4,$5)`,
@@ -159,6 +179,7 @@ export async function admitPatient(
   tx: TenantTx,
   a: { patientId: string; bedId: string; staffId: string; notes?: string; ring?: PhiKeyRing },
 ) {
+  await assertPatientActive(tx, a.patientId);
   const id = newId('adm');
   const notes =
     a.notes && a.ring ? seal(a.ring, a.notes, { tenantId: tx.tenantId, column: 'admissionNotes', rowId: id }) : null;
@@ -184,6 +205,7 @@ export async function bookAppointment(
   b: { patientId: string; doctorId: string; start: Date; end: Date },
 ) {
   if (!(b.end > b.start)) throw new HttpError(422, 'INVALID_SLOT');
+  await assertPatientActive(tx, b.patientId);
   const id = newId('apt');
   await tx.query(
     `INSERT INTO "HmsAppointment" ("id","patientId","doctorId","slot") VALUES ($1,$2,$3,tstzrange($4::timestamptz,$5::timestamptz,'[)'))`,

@@ -4,7 +4,14 @@ import { withTenantTx } from '@/lib/tenant-db';
 import { prisma } from '@/lib/prisma';
 import { mapDbError, errorBody, HttpError } from '@/lib/db-errors';
 import { getPhiKeyRing } from '@/lib/phi-crypto';
-import { readPatientForPurpose, admitPatient, dischargePatient, Purpose, PhiField } from '@/lib/hms-repository';
+import {
+  readPatientForPurpose,
+  admitPatient,
+  dischargePatient,
+  assertPatientActive,
+  Purpose,
+  PhiField,
+} from '@/lib/hms-repository';
 
 export const GET = withHospitalGuard(async (req: NextRequest, context: { params: Promise<{ id: string }> }, authContext) => {
   try {
@@ -81,6 +88,7 @@ export const PATCH = withHospitalGuard(async (req: NextRequest, context: { param
     const body = await req.json();
 
     const data = await withTenantTx(prisma, authContext.tenantId, async (tx) => {
+      await assertPatientActive(tx, id);
       const { rows } = await tx.query(
         `UPDATE "HmsPatient"
          SET "triageLevel" = COALESCE($2, "triageLevel"),
@@ -88,7 +96,7 @@ export const PATCH = withHospitalGuard(async (req: NextRequest, context: { param
              "gender" = COALESCE($4, "gender"),
              "bloodGroup" = COALESCE($5, "bloodGroup"),
              "updatedAt" = now()
-         WHERE "id" = $1
+         WHERE "id" = $1 AND "processingStatus" = 'ACTIVE'
          RETURNING "id", "mrn", "triageLevel", "ageBand", "gender", "bloodGroup", "updatedAt"`,
         [id, body.triageLevel ?? null, body.ageBand ?? null, body.gender ?? null, body.bloodGroup ?? null]
       );

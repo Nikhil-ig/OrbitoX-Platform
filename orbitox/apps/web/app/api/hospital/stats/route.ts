@@ -8,7 +8,7 @@ export const GET = withHospitalGuard(async (_req: NextRequest, _routeContext, au
   try {
     const data = await withTenantTx(prisma, authContext.tenantId, async (tx) => {
       const { rows: patientCount } = await tx.query<{ count: string }>(
-        `SELECT COUNT(*)::text as "count" FROM "HmsPatient"`
+        `SELECT COUNT(*)::text as "count" FROM "HmsPatient" WHERE "processingStatus" = 'ACTIVE'`
       );
       const { rows: admissionCount } = await tx.query<{ count: string }>(
         `SELECT COUNT(*)::text as "count" FROM "HmsAdmission" WHERE "dischargedAt" IS NULL`

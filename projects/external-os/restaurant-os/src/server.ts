@@ -84,6 +84,14 @@ import { PosService } from '@orbitox/pos';
 import { PostgresRestaurantStore } from '../packages/storage/postgres-store';
 import { RealtimeEventBus } from '../packages/domain/event-bus';
 import { RestaurantControlBridge, restaurantControlBridge } from './bridge';
+import {
+  assertPlatformBridgeCaller,
+  exportRestaurantTenantData,
+  eraseRestaurantTenantData,
+  exportRestaurantPrincipalData,
+  correctRestaurantPrincipalData,
+  eraseRestaurantPrincipalData,
+} from './data-rights';
 import { RazorpayPaymentGatewayAdapter } from '../packages/integrations';
 import {
   PluginGrantEnforcer,
@@ -1225,7 +1233,11 @@ export async function handleRequest(req: http.IncomingMessage, res: http.ServerR
   }
 
   if (!tenantContext) {
-    if (pathname.startsWith('/internal/') || pathname.startsWith('/orbitox/lifecycle')) {
+    if (
+      pathname.startsWith('/internal/') ||
+      pathname.startsWith('/orbitox/lifecycle') ||
+      pathname.startsWith('/orbitox/data-rights')
+    ) {
       tenantContext = {
         tenantId: 'PLATFORM_SUPERUSER',
         tenantSlug: 'platform',
@@ -1548,6 +1560,81 @@ export async function handleRequest(req: http.IncomingMessage, res: http.ServerR
     }
   }
 
+  // --- ORBITOX 6G DATA-RIGHTS BRIDGE ENDPOINTS ---
+  if (pathname.startsWith('/orbitox/data-rights')) {
+    if (!postgresStore?.prisma) {
+      sendJson(res, 503, { error: 'STORE_UNAVAILABLE', message: 'PostgreSQL store is required for data-rights endpoints.' });
+      return;
+    }
+    try {
+      const caller = assertPlatformBridgeCaller(verifiedBridge);
+      if (pathname === '/orbitox/data-rights/export' && method === 'POST') {
+        const result = await exportRestaurantTenantData(postgresStore.prisma, caller.tenantId);
+        sendJson(res, 200, result);
+        return;
+      }
+      if (pathname === '/orbitox/data-rights/erase' && method === 'POST') {
+        const body = await parseBody(req);
+        const mode = body.mode === 'RESTRICT' ? 'RESTRICT' : 'DELETE';
+        const result = await eraseRestaurantTenantData(
+          postgresStore.prisma,
+          caller.tenantId,
+          mode,
+          body.context || { actorId: caller.actorSub, reason: 'Organization erasure' },
+        );
+        restaurantGrantEnforcer.invalidate(caller.tenantId);
+        invalidateTenantResolutionCache(caller.tenantId);
+        sendJson(res, 200, result);
+        return;
+      }
+      if (pathname === '/orbitox/data-rights/principal/export' && method === 'POST') {
+        const body = await parseBody(req);
+        const result = await exportRestaurantPrincipalData(
+          postgresStore.prisma,
+          caller.tenantId,
+          body.principal || {},
+          body.context || { actorId: caller.actorSub, reason: 'DSR principal export' },
+        );
+        sendJson(res, 200, result);
+        return;
+      }
+      if (pathname === '/orbitox/data-rights/principal/correct' && method === 'POST') {
+        const body = await parseBody(req);
+        const result = await correctRestaurantPrincipalData(
+          postgresStore.prisma,
+          caller.tenantId,
+          body.principal || {},
+          body.patch || { fields: {} },
+          body.context || { actorId: caller.actorSub, reason: 'DSR principal correction' },
+        );
+        sendJson(res, 200, result);
+        return;
+      }
+      if (pathname === '/orbitox/data-rights/principal/erase' && method === 'POST') {
+        const body = await parseBody(req);
+        const mode = body.mode === 'RESTRICT' ? 'RESTRICT' : 'DELETE';
+        const result = await eraseRestaurantPrincipalData(
+          postgresStore.prisma,
+          caller.tenantId,
+          body.principal || {},
+          mode,
+          body.context || { actorId: caller.actorSub, reason: 'DSR principal erasure' },
+        );
+        sendJson(res, 200, result);
+        return;
+      }
+      sendJson(res, 404, { error: 'NOT_FOUND', message: 'Unknown data-rights bridge endpoint.' });
+    } catch (err: any) {
+      const status = typeof err?.statusCode === 'number' ? err.statusCode : 500;
+      sendJson(res, status, {
+        error: err?.code || 'DATA_RIGHTS_ERROR',
+        code: err?.code || 'DATA_RIGHTS_ERROR',
+        message: err?.message || 'Data-rights bridge execution failed.',
+      });
+    }
+    return;
+  }
+
   res.setHeader('x-tenant-id', tenantContext.tenantId);
   return withTenantContext(tenantContext, async () => {
     const repo = getTenantRepository(tenantContext, postgresStore?.prisma, eventBus);
@@ -1717,6 +1804,7 @@ export async function handleRequest(req: http.IncomingMessage, res: http.ServerR
       (shouldEnforceGrants || isLocallySuspended) &&
       !pathname.startsWith('/internal/') &&
       !pathname.startsWith('/orbitox/lifecycle') &&
+      !pathname.startsWith('/orbitox/data-rights') &&
       !pathname.startsWith('/api/platform/lifecycle') &&
       !pathname.startsWith('/health') &&
       !pathname.startsWith('/metrics') &&
