@@ -1,0 +1,326 @@
+import assert from 'node:assert/strict';
+import { execFileSync, spawnSync } from 'node:child_process';
+import crypto from 'node:crypto';
+import fs from 'node:fs/promises';
+import os from 'node:os';
+import path from 'node:path';
+import { after, describe, it } from 'node:test';
+import {
+  DEFAULT_PLUGIN_ERASURE_POLICY,
+  PLUGIN_DATA_CONTRACT_VERSION,
+  resolvePluginErasureMode,
+} from '@orbitox-io/plugin-engine';
+import {
+  buildExportBundle,
+  readZipArchive,
+  verifyExportArchive,
+} from '../lib/data-rights/archive';
+import {
+  LocalObjectStore,
+  S3ObjectStore,
+  type S3CommandExecutor,
+  type S3PutObjectInput,
+} from '../lib/data-rights/object-store';
+import {
+  buildSignedDeletionCertificate,
+  extractDeletionCertPublicKeys,
+  verifyDeletionCertificate,
+} from '../lib/data-rights/deletion-certificate';
+
+function genEd25519() {
+  const pair = crypto.generateKeyPairSync('ed25519');
+  return {
+    privateKey: pair.privateKey.export({ type: 'pkcs8', format: 'pem' }).toString(),
+    publicKey: pair.publicKey.export({ type: 'spki', format: 'pem' }).toString(),
+  };
+}
+
+describe('Phase 6G Foundations: Contract, ObjectStore, Export Bundle & Deletion Certificate', () => {
+  const tempDirs: string[] = [];
+
+  after(async () => {
+    for (const dir of tempDirs) {
+      await fs.rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('G1: enforces versioned plugin data contract & config-driven erasure policy', () => {
+    assert.equal(PLUGIN_DATA_CONTRACT_VERSION, 'v1');
+    assert.equal(DEFAULT_PLUGIN_ERASURE_POLICY['@orbitox/hms'], 'RESTRICT');
+    assert.equal(DEFAULT_PLUGIN_ERASURE_POLICY['@orbitox/restaurant'], 'DELETE');
+
+    assert.equal(resolvePluginErasureMode('hospital-os'), 'RESTRICT');
+    assert.equal(resolvePluginErasureMode('@orbitox/hms'), 'RESTRICT');
+    assert.equal(resolvePluginErasureMode('restaurant-os'), 'DELETE');
+    assert.equal(resolvePluginErasureMode('@orbitox/restaurant'), 'DELETE');
+
+    const customPolicy = JSON.stringify({
+      '@orbitox/hms': 'DELETE',
+      'restaurant-os': 'RESTRICT',
+    });
+    assert.equal(resolvePluginErasureMode('@orbitox/hms', customPolicy), 'DELETE');
+    assert.equal(resolvePluginErasureMode('@orbitox/restaurant', customPolicy), 'RESTRICT');
+
+    assert.throws(
+      () => resolvePluginErasureMode('@orbitox/hms', JSON.stringify({ '@orbitox/hms': 'PURGE' })),
+      /Invalid erasure mode/,
+    );
+  });
+
+  it('G2: builds deterministic PKZIP with JSON, CSV, and SHA-256 verified manifest.json', async () => {
+    const generatedAt = new Date('2026-11-10T10:00:00.000Z');
+    const { zipBuffer, manifest } = buildExportBundle({
+      organizationId: 'org_test_1',
+      jobId: 'job_test_1',
+      generatedAt,
+      tenants: [
+        {
+          tenantId: 'org/org_test_1/project/p1/environment/e1',
+          projectId: 'p1',
+          environmentId: 'e1',
+          plugins: ['@orbitox/hms'],
+        },
+      ],
+      tableData: [
+        {
+          tenantId: 'org/org_test_1/project/p1/environment/e1',
+          pluginId: '@orbitox/hms',
+          table: 'HmsPatient',
+          columns: ['id', 'name', 'notes'],
+          rows: [
+            { id: 'pat_1', name: 'Alice "A." Smith', notes: 'Line1,\nLine2' },
+            { id: 'pat_2', name: 'Bob', notes: null },
+          ],
+        },
+      ],
+    });
+
+    assert.equal(manifest.schemaVersion, 'orbitox.data_export.v1');
+    assert.equal(manifest.tables.length, 1);
+    assert.equal(manifest.tables[0]?.rowCount, 2);
+
+    const verified = verifyExportArchive(zipBuffer);
+    assert.equal(verified.organizationId, 'org_test_1');
+
+    const entries = readZipArchive(zipBuffer);
+    const csv = entries.get(manifest.tables[0]!.csvFile)!.toString('utf8');
+    assert.match(csv, /^id,name,notes\n/);
+    assert.ok(csv.includes('"Alice ""A."" Smith"'));
+    assert.ok(csv.includes('"Line1,\nLine2"'));
+
+    // Also validate ZIP archive with OS python3 zipfile module if available
+    const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'orbitox-zip-'));
+    tempDirs.push(tmpDir);
+    const zipPath = path.join(tmpDir, 'export.zip');
+    await fs.writeFile(zipPath, zipBuffer);
+    const pyCheck = spawnSync('python3', ['-m', 'zipfile', '-t', zipPath], { encoding: 'utf8' });
+    if (pyCheck.status !== null && !pyCheck.error) {
+      assert.equal(pyCheck.status, 0, `python3 zipfile test failed: ${pyCheck.stderr}`);
+    }
+
+    // Tampered manifest checksum detection
+    const badEntries = Array.from(entries.entries()).map(([p, content]) => ({
+      path: p,
+      content: p.endsWith('.json') && p !== 'manifest.json'
+        ? Buffer.from('[{"tampered":true}]')
+        : content,
+    }));
+    const { buildZipArchive } = await import('../lib/data-rights/archive');
+    const tamperedZip = buildZipArchive(badEntries, generatedAt);
+    assert.throws(() => verifyExportArchive(tamperedZip), /Checksum or size mismatch/);
+  });
+
+  it('G2: LocalObjectStore supports put/get/delete/deletePrefix/signedUrl and blocks traversal', async () => {
+    const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'orbitox-local-store-'));
+    tempDirs.push(tmpDir);
+
+    const store = new LocalObjectStore({ rootDir: tmpDir, signingSecret: 'secret-signing-key-32-chars-min!' });
+    await store.put('exports/org-1/job-1.zip', Buffer.from('zip-bytes'), {
+      contentType: 'application/zip',
+    });
+
+    const got = await store.get('exports/org-1/job-1.zip');
+    assert.equal(got?.toString('utf8'), 'zip-bytes');
+
+    const url = await store.signedDownloadUrl('exports/org-1/job-1.zip', {
+      expiresInSeconds: 300,
+      baseUrl: 'https://console.orbitox.test',
+    });
+    assert.ok(url.startsWith('https://console.orbitox.test/'));
+    assert.ok(url.includes('sig='));
+
+    await assert.rejects(() => store.put('../escape.txt', Buffer.from('x')), /Invalid object store key/);
+    await assert.rejects(() => store.get('/etc/passwd'), /Path|Invalid|ENOENT/);
+
+    await store.put('exports/org-1/job-2.zip', Buffer.from('zip-2'));
+    const deletedCount = await store.deletePrefix('exports/org-1');
+    assert.equal(deletedCount, 2);
+    assert.equal(await store.get('exports/org-1/job-1.zip'), null);
+  });
+
+  it('G2: S3ObjectStore enforces SSE-KMS (aws:kms + SSEKMSKeyId) and supports get/delete/presign with mocks', async () => {
+    const recordedPuts: S3PutObjectInput[] = [];
+    const backing = new Map<string, Buffer>();
+
+    const mockExecutor: S3CommandExecutor = {
+      async putObject(input) {
+        recordedPuts.push(input);
+        backing.set(input.Key, input.Body);
+      },
+      async getObject(input) {
+        return backing.get(input.Key) ?? null;
+      },
+      async deleteObject(input) {
+        backing.delete(input.Key);
+      },
+      async listKeys(input) {
+        return Array.from(backing.keys()).filter((k) => k.startsWith(input.Prefix));
+      },
+      async getPresignedGetUrl(input) {
+        return `https://${input.Bucket}.s3.amazonaws.com/${input.Key}?X-Amz-Expires=${input.ExpiresIn}`;
+      },
+    };
+
+    assert.throws(
+      () => new S3ObjectStore({ bucket: 'bkt', kmsKeyId: '', executor: mockExecutor }),
+      /requires SSE-KMS key id/,
+    );
+
+    const store = new S3ObjectStore({
+      bucket: 'orbitox-exports-staging',
+      kmsKeyId: 'arn:aws:kms:ap-south-1:123456789012:key/exports-cmk',
+      executor: mockExecutor,
+    });
+
+    await store.put('exports/org-a/archive.zip', Buffer.from('encrypted-zip'), {
+      contentType: 'application/zip',
+    });
+    assert.equal(recordedPuts.length, 1);
+    assert.equal(recordedPuts[0]?.ServerSideEncryption, 'aws:kms');
+    assert.equal(
+      recordedPuts[0]?.SSEKMSKeyId,
+      'arn:aws:kms:ap-south-1:123456789012:key/exports-cmk',
+    );
+
+    const fetched = await store.get('exports/org-a/archive.zip');
+    assert.equal(fetched?.toString('utf8'), 'encrypted-zip');
+
+    const signedUrl = await store.signedDownloadUrl('exports/org-a/archive.zip', {
+      expiresInSeconds: 600,
+    });
+    assert.ok(signedUrl.includes('orbitox-exports-staging.s3.amazonaws.com/exports/org-a/archive.zip'));
+    assert.ok(signedUrl.includes('X-Amz-Expires=600'));
+
+    const deleted = await store.deletePrefix('exports/org-a');
+    assert.equal(deleted, 1);
+    assert.equal(await store.get('exports/org-a/archive.zip'), null);
+  });
+
+  it('G3: deletion certificate requires dedicated key (not grant key), detects 1-byte tamper, and CLI verifies', async () => {
+    const grantKey = genEd25519();
+    const certKey = genEd25519();
+
+    const env = {
+      ORBITOX_GRANT_SIGNING_KEYS: JSON.stringify({ grant_k1: grantKey }),
+      ORBITOX_DELETION_CERT_KEYS: JSON.stringify({ cert_k1: certKey }),
+      ORBITOX_BACKUP_RETENTION_DAYS: '35',
+    };
+
+    // Reusing the grant key MUST be rejected
+    assert.throws(
+      () =>
+        buildSignedDeletionCertificate(
+          {
+            organizationId: 'org_1',
+            requestId: 'del_1',
+            requestedAt: new Date('2026-10-01T00:00:00.000Z'),
+            scheduledFor: new Date('2026-10-31T00:00:00.000Z'),
+            completedAt: new Date('2026-10-31T00:05:00.000Z'),
+            plugins: [],
+            platformRowsDeletedByTable: { PlatformOrganization: 1 },
+            objectStoreObjectsDeleted: 0,
+          },
+          {
+            ORBITOX_GRANT_SIGNING_KEYS: JSON.stringify({ grant_k1: grantKey }),
+            ORBITOX_DELETION_CERT_KEYS: JSON.stringify({ cert_k1: grantKey }),
+          },
+        ),
+      /reuses an entitlement grant key/,
+    );
+
+    const cert = buildSignedDeletionCertificate(
+      {
+        organizationId: 'org_del_1',
+        organizationSlug: 'acme-health',
+        requestId: 'req_123',
+        requestedAt: new Date('2026-10-01T00:00:00.000Z'),
+        scheduledFor: new Date('2026-10-31T00:00:00.000Z'),
+        completedAt: new Date('2026-10-31T00:05:00.000Z'),
+        plugins: [
+          {
+            pluginId: '@orbitox/hms',
+            tenantId: 'org/org_del_1/project/p1/environment/e1',
+            rowsDeletedByTable: { HmsPatient: 3, HmsInvoice: 1 },
+          },
+        ],
+        platformRowsDeletedByTable: { PlatformOrganization: 1 },
+        objectStoreObjectsDeleted: 2,
+      },
+      env,
+    );
+
+    assert.equal(cert.payload.purpose, 'deletion-certificate');
+    assert.equal(cert.keyId, 'cert_k1');
+    assert.equal(cert.payload.totalRowsDeleted, 5);
+    assert.ok(cert.payload.backupNotice.includes('2026-12-05'));
+    assert.ok(cert.payload.backupNotice.includes('unrecoverable'));
+
+    const publicKeys = extractDeletionCertPublicKeys(env.ORBITOX_DELETION_CERT_KEYS);
+    assert.equal(verifyDeletionCertificate(cert, publicKeys).valid, true);
+
+    // 1-byte tamper inside payload
+    const tamperedPayloadCert = structuredClone(cert);
+    tamperedPayloadCert.payload.totalRowsDeleted = 6;
+    assert.equal(verifyDeletionCertificate(tamperedPayloadCert, publicKeys).valid, false);
+
+    // 1-byte tamper in signature
+    const tamperedSigCert = structuredClone(cert);
+    const firstChar = tamperedSigCert.signature[0] === 'A' ? 'B' : 'A';
+    tamperedSigCert.signature = firstChar + tamperedSigCert.signature.slice(1);
+    assert.equal(verifyDeletionCertificate(tamperedSigCert, publicKeys).valid, false);
+
+    // Offline CLI verification
+    const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'orbitox-cert-cli-'));
+    tempDirs.push(tmpDir);
+    const certPath = path.join(tmpDir, 'cert.json');
+    const tamperedPath = path.join(tmpDir, 'cert-tampered.json');
+    const pubPath = path.join(tmpDir, 'pub.json');
+    await fs.writeFile(certPath, JSON.stringify(cert, null, 2));
+    await fs.writeFile(tamperedPath, JSON.stringify(tamperedPayloadCert, null, 2));
+    await fs.writeFile(pubPath, JSON.stringify(publicKeys, null, 2));
+
+    const cliScript = path.resolve(__dirname, '../../../scripts/verify-deletion-certificate.ts');
+    const cliStdout = execFileSync(
+      'pnpm',
+      ['exec', 'tsx', cliScript, '--cert', certPath, '--public-key', pubPath],
+      {
+        cwd: path.resolve(__dirname, '../../..'),
+        encoding: 'utf8',
+      },
+    );
+    const parsedOut = JSON.parse(cliStdout);
+    assert.equal(parsedOut.valid, true);
+    assert.equal(parsedOut.organizationId, 'org_del_1');
+
+    const failRun = spawnSync(
+      'pnpm',
+      ['exec', 'tsx', cliScript, '--cert', tamperedPath, '--public-key', pubPath],
+      {
+        cwd: path.resolve(__dirname, '../../..'),
+        encoding: 'utf8',
+      },
+    );
+    assert.equal(failRun.status, 1);
+    assert.match(failRun.stderr, /INVALID DELETION CERTIFICATE/);
+  });
+});

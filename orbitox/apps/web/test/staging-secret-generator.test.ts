@@ -108,7 +108,7 @@ describe('Phase 6F B0: Staging Secret Generator Verification', () => {
       } else if (name === 'RESTAURANT_STATION_SECRETS') {
         const parsed = JSON.parse(val);
         assert.ok(Object.keys(parsed).length > 0);
-      } else if (name === 'ORBITOX_GRANT_SIGNING_KEYS') {
+      } else if (name === 'ORBITOX_GRANT_SIGNING_KEYS' || name === 'ORBITOX_DELETION_CERT_KEYS') {
         const parsed = JSON.parse(val);
         assert.ok(parsed.k1.privateKey.includes('BEGIN PRIVATE KEY'));
         assert.ok(parsed.k1.publicKey.includes('BEGIN PUBLIC KEY'));
@@ -292,6 +292,21 @@ describe('Phase 6F B0: Staging Secret Generator Verification', () => {
     });
     mockStorage.set('orbitox/staging/ORBITOX_GRANT_SIGNING_KEYS', initialGrantKeys);
 
+    // Seed initial deletion cert keys generated dynamically at runtime
+    const certKeyPair = crypto.generateKeyPairSync('ed25519', {
+      privateKeyEncoding: { type: 'pkcs8', format: 'pem' },
+      publicKeyEncoding: { type: 'spki', format: 'pem' },
+    });
+    mockStorage.set(
+      'orbitox/staging/ORBITOX_DELETION_CERT_KEYS',
+      JSON.stringify({
+        k1: {
+          privateKey: certKeyPair.privateKey,
+          publicKey: certKeyPair.publicKey,
+        },
+      }),
+    );
+
     // Seed initial bridge keys generated dynamically at runtime
     const initialBridgeKeys = JSON.stringify({
       activeKeyId: 'k1',
@@ -351,6 +366,16 @@ describe('Phase 6F B0: Staging Secret Generator Verification', () => {
     assert.ok(updatedPublic.k1?.publicKey, 'Must contain k1 public key');
     assert.ok(updatedPublic.k2?.publicKey, 'Must contain k2 public key');
     assert.equal(updatedPublic.k1?.privateKey, undefined, 'Must NEVER contain private keys in grant public keys');
+
+    // 2b. Add key to ORBITOX_DELETION_CERT_KEYS
+    const certResult = runSecretGenerator({
+      addKey: 'ORBITOX_DELETION_CERT_KEYS',
+      awsCliRunner: mockRunner,
+    });
+    assert.equal(certResult[0]?.action, 'added-key');
+    const updatedCert = JSON.parse(mockStorage.get('orbitox/staging/ORBITOX_DELETION_CERT_KEYS')!);
+    assert.ok(updatedCert.k1, 'Must preserve original deletion cert key k1');
+    assert.ok(updatedCert.k2, 'Must add new deletion cert key k2');
 
     // 3. Add key to ORBITOX_BRIDGE_KEYS
     const bridgeResult = runSecretGenerator({

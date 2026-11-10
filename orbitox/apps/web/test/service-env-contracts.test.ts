@@ -95,6 +95,10 @@ const GLOBAL_DEV_TEST_IGNORE: ReadonlyMap<string, string> = new Map([
   ['RESTAURANT_STORE_URL', 'Dev routing URL for external OS microservice testing.'],
   ['RESTAURANT_URL', 'Dev routing URL for external OS microservice testing.'],
   ['S3_BUCKET_NAME', 'S3 ObjectStore storage bucket name (used in Phase 6G ObjectStore).'],
+  ['ORBITOX_OBJECT_STORE_DRIVER', 'Optional ObjectStore backend selector (local vs s3) with built-in safe defaults.'],
+  ['ORBITOX_OBJECT_STORE_KMS_KEY_ID', 'Optional AWS KMS key ARN/id override for S3 SSE-KMS exports in staging/production.'],
+  ['ORBITOX_OBJECT_STORE_LOCAL_DIR', 'Local filesystem root directory override for LocalObjectStore in CI and tests.'],
+  ['ORBITOX_BACKUP_RETENTION_DAYS', 'Optional PITR backup retention days override (default 35) for deletion certificates.'],
   ['JWT_PRIVATE_KEY', 'Test fixture cryptographic key used in local token generation tests.'],
   ['JWT_PUBLIC_KEY', 'Test fixture cryptographic key used in local token generation tests.'],
 ]);

@@ -46,6 +46,7 @@ export const STATEFUL_ENCRYPTION_SECRETS = [
 export const KEYED_ROTATABLE_SECRETS = [
   'ORBITOX_PHI_KEYS',
   'ORBITOX_GRANT_SIGNING_KEYS',
+  'ORBITOX_DELETION_CERT_KEYS',
   'ORBITOX_BRIDGE_KEYS',
   'ORBITOX_SERVER_PEPPERS',
 ] as const;
@@ -201,6 +202,7 @@ export const SECRET_GENERATORS: Record<string, () => string> = {
   ORBITOX_PHI_KEYS: generatePhiKeys,
   ORBITOX_GRANT_SIGNING_KEYS: generateEd25519GrantSigningKeys,
   ORBITOX_GRANT_PUBLIC_KEYS: generateGrantPublicKeys,
+  ORBITOX_DELETION_CERT_KEYS: generateEd25519GrantSigningKeys,
   ORBITOX_BRIDGE_KEYS: generateBridgeKeys,
   ORBITOX_BRIDGE_ACTIVE_KID: () => 'k1',
   ORBITOX_EMAIL_WEBHOOK_SECRET: () => 'whsec_' + crypto.randomBytes(32).toString('base64'),
@@ -359,6 +361,44 @@ export function handleAdditiveKeyRotation(options: {
     );
 
     console.log(`${name}: added key ${newKid} (preserved ${Object.keys(keysMap).length - 1} existing keys, synced ORBITOX_GRANT_PUBLIC_KEYS)`);
+    return { name, action: 'added-key', detail: `Added key ${newKid}` };
+  }
+
+  if (name === 'ORBITOX_DELETION_CERT_KEYS') {
+    let keysMap: Record<string, { privateKey: string; publicKey: string }> = {};
+    if (currentString) {
+      try {
+        keysMap = JSON.parse(currentString);
+      } catch {
+        throw new Error('Existing ORBITOX_DELETION_CERT_KEYS is not valid JSON.');
+      }
+    }
+    const newKid = `k${Object.keys(keysMap).length + 1}`;
+    const { privateKey, publicKey } = crypto.generateKeyPairSync('ed25519', {
+      privateKeyEncoding: { type: 'pkcs8', format: 'pem' },
+      publicKeyEncoding: { type: 'spki', format: 'pem' },
+    });
+    keysMap[newKid] = { privateKey, publicKey };
+
+    const putRes = runner(
+      [
+        'secretsmanager',
+        'put-secret-value',
+        '--secret-id',
+        secretId,
+        '--secret-string',
+        'file:///dev/stdin',
+        '--region',
+        region,
+      ],
+      JSON.stringify(keysMap),
+    );
+
+    if (putRes.status !== 0) {
+      throw new Error(`Failed to update ${secretId} in Secrets Manager.`);
+    }
+
+    console.log(`${name}: added key ${newKid} (preserved ${Object.keys(keysMap).length - 1} existing keys)`);
     return { name, action: 'added-key', detail: `Added key ${newKid}` };
   }
 

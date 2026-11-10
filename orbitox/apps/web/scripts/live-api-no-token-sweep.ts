@@ -108,6 +108,9 @@ async function run() {
   const grantPair = crypto.generateKeyPairSync('ed25519');
   const grantPrivPem = grantPair.privateKey.export({ type: 'pkcs8', format: 'pem' }).toString();
   const grantPubPem = grantPair.publicKey.export({ type: 'spki', format: 'pem' }).toString();
+  const certPair = crypto.generateKeyPairSync('ed25519');
+  const certPrivPem = certPair.privateKey.export({ type: 'pkcs8', format: 'pem' }).toString();
+  const certPubPem = certPair.publicKey.export({ type: 'spki', format: 'pem' }).toString();
 
   const env: NodeJS.ProcessEnv = {
     ...process.env,
@@ -128,6 +131,9 @@ async function run() {
     ORBITOX_EMAIL_WEBHOOK_SECRET: `whsec_${crypto.randomBytes(32).toString('base64')}`,
     ORBITOX_GRANT_SIGNING_KEYS: JSON.stringify({
       k1: { privateKey: grantPrivPem, publicKey: grantPubPem },
+    }),
+    ORBITOX_DELETION_CERT_KEYS: JSON.stringify({
+      k1: { privateKey: certPrivPem, publicKey: certPubPem },
     }),
     ORBITOX_GRANT_PUBLIC_KEYS: JSON.stringify({
       k1: grantPubPem,

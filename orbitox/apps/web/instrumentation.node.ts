@@ -106,6 +106,32 @@ export async function registerNode() {
       );
     }
 
+    const loopbackStandaloneHarness =
+      process.env.ORBITOX_TEST_STANDALONE === 'true' &&
+      (process.env.HOSTNAME === '127.0.0.1' || process.env.HOSTNAME === 'localhost') &&
+      !process.env.VERCEL &&
+      !process.env.KUBERNETES_SERVICE_HOST &&
+      !process.env.AWS_REGION;
+
+    // Dedicated Ed25519 deletion certificate keys (Phase 6G G3)
+    const rawDeletionCertKeys = process.env.ORBITOX_DELETION_CERT_KEYS?.trim();
+    if (!rawDeletionCertKeys && !loopbackStandaloneHarness) {
+      problems.push(
+        'ORBITOX_DELETION_CERT_KEYS is not set (Dedicated Ed25519 signing keypair is required for deletion certificates)',
+      );
+    } else if (rawDeletionCertKeys) {
+      try {
+        const { loadDeletionCertSigningKeysFromEnv } = await import(
+          './lib/data-rights/deletion-certificate'
+        );
+        loadDeletionCertSigningKeysFromEnv(process.env);
+      } catch (certKeyErr: any) {
+        problems.push(
+          `ORBITOX_DELETION_CERT_KEYS is invalid: ${certKeyErr instanceof Error ? certKeyErr.message : String(certKeyErr)}`,
+        );
+      }
+    }
+
     // Pepper ring validation (ORBITOX_SERVER_PEPPERS and ORBITOX_SERVER_PEPPER_ACTIVE in production)
     const rawPeppers = process.env.ORBITOX_SERVER_PEPPERS?.trim();
     const activePepper = process.env.ORBITOX_SERVER_PEPPER_ACTIVE?.trim();
@@ -142,12 +168,6 @@ export async function registerNode() {
       );
     }
 
-    const loopbackStandaloneHarness =
-      process.env.ORBITOX_TEST_STANDALONE === 'true' &&
-      (process.env.HOSTNAME === '127.0.0.1' || process.env.HOSTNAME === 'localhost') &&
-      !process.env.VERCEL &&
-      !process.env.KUBERNETES_SERVICE_HOST &&
-      !process.env.AWS_REGION;
     if (process.env.TEST_STEP5_DELAY_MS && !loopbackStandaloneHarness) {
       problems.push('TEST_STEP5_DELAY_MS is strictly prohibited in production deployments.');
     }
