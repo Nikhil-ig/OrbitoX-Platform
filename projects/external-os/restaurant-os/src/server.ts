@@ -1348,6 +1348,9 @@ export async function handleRequest(req: http.IncomingMessage, res: http.ServerR
         restaurantName: body.restaurantName || body.name || `Restaurant ${cleanSlug}`,
         slug: cleanSlug,
         planId,
+        gstin: body.gstin,
+        address: body.address,
+        legalEntityName: body.legalEntityName,
         entitlementRevision: Math.max(1, incomingRevision),
         idempotencyKey,
       });

@@ -16,7 +16,7 @@ export const defaultRuntimeConfig: RestaurantRuntimeConfig = {
   port: 4010,
   controlPlaneUrl: 'http://localhost:3005',
   projectId: 'project_restaurant_os',
-  brandName: 'OrbitoX Bistro',
+  brandName: 'Restaurant',
   taxBasisPoints: 500,
   currency: 'INR',
   defaultStationRouting: {

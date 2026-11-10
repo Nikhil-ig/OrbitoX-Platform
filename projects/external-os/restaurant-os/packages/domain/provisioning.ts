@@ -127,6 +127,8 @@ export interface ProvisionTenantInput {
   currency?: string;
   timezone?: string;
   gstin?: string;
+  address?: string;
+  legalEntityName?: string;
   planId: string;
   status?: string;
   entitlementRevision?: number;
@@ -284,13 +286,14 @@ export class TenantProvisioningService {
       });
 
       // 4b. Primary Branch
+      const branchAddress = input.address || 'Main Dining Hall';
       await tx.branch.create({
         data: {
           id: branchId,
           tenantId,
           name: `${restaurantName} Main`,
           code: branchCode,
-          address: 'Main Dining Hall',
+          address: branchAddress,
           city: 'Metropolis',
           timezone,
           currency,
@@ -304,6 +307,21 @@ export class TenantProvisioningService {
             closeTime: '11:00 PM',
             daysOpen: 'Mon - Sun',
             isOpenNow: true,
+          },
+        },
+      });
+
+      // 4b-2. Tenant Brand Settings
+      await tx.tenantBrandConfig.create({
+        data: {
+          tenantId,
+          config: {
+            tenantId,
+            restaurantName,
+            legalEntityName: input.legalEntityName || restaurantName,
+            gstin: input.gstin ? input.gstin.trim() : undefined,
+            address: `${branchAddress}, Metropolis`,
+            themeColor: '#818CF8',
           },
         },
       });

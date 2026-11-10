@@ -58,7 +58,7 @@ export function renderDinerPwa(
   brand?: TenantBrandConfig,
   template?: MarketplaceTemplate
 ): string {
-  const brandName = brand?.restaurantName || 'OrbitoX Bistro';
+  const brandName = brand?.restaurantName || 'Restaurant';
   const brandTagline = brand?.tagline || 'Farm-to-fork gastronomy, crafted over live charcoal embers.';
   const tmplTokens = template?.defaultTokens;
   const primaryColor = tmplTokens?.primaryColor || brand?.primaryColor || '#C86B3C';

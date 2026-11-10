@@ -207,6 +207,9 @@ async function runBlackBoxHttpMultiTenantSuite() {
       ownerName: 'Owner Alpha',
       planId: 'restaurant-pro',
       currency: 'INR',
+      gstin: '27AAAAA0000A1Z5',
+      address: '101 Promenade, Bandra, Mumbai',
+      legalEntityName: 'Alpha Trattoria Hospitality Pvt Ltd',
     };
     const tenantBData = {
       restaurantName: 'Beta Brasserie',
@@ -215,6 +218,9 @@ async function runBlackBoxHttpMultiTenantSuite() {
       ownerName: 'Owner Beta',
       planId: 'restaurant-starter',
       currency: 'INR',
+      gstin: '29BBBBB1111B1Z2',
+      address: '202 MG Road, Indiranagar, Bengaluru',
+      legalEntityName: 'Beta Brasserie LLP',
     };
 
     // 1. Verify deprecated bearer route unconditionally returns 410 ROUTE_DEPRECATED

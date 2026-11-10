@@ -1647,7 +1647,26 @@ export class PostgresRestaurantRepository implements RestaurantRepository {
       const r = await tx.tenantBrandConfig.findFirst({
         where: { tenantId: this.tenantId },
       });
-      const base = r?.config || { tenantId: this.tenantId, restaurantName: 'OrbitoX Bistro', themeColor: '#818CF8' };
+      let base = r?.config;
+      if (!base) {
+        const tenant = await tx.tenant.findUnique({
+          where: { id: this.tenantId },
+          select: { name: true, gstin: true },
+        }).catch(() => null);
+        const branch = await tx.branch.findFirst({
+          where: { tenantId: this.tenantId },
+          select: { address: true, city: true },
+        }).catch(() => null);
+        const branchAddress = branch?.address ? `${branch.address}${branch.city ? `, ${branch.city}` : ''}` : undefined;
+        base = {
+          tenantId: this.tenantId,
+          restaurantName: tenant?.name || 'Restaurant',
+          legalEntityName: tenant?.name || 'Restaurant',
+          gstin: tenant?.gstin || undefined,
+          address: branchAddress,
+          themeColor: '#818CF8',
+        };
+      }
       if (branchId && base.branchOverrides && base.branchOverrides[branchId]) {
         return {
           ...base,

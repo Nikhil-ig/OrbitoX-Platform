@@ -141,7 +141,6 @@ function spawnServer(port: number, envOverrides: Record<string, string> = {}): C
       MAINTENANCE_DATABASE_URL: boundedUrl(maintenanceUrl),
       HMS_AUDIT_DATABASE_URL: boundedUrl(hmsAuditUrl),
       OUTBOX_RELAY_DATABASE_URL: boundedUrl(process.env.OUTBOX_RELAY_DATABASE_URL || 'postgresql://orbitox_outbox_relay:test_relay_pass@127.0.0.1:5432/orbitox_phase2'),
-      ORBITOX_ENABLE_HOSPITAL_ADMIN_ENDPOINTS: 'true',
       ORBITOX_ENABLE_CRM_PLUGIN: 'true',
       ...envOverrides,
     },

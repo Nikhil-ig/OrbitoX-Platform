@@ -1,5 +1,6 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
+import crypto from 'node:crypto';
 import {
   PLATFORM_SERVICE_CONTRACTS,
   EXTERNAL_SECRETS,
@@ -272,24 +273,30 @@ describe('Phase 6F B0: Staging Secret Generator Verification', () => {
   it('B0-2 HIGH security: --add-key additively rotates keyed secrets preserving all historical keys', () => {
     const mockStorage = new Map<string, string>();
     
-    // Seed initial PHI keys
-    const initialPhiKeys = JSON.stringify({ 'phi-key-2026-1': 'aW5pdGlhbF9waGlfa2V5XzMyX2J5dGVzX2xlbg==' });
+    // Seed initial PHI keys generated dynamically at runtime
+    const initialPhiKeys = JSON.stringify({
+      'phi-key-2026-1': crypto.randomBytes(32).toString('base64'),
+    });
     mockStorage.set('orbitox/staging/ORBITOX_PHI_KEYS', initialPhiKeys);
 
-    // Seed initial grant keys
+    // Seed initial grant keys generated dynamically at runtime
+    const seedKeyPair = crypto.generateKeyPairSync('ed25519', {
+      privateKeyEncoding: { type: 'pkcs8', format: 'pem' },
+      publicKeyEncoding: { type: 'spki', format: 'pem' },
+    });
     const initialGrantKeys = JSON.stringify({
       k1: {
-        privateKey: '-----BEGIN PRIVATE KEY-----\nMIIEvgIBADANBgkqhkiG9w0BAQEFAASCBKgwggSkAgEAAoIBAQC...\n-----END PRIVATE KEY-----',
-        publicKey: '-----BEGIN PUBLIC KEY-----\nMIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA...\n-----END PUBLIC KEY-----',
+        privateKey: seedKeyPair.privateKey,
+        publicKey: seedKeyPair.publicKey,
       },
     });
     mockStorage.set('orbitox/staging/ORBITOX_GRANT_SIGNING_KEYS', initialGrantKeys);
 
-    // Seed initial bridge keys
+    // Seed initial bridge keys generated dynamically at runtime
     const initialBridgeKeys = JSON.stringify({
       activeKeyId: 'k1',
       keys: {
-        k1: 'initial_bridge_key_hex_string_32_bytes_at_least_1234567890',
+        k1: crypto.randomBytes(32).toString('hex'),
       },
     });
     mockStorage.set('orbitox/staging/ORBITOX_BRIDGE_KEYS', initialBridgeKeys);
@@ -524,7 +531,7 @@ describe('Phase 6F B0: Staging Secret Generator Verification', () => {
     assert.equal(ring1.active, 'p1');
 
     // 3. Derive verifier for an API key using the active pepper
-    const rawApiKey = 'ak_live_restaurant_pilot_secret_1234567890abcdef';
+    const rawApiKey = `ak_live_${crypto.randomBytes(24).toString('hex')}`;
     const { verifier: oldVerifier, pepperId: oldPepperId } = activeVerifier(ring1, rawApiKey);
     assert.equal(oldPepperId, 'p1');
     assert.equal(whichPepper(ring1, rawApiKey, oldVerifier), 'p1');
@@ -559,7 +566,7 @@ describe('Phase 6F B0: Staging Secret Generator Verification', () => {
     assert.equal(whichPepper(ring3, rawApiKey, oldVerifier), 'p1');
 
     // New key is hashed with active pepper p2
-    const newApiKey = 'ak_live_hospital_suite_new_key_abcdef1234567890';
+    const newApiKey = `ak_live_${crypto.randomBytes(24).toString('hex')}`;
     const { verifier: newVerifier, pepperId: newPepperId } = activeVerifier(ring3, newApiKey);
     assert.equal(newPepperId, 'p2');
     assert.equal(whichPepper(ring3, newApiKey, newVerifier), 'p2');

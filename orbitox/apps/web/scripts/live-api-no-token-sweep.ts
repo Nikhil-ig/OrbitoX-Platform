@@ -137,7 +137,6 @@ async function run() {
     PLATFORM_AUDIT_DATABASE_URL: auditUrl,
     HMS_AUDIT_DATABASE_URL: hmsAuditUrl,
     OUTBOX_RELAY_DATABASE_URL: outboxRelayUrl,
-    ORBITOX_ENABLE_HOSPITAL_ADMIN_ENDPOINTS: 'true',
     ORBITOX_PLATFORM_REPOSITORY: 'prisma',
     RESTAURANTOS_PUBLIC_URL: 'https://restaurant.orbitox.internal',
     ORBITOX_ENABLE_CRM_PLUGIN: 'true',
