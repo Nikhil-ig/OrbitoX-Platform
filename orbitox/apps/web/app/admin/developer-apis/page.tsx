@@ -20,7 +20,7 @@ interface ApiEndpointDef {
   method: 'GET' | 'POST' | 'PATCH' | 'DELETE';
   path: string;
   serviceId: string;
-  category: 'admin' | 'hms' | 'commerce' | 'crm' | 'restaurant' | 'hospital';
+  category: 'admin' | 'hms' | 'restaurant' | 'hospital';
   title: string;
   description: string;
   scopes?: string[];
@@ -56,7 +56,7 @@ const API_CATALOG: ApiEndpointDef[] = [
     category: 'admin',
     title: 'Toggle Microservice Lockout Gate',
     description: 'Transitions microservice status between active and blocked to immediately enforce governance.',
-    defaultBody: JSON.stringify({ serviceId: 'commerce', action: 'toggle' }, null, 2),
+    defaultBody: JSON.stringify({ serviceId: 'hms', action: 'toggle' }, null, 2),
   },
   {
     id: 'ep-admin-providers',
@@ -65,7 +65,7 @@ const API_CATALOG: ApiEndpointDef[] = [
     serviceId: 'admin',
     category: 'admin',
     title: 'List Business Providers & Tenants',
-    description: 'Fetches multi-tenant business providers across hospitals, ecommerce, CRM, and restaurants.',
+    description: 'Fetches multi-tenant business providers across hospitals and restaurants.',
     defaultQuery: 'category=hospitals',
   },
   {
@@ -136,59 +136,7 @@ const API_CATALOG: ApiEndpointDef[] = [
     defaultQuery: 'patientId=pat-101',
   },
 
-  // 3. Commerce & Store Engine
-  {
-    id: 'ep-commerce-products',
-    method: 'GET',
-    path: '/api/v1/commerce/products',
-    serviceId: 'commerce',
-    category: 'commerce',
-    title: 'Query Storefront Catalog',
-    description: 'Fetches high-fashion catalog items, inventory levels, prices, and imagery.',
-    defaultQuery: 'category=Outerwear',
-  },
-  {
-    id: 'ep-commerce-checkout',
-    method: 'POST',
-    path: '/api/v1/commerce/checkout/initiate',
-    serviceId: 'commerce',
-    category: 'commerce',
-    title: 'Initiate Zero-Trust Checkout',
-    description: 'Creates a signed payment session token and expiration timestamp.',
-    defaultBody: JSON.stringify({ items: [{ sku: 'AUR-TC-001', qty: 1 }], total: 1250, customerEmail: 'vip@client.com' }, null, 2),
-  },
-  {
-    id: 'ep-commerce-orders',
-    method: 'GET',
-    path: '/api/v1/commerce/orders',
-    serviceId: 'commerce',
-    category: 'commerce',
-    title: 'Customer Orders History',
-    description: 'Fetches multi-channel order history and fulfillment statuses.',
-  },
-
-  // 4. CRM & Pipeline
-  {
-    id: 'ep-crm-leads',
-    method: 'GET',
-    path: '/api/v1/crm/leads',
-    serviceId: 'crm',
-    category: 'crm',
-    title: 'Sales Pipeline & Leads',
-    description: 'Retrieves prospective customer opportunities, pipeline valuations, and lead scores.',
-  },
-  {
-    id: 'ep-crm-leads-post',
-    method: 'POST',
-    path: '/api/v1/crm/leads',
-    serviceId: 'crm',
-    category: 'crm',
-    title: 'Ingest Inbound Lead Opportunity',
-    description: 'Registers a new enterprise deal into the pipeline state machine.',
-    defaultBody: JSON.stringify({ name: 'Dr. Gregory House', email: 'house@princeton.edu', company: 'Diagnostics Group', estimatedValue: 2800000 }, null, 2),
-  },
-
-  // 5. Restaurant OS
+  // 3. Restaurant OS
   {
     id: 'ep-restaurant-menu',
     method: 'GET',
@@ -413,8 +361,6 @@ export default function DeveloperApisPage() {
           { id: 'all', label: 'All Endpoints', count: API_CATALOG.length },
           { id: 'admin', label: 'Platform Admin', count: API_CATALOG.filter((e) => e.category === 'admin').length },
           { id: 'hms', label: 'Hospital OS (HMS)', count: API_CATALOG.filter((e) => e.category === 'hms').length },
-          { id: 'commerce', label: 'Commerce Engine', count: API_CATALOG.filter((e) => e.category === 'commerce').length },
-          { id: 'crm', label: 'CRM Pipeline', count: API_CATALOG.filter((e) => e.category === 'crm').length },
           { id: 'restaurant', label: 'Restaurant OS', count: API_CATALOG.filter((e) => e.category === 'restaurant').length },
           { id: 'hospital', label: 'Resilient Proxy', count: API_CATALOG.filter((e) => e.category === 'hospital').length },
         ].map((tab) => {

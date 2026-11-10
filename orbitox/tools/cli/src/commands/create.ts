@@ -2,9 +2,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { execSync } from 'child_process';
 import { restaurantTemplate } from '../templates/restaurant';
-import { crmTemplate } from '../templates/crm';
 import { hmsTemplate } from '../templates/hms';
-import { ecommerceTemplate } from '../templates/ecommerce';
 
 /**
  * `orbitox create <app-name> [--template=<template-name>] [--install-mode=<registry|file|workspace>] [--pack-dir=<path>] [--skip-install]` 
@@ -113,12 +111,8 @@ function generateConfig(appName: string, template: string): string {
 
   if (template === 'restaurant') {
     content = restaurantTemplate;
-  } else if (template === 'crm') {
-    content = crmTemplate;
   } else if (template === 'hms') {
     content = hmsTemplate;
-  } else if (template === 'ecommerce') {
-    content = ecommerceTemplate;
   } else {
     content = restaurantTemplate;
   }
@@ -172,18 +166,15 @@ ORBITOX_RUNTIME_TOKEN=tok_${appName}_dev
 
 function generatePackageJson(appName: string, template: string, installMode: string, packDir?: string): string {
   const isRestaurant = template === 'restaurant';
-  const isCrm = template === 'crm';
 
   let runtimeDep = '^1.0.0';
   let posDep = '^1.0.0';
-  let crmDep = '^1.0.0';
   let sdkDep = '^1.0.0';
   let engineDep = '^1.0.0';
 
   if (installMode === 'workspace') {
     runtimeDep = 'workspace:*';
     posDep = 'workspace:*';
-    crmDep = 'workspace:*';
     sdkDep = 'workspace:*';
     engineDep = 'workspace:*';
   }
@@ -196,9 +187,6 @@ function generatePackageJson(appName: string, template: string, installMode: str
 
   if (isRestaurant) {
     dependencies['@orbitox/pos'] = posDep;
-  }
-  if (isCrm) {
-    dependencies['@orbitox/crm'] = crmDep;
   }
 
   if (installMode === 'file' && packDir && fs.existsSync(packDir)) {

@@ -159,7 +159,6 @@ function spawnServer(port: number, envOverrides: Record<string, string> = {}): C
       MAINTENANCE_DATABASE_URL: boundedUrl(maintenanceUrl),
       HMS_AUDIT_DATABASE_URL: boundedUrl(hmsAuditUrl),
       OUTBOX_RELAY_DATABASE_URL: boundedUrl(process.env.OUTBOX_RELAY_DATABASE_URL || 'postgresql://orbitox_outbox_relay:test_relay_pass@127.0.0.1:5432/orbitox_phase2'),
-      ORBITOX_ENABLE_CRM_PLUGIN: 'true',
       ...envOverrides,
     },
     stdio: ['ignore', 'pipe', 'pipe'],
@@ -345,13 +344,13 @@ async function main() {
   console.log('Goal: N quota billable requests: exactly N accepted, all others 429, ZERO overshoot (>=20 runs).');
   console.log('--------------------------------------------------------------------------------\n');
 
-  async function provisionActiveCrm(orgId: string, projectId: string, envId: string) {
+  async function provisionActiveHms(orgId: string, projectId: string, envId: string) {
     const tenantId = `org/${orgId}/project/${projectId}/environment/${envId}`;
     await owner.pluginInstallation.create({
       data: {
         id: `pinst_${crypto.randomUUID()}`,
         tenantId,
-        pluginId: '@orbitox/crm',
+        pluginId: '@orbitox/hms',
         runtimeTenantId: tenantId,
         status: 'ACTIVE',
         planId: null,
@@ -384,7 +383,7 @@ async function main() {
         businessModel: 'B2B',
         technicalLead: 'Step 4 Lead',
         contactEmail: 'step4@orbitox.io',
-        enabledServices: ['crm'],
+        enabledServices: ['hms'],
         planTier: 'growth',
         plan: 'growth',
         apiCallQuota: QUOTA_N,
@@ -401,7 +400,7 @@ async function main() {
         isProduction: true,
       },
     });
-    await provisionActiveCrm(org.id, project.id, env.id);
+    await provisionActiveHms(org.id, project.id, env.id);
 
     const key = await owner.platformApiKey.create({
       data: {
@@ -412,7 +411,7 @@ async function main() {
         secretFingerprint,
         authVerifier,
         environmentId: env.id,
-        capabilities: ['crm:read'],
+        capabilities: ['hms:read'],
         tenantScope: [projSlug],
         createdBy: 'step4_test',
         status: 'ACTIVE',
@@ -422,7 +421,7 @@ async function main() {
     // Fire CONCURRENT_REQUESTS concurrently against the round-robin splitter
     const reqPromises = Array.from({ length: CONCURRENT_REQUESTS }, async () => {
       try {
-        const res = await fetch(`http://127.0.0.1:${proxyPort}/api/v1/crm/leads`, {
+        const res = await fetch(`http://127.0.0.1:${proxyPort}/api/v1/hms/patients`, {
           method: 'GET',
           headers: {
             'x-api-key': rawSecret,
@@ -488,7 +487,7 @@ async function main() {
       businessModel: 'B2B',
       technicalLead: 'Step 4 Lead',
       contactEmail: 'step4@orbitox.io',
-      enabledServices: ['crm'],
+      enabledServices: ['hms'],
       planTier: 'growth',
       plan: 'growth',
       apiCallQuota: 1000000,
@@ -506,7 +505,7 @@ async function main() {
       isProduction: true,
     },
   });
-  await provisionActiveCrm(org.id, rlProject.id, rlEnv.id);
+  await provisionActiveHms(org.id, rlProject.id, rlEnv.id);
 
   const rlKey = await owner.platformApiKey.create({
     data: {
@@ -517,7 +516,7 @@ async function main() {
       secretFingerprint: rlSecretFingerprint,
       authVerifier: rlAuthVerifier,
       environmentId: rlEnv.id,
-      capabilities: ['crm:read'],
+      capabilities: ['hms:read'],
       tenantScope: [rateLimitProjSlug],
       createdBy: 'step4_test',
       status: 'ACTIVE',
@@ -529,7 +528,7 @@ async function main() {
   console.log('Sub-test 2A: Cumulative rate limit enforcement across both servers');
   const sub2aResults: number[] = [];
   for (let i = 0; i < RATE_LIMIT_L + 10; i++) {
-    const res = await fetch(`http://127.0.0.1:${proxyPort}/api/v1/crm/leads`, {
+    const res = await fetch(`http://127.0.0.1:${proxyPort}/api/v1/hms/patients`, {
       headers: { 'x-api-key': rlRawSecret, 'x-tenant-id': rateLimitProjSlug },
     });
     sub2aResults.push(res.status);
@@ -552,7 +551,7 @@ async function main() {
       businessModel: 'B2B',
       technicalLead: 'Step 4 Lead',
       contactEmail: 'step4@orbitox.io',
-      enabledServices: ['crm'],
+      enabledServices: ['hms'],
       planTier: 'growth',
       plan: 'growth',
       apiCallQuota: 1000000,
@@ -569,7 +568,7 @@ async function main() {
       isProduction: true,
     },
   });
-  await provisionActiveCrm(org.id, burstProject.id, burstEnv.id);
+  await provisionActiveHms(org.id, burstProject.id, burstEnv.id);
   const burstSecret = `orb_live_${crypto.randomBytes(24).toString('hex')}`;
   const burstPrefix = burstSecret.slice(0, 14);
   const burstKey = await owner.platformApiKey.create({
@@ -581,7 +580,7 @@ async function main() {
       secretFingerprint: crypto.createHash('sha256').update(burstSecret).digest('hex'),
       authVerifier: crypto.createHmac('sha256', serverPepper).update(burstSecret).digest('hex'),
       environmentId: burstEnv.id,
-      capabilities: ['crm:read'],
+      capabilities: ['hms:read'],
       tenantScope: [burstProjSlug],
       createdBy: 'step4_test',
       status: 'ACTIVE',
@@ -590,7 +589,7 @@ async function main() {
   });
 
   const burstPromises = Array.from({ length: 40 }, async () => {
-    const res = await fetch(`http://127.0.0.1:${proxyPort}/api/v1/crm/leads`, {
+    const res = await fetch(`http://127.0.0.1:${proxyPort}/api/v1/hms/patients`, {
       headers: { 'x-api-key': burstSecret, 'x-tenant-id': burstProjSlug },
     });
     return res.status;
@@ -614,7 +613,7 @@ async function main() {
       businessModel: 'B2B',
       technicalLead: 'Step 4 Lead',
       contactEmail: 'step4@orbitox.io',
-      enabledServices: ['crm'],
+      enabledServices: ['hms'],
       planTier: 'growth',
       plan: 'growth',
       apiCallQuota: 1000000,
@@ -631,7 +630,7 @@ async function main() {
       isProduction: true,
     },
   });
-  await provisionActiveCrm(org.id, killProject.id, killEnv.id);
+  await provisionActiveHms(org.id, killProject.id, killEnv.id);
   const killSecret = `orb_live_${crypto.randomBytes(24).toString('hex')}`;
   const killPrefix = killSecret.slice(0, 14);
   const killKey = await owner.platformApiKey.create({
@@ -643,7 +642,7 @@ async function main() {
       secretFingerprint: crypto.createHash('sha256').update(killSecret).digest('hex'),
       authVerifier: crypto.createHmac('sha256', serverPepper).update(killSecret).digest('hex'),
       environmentId: killEnv.id,
-      capabilities: ['crm:read'],
+      capabilities: ['hms:read'],
       tenantScope: [killProjSlug],
       createdBy: 'step4_test',
       status: 'ACTIVE',
@@ -654,7 +653,7 @@ async function main() {
   // Send 12 requests directly to Server 1
   console.log(`Sending 12 requests directly to Server 1 (port ${port1})...`);
   for (let i = 0; i < 12; i++) {
-    const res = await fetch(`http://127.0.0.1:${port1}/api/v1/crm/leads`, {
+    const res = await fetch(`http://127.0.0.1:${port1}/api/v1/hms/patients`, {
       headers: { 'x-api-key': killSecret, 'x-tenant-id': killProjSlug },
     });
     assert.equal(res.status, 200, `Request ${i + 1} to Server 1 should succeed`);
@@ -670,7 +669,7 @@ async function main() {
   console.log(`Sending remaining 15 requests directly to surviving Server 2 (port ${port2})...`);
   const server2Statuses: number[] = [];
   for (let i = 0; i < 15; i++) {
-    const res = await fetch(`http://127.0.0.1:${port2}/api/v1/crm/leads`, {
+    const res = await fetch(`http://127.0.0.1:${port2}/api/v1/hms/patients`, {
       headers: { 'x-api-key': killSecret, 'x-tenant-id': killProjSlug },
     });
     server2Statuses.push(res.status);
@@ -700,7 +699,7 @@ async function main() {
       businessModel: 'B2B',
       technicalLead: 'Step 4 Lead',
       contactEmail: 'step4@orbitox.io',
-      enabledServices: ['crm'],
+      enabledServices: ['hms'],
       planTier: 'growth',
       plan: 'growth',
       apiCallQuota: 1000000,
@@ -712,7 +711,7 @@ async function main() {
   const perKeyEnv = await owner.projectEnvironment.create({
     data: { name: 'Production', slug: 'production', projectId: perKeyProject.id, isProduction: true },
   });
-  await provisionActiveCrm(org.id, perKeyProject.id, perKeyEnv.id);
+  await provisionActiveHms(org.id, perKeyProject.id, perKeyEnv.id);
   const KEY_LIMIT_K = 10;
   const pkSecret = `orb_live_${crypto.randomBytes(24).toString('hex')}`;
   const pkPrefix = pkSecret.slice(0, 14);
@@ -725,7 +724,7 @@ async function main() {
       secretFingerprint: crypto.createHash('sha256').update(pkSecret).digest('hex'),
       authVerifier: crypto.createHmac('sha256', serverPepper).update(pkSecret).digest('hex'),
       environmentId: perKeyEnv.id,
-      capabilities: ['crm:read'],
+      capabilities: ['hms:read'],
       tenantScope: [perKeyProjSlug],
       createdBy: 'step4_test',
       status: 'ACTIVE',
@@ -737,7 +736,7 @@ async function main() {
   const pkStatuses: number[] = [];
   for (let i = 0; i < KEY_LIMIT_K + 6; i++) {
     const port = i % 2 === 0 ? port1 : port2;
-    const res = await fetch(`http://127.0.0.1:${port}/api/v1/crm/leads`, {
+    const res = await fetch(`http://127.0.0.1:${port}/api/v1/hms/patients`, {
       headers: { 'x-api-key': pkSecret, 'x-tenant-id': perKeyProjSlug },
     });
     pkStatuses.push(res.status);
@@ -760,7 +759,7 @@ async function main() {
       businessModel: 'B2B',
       technicalLead: 'Step 4 Lead',
       contactEmail: 'step4@orbitox.io',
-      enabledServices: ['crm'],
+      enabledServices: ['hms'],
       planTier: 'growth',
       plan: 'growth',
       apiCallQuota: 1000000,
@@ -772,7 +771,7 @@ async function main() {
   const comboEnv = await owner.projectEnvironment.create({
     data: { name: 'Production', slug: 'production', projectId: comboProject.id, isProduction: true },
   });
-  await provisionActiveCrm(org.id, comboProject.id, comboEnv.id);
+  await provisionActiveHms(org.id, comboProject.id, comboEnv.id);
   // Key A with strict limit = 5
   const keyASecret = `orb_live_${crypto.randomBytes(24).toString('hex')}`;
   const keyAPrefix = keyASecret.slice(0, 14);
@@ -785,7 +784,7 @@ async function main() {
       secretFingerprint: crypto.createHash('sha256').update(keyASecret).digest('hex'),
       authVerifier: crypto.createHmac('sha256', serverPepper).update(keyASecret).digest('hex'),
       environmentId: comboEnv.id,
-      capabilities: ['crm:read'],
+      capabilities: ['hms:read'],
       tenantScope: [comboProjSlug],
       createdBy: 'step4_test',
       status: 'ACTIVE',
@@ -804,7 +803,7 @@ async function main() {
       secretFingerprint: crypto.createHash('sha256').update(keyBSecret).digest('hex'),
       authVerifier: crypto.createHmac('sha256', serverPepper).update(keyBSecret).digest('hex'),
       environmentId: comboEnv.id,
-      capabilities: ['crm:read'],
+      capabilities: ['hms:read'],
       tenantScope: [comboProjSlug],
       createdBy: 'step4_test',
       status: 'ACTIVE',
@@ -814,7 +813,7 @@ async function main() {
 
   // Fire 10 requests on Key A (limit is 5)
   for (let i = 0; i < 10; i++) {
-    const res = await fetch(`http://127.0.0.1:${proxyPort}/api/v1/crm/leads`, {
+    const res = await fetch(`http://127.0.0.1:${proxyPort}/api/v1/hms/patients`, {
       headers: { 'x-api-key': keyASecret, 'x-tenant-id': comboProjSlug },
     });
     if (i < 5) {
@@ -829,7 +828,7 @@ async function main() {
   // Therefore, Key B should still be able to make exactly 20 - 5 = 15 requests!
   const keyBStatuses: number[] = [];
   for (let i = 0; i < 18; i++) {
-    const res = await fetch(`http://127.0.0.1:${proxyPort}/api/v1/crm/leads`, {
+    const res = await fetch(`http://127.0.0.1:${proxyPort}/api/v1/hms/patients`, {
       headers: { 'x-api-key': keyBSecret, 'x-tenant-id': comboProjSlug },
     });
     keyBStatuses.push(res.status);
@@ -852,7 +851,7 @@ async function main() {
       businessModel: 'B2B',
       technicalLead: 'Step 4 Lead',
       contactEmail: 'step4@orbitox.io',
-      enabledServices: ['crm'],
+      enabledServices: ['hms'],
       planTier: 'growth',
       plan: 'growth',
       apiCallQuota: 1000000,
@@ -863,7 +862,7 @@ async function main() {
   const ipEnv = await owner.projectEnvironment.create({
     data: { name: 'Production', slug: 'production', projectId: ipProject.id, isProduction: true },
   });
-  await provisionActiveCrm(org.id, ipProject.id, ipEnv.id);
+  await provisionActiveHms(org.id, ipProject.id, ipEnv.id);
   const ipSecret = `orb_live_${crypto.randomBytes(24).toString('hex')}`;
   const ipPrefix = ipSecret.slice(0, 14);
   const ipKey = await owner.platformApiKey.create({
@@ -875,13 +874,13 @@ async function main() {
       secretFingerprint: crypto.createHash('sha256').update(ipSecret).digest('hex'),
       authVerifier: crypto.createHmac('sha256', serverPepper).update(ipSecret).digest('hex'),
       environmentId: ipEnv.id,
-      capabilities: ['crm:read'],
+      capabilities: ['hms:read'],
       tenantScope: [ipProjSlug],
       createdBy: 'step4_test',
       status: 'ACTIVE',
     },
   });
-  const ipRes = await fetch(`http://127.0.0.1:${proxyPort}/api/v1/crm/leads`, {
+  const ipRes = await fetch(`http://127.0.0.1:${proxyPort}/api/v1/hms/patients`, {
     headers: { 'x-api-key': ipSecret, 'x-tenant-id': ipProjSlug },
   });
   assert.equal(ipRes.status, 200, 'Request with unconfigured project/key rate limit falls back cleanly to IP limit');
@@ -909,7 +908,7 @@ async function main() {
       businessModel: 'B2B',
       technicalLead: 'Step 4 Lead',
       contactEmail: 'step4@orbitox.io',
-      enabledServices: ['crm'],
+      enabledServices: ['hms'],
       planTier: 'growth',
       plan: 'growth',
       apiCallQuota: 5,
@@ -980,7 +979,7 @@ async function main() {
       businessModel: 'B2B',
       technicalLead: 'Step 4 Lead',
       contactEmail: 'step4@orbitox.io',
-      enabledServices: ['crm'],
+      enabledServices: ['hms'],
       planTier: 'growth',
       plan: 'growth',
       apiCallQuota: 100,
@@ -1169,7 +1168,7 @@ async function main() {
       businessModel: 'B2B',
       technicalLead: 'Step 4 Benchmark',
       contactEmail: 'step4@orbitox.io',
-      enabledServices: ['crm'],
+      enabledServices: ['hms'],
       planTier: 'enterprise',
       plan: 'enterprise',
       apiCallQuota: 10000000,
@@ -1186,7 +1185,7 @@ async function main() {
       isProduction: true,
     },
   });
-  await provisionActiveCrm(org.id, benchProject.id, benchEnv.id);
+  await provisionActiveHms(org.id, benchProject.id, benchEnv.id);
 
   const benchKey = await owner.platformApiKey.create({
     data: {
@@ -1197,7 +1196,7 @@ async function main() {
       secretFingerprint: crypto.createHash('sha256').update(benchRawSecret).digest('hex'),
       authVerifier: crypto.createHmac('sha256', serverPepper).update(benchRawSecret).digest('hex'),
       environmentId: benchEnv.id,
-      capabilities: ['crm:read'],
+      capabilities: ['hms:read'],
       tenantScope: [benchProjSlug],
       createdBy: 'step4_bench',
       status: 'ACTIVE',
@@ -1255,10 +1254,10 @@ async function main() {
   const BENCH_CONCURRENCY = 40;
 
   console.log(`Running Benchmark 1: Single Standalone Server (${BENCH_REQUESTS} requests, concurrency ${BENCH_CONCURRENCY})...`);
-  const bench1 = await runBenchmark(`http://127.0.0.1:${port1}/api/v1/crm/leads`, BENCH_REQUESTS, BENCH_CONCURRENCY);
+  const bench1 = await runBenchmark(`http://127.0.0.1:${port1}/api/v1/hms/patients`, BENCH_REQUESTS, BENCH_CONCURRENCY);
 
   console.log(`Running Benchmark 2: Two Standalone Servers behind Round-Robin Splitter (${BENCH_REQUESTS} requests, concurrency ${BENCH_CONCURRENCY})...`);
-  const bench2 = await runBenchmark(`http://127.0.0.1:${proxyPort}/api/v1/crm/leads`, BENCH_REQUESTS, BENCH_CONCURRENCY);
+  const bench2 = await runBenchmark(`http://127.0.0.1:${proxyPort}/api/v1/hms/patients`, BENCH_REQUESTS, BENCH_CONCURRENCY);
 
   // Check database lock waiting status
   const lockWaitStats = await owner.$queryRaw<Array<{ waiting_locks: bigint }>>`

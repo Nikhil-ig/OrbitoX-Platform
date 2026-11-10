@@ -56,50 +56,6 @@ export function CommandPalette({ isOpen, onClose, onOpenKeyModal }: CommandPalet
   const allItems: PaletteItem[] = [
     // Running Functional Micro-Applications
     {
-      id: 'app-commerce',
-      category: 'Running Micro-Apps',
-      title: 'Commerce Studio Hub',
-      subtitle: 'Headless multi-tenant e-commerce console',
-      icon: <ShoppingBagIcon size={18} color="#FF7A1A" />,
-      action: () => {
-        router.push('/commerce');
-        onClose();
-      },
-    },
-    {
-      id: 'app-storefront',
-      category: 'Running Micro-Apps',
-      title: 'Live Customer Storefront (Aura Luxury)',
-      subtitle: 'Public-facing e-commerce storefront',
-      icon: <GlobeIcon size={18} color="#FF7A1A" />,
-      action: () => {
-        router.push('/store/aura-luxury');
-        onClose();
-      },
-    },
-    {
-      id: 'app-store-builder',
-      category: 'Running Micro-Apps',
-      title: 'Storefront Creative Builder',
-      subtitle: 'Visual drag-and-drop storefront customizer',
-      icon: <RocketIcon size={18} color="#A855F7" />,
-      action: () => {
-        router.push('/commerce/store/builder');
-        onClose();
-      },
-    },
-    {
-      id: 'app-orders',
-      category: 'Running Micro-Apps',
-      title: 'Orders & Fulfillment Pipeline',
-      subtitle: 'Customer checkout orders & logistics matrix',
-      icon: <PackageIcon size={18} color="#38BDF8" />,
-      action: () => {
-        router.push('/commerce/orders');
-        onClose();
-      },
-    },
-    {
       id: 'app-hms',
       category: 'Running Micro-Apps',
       title: 'Hospital OS Command Center',
@@ -122,46 +78,13 @@ export function CommandPalette({ isOpen, onClose, onOpenKeyModal }: CommandPalet
       },
     },
     {
-      id: 'app-crm',
+      id: 'app-kds',
       category: 'Running Micro-Apps',
-      title: 'CRM Sales & Leads Pipeline',
-      subtitle: 'Zero-leak deal pipeline & scoring',
-      icon: <BriefcaseIcon size={18} color="#818CF8" />,
+      title: 'RestaurantOS Kitchen Display (KDS)',
+      subtitle: 'Multi-station ticket queue & prep orchestration',
+      icon: <PackageIcon size={18} color="#F59E0B" />,
       action: () => {
-        router.push('/crm/leads');
-        onClose();
-      },
-    },
-    {
-      id: 'app-inventory',
-      category: 'Running Micro-Apps',
-      title: 'Central Stock & Inventory Matrix',
-      subtitle: 'Multi-warehouse SKU tracking and levels',
-      icon: <PackageIcon size={18} color="#06B6D4" />,
-      action: () => {
-        router.push('/inventory/items');
-        onClose();
-      },
-    },
-    {
-      id: 'app-finance',
-      category: 'Running Micro-Apps',
-      title: 'Enterprise Billing & Invoices',
-      subtitle: 'General tax ledger & automated billing',
-      icon: <CreditCardIcon size={18} color="#10B981" />,
-      action: () => {
-        router.push('/finance/invoices');
-        onClose();
-      },
-    },
-    {
-      id: 'app-hrms',
-      category: 'Running Micro-Apps',
-      title: 'HRMS Workforce & Employee Directory',
-      subtitle: 'Staff onboarding & organizational chart',
-      icon: <BriefcaseIcon size={18} color="#8B5CF6" />,
-      action: () => {
-        router.push('/hrms/employees');
+        router.push('/kds');
         onClose();
       },
     },

@@ -294,19 +294,6 @@ export class RuntimeControllerService {
             actionLevel: { type: 'number', default: 1, title: 'Action Authorization Level (1=Read, 2=Mutate)' },
           },
         },
-        {
-          id: '@orbitox/crm',
-          name: 'OrbitoX CRM & Guest Loyalty',
-          version: '1.0.1',
-          description: 'Guest lifecycle, diner session history, and VIP perks management.',
-          category: 'Growth',
-          capabilities: ['Guest Profiles', 'Loyalty Points', 'Session Memory'],
-          dependencies: [],
-          apis: ['restaurant.sessions'],
-          installed: false,
-          enabled: false,
-          configuration: { loyaltyEarnRatePercent: 5 },
-        },
       ];
       this.store.savePlugins(restaurantProject.id, plugins);
 

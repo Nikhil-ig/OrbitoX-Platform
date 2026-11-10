@@ -50,7 +50,7 @@ export default function BusinessVerticalsPage() {
             </h1>
           </div>
           <p style={{ color: '#A3AED0', fontSize: '13.5px', margin: '8px 0 0 0', maxWidth: '750px', lineHeight: 1.6 }}>
-            OrbitoX powers isolated multi-tenant business ecosystems. Select any vertical to inspect and govern its live providers (e.g. view all hospitals, all e-commerce stores, all restaurants).
+            OrbitoX powers isolated multi-tenant business ecosystems. Select any vertical to inspect and govern its live providers (e.g. view all hospitals and all restaurants).
           </p>
         </div>
 

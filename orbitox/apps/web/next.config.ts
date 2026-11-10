@@ -16,12 +16,10 @@ const nextConfig: NextConfig = {
     "@orbitox/sdk",
     "@orbitox/types",
     "@orbitox/utils",
-    "@orbitox/commerce",
     "@orbitox/runtime",
     "@orbitox/plugin-engine",
     "@orbitox-io/plugin-engine",
     "@orbitox/pos",
-    "@orbitox/school",
   ],
   async rewrites() {
     return [

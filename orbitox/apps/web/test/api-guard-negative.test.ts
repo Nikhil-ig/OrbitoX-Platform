@@ -105,7 +105,7 @@ describe('Phase 1 & 1.5 Security, Unified Auth & Licensed Customer Test Suite', 
     });
     validAdminKeySecret = adminKeyRes.rawSecret;
 
-    // 2. Create customer project (CRM only)
+    // 2. Create customer project (HMS only)
     const customerProjRes = await platformRepository.createProject({
       name: 'Omega Tenant Project',
       slug: 'tenant-omega',
@@ -115,7 +115,7 @@ describe('Phase 1 & 1.5 Security, Unified Auth & Licensed Customer Test Suite', 
       plan: 'pro',
       technicalLead: 'Omega Lead',
       contactEmail: 'admin@omega.test',
-      enabledServices: ['crm'],
+      enabledServices: ['hms'],
       apiCallQuota: 5000000,
     });
 
@@ -124,7 +124,7 @@ describe('Phase 1 & 1.5 Security, Unified Auth & Licensed Customer Test Suite', 
       name: 'Omega Customer Key',
       environmentId: prodEnv.id,
       projectId: customerProjRes.project.id,
-      capabilities: ['crm:read', 'crm:write'],
+      capabilities: ['hms:read', 'hms:write'],
       tenantScope: ['tenant-omega'],
       createdBy: 'test_suite',
     });
@@ -135,7 +135,7 @@ describe('Phase 1 & 1.5 Security, Unified Auth & Licensed Customer Test Suite', 
       name: 'Revoked Key',
       environmentId: prodEnv.id,
       projectId: customerProjRes.project.id,
-      capabilities: ['crm:read'],
+      capabilities: ['hms:read'],
       createdBy: 'test_suite',
     });
     revokedKeySecret = revokedKeyRes.rawSecret;
@@ -150,7 +150,7 @@ describe('Phase 1 & 1.5 Security, Unified Auth & Licensed Customer Test Suite', 
       planTier: 'starter',
       technicalLead: 'Suspended Lead',
       contactEmail: 'admin@suspended.test',
-      enabledServices: ['crm'],
+      enabledServices: ['hms'],
       status: 'SUSPENDED',
     });
 
@@ -176,12 +176,12 @@ describe('Phase 1 & 1.5 Security, Unified Auth & Licensed Customer Test Suite', 
       plan: 'starter',
       technicalLead: 'Quota Lead',
       contactEmail: 'admin@quota.test',
-      enabledServices: ['crm'],
+      enabledServices: ['hms'],
       apiCallQuota: 100,
     });
     await platformRepository.updateProject('tenant-quota', { monthlyApiCalls: 100 });
 
-    // 7. Create Restaurant + POS licensed project
+    // 7. Create Restaurant licensed project
     const restPosRes = await platformRepository.createProject({
       name: 'Bistro 360',
       slug: 'bistro360',
@@ -191,7 +191,7 @@ describe('Phase 1 & 1.5 Security, Unified Auth & Licensed Customer Test Suite', 
       plan: 'growth',
       technicalLead: 'Chef Chef',
       contactEmail: 'chef@bistro360.com',
-      enabledServices: ['restaurant', 'pos'],
+      enabledServices: ['restaurant'],
       apiCallQuota: 10000,
     });
     restaurantPosProjectId = restPosRes.project.id;
@@ -201,7 +201,7 @@ describe('Phase 1 & 1.5 Security, Unified Auth & Licensed Customer Test Suite', 
       name: 'Bistro API Key',
       environmentId: prodEnvRest.id,
       projectId: restPosRes.project.id,
-      capabilities: ['restaurant:order', 'pos:terminal'],
+      capabilities: ['restaurant:order'],
       tenantScope: ['bistro360'],
       createdBy: 'test_suite',
     });
@@ -235,8 +235,8 @@ describe('Phase 1 & 1.5 Security, Unified Auth & Licensed Customer Test Suite', 
   };
 
   it('1. Mandatory Auth: rejects request with no credentials with 401', async () => {
-    const handler = withApiGuard({ serviceId: 'crm', serviceName: 'CRM Service' }, dummyHandler);
-    const req = new NextRequest('http://localhost:3000/api/v1/crm/contacts');
+    const handler = withApiGuard({ serviceId: 'hms', serviceName: 'HMS Service' }, dummyHandler);
+    const req = new NextRequest('http://localhost:3000/api/v1/hms/patients');
     const res = await handler(req);
 
     assert.equal(res.status, 401);
@@ -257,8 +257,8 @@ describe('Phase 1 & 1.5 Security, Unified Auth & Licensed Customer Test Suite', 
   });
 
   it('2. Query Parameter Auth: ignores and rejects apiKey in query string with 401', async () => {
-    const handler = withApiGuard({ serviceId: 'crm', serviceName: 'CRM Service' }, dummyHandler);
-    const req = new NextRequest(`http://localhost:3000/api/v1/crm/contacts?apiKey=${validCustomerKeySecret}`);
+    const handler = withApiGuard({ serviceId: 'hms', serviceName: 'HMS Service' }, dummyHandler);
+    const req = new NextRequest(`http://localhost:3000/api/v1/hms/patients?apiKey=${validCustomerKeySecret}`);
     const res = await handler(req);
 
     assert.equal(res.status, 401);
@@ -267,8 +267,8 @@ describe('Phase 1 & 1.5 Security, Unified Auth & Licensed Customer Test Suite', 
   });
 
   it('3. Invalid Secret: rejects fabricated or wrong API key with 401', async () => {
-    const handler = withApiGuard({ serviceId: 'crm', serviceName: 'CRM Service' }, dummyHandler);
-    const req = new NextRequest('http://localhost:3000/api/v1/crm/contacts', {
+    const handler = withApiGuard({ serviceId: 'hms', serviceName: 'HMS Service' }, dummyHandler);
+    const req = new NextRequest('http://localhost:3000/api/v1/hms/patients', {
       headers: { 'x-api-key': 'orb_live_fakekeythatneverexisted1234567890' },
     });
     const res = await handler(req);
@@ -280,8 +280,8 @@ describe('Phase 1 & 1.5 Security, Unified Auth & Licensed Customer Test Suite', 
 
   it('4. Prefix Matching Elimination: rejects key prefix only with 401', async () => {
     const prefixOnly = validCustomerKeySecret.slice(0, 14);
-    const handler = withApiGuard({ serviceId: 'crm', serviceName: 'CRM Service' }, dummyHandler);
-    const req = new NextRequest('http://localhost:3000/api/v1/crm/contacts', {
+    const handler = withApiGuard({ serviceId: 'hms', serviceName: 'HMS Service' }, dummyHandler);
+    const req = new NextRequest('http://localhost:3000/api/v1/hms/patients', {
       headers: { 'x-api-key': prefixOnly },
     });
     const res = await handler(req);
@@ -292,8 +292,8 @@ describe('Phase 1 & 1.5 Security, Unified Auth & Licensed Customer Test Suite', 
   });
 
   it('5. Revoked Credential: rejects revoked/disabled key with 403 KEY_DISABLED', async () => {
-    const handler = withApiGuard({ serviceId: 'crm', serviceName: 'CRM Service' }, dummyHandler);
-    const req = new NextRequest('http://localhost:3000/api/v1/crm/contacts', {
+    const handler = withApiGuard({ serviceId: 'hms', serviceName: 'HMS Service' }, dummyHandler);
+    const req = new NextRequest('http://localhost:3000/api/v1/hms/patients', {
       headers: { 'x-api-key': revokedKeySecret },
     });
     const res = await handler(req);
@@ -310,12 +310,12 @@ describe('Phase 1 & 1.5 Security, Unified Auth & Licensed Customer Test Suite', 
       name: 'Expired Key',
       environmentId: environment.id,
       projectId: project.id,
-      capabilities: ['crm:read'],
+      capabilities: ['hms:read'],
       createdBy: 'test_suite',
       expiresInDays: -1,
     });
-    const handler = withApiGuard({ serviceId: 'crm', serviceName: 'CRM Service' }, dummyHandler);
-    const response = await handler(new NextRequest('http://localhost:3000/api/v1/crm/leads', {
+    const handler = withApiGuard({ serviceId: 'hms', serviceName: 'HMS Service' }, dummyHandler);
+    const response = await handler(new NextRequest('http://localhost:3000/api/v1/hms/patients', {
       headers: { 'x-api-key': expired.rawSecret },
     }));
 
@@ -326,13 +326,13 @@ describe('Phase 1 & 1.5 Security, Unified Auth & Licensed Customer Test Suite', 
   it('6. Missing Required Scopes: rejects authenticated key lacking declared scopes with 403', async () => {
     const handler = withApiGuard(
       {
-        serviceId: 'crm',
-        serviceName: 'CRM Admin Service',
-        requiredScopes: ['crm:super_admin', 'billing:write'],
+        serviceId: 'hms',
+        serviceName: 'HMS Admin Service',
+        requiredScopes: ['hms:super_admin', 'billing:write'],
       },
       dummyHandler
     );
-    const req = new NextRequest('http://localhost:3000/api/v1/crm/admin', {
+    const req = new NextRequest('http://localhost:3000/api/v1/hms/admin', {
       headers: { 'x-api-key': validCustomerKeySecret },
     });
     const res = await handler(req);
@@ -379,8 +379,8 @@ describe('Phase 1 & 1.5 Security, Unified Auth & Licensed Customer Test Suite', 
   });
 
   it('9. Tenant Isolation: rejects spoofed x-tenant-id mismatching key tenant with 403', async () => {
-    const handler = withApiGuard({ serviceId: 'crm', serviceName: 'CRM Service' }, dummyHandler);
-    const req = new NextRequest('http://localhost:3000/api/v1/crm/contacts', {
+    const handler = withApiGuard({ serviceId: 'hms', serviceName: 'HMS Service' }, dummyHandler);
+    const req = new NextRequest('http://localhost:3000/api/v1/hms/patients', {
       headers: {
         'x-api-key': validCustomerKeySecret,
         'x-tenant-id': 'tenant_impersonated_victim',
@@ -400,12 +400,12 @@ describe('Phase 1 & 1.5 Security, Unified Auth & Licensed Customer Test Suite', 
       name: 'Suspended Machine Key',
       environmentId: suspendedEnvironment.id,
       projectId: suspendedProj!.id,
-      capabilities: ['crm:read'],
+      capabilities: ['hms:read'],
       createdBy: 'test_suite',
     });
 
-    const handler = withApiGuard({ serviceId: 'crm', serviceName: 'CRM Service' }, dummyHandler);
-    const req = new NextRequest('http://localhost:3000/api/v1/crm/contacts', {
+    const handler = withApiGuard({ serviceId: 'hms', serviceName: 'HMS Service' }, dummyHandler);
+    const req = new NextRequest('http://localhost:3000/api/v1/hms/patients', {
       headers: { 'x-api-key': suspendedKey.rawSecret },
     });
     const res = await handler(req);
@@ -422,12 +422,12 @@ describe('Phase 1 & 1.5 Security, Unified Auth & Licensed Customer Test Suite', 
       name: 'Empty Key',
       environmentId: emptyEnvironment.id,
       projectId: emptyProj!.id,
-      capabilities: ['crm:read'],
+      capabilities: ['hms:read'],
       createdBy: 'test_suite',
     });
 
-    const handler = withApiGuard({ serviceId: 'crm', serviceName: 'CRM Service' }, dummyHandler);
-    const req = new NextRequest('http://localhost:3000/api/v1/crm/contacts', {
+    const handler = withApiGuard({ serviceId: 'hms', serviceName: 'HMS Service' }, dummyHandler);
+    const req = new NextRequest('http://localhost:3000/api/v1/hms/patients', {
       headers: { 'x-api-key': emptyKey.rawSecret },
     });
     const res = await handler(req);
@@ -444,12 +444,12 @@ describe('Phase 1 & 1.5 Security, Unified Auth & Licensed Customer Test Suite', 
       name: 'Quota Key',
       environmentId: quotaEnvironment.id,
       projectId: quotaProj!.id,
-      capabilities: ['crm:read'],
+      capabilities: ['hms:read'],
       createdBy: 'test_suite',
     });
 
-    const handler = withApiGuard({ serviceId: 'crm', serviceName: 'CRM Service' }, dummyHandler);
-    const req = new NextRequest('http://localhost:3000/api/v1/crm/contacts', {
+    const handler = withApiGuard({ serviceId: 'hms', serviceName: 'HMS Service' }, dummyHandler);
+    const req = new NextRequest('http://localhost:3000/api/v1/hms/patients', {
       headers: { 'x-api-key': quotaKey.rawSecret },
     });
     const res = await handler(req);
@@ -509,13 +509,13 @@ describe('Phase 1 & 1.5 Security, Unified Auth & Licensed Customer Test Suite', 
   it('16. Valid Request: accepts authentic credentials with matching scopes and tenant', async () => {
     const handler = withApiGuard(
       {
-        serviceId: 'crm',
-        serviceName: 'CRM Service',
-        requiredScopes: ['crm:read'],
+        serviceId: 'hms',
+        serviceName: 'HMS Service',
+        requiredScopes: ['hms:read'],
       },
       dummyHandler
     );
-    const req = new NextRequest('http://localhost:3000/api/v1/crm/contacts', {
+    const req = new NextRequest('http://localhost:3000/api/v1/hms/patients', {
       headers: {
         'x-api-key': validCustomerKeySecret,
       },
@@ -634,13 +634,13 @@ describe('Phase 1 & 1.5 Security, Unified Auth & Licensed Customer Test Suite', 
   it('22. Customer Key + Admin Token Combination: both headers can be provided without collision', async () => {
     const handler = withApiGuard(
       {
-        serviceId: 'crm',
-        serviceName: 'CRM Service',
+        serviceId: 'hms',
+        serviceName: 'HMS Service',
         routeClass: 'customer',
       },
       dummyHandler
     );
-    const req = new NextRequest('http://localhost:3000/api/v1/crm/contacts', {
+    const req = new NextRequest('http://localhost:3000/api/v1/hms/patients', {
       headers: {
         authorization: `Bearer ${TEST_ADMIN_TOKEN}`,
         'x-api-key': validCustomerKeySecret,
@@ -655,13 +655,13 @@ describe('Phase 1 & 1.5 Security, Unified Auth & Licensed Customer Test Suite', 
   it('23. Admin Token Calling Customer Route Lacking Project: returns 403 PROJECT_NOT_FOUND', async () => {
     const handler = withApiGuard(
       {
-        serviceId: 'crm',
-        serviceName: 'CRM Service',
+        serviceId: 'hms',
+        serviceName: 'HMS Service',
         routeClass: 'customer',
       },
       dummyHandler
     );
-    const req = new NextRequest('http://localhost:3000/api/v1/crm/contacts', {
+    const req = new NextRequest('http://localhost:3000/api/v1/hms/patients', {
       headers: {
         authorization: `Bearer ${TEST_ADMIN_TOKEN}`,
       },
@@ -672,10 +672,8 @@ describe('Phase 1 & 1.5 Security, Unified Auth & Licensed Customer Test Suite', 
     assert.equal(body.error?.code, 'PROJECT_NOT_FOUND');
   });
 
-  it('24. Licensed-Customer Path End-to-End: Restaurant + POS entitled key succeeds on restaurant & pos, but denied on commerce & hms', async () => {
+  it('24. Licensed-Customer Path End-to-End: Restaurant entitled key succeeds on restaurant, but denied on hms', async () => {
     const restHandler = withApiGuard({ serviceId: 'restaurant', serviceName: 'Restaurant Service' }, dummyHandler);
-    const posHandler = withApiGuard({ serviceId: 'pos', serviceName: 'POS Service' }, dummyHandler);
-    const commerceHandler = withApiGuard({ serviceId: 'commerce', serviceName: 'Commerce Service' }, dummyHandler);
     const hmsHandler = withApiGuard({ serviceId: 'hms', serviceName: 'Hospitality Service' }, dummyHandler);
 
     // 1. Restaurant succeeds
@@ -685,23 +683,7 @@ describe('Phase 1 & 1.5 Security, Unified Auth & Licensed Customer Test Suite', 
     const restRes = await restHandler(restReq);
     assert.equal(restRes.status, 200);
 
-    // 2. POS succeeds
-    const posReq = new NextRequest('http://localhost:3000/api/v1/pos/terminals', {
-      headers: { 'x-api-key': restaurantPosKeySecret },
-    });
-    const posRes = await posHandler(posReq);
-    assert.equal(posRes.status, 200);
-
-    // 3. Commerce is denied fail-closed (not entitled)
-    const commReq = new NextRequest('http://localhost:3000/api/v1/commerce/products', {
-      headers: { 'x-api-key': restaurantPosKeySecret },
-    });
-    const commRes = await commerceHandler(commReq);
-    assert.equal(commRes.status, 403);
-    const commBody = await commRes.json();
-    assert.equal(commBody.error?.code, 'PLUGIN_NOT_ENTITLED');
-
-    // 4. HMS is denied fail-closed (not entitled)
+    // 2. HMS is denied fail-closed (not entitled)
     const hmsReq = new NextRequest('http://localhost:3000/api/v1/hms/patients', {
       headers: { 'x-api-key': restaurantPosKeySecret },
     });
@@ -726,7 +708,7 @@ describe('Phase 1 & 1.5 Security, Unified Auth & Licensed Customer Test Suite', 
     assert.equal(body1.error?.code, 'PROJECT_SUSPENDED');
 
     // Reactivate project and remove restaurant entitlement
-    await platformRepository.updateProject(restaurantPosProjectId, { status: 'ACTIVE', enabledServices: ['pos'] });
+    await platformRepository.updateProject(restaurantPosProjectId, { status: 'ACTIVE', enabledServices: [] });
 
     const req2 = new NextRequest('http://localhost:3000/api/v1/restaurant/menu', {
       headers: { 'x-api-key': restaurantPosKeySecret },
@@ -737,7 +719,7 @@ describe('Phase 1 & 1.5 Security, Unified Auth & Licensed Customer Test Suite', 
     assert.equal(body2.error?.code, 'PLUGIN_NOT_ENTITLED');
 
     // Re-grant restaurant entitlement
-    await platformRepository.updateProject(restaurantPosProjectId, { enabledServices: ['restaurant', 'pos'] });
+    await platformRepository.updateProject(restaurantPosProjectId, { enabledServices: ['restaurant'] });
     const req3 = new NextRequest('http://localhost:3000/api/v1/restaurant/menu', {
       headers: { 'x-api-key': restaurantPosKeySecret },
     });
@@ -758,7 +740,7 @@ describe('Phase 1 & 1.5 Security, Unified Auth & Licensed Customer Test Suite', 
         },
         body: JSON.stringify({
           name: 'Durable Provisioned Customer',
-          enabledServices: ['crm'],
+          enabledServices: ['hms'],
           contactEmail: 'durable@example.test',
         }),
       }));
@@ -793,7 +775,7 @@ describe('Phase 1 & 1.5 Security, Unified Auth & Licensed Customer Test Suite', 
         },
         body: JSON.stringify({
           name: 'Durable Provisioned Customer',
-          enabledServices: ['crm'],
+          enabledServices: ['hms'],
           contactEmail: 'durable@example.test',
         }),
       }));
@@ -829,7 +811,7 @@ describe('Phase 1 & 1.5 Security, Unified Auth & Licensed Customer Test Suite', 
       planTier: 'starter',
       technicalLead: 'Quota Test',
       contactEmail: 'quota@example.test',
-      enabledServices: ['crm'],
+      enabledServices: ['hms'],
       apiCallQuota: 10,
     })).project;
     const productionEnvironment = (await platformRepository.listEnvironments(project.id)).find((item) => item.isProduction)!;
@@ -837,17 +819,17 @@ describe('Phase 1 & 1.5 Security, Unified Auth & Licensed Customer Test Suite', 
       name: 'Atomic Quota Test Key',
       environmentId: productionEnvironment.id,
       projectId: project.id,
-      capabilities: ['crm:read'],
+      capabilities: ['hms:read'],
       tenantScope: [project.slug],
       createdBy: 'test_suite',
     });
     const handler = withApiGuard(
-      { serviceId: 'crm', serviceName: 'CRM Service' },
+      { serviceId: 'hms', serviceName: 'HMS Service' },
       async () => NextResponse.json({ success: true })
     );
 
     const responses = await Promise.all(Array.from({ length: 50 }, () => handler(new NextRequest(
-      'http://localhost:3000/api/v1/crm/leads',
+      'http://localhost:3000/api/v1/hms/patients',
       { headers: { 'x-api-key': key.rawSecret } }
     ))));
 
@@ -861,7 +843,7 @@ describe('Phase 1 & 1.5 Security, Unified Auth & Licensed Customer Test Suite', 
       planTier: 'starter',
       technicalLead: 'Quota Test',
       contactEmail: 'quota-failure@example.test',
-      enabledServices: ['crm'],
+      enabledServices: ['hms'],
       apiCallQuota: 1,
     })).project;
     const failingEnvironment = (await platformRepository.listEnvironments(failingProject.id)).find((item) => item.isProduction)!;
@@ -869,16 +851,16 @@ describe('Phase 1 & 1.5 Security, Unified Auth & Licensed Customer Test Suite', 
       name: 'Failed Call Test Key',
       environmentId: failingEnvironment.id,
       projectId: failingProject.id,
-      capabilities: ['crm:read'],
+      capabilities: ['hms:read'],
       tenantScope: [failingProject.slug],
       createdBy: 'test_suite',
     });
     const environmentCallsBeforeFailure = (await platformRepository.getQuotaPolicy(failingEnvironment.id))?.monthlyCallsUsed || 0;
     const failOnce = withApiGuard(
-      { serviceId: 'crm', serviceName: 'CRM Service' },
+      { serviceId: 'hms', serviceName: 'HMS Service' },
       async () => NextResponse.json({ success: false }, { status: 503 })
     );
-    const failure = await failOnce(new NextRequest('http://localhost:3000/api/v1/crm/leads', {
+    const failure = await failOnce(new NextRequest('http://localhost:3000/api/v1/hms/patients', {
       headers: { 'x-api-key': failingKey.rawSecret },
     }));
 
@@ -1138,14 +1120,14 @@ describe('Phase 1 & 1.5 Security, Unified Auth & Licensed Customer Test Suite', 
       };
 
       const guardedHandler = withApiGuard(
-        { serviceId: 'crm', serviceName: 'CRM Service', requiredScopes: ['crm:read'] },
+        { serviceId: 'hms', serviceName: 'HMS Service', requiredScopes: ['hms:read'] },
         async () => {
           mutationExecuted = true;
           return NextResponse.json({ success: true, leadId: 'lead-created-123' }, { status: 201 });
         }
       );
 
-      const req = new NextRequest('http://localhost:3000/api/v1/crm/leads', {
+      const req = new NextRequest('http://localhost:3000/api/v1/hms/patients', {
         method: 'POST',
         headers: {
           'x-api-key': validCustomerKeySecret,

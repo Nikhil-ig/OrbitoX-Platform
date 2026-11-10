@@ -160,7 +160,6 @@ function spawnServer(port: number, envOverrides: Record<string, string> = {}): C
         process.env.OUTBOX_RELAY_DATABASE_URL ||
           'postgresql://orbitox_outbox_relay:test_relay_pass@127.0.0.1:5432/orbitox_phase2',
       ),
-      ORBITOX_ENABLE_CRM_PLUGIN: 'true',
       ...envOverrides,
     },
     stdio: ['pipe', 'pipe', 'pipe'],
@@ -410,8 +409,8 @@ async function main() {
     projectId: string,
     keyName: string,
     environment = 'production',
-    serviceId = 'crm',
-    scopes = ['crm:read', 'crm:write', 'admin'],
+    serviceId = 'hms',
+    scopes = ['hms:read', 'hms:write', 'admin'],
   ): Promise<{ id: string; keyId: string; rawSecret: string }> {
     const res = await fetch(`http://127.0.0.1:${port}/api/v1/admin/api-keys`, {
       method: 'POST',
@@ -450,7 +449,7 @@ async function main() {
         data: {
           id: `pinst_${randomUUID()}`,
           tenantId,
-          pluginId: '@orbitox/crm',
+          pluginId: '@orbitox/hms',
           runtimeTenantId: tenantId,
           status: 'ACTIVE',
           planId: null,
@@ -480,7 +479,7 @@ async function main() {
         organizationId: org.id,
         businessModel: 'B2B_SAAS',
         planTier: 'growth',
-        enabledServices: ['crm'],
+        enabledServices: ['hms'],
         technicalLead: 'Lead',
         contactEmail: `lead-${suffix}@example.com`,
         environments: {
@@ -508,7 +507,7 @@ async function main() {
 
       // Verify on a completely brand-new server process that the key authenticates
       await withFreshServer(async (port) => {
-        const authRes = await fetch(`http://127.0.0.1:${port}/api/v1/crm/leads`, {
+        const authRes = await fetch(`http://127.0.0.1:${port}/api/v1/hms/patients`, {
           headers: { 'x-api-key': createdRawSecret },
         });
         assert.equal(authRes.status, 200, `Created key ${i} must authenticate on restarted server`);
@@ -554,7 +553,7 @@ async function main() {
         organizationId: org.id,
         businessModel: 'B2B_SAAS',
         planTier: 'growth',
-        enabledServices: ['crm'],
+        enabledServices: ['hms'],
         technicalLead: 'Lead',
         contactEmail: `lead-${suffix}@example.com`,
         environments: {
@@ -591,7 +590,7 @@ async function main() {
 
       // Verify on new server that key is rejected with 403 KEY_DISABLED
       await withFreshServer(async (port) => {
-        const authRes = await fetch(`http://127.0.0.1:${port}/api/v1/crm/leads`, {
+        const authRes = await fetch(`http://127.0.0.1:${port}/api/v1/hms/patients`, {
           headers: { 'x-api-key': rawSecret },
         });
         assert.equal(authRes.status, 403);
@@ -638,7 +637,7 @@ async function main() {
         organizationId: org.id,
         businessModel: 'B2B_SAAS',
         planTier: 'growth',
-        enabledServices: ['crm'],
+        enabledServices: ['hms'],
         technicalLead: 'Lead',
         contactEmail: `lead-${suffix}@example.com`,
         environments: {
@@ -693,14 +692,14 @@ async function main() {
 
       // Verify on new server: old key rejected with 403 KEY_DISABLED, new key accepted with 200
       await withFreshServer(async (port) => {
-        const oldCheck = await fetch(`http://127.0.0.1:${port}/api/v1/crm/leads`, {
+        const oldCheck = await fetch(`http://127.0.0.1:${port}/api/v1/hms/patients`, {
           headers: { 'x-api-key': oldRawSecret },
         });
         assert.equal(oldCheck.status, 403);
         const oldErr = await oldCheck.json();
         assert.equal(oldErr.error?.code, 'KEY_DISABLED');
 
-        const newCheck = await fetch(`http://127.0.0.1:${port}/api/v1/crm/leads`, {
+        const newCheck = await fetch(`http://127.0.0.1:${port}/api/v1/hms/patients`, {
           headers: { 'x-api-key': newRawSecret },
         });
         assert.equal(newCheck.status, 200);
@@ -745,7 +744,7 @@ async function main() {
         organizationId: org.id,
         businessModel: 'B2B_SAAS',
         planTier: 'growth',
-        enabledServices: ['crm'],
+        enabledServices: ['hms'],
         technicalLead: 'Lead',
         contactEmail: `lead-${suffix}@example.com`,
         environments: {
@@ -795,12 +794,12 @@ async function main() {
 
       // Both keys succeed on restarted server instance
       await withFreshServer(async (port) => {
-        const oldCheck = await fetch(`http://127.0.0.1:${port}/api/v1/crm/leads`, {
+        const oldCheck = await fetch(`http://127.0.0.1:${port}/api/v1/hms/patients`, {
           headers: { 'x-api-key': oldRawSecret },
         });
         assert.equal(oldCheck.status, 200);
 
-        const newCheck = await fetch(`http://127.0.0.1:${port}/api/v1/crm/leads`, {
+        const newCheck = await fetch(`http://127.0.0.1:${port}/api/v1/hms/patients`, {
           headers: { 'x-api-key': newRawSecret },
         });
         assert.equal(newCheck.status, 200);
@@ -847,7 +846,7 @@ async function main() {
           organizationId: org.id,
           businessModel: 'B2B_SAAS',
           planTier: 'growth',
-          enabledServices: ['crm'],
+          enabledServices: ['hms'],
           technicalLead: 'Lead',
           contactEmail: `lead-${suffix}-${i}@example.com`,
           environments: {
@@ -883,7 +882,7 @@ async function main() {
 
       // Verify on new server: 403 PROJECT_SUSPENDED
       await withFreshServer(async (port) => {
-        const check = await fetch(`http://127.0.0.1:${port}/api/v1/crm/leads`, {
+        const check = await fetch(`http://127.0.0.1:${port}/api/v1/hms/patients`, {
           headers: { 'x-api-key': rawSecret },
         });
         assert.equal(check.status, 403);
@@ -932,7 +931,7 @@ async function main() {
           organizationId: org.id,
           businessModel: 'B2B_SAAS',
           planTier: 'growth',
-          enabledServices: ['crm', 'commerce'],
+          enabledServices: ['hms', 'restaurant'],
           technicalLead: 'Lead',
           contactEmail: `lead-${suffix}-${i}@example.com`,
           environments: {
@@ -954,21 +953,21 @@ async function main() {
         const keyInfo = await createAdminKey(port, proj.id, `Key-Ent-${i}`);
         rawSecret = keyInfo.rawSecret;
 
-        // Remove crm from enabledServices
+        // Remove hms from enabledServices
         const patchRes = await fetch(`http://127.0.0.1:${port}/api/v1/admin/projects/${proj.id}`, {
           method: 'PATCH',
           headers: {
             authorization: 'Bearer test_admin_token_super_secret_32_chars_minimum',
             'content-type': 'application/json',
           },
-          body: JSON.stringify({ enabledServices: ['commerce'] }),
+          body: JSON.stringify({ enabledServices: ['restaurant'] }),
         });
         assert.equal(patchRes.status, 200);
       });
 
-      // Restarted server denies CRM with 403 PLUGIN_NOT_ENTITLED
+      // Restarted server denies HMS with 403 PLUGIN_NOT_ENTITLED
       await withFreshServer(async (port) => {
-        const check = await fetch(`http://127.0.0.1:${port}/api/v1/crm/leads`, {
+        const check = await fetch(`http://127.0.0.1:${port}/api/v1/hms/patients`, {
           headers: { 'x-api-key': rawSecret },
         });
         assert.equal(check.status, 403);
@@ -990,7 +989,7 @@ async function main() {
       diedBeforeCommit: 0,
       diedAfterCommit: iters,
       retriesOrDiscarded: 0,
-      dbStateVerified: 'Project enabledServices = ["commerce"] in PostgreSQL',
+      dbStateVerified: 'Project enabledServices = ["restaurant"] in PostgreSQL',
       apiResultVerified: 'Removed service returns 403 PLUGIN_NOT_ENTITLED on cold server restart',
       status: 'PASS',
     });
@@ -1017,7 +1016,7 @@ async function main() {
           organizationId: org.id,
           businessModel: 'B2B_SAAS',
           planTier: 'growth',
-          enabledServices: ['crm'],
+          enabledServices: ['hms'],
           apiCallQuota: 1000n,
           monthlyApiCalls: 5n,
           technicalLead: 'Lead',
@@ -1055,7 +1054,7 @@ async function main() {
 
       // Restarted server immediately returns 429 QUOTA_EXCEEDED
       await withFreshServer(async (port) => {
-        const check = await fetch(`http://127.0.0.1:${port}/api/v1/crm/leads`, {
+        const check = await fetch(`http://127.0.0.1:${port}/api/v1/hms/patients`, {
           headers: { 'x-api-key': rawSecret },
         });
         assert.equal(check.status, 429);
@@ -1104,7 +1103,7 @@ async function main() {
           organizationId: org.id,
           businessModel: 'B2B_SAAS',
           planTier: 'growth',
-          enabledServices: ['crm'],
+          enabledServices: ['hms'],
           monthlyApiCalls: 88n,
           technicalLead: 'Lead',
           contactEmail: `lead-${suffix}-${i}@example.com`,
@@ -1191,7 +1190,7 @@ async function main() {
             organization: `Org ${slug}`,
             businessModel: 'B2B_SAAS',
             plan: 'growth',
-            enabledServices: ['crm'],
+            enabledServices: ['hms'],
           }),
         });
         assert.ok(
@@ -1214,7 +1213,7 @@ async function main() {
 
       // Verify on new server: root key authenticates
       await withFreshServer(async (port) => {
-        const check = await fetch(`http://127.0.0.1:${port}/api/v1/crm/leads`, {
+        const check = await fetch(`http://127.0.0.1:${port}/api/v1/hms/patients`, {
           headers: { 'x-api-key': rootKeySecret },
         });
         assert.equal(check.status, 200);
@@ -1370,7 +1369,7 @@ async function main() {
         organizationId: org.id,
         businessModel: 'B2B_SAAS',
         planTier: 'growth',
-        enabledServices: ['crm'],
+        enabledServices: ['hms'],
         technicalLead: 'Lead',
         contactEmail: `lead-${suffix}@example.com`,
         environments: {
@@ -1499,7 +1498,7 @@ async function main() {
             organization: `Org ${targetSlug}`,
             businessModel: 'B2B_SAAS',
             plan: 'growth',
-            enabledServices: ['crm'],
+            enabledServices: ['hms'],
           }),
         }).catch(() => {});
 
@@ -1681,7 +1680,7 @@ async function main() {
           organization: org.name,
           businessModel: 'B2B_SAAS',
           plan: 'growth',
-          enabledServices: ['crm'],
+          enabledServices: ['hms'],
         }),
       }).catch(() => {});
 
@@ -1743,7 +1742,7 @@ async function main() {
           organization: `Idem Org`,
           businessModel: 'B2B_SAAS',
           plan: 'growth',
-          enabledServices: ['crm'],
+          enabledServices: ['hms'],
         }),
       });
       assert.ok(res.status === 200 || res.status === 201, `Creation status was ${res.status}`);
@@ -1765,7 +1764,7 @@ async function main() {
           organization: `Idem Org`,
           businessModel: 'B2B_SAAS',
           plan: 'growth',
-          enabledServices: ['crm'],
+          enabledServices: ['hms'],
         }),
       });
 
@@ -1850,7 +1849,7 @@ async function main() {
         organizationId: org.id,
         businessModel: 'B2B_SAAS',
         planTier: 'growth',
-        enabledServices: ['crm'],
+        enabledServices: ['hms'],
         technicalLead: 'Lead',
         contactEmail: `lead-${suffix}@example.com`,
         environments: {
@@ -1873,10 +1872,10 @@ async function main() {
     const keyId = keyInfo.id;
 
     // Both servers accept the key
-    const preCheck1 = await fetch(`http://127.0.0.1:${portA}/api/v1/crm/leads`, {
+    const preCheck1 = await fetch(`http://127.0.0.1:${portA}/api/v1/hms/patients`, {
       headers: { 'x-api-key': rawSecret },
     });
-    const preCheck2 = await fetch(`http://127.0.0.1:${portB}/api/v1/crm/leads`, {
+    const preCheck2 = await fetch(`http://127.0.0.1:${portB}/api/v1/hms/patients`, {
       headers: { 'x-api-key': rawSecret },
     });
     assert.equal(preCheck1.status, 200);
@@ -1892,7 +1891,7 @@ async function main() {
     // IMMEDIATELY (0 sleep) blast 50 concurrent requests through the round-robin splitter
     // Exactly half of these hit Server B, which never saw the revocation request!
     const blastPromises = Array.from({ length: 50 }, () =>
-      fetch(`http://127.0.0.1:${splitterPort}/api/v1/crm/leads`, {
+      fetch(`http://127.0.0.1:${splitterPort}/api/v1/hms/patients`, {
         headers: { 'x-api-key': rawSecret },
       }),
     );
@@ -2174,7 +2173,7 @@ async function main() {
   {
     await withFreshServer(async (port) => {
       // 1. Missing credentials -> 401 (never 200, never 500)
-      const anonRes = await fetch(`http://127.0.0.1:${port}/api/v1/crm/leads`);
+      const anonRes = await fetch(`http://127.0.0.1:${port}/api/v1/hms/patients`);
       assert.equal(anonRes.status, 401);
 
       // 2. Health check healthy -> 200
@@ -2220,7 +2219,7 @@ async function main() {
         organizationId: org.id,
         businessModel: 'B2B_SAAS',
         planTier: 'growth',
-        enabledServices: ['crm'],
+        enabledServices: ['hms'],
         technicalLead: 'Lead',
         contactEmail: `lead-dbfail-${suffix}@example.com`,
         environments: {
@@ -2266,7 +2265,7 @@ async function main() {
       // Wait a moment for the row lock to be acquired
       await new Promise((r) => setTimeout(r, 100));
 
-      const lockRes = await fetch(`http://127.0.0.1:${port}/api/v1/crm/leads`, {
+      const lockRes = await fetch(`http://127.0.0.1:${port}/api/v1/hms/patients`, {
         headers: { 'x-api-key': rawSecret },
       });
       assert.equal(lockRes.status, 503, 'Must return 503 during lock timeout');
@@ -2285,7 +2284,7 @@ async function main() {
       await lockingClient.$disconnect().catch(() => {});
 
       // Verify immediate recovery on the SAME server process without restart!
-      const recoverRes1 = await fetch(`http://127.0.0.1:${port}/api/v1/crm/leads`, {
+      const recoverRes1 = await fetch(`http://127.0.0.1:${port}/api/v1/hms/patients`, {
         headers: { 'x-api-key': rawSecret },
       });
       assert.equal(
@@ -2318,7 +2317,7 @@ async function main() {
 
         await new Promise((r) => setTimeout(r, 100));
 
-        const stmtRes = await fetch(`http://127.0.0.1:${stmtPort}/api/v1/crm/leads`, {
+        const stmtRes = await fetch(`http://127.0.0.1:${stmtPort}/api/v1/hms/patients`, {
           headers: { 'x-api-key': rawSecret },
         });
         assert.equal(stmtRes.status, 503, 'Must return 503 during statement timeout');
@@ -2341,7 +2340,7 @@ async function main() {
 
         // Verify recovery without restart on SAME server process
         await new Promise((r) => setTimeout(r, 100));
-        const stmtRecoverRes = await fetch(`http://127.0.0.1:${stmtPort}/api/v1/crm/leads`, {
+        const stmtRecoverRes = await fetch(`http://127.0.0.1:${stmtPort}/api/v1/hms/patients`, {
           headers: { 'x-api-key': rawSecret },
         });
         assert.equal(
@@ -2375,7 +2374,7 @@ async function main() {
       });
       await waitForServer(poolChild, poolPort);
       try {
-        const poolRes = await fetch(`http://127.0.0.1:${poolPort}/api/v1/crm/leads`, {
+        const poolRes = await fetch(`http://127.0.0.1:${poolPort}/api/v1/hms/patients`, {
           headers: { 'x-api-key': rawSecret },
         });
         assert.equal(poolRes.status, 200, 'Baseline connection succeeds');

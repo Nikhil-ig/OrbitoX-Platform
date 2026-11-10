@@ -126,20 +126,15 @@ describe('Route & Page Security Boundary Architecture', () => {
             const relPath = path.relative(appDir, file).split(path.sep).join('/');
             const urlPath = `/${relPath.replace(/(^|\/)page\.tsx$/, '')}`.replace(/\/$/, '') || '/';
 
-            // Shopper storefront customer UI pages
-            const isShopperStorefront = /^\/store\/\[storeSlug\](\/.*)?$/.test(urlPath);
             // Diner customer UI pages
             const isDinerUi = urlPath === '/dine' || urlPath.startsWith('/dine/');
             const isOperatorLogin = urlPath === '/platform/login';
 
-            const isClassifiedPublic = isShopperStorefront || isDinerUi || isOperatorLogin;
+            const isClassifiedPublic = isDinerUi || isOperatorLogin;
 
             if (isClassifiedPublic) {
                 // Verify that route classification recognizes sample runtime paths as public
-                const samplePath = isShopperStorefront
-                    ? urlPath.replace('[storeSlug]', 'test-merchant-slug')
-                    : urlPath;
-                if (!isExplicitPublicRoute(samplePath)) {
+                if (!isExplicitPublicRoute(urlPath)) {
                     violations.push(`${relPath} (expected to be public but rejected by isExplicitPublicRoute)`);
                 }
             } else {
@@ -192,7 +187,7 @@ describe('Route & Page Security Boundary Architecture', () => {
             const relPath = path.relative(appDir, file).split(path.sep).join('/');
             const urlPath = `/${relPath.replace(/(^|\/)page\.tsx$/, '')}`.replace(/\/$/, '') || '/';
             // Only examine protected routes with dynamic bracket parameters
-            if (urlPath.includes('[') && !urlPath.startsWith('/store/[storeSlug]') && !urlPath.startsWith('/dine/')) {
+            if (urlPath.includes('[') && !urlPath.startsWith('/dine/')) {
                 dynamicProtectedPages.push(urlPath);
             }
         }
@@ -246,7 +241,7 @@ describe('Route & Page Security Boundary Architecture', () => {
 
         // Control plane and plugin dynamic routes must NEVER be treated as static assets
         assert.equal(isStaticAsset('/admin/projects/abc.png'), false);
-        assert.equal(isStaticAsset('/crm/leads/1.txt'), false);
+        assert.equal(isStaticAsset('/hms/labs/1.txt'), false);
         assert.equal(isStaticAsset('/platform/x.map'), false);
         assert.equal(isStaticAsset('/hms/patients/p1.svg'), false);
 

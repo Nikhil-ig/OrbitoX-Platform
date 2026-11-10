@@ -1101,7 +1101,7 @@ export class ResourceGraphService {
       const services = (p.getServices ? (await p.getServices()) || [] : []).length > 0
         ? await p.getServices!()
         : [
-            { id: 'svc_gateway', name: 'API Edge Gateway', packageId: '@orbitox/commerce', nodeId: 'node_mumbai_01' },
+            { id: 'svc_gateway', name: 'API Edge Gateway', packageId: '@orbitox/hms', nodeId: 'node_mumbai_01' },
             { id: 'svc_ordering', name: 'Restaurant Order Engine', packageId: '@orbitox/restaurant', nodeId: 'node_mumbai_01' },
             { id: 'svc_kds', name: 'Kitchen Display Service', packageId: '@orbitox/restaurant', nodeId: 'node_singapore_01' },
           ];
@@ -1739,12 +1739,10 @@ export class ResourceGraphService {
       });
     });
 
-    // 3. Core Packages
+    // 3. Core Packages (HospitalOS & RestaurantOS)
     const packages = [
       { id: 'pkg_restaurant', name: '@orbitox/restaurant', version: '2.2.1' },
-      { id: 'pkg_pos', name: '@orbitox/pos', version: '3.0.0' },
-      { id: 'pkg_commerce', name: '@orbitox/commerce', version: '1.4.0' },
-      { id: 'pkg_crm', name: '@orbitox-io/crm', version: '1.0.1' },
+      { id: 'pkg_hms', name: '@orbitox/hms', version: '2.4.0' },
     ];
 
     packages.forEach((pkg) => {
@@ -1762,17 +1760,6 @@ export class ResourceGraphService {
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
       });
-    });
-
-    // Dependency: Restaurant depends on POS
-    this.addEdge({
-      id: 'edge_pkg_rest_pos',
-      sourceId: 'pkg_restaurant',
-      sourceType: 'PACKAGE',
-      targetId: 'pkg_pos',
-      targetType: 'PACKAGE',
-      edgeType: 'DEPENDS_ON',
-      metadata: { minVersion: '3.0.0', reason: 'Restaurant module requires POS hardware engine' },
     });
 
     // Bind Restaurant to OmniDeliver Production
@@ -1811,7 +1798,7 @@ export class ResourceGraphService {
 
     // 5. Services
     const services = [
-      { id: 'svc_gateway', name: 'API Edge Gateway', packageId: 'pkg_commerce', nodeId: 'node_mumbai_01' },
+      { id: 'svc_gateway', name: 'API Edge Gateway', packageId: 'pkg_hms', nodeId: 'node_mumbai_01' },
       { id: 'svc_ordering', name: 'Restaurant Order Engine', packageId: 'pkg_restaurant', nodeId: 'node_mumbai_01' },
       { id: 'svc_kds', name: 'Kitchen Display Service', packageId: 'pkg_restaurant', nodeId: 'node_singapore_01' },
     ];

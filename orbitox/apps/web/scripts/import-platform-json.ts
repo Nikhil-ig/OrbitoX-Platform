@@ -599,7 +599,7 @@ export async function runPlatformJsonImporter(
                   const canonicalTenantId = `org/${orgRecord.id}/project/${proj.id}/environment/${envItem.id}`;
                   for (const s of projectServices) {
                     const canonical = s.startsWith('@') ? s : `@orbitox/${s}`;
-                    if (['@orbitox/restaurant', '@orbitox/hms', '@orbitox/crm', '@orbitox/pos'].includes(canonical)) {
+                    if (['@orbitox/restaurant', '@orbitox/hms'].includes(canonical)) {
                       const existingInst = await tx.pluginInstallation.findFirst({
                         where: { tenantId: canonicalTenantId, pluginId: canonical },
                       });

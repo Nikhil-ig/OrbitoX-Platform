@@ -10,14 +10,14 @@ describe('MenuRegistry', () => {
   it('should register and retrieve menus per context', () => {
     const contextId = 'ctx-123';
     const menuItems = [
-      { id: 'leads', label: 'Leads', path: '/crm/leads' },
+      { id: 'patients', label: 'Patients', path: '/hms' },
     ];
 
-    registry.register(contextId, 'crm', menuItems);
+    registry.register(contextId, 'hms', menuItems);
     const retrieved = registry.getMenus(contextId);
 
     expect(retrieved).toHaveLength(1);
-    expect(retrieved[0].id).toBe('leads');
+    expect(retrieved[0].id).toBe('patients');
   });
 
   it('should return empty array for context without menus', () => {

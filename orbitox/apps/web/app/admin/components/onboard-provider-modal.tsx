@@ -28,7 +28,7 @@ export function OnboardProviderModal({
   const [customDomain, setCustomDomain] = useState('');
   const [plan, setPlan] = useState('Enterprise Tier 1');
   const [avatar, setAvatar] = useState('hospital');
-  const [selectedServices, setSelectedServices] = useState<string[]>(['hms', 'inventory', 'crm']);
+  const [selectedServices, setSelectedServices] = useState<string[]>(['hms']);
   const [apiCallQuota, setApiCallQuota] = useState(3000000);
   const [storageQuotaGb, setStorageQuotaGb] = useState(500);
 
@@ -81,7 +81,7 @@ export function OnboardProviderModal({
       apiCallQuota,
       storageUsedGb: 0,
       storageQuotaGb,
-      enabledServices: selectedServices.length > 0 ? selectedServices : ['crm'],
+      enabledServices: selectedServices.length > 0 ? selectedServices : ['hms'],
       apiKeysCount: 1,
       contactEmail: `admin@${customDomain.trim().toLowerCase().replace(/^https?:\/\//, '')}`,
       technicalLead: 'Platform SuperAdmin (Self-Provisioned)',

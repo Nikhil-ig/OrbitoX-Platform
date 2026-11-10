@@ -28,14 +28,7 @@ interface PageProps {
 
 const serviceAppRouteMap: Record<string, { label: string; path: string; icon: string }> = {
   hms: { label: 'Open Hospital OS Command Center', path: '/hms', icon: 'hospital' },
-  commerce: { label: 'Open Commerce Studio', path: '/commerce', icon: 'ecommerce' },
-  crm: { label: 'Open CRM Leads Pipeline', path: '/crm/leads', icon: 'sales' },
-  inventory: { label: 'Open Inventory Stock', path: '/inventory/items', icon: 'logistics' },
-  finance: { label: 'Open Finance Invoices', path: '/finance/invoices', icon: 'finance' },
-  hrms: { label: 'Open HRMS Employees', path: '/hrms/employees', icon: 'hr' },
-  restaurant: { label: 'Open Kitchen Orders', path: '/commerce/orders', icon: 'restaurant' },
-  school: { label: 'Open Student Admissions', path: '/crm/leads', icon: 'education' },
-  pos: { label: 'Open POS Register', path: '/commerce/orders', icon: 'pos' },
+  restaurant: { label: 'Open Kitchen Display (KDS)', path: '/kds', icon: 'restaurant' },
 };
 
 export default function ServiceDetailPage({ params }: PageProps) {

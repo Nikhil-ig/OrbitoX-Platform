@@ -86,15 +86,14 @@ async function run() {
   const paths: Array<{ category: string; path: string; expected: string }> = [
     // 1. Control Plane Root & Overview
     { category: 'Overview / Root', path: '/', expected: '401' },
-    { category: 'Automations', path: '/automations', expected: '401' },
 
     // 2. Admin Control Plane Pages
     { category: 'Admin', path: '/admin', expected: '401' },
     { category: 'Admin', path: '/admin/api-keys', expected: '401' },
     { category: 'Admin', path: '/admin/audit', expected: '401' },
     { category: 'Admin', path: '/admin/business', expected: '401' },
-    { category: 'Admin', path: '/admin/business/ecommerce', expected: '401' },
-    { category: 'Admin', path: '/admin/business/ecommerce/shopify', expected: '401' },
+    { category: 'Admin', path: '/admin/business/hospitals', expected: '401' },
+    { category: 'Admin', path: '/admin/business/hospitals/st-jude', expected: '401' },
     { category: 'Admin', path: '/admin/developer-apis', expected: '401' },
     { category: 'Admin', path: '/admin/marketplace', expected: '401' },
     { category: 'Admin', path: '/admin/projects', expected: '401' },
@@ -103,7 +102,7 @@ async function run() {
     { category: 'Admin', path: '/admin/quotas', expected: '401' },
     { category: 'Admin', path: '/admin/restaurant', expected: '401' },
     { category: 'Admin', path: '/admin/services', expected: '401' },
-    { category: 'Admin', path: '/admin/services/crm', expected: '401' },
+    { category: 'Admin', path: '/admin/services/hms', expected: '401' },
     { category: 'Admin', path: '/admin/system', expected: '401' },
 
     // 3. Platform Control Plane Pages
@@ -129,11 +128,7 @@ async function run() {
     { category: 'Platform', path: '/platform/settings', expected: '401' },
     { category: 'Platform', path: '/platform/tests', expected: '401' },
 
-    // 4. CRM Pages
-    { category: 'CRM', path: '/crm', expected: '401' },
-    { category: 'CRM', path: '/crm/leads', expected: '401' },
-
-    // 5. HMS Pages
+    // 4. HMS Pages
     { category: 'HMS', path: '/hms', expected: '401' },
     { category: 'HMS', path: '/hms/appointments', expected: '401' },
     { category: 'HMS', path: '/hms/beds', expected: '401' },
@@ -147,49 +142,26 @@ async function run() {
     { category: 'HMS', path: '/hms/staff', expected: '401' },
     { category: 'HMS', path: '/hms/telemetry', expected: '401' },
 
-    // 6. HRMS Pages
-    { category: 'HRMS', path: '/hrms', expected: '401' },
-    { category: 'HRMS', path: '/hrms/employees', expected: '401' },
-
-    // 7. Finance Pages
-    { category: 'Finance', path: '/finance', expected: '401' },
-    { category: 'Finance', path: '/finance/invoices', expected: '401' },
-
-    // 8. Commerce Pages
-    { category: 'Commerce', path: '/commerce', expected: '401' },
-    { category: 'Commerce', path: '/commerce/automations', expected: '401' },
-    { category: 'Commerce', path: '/commerce/customers', expected: '401' },
-    { category: 'Commerce', path: '/commerce/discounts', expected: '401' },
-    { category: 'Commerce', path: '/commerce/media', expected: '401' },
-    { category: 'Commerce', path: '/commerce/orders', expected: '401' },
-    { category: 'Commerce', path: '/commerce/products', expected: '401' },
-    { category: 'Commerce', path: '/commerce/store/builder', expected: '401' },
-    { category: 'Commerce', path: '/commerce/store/pages', expected: '401' },
-    { category: 'Commerce', path: '/commerce/store/theme', expected: '401' },
-
-    // 9. Inventory, KDS, Fleet
-    { category: 'Inventory', path: '/inventory/items', expected: '401' },
+    // 5. KDS, Fleet
     { category: 'KDS', path: '/kds', expected: '401' },
     { category: 'Fleet', path: '/platform/fleet', expected: '401' },
 
-    // 10. Dynamic Dotted Variants (S3-1 Regression Verification: png, svg, txt, js, css, map, ico, json)
+    // 6. Dynamic Dotted Variants (S3-1 Regression Verification: png, svg, txt, js, css, map, ico, json)
     ...['png', 'svg', 'txt', 'js', 'css', 'map', 'ico', 'json'].flatMap((ext) => [
       { category: `Dynamic Dotted (.${ext})`, path: `/admin/projects/proj-123.${ext}`, expected: '401' },
       { category: `Dynamic Dotted (.${ext})`, path: `/platform/projects/proj-123.${ext}`, expected: '401' },
       { category: `Dynamic Dotted (.${ext})`, path: `/platform/restaurants/rest-123.${ext}`, expected: '401' },
-      { category: `Dynamic Dotted (.${ext})`, path: `/admin/business/ecommerce/shopify.${ext}`, expected: '401' },
-      { category: `Dynamic Dotted (.${ext})`, path: `/admin/services/crm.${ext}`, expected: '401' },
+      { category: `Dynamic Dotted (.${ext})`, path: `/admin/business/hospitals/st-jude.${ext}`, expected: '401' },
+      { category: `Dynamic Dotted (.${ext})`, path: `/admin/services/hms.${ext}`, expected: '401' },
     ]),
 
-    // 11. Audited Public / Static Assets
+    // 7. Audited Public / Static Assets
     { category: 'Public Asset', path: '/favicon.ico', expected: '200' },
     { category: 'Public Asset', path: '/robots.txt', expected: '200' },
     { category: 'Public Asset', path: '/_next/static/chunks/5610-60fa5a988d93f8a1.js', expected: '200' },
     { category: 'Public Route', path: '/api/health', expected: '200' },
     { category: 'Public Route', path: '/api/v1/openapi.json', expected: '200' },
     { category: 'Diner Public', path: '/dine/tbl-123', expected: '200' },
-    { category: 'Storefront Public', path: '/store/sample-store', expected: '200' },
-    { category: 'Storefront Public', path: '/store/sample-store/shop', expected: '200' },
   ];
 
   console.log('| Category | Requested Path | Status Code | Expected | Pass/Fail |');

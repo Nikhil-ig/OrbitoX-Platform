@@ -318,12 +318,6 @@ export const FORBIDDEN_EXPORT_COLUMNS = [
  */
 export const REVIEWED_SECRET_COLUMN_ALLOWLIST: Readonly<Record<string, string>> = {
   // Platform schema (orbitox/prisma/schema.prisma)
-  'Order.shippingAmount': 'Commerce shipping fee amount (regex false positive on "pin"); sample model slated for 7A-1 removal.',
-  'Order.shippingAddress': 'Commerce shipping postal address (regex false positive on "pin"); sample model slated for 7A-1 removal.',
-  'Order.shippingMethod': 'Commerce fulfillment method name (regex false positive on "pin"); sample model slated for 7A-1 removal.',
-  'CelebrationExperience.passwordProtection': 'Boolean access-control flag only (not the passwordHash itself); slated for 7A-1 removal.',
-  'CelebrationPricingPlan.passwordProtectionAllowed': 'Boolean plan capability flag only; slated for 7A-1 removal.',
-  'StudioProject.designTokens': 'Public UI styling theme JSON tokens, not authentication credentials; slated for 7A-1 removal.',
   'RestaurantPricingQuote.inputHash': 'Deterministic pricing payload integrity hash (no secrets); quote verification metadata.',
   'RestaurantPricingQuote.resultHash': 'Deterministic pricing quote output hash (no secrets); quote verification metadata.',
   'PlatformIdempotencyRecord.requestHash': 'SHA-256 request body deduplication digest, not a credential or secret.',

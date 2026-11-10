@@ -27,10 +27,10 @@ function ConnectProjectContent() {
   const [mode, setMode] = useState<'template' | 'manual'>(initialMode);
 
   // Template Provisioning State
-  const [selectedTemplate, setSelectedTemplate] = useState<'restaurant' | 'crm' | 'blank'>('restaurant');
+  const [selectedTemplate, setSelectedTemplate] = useState<'restaurant' | 'hms' | 'blank'>('restaurant');
   const [templateName, setTemplateName] = useState('My Artisan Bistro');
   const [templateSlug, setTemplateSlug] = useState('my-artisan-bistro');
-  const [selectedPlan, setSelectedPlan] = useState('plan_restaurant_growth');
+  const [selectedPlan, setSelectedPlan] = useState('restaurant-growth');
   const [isProvisioning, setIsProvisioning] = useState(false);
   const [provisionError, setProvisionError] = useState<string | null>(null);
   const [provisioned, setProvisioned] = useState<ProvisionedData | null>(null);
@@ -228,31 +228,31 @@ await orbitox.registerRuntime();`;
                     className={`${styles.templateCard} ${selectedTemplate === 'restaurant' ? styles.templateCardActive : ''}`}
                     onClick={() => {
                       setSelectedTemplate('restaurant');
-                      setSelectedPlan('plan_restaurant_growth');
+                      setSelectedPlan('restaurant-growth');
                     }}
                   >
                     <div className={styles.templateIcon}>🍽️</div>
                     <h3 className={styles.templateTitle}>Restaurant & Bistro OS</h3>
                     <p className={styles.templateDesc}>
-                      Composes <code>@orbitox/pos</code>: deterministic GST quote engine, idempotent order lifecycle, synchronized kitchen preparation DAG, and QR dining sessions.
+                      Composes <code>@orbitox/restaurant</code>: deterministic GST quote engine, idempotent order lifecycle, synchronized kitchen preparation DAG, and QR dining sessions.
                     </p>
-                    <span className={styles.templateBadge}>Plugin: @orbitox/pos</span>
+                    <span className={styles.templateBadge}>Plugin: @orbitox/restaurant</span>
                   </div>
 
-                  {/* CRM OS */}
+                  {/* Hospital OS */}
                   <div
-                    className={`${styles.templateCard} ${selectedTemplate === 'crm' ? styles.templateCardActive : ''}`}
+                    className={`${styles.templateCard} ${selectedTemplate === 'hms' ? styles.templateCardActive : ''}`}
                     onClick={() => {
-                      setSelectedTemplate('crm');
-                      setSelectedPlan('plan_crm_growth');
+                      setSelectedTemplate('hms');
+                      setSelectedPlan('hms-pro');
                     }}
                   >
-                    <div className={styles.templateIcon}>💼</div>
-                    <h3 className={styles.templateTitle}>Enterprise CRM & Deals OS</h3>
+                    <div className={styles.templateIcon}>🏥</div>
+                    <h3 className={styles.templateTitle}>Hospital & Clinical OS</h3>
                     <p className={styles.templateDesc}>
-                      Composes <code>@orbitox/crm</code>: predictive lead scoring, opportunity pipeline stages, durable status state machines, and multi-tenant rep isolation.
+                      Composes <code>@orbitox/hms</code>: sealed PHI clinical records, emergency triage state machine, ward &amp; bed allocation, and lab verification.
                     </p>
-                    <span className={styles.templateBadge}>Plugin: @orbitox/crm</span>
+                    <span className={styles.templateBadge}>Plugin: @orbitox/hms</span>
                   </div>
 
                   {/* Blank Custom OS */}
@@ -315,11 +315,16 @@ await orbitox.registerRuntime();`;
                       value={selectedPlan}
                       onChange={(e) => setSelectedPlan(e.target.value)}
                     >
-                      {selectedTemplate === 'crm' ? (
+                      {selectedTemplate === 'hms' ? (
                         <>
-                          <option value="plan_crm_starter">CRM Starter (1,000 monthly leads)</option>
-                          <option value="plan_crm_growth">CRM Growth (5,000 monthly leads)</option>
-                          <option value="plan_crm_enterprise">CRM Enterprise (50,000 monthly leads)</option>
+                          <option value="hms-starter">HospitalOS Starter (1,000 monthly patients)</option>
+                          <option value="hms-pro">HospitalOS Pro (10,000 monthly patients)</option>
+                          <option value="hms-enterprise">HospitalOS Enterprise (Unlimited beds &amp; labs)</option>
+                        </>
+                      ) : selectedTemplate === 'blank' ? (
+                        <>
+                          <option value="plan_custom_starter">Custom Foundation Starter</option>
+                          <option value="plan_custom_enterprise">Custom Foundation Enterprise</option>
                         </>
                       ) : (
                         <>

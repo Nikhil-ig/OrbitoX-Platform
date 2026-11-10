@@ -34,7 +34,7 @@ describe('withApiGuard Billing State Enforcement & Query Budget', () => {
       plan: 'starter',
       technicalLead: 'Billing Test',
       contactEmail: `billing-${suffix}@example.test`,
-      enabledServices: ['crm'],
+      enabledServices: ['hms'],
       apiCallQuota: 1000,
     });
     createdProjectId = proj.project.id;
@@ -42,12 +42,12 @@ describe('withApiGuard Billing State Enforcement & Query Budget', () => {
     createdEnvId = env.id;
     tenantId = `org/${org.id}/project/${proj.project.id}/environment/${env.id}`;
 
-    const existingInst = await platformRepository.getPluginInstallation(tenantId, '@orbitox/crm');
+    const existingInst = await platformRepository.getPluginInstallation(tenantId, '@orbitox/hms');
     if (!existingInst) {
       await platformRepository.provisionPluginInstallation({
         tenantId,
         runtimeTenantId: tenantId,
-        pluginId: '@orbitox/crm',
+        pluginId: '@orbitox/hms',
         status: 'ACTIVE',
         planId: null,
       });
@@ -57,7 +57,7 @@ describe('withApiGuard Billing State Enforcement & Query Budget', () => {
       name: `Billing Test Key ${suffix}`,
       environmentId: env.id,
       projectId: proj.project.id,
-      capabilities: ['crm:read', 'crm:write'],
+      capabilities: ['hms:read', 'hms:write'],
       tenantScope: [proj.project.slug],
       createdBy: 'test-billing',
     });
@@ -87,18 +87,18 @@ describe('withApiGuard Billing State Enforcement & Query Budget', () => {
       };
 
       const getHandler = withApiGuard(
-        { serviceId: 'crm', serviceName: 'CRM Service', requiredScopes: ['crm:read'] },
+        { serviceId: 'hms', serviceName: 'HMS Service', requiredScopes: ['hms:read'] },
         async (_req, ctx) => NextResponse.json({ success: true, method: 'GET', tenantId: ctx.tenantId }),
       );
 
       const postHandler = withApiGuard(
-        { serviceId: 'crm', serviceName: 'CRM Service', requiredScopes: ['crm:write'] },
+        { serviceId: 'hms', serviceName: 'HMS Service', requiredScopes: ['hms:write'] },
         async (_req, ctx) => NextResponse.json({ success: true, method: 'POST', tenantId: ctx.tenantId }),
       );
 
       // 1. ACTIVE: GET allowed (200), POST allowed (200) without any grant header
       const activeGetRes = await getHandler(
-        new NextRequest('http://localhost/api/v1/crm/leads', {
+        new NextRequest('http://localhost/api/v1/hms/patients', {
           method: 'GET',
           headers: { 'x-api-key': apiKeySecret },
         }),
@@ -106,7 +106,7 @@ describe('withApiGuard Billing State Enforcement & Query Budget', () => {
       assert.equal(activeGetRes.status, 200);
 
       const activePostRes = await postHandler(
-        new NextRequest('http://localhost/api/v1/crm/leads', {
+        new NextRequest('http://localhost/api/v1/hms/patients', {
           method: 'POST',
           headers: { 'x-api-key': apiKeySecret },
         }),
@@ -114,10 +114,10 @@ describe('withApiGuard Billing State Enforcement & Query Budget', () => {
       assert.equal(activePostRes.status, 200);
 
       // 2. READ_ONLY installation, no grant header: POST -> 402, GET -> 200
-      await platformRepository.updatePluginInstallationStatus(tenantId, '@orbitox/crm', 'READ_ONLY');
+      await platformRepository.updatePluginInstallationStatus(tenantId, '@orbitox/hms', 'READ_ONLY');
 
       const roGetRes = await getHandler(
-        new NextRequest('http://localhost/api/v1/crm/leads', {
+        new NextRequest('http://localhost/api/v1/hms/patients', {
           method: 'GET',
           headers: { 'x-api-key': apiKeySecret },
         }),
@@ -125,7 +125,7 @@ describe('withApiGuard Billing State Enforcement & Query Budget', () => {
       assert.equal(roGetRes.status, 200);
 
       const roPostRes = await postHandler(
-        new NextRequest('http://localhost/api/v1/crm/leads', {
+        new NextRequest('http://localhost/api/v1/hms/patients', {
           method: 'POST',
           headers: { 'x-api-key': apiKeySecret },
         }),
@@ -136,10 +136,10 @@ describe('withApiGuard Billing State Enforcement & Query Budget', () => {
       assert.equal(roBody.error?.code, 'PAYMENT_REQUIRED');
 
       // 3. SUSPENDED installation, no grant header: GET -> 402, POST -> 402
-      await platformRepository.updatePluginInstallationStatus(tenantId, '@orbitox/crm', 'SUSPENDED');
+      await platformRepository.updatePluginInstallationStatus(tenantId, '@orbitox/hms', 'SUSPENDED');
 
       const suspGetRes = await getHandler(
-        new NextRequest('http://localhost/api/v1/crm/leads', {
+        new NextRequest('http://localhost/api/v1/hms/patients', {
           method: 'GET',
           headers: { 'x-api-key': apiKeySecret },
         }),
@@ -150,7 +150,7 @@ describe('withApiGuard Billing State Enforcement & Query Budget', () => {
       assert.equal(suspGetBody.error?.code, 'PAYMENT_REQUIRED');
 
       const suspPostRes = await postHandler(
-        new NextRequest('http://localhost/api/v1/crm/leads', {
+        new NextRequest('http://localhost/api/v1/hms/patients', {
           method: 'POST',
           headers: { 'x-api-key': apiKeySecret },
         }),
@@ -161,8 +161,8 @@ describe('withApiGuard Billing State Enforcement & Query Budget', () => {
       // 4. Client sending a forged or ACTIVE grant header for a SUSPENDED installation -> still 402 (headers ignored)
       const forgedActiveToken = createEntitlementGrantToken({
         tenantId,
-        pluginId: '@orbitox/crm',
-        planId: 'crm-starter',
+        pluginId: '@orbitox/hms',
+        planId: 'hms-starter',
         status: 'ACTIVE',
         features: ['*'],
         quotas: {},
@@ -170,7 +170,7 @@ describe('withApiGuard Billing State Enforcement & Query Budget', () => {
       });
 
       const forgedRes = await postHandler(
-        new NextRequest('http://localhost/api/v1/crm/leads', {
+        new NextRequest('http://localhost/api/v1/hms/patients', {
           method: 'POST',
           headers: {
             'x-api-key': apiKeySecret,
@@ -184,10 +184,10 @@ describe('withApiGuard Billing State Enforcement & Query Budget', () => {
       assert.equal(forgedRes.headers.get('x-orbitox-billing-state'), 'suspended');
 
       // 5. After subscription.charged -> the write works again (restored to ACTIVE server-side)
-      await platformRepository.updatePluginInstallationStatus(tenantId, '@orbitox/crm', 'ACTIVE');
+      await platformRepository.updatePluginInstallationStatus(tenantId, '@orbitox/hms', 'ACTIVE');
 
       const restoredPostRes = await postHandler(
-        new NextRequest('http://localhost/api/v1/crm/leads', {
+        new NextRequest('http://localhost/api/v1/hms/patients', {
           method: 'POST',
           headers: { 'x-api-key': apiKeySecret },
         }),
@@ -212,7 +212,7 @@ describe('withApiGuard Billing State Enforcement & Query Budget', () => {
         const usageRecords = await prisma.$transaction(async (tx) => {
           await tx.$queryRaw`SELECT set_config('app.current_tenant_id', ${usageTenantId}, true)`;
           return tx.platformPluginUsage.findMany({
-            where: { pluginId: 'crm', projectId: createdProjectId },
+            where: { pluginId: 'hms', projectId: createdProjectId },
           });
         });
         assert.ok(usageRecords.length > 0, 'Expected PlatformPluginUsage record to be created');
@@ -227,14 +227,14 @@ describe('withApiGuard Billing State Enforcement & Query Budget', () => {
   it('refuses request when no installation exists for a plugin service', async () => {
     if (platformRepository.isPrismaBacked()) {
       await prisma.pluginInstallation.updateMany({
-        where: { tenantId, pluginId: { in: ['@orbitox/crm', 'crm'] } },
+        where: { tenantId, pluginId: { in: ['@orbitox/hms', 'hms'] } },
         data: { tenantId: `${tenantId}-uninstalled`, runtimeTenantId: `${tenantId}-uninstalled` },
       });
     } else {
       const allInst: any[] = (PlatformRepository as any).pluginInstallations || [];
       const toRemove = allInst.filter((p: any) =>
         (p.tenantId === tenantId || p.tenantId?.includes(createdProjectId) || p.tenantId?.includes(suffix)) &&
-        (p.pluginId === '@orbitox/crm' || p.pluginId === 'crm')
+        (p.pluginId === '@orbitox/hms' || p.pluginId === 'hms')
       );
       for (const inst of toRemove) {
         const idx = allInst.indexOf(inst);
@@ -243,12 +243,12 @@ describe('withApiGuard Billing State Enforcement & Query Budget', () => {
     }
 
     const handler = withApiGuard(
-      { serviceId: 'crm', serviceName: 'CRM Service', requiredScopes: ['crm:read'] },
+      { serviceId: 'hms', serviceName: 'HMS Service', requiredScopes: ['hms:read'] },
       async (_req, ctx) => NextResponse.json({ success: true, tenantId: ctx.tenantId }),
     );
 
     const res = await handler(
-      new NextRequest('http://localhost/api/v1/crm/leads', {
+      new NextRequest('http://localhost/api/v1/hms/patients', {
         method: 'GET',
         headers: { 'x-api-key': apiKeySecret },
       }),
@@ -273,7 +273,7 @@ describe('withApiGuard Billing State Enforcement & Query Budget', () => {
       plan: 'starter',
       technicalLead: 'G4 Test',
       contactEmail: `g4-env-${suffix}@example.test`,
-      enabledServices: ['crm'],
+      enabledServices: ['hms'],
       apiCallQuota: 1000,
     });
     const prodEnv = proj.environments.find((e) => e.slug === 'production')!;
@@ -282,14 +282,14 @@ describe('withApiGuard Billing State Enforcement & Query Budget', () => {
     const prodTenantId = `org/${org.id}/project/${proj.project.id}/environment/${prodEnv.id}`;
     const stageTenantId = `org/${org.id}/project/${proj.project.id}/environment/${stageEnv.id}`;
 
-    const existingProdInst = await platformRepository.getPluginInstallation(prodTenantId, '@orbitox/crm');
+    const existingProdInst = await platformRepository.getPluginInstallation(prodTenantId, '@orbitox/hms');
     if (existingProdInst) {
-      await platformRepository.updatePluginInstallationStatus(prodTenantId, '@orbitox/crm', 'ACTIVE');
+      await platformRepository.updatePluginInstallationStatus(prodTenantId, '@orbitox/hms', 'ACTIVE');
     } else {
       await platformRepository.provisionPluginInstallation({
         tenantId: prodTenantId,
         runtimeTenantId: prodTenantId,
-        pluginId: '@orbitox/crm',
+        pluginId: '@orbitox/hms',
         status: 'ACTIVE',
         planId: null,
       });
@@ -298,7 +298,7 @@ describe('withApiGuard Billing State Enforcement & Query Budget', () => {
     await platformRepository.provisionPluginInstallation({
       tenantId: stageTenantId,
       runtimeTenantId: stageTenantId,
-      pluginId: '@orbitox/crm',
+      pluginId: '@orbitox/hms',
       status: 'SUSPENDED',
       planId: null,
     });
@@ -307,7 +307,7 @@ describe('withApiGuard Billing State Enforcement & Query Budget', () => {
       name: `Prod Key ${suffix}`,
       environmentId: prodEnv.id,
       projectId: proj.project.id,
-      capabilities: ['crm:read'],
+      capabilities: ['hms:read'],
       tenantScope: [proj.project.slug],
       createdBy: 'test-g4',
     });
@@ -316,18 +316,18 @@ describe('withApiGuard Billing State Enforcement & Query Budget', () => {
       name: `Stage Key ${suffix}`,
       environmentId: stageEnv.id,
       projectId: proj.project.id,
-      capabilities: ['crm:read'],
+      capabilities: ['hms:read'],
       tenantScope: [proj.project.slug],
       createdBy: 'test-g4',
     });
 
     const handler = withApiGuard(
-      { serviceId: 'crm', serviceName: 'CRM Service', requiredScopes: ['crm:read'] },
+      { serviceId: 'hms', serviceName: 'HMS Service', requiredScopes: ['hms:read'] },
       async (_req, ctx) => NextResponse.json({ success: true, tenantId: ctx.tenantId }),
     );
 
     const stageRes = await handler(
-      new NextRequest('http://localhost/api/v1/crm/leads', {
+      new NextRequest('http://localhost/api/v1/hms/patients', {
         method: 'GET',
         headers: { 'x-api-key': stageKey.rawSecret },
       }),
@@ -337,7 +337,7 @@ describe('withApiGuard Billing State Enforcement & Query Budget', () => {
     assert.equal(stageBody.error?.code, 'PAYMENT_REQUIRED');
 
     const prodRes = await handler(
-      new NextRequest('http://localhost/api/v1/crm/leads', {
+      new NextRequest('http://localhost/api/v1/hms/patients', {
         method: 'GET',
         headers: { 'x-api-key': prodKey.rawSecret },
       }),
@@ -360,21 +360,21 @@ describe('withApiGuard Billing State Enforcement & Query Budget', () => {
       plan: 'starter',
       technicalLead: 'G4 Test',
       contactEmail: `g4-stale-${suffix}@example.test`,
-      enabledServices: ['crm'],
+      enabledServices: ['hms'],
       apiCallQuota: 1000,
     });
     const prodEnv = proj.environments.find((e) => e.slug === 'production')!;
     const canonicalTenantId = `org/${org.id}/project/${proj.project.id}/environment/${prodEnv.id}`;
     const slugBasedTenantId = `org/${org.slug}/project/${proj.project.slug}/environment/production`;
 
-    const existingCanonical = await platformRepository.getPluginInstallation(canonicalTenantId, '@orbitox/crm');
+    const existingCanonical = await platformRepository.getPluginInstallation(canonicalTenantId, '@orbitox/hms');
     if (existingCanonical) {
-      await platformRepository.updatePluginInstallationStatus(canonicalTenantId, '@orbitox/crm', 'SUSPENDED');
+      await platformRepository.updatePluginInstallationStatus(canonicalTenantId, '@orbitox/hms', 'SUSPENDED');
     } else {
       await platformRepository.provisionPluginInstallation({
         tenantId: canonicalTenantId,
         runtimeTenantId: canonicalTenantId,
-        pluginId: '@orbitox/crm',
+        pluginId: '@orbitox/hms',
         status: 'SUSPENDED',
         planId: null,
       });
@@ -387,7 +387,7 @@ describe('withApiGuard Billing State Enforcement & Query Budget', () => {
           id: `pinst_stale_${suffix}`,
           tenantId: slugBasedTenantId,
           runtimeTenantId: slugBasedTenantId,
-          pluginId: '@orbitox/crm',
+          pluginId: '@orbitox/hms',
           status: 'ACTIVE',
           planId: null,
         },
@@ -397,7 +397,7 @@ describe('withApiGuard Billing State Enforcement & Query Budget', () => {
         id: `pinst_stale_${suffix}`,
         tenantId: slugBasedTenantId,
         runtimeTenantId: slugBasedTenantId,
-        pluginId: '@orbitox/crm',
+        pluginId: '@orbitox/hms',
         status: 'ACTIVE',
         planId: null,
         entitlementRevision: 1,
@@ -411,18 +411,18 @@ describe('withApiGuard Billing State Enforcement & Query Budget', () => {
       name: `Stale Test Key ${suffix}`,
       environmentId: prodEnv.id,
       projectId: proj.project.id,
-      capabilities: ['crm:read'],
+      capabilities: ['hms:read'],
       tenantScope: [proj.project.slug],
       createdBy: 'test-g4',
     });
 
     const handler = withApiGuard(
-      { serviceId: 'crm', serviceName: 'CRM Service', requiredScopes: ['crm:read'] },
+      { serviceId: 'hms', serviceName: 'HMS Service', requiredScopes: ['hms:read'] },
       async (_req, ctx) => NextResponse.json({ success: true, tenantId: ctx.tenantId }),
     );
 
     const res = await handler(
-      new NextRequest('http://localhost/api/v1/crm/leads', {
+      new NextRequest('http://localhost/api/v1/hms/patients', {
         method: 'GET',
         headers: { 'x-api-key': key.rawSecret },
       }),
@@ -447,20 +447,20 @@ describe('withApiGuard Billing State Enforcement & Query Budget', () => {
       plan: 'starter',
       technicalLead: 'G4 Test',
       contactEmail: `g4-star-a-${suffix}@example.test`,
-      enabledServices: ['crm'],
+      enabledServices: ['hms'],
       apiCallQuota: 1000,
     });
     const envA = projA.environments.find((e) => e.slug === 'production')!;
     const tenantA = `org/${orgA.id}/project/${projA.project.id}/environment/${envA.id}`;
 
-    const existingA = await platformRepository.getPluginInstallation(tenantA, '@orbitox/crm');
+    const existingA = await platformRepository.getPluginInstallation(tenantA, '@orbitox/hms');
     if (existingA) {
-      await platformRepository.updatePluginInstallationStatus(tenantA, '@orbitox/crm', 'ACTIVE');
+      await platformRepository.updatePluginInstallationStatus(tenantA, '@orbitox/hms', 'ACTIVE');
     } else {
       await platformRepository.provisionPluginInstallation({
         tenantId: tenantA,
         runtimeTenantId: tenantA,
-        pluginId: '@orbitox/crm',
+        pluginId: '@orbitox/hms',
         status: 'ACTIVE',
         planId: null,
       });
@@ -480,20 +480,20 @@ describe('withApiGuard Billing State Enforcement & Query Budget', () => {
       plan: 'starter',
       technicalLead: 'G4 Test',
       contactEmail: `g4-star-b-${suffix}@example.test`,
-      enabledServices: ['crm'],
+      enabledServices: ['hms'],
       apiCallQuota: 1000,
     });
     const envB = projB.environments.find((e) => e.slug === 'production')!;
     const tenantB = `org/${orgB.id}/project/${projB.project.id}/environment/${envB.id}`;
 
-    const existingB = await platformRepository.getPluginInstallation(tenantB, '@orbitox/crm');
+    const existingB = await platformRepository.getPluginInstallation(tenantB, '@orbitox/hms');
     if (existingB) {
-      await platformRepository.updatePluginInstallationStatus(tenantB, '@orbitox/crm', 'SUSPENDED');
+      await platformRepository.updatePluginInstallationStatus(tenantB, '@orbitox/hms', 'SUSPENDED');
     } else {
       await platformRepository.provisionPluginInstallation({
         tenantId: tenantB,
         runtimeTenantId: tenantB,
-        pluginId: '@orbitox/crm',
+        pluginId: '@orbitox/hms',
         status: 'SUSPENDED',
         planId: null,
       });
@@ -503,18 +503,18 @@ describe('withApiGuard Billing State Enforcement & Query Budget', () => {
       name: `Broad Key ${suffix}`,
       environmentId: envA.id,
       projectId: projA.project.id,
-      capabilities: ['crm:read'],
+      capabilities: ['hms:read'],
       tenantScope: ['*'],
       createdBy: 'test-g4',
     });
 
     const handler = withApiGuard(
-      { serviceId: 'crm', serviceName: 'CRM Service', requiredScopes: ['crm:read'] },
+      { serviceId: 'hms', serviceName: 'HMS Service', requiredScopes: ['hms:read'] },
       async (_req, ctx) => NextResponse.json({ success: true, tenantId: ctx.tenantId }),
     );
 
     const resB = await handler(
-      new NextRequest('http://localhost/api/v1/crm/leads', {
+      new NextRequest('http://localhost/api/v1/hms/patients', {
         method: 'GET',
         headers: {
           'x-api-key': broadKey.rawSecret,
@@ -527,7 +527,7 @@ describe('withApiGuard Billing State Enforcement & Query Budget', () => {
     assert.equal(bodyB.error?.code, 'PAYMENT_REQUIRED');
 
     const resA = await handler(
-      new NextRequest('http://localhost/api/v1/crm/leads', {
+      new NextRequest('http://localhost/api/v1/hms/patients', {
         method: 'GET',
         headers: {
           'x-api-key': broadKey.rawSecret,
@@ -552,20 +552,20 @@ describe('withApiGuard Billing State Enforcement & Query Budget', () => {
       plan: 'starter',
       technicalLead: 'G4 Test',
       contactEmail: `g4-scope-${suffix}@example.test`,
-      enabledServices: ['crm'],
+      enabledServices: ['hms'],
       apiCallQuota: 1000,
     });
     const env = proj.environments.find((e) => e.slug === 'production')!;
     const canonicalTenantId = `org/${org.id}/project/${proj.project.id}/environment/${env.id}`;
 
-    const existing = await platformRepository.getPluginInstallation(canonicalTenantId, '@orbitox/crm');
+    const existing = await platformRepository.getPluginInstallation(canonicalTenantId, '@orbitox/hms');
     if (existing) {
-      await platformRepository.updatePluginInstallationStatus(canonicalTenantId, '@orbitox/crm', 'ACTIVE');
+      await platformRepository.updatePluginInstallationStatus(canonicalTenantId, '@orbitox/hms', 'ACTIVE');
     } else {
       await platformRepository.provisionPluginInstallation({
         tenantId: canonicalTenantId,
         runtimeTenantId: canonicalTenantId,
-        pluginId: '@orbitox/crm',
+        pluginId: '@orbitox/hms',
         status: 'ACTIVE',
         planId: null,
       });
@@ -575,18 +575,18 @@ describe('withApiGuard Billing State Enforcement & Query Budget', () => {
       name: `Scoped Key ${suffix}`,
       environmentId: env.id,
       projectId: proj.project.id,
-      capabilities: ['crm:read'],
+      capabilities: ['hms:read'],
       tenantScope: [proj.project.slug],
       createdBy: 'test-g4',
     });
 
     const handler = withApiGuard(
-      { serviceId: 'crm', serviceName: 'CRM Service', requiredScopes: ['crm:read'] },
+      { serviceId: 'hms', serviceName: 'HMS Service', requiredScopes: ['hms:read'] },
       async (_req, ctx) => NextResponse.json({ success: true, tenantId: ctx.tenantId }),
     );
 
     const res = await handler(
-      new NextRequest('http://localhost/api/v1/crm/leads', {
+      new NextRequest('http://localhost/api/v1/hms/patients', {
         method: 'GET',
         headers: {
           'x-api-key': key.rawSecret,

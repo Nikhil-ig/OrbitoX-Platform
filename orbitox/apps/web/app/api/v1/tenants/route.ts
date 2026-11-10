@@ -5,7 +5,6 @@ import {
   provisioningSaga,
 } from '@/lib/tenant-provisioning/provisioning-saga';
 import { TenantProvisionRequest } from '@/lib/tenant-provisioning/types';
-import { isSamplePackage } from '@/lib/sample-plugins';
 import { getOperatorSession, OPERATOR_SESSION_COOKIE } from '@/lib/phase6-account-service';
 import { operatorRoleAllows } from '@/lib/operator-route-policy';
 import { verifyAdminTokenForRequestSync } from '../_lib/auth-pipeline';
@@ -48,15 +47,14 @@ export async function GET(req: NextRequest) {
 
   try {
     const packages = await platformRepository.listPackages();
-    // Item 8 (3): Catalogue-driven installable plugins filter (only HospitalOS and RestaurantOS; CRM excluded)
+    // Catalogue-driven installable plugins filter (HospitalOS and RestaurantOS only)
     const plugins = (await Promise.all(packages.map(async (pkg) => {
-        const isSample = isSamplePackage(pkg.packageId) || isSamplePackage(pkg.id);
-        const installable = !isSample;
         const canonicalPluginId = canonicalizePluginId(pkg.packageId);
         const canonical = canonicalPluginId.replace(/^@orbitox\//, '').toLowerCase();
         const id = canonical === 'hms' ? 'hospital-os' : canonical === 'restaurant' ? 'restaurant-os' : canonical;
         const isHospital = id === 'hospital-os' || id === 'hms';
         const isRestaurant = id === 'restaurant-os' || id === 'restaurant';
+        const installable = isHospital || isRestaurant;
         const availablePlans = (await platformRepository.listPlans(canonicalPluginId))
           .filter((plan) => plan.status === 'ACTIVE')
           .map(({ planId, name, tier }) => ({ planId, name, tier }));

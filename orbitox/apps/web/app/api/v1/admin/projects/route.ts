@@ -61,7 +61,7 @@ export const POST = withApiGuard(
         businessModel = 'O2O2B2B2C',
         plan = 'growth',
         customDomain,
-        enabledServices = ['commerce', 'crm'],
+        enabledServices = ['hms', 'restaurant'],
         contactEmail,
         technicalLead,
         customQuota,
@@ -222,7 +222,7 @@ console.log('OrbitoX OS Active with plugins:', Object.keys(app.plugins));`;
             },
             onboardingKit: {
               bootstrapperCode: quickstartCode,
-              curlExample: `curl -H "x-api-key: ${fullKey}" -H "x-tenant-id: ${slug}" "http://localhost:3005/api/v1/${enabledServices[0] || 'commerce'}/products"`,
+              curlExample: `curl -H "x-api-key: ${fullKey}" -H "x-tenant-id: ${slug}" "http://localhost:3005/api/v1/${enabledServices[0] || 'hms'}/patients"`,
               restEndpointBase: `http://localhost:3005/api/v1`,
             },
           },

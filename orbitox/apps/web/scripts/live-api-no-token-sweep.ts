@@ -74,7 +74,7 @@ function convertRouteToUrl(filePath: string): string {
     .replace(/\[operationId\]/g, 'sweep-operation-id')
     .replace(/\[provider\]/g, 'resend')
     .replace(/\[providerId\]/g, 'test-prov-c2-123')
-    .replace(/\[serviceId\]/g, 'crm')
+    .replace(/\[serviceId\]/g, 'hms')
     .replace(/\[keyId\]/g, 'test-key-c2-123')
     .replace(/\[locator\]/g, '7Kp9xQ8m2L')
     .replace(/\[id\]/g, 'test-id-c2-123')
@@ -152,8 +152,6 @@ async function run() {
     OUTBOX_RELAY_DATABASE_URL: outboxRelayUrl,
     ORBITOX_PLATFORM_REPOSITORY: 'prisma',
     RESTAURANTOS_PUBLIC_URL: 'https://restaurant.orbitox.internal',
-    ORBITOX_ENABLE_CRM_PLUGIN: 'true',
-    ORBITOX_ENABLE_COMMERCE_PLUGIN: 'true',
     ORBITOX_TEST_STANDALONE: 'true',
     ORBITOX_PHI_KEYS: JSON.stringify({
       k1: crypto.randomBytes(32).toString('base64'),
@@ -206,7 +204,7 @@ async function run() {
       businessModel: 'B2B',
       technicalLead: 'C2 Lead',
       contactEmail: 'c2@test.org',
-      enabledServices: ['crm'],
+      enabledServices: ['hms'],
       planTier: 'growth',
       plan: 'growth',
       apiCallQuota: 50000,
@@ -233,8 +231,51 @@ async function run() {
       secretFingerprint,
       authVerifier,
       environmentId: envRecord.id,
-      capabilities: ['crm:read'],
+      capabilities: ['hms:read'],
       tenantScope: [proj.slug],
+      createdBy: 'c2_sweep',
+      status: 'ACTIVE',
+    },
+  });
+
+  const unentitledProjSlug = `proj-c2-rest-${Date.now()}`;
+  const rawRestOnlySecret = `orb_live_${crypto.randomBytes(24).toString('hex')}`;
+  const restPrefix = rawRestOnlySecret.slice(0, 14);
+  const restProj = await prisma.platformProject.create({
+    data: {
+      name: 'C2 Unentitled HMS Test Project',
+      slug: unentitledProjSlug,
+      organizationId: org.id,
+      businessModel: 'O2O',
+      technicalLead: 'C2 Rest Lead',
+      contactEmail: 'c2-rest@test.org',
+      enabledServices: ['restaurant'],
+      planTier: 'growth',
+      plan: 'growth',
+      apiCallQuota: 50000,
+      monthlyApiCalls: 0,
+      currentBillingPeriod: new Date().toISOString().slice(0, 7),
+    },
+  });
+  const restEnvRecord = await prisma.projectEnvironment.create({
+    data: {
+      name: 'Production',
+      slug: 'production',
+      projectId: restProj.id,
+      isProduction: true,
+    },
+  });
+  await prisma.platformApiKey.create({
+    data: {
+      name: 'C2 Restaurant-Only Key',
+      keyId: `key_${crypto.randomUUID()}`,
+      keyPrefix: restPrefix,
+      maskedDisplay: `${restPrefix}...${rawRestOnlySecret.slice(-4)}`,
+      secretFingerprint: crypto.createHash('sha256').update(rawRestOnlySecret).digest('hex'),
+      authVerifier: crypto.createHmac('sha256', serverPepper).update(rawRestOnlySecret).digest('hex'),
+      environmentId: restEnvRecord.id,
+      capabilities: ['restaurant:read'],
+      tenantScope: [restProj.slug],
       createdBy: 'c2_sweep',
       status: 'ACTIVE',
     },
@@ -526,37 +567,10 @@ async function run() {
     expectedCode: string;
   }> = [
     {
-      scenario: 'Read-only CRM key mutating CRM leads (Scope mismatch)',
-      method: 'POST',
-      urlPath: '/api/v1/crm/leads',
-      scope: 'crm:read',
-      required: 'crm:write',
-      headers: {
-        'x-api-key': rawReadOnlySecret,
-        'content-type': 'application/json',
-      },
-      body: JSON.stringify({ name: 'Alice Test Lead', email: 'alice@example.com' }),
-      expectedStatus: 403,
-      expectedCode: 'INSUFFICIENT_SCOPES',
-    },
-    {
-      scenario: 'Customer key accessing control-plane admin endpoint (Perimeter isolation)',
-      method: 'GET',
-      urlPath: '/api/v1/admin/projects',
-      scope: 'crm:read',
-      required: 'platform-admin',
-      headers: {
-        'x-api-key': rawReadOnlySecret,
-      },
-      body: undefined,
-      expectedStatus: 401,
-      expectedCode: 'UNAUTHORIZED',
-    },
-    {
-      scenario: 'Customer key calling self-guarded platform-admin endpoint (Route isolation)',
+      scenario: 'Read-only HMS key mutating hospital patient registry (Scope mismatch)',
       method: 'POST',
       urlPath: '/api/v1/hms/patients',
-      scope: 'crm:read',
+      scope: 'hms:read',
       required: 'write',
       headers: {
         'x-api-key': rawReadOnlySecret,
@@ -567,26 +581,26 @@ async function run() {
       expectedCode: 'INSUFFICIENT_SCOPES',
     },
     {
-      scenario: 'CRM-licensed key calling unentitled commerce plugin (Entitlement violation)',
+      scenario: 'Customer key accessing control-plane admin endpoint (Perimeter isolation)',
       method: 'GET',
-      urlPath: '/api/v1/commerce/products',
-      scope: 'crm:read',
-      required: 'commerce',
+      urlPath: '/api/v1/admin/projects',
+      scope: 'hms:read',
+      required: 'platform-admin',
       headers: {
         'x-api-key': rawReadOnlySecret,
       },
       body: undefined,
-      expectedStatus: 403,
-      expectedCode: 'PLUGIN_NOT_ENTITLED',
+      expectedStatus: 401,
+      expectedCode: 'UNAUTHORIZED',
     },
     {
-      scenario: 'Customer key calling unentitled hospital patient registry',
+      scenario: 'Restaurant-licensed key calling unentitled HospitalOS endpoint (Entitlement violation)',
       method: 'GET',
       urlPath: '/api/v1/hms/patients',
-      scope: 'crm:read',
+      scope: 'restaurant:read',
       required: 'hms',
       headers: {
-        'x-api-key': rawReadOnlySecret,
+        'x-api-key': rawRestOnlySecret,
       },
       body: undefined,
       expectedStatus: 403,

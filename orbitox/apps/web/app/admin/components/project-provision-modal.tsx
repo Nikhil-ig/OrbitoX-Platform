@@ -54,12 +54,8 @@ export function ProjectProvisionModal({ isOpen, onClose, defaultModel = 'O2O2B2B
 
   // Step 3 Packages
   const [selectedServices, setSelectedServices] = useState<string[]>([
+    'hms',
     'restaurant',
-    'pos',
-    'commerce',
-    'crm',
-    'finance',
-    'inventory',
   ]);
 
   // Step 4 Result
@@ -83,7 +79,7 @@ export function ProjectProvisionModal({ isOpen, onClose, defaultModel = 'O2O2B2B
   const handleToggleService = (serviceId: string) => {
     const pkg = AVAILABLE_PACKAGES.find((p) => p.id === serviceId);
     if (pkg && pkg.installable === false) {
-      showToast('Not Installable: This sample-data plugin is pending rebuild to HospitalOS multi-tenant standards (dedicated schema, RLS, and tests).');
+      showToast('This package is not independently installable.');
       return;
     }
     if (selectedServices.includes(serviceId)) {
@@ -98,19 +94,19 @@ export function ProjectProvisionModal({ isOpen, onClose, defaultModel = 'O2O2B2B
   const handleApplyModelPreset = (model: BusinessModelType) => {
     setBusinessModel(model);
     if (model === 'O2O2B2B2C') {
-      setSelectedServices(['restaurant', 'pos', 'commerce', 'crm', 'finance', 'inventory']);
+      setSelectedServices(['hms', 'restaurant']);
       handleSelectPlan('hyperscale');
     } else if (model === 'HEALTHCARE_NETWORK') {
-      setSelectedServices(['hms', 'inventory', 'crm', 'hrms', 'finance']);
+      setSelectedServices(['hms']);
       handleSelectPlan('enterprise');
     } else if (model === 'D2C') {
-      setSelectedServices(['commerce', 'inventory', 'pos', 'crm']);
+      setSelectedServices(['restaurant']);
       handleSelectPlan('pro');
     } else if (model === 'B2B2C') {
-      setSelectedServices(['school', 'finance', 'hrms', 'crm']);
+      setSelectedServices(['hms', 'restaurant']);
       handleSelectPlan('growth');
     } else if (model === 'FRANCHISE_RETAIL') {
-      setSelectedServices(['pos', 'inventory', 'finance', 'commerce']);
+      setSelectedServices(['restaurant']);
       handleSelectPlan('enterprise');
     }
   };
@@ -209,14 +205,7 @@ export function ProjectProvisionModal({ isOpen, onClose, defaultModel = 'O2O2B2B
 
   const AVAILABLE_PACKAGES = [
     { id: 'restaurant', name: 'Restaurant & Kitchen OS', pkg: '@orbitox/restaurant', icon: <UtensilsIcon size={16} />, color: '#F59E0B', installable: true },
-    { id: 'pos', name: 'Omnichannel POS Register', pkg: '@orbitox/pos', icon: <StoreIcon size={16} />, color: '#14B8A6', installable: true },
-    { id: 'commerce', name: 'Commerce & Store Engine', pkg: '@orbitox/commerce', icon: <ShoppingBagIcon size={16} />, color: '#A855F7', installable: false, badge: 'Not Installable' },
-    { id: 'crm', name: 'CRM & Sales Pipeline', pkg: '@orbitox/crm', icon: <BriefcaseIcon size={16} />, color: '#3B82F6', installable: false, badge: 'Not Installable' },
-    { id: 'finance', name: 'Finance & Ledger Engine', pkg: '@orbitox/finance', icon: <ZapIcon size={16} />, color: '#10B981', installable: false, badge: 'Not Installable' },
-    { id: 'inventory', name: 'Inventory & Logistics', pkg: '@orbitox/inventory', icon: <PackageIcon size={16} />, color: '#EC4899', installable: false, badge: 'Not Installable' },
     { id: 'hms', name: 'Hospital Management (HMS)', pkg: '@orbitox/hms', icon: <HospitalIcon size={16} />, color: '#EF4444', installable: true },
-    { id: 'hrms', name: 'HRMS & Workforce Suite', pkg: '@orbitox/hrms', icon: <CpuIcon size={16} />, color: '#8B5CF6', installable: false, badge: 'Not Installable' },
-    { id: 'school', name: 'School & Campus OS', pkg: '@orbitox/school', icon: <GraduationCapIcon size={16} />, color: '#6366F1', installable: false, badge: 'Not Installable' },
   ];
 
   return (
@@ -643,11 +632,6 @@ export function ProjectProvisionModal({ isOpen, onClose, defaultModel = 'O2O2B2B
                       <div>
                         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                           <div style={{ fontSize: '13px', fontWeight: 800, color: '#FFFFFF' }}>{pkg.name}</div>
-                          {pkg.badge && (
-                            <span style={{ fontSize: '9.5px', fontWeight: 800, padding: '2px 6px', borderRadius: '6px', background: 'rgba(239, 68, 68, 0.2)', color: '#F87171', border: '1px solid rgba(239, 68, 68, 0.3)' }}>
-                              {pkg.badge}
-                            </span>
-                          )}
                         </div>
                         <div style={{ fontSize: '11px', color: '#9AA7C2', fontFamily: 'monospace', marginTop: '2px' }}>
                           {pkg.pkg}
@@ -771,25 +755,11 @@ export function ProjectProvisionModal({ isOpen, onClose, defaultModel = 'O2O2B2B
                   <button
                     type="button"
                     onClick={() => {
-                      const primary = createdProject.enabledServices[0] || 'commerce';
+                      const primary = createdProject.enabledServices[0] || 'hms';
                       const path =
                         primary === 'restaurant'
                           ? '/api/v1/restaurant/orders'
-                          : primary === 'pos'
-                          ? '/api/v1/pos/terminals'
-                          : primary === 'commerce'
-                          ? '/api/v1/commerce/products'
-                          : primary === 'crm'
-                          ? '/api/v1/crm/leads'
-                          : primary === 'finance'
-                          ? '/api/v1/finance/ledger'
-                          : primary === 'inventory'
-                          ? '/api/v1/inventory/items'
-                          : primary === 'hms'
-                          ? '/api/v1/hms/patients'
-                          : primary === 'hrms'
-                          ? '/api/v1/hrms/employees'
-                          : '/api/v1/school/students';
+                          : '/api/v1/hms/patients';
 
                       const codeToCopy =
                         kitTab === 'bootstrapper'
@@ -838,21 +808,7 @@ export function ProjectProvisionModal({ isOpen, onClose, defaultModel = 'O2O2B2B
                       <span style={{ color: '#F59E0B' }}>curl</span> -X GET &quot;http://localhost:3005{
                         createdProject.enabledServices[0] === 'restaurant'
                           ? '/api/v1/restaurant/orders'
-                          : createdProject.enabledServices[0] === 'pos'
-                          ? '/api/v1/pos/terminals'
-                          : createdProject.enabledServices[0] === 'commerce'
-                          ? '/api/v1/commerce/products'
-                          : createdProject.enabledServices[0] === 'crm'
-                          ? '/api/v1/crm/leads'
-                          : createdProject.enabledServices[0] === 'finance'
-                          ? '/api/v1/finance/ledger'
-                          : createdProject.enabledServices[0] === 'inventory'
-                          ? '/api/v1/inventory/items'
-                          : createdProject.enabledServices[0] === 'hms'
-                          ? '/api/v1/hms/patients'
-                          : createdProject.enabledServices[0] === 'hrms'
-                          ? '/api/v1/hrms/employees'
-                          : '/api/v1/school/students'
+                          : '/api/v1/hms/patients'
                       }&quot; \<br />
                       &nbsp;&nbsp;-H &quot;x-api-key: {createdApiKey.rawKey}&quot; \<br />
                       &nbsp;&nbsp;-H &quot;x-tenant-id: {createdProject.slug}&quot;

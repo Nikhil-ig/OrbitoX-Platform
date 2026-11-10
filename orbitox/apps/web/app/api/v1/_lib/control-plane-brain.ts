@@ -79,7 +79,7 @@ export const platformRepoProvider: AuthoritativeResourceProvider = {
         tier: 'growth',
         domain: 'milano.aura-luxury.com',
         status: 'ACTIVE',
-        features: ['pos_omnichannel', 'clientele_crm'],
+        features: ['dine_qr', 'realtime_kds'],
       },
     ];
   },
@@ -189,13 +189,6 @@ export const platformRepoProvider: AuthoritativeResourceProvider = {
         rateLimitRpm: 10000,
       },
       {
-        id: 'api_pos_checkout',
-        name: 'Retail Point-of-Sale Hardware API',
-        packageId: '@orbitox/pos',
-        version: 'v1.4',
-        rateLimitRpm: 5000,
-      },
-      {
         id: 'api_clinical_ehr',
         name: 'HIPAA Certified Clinical Records API',
         packageId: '@orbitox/hms',
@@ -213,10 +206,10 @@ export const platformRepoProvider: AuthoritativeResourceProvider = {
         defaultProvider: 'gemini_flash',
       },
       {
-        id: 'cap_pos_terminal',
-        name: 'Hardware EMV / NFC Chip Reader Interface',
-        apiId: 'api_pos_checkout',
-        defaultProvider: 'stripe_terminal',
+        id: 'cap_ehr_audit',
+        name: 'HIPAA PHI Sealed Audit Stream',
+        apiId: 'api_clinical_ehr',
+        defaultProvider: 'internal_kms',
       },
       {
         id: 'cap_ehr_audit',

@@ -30,76 +30,6 @@ importers:
         specifier: ~5.9.3
         version: 5.9.3
 
-  apps/celebrations:
-    dependencies:
-      '@gsap/react':
-        specifier: ^2.1.2
-        version: 2.1.2(gsap@3.15.0)(react@19.2.8)
-      '@orbitox-io/celebrations':
-        specifier: workspace:*
-        version: link:../../plugins/celebrations
-      '@orbitox-io/crm':
-        specifier: workspace:*
-        version: link:../../plugins/crm
-      '@orbitox-io/importer-core':
-        specifier: workspace:*
-        version: link:../../packages/importer-core
-      '@orbitox-io/plugin-engine':
-        specifier: workspace:*
-        version: link:../../packages/plugin-engine
-      '@orbitox/sdk':
-        specifier: workspace:*
-        version: link:../../packages/compat-sdk
-      '@orbitox/types':
-        specifier: workspace:*
-        version: link:../../packages/compat-types
-      '@orbitox/ui':
-        specifier: workspace:*
-        version: link:../../packages/compat-ui
-      '@types/three':
-        specifier: ^0.186.0
-        version: 0.186.0
-      gsap:
-        specifier: ^3.15.0
-        version: 3.15.0
-      lucide-react:
-        specifier: ^1.43.0
-        version: 1.43.0(react@19.2.8)
-      next:
-        specifier: ^15.5.25
-        version: 15.5.25(@playwright/test@1.63.0)(@types/node@20.19.43)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
-      react:
-        specifier: ^19.0.0
-        version: 19.2.8
-      react-dom:
-        specifier: ^19.0.0
-        version: 19.2.8(react@19.2.8)
-      three:
-        specifier: ^0.186.1
-        version: 0.186.1
-    devDependencies:
-      '@orbitox/tsconfig':
-        specifier: workspace:*
-        version: link:../../packages/config/tsconfig
-      '@playwright/test':
-        specifier: ^1.63.0
-        version: 1.63.0
-      '@types/node':
-        specifier: ^20
-        version: 20.19.43
-      '@types/react':
-        specifier: ^19
-        version: 19.2.18
-      '@types/react-dom':
-        specifier: ^19
-        version: 19.2.4(@types/react@19.2.18)
-      playwright:
-        specifier: ^1.63.0
-        version: 1.63.0
-      typescript:
-        specifier: ~5.9.3
-        version: 5.9.3
-
   apps/web:
     dependencies:
       '@orbitox-io/bridge':
@@ -111,15 +41,9 @@ importers:
       '@orbitox-io/sdk':
         specifier: workspace:*
         version: link:../../packages/sdk
-      '@orbitox/commerce':
-        specifier: workspace:*
-        version: link:../../packages/compat-commerce
       '@orbitox/core':
         specifier: workspace:*
         version: link:../../packages/compat-core
-      '@orbitox/crm':
-        specifier: workspace:*
-        version: link:../../packages/compat-crm
       '@orbitox/external-project-engine':
         specifier: workspace:*
         version: link:../../packages/compat-external-project-engine
@@ -135,9 +59,6 @@ importers:
       '@orbitox/runtime':
         specifier: workspace:*
         version: link:../../packages/compat-runtime
-      '@orbitox/school':
-        specifier: workspace:*
-        version: link:../../packages/compat-school
       '@orbitox/sdk':
         specifier: workspace:*
         version: link:../../packages/compat-sdk
@@ -197,23 +118,11 @@ importers:
         specifier: ~5.9.3
         version: 5.9.3
 
-  packages/compat-commerce:
-    dependencies:
-      '@orbitox-io/commerce':
-        specifier: workspace:*
-        version: link:../../plugins/commerce
-
   packages/compat-core:
     dependencies:
       '@orbitox-io/core':
         specifier: workspace:*
         version: link:../core
-
-  packages/compat-crm:
-    dependencies:
-      '@orbitox-io/crm':
-        specifier: workspace:*
-        version: link:../../plugins/crm
 
   packages/compat-external-project-engine:
     dependencies:
@@ -244,12 +153,6 @@ importers:
       '@orbitox-io/runtime':
         specifier: workspace:*
         version: link:../runtime
-
-  packages/compat-school:
-    dependencies:
-      '@orbitox-io/school':
-        specifier: workspace:*
-        version: link:../../plugins/school
 
   packages/compat-sdk:
     dependencies:
@@ -699,140 +602,6 @@ importers:
         specifier: ~5.9.3
         version: 5.9.3
 
-  plugins/celebrations:
-    dependencies:
-      '@orbitox-io/crm':
-        specifier: workspace:*
-        version: link:../crm
-    devDependencies:
-      '@orbitox/jest-config':
-        specifier: workspace:*
-        version: link:../../packages/config/jest
-      '@types/jest':
-        specifier: ^29.0.0
-        version: 29.5.14
-      '@types/node':
-        specifier: ^20.0.0
-        version: 20.19.43
-      '@types/react':
-        specifier: ^19.0.0
-        version: 19.2.18
-      jest:
-        specifier: ^29.0.0
-        version: 29.7.0(@types/node@20.19.43)
-      react:
-        specifier: ^19.0.0
-        version: 19.2.8
-      ts-jest:
-        specifier: ^29.0.0
-        version: 29.4.12(@babel/core@7.29.7)(@jest/transform@29.7.0)(@jest/types@29.6.3)(babel-jest@29.7.0(@babel/core@7.29.7))(jest-util@29.7.0)(jest@29.7.0(@types/node@20.19.43))(typescript@5.9.3)
-      typescript:
-        specifier: ~5.9.3
-        version: 5.9.3
-
-  plugins/commerce:
-    dependencies:
-      '@orbitox/core':
-        specifier: workspace:*
-        version: link:../../packages/compat-core
-      '@orbitox/sdk':
-        specifier: workspace:*
-        version: link:../../packages/compat-sdk
-      '@orbitox/types':
-        specifier: workspace:*
-        version: link:../../packages/compat-types
-      '@orbitox/utils':
-        specifier: workspace:*
-        version: link:../../packages/compat-utils
-    devDependencies:
-      '@orbitox/tsconfig':
-        specifier: workspace:*
-        version: link:../../packages/config/tsconfig
-      '@types/node':
-        specifier: ^20.0.0
-        version: 20.19.43
-      '@types/react':
-        specifier: ^19.0.0
-        version: 19.2.18
-      react:
-        specifier: ^19.0.0
-        version: 19.2.8
-      typescript:
-        specifier: ~5.9.3
-        version: 5.9.3
-
-  plugins/commerce/backend:
-    dependencies:
-      '@nestjs/common':
-        specifier: ^12.0.1
-        version: 12.0.1(class-transformer@0.5.1)(class-validator@0.14.4)(reflect-metadata@0.2.2)(rxjs@7.8.2)
-      '@orbitox/commerce':
-        specifier: workspace:*
-        version: link:../../../packages/compat-commerce
-      '@orbitox/core':
-        specifier: workspace:*
-        version: link:../../../packages/compat-core
-      '@orbitox/sdk':
-        specifier: workspace:*
-        version: link:../../../packages/compat-sdk
-    devDependencies:
-      '@orbitox/tsconfig':
-        specifier: workspace:*
-        version: link:../../../packages/config/tsconfig
-      typescript:
-        specifier: ~5.9.3
-        version: 5.9.3
-
-  plugins/crm:
-    dependencies:
-      '@orbitox-io/plugin-engine':
-        specifier: workspace:*
-        version: link:../../packages/plugin-engine
-    devDependencies:
-      '@orbitox/jest-config':
-        specifier: workspace:*
-        version: link:../../packages/config/jest
-      '@types/jest':
-        specifier: ^29.0.0
-        version: 29.5.14
-      '@types/node':
-        specifier: ^20.0.0
-        version: 20.19.43
-      '@types/react':
-        specifier: ^19.0.0
-        version: 19.2.18
-      jest:
-        specifier: ^29.0.0
-        version: 29.7.0(@types/node@20.19.43)
-      react:
-        specifier: ^19.0.0
-        version: 19.2.8
-      ts-jest:
-        specifier: ^29.0.0
-        version: 29.4.12(@babel/core@7.29.7)(@jest/transform@29.7.0)(@jest/types@29.6.3)(babel-jest@29.7.0(@babel/core@7.29.7))(jest-util@29.7.0)(jest@29.7.0(@types/node@20.19.43))(typescript@5.9.3)
-      typescript:
-        specifier: ~5.9.3
-        version: 5.9.3
-
-  plugins/crm/backend:
-    dependencies:
-      '@nestjs/common':
-        specifier: ^12.0.1
-        version: 12.0.1(class-transformer@0.5.1)(class-validator@0.14.4)(reflect-metadata@0.2.2)(rxjs@7.8.2)
-      '@orbitox/core':
-        specifier: workspace:*
-        version: link:../../../packages/compat-core
-      '@orbitox/sdk':
-        specifier: workspace:*
-        version: link:../../../packages/compat-sdk
-    devDependencies:
-      '@orbitox/tsconfig':
-        specifier: workspace:*
-        version: link:../../../packages/config/tsconfig
-      typescript:
-        specifier: ~5.9.3
-        version: 5.9.3
-
   plugins/external-project-engine:
     dependencies:
       '@orbitox/core':
@@ -851,186 +620,6 @@ importers:
       '@types/node':
         specifier: ^20.0.0
         version: 20.19.43
-      typescript:
-        specifier: ~5.9.3
-        version: 5.9.3
-
-  plugins/finance:
-    dependencies:
-      '@orbitox/types':
-        specifier: workspace:*
-        version: link:../../packages/compat-types
-      '@orbitox/utils':
-        specifier: workspace:*
-        version: link:../../packages/compat-utils
-    devDependencies:
-      '@types/node':
-        specifier: ^20.0.0
-        version: 20.19.43
-      '@types/react':
-        specifier: ^19.0.0
-        version: 19.2.18
-      react:
-        specifier: ^19.0.0
-        version: 19.2.8
-      typescript:
-        specifier: ~5.9.3
-        version: 5.9.3
-
-  plugins/finance/backend:
-    dependencies:
-      '@nestjs/common':
-        specifier: ^12.0.1
-        version: 12.0.1(class-transformer@0.5.1)(class-validator@0.14.4)(reflect-metadata@0.2.2)(rxjs@7.8.2)
-      '@orbitox/core':
-        specifier: workspace:*
-        version: link:../../../packages/compat-core
-      '@orbitox/sdk':
-        specifier: workspace:*
-        version: link:../../../packages/compat-sdk
-    devDependencies:
-      '@orbitox/tsconfig':
-        specifier: workspace:*
-        version: link:../../../packages/config/tsconfig
-      typescript:
-        specifier: ~5.9.3
-        version: 5.9.3
-
-  plugins/hms:
-    dependencies:
-      '@orbitox/types':
-        specifier: workspace:*
-        version: link:../../packages/compat-types
-      '@orbitox/utils':
-        specifier: workspace:*
-        version: link:../../packages/compat-utils
-    devDependencies:
-      '@types/node':
-        specifier: ^20.0.0
-        version: 20.19.43
-      '@types/react':
-        specifier: ^19.0.0
-        version: 19.2.18
-      react:
-        specifier: ^19.0.0
-        version: 19.2.8
-      typescript:
-        specifier: ~5.9.3
-        version: 5.9.3
-
-  plugins/hms/backend:
-    dependencies:
-      '@nestjs/common':
-        specifier: ^12.0.1
-        version: 12.0.1(class-transformer@0.5.1)(class-validator@0.14.4)(reflect-metadata@0.2.2)(rxjs@7.8.2)
-      '@orbitox/core':
-        specifier: workspace:*
-        version: link:../../../packages/compat-core
-      '@orbitox/sdk':
-        specifier: workspace:*
-        version: link:../../../packages/compat-sdk
-    devDependencies:
-      '@orbitox/tsconfig':
-        specifier: workspace:*
-        version: link:../../../packages/config/tsconfig
-      typescript:
-        specifier: ~5.9.3
-        version: 5.9.3
-
-  plugins/hrms:
-    dependencies:
-      '@orbitox/types':
-        specifier: workspace:*
-        version: link:../../packages/compat-types
-      '@orbitox/utils':
-        specifier: workspace:*
-        version: link:../../packages/compat-utils
-    devDependencies:
-      '@types/node':
-        specifier: ^20.0.0
-        version: 20.19.43
-      '@types/react':
-        specifier: ^19.0.0
-        version: 19.2.18
-      react:
-        specifier: ^19.0.0
-        version: 19.2.8
-      typescript:
-        specifier: ~5.9.3
-        version: 5.9.3
-
-  plugins/hrms/backend:
-    dependencies:
-      '@nestjs/common':
-        specifier: ^12.0.1
-        version: 12.0.1(class-transformer@0.5.1)(class-validator@0.14.4)(reflect-metadata@0.2.2)(rxjs@7.8.2)
-      '@orbitox/core':
-        specifier: workspace:*
-        version: link:../../../packages/compat-core
-      '@orbitox/sdk':
-        specifier: workspace:*
-        version: link:../../../packages/compat-sdk
-    devDependencies:
-      '@orbitox/tsconfig':
-        specifier: workspace:*
-        version: link:../../../packages/config/tsconfig
-      typescript:
-        specifier: ~5.9.3
-        version: 5.9.3
-
-  plugins/inventory:
-    dependencies:
-      '@orbitox/types':
-        specifier: workspace:*
-        version: link:../../packages/compat-types
-      '@orbitox/utils':
-        specifier: workspace:*
-        version: link:../../packages/compat-utils
-    devDependencies:
-      '@types/node':
-        specifier: ^20.0.0
-        version: 20.19.43
-      '@types/react':
-        specifier: ^19.0.0
-        version: 19.2.18
-      react:
-        specifier: ^19.0.0
-        version: 19.2.8
-      typescript:
-        specifier: ~5.9.3
-        version: 5.9.3
-
-  plugins/inventory/backend:
-    dependencies:
-      '@nestjs/common':
-        specifier: ^12.0.1
-        version: 12.0.1(class-transformer@0.5.1)(class-validator@0.14.4)(reflect-metadata@0.2.2)(rxjs@7.8.2)
-      '@orbitox/core':
-        specifier: workspace:*
-        version: link:../../../packages/compat-core
-      '@orbitox/sdk':
-        specifier: workspace:*
-        version: link:../../../packages/compat-sdk
-    devDependencies:
-      '@orbitox/tsconfig':
-        specifier: workspace:*
-        version: link:../../../packages/config/tsconfig
-      typescript:
-        specifier: ~5.9.3
-        version: 5.9.3
-
-  plugins/my-noob-plugin:
-    dependencies:
-      '@orbitox/sdk':
-        specifier: workspace:*
-        version: link:../../packages/compat-sdk
-    devDependencies:
-      '@orbitox-io/plugin-engine':
-        specifier: workspace:*
-        version: link:../../packages/plugin-engine
-      tsx:
-        specifier: ^4.23.7
-        version: 4.23.15
       typescript:
         specifier: ~5.9.3
         version: 5.9.3
@@ -1068,25 +657,6 @@ importers:
       ts-jest:
         specifier: ^29.1.0
         version: 29.4.12(@babel/core@7.29.7)(@jest/transform@29.7.0)(@jest/types@29.6.3)(babel-jest@29.7.0(@babel/core@7.29.7))(jest-util@29.7.0)(jest@29.7.0(@types/node@20.19.43))(typescript@5.9.3)
-      typescript:
-        specifier: ~5.9.3
-        version: 5.9.3
-
-  plugins/school:
-    dependencies:
-      '@orbitox/core':
-        specifier: workspace:*
-        version: link:../../packages/compat-core
-      '@orbitox/sdk':
-        specifier: workspace:*
-        version: link:../../packages/compat-sdk
-      '@orbitox/types':
-        specifier: workspace:*
-        version: link:../../packages/compat-types
-    devDependencies:
-      '@orbitox/tsconfig':
-        specifier: workspace:*
-        version: link:../../packages/config/tsconfig
       typescript:
         specifier: ~5.9.3
         version: 5.9.3
@@ -1353,9 +923,6 @@ packages:
   '@borewit/text-codec@0.2.2':
     resolution: {integrity: sha512-DDaRehssg1aNrH4+2hnj1B7vnUGEjU6OIlyRdkMd0aUdIUvKXrJfXsy8LVtXAy7DRvYVluWbMspsRhz2lcW0mQ==}
 
-  '@dimforge/rapier3d-compat@0.12.0':
-    resolution: {integrity: sha512-uekIGetywIgopfD97oDL5PfeezkFpNhwlzlaEYNOA0N6ghdsOvh/HYjSMek5Q2O1PYvRSDFcqFVJl4r4ZBwOow==}
-
   '@emnapi/runtime@1.11.3':
     resolution: {integrity: sha512-Xz4Tpyki7XyrpbUK1jR1AhdAdaXyhhY4lZ3neLodmhpuWfy2PAQN5B46sAiU4liOXGLkHypn/qU+jvfWSCYYLA==}
 
@@ -1552,12 +1119,6 @@ packages:
   '@eslint/plugin-kit@0.4.1':
     resolution: {integrity: sha512-43/qtrDUokr7LJqoF2c3+RInu/t4zfrpYdoSDfYyhg52rwLV6TnOvdG4fXm7IkSB3wErkcmJS9iEhjVtOSEjjA==}
     engines: {node: ^18.18.0 || ^20.9.0 || >=21.1.0}
-
-  '@gsap/react@2.1.2':
-    resolution: {integrity: sha512-JqliybO1837UcgH2hVOM4VO+38APk3ECNrsuSM4MuXp+rbf+/2IG2K1YJiqfTcXQHH7XlA0m3ykniFYstfq0Iw==}
-    peerDependencies:
-      gsap: ^3.12.5
-      react: '>=17'
 
   '@humanfs/core@0.19.2':
     resolution: {integrity: sha512-UhXNm+CFMWcbChXywFwkmhqjs3PRCmcSa/hfBgLIb7oQ5HNb1wS0icWsGtSAUNgefHeI+eBrA8I1fxmbHsGdvA==}
@@ -2087,9 +1648,6 @@ packages:
     cpu: [arm64]
     os: [win32]
 
-  '@tweenjs/tween.js@23.1.3':
-    resolution: {integrity: sha512-vJmvvwFxYuGnF2axRtPYocag6Clbb5YS7kLL+SO/TeVFzHqDIWrNKYtcsPMibjDx9O+bu+psAy9NKfWklassUA==}
-
   '@types/babel__core@7.20.5':
     resolution: {integrity: sha512-qoQprZvz5wQFJwMDqeseRXWv3rqMvhgpbXFfVyWhbx9X47POIA6i/+dXefEmZKoAgOaTdaIgNSMqMIU61yRyzA==}
 
@@ -2179,17 +1737,8 @@ packages:
   '@types/stack-utils@2.0.3':
     resolution: {integrity: sha512-9aEbYZ3TbYMznPdcdr3SmIrLXwC/AKZXQeCf9Pgao5CKb8CyHuEX5jzWPTkvregvhRJHcpRO6BFoGW9ycaOkYw==}
 
-  '@types/stats.js@0.17.4':
-    resolution: {integrity: sha512-jIBvWWShCvlBqBNIZt0KAshWpvSjhkwkEu4ZUcASoAvhmrgAUI2t1dXrjSL4xXVLB4FznPrIsX3nKXFl/Dt4vA==}
-
-  '@types/three@0.186.0':
-    resolution: {integrity: sha512-mxYSBpDC+D0pLfSP6sW4WZTcT+nrtmZcimMqnVmy36Hte3XpeYSrvgg4TRdaM1GemGog1AWzI5qL2VoIfMXbJQ==}
-
   '@types/validator@13.15.10':
     resolution: {integrity: sha512-T8L6i7wCuyoK8A/ZeLYt1+q0ty3Zb9+qbSSvrIVitzT3YjZqkTZ40IbRsPanlB4h1QB3JVL1SYCdR6ngtFYcuA==}
-
-  '@types/webxr@0.5.24':
-    resolution: {integrity: sha512-h8fgEd/DpoS9CBrjEQXR+dIDraopAEfu4wYVNY2tEPwk60stPWhvZMf4Foo5FakuQ7HFZoa8WceaWFervK2Ovg==}
 
   '@types/yargs-parser@21.0.3':
     resolution: {integrity: sha512-I4q9QU9MQv4oEOz4tAHJtNz1cwuLxn2F3xcc2iV5WdqLPpUnj30aUuxt1mAxYTG+oe8CZMV/+6rU4S4gRDzqtQ==}
@@ -2907,9 +2456,6 @@ packages:
       picomatch:
         optional: true
 
-  fflate@0.8.3:
-    resolution: {integrity: sha512-tbZNuJrLwGUp3zshBtdy4W+ORxZuIh8a5ilyIEQDC5rY1f3U20JMry0Ll3WBzU58EZKsEuJFXhb5gwv8CsPvgA==}
-
   file-entry-cache@8.0.0:
     resolution: {integrity: sha512-XXTUwCvisa5oacNGRP9SfNtYBNAMi+RPwBFmblZEF7N7swHYQS6/Zfk7SRwx4D5j3CH211YNRco1DEMNVfZCnQ==}
     engines: {node: '>=16.0.0'}
@@ -3029,9 +2575,6 @@ packages:
 
   graceful-fs@4.2.11:
     resolution: {integrity: sha512-RbJ5/jmFcNNCcDV5o9eTnBLJ/HszWV0P73bc+Ff4nS/rJj+YaS6IGyiOL0VoBYX+l1Wrl3k63h/KrH+nhJ0XvQ==}
-
-  gsap@3.15.0:
-    resolution: {integrity: sha512-dMW4CWBTUK1AEEDeZc1g4xpPGIrSf9fJF960qbTZmN/QwZIWY5wgliS6JWl9/25fpTGJrMRtSjGtOmPnfjZB+A==}
 
   handlebars@4.7.9:
     resolution: {integrity: sha512-4E71E0rpOaQuJR2A3xDZ+GM1HyWYv1clR58tC8emQNeQe3RH7MAzSbat+V0wG78LQBo6m6bzSG/L4pBuCsgnUQ==}
@@ -3565,9 +3108,6 @@ packages:
 
   merge-stream@2.0.0:
     resolution: {integrity: sha512-abv/qOcuPfk3URPfDzmZU1LKmuw8kT+0nIHvKrKgFrwifol/doWcdA4ZqsWQ8ENrFKkd67Mfpo/LovbIUsbt3w==}
-
-  meshoptimizer@1.1.1:
-    resolution: {integrity: sha512-oRFNWJRDA/WTrVj7NWvqa5HqE1t9MYDj2VaWirQCzCCrAd2GHrqR/sQezCxiWATPNlKTcRaPRHPJwIRoPBAp5g==}
 
   micromatch@4.0.8:
     resolution: {integrity: sha512-PXwfBhYu0hBCPw8Dn0E+WDYb7af3dSLVWKi3HGv84IdF4TyFoC0ysxFd0Goxw7nSv4T/PzEJQxsYsEiFCKo2BA==}
@@ -4284,9 +3824,6 @@ packages:
     resolution: {integrity: sha512-e2zZ96wSChazBsbENf/Pcm/4swHt2cEKQ92rhUjkL9GCKiTDJIaTBenjE/m9DXi0QBmTMDkFDdOomUy20A1tDQ==}
     engines: {node: '>=20'}
 
-  three@0.186.1:
-    resolution: {integrity: sha512-blFeqb49wRCSGUGj7gtpfnSGHy2lwDk94RhUmS1c/hTby70kvChbWpkJ4Pm1390LqzzvTmzgXKHPEafJwCb8jA==}
-
   tinyexec@1.3.1:
     resolution: {integrity: sha512-GCvB3aoys96IuDFBMcTB46JOR6mdMtAToqwiW8JlWhsoh1mhHi/xn9ss/Dg7N555GiJyEt2qzoG/NHCwM6h1EA==}
     engines: {node: '>=18'}
@@ -4884,8 +4421,6 @@ snapshots:
 
   '@borewit/text-codec@0.2.2': {}
 
-  '@dimforge/rapier3d-compat@0.12.0': {}
-
   '@emnapi/runtime@1.11.3':
     dependencies:
       tslib: 2.8.1
@@ -5014,11 +4549,6 @@ snapshots:
     dependencies:
       '@eslint/core': 0.17.0
       levn: 0.4.1
-
-  '@gsap/react@2.1.2(gsap@3.15.0)(react@19.2.8)':
-    dependencies:
-      gsap: 3.15.0
-      react: 19.2.8
 
   '@humanfs/core@0.19.2':
     dependencies:
@@ -5454,6 +4984,7 @@ snapshots:
   '@playwright/test@1.63.0':
     dependencies:
       playwright: 1.63.0
+    optional: true
 
   '@prisma/client@6.19.3(prisma@6.19.3(typescript@5.9.3))(typescript@5.9.3)':
     optionalDependencies:
@@ -5570,8 +5101,6 @@ snapshots:
   '@turbo/windows-arm64@2.10.12':
     optional: true
 
-  '@tweenjs/tween.js@23.1.3': {}
-
   '@types/babel__core@7.20.5':
     dependencies:
       '@babel/parser': 7.29.8
@@ -5684,20 +5213,7 @@ snapshots:
 
   '@types/stack-utils@2.0.3': {}
 
-  '@types/stats.js@0.17.4': {}
-
-  '@types/three@0.186.0':
-    dependencies:
-      '@dimforge/rapier3d-compat': 0.12.0
-      '@tweenjs/tween.js': 23.1.3
-      '@types/stats.js': 0.17.4
-      '@types/webxr': 0.5.24
-      fflate: 0.8.3
-      meshoptimizer: 1.1.1
-
   '@types/validator@13.15.10': {}
-
-  '@types/webxr@0.5.24': {}
 
   '@types/yargs-parser@21.0.3': {}
 
@@ -6598,8 +6114,6 @@ snapshots:
     optionalDependencies:
       picomatch: 4.0.5
 
-  fflate@0.8.3: {}
-
   file-entry-cache@8.0.0:
     dependencies:
       flat-cache: 4.0.1
@@ -6740,8 +6254,6 @@ snapshots:
   gopd@1.2.0: {}
 
   graceful-fs@4.2.11: {}
-
-  gsap@3.15.0: {}
 
   handlebars@4.7.9:
     dependencies:
@@ -7443,8 +6955,6 @@ snapshots:
 
   merge-stream@2.0.0: {}
 
-  meshoptimizer@1.1.1: {}
-
   micromatch@4.0.8:
     dependencies:
       braces: 3.0.3
@@ -7800,11 +7310,13 @@ snapshots:
       exsolve: 1.1.3
       pathe: 2.0.3
 
-  playwright-core@1.63.0: {}
+  playwright-core@1.63.0:
+    optional: true
 
   playwright@1.63.0:
     dependencies:
       playwright-core: 1.63.0
+    optional: true
 
   possible-typed-array-names@1.1.0: {}
 
@@ -8229,8 +7741,6 @@ snapshots:
   thread-stream@4.2.0:
     dependencies:
       real-require: 1.0.0
-
-  three@0.186.1: {}
 
   tinyexec@1.3.1: {}
 

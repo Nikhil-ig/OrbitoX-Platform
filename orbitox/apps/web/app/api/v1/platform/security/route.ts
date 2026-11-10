@@ -105,7 +105,7 @@ export const GET = withApiGuard(
         timestamp: new Date(Date.now() - 1000 * 60 * 8).toISOString(),
         severity: 'INFO',
         category: 'SUPPLY_CHAIN',
-        message: 'Ed25519 digital signature verified for @orbitox-io/crm v1.0.1 from GitHub Packages.',
+        message: 'Ed25519 digital signature verified for @orbitox-io/plugin-engine v1.4.0 from GitHub Packages.',
       },
       {
         id: 'thr_102',

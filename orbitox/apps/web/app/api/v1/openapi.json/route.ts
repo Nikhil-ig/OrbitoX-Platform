@@ -122,37 +122,6 @@ export async function GET() {
           responses: { 200: { description: 'Triage transitioned' } },
         },
       },
-      '/api/v1/commerce/products': {
-        get: {
-          tags: ['Commerce'],
-          summary: 'Query store catalog items and stock levels',
-          responses: { 200: { description: 'Products list' } },
-        },
-        post: {
-          tags: ['Commerce'],
-          summary: 'Create or update catalog item',
-          responses: { 200: { description: 'Product created' } },
-        },
-      },
-      '/api/v1/commerce/checkout/initiate': {
-        post: {
-          tags: ['Commerce'],
-          summary: 'Initiate zero-trust payment checkout flow',
-          responses: { 200: { description: 'Checkout session created' } },
-        },
-      },
-      '/api/v1/crm/leads': {
-        get: {
-          tags: ['CRM'],
-          summary: 'Fetch sales pipeline leads and valuations',
-          responses: { 200: { description: 'Leads list' } },
-        },
-        post: {
-          tags: ['CRM'],
-          summary: 'Ingest inbound lead opportunity',
-          responses: { 200: { description: 'Lead ingested' } },
-        },
-      },
       '/api/v1/restaurant/orders': {
         get: {
           tags: ['Restaurant'],

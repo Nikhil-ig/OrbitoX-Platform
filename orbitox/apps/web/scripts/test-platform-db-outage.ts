@@ -30,7 +30,6 @@ const suffix = randomUUID();
 const previousMode = process.env.ORBITOX_PLATFORM_REPOSITORY;
 const previousPepper = process.env.ORBITOX_SERVER_PEPPER;
 const previousAdminToken = process.env.ORBITOX_ADMIN_TOKEN;
-const previousCrmPlugin = process.env.ORBITOX_ENABLE_CRM_PLUGIN;
 let organizationId: string | undefined;
 let databaseStopped = false;
 const timeout = setTimeout(() => {
@@ -84,7 +83,6 @@ async function main(): Promise<void> {
     process.env.ORBITOX_PLATFORM_REPOSITORY = 'prisma';
     process.env.ORBITOX_SERVER_PEPPER = `outage-pepper-${suffix}-32-characters`;
     process.env.ORBITOX_ADMIN_TOKEN = `outage-admin-${suffix}-32-characters`;
-    process.env.ORBITOX_ENABLE_CRM_PLUGIN = 'true';
     const organization = await repository.createOrganization({
         slug: `outage-${suffix}`,
         name: `Outage test ${suffix}`,
@@ -100,7 +98,7 @@ async function main(): Promise<void> {
         plan: 'starter',
         technicalLead: 'Outage test',
         contactEmail: `outage-${suffix}@example.test`,
-        enabledServices: ['crm'],
+        enabledServices: ['hms'],
         apiCallQuota: 10,
     });
     const environment = created.environments.find((item) => item.slug === 'production');
@@ -109,7 +107,7 @@ async function main(): Promise<void> {
         name: `Outage key ${suffix}`,
         environmentId: environment.id,
         projectId: created.project.id,
-        capabilities: ['crm:read'],
+        capabilities: ['hms:read'],
         tenantScope: [created.project.slug],
         createdBy: 'outage-test',
     });
@@ -117,13 +115,13 @@ async function main(): Promise<void> {
     const { withApiGuard } = await import('../app/api/v1/_lib/api-guard');
     let protectedHandlerInvoked = false;
     const protectedRoute = withApiGuard(
-        { serviceId: 'crm', serviceName: 'CRM Service' },
+        { serviceId: 'hms', serviceName: 'HMS Service' },
         async () => {
             protectedHandlerInvoked = true;
             return NextResponse.json({ success: true });
         },
     );
-    const request = () => new NextRequest('http://localhost/api/v1/crm/leads', {
+    const request = () => new NextRequest('http://localhost/api/v1/hms/patients', {
         headers: { 'x-api-key': apiKey.rawSecret },
     });
 
@@ -172,7 +170,5 @@ main()
         else process.env.ORBITOX_SERVER_PEPPER = previousPepper;
         if (previousAdminToken === undefined) delete process.env.ORBITOX_ADMIN_TOKEN;
         else process.env.ORBITOX_ADMIN_TOKEN = previousAdminToken;
-        if (previousCrmPlugin === undefined) delete process.env.ORBITOX_ENABLE_CRM_PLUGIN;
-        else process.env.ORBITOX_ENABLE_CRM_PLUGIN = previousCrmPlugin;
         clearTimeout(timeout);
     });

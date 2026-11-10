@@ -1569,18 +1569,6 @@ export async function processDueOrganizationDeletions(input: {
             })
           ).count;
 
-          if (projectIds.length > 0) {
-            counts.StudioAsset = (
-              await tx.studioAsset.deleteMany({ where: { projectId: { in: projectIds } } })
-            ).count;
-            counts.StudioPage = (
-              await tx.studioPage.deleteMany({ where: { projectId: { in: projectIds } } })
-            ).count;
-            counts.StudioSnapshot = (
-              await tx.studioSnapshot.deleteMany({ where: { projectId: { in: projectIds } } })
-            ).count;
-          }
-
           counts.PlatformAuditEvent = (
             await tx.platformAuditEvent.deleteMany({
               where: {

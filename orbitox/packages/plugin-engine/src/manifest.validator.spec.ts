@@ -11,12 +11,12 @@ describe('ManifestValidator', () => {
 
   it('should pass for a valid manifest', () => {
     const validManifest: PluginManifest = {
-      id: 'crm',
-      name: '@orbitox/crm',
+      id: 'hms',
+      name: '@orbitox/hms',
       version: '1.0.0',
-      displayName: 'CRM',
-      description: 'CRM plugin',
-      category: 'sales',
+      displayName: 'HMS',
+      description: 'HospitalOS plugin',
+      category: 'healthcare',
       author: 'OrbitoX',
     };
 
@@ -25,7 +25,7 @@ describe('ManifestValidator', () => {
 
   it('should throw BadRequestException if id is missing', () => {
     const invalidManifest = {
-      name: '@orbitox/crm',
+      name: '@orbitox/hms',
       version: '1.0.0',
     } as any;
 
@@ -34,8 +34,8 @@ describe('ManifestValidator', () => {
 
   it('should throw BadRequestException if displayName is missing', () => {
     const invalidManifest = {
-      id: 'crm',
-      name: '@orbitox/crm',
+      id: 'hms',
+      name: '@orbitox/hms',
       version: '1.0.0',
     } as any;
 

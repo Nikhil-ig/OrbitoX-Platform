@@ -31,7 +31,7 @@ describe('🪐 Phase 5: @orbitox-io/cli Suite', () => {
     assert.ok(masked.includes('••••••••'), 'Mask characters must be present');
   });
 
-  it('3. Catalogue enforcement: rejects un-installable plugins like crm', () => {
+  it('3. Catalogue enforcement: rejects non-catalogue plugins outside HospitalOS & RestaurantOS', () => {
     assert.throws(
       () => {
         execSync(
@@ -42,8 +42,8 @@ describe('🪐 Phase 5: @orbitox-io/cli Suite', () => {
       (err: any) => {
         const stderr = err.stderr || err.stdout || '';
         assert.ok(
-          stderr.includes('Plugin "crm" is not installable while disabled'),
-          `Must refuse CRM installation with clear reason, got: ${stderr}`
+          stderr.includes('is not installable. Installable plugins: hospital-os, restaurant-os'),
+          `Must refuse removed plugin installation with clear reason, got: ${stderr}`
         );
         return true;
       }

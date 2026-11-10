@@ -31,7 +31,6 @@ PACKAGES=(
   "packages/plugin-engine"
   "packages/runtime"
   "plugins/pos"
-  "plugins/crm"
   "tools/cli"
 )
 
@@ -61,7 +60,6 @@ npm install --no-audit --no-fund \
   "$TARBALL_DIR"/orbitox-io-plugin-engine-*.tgz \
   "$TARBALL_DIR"/orbitox-io-runtime-*.tgz \
   "$TARBALL_DIR"/orbitox-io-pos-*.tgz \
-  "$TARBALL_DIR"/orbitox-io-crm-*.tgz \
   "$TARBALL_DIR"/orbitox-io-cli-*.tgz
 
 echo ""
@@ -92,12 +90,7 @@ const sdk = require('@orbitox-io/external-runtime-sdk');
 assert(typeof sdk.ControlClient === 'function', 'ControlClient must be exported');
 console.log('  ✅ @orbitox-io/external-runtime-sdk loaded successfully');
 
-// 5. CRM
-const crm = require('@orbitox-io/crm');
-assert(typeof crm.LeadStateMachine === 'function', 'LeadStateMachine must be exported');
-console.log('  ✅ @orbitox-io/crm loaded successfully');
-
-// 6. Test plugin composition via defineOrbitoXPlugin
+// 5. Test plugin composition via defineOrbitoXPlugin
 const testPlugin = pos.pos();
 assert(testPlugin.manifest.name === '@orbitox/pos' || testPlugin.manifest.name === '@orbitox-io/pos', 'POS manifest name match');
 assert(testPlugin.routes.length > 0, 'POS defines routes');

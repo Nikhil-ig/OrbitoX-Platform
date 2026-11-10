@@ -7,18 +7,6 @@ import { PlatformGovernanceDock } from '../components/platform-governance-dock';
 
 const sampleMenuItems: MenuItem[] = [
   {
-    id: 'commerce-root',
-    label: 'Commerce Studio',
-    children: [
-      { id: 'commerce-overview', label: '📊 Dashboard', path: '/commerce' },
-      { id: 'commerce-builder', label: '🎨 Store Builder (Wix/Shopify)', path: '/commerce/store/builder' },
-      { id: 'commerce-theme', label: '✨ Theme Studio', path: '/commerce/store/theme' },
-      { id: 'commerce-products', label: '🛍️ Products & Variants', path: '/commerce/products' },
-      { id: 'commerce-orders', label: '📦 Orders & Fulfillment', path: '/commerce/orders' },
-      { id: 'commerce-storefront', label: '🌐 Live Storefront (Aura)', path: '/store/aura-luxury' },
-    ],
-  },
-  {
     id: 'hms-root',
     label: 'Hospital OS (HMS)',
     children: [
@@ -35,16 +23,15 @@ const sampleMenuItems: MenuItem[] = [
     label: '🪐 Admin Console (God-Mode)',
     children: [
       { id: 'admin-overview', label: '📊 Control Dashboard', path: '/admin' },
-      { id: 'admin-services', label: '🔌 All 9 Services', path: '/admin/services' },
+      { id: 'admin-services', label: '🔌 Services Catalogue', path: '/admin/services' },
       { id: 'admin-business', label: '🌐 Business Verticals', path: '/admin/business' },
       { id: 'admin-hospitals', label: '🏥 Hospital Network', path: '/admin/business/hospitals' },
-      { id: 'admin-ecommerce', label: '🛍️ E-Commerce Stores', path: '/admin/business/ecommerce' },
+      { id: 'admin-restaurants', label: '🍽️ Restaurant Network', path: '/admin/business/restaurants' },
       { id: 'admin-keys', label: '🔑 API Key Generator', path: '/admin/api-keys' },
       { id: 'admin-quotas', label: '📈 Platform Quotas', path: '/admin/quotas' },
       { id: 'admin-system', label: '🛡️ System & Crypto', path: '/admin/system' },
     ],
   },
-  { id: 'automations', label: 'Automations (n8n)', path: '/automations' },
   { id: 'marketplace', label: 'App Marketplace', path: '/admin/marketplace' },
 ];
 
@@ -186,10 +173,7 @@ function PlatformLayoutInner({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
 
   let activeServiceId: string | undefined;
-  if (pathname?.includes('/crm')) activeServiceId = 'crm';
-  else if (pathname?.includes('/inventory')) activeServiceId = 'inventory';
-  else if (pathname?.includes('/finance')) activeServiceId = 'finance';
-  else if (pathname?.includes('/hrms')) activeServiceId = 'hrms';
+  if (pathname?.includes('/hms')) activeServiceId = 'hms';
 
   return (
     <div style={{ display: 'flex', minHeight: '100vh', backgroundColor: 'var(--bg-primary)', color: 'var(--text-primary)' }}>

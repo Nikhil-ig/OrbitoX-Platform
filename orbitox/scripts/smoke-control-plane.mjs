@@ -117,7 +117,7 @@ await expectStatus('GET /api/health is public', 200, '/api/health');
 console.log('\nAdmin surface rejects anonymous callers');
 for (const path of [
   '/platform', '/platform/restaurants', '/platform/fleet', '/platform/plans', '/platform/connect', '/platform/settings', '/admin',
-  '/hms', '/hrms', '/crm', '/finance', '/commerce', '/store'
+  '/hms'
 ]) {
   await expectLoginRedirect(`GET ${path} redirects anonymous caller to login`, path);
 }
@@ -144,8 +144,7 @@ await expectStatus('GET /api/v1/platform/restaurants/check-slug with Bearer', 20
 console.log('\nAPI-scoped admin token cannot access operator pages');
 for (const path of [
   '/platform', '/platform/restaurants', '/platform/fleet', '/platform/plans',
-  '/platform/connect', '/platform/settings', '/hms', '/hrms', '/crm', '/finance',
-  '/commerce', '/store'
+  '/platform/connect', '/platform/settings', '/hms'
 ]) {
   await expectLoginRedirect(
     `API-scoped admin token on ${path} redirects to operator login`,

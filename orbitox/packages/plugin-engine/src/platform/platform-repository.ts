@@ -102,12 +102,6 @@ export function canonicalizePluginId(pluginId: string): string {
   ) {
     return '@orbitox/restaurant';
   }
-  if (trimmed === 'crm' || trimmed === '@orbitox-io/crm' || trimmed === '@orbitox/crm') {
-    return '@orbitox/crm';
-  }
-  if (trimmed === 'pos' || trimmed === '@orbitox-io/pos' || trimmed === '@orbitox/pos') {
-    return '@orbitox/pos';
-  }
   if (
     trimmed === 'hms' ||
     trimmed === '@orbitox-io/hms' ||
@@ -851,7 +845,7 @@ export class PlatformRepository {
     const explicitPackages = [...(input.initialPackages || []), ...(input.enabledServices || [])];
     for (const pkg of explicitPackages) {
       const canonical = canonicalizePluginId(pkg);
-      if (['@orbitox/restaurant', '@orbitox/hms', '@orbitox/crm', '@orbitox/pos'].includes(canonical)) {
+      if (['@orbitox/restaurant', '@orbitox/hms'].includes(canonical)) {
         if (!this.pluginInstallations.some((p) => p.tenantId === canonicalTenantId && canonicalizePluginId(p.pluginId) === canonical)) {
           this.provisionPluginInstallation({
             tenantId: canonicalTenantId,
@@ -2090,17 +2084,10 @@ export class PlatformRepository {
       complianceTier: 'PCI_DSS',
     });
 
-    // 2. Packages Catalog
+    // 2. Packages Catalog (HospitalOS & RestaurantOS only)
     const corePackages = [
       { id: 'pkg_restaurant', packageId: '@orbitox/restaurant', name: 'Restaurant & Kitchen OS', category: 'Hospitality', publisher: 'OrbitoX Core Labs', version: '2.2.0' },
-      { id: 'pkg_pos', packageId: '@orbitox/pos', name: 'Point of Sale (POS)', category: 'Retail', publisher: 'OrbitoX Core Labs', version: '1.4.0' },
-      { id: 'pkg_commerce', packageId: '@orbitox/commerce', name: 'Commerce & Store Engine', category: 'Commerce', publisher: 'OrbitoX Core Labs', version: '2.1.0' },
-      { id: 'pkg_crm', packageId: '@orbitox/crm', name: 'CRM & Deal Pipeline', category: 'Sales', publisher: 'OrbitoX Core Labs', version: '1.0.1' },
-      { id: 'pkg_finance', packageId: '@orbitox/finance', name: 'Finance & Ledger Engine', category: 'Finance', publisher: 'OrbitoX Core Labs', version: '2.0.0' },
-      { id: 'pkg_inventory', packageId: '@orbitox/inventory', name: 'Inventory & Stock Logistics', category: 'Supply Chain', publisher: 'OrbitoX Core Labs', version: '1.5.0' },
       { id: 'pkg_hms', packageId: '@orbitox/hms', name: 'Hospital Management System (HMS)', category: 'Healthcare', publisher: 'OrbitoX Clinical Group', version: '2.4.0' },
-      { id: 'pkg_hrms', packageId: '@orbitox/hrms', name: 'HRMS & Workforce Suite', category: 'HR', publisher: 'OrbitoX Core Labs', version: '1.2.0' },
-      { id: 'pkg_school', packageId: '@orbitox/school', name: 'School & Campus OS', category: 'Education', publisher: 'OrbitoX Academy', version: '1.1.0' },
     ];
 
     for (const p of corePackages) {
@@ -2140,7 +2127,7 @@ export class PlatformRepository {
       planTier: 'hyperscale',
       technicalLead: 'Sophia Martinez, VP Infrastructure',
       contactEmail: 'platform@omnideliver.global',
-      initialPackages: ['@orbitox/restaurant', '@orbitox/pos', '@orbitox/commerce', '@orbitox/crm', '@orbitox/finance', '@orbitox/inventory'],
+      initialPackages: ['@orbitox/restaurant'],
     });
 
     const mednet = this.createProject({
@@ -2151,7 +2138,7 @@ export class PlatformRepository {
       planTier: 'enterprise',
       technicalLead: 'Dr. Michael Chen, Chief Medical Informaticist',
       contactEmail: 'security@mednet.health',
-      initialPackages: ['@orbitox/hms', '@orbitox/inventory', '@orbitox/finance', '@orbitox/hrms'],
+      initialPackages: ['@orbitox/hms'],
     });
 
     const aura = this.createProject({
@@ -2162,7 +2149,7 @@ export class PlatformRepository {
       planTier: 'growth',
       technicalLead: 'Alexander Vance, Head of Engineering',
       contactEmail: 'devops@aura-luxury.com',
-      initialPackages: ['@orbitox/commerce', '@orbitox/crm', '@orbitox/inventory'],
+      initialPackages: ['@orbitox/restaurant'],
     });
 
     // 4. Domains

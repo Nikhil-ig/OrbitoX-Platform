@@ -41,13 +41,8 @@ export function ApiKeyModal({
     : [
         'hms.patients.read',
         'hms.triage.execute',
-        'commerce.orders.fulfill',
-        'crm.leads.read',
-        'pos.checkout.process',
         'restaurant.orders.kds',
-        'school.students.enroll',
-        'finance.ledger.read',
-        'inventory.stock.adjust',
+        'restaurant.tables.reserve',
       ];
 
   const handleScopeToggle = (scope: string) => {

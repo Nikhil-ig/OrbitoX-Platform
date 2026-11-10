@@ -27,11 +27,6 @@ export const PROTECTED_PAGE_PREFIXES: readonly string[] = [
     '/admin',
     '/platform',
     '/hms',
-    '/hrms',
-    '/crm',
-    '/finance',
-    '/commerce',
-    '/inventory',
     '/kds',
     '/overview',
     '/fleet',
@@ -40,17 +35,10 @@ export const PROTECTED_PAGE_PREFIXES: readonly string[] = [
 export const SELF_GUARDED_API_PREFIXES: readonly string[] = [
     '/api/hospital/',
     '/api/restaurant/',
-    '/api/v1/commerce/',
     '/api/v1/customer/',
-    '/api/v1/crm/',
-    '/api/v1/finance/',
     '/api/v1/hms/',
-    '/api/v1/hrms/',
-    '/api/v1/inventory/',
     '/api/v1/operations',
-    '/api/v1/pos/',
     '/api/v1/restaurant/',
-    '/api/v1/school/',
     '/api/v1/tenants',
 ] as const;
 
@@ -81,10 +69,6 @@ export function isExplicitPublicRoute(pathname: string): boolean {
 
     // Diner customer-facing UI
     if (pathname === '/dine' || pathname.startsWith('/dine/')) return true;
-
-    // Shopper storefront customer UI (/store/<storeSlug> and subpaths)
-    // NOTE: Exact '/store' and '/store/' are demo admin control-plane redirect pages and must remain protected!
-    if (/^\/store\/[^/]+(\/.*)?$/.test(pathname)) return true;
 
     return false;
 }

@@ -30,20 +30,16 @@ export const DynamicSidebar: React.FC<DynamicSidebarProps> = ({
 }) => {
   const [searchQuery, setSearchQuery] = useState('');
   const [collapsedSections, setCollapsedSections] = useState<Record<string, boolean>>({});
-  const [activeDockApp, setActiveDockApp] = useState<string>('commerce');
+  const [activeDockApp, setActiveDockApp] = useState<string>('hms');
 
   const toggleSection = (id: string) => {
     setCollapsedSections(prev => ({ ...prev, [id]: !prev[id] }));
   };
 
   const dockApps = [
-    { id: 'commerce', icon: '🛍️', label: 'Commerce OS', path: '/commerce' },
     { id: 'hms', icon: '🏥', label: 'Hospital OS', path: '/hms' },
-    { id: 'automations', icon: '⚡', label: 'Automations (n8n)', path: '/automations' },
+    { id: 'restaurant', icon: '🍽️', label: 'Restaurant OS', path: '/kds' },
     { id: 'marketplace', icon: '🧩', label: 'App Market', path: '/admin/marketplace' },
-    { id: 'crm', icon: '👥', label: 'CRM Leads', path: '/crm/leads' },
-    { id: 'inventory', icon: '📦', label: 'Inventory', path: '/inventory/items' },
-    { id: 'finance', icon: '💳', label: 'Billing & Invoices', path: '/finance/invoices' },
   ];
 
   return (

@@ -150,12 +150,8 @@ export class OrbitoXApp {
     // 1. Auto-detect plugin identifier
     let rawId = plugin.id || plugin.name || (plugin.manifest && plugin.manifest.id);
     if (!rawId) {
-      if (plugin.HeadlessCrmService || plugin.crmLeadStateMachine || plugin.useLeads) {
-        rawId = 'crm';
-      } else if (plugin.HeadlessHmsService || plugin.hmsTriageStateMachine) {
+      if (plugin.HeadlessHmsService || plugin.hmsTriageStateMachine) {
         rawId = 'hms';
-      } else if (plugin.HeadlessCommerceService || plugin.useCommerceCart) {
-        rawId = 'commerce';
       } else {
         rawId = 'custom_plugin';
       }

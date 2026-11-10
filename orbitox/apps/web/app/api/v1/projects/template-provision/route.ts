@@ -6,7 +6,6 @@ import {
   hashProjectKey,
   ExternalProjectRecord,
 } from '@orbitox/external-project-engine';
-import { isSamplePluginEnabled } from '@/lib/sample-plugins';
 
 export async function POST(req: NextRequest) {
   try {
@@ -35,34 +34,33 @@ export async function POST(req: NextRequest) {
 
     const randSuffix = crypto.randomBytes(3).toString('hex');
     const projectId = `proj_${slug.replace(/-/g, '_')}_${randSuffix}`;
-    const port = defaultPort ? Number(defaultPort) : template === 'crm' ? 4051 : 4050;
+    const port = defaultPort ? Number(defaultPort) : template === 'hms' ? 4030 : 4050;
 
     // 1. Generate one-time scoped project API key
     const scopedKey = generateProjectKey();
     const keyHash = hashProjectKey(scopedKey);
 
     // 2. Resolve template plugins and features
-    let enabledPlugins = ['@orbitox/pos'];
-    let enabledFeatures = ['pos.orders', 'pos.kitchen', 'pos.quotes', 'pos.sessions'];
-    let planReference = plan || 'plan_restaurant_growth';
+    let enabledPlugins = ['@orbitox/restaurant'];
+    let enabledFeatures = ['dine_qr', 'realtime_kds', 'pos.orders', 'pos.quotes'];
+    let planReference = plan || 'restaurant-growth';
 
-    if (template === 'crm') {
-      if (!isSamplePluginEnabled('crm')) {
-        return NextResponse.json(
-          {
-            success: false,
-            error: 'The CRM template is not installable in production until rebuilt to HospitalOS multi-tenant standards (coming soon).',
-          },
-          { status: 400 }
-        );
-      }
-      enabledPlugins = ['@orbitox/crm'];
-      enabledFeatures = ['crm.leads', 'crm.pipelines', 'crm.scoring'];
-      planReference = plan || 'plan_crm_growth';
+    if (template === 'hms' || template === 'hospital') {
+      enabledPlugins = ['@orbitox/hms'];
+      enabledFeatures = ['ehr_vault', 'triage_scoring', 'clinical_billing'];
+      planReference = plan || 'hms-pro';
     } else if (template === 'blank' || template === 'custom') {
       enabledPlugins = ['@orbitox/core'];
       enabledFeatures = ['core.tenancy'];
       planReference = plan || 'plan_custom_starter';
+    } else if (template !== 'restaurant') {
+      return NextResponse.json(
+        {
+          success: false,
+          error: `Unsupported template "${template}". Supported templates: restaurant, hms, blank.`,
+        },
+        { status: 400 }
+      );
     }
 
     const resolvedControlPlaneUrl =
@@ -88,7 +86,7 @@ export async function POST(req: NextRequest) {
         projectId,
         slug,
         name,
-        type: (template === 'crm' ? 'crm-os' : template === 'restaurant' ? 'restaurant-os' : 'custom-os') as any,
+        type: (template === 'hms' || template === 'hospital' ? 'hospital-os' : template === 'restaurant' ? 'restaurant-os' : 'custom-os') as any,
         version: '1.0.0',
         runtime: {
           type: 'standalone',
@@ -119,7 +117,7 @@ export async function POST(req: NextRequest) {
     externalProjectEngine.runtimeController.updateDesiredState(projectId, {
       features: enabledFeatures.reduce((acc, f) => ({ ...acc, [f]: true }), {}),
       entitlements: {
-        monthly_limit: template === 'crm' ? 5000 : 10000,
+        monthly_limit: 10000,
       },
       plugins: enabledPlugins,
       plan: planReference,

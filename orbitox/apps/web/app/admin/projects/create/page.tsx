@@ -20,15 +20,15 @@ export default function ProjectCreationWizardPage() {
   const [currentStep, setCurrentStep] = useState(0);
 
   // Form State
-  const [name, setName] = useState('CelebrationsOS');
-  const [slug, setSlug] = useState('celebrations-os');
-  const [type, setType] = useState<'restaurant-os' | 'celebrations-os' | 'hospital-os' | 'commerce-os' | 'crm-os' | 'custom-os'>('celebrations-os');
-  const [templateId, setTemplateId] = useState('template_celebrations_os');
-  const [businessModel, setBusinessModel] = useState('D2C');
-  const [defaultPort, setDefaultPort] = useState(4020);
-  const [enabledPlugins, setEnabledPlugins] = useState<string[]>(['@orbitox/celebrations', '@orbitox/realtime']);
-  const [enabledFeatures, setEnabledFeatures] = useState<string[]>(['motion_timeline', 'canvas_inspector', '3d_particles']);
-  const [selectedPlan, setSelectedPlan] = useState('plan_celebrations_pro');
+  const [name, setName] = useState('RestaurantOS');
+  const [slug, setSlug] = useState('restaurant-os');
+  const [type, setType] = useState<'restaurant-os' | 'hospital-os' | 'custom-os'>('restaurant-os');
+  const [templateId, setTemplateId] = useState('template_restaurant_os');
+  const [businessModel, setBusinessModel] = useState('O2O2B2B2C');
+  const [defaultPort, setDefaultPort] = useState(4010);
+  const [enabledPlugins, setEnabledPlugins] = useState<string[]>(['@orbitox/restaurant']);
+  const [enabledFeatures, setEnabledFeatures] = useState<string[]>(['dine_qr', 'dag_prep_scheduler', 'companion_join', 'realtime_kds']);
+  const [selectedPlan, setSelectedPlan] = useState('restaurant-growth');
   const [environment, setEnvironment] = useState('production');
   const [syncInterval, setSyncInterval] = useState(10);
 
@@ -42,21 +42,10 @@ export default function ProjectCreationWizardPage() {
       type: 'restaurant-os' as const,
       port: 4010,
       desc: 'Culinary runtime with Dine PWA, KDS routing, and spatial floor matrix.',
-      plugins: ['@orbitox/pos', '@orbitox/realtime', '@orbitox/billing'],
+      plugins: ['@orbitox/restaurant'],
       features: ['dine_qr', 'dag_prep_scheduler', 'companion_join', 'realtime_kds'],
-      plan: 'plan_restaurant_growth',
+      plan: 'restaurant-growth',
       model: 'O2O2B2B2C',
-    },
-    {
-      id: 'template_celebrations_os',
-      name: 'CelebrationsOS',
-      type: 'celebrations-os' as const,
-      port: 4020,
-      desc: 'Interactive motion studio, audio sync, and spatial celebration cards.',
-      plugins: ['@orbitox/celebrations', '@orbitox/realtime'],
-      features: ['motion_timeline', 'canvas_inspector', '3d_particles', 'audio_sync'],
-      plan: 'plan_celebrations_pro',
-      model: 'D2C',
     },
     {
       id: 'template_hospital_os',
@@ -64,32 +53,10 @@ export default function ProjectCreationWizardPage() {
       type: 'hospital-os' as const,
       port: 4030,
       desc: 'Clinical telemetry, emergency triage scoring, and ICU occupancy mesh.',
-      plugins: ['@orbitox/hms', '@orbitox/telemetry'],
+      plugins: ['@orbitox/hms'],
       features: ['triage_scoring', 'icu_telemetry', 'consultation_mesh'],
-      plan: 'plan_hospital_enterprise',
+      plan: 'hms-pro',
       model: 'HEALTHCARE_NETWORK',
-    },
-    {
-      id: 'template_commerce_os',
-      name: 'CommerceOS',
-      type: 'commerce-os' as const,
-      port: 4040,
-      desc: 'Omnichannel storefront, inventory mesh, and zero-trust checkout.',
-      plugins: ['@orbitox/commerce', '@orbitox/inventory', '@orbitox/billing'],
-      features: ['zero_trust_checkout', 'multi_warehouse', 'dynamic_tax'],
-      plan: 'plan_commerce_scale',
-      model: 'B2B_SAAS',
-    },
-    {
-      id: 'template_crm_os',
-      name: 'CRM OS',
-      type: 'crm-os' as const,
-      port: 4050,
-      desc: 'Predictive lead scoring, pipeline Kanban stages, and guest memory.',
-      plugins: ['@orbitox/crm', '@orbitox/billing'],
-      features: ['pipeline_stages', 'lead_scoring', 'activity_stream'],
-      plan: 'plan_crm_growth',
-      model: 'B2B_SAAS',
     },
     {
       id: 'template_blank_os',
@@ -356,7 +323,7 @@ export default function ProjectCreationWizardPage() {
             <p style={{ fontSize: '13px', color: '#94A3B8', marginBottom: '24px' }}>Provision extensions providing capabilities and registering APIs.</p>
 
             <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-              {['@orbitox/pos', '@orbitox/realtime', '@orbitox/billing', '@orbitox/celebrations', '@orbitox/hms', '@orbitox/commerce', '@orbitox/crm', '@orbitox/mcp'].map((p) => {
+              {['@orbitox/hms', '@orbitox/restaurant', '@orbitox/core'].map((p) => {
                 const isSelected = enabledPlugins.includes(p);
                 return (
                   <div

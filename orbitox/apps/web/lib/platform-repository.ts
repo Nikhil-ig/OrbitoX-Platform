@@ -41,7 +41,6 @@ import { TENANT_RE } from '@orbitox-io/bridge';
 import { loadPepperRing, activeVerifier, candidateVerifiers } from './pepper';
 
 export type { PlatformProject };
-import { isSamplePackage } from './sample-plugins';
 
 type AsyncMethods<T> = {
     [Key in keyof T as T[Key] extends (...args: any[]) => any ? Key : never]: T[Key] extends (
@@ -819,7 +818,7 @@ export function createPrismaPlatformRepository(
                 const explicitPackages = [...(input.initialPackages || []), ...(input.enabledServices || [])];
                 for (const pkg of explicitPackages) {
                     const canonical = canonicalizePluginId(pkg);
-                    if (['@orbitox/restaurant', '@orbitox/hms', '@orbitox/crm', '@orbitox/pos'].includes(canonical)) {
+                    if (['@orbitox/restaurant', '@orbitox/hms'].includes(canonical)) {
                         if (!pluginsToInstall.some((p) => p.pluginId === canonical)) {
                             pluginsToInstall.push({
                                 pluginId: canonical,
@@ -1539,8 +1538,9 @@ export function createPrismaPlatformRepository(
             versionId: string,
             configOverrides: Record<string, any> = {},
         ): Promise<PackageInstallationRecord> {
-            if (isSamplePackage(packageId)) {
-                throw new Error(`Package [${packageId}] is not installable: sample-data plugin pending HospitalOS multi-tenant rebuild.`);
+            const canonical = canonicalizePluginId(packageId);
+            if (!['@orbitox/hms', '@orbitox/restaurant'].includes(canonical)) {
+                throw new Error(`Package [${packageId}] is not an installable OrbitoX product package.`);
             }
             const pkg = await client.platformPackage.findFirst({ where: { OR: [{ packageId }, { id: packageId }] } });
             if (!pkg) throw new Error(`Package [${packageId}] not found.`);

@@ -12,23 +12,23 @@ describe('PluginLoaderService', () => {
 
   it('should register and retrieve a plugin module', () => {
     const mockManifest: PluginManifest = {
-      id: 'inventory',
-      name: '@orbitox/inventory',
+      id: 'hms',
+      name: '@orbitox/hms',
       version: '1.0.0',
-      displayName: 'Inventory',
-      description: 'Inventory Management',
-      category: 'logistics',
+      displayName: 'HospitalOS',
+      description: 'Hospital Management',
+      category: 'healthcare',
       author: 'OrbitoX',
     };
 
     @OrbitoXPlugin(mockManifest)
-    class InventoryModule {}
+    class HmsModule {}
 
-    service.registerPluginModule(InventoryModule);
-    const loaded = service.getPlugin('inventory');
+    service.registerPluginModule(HmsModule);
+    const loaded = service.getPlugin('hms');
 
     expect(loaded).toBeDefined();
-    expect(loaded?.manifest.name).toBe('@orbitox/inventory');
+    expect(loaded?.manifest.name).toBe('@orbitox/hms');
   });
 
   it('should throw error when registering module without decorator', () => {

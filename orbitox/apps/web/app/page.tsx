@@ -26,20 +26,20 @@ export default function HomePage() {
           <div style={{ display: 'flex', gap: '16px', marginTop: '16px' }}>
             <div style={{ padding: '16px', borderRadius: '8px', background: 'rgba(255,255,255,0.03)', border: '1px solid var(--border-glass)', flex: 1 }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <span style={{ fontWeight: 700 }}>@orbitox/crm</span>
-                <Badge variant="success">Active v1.0.0</Badge>
+                <span style={{ fontWeight: 700 }}>@orbitox/hms</span>
+                <Badge variant="success">Active v2.4.0</Badge>
               </div>
               <p style={{ fontSize: '13px', color: 'var(--text-secondary)', margin: '8px 0 0 0' }}>
-                Leads, Customers, Pipeline Management
+                HospitalOS Clinical EHR, Emergency Triage &amp; Ward Matrix
               </p>
             </div>
             <div style={{ padding: '16px', borderRadius: '8px', background: 'rgba(255,255,255,0.03)', border: '1px solid var(--border-glass)', flex: 1 }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <span style={{ fontWeight: 700 }}>@orbitox/inventory</span>
-                <Badge variant="info">Ready to Install</Badge>
+                <span style={{ fontWeight: 700 }}>@orbitox/restaurant</span>
+                <Badge variant="info">Active v2.2.0</Badge>
               </div>
               <p style={{ fontSize: '13px', color: 'var(--text-secondary)', margin: '8px 0 0 0' }}>
-                Stock Tracking, Multi-Warehouse Logistics
+                RestaurantOS QR Dining, KDS Queues &amp; Floor Operations
               </p>
             </div>
           </div>

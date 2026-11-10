@@ -401,61 +401,6 @@ export default function ProviderDetailPage({ params }: PageProps) {
             </>
           )}
 
-          {categorySlug === 'ecommerce' && (
-            <>
-              <Link
-                href="/commerce"
-                className="pill-interactive pill-interactive-primary"
-                style={{ textDecoration: 'none', padding: '9px 18px', fontSize: '12.5px', display: 'flex', alignItems: 'center', gap: '7px' }}
-              >
-                <ShoppingBagIcon size={16} color="#FFFFFF" />
-                <span>Commerce Studio</span>
-                <ExternalLinkIcon size={13} color="#FFFFFF" />
-              </Link>
-              <Link
-                href={`/store/${provider.id}`}
-                className="pill-interactive pill-interactive-orange"
-                style={{ textDecoration: 'none', padding: '9px 16px', fontSize: '12px', display: 'flex', alignItems: 'center', gap: '6px' }}
-              >
-                <GlobeIcon size={14} color="#FFFFFF" />
-                <span>Live Storefront ({provider.id})</span>
-                <ExternalLinkIcon size={12} color="#FFFFFF" />
-              </Link>
-              <Link
-                href="/commerce/store/builder"
-                className="pill-interactive"
-                style={{ textDecoration: 'none', padding: '9px 16px', fontSize: '12px', display: 'flex', alignItems: 'center', gap: '6px' }}
-              >
-                <DynamicIcon name="builder" size={14} color="#A3AED0" />
-                <span>Store Builder</span>
-              </Link>
-              <Link
-                href="/commerce/orders"
-                className="pill-interactive"
-                style={{ textDecoration: 'none', padding: '9px 16px', fontSize: '12px', display: 'flex', alignItems: 'center', gap: '6px' }}
-              >
-                <PackageIcon size={14} color="#A3AED0" />
-                <span>Orders</span>
-              </Link>
-              <Link
-                href="/commerce/products"
-                className="pill-interactive"
-                style={{ textDecoration: 'none', padding: '9px 16px', fontSize: '12px', display: 'flex', alignItems: 'center', gap: '6px' }}
-              >
-                <ShoppingBagIcon size={14} color="#A3AED0" />
-                <span>Products & SKUs</span>
-              </Link>
-              <Link
-                href="/commerce/customers"
-                className="pill-interactive"
-                style={{ textDecoration: 'none', padding: '9px 16px', fontSize: '12px', display: 'flex', alignItems: 'center', gap: '6px' }}
-              >
-                <UsersIcon size={14} color="#A3AED0" />
-                <span>Customers</span>
-              </Link>
-            </>
-          )}
-
           {categorySlug === 'restaurants' && (
             <>
               <Link
@@ -468,132 +413,14 @@ export default function ProviderDetailPage({ params }: PageProps) {
                 <ExternalLinkIcon size={13} color="#FFFFFF" />
               </Link>
               <Link
-                href="/commerce/orders"
+                href="/kds"
                 className="pill-interactive"
                 style={{ textDecoration: 'none', padding: '9px 16px', fontSize: '12px', display: 'flex', alignItems: 'center', gap: '6px' }}
               >
                 <PackageIcon size={14} color="#A3AED0" />
-                <span>Table Tickets & Orders</span>
-              </Link>
-              <Link
-                href="/inventory/items"
-                className="pill-interactive"
-                style={{ textDecoration: 'none', padding: '9px 16px', fontSize: '12px', display: 'flex', alignItems: 'center', gap: '6px' }}
-              >
-                <PackageIcon size={14} color="#A3AED0" />
-                <span>Kitchen Stock</span>
-              </Link>
-              <Link
-                href="/finance/invoices"
-                className="pill-interactive"
-                style={{ textDecoration: 'none', padding: '9px 16px', fontSize: '12px', display: 'flex', alignItems: 'center', gap: '6px' }}
-              >
-                <CreditCardIcon size={14} color="#A3AED0" />
-                <span>Dining Invoices</span>
+                <span>Live Kitchen Display</span>
               </Link>
             </>
-          )}
-
-          {categorySlug === 'education' && (
-            <>
-              <Link
-                href="/admin/services/school"
-                className="pill-interactive pill-interactive-primary"
-                style={{ textDecoration: 'none', padding: '9px 18px', fontSize: '12.5px', display: 'flex', alignItems: 'center', gap: '7px' }}
-              >
-                <GraduationCapIcon size={16} color="#FFFFFF" />
-                <span>Campus & School OS</span>
-                <ExternalLinkIcon size={13} color="#FFFFFF" />
-              </Link>
-              <Link
-                href="/crm/leads"
-                className="pill-interactive"
-                style={{ textDecoration: 'none', padding: '9px 16px', fontSize: '12px', display: 'flex', alignItems: 'center', gap: '6px' }}
-              >
-                <BriefcaseIcon size={14} color="#A3AED0" />
-                <span>Student Admissions</span>
-              </Link>
-              <Link
-                href="/finance/invoices"
-                className="pill-interactive"
-                style={{ textDecoration: 'none', padding: '9px 16px', fontSize: '12px', display: 'flex', alignItems: 'center', gap: '6px' }}
-              >
-                <CreditCardIcon size={14} color="#A3AED0" />
-                <span>Tuition Billing</span>
-              </Link>
-            </>
-          )}
-
-          {categorySlug === 'retail' && (
-            <>
-              <Link
-                href="/admin/services/pos"
-                className="pill-interactive pill-interactive-primary"
-                style={{ textDecoration: 'none', padding: '9px 18px', fontSize: '12.5px', display: 'flex', alignItems: 'center', gap: '7px' }}
-              >
-                <StoreIcon size={16} color="#FFFFFF" />
-                <span>Omnichannel POS Register</span>
-                <ExternalLinkIcon size={13} color="#FFFFFF" />
-              </Link>
-              <Link
-                href="/inventory/items"
-                className="pill-interactive"
-                style={{ textDecoration: 'none', padding: '9px 16px', fontSize: '12px', display: 'flex', alignItems: 'center', gap: '6px' }}
-              >
-                <PackageIcon size={14} color="#A3AED0" />
-                <span>Barcodes & Inventory</span>
-              </Link>
-              <Link
-                href="/commerce/orders"
-                className="pill-interactive"
-                style={{ textDecoration: 'none', padding: '9px 16px', fontSize: '12px', display: 'flex', alignItems: 'center', gap: '6px' }}
-              >
-                <PackageIcon size={14} color="#A3AED0" />
-                <span>Register Sales</span>
-              </Link>
-            </>
-          )}
-
-          {/* Cross-Cutting Service Integrations */}
-          {provider.enabledServices.includes('crm') && categorySlug !== 'education' && (
-            <Link
-              href="/crm/leads"
-              className="pill-interactive"
-              style={{ textDecoration: 'none', padding: '9px 16px', fontSize: '12px', display: 'flex', alignItems: 'center', gap: '6px' }}
-            >
-              <BriefcaseIcon size={14} color="#A3AED0" />
-              <span>CRM Leads</span>
-            </Link>
-          )}
-          {provider.enabledServices.includes('inventory') && categorySlug !== 'ecommerce' && categorySlug !== 'restaurants' && categorySlug !== 'retail' && (
-            <Link
-              href="/inventory/items"
-              className="pill-interactive"
-              style={{ textDecoration: 'none', padding: '9px 16px', fontSize: '12px', display: 'flex', alignItems: 'center', gap: '6px' }}
-            >
-              <PackageIcon size={14} color="#A3AED0" />
-              <span>Inventory</span>
-            </Link>
-          )}
-          {provider.enabledServices.includes('finance') && categorySlug !== 'hospitals' && categorySlug !== 'restaurants' && categorySlug !== 'education' && (
-            <Link
-              href="/finance/invoices"
-              className="pill-interactive"
-              style={{ textDecoration: 'none', padding: '9px 16px', fontSize: '12px', display: 'flex', alignItems: 'center', gap: '6px' }}
-            >
-              <CreditCardIcon size={14} color="#A3AED0" />
-              <span>Finance Ledger</span>
-            </Link>
-          )}
-          {provider.enabledServices.includes('hrms') && (
-            <Link
-              href="/hrms/employees"
-              className="pill-interactive"
-              style={{ textDecoration: 'none', padding: '9px 16px', fontSize: '12px', display: 'flex', alignItems: 'center', gap: '6px' }}
-            >
-              <UsersIcon size={14} color="#A3AED0" />
-              <span>Staff & HRMS</span>
-            </Link>
           )}
         </div>
       </div>

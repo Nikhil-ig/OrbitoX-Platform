@@ -55,19 +55,19 @@ describe('1-Line createOrbitoX() SDK Initializer', () => {
     ).rejects.toThrow('Domain lock violation');
   });
 
-  it('should mount plugins and allow direct property access (app.crm)', async () => {
-    const mockCrmPlugin = {
-      id: 'crm',
-      createLead: (data: any) => ({ id: 'lead_123', ...data }),
+  it('should mount plugins and allow direct property access (app.hms)', async () => {
+    const mockHmsPlugin = {
+      id: 'hms',
+      registerPatient: (data: any) => ({ id: 'pat_123', ...data }),
     };
 
     const app = await createOrbitoX({
-      plugins: [mockCrmPlugin],
+      plugins: [mockHmsPlugin],
     });
 
-    expect(app.crm).toBeDefined();
-    const result = app.crm.createLead({ name: 'Dr. John' });
-    expect(result.id).toBe('lead_123');
+    expect(app.hms).toBeDefined();
+    const result = app.hms.registerPatient({ name: 'Dr. John' });
+    expect(result.id).toBe('pat_123');
     expect(result.name).toBe('Dr. John');
   });
 });

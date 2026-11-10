@@ -48,12 +48,6 @@ const passed: string[] = [];
 
 const globalTableAllowlist = new Set([
   '_prisma_migrations',
-  'CelebrationOccasionCategory',
-  'CelebrationOccasion',
-  'CelebrationTheme',
-  'CelebrationSectionDefinition',
-  'CelebrationFeatureDefinition',
-  'CelebrationPricingPlan',
   'PlatformIdempotencyRecord',
   'PlatformOrganization',
   'CustomerOrganizationClosureContext', // Transaction-scoped guard context is accessed only by its security-definer closure function.

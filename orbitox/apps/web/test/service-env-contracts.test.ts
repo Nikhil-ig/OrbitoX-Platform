@@ -70,7 +70,6 @@ const GLOBAL_DEV_TEST_IGNORE: ReadonlyMap<string, string> = new Map([
   ['ORBITOX_CONTROL_PLANE_URL', 'Client SDK routing endpoint override for local multi-service development.'],
   ['ORBITOX_DISABLE_AUTO_RESUME', 'Test runner flag to disable automatic tenant saga recovery.'],
   ['ORBITOX_DISABLE_KEY_USAGE_THROTTLE', 'Test runner flag to disable key usage throttling during stress tests.'],
-  ['ORBITOX_DISABLE_SAMPLE_PLUGINS', 'Test runner flag to bypass sample plugin registration.'],
   ['ORBITOX_DOMAIN', '1-line bootstrapper domain configuration parameter for embedded apps.'],
   ['ORBITOX_GRANT_KEY_ID', 'Legacy single grant key identifier superseded by ORBITOX_GRANT_SIGNING_KEYS.'],
   ['ORBITOX_GRANT_PRIVATE_KEY', 'Legacy single grant private key superseded by ORBITOX_GRANT_SIGNING_KEYS.'],

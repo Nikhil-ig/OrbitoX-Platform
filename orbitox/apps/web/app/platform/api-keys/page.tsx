@@ -18,7 +18,7 @@ export default function PlatformApiKeysPage() {
     name: '',
     projectId: '',
     environment: 'production',
-    capabilities: ['crm.leads.read', 'crm.leads.write'],
+    capabilities: ['hms.patients.read', 'restaurant.orders.read'],
     rateLimitPerMinute: 1000,
     expiresInDays: 90,
   });

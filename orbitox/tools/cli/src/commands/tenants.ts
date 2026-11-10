@@ -87,17 +87,13 @@ export async function commandTenants(subcommand: string, args: string[]): Promis
   const client = createOrbitoXClient({ baseUrl, apiKey });
 
   if (subcommand === 'create') {
-    // Catalogue-driven installable plugins filter (HospitalOS and RestaurantOS; CRM pending)
+    // Catalogue-driven installable plugins filter (HospitalOS and RestaurantOS only)
     const installablePlugins = ['hospital-os', 'restaurant-os'];
-    const canonical = pluginId.replace(/^@orbitox\//, '').toLowerCase();
+    const canonical = pluginId.replace(/^@orbitox(-io)?\//, '').toLowerCase();
     const resolvedPlugin = canonical === 'hms' ? 'hospital-os' : canonical === 'restaurant' ? 'restaurant-os' : canonical;
 
     if (!installablePlugins.includes(resolvedPlugin)) {
-      if (resolvedPlugin === 'crm') {
-        console.error(`\n❌ Error: Plugin "crm" is not installable while disabled (pending multi-tenant rebuild). Installable plugins: ${installablePlugins.join(', ')}\n`);
-      } else {
-        console.error(`\n❌ Error: Plugin "${pluginId}" is not installable. Installable plugins: ${installablePlugins.join(', ')}\n`);
-      }
+      console.error(`\n❌ Error: Plugin "${pluginId}" is not installable. Installable plugins: ${installablePlugins.join(', ')}\n`);
       process.exit(1);
     }
 

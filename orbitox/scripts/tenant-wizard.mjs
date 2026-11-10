@@ -43,14 +43,9 @@ const planTier = parseArg('--plan', 'starter');
 const apiKey = parseArg('--key', process.env.ORBITOX_CUSTOMER_API_KEY || '');
 const serverUrl = parseArg('--url', baseUrl);
 
-// Item 8 (3): Catalogue-driven installable plugins enforcement; CRM must not be offered while disabled
 const installablePlugins = ['hospital-os', 'restaurant-os'];
 if (!installablePlugins.includes(pluginId.toLowerCase())) {
-  if (pluginId.toLowerCase() === 'crm') {
-    console.error(`\n❌ [Wizard] Plugin "crm" is not installable while disabled (pending multi-tenant rebuild). Installable plugins: ${installablePlugins.join(', ')}\n`);
-  } else {
-    console.error(`\n❌ [Wizard] Plugin "${pluginId}" is not installable. Installable plugins: ${installablePlugins.join(', ')}\n`);
-  }
+  console.error(`\n❌ [Wizard] Plugin "${pluginId}" is not installable. Installable plugins: ${installablePlugins.join(', ')}\n`);
   process.exit(1);
 }
 

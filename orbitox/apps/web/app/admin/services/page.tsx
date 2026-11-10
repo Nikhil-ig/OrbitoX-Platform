@@ -18,14 +18,7 @@ export default function ServicesPage() {
   const categories = [
     { id: 'all', label: 'All Categories' },
     { id: 'healthcare', label: 'Healthcare' },
-    { id: 'ecommerce', label: 'E-Commerce' },
-    { id: 'sales', label: 'CRM & Sales' },
     { id: 'restaurant', label: 'Restaurant' },
-    { id: 'finance', label: 'Finance' },
-    { id: 'logistics', label: 'Logistics' },
-    { id: 'hr', label: 'HR & People' },
-    { id: 'education', label: 'Education' },
-    { id: 'retail', label: 'Retail POS' },
   ];
 
   const filteredServices = services.filter((s) => {

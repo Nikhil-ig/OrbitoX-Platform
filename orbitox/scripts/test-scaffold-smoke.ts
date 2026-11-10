@@ -107,7 +107,6 @@ async function run() {
       'packages/plugin-engine',
       'packages/runtime',
       'plugins/pos',
-      'plugins/crm',
       'tools/cli',
     ];
 
@@ -192,93 +191,26 @@ async function run() {
     }
 
     // -------------------------------------------------------------------------
-    // Step 3: Test Template 2 - CRM SaaS (my-crm)
+    // Step 3: Test Template 2 - HospitalOS SaaS (my-hms)
     // -------------------------------------------------------------------------
-    console.log('\n[3/4] Testing Template 2: CRM SaaS (my-crm)...');
-    const crmDir = path.join(TEMP_ROOT, 'my-crm');
-    execSync(`node "${cliBin}" create my-crm --template=crm --install-mode=file --pack-dir="${TARBALL_DIR}" --skip-install`, {
+    console.log('\n[3/3] Testing Template 2: HospitalOS SaaS (my-hms)...');
+    const hmsDir = path.join(TEMP_ROOT, 'my-hms');
+    execSync(`node "${cliBin}" create my-hms --template=hms --install-mode=file --pack-dir="${TARBALL_DIR}" --skip-install`, {
       cwd: TEMP_ROOT,
       stdio: 'pipe',
     });
 
-    assert(fs.existsSync(path.join(crmDir, 'orbitox.config.ts')), 'my-crm: orbitox.config.ts created');
-    assert(fs.existsSync(path.join(crmDir, 'docker-compose.yml')), 'my-crm: docker-compose.yml created');
-    assert(fs.existsSync(path.join(crmDir, 'package.json')), 'my-crm: package.json created');
-    assert(fs.existsSync(path.join(crmDir, 'src/main.ts')), 'my-crm: src/main.ts created');
+    assert(fs.existsSync(path.join(hmsDir, 'orbitox.config.ts')), 'my-hms: orbitox.config.ts created');
+    assert(fs.existsSync(path.join(hmsDir, 'docker-compose.yml')), 'my-hms: docker-compose.yml created');
+    assert(fs.existsSync(path.join(hmsDir, 'package.json')), 'my-hms: package.json created');
+    assert(fs.existsSync(path.join(hmsDir, 'src/main.ts')), 'my-hms: src/main.ts created');
 
-    console.log('  -> Installing dependencies into my-crm...');
-    execSync('npm install --no-audit --no-fund', { cwd: crmDir, stdio: 'pipe' });
+    console.log('  -> Installing dependencies into my-hms...');
+    execSync('npm install --no-audit --no-fund', { cwd: hmsDir, stdio: 'pipe' });
 
-    console.log('  -> Verifying TypeScript build for my-crm...');
-    execSync('npm run build', { cwd: crmDir, stdio: 'inherit' });
-    console.log('  ✅ my-crm TypeScript compilation passed cleanly.');
-
-    console.log('  -> Booting my-crm runtime on port 4051...');
-    const crmPort = 4051;
-    const crmProc: ChildProcess = spawn('npx', ['-y', 'tsx', 'src/main.ts'], {
-      cwd: crmDir,
-      env: {
-        ...process.env,
-        PORT: String(crmPort),
-        NODE_ENV: 'test',
-        ORBITOX_TEST_MODE: '0',
-      },
-      stdio: 'pipe',
-    });
-    crmProc.stdout?.pipe(process.stdout);
-    crmProc.stderr?.pipe(process.stderr);
-
-    try {
-      await waitForHealth(crmPort);
-      console.log('  ✅ my-crm /health endpoint is responding 200 UP.');
-
-      // Create a lead through composed @orbitox/crm plugin
-      console.log('  -> Creating enterprise lead through composed @orbitox/crm engine...');
-      const createLeadRes = await makeHttpRequest(
-        crmPort,
-        'POST',
-        '/api/crm/leads',
-        {
-          'x-tenant-id': 'tenant_acme_corp',
-          Authorization: 'Bearer test_crm_rep_token_456',
-        },
-        {
-          name: 'Sarah Connor',
-          email: 'sconnor@cyberdyne.org',
-          company: 'Cyberdyne Systems',
-          estimatedValue: 75000,
-        }
-      );
-
-      assert(createLeadRes.status === 201, `my-crm create lead returned 201 Created (got: ${createLeadRes.status})`);
-      assert(Boolean(createLeadRes.body.data.id), 'my-crm lead response has id');
-      assert(createLeadRes.body.data.status === 'NEW', 'my-crm lead initial state is NEW');
-      assert(createLeadRes.body.data.score === 100, `my-crm calculated lead score is 100 (got: ${createLeadRes.body.data.score})`);
-
-      const leadId = createLeadRes.body.data.id;
-      console.log(`  ✅ CRM Lead created: ID=${leadId}, Score=${createLeadRes.body.data.score}/100, Status=${createLeadRes.body.data.status}`);
-
-      // Transition lead to CONTACTED
-      console.log('  -> Transitioning lead status NEW -> CONTACTED through state machine...');
-      const transitionRes = await makeHttpRequest(
-        crmPort,
-        'POST',
-        `/api/crm/leads/${leadId}/status`,
-        {
-          'x-tenant-id': 'tenant_acme_corp',
-          Authorization: 'Bearer test_crm_rep_token_456',
-        },
-        {
-          nextStatus: 'CONTACTED',
-        }
-      );
-
-      assert(transitionRes.status === 200, `my-crm transition returned 200 OK (got: ${transitionRes.status})`);
-      assert(transitionRes.body.data.status === 'CONTACTED', 'my-crm lead status successfully transitioned to CONTACTED');
-      console.log(`  ✅ State machine transition validated: NEW -> CONTACTED`);
-    } finally {
-      crmProc.kill();
-    }
+    console.log('  -> Verifying TypeScript build for my-hms...');
+    execSync('npm run build', { cwd: hmsDir, stdio: 'inherit' });
+    console.log('  ✅ my-hms TypeScript compilation passed cleanly.');
 
     // -------------------------------------------------------------------------
     // Final Summary
@@ -286,7 +218,7 @@ async function run() {
     console.log('\n======================================================================');
     console.log('🎉 ALL SCAFFOLDING & COMPOSABILITY SMOKE TESTS PASSED 100%!');
     console.log('   - Template [restaurant]: Composes @orbitox/pos + tenancy + order lifecycle');
-    console.log('   - Template [crm]:        Composes @orbitox/crm + tenancy + lead state machine');
+    console.log('   - Template [hms]:        Composes HospitalOS config + tenancy');
     console.log('======================================================================\n');
   } finally {
     cleanup();

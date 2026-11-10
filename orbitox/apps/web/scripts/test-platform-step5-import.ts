@@ -144,7 +144,6 @@ function spawnServer(port: number, envOverrides: Record<string, string> = {}): C
       HMS_AUDIT_DATABASE_URL: boundedUrl(hmsAuditUrl),
       OUTBOX_RELAY_DATABASE_URL: boundedUrl(outboxRelayUrl),
       MAINTENANCE_DATABASE_URL: boundedUrl(maintenanceUrl),
-      ORBITOX_ENABLE_CRM_PLUGIN: 'true',
       ...envOverrides,
     },
     stdio: ['pipe', 'pipe', 'pipe'],
@@ -905,7 +904,7 @@ async function main() {
   console.log(`Server healthy on port ${port}.\n`);
 
   // Test 5A: Key with verifier authenticates successfully
-  const validRes = await fetch(`http://127.0.0.1:${port}/api/v1/crm/leads`, {
+  const validRes = await fetch(`http://127.0.0.1:${port}/api/v1/hms/patients`, {
     headers: {
       'x-api-key': validSecret,
       'x-tenant-id': 'omni-freight',
@@ -920,7 +919,7 @@ async function main() {
   console.log('✔ Migrated key with valid verifier authenticated successfully.');
 
   // Test 5B: Legacy key without verifier must NOT authenticate (REVOKED / dummy verifier)
-  const invalidRes = await fetch(`http://127.0.0.1:${port}/api/v1/crm/leads`, {
+  const invalidRes = await fetch(`http://127.0.0.1:${port}/api/v1/hms/patients`, {
     headers: {
       'x-api-key': legacyUnverifiedSecret,
       'x-tenant-id': 'mednet-inpatient',
@@ -962,7 +961,7 @@ async function main() {
   );
 
   // Fire another billable request
-  await fetch(`http://127.0.0.1:${port}/api/v1/crm/leads`, {
+  await fetch(`http://127.0.0.1:${port}/api/v1/hms/patients`, {
     headers: { 'x-api-key': validSecret, 'x-tenant-id': 'omni-freight' },
   });
 
@@ -1010,7 +1009,7 @@ async function main() {
 
   // 8A: Live HTTP cross-tenant scope enforcement
   // Attempt 1: Key authenticated for omni-freight attempts to access with x-tenant-id: mednet-inpatient
-  const spoofedTenantRes = await fetch(`http://127.0.0.1:${port}/api/v1/crm/leads`, {
+  const spoofedTenantRes = await fetch(`http://127.0.0.1:${port}/api/v1/hms/patients`, {
     headers: {
       'x-api-key': validSecret,
       'x-tenant-id': 'mednet-inpatient',

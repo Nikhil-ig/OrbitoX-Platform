@@ -47,7 +47,7 @@ describe('PlatformRepository (Normalized Domain Access & Cryptographic Binding)'
         planTier: 'enterprise',
         technicalLead: 'Elena Rostova',
         contactEmail: 'dev@nexus.io',
-        initialPackages: ['@orbitox/pos', '@orbitox/inventory'],
+        initialPackages: ['@orbitox/hms', '@orbitox/restaurant'],
       });
 
       expect(created.project.id.startsWith('proj_nexus-retail_')).toBe(true);
@@ -62,7 +62,7 @@ describe('PlatformRepository (Normalized Domain Access & Cryptographic Binding)'
       const prodEnv = created.environments.find((e) => e.slug === 'production')!;
       const installations = PlatformRepository.listInstallations(prodEnv.id);
       expect(installations.length).toBe(2);
-      expect(installations.some((i) => i.packageId === '@orbitox/pos')).toBe(true);
+      expect(installations.some((i) => i.packageId === '@orbitox/hms')).toBe(true);
     });
 
     it('generates unique slugs for repeated names and rejects case-insensitive collisions', () => {
@@ -238,14 +238,14 @@ describe('PlatformRepository (Normalized Domain Access & Cryptographic Binding)'
         planTier: 'starter',
         technicalLead: 'Shutdown Test',
         contactEmail: 'shutdown@orbitox.io',
-        enabledServices: ['crm'],
+        enabledServices: ['hms'],
       }).project;
       const environment = PlatformRepository.listEnvironments(project.id).find((item) => item.isProduction)!;
       const key = PlatformRepository.createApiKey({
         name: 'Immediate Shutdown Revocation Key',
         environmentId: environment.id,
         projectId: project.id,
-        capabilities: ['crm:read'],
+        capabilities: ['hms:read'],
         createdBy: 'test-suite',
       });
       PlatformRepository.saveImmediate();
@@ -564,7 +564,7 @@ describe('PlatformRepository (Normalized Domain Access & Cryptographic Binding)'
         planTier: 'enterprise',
         technicalLead: 'Lead Architect',
         contactEmail: 'pos@durable.io',
-        initialPackages: ['@orbitox/pos'],
+        initialPackages: ['@orbitox/restaurant'],
       });
       expect(project.id).toBeDefined();
       const prodEnv = environments.find((e) => e.isProduction)!;
@@ -574,7 +574,7 @@ describe('PlatformRepository (Normalized Domain Access & Cryptographic Binding)'
         name: 'Durable Terminal Key',
         environmentId: prodEnv.id,
         projectId: project.id,
-        capabilities: ['pos.orders.write', 'pos.orders.read'],
+        capabilities: ['restaurant.orders.write', 'restaurant.orders.read'],
         createdBy: 'admin@durable.io',
       });
       expect(rawSecret).toBeDefined();
@@ -630,7 +630,7 @@ describe('PlatformRepository (Normalized Domain Access & Cryptographic Binding)'
       const reloadedKey = PlatformRepository.getApiKey(keyRecord.keyId);
       expect(reloadedKey).toBeDefined();
       expect(reloadedKey?.authVerifier).toBe(keyRecord.authVerifier);
-      expect(reloadedKey?.capabilities).toContain('pos.orders.write');
+      expect(reloadedKey?.capabilities).toContain('restaurant.orders.write');
 
       // Verify that findKeyByRawSecret still works with cryptographic constant-time comparison
       const validatedKey = PlatformRepository.findKeyByRawSecret(rawSecret);

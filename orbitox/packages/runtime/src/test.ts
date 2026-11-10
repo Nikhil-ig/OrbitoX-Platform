@@ -108,7 +108,7 @@ async function run() {
   // 11.1 Plan Builder
   const easyPlan = await orbitox.billing.buildPlan('Enterprise')
     .price(999, 'USD', 'year')
-    .includeFeatures('crm', 'ai_assistant', 'sso')
+    .includeFeatures('hms', 'ai_assistant', 'sso')
     .limit('maxUsers', 1000)
     .publish();
   console.log('Builder created plan:', easyPlan.name, easyPlan.features);

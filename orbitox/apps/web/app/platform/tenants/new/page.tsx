@@ -74,7 +74,7 @@ export default function TenantProvisioningWizardPage() {
         const data = await res.json();
         if (Array.isArray(data.plugins) && data.plugins.length > 0) {
           const valid = data.plugins
-            .filter((p: any) => p.installable !== false && p.id !== 'crm')
+            .filter((p: any) => p.installable !== false)
             .map((p: any, idx: number) => ({
               id: p.id,
               name: p.name,

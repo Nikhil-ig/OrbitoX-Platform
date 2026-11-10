@@ -64,12 +64,12 @@ const INITIAL_LOGS: TelemetryLogEntry[] = [
   },
   {
     id: 'log-5',
-    tenantId: 'aura-luxury',
-    categorySlug: 'ecommerce',
+    tenantId: 'bella-italia',
+    categorySlug: 'restaurants',
     timestamp: '19:52:45',
-    facade: 'BillingFacade',
+    facade: 'EventsFacade',
     level: 'INFO',
-    message: 'Stripe token authorized for Order #ORD-9821 ($420.00). Rate limit meter ticked.',
+    message: 'Table #8 kitchen firing dispatched to Woodfire Station. Quote verification hash matched.',
   },
   {
     id: 'log-6',
@@ -114,12 +114,12 @@ export const INITIAL_ACTIVITIES: ActivityItem[] = [
   },
   {
     id: 'act-3',
-    title: 'Aura Luxury Boutiques',
-    subtitle: 'Commerce Global Checkout',
+    title: 'Bella Italia Hospitality',
+    subtitle: 'Kitchen Display Order Batch',
     amount: '$169',
     type: 'send',
     badgeLabel: 'Send',
-    icon: 'ecommerce',
+    icon: 'restaurant',
     timestamp: 'Today',
   },
   {
@@ -707,7 +707,7 @@ export function AdminProvider({ children }: { children: React.ReactNode }) {
     addTelemetryLog({
       tenantId: params.tenantId,
       categorySlug: params.categorySlug,
-      facade: params.serviceId === 'commerce' ? 'BillingFacade' : params.serviceId === 'hms' ? 'EventsFacade' : 'ContextFacade',
+      facade: params.serviceId === 'restaurant' ? 'EventsFacade' : params.serviceId === 'hms' ? 'EventsFacade' : 'ContextFacade',
       level: params.level || 'INFO',
       message: `[${params.serviceId.toUpperCase()}] ${params.action} for ${params.tenantName || params.tenantId || 'system'}: ${params.details}`,
     });

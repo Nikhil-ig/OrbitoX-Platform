@@ -7,14 +7,7 @@
 export type CorePackageNamespace =
   | 'platform'
   | 'restaurant'
-  | 'pos'
-  | 'commerce'
-  | 'crm'
-  | 'finance'
-  | 'inventory'
   | 'hms'
-  | 'hrms'
-  | 'school'
   | 'system';
 
 export type PlatformCapability =
@@ -53,40 +46,6 @@ export type PlatformCapability =
   | 'restaurant.tables.view'
   | 'restaurant.tables.reserve'
   
-  // ─── Point of Sale (POS) ───
-  | 'pos.checkout.process'
-  | 'pos.drawer.open'
-  | 'pos.receipts.generate'
-  | 'pos.terminals.sync'
-  
-  // ─── Commerce & Storefront ───
-  | 'commerce.catalog.read'
-  | 'commerce.catalog.manage'
-  | 'commerce.checkout.initiate'
-  | 'commerce.orders.read'
-  | 'commerce.orders.fulfill'
-  | 'commerce.payments.charge'
-  | 'commerce.themes.manage'
-  
-  // ─── CRM & Pipeline ───
-  | 'crm.leads.read'
-  | 'crm.leads.create'
-  | 'crm.leads.update'
-  | 'crm.deals.read'
-  | 'crm.deals.manage'
-  
-  // ─── Finance & Ledger ───
-  | 'finance.ledger.read'
-  | 'finance.invoices.read'
-  | 'finance.invoices.generate'
-  | 'finance.tax.estimate'
-  
-  // ─── Inventory & Supply Chain ───
-  | 'inventory.stock.read'
-  | 'inventory.stock.adjust'
-  | 'inventory.warehouses.read'
-  | 'inventory.warehouses.manage'
-  
   // ─── Healthcare (HMS) ───
   | 'hms.patients.read'
   | 'hms.patients.register'
@@ -94,20 +53,7 @@ export type PlatformCapability =
   | 'hms.beds.view'
   | 'hms.beds.allocate'
   | 'hms.pharmacy.dispense'
-  | 'hms.telemetry.stream'
-  
-  // ─── HRMS & Workforce ───
-  | 'hrms.employees.read'
-  | 'hrms.employees.manage'
-  | 'hrms.leave.request'
-  | 'hrms.leave.approve'
-  | 'hrms.payroll.process'
-  
-  // ─── School & Campus ───
-  | 'school.students.read'
-  | 'school.students.enroll'
-  | 'school.attendance.log'
-  | 'school.courses.manage';
+  | 'hms.telemetry.stream';
 
 export interface CapabilityPreset {
   id: string;
@@ -163,8 +109,6 @@ export const CAPABILITY_PRESETS: Record<string, CapabilityPreset> = {
       'restaurant.tables.reserve',
       'restaurant.kds.view',
       'restaurant.kds.fire',
-      'pos.checkout.process',
-      'pos.receipts.generate',
     ],
   },
 
@@ -191,22 +135,6 @@ export const CAPABILITY_PRESETS: Record<string, CapabilityPreset> = {
       'hms.triage.execute',
       'hms.beds.view',
       'hms.beds.allocate',
-    ],
-  },
-
-  // ─── Commerce Presets ───
-  'commerce_erp_integration': {
-    id: 'commerce_erp_integration',
-    name: 'E-Commerce ERP & Warehouse Sync',
-    description: 'Machine automation credential for updating catalog SKUs and synchronizing order fulfillment.',
-    packageNamespace: 'commerce',
-    capabilities: [
-      'commerce.catalog.read',
-      'commerce.catalog.manage',
-      'commerce.orders.read',
-      'commerce.orders.fulfill',
-      'inventory.stock.read',
-      'inventory.stock.adjust',
     ],
   },
 

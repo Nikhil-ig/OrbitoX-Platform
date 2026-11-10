@@ -39,7 +39,6 @@ const previousRepositoryMode = process.env.ORBITOX_PLATFORM_REPOSITORY;
 const previousAdminToken = process.env.ORBITOX_ADMIN_TOKEN;
 const previousAdminTokenScopes = process.env.ORBITOX_ADMIN_TOKEN_SCOPES;
 const previousServerPepper = process.env.ORBITOX_SERVER_PEPPER;
-const previousCrmPlugin = process.env.ORBITOX_ENABLE_CRM_PLUGIN;
 
 function pass(name: string): void {
   passed.push(name);
@@ -48,7 +47,6 @@ function pass(name: string): void {
 
 async function main(): Promise<void> {
   process.env.ORBITOX_SERVER_PEPPER = `step2-server-pepper-${suffix}`;
-  process.env.ORBITOX_ENABLE_CRM_PLUGIN = 'true';
   const organization = await repository.createOrganization({
     slug: organizationSlug,
     name: `Step 2 ${suffix}`,
@@ -64,7 +62,7 @@ async function main(): Promise<void> {
     plan: 'starter',
     technicalLead: 'Step 2 test',
     contactEmail: `step2-${suffix}@example.test`,
-    enabledServices: ['crm'],
+    enabledServices: ['hms'],
     apiCallQuota: 2,
   });
   projectId = created.project.id;
@@ -75,7 +73,7 @@ async function main(): Promise<void> {
     name: `Step 2 key ${suffix}`,
     environmentId: environment.id,
     projectId: created.project.id,
-    capabilities: ['crm:read'],
+    capabilities: ['hms:read'],
     tenantScope: [created.project.slug],
     createdBy: 'step2-test',
   });
@@ -108,11 +106,11 @@ async function main(): Promise<void> {
     'GET:/api/v1/platform/api-keys,GET:/api/v1/platform/api-keys/*';
   const { withApiGuard, PlatformApiState } = await import('../app/api/v1/_lib/api-guard');
   const handler = withApiGuard(
-    { serviceId: 'crm', serviceName: 'CRM Service' },
+    { serviceId: 'hms', serviceName: 'HMS Service' },
     async (_request, context) => NextResponse.json({ success: true, tenantId: context.tenantId }),
   );
   const response = await handler(
-    new NextRequest('http://localhost/api/v1/crm/leads', {
+    new NextRequest('http://localhost/api/v1/hms/patients', {
       headers: { 'x-api-key': apiKey.rawSecret },
     }),
   );
@@ -350,8 +348,6 @@ main()
     else process.env.ORBITOX_ADMIN_TOKEN = previousAdminToken;
     if (previousServerPepper === undefined) delete process.env.ORBITOX_SERVER_PEPPER;
     else process.env.ORBITOX_SERVER_PEPPER = previousServerPepper;
-    if (previousCrmPlugin === undefined) delete process.env.ORBITOX_ENABLE_CRM_PLUGIN;
-    else process.env.ORBITOX_ENABLE_CRM_PLUGIN = previousCrmPlugin;
     if (platformAuditId) {
       await owner.$executeRaw`DELETE FROM "PlatformAuditEvent" WHERE "id" = ${platformAuditId}`.catch(
         () => undefined,
