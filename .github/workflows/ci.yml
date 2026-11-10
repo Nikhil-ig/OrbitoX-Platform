@@ -949,6 +949,101 @@ jobs:
           MAINTENANCE_DATABASE_URL: postgresql://orbitox_maintenance:maint_test_password@127.0.0.1:5432/orbitox_staging_sim
           OUTBOX_RELAY_DATABASE_URL: postgresql://orbitox_outbox_relay:relay_test_password@127.0.0.1:5432/orbitox_staging_sim
 
+  data-rights-6g:
+    name: Phase 6G Data Rights (Export, Erasure, DSR & Cross-Tenant Isolation)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: orbitox_phase2
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgrespassword
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v5
+      - uses: pnpm/action-setup@v5
+        with:
+          version: 9.15.0
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: |
+            orbitox/pnpm-lock.yaml
+            projects/external-os/restaurant-os/pnpm-lock.yaml
+
+      - name: Install and build OrbitoX workspace packages
+        working-directory: orbitox
+        run: |
+          pnpm install --frozen-lockfile --ignore-scripts
+          pnpm exec prisma generate --schema prisma/schema.prisma
+          pnpm exec turbo run build --filter='web^...'
+
+      - name: Install RestaurantOS dependencies & generate Prisma client
+        working-directory: projects/external-os/restaurant-os
+        run: |
+          pnpm install --frozen-lockfile
+          pnpm exec prisma generate
+
+      - name: Deploy OrbitoX & RestaurantOS schemas and configure roles/RLS
+        run: |
+          PGPASSWORD=postgrespassword psql -h 127.0.0.1 -U postgres -d orbitox_phase2 -c "CREATE DATABASE restaurant_os;"
+          (
+            cd orbitox
+            pnpm exec prisma migrate deploy --schema prisma/schema.prisma
+            pnpm exec prisma migrate diff --from-url "$DATABASE_URL" --to-schema-datamodel prisma/schema.prisma --exit-code
+            PGPASSWORD=postgrespassword psql "$DATABASE_URL" -v ON_ERROR_STOP=1 \
+              -v app_role_password="$APP_DB_PASSWORD" \
+              -v maintenance_role_password="$MAINTENANCE_DB_PASSWORD" \
+              -v platform_admin_audit_password="$PLATFORM_ADMIN_AUDIT_DB_PASSWORD" \
+              -v hms_audit_reader_password="$HMS_AUDIT_DB_PASSWORD" \
+              -v outbox_relay_password="$OUTBOX_RELAY_DB_PASSWORD" \
+              -f scripts/configure-step1-runtime-role.sql
+          )
+          (
+            cd projects/external-os/restaurant-os
+            DATABASE_URL="$RESTAURANT_OS_DATABASE_URL" pnpm exec prisma migrate deploy
+            DATABASE_URL="$RESTAURANT_OS_DATABASE_URL" APP_DB_PASSWORD="$REST_APP_DB_PASSWORD" pnpm exec tsx scripts/setup-postgres-rls.ts
+          )
+        env:
+          DATABASE_URL: postgresql://postgres:postgrespassword@127.0.0.1:5432/orbitox_phase2
+          RESTAURANT_OS_DATABASE_URL: postgresql://postgres:postgrespassword@127.0.0.1:5432/restaurant_os
+          APP_DB_PASSWORD: phase2-ci-${{ github.run_id }}-${{ github.run_attempt }}
+          MAINTENANCE_DB_PASSWORD: phase2-maint-${{ github.run_id }}-${{ github.run_attempt }}
+          PLATFORM_ADMIN_AUDIT_DB_PASSWORD: phase2-audit-${{ github.run_id }}-${{ github.run_attempt }}
+          HMS_AUDIT_DB_PASSWORD: phase2-auditreader-${{ github.run_id }}-${{ github.run_attempt }}
+          OUTBOX_RELAY_DB_PASSWORD: phase2-relay-${{ github.run_id }}-${{ github.run_attempt }}
+          REST_APP_DB_PASSWORD: test_app_pass_123
+
+      - name: Run Phase 6G Data Rights Integration Suite (G1-G5)
+        working-directory: orbitox
+        run: pnpm --filter web test:data-rights-6g
+        env:
+          NODE_ENV: test
+          DATABASE_URL: postgresql://postgres:postgrespassword@127.0.0.1:5432/orbitox_phase2
+          TEST_DATABASE_URL: postgresql://postgres:postgrespassword@127.0.0.1:5432/orbitox_phase2
+          APP_DATABASE_URL: postgresql://orbitox_runtime:phase2-ci-${{ github.run_id }}-${{ github.run_attempt }}@127.0.0.1:5432/orbitox_phase2
+          MAINTENANCE_DATABASE_URL: postgresql://orbitox_maintenance:phase2-maint-${{ github.run_id }}-${{ github.run_attempt }}@127.0.0.1:5432/orbitox_phase2
+          PLATFORM_AUDIT_DATABASE_URL: postgresql://orbitox_platform_admin_audit:phase2-audit-${{ github.run_id }}-${{ github.run_attempt }}@127.0.0.1:5432/orbitox_phase2
+          HMS_AUDIT_DATABASE_URL: postgresql://hms_audit_reader:phase2-auditreader-${{ github.run_id }}-${{ github.run_attempt }}@127.0.0.1:5432/orbitox_phase2
+          RESTAURANT_OS_DATABASE_URL: postgresql://postgres:postgrespassword@127.0.0.1:5432/restaurant_os
+          ORBITOX_EXPORT_MANIFEST_OUT: ${{ runner.temp }}/6g-export-manifest.json
+
+      - name: Upload Phase 6G export manifest artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: phase-6g-export-manifest
+          path: ${{ runner.temp }}/6g-export-manifest.json
+          if-no-files-found: error
+
   docker:
     name: Docker image builds
     runs-on: ubuntu-24.04
@@ -961,6 +1056,7 @@ jobs:
         platform-phase2-step4,
         platform-phase2-step5,
         rds-compatible-migrations,
+        data-rights-6g,
       ]
     steps:
       - uses: actions/checkout@v5

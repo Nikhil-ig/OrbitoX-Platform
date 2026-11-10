@@ -43,6 +43,17 @@ export const defaultBillingCancellationProvider: BillingCancellationProvider = {
   },
 };
 
+let billingProviderOverride: BillingCancellationProvider | null = null;
+
+export function setBillingCancellationProviderForTesting(
+  provider: BillingCancellationProvider | null,
+): void {
+  if (process.env.NODE_ENV !== 'test' && process.env.ORBITOX_TEST_STANDALONE !== 'true') {
+    throw new Error('Billing cancellation provider override is permitted only in test mode.');
+  }
+  billingProviderOverride = provider;
+}
+
 export interface DataRightsAdapters {
   hms: PluginDataRightsAdapter;
   restaurant: PluginDataRightsAdapter;
@@ -638,7 +649,8 @@ export async function scheduleOrganizationDeletion(input: {
   cancelledSubscriptionIds: string[];
 }> {
   const client = input.runtimePrisma ?? defaultRuntimePrisma;
-  const billingProvider = input.billingProvider ?? defaultBillingCancellationProvider;
+  const billingProvider =
+    input.billingProvider ?? billingProviderOverride ?? defaultBillingCancellationProvider;
   const now = input.now ?? new Date();
   const scheduledFor = new Date(now.getTime() + DELETION_COOLING_OFF_MS);
   const digest = digestOrganizationId(input.organizationId);
@@ -1256,6 +1268,13 @@ export async function processDueOrganizationDeletions(input: {
       );
 
       await maintenance.$transaction(async (tx) => {
+        await tx.organizationDeletionRequest.deleteMany({
+          where: {
+            organizationId,
+            id: { not: req.id },
+          },
+        });
+
         await tx.organizationDeletionRequest.update({
           where: { id: req.id },
           data: {

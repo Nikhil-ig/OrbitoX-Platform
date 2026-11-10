@@ -20,6 +20,7 @@
     "test:step5-import": "pnpm run prisma:generate && pnpm exec tsx scripts/test-platform-step5-import.ts",
     "platform:import": "pnpm run prisma:generate && pnpm exec tsx scripts/import-platform-json.ts",
     "test:api-no-token-sweep": "pnpm exec tsx scripts/live-api-no-token-sweep.ts",
+    "test:data-rights-6g": "pnpm run prisma:generate && pnpm exec tsx --test scripts/test-data-rights-6g.ts",
     "recover:platform-audit-intents": "pnpm exec tsx scripts/recover-platform-audit-intents.ts",
     "email:worker": "pnpm exec tsx scripts/account-email-worker.ts",
     "billing:grace-sweep": "pnpm exec tsx scripts/billing-grace-sweep.ts",

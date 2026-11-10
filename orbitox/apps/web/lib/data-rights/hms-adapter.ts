@@ -366,13 +366,13 @@ export class HospitalOsDataRightsAdapter implements PluginDataRightsAdapter {
         testType: string;
         status: string;
         resultSealed: string | null;
-        resultEnteredById: string | null;
+        resultedById: string | null;
         verifiedById: string | null;
         verifiedAt: string | null;
         updatedAt: string;
       }>(
         `SELECT "id", "patientId", "orderedById", "testType", "status", "resultSealed",
-                "resultEnteredById", "verifiedById", "verifiedAt", "updatedAt"
+                "resultedById", "verifiedById", "verifiedAt", "updatedAt"
          FROM "HmsLabOrder" ORDER BY "updatedAt" ASC, "id" ASC`,
       );
       const decryptedLabs: Array<Record<string, unknown>> = [];
@@ -393,7 +393,7 @@ export class HospitalOsDataRightsAdapter implements PluginDataRightsAdapter {
           result: tryOpenSealed(ring, lab.resultSealed, { tenantId, column: 'result', rowId: lab.id }, [
             'resultSealed',
           ]),
-          resultEnteredById: lab.resultEnteredById,
+          resultedById: lab.resultedById,
           verifiedById: lab.verifiedById,
           verifiedAt: lab.verifiedAt,
           updatedAt: lab.updatedAt,
@@ -408,7 +408,7 @@ export class HospitalOsDataRightsAdapter implements PluginDataRightsAdapter {
           'testType',
           'status',
           'result',
-          'resultEnteredById',
+          'resultedById',
           'verifiedById',
           'verifiedAt',
           'updatedAt',
