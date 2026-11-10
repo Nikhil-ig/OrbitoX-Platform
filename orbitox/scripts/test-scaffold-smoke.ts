@@ -95,13 +95,12 @@ async function run() {
     // -------------------------------------------------------------------------
     // Step 1: Pack foundational packages into TARBALL_DIR
     // -------------------------------------------------------------------------
-    console.log('\n[1/4] Packing local @orbitox/* packages for clean offline installation...');
+    console.log('\n[1/4] Packing local @orbitox-io/* packages for clean offline installation...');
     const PACKAGES = [
       'packages/types',
       'packages/utils',
       'packages/core',
       'packages/sdk',
-      'packages/services',
       'packages/ui',
       'packages/external-runtime-sdk',
       'packages/plugin-engine',
