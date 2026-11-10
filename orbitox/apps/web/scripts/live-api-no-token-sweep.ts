@@ -136,6 +136,12 @@ async function run() {
       k1: { privateKey: certPrivPem, publicKey: certPubPem },
     }),
     ORBITOX_DELETION_CERT_KEY_ACTIVE: 'k1',
+    ORBITOX_OBJECT_STORE_DRIVER: 's3',
+    ORBITOX_OBJECT_STORE_REGION: 'ap-south-1',
+    S3_BUCKET_NAME: 'orbitox-ci-api-sweep-exports',
+    ORBITOX_OBJECT_STORE_ENCRYPTION: 'client',
+    ORBITOX_EXPORT_ENCRYPTION_KEYS: JSON.stringify({ k1: crypto.randomBytes(32).toString('base64') }),
+    ORBITOX_EXPORT_ENCRYPTION_KEY_ACTIVE: 'k1',
     ORBITOX_GRANT_PUBLIC_KEYS: JSON.stringify({
       k1: grantPubPem,
     }),

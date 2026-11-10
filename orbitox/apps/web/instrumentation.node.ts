@@ -139,6 +139,18 @@ export async function registerNode() {
       }
     }
 
+    // ObjectStore configuration validation (Phase 6G G-7: explicit s3 driver, region, encryption mode)
+    try {
+      const { createObjectStoreFromEnv } = await import('./lib/data-rights/object-store');
+      createObjectStoreFromEnv(process.env);
+    } catch (objectStoreErr: unknown) {
+      problems.push(
+        `ObjectStore configuration is invalid: ${
+          objectStoreErr instanceof Error ? objectStoreErr.message : String(objectStoreErr)
+        }`,
+      );
+    }
+
     // Pepper ring validation (ORBITOX_SERVER_PEPPERS and ORBITOX_SERVER_PEPPER_ACTIVE in production)
     const rawPeppers = process.env.ORBITOX_SERVER_PEPPERS?.trim();
     const activePepper = process.env.ORBITOX_SERVER_PEPPER_ACTIVE?.trim();

@@ -116,6 +116,15 @@ function spawnServer(port: number, envOverrides: Record<string, string> = {}): C
       ...process.env,
       ORBITOX_DELETION_CERT_KEYS: process.env.ORBITOX_DELETION_CERT_KEYS || step3CertKeysJson,
       ORBITOX_DELETION_CERT_KEY_ACTIVE: process.env.ORBITOX_DELETION_CERT_KEY_ACTIVE || 'cert_k1',
+      ORBITOX_OBJECT_STORE_DRIVER: 's3',
+      ORBITOX_OBJECT_STORE_REGION: 'ap-south-1',
+      S3_BUCKET_NAME: 'orbitox-ci-step3-exports',
+      ORBITOX_OBJECT_STORE_ENCRYPTION: 'client',
+      ORBITOX_EXPORT_ENCRYPTION_KEYS:
+        process.env.ORBITOX_EXPORT_ENCRYPTION_KEYS ||
+        JSON.stringify({ k1: crypto.randomBytes(32).toString('base64') }),
+      ORBITOX_EXPORT_ENCRYPTION_KEY_ACTIVE:
+        process.env.ORBITOX_EXPORT_ENCRYPTION_KEY_ACTIVE || 'k1',
       PORT: String(port),
       HOSTNAME: '127.0.0.1',
       NODE_ENV: 'production',

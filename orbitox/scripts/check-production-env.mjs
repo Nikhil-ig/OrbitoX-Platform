@@ -272,6 +272,64 @@ if (isProduction) {
       purpose: 'Configured Ed25519 signing keys for issuing platform grants',
     });
   }
+
+  const objectStoreDriver = (process.env.ORBITOX_OBJECT_STORE_DRIVER || '').trim().toLowerCase();
+  if (objectStoreDriver !== 's3') {
+    errors.push({
+      name: 'ORBITOX_OBJECT_STORE_DRIVER',
+      reason:
+        objectStoreDriver === 'local'
+          ? 'ORBITOX_OBJECT_STORE_DRIVER=local is refused in production'
+          : 'Must be explicitly set to "s3" in production',
+      purpose: 'Zero-trust S3/S3-compatible ObjectStore backend for encrypted DSR export archives',
+    });
+  } else {
+    const osRegion =
+      process.env.ORBITOX_OBJECT_STORE_REGION?.trim() || process.env.AWS_REGION?.trim() || '';
+    if (!osRegion) {
+      errors.push({
+        name: 'ORBITOX_OBJECT_STORE_REGION',
+        reason: 'NOT SET (default us-east-1 fallback is prohibited)',
+        purpose: 'Explicit data-residency region (e.g. ap-south-1) for ObjectStore',
+      });
+    }
+    if (!process.env.S3_BUCKET_NAME?.trim()) {
+      errors.push({
+        name: 'S3_BUCKET_NAME',
+        reason: 'NOT SET',
+        purpose: 'Target bucket name for S3/S3-compatible ObjectStore archives',
+      });
+    }
+    const encMode = (process.env.ORBITOX_OBJECT_STORE_ENCRYPTION || '').trim().toLowerCase();
+    if (encMode !== 'kms' && encMode !== 'client') {
+      errors.push({
+        name: 'ORBITOX_OBJECT_STORE_ENCRYPTION',
+        reason: 'Must be explicitly set to "kms" or "client"',
+        purpose: 'Server-side AWS SSE-KMS vs client-side AES-256-GCM envelope encryption',
+      });
+    } else if (encMode === 'kms' && !process.env.ORBITOX_OBJECT_STORE_KMS_KEY_ID?.trim()) {
+      errors.push({
+        name: 'ORBITOX_OBJECT_STORE_KMS_KEY_ID',
+        reason: 'NOT SET (required when ORBITOX_OBJECT_STORE_ENCRYPTION=kms)',
+        purpose: 'AWS KMS CMK ARN/id for S3 SSE-KMS encryption',
+      });
+    } else if (encMode === 'client') {
+      if (!process.env.ORBITOX_EXPORT_ENCRYPTION_KEYS?.trim()) {
+        errors.push({
+          name: 'ORBITOX_EXPORT_ENCRYPTION_KEYS',
+          reason: 'NOT SET (required when ORBITOX_OBJECT_STORE_ENCRYPTION=client)',
+          purpose: 'JSON key ring of 32-byte AES-256-GCM keys for client-side export encryption',
+        });
+      }
+      if (!process.env.ORBITOX_EXPORT_ENCRYPTION_KEY_ACTIVE?.trim()) {
+        errors.push({
+          name: 'ORBITOX_EXPORT_ENCRYPTION_KEY_ACTIVE',
+          reason: 'NOT SET (required when ORBITOX_OBJECT_STORE_ENCRYPTION=client)',
+          purpose: 'Active key ID selector within ORBITOX_EXPORT_ENCRYPTION_KEYS',
+        });
+      }
+    }
+  }
 }
 
 for (const s of successes) {

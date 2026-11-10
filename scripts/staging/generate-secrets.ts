@@ -47,6 +47,7 @@ export const KEYED_ROTATABLE_SECRETS = [
   'ORBITOX_PHI_KEYS',
   'ORBITOX_GRANT_SIGNING_KEYS',
   'ORBITOX_DELETION_CERT_KEYS',
+  'ORBITOX_EXPORT_ENCRYPTION_KEYS',
   'ORBITOX_BRIDGE_KEYS',
   'ORBITOX_SERVER_PEPPERS',
 ] as const;
@@ -163,6 +164,13 @@ export function generatePhiKeys(): string {
   });
 }
 
+export function generateExportEncryptionKeys(): string {
+  const key32 = crypto.randomBytes(32).toString('base64');
+  return JSON.stringify({
+    k1: key32,
+  });
+}
+
 export function generatePepperRing(): string {
   return JSON.stringify({
     p1: crypto.randomBytes(32).toString('hex'),
@@ -204,6 +212,8 @@ export const SECRET_GENERATORS: Record<string, () => string> = {
   ORBITOX_GRANT_PUBLIC_KEYS: generateGrantPublicKeys,
   ORBITOX_DELETION_CERT_KEYS: generateEd25519GrantSigningKeys,
   ORBITOX_DELETION_CERT_KEY_ACTIVE: () => 'k1',
+  ORBITOX_EXPORT_ENCRYPTION_KEYS: generateExportEncryptionKeys,
+  ORBITOX_EXPORT_ENCRYPTION_KEY_ACTIVE: () => 'k1',
   ORBITOX_BRIDGE_KEYS: generateBridgeKeys,
   ORBITOX_BRIDGE_ACTIVE_KID: () => 'k1',
   ORBITOX_EMAIL_WEBHOOK_SECRET: () => 'whsec_' + crypto.randomBytes(32).toString('base64'),
@@ -401,6 +411,59 @@ export function handleAdditiveKeyRotation(options: {
 
     if (options.activate) {
       const activeSecretId = `orbitox/${env}/ORBITOX_DELETION_CERT_KEY_ACTIVE`;
+      runner(
+        [
+          'secretsmanager',
+          'put-secret-value',
+          '--secret-id',
+          activeSecretId,
+          '--secret-string',
+          'file:///dev/stdin',
+          '--region',
+          region,
+        ],
+        newKid,
+      );
+      console.log(`${name}: added key ${newKid} and activated it (preserved ${Object.keys(keysMap).length - 1} existing keys)`);
+      return { name, action: 'added-key', detail: `Added key ${newKid} and activated it` };
+    }
+
+    console.log(`${name}: added key ${newKid} (preserved ${Object.keys(keysMap).length - 1} existing keys, active key unchanged)`);
+    return { name, action: 'added-key', detail: `Added key ${newKid}` };
+  }
+
+  if (name === 'ORBITOX_EXPORT_ENCRYPTION_KEYS') {
+    let keysMap: Record<string, string> = {};
+    if (currentString) {
+      try {
+        keysMap = JSON.parse(currentString);
+      } catch {
+        throw new Error('Existing ORBITOX_EXPORT_ENCRYPTION_KEYS is not valid JSON.');
+      }
+    }
+    const newKid = `k${Object.keys(keysMap).length + 1}`;
+    keysMap[newKid] = crypto.randomBytes(32).toString('base64');
+
+    const putRes = runner(
+      [
+        'secretsmanager',
+        'put-secret-value',
+        '--secret-id',
+        secretId,
+        '--secret-string',
+        'file:///dev/stdin',
+        '--region',
+        region,
+      ],
+      JSON.stringify(keysMap),
+    );
+
+    if (putRes.status !== 0) {
+      throw new Error(`Failed to update ${secretId} in Secrets Manager.`);
+    }
+
+    if (options.activate) {
+      const activeSecretId = `orbitox/${env}/ORBITOX_EXPORT_ENCRYPTION_KEY_ACTIVE`;
       runner(
         [
           'secretsmanager',
@@ -652,7 +715,55 @@ export function handleActivateKey(options: {
     return { name: 'ORBITOX_DELETION_CERT_KEY_ACTIVE', action: 'activated', detail: `Activated deletion cert key ID ${kid}` };
   }
 
-  throw new Error(`Activation not supported for secret "${name}". Supported: ORBITOX_SERVER_PEPPERS, ORBITOX_DELETION_CERT_KEYS`);
+  if (name === 'ORBITOX_EXPORT_ENCRYPTION_KEYS') {
+    const exportSecretId = `orbitox/${env}/ORBITOX_EXPORT_ENCRYPTION_KEYS`;
+    const checkRes = runner([
+      'secretsmanager',
+      'get-secret-value',
+      '--secret-id',
+      exportSecretId,
+      '--region',
+      region,
+      '--output',
+      'json',
+    ]);
+    if (checkRes.status !== 0) {
+      throw new Error(`Failed to read ${exportSecretId} from Secrets Manager.`);
+    }
+    let parsed: Record<string, string> = {};
+    try {
+      parsed = JSON.parse(JSON.parse(checkRes.stdout).SecretString);
+    } catch {
+      throw new Error(`Invalid JSON in ${exportSecretId}`);
+    }
+    if (!parsed[kid]) {
+      throw new Error(
+        `Export encryption key "${kid}" does not exist in ${exportSecretId}. Existing keys: ${Object.keys(parsed).join(', ')}`,
+      );
+    }
+
+    const activeSecretId = `orbitox/${env}/ORBITOX_EXPORT_ENCRYPTION_KEY_ACTIVE`;
+    const putRes = runner(
+      [
+        'secretsmanager',
+        'put-secret-value',
+        '--secret-id',
+        activeSecretId,
+        '--secret-string',
+        'file:///dev/stdin',
+        '--region',
+        region,
+      ],
+      kid,
+    );
+    if (putRes.status !== 0) {
+      throw new Error(`Failed to update ${activeSecretId} in Secrets Manager.`);
+    }
+    console.log(`ORBITOX_EXPORT_ENCRYPTION_KEY_ACTIVE: activated export encryption key ID ${kid}`);
+    return { name: 'ORBITOX_EXPORT_ENCRYPTION_KEY_ACTIVE', action: 'activated', detail: `Activated export encryption key ID ${kid}` };
+  }
+
+  throw new Error(`Activation not supported for secret "${name}". Supported: ORBITOX_SERVER_PEPPERS, ORBITOX_DELETION_CERT_KEYS, ORBITOX_EXPORT_ENCRYPTION_KEYS`);
 }
 
 export function runDatabaseCredentialGenerator(options: {
@@ -847,6 +958,11 @@ export function runSecretGenerator(options: {
       if (target === 'ORBITOX_DELETION_CERT_KEY_ACTIVE') {
         throw new Error(
           `Secret "${target}" cannot be blind-rotated. Rotate deletion cert keys via --add-key=ORBITOX_DELETION_CERT_KEYS and promote via --activate=ORBITOX_DELETION_CERT_KEYS --kid=<ID>.`,
+        );
+      }
+      if (target === 'ORBITOX_EXPORT_ENCRYPTION_KEY_ACTIVE') {
+        throw new Error(
+          `Secret "${target}" cannot be blind-rotated. Rotate export encryption keys via --add-key=ORBITOX_EXPORT_ENCRYPTION_KEYS and promote via --activate=ORBITOX_EXPORT_ENCRYPTION_KEYS --kid=<ID>.`,
         );
       }
       throw new Error(`Secret "${target}" is not recognized or not eligible for rotation.`);

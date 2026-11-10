@@ -9,14 +9,24 @@ export class S3Adapter implements StorageProvider {
   private bucket: string;
 
   constructor() {
+    const region = process.env.ORBITOX_OBJECT_STORE_REGION?.trim() || process.env.AWS_REGION?.trim();
+    if (!region) {
+      throw new Error(
+        'S3Adapter requires explicit region (ORBITOX_OBJECT_STORE_REGION or AWS_REGION); default us-east-1 fallback is prohibited.',
+      );
+    }
+    const bucket = process.env.S3_BUCKET_NAME?.trim();
+    if (!bucket) {
+      throw new Error(
+        'S3Adapter requires explicit S3_BUCKET_NAME; default bucket fallback is prohibited.',
+      );
+    }
+    const endpoint = process.env.ORBITOX_OBJECT_STORE_ENDPOINT?.trim() || undefined;
     this.s3 = new S3Client({
-      region: process.env.AWS_REGION || 'us-east-1',
-      credentials: {
-        accessKeyId: process.env.AWS_ACCESS_KEY_ID || 'mock',
-        secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY || 'mock',
-      },
+      region,
+      ...(endpoint ? { endpoint, forcePathStyle: true } : {}),
     });
-    this.bucket = process.env.S3_BUCKET_NAME || 'orbitox-storage';
+    this.bucket = bucket;
   }
 
   async upload(file: Buffer, path: string, mimeType: string, contextId: string): Promise<string> {

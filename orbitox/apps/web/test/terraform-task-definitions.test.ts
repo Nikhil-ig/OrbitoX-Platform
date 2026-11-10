@@ -94,10 +94,11 @@ describe('Phase 6F R4: Terraform ECS Task Definition Environment & Secret Contra
   const tfContent = fs.readFileSync(mainTfPath, 'utf8');
   const parsedContainers = parseContainerDefinitions(tfContent);
 
-  it('locates and parses all 4 primary services from compute/main.tf', () => {
+  it('locates and parses all 5 primary services from compute/main.tf', () => {
     assert.ok(parsedContainers.has('web'), 'compute/main.tf must define task definition "web"');
     assert.ok(parsedContainers.has('worker_email'), 'compute/main.tf must define task definition "worker_email"');
     assert.ok(parsedContainers.has('worker_sweep'), 'compute/main.tf must define task definition "worker_sweep"');
+    assert.ok(parsedContainers.has('worker_data_rights'), 'compute/main.tf must define task definition "worker_data_rights"');
     assert.ok(parsedContainers.has('restaurant_os'), 'compute/main.tf must define task definition "restaurant_os"');
   });
 

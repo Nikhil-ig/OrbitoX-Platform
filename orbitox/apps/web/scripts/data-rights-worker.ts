@@ -1,4 +1,5 @@
 import { PrismaClient } from '@prisma/client';
+import { createObjectStoreFromEnv } from '../lib/data-rights/object-store';
 import {
   processDueOrganizationDeletions,
   processExportJobs,
@@ -9,6 +10,9 @@ async function main(): Promise<void> {
   if ((process.env.ORBITOX_PLATFORM_REPOSITORY || 'prisma') !== 'prisma') {
     throw new Error('Data-rights worker requires ORBITOX_PLATFORM_REPOSITORY=prisma.');
   }
+
+  // Fail closed at worker startup if ObjectStore configuration is missing/invalid.
+  const objectStore = createObjectStoreFromEnv(process.env);
 
   const runtimeUrl = process.env.APP_DATABASE_URL?.trim();
   const maintenanceUrl = process.env.MAINTENANCE_DATABASE_URL?.trim();
@@ -30,8 +34,12 @@ async function main(): Promise<void> {
     const exportsRes = await processExportJobs({
       runtimePrisma: runtime,
       maintenancePrisma: maintenance,
+      objectStore,
     });
-    const purgeRes = await purgeExpiredExports({ maintenancePrisma: maintenance });
+    const purgeRes = await purgeExpiredExports({
+      maintenancePrisma: maintenance,
+      objectStore,
+    });
     const deletionRes = await processDueOrganizationDeletions({ maintenancePrisma: maintenance });
 
     console.info(

@@ -94,14 +94,25 @@ const GLOBAL_DEV_TEST_IGNORE: ReadonlyMap<string, string> = new Map([
   ['RESTAURANTOS_URL', 'Dev routing URL for external OS microservice testing.'],
   ['RESTAURANT_STORE_URL', 'Dev routing URL for external OS microservice testing.'],
   ['RESTAURANT_URL', 'Dev routing URL for external OS microservice testing.'],
-  ['S3_BUCKET_NAME', 'S3 ObjectStore storage bucket name (used in Phase 6G ObjectStore).'],
-  ['ORBITOX_OBJECT_STORE_DRIVER', 'Optional ObjectStore backend selector (local vs s3) with built-in safe defaults.'],
-  ['ORBITOX_OBJECT_STORE_KMS_KEY_ID', 'Optional AWS KMS key ARN/id override for S3 SSE-KMS exports in staging/production.'],
-  ['ORBITOX_OBJECT_STORE_LOCAL_DIR', 'Local filesystem root directory override for LocalObjectStore in CI and tests.'],
+  ['ORBITOX_OBJECT_STORE_LOCAL_DIR', 'Local filesystem root directory override used only when ORBITOX_OBJECT_STORE_DRIVER=local in dev/test.'],
   ['ORBITOX_BACKUP_RETENTION_DAYS', 'Optional PITR backup retention days override (default 35) for deletion certificates.'],
   ['ORBITOX_PLUGIN_ERASURE_POLICY', 'Optional JSON map overriding default plugin DSR erasure modes (HMS=RESTRICT, RestaurantOS=DELETE).'],
   ['JWT_PRIVATE_KEY', 'Test fixture cryptographic key used in local token generation tests.'],
   ['JWT_PUBLIC_KEY', 'Test fixture cryptographic key used in local token generation tests.'],
+]);
+
+// Worker Data Rights ignore list: optional policy/retention overrides and local dev overrides
+const WORKER_DATA_RIGHTS_DEV_TEST_IGNORE: ReadonlyMap<string, string> = new Map([
+  ['AWS_REGION', 'Ambient AWS region fallback when ORBITOX_OBJECT_STORE_REGION is not explicitly set.'],
+  ['ORBITOX_BACKUP_RETENTION_DAYS', 'Optional PITR backup retention days override (default 35) for deletion certificates.'],
+  ['ORBITOX_CONTROL_SECRET', 'Signing secret used only by LocalObjectStore in dev/test.'],
+  ['ORBITOX_GRANT_PRIVATE_KEY', 'Legacy single grant private key checked only to reject grant key reuse.'],
+  ['ORBITOX_GRANT_PUBLIC_KEY', 'Legacy single grant public key checked only to reject grant key reuse.'],
+  ['ORBITOX_OBJECT_STORE_LOCAL_DIR', 'Local filesystem root directory override used only when ORBITOX_OBJECT_STORE_DRIVER=local in dev/test.'],
+  ['ORBITOX_PLUGIN_ERASURE_POLICY', 'Optional JSON map overriding default plugin DSR erasure modes (HMS=RESTRICT, RestaurantOS=DELETE).'],
+  ['ORBITOX_TEST_STANDALONE', 'Test harness flag permitting mock billing cancellation provider overrides in non-test harness.'],
+  ['RESTAURANTOS_RUNTIME_URL', 'Dev routing URL override for local RestaurantOS service calls.'],
+  ['RESTAURANT_STORE_URL', 'Dev routing URL override for local RestaurantOS service calls.'],
 ]);
 
 // Worker Email service ignore list: ambient AWS credentials and alternative providers
@@ -382,6 +393,47 @@ describe('Phase 6F B0-5: Service Environment & Secret Static Code Contract Verif
 
     assert.deepEqual(prodCodeReads, contractAll, 'All production worker_sweep code reads must exactly match the contract');
     assert.deepEqual(contractAll, tfAll, 'Contract and Terraform must match exactly for worker_sweep');
+  });
+
+  it('verifies exact bidirectional parity between code reads, contract, and terraform for worker_data_rights service', () => {
+    const drFiles = [
+      path.resolve(repoRoot, 'orbitox/apps/web/scripts/data-rights-worker.ts'),
+      ...scanDirectory(path.resolve(repoRoot, 'orbitox/apps/web/lib/data-rights')),
+      path.resolve(repoRoot, 'orbitox/apps/web/lib/phi-crypto.ts'),
+      ...scanDirectory(path.resolve(repoRoot, 'orbitox/packages/bridge/src')),
+    ];
+
+    const rawReads = extractEnvReads(drFiles);
+    const prodCodeReads = Array.from(rawReads)
+      .filter((v) => !WORKER_DATA_RIGHTS_DEV_TEST_IGNORE.has(v))
+      .sort();
+
+    const contract = PLATFORM_SERVICE_CONTRACTS.worker_data_rights;
+    const contractAll = [...contract.environment, ...contract.secrets].sort();
+
+    const tf = parseTerraformTaskDefinition(
+      mainTfContent,
+      'family                   = "orbitox-${var.environment}-worker-data-rights"',
+    );
+    const tfAll = [...tf.environment, ...tf.secrets].sort();
+
+    for (const name of contractAll) {
+      assert.ok(
+        rawReads.has(name),
+        `Contract variable "${name}" is not read in worker_data_rights runtime code`,
+      );
+    }
+
+    assert.deepEqual(
+      prodCodeReads,
+      contractAll,
+      'All production worker_data_rights code reads must exactly match the contract',
+    );
+    assert.deepEqual(
+      contractAll,
+      tfAll,
+      'Contract and Terraform must match exactly for worker_data_rights',
+    );
   });
 
   it('verifies exact bidirectional parity between code reads, contract, and terraform for restaurant_os service', () => {

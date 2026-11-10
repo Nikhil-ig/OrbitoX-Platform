@@ -87,6 +87,16 @@ resource "aws_cloudwatch_log_group" "worker_sweep" {
   })
 }
 
+resource "aws_cloudwatch_log_group" "worker_data_rights" {
+  name              = "/ecs/orbitox-${var.environment}-worker-data-rights"
+  retention_in_days = 365
+
+  tags = merge(var.tags, {
+    Name        = "orbitox-${var.environment}-worker-data-rights-logs"
+    Environment = var.environment
+  })
+}
+
 resource "aws_cloudwatch_log_group" "restaurant_os" {
   name              = "/ecs/orbitox-${var.environment}-restaurant-os"
   retention_in_days = 365
@@ -199,6 +209,8 @@ resource "aws_iam_policy" "web_secrets_access" {
           var.secrets_map["ORBITOX_GRANT_SIGNING_KEYS"],
           var.secrets_map["ORBITOX_DELETION_CERT_KEYS"],
           var.secrets_map["ORBITOX_DELETION_CERT_KEY_ACTIVE"],
+          var.secrets_map["ORBITOX_EXPORT_ENCRYPTION_KEYS"],
+          var.secrets_map["ORBITOX_EXPORT_ENCRYPTION_KEY_ACTIVE"],
           var.secrets_map["ORBITOX_EMAIL_WEBHOOK_SECRET"],
           var.secrets_map["RESEND_API_KEY"],
           var.secrets_map["RAZORPAY_KEY_ID"],
@@ -332,6 +344,70 @@ resource "aws_iam_policy" "sweep_secrets_access" {
 resource "aws_iam_role_policy_attachment" "sweep_secrets_attach" {
   role       = aws_iam_role.sweep_execution_role.name
   policy_arn = aws_iam_policy.sweep_secrets_access.arn
+}
+
+# 3b. Worker Data Rights Execution Role (Data rights export, purge, and scheduled deletion)
+resource "aws_iam_role" "data_rights_execution_role" {
+  name = "orbitox-${var.environment}-ecs-data-rights-execution-role"
+
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Action    = "sts:AssumeRole"
+        Effect    = "Allow"
+        Principal = { Service = "ecs-tasks.amazonaws.com" }
+      }
+    ]
+  })
+
+  tags = merge(var.tags, {
+    Name        = "orbitox-${var.environment}-ecs-data-rights-execution-role"
+    Environment = var.environment
+  })
+}
+
+resource "aws_iam_role_policy_attachment" "data_rights_execution_standard" {
+  role       = aws_iam_role.data_rights_execution_role.name
+  policy_arn = "arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy"
+}
+
+resource "aws_iam_policy" "data_rights_secrets_access" {
+  name        = "orbitox-${var.environment}-ecs-data-rights-secrets-policy"
+  description = "Allows worker-data-rights to read DSR DB roles, export/PHI/bridge/cert keys"
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect   = "Allow"
+        Action   = ["secretsmanager:GetSecretValue"]
+        Resource = [
+          var.secrets_map["APP_DATABASE_URL"],
+          var.secrets_map["MAINTENANCE_DATABASE_URL"],
+          var.secrets_map["ORBITOX_PHI_KEYS"],
+          var.secrets_map["ORBITOX_PHI_INDEX_KEY"],
+          var.secrets_map["ORBITOX_GRANT_SIGNING_KEYS"],
+          var.secrets_map["ORBITOX_DELETION_CERT_KEYS"],
+          var.secrets_map["ORBITOX_DELETION_CERT_KEY_ACTIVE"],
+          var.secrets_map["ORBITOX_EXPORT_ENCRYPTION_KEYS"],
+          var.secrets_map["ORBITOX_EXPORT_ENCRYPTION_KEY_ACTIVE"],
+          var.secrets_map["ORBITOX_BRIDGE_KEYS"],
+          var.secrets_map["ORBITOX_BRIDGE_ACTIVE_KID"]
+        ]
+      },
+      {
+        Effect   = "Allow"
+        Action   = ["kms:Decrypt"]
+        Resource = [var.secrets_kms_key_arn]
+      }
+    ]
+  })
+}
+
+resource "aws_iam_role_policy_attachment" "data_rights_secrets_attach" {
+  role       = aws_iam_role.data_rights_execution_role.name
+  policy_arn = aws_iam_policy.data_rights_secrets_access.arn
 }
 
 # 4. Migrate Task Execution Role (Only migrator database secret)
@@ -547,7 +623,13 @@ resource "aws_ecs_task_definition" "web" {
         { name = "ORBITOX_EMAIL_PROVIDER", value = "resend" },
         { name = "ORBITOX_EMAIL_FROM", value = var.email_from },
         { name = "ORBITOX_PHI_ACTIVE_KID", value = "v1" },
-        { name = "TRUSTED_PROXIES", value = "10.0.0.0/16" }
+        { name = "TRUSTED_PROXIES", value = "10.0.0.0/16" },
+        { name = "ORBITOX_OBJECT_STORE_DRIVER", value = "s3" },
+        { name = "ORBITOX_OBJECT_STORE_REGION", value = data.aws_region.current.name },
+        { name = "ORBITOX_OBJECT_STORE_ENCRYPTION", value = var.object_store_encryption },
+        { name = "ORBITOX_OBJECT_STORE_ENDPOINT", value = var.object_store_endpoint },
+        { name = "ORBITOX_OBJECT_STORE_KMS_KEY_ID", value = var.object_store_kms_key_id },
+        { name = "S3_BUCKET_NAME", value = var.exports_bucket_name }
       ]
       secrets = [
         { name = "APP_DATABASE_URL", valueFrom = var.secrets_map["APP_DATABASE_URL"] },
@@ -567,6 +649,8 @@ resource "aws_ecs_task_definition" "web" {
         { name = "ORBITOX_GRANT_SIGNING_KEYS", valueFrom = var.secrets_map["ORBITOX_GRANT_SIGNING_KEYS"] },
         { name = "ORBITOX_DELETION_CERT_KEYS", valueFrom = var.secrets_map["ORBITOX_DELETION_CERT_KEYS"] },
         { name = "ORBITOX_DELETION_CERT_KEY_ACTIVE", valueFrom = var.secrets_map["ORBITOX_DELETION_CERT_KEY_ACTIVE"] },
+        { name = "ORBITOX_EXPORT_ENCRYPTION_KEYS", valueFrom = var.secrets_map["ORBITOX_EXPORT_ENCRYPTION_KEYS"] },
+        { name = "ORBITOX_EXPORT_ENCRYPTION_KEY_ACTIVE", valueFrom = var.secrets_map["ORBITOX_EXPORT_ENCRYPTION_KEY_ACTIVE"] },
         { name = "ORBITOX_EMAIL_WEBHOOK_SECRET", valueFrom = var.secrets_map["ORBITOX_EMAIL_WEBHOOK_SECRET"] },
         { name = "RESEND_API_KEY", valueFrom = var.secrets_map["RESEND_API_KEY"] },
         { name = "RAZORPAY_KEY_ID", valueFrom = var.secrets_map["RAZORPAY_KEY_ID"] },
@@ -679,6 +763,63 @@ resource "aws_ecs_task_definition" "worker_sweep" {
 
   tags = merge(var.tags, {
     Name        = "orbitox-${var.environment}-worker-sweep-task"
+    Environment = var.environment
+  })
+}
+
+resource "aws_ecs_task_definition" "worker_data_rights" {
+  family                   = "orbitox-${var.environment}-worker-data-rights"
+  network_mode             = "awsvpc"
+  requires_compatibilities = ["FARGATE"]
+  cpu                      = 512
+  memory                   = 1024
+  execution_role_arn       = aws_iam_role.data_rights_execution_role.arn
+  task_role_arn            = aws_iam_role.task_role.arn
+
+  container_definitions = jsonencode([
+    {
+      name      = "worker-data-rights"
+      image     = var.web_image_digest
+      essential = true
+      command   = ["node", "scripts/data-rights-worker.js"]
+      environment = [
+        { name = "NODE_ENV", value = "production" },
+        { name = "ORBITOX_PLATFORM_REPOSITORY", value = "prisma" },
+        { name = "ORBITOX_PUBLIC_BASE_URL", value = var.public_base_url },
+        { name = "ORBITOX_PHI_ACTIVE_KID", value = "v1" },
+        { name = "ORBITOX_OBJECT_STORE_DRIVER", value = "s3" },
+        { name = "ORBITOX_OBJECT_STORE_REGION", value = data.aws_region.current.name },
+        { name = "ORBITOX_OBJECT_STORE_ENCRYPTION", value = var.object_store_encryption },
+        { name = "ORBITOX_OBJECT_STORE_ENDPOINT", value = var.object_store_endpoint },
+        { name = "ORBITOX_OBJECT_STORE_KMS_KEY_ID", value = var.object_store_kms_key_id },
+        { name = "S3_BUCKET_NAME", value = var.exports_bucket_name }
+      ]
+      secrets = [
+        { name = "APP_DATABASE_URL", valueFrom = var.secrets_map["APP_DATABASE_URL"] },
+        { name = "MAINTENANCE_DATABASE_URL", valueFrom = var.secrets_map["MAINTENANCE_DATABASE_URL"] },
+        { name = "ORBITOX_PHI_KEYS", valueFrom = var.secrets_map["ORBITOX_PHI_KEYS"] },
+        { name = "ORBITOX_PHI_INDEX_KEY", valueFrom = var.secrets_map["ORBITOX_PHI_INDEX_KEY"] },
+        { name = "ORBITOX_GRANT_SIGNING_KEYS", valueFrom = var.secrets_map["ORBITOX_GRANT_SIGNING_KEYS"] },
+        { name = "ORBITOX_DELETION_CERT_KEYS", valueFrom = var.secrets_map["ORBITOX_DELETION_CERT_KEYS"] },
+        { name = "ORBITOX_DELETION_CERT_KEY_ACTIVE", valueFrom = var.secrets_map["ORBITOX_DELETION_CERT_KEY_ACTIVE"] },
+        { name = "ORBITOX_EXPORT_ENCRYPTION_KEYS", valueFrom = var.secrets_map["ORBITOX_EXPORT_ENCRYPTION_KEYS"] },
+        { name = "ORBITOX_EXPORT_ENCRYPTION_KEY_ACTIVE", valueFrom = var.secrets_map["ORBITOX_EXPORT_ENCRYPTION_KEY_ACTIVE"] },
+        { name = "ORBITOX_BRIDGE_KEYS", valueFrom = var.secrets_map["ORBITOX_BRIDGE_KEYS"] },
+        { name = "ORBITOX_BRIDGE_ACTIVE_KID", valueFrom = var.secrets_map["ORBITOX_BRIDGE_ACTIVE_KID"] }
+      ]
+      logConfiguration = {
+        logDriver = "awslogs"
+        options = {
+          "awslogs-group"         = aws_cloudwatch_log_group.worker_data_rights.name
+          "awslogs-region"        = data.aws_region.current.name
+          "awslogs-stream-prefix" = "worker-data-rights"
+        }
+      }
+    }
+  ])
+
+  tags = merge(var.tags, {
+    Name        = "orbitox-${var.environment}-worker-data-rights-task"
     Environment = var.environment
   })
 }
@@ -943,12 +1084,19 @@ resource "aws_iam_role_policy" "events_run_task" {
       {
         Effect   = "Allow"
         Action   = ["ecs:RunTask"]
-        Resource = [aws_ecs_task_definition.worker_sweep.arn]
+        Resource = [
+          aws_ecs_task_definition.worker_sweep.arn,
+          aws_ecs_task_definition.worker_data_rights.arn
+        ]
       },
       {
         Effect   = "Allow"
         Action   = ["iam:PassRole"]
-        Resource = [aws_iam_role.sweep_execution_role.arn, aws_iam_role.task_role.arn]
+        Resource = [
+          aws_iam_role.sweep_execution_role.arn,
+          aws_iam_role.data_rights_execution_role.arn,
+          aws_iam_role.task_role.arn
+        ]
       }
     ]
   })
@@ -963,6 +1111,37 @@ resource "aws_cloudwatch_event_target" "sweep_target" {
   ecs_target {
     task_count          = 1
     task_definition_arn = aws_ecs_task_definition.worker_sweep.arn
+    launch_type         = "FARGATE"
+    platform_version    = "LATEST"
+
+    network_configuration {
+      subnets          = var.private_subnet_ids
+      security_groups  = [aws_security_group.ecs.id]
+      assign_public_ip = false
+    }
+  }
+}
+
+resource "aws_cloudwatch_event_rule" "data_rights_schedule" {
+  name                = "orbitox-${var.environment}-data-rights-worker-rule"
+  description         = "Triggers scheduled Phase 6G data-rights export, purge, and deletion worker"
+  schedule_expression = "rate(15 minutes)"
+
+  tags = merge(var.tags, {
+    Name        = "orbitox-${var.environment}-data-rights-worker-rule"
+    Environment = var.environment
+  })
+}
+
+resource "aws_cloudwatch_event_target" "data_rights_target" {
+  rule      = aws_cloudwatch_event_rule.data_rights_schedule.name
+  target_id = "orbitox-${var.environment}-data-rights-worker"
+  arn       = aws_ecs_cluster.main.arn
+  role_arn  = aws_iam_role.events_ecs_role.arn
+
+  ecs_target {
+    task_count          = 1
+    task_definition_arn = aws_ecs_task_definition.worker_data_rights.arn
     launch_type         = "FARGATE"
     platform_version    = "LATEST"
 

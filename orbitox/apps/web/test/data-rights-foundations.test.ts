@@ -5,6 +5,7 @@ import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { after, describe, it } from 'node:test';
+import { registerNode } from '../instrumentation.node';
 import {
   DEFAULT_PLUGIN_ERASURE_POLICY,
   PLUGIN_DATA_CONTRACT_VERSION,
@@ -19,6 +20,8 @@ import {
   verifyExportArchive,
 } from '../lib/data-rights/archive';
 import {
+  createObjectStoreFromEnv,
+  loadExportEncryptionKeyRingFromEnv,
   LocalObjectStore,
   S3ObjectStore,
   type S3CommandExecutor,
@@ -185,12 +188,17 @@ describe('Phase 6G Foundations: Contract, ObjectStore, Export Bundle & Deletion 
     };
 
     assert.throws(
-      () => new S3ObjectStore({ bucket: 'bkt', kmsKeyId: '', executor: mockExecutor }),
+      () => new S3ObjectStore({ bucket: 'bkt', region: 'ap-south-1', kmsKeyId: '', executor: mockExecutor }),
       /requires SSE-KMS key id/,
+    );
+    assert.throws(
+      () => new S3ObjectStore({ bucket: 'bkt', region: '', kmsKeyId: 'k', executor: mockExecutor }),
+      /requires explicit region/,
     );
 
     const store = new S3ObjectStore({
       bucket: 'orbitox-exports-staging',
+      region: 'ap-south-1',
       kmsKeyId: 'arn:aws:kms:ap-south-1:123456789012:key/exports-cmk',
       executor: mockExecutor,
     });
@@ -497,5 +505,181 @@ describe('Phase 6G Foundations: Contract, ObjectStore, Export Bundle & Deletion 
     assert.equal(jsonRows[0].tab, payloads[4]);
     assert.equal(jsonRows[0].cr, payloads[5]);
     assert.equal(jsonRows[0].amount, -42);
+  });
+
+  it('G-7: refuses missing/local driver and missing region in production', () => {
+    const validKey = crypto.randomBytes(32).toString('base64');
+
+    // 1. production + no driver -> refuse (even when S3_BUCKET_NAME & region are set!)
+    assert.throws(
+      () =>
+        createObjectStoreFromEnv({
+          NODE_ENV: 'production',
+          S3_BUCKET_NAME: 'orbitox-prod-exports',
+          ORBITOX_OBJECT_STORE_REGION: 'ap-south-1',
+          ORBITOX_OBJECT_STORE_ENCRYPTION: 'client',
+          ORBITOX_EXPORT_ENCRYPTION_KEYS: JSON.stringify({ k1: validKey }),
+          ORBITOX_EXPORT_ENCRYPTION_KEY_ACTIVE: 'k1',
+        } as unknown as NodeJS.ProcessEnv),
+      /ORBITOX_OBJECT_STORE_DRIVER must be explicitly set to "s3"/,
+    );
+
+    // 2. production + local driver -> refuse (including standalone flag)
+    assert.throws(
+      () =>
+        createObjectStoreFromEnv({
+          NODE_ENV: 'production',
+          ORBITOX_TEST_STANDALONE: 'true',
+          ORBITOX_OBJECT_STORE_DRIVER: 'local',
+        } as unknown as NodeJS.ProcessEnv),
+      /ORBITOX_OBJECT_STORE_DRIVER=local is refused in production/,
+    );
+
+    // 3. driver=s3 + no region -> refuse (no us-east-1 default)
+    assert.throws(
+      () =>
+        createObjectStoreFromEnv({
+          NODE_ENV: 'production',
+          ORBITOX_OBJECT_STORE_DRIVER: 's3',
+          S3_BUCKET_NAME: 'orbitox-prod-exports',
+          ORBITOX_OBJECT_STORE_ENCRYPTION: 'client',
+          ORBITOX_EXPORT_ENCRYPTION_KEYS: JSON.stringify({ k1: validKey }),
+          ORBITOX_EXPORT_ENCRYPTION_KEY_ACTIVE: 'k1',
+        } as unknown as NodeJS.ProcessEnv),
+      /ORBITOX_OBJECT_STORE_REGION.*required|default us-east-1 is prohibited/,
+    );
+  });
+
+  it('G-7: client AES-256-GCM encryption hides ZIP bytes on S3-compatible store and preserves decryption across key rotation', async () => {
+    const recordedPuts: S3PutObjectInput[] = [];
+    const backing = new Map<string, Buffer>();
+    const backingMeta = new Map<string, Record<string, string>>();
+
+    const mockExecutor: S3CommandExecutor = {
+      async putObject(input) {
+        recordedPuts.push(input);
+        backing.set(input.Key, input.Body);
+        backingMeta.set(input.Key, input.Metadata || {});
+      },
+      async getObject(input) {
+        return backing.get(input.Key) ?? null;
+      },
+      async deleteObject(input) {
+        backing.delete(input.Key);
+      },
+      async listKeys(input) {
+        return Array.from(backing.keys()).filter((k) => k.startsWith(input.Prefix));
+      },
+      async getPresignedGetUrl(input) {
+        return `https://blr1.digitaloceanspaces.com/${input.Bucket}/${input.Key}`;
+      },
+    };
+
+    const k1 = crypto.randomBytes(32).toString('base64');
+    const k2 = crypto.randomBytes(32).toString('base64');
+    const ring1 = loadExportEncryptionKeyRingFromEnv({
+      ORBITOX_EXPORT_ENCRYPTION_KEYS: JSON.stringify({ k1 }),
+      ORBITOX_EXPORT_ENCRYPTION_KEY_ACTIVE: 'k1',
+    });
+
+    const store1 = new S3ObjectStore({
+      bucket: 'orbitox-vps-exports',
+      region: 'ap-south-1',
+      endpoint: 'https://blr1.digitaloceanspaces.com',
+      encryption: 'client',
+      exportKeys: ring1,
+      executor: mockExecutor,
+    });
+
+    const { zipBuffer } = buildExportBundle({
+      organizationId: 'org_client_enc',
+      jobId: 'job_1',
+      generatedAt: new Date('2026-11-10T10:00:00.000Z'),
+      tenants: [],
+      tableData: [
+        {
+          tenantId: null,
+          pluginId: 'platform',
+          table: 'PlatformOrganization',
+          columns: ['id', 'name'],
+          rows: [{ id: 'org_client_enc', name: 'Apollo Clinic' }],
+        },
+      ],
+    });
+    assert.equal(zipBuffer.subarray(0, 4).toString('hex'), '504b0304');
+
+    await store1.put('exports/org_client_enc/job_1.zip', zipBuffer, {
+      contentType: 'application/zip',
+    });
+
+    const storedBytes = backing.get('exports/org_client_enc/job_1.zip')!;
+    assert.ok(storedBytes);
+    assert.notEqual(
+      storedBytes.subarray(0, 4).toString('hex'),
+      '504b0304',
+      'Stored ciphertext must NOT begin with PKZIP magic bytes',
+    );
+    assert.throws(() => readZipArchive(storedBytes), /ZIP|EOCD|magic|valid/i);
+    assert.equal(recordedPuts[0]?.ServerSideEncryption, undefined);
+    assert.equal(recordedPuts[0]?.SSEKMSKeyId, undefined);
+    assert.equal(backingMeta.get('exports/org_client_enc/job_1.zip')?.['orbitox-encryption-kid'], 'k1');
+
+    // Downloaded bytes MUST match a valid readable ZIP
+    const downloaded1 = await store1.get('exports/org_client_enc/job_1.zip');
+    assert.ok(downloaded1);
+    assert.equal(Buffer.compare(downloaded1, zipBuffer), 0);
+    const unzipped1 = readZipArchive(downloaded1);
+    assert.ok(unzipped1.has('manifest.json'));
+
+    // Rotate key: add k2 and make k2 active while preserving k1
+    const ring2 = loadExportEncryptionKeyRingFromEnv({
+      ORBITOX_EXPORT_ENCRYPTION_KEYS: JSON.stringify({ k1, k2 }),
+      ORBITOX_EXPORT_ENCRYPTION_KEY_ACTIVE: 'k2',
+    });
+    const store2 = new S3ObjectStore({
+      bucket: 'orbitox-vps-exports',
+      region: 'ap-south-1',
+      endpoint: 'https://blr1.digitaloceanspaces.com',
+      encryption: 'client',
+      exportKeys: ring2,
+      executor: mockExecutor,
+    });
+
+    await store2.put('exports/org_client_enc/job_2.zip', zipBuffer);
+    assert.equal(backingMeta.get('exports/org_client_enc/job_2.zip')?.['orbitox-encryption-kid'], 'k2');
+
+    // Old k1 archive still decrypts after rotation to k2, AND new k2 archive decrypts too
+    const oldAfterRotate = await store2.get('exports/org_client_enc/job_1.zip');
+    const newAfterRotate = await store2.get('exports/org_client_enc/job_2.zip');
+    assert.ok(oldAfterRotate && Buffer.compare(oldAfterRotate, zipBuffer) === 0);
+    assert.ok(newAfterRotate && Buffer.compare(newAfterRotate, zipBuffer) === 0);
+    assert.ok(readZipArchive(oldAfterRotate).has('platform/platform/PlatformOrganization.json'));
+  });
+
+  it('G-7: registerNode() refuses production startup when ObjectStore driver is missing or local', async () => {
+    const origEnv = { ...process.env };
+    try {
+      Reflect.set(process.env, 'NODE_ENV', 'production');
+      delete process.env.APP_DATABASE_URL;
+      delete process.env.HMS_AUDIT_DATABASE_URL;
+      delete process.env.OUTBOX_RELAY_DATABASE_URL;
+      process.env.ORBITOX_OBJECT_STORE_DRIVER = 'local';
+      process.env.ORBITOX_OBJECT_STORE_REGION = 'ap-south-1';
+      process.env.S3_BUCKET_NAME = 'orbitox-prod-exports';
+      process.env.ORBITOX_OBJECT_STORE_ENCRYPTION = 'client';
+
+      await assert.rejects(
+        () => registerNode(),
+        /ORBITOX_OBJECT_STORE_DRIVER=local is refused in production/,
+      );
+
+      delete process.env.ORBITOX_OBJECT_STORE_DRIVER;
+      await assert.rejects(
+        () => registerNode(),
+        /ORBITOX_OBJECT_STORE_DRIVER must be explicitly set to "s3"/,
+      );
+    } finally {
+      process.env = origEnv;
+    }
   });
 });

@@ -164,6 +164,12 @@ jobs:
           export ORBITOX_GRANT_SIGNING_KEYS="$(node -e 'const { generateKeyPairSync } = require("crypto"); const p = generateKeyPairSync("ed25519"); console.log(JSON.stringify({ k1: { privateKey: p.privateKey.export({type:"pkcs8",format:"pem"}), publicKey: p.publicKey.export({type:"spki",format:"pem"}) } }))')"
           export ORBITOX_DELETION_CERT_KEYS="$(node -e 'const { generateKeyPairSync } = require("crypto"); const p = generateKeyPairSync("ed25519"); console.log(JSON.stringify({ k1: { privateKey: p.privateKey.export({type:"pkcs8",format:"pem"}), publicKey: p.publicKey.export({type:"spki",format:"pem"}) } }))')"
           export ORBITOX_DELETION_CERT_KEY_ACTIVE="k1"
+          export ORBITOX_OBJECT_STORE_DRIVER="s3"
+          export ORBITOX_OBJECT_STORE_REGION="ap-south-1"
+          export S3_BUCKET_NAME="orbitox-ci-smoke-exports"
+          export ORBITOX_OBJECT_STORE_ENCRYPTION="client"
+          export ORBITOX_EXPORT_ENCRYPTION_KEYS="{\"k1\":\"$(openssl rand -base64 32)\"}"
+          export ORBITOX_EXPORT_ENCRYPTION_KEY_ACTIVE="k1"
           cp -r apps/web/.next/static apps/web/.next/standalone/apps/web/.next/static
           NODE_ENV=production PORT=3005 HOSTNAME=127.0.0.1 ORBITOX_DATA_DIR="$RUNNER_TEMP/orbitox-data" \
             node apps/web/.next/standalone/apps/web/server.js > "$RUNNER_TEMP/server.log" 2>&1 &

@@ -33,6 +33,13 @@ import {
   extractDeletionCertPublicKeys,
   verifyDeletionCertificate,
 } from '../lib/data-rights/deletion-certificate';
+import {
+  createObjectStoreFromEnv,
+  loadExportEncryptionKeyRingFromEnv,
+  S3ObjectStore,
+  type S3CommandExecutor,
+} from '../lib/data-rights/object-store';
+import { buildZipArchive, readZipArchive } from '../lib/data-rights/archive';
 
 describe('Phase 6F B0: Staging Secret Generator Verification', () => {
   it('dry-run mode lists the exact names it would set without writing secrets', () => {
@@ -117,8 +124,12 @@ describe('Phase 6F B0: Staging Secret Generator Verification', () => {
         const parsed = JSON.parse(val);
         assert.ok(parsed.k1.privateKey.includes('BEGIN PRIVATE KEY'));
         assert.ok(parsed.k1.publicKey.includes('BEGIN PUBLIC KEY'));
-      } else if (name === 'ORBITOX_DELETION_CERT_KEY_ACTIVE') {
+      } else if (name === 'ORBITOX_DELETION_CERT_KEY_ACTIVE' || name === 'ORBITOX_EXPORT_ENCRYPTION_KEY_ACTIVE') {
         assert.equal(val, 'k1');
+      } else if (name === 'ORBITOX_EXPORT_ENCRYPTION_KEYS') {
+        const parsed = JSON.parse(val);
+        assert.ok(parsed.k1, 'Must contain export encryption key k1');
+        assert.equal(Buffer.from(parsed.k1, 'base64').length, 32, 'Export encryption key must decode to 32 bytes');
       } else if (name === 'ORBITOX_GRANT_PUBLIC_KEYS') {
         const parsed = JSON.parse(val);
         assert.ok(parsed.k1.publicKey.includes('BEGIN PUBLIC KEY'));
@@ -217,6 +228,14 @@ describe('Phase 6F B0: Staging Secret Generator Verification', () => {
     );
     assert.throws(
       () => runSecretGenerator({ rotate: 'ORBITOX_DELETION_CERT_KEY_ACTIVE', awsCliRunner: mockRunner }),
+      /cannot be blind-rotated/,
+    );
+    assert.throws(
+      () => runSecretGenerator({ rotate: 'ORBITOX_EXPORT_ENCRYPTION_KEYS', awsCliRunner: mockRunner }),
+      /Keyed secrets must be rotated additively via --add-key=ORBITOX_EXPORT_ENCRYPTION_KEYS/,
+    );
+    assert.throws(
+      () => runSecretGenerator({ rotate: 'ORBITOX_EXPORT_ENCRYPTION_KEY_ACTIVE', awsCliRunner: mockRunner }),
       /cannot be blind-rotated/,
     );
     assert.throws(
@@ -329,6 +348,10 @@ describe('Phase 6F B0: Staging Secret Generator Verification', () => {
         k1: crypto.randomBytes(32).toString('hex'),
       },
     });
+    mockStorage.set(
+      'orbitox/staging/ORBITOX_EXPORT_ENCRYPTION_KEYS',
+      JSON.stringify({ k1: crypto.randomBytes(32).toString('base64') }),
+    );
     mockStorage.set('orbitox/staging/ORBITOX_BRIDGE_KEYS', initialBridgeKeys);
 
     const mockRunner = (args: string[], stdin?: string) => {
@@ -400,6 +423,24 @@ describe('Phase 6F B0: Staging Secret Generator Verification', () => {
     });
     assert.equal(certActivateRes[0]?.action, 'activated');
     assert.equal(mockStorage.get('orbitox/staging/ORBITOX_DELETION_CERT_KEY_ACTIVE'), 'k2');
+
+    // 2c. Add key to ORBITOX_EXPORT_ENCRYPTION_KEYS and explicitly activate k2
+    mockStorage.set('orbitox/staging/ORBITOX_EXPORT_ENCRYPTION_KEY_ACTIVE', 'k1');
+    const expEncRes = runSecretGenerator({
+      addKey: 'ORBITOX_EXPORT_ENCRYPTION_KEYS',
+      awsCliRunner: mockRunner,
+    });
+    assert.equal(expEncRes[0]?.action, 'added-key');
+    const updatedExpEnc = JSON.parse(mockStorage.get('orbitox/staging/ORBITOX_EXPORT_ENCRYPTION_KEYS')!);
+    assert.ok(updatedExpEnc.k1 && updatedExpEnc.k2, 'Must preserve k1 and add k2 for export encryption keys');
+    assert.equal(mockStorage.get('orbitox/staging/ORBITOX_EXPORT_ENCRYPTION_KEY_ACTIVE'), 'k1');
+    const expActivateRes = runSecretGenerator({
+      activate: 'ORBITOX_EXPORT_ENCRYPTION_KEYS',
+      kid: 'k2',
+      awsCliRunner: mockRunner,
+    });
+    assert.equal(expActivateRes[0]?.action, 'activated');
+    assert.equal(mockStorage.get('orbitox/staging/ORBITOX_EXPORT_ENCRYPTION_KEY_ACTIVE'), 'k2');
 
     // 3. Add key to ORBITOX_BRIDGE_KEYS
     const bridgeResult = runSecretGenerator({
@@ -969,5 +1010,98 @@ describe('Phase 6F B0: Staging Secret Generator Verification', () => {
     } finally {
       process.env = origEnv;
     }
+  });
+
+  it('B0-7: Real-loader round-trip through S3ObjectStore client encryption decrypts k1 export after --add-key + --activate k2', async () => {
+    const mockStorage = new Map<string, string>();
+    const s3Objects = new Map<string, Buffer>();
+    const s3Meta = new Map<string, Record<string, string>>();
+    const mockRunner = (args: string[], stdin?: string) => {
+      const subcmd = args[1];
+      const idIdx = args.indexOf('--secret-id');
+      const secretId = idIdx !== -1 ? args[idIdx + 1] : undefined;
+      if (!secretId) return { stdout: '', status: 1 };
+      if (subcmd === 'get-secret-value') {
+        if (mockStorage.has(secretId)) {
+          return { stdout: JSON.stringify({ SecretString: mockStorage.get(secretId) }), status: 0 };
+        }
+        return { stdout: '', status: 1 };
+      }
+      if (subcmd === 'put-secret-value') {
+        if (stdin) mockStorage.set(secretId, stdin);
+        return { stdout: JSON.stringify({ VersionId: 'v1' }), status: 0 };
+      }
+      return { stdout: '', status: 0 };
+    };
+
+    runSecretGenerator({ dryRun: false, awsCliRunner: mockRunner });
+    const mockExecutor: S3CommandExecutor = {
+      async putObject(input) {
+        s3Objects.set(input.Key, input.Body);
+        s3Meta.set(input.Key, input.Metadata || {});
+      },
+      async getObject(input) {
+        return s3Objects.get(input.Key) ?? null;
+      },
+      async deleteObject(input) {
+        s3Objects.delete(input.Key);
+      },
+      async listKeys(input) {
+        return Array.from(s3Objects.keys()).filter((k) => k.startsWith(input.Prefix));
+      },
+      async getPresignedGetUrl(input) {
+        return `https://spaces.example.invalid/${input.Bucket}/${input.Key}`;
+      },
+    };
+
+    const sampleZip = buildZipArchive([{ path: 'hello.txt', content: Buffer.from('phi-safe-export', 'utf8') }]);
+
+    // 1. Encrypt under initial k1 ring produced by generator
+    const ring1 = loadExportEncryptionKeyRingFromEnv({
+      ORBITOX_EXPORT_ENCRYPTION_KEYS: mockStorage.get('orbitox/staging/ORBITOX_EXPORT_ENCRYPTION_KEYS'),
+      ORBITOX_EXPORT_ENCRYPTION_KEY_ACTIVE: mockStorage.get('orbitox/staging/ORBITOX_EXPORT_ENCRYPTION_KEY_ACTIVE'),
+    });
+    const store1 = new S3ObjectStore({
+      bucket: 'orbitox-vps-exports',
+      region: 'ap-south-1',
+      endpoint: 'https://blr1.digitaloceanspaces.com',
+      encryption: 'client',
+      exportKeys: ring1,
+      executor: mockExecutor,
+    });
+    await store1.put('exports/org_1/old.zip', sampleZip);
+    assert.equal(s3Meta.get('exports/org_1/old.zip')?.['orbitox-encryption-kid'], 'k1');
+
+    // 2. Rotate via --add-key + --activate k2
+    runSecretGenerator({ addKey: 'ORBITOX_EXPORT_ENCRYPTION_KEYS', awsCliRunner: mockRunner });
+    runSecretGenerator({ activate: 'ORBITOX_EXPORT_ENCRYPTION_KEYS', kid: 'k2', awsCliRunner: mockRunner });
+
+    const ring2 = loadExportEncryptionKeyRingFromEnv({
+      ORBITOX_EXPORT_ENCRYPTION_KEYS: mockStorage.get('orbitox/staging/ORBITOX_EXPORT_ENCRYPTION_KEYS'),
+      ORBITOX_EXPORT_ENCRYPTION_KEY_ACTIVE: mockStorage.get('orbitox/staging/ORBITOX_EXPORT_ENCRYPTION_KEY_ACTIVE'),
+    });
+    const store2 = new S3ObjectStore({
+      bucket: 'orbitox-vps-exports',
+      region: 'ap-south-1',
+      endpoint: 'https://blr1.digitaloceanspaces.com',
+      encryption: 'client',
+      exportKeys: ring2,
+      executor: mockExecutor,
+    });
+    const restored = await store2.get('exports/org_1/old.zip');
+    assert.ok(restored);
+    assert.equal(readZipArchive(restored).get('hello.txt')?.toString('utf8'), 'phi-safe-export');
+
+    // 3. Also verify createObjectStoreFromEnv production loader with generated secrets succeeds in client mode
+    const loadedStore = createObjectStoreFromEnv({
+      NODE_ENV: 'production',
+      ORBITOX_OBJECT_STORE_DRIVER: 's3',
+      ORBITOX_OBJECT_STORE_REGION: 'ap-south-1',
+      S3_BUCKET_NAME: 'orbitox-vps-exports',
+      ORBITOX_OBJECT_STORE_ENCRYPTION: 'client',
+      ORBITOX_EXPORT_ENCRYPTION_KEYS: mockStorage.get('orbitox/staging/ORBITOX_EXPORT_ENCRYPTION_KEYS'),
+      ORBITOX_EXPORT_ENCRYPTION_KEY_ACTIVE: mockStorage.get('orbitox/staging/ORBITOX_EXPORT_ENCRYPTION_KEY_ACTIVE'),
+    } as unknown as NodeJS.ProcessEnv);
+    assert.equal(loadedStore.driver, 's3');
   });
 });

@@ -75,6 +75,30 @@ variable "email_from" {
   default     = "noreply@mail.staging.orbitox.io"
 }
 
+variable "exports_bucket_name" {
+  type        = string
+  description = "S3 / S3-compatible bucket name for Phase 6G encrypted data-rights export archives"
+  default     = "orbitox-staging-data-rights-exports"
+}
+
+variable "object_store_encryption" {
+  type        = string
+  description = "ObjectStore encryption mode: kms (AWS SSE-KMS) or client (AES-256-GCM envelope)"
+  default     = "kms"
+}
+
+variable "object_store_endpoint" {
+  type        = string
+  description = "Optional S3-compatible endpoint URL (for DigitalOcean Spaces / Backblaze B2 / Cloudflare R2)"
+  default     = ""
+}
+
+variable "object_store_kms_key_id" {
+  type        = string
+  description = "AWS KMS CMK ARN/id used when object_store_encryption = kms"
+  default     = "alias/orbitox-staging-exports"
+}
+
 variable "tags" {
   type        = map(string)
   description = "Common tags for all compute resources"

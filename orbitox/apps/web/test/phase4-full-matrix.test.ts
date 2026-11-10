@@ -310,6 +310,12 @@ describe('Phase 4 Item 8: Comprehensive Tenant Provisioning Matrix', () => {
       ORBITOX_PHI_INDEX_KEY: crypto.randomBytes(32).toString('base64'),
       ORBITOX_BRIDGE_KEYS: JSON.stringify(bridgeKeys),
       ORBITOX_BRIDGE_ACTIVE_KID: 'k1',
+      ORBITOX_OBJECT_STORE_DRIVER: 's3',
+      ORBITOX_OBJECT_STORE_REGION: 'ap-south-1',
+      S3_BUCKET_NAME: 'orbitox-ci-matrix-exports',
+      ORBITOX_OBJECT_STORE_ENCRYPTION: 'client',
+      ORBITOX_EXPORT_ENCRYPTION_KEYS: JSON.stringify({ k1: crypto.randomBytes(32).toString('base64') }),
+      ORBITOX_EXPORT_ENCRYPTION_KEY_ACTIVE: 'k1',
     };
 
     child = spawn('node', [serverScript], {
@@ -595,6 +601,12 @@ describe('Phase 4 Item 8: Comprehensive Tenant Provisioning Matrix', () => {
       ORBITOX_PHI_INDEX_KEY: crypto.randomBytes(32).toString('base64'),
       ORBITOX_BRIDGE_KEYS: JSON.stringify(bridgeKeys),
       ORBITOX_BRIDGE_ACTIVE_KID: 'k1',
+      ORBITOX_OBJECT_STORE_DRIVER: 's3',
+      ORBITOX_OBJECT_STORE_REGION: 'ap-south-1',
+      S3_BUCKET_NAME: 'orbitox-ci-kill-exports',
+      ORBITOX_OBJECT_STORE_ENCRYPTION: 'client',
+      ORBITOX_EXPORT_ENCRYPTION_KEYS: JSON.stringify({ k1: crypto.randomBytes(32).toString('base64') }),
+      ORBITOX_EXPORT_ENCRYPTION_KEY_ACTIVE: 'k1',
     };
 
     // 1. Spawn Server 1 with TEST_STEP5_DELAY_MS = 6000 and async background execution (ORBITOX_SYNC_SAGA not set)
