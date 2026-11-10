@@ -852,7 +852,11 @@ export async function isCustomerMembership(
   return Boolean(membership && (!roles || roles.includes(membership.role)));
 }
 
-async function consumeAccountToken(tx: Tx, rawToken: string, purpose: AccountTokenPurpose) {
+async function consumeAccountToken(
+  tx: Tx,
+  rawToken: string,
+  purpose: Exclude<AccountTokenPurpose, 'DATA_EXPORT_DOWNLOAD'>,
+) {
   let tokenHash: string;
   try {
     tokenHash = hashAccountToken(rawToken);

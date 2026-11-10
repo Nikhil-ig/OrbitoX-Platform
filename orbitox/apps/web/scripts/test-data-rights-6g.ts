@@ -39,6 +39,7 @@ import {
   decryptAccountEmailPayload,
   generateTotpSecret,
   hashAccountPassword,
+  newAccountToken,
   newSessionTokens,
   sealTotpSecret,
 } from '../lib/phase6-account-security';
@@ -151,6 +152,15 @@ const hmsAuditUrl =
 const restaurantOwnerUrl =
   process.env.RESTAURANT_OS_DATABASE_URL ||
   'postgresql://apple@127.0.0.1:5432/restaurant_os';
+const restaurantAppPassword = process.env.RESTAURANT_OS_APP_PASSWORD || 'test_app_pass_123';
+const restaurantAppUrl =
+  process.env.RESTAURANT_OS_APP_DATABASE_URL ||
+  (() => {
+    const u = new URL(restaurantOwnerUrl);
+    u.username = 'restaurantos_app';
+    u.password = restaurantAppPassword;
+    return u.toString();
+  })();
 
 process.env.DATABASE_URL = platformOwnerUrl;
 process.env.TEST_DATABASE_URL = platformOwnerUrl;
@@ -367,7 +377,27 @@ describe('Phase 6G G1-G5 End-to-End PostgreSQL Integration Suite', () => {
       signingSecret: 'local-6g-object-store-signing-secret-32chars',
     });
 
-    // Launch real RestaurantOS server on a dedicated port backed by PostgreSQL
+    // Verify RestaurantOS server uses the non-superuser RLS runtime role restaurantos_app (G-6 #3)
+    const appCheckPool = new Pool({ connectionString: restaurantAppUrl });
+    try {
+      const roleCheck = await appCheckPool.query<{
+        current_user: string;
+        rolsuper: boolean;
+        rolbypassrls: boolean;
+      }>(
+        `SELECT current_user, r.rolsuper, r.rolbypassrls
+         FROM pg_roles r
+         WHERE r.rolname = current_user`,
+      );
+      const appRole = roleCheck.rows[0];
+      assert.equal(appRole?.current_user, 'restaurantos_app');
+      assert.equal(appRole?.rolsuper, false, 'restaurantos_app must NOT be superuser');
+      assert.equal(appRole?.rolbypassrls, false, 'restaurantos_app must NOT bypass RLS');
+    } finally {
+      await appCheckPool.end();
+    }
+
+    // Launch real RestaurantOS server on a dedicated port backed by PostgreSQL (non-superuser RLS role)
     const port = await allocateFreePort(4120);
     restaurantBaseUrl = `http://127.0.0.1:${port}`;
     const restLogs: string[] = [];
@@ -379,7 +409,7 @@ describe('Phase 6G G1-G5 End-to-End PostgreSQL Integration Suite', () => {
         PORT: String(port),
         HOSTNAME: '127.0.0.1',
         STORAGE_DRIVER: 'postgres',
-        DATABASE_URL: restaurantOwnerUrl,
+        DATABASE_URL: restaurantAppUrl,
         RESTAURANTOS_DISABLE_AUTOLISTEN: 'false',
         ORBITOX_BRIDGE_KEYS: process.env.ORBITOX_BRIDGE_KEYS,
         ORBITOX_BRIDGE_ACTIVE_KID: 'k1',
@@ -983,7 +1013,51 @@ describe('Phase 6G G1-G5 End-to-End PostgreSQL Integration Suite', () => {
     // Note: in CI/local override where process.env.ORBITOX_OBJECT_STORE_LOCAL_DIR is set by download route
     process.env.ORBITOX_OBJECT_STORE_LOCAL_DIR = objectStoreRoot;
 
-    // 1st download with single-use token -> 200 ZIP
+    // G-5: DATA_EXPORT_DOWNLOAD token is refused by verify-email AND a VERIFY_EMAIL token is refused by /data/export/download
+    const { POST: postVerifyEmail } = await import('../app/api/v1/customer/auth/verify-email/route');
+    const crossUseExportOnVerify = await postVerifyEmail(
+      new NextRequest('https://console.orbitox.test/api/v1/customer/auth/verify-email', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ token: tokenFromEmail }),
+      }),
+    );
+    assert.equal(crossUseExportOnVerify.status, 400);
+
+    const verifyTokenPair = newAccountToken('VERIFY_EMAIL');
+    await ownerPrisma.accountToken.create({
+      data: {
+        tokenHash: verifyTokenPair.tokenHash,
+        purpose: 'VERIFY_EMAIL',
+        userId: memberAUserId,
+        organizationId: orgAId,
+        email: memberAEmail,
+        expiresAt: verifyTokenPair.expiresAt,
+      },
+    });
+    const crossUseVerifyOnDownload = await postExportDownload(
+      makeCustomerRequest(
+        'POST',
+        `/api/v1/customer/organizations/${orgAId}/data/export/download`,
+        ownerASessionToken,
+        ownerACsrfToken,
+        { token: verifyTokenPair.token },
+      ),
+      { params: Promise.resolve({ organizationId: orgAId }) },
+    );
+    assert.equal(crossUseVerifyOnDownload.status, 410);
+
+    // Original VERIFY_EMAIL token remained unconsumed and still works on verify-email
+    const realVerifyRes = await postVerifyEmail(
+      new NextRequest('https://console.orbitox.test/api/v1/customer/auth/verify-email', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ token: verifyTokenPair.token }),
+      }),
+    );
+    assert.equal(realVerifyRes.status, 200);
+
+    // 1st download with single-use DATA_EXPORT_DOWNLOAD token -> 200 ZIP (unconsumed by verify-email)
     const dl1 = await postExportDownload(
       makeCustomerRequest(
         'POST',
@@ -1535,7 +1609,9 @@ describe('Phase 6G G1-G5 End-to-End PostgreSQL Integration Suite', () => {
     assert.equal(resumedSweep.certificates.length, 1);
     const cert = resumedSweep.certificates[0]!;
     assert.equal(cert.payload.organizationId, orgAId);
-    assert.equal(cert.payload.purpose, 'deletion-certificate');
+    assert.equal(cert.payload.purpose, 'orbitox.deletion_certificate.v1');
+    assert.match(cert.spkiFingerprint, /^[a-f0-9]{64}$/);
+    assert.equal(cert.payload.spkiFingerprint, cert.spkiFingerprint);
     assert.equal(cert.payload.objectStoreObjectsDeleted, 1);
     assert.ok(cert.payload.backupNotice.includes('data persists in encrypted backups until'));
     assert.ok(cert.payload.backupNotice.includes('unrecoverable'));

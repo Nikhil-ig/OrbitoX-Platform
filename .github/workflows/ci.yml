@@ -1038,6 +1038,7 @@ jobs:
           PLATFORM_AUDIT_DATABASE_URL: postgresql://orbitox_platform_admin_audit:phase2-audit-${{ github.run_id }}-${{ github.run_attempt }}@127.0.0.1:5432/orbitox_phase2
           HMS_AUDIT_DATABASE_URL: postgresql://hms_audit_reader:phase2-auditreader-${{ github.run_id }}-${{ github.run_attempt }}@127.0.0.1:5432/orbitox_phase2
           RESTAURANT_OS_DATABASE_URL: postgresql://postgres:postgrespassword@127.0.0.1:5432/restaurant_os
+          RESTAURANT_OS_APP_DATABASE_URL: postgresql://restaurantos_app:test_app_pass_123@127.0.0.1:5432/restaurant_os
           ORBITOX_EXPORT_MANIFEST_OUT: ${{ runner.temp }}/6g-export-manifest.json
 
       - name: Upload Phase 6G export manifest artifact

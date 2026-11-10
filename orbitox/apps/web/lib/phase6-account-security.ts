@@ -1,13 +1,19 @@
 import crypto from 'node:crypto';
 import localBreachedPasswordHashes from './data/breached-password-hashes.json';
 
-export type AccountTokenPurpose = 'VERIFY_EMAIL' | 'RESET_PASSWORD' | 'INVITE' | 'EMAIL_CHANGE';
+export type AccountTokenPurpose =
+  | 'VERIFY_EMAIL'
+  | 'RESET_PASSWORD'
+  | 'INVITE'
+  | 'EMAIL_CHANGE'
+  | 'DATA_EXPORT_DOWNLOAD';
 
 export const ACCOUNT_TOKEN_TTL_SECONDS: Record<AccountTokenPurpose, number> = {
   VERIFY_EMAIL: 24 * 60 * 60,
   RESET_PASSWORD: 30 * 60,
   INVITE: 7 * 24 * 60 * 60,
   EMAIL_CHANGE: 60 * 60,
+  DATA_EXPORT_DOWNLOAD: 24 * 60 * 60,
 };
 
 export const PASSWORD_SCRYPT_OPTIONS: crypto.ScryptOptions = {
@@ -140,7 +146,7 @@ function scrypt(password: string, salt: Buffer): Promise<Buffer> {
   });
 }
 
-export function newAccountToken(purpose: AccountTokenPurpose, now = Date.now()) {
+export function newAccountToken<P extends AccountTokenPurpose>(purpose: P, now = Date.now()) {
   const token = crypto.randomBytes(32).toString('base64url');
   return {
     token,

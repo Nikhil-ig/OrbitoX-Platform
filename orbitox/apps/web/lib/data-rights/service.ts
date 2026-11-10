@@ -857,7 +857,7 @@ export async function processExportJobs(input: {
         metadata: { organizationId, jobId: job.id },
       });
 
-      const { token: rawToken, tokenHash } = newAccountToken('VERIFY_EMAIL', now.getTime());
+      const { token: rawToken, tokenHash } = newAccountToken('DATA_EXPORT_DOWNLOAD', now.getTime());
       const downloadExpiresAt = new Date(now.getTime() + EXPORT_DOWNLOAD_TTL_MS);
       const jobExpiresAt = new Date(now.getTime() + EXPORT_RETENTION_MS);
       const downloadLink = buildAccountLink(
