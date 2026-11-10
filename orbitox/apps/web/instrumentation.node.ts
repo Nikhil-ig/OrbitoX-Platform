@@ -113,22 +113,29 @@ export async function registerNode() {
       !process.env.KUBERNETES_SERVICE_HOST &&
       !process.env.AWS_REGION;
 
-    // Dedicated Ed25519 deletion certificate keys (Phase 6G G3)
+    // Dedicated Ed25519 deletion certificate keys (Phase 6G G3 / G-4)
     const rawDeletionCertKeys = process.env.ORBITOX_DELETION_CERT_KEYS?.trim();
+    const activeDeletionCertKid = process.env.ORBITOX_DELETION_CERT_KEY_ACTIVE?.trim();
     if (!rawDeletionCertKeys && !loopbackStandaloneHarness) {
       problems.push(
         'ORBITOX_DELETION_CERT_KEYS is not set (Dedicated Ed25519 signing keypair is required for deletion certificates)',
       );
     } else if (rawDeletionCertKeys) {
-      try {
-        const { loadDeletionCertSigningKeysFromEnv } = await import(
-          './lib/data-rights/deletion-certificate'
-        );
-        loadDeletionCertSigningKeysFromEnv(process.env);
-      } catch (certKeyErr: any) {
+      if (!activeDeletionCertKid) {
         problems.push(
-          `ORBITOX_DELETION_CERT_KEYS is invalid: ${certKeyErr instanceof Error ? certKeyErr.message : String(certKeyErr)}`,
+          'ORBITOX_DELETION_CERT_KEY_ACTIVE is not set (must name the active key ID in ORBITOX_DELETION_CERT_KEYS)',
         );
+      } else {
+        try {
+          const { loadDeletionCertSigningKeysFromEnv } = await import(
+            './lib/data-rights/deletion-certificate'
+          );
+          loadDeletionCertSigningKeysFromEnv(process.env);
+        } catch (certKeyErr: any) {
+          problems.push(
+            `ORBITOX_DELETION_CERT_KEYS is invalid: ${certKeyErr instanceof Error ? certKeyErr.message : String(certKeyErr)}`,
+          );
+        }
       }
     }
 

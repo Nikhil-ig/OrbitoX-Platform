@@ -120,6 +120,7 @@ function spawnServer(port: number, envOverrides: Record<string, string> = {}): C
     env: {
       ...process.env,
       ORBITOX_DELETION_CERT_KEYS: process.env.ORBITOX_DELETION_CERT_KEYS || step4CertKeysJson,
+      ORBITOX_DELETION_CERT_KEY_ACTIVE: process.env.ORBITOX_DELETION_CERT_KEY_ACTIVE || 'cert_k1',
       PORT: String(port),
       HOSTNAME: '127.0.0.1',
       NODE_ENV: 'production',

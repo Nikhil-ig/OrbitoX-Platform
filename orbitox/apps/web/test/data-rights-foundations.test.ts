@@ -226,6 +226,7 @@ describe('Phase 6G Foundations: Contract, ObjectStore, Export Bundle & Deletion 
     const env = {
       ORBITOX_GRANT_SIGNING_KEYS: JSON.stringify({ grant_k1: grantKey }),
       ORBITOX_DELETION_CERT_KEYS: JSON.stringify({ cert_k1: certKey }),
+      ORBITOX_DELETION_CERT_KEY_ACTIVE: 'cert_k1',
       ORBITOX_BACKUP_RETENTION_DAYS: '35',
     };
 
@@ -246,6 +247,7 @@ describe('Phase 6G Foundations: Contract, ObjectStore, Export Bundle & Deletion 
           {
             ORBITOX_GRANT_SIGNING_KEYS: JSON.stringify({ grant_k1: grantKey }),
             ORBITOX_DELETION_CERT_KEYS: JSON.stringify({ cert_k1: grantKey }),
+            ORBITOX_DELETION_CERT_KEY_ACTIVE: 'cert_k1',
           },
         ),
       /reuses an entitlement grant key/,
@@ -272,14 +274,52 @@ describe('Phase 6G Foundations: Contract, ObjectStore, Export Bundle & Deletion 
       env,
     );
 
-    assert.equal(cert.payload.purpose, 'deletion-certificate');
+    assert.equal(cert.payload.purpose, 'orbitox.deletion_certificate.v1');
     assert.equal(cert.keyId, 'cert_k1');
+    assert.match(cert.spkiFingerprint, /^[a-f0-9]{64}$/);
+    assert.equal(cert.payload.spkiFingerprint, cert.spkiFingerprint);
     assert.equal(cert.payload.totalRowsDeleted, 5);
     assert.ok(cert.payload.backupNotice.includes('2026-12-05'));
     assert.ok(cert.payload.backupNotice.includes('unrecoverable'));
 
     const publicKeys = extractDeletionCertPublicKeys(env.ORBITOX_DELETION_CERT_KEYS);
     assert.equal(verifyDeletionCertificate(cert, publicKeys).valid, true);
+
+    // Tampered spkiFingerprint & purpose fail verification
+    const tamperedPurposeCert = structuredClone(cert);
+    (tamperedPurposeCert.payload as any).purpose = 'wrong-purpose';
+    assert.equal(verifyDeletionCertificate(tamperedPurposeCert, publicKeys).valid, false);
+    const tamperedFpCert = structuredClone(cert);
+    tamperedFpCert.payload.spkiFingerprint = '0'.repeat(64);
+    assert.equal(verifyDeletionCertificate(tamperedFpCert, publicKeys).valid, false);
+
+    // Retired public-only k1 still verifies historical certificate when k2 is active
+    const certKey2 = genEd25519();
+    const rotatedRingEnv = {
+      ORBITOX_GRANT_SIGNING_KEYS: env.ORBITOX_GRANT_SIGNING_KEYS,
+      ORBITOX_DELETION_CERT_KEYS: JSON.stringify({
+        cert_k1: { publicKey: certKey.publicKey },
+        cert_k2: certKey2,
+      }),
+      ORBITOX_DELETION_CERT_KEY_ACTIVE: 'cert_k2',
+    };
+    const cert2 = buildSignedDeletionCertificate(
+      {
+        organizationId: 'org_del_2',
+        requestId: 'req_456',
+        requestedAt: new Date('2026-11-01T00:00:00.000Z'),
+        scheduledFor: new Date('2026-12-01T00:00:00.000Z'),
+        completedAt: new Date('2026-12-01T00:05:00.000Z'),
+        plugins: [],
+        platformRowsDeletedByTable: { PlatformOrganization: 1 },
+        objectStoreObjectsDeleted: 0,
+      },
+      rotatedRingEnv,
+    );
+    assert.equal(cert2.keyId, 'cert_k2');
+    const rotatedPublicKeys = extractDeletionCertPublicKeys(rotatedRingEnv.ORBITOX_DELETION_CERT_KEYS);
+    assert.equal(verifyDeletionCertificate(cert, rotatedPublicKeys).valid, true);
+    assert.equal(verifyDeletionCertificate(cert2, rotatedPublicKeys).valid, true);
 
     // 1-byte tamper inside payload
     const tamperedPayloadCert = structuredClone(cert);

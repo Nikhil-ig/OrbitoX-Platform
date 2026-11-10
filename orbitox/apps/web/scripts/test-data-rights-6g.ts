@@ -122,6 +122,7 @@ process.env.ORBITOX_PHI_INDEX_KEY = process.env.ORBITOX_PHI_INDEX_KEY || phiInde
 process.env.ORBITOX_GRANT_SIGNING_KEYS = JSON.stringify({ k1: grantPair });
 process.env.ORBITOX_GRANT_PUBLIC_KEYS = JSON.stringify({ k1: { publicKey: grantPair.publicKey } });
 process.env.ORBITOX_DELETION_CERT_KEYS = JSON.stringify({ cert_k1: certPair });
+process.env.ORBITOX_DELETION_CERT_KEY_ACTIVE = 'cert_k1';
 process.env.ORBITOX_MFA_ENCRYPTION_KEY = process.env.ORBITOX_MFA_ENCRYPTION_KEY || crypto.randomBytes(32).toString('base64');
 process.env.ORBITOX_ACCOUNT_TOKEN_ENCRYPTION_KEY = process.env.ORBITOX_ACCOUNT_TOKEN_ENCRYPTION_KEY || crypto.randomBytes(32).toString('base64');
 process.env.ORBITOX_SERVER_PEPPER = process.env.ORBITOX_SERVER_PEPPER || 'test_server_pepper_32_characters_long_6g';

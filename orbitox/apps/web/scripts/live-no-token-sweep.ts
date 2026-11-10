@@ -20,6 +20,7 @@ const env: NodeJS.ProcessEnv = {
       publicKey: sweepCertPair.publicKey.export({ type: 'spki', format: 'pem' }).toString(),
     },
   }),
+  ORBITOX_DELETION_CERT_KEY_ACTIVE: 'cert_k1',
   ORBITOX_ADMIN_TOKEN: crypto.randomBytes(32).toString('hex'),
   ORBITOX_RUNTIME_TOKEN: crypto.randomBytes(32).toString('hex'),
   ORBITOX_CONTROL_SECRET: crypto.randomBytes(32).toString('hex'),

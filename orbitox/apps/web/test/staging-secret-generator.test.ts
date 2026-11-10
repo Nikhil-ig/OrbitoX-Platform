@@ -28,6 +28,11 @@ import {
   verifyBridgeRequest,
   MemoryNonceStore,
 } from '../../../../orbitox/packages/bridge/src';
+import {
+  buildSignedDeletionCertificate,
+  extractDeletionCertPublicKeys,
+  verifyDeletionCertificate,
+} from '../lib/data-rights/deletion-certificate';
 
 describe('Phase 6F B0: Staging Secret Generator Verification', () => {
   it('dry-run mode lists the exact names it would set without writing secrets', () => {
@@ -112,6 +117,8 @@ describe('Phase 6F B0: Staging Secret Generator Verification', () => {
         const parsed = JSON.parse(val);
         assert.ok(parsed.k1.privateKey.includes('BEGIN PRIVATE KEY'));
         assert.ok(parsed.k1.publicKey.includes('BEGIN PUBLIC KEY'));
+      } else if (name === 'ORBITOX_DELETION_CERT_KEY_ACTIVE') {
+        assert.equal(val, 'k1');
       } else if (name === 'ORBITOX_GRANT_PUBLIC_KEYS') {
         const parsed = JSON.parse(val);
         assert.ok(parsed.k1.publicKey.includes('BEGIN PUBLIC KEY'));
@@ -203,6 +210,14 @@ describe('Phase 6F B0: Staging Secret Generator Verification', () => {
     assert.throws(
       () => runSecretGenerator({ rotate: 'ORBITOX_SERVER_PEPPERS', awsCliRunner: mockRunner }),
       /Keyed secrets must be rotated additively via --add-key=ORBITOX_SERVER_PEPPERS/,
+    );
+    assert.throws(
+      () => runSecretGenerator({ rotate: 'ORBITOX_DELETION_CERT_KEYS', awsCliRunner: mockRunner }),
+      /Keyed secrets must be rotated additively via --add-key=ORBITOX_DELETION_CERT_KEYS/,
+    );
+    assert.throws(
+      () => runSecretGenerator({ rotate: 'ORBITOX_DELETION_CERT_KEY_ACTIVE', awsCliRunner: mockRunner }),
+      /cannot be blind-rotated/,
     );
     assert.throws(
       () => runSecretGenerator({ rotate: 'STAFF_AUTH_SECRET', awsCliRunner: mockRunner }),
@@ -367,7 +382,8 @@ describe('Phase 6F B0: Staging Secret Generator Verification', () => {
     assert.ok(updatedPublic.k2?.publicKey, 'Must contain k2 public key');
     assert.equal(updatedPublic.k1?.privateKey, undefined, 'Must NEVER contain private keys in grant public keys');
 
-    // 2b. Add key to ORBITOX_DELETION_CERT_KEYS
+    // 2b. Add key to ORBITOX_DELETION_CERT_KEYS (preserves active key k1 until explicit activation)
+    mockStorage.set('orbitox/staging/ORBITOX_DELETION_CERT_KEY_ACTIVE', 'k1');
     const certResult = runSecretGenerator({
       addKey: 'ORBITOX_DELETION_CERT_KEYS',
       awsCliRunner: mockRunner,
@@ -376,6 +392,14 @@ describe('Phase 6F B0: Staging Secret Generator Verification', () => {
     const updatedCert = JSON.parse(mockStorage.get('orbitox/staging/ORBITOX_DELETION_CERT_KEYS')!);
     assert.ok(updatedCert.k1, 'Must preserve original deletion cert key k1');
     assert.ok(updatedCert.k2, 'Must add new deletion cert key k2');
+    assert.equal(mockStorage.get('orbitox/staging/ORBITOX_DELETION_CERT_KEY_ACTIVE'), 'k1', 'Active cert key must remain k1 until explicit activation');
+    const certActivateRes = runSecretGenerator({
+      activate: 'ORBITOX_DELETION_CERT_KEYS',
+      kid: 'k2',
+      awsCliRunner: mockRunner,
+    });
+    assert.equal(certActivateRes[0]?.action, 'activated');
+    assert.equal(mockStorage.get('orbitox/staging/ORBITOX_DELETION_CERT_KEY_ACTIVE'), 'k2');
 
     // 3. Add key to ORBITOX_BRIDGE_KEYS
     const bridgeResult = runSecretGenerator({
@@ -853,6 +877,95 @@ describe('Phase 6F B0: Staging Secret Generator Verification', () => {
         rawBody: JSON.stringify({ status: 'SUSPENDED' }),
       });
       assert.equal(vNew.ok, true);
+    } finally {
+      process.env = origEnv;
+    }
+  });
+
+  it('B0-7: Real-loader round-trip through buildSignedDeletionCertificate and verifyDeletionCertificate asserts historical verification after --add-key and key retirement', () => {
+    const mockStorage = new Map<string, string>();
+    const mockRunner = (args: string[], stdin?: string) => {
+      const subcmd = args[1];
+      const idIdx = args.indexOf('--secret-id');
+      const secretId = idIdx !== -1 ? args[idIdx + 1] : undefined;
+      if (!secretId) return { stdout: '', status: 1 };
+      if (subcmd === 'get-secret-value') {
+        if (mockStorage.has(secretId)) {
+          return { stdout: JSON.stringify({ SecretString: mockStorage.get(secretId) }), status: 0 };
+        }
+        return { stdout: '', status: 1 };
+      }
+      if (subcmd === 'put-secret-value') {
+        if (stdin) mockStorage.set(secretId, stdin);
+        return { stdout: JSON.stringify({ VersionId: 'v1' }), status: 0 };
+      }
+      return { stdout: '', status: 0 };
+    };
+
+    // 1. Initial generation produces k1 + active = 'k1' and grant signing keys separate
+    runSecretGenerator({ dryRun: false, awsCliRunner: mockRunner });
+    const initialCertKeys = mockStorage.get('orbitox/staging/ORBITOX_DELETION_CERT_KEYS')!;
+    const initialActiveKid = mockStorage.get('orbitox/staging/ORBITOX_DELETION_CERT_KEY_ACTIVE')!;
+    const grantKeys = mockStorage.get('orbitox/staging/ORBITOX_GRANT_SIGNING_KEYS')!;
+    assert.equal(initialActiveKid, 'k1');
+
+    const origEnv = { ...process.env };
+    try {
+      Reflect.set(process.env, 'NODE_ENV', 'production');
+      process.env.ORBITOX_DELETION_CERT_KEYS = initialCertKeys;
+      process.env.ORBITOX_DELETION_CERT_KEY_ACTIVE = initialActiveKid;
+      process.env.ORBITOX_GRANT_SIGNING_KEYS = grantKeys;
+
+      // 2. Sign deletion certificate 1 with active key k1 through real loader
+      const cert1 = buildSignedDeletionCertificate({
+        organizationId: 'org_b07_cert_1',
+        organizationSlug: 'b07-org-1',
+        requestId: 'del_req_1',
+        requestedAt: new Date('2026-10-01T00:00:00.000Z'),
+        scheduledFor: new Date('2026-10-31T00:00:00.000Z'),
+        completedAt: new Date('2026-10-31T00:05:00.000Z'),
+        plugins: [{ pluginId: '@orbitox/restaurant', tenantId: 't1', rowsDeletedByTable: { Tenant: 1 } }],
+        platformRowsDeletedByTable: { PlatformOrganization: 1 },
+        objectStoreObjectsDeleted: 1,
+      });
+      assert.equal(cert1.keyId, 'k1');
+      assert.equal(cert1.payload.purpose, 'orbitox.deletion_certificate.v1');
+
+      // 3. Add key k2 via secret generator and activate k2
+      runSecretGenerator({ addKey: 'ORBITOX_DELETION_CERT_KEYS', awsCliRunner: mockRunner });
+      runSecretGenerator({ activate: 'ORBITOX_DELETION_CERT_KEYS', kid: 'k2', awsCliRunner: mockRunner });
+      assert.equal(mockStorage.get('orbitox/staging/ORBITOX_DELETION_CERT_KEY_ACTIVE'), 'k2');
+
+      // Retire privateKey on k1 while keeping its publicKey in ORBITOX_DELETION_CERT_KEYS
+      const ringParsed = JSON.parse(mockStorage.get('orbitox/staging/ORBITOX_DELETION_CERT_KEYS')!) as Record<
+        string,
+        { privateKey?: string; publicKey: string }
+      >;
+      assert.ok(ringParsed.k1?.publicKey && ringParsed.k2?.privateKey && ringParsed.k2?.publicKey);
+      ringParsed.k1 = { publicKey: ringParsed.k1.publicKey };
+
+      process.env.ORBITOX_DELETION_CERT_KEYS = JSON.stringify(ringParsed);
+      process.env.ORBITOX_DELETION_CERT_KEY_ACTIVE = 'k2';
+
+      // 4. Sign certificate 2 with k2 while k1 has only retired publicKey in ring
+      const cert2 = buildSignedDeletionCertificate({
+        organizationId: 'org_b07_cert_2',
+        organizationSlug: 'b07-org-2',
+        requestId: 'del_req_2',
+        requestedAt: new Date('2026-11-01T00:00:00.000Z'),
+        scheduledFor: new Date('2026-12-01T00:00:00.000Z'),
+        completedAt: new Date('2026-12-01T00:05:00.000Z'),
+        plugins: [],
+        platformRowsDeletedByTable: { PlatformOrganization: 1 },
+        objectStoreObjectsDeleted: 0,
+      });
+      assert.equal(cert2.keyId, 'k2');
+      assert.notEqual(cert2.spkiFingerprint, cert1.spkiFingerprint);
+
+      // 5. Verify both historical k1 certificate and new k2 certificate through real key extractor & verifier
+      const trustedPublicKeys = extractDeletionCertPublicKeys(process.env.ORBITOX_DELETION_CERT_KEYS);
+      assert.equal(verifyDeletionCertificate(cert1, trustedPublicKeys).valid, true);
+      assert.equal(verifyDeletionCertificate(cert2, trustedPublicKeys).valid, true);
     } finally {
       process.env = origEnv;
     }

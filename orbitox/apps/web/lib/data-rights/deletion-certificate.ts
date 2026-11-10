@@ -1,6 +1,6 @@
 import crypto from 'node:crypto';
 
-export const DELETION_CERTIFICATE_PURPOSE = 'deletion-certificate' as const;
+export const DELETION_CERTIFICATE_PURPOSE = 'orbitox.deletion_certificate.v1' as const;
 export const DELETION_CERTIFICATE_VERSION = 'orbitox.deletion_certificate.v1' as const;
 export const DEFAULT_BACKUP_RETENTION_DAYS = 35;
 
@@ -19,6 +19,7 @@ export interface DeletionCertificatePayload {
   version: typeof DELETION_CERTIFICATE_VERSION;
   purpose: typeof DELETION_CERTIFICATE_PURPOSE;
   keyId: string;
+  spkiFingerprint: string;
   organizationId: string;
   organizationSlug?: string;
   requestId: string;
@@ -37,6 +38,7 @@ export interface DeletionCertificatePayload {
 export interface SignedDeletionCertificate {
   algorithm: 'Ed25519';
   keyId: string;
+  spkiFingerprint: string;
   payload: DeletionCertificatePayload;
   signature: string;
 }
@@ -169,30 +171,57 @@ export function parseDeletionCertKeys(
 
 export function loadDeletionCertSigningKeysFromEnv(
   env: NodeJS.ProcessEnv | Record<string, string | undefined> = process.env,
-): { activeKeyId: string; keys: Record<string, { privateKey: string; publicKey: string }> } {
+): {
+  activeKeyId: string;
+  keys: Record<string, { privateKey: string; publicKey: string }>;
+  publicKeys: Record<string, { publicKey: string }>;
+} {
   const raw = env.ORBITOX_DELETION_CERT_KEYS?.trim();
   if (!raw) {
     throw new Error('ORBITOX_DELETION_CERT_KEYS is not configured.');
   }
 
   const parsed = parseDeletionCertKeys(raw);
+  const explicitActive = env.ORBITOX_DELETION_CERT_KEY_ACTIVE?.trim();
+  if (!explicitActive && env.NODE_ENV === 'production') {
+    throw new Error('ORBITOX_DELETION_CERT_KEY_ACTIVE is not configured.');
+  }
+
+  const activeKeyId = explicitActive || parsed.activeKeyId;
+  if (!parsed.keys[activeKeyId]) {
+    throw new Error(
+      `ORBITOX_DELETION_CERT_KEY_ACTIVE "${activeKeyId}" not found in ORBITOX_DELETION_CERT_KEYS.`,
+    );
+  }
+
   const forbiddenGrantFps = extractForbiddenGrantFingerprints(env);
   const signingKeys: Record<string, { privateKey: string; publicKey: string }> = {};
+  const publicKeys: Record<string, { publicKey: string }> = {};
 
   for (const [kid, pair] of Object.entries(parsed.keys)) {
+    const pubObj = crypto.createPublicKey(pair.publicKey);
+    if (pubObj.asymmetricKeyType !== 'ed25519') {
+      throw new Error(`Deletion certificate key "${kid}" must use Ed25519.`);
+    }
     const pubFp = spkiFingerprintHex(pair.publicKey);
     if (forbiddenGrantFps.has(pubFp)) {
       throw new Error(
         `Security violation: deletion certificate key "${kid}" reuses an entitlement grant key (forbidden).`,
       );
     }
+
+    publicKeys[kid] = { publicKey: pair.publicKey };
+
     if (!pair.privateKey) {
-      throw new Error(`Deletion certificate key "${kid}" is missing privateKey for signing.`);
+      if (kid === activeKeyId) {
+        throw new Error(`Active deletion certificate key "${kid}" is missing privateKey for signing.`);
+      }
+      // Retired public keys stay in the ring for verifying previously signed certificates
+      continue;
     }
-    // Validate keypair actually matches and is Ed25519
+
     const privObj = crypto.createPrivateKey(pair.privateKey);
-    const pubObj = crypto.createPublicKey(pair.publicKey);
-    if (privObj.asymmetricKeyType !== 'ed25519' || pubObj.asymmetricKeyType !== 'ed25519') {
+    if (privObj.asymmetricKeyType !== 'ed25519') {
       throw new Error(`Deletion certificate key "${kid}" must use Ed25519.`);
     }
     const derivedPubHex = crypto
@@ -205,7 +234,11 @@ export function loadDeletionCertSigningKeysFromEnv(
     signingKeys[kid] = { privateKey: pair.privateKey, publicKey: pair.publicKey };
   }
 
-  return { activeKeyId: parsed.activeKeyId, keys: signingKeys };
+  if (!signingKeys[activeKeyId]) {
+    throw new Error(`Active deletion certificate key "${activeKeyId}" has no signing privateKey.`);
+  }
+
+  return { activeKeyId, keys: signingKeys, publicKeys };
 }
 
 export function extractDeletionCertPublicKeys(
@@ -282,10 +315,13 @@ export function buildSignedDeletionCertificate(
     totalRowsDeleted += count;
   }
 
+  const pubSpkiFp = spkiFingerprintHex(keyPair.publicKey);
+
   const payload: DeletionCertificatePayload = {
     version: DELETION_CERTIFICATE_VERSION,
     purpose: DELETION_CERTIFICATE_PURPOSE,
     keyId: activeKeyId,
+    spkiFingerprint: pubSpkiFp,
     organizationId: input.organizationId,
     ...(input.organizationSlug ? { organizationSlug: input.organizationSlug } : {}),
     requestId: input.requestId,
@@ -309,6 +345,7 @@ export function buildSignedDeletionCertificate(
   return {
     algorithm: 'Ed25519',
     keyId: activeKeyId,
+    spkiFingerprint: pubSpkiFp,
     payload,
     signature,
   };
@@ -376,6 +413,20 @@ export function verifyDeletionCertificate(
   }
 
   try {
+    const expectedSpkiFp = spkiFingerprintHex(publicKeyPem);
+    if (typeof payload.spkiFingerprint !== 'string' || payload.spkiFingerprint !== expectedSpkiFp) {
+      return {
+        valid: false,
+        reason: `Certificate payload spkiFingerprint does not match trusted public key SPKI for keyId "${cert.keyId}".`,
+      };
+    }
+    if (typeof cert.spkiFingerprint === 'string' && cert.spkiFingerprint !== expectedSpkiFp) {
+      return {
+        valid: false,
+        reason: `Certificate envelope spkiFingerprint does not match trusted public key SPKI for keyId "${cert.keyId}".`,
+      };
+    }
+
     const payloadBytes = Buffer.from(canonicalJson(cert.payload), 'utf8');
     const sigBytes = Buffer.from(cert.signature, 'base64url');
     const verified = crypto.verify(

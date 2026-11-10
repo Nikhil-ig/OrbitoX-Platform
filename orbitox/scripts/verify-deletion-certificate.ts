@@ -88,6 +88,7 @@ function main(): void {
         organizationId: certificate.payload.organizationId,
         requestId: certificate.payload.requestId,
         keyId: certificate.keyId,
+        spkiFingerprint: certificate.payload.spkiFingerprint,
         purpose: certificate.payload.purpose,
         completedAt: certificate.payload.completedAt,
         backupPitrExpiryAt: certificate.payload.backupPitrExpiryAt,

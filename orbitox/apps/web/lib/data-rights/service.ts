@@ -1,5 +1,5 @@
 import crypto from 'node:crypto';
-import { PrismaClient, type Prisma } from '@prisma/client';
+import type { Prisma, PrismaClient } from '@prisma/client';
 import {
   normalizeDataRightsPluginId,
   resolvePluginErasureMode,
@@ -707,59 +707,46 @@ export async function processExportJobs(input: {
       });
 
       let auditRows: Array<Record<string, unknown>> = [];
-      let ownedMaintClient: PrismaClient | null = null;
-      try {
-        const maintClient =
-          input.maintenancePrisma ??
-          (process.env.MAINTENANCE_DATABASE_URL
-            ? (ownedMaintClient = new PrismaClient({ datasources: { db: { url: process.env.MAINTENANCE_DATABASE_URL } } }))
-            : null);
-
-        if (maintClient) {
-          auditRows = (
-            await maintClient.platformAuditEvent.findMany({
-              where: { organizationId },
-              select: {
-                id: true,
-                actorId: true,
-                actorEmail: true,
-                action: true,
-                entityType: true,
-                entityId: true,
-                organizationId: true,
-                projectId: true,
-                environmentId: true,
-                ipAddress: true,
-                requestId: true,
-                reason: true,
-                metadata: true,
-                status: true,
-                failureReason: true,
-                occurredAt: true,
-              },
-              orderBy: [{ occurredAt: 'asc' }, { id: 'asc' }],
-            })
-          ).map((ev) => serializePlainRow(ev as unknown as Record<string, unknown>));
-        } else {
-          for (const tenant of resolved.tenants) {
-            const rows = await withTenantTx(runtimePrisma, tenant.tenantId, async (tx) => {
-              const { rows: scopedAudit } = await tx.query(
-                `SELECT "id", "actorId", "actorEmail", "action", "entityType", "entityId", "organizationId",
-                        "projectId", "environmentId", "ipAddress", "requestId", "reason", "metadata", "status",
-                        "failureReason", "occurredAt"
-                 FROM public."PlatformAuditEvent"
-                 ORDER BY "occurredAt" ASC, "id" ASC`,
-              );
-              return scopedAudit;
-            });
-            for (const r of rows) {
-              auditRows.push(serializePlainRow(r));
-            }
+      if (input.maintenancePrisma) {
+        auditRows = (
+          await input.maintenancePrisma.platformAuditEvent.findMany({
+            where: { organizationId },
+            select: {
+              id: true,
+              actorId: true,
+              actorEmail: true,
+              action: true,
+              entityType: true,
+              entityId: true,
+              organizationId: true,
+              projectId: true,
+              environmentId: true,
+              ipAddress: true,
+              requestId: true,
+              reason: true,
+              metadata: true,
+              status: true,
+              failureReason: true,
+              occurredAt: true,
+            },
+            orderBy: [{ occurredAt: 'asc' }, { id: 'asc' }],
+          })
+        ).map((ev) => serializePlainRow(ev as unknown as Record<string, unknown>));
+      } else {
+        for (const tenant of resolved.tenants) {
+          const rows = await withTenantTx(runtimePrisma, tenant.tenantId, async (tx) => {
+            const { rows: scopedAudit } = await tx.query(
+              `SELECT "id", "actorId", "actorEmail", "action", "entityType", "entityId", "organizationId",
+                      "projectId", "environmentId", "ipAddress", "requestId", "reason", "metadata", "status",
+                      "failureReason", "occurredAt"
+               FROM public."PlatformAuditEvent"
+               ORDER BY "occurredAt" ASC, "id" ASC`,
+            );
+            return scopedAudit;
+          });
+          for (const r of rows) {
+            auditRows.push(serializePlainRow(r));
           }
-        }
-      } finally {
-        if (ownedMaintClient) {
-          await ownedMaintClient.$disconnect().catch(() => {});
         }
       }
       tableData.push({

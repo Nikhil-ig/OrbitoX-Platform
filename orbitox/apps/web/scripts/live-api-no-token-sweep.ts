@@ -135,6 +135,7 @@ async function run() {
     ORBITOX_DELETION_CERT_KEYS: JSON.stringify({
       k1: { privateKey: certPrivPem, publicKey: certPubPem },
     }),
+    ORBITOX_DELETION_CERT_KEY_ACTIVE: 'k1',
     ORBITOX_GRANT_PUBLIC_KEYS: JSON.stringify({
       k1: grantPubPem,
     }),
