@@ -402,6 +402,7 @@ async function main() {
     });
     await provisionActiveHms(org.id, project.id, env.id);
 
+    const quotaTenantId = `org/${org.id}/project/${project.id}/environment/${env.id}`;
     const key = await owner.platformApiKey.create({
       data: {
         name: `Quota Key Run ${r}`,
@@ -412,7 +413,7 @@ async function main() {
         authVerifier,
         environmentId: env.id,
         capabilities: ['hms:read'],
-        tenantScope: [projSlug],
+        tenantScope: [quotaTenantId],
         createdBy: 'step4_test',
         status: 'ACTIVE',
       },
@@ -425,7 +426,7 @@ async function main() {
           method: 'GET',
           headers: {
             'x-api-key': rawSecret,
-            'x-tenant-id': projSlug,
+            'x-tenant-id': quotaTenantId,
           },
         });
         const status = res.status;
@@ -507,6 +508,7 @@ async function main() {
   });
   await provisionActiveHms(org.id, rlProject.id, rlEnv.id);
 
+  const rlTenantId = `org/${org.id}/project/${rlProject.id}/environment/${rlEnv.id}`;
   const rlKey = await owner.platformApiKey.create({
     data: {
       name: 'Rate Limit Key',
@@ -517,7 +519,7 @@ async function main() {
       authVerifier: rlAuthVerifier,
       environmentId: rlEnv.id,
       capabilities: ['hms:read'],
-      tenantScope: [rateLimitProjSlug],
+      tenantScope: [rlTenantId],
       createdBy: 'step4_test',
       status: 'ACTIVE',
       rateLimitPerMin: RATE_LIMIT_L,
@@ -529,7 +531,7 @@ async function main() {
   const sub2aResults: number[] = [];
   for (let i = 0; i < RATE_LIMIT_L + 10; i++) {
     const res = await fetch(`http://127.0.0.1:${proxyPort}/api/v1/hms/patients`, {
-      headers: { 'x-api-key': rlRawSecret, 'x-tenant-id': rateLimitProjSlug },
+      headers: { 'x-api-key': rlRawSecret, 'x-tenant-id': rlTenantId },
     });
     sub2aResults.push(res.status);
   }
@@ -569,6 +571,7 @@ async function main() {
     },
   });
   await provisionActiveHms(org.id, burstProject.id, burstEnv.id);
+  const burstTenantId = `org/${org.id}/project/${burstProject.id}/environment/${burstEnv.id}`;
   const burstSecret = `orb_live_${crypto.randomBytes(24).toString('hex')}`;
   const burstPrefix = burstSecret.slice(0, 14);
   const burstKey = await owner.platformApiKey.create({
@@ -581,7 +584,7 @@ async function main() {
       authVerifier: crypto.createHmac('sha256', serverPepper).update(burstSecret).digest('hex'),
       environmentId: burstEnv.id,
       capabilities: ['hms:read'],
-      tenantScope: [burstProjSlug],
+      tenantScope: [burstTenantId],
       createdBy: 'step4_test',
       status: 'ACTIVE',
       rateLimitPerMin: 15,
@@ -590,7 +593,7 @@ async function main() {
 
   const burstPromises = Array.from({ length: 40 }, async () => {
     const res = await fetch(`http://127.0.0.1:${proxyPort}/api/v1/hms/patients`, {
-      headers: { 'x-api-key': burstSecret, 'x-tenant-id': burstProjSlug },
+      headers: { 'x-api-key': burstSecret, 'x-tenant-id': burstTenantId },
     });
     return res.status;
   });
@@ -633,6 +636,7 @@ async function main() {
   await provisionActiveHms(org.id, killProject.id, killEnv.id);
   const killSecret = `orb_live_${crypto.randomBytes(24).toString('hex')}`;
   const killPrefix = killSecret.slice(0, 14);
+  const killTenantId = `org/${org.id}/project/${killProject.id}/environment/${killEnv.id}`;
   const killKey = await owner.platformApiKey.create({
     data: {
       name: 'Kill Durability Key',
@@ -643,7 +647,7 @@ async function main() {
       authVerifier: crypto.createHmac('sha256', serverPepper).update(killSecret).digest('hex'),
       environmentId: killEnv.id,
       capabilities: ['hms:read'],
-      tenantScope: [killProjSlug],
+      tenantScope: [killTenantId],
       createdBy: 'step4_test',
       status: 'ACTIVE',
       rateLimitPerMin: 20,
@@ -654,7 +658,7 @@ async function main() {
   console.log(`Sending 12 requests directly to Server 1 (port ${port1})...`);
   for (let i = 0; i < 12; i++) {
     const res = await fetch(`http://127.0.0.1:${port1}/api/v1/hms/patients`, {
-      headers: { 'x-api-key': killSecret, 'x-tenant-id': killProjSlug },
+      headers: { 'x-api-key': killSecret, 'x-tenant-id': killTenantId },
     });
     assert.equal(res.status, 200, `Request ${i + 1} to Server 1 should succeed`);
   }
@@ -670,7 +674,7 @@ async function main() {
   const server2Statuses: number[] = [];
   for (let i = 0; i < 15; i++) {
     const res = await fetch(`http://127.0.0.1:${port2}/api/v1/hms/patients`, {
-      headers: { 'x-api-key': killSecret, 'x-tenant-id': killProjSlug },
+      headers: { 'x-api-key': killSecret, 'x-tenant-id': killTenantId },
     });
     server2Statuses.push(res.status);
   }
@@ -715,6 +719,7 @@ async function main() {
   const KEY_LIMIT_K = 10;
   const pkSecret = `orb_live_${crypto.randomBytes(24).toString('hex')}`;
   const pkPrefix = pkSecret.slice(0, 14);
+  const perKeyTenantId = `org/${org.id}/project/${perKeyProject.id}/environment/${perKeyEnv.id}`;
   const pkKey = await owner.platformApiKey.create({
     data: {
       name: 'Strict Key',
@@ -725,7 +730,7 @@ async function main() {
       authVerifier: crypto.createHmac('sha256', serverPepper).update(pkSecret).digest('hex'),
       environmentId: perKeyEnv.id,
       capabilities: ['hms:read'],
-      tenantScope: [perKeyProjSlug],
+      tenantScope: [perKeyTenantId],
       createdBy: 'step4_test',
       status: 'ACTIVE',
       rateLimitPerMin: KEY_LIMIT_K, // Strict key limit: 10
@@ -737,7 +742,7 @@ async function main() {
   for (let i = 0; i < KEY_LIMIT_K + 6; i++) {
     const port = i % 2 === 0 ? port1 : port2;
     const res = await fetch(`http://127.0.0.1:${port}/api/v1/hms/patients`, {
-      headers: { 'x-api-key': pkSecret, 'x-tenant-id': perKeyProjSlug },
+      headers: { 'x-api-key': pkSecret, 'x-tenant-id': perKeyTenantId },
     });
     pkStatuses.push(res.status);
   }
@@ -772,6 +777,7 @@ async function main() {
     data: { name: 'Production', slug: 'production', projectId: comboProject.id, isProduction: true },
   });
   await provisionActiveHms(org.id, comboProject.id, comboEnv.id);
+  const comboTenantId = `org/${org.id}/project/${comboProject.id}/environment/${comboEnv.id}`;
   // Key A with strict limit = 5
   const keyASecret = `orb_live_${crypto.randomBytes(24).toString('hex')}`;
   const keyAPrefix = keyASecret.slice(0, 14);
@@ -785,7 +791,7 @@ async function main() {
       authVerifier: crypto.createHmac('sha256', serverPepper).update(keyASecret).digest('hex'),
       environmentId: comboEnv.id,
       capabilities: ['hms:read'],
-      tenantScope: [comboProjSlug],
+      tenantScope: [comboTenantId],
       createdBy: 'step4_test',
       status: 'ACTIVE',
       rateLimitPerMin: 5, // Strict key limit: 5
@@ -804,7 +810,7 @@ async function main() {
       authVerifier: crypto.createHmac('sha256', serverPepper).update(keyBSecret).digest('hex'),
       environmentId: comboEnv.id,
       capabilities: ['hms:read'],
-      tenantScope: [comboProjSlug],
+      tenantScope: [comboTenantId],
       createdBy: 'step4_test',
       status: 'ACTIVE',
       rateLimitPerMin: 20,
@@ -814,7 +820,7 @@ async function main() {
   // Fire 10 requests on Key A (limit is 5)
   for (let i = 0; i < 10; i++) {
     const res = await fetch(`http://127.0.0.1:${proxyPort}/api/v1/hms/patients`, {
-      headers: { 'x-api-key': keyASecret, 'x-tenant-id': comboProjSlug },
+      headers: { 'x-api-key': keyASecret, 'x-tenant-id': comboTenantId },
     });
     if (i < 5) {
       assert.equal(res.status, 200, `Key A request ${i + 1} should be accepted`);
@@ -829,7 +835,7 @@ async function main() {
   const keyBStatuses: number[] = [];
   for (let i = 0; i < 18; i++) {
     const res = await fetch(`http://127.0.0.1:${proxyPort}/api/v1/hms/patients`, {
-      headers: { 'x-api-key': keyBSecret, 'x-tenant-id': comboProjSlug },
+      headers: { 'x-api-key': keyBSecret, 'x-tenant-id': comboTenantId },
     });
     keyBStatuses.push(res.status);
   }
@@ -865,6 +871,7 @@ async function main() {
   await provisionActiveHms(org.id, ipProject.id, ipEnv.id);
   const ipSecret = `orb_live_${crypto.randomBytes(24).toString('hex')}`;
   const ipPrefix = ipSecret.slice(0, 14);
+  const ipTenantId = `org/${org.id}/project/${ipProject.id}/environment/${ipEnv.id}`;
   const ipKey = await owner.platformApiKey.create({
     data: {
       name: 'IP Fallback Key',
@@ -875,13 +882,13 @@ async function main() {
       authVerifier: crypto.createHmac('sha256', serverPepper).update(ipSecret).digest('hex'),
       environmentId: ipEnv.id,
       capabilities: ['hms:read'],
-      tenantScope: [ipProjSlug],
+      tenantScope: [ipTenantId],
       createdBy: 'step4_test',
       status: 'ACTIVE',
     },
   });
   const ipRes = await fetch(`http://127.0.0.1:${proxyPort}/api/v1/hms/patients`, {
-    headers: { 'x-api-key': ipSecret, 'x-tenant-id': ipProjSlug },
+    headers: { 'x-api-key': ipSecret, 'x-tenant-id': ipTenantId },
   });
   assert.equal(ipRes.status, 200, 'Request with unconfigured project/key rate limit falls back cleanly to IP limit');
   console.log('✔ Sub-test 2F passed: IP fallback rate limiting active when no project or key limit defined.\n');
@@ -1187,6 +1194,7 @@ async function main() {
   });
   await provisionActiveHms(org.id, benchProject.id, benchEnv.id);
 
+  const benchTenantId = `org/${org.id}/project/${benchProject.id}/environment/${benchEnv.id}`;
   const benchKey = await owner.platformApiKey.create({
     data: {
       name: 'Benchmark Key',
@@ -1197,7 +1205,7 @@ async function main() {
       authVerifier: crypto.createHmac('sha256', serverPepper).update(benchRawSecret).digest('hex'),
       environmentId: benchEnv.id,
       capabilities: ['hms:read'],
-      tenantScope: [benchProjSlug],
+      tenantScope: [benchTenantId],
       createdBy: 'step4_bench',
       status: 'ACTIVE',
     },
@@ -1218,7 +1226,7 @@ async function main() {
         const t0 = performance.now();
         try {
           const res = await fetch(targetUrl, {
-            headers: { 'x-api-key': benchRawSecret, 'x-tenant-id': benchProjSlug },
+            headers: { 'x-api-key': benchRawSecret, 'x-tenant-id': benchTenantId },
           });
           const t1 = performance.now();
           if (res.status === 200) {

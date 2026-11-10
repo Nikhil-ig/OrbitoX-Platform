@@ -907,7 +907,7 @@ async function main() {
   const validRes = await fetch(`http://127.0.0.1:${port}/api/v1/hms/patients`, {
     headers: {
       'x-api-key': validSecret,
-      'x-tenant-id': 'omni-freight',
+      'x-tenant-id': 'org/org_legacy_omni_01/project/proj_omni_logistics_01/environment/env_omni_prod',
     },
   });
   console.log(`Valid Migrated Key Response: ${validRes.status}`);
@@ -962,7 +962,10 @@ async function main() {
 
   // Fire another billable request
   await fetch(`http://127.0.0.1:${port}/api/v1/hms/patients`, {
-    headers: { 'x-api-key': validSecret, 'x-tenant-id': 'omni-freight' },
+    headers: {
+      'x-api-key': validSecret,
+      'x-tenant-id': 'org/org_legacy_omni_01/project/proj_omni_logistics_01/environment/env_omni_prod',
+    },
   });
 
   const freshOmniProj = await owner.platformProject.findUnique({ where: { slug: 'omni-freight' } });

@@ -412,6 +412,13 @@ async function main() {
     serviceId = 'hms',
     scopes = ['hms:read', 'hms:write', 'admin'],
   ): Promise<{ id: string; keyId: string; rawSecret: string }> {
+    const envRecord = await owner.projectEnvironment.findFirst({
+      where: { projectId, slug: environment },
+      select: { id: true, project: { select: { organizationId: true } } },
+    });
+    const canonicalScope = envRecord
+      ? [`org/${envRecord.project.organizationId}/project/${projectId}/environment/${envRecord.id}`]
+      : undefined;
     const res = await fetch(`http://127.0.0.1:${port}/api/v1/admin/api-keys`, {
       method: 'POST',
       headers: {
@@ -424,6 +431,7 @@ async function main() {
         projectId,
         environment,
         scopes,
+        ...(canonicalScope ? { tenantScope: canonicalScope } : {}),
       }),
     });
     if (res.status !== 200 && res.status !== 201) {
@@ -1210,6 +1218,12 @@ async function main() {
       assert.equal(project.environments.length, 3);
       const prodEnv = project.environments.find((e) => e.isProduction);
       assert.ok(prodEnv?.quotaPolicy);
+
+      const canonicalRootTenant = `org/${project.organizationId}/project/${project.id}/environment/${prodEnv!.id}`;
+      await owner.platformApiKey.updateMany({
+        where: { environmentId: prodEnv!.id },
+        data: { tenantScope: [canonicalRootTenant] },
+      });
 
       // Verify on new server: root key authenticates
       await withFreshServer(async (port) => {

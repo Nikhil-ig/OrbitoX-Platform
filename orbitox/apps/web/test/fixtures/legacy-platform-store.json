@@ -97,7 +97,7 @@
       "capabilities": ["hms:read", "hms:write"],
       "ipAllowlist": ["127.0.0.1/32"],
       "rateLimitPerMin": 2500,
-      "tenantScope": ["omni-freight"],
+      "tenantScope": ["omni-freight", "org/org_legacy_omni_01/project/proj_omni_logistics_01/environment/env_omni_prod"],
       "issuedAt": "2025-06-15T10:10:00.000Z",
       "activatedAt": "2025-06-15T10:10:00.000Z",
       "createdBy": "admin@omni-legacy.global",
