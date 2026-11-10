@@ -56,6 +56,40 @@ export function withTenantContext<T>(
   return tenantStorage.run(context, fn);
 }
 
+const SYNTHETIC_TENANT_NAMES = new Set([
+  'Signed Bridge Tenant',
+  'Platform Superuser',
+  'Pending Restaurant',
+]);
+
+/**
+ * Resolves a tenant's display restaurant name from brand config, an explicit
+ * tenant name, or the active AsyncLocalStorage tenant context, falling back to
+ * the neutral `'Restaurant'` label.
+ */
+export function resolveTenantDisplayName(
+  brandOrName?: { restaurantName?: string | null } | string | null,
+  explicitTenantName?: string | null
+): string {
+  const brandName =
+    typeof brandOrName === 'string'
+      ? brandOrName.trim()
+      : typeof brandOrName?.restaurantName === 'string'
+        ? brandOrName.restaurantName.trim()
+        : '';
+  if (brandName) {
+    return brandName;
+  }
+
+  const trimmedExplicit = typeof explicitTenantName === 'string' ? explicitTenantName.trim() : '';
+  const candidateTenantName = trimmedExplicit || (tryGetActiveTenant()?.tenantName || '').trim();
+  if (candidateTenantName && !SYNTHETIC_TENANT_NAMES.has(candidateTenantName)) {
+    return candidateTenantName;
+  }
+
+  return 'Restaurant';
+}
+
 interface CachedTenantEntry {
   context: ActiveTenantContext;
   expiresAt: number;

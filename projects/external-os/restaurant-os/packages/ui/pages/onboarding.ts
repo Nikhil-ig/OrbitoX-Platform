@@ -11,13 +11,16 @@
  */
 
 import { OnboardingState, OnboardingStepKey } from '../../domain/owner-self-service';
+import { resolveTenantDisplayName } from '../../domain/tenancy';
 import { icon } from '../icons';
 
 export function renderOnboardingWorkspace(
   state: OnboardingState,
   brand: any,
-  branchName = 'Main Dining'
+  branchName = 'Main Dining',
+  tenantName?: string
 ): string {
+  const restaurantName = resolveTenantDisplayName(brand, tenantName);
   const stepsConfig: Array<{
     key: OnboardingStepKey;
     title: string;
@@ -151,9 +154,9 @@ export function renderOnboardingWorkspace(
           <div style="margin-top: 20px; border-top: 1px solid rgba(255,255,255,0.08); padding-top: 16px;">
             <div style="font-size: 11px; font-weight: 700; text-transform: uppercase; color: #94A3B8; margin-bottom: 8px;">Current Brand Preview</div>
             <div style="display: flex; align-items: center; gap: 12px; background: rgba(0,0,0,0.25); padding: 10px; border-radius: 8px;">
-              ${brand?.logoUrl ? `<img id="preview-logo-img" src="${brand.logoUrl}" alt="Logo" style="height: 36px; max-width: 80px; object-fit: contain;" />` : `<div style="width: 36px; height: 36px; background: var(--color-copper); border-radius: 6px; display: flex; align-items: center; justify-content: center; font-weight: 800; color: #FFF;">${(brand?.restaurantName || 'R')[0]}</div>`}
+              ${brand?.logoUrl ? `<img id="preview-logo-img" src="${brand.logoUrl}" alt="Logo" style="height: 36px; max-width: 80px; object-fit: contain;" />` : `<div style="width: 36px; height: 36px; background: var(--color-copper); border-radius: 6px; display: flex; align-items: center; justify-content: center; font-weight: 800; color: #FFF;">${(restaurantName || 'R')[0]}</div>`}
               <div>
-                <div style="font-size: 14px; font-weight: 700; color: #F8FAFC;">${brand?.restaurantName || 'OrbitoX Bistro'}</div>
+                <div style="font-size: 14px; font-weight: 700; color: #F8FAFC;">${restaurantName}</div>
                 <div style="font-size: 11px; color: #A0AEC0;">${branchName}</div>
               </div>
             </div>

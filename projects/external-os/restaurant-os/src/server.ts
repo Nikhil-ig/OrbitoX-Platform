@@ -55,6 +55,7 @@ import {
   withTenantContext,
   getActiveTenant,
   tryGetActiveTenant,
+  resolveTenantDisplayName,
   invalidateTenantResolutionCache,
   renderTenantNotFoundPage,
   TenantProvisioningService,
@@ -2675,7 +2676,7 @@ export async function handleRequest(req: http.IncomingMessage, res: http.ServerR
         status: table.status,
         locator: table.locator,
         section: table.section,
-        restaurantName: tenantBrand?.restaurantName || tenantContext.tenantName || 'OrbitoX Restaurant',
+        restaurantName: resolveTenantDisplayName(tenantBrand, tenantContext.tenantName),
         activeSession: {
           sessionId: table.activeSessionId || `sess_${locator.slice(0, 4)}`,
           hostName: 'Guest Host',
@@ -7265,7 +7266,7 @@ export async function handleRequest(req: http.IncomingMessage, res: http.ServerR
       {
         title: 'Operations Command',
         activeNav: 'overview',
-        restaurantName: tenantBrand.restaurantName || 'OrbitoX Bistro',
+        restaurantName: resolveTenantDisplayName(tenantBrand, tenantContext?.tenantName),
         currentBranchId: currentBranch.id,
         currentFloorId: currentFloor.id,
         currentServiceShift: serviceShift,
@@ -7290,7 +7291,7 @@ export async function handleRequest(req: http.IncomingMessage, res: http.ServerR
       {
         title: 'Spatial Floor Studio',
         activeNav: 'floor',
-        restaurantName: tenantBrand.restaurantName || 'OrbitoX Bistro',
+        restaurantName: resolveTenantDisplayName(tenantBrand, tenantContext?.tenantName),
         currentBranchId: currentBranch.id,
         currentFloorId: currentFloor.id,
         currentServiceShift: serviceShift,
@@ -7311,7 +7312,7 @@ export async function handleRequest(req: http.IncomingMessage, res: http.ServerR
     const html = renderShell(renderTablesList(tables, currentBranch.id, section), {
       title: 'Tables Fleet',
       activeNav: 'tables',
-      restaurantName: tenantBrand.restaurantName || 'OrbitoX Bistro',
+      restaurantName: resolveTenantDisplayName(tenantBrand, tenantContext?.tenantName),
       currentBranchId: currentBranch.id,
       currentFloorId: currentFloor.id,
       currentServiceShift: serviceShift,
@@ -7340,7 +7341,7 @@ export async function handleRequest(req: http.IncomingMessage, res: http.ServerR
     }
     const tenantBrand = await repo.getTenantBrand();
     const branchName = currentBranch?.name || 'Main Dining';
-    const html = renderTableQrStand(table, tenantBrand, branchName);
+    const html = renderTableQrStand(table, tenantBrand, branchName, tenantContext?.tenantName);
     sendHtml(res, html);
     return;
   }
@@ -7352,7 +7353,7 @@ export async function handleRequest(req: http.IncomingMessage, res: http.ServerR
     const html = renderShell(renderOrdersWorkspace(branchOrders, branches, currentBranch.id), {
       title: 'Service Orders',
       activeNav: 'orders',
-      restaurantName: tenantBrand.restaurantName,
+      restaurantName: resolveTenantDisplayName(tenantBrand, tenantContext?.tenantName),
       currentBranchId: currentBranch.id,
       currentFloorId: currentFloor.id,
       currentServiceShift: serviceShift,
@@ -7408,7 +7409,7 @@ export async function handleRequest(req: http.IncomingMessage, res: http.ServerR
     const html = renderShell(renderMenuWorkspace(menuItems, branches, currentBranch.id, branchOverrides, categories), {
       title: 'Menu Catalog',
       activeNav: 'menu',
-      restaurantName: tenantBrand.restaurantName,
+      restaurantName: resolveTenantDisplayName(tenantBrand, tenantContext?.tenantName),
       currentBranchId: currentBranch.id,
       currentFloorId: currentFloor.id,
       currentServiceShift: serviceShift,
@@ -7428,7 +7429,7 @@ export async function handleRequest(req: http.IncomingMessage, res: http.ServerR
     const html = renderShell(renderGuestsWorkspace(branchTables, currentBranch.id, guests), {
       title: 'Active Guests',
       activeNav: 'guests',
-      restaurantName: tenantBrand.restaurantName || 'OrbitoX Bistro',
+      restaurantName: resolveTenantDisplayName(tenantBrand, tenantContext?.tenantName),
       currentBranchId: currentBranch.id,
       currentFloorId: currentFloor.id,
       currentServiceShift: serviceShift,
@@ -7446,7 +7447,7 @@ export async function handleRequest(req: http.IncomingMessage, res: http.ServerR
     const html = renderShell(renderLocationsWorkspace(branches, currentBranch.id), {
       title: 'Locations & Branches',
       activeNav: 'locations',
-      restaurantName: tenantBrand.restaurantName || 'OrbitoX Bistro',
+      restaurantName: resolveTenantDisplayName(tenantBrand, tenantContext?.tenantName),
       currentBranchId: currentBranch.id,
       currentFloorId: currentFloor.id,
       currentServiceShift: serviceShift,
@@ -7464,7 +7465,7 @@ export async function handleRequest(req: http.IncomingMessage, res: http.ServerR
     const html = renderShell(renderFloorsWorkspace(floors, currentBranch), {
       title: 'Floor Plans & Layouts',
       activeNav: 'floors',
-      restaurantName: tenantBrand.restaurantName || 'OrbitoX Bistro',
+      restaurantName: resolveTenantDisplayName(tenantBrand, tenantContext?.tenantName),
       currentBranchId: currentBranch.id,
       currentFloorId: currentFloor.id,
       currentServiceShift: serviceShift,
@@ -7485,7 +7486,7 @@ export async function handleRequest(req: http.IncomingMessage, res: http.ServerR
     const html = renderShell(renderReportsWorkspace(orders, tasks, tables), {
       title: 'Service Analytics',
       activeNav: 'reports',
-      restaurantName: tenantBrand.restaurantName || 'OrbitoX Bistro',
+      restaurantName: resolveTenantDisplayName(tenantBrand, tenantContext?.tenantName),
       currentBranchId: currentBranch.id,
       currentFloorId: currentFloor.id,
       currentServiceShift: serviceShift,
@@ -7504,7 +7505,7 @@ export async function handleRequest(req: http.IncomingMessage, res: http.ServerR
     const html = renderShell(renderStaffWorkspace(branches, currentBranch.id, staffMembers), {
       title: 'Staff Directory & RBAC Security',
       activeNav: 'staff',
-      restaurantName: tenantBrand.restaurantName,
+      restaurantName: resolveTenantDisplayName(tenantBrand, tenantContext?.tenantName),
       currentBranchId: currentBranch.id,
       currentFloorId: currentFloor.id,
       currentServiceShift: serviceShift,
@@ -7625,7 +7626,7 @@ export async function handleRequest(req: http.IncomingMessage, res: http.ServerR
       {
         title: 'White-Label & Domains',
         activeNav: 'whitelabel',
-        restaurantName: tenantBrand.restaurantName,
+        restaurantName: resolveTenantDisplayName(tenantBrand, tenantContext?.tenantName),
         currentBranchId: currentBranch.id,
         currentFloorId: currentFloor.id,
         currentServiceShift: serviceShift,
@@ -7647,7 +7648,7 @@ export async function handleRequest(req: http.IncomingMessage, res: http.ServerR
       {
         title: 'Staff Directory & RBAC Security',
         activeNav: 'staff',
-        restaurantName: tenantBrand.restaurantName,
+        restaurantName: resolveTenantDisplayName(tenantBrand, tenantContext?.tenantName),
         currentBranchId: currentBranch.id,
         currentFloorId: currentFloor.id,
         currentServiceShift: serviceShift,
@@ -7669,7 +7670,7 @@ export async function handleRequest(req: http.IncomingMessage, res: http.ServerR
       {
         title: 'Customer Support Desk',
         activeNav: 'support',
-        restaurantName: tenantBrand.restaurantName,
+        restaurantName: resolveTenantDisplayName(tenantBrand, tenantContext?.tenantName),
         currentBranchId: currentBranch.id,
         currentFloorId: currentFloor.id,
         currentServiceShift: serviceShift,
@@ -7686,12 +7687,13 @@ export async function handleRequest(req: http.IncomingMessage, res: http.ServerR
   if (pathname === '/operations/onboarding' || pathname === '/onboarding') {
     const onboardingState = await ownerSelfService.getOnboardingState(tenantContext.tenantId);
     const tenantBrand = await repo.getTenantBrand();
+    const tenantDisplayName = resolveTenantDisplayName(tenantBrand, tenantContext?.tenantName);
     const html = renderShell(
-      renderOnboardingWorkspace(onboardingState, tenantBrand, currentBranch?.name),
+      renderOnboardingWorkspace(onboardingState, tenantBrand, currentBranch?.name, tenantDisplayName),
       {
         title: 'Owner Onboarding',
         activeNav: 'onboarding',
-        restaurantName: tenantBrand.restaurantName,
+        restaurantName: tenantDisplayName,
         currentBranchId: currentBranch.id,
         currentFloorId: currentFloor.id,
         currentServiceShift: serviceShift,
@@ -7716,7 +7718,7 @@ export async function handleRequest(req: http.IncomingMessage, res: http.ServerR
       {
         title: 'Template Composition Inspector',
         activeNav: 'marketplace',
-        restaurantName: tenantBrand.restaurantName,
+        restaurantName: resolveTenantDisplayName(tenantBrand, tenantContext?.tenantName),
         currentBranchId: currentBranch.id,
         currentFloorId: currentFloor.id,
         currentServiceShift: serviceShift,
@@ -7733,10 +7735,11 @@ export async function handleRequest(req: http.IncomingMessage, res: http.ServerR
   if (pathname === '/developer/inspector') {
     const rawData = await repo.getRawData();
     const tenantBrand = await repo.getTenantBrand();
-    const html = renderShell(renderDeveloperInspector(context, rawData), {
+    const tenantDisplayName = resolveTenantDisplayName(tenantBrand, tenantContext?.tenantName);
+    const html = renderShell(renderDeveloperInspector(context, rawData, tenantDisplayName), {
       title: 'Runtime Inspector',
       activeNav: 'overview',
-      restaurantName: tenantBrand.restaurantName || 'OrbitoX Bistro',
+      restaurantName: tenantDisplayName,
       currentBranchId: currentBranch.id,
       currentFloorId: currentFloor.id,
       currentServiceShift: serviceShift,

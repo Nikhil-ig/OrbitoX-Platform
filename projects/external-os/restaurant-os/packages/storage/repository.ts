@@ -1648,24 +1648,31 @@ export class PostgresRestaurantRepository implements RestaurantRepository {
         where: { tenantId: this.tenantId },
       });
       let base = r?.config;
-      if (!base) {
+      if (!base || !base.restaurantName) {
         const tenant = await tx.tenant.findUnique({
           where: { id: this.tenantId },
           select: { name: true, gstin: true },
         }).catch(() => null);
-        const branch = await tx.branch.findFirst({
-          where: { tenantId: this.tenantId },
-          select: { address: true, city: true },
-        }).catch(() => null);
-        const branchAddress = branch?.address ? `${branch.address}${branch.city ? `, ${branch.city}` : ''}` : undefined;
-        base = {
-          tenantId: this.tenantId,
-          restaurantName: tenant?.name || 'Restaurant',
-          legalEntityName: tenant?.name || 'Restaurant',
-          gstin: tenant?.gstin || undefined,
-          address: branchAddress,
-          themeColor: '#818CF8',
-        };
+        if (!base) {
+          const branch = await tx.branch.findFirst({
+            where: { tenantId: this.tenantId },
+            select: { address: true, city: true },
+          }).catch(() => null);
+          const branchAddress = branch?.address ? `${branch.address}${branch.city ? `, ${branch.city}` : ''}` : undefined;
+          base = {
+            tenantId: this.tenantId,
+            restaurantName: tenant?.name || 'Restaurant',
+            legalEntityName: tenant?.name || 'Restaurant',
+            gstin: tenant?.gstin || undefined,
+            address: branchAddress,
+            themeColor: '#818CF8',
+          };
+        } else {
+          base = {
+            ...base,
+            restaurantName: tenant?.name || 'Restaurant',
+          };
+        }
       }
       if (branchId && base.branchOverrides && base.branchOverrides[branchId]) {
         return {

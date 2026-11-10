@@ -12,6 +12,7 @@
  */
 
 import { TableFloorRecord } from '../../domain';
+import { resolveTenantDisplayName } from '../../domain/tenancy';
 
 export function renderTablesList(
   tables: TableFloorRecord[],
@@ -828,9 +829,10 @@ function generateStandaloneQrSvg(text: string, moduleSize = 8): string {
 export function renderTableQrStand(
   table: TableFloorRecord,
   brand: any,
-  branchName = 'Main Dining'
+  branchName = 'Main Dining',
+  tenantName?: string
 ): string {
-  const restaurantName = brand?.restaurantName || 'OrbitoX Bistro';
+  const restaurantName = resolveTenantDisplayName(brand, tenantName);
   const tagline = brand?.tagline || 'Farm-to-fork dining, crafted over live embers.';
   const primaryColor = brand?.primaryColor || '#C86B3C';
   const dinerUrl = `/diner?table=${encodeURIComponent(table.number)}&branchId=${encodeURIComponent(table.branchId || '')}${table.locator ? `&locator=${encodeURIComponent(table.locator)}` : ''}`;

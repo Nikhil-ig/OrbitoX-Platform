@@ -16,6 +16,7 @@
 import { BASE_STYLE_SHEET } from './styles';
 import { icon } from './icons';
 import { BranchRecord, FloorRecord, DEFAULT_BRANCHES, DEFAULT_FLOORS } from '../domain';
+import { resolveTenantDisplayName } from '../domain/tenancy';
 
 export interface ShellOptions {
   title?: string;
@@ -38,6 +39,7 @@ export interface ShellOptions {
     | 'support'
     | 'onboarding';
   restaurantName?: string;
+  tenantName?: string;
   currentBranchId?: string;
   currentFloorId?: string;
   currentServiceShift?: string;
@@ -49,7 +51,7 @@ export interface ShellOptions {
 }
 
 export function renderShell(contentHtml: string, options: ShellOptions): string {
-  const restaurantName = options.restaurantName || 'OrbitoX Bistro';
+  const restaurantName = resolveTenantDisplayName(options.restaurantName, options.tenantName);
   const branches = options.branches || DEFAULT_BRANCHES;
   const currentBranchId = options.currentBranchId || branches[0].id;
   const currentBranch = branches.find((b) => b.id === currentBranchId) || branches[0];

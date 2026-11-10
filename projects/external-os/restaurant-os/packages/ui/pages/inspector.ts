@@ -6,13 +6,16 @@
  */
 
 import { RestaurantContext } from '../../domain';
+import { resolveTenantDisplayName } from '../../domain/tenancy';
 import { RestaurantRuntimeStoreData } from '../../storage';
 import { icon } from '../icons';
 
 export function renderDeveloperInspector(
   context: RestaurantContext,
-  storeData: RestaurantRuntimeStoreData
+  storeData: RestaurantRuntimeStoreData,
+  restaurantName?: string
 ): string {
+  const displayRestaurantName = resolveTenantDisplayName(restaurantName || storeData?.tenantBrand);
   const events = (storeData.events || []).slice(-20).reverse();
   const tables = storeData.tables || [];
   const selectedTable = tables.find((t) => t.number === 'T-14') || tables[0];
@@ -42,7 +45,7 @@ export function renderDeveloperInspector(
         <div style="display: flex; flex-direction: column; gap: 8px; font-size: 13px;">
           <div style="display: flex; justify-content: space-between;">
             <span style="color: var(--color-stone);">Restaurant:</span>
-            <span style="font-weight: 700; color: var(--color-linen);">OrbitoX Bistro</span>
+            <span style="font-weight: 700; color: var(--color-linen);">${displayRestaurantName}</span>
           </div>
           <div style="display: flex; justify-content: space-between;">
             <span style="color: var(--color-stone);">Branch:</span>
@@ -131,7 +134,7 @@ export function renderDeveloperInspector(
         <!-- Column 1: Context & Runtime -->
         <div>
           <div style="color: var(--color-stone); font-weight: 700;">Context ────────────────</div>
-          <div><span style="color: var(--color-stone);">Restaurant:</span> <strong style="color: var(--color-linen);">OrbitoX Bistro</strong></div>
+          <div><span style="color: var(--color-stone);">Restaurant:</span> <strong style="color: var(--color-linen);">${displayRestaurantName}</strong></div>
           <div><span style="color: var(--color-stone);">Branch:</span> <strong style="color: var(--color-copper);">${context.branchName}</strong></div>
           <div><span style="color: var(--color-stone);">Floor:</span> <strong style="color: var(--color-linen);">${context.floorName}</strong></div>
           <div><span style="color: var(--color-stone);">Service:</span> <strong style="color: var(--color-sky);">${context.serviceName}</strong></div>
