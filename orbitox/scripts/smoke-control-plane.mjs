@@ -9,7 +9,7 @@
  * Verifies: public vs. protected surfaces, admin/runtime role separation (including
  * privilege-escalation attempts), real SDK registration + heartbeat, fleet visibility,
  * and the issue -> poll -> complete command loop. Exit code 1 if anything fails.
- * Requires the SDK to be built (`pnpm turbo run build --filter=@orbitox/external-runtime-sdk`).
+ * Requires the SDK to be built (`pnpm turbo run build --filter=@orbitox-io/external-runtime-sdk`).
  */
 import { createRequire } from 'node:module';
 import { createHmac, randomBytes } from 'node:crypto';

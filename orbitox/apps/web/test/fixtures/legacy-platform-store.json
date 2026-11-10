@@ -28,10 +28,7 @@
       "businessModel": "B2B_SAAS",
       "planTier": "growth",
       "plan": "growth",
-      "enabledServices": [
-        "hms",
-        "fleet"
-      ],
+      "enabledServices": ["hms", "fleet"],
       "apiCallQuota": 500000,
       "monthlyApiCalls": 1250,
       "currentBillingPeriod": "2026-10",
@@ -50,9 +47,7 @@
       "businessModel": "HEALTHCARE_NETWORK",
       "planTier": "enterprise",
       "plan": "enterprise",
-      "enabledServices": [
-        "hms"
-      ],
+      "enabledServices": ["hms"],
       "apiCallQuota": 1000000,
       "monthlyApiCalls": 4820,
       "status": "ACTIVE",
@@ -99,17 +94,10 @@
       "authVerifier": "orb_test_verifier_placeholder",
       "maskedDisplay": "orb_test_omni1_••••••••1234",
       "status": "ACTIVE",
-      "capabilities": [
-        "hms:read",
-        "hms:write"
-      ],
-      "ipAllowlist": [
-        "127.0.0.1/32"
-      ],
+      "capabilities": ["hms:read", "hms:write"],
+      "ipAllowlist": ["127.0.0.1/32"],
       "rateLimitPerMin": 2500,
-      "tenantScope": [
-        "omni-freight"
-      ],
+      "tenantScope": ["omni-freight", "org/org_legacy_omni_01/project/proj_omni_logistics_01/environment/env_omni_prod"],
       "issuedAt": "2025-06-15T10:10:00.000Z",
       "activatedAt": "2025-06-15T10:10:00.000Z",
       "createdBy": "admin@omni-legacy.global",
@@ -127,9 +115,7 @@
       "secretFingerprint": "DISCARDED_UNVERIFIED_LEGACY_KEY",
       "maskedDisplay": "orb_test_med2_••••••••xyz",
       "status": "ACTIVE",
-      "capabilities": [
-        "hms:read"
-      ],
+      "capabilities": ["hms:read"],
       "issuedAt": "2025-01-10T08:40:00.000Z",
       "activatedAt": "2025-01-10T08:40:00.000Z",
       "createdBy": "legacy_dev@mednet.health"
@@ -184,10 +170,7 @@
       "organizationId": "org_legacy_omni_01",
       "projectId": "proj_omni_logistics_01",
       "environmentId": "env_omni_prod",
-      "metadata": {
-        "importedFrom": "legacy_v1",
-        "migrated": true
-      },
+      "metadata": { "importedFrom": "legacy_v1", "migrated": true },
       "occurredAt": "2025-06-15T10:05:00.000Z"
     }
   ]

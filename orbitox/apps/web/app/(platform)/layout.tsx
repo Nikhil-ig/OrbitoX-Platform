@@ -2,7 +2,7 @@
 
 import React from 'react';
 import { usePathname } from 'next/navigation';
-import { DynamicSidebar, MenuItem, ThemeProvider, useTheme, Button, DynamicCopilot } from '@orbitox/ui';
+import { DynamicSidebar, MenuItem, ThemeProvider, useTheme, Button, DynamicCopilot } from '@orbitox-io/ui';
 import { PlatformGovernanceDock } from '../components/platform-governance-dock';
 
 const sampleMenuItems: MenuItem[] = [

@@ -630,7 +630,7 @@ describe('PlatformRepository (Normalized Domain Access & Cryptographic Binding)'
       const reloadedKey = PlatformRepository.getApiKey(keyRecord.keyId);
       expect(reloadedKey).toBeDefined();
       expect(reloadedKey?.authVerifier).toBe(keyRecord.authVerifier);
-      expect(reloadedKey?.capabilities).toContain('pos.orders.write');
+      expect(reloadedKey?.capabilities).toContain('restaurant.orders.write');
 
       // Verify that findKeyByRawSecret still works with cryptographic constant-time comparison
       const validatedKey = PlatformRepository.findKeyByRawSecret(rawSecret);

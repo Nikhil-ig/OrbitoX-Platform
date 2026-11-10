@@ -25,7 +25,6 @@ PACKAGES=(
   "packages/utils"
   "packages/core"
   "packages/sdk"
-  "packages/services"
   "packages/ui"
   "packages/external-runtime-sdk"
   "packages/plugin-engine"
