@@ -13,6 +13,7 @@ import {
 import {
   assertNoForbiddenExportColumns,
   buildExportBundle,
+  escapeCsvCell,
   FORBIDDEN_EXPORT_COLUMNS,
   readZipArchive,
   verifyExportArchive,
@@ -381,5 +382,80 @@ describe('Phase 6G Foundations: Contract, ObjectStore, Export Bundle & Deletion 
         `Nested forbidden JSON key "${secretCol}" must throw`,
       );
     }
+  });
+
+  it('G-3: neutralizes all 6 CSV formula triggers (=,+,-,@,\\t,\\r) while keeping negative numbers and JSON raw', () => {
+    const payloads = [
+      '=cmd|"/c calc"!A0',
+      '+1+1',
+      '-2+3',
+      '@SUM(1+1)',
+      '\t=HYPERLINK("http://evil.test")',
+      '\r=IMPORTXML("http://evil.test")',
+    ];
+
+    for (const payload of payloads) {
+      const escaped = escapeCsvCell(payload);
+      assert.equal(
+        escaped,
+        `"'${payload.replace(/"/g, '""')}"`,
+        `Formula trigger payload ${JSON.stringify(payload)} must be prefixed with apostrophe and CSV-quoted`,
+      );
+    }
+
+    // Typed finite negative numbers stay raw unquoted numeric values
+    assert.equal(escapeCsvCell(-42), '-42');
+    assert.equal(escapeCsvCell(-12.5), '-12.5');
+    // String "-42" or "-1+1" in text columns is treated as untrusted text and neutralized
+    assert.equal(escapeCsvCell('-42'), `"'` + `-42"`);
+
+    const generatedAt = new Date('2026-11-10T10:00:00.000Z');
+    const { zipBuffer } = buildExportBundle({
+      organizationId: 'org_csv_inj',
+      jobId: 'job_csv_inj',
+      generatedAt,
+      tenants: [],
+      tableData: [
+        {
+          tenantId: null,
+          pluginId: 'platform',
+          table: 'FormulaRows',
+          columns: ['id', 'eq', 'plus', 'minus', 'at', 'tab', 'cr', 'amount'],
+          rows: [
+            {
+              id: 'r1',
+              eq: payloads[0],
+              plus: payloads[1],
+              minus: payloads[2],
+              at: payloads[3],
+              tab: payloads[4],
+              cr: payloads[5],
+              amount: -42,
+            },
+          ],
+        },
+      ],
+    });
+
+    const files = readZipArchive(zipBuffer);
+    const csvText = files.get('platform/platform/FormulaRows.csv')!.toString('utf8');
+    const jsonRows = JSON.parse(files.get('platform/platform/FormulaRows.json')!.toString('utf8'));
+
+    assert.ok(csvText.includes(`"'=cmd|""/c calc""!A0"`));
+    assert.ok(csvText.includes(`"'+1+1"`));
+    assert.ok(csvText.includes(`"'-2+3"`));
+    assert.ok(csvText.includes(`"'@SUM(1+1)"`));
+    assert.ok(csvText.includes(`"'\t=HYPERLINK(""http://evil.test"")"`));
+    assert.ok(csvText.includes(`"'\r=IMPORTXML(""http://evil.test"")"`));
+    assert.ok(csvText.trimEnd().endsWith(',-42'), `Expected raw negative number -42 at end of CSV row, got: ${csvText}`);
+
+    // JSON export stays completely raw (not prefixed with ')
+    assert.equal(jsonRows[0].eq, payloads[0]);
+    assert.equal(jsonRows[0].plus, payloads[1]);
+    assert.equal(jsonRows[0].minus, payloads[2]);
+    assert.equal(jsonRows[0].at, payloads[3]);
+    assert.equal(jsonRows[0].tab, payloads[4]);
+    assert.equal(jsonRows[0].cr, payloads[5]);
+    assert.equal(jsonRows[0].amount, -42);
   });
 });

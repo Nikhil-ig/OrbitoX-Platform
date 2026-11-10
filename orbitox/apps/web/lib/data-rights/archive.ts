@@ -218,8 +218,18 @@ export function readZipArchive(zipBuffer: Buffer): Map<string, Buffer> {
   return result;
 }
 
-function escapeCsvCell(value: unknown): string {
+const CSV_FORMULA_TRIGGER_RE = /^[=+\-@\t\r]/;
+
+/**
+ * Escapes a single CSV cell per RFC 4180 while neutralizing OWASP CSV/formula injection.
+ * Any non-numeric text starting with =, +, -, @, tab, or CR is prefixed with "'" and quoted.
+ * Finite JS numbers (including negative numbers such as -42) remain raw unquoted numeric values.
+ */
+export function escapeCsvCell(value: unknown): string {
   if (value === null || value === undefined) return '';
+  if (typeof value === 'number') {
+    return Number.isFinite(value) ? String(value) : '';
+  }
   let text: string;
   if (value instanceof Date) {
     text = value.toISOString();
@@ -228,10 +238,12 @@ function escapeCsvCell(value: unknown): string {
   } else {
     text = String(value);
   }
-  if (/[",\r\n]/.test(text)) {
-    return `"${text.replace(/"/g, '""')}"`;
+  const hasFormulaTrigger = CSV_FORMULA_TRIGGER_RE.test(text);
+  const safeText = hasFormulaTrigger ? `'${text}` : text;
+  if (hasFormulaTrigger || /[",\r\n]/.test(safeText)) {
+    return `"${safeText.replace(/"/g, '""')}"`;
   }
-  return text;
+  return safeText;
 }
 
 export function serializeRowsToCsv(
