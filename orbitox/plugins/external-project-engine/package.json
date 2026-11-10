@@ -10,9 +10,9 @@
     "test": "node --test --experimental-strip-types \"src/**/*.test.ts\""
   },
   "dependencies": {
-    "@orbitox/core": "workspace:*",
-    "@orbitox/external-runtime-sdk": "workspace:*",
-    "@orbitox/types": "workspace:*"
+    "@orbitox-io/core": "workspace:*",
+    "@orbitox-io/external-runtime-sdk": "workspace:*",
+    "@orbitox-io/types": "workspace:*"
   },
   "devDependencies": {
     "@orbitox/tsconfig": "workspace:*",

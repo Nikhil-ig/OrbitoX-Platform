@@ -179,14 +179,14 @@ function generatePackageJson(appName: string, template: string, installMode: str
     engineDep = 'workspace:*';
   }
   const dependencies: Record<string, string> = {
-    '@orbitox/runtime': runtimeDep,
-    '@orbitox/external-runtime-sdk': sdkDep,
-    '@orbitox/plugin-engine': engineDep,
+    '@orbitox-io/runtime': runtimeDep,
+    '@orbitox-io/external-runtime-sdk': sdkDep,
+    '@orbitox-io/plugin-engine': engineDep,
     'express': '^5.2.1'
   };
 
   if (isRestaurant) {
-    dependencies['@orbitox/pos'] = posDep;
+    dependencies['@orbitox-io/pos'] = posDep;
   }
 
   if (installMode === 'file' && packDir && fs.existsSync(packDir)) {
@@ -196,13 +196,11 @@ function generatePackageJson(appName: string, template: string, installMode: str
       if (match && match[1]) {
         const name = match[1];
         dependencies[`@orbitox-io/${name}`] = `file:${path.resolve(packDir, t)}`;
-        dependencies[`@orbitox/${name}`] = `file:${path.resolve(packDir, t)}`;
       } else {
         match = t.match(/^orbitox-([a-z-]+)-\d+\.\d+\.\d+.*\.tgz$/);
         if (match && match[1]) {
           const name = match[1];
           dependencies[`@orbitox-io/${name}`] = `file:${path.resolve(packDir, t)}`;
-          dependencies[`@orbitox/${name}`] = `file:${path.resolve(packDir, t)}`;
         }
       }
     }
@@ -240,7 +238,7 @@ function generateTsconfig(): string {
 }
 
 function generateMainTs(appName: string): string {
-  return `import { createOrbitoXApp } from '@orbitox/runtime';
+  return `import { createOrbitoXApp } from '@orbitox-io/runtime';
 import config from '../orbitox.config';
 
 export async function bootstrap() {

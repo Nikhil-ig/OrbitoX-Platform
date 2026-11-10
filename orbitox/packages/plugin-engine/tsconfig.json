@@ -8,7 +8,7 @@
     "declarationMap": true,
     "baseUrl": ".",
     "paths": {
-      "@orbitox/types": ["../types/dist"]
+      "@orbitox-io/types": ["../types/dist"]
     }
   },
   "include": ["src/**/*"],

@@ -2,7 +2,7 @@
 
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
-import type { FleetConnection, FleetAttention, FleetProject } from '@orbitox/external-project-engine';
+import type { FleetConnection, FleetAttention, FleetProject } from '@orbitox-io/external-project-engine';
 import styles from './overview.module.css';
 
 const POLL_MS = 10_000;

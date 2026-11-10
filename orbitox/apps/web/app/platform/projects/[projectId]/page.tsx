@@ -2,7 +2,7 @@
 
 import React, { useCallback, useEffect, useRef, useState, use } from 'react';
 import Link from 'next/link';
-import type { FleetConnection } from '@orbitox/external-project-engine';
+import type { FleetConnection } from '@orbitox-io/external-project-engine';
 import styles from './project-detail.module.css';
 
 interface ProjectDetailData {

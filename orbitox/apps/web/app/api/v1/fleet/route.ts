@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { externalProjectEngine, FleetConnection } from '@orbitox/external-project-engine';
+import { externalProjectEngine, FleetConnection } from '@orbitox-io/external-project-engine';
 
 export const dynamic = 'force-dynamic';
 

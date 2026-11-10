@@ -1,6 +1,6 @@
 import * as crypto from 'crypto';
 import { CentralPlanDefinition, PlanAddonDefinition } from '../types';
-import { CentralQuoteRequest, CentralQuoteResponse } from '@orbitox/external-runtime-sdk';
+import { CentralQuoteRequest, CentralQuoteResponse } from '@orbitox-io/external-runtime-sdk';
 
 export class CentralQuoteService {
   private static plans: Map<string, CentralPlanDefinition> = new Map();

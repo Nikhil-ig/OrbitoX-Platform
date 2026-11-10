@@ -353,7 +353,7 @@ export function createAwsSdkS3Executor(options: {
     DeleteObjectCommand,
     ListObjectsV2Command,
     getSignedUrl,
-  } = require('@orbitox/core/s3-client') as typeof import('@orbitox/core/s3-client');
+  } = require('@orbitox-io/core/s3-client') as typeof import('@orbitox-io/core/s3-client');
 
   const endpoint = options.endpoint?.trim();
   const client = new S3Client({

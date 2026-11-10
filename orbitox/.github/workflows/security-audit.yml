@@ -62,4 +62,4 @@ jobs:
 
       - name: Run Plugin Engine Security Tests
         run: |
-          pnpm --filter @orbitox/plugin-engine test
+          pnpm --filter @orbitox-io/plugin-engine test

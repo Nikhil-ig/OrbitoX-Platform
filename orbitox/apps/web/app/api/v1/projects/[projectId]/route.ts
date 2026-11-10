@@ -6,7 +6,7 @@ import {
   STALE_WINDOW_MS,
   FleetConnection,
   FleetAttention,
-} from '@orbitox/external-project-engine';
+} from '@orbitox-io/external-project-engine';
 
 export const dynamic = 'force-dynamic';
 

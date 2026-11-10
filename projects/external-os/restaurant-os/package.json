@@ -26,10 +26,9 @@
   },
   "dependencies": {
     "@orbitox-io/bridge": "link:../../../orbitox/packages/bridge",
+    "@orbitox-io/external-runtime-sdk": "link:../../../orbitox/packages/external-runtime-sdk",
     "@orbitox-io/plugin-engine": "link:../../../orbitox/packages/plugin-engine",
-    "@orbitox/external-runtime-sdk": "link:../../../orbitox/packages/external-runtime-sdk",
-    "@orbitox/pos": "link:../../../orbitox/plugins/pos",
-    "@orbitox/plugin-engine": "link:../../../orbitox/packages/plugin-engine",
+    "@orbitox-io/pos": "link:../../../orbitox/plugins/pos",
     "@prisma/client": "^6.4.1",
     "pg": "^8.23.1"
   }

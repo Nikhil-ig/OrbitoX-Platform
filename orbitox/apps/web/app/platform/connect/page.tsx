@@ -145,7 +145,7 @@ function ConnectProjectContent() {
     revealToken ? runtimeToken || 'your-runtime-token' : '••••••••••••••••••••••••••••••••'
   }`;
 
-  const codeSnippet = `import { ControlClient } from '@orbitox/external-runtime-sdk';
+  const codeSnippet = `import { ControlClient } from '@orbitox-io/external-runtime-sdk';
 
 const orbitox = new ControlClient({
   manifest: {
@@ -486,12 +486,12 @@ await orbitox.registerRuntime();`;
                 <button
                   type="button"
                   className={styles.btn}
-                  onClick={() => navigator.clipboard.writeText('npm install @orbitox/external-runtime-sdk')}
+                  onClick={() => navigator.clipboard.writeText('npm install @orbitox-io/external-runtime-sdk')}
                 >
                   Copy
                 </button>
               </div>
-              <pre className={styles.codeBox}>npm install @orbitox/external-runtime-sdk</pre>
+              <pre className={styles.codeBox}>npm install @orbitox-io/external-runtime-sdk</pre>
             </div>
 
             <div className={styles.codeWrap}>

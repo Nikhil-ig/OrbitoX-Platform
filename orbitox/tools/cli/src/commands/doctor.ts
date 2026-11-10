@@ -66,9 +66,9 @@ export function commandDoctor(): void {
     { path: 'pnpm-workspace.yaml', label: 'pnpm-workspace.yaml' },
     { path: 'turbo.json', label: 'turbo.json' },
     { path: 'tsconfig.base.json', label: 'tsconfig.base.json' },
-    { path: 'packages/core/package.json', label: '@orbitox/core' },
-    { path: 'packages/sdk/package.json', label: '@orbitox/sdk' },
-    { path: 'packages/types/package.json', label: '@orbitox/types' },
+    { path: 'packages/core/package.json', label: '@orbitox-io/core' },
+    { path: 'packages/sdk/package.json', label: '@orbitox-io/sdk' },
+    { path: 'packages/types/package.json', label: '@orbitox-io/types' },
   ];
 
   console.log('   Workspace Integrity:');

@@ -16,7 +16,7 @@ import {
     ProjectDomainRecord,
     ProjectEnvironment,
     ProvisionPluginInstallationInput,
-} from '@orbitox/types';
+} from '@orbitox-io/types';
 import {
     CreateKeyInput,
     CreateProjectInput,

@@ -34,7 +34,7 @@ import {
   RestaurantRuntimeStore,
 } from './store';
 import { RealtimeEventBus, eventBus as defaultEventBus } from '../domain/event-bus';
-import { PosRepository } from '@orbitox/pos';
+import { PosRepository } from '@orbitox-io/pos';
 
 export interface RestaurantRepository extends PosRepository {
   readonly tenantId: string;

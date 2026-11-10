@@ -1,5 +1,5 @@
 import React from 'react';
-import '@orbitox/ui/src/styles/theme.css';
+import '@orbitox-io/ui/src/styles/theme.css';
 import { GlobalProviders } from './providers';
 
 export const metadata = {

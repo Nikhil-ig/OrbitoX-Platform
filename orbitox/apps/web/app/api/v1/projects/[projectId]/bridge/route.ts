@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { externalProjectEngine, RuntimeRegistrationError } from '@orbitox/external-project-engine';
+import { externalProjectEngine, RuntimeRegistrationError } from '@orbitox-io/external-project-engine';
 import { authorizeProjectRequest } from '../../_lib/project-guard';
 
 export async function POST(

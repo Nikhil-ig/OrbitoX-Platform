@@ -3,7 +3,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
-import type { FleetConnection, FleetProject, FleetSnapshot } from '@orbitox/external-project-engine';
+import type { FleetConnection, FleetProject, FleetSnapshot } from '@orbitox-io/external-project-engine';
 import styles from './fleet.module.css';
 
 const POLL_MS = 10_000;
@@ -63,7 +63,7 @@ function formatUptime(seconds: number | null): string {
   return h > 0 ? `${h}h ${m}m` : `${m}m`;
 }
 
-const CONNECT_SNIPPET = `import { ControlClient } from '@orbitox/external-runtime-sdk';
+const CONNECT_SNIPPET = `import { ControlClient } from '@orbitox-io/external-runtime-sdk';
 import manifest from './orbitox.manifest.json';
 
 const orbitox = new ControlClient({

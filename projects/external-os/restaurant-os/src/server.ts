@@ -80,7 +80,7 @@ import {
   renderPrintableInvoiceHtml,
 } from '../packages/domain/invoicing';
 import { RestaurantRuntimeStore, DomainEvent, getTenantRepository, RestaurantRepository } from '../packages/storage';
-import { PosService } from '@orbitox/pos';
+import { PosService } from '@orbitox-io/pos';
 import { PostgresRestaurantStore } from '../packages/storage/postgres-store';
 import { RealtimeEventBus } from '../packages/domain/event-bus';
 import { RestaurantControlBridge, restaurantControlBridge } from './bridge';

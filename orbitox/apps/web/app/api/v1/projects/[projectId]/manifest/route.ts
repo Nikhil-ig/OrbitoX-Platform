@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { externalProjectEngine } from '@orbitox/external-project-engine';
+import { externalProjectEngine } from '@orbitox-io/external-project-engine';
 import { authorizeProjectRequest } from '../../_lib/project-guard';
 import * as fs from 'fs';
 import * as path from 'path';

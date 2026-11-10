@@ -1,4 +1,4 @@
-export const hmsTemplate = `import { OrbitoXConfig } from '@orbitox/runtime';
+export const hmsTemplate = `import { OrbitoXConfig } from '@orbitox-io/runtime';
 
 const config: OrbitoXConfig = {
   app: {

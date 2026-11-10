@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { externalProjectEngine } from '@orbitox/external-project-engine';
+import { externalProjectEngine } from '@orbitox-io/external-project-engine';
 
 export async function GET(
   req: NextRequest,

@@ -6,7 +6,7 @@ import type {
   RuntimeReconciliationReport,
   ApiRegistrationMeta,
   ProjectRuntimeMetadata,
-} from '@orbitox/external-runtime-sdk';
+} from '@orbitox-io/external-runtime-sdk';
 
 export type {
   OrbitoxProjectManifest,

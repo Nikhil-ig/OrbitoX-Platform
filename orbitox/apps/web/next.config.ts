@@ -12,14 +12,13 @@ const nextConfig: NextConfig = {
     "@aws-sdk/s3-request-presigner",
   ],
   transpilePackages: [
-    "@orbitox/ui",
-    "@orbitox/sdk",
-    "@orbitox/types",
-    "@orbitox/utils",
-    "@orbitox/runtime",
-    "@orbitox/plugin-engine",
+    "@orbitox-io/ui",
+    "@orbitox-io/sdk",
+    "@orbitox-io/types",
+    "@orbitox-io/utils",
+    "@orbitox-io/runtime",
     "@orbitox-io/plugin-engine",
-    "@orbitox/pos",
+    "@orbitox-io/pos",
   ],
   async rewrites() {
     return [

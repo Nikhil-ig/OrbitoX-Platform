@@ -5,7 +5,7 @@ import type {
   PlatformPluginRecord,
   ProjectAuditEntry,
 } from '../types';
-import type { ControlCommand } from '@orbitox/external-runtime-sdk';
+import type { ControlCommand } from '@orbitox-io/external-runtime-sdk';
 
 /**
  * Fleet view: one honest, real-data snapshot of every project connected to the

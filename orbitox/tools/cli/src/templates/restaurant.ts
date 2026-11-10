@@ -1,5 +1,5 @@
-export const restaurantTemplate = `import { OrbitoXConfig } from '@orbitox/runtime';
-import { pos } from '@orbitox/pos';
+export const restaurantTemplate = `import { OrbitoXConfig } from '@orbitox-io/runtime';
+import { pos } from '@orbitox-io/pos';
 
 const config: OrbitoXConfig = {
   app: {

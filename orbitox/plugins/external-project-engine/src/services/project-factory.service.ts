@@ -206,7 +206,7 @@ export class ProjectFactoryService {
             build: 'tsc',
           },
           dependencies: {
-            '@orbitox/external-runtime-sdk': 'workspace:*',
+            '@orbitox-io/external-runtime-sdk': 'workspace:*',
           },
         },
         null,

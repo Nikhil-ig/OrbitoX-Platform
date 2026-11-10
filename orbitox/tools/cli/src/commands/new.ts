@@ -83,7 +83,7 @@ function logCreated(name: string): void {
 // ─── Template Generators ──────────────────────────────────────
 
 function generatePluginConfig(pluginName: string, pascalName: string): string {
-  return `import { definePlugin } from '@orbitox/sdk';
+  return `import { definePlugin } from '@orbitox-io/sdk';
 
 export default definePlugin({
   id: '${pluginName}',
@@ -132,7 +132,7 @@ function generatePackageJson(pluginName: string): string {
       clean: "rm -rf dist"
     },
     dependencies: {
-      "@orbitox/sdk": "workspace:*"
+      "@orbitox-io/sdk": "workspace:*"
     },
     devDependencies: {
       "typescript": "^5.0.0"

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { commandBus } from '../../_lib/control-plane-brain';
-import { PlatformCommand } from '@orbitox/core/control-plane';
+import { PlatformCommand } from '@orbitox-io/core/control-plane';
 
 export async function POST(req: NextRequest) {
   try {

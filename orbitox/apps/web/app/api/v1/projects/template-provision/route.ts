@@ -5,7 +5,7 @@ import {
   generateProjectKey,
   hashProjectKey,
   ExternalProjectRecord,
-} from '@orbitox/external-project-engine';
+} from '@orbitox-io/external-project-engine';
 
 export async function POST(req: NextRequest) {
   try {

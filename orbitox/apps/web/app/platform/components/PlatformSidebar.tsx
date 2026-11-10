@@ -4,7 +4,7 @@ import React from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { usePlatform } from './PlatformContext';
-import { useTheme } from '@orbitox/ui';
+import { useTheme } from '@orbitox-io/ui';
 import styles from './sidebar.module.css';
 
 interface NavItem {

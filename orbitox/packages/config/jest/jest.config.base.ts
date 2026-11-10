@@ -26,8 +26,8 @@ const baseConfig: Config = {
     '^.+\\.ts$': 'ts-jest',
   },
   moduleNameMapper: {
-    '^@orbitox/types(.*)$': '<rootDir>/../types/src$1',
-    '^@orbitox/utils(.*)$': '<rootDir>/../utils/src$1',
+    '^@orbitox-io/types(.*)$': '<rootDir>/../types/src$1',
+    '^@orbitox-io/utils(.*)$': '<rootDir>/../utils/src$1',
   },
 };
 

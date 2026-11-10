@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { resourceGraph, resourceRegistry } from '../../_lib/control-plane-brain';
-import { ResourceType } from '@orbitox/core/control-plane';
+import { ResourceType } from '@orbitox-io/core/control-plane';
 
 export async function GET(req: NextRequest) {
   try {

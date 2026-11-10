@@ -2,7 +2,7 @@
 
 import React from 'react';
 import PlatformLayout from './(platform)/layout';
-import { DynamicDashboard, Card, Badge, WidgetData } from '@orbitox/ui';
+import { DynamicDashboard, Card, Badge, WidgetData } from '@orbitox-io/ui';
 
 export default function HomePage() {
   const sampleWidgets: WidgetData[] = [

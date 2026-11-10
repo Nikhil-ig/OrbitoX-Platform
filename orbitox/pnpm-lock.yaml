@@ -35,39 +35,33 @@ importers:
       '@orbitox-io/bridge':
         specifier: workspace:*
         version: link:../../packages/bridge
+      '@orbitox-io/core':
+        specifier: workspace:*
+        version: link:../../packages/core
+      '@orbitox-io/external-project-engine':
+        specifier: workspace:*
+        version: link:../../plugins/external-project-engine
+      '@orbitox-io/external-runtime-sdk':
+        specifier: workspace:*
+        version: link:../../packages/external-runtime-sdk
       '@orbitox-io/plugin-engine':
         specifier: workspace:*
         version: link:../../packages/plugin-engine
+      '@orbitox-io/pos':
+        specifier: workspace:*
+        version: link:../../plugins/pos
+      '@orbitox-io/runtime':
+        specifier: workspace:*
+        version: link:../../packages/runtime
       '@orbitox-io/sdk':
         specifier: workspace:*
         version: link:../../packages/sdk
-      '@orbitox/core':
+      '@orbitox-io/types':
         specifier: workspace:*
-        version: link:../../packages/compat-core
-      '@orbitox/external-project-engine':
+        version: link:../../packages/types
+      '@orbitox-io/ui':
         specifier: workspace:*
-        version: link:../../packages/compat-external-project-engine
-      '@orbitox/external-runtime-sdk':
-        specifier: workspace:*
-        version: link:../../packages/compat-external-runtime-sdk
-      '@orbitox/plugin-engine':
-        specifier: workspace:*
-        version: link:../../packages/compat-plugin-engine
-      '@orbitox/pos':
-        specifier: workspace:*
-        version: link:../../packages/compat-pos
-      '@orbitox/runtime':
-        specifier: workspace:*
-        version: link:../../packages/compat-runtime
-      '@orbitox/sdk':
-        specifier: workspace:*
-        version: link:../../packages/compat-sdk
-      '@orbitox/types':
-        specifier: workspace:*
-        version: link:../../packages/compat-types
-      '@orbitox/ui':
-        specifier: workspace:*
-        version: link:../../packages/compat-ui
+        version: link:../../packages/ui
       '@prisma/client':
         specifier: ^6.19.0
         version: 6.19.3(prisma@6.19.3(typescript@5.9.3))(typescript@5.9.3)
@@ -117,66 +111,6 @@ importers:
       typescript:
         specifier: ~5.9.3
         version: 5.9.3
-
-  packages/compat-core:
-    dependencies:
-      '@orbitox-io/core':
-        specifier: workspace:*
-        version: link:../core
-
-  packages/compat-external-project-engine:
-    dependencies:
-      '@orbitox-io/external-project-engine':
-        specifier: workspace:*
-        version: link:../../plugins/external-project-engine
-
-  packages/compat-external-runtime-sdk:
-    dependencies:
-      '@orbitox-io/external-runtime-sdk':
-        specifier: workspace:*
-        version: link:../external-runtime-sdk
-
-  packages/compat-plugin-engine:
-    dependencies:
-      '@orbitox-io/plugin-engine':
-        specifier: workspace:*
-        version: link:../plugin-engine
-
-  packages/compat-pos:
-    dependencies:
-      '@orbitox-io/pos':
-        specifier: workspace:*
-        version: link:../../plugins/pos
-
-  packages/compat-runtime:
-    dependencies:
-      '@orbitox-io/runtime':
-        specifier: workspace:*
-        version: link:../runtime
-
-  packages/compat-sdk:
-    dependencies:
-      '@orbitox-io/sdk':
-        specifier: workspace:*
-        version: link:../sdk
-
-  packages/compat-types:
-    dependencies:
-      '@orbitox-io/types':
-        specifier: workspace:*
-        version: link:../types
-
-  packages/compat-ui:
-    dependencies:
-      '@orbitox-io/ui':
-        specifier: workspace:*
-        version: link:../ui
-
-  packages/compat-utils:
-    dependencies:
-      '@orbitox-io/utils':
-        specifier: workspace:*
-        version: link:../utils
 
   packages/config/eslint:
     dependencies:
@@ -330,9 +264,9 @@ importers:
 
   packages/importer-core:
     dependencies:
-      '@orbitox/types':
+      '@orbitox-io/types':
         specifier: workspace:*
-        version: link:../compat-types
+        version: link:../types
     devDependencies:
       '@orbitox/eslint-config':
         specifier: workspace:*
@@ -604,15 +538,15 @@ importers:
 
   plugins/external-project-engine:
     dependencies:
-      '@orbitox/core':
+      '@orbitox-io/core':
         specifier: workspace:*
-        version: link:../../packages/compat-core
-      '@orbitox/external-runtime-sdk':
+        version: link:../../packages/core
+      '@orbitox-io/external-runtime-sdk':
         specifier: workspace:*
-        version: link:../../packages/compat-external-runtime-sdk
-      '@orbitox/types':
+        version: link:../../packages/external-runtime-sdk
+      '@orbitox-io/types':
         specifier: workspace:*
-        version: link:../../packages/compat-types
+        version: link:../../packages/types
     devDependencies:
       '@orbitox/tsconfig':
         specifier: workspace:*

@@ -160,7 +160,7 @@ Options:
   const clientPath = path.join(outDir, clientFileName);
 
   const clientContent = isTs
-    ? `import { ControlClient } from '@orbitox/external-runtime-sdk';
+    ? `import { ControlClient } from '@orbitox-io/external-runtime-sdk';
 import manifest from './orbitox.manifest.json';
 
 const controlPlaneUrl = process.env.ORBITOX_CONTROL_PLANE_URL || process.env.ORBITOX_BACKEND_URL || '${options.url}';
@@ -217,7 +217,7 @@ export async function initOrbitoX(): Promise<void> {
   }
 }
 `
-    : `const { ControlClient } = require('@orbitox/external-runtime-sdk');
+    : `const { ControlClient } = require('@orbitox-io/external-runtime-sdk');
 const manifest = require('./orbitox.manifest.json');
 
 const controlPlaneUrl = process.env.ORBITOX_CONTROL_PLANE_URL || process.env.ORBITOX_BACKEND_URL || '${options.url}';
@@ -280,7 +280,7 @@ Generated files:
 
 Next Steps:
 1. Ensure the SDK dependency is installed in your project:
-   pnpm add @orbitox/external-runtime-sdk
+   pnpm add @orbitox-io/external-runtime-sdk
 
 2. Configure environment variables in your .env:
    ORBITOX_CONTROL_PLANE_URL=${options.url}
