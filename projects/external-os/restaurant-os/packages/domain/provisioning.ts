@@ -311,21 +311,6 @@ export class TenantProvisioningService {
         },
       });
 
-      // 4b-2. Tenant Brand Settings
-      await tx.tenantBrandConfig.create({
-        data: {
-          tenantId,
-          config: {
-            tenantId,
-            restaurantName,
-            legalEntityName: input.legalEntityName || restaurantName,
-            gstin: input.gstin ? input.gstin.trim() : undefined,
-            address: `${branchAddress}, Metropolis`,
-            themeColor: '#818CF8',
-          },
-        },
-      });
-
       // 4c. Default Floor
       const tableIdsArray: number[] = [];
       for (let i = 1; i <= template.defaultTableCount; i++) {
@@ -431,7 +416,11 @@ export class TenantProvisioningService {
 
       // 4f. Tenant Brand Configuration
       const brandConfigData = {
+        tenantId,
         restaurantName,
+        legalEntityName: input.legalEntityName || restaurantName,
+        gstin: input.gstin ? input.gstin.trim() : undefined,
+        address: input.address || 'Main Dining Hall, Metropolis',
         tagline: `${template.category} Experience`,
         logoUrl: `https://assets.orbitox.io/starter/logos/${template.slug}.svg`,
         faviconUrl: '/favicon.ico',
