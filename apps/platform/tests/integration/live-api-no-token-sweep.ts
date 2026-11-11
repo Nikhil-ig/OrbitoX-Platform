@@ -39,7 +39,10 @@ async function allocateSafePort(preferred: number): Promise<number> {
 import { getStandaloneScript, createCleanStandaloneEnv } from '../standalone-helper';
 
 const serverScript = getStandaloneScript(__dirname);
-const apiDir = path.resolve(__dirname, '../app/api');
+const apiDir = [
+  path.resolve(__dirname, '../../src/app/api'),
+  path.resolve(__dirname, '../app/api'),
+].find(fs.existsSync) || path.resolve(__dirname, '../../src/app/api');
 
 function findRoutes(dir: string): string[] {
   let results: string[] = [];

@@ -206,7 +206,10 @@ async function main() {
   console.log('🪐 OrbitoX Phase 2 Step 5: JSON-Store to PostgreSQL Migration & Importer Harness');
   console.log('================================================================================\n');
 
-  const baseFixturePath = path.resolve(__dirname, '../test/fixtures/legacy-platform-store.json');
+  const baseFixturePath = [
+    path.resolve(__dirname, '../fixtures/legacy-platform-store.json'),
+    path.resolve(__dirname, '../test/fixtures/legacy-platform-store.json'),
+  ].find(fs.existsSync) || path.resolve(__dirname, '../fixtures/legacy-platform-store.json');
   assert.equal(fs.existsSync(baseFixturePath), true, 'Base legacy fixture file must exist');
 
   // S5-4: Generate dynamic runtime test secrets with synthetic prefixes at test time
@@ -231,7 +234,7 @@ async function main() {
     mednetKey.rawSecret = legacyUnverifiedSecret;
   }
 
-  const legacyFixturePath = path.resolve(__dirname, '../test/fixtures/.runtime-step5-store.json');
+  const legacyFixturePath = path.resolve(path.dirname(baseFixturePath), '.runtime-step5-store.json');
   fs.writeFileSync(legacyFixturePath, JSON.stringify(fixtureData, null, 2));
 
   // ---------------------------------------------------------------------------
@@ -287,7 +290,7 @@ async function main() {
   const validOrgSlug = `valid-org-${Date.now()}`;
   const corruptOrgSlug = `corrupt-org-${Date.now()}`;
 
-  const corruptFixturePath = path.resolve(__dirname, '../test/fixtures/corrupt-test-store.json');
+  const corruptFixturePath = path.resolve(path.dirname(baseFixturePath), 'corrupt-test-store.json');
   const corruptFixtureData = {
     organizations: [
       {
@@ -449,7 +452,7 @@ async function main() {
   );
   console.log('--------------------------------------------------------------------------------\n');
 
-  const killFixturePath = path.resolve(__dirname, '../test/fixtures/kill-test-store.json');
+  const killFixturePath = path.resolve(path.dirname(baseFixturePath), 'kill-test-store.json');
   const kOrg1 = `kill-org-1-${Date.now()}`;
   const kOrg2 = `kill-org-2-${Date.now()}`;
   const kOrg3 = `kill-org-3-${Date.now()}`;
@@ -1299,7 +1302,7 @@ async function main() {
 
   // Operator billing period override
   const overrideOrgSlug = `override-org-${Date.now()}`;
-  const overrideFixturePath = path.resolve(__dirname, '../test/fixtures/override-test-store.json');
+  const overrideFixturePath = path.resolve(path.dirname(baseFixturePath), 'override-test-store.json');
   fs.writeFileSync(
     overrideFixturePath,
     JSON.stringify({

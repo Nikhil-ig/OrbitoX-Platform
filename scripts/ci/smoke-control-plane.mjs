@@ -27,7 +27,7 @@ if (!ADMIN || !RUNTIME) {
 }
 
 const require = createRequire(import.meta.url);
-const { ControlClient } = require('../packages/external-runtime-sdk/dist/index.js');
+const { ControlClient } = require('../../packages/external-runtime-sdk/dist/index.js');
 
 const bearer = (t) => ({ Authorization: `Bearer ${t}` });
 const json = { 'Content-Type': 'application/json' };
