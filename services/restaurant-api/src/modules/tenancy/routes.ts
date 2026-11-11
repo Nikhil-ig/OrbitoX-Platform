@@ -11,6 +11,7 @@ import {
   verifyPlatformAuth,
   validateAndSanitizeCustomCss,
 } from '../../shared';
+import { handleVerifyDomain } from '../owners/routes';
 
 export const tenancyRoutes: RouteDefinition[] = [
   {
@@ -157,14 +158,32 @@ export const tenancyRoutes: RouteDefinition[] = [
     path: '/api/restaurant/branding/branch-overrides',
     handler: async (req, res, context) => {
       const identity = context.requestIdentity;
+      if (identity.type === 'INVALID_CREDENTIAL' || identity.type === 'REVOKED_CAPABILITY') {
+        sendJson(res, 401, { error: identity.type, code: identity.type, message: 'Invalid or revoked credential.' });
+        return;
+      }
+      if (identity.type === 'ANONYMOUS') {
+        sendJson(res, 401, { error: 'AUTHENTICATION_REQUIRED', code: 'AUTHENTICATION_REQUIRED', message: 'Branch override updates require authenticated manager credentials.' });
+        return;
+      }
       if (!identity.isPrivileged) {
-        sendJson(res, 403, { error: 'FORBIDDEN', message: 'Manager or Admin privileges required.' });
+        sendJson(res, 403, { error: 'FORBIDDEN', code: 'FORBIDDEN', message: 'Branch override updates require Manager or Admin privileges.' });
         return;
       }
       const body = await context.parseBody();
       const targetBranchId = body.branchId;
       if (!targetBranchId) {
         sendJson(res, 400, { success: false, error: 'BRANCH_REQUIRED', message: 'Target branchId is required.' });
+        return;
+      }
+      // Scope check: branch-scoped credentials cannot modify another branch's overrides!
+      if (identity.branchId && identity.branchId !== '*' && identity.branchId !== targetBranchId) {
+        sendJson(res, 403, {
+          success: false,
+          error: 'BRANCH_MISMATCH',
+          code: 'BRANCH_MISMATCH',
+          message: `Staff credential for branch ${identity.branchId} cannot configure overrides for branch ${targetBranchId}.`,
+        });
         return;
       }
       const branch = await context.repo.getBranch(targetBranchId);
@@ -186,8 +205,12 @@ export const tenancyRoutes: RouteDefinition[] = [
     path: '/api/restaurant/branding/upload-image',
     handler: async (req, res, context) => {
       const identity = context.requestIdentity;
-      if (!identity.isPrivileged) {
-        sendJson(res, 403, { error: 'FORBIDDEN', message: 'Privileged credentials required for uploads.' });
+      if (identity.type === 'INVALID_CREDENTIAL' || identity.type === 'REVOKED_CAPABILITY') {
+        sendJson(res, 401, { error: identity.type, code: identity.type, message: 'Invalid or revoked credential.' });
+        return;
+      }
+      if (identity.type === 'ANONYMOUS' || identity.type === 'DINER' || !identity.isPrivileged) {
+        sendJson(res, 403, { error: 'FORBIDDEN', message: 'Manager or Admin privileges required to upload branding assets.' });
         return;
       }
       try {
@@ -212,13 +235,7 @@ export const tenancyRoutes: RouteDefinition[] = [
   {
     method: 'POST',
     path: '/api/restaurant/branding/verify-domain',
-    handler: async (req, res, context) => {
-      const body = await context.parseBody();
-      const brand = await context.repo.getTenantBrand();
-      const domain = body.domain || brand.customDomain;
-      const verifyRes = await customDomainService.verifyCustomDomain(context.tenantContext.tenantId, domain);
-      sendJson(res, 200, verifyRes);
-    },
+    handler: handleVerifyDomain,
   },
   {
     method: 'GET',
@@ -266,11 +283,19 @@ export const tenancyRoutes: RouteDefinition[] = [
     handler: async (_req, res, context) => {
       const identity = context.requestIdentity;
       if (identity.type === 'INVALID_CREDENTIAL' || identity.type === 'REVOKED_CAPABILITY') {
-        sendJson(res, 401, { error: 'INVALID_CREDENTIAL', message: 'Access denied.' });
+        sendJson(res, 401, {
+          error: identity.type === 'REVOKED_CAPABILITY' ? 'REVOKED_CAPABILITY' : (identity.error || 'INVALID_CREDENTIAL'),
+          code: identity.type,
+          message: 'Invalid or revoked credential. Access denied.',
+        });
         return;
       }
       if (identity.type === 'DINER' || (process.env.NODE_ENV === 'production' && identity.type === 'ANONYMOUS')) {
-        sendJson(res, identity.type === 'ANONYMOUS' ? 401 : 403, { error: 'FORBIDDEN', message: 'Staff credentials required.' });
+        sendJson(res, identity.type === 'ANONYMOUS' ? 401 : 403, {
+          error: 'FORBIDDEN',
+          code: 'FORBIDDEN',
+          message: 'Full state inspection requires staff or manager credentials.',
+        });
         return;
       }
       const [tables, menu, orders, tasks, sreqs, brand] = await Promise.all([
@@ -309,3 +334,37 @@ export const tenancyRoutes: RouteDefinition[] = [
     },
   },
 ];
+
+export async function handleDeleteBranchOverrides(_req: any, res: any, context: any): Promise<void> {
+  const identity = context.requestIdentity;
+  if (identity.type === 'ANONYMOUS') {
+    sendJson(res, 401, { error: 'AUTHENTICATION_REQUIRED', code: 'AUTHENTICATION_REQUIRED', message: 'Resetting branch overrides requires authenticated manager credentials.' });
+    return;
+  }
+  if (!identity.isPrivileged) {
+    sendJson(res, 403, { error: 'FORBIDDEN', code: 'FORBIDDEN', message: 'Resetting branch overrides requires Manager or Admin privileges.' });
+    return;
+  }
+  const targetBranchId = context.params?.id || context.pathname.replace('/api/restaurant/branding/branch-overrides/', '');
+  if (identity.branchId && identity.branchId !== '*' && identity.branchId !== targetBranchId) {
+    sendJson(res, 403, {
+      success: false,
+      error: 'BRANCH_MISMATCH',
+      code: 'BRANCH_MISMATCH',
+      message: `Staff credential for branch ${identity.branchId} cannot reset overrides for branch ${targetBranchId}.`,
+    });
+    return;
+  }
+  const branch = await context.repo.getBranch(targetBranchId);
+  if (!branch) {
+    sendJson(res, 404, { success: false, error: 'BRANCH_NOT_FOUND', message: `Branch ${targetBranchId} does not exist.` });
+    return;
+  }
+  const effective = await context.repo.updateBranchBrandOverride(targetBranchId, null, identity.id || 'Manager');
+  sendJson(res, 200, {
+    success: true,
+    branchId: targetBranchId,
+    message: `Branch brand overrides for ${targetBranchId} cleared successfully.`,
+    effective,
+  });
+}

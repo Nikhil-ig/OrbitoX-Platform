@@ -50,7 +50,11 @@ async function handlePrintInvoice(_req: any, res: any, context: any) {
     }
   }
   if (!invoice) {
-    sendJson(res, 404, { success: false, error: 'INVOICE_NOT_FOUND' });
+    sendJson(res, 404, {
+      error: 'INVOICE_NOT_FOUND',
+      code: 'INVOICE_NOT_FOUND',
+      message: `Invoice not found for identifier: ${invoiceId}`,
+    });
     return;
   }
   const tenantBrand = await context.repo.getTenantBrand();
@@ -179,16 +183,26 @@ export const invoicingRoutes: RouteDefinition[] = [
     path: '/api/restaurant/finance/reconciliation',
     handler: async (req, res, context) => {
       const identity = context.requestIdentity;
+      if (identity.type === 'INVALID_CREDENTIAL' || identity.type === 'REVOKED_CAPABILITY') {
+        sendJson(res, 401, { error: 'INVALID_CREDENTIAL', code: identity.type });
+        return;
+      }
       if (identity.type === 'DINER' || (process.env.NODE_ENV === 'production' && !identity.isPrivileged)) {
         sendJson(res, identity.type === 'ANONYMOUS' ? 401 : 403, {
           error: 'FORBIDDEN',
+          code: 'FORBIDDEN',
           message: 'Financial reconciliation requires manager privileges.',
         });
         return;
       }
       const branchFilter = (context.parsedUrl.query.branchId as string) || undefined;
       const report = await context.repo.reconcileFinancialLedger(branchFilter);
-      sendJson(res, 200, { success: true, data: report });
+      sendJson(res, 200, {
+        success: true,
+        data: report,
+        branchId: branchFilter || 'ALL_BRANCHES',
+        timestamp: new Date().toISOString(),
+      });
     },
   },
 ];

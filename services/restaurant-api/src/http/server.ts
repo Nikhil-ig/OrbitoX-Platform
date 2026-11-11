@@ -30,6 +30,7 @@ import {
   recordStatusCount,
   recordMethodCount,
   RequestContext,
+  verifyPlatformAuth,
 } from './context';
 import { router, ensureModulesRegistered } from './router';
 import {
@@ -68,6 +69,7 @@ export {
   sendHtml,
   parseBody,
   readRawBody,
+  verifyPlatformAuth,
 };
 
 export async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse): Promise<void> {
@@ -148,6 +150,31 @@ export async function handleRequest(req: http.IncomingMessage, res: http.ServerR
     };
     const handled = await router.dispatch(method, pathname, req, res, dummyContext);
     if (handled) return;
+  }
+
+  // Platform internal management endpoints (require platform auth token, bypass public host resolution)
+  if (pathname.startsWith('/internal/')) {
+    // Caddy On-Demand TLS Ask gatekeeper: Called by reverse proxy to authorize automated SSL issuance
+    if (pathname === '/internal/tls/ask' && method === 'GET') {
+      const askDomain = (parsedUrl.query.domain as string) || '';
+      const allowed = await customDomainService.isDomainAllowedForTls(askDomain);
+      if (allowed) {
+        res.writeHead(200, { 'Content-Type': 'text/plain' });
+        res.end('OK');
+      } else {
+        res.writeHead(403, { 'Content-Type': 'text/plain' });
+        res.end('FORBIDDEN: Domain not permitted for TLS');
+      }
+      return;
+    }
+
+    if (!verifyPlatformAuth(req)) {
+      sendJson(res, 401, {
+        error: 'UNAUTHORIZED',
+        message: 'Platform service credentials required (RESTAURANTOS_PLATFORM_TOKEN >= 32 chars).',
+      });
+      return;
+    }
   }
 
   // Authoritative host-based tenant resolution

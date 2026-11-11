@@ -321,6 +321,18 @@ jobs:
           DATABASE_URL: postgresql://postgres:postgrespassword@127.0.0.1:5432/restaurant_os
           APP_DATABASE_URL: postgresql://restaurantos_app:test_app_pass_123@127.0.0.1:5432/restaurant_os
 
+      - name: Route Ownership Invariant (B-2)
+        run: pnpm exec tsx --test test/route-ownership.test.ts
+
+      - name: Permanent Cross-Branch Authorization & Isolation (B-6)
+        run: pnpm exec tsx --test test/branch-isolation.test.ts
+
+      - name: Differential Parity Matrix (d7f9de5 vs Modular Server)
+        run: pnpm exec tsx --test test/differential-parity.test.ts
+
+      - name: Data Rights Model Coverage
+        run: pnpm exec tsx --test test/data-rights-model-coverage.test.ts
+
   restaurantos-phase2b4:
     name: RestaurantOS 2b-4
     runs-on: ubuntu-24.04

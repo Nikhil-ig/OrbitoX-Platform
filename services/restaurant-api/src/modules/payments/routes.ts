@@ -229,6 +229,10 @@ export const paymentsRoutes: RouteDefinition[] = [
     path: '/api/restaurant/payments/config',
     handler: async (req, res, context) => {
       const identity = context.requestIdentity;
+      if (identity.type === 'INVALID_CREDENTIAL' || identity.type === 'REVOKED_CAPABILITY') {
+        sendJson(res, 401, { error: identity.type, code: identity.type, message: 'Invalid or revoked credential.' });
+        return;
+      }
       if (identity.type === 'ANONYMOUS' || identity.type === 'DINER') {
         sendJson(res, 403, { error: 'FORBIDDEN', message: 'Staff credentials required to view payment configuration.' });
         return;
@@ -247,7 +251,11 @@ export const paymentsRoutes: RouteDefinition[] = [
     path: '/api/restaurant/payments/config',
     handler: async (req, res, context) => {
       const identity = context.requestIdentity;
-      if (!identity.isPrivileged) {
+      if (identity.type === 'INVALID_CREDENTIAL' || identity.type === 'REVOKED_CAPABILITY') {
+        sendJson(res, 401, { error: identity.type, code: identity.type, message: 'Invalid or revoked credential.' });
+        return;
+      }
+      if (identity.type === 'ANONYMOUS' || identity.type === 'DINER' || !identity.isPrivileged) {
         sendJson(res, 403, { error: 'FORBIDDEN', message: 'Manager or Admin privileges required to configure payment gateway.' });
         return;
       }

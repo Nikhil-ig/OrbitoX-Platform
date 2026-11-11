@@ -8,15 +8,20 @@ import {
   ownerSelfService,
 } from '../../http/context';
 import { generateSeats } from '../../shared';
+import { handleTableSettle, handleTableBill, handleRotateLocator } from './service';
 
 export const tablesRoutes: RouteDefinition[] = [
   {
     method: 'GET',
     path: '/api/restaurant/tables',
     handler: async (req, res, context) => {
-      const branchId = (context.parsedUrl.query.branchId as string) || (context.parsedUrl.query.branch as string) || context.currentBranch?.id;
-      const tables = await context.repo.getTables(branchId);
-      sendJson(res, 200, { success: true, count: tables.length, data: tables });
+      const bId = (context.parsedUrl.query.branchId as string) || (context.parsedUrl.query.branch as string) || context.currentBranch?.id;
+      const fId = (context.parsedUrl.query.floorId as string) || undefined;
+      const tables = await context.repo.getTables(bId, fId);
+      sendJson(res, 200, {
+        success: true,
+        tables,
+      });
     },
   },
   {
@@ -95,29 +100,69 @@ export const tablesRoutes: RouteDefinition[] = [
     path: '/api/restaurant/tables/:id',
     handler: async (req, res, context) => {
       const identity = context.requestIdentity;
-      if (!identity.isPrivileged && identity.type !== 'STAFF') {
-        sendJson(res, 403, { error: 'FORBIDDEN', message: 'Staff credentials required to update table.' });
+      if (identity.type === 'INVALID_CREDENTIAL') {
+        sendJson(res, 401, { error: 'Invalid credential', code: 'INVALID_CREDENTIAL' });
         return;
       }
-      const id = context.params.id;
-      const body = await context.parseBody();
-      try {
-        const tableId = /^\d+$/.test(id) ? parseInt(id, 10) : id;
-        let updated: any;
-        if (body.capacity) {
-          updated = await context.repo.updateTableCapacity(tableId as number, parseInt(body.capacity, 10));
-        } else {
-          updated = typeof tableId === 'number' ? await context.repo.getTable(tableId) : await context.repo.getTableByNumber(tableId);
-          if (updated) {
-            if (body.status) updated.status = body.status;
-            if (body.serverName) updated.serverName = body.serverName;
-            await context.repo.saveFloorTables([updated]);
-          }
-        }
-        sendJson(res, 200, { success: true, data: updated, table: updated });
-      } catch (err: any) {
-        sendJson(res, 400, { success: false, error: err.message });
+      if (identity.type === 'DINER' || identity.type === 'REVOKED_CAPABILITY') {
+        sendJson(res, 403, { error: 'Diner capability cannot modify table properties', code: 'FORBIDDEN' });
+        return;
       }
+      if (identity.type === 'ANONYMOUS') {
+        sendJson(res, 401, { error: 'Staff credential required', code: 'UNAUTHENTICATED' });
+        return;
+      }
+      if (!identity.isPrivileged) {
+        sendJson(res, 403, { error: 'Table modification requires Manager or Admin privileges', code: 'FORBIDDEN' });
+        return;
+      }
+
+      const id = context.params.id;
+      const tableId = /^\d+$/.test(id) ? parseInt(id, 10) : id;
+      const existingTable = typeof tableId === 'number' ? await context.repo.getTable(tableId) : await context.repo.getTableByNumber(tableId);
+      if (!existingTable) {
+        sendJson(res, 404, { error: 'Table not found' });
+        return;
+      }
+      if (identity.branchId && identity.branchId !== '*' && existingTable.branchId !== identity.branchId) {
+        sendJson(res, 403, {
+          error: `Credential for branch ${identity.branchId} cannot modify table in branch ${existingTable.branchId}`,
+          code: 'BRANCH_MISMATCH',
+        });
+        return;
+      }
+      const body = await context.parseBody();
+
+      let updatedTable: any;
+      if (body.capacity && typeof tableId === 'number') {
+        updatedTable = await context.repo.updateTableCapacity(tableId, parseInt(body.capacity, 10));
+      } else {
+        updatedTable = typeof tableId === 'number' ? await context.repo.getTable(tableId) : await context.repo.getTableByNumber(tableId);
+        if (updatedTable) {
+          if (body.status) updatedTable.status = body.status;
+          if (body.serverName) updatedTable.serverName = body.serverName;
+          await context.repo.saveFloorTables([updatedTable]);
+        }
+      }
+
+      if (!updatedTable) {
+        sendJson(res, 404, { error: 'Table not found' });
+        return;
+      }
+
+      eventBus.broadcast({
+        id: `evt_${Date.now()}`,
+        sequence: (await context.repo.getEvents()).length,
+        type: 'table.updated',
+        timestamp: new Date().toISOString(),
+        producer: 'api:table-patch',
+        branchId: context.currentBranch?.id,
+        tableNumber: updatedTable.number,
+        tenantId: context.tenantContext?.tenantId,
+        payload: updatedTable,
+      });
+
+      sendJson(res, 200, { success: true, table: updatedTable, data: updatedTable });
     },
   },
   {
@@ -126,13 +171,29 @@ export const tablesRoutes: RouteDefinition[] = [
     handler: async (_req, res, context) => {
       const identity = context.requestIdentity;
       if (!identity.isPrivileged) {
-        sendJson(res, 403, { error: 'FORBIDDEN', message: 'Table deletion requires Manager or Admin privileges.' });
+        sendJson(res, (identity.type === 'ANONYMOUS' || identity.type === 'INVALID_CREDENTIAL' || identity.type === 'REVOKED_CAPABILITY') ? 401 : 403, {
+          error: 'FORBIDDEN',
+          code: 'FORBIDDEN',
+          message: 'Deleting tables requires manager privileges.',
+        });
         return;
       }
       const id = context.params.id;
       const tableId = /^\d+$/.test(id) ? parseInt(id, 10) : id;
-      const deleted = await context.repo.deleteTable(tableId);
-      sendJson(res, deleted ? 200 : 404, { success: deleted, tableId });
+      const table = typeof tableId === 'number' ? await context.repo.getTable(tableId) : await context.repo.getTableByNumber(tableId);
+      if (!table) {
+        sendJson(res, 404, { error: 'Table not found', deletedTableId: tableId });
+        return;
+      }
+      if (identity.branchId && identity.branchId !== '*' && table.branchId !== identity.branchId) {
+        sendJson(res, 403, {
+          error: `Credential for branch ${identity.branchId} cannot delete table in branch ${table.branchId}`,
+          code: 'BRANCH_MISMATCH',
+        });
+        return;
+      }
+      const ok = await context.repo.deleteTable(tableId as number);
+      sendJson(res, ok ? 200 : 404, { success: ok, deletedTableId: tableId });
     },
   },
   {
@@ -167,58 +228,23 @@ export const tablesRoutes: RouteDefinition[] = [
   {
     method: 'POST',
     path: '/api/restaurant/tables/settle',
-    handler: async (req, res, context) => {
-      const identity = context.requestIdentity;
-      if (!identity.isPrivileged && identity.type !== 'STAFF') {
-        sendJson(res, 403, { error: 'FORBIDDEN', message: 'Staff credentials required to settle table.' });
-        return;
-      }
-      const body = await context.parseBody();
-      const tableParam = body.tableId !== undefined ? body.tableId : body.tableNumber;
-      const targetTable = typeof tableParam === 'number'
-        ? await context.repo.getTable(tableParam)
-        : await context.repo.getTableByNumber(String(tableParam));
-
-      if (!targetTable) {
-        sendJson(res, 404, { error: 'TABLE_NOT_FOUND', code: 'TABLE_NOT_FOUND', message: `Table ${tableParam} not found.` });
-        return;
-      }
-
-      const lockKey = `${context.tenantContext.tenantId}:${targetTable.number}`;
-      if (activeSettlementLocks.has(lockKey)) {
-        sendJson(res, 409, { error: 'SETTLEMENT_IN_PROGRESS', message: 'Settlement already in progress for this table.' });
-        return;
-      }
-      activeSettlementLocks.add(lockKey);
-      try {
-        const authorizer = identity.id;
-        const settlementPayload = {
-          method: body.paymentMethod || body.method || 'CASH',
-          status: body.paymentStatus || body.status || 'PAID',
-          amountMinor: body.amountMinor,
-          authorizedBy: authorizer,
-          reason: body.reason,
-          verification: 'MANUAL_STAFF_RECORDED' as const,
-          settledAt: new Date().toISOString(),
-        };
-        const result = await context.repo.settleTableSession(targetTable.id, settlementPayload, {
-          expectedRevision: body.expectedRevision,
-          authorizedBy: authorizer,
-          reason: body.reason,
-        });
-        sendJson(res, result.success ? 200 : 400, result);
-      } finally {
-        activeSettlementLocks.delete(lockKey);
-      }
-    },
+    handler: (req, res, context) => handleTableSettle(req, res, context),
   },
   {
     method: 'POST',
     path: '/api/restaurant/tables/merge',
     handler: async (req, res, context) => {
       const identity = context.requestIdentity;
-      if (identity.type === 'DINER' || identity.type === 'ANONYMOUS') {
+      if (identity.type === 'INVALID_CREDENTIAL') {
+        sendJson(res, 401, { error: 'Invalid credential', code: 'INVALID_CREDENTIAL' });
+        return;
+      }
+      if (identity.type === 'DINER' || identity.type === 'REVOKED_CAPABILITY') {
         sendJson(res, 403, { error: 'Diners cannot merge tables', code: 'FORBIDDEN' });
+        return;
+      }
+      if (identity.type === 'ANONYMOUS') {
+        sendJson(res, 401, { error: 'Staff credential required', code: 'UNAUTHENTICATED' });
         return;
       }
       const body = await context.parseBody();
@@ -245,8 +271,16 @@ export const tablesRoutes: RouteDefinition[] = [
     path: '/api/restaurant/tables/unmerge',
     handler: async (req, res, context) => {
       const identity = context.requestIdentity;
-      if (identity.type === 'DINER' || identity.type === 'ANONYMOUS') {
+      if (identity.type === 'INVALID_CREDENTIAL') {
+        sendJson(res, 401, { error: 'Invalid credential', code: 'INVALID_CREDENTIAL' });
+        return;
+      }
+      if (identity.type === 'DINER' || identity.type === 'REVOKED_CAPABILITY') {
         sendJson(res, 403, { error: 'Diners cannot unmerge tables', code: 'FORBIDDEN' });
+        return;
+      }
+      if (identity.type === 'ANONYMOUS') {
+        sendJson(res, 401, { error: 'Staff credential required', code: 'UNAUTHENTICATED' });
         return;
       }
       const body = await context.parseBody();
@@ -284,6 +318,18 @@ export const tablesRoutes: RouteDefinition[] = [
     path: '/api/restaurant/floor/save',
     handler: async (req, res, context) => {
       const identity = context.requestIdentity;
+      if (identity.type === 'INVALID_CREDENTIAL' || identity.type === 'REVOKED_CAPABILITY') {
+        sendJson(res, 401, { error: 'Invalid or revoked credential', code: identity.type });
+        return;
+      }
+      if (identity.type === 'DINER') {
+        sendJson(res, 403, { error: 'Diner capability cannot modify floor layout', code: 'FORBIDDEN' });
+        return;
+      }
+      if (identity.type === 'ANONYMOUS') {
+        sendJson(res, 401, { error: 'Staff credential required', code: 'UNAUTHENTICATED' });
+        return;
+      }
       if (!identity.isPrivileged) {
         sendJson(res, 403, { error: 'Floor layout modification requires Manager or Admin privileges', code: 'FORBIDDEN' });
         return;
@@ -394,17 +440,63 @@ export const tablesRoutes: RouteDefinition[] = [
     path: '/api/restaurant/service-requests/:id/resolve',
     handler: async (_req, res, context) => {
       const identity = context.requestIdentity;
-      if (identity.type === 'DINER' || identity.type === 'ANONYMOUS') {
-        sendJson(res, 403, { error: 'FORBIDDEN', message: 'Diners cannot resolve service requests.' });
+      if (identity.type === 'INVALID_CREDENTIAL' || identity.type === 'ANONYMOUS') {
+        sendJson(res, 401, {
+          error: 'UNAUTHENTICATED',
+          code: 'UNAUTHENTICATED',
+          message: 'Resolving service requests requires authenticated staff or manager credentials.',
+        });
         return;
       }
-      const reqId = context.params.id;
+      if (identity.type === 'DINER' || identity.type === 'REVOKED_CAPABILITY') {
+        sendJson(res, 403, {
+          error: 'FORBIDDEN',
+          code: 'FORBIDDEN',
+          message: 'Diners cannot resolve service requests.',
+        });
+        return;
+      }
+      const allowedRoles = ['WAITER', 'SERVER', 'RUNNER', 'HOST', 'CHEF', 'MANAGER', 'ADMIN'];
+      const staffRole = identity.role || (identity.type === 'ADMIN' ? 'ADMIN' : '');
+      if (!allowedRoles.includes(staffRole)) {
+        sendJson(res, 403, {
+          error: 'FORBIDDEN',
+          code: 'FORBIDDEN',
+          message: 'Resolving service requests requires operations staff or manager credentials.',
+        });
+        return;
+      }
+      const reqId = context.params.id || context.pathname.split('/')[4];
+      const sReqs = await context.repo.getServiceRequests();
+      const sReq = sReqs.find((r) => r.id === reqId);
+      if (!sReq) {
+        sendJson(res, 404, { error: 'Request not found' });
+        return;
+      }
+      const targetTbl = await context.repo.getTableByNumber(sReq.tableNumber);
+      if (targetTbl && identity.branchId && identity.branchId !== '*' && targetTbl.branchId !== identity.branchId) {
+        sendJson(res, 403, {
+          error: `Credential for branch ${identity.branchId} cannot resolve request in branch ${targetTbl.branchId}`,
+          code: 'BRANCH_MISMATCH',
+        });
+        return;
+      }
       const resolved = await context.repo.resolveServiceRequest(reqId);
-      if (!resolved) {
-        sendJson(res, 404, { success: false, error: `Service request ${reqId} not found` });
-        return;
-      }
+      eventBus.broadcast({
+        id: `evt_${Date.now()}`,
+        sequence: (await context.repo.getEvents()).length,
+        type: 'service_request.resolved',
+        timestamp: new Date().toISOString(),
+        producer: 'api:service-resolve',
+        branchId: context.currentBranch?.id,
+        tableNumber: resolved?.tableNumber || sReq.tableNumber,
+        tenantId: context.tenantContext?.tenantId,
+        payload: resolved,
+      });
       sendJson(res, 200, { success: true, data: resolved });
     },
   },
 ];
+
+export { handleTableBill, handleRotateLocator } from './service';
+

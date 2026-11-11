@@ -12,10 +12,15 @@ import {
 } from './service';
 
 async function handleBumpTask(req: any, res: any, context: any): Promise<void> {
+  const initialAuth = authorizeKdsRequest(context.requestIdentity);
+  if (!initialAuth.authorized) {
+    sendJson(res, initialAuth.statusCode || 401, { error: initialAuth.error, code: initialAuth.code });
+    return;
+  }
   const body = await context.parseBody().catch(() => ({}));
   const taskId = body.taskId || context.params?.id;
   if (!taskId) {
-    sendJson(res, 400, { error: 'taskId required', code: 'TASK_ID_REQUIRED' });
+    sendJson(res, 400, { error: 'Task ID is required', code: 'TASK_ID_REQUIRED' });
     return;
   }
   const task = (await context.repo.getKitchenTasks()).find((t: any) => t.id === taskId);
@@ -24,6 +29,13 @@ async function handleBumpTask(req: any, res: any, context: any): Promise<void> {
     return;
   }
   const taskBranchRes = await resolveTaskAuthoritativeBranch(task, context.repo);
+  if (!taskBranchRes.branchId && context.requestIdentity.branchId && context.requestIdentity.branchId !== '*') {
+    sendJson(res, 403, {
+      error: taskBranchRes.error || 'Task cannot be mutated due to unverified branch origin.',
+      code: taskBranchRes.code || 'BRANCH_MISMATCH',
+    });
+    return;
+  }
   const authCheck = authorizeKdsRequest(context.requestIdentity, taskBranchRes.branchId || undefined, task.station);
   if (!authCheck.authorized) {
     sendJson(res, authCheck.statusCode || 403, { error: authCheck.error, code: authCheck.code });
@@ -73,18 +85,30 @@ async function handleBumpTask(req: any, res: any, context: any): Promise<void> {
 }
 
 async function handleRecallTask(req: any, res: any, context: any): Promise<void> {
+  const initialAuth = authorizeKdsRequest(context.requestIdentity);
+  if (!initialAuth.authorized) {
+    sendJson(res, initialAuth.statusCode || 401, { error: initialAuth.error, code: initialAuth.code });
+    return;
+  }
   const body = await context.parseBody().catch(() => ({}));
   const taskId = body.taskId || context.params?.id;
   if (!taskId) {
-    sendJson(res, 400, { error: 'taskId required' });
+    sendJson(res, 400, { error: 'Task ID is required', code: 'TASK_ID_REQUIRED' });
     return;
   }
   const task = (await context.repo.getKitchenTasks()).find((t: any) => t.id === taskId);
   if (!task) {
-    sendJson(res, 404, { error: `Task ${taskId} not found` });
+    sendJson(res, 404, { error: `Task ${taskId} not found`, code: 'TASK_NOT_FOUND' });
     return;
   }
   const taskBranchRes = await resolveTaskAuthoritativeBranch(task, context.repo);
+  if (!taskBranchRes.branchId && context.requestIdentity.branchId && context.requestIdentity.branchId !== '*') {
+    sendJson(res, 403, {
+      error: taskBranchRes.error || 'Task cannot be mutated due to unverified branch origin.',
+      code: taskBranchRes.code || 'BRANCH_MISMATCH',
+    });
+    return;
+  }
   const authCheck = authorizeKdsRequest(context.requestIdentity, taskBranchRes.branchId || undefined, task.station);
   if (!authCheck.authorized) {
     sendJson(res, authCheck.statusCode || 403, { error: authCheck.error, code: authCheck.code });
@@ -95,15 +119,28 @@ async function handleRecallTask(req: any, res: any, context: any): Promise<void>
 }
 
 async function handleExpoDispatch(req: any, res: any, context: any): Promise<void> {
+  const initialAuth = authorizeKdsRequest(context.requestIdentity, undefined, undefined, true);
+  if (!initialAuth.authorized) {
+    sendJson(res, initialAuth.statusCode || 401, { error: initialAuth.error, code: initialAuth.code });
+    return;
+  }
   const body = await context.parseBody().catch(() => ({}));
   const tableNumber = body.tableNumber;
   if (!tableNumber) {
-    sendJson(res, 400, { error: 'tableNumber is required' });
+    sendJson(res, 400, { error: 'Table number is required', code: 'TABLE_NUMBER_REQUIRED' });
     return;
   }
   const tasks = (await context.repo.getKitchenTasks()).filter((t: any) => t.tableNumber === tableNumber);
   if (tasks.length === 0) {
     sendJson(res, 400, { error: `No kitchen tasks found for table ${tableNumber}`, code: 'TASKS_NOT_FOUND' });
+    return;
+  }
+  const targetBranch = tasks[0].branchId;
+  if (context.requestIdentity.branchId && context.requestIdentity.branchId !== '*' && targetBranch && targetBranch !== context.requestIdentity.branchId) {
+    sendJson(res, 403, {
+      error: `Staff credential for branch ${context.requestIdentity.branchId} cannot dispatch tables in branch ${targetBranch}.`,
+      code: 'BRANCH_MISMATCH',
+    });
     return;
   }
   const authCheck = authorizeKdsRequest(context.requestIdentity, tasks[0].branchId || undefined, undefined, true);
@@ -131,18 +168,30 @@ async function handleExpoDispatch(req: any, res: any, context: any): Promise<voi
 }
 
 async function handleFulfillItem(req: any, res: any, context: any): Promise<void> {
+  const initialAuth = authorizeKdsRequest(context.requestIdentity);
+  if (!initialAuth.authorized) {
+    sendJson(res, initialAuth.statusCode || 401, { error: initialAuth.error, code: initialAuth.code });
+    return;
+  }
   const body = await context.parseBody().catch(() => ({}));
   const taskId = body.taskId || context.params?.id;
   if (!taskId) {
-    sendJson(res, 400, { error: 'taskId required' });
+    sendJson(res, 400, { error: 'Task ID is required', code: 'TASK_ID_REQUIRED' });
     return;
   }
   const task = (await context.repo.getKitchenTasks()).find((t: any) => t.id === taskId);
   if (!task) {
-    sendJson(res, 404, { error: `Task ${taskId} not found` });
+    sendJson(res, 404, { error: `Task ${taskId} not found`, code: 'TASK_NOT_FOUND' });
     return;
   }
   const taskBranchRes = await resolveTaskAuthoritativeBranch(task, context.repo);
+  if (!taskBranchRes.branchId && context.requestIdentity.branchId && context.requestIdentity.branchId !== '*') {
+    sendJson(res, 403, {
+      error: taskBranchRes.error || 'Task cannot be mutated due to unverified branch origin.',
+      code: taskBranchRes.code || 'BRANCH_MISMATCH',
+    });
+    return;
+  }
   const authCheck = authorizeKdsRequest(context.requestIdentity, taskBranchRes.branchId || undefined, task.station);
   if (!authCheck.authorized) {
     sendJson(res, authCheck.statusCode || 403, { error: authCheck.error, code: authCheck.code });
@@ -157,10 +206,14 @@ export const kitchenRoutes: RouteDefinition[] = [
     method: 'GET',
     path: '/api/restaurant/kds',
     handler: async (req, res, context) => {
-      const branchId = (context.parsedUrl.query.branchId as string) || (context.parsedUrl.query.branch as string) || context.currentBranch?.id;
-      const station = (context.parsedUrl.query.station as string) || undefined;
-      const tasks = await context.posService.listKitchenTasks({ branchId, station });
-      sendJson(res, 200, { success: true, count: tasks.length, data: tasks, tasks });
+      const stationFilter = (context.parsedUrl.query.station || context.parsedUrl.query.stationId) as string;
+      const branchFilter = context.requestIdentity.isPrivileged ? (context.parsedUrl.query.branchId as string) : context.requestIdentity.branchId;
+      const tasks = await context.posService.listKitchenTasks({ station: stationFilter, branchId: branchFilter });
+      sendJson(res, 200, {
+        success: true,
+        data: tasks,
+        tasks,
+      });
     },
   },
   {
@@ -197,17 +250,27 @@ export const kitchenRoutes: RouteDefinition[] = [
     method: 'POST',
     path: '/api/restaurant/kds/expo-recall',
     handler: async (req, res, context) => {
+      const initialAuth = authorizeKdsRequest(context.requestIdentity, undefined, undefined, true);
+      if (!initialAuth.authorized) {
+        sendJson(res, initialAuth.statusCode || 401, { error: initialAuth.error, code: initialAuth.code });
+        return;
+      }
       const body = await context.parseBody();
       const tableNumber = body.tableNumber;
       if (!tableNumber) {
-        sendJson(res, 400, { error: 'tableNumber required' });
+        sendJson(res, 400, { error: 'Table number is required', code: 'TABLE_NUMBER_REQUIRED' });
         return;
       }
-      const tasks = (await context.repo.getKitchenTasks()).filter((t) => t.tableNumber === tableNumber && t.status === 'BUMPED');
-      for (const t of tasks) {
+      const tasks = (await context.repo.getKitchenTasks()).filter((t) => t.tableNumber === tableNumber);
+      const bumpedTasks = tasks.filter((t) => t.status === 'BUMPED');
+      if (bumpedTasks.length === 0) {
+        sendJson(res, 400, { error: `No bumped tasks to recall for table ${tableNumber}`, code: 'NO_BUMPED_TASKS' });
+        return;
+      }
+      for (const t of bumpedTasks) {
         await context.repo.recallTask(t.id, 'READY');
       }
-      sendJson(res, 200, { success: true, count: tasks.length });
+      sendJson(res, 200, { success: true, count: bumpedTasks.length, tableNumber });
     },
   },
   {
@@ -229,10 +292,14 @@ export const kitchenRoutes: RouteDefinition[] = [
     method: 'GET',
     path: '/api/restaurant/kds/tasks',
     handler: async (req, res, context) => {
-      const branchId = (context.parsedUrl.query.branchId as string) || context.currentBranch?.id;
-      const tasks = await context.repo.getKitchenTasks();
-      const filtered = branchId ? tasks.filter((t) => t.branchId === branchId) : tasks;
-      sendJson(res, 200, { success: true, count: filtered.length, data: filtered });
+      const stationFilter = (context.parsedUrl.query.station || context.parsedUrl.query.stationId) as string;
+      const branchFilter = context.requestIdentity.isPrivileged ? (context.parsedUrl.query.branchId as string) : context.requestIdentity.branchId;
+      const tasks = await context.posService.listKitchenTasks({ station: stationFilter, branchId: branchFilter });
+      sendJson(res, 200, {
+        success: true,
+        data: tasks,
+        tasks,
+      });
     },
   },
   {

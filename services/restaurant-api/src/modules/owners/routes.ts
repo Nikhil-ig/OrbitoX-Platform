@@ -14,6 +14,52 @@ import {
   validateAndSanitizeCustomCss,
 } from '../../shared';
 
+export async function handleVerifyDomain(req: any, res: any, context: any): Promise<void> {
+  const identity = context.requestIdentity;
+  if (identity.type === 'INVALID_CREDENTIAL' || identity.type === 'REVOKED_CAPABILITY') {
+    sendJson(res, 401, { error: identity.type, code: identity.type, message: 'Invalid or revoked credential.' });
+    return;
+  }
+  if (identity.type === 'ANONYMOUS') {
+    sendJson(res, 401, { error: 'AUTHENTICATION_REQUIRED', code: 'AUTHENTICATION_REQUIRED', message: 'Domain verification requires authenticated manager credentials.' });
+    return;
+  }
+  if (!identity.isPrivileged) {
+    sendJson(res, 403, { error: 'FORBIDDEN', code: 'FORBIDDEN', message: 'Domain verification requires Manager or Admin privileges.' });
+    return;
+  }
+  const body = await context.parseBody().catch(() => ({}));
+  const brand = await context.repo.getTenantBrand();
+  const domain = body.domain || brand?.customDomain;
+  if (!domain || !domain.includes('.')) {
+    sendJson(res, 400, { success: false, error: 'INVALID_DOMAIN', message: 'Domain must be a fully qualified domain name.' });
+    return;
+  }
+  try {
+    const verifyRes = await customDomainService.verifyCustomDomain(context.tenantContext.tenantId, domain);
+    if (verifyRes.verified) {
+      await context.repo.updateTenantBrand({
+        customDomain: domain,
+        domainStatus: 'VERIFIED',
+        sslStatus: 'ACTIVE',
+      });
+      sendJson(res, 200, {
+        success: true,
+        data: verifyRes,
+        message: `Domain ${domain} successfully verified with SSL provisioned.`,
+      });
+    } else {
+      sendJson(res, 400, {
+        success: false,
+        data: verifyRes,
+        error: verifyRes.error || 'DNS TXT verification failed.',
+      });
+    }
+  } catch (err: any) {
+    sendJson(res, 400, { success: false, error: err.message });
+  }
+}
+
 export const ownersRoutes: RouteDefinition[] = [
   {
     method: 'GET',
@@ -54,43 +100,7 @@ export const ownersRoutes: RouteDefinition[] = [
   {
     method: 'POST',
     path: '/api/restaurant/domains/verify',
-    handler: async (req, res, context) => {
-      const identity = context.requestIdentity;
-      if (!identity.isPrivileged) {
-        sendJson(res, 403, { error: 'FORBIDDEN', message: 'Domain verification requires Manager or Admin privileges.' });
-        return;
-      }
-      const body = await context.parseBody();
-      const brand = await context.repo.getTenantBrand();
-      const domain = body.domain || brand?.customDomain;
-      if (!domain || !domain.includes('.')) {
-        sendJson(res, 400, { success: false, error: 'INVALID_DOMAIN', message: 'Domain must be a fully qualified domain name.' });
-        return;
-      }
-      try {
-        const verifyRes = await customDomainService.verifyCustomDomain(context.tenantContext.tenantId, domain);
-        if (verifyRes.verified) {
-          await context.repo.updateTenantBrand({
-            customDomain: domain,
-            domainStatus: 'VERIFIED',
-            sslStatus: 'ACTIVE',
-          });
-          sendJson(res, 200, {
-            success: true,
-            data: verifyRes,
-            message: `Domain ${domain} successfully verified with SSL provisioned.`,
-          });
-        } else {
-          sendJson(res, 400, {
-            success: false,
-            data: verifyRes,
-            error: verifyRes.error || 'DNS TXT verification failed.',
-          });
-        }
-      } catch (err: any) {
-        sendJson(res, 400, { success: false, error: err.message });
-      }
-    },
+    handler: handleVerifyDomain,
   },
   {
     method: 'DELETE',
@@ -127,6 +137,10 @@ export const ownersRoutes: RouteDefinition[] = [
     path: '/api/restaurant/onboarding/step',
     handler: async (req, res, context) => {
       const identity = context.requestIdentity;
+      if (identity.type === 'INVALID_CREDENTIAL' || identity.type === 'REVOKED_CAPABILITY') {
+        sendJson(res, 401, { error: identity.type, code: identity.type, message: 'Invalid or revoked credential.' });
+        return;
+      }
       if (identity.type === 'ANONYMOUS' || identity.type === 'DINER') {
         sendJson(res, 403, { error: 'FORBIDDEN', message: 'Staff credentials required to update onboarding checklist.' });
         return;
@@ -153,8 +167,12 @@ export const ownersRoutes: RouteDefinition[] = [
     path: '/api/restaurant/uploads/logo',
     handler: async (req, res, context) => {
       const identity = context.requestIdentity;
-      if (!identity.isPrivileged) {
-        sendJson(res, 403, { error: 'FORBIDDEN', message: 'Manager or Admin privileges required.' });
+      if (identity.type === 'INVALID_CREDENTIAL' || identity.type === 'REVOKED_CAPABILITY') {
+        sendJson(res, 401, { error: identity.type, code: identity.type, message: 'Invalid or revoked credential.' });
+        return;
+      }
+      if (identity.type === 'ANONYMOUS' || identity.type === 'DINER' || !identity.isPrivileged) {
+        sendJson(res, 403, { error: 'FORBIDDEN', message: 'Manager or Admin privileges required to upload branding assets.' });
         return;
       }
       try {
@@ -181,8 +199,12 @@ export const ownersRoutes: RouteDefinition[] = [
     path: '/api/restaurant/uploads/hero',
     handler: async (req, res, context) => {
       const identity = context.requestIdentity;
-      if (!identity.isPrivileged) {
-        sendJson(res, 403, { error: 'FORBIDDEN', message: 'Manager or Admin privileges required.' });
+      if (identity.type === 'INVALID_CREDENTIAL' || identity.type === 'REVOKED_CAPABILITY') {
+        sendJson(res, 401, { error: identity.type, code: identity.type, message: 'Invalid or revoked credential.' });
+        return;
+      }
+      if (identity.type === 'ANONYMOUS' || identity.type === 'DINER' || !identity.isPrivileged) {
+        sendJson(res, 403, { error: 'FORBIDDEN', message: 'Manager or Admin privileges required to upload branding assets.' });
         return;
       }
       try {
@@ -217,8 +239,16 @@ export const ownersRoutes: RouteDefinition[] = [
     path: '/api/restaurant/settings/whitelabel',
     handler: async (req, res, context) => {
       const identity = context.requestIdentity;
+      if (identity.type === 'INVALID_CREDENTIAL' || identity.type === 'REVOKED_CAPABILITY') {
+        sendJson(res, 401, { error: identity.type, code: identity.type, message: 'Invalid or revoked credential.' });
+        return;
+      }
+      if (identity.type === 'ANONYMOUS') {
+        sendJson(res, 401, { error: 'AUTHENTICATION_REQUIRED', code: 'AUTHENTICATION_REQUIRED', message: 'Branding updates require authenticated manager credentials.' });
+        return;
+      }
       if (!identity.isPrivileged) {
-        sendJson(res, 403, { error: 'FORBIDDEN', message: 'Manager or Admin privileges required.' });
+        sendJson(res, 403, { error: 'FORBIDDEN', code: 'FORBIDDEN', message: 'Branding updates require Manager or Admin privileges.' });
         return;
       }
       const body = await context.parseBody();
@@ -256,10 +286,11 @@ export const ownersRoutes: RouteDefinition[] = [
         sendJson(res, 401, {
           error: 'AUTHENTICATION_REQUIRED',
           code: 'AUTHENTICATION_REQUIRED',
-          message: 'Staff credentials required.',
+          message: 'Staff or manager credentials required to view staff directory.',
         });
         return;
       }
+
       const queryBranch = (context.parsedUrl.query.branchId as string) || (identity.branchId !== '*' ? identity.branchId : undefined);
       const members = await context.repo.getStaffMembers();
       const staffList = members
@@ -275,28 +306,46 @@ export const ownersRoutes: RouteDefinition[] = [
       const identity = context.requestIdentity;
       if (
         identity.type === 'ANONYMOUS' ||
-        identity.type === 'DINER' ||
-        identity.type === 'REVOKED_CAPABILITY' ||
-        identity.type === 'INVALID_CREDENTIAL'
+        identity.type === 'INVALID_CREDENTIAL' ||
+        identity.type === 'REVOKED_CAPABILITY'
       ) {
-        sendJson(res, 401, {
-          error: 'AUTHENTICATION_REQUIRED',
-          code: 'AUTHENTICATION_REQUIRED',
-          message: 'Staff credentials required.',
+        sendJson(res, 401, { error: 'AUTHENTICATION_REQUIRED', code: 'AUTHENTICATION_REQUIRED' });
+        return;
+      }
+
+      if (identity.role !== 'MANAGER' && identity.role !== 'ADMIN' && identity.role !== 'OWNER' && identity.type !== 'ADMIN') {
+        sendJson(res, 403, { error: 'FORBIDDEN', code: 'FORBIDDEN', message: 'Manager credentials required.' });
+        return;
+      }
+
+      const staffId = context.params.id || context.pathname.split('/')[4];
+      const targetMember = await context.repo.getStaffMember(staffId);
+      if (!targetMember) {
+        sendJson(res, 404, { error: 'STAFF_NOT_FOUND', code: 'STAFF_NOT_FOUND', message: `Staff member ${staffId} not found.` });
+        return;
+      }
+
+      // Branch scoping
+      if (identity.branchId && identity.branchId !== '*' && targetMember.branchId !== '*' && targetMember.branchId !== identity.branchId) {
+        sendJson(res, 403, {
+          error: 'BRANCH_MISMATCH',
+          code: 'BRANCH_MISMATCH',
+          message: `Manager for branch ${identity.branchId} cannot modify staff in branch ${targetMember.branchId}.`,
         });
         return;
       }
-      if (!identity.isPrivileged) {
-        sendJson(res, 403, { error: 'FORBIDDEN', message: 'Manager credentials required.' });
-        return;
-      }
-      const staffId = context.params.id;
-      const targetMember = await context.repo.getStaffMember(staffId);
-      if (!targetMember) {
-        sendJson(res, 404, { error: 'STAFF_NOT_FOUND', message: `Staff member ${staffId} not found.` });
-        return;
-      }
+
       const body = await context.parseBody();
+      // Privilege escalation guard
+      if (body.role === 'ADMIN' && identity.role !== 'ADMIN' && identity.role !== 'OWNER') {
+        sendJson(res, 403, {
+          error: 'PRIVILEGE_ESCALATION',
+          code: 'PRIVILEGE_ESCALATION',
+          message: 'Only platform administrators or owners can grant the ADMIN role.',
+        });
+        return;
+      }
+
       if (body.name !== undefined) targetMember.name = body.name.trim();
       if (body.role !== undefined) targetMember.role = body.role;
       if (body.branchId !== undefined) targetMember.branchId = body.branchId;
@@ -307,7 +356,13 @@ export const ownersRoutes: RouteDefinition[] = [
         targetMember.salt = `salt_${targetMember.branchId}_${crypto.randomBytes(8).toString('hex')}`;
         targetMember.pinHash = hashStaffSecretSync(body.secret || body.pin, targetMember.salt);
       }
+
       await context.repo.saveStaffMember(targetMember);
+      await runtimeController.emitAudit('STAFF_MEMBER_UPDATED', identity.id, {
+        staffId,
+        updates: { role: body.role, station: body.station, branchId: body.branchId, status: body.status },
+      });
+
       const { salt: _s, pinHash: _p, ...safe } = targetMember;
       sendJson(res, 200, { success: true, data: safe });
     },
@@ -319,29 +374,47 @@ export const ownersRoutes: RouteDefinition[] = [
       const identity = context.requestIdentity;
       if (
         identity.type === 'ANONYMOUS' ||
-        identity.type === 'DINER' ||
-        identity.type === 'REVOKED_CAPABILITY' ||
-        identity.type === 'INVALID_CREDENTIAL'
+        identity.type === 'INVALID_CREDENTIAL' ||
+        identity.type === 'REVOKED_CAPABILITY'
       ) {
-        sendJson(res, 401, {
-          error: 'AUTHENTICATION_REQUIRED',
-          code: 'AUTHENTICATION_REQUIRED',
-          message: 'Staff credentials required.',
-        });
+        sendJson(res, 401, { error: 'AUTHENTICATION_REQUIRED', code: 'AUTHENTICATION_REQUIRED' });
         return;
       }
-      if (!identity.isPrivileged) {
-        sendJson(res, 403, { error: 'FORBIDDEN', message: 'Manager credentials required.' });
-        return;
-      }
-      const staffId = context.params.id;
+
+      const staffId = context.params.id || context.pathname.split('/')[4];
       const targetMember = await context.repo.getStaffMember(staffId);
       if (!targetMember) {
         sendJson(res, 404, { error: 'STAFF_NOT_FOUND', code: 'STAFF_NOT_FOUND', message: `Staff member ${staffId} not found.` });
         return;
       }
+
+      const isSelf = identity.id === staffId;
+      if (!identity.isPrivileged && !isSelf) {
+        sendJson(res, 403, {
+          error: 'FORBIDDEN',
+          code: 'FORBIDDEN',
+          message: 'Manager privileges required to revoke staff credentials.',
+        });
+        return;
+      }
+
+      // Branch scoping
+      if (identity.branchId && identity.branchId !== '*' && targetMember.branchId !== '*' && targetMember.branchId !== identity.branchId) {
+        sendJson(res, 403, {
+          error: 'BRANCH_MISMATCH',
+          code: 'BRANCH_MISMATCH',
+          message: `Manager for branch ${identity.branchId} cannot revoke staff in branch ${targetMember.branchId}.`,
+        });
+        return;
+      }
+
       await context.repo.revokeStaffMember(staffId);
-      sendJson(res, 200, { success: true, message: `Staff member ${staffId} revoked.` });
+      await runtimeController.emitAudit('STAFF_MEMBER_REVOKED', identity.id, { staffId });
+
+      sendJson(res, 200, {
+        success: true,
+        message: `All current and future tokens for staff member ${staffId} have been durably revoked.`,
+      });
     },
   },
   {
@@ -349,19 +422,6 @@ export const ownersRoutes: RouteDefinition[] = [
     path: '/api/restaurant/staff/reset-lockout',
     handler: async (req, res, context) => {
       const identity = context.requestIdentity;
-      if (
-        identity.type === 'ANONYMOUS' ||
-        identity.type === 'DINER' ||
-        identity.type === 'REVOKED_CAPABILITY' ||
-        identity.type === 'INVALID_CREDENTIAL'
-      ) {
-        sendJson(res, 401, {
-          error: 'AUTHENTICATION_REQUIRED',
-          code: 'AUTHENTICATION_REQUIRED',
-          message: 'Staff credentials required.',
-        });
-        return;
-      }
       if (!identity.isPrivileged) {
         sendJson(res, 403, { error: 'FORBIDDEN', message: 'Manager privileges required to reset lockouts.' });
         return;
@@ -384,8 +444,16 @@ export const ownersRoutes: RouteDefinition[] = [
     path: '/api/restaurant/templates/install',
     handler: async (req, res, context) => {
       const identity = context.requestIdentity;
+      if (identity.type === 'INVALID_CREDENTIAL' || identity.type === 'REVOKED_CAPABILITY') {
+        sendJson(res, 401, { error: identity.type, code: identity.type, message: 'Invalid or revoked credential.' });
+        return;
+      }
+      if (identity.type === 'ANONYMOUS') {
+        sendJson(res, 401, { error: 'AUTHENTICATION_REQUIRED', code: 'AUTHENTICATION_REQUIRED', message: 'Template installation requires manager credentials.' });
+        return;
+      }
       if (!identity.isPrivileged) {
-        sendJson(res, 403, { error: 'FORBIDDEN', message: 'Installing templates requires Manager or Admin privileges.' });
+        sendJson(res, 403, { error: 'FORBIDDEN', code: 'FORBIDDEN', message: 'Installing templates requires Manager or Admin privileges.' });
         return;
       }
       const body = await context.parseBody();
@@ -411,8 +479,16 @@ export const ownersRoutes: RouteDefinition[] = [
     path: '/api/restaurant/studio/publish',
     handler: async (req, res, context) => {
       const identity = context.requestIdentity;
+      if (identity.type === 'INVALID_CREDENTIAL' || identity.type === 'REVOKED_CAPABILITY') {
+        sendJson(res, 401, { error: identity.type, code: identity.type, message: 'Invalid or revoked credential.' });
+        return;
+      }
+      if (identity.type === 'ANONYMOUS') {
+        sendJson(res, 401, { error: 'AUTHENTICATION_REQUIRED', code: 'AUTHENTICATION_REQUIRED', message: 'Publishing templates requires manager credentials.' });
+        return;
+      }
       if (!identity.isPrivileged) {
-        sendJson(res, 403, { error: 'FORBIDDEN', message: 'Publishing template changes requires Manager or Admin privileges.' });
+        sendJson(res, 403, { error: 'FORBIDDEN', code: 'FORBIDDEN', message: 'Publishing template changes requires Manager or Admin privileges.' });
         return;
       }
       const body = await context.parseBody();
@@ -425,3 +501,93 @@ export const ownersRoutes: RouteDefinition[] = [
     },
   },
 ];
+
+export async function handleCreateStaff(req: any, res: any, context: any): Promise<void> {
+  const identity = context.requestIdentity;
+  if (
+    identity.type === 'ANONYMOUS' ||
+    identity.type === 'INVALID_CREDENTIAL' ||
+    identity.type === 'REVOKED_CAPABILITY'
+  ) {
+    sendJson(res, 401, {
+      error: 'AUTHENTICATION_REQUIRED',
+      code: 'AUTHENTICATION_REQUIRED',
+      message: 'Authentication required.',
+    });
+    return;
+  }
+
+  if (identity.role !== 'MANAGER' && identity.role !== 'ADMIN' && identity.role !== 'OWNER' && identity.type !== 'ADMIN') {
+    sendJson(res, 403, {
+      error: 'FORBIDDEN',
+      code: 'FORBIDDEN',
+      message: 'Manager or administrator credentials required to provision staff members.',
+    });
+    return;
+  }
+
+  const body = await context.parseBody();
+  const targetBranchId = body.branchId || identity.branchId || 'branch_ldh';
+
+  // Cross-branch check: Non-admin manager cannot assign staff to other branches
+  if (identity.branchId && identity.branchId !== '*' && targetBranchId !== identity.branchId) {
+    sendJson(res, 403, {
+      error: 'BRANCH_MISMATCH',
+      code: 'BRANCH_MISMATCH',
+      message: `Manager for branch ${identity.branchId} cannot provision staff for branch ${targetBranchId}.`,
+    });
+    return;
+  }
+
+  // Privilege escalation check: only ADMIN/OWNER can assign ADMIN role
+  if (body.role === 'ADMIN' && identity.role !== 'ADMIN' && identity.role !== 'OWNER') {
+    sendJson(res, 403, {
+      error: 'PRIVILEGE_ESCALATION',
+      code: 'PRIVILEGE_ESCALATION',
+      message: 'Only platform administrators or owners can provision the ADMIN role.',
+    });
+    return;
+  }
+
+  if (!body.name || (!body.pin && !body.secret) || !body.role) {
+    sendJson(res, 400, {
+      error: 'VALIDATION_ERROR',
+      code: 'VALIDATION_ERROR',
+      message: 'Name, role, and PIN/secret are required.',
+    });
+    return;
+  }
+
+  try {
+    const id = `stf_${body.role.toLowerCase()}_${targetBranchId.replace('branch_', '')}_${Date.now().toString(36)}`;
+    const salt = `salt_${targetBranchId}_${crypto.randomBytes(8).toString('hex')}`;
+    const pinHash = hashStaffSecretSync(body.secret || body.pin, salt);
+    const member = {
+      id,
+      name: body.name.trim(),
+      role: body.role,
+      branchId: targetBranchId,
+      station: body.station,
+      salt,
+      pinHash,
+      status: 'ACTIVE' as const,
+      permissions: body.permissions,
+    };
+    await context.repo.saveStaffMember(member);
+
+    await runtimeController.emitAudit('STAFF_MEMBER_CREATED', identity.id, {
+      staffId: member.id,
+      role: member.role,
+      branchId: member.branchId,
+      station: member.station,
+    });
+
+    const { salt: _s, pinHash: _p, ...safe } = member;
+    sendJson(res, 201, { success: true, data: safe });
+    return;
+  } catch (err: any) {
+    sendJson(res, 400, { error: 'VALIDATION_ERROR', message: err.message });
+    return;
+  }
+}
+

@@ -8,7 +8,7 @@ import {
   RESTAURANT_NON_CASCADE_TENANT_TABLES,
   RESTAURANT_REVIEWED_MODEL_EXCLUSIONS,
   TENANT_CASCADE_TABLES,
-} from '../src/data-rights';
+} from '../src/modules/data-rights/service';
 
 interface ParsedSchemaModel {
   name: string;

@@ -196,3 +196,14 @@ The rule for 7A-1 is strict: **no kept security or product test is deleted; test
   2. `orbitox/packages/plugin-engine/src/client.ts <-> modeSwitcher.ts`
   3. `orbitox/packages/runtime/src/builders/{plan,policy,workflow}.builder.ts <-> facades/{billing,security,workflows}.facade.ts`
   4. `projects/external-os/restaurant-os/packages/domain/* <-> packages/storage/*` (12 internal cycles — address during 7A-2/7F restructure)
+
+---
+
+## 5. Monolithic Architecture Files Inventory (Stage 7A-2 Preservation -> Stage 7F Modularization)
+
+During the Stage 7A-2 move-only monorepo consolidation, the following monolithic support and persistence files in `services/restaurant-api` were intentionally preserved in their unified state to guarantee zero behavioral regressions and maintain 100% cryptographic and state parity. These files are scheduled for modular domain decomposition in Stage 7F:
+
+1. `services/restaurant-api/src/shared/index.ts` (3,204 lines): Unified exports and shared domain utilities for multi-tenancy, cryptographic signatures, custom domain resolution, and rate limiting.
+2. `services/restaurant-api/src/storage/store.ts` (~3,000 lines): In-memory JSON/runtime mock store backing test fixtures and standalone dev environments.
+3. `services/restaurant-api/src/storage/repository.ts` (~3,000 lines): Multi-tenant database repository facade with Prisma client integrations.
+

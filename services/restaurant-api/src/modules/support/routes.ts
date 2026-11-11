@@ -15,8 +15,7 @@ export const supportRoutes: RouteDefinition[] = [
         sendJson(res, 401, { error: 'AUTHENTICATION_REQUIRED', code: 'AUTHENTICATION_REQUIRED', message: 'Staff or manager authentication required to view support tickets.' });
         return;
       }
-      const tickets = await context.repo.getSupportTickets();
-      sendJson(res, 200, { success: true, count: tickets.length, data: tickets });
+      sendJson(res, 200, { success: true, data: await context.repo.getSupportTickets() });
     },
   },
   {
@@ -33,38 +32,51 @@ export const supportRoutes: RouteDefinition[] = [
         return;
       }
       const body = await context.parseBody();
-      const ticket = await context.repo.createSupportTicket({
-        ...body,
-        createdById: context.requestIdentity.id,
-      });
-      sendJson(res, 201, { success: true, data: ticket });
+      const initialMessage = body.initialMessage || body.description || body.message || body.subject;
+      if (!body.subject || !initialMessage) {
+        sendJson(res, 400, { success: false, error: 'Missing subject or initialMessage' });
+        return;
+      }
+      try {
+        const ticket = await context.repo.createSupportTicket({
+          branchId: body.branchId || context.currentBranch?.id || 'branch_ldh',
+          branchName: body.branchName || context.currentBranch?.name || 'Main Branch',
+          staffId: body.staffId || 'staff_mgr_ldh',
+          staffName: body.staffName || body.senderName || 'Restaurant Operator',
+          category: body.category || 'URGENT_INCIDENT',
+          severity: body.severity || 'MEDIUM',
+          subject: body.subject,
+          description: body.description || initialMessage || body.subject,
+          initialMessage,
+        });
+        sendJson(res, 201, { success: true, data: ticket });
+      } catch (err: any) {
+        sendJson(res, 400, { success: false, error: err.message });
+      }
     },
   },
   {
     method: 'POST',
     path: '/api/restaurant/support/tickets/:id/message',
     handler: async (req, res, context) => {
-      const identity = context.requestIdentity;
-      if (identity.type === 'INVALID_CREDENTIAL' || identity.type === 'REVOKED_CAPABILITY') {
-        sendJson(res, 401, { error: identity.type, code: identity.type, message: 'Invalid or revoked credential.' });
-        return;
-      }
-      if (identity.type !== 'STAFF' && identity.type !== 'ADMIN') {
-        sendJson(res, 401, { error: 'AUTHENTICATION_REQUIRED', code: 'AUTHENTICATION_REQUIRED', message: 'Staff authentication required.' });
-        return;
-      }
-      const ticketId = context.params.id;
+      const ticketId = context.params.id || context.pathname.replace('/api/restaurant/support/tickets/', '').replace('/message', '');
       const body = await context.parseBody();
-      const updated = await context.repo.addSupportTicketMessage(ticketId, {
-        authorId: context.requestIdentity.id,
-        authorName: (context.requestIdentity as any).name || 'Staff',
-        message: body.message,
-      });
-      if (!updated) {
-        sendJson(res, 404, { success: false, error: 'TICKET_NOT_FOUND' });
+      if (!body.body && !body.text) {
+        sendJson(res, 400, { success: false, error: 'Missing body for support message' });
         return;
       }
-      sendJson(res, 200, { success: true, data: updated });
+      try {
+        const success = await context.repo.addSupportTicketMessage(ticketId, {
+          text: body.body || body.text,
+          sender: body.senderRole === 'ORBITOX_SUPPORT' ? 'ORBITOX_SUPPORT' : 'RESTAURANT_STAFF',
+          authorName: body.senderName || body.authorName || 'Staff Member',
+          attachments: body.attachmentUrl ? [body.attachmentUrl] : undefined,
+        });
+        const ticket = await context.repo.getSupportTicketById(ticketId);
+        sendJson(res, 200, { success, data: ticket });
+      } catch (err: any) {
+        sendJson(res, 400, { success: false, error: err.message });
+      }
     },
   },
   {
@@ -80,14 +92,15 @@ export const supportRoutes: RouteDefinition[] = [
         sendJson(res, 401, { error: 'AUTHENTICATION_REQUIRED', code: 'AUTHENTICATION_REQUIRED', message: 'Updating support ticket status requires authenticated staff credentials.' });
         return;
       }
-      const ticketId = context.params.id;
+      const ticketId = context.params.id || context.pathname.replace('/api/restaurant/support/tickets/', '').replace('/status', '');
       const body = await context.parseBody();
-      const updated = await context.repo.updateSupportTicketStatus(ticketId, body.status);
-      if (!updated) {
-        sendJson(res, 404, { success: false, error: 'TICKET_NOT_FOUND' });
-        return;
+      try {
+        const ok = await context.repo.updateSupportTicketStatus(ticketId, body.status);
+        const ticket = await context.repo.getSupportTicketById(ticketId);
+        sendJson(res, 200, { success: ok, data: ticket });
+      } catch (err: any) {
+        sendJson(res, 400, { success: false, error: err.message });
       }
-      sendJson(res, 200, { success: true, data: updated });
     },
   },
 ];

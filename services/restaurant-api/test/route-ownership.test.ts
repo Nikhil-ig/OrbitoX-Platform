@@ -1,12 +1,29 @@
-import { describe, it } from 'node:test';
+process.env.NODE_ENV = 'test';
+process.env.STORAGE_DRIVER = 'json';
+
+import { describe, it, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import * as path from 'path';
 import * as fs from 'fs';
-import { getAllRegisteredRoutes, RouteEntry } from '../src/http/router';
 
 describe('RestaurantOS Route Ownership & Disjoint Boundary Invariants (B-2)', () => {
   const fixturePath = path.resolve(__dirname, 'fixtures/restaurant-routes-d7f9de5.json');
-  const expectedRoutes: RouteEntry[] = JSON.parse(fs.readFileSync(fixturePath, 'utf8'));
+  let expectedRoutes: any[];
+  let getAllRegisteredRoutes: any;
+
+  before(async () => {
+    expectedRoutes = JSON.parse(fs.readFileSync(fixturePath, 'utf8'));
+    const routerMod = await import('../src/http/router');
+    getAllRegisteredRoutes = routerMod.getAllRegisteredRoutes;
+  });
+
+  after(async () => {
+    const contextMod = await import('../src/http/context');
+    contextMod.eventLoopMonitor?.stop?.();
+    if (contextMod.pgEventListener) {
+      await contextMod.pgEventListener.stop?.();
+    }
+  });
 
   it('1. builds the route table from all modules and confirms every route has exactly ONE owning module', () => {
     const registered = getAllRegisteredRoutes();

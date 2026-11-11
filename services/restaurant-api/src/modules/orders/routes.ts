@@ -6,6 +6,7 @@ import {
   ownerSelfService,
   runtimeController,
   checkTestKillPoint,
+  eventBus,
 } from '../../http/context';
 import { processCommerceOrder, processCommerceGroceryOrder } from './service';
 
@@ -185,20 +186,88 @@ export const ordersRoutes: RouteDefinition[] = [
     method: 'GET',
     path: '/api/restaurant/orders/:id',
     handler: async (_req, res, context) => {
-      const order = await context.repo.getOrder(context.params.id);
+      const identity = context.requestIdentity;
+      const orderId = context.params.id;
+      const order = await context.repo.getOrder(orderId);
       if (!order) {
-        sendJson(res, 404, { success: false, error: `Order ${context.params.id} not found` });
+        sendJson(res, 404, { success: false, error: `Order ${orderId} not found`, code: 'ORDER_NOT_FOUND' });
         return;
       }
-      sendJson(res, 200, { success: true, data: order });
+
+      const targetTable = await context.repo.getTableByNumber(order.tableNumber);
+      const orderBranch = order.branchId || targetTable?.branchId;
+      if (
+        identity.branchId &&
+        identity.branchId !== '*' &&
+        orderBranch &&
+        identity.branchId !== orderBranch
+      ) {
+        sendJson(res, 403, {
+          error: 'BRANCH_MISMATCH',
+          code: 'BRANCH_MISMATCH',
+          message: `Staff member for branch ${identity.branchId} cannot view order in branch ${orderBranch}.`,
+        });
+        return;
+      }
+
+      const tasks = (await context.repo.getKitchenTasks()).filter((t: any) => t.orderId === order.orderId);
+      sendJson(res, 200, { success: true, data: order, tasks });
     },
   },
   {
     method: 'PATCH',
     path: '/api/restaurant/orders/:id/status',
     handler: async (req, res, context) => {
-      const body = await context.parseBody();
+      const identity = context.requestIdentity;
+      if (identity.type === 'INVALID_CREDENTIAL' || identity.type === 'REVOKED_CAPABILITY') {
+        sendJson(res, 401, { error: identity.type, code: identity.type });
+        return;
+      }
+      if (identity.type === 'ANONYMOUS' || identity.type === 'DINER') {
+        sendJson(res, 403, {
+          error: 'FORBIDDEN',
+          code: 'FORBIDDEN',
+          message: 'Staff credentials required to update order status.',
+        });
+        return;
+      }
+
       const orderId = context.params.id;
+      const order = await context.repo.getOrder(orderId);
+      if (!order) {
+        sendJson(res, 404, { success: false, error: `Order ${orderId} not found`, code: 'ORDER_NOT_FOUND' });
+        return;
+      }
+
+      const targetTable = await context.repo.getTableByNumber(order.tableNumber);
+      const orderBranch = order.branchId || targetTable?.branchId;
+      if (
+        identity.branchId &&
+        identity.branchId !== '*' &&
+        orderBranch &&
+        identity.branchId !== orderBranch
+      ) {
+        sendJson(res, 403, {
+          error: 'BRANCH_MISMATCH',
+          code: 'BRANCH_MISMATCH',
+          message: `Staff credential for branch ${identity.branchId} cannot update status for order in branch ${orderBranch}.`,
+        });
+        return;
+      }
+
+      const canUpdateStatus =
+        identity.isPrivileged ||
+        ['MANAGER', 'ADMIN', 'OPERATIONS', 'POS', 'CHEF', 'SERVER', 'EXPO'].includes(identity.role || '');
+      if (!canUpdateStatus) {
+        sendJson(res, 403, {
+          error: 'FORBIDDEN',
+          code: 'FORBIDDEN',
+          message: `Role ${identity.role} is not authorized to update order status.`,
+        });
+        return;
+      }
+
+      const body = await context.parseBody();
       const newStatus = body.status || body.newStatus;
       const version = typeof body.version === 'number' ? body.version : undefined;
 
@@ -209,7 +278,7 @@ export const ordersRoutes: RouteDefinition[] = [
 
       try {
         const success = await context.repo.updateOrderStatus(orderId, newStatus, {
-          authorizedBy: context.requestIdentity.id,
+          authorizedBy: identity.id,
           reason: body.reason,
           version,
         });
@@ -219,6 +288,17 @@ export const ordersRoutes: RouteDefinition[] = [
         }
 
         const updatedOrder = await context.repo.getOrder(orderId);
+        eventBus.broadcast({
+          id: `evt_${Date.now()}`,
+          sequence: (await context.repo.getEvents()).length,
+          type: 'order.status_updated',
+          timestamp: new Date().toISOString(),
+          producer: 'api:order-status',
+          branchId: updatedOrder?.branchId || context.currentBranch?.id,
+          tenantId: context.tenantContext?.tenantId,
+          payload: { orderId, status: newStatus, version: (updatedOrder as any)?.version },
+        });
+
         sendJson(res, 200, { success: true, data: updatedOrder });
       } catch (err: any) {
         if (err.code === 'STATE_CONFLICT' || err.statusCode === 409 || err.message?.includes('STATE_CONFLICT')) {
@@ -239,24 +319,99 @@ export const ordersRoutes: RouteDefinition[] = [
     path: '/api/restaurant/orders/:id/cancel',
     handler: async (req, res, context) => {
       const identity = context.requestIdentity;
-      if (identity.type === 'ANONYMOUS' || identity.type === 'DINER') {
-        sendJson(res, 403, { error: 'FORBIDDEN', message: 'Staff credentials required to cancel order.' });
+      if (identity.type === 'INVALID_CREDENTIAL' || identity.type === 'REVOKED_CAPABILITY') {
+        sendJson(res, 401, { error: identity.type, code: identity.type });
         return;
       }
+      if (identity.type === 'ANONYMOUS' || identity.type === 'DINER') {
+        sendJson(res, 403, {
+          error: 'FORBIDDEN',
+          code: 'FORBIDDEN',
+          message: 'Staff credentials required to cancel orders. Diner capability tokens cannot cancel placed orders directly.',
+        });
+        return;
+      }
+
       const orderId = context.params.id;
       const order = await context.repo.getOrder(orderId);
       if (!order) {
         sendJson(res, 404, { success: false, error: `Order ${orderId} not found`, code: 'ORDER_NOT_FOUND' });
         return;
       }
-      const body = await context.parseBody();
-      const reason = body.reason || body.cancellationReason;
-      if (!reason || reason.trim().length < 3) {
-        sendJson(res, 400, { success: false, error: 'A mandatory cancellation reason with at least 3 characters is required.', code: 'REASON_REQUIRED' });
+
+      const targetTable = await context.repo.getTableByNumber(order.tableNumber);
+      const orderBranch = order.branchId || targetTable?.branchId;
+      if (
+        identity.branchId &&
+        identity.branchId !== '*' &&
+        orderBranch &&
+        identity.branchId !== orderBranch
+      ) {
+        sendJson(res, 403, {
+          error: 'BRANCH_MISMATCH',
+          code: 'BRANCH_MISMATCH',
+          message: `Staff credential for branch ${identity.branchId} cannot cancel order in branch ${orderBranch}.`,
+        });
         return;
       }
-      const result = await context.repo.cancelOrder(orderId, reason, identity.id);
-      sendJson(res, 200, { success: true, data: result });
+
+      const canCancel =
+        identity.isPrivileged ||
+        ['MANAGER', 'ADMIN', 'OPERATIONS', 'POS'].includes(identity.role || '');
+      if (!canCancel) {
+        sendJson(res, 403, {
+          error: 'FORBIDDEN',
+          code: 'FORBIDDEN',
+          message: `Role ${identity.role} is not authorized to cancel orders. Manager or Operations role required.`,
+        });
+        return;
+      }
+
+      const body = await context.parseBody();
+      const reason = body.reason || body.cancellationReason;
+
+      if (!reason || reason.trim().length < 3) {
+        sendJson(res, 400, {
+          success: false,
+          error: 'A mandatory cancellation reason with at least 3 characters is required.',
+          code: 'REASON_REQUIRED',
+        });
+        return;
+      }
+
+      const result = await context.repo.cancelOrder(orderId, reason);
+      if (!result.success) {
+        const statusCode = result.code === 'ORDER_NOT_FOUND' ? 404 : 400;
+        sendJson(res, statusCode, { success: false, error: result.error, code: result.code });
+        return;
+      }
+
+      sendJson(res, 200, { success: true, message: `Order ${orderId} cancelled`, data: result.order });
+      return;
+
+      eventBus.broadcast({
+        id: `evt_${Date.now()}`,
+        sequence: (await context.repo.getEvents()).length,
+        type: 'order.cancelled',
+        timestamp: new Date().toISOString(),
+        producer: 'api:order-cancel',
+        branchId: order.branchId || context.currentBranch?.id,
+        tenantId: context.tenantContext?.tenantId,
+        payload: { orderId, reason, cancelledBy: identity.id },
+      });
+
+      await runtimeController.emitAudit('ORDER_CANCELLED', identity.id, {
+        orderId,
+        tableNumber: order.tableNumber,
+        reason,
+        itemCount: order.items?.length,
+      });
+
+      sendJson(res, 200, {
+        success: true,
+        message: `Order ${orderId} cancelled successfully.`,
+        data: result.order,
+      });
     },
   },
   {
@@ -342,10 +497,82 @@ export const ordersRoutes: RouteDefinition[] = [
     path: '/api/commerce/orders/:id/cancel',
     handler: async (req, res, context) => {
       const orderId = context.params.id;
-      const body = await context.parseBody();
-      const reason = body.reason || 'Customer requested online cancellation';
-      const result = await context.repo.cancelOrder(orderId, reason, 'online_customer');
-      sendJson(res, 200, { success: true, data: result });
+      const order = await context.repo.getOrder(orderId);
+      const cachedRecord = await context.repo.getIdempotencyRecord(orderId);
+      const cached = cachedRecord?.response || cachedRecord;
+      if (!order && !cached) {
+        sendJson(res, 404, { success: false, error: 'NOT_FOUND', message: `Order ${orderId} not found.` });
+        return;
+      }
+
+      const authHeader = (req.headers['authorization'] as string) || '';
+      const bearerToken = authHeader.startsWith('Bearer ') ? authHeader.slice(7).trim() : undefined;
+      const headerToken = (req.headers['x-order-token'] as string) || bearerToken;
+      const queryToken = (context.parsedUrl.query.orderToken as string) || '';
+      const reqToken = headerToken || queryToken;
+
+      const identity = context.requestIdentity;
+      const isStaff = identity.type === 'STAFF' || identity.type === 'ADMIN' || identity.type === 'STATION';
+      const expectedToken = order?.orderToken || cached?.orderToken;
+
+      const isAuthorized = isStaff || (expectedToken && reqToken === expectedToken);
+      if (!isAuthorized) {
+        sendJson(res, 403, {
+          success: false,
+          error: 'FORBIDDEN',
+          code: 'FORBIDDEN',
+          message: 'Valid order token or staff credentials required to cancel order.',
+        });
+        return;
+      }
+
+      const tasks = (await context.repo.getKitchenTasks()).filter((t: any) => t.orderId === orderId);
+      const alreadyStarted = tasks.some((t: any) => t.status === 'IN_PROGRESS' || t.status === 'READY' || t.status === 'BUMPED');
+      if (alreadyStarted && !isStaff) {
+        sendJson(res, 400, {
+          success: false,
+          error: 'ORDER_ALREADY_IN_PREPARATION',
+          code: 'ORDER_ALREADY_IN_PREPARATION',
+          message: 'Order is already being prepared in the kitchen and cannot be cancelled automatically.',
+        });
+        return;
+      }
+
+      const body = await context.parseBody().catch(() => ({}));
+      const reason = body.reason || 'Customer requested cancellation';
+
+      if (order) {
+        await context.repo.cancelOrder(orderId, reason, isStaff ? identity.id : 'customer');
+      }
+      if (cached) {
+        cached.status = 'CANCELLED';
+        cached.statusLabel = 'Order Cancelled';
+      }
+      for (const t of tasks) {
+        if (t.status === 'QUEUED') {
+          t.status = 'CANCELLED' as any;
+        }
+      }
+
+      const orderBranchId = order?.branchId || cached?.branchId || context.currentBranch?.id || 'branch_ldh';
+      eventBus.broadcast({
+        id: `evt_${Date.now()}`,
+        sequence: (await context.repo.getEvents()).length,
+        type: 'order.cancelled',
+        timestamp: new Date().toISOString(),
+        producer: orderId,
+        branchId: orderBranchId,
+        tenantId: context.tenantContext.tenantId,
+        payload: { orderId, reason, status: 'CANCELLED' },
+      });
+
+      sendJson(res, 200, {
+        success: true,
+        message: `Order ${orderId} has been cancelled successfully.`,
+        orderId,
+        status: 'CANCELLED',
+        statusLabel: 'Order Cancelled',
+      });
     },
   },
   {

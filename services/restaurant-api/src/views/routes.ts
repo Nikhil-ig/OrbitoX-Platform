@@ -471,8 +471,8 @@ async function renderLocations(req: any, res: any, context: any): Promise<void> 
 async function renderStaff(req: any, res: any, context: any): Promise<void> {
   const members = await context.repo.getStaffMembers();
   const branches = await context.repo.getBranches();
-  const opts = await getShellOptions(context, 'Staff & Security', 'staff');
-  const html = renderShell(renderStaffWorkspace(members, branches, context.currentBranch?.id || 'branch_ldh'), opts);
+  const opts = await getShellOptions(context, 'Staff Directory & RBAC Security', 'staff');
+  const html = renderShell(renderStaffWorkspace(branches, context.currentBranch?.id || 'branch_ldh', members), opts);
   sendHtml(res, html);
 }
 

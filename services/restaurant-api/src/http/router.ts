@@ -91,6 +91,49 @@ export class Router {
         }
       }
     }
+
+    // Direct compatibility dispatch for staff endpoints
+    if (method === 'POST' && pathname === '/api/restaurant/staff') {
+      const { handleCreateStaff } = require('../modules/owners/routes');
+      await handleCreateStaff(req, res, context);
+      return true;
+    }
+    if (method === 'POST' && pathname.startsWith('/api/restaurant/staff/') && pathname.endsWith('/revoke')) {
+      const staffId = pathname.split('/')[4];
+      context.params = { id: staffId };
+      const revokeRoute = this.routes.find((r) => r.method === 'DELETE' && r.path === '/api/restaurant/staff/:id');
+      if (revokeRoute) {
+        await revokeRoute.handler(req, res, context);
+        return true;
+      }
+    }
+    if (method === 'POST' && pathname.startsWith('/api/restaurant/staff/') && !pathname.endsWith('/revoke')) {
+      const staffId = pathname.split('/')[4];
+      context.params = { id: staffId };
+      const patchRoute = this.routes.find((r) => r.method === 'PATCH' && r.path === '/api/restaurant/staff/:id');
+      if (patchRoute) {
+        await patchRoute.handler(req, res, context);
+        return true;
+      }
+    }
+
+    // Direct compatibility dispatch for table bill and rotate-locator
+    if (method === 'GET' && pathname.startsWith('/api/restaurant/tables/') && pathname.endsWith('/bill')) {
+      const { handleTableBill } = require('../modules/tables/routes');
+      await handleTableBill(req, res, context);
+      return true;
+    }
+    if (method === 'POST' && pathname.startsWith('/api/restaurant/tables/') && pathname.endsWith('/rotate-locator')) {
+      const { handleRotateLocator } = require('../modules/tables/routes');
+      await handleRotateLocator(req, res, context);
+      return true;
+    }
+    if (method === 'DELETE' && pathname.startsWith('/api/restaurant/branding/branch-overrides/')) {
+      const { handleDeleteBranchOverrides } = require('../modules/tenancy/routes');
+      await handleDeleteBranchOverrides(req, res, context);
+      return true;
+    }
+
     return false;
   }
 }

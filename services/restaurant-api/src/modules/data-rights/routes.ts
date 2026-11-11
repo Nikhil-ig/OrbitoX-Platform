@@ -11,7 +11,7 @@ import {
   exportRestaurantPrincipalData,
   correctRestaurantPrincipalData,
   eraseRestaurantPrincipalData,
-} from '../../data-rights';
+} from './service';
 import { invalidateTenantResolutionCache } from '../../shared';
 
 export const dataRightsRoutes: RouteDefinition[] = [

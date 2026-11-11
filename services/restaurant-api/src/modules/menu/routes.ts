@@ -28,8 +28,16 @@ export const menuRoutes: RouteDefinition[] = [
     path: '/api/restaurant/menu/items',
     handler: async (req, res, context) => {
       const identity = context.requestIdentity;
+      if (identity.type === 'INVALID_CREDENTIAL' || identity.type === 'REVOKED_CAPABILITY') {
+        sendJson(res, 401, { error: identity.type, code: identity.type, message: 'Invalid or revoked credential.' });
+        return;
+      }
+      if (identity.type === 'ANONYMOUS') {
+        sendJson(res, 401, { error: 'AUTHENTICATION_REQUIRED', code: 'AUTHENTICATION_REQUIRED', message: 'Menu catalog mutation requires manager credentials.' });
+        return;
+      }
       if (!identity.isPrivileged) {
-        sendJson(res, 403, { error: 'FORBIDDEN', message: 'Menu catalog mutation requires Manager or Admin privileges.' });
+        sendJson(res, 403, { error: 'FORBIDDEN', code: 'FORBIDDEN', message: 'Menu catalog mutation requires Manager or Admin privileges.' });
         return;
       }
       const body = await context.parseBody();
@@ -58,8 +66,16 @@ export const menuRoutes: RouteDefinition[] = [
     path: '/api/restaurant/menu/items/:id',
     handler: async (req, res, context) => {
       const identity = context.requestIdentity;
+      if (identity.type === 'INVALID_CREDENTIAL' || identity.type === 'REVOKED_CAPABILITY') {
+        sendJson(res, 401, { error: identity.type, code: identity.type, message: 'Invalid or revoked credential.' });
+        return;
+      }
+      if (identity.type === 'ANONYMOUS') {
+        sendJson(res, 401, { error: 'AUTHENTICATION_REQUIRED', code: 'AUTHENTICATION_REQUIRED', message: 'Menu catalog modification requires manager credentials.' });
+        return;
+      }
       if (!identity.isPrivileged) {
-        sendJson(res, 403, { error: 'FORBIDDEN', message: 'Menu catalog modification requires Manager or Admin privileges.' });
+        sendJson(res, 403, { error: 'FORBIDDEN', code: 'FORBIDDEN', message: 'Menu catalog modification requires Manager or Admin privileges.' });
         return;
       }
       const body = await context.parseBody();
@@ -76,8 +92,16 @@ export const menuRoutes: RouteDefinition[] = [
     path: '/api/restaurant/menu/items/:id',
     handler: async (_req, res, context) => {
       const identity = context.requestIdentity;
+      if (identity.type === 'INVALID_CREDENTIAL' || identity.type === 'REVOKED_CAPABILITY') {
+        sendJson(res, 401, { error: identity.type, code: identity.type, message: 'Invalid or revoked credential.' });
+        return;
+      }
+      if (identity.type === 'ANONYMOUS') {
+        sendJson(res, 401, { error: 'AUTHENTICATION_REQUIRED', code: 'AUTHENTICATION_REQUIRED', message: 'Menu catalog deletion requires manager credentials.' });
+        return;
+      }
       if (!identity.isPrivileged) {
-        sendJson(res, 403, { error: 'FORBIDDEN', message: 'Menu catalog deletion requires Manager or Admin privileges.' });
+        sendJson(res, 403, { error: 'FORBIDDEN', code: 'FORBIDDEN', message: 'Menu catalog deletion requires Manager or Admin privileges.' });
         return;
       }
       try {
@@ -107,8 +131,16 @@ export const menuRoutes: RouteDefinition[] = [
     path: '/api/restaurant/menu/categories',
     handler: async (req, res, context) => {
       const identity = context.requestIdentity;
+      if (identity.type === 'INVALID_CREDENTIAL' || identity.type === 'REVOKED_CAPABILITY') {
+        sendJson(res, 401, { error: identity.type, code: identity.type, message: 'Invalid or revoked credential.' });
+        return;
+      }
+      if (identity.type === 'ANONYMOUS') {
+        sendJson(res, 401, { error: 'AUTHENTICATION_REQUIRED', code: 'AUTHENTICATION_REQUIRED', message: 'Category creation requires manager credentials.' });
+        return;
+      }
       if (!identity.isPrivileged) {
-        sendJson(res, 403, { error: 'FORBIDDEN', message: 'Category creation requires Manager or Admin privileges.' });
+        sendJson(res, 403, { error: 'FORBIDDEN', code: 'FORBIDDEN', message: 'Category creation requires Manager or Admin privileges.' });
         return;
       }
       const body = await context.parseBody();
@@ -125,8 +157,16 @@ export const menuRoutes: RouteDefinition[] = [
     path: '/api/restaurant/menu/categories/reorder',
     handler: async (req, res, context) => {
       const identity = context.requestIdentity;
+      if (identity.type === 'INVALID_CREDENTIAL' || identity.type === 'REVOKED_CAPABILITY') {
+        sendJson(res, 401, { error: identity.type, code: identity.type, message: 'Invalid or revoked credential.' });
+        return;
+      }
+      if (identity.type === 'ANONYMOUS') {
+        sendJson(res, 401, { error: 'AUTHENTICATION_REQUIRED', code: 'AUTHENTICATION_REQUIRED', message: 'Category reordering requires manager credentials.' });
+        return;
+      }
       if (!identity.isPrivileged) {
-        sendJson(res, 403, { error: 'FORBIDDEN', message: 'Category reordering requires Manager or Admin privileges.' });
+        sendJson(res, 403, { error: 'FORBIDDEN', code: 'FORBIDDEN', message: 'Category reordering requires Manager or Admin privileges.' });
         return;
       }
       const body = await context.parseBody();
@@ -147,8 +187,16 @@ export const menuRoutes: RouteDefinition[] = [
     path: '/api/restaurant/menu/categories/:id',
     handler: async (req, res, context) => {
       const identity = context.requestIdentity;
+      if (identity.type === 'INVALID_CREDENTIAL' || identity.type === 'REVOKED_CAPABILITY') {
+        sendJson(res, 401, { error: identity.type, code: identity.type, message: 'Invalid or revoked credential.' });
+        return;
+      }
+      if (identity.type === 'ANONYMOUS') {
+        sendJson(res, 401, { error: 'AUTHENTICATION_REQUIRED', code: 'AUTHENTICATION_REQUIRED', message: 'Category modification requires manager credentials.' });
+        return;
+      }
       if (!identity.isPrivileged) {
-        sendJson(res, 403, { error: 'FORBIDDEN', message: 'Category modification requires Manager or Admin privileges.' });
+        sendJson(res, 403, { error: 'FORBIDDEN', code: 'FORBIDDEN', message: 'Category modification requires Manager or Admin privileges.' });
         return;
       }
       const body = await context.parseBody();
@@ -169,8 +217,16 @@ export const menuRoutes: RouteDefinition[] = [
     path: '/api/restaurant/menu/categories/:id',
     handler: async (_req, res, context) => {
       const identity = context.requestIdentity;
+      if (identity.type === 'INVALID_CREDENTIAL' || identity.type === 'REVOKED_CAPABILITY') {
+        sendJson(res, 401, { error: identity.type, code: identity.type, message: 'Invalid or revoked credential.' });
+        return;
+      }
+      if (identity.type === 'ANONYMOUS') {
+        sendJson(res, 401, { error: 'AUTHENTICATION_REQUIRED', code: 'AUTHENTICATION_REQUIRED', message: 'Category deletion requires manager credentials.' });
+        return;
+      }
       if (!identity.isPrivileged) {
-        sendJson(res, 403, { error: 'FORBIDDEN', message: 'Category deletion requires Manager or Admin privileges.' });
+        sendJson(res, 403, { error: 'FORBIDDEN', code: 'FORBIDDEN', message: 'Category deletion requires Manager or Admin privileges.' });
         return;
       }
       const reassignTo = (context.parsedUrl.query.reassignTo as string) || undefined;
@@ -213,8 +269,16 @@ export const menuRoutes: RouteDefinition[] = [
     path: '/api/restaurant/menu/branch-overrides',
     handler: async (req, res, context) => {
       const identity = context.requestIdentity;
+      if (identity.type === 'INVALID_CREDENTIAL' || identity.type === 'REVOKED_CAPABILITY') {
+        sendJson(res, 401, { error: identity.type, code: identity.type, message: 'Invalid or revoked credential.' });
+        return;
+      }
+      if (identity.type === 'ANONYMOUS') {
+        sendJson(res, 401, { error: 'AUTHENTICATION_REQUIRED', code: 'AUTHENTICATION_REQUIRED', message: 'Branch menu override requires manager credentials.' });
+        return;
+      }
       if (!identity.isPrivileged) {
-        sendJson(res, 403, { error: 'FORBIDDEN', message: 'Branch menu override requires Manager or Admin privileges.' });
+        sendJson(res, 403, { error: 'FORBIDDEN', code: 'FORBIDDEN', message: 'Branch menu override requires Manager or Admin privileges.' });
         return;
       }
       const body = await context.parseBody();
