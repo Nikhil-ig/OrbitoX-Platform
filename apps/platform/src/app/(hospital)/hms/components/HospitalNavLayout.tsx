@@ -5,7 +5,6 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useStaffAuth, StaffProfile } from '../context/StaffAuthContext';
 import { PlatformGovernanceDock } from '@/app/components/platform-governance-dock';
-import { useAdmin } from '@/app/(console)/admin/data/admin-context';
 
 interface HospitalNavLayoutProps {
   children: React.ReactNode;

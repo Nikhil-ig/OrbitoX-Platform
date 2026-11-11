@@ -1,0 +1,146 @@
+{
+  "$schema": "https://unpkg.com/knip@6/schema.json",
+  "rules": {
+    "files": "error",
+    "dependencies": "error",
+    "devDependencies": "error",
+    "unlisted": "error",
+    "unresolved": "error",
+    "binaries": "error",
+    "exports": "warn",
+    "types": "warn",
+    "duplicates": "off"
+  },
+  "ignore": [
+    "docs/**",
+    "packages/types/**",
+    "services/restaurant-api/packages/config/index.ts",
+    "services/restaurant-api/packages/domain/recommendation-engine.ts",
+    "services/restaurant-api/packages/runtime/index.ts",
+    "services/restaurant-api/src/http/errors.ts",
+    "services/restaurant-api/src/shared/index.ts",
+    "services/restaurant-api/src/shared/logger.ts",
+    "apps/platform/src/app/(console)/admin/components/activity-pill-row.tsx",
+    "apps/platform/src/app/(console)/admin/components/glow-spline-chart.tsx",
+    "apps/platform/src/app/(console)/admin/components/neon-bar-chart.tsx",
+    "apps/platform/src/app/(console)/admin/components/project-provision-modal.tsx",
+    "apps/platform/src/app/components/orbitox-logo.tsx",
+    "apps/platform/src/components/plugin-coming-soon.tsx",
+    "apps/platform/src/server/organizations/governance-dock-context.tsx",
+    "apps/platform/src/server/organizations/platform-catalogue-presets.ts",
+    "apps/platform/src/lib/**",
+    "apps/platform/src/hooks/useHospitalOS.ts"
+  ],
+  "ignoreBinaries": [
+    "terraform"
+  ],
+  "ignoreDependencies": [
+    "@orbitox-io/tsconfig",
+    "@orbitox-io/eslint-config",
+    "@orbitox-io/types",
+    "@orbitox-io/sdk",
+    "reflect-metadata",
+    "express",
+    "ts-jest",
+    "pino-pretty"
+  ],
+  "workspaces": {
+    ".": {
+      "entry": [
+        "scripts/**/*.{ts,mjs,js}"
+      ]
+    },
+    "apps/platform": {
+      "entry": [
+        "src/instrumentation*.ts",
+        "scripts/**/*.{ts,mjs,js}",
+        "tests/**/*.{ts,tsx}",
+        "src/workers/*.ts",
+        "src/app/**/page.tsx",
+        "src/app/**/layout.tsx",
+        "src/app/api/**/route.ts"
+      ],
+      "ignoreDependencies": [
+        "@orbitox-io/pos",
+        "@orbitox-io/runtime"
+      ]
+    },
+    "services/restaurant-api": {
+      "entry": [
+        "src/main.ts",
+        "scripts/*.{ts,js}",
+        "test/**/*.test.ts"
+      ],
+      "ignoreDependencies": [
+        "@prisma/client"
+      ]
+    },
+    "packages/core": {
+      "ignoreDependencies": [
+        "@orbitox-io/utils"
+      ]
+    },
+    "packages/plugin-engine": {
+      "ignoreDependencies": [
+        "@prisma/client"
+      ]
+    },
+    "packages/runtime": {
+      "entry": [
+        "src/test*.ts"
+      ],
+      "ignoreDependencies": [
+        "@nestjs/common",
+        "@orbitox-io/sdk"
+      ]
+    },
+    "packages/sdk": {
+      "ignoreDependencies": [
+        "@nestjs/common"
+      ]
+    },
+    "packages/ui": {
+      "entry": [
+        "src/components/*.tsx",
+        "src/dynamic/*.tsx"
+      ],
+      "ignoreDependencies": [
+        "react-dom",
+        "@types/react-dom",
+        "lucide-react"
+      ]
+    },
+    "packages/eslint-config": {
+      "ignoreDependencies": [
+        "eslint-plugin-import"
+      ]
+    },
+    "packages/jest-config": {
+      "entry": [
+        "jest.config.base.ts"
+      ]
+    },
+    "plugins/external-project-engine": {
+      "entry": [
+        "src/**/*.test.ts"
+      ],
+      "ignoreDependencies": [
+        "@orbitox-io/core"
+      ]
+    },
+    "plugins/pos": {
+      "entry": [
+        "src/pos-plugin.ts",
+        "src/domain/__tests__/*.ts"
+      ],
+      "ignoreDependencies": [
+        "@orbitox-io/sdk"
+      ]
+    },
+    "tools/cli": {
+      "entry": [
+        "test/**/*.test.ts"
+      ]
+    }
+  }
+}

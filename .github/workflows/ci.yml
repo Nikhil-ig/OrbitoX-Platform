@@ -129,6 +129,12 @@ jobs:
       - name: Check circular dependencies
         run: pnpm run check:circular
 
+      - name: Lint architecture boundaries and inline style rules
+        run: pnpm run lint
+
+      - name: Dead code and dependency check (Knip)
+        run: pnpm run check:knip
+
       - name: Unit tests (Core, Plugin Engine, POS, External Project Engine)
         run: |
           pnpm --filter @orbitox-io/core test

@@ -2,6 +2,8 @@ export * from './security';
 export * from './client';
 export * from './manifest.validator';
 export * from './plugin-loader.service';
+export * from './plugin-lifecycle.service';
+export * from './plugin-engine.module';
 export * from './marketplace/marketplace.service';
 export type {
   FieldType,

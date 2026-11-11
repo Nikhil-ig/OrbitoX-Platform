@@ -13,7 +13,8 @@
     "dev": "turbo run dev",
     "test": "turbo run test",
     "test:integration": "turbo run test:integration",
-    "lint": "turbo run lint",
+    "lint": "eslint . --quiet",
+    "check:knip": "knip",
     "type-check": "turbo run type-check",
     "check:circular": "madge --circular --extensions ts,tsx --exclude '(^|/)(dist|\\.next|node_modules|coverage)(/|$)' packages/*/src plugins/*/src tools/*/src apps/platform/src services/restaurant-api/src",
     "clean": "turbo run clean",
@@ -33,7 +34,10 @@
     "format:check": "prettier --check \"**/*.{ts,tsx,js,jsx,json,md}\""
   },
   "devDependencies": {
+    "@orbitox-io/eslint-config": "workspace:*",
     "@prisma/client": "^6.19.0",
+    "eslint": "^9",
+    "knip": "6.45.0",
     "madge": "8.0.0",
     "prettier": "^3.5.0",
     "prisma": "^6.19.0",
