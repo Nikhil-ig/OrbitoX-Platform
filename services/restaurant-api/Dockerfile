@@ -28,7 +28,6 @@ RUN pnpm --filter @orbitox-io/restaurant-api run prisma:generate
 FROM deps AS build
 COPY services/restaurant-api/tsconfig.json ./services/restaurant-api/tsconfig.json
 COPY services/restaurant-api/src ./services/restaurant-api/src
-COPY services/restaurant-api/packages ./services/restaurant-api/packages
 COPY services/restaurant-api/orbitox.project.json ./services/restaurant-api/orbitox.project.json
 RUN pnpm --filter @orbitox-io/restaurant-api exec tsc --noEmit
 

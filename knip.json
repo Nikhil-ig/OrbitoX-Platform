@@ -66,7 +66,6 @@
     },
     "packages/plugin-engine": {
       "entry": [
-        "src/index.ts",
         "src/plugin-engine.module.ts"
       ],
       "ignoreDependencies": [

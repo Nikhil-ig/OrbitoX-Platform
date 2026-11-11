@@ -1,0 +1,957 @@
+[
+  {
+    "method": "GET",
+    "path": "/favicon.ico",
+    "module": "http"
+  },
+  {
+    "method": "GET",
+    "path": "/healthz/ready",
+    "module": "http"
+  },
+  {
+    "method": "GET",
+    "path": "/ready",
+    "module": "http"
+  },
+  {
+    "method": "GET",
+    "path": "/health",
+    "module": "http"
+  },
+  {
+    "method": "GET",
+    "path": "/healthz",
+    "module": "http"
+  },
+  {
+    "method": "GET",
+    "path": "/healthz/live",
+    "module": "http"
+  },
+  {
+    "method": "GET",
+    "path": "/live",
+    "module": "http"
+  },
+  {
+    "method": "GET",
+    "path": "/metrics",
+    "module": "http"
+  },
+  {
+    "method": "GET",
+    "path": "/internal/metrics",
+    "module": "http"
+  },
+  {
+    "method": "GET",
+    "path": "/manifest.json",
+    "module": "http"
+  },
+  {
+    "method": "GET",
+    "path": "/uploads/*",
+    "module": "http"
+  },
+  {
+    "method": "GET",
+    "path": "/assets/*",
+    "module": "http"
+  },
+  {
+    "method": "POST",
+    "path": "/orbitox/lifecycle/provision",
+    "module": "provisioning"
+  },
+  {
+    "method": "POST",
+    "path": "/api/platform/lifecycle/provision",
+    "module": "provisioning"
+  },
+  {
+    "method": "POST",
+    "path": "/internal/lifecycle/provision",
+    "module": "provisioning"
+  },
+  {
+    "method": "POST",
+    "path": "/orbitox/lifecycle/suspend",
+    "module": "provisioning"
+  },
+  {
+    "method": "POST",
+    "path": "/api/platform/lifecycle/suspend",
+    "module": "provisioning"
+  },
+  {
+    "method": "POST",
+    "path": "/internal/lifecycle/suspend",
+    "module": "provisioning"
+  },
+  {
+    "method": "POST",
+    "path": "/orbitox/lifecycle/resume",
+    "module": "provisioning"
+  },
+  {
+    "method": "POST",
+    "path": "/api/platform/lifecycle/resume",
+    "module": "provisioning"
+  },
+  {
+    "method": "POST",
+    "path": "/internal/lifecycle/resume",
+    "module": "provisioning"
+  },
+  {
+    "method": "POST",
+    "path": "/orbitox/lifecycle/plan-changed",
+    "module": "provisioning"
+  },
+  {
+    "method": "POST",
+    "path": "/api/platform/lifecycle/plan-changed",
+    "module": "provisioning"
+  },
+  {
+    "method": "POST",
+    "path": "/internal/lifecycle/plan-changed",
+    "module": "provisioning"
+  },
+  {
+    "method": "POST",
+    "path": "/orbitox/lifecycle/entitlement-updated",
+    "module": "provisioning"
+  },
+  {
+    "method": "POST",
+    "path": "/api/platform/lifecycle/entitlement-updated",
+    "module": "provisioning"
+  },
+  {
+    "method": "POST",
+    "path": "/internal/lifecycle/entitlement-updated",
+    "module": "provisioning"
+  },
+  {
+    "method": "POST",
+    "path": "/orbitox/lifecycle/deprovision",
+    "module": "provisioning"
+  },
+  {
+    "method": "POST",
+    "path": "/api/platform/lifecycle/deprovision",
+    "module": "provisioning"
+  },
+  {
+    "method": "POST",
+    "path": "/internal/lifecycle/deprovision",
+    "module": "provisioning"
+  },
+  {
+    "method": "POST",
+    "path": "/orbitox/data-rights/export",
+    "module": "data-rights"
+  },
+  {
+    "method": "POST",
+    "path": "/orbitox/data-rights/erase",
+    "module": "data-rights"
+  },
+  {
+    "method": "POST",
+    "path": "/orbitox/data-rights/principal/export",
+    "module": "data-rights"
+  },
+  {
+    "method": "POST",
+    "path": "/orbitox/data-rights/principal/correct",
+    "module": "data-rights"
+  },
+  {
+    "method": "POST",
+    "path": "/orbitox/data-rights/principal/erase",
+    "module": "data-rights"
+  },
+  {
+    "method": "GET",
+    "path": "/accept-invite",
+    "module": "auth"
+  },
+  {
+    "method": "POST",
+    "path": "/api/restaurant/auth/accept-invite",
+    "module": "auth"
+  },
+  {
+    "method": "POST",
+    "path": "/api/restaurant/auth/login",
+    "module": "auth"
+  },
+  {
+    "method": "POST",
+    "path": "/api/restaurant/auth/verify-pin",
+    "module": "auth"
+  },
+  {
+    "method": "POST",
+    "path": "/api/restaurant/auth/station/login",
+    "module": "auth"
+  },
+  {
+    "method": "POST",
+    "path": "/api/restaurant/auth/device-enroll",
+    "module": "auth"
+  },
+  {
+    "method": "POST",
+    "path": "/api/restaurant/auth/staff-token",
+    "module": "auth"
+  },
+  {
+    "method": "POST",
+    "path": "/api/restaurant/auth/logout",
+    "module": "auth"
+  },
+  {
+    "method": "POST",
+    "path": "/api/restaurant/auth/revoke",
+    "module": "auth"
+  },
+  {
+    "method": "GET",
+    "path": "/api/restaurant/auth/staff",
+    "module": "auth"
+  },
+  {
+    "method": "POST",
+    "path": "/api/restaurant/auth/staff",
+    "module": "auth"
+  },
+  {
+    "method": "POST",
+    "path": "/api/restaurant/auth/token",
+    "module": "auth"
+  },
+  {
+    "method": "GET",
+    "path": "/api/restaurant/auth/api-token",
+    "module": "auth"
+  },
+  {
+    "method": "GET",
+    "path": "/internal/tls/ask",
+    "module": "tenancy"
+  },
+  {
+    "method": "GET",
+    "path": "/internal/tenants",
+    "module": "tenancy"
+  },
+  {
+    "method": "GET",
+    "path": "/api/restaurant/branches",
+    "module": "tenancy"
+  },
+  {
+    "method": "GET",
+    "path": "/api/restaurant/branches/:id",
+    "module": "tenancy"
+  },
+  {
+    "method": "GET",
+    "path": "/api/restaurant/floors",
+    "module": "tenancy"
+  },
+  {
+    "method": "GET",
+    "path": "/api/restaurant/floors/:id",
+    "module": "tenancy"
+  },
+  {
+    "method": "GET",
+    "path": "/api/restaurant/branding",
+    "module": "tenancy"
+  },
+  {
+    "method": "GET",
+    "path": "/api/restaurant/branding/css",
+    "module": "tenancy"
+  },
+  {
+    "method": "GET",
+    "path": "/api/restaurant/branding/branch-overrides/:id",
+    "module": "tenancy"
+  },
+  {
+    "method": "POST",
+    "path": "/api/restaurant/branding/branch-overrides",
+    "module": "tenancy"
+  },
+  {
+    "method": "POST",
+    "path": "/api/restaurant/branding/upload-image",
+    "module": "tenancy"
+  },
+  {
+    "method": "POST",
+    "path": "/api/restaurant/branding/verify-domain",
+    "module": "tenancy"
+  },
+  {
+    "method": "GET",
+    "path": "/api/restaurant/events",
+    "module": "tenancy"
+  },
+  {
+    "method": "GET",
+    "path": "/api/restaurant/events/cursor",
+    "module": "tenancy"
+  },
+  {
+    "method": "GET",
+    "path": "/api/restaurant/state",
+    "module": "tenancy"
+  },
+  {
+    "method": "POST",
+    "path": "/api/restaurant/reseed",
+    "module": "tenancy"
+  },
+  {
+    "method": "POST",
+    "path": "/api/restaurant/test/reset",
+    "module": "tenancy"
+  },
+  {
+    "method": "GET",
+    "path": "/api/restaurant/menu",
+    "module": "menu"
+  },
+  {
+    "method": "GET",
+    "path": "/api/restaurant/menu/items",
+    "module": "menu"
+  },
+  {
+    "method": "POST",
+    "path": "/api/restaurant/menu/items",
+    "module": "menu"
+  },
+  {
+    "method": "GET",
+    "path": "/api/restaurant/menu/items/:id",
+    "module": "menu"
+  },
+  {
+    "method": "PATCH",
+    "path": "/api/restaurant/menu/items/:id",
+    "module": "menu"
+  },
+  {
+    "method": "DELETE",
+    "path": "/api/restaurant/menu/items/:id",
+    "module": "menu"
+  },
+  {
+    "method": "GET",
+    "path": "/api/restaurant/menu/categories",
+    "module": "menu"
+  },
+  {
+    "method": "POST",
+    "path": "/api/restaurant/menu/categories",
+    "module": "menu"
+  },
+  {
+    "method": "POST",
+    "path": "/api/restaurant/menu/categories/reorder",
+    "module": "menu"
+  },
+  {
+    "method": "PATCH",
+    "path": "/api/restaurant/menu/categories/:id",
+    "module": "menu"
+  },
+  {
+    "method": "DELETE",
+    "path": "/api/restaurant/menu/categories/:id",
+    "module": "menu"
+  },
+  {
+    "method": "GET",
+    "path": "/api/restaurant/branches/:id/menu",
+    "module": "menu"
+  },
+  {
+    "method": "GET",
+    "path": "/api/restaurant/menu/branch-overrides",
+    "module": "menu"
+  },
+  {
+    "method": "POST",
+    "path": "/api/restaurant/menu/branch-overrides",
+    "module": "menu"
+  },
+  {
+    "method": "GET",
+    "path": "/api/commerce/menu",
+    "module": "menu"
+  },
+  {
+    "method": "GET",
+    "path": "/api/commerce/restaurants",
+    "module": "menu"
+  },
+  {
+    "method": "GET",
+    "path": "/api/commerce/restaurants/:id",
+    "module": "menu"
+  },
+  {
+    "method": "GET",
+    "path": "/api/commerce/grocery/catalog",
+    "module": "menu"
+  },
+  {
+    "method": "GET",
+    "path": "/api/commerce/grocery/skus",
+    "module": "menu"
+  },
+  {
+    "method": "GET",
+    "path": "/api/commerce/grocery/skus/:id",
+    "module": "menu"
+  },
+  {
+    "method": "GET",
+    "path": "/api/restaurant/orders",
+    "module": "orders"
+  },
+  {
+    "method": "POST",
+    "path": "/api/restaurant/orders",
+    "module": "orders"
+  },
+  {
+    "method": "GET",
+    "path": "/api/restaurant/orders/:id",
+    "module": "orders"
+  },
+  {
+    "method": "PATCH",
+    "path": "/api/restaurant/orders/:id/status",
+    "module": "orders"
+  },
+  {
+    "method": "POST",
+    "path": "/api/restaurant/orders/:id/cancel",
+    "module": "orders"
+  },
+  {
+    "method": "POST",
+    "path": "/api/restaurant/quote",
+    "module": "orders"
+  },
+  {
+    "method": "GET",
+    "path": "/api/commerce/orders/:id",
+    "module": "orders"
+  },
+  {
+    "method": "POST",
+    "path": "/api/commerce/orders/:id/cancel",
+    "module": "orders"
+  },
+  {
+    "method": "POST",
+    "path": "/api/commerce/orders",
+    "module": "orders"
+  },
+  {
+    "method": "POST",
+    "path": "/api/commerce/grocery/orders",
+    "module": "orders"
+  },
+  {
+    "method": "GET",
+    "path": "/api/restaurant/tables",
+    "module": "tables"
+  },
+  {
+    "method": "POST",
+    "path": "/api/restaurant/tables",
+    "module": "tables"
+  },
+  {
+    "method": "GET",
+    "path": "/api/restaurant/tables/:id",
+    "module": "tables"
+  },
+  {
+    "method": "PATCH",
+    "path": "/api/restaurant/tables/:id",
+    "module": "tables"
+  },
+  {
+    "method": "DELETE",
+    "path": "/api/restaurant/tables/:id",
+    "module": "tables"
+  },
+  {
+    "method": "GET",
+    "path": "/api/restaurant/qr/:locator",
+    "module": "tables"
+  },
+  {
+    "method": "POST",
+    "path": "/api/restaurant/tables/settle",
+    "module": "tables"
+  },
+  {
+    "method": "POST",
+    "path": "/api/restaurant/tables/merge",
+    "module": "tables"
+  },
+  {
+    "method": "POST",
+    "path": "/api/restaurant/tables/unmerge",
+    "module": "tables"
+  },
+  {
+    "method": "GET",
+    "path": "/api/restaurant/floor",
+    "module": "tables"
+  },
+  {
+    "method": "POST",
+    "path": "/api/restaurant/floor/save",
+    "module": "tables"
+  },
+  {
+    "method": "GET",
+    "path": "/api/restaurant/layout",
+    "module": "tables"
+  },
+  {
+    "method": "GET",
+    "path": "/api/restaurant/service-requests",
+    "module": "tables"
+  },
+  {
+    "method": "POST",
+    "path": "/api/restaurant/service-requests",
+    "module": "tables"
+  },
+  {
+    "method": "POST",
+    "path": "/api/restaurant/service-requests/:id/resolve",
+    "module": "tables"
+  },
+  {
+    "method": "GET",
+    "path": "/api/restaurant/kds",
+    "module": "kitchen"
+  },
+  {
+    "method": "POST",
+    "path": "/api/restaurant/kds/bump",
+    "module": "kitchen"
+  },
+  {
+    "method": "POST",
+    "path": "/api/restaurant/kds/recall",
+    "module": "kitchen"
+  },
+  {
+    "method": "POST",
+    "path": "/api/restaurant/kds/expo-dispatch",
+    "module": "kitchen"
+  },
+  {
+    "method": "POST",
+    "path": "/api/restaurant/kds/expo-recall",
+    "module": "kitchen"
+  },
+  {
+    "method": "POST",
+    "path": "/api/restaurant/kds/fulfill-item",
+    "module": "kitchen"
+  },
+  {
+    "method": "POST",
+    "path": "/api/restaurant/kds/item-fulfill",
+    "module": "kitchen"
+  },
+  {
+    "method": "GET",
+    "path": "/api/restaurant/kds/tasks",
+    "module": "kitchen"
+  },
+  {
+    "method": "GET",
+    "path": "/api/restaurant/kds/tasks/:id",
+    "module": "kitchen"
+  },
+  {
+    "method": "POST",
+    "path": "/api/test/inject-task",
+    "module": "kitchen"
+  },
+  {
+    "method": "POST",
+    "path": "/api/restaurant/sessions/join",
+    "module": "diners"
+  },
+  {
+    "method": "POST",
+    "path": "/api/restaurant/sessions/close",
+    "module": "diners"
+  },
+  {
+    "method": "GET",
+    "path": "/api/restaurant/sessions/:id",
+    "module": "diners"
+  },
+  {
+    "method": "GET",
+    "path": "/api/restaurant/seats/:id",
+    "module": "diners"
+  },
+  {
+    "method": "GET",
+    "path": "/api/restaurant/payments/config",
+    "module": "payments"
+  },
+  {
+    "method": "POST",
+    "path": "/api/restaurant/payments/config",
+    "module": "payments"
+  },
+  {
+    "method": "POST",
+    "path": "/api/restaurant/payments/create-order",
+    "module": "payments"
+  },
+  {
+    "method": "POST",
+    "path": "/api/restaurant/payments/refund",
+    "module": "payments"
+  },
+  {
+    "method": "POST",
+    "path": "/api/restaurant/payments/webhook",
+    "module": "payments"
+  },
+  {
+    "method": "POST",
+    "path": "/api/commerce/payments/create-session",
+    "module": "payments"
+  },
+  {
+    "method": "POST",
+    "path": "/api/commerce/payments/webhook",
+    "module": "payments"
+  },
+  {
+    "method": "POST",
+    "path": "/api/commerce/razorpay/create-order",
+    "module": "payments"
+  },
+  {
+    "method": "POST",
+    "path": "/api/restaurant/checkout/razorpay/create-order",
+    "module": "payments"
+  },
+  {
+    "method": "POST",
+    "path": "/api/restaurant/checkout/razorpay/order",
+    "module": "payments"
+  },
+  {
+    "method": "POST",
+    "path": "/api/restaurant/checkout/razorpay/webhook",
+    "module": "payments"
+  },
+  {
+    "method": "GET",
+    "path": "/api/restaurant/invoices",
+    "module": "invoicing"
+  },
+  {
+    "method": "GET",
+    "path": "/api/restaurant/invoices/:id",
+    "module": "invoicing"
+  },
+  {
+    "method": "POST",
+    "path": "/api/restaurant/invoices/generate",
+    "module": "invoicing"
+  },
+  {
+    "method": "GET",
+    "path": "/api/restaurant/invoices/:id/print",
+    "module": "invoicing"
+  },
+  {
+    "method": "GET",
+    "path": "/api/restaurant/finance/reconciliation",
+    "module": "invoicing"
+  },
+  {
+    "method": "GET",
+    "path": "/api/restaurant/domains",
+    "module": "owners"
+  },
+  {
+    "method": "POST",
+    "path": "/api/restaurant/domains",
+    "module": "owners"
+  },
+  {
+    "method": "POST",
+    "path": "/api/restaurant/domains/verify",
+    "module": "owners"
+  },
+  {
+    "method": "DELETE",
+    "path": "/api/restaurant/domains/:id",
+    "module": "owners"
+  },
+  {
+    "method": "GET",
+    "path": "/api/restaurant/onboarding",
+    "module": "owners"
+  },
+  {
+    "method": "POST",
+    "path": "/api/restaurant/onboarding/step",
+    "module": "owners"
+  },
+  {
+    "method": "POST",
+    "path": "/api/restaurant/uploads/logo",
+    "module": "owners"
+  },
+  {
+    "method": "POST",
+    "path": "/api/restaurant/uploads/hero",
+    "module": "owners"
+  },
+  {
+    "method": "GET",
+    "path": "/api/restaurant/settings/whitelabel",
+    "module": "owners"
+  },
+  {
+    "method": "POST",
+    "path": "/api/restaurant/settings/whitelabel",
+    "module": "owners"
+  },
+  {
+    "method": "GET",
+    "path": "/api/restaurant/staff",
+    "module": "owners"
+  },
+  {
+    "method": "PATCH",
+    "path": "/api/restaurant/staff/:id",
+    "module": "owners"
+  },
+  {
+    "method": "DELETE",
+    "path": "/api/restaurant/staff/:id",
+    "module": "owners"
+  },
+  {
+    "method": "POST",
+    "path": "/api/restaurant/staff/reset-lockout",
+    "module": "owners"
+  },
+  {
+    "method": "GET",
+    "path": "/api/restaurant/templates",
+    "module": "owners"
+  },
+  {
+    "method": "POST",
+    "path": "/api/restaurant/templates/install",
+    "module": "owners"
+  },
+  {
+    "method": "GET",
+    "path": "/api/restaurant/studio/draft",
+    "module": "owners"
+  },
+  {
+    "method": "POST",
+    "path": "/api/restaurant/studio/publish",
+    "module": "owners"
+  },
+  {
+    "method": "GET",
+    "path": "/api/restaurant/support/tickets",
+    "module": "support"
+  },
+  {
+    "method": "POST",
+    "path": "/api/restaurant/support/tickets",
+    "module": "support"
+  },
+  {
+    "method": "POST",
+    "path": "/api/restaurant/support/tickets/:id/message",
+    "module": "support"
+  },
+  {
+    "method": "POST",
+    "path": "/api/restaurant/support/tickets/:id/status",
+    "module": "support"
+  },
+  {
+    "method": "GET",
+    "path": "/",
+    "module": "views"
+  },
+  {
+    "method": "GET",
+    "path": "/overview",
+    "module": "views"
+  },
+  {
+    "method": "GET",
+    "path": "/operations",
+    "module": "views"
+  },
+  {
+    "method": "GET",
+    "path": "/operations/floor",
+    "module": "views"
+  },
+  {
+    "method": "GET",
+    "path": "/operations/tables",
+    "module": "views"
+  },
+  {
+    "method": "GET",
+    "path": "/operations/orders",
+    "module": "views"
+  },
+  {
+    "method": "GET",
+    "path": "/orders",
+    "module": "views"
+  },
+  {
+    "method": "GET",
+    "path": "/kds",
+    "module": "views"
+  },
+  {
+    "method": "GET",
+    "path": "/menu",
+    "module": "views"
+  },
+  {
+    "method": "GET",
+    "path": "/guests",
+    "module": "views"
+  },
+  {
+    "method": "GET",
+    "path": "/operations/locations",
+    "module": "views"
+  },
+  {
+    "method": "GET",
+    "path": "/operations/floors",
+    "module": "views"
+  },
+  {
+    "method": "GET",
+    "path": "/reports",
+    "module": "views"
+  },
+  {
+    "method": "GET",
+    "path": "/staff",
+    "module": "views"
+  },
+  {
+    "method": "GET",
+    "path": "/operations/staff",
+    "module": "views"
+  },
+  {
+    "method": "GET",
+    "path": "/dine/*",
+    "module": "views"
+  },
+  {
+    "method": "GET",
+    "path": "/marketplace",
+    "module": "views"
+  },
+  {
+    "method": "GET",
+    "path": "/apps/*",
+    "module": "views"
+  },
+  {
+    "method": "GET",
+    "path": "/studio",
+    "module": "views"
+  },
+  {
+    "method": "GET",
+    "path": "/white-label",
+    "module": "views"
+  },
+  {
+    "method": "GET",
+    "path": "/whitelabel",
+    "module": "views"
+  },
+  {
+    "method": "GET",
+    "path": "/support",
+    "module": "views"
+  },
+  {
+    "method": "GET",
+    "path": "/operations/onboarding",
+    "module": "views"
+  },
+  {
+    "method": "GET",
+    "path": "/onboarding",
+    "module": "views"
+  },
+  {
+    "method": "GET",
+    "path": "/developer/*",
+    "module": "views"
+  },
+  {
+    "method": "GET",
+    "path": "/crave-atlas*",
+    "module": "views"
+  },
+  {
+    "method": "GET",
+    "path": "/swift-bite*",
+    "module": "views"
+  },
+  {
+    "method": "GET",
+    "path": "/pantry-rush*",
+    "module": "views"
+  },
+  {
+    "method": "GET",
+    "path": "/locations*",
+    "module": "views"
+  }
+]

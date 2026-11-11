@@ -3,10 +3,10 @@
   "version": "1.0.0",
   "private": true,
   "description": "OrbitoX RestaurantOS Independent Runtime Product",
-  "main": "src/server.ts",
+  "main": "src/main.ts",
   "scripts": {
-    "dev": "tsx src/server.ts",
-    "start": "tsx src/server.ts",
+    "dev": "tsx src/main.ts",
+    "start": "tsx src/main.ts",
     "prisma:generate": "prisma generate --schema prisma/schema.prisma",
     "build": "pnpm run prisma:generate && tsc --noEmit",
     "test": "pnpm run prisma:generate && tsx scripts/test-event-bus-tenants.ts && node scripts/test-milestone2-core.js",
