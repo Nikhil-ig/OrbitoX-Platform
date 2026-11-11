@@ -163,7 +163,16 @@ export const ownersRoutes: RouteDefinition[] = [
         await context.repo.updateTenantBrand({ logoUrl: saved.url });
         sendJson(res, 200, { success: true, data: saved });
       } catch (err: any) {
-        sendJson(res, 400, { success: false, error: err.message });
+        const isSecurity = err.message?.includes('SECURITY_VIOLATION');
+        const isFormat = err.message?.includes('UNSUPPORTED_IMAGE_FORMAT');
+        const isLarge = err.message?.includes('IMAGE_TOO_LARGE');
+        const statusCode = (isSecurity || isFormat || isLarge) ? 400 : 500;
+        sendJson(res, statusCode, {
+          success: false,
+          error: isSecurity ? 'SECURITY_VIOLATION' : (isFormat ? 'UNSUPPORTED_IMAGE_FORMAT' : (isLarge ? 'IMAGE_TOO_LARGE' : 'UPLOAD_FAILED')),
+          code: isSecurity ? 'SECURITY_VIOLATION' : (isFormat ? 'UNSUPPORTED_IMAGE_FORMAT' : (isLarge ? 'IMAGE_TOO_LARGE' : 'UPLOAD_FAILED')),
+          message: err.message,
+        });
       }
     },
   },
@@ -182,7 +191,16 @@ export const ownersRoutes: RouteDefinition[] = [
         await context.repo.updateTenantBrand({ heroBannerUrl: saved.url });
         sendJson(res, 200, { success: true, data: saved });
       } catch (err: any) {
-        sendJson(res, 400, { success: false, error: err.message });
+        const isSecurity = err.message?.includes('SECURITY_VIOLATION');
+        const isFormat = err.message?.includes('UNSUPPORTED_IMAGE_FORMAT');
+        const isLarge = err.message?.includes('IMAGE_TOO_LARGE');
+        const statusCode = (isSecurity || isFormat || isLarge) ? 400 : 500;
+        sendJson(res, statusCode, {
+          success: false,
+          error: isSecurity ? 'SECURITY_VIOLATION' : (isFormat ? 'UNSUPPORTED_IMAGE_FORMAT' : (isLarge ? 'IMAGE_TOO_LARGE' : 'UPLOAD_FAILED')),
+          code: isSecurity ? 'SECURITY_VIOLATION' : (isFormat ? 'UNSUPPORTED_IMAGE_FORMAT' : (isLarge ? 'IMAGE_TOO_LARGE' : 'UPLOAD_FAILED')),
+          message: err.message,
+        });
       }
     },
   },

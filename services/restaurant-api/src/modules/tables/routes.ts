@@ -5,6 +5,7 @@ import {
   eventBus,
   runtimeController,
   activeSettlementLocks,
+  ownerSelfService,
 } from '../../http/context';
 import { generateSeats } from '../../shared';
 
@@ -23,12 +24,30 @@ export const tablesRoutes: RouteDefinition[] = [
     path: '/api/restaurant/tables',
     handler: async (req, res, context) => {
       const identity = context.requestIdentity;
+      if (identity.type === 'INVALID_CREDENTIAL' || identity.type === 'REVOKED_CAPABILITY') {
+        sendJson(res, 401, { error: identity.type, code: identity.type, message: 'Invalid or revoked credential.' });
+        return;
+      }
       if (!identity.isPrivileged) {
         sendJson(res, 403, { error: 'FORBIDDEN', message: 'Table creation requires Manager or Admin privileges.' });
         return;
       }
-      const body = await context.parseBody();
       try {
+        const quotaCheck = await ownerSelfService.checkPlanLimits(context.tenantContext.tenantId, 'TABLES');
+        if (!quotaCheck.allowed) {
+          sendJson(res, 403, {
+            error: 'PLAN_LIMIT_EXCEEDED',
+            code: 'PLAN_LIMIT_EXCEEDED',
+            message: quotaCheck.error || 'Table limit exceeded for current plan tier.',
+            quota: quotaCheck,
+          });
+          return;
+        }
+        if (quotaCheck.warning) {
+          res.setHeader('x-quota-warning', `${quotaCheck.percentage}%`);
+        }
+
+        const body = await context.parseBody();
         const allTables = await context.repo.getTables();
         const nextId = body.id ? (typeof body.id === 'number' ? body.id : parseInt(body.id, 10)) : Math.max(0, ...allTables.map((t: any) => t.id)) + 1;
         const tableNumber = body.number || `T-${nextId < 10 ? '0' + nextId : nextId}`;
@@ -323,10 +342,42 @@ export const tablesRoutes: RouteDefinition[] = [
     method: 'POST',
     path: '/api/restaurant/service-requests',
     handler: async (req, res, context) => {
+      const identity = context.requestIdentity;
+      if (identity.type === 'INVALID_CREDENTIAL') {
+        sendJson(res, 401, { error: 'INVALID_CREDENTIAL', code: 'INVALID_CREDENTIAL' });
+        return;
+      }
+      if (identity.type === 'REVOKED_CAPABILITY') {
+        sendJson(res, 401, { error: 'CAPABILITY_REVOKED', code: 'CAPABILITY_REVOKED' });
+        return;
+      }
+      if (process.env.NODE_ENV === 'production' && identity.type === 'ANONYMOUS') {
+        sendJson(res, 401, { error: 'CAPABILITY_REQUIRED', code: 'CAPABILITY_REQUIRED' });
+        return;
+      }
       const body = await context.parseBody();
+      const tableNumber = body.tableNumber;
+      if (!tableNumber) {
+        sendJson(res, 400, { error: 'TABLE_REQUIRED', code: 'TABLE_REQUIRED', message: 'Table number is required.' });
+        return;
+      }
+
+      if (identity.type === 'DINER' && identity.tableNumber) {
+        const normIdTable = (identity.tableNumber || '').replace(/^T-/, '');
+        const normReqTable = (tableNumber || '').replace(/^T-/, '');
+        if (normIdTable !== normReqTable) {
+          sendJson(res, 403, {
+            error: 'TABLE_MISMATCH',
+            code: 'TABLE_MISMATCH',
+            message: `Diner capability for ${identity.tableNumber} cannot create service requests for ${tableNumber}.`,
+          });
+          return;
+        }
+      }
+
       const newReq: any = {
         id: body.id || `sreq_${Date.now()}`,
-        tableNumber: body.tableNumber,
+        tableNumber,
         branchId: body.branchId || context.currentBranch?.id || 'branch_ldh',
         floorId: body.floorId || context.currentFloor?.id || 'floor_ground',
         type: body.type || 'WATER',

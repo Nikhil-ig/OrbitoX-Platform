@@ -6,6 +6,58 @@ import {
   renderPrintableInvoiceHtml,
 } from '../../shared/invoicing';
 
+async function handleGetInvoice(_req: any, res: any, context: any) {
+  const invoiceId = context.params.id;
+  let invoice = await context.repo.getInvoiceByOrderId(invoiceId);
+  if (!invoice && invoiceId.startsWith('INV-')) {
+    invoice = await context.repo.getInvoiceByNumber(invoiceId);
+  }
+  if (!invoice && postgresStore) {
+    invoice = await postgresStore.getInvoiceByOrderId(invoiceId, context.tenantContext.tenantId);
+    if (!invoice && invoiceId.startsWith('INV-')) {
+      invoice = await postgresStore.getInvoiceByNumber(invoiceId, context.tenantContext.tenantId);
+    }
+  }
+  if (!invoice) {
+    sendJson(res, 404, {
+      error: 'INVOICE_NOT_FOUND',
+      code: 'INVOICE_NOT_FOUND',
+      message: `Invoice not found for identifier: ${invoiceId}`,
+    });
+    return;
+  }
+
+  if (context.parsedUrl.query.format === 'html') {
+    const tenantBrand = await context.repo.getTenantBrand();
+    const html = renderPrintableInvoiceHtml(invoice, tenantBrand, context.currentBranch);
+    sendHtml(res, html);
+    return;
+  }
+
+  sendJson(res, 200, { success: true, data: invoice });
+}
+
+async function handlePrintInvoice(_req: any, res: any, context: any) {
+  const invoiceId = context.params.id;
+  let invoice = await context.repo.getInvoiceByOrderId(invoiceId);
+  if (!invoice && invoiceId.startsWith('INV-')) {
+    invoice = await context.repo.getInvoiceByNumber(invoiceId);
+  }
+  if (!invoice && postgresStore) {
+    invoice = await postgresStore.getInvoiceByOrderId(invoiceId, context.tenantContext.tenantId);
+    if (!invoice && invoiceId.startsWith('INV-')) {
+      invoice = await postgresStore.getInvoiceByNumber(invoiceId, context.tenantContext.tenantId);
+    }
+  }
+  if (!invoice) {
+    sendJson(res, 404, { success: false, error: 'INVOICE_NOT_FOUND' });
+    return;
+  }
+  const tenantBrand = await context.repo.getTenantBrand();
+  const html = renderPrintableInvoiceHtml(invoice, tenantBrand, context.currentBranch);
+  sendHtml(res, html);
+}
+
 export const invoicingRoutes: RouteDefinition[] = [
   {
     method: 'GET',
@@ -54,36 +106,12 @@ export const invoicingRoutes: RouteDefinition[] = [
   {
     method: 'GET',
     path: '/api/restaurant/invoices/:id',
-    handler: async (_req, res, context) => {
-      const invoiceId = context.params.id;
-      let invoice = await context.repo.getInvoiceByOrderId(invoiceId);
-      if (!invoice && invoiceId.startsWith('INV-')) {
-        invoice = await context.repo.getInvoiceByNumber(invoiceId);
-      }
-      if (!invoice && postgresStore) {
-        invoice = await postgresStore.getInvoiceByOrderId(invoiceId, context.tenantContext.tenantId);
-        if (!invoice && invoiceId.startsWith('INV-')) {
-          invoice = await postgresStore.getInvoiceByNumber(invoiceId, context.tenantContext.tenantId);
-        }
-      }
-      if (!invoice) {
-        sendJson(res, 404, {
-          error: 'INVOICE_NOT_FOUND',
-          code: 'INVOICE_NOT_FOUND',
-          message: `Invoice not found for identifier: ${invoiceId}`,
-        });
-        return;
-      }
-
-      if (context.parsedUrl.query.format === 'html') {
-        const tenantBrand = await context.repo.getTenantBrand();
-        const html = renderPrintableInvoiceHtml(invoice, tenantBrand, context.currentBranch);
-        sendHtml(res, html);
-        return;
-      }
-
-      sendJson(res, 200, { success: true, data: invoice });
-    },
+    handler: handleGetInvoice,
+  },
+  {
+    method: 'GET',
+    path: '/invoices/:id',
+    handler: handleGetInvoice,
   },
   {
     method: 'POST',
@@ -139,26 +167,12 @@ export const invoicingRoutes: RouteDefinition[] = [
   {
     method: 'GET',
     path: '/api/restaurant/invoices/:id/print',
-    handler: async (_req, res, context) => {
-      const invoiceId = context.params.id;
-      let invoice = await context.repo.getInvoiceByOrderId(invoiceId);
-      if (!invoice && invoiceId.startsWith('INV-')) {
-        invoice = await context.repo.getInvoiceByNumber(invoiceId);
-      }
-      if (!invoice && postgresStore) {
-        invoice = await postgresStore.getInvoiceByOrderId(invoiceId, context.tenantContext.tenantId);
-        if (!invoice && invoiceId.startsWith('INV-')) {
-          invoice = await postgresStore.getInvoiceByNumber(invoiceId, context.tenantContext.tenantId);
-        }
-      }
-      if (!invoice) {
-        sendJson(res, 404, { success: false, error: 'INVOICE_NOT_FOUND' });
-        return;
-      }
-      const tenantBrand = await context.repo.getTenantBrand();
-      const html = renderPrintableInvoiceHtml(invoice, tenantBrand, context.currentBranch);
-      sendHtml(res, html);
-    },
+    handler: handlePrintInvoice,
+  },
+  {
+    method: 'GET',
+    path: '/invoices/:id/print',
+    handler: handlePrintInvoice,
   },
   {
     method: 'GET',

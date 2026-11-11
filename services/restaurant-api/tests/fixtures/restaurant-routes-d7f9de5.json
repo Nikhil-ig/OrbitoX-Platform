@@ -250,6 +250,11 @@
     "module": "tenancy"
   },
   {
+    "method": "POST",
+    "path": "/internal/tenants",
+    "module": "tenancy"
+  },
+  {
     "method": "GET",
     "path": "/api/restaurant/branches",
     "module": "tenancy"
@@ -561,12 +566,27 @@
   },
   {
     "method": "POST",
+    "path": "/api/restaurant/kds/tasks/:id/bump",
+    "module": "kitchen"
+  },
+  {
+    "method": "POST",
     "path": "/api/restaurant/kds/recall",
     "module": "kitchen"
   },
   {
     "method": "POST",
+    "path": "/api/restaurant/kds/tasks/:id/recall",
+    "module": "kitchen"
+  },
+  {
+    "method": "POST",
     "path": "/api/restaurant/kds/expo-dispatch",
+    "module": "kitchen"
+  },
+  {
+    "method": "POST",
+    "path": "/api/restaurant/kds/tasks/:id/dispatch",
     "module": "kitchen"
   },
   {
@@ -582,6 +602,11 @@
   {
     "method": "POST",
     "path": "/api/restaurant/kds/item-fulfill",
+    "module": "kitchen"
+  },
+  {
+    "method": "POST",
+    "path": "/api/restaurant/kds/tasks/:id/fulfill-item",
     "module": "kitchen"
   },
   {
@@ -685,6 +710,11 @@
     "module": "invoicing"
   },
   {
+    "method": "GET",
+    "path": "/invoices/:id",
+    "module": "invoicing"
+  },
+  {
     "method": "POST",
     "path": "/api/restaurant/invoices/generate",
     "module": "invoicing"
@@ -692,6 +722,11 @@
   {
     "method": "GET",
     "path": "/api/restaurant/invoices/:id/print",
+    "module": "invoicing"
+  },
+  {
+    "method": "GET",
+    "path": "/invoices/:id/print",
     "module": "invoicing"
   },
   {

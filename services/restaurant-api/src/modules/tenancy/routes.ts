@@ -52,6 +52,23 @@ export const tenancyRoutes: RouteDefinition[] = [
     },
   },
   {
+    method: 'POST',
+    path: '/internal/tenants',
+    handler: async (req, res) => {
+      if (!verifyPlatformAuth(req)) {
+        sendJson(res, 401, {
+          error: 'UNAUTHORIZED',
+          message: 'Platform service credentials required (RESTAURANTOS_PLATFORM_TOKEN >= 32 chars).',
+        });
+        return;
+      }
+      sendJson(res, 410, {
+        error: 'ROUTE_DEPRECATED',
+        message: 'Tenant provisioning via /internal/tenants has been deleted. Tenant creation must go through the signed /orbitox/lifecycle/provision hook.',
+      });
+    },
+  },
+  {
     method: 'GET',
     path: '/api/restaurant/branches',
     handler: async (_req, res, context) => {
@@ -179,7 +196,16 @@ export const tenancyRoutes: RouteDefinition[] = [
         await context.repo.updateTenantBrand({ logoUrl: saved.url });
         sendJson(res, 200, { success: true, url: saved.url, data: saved });
       } catch (err: any) {
-        sendJson(res, 400, { error: 'UPLOAD_FAILED', message: err.message });
+        const isSecurity = err.message?.includes('SECURITY_VIOLATION');
+        const isFormat = err.message?.includes('UNSUPPORTED_IMAGE_FORMAT');
+        const isLarge = err.message?.includes('IMAGE_TOO_LARGE');
+        const statusCode = (isSecurity || isFormat || isLarge) ? 400 : 500;
+        sendJson(res, statusCode, {
+          success: false,
+          error: isSecurity ? 'SECURITY_VIOLATION' : (isFormat ? 'UNSUPPORTED_IMAGE_FORMAT' : (isLarge ? 'IMAGE_TOO_LARGE' : 'UPLOAD_FAILED')),
+          code: isSecurity ? 'SECURITY_VIOLATION' : (isFormat ? 'UNSUPPORTED_IMAGE_FORMAT' : (isLarge ? 'IMAGE_TOO_LARGE' : 'UPLOAD_FAILED')),
+          message: err.message,
+        });
       }
     },
   },

@@ -87,7 +87,7 @@ function sendRawHttpRequest(options: {
   });
 }
 
-import { getStandaloneScript, getStandaloneCwd } from '../standalone-helper';
+import { getStandaloneScript, getStandaloneCwd, createCleanStandaloneEnv } from '../standalone-helper';
 
 describe('Phase 4 Item 8: Comprehensive Tenant Provisioning Matrix', () => {
   const serverScript = getStandaloneScript(__dirname);
@@ -322,7 +322,7 @@ describe('Phase 4 Item 8: Comprehensive Tenant Provisioning Matrix', () => {
 
     child = spawn('node', [serverScript], {
       cwd: getStandaloneCwd(__dirname),
-      env,
+      env: createCleanStandaloneEnv(env),
       stdio: ['ignore', 'pipe', 'pipe'],
     });
 
@@ -621,7 +621,7 @@ describe('Phase 4 Item 8: Comprehensive Tenant Provisioning Matrix', () => {
 
     const server1 = spawn('node', [serverScript], {
       cwd: getStandaloneCwd(__dirname),
-      env: env1,
+      env: createCleanStandaloneEnv(env1),
       stdio: ['ignore', 'pipe', 'pipe'],
     });
 
@@ -688,7 +688,7 @@ describe('Phase 4 Item 8: Comprehensive Tenant Provisioning Matrix', () => {
 
     const server2 = spawn('node', [serverScript], {
       cwd: getStandaloneCwd(__dirname),
-      env: env2,
+      env: createCleanStandaloneEnv(env2),
       stdio: ['ignore', 'pipe', 'pipe'],
     });
 

@@ -10,7 +10,7 @@ import {
   RequestContext,
 } from '../../http/context';
 import { RazorpayPaymentGatewayAdapter } from '../../shared/integrations';
-import { buildGSTInvoice } from '../../shared/invoicing';
+import { buildGSTInvoice, computeFiscalYear } from '../../shared/invoicing';
 
 async function handleCreateRazorpayOrder(req: http.IncomingMessage, res: http.ServerResponse, context: RequestContext): Promise<void> {
   const body = await context.parseBody();
@@ -168,23 +168,56 @@ async function handleRazorpayWebhook(req: http.IncomingMessage, res: http.Server
     return;
   }
 
-  const paymentEntity = body.payload?.payment?.entity;
-  const orderEntity = body.payload?.order?.entity;
-  const razorpayOrderId = paymentEntity?.order_id || orderEntity?.id;
-  const paymentId = paymentEntity?.id;
-  const amountMinor = paymentEntity?.amount || orderEntity?.amount;
+  const paymentEntity = body.payload?.payment?.entity || body.payment || {};
+  const orderEntity = body.payload?.order?.entity || body.order || {};
+  const razorpayPaymentId = paymentEntity.id || body.payment_id || `pay_${Date.now()}`;
+  const razorpayOrderId = paymentEntity.order_id || orderEntity.id || body.order_id;
+  const notes = paymentEntity.notes || orderEntity.notes || body.notes || {};
+  const orderId = notes.orderId || body.orderId;
 
-  if (body.event === 'payment.captured' || body.event === 'order.paid') {
-    const targetOrderId = orderEntity?.notes?.orderId || paymentEntity?.notes?.orderId || body.orderId;
-    if (targetOrderId) {
-      const order = await context.repo.getOrder(targetOrderId);
-      if (order) {
-        order.status = 'PAID';
-        (order as any).paymentMethod = 'RAZORPAY';
-        (order as any).paymentStatus = 'PAID';
-        await context.repo.updateOrderStatus(order.orderId, 'PAID', 'Order paid via Razorpay');
+  let invoiceRecord: any = null;
+  const event = body.event || 'payment.captured';
+  if (
+    event === 'payment.captured' ||
+    event === 'payment.authorized' ||
+    event === 'order.paid'
+  ) {
+    const targetOrderId = orderId || razorpayOrderId;
+    let order = targetOrderId ? await context.repo.getOrder(targetOrderId) : null;
+    if (order) {
+      order.status = 'PAID';
+      (order as any).paymentMethod = 'RAZORPAY';
+      (order as any).paymentStatus = 'PAID';
+      await context.repo.updateOrderStatus(order.orderId, 'PAID', 'Order paid via Razorpay');
+
+      try {
+        invoiceRecord = await context.repo.getInvoiceByOrderId(order.orderId);
+        if (!invoiceRecord) {
+          const { fiscalYear } = computeFiscalYear();
+          const seq = await context.repo.getNextInvoiceSequence(fiscalYear);
+          const tenantBrand = await context.repo.getTenantBrand();
+          invoiceRecord = buildGSTInvoice({
+            order,
+            sequenceNumber: seq,
+            tenantId: tid,
+            tenantBrand,
+            branch: context.currentBranch,
+          });
+          await context.repo.saveInvoice(invoiceRecord);
+        }
+      } catch (invErr: any) {
+        console.warn('[Invoicing] Automatic invoice generation failed:', invErr.message);
       }
     }
+
+    sendJson(res, 200, {
+      success: true,
+      status: 'captured',
+      razorpayPaymentId,
+      orderId: targetOrderId,
+      invoiceNumber: invoiceRecord?.invoiceNumber,
+    });
+    return;
   }
 
   sendJson(res, 200, { success: true, received: true });

@@ -21,3 +21,14 @@ export function getStandaloneCwd(testDir: string): string {
   const found = candidates.find(fs.existsSync);
   return found ?? candidates[0] ?? path.resolve(testDir, '..');
 }
+
+export function createCleanStandaloneEnv(baseEnv: NodeJS.ProcessEnv = process.env): NodeJS.ProcessEnv {
+  const env = { ...baseEnv };
+  if (env.NODE_OPTIONS) {
+    env.NODE_OPTIONS = env.NODE_OPTIONS.replace(/--conditions=react-server/g, '').trim();
+    if (!env.NODE_OPTIONS) {
+      delete env.NODE_OPTIONS;
+    }
+  }
+  return env;
+}

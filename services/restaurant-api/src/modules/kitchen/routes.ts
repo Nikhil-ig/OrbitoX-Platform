@@ -11,6 +11,147 @@ import {
   checkKdsIdempotency,
 } from './service';
 
+async function handleBumpTask(req: any, res: any, context: any): Promise<void> {
+  const body = await context.parseBody().catch(() => ({}));
+  const taskId = body.taskId || context.params?.id;
+  if (!taskId) {
+    sendJson(res, 400, { error: 'taskId required', code: 'TASK_ID_REQUIRED' });
+    return;
+  }
+  const task = (await context.repo.getKitchenTasks()).find((t: any) => t.id === taskId);
+  if (!task) {
+    sendJson(res, 404, { error: `Task ${taskId} not found`, code: 'TASK_NOT_FOUND' });
+    return;
+  }
+  const taskBranchRes = await resolveTaskAuthoritativeBranch(task, context.repo);
+  const authCheck = authorizeKdsRequest(context.requestIdentity, taskBranchRes.branchId || undefined, task.station);
+  if (!authCheck.authorized) {
+    sendJson(res, authCheck.statusCode || 403, { error: authCheck.error, code: authCheck.code });
+    return;
+  }
+  const idempotencyKey = (req.headers['x-idempotency-key'] as string) || body.idempotencyKey;
+  const idempCheck = await checkKdsIdempotency(idempotencyKey, 'kds.bump', taskId, taskBranchRes.branchId, body, context.repo);
+  if (idempCheck.hasConflict) {
+    sendJson(res, 409, { error: 'IDEMPOTENCY_CONFLICT', code: 'IDEMPOTENCY_CONFLICT' });
+    return;
+  }
+  if (idempCheck.isReplay) {
+    sendJson(res, 200, idempCheck.cachedResponse);
+    return;
+  }
+  const nextStatus = body.newStatus || body.status || body.targetStatus || (task.status === 'QUEUED' ? 'IN_PROGRESS' : task.status === 'IN_PROGRESS' ? 'READY' : 'BUMPED');
+  checkTestKillPoint(req, 'pre-commit');
+
+  const result = await context.repo.updateKitchenTaskStatus(taskId, nextStatus, {
+    authoritativeBranchId: taskBranchRes.branchId || undefined,
+    station: body.station,
+    expectedRevision: body.expectedRevision,
+  });
+
+  const responsePayload = {
+    success: true,
+    data: result.task,
+    task: result.task,
+    isIdempotent: result.isIdempotent,
+  };
+
+  if (idempotencyKey) {
+    const record = {
+      operation: 'kds.bump',
+      targetId: taskId,
+      branchId: taskBranchRes.branchId,
+      payloadHash: idempCheck.payloadHash,
+      response: responsePayload,
+      responseBody: responsePayload,
+    };
+    await context.repo.saveIdempotencyRecord(idempotencyKey, record);
+  }
+
+  checkTestKillPoint(req, 'post-commit');
+
+  sendJson(res, 200, responsePayload);
+}
+
+async function handleRecallTask(req: any, res: any, context: any): Promise<void> {
+  const body = await context.parseBody().catch(() => ({}));
+  const taskId = body.taskId || context.params?.id;
+  if (!taskId) {
+    sendJson(res, 400, { error: 'taskId required' });
+    return;
+  }
+  const task = (await context.repo.getKitchenTasks()).find((t: any) => t.id === taskId);
+  if (!task) {
+    sendJson(res, 404, { error: `Task ${taskId} not found` });
+    return;
+  }
+  const taskBranchRes = await resolveTaskAuthoritativeBranch(task, context.repo);
+  const authCheck = authorizeKdsRequest(context.requestIdentity, taskBranchRes.branchId || undefined, task.station);
+  if (!authCheck.authorized) {
+    sendJson(res, authCheck.statusCode || 403, { error: authCheck.error, code: authCheck.code });
+    return;
+  }
+  const result = await context.repo.recallTask(taskId, body.targetStatus || 'IN_PROGRESS');
+  sendJson(res, 200, { success: true, data: result.task });
+}
+
+async function handleExpoDispatch(req: any, res: any, context: any): Promise<void> {
+  const body = await context.parseBody().catch(() => ({}));
+  const tableNumber = body.tableNumber;
+  if (!tableNumber) {
+    sendJson(res, 400, { error: 'tableNumber is required' });
+    return;
+  }
+  const tasks = (await context.repo.getKitchenTasks()).filter((t: any) => t.tableNumber === tableNumber);
+  if (tasks.length === 0) {
+    sendJson(res, 400, { error: `No kitchen tasks found for table ${tableNumber}`, code: 'TASKS_NOT_FOUND' });
+    return;
+  }
+  const authCheck = authorizeKdsRequest(context.requestIdentity, tasks[0].branchId || undefined, undefined, true);
+  if (!authCheck.authorized) {
+    sendJson(res, authCheck.statusCode || 403, { error: authCheck.error, code: authCheck.code });
+    return;
+  }
+  const unbumped = tasks.filter((t: any) => t.status !== 'BUMPED');
+  if (unbumped.length === 0) {
+    sendJson(res, 200, { success: true, message: `All tasks for table ${tableNumber} already dispatched` });
+    return;
+  }
+  const unready = unbumped.filter((t: any) => t.status !== 'READY');
+  if (unready.length > 0 && !body.force) {
+    sendJson(res, 400, {
+      error: 'TASKS_NOT_READY',
+      message: `Cannot dispatch table ${tableNumber}: ${unready.length} task(s) are not yet READY.`,
+    });
+    return;
+  }
+  for (const t of unbumped) {
+    await context.repo.updateKitchenTaskStatus(t.id, 'BUMPED');
+  }
+  sendJson(res, 200, { success: true, message: `Dispatched ${unbumped.length} tasks for table ${tableNumber}` });
+}
+
+async function handleFulfillItem(req: any, res: any, context: any): Promise<void> {
+  const body = await context.parseBody().catch(() => ({}));
+  const taskId = body.taskId || context.params?.id;
+  if (!taskId) {
+    sendJson(res, 400, { error: 'taskId required' });
+    return;
+  }
+  const task = (await context.repo.getKitchenTasks()).find((t: any) => t.id === taskId);
+  if (!task) {
+    sendJson(res, 404, { error: `Task ${taskId} not found` });
+    return;
+  }
+  const taskBranchRes = await resolveTaskAuthoritativeBranch(task, context.repo);
+  const authCheck = authorizeKdsRequest(context.requestIdentity, taskBranchRes.branchId || undefined, task.station);
+  if (!authCheck.authorized) {
+    sendJson(res, authCheck.statusCode || 403, { error: authCheck.error, code: authCheck.code });
+    return;
+  }
+  const result = await context.repo.fulfillTaskItem(taskId, body.targetCount);
+  sendJson(res, 200, { success: true, data: result.task });
+}
+
 export const kitchenRoutes: RouteDefinition[] = [
   {
     method: 'GET',
@@ -25,129 +166,32 @@ export const kitchenRoutes: RouteDefinition[] = [
   {
     method: 'POST',
     path: '/api/restaurant/kds/bump',
-    handler: async (req, res, context) => {
-      const body = await context.parseBody();
-      const taskId = body.taskId;
-      if (!taskId) {
-        sendJson(res, 400, { error: 'taskId required', code: 'TASK_ID_REQUIRED' });
-        return;
-      }
-      const task = (await context.repo.getKitchenTasks()).find((t) => t.id === taskId);
-      if (!task) {
-        sendJson(res, 404, { error: `Task ${taskId} not found`, code: 'TASK_NOT_FOUND' });
-        return;
-      }
-      const taskBranchRes = await resolveTaskAuthoritativeBranch(task, context.repo);
-      const authCheck = authorizeKdsRequest(context.requestIdentity, taskBranchRes.branchId || undefined, task.station);
-      if (!authCheck.authorized) {
-        sendJson(res, authCheck.statusCode || 403, { error: authCheck.error, code: authCheck.code });
-        return;
-      }
-      const idempotencyKey = (req.headers['x-idempotency-key'] as string) || body.idempotencyKey;
-      const idempCheck = await checkKdsIdempotency(idempotencyKey, 'kds.bump', taskId, taskBranchRes.branchId, body, context.repo);
-      if (idempCheck.hasConflict) {
-        sendJson(res, 409, { error: 'IDEMPOTENCY_CONFLICT', code: 'IDEMPOTENCY_CONFLICT' });
-        return;
-      }
-      if (idempCheck.isReplay) {
-        sendJson(res, 200, idempCheck.cachedResponse);
-        return;
-      }
-      const nextStatus = body.newStatus || body.status || body.targetStatus || (task.status === 'QUEUED' ? 'IN_PROGRESS' : task.status === 'IN_PROGRESS' ? 'READY' : 'BUMPED');
-      checkTestKillPoint(req, 'pre-commit');
-
-      const result = await context.repo.updateKitchenTaskStatus(taskId, nextStatus, {
-        authoritativeBranchId: taskBranchRes.branchId || undefined,
-        station: body.station,
-        expectedRevision: body.expectedRevision,
-      });
-
-      const responsePayload = {
-        success: true,
-        data: result.task,
-        isIdempotent: result.isIdempotent,
-      };
-
-      if (idempotencyKey) {
-        const record = {
-          operation: 'kds.bump',
-          targetId: taskId,
-          branchId: taskBranchRes.branchId,
-          payloadHash: idempCheck.payloadHash,
-          response: responsePayload,
-          responseBody: responsePayload,
-        };
-        await context.repo.saveIdempotencyRecord(idempotencyKey, record);
-      }
-
-      checkTestKillPoint(req, 'post-commit');
-
-      sendJson(res, 200, responsePayload);
-    },
+    handler: handleBumpTask,
+  },
+  {
+    method: 'POST',
+    path: '/api/restaurant/kds/tasks/:id/bump',
+    handler: handleBumpTask,
   },
   {
     method: 'POST',
     path: '/api/restaurant/kds/recall',
-    handler: async (req, res, context) => {
-      const body = await context.parseBody();
-      const taskId = body.taskId;
-      if (!taskId) {
-        sendJson(res, 400, { error: 'taskId required' });
-        return;
-      }
-      const task = (await context.repo.getKitchenTasks()).find((t) => t.id === taskId);
-      if (!task) {
-        sendJson(res, 404, { error: `Task ${taskId} not found` });
-        return;
-      }
-      const taskBranchRes = await resolveTaskAuthoritativeBranch(task, context.repo);
-      const authCheck = authorizeKdsRequest(context.requestIdentity, taskBranchRes.branchId || undefined, task.station);
-      if (!authCheck.authorized) {
-        sendJson(res, authCheck.statusCode || 403, { error: authCheck.error, code: authCheck.code });
-        return;
-      }
-      const result = await context.repo.recallTask(taskId, body.targetStatus || 'IN_PROGRESS');
-      sendJson(res, 200, { success: true, data: result.task });
-    },
+    handler: handleRecallTask,
+  },
+  {
+    method: 'POST',
+    path: '/api/restaurant/kds/tasks/:id/recall',
+    handler: handleRecallTask,
   },
   {
     method: 'POST',
     path: '/api/restaurant/kds/expo-dispatch',
-    handler: async (req, res, context) => {
-      const body = await context.parseBody();
-      const tableNumber = body.tableNumber;
-      if (!tableNumber) {
-        sendJson(res, 400, { error: 'tableNumber is required' });
-        return;
-      }
-      const tasks = (await context.repo.getKitchenTasks()).filter((t) => t.tableNumber === tableNumber);
-      if (tasks.length === 0) {
-        sendJson(res, 400, { error: `No kitchen tasks found for table ${tableNumber}`, code: 'TASKS_NOT_FOUND' });
-        return;
-      }
-      const authCheck = authorizeKdsRequest(context.requestIdentity, tasks[0].branchId || undefined, undefined, true);
-      if (!authCheck.authorized) {
-        sendJson(res, authCheck.statusCode || 403, { error: authCheck.error, code: authCheck.code });
-        return;
-      }
-      const unbumped = tasks.filter((t) => t.status !== 'BUMPED');
-      if (unbumped.length === 0) {
-        sendJson(res, 200, { success: true, message: `All tasks for table ${tableNumber} already dispatched` });
-        return;
-      }
-      const unready = unbumped.filter((t) => t.status !== 'READY');
-      if (unready.length > 0 && !body.force) {
-        sendJson(res, 400, {
-          error: 'TASKS_NOT_READY',
-          message: `Cannot dispatch table ${tableNumber}: ${unready.length} task(s) are not yet READY.`,
-        });
-        return;
-      }
-      for (const t of unbumped) {
-        await context.repo.updateKitchenTaskStatus(t.id, 'BUMPED');
-      }
-      sendJson(res, 200, { success: true, message: `Dispatched ${unbumped.length} tasks for table ${tableNumber}` });
-    },
+    handler: handleExpoDispatch,
+  },
+  {
+    method: 'POST',
+    path: '/api/restaurant/kds/tasks/:id/dispatch',
+    handler: handleExpoDispatch,
   },
   {
     method: 'POST',
@@ -174,6 +218,11 @@ export const kitchenRoutes: RouteDefinition[] = [
   {
     method: 'POST',
     path: '/api/restaurant/kds/item-fulfill',
+    handler: (req, res, context) => handleFulfillItem(req, res, context),
+  },
+  {
+    method: 'POST',
+    path: '/api/restaurant/kds/tasks/:id/fulfill-item',
     handler: (req, res, context) => handleFulfillItem(req, res, context),
   },
   {
@@ -213,25 +262,3 @@ export const kitchenRoutes: RouteDefinition[] = [
     },
   },
 ];
-
-async function handleFulfillItem(req: any, res: any, context: any): Promise<void> {
-  const body = await context.parseBody();
-  const taskId = body.taskId;
-  if (!taskId) {
-    sendJson(res, 400, { error: 'taskId required' });
-    return;
-  }
-  const task = (await context.repo.getKitchenTasks()).find((t: any) => t.id === taskId);
-  if (!task) {
-    sendJson(res, 404, { error: `Task ${taskId} not found` });
-    return;
-  }
-  const taskBranchRes = await resolveTaskAuthoritativeBranch(task, context.repo);
-  const authCheck = authorizeKdsRequest(context.requestIdentity, taskBranchRes.branchId || undefined, task.station);
-  if (!authCheck.authorized) {
-    sendJson(res, authCheck.statusCode || 403, { error: authCheck.error, code: authCheck.code });
-    return;
-  }
-  const result = await context.repo.fulfillTaskItem(taskId, body.targetCount);
-  sendJson(res, 200, { success: true, data: result.task });
-}

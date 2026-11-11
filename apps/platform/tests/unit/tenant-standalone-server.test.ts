@@ -30,7 +30,7 @@ async function allocateSafePort(preferred: number): Promise<number> {
   throw new Error('No available safe port found');
 }
 
-import { getStandaloneScript, getStandaloneCwd } from '../standalone-helper';
+import { getStandaloneScript, getStandaloneCwd, createCleanStandaloneEnv } from '../standalone-helper';
 
 describe('Standalone Server Customer Tenant Provisioning Gate (N1)', () => {
   const serverScript = getStandaloneScript(__dirname);
@@ -300,10 +300,9 @@ describe('Standalone Server Customer Tenant Provisioning Gate (N1)', () => {
       ORBITOX_EXPORT_ENCRYPTION_KEYS: JSON.stringify({ k1: crypto.randomBytes(32).toString('base64') }),
       ORBITOX_EXPORT_ENCRYPTION_KEY_ACTIVE: 'k1',
     };
-
     child = spawn('node', [serverScript], {
       cwd: getStandaloneCwd(__dirname),
-      env,
+      env: createCleanStandaloneEnv(env),
       stdio: ['ignore', 'pipe', 'pipe'],
     });
 

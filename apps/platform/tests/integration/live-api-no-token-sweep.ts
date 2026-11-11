@@ -36,7 +36,7 @@ async function allocateSafePort(preferred: number): Promise<number> {
   throw new Error('No available safe port found');
 }
 
-import { getStandaloneScript } from '../standalone-helper';
+import { getStandaloneScript, createCleanStandaloneEnv } from '../standalone-helper';
 
 const serverScript = getStandaloneScript(__dirname);
 const apiDir = path.resolve(__dirname, '../app/api');
@@ -285,7 +285,7 @@ async function run() {
 
   const child: ChildProcess = spawn(process.execPath, [serverScript], {
     cwd: path.resolve(__dirname, '..'),
-    env,
+    env: createCleanStandaloneEnv(env),
     stdio: ['ignore', 'pipe', 'pipe'],
   });
 

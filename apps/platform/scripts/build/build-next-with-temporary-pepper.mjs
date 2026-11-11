@@ -41,10 +41,16 @@ export function runNextBuild() {
     const buildEnvironment = createBuildEnvironment();
     const buildPepper = buildEnvironment.ORBITOX_SERVER_PEPPER;
 
+    const spawnEnv = { ...buildEnvironment, ORBITOX_DATA_DIR: buildDataDirectory };
+    if (spawnEnv.NODE_OPTIONS) {
+        spawnEnv.NODE_OPTIONS = spawnEnv.NODE_OPTIONS.replace(/--conditions=react-server/g, '').trim();
+        if (!spawnEnv.NODE_OPTIONS) delete spawnEnv.NODE_OPTIONS;
+    }
+
     try {
         const result = spawnSync(process.execPath, [nextCli, 'build'], {
             cwd: webDirectory,
-            env: { ...buildEnvironment, ORBITOX_DATA_DIR: buildDataDirectory },
+            env: spawnEnv,
             stdio: 'inherit',
         });
 

@@ -2,7 +2,7 @@ import { spawn, ChildProcess } from 'node:child_process';
 import crypto from 'node:crypto';
 import path from 'node:path';
 
-import { getStandaloneScript } from '../standalone-helper';
+import { getStandaloneScript, createCleanStandaloneEnv } from '../standalone-helper';
 
 const PORT = 3680;
 const serverScript = getStandaloneScript(__dirname);
@@ -57,7 +57,7 @@ const env: NodeJS.ProcessEnv = {
 async function run() {
   const child: ChildProcess = spawn(process.execPath, [serverScript], {
     cwd: path.resolve(__dirname, '..'),
-    env,
+    env: createCleanStandaloneEnv(env),
     stdio: ['ignore', 'pipe', 'pipe'],
   });
 

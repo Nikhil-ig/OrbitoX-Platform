@@ -33,7 +33,7 @@ import {
   scrubSecrets,
 } from '@orbitox-io/sdk';
 
-import { getStandaloneScript, getStandaloneCwd } from '../standalone-helper';
+import { getStandaloneScript, getStandaloneCwd, createCleanStandaloneEnv } from '../standalone-helper';
 
 const databaseUrl = process.env.DATABASE_URL || 'postgresql://postgres:postgrespassword@127.0.0.1:5432/orbitox_phase2';
 const serverScript = getStandaloneScript(__dirname);
@@ -193,7 +193,7 @@ describe('🪐 Phase 5: @orbitox-io/sdk Integration & Real Server Suite', () => 
 
     child = spawn('node', [serverScript], {
       cwd: getStandaloneCwd(__dirname),
-      env: childEnv,
+      env: createCleanStandaloneEnv(childEnv),
       stdio: ['ignore', 'pipe', 'pipe'],
     });
 

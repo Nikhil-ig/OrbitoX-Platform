@@ -16,9 +16,6 @@ concurrency:
 permissions:
   contents: read
 
-env:
-  NODE_OPTIONS: "--conditions=react-server"
-
 jobs:
   build:
     name: Build, test & smoke
@@ -115,8 +112,8 @@ jobs:
 
       - name: Verify Phase 6 identity privileges and MFA protections
         run: |
-          pnpm exec tsx --tsconfig apps/platform/tsconfig.json --test apps/platform/tests/unit/phase6-role-privileges.test.ts apps/platform/tests/unit/phase6-account-auth.test.ts
-          pnpm exec tsx --tsconfig apps/platform/tsconfig.json --test --test-concurrency=1 apps/platform/tests/unit/hms-auth-security.test.ts
+          NODE_OPTIONS='--conditions=react-server' pnpm exec tsx --tsconfig apps/platform/tsconfig.json --test apps/platform/tests/unit/phase6-role-privileges.test.ts apps/platform/tests/unit/phase6-account-auth.test.ts
+          NODE_OPTIONS='--conditions=react-server' pnpm exec tsx --tsconfig apps/platform/tsconfig.json --test --test-concurrency=1 apps/platform/tests/unit/hms-auth-security.test.ts
         env:
           NODE_ENV: test
           DATABASE_URL: postgresql://postgres:postgrespassword@127.0.0.1:5432/orbitox_smoke
@@ -418,7 +415,7 @@ jobs:
           APP_DATABASE_URL: postgresql://restaurantos_app:test_app_pass_123@127.0.0.1:5432/restaurant_os
 
       - name: "Suite 5: Platform <-> RestaurantOS Lifecycle Bridge E2E (Cross-Process)"
-        run: pnpm --filter @orbitox-io/platform exec tsx --test tests/unit/restaurant-lifecycle-bridge-e2e.test.ts
+        run: NODE_OPTIONS='--conditions=react-server' pnpm --filter @orbitox-io/platform exec tsx --test tests/unit/restaurant-lifecycle-bridge-e2e.test.ts
         env:
           NODE_ENV: test
           DATABASE_URL: postgresql://postgres:postgrespassword@127.0.0.1:5432/restaurant_os
@@ -635,9 +632,9 @@ jobs:
           HMS_AUDIT_DATABASE_URL: postgresql://hms_audit_reader:phase2-auditreader-${{ github.run_id }}-${{ github.run_attempt }}@127.0.0.1:5432/orbitox_phase2
           OUTBOX_RELAY_DATABASE_URL: postgresql://orbitox_outbox_relay:phase2-relay-${{ github.run_id }}-${{ github.run_attempt }}@127.0.0.1:5432/orbitox_phase2
       - name: Verify S3-1 Route and Page Security Architecture
-        run: pnpm --filter @orbitox-io/platform exec tsx --test tests/unit/api-route-auth-structure.test.ts
+        run: NODE_OPTIONS='--conditions=react-server' pnpm --filter @orbitox-io/platform exec tsx --test tests/unit/api-route-auth-structure.test.ts
       - name: Verify S3-5 Audit Role Permissions & Immutability
-        run: pnpm --filter @orbitox-io/platform exec tsx --test tests/unit/audit-role-permissions.test.ts
+        run: NODE_OPTIONS='--conditions=react-server' pnpm --filter @orbitox-io/platform exec tsx --test tests/unit/audit-role-permissions.test.ts
         env:
           DATABASE_URL: postgresql://postgres:postgrespassword@127.0.0.1:5432/orbitox_phase2
           TEST_DATABASE_URL: postgresql://postgres:postgrespassword@127.0.0.1:5432/orbitox_phase2
@@ -646,7 +643,7 @@ jobs:
           HMS_AUDIT_DATABASE_URL: postgresql://hms_audit_reader:phase2-auditreader-${{ github.run_id }}-${{ github.run_attempt }}@127.0.0.1:5432/orbitox_phase2
           OUTBOX_RELAY_DATABASE_URL: postgresql://orbitox_outbox_relay:phase2-relay-${{ github.run_id }}-${{ github.run_attempt }}@127.0.0.1:5432/orbitox_phase2
       - name: Verify B1.3 Concurrent Atomic Previous-Value
-        run: pnpm --filter @orbitox-io/platform exec tsx --test tests/unit/concurrent-usage-audit.test.ts
+        run: NODE_OPTIONS='--conditions=react-server' pnpm --filter @orbitox-io/platform exec tsx --test tests/unit/concurrent-usage-audit.test.ts
         env:
           DATABASE_URL: postgresql://postgres:postgrespassword@127.0.0.1:5432/orbitox_phase2
           TEST_DATABASE_URL: postgresql://postgres:postgrespassword@127.0.0.1:5432/orbitox_phase2

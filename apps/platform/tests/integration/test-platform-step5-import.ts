@@ -92,13 +92,13 @@ const step5CertKeysJson = JSON.stringify({
   },
 });
 
-import { getStandaloneScript } from '../standalone-helper';
+import { getStandaloneScript, createCleanStandaloneEnv } from '../standalone-helper';
 
 function spawnServer(port: number, envOverrides: Record<string, string> = {}): ChildProcess {
   const standaloneScript = getStandaloneScript(__dirname);
   const child = spawn(process.execPath, [standaloneScript], {
     cwd: path.resolve(__dirname, '..'),
-    env: {
+    env: createCleanStandaloneEnv({
       ...process.env,
       ORBITOX_DELETION_CERT_KEYS: process.env.ORBITOX_DELETION_CERT_KEYS || step5CertKeysJson,
       ORBITOX_DELETION_CERT_KEY_ACTIVE: process.env.ORBITOX_DELETION_CERT_KEY_ACTIVE || 'cert_k1',
@@ -147,7 +147,7 @@ function spawnServer(port: number, envOverrides: Record<string, string> = {}): C
       OUTBOX_RELAY_DATABASE_URL: boundedUrl(outboxRelayUrl),
       MAINTENANCE_DATABASE_URL: boundedUrl(maintenanceUrl),
       ...envOverrides,
-    },
+    }),
     stdio: ['pipe', 'pipe', 'pipe'],
   });
 
