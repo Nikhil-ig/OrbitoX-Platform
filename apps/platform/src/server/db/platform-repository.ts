@@ -1,3 +1,4 @@
+import 'server-only';
 import * as crypto from 'crypto';
 import { Prisma, PrismaClient } from '@prisma/client';
 import { currentOperatorActor } from '@/server/organizations/operator-actor-context';

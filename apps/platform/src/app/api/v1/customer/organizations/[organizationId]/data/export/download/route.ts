@@ -1,11 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { withCustomerAuth } from '@/lib/customer-auth';
+import { withCustomerAuth } from '@/server/auth/customer-auth';
 import {
   canCustomerDashboardAction,
   getCustomerOrganizationRole,
   noStoreHeaders,
-} from '@/lib/customer-dashboard';
-import { consumeExportDownloadToken } from '@/lib/data-rights/service';
+} from '@/server/organizations/customer-dashboard';
+import { consumeExportDownloadToken } from '@/server/data-rights/service';
 
 type RouteContext = { params: Promise<{ organizationId: string }> };
 

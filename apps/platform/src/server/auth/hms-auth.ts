@@ -1,3 +1,4 @@
+import 'server-only';
 import crypto from 'node:crypto';
 import type { TenantTx } from '@/server/db/tenant-db';
 import { HttpError } from '@/server/db/db-errors';

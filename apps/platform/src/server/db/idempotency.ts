@@ -1,3 +1,4 @@
+import 'server-only';
 /**
  * Durable idempotency inside the SAME transaction as the mutation.
  *

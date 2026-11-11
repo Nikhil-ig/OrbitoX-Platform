@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { platformRepository } from '@/lib/platform-repository';
+import { platformRepository } from '@/server/db/platform-repository';
 
 async function authenticateCustomerOrAdmin(req: NextRequest) {
   const authHeader = req.headers.get('authorization') || '';

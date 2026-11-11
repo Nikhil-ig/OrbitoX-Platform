@@ -1,3 +1,4 @@
+import 'server-only';
 import type { CustomerMembershipRole } from '@prisma/client';
 import { prisma } from '@/server/db/prisma';
 

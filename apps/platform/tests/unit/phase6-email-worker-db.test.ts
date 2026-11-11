@@ -4,13 +4,13 @@ import { after, before, describe, it } from 'node:test';
 import { PrismaClient } from '@prisma/client';
 import { NextRequest } from 'next/server';
 import { POST as postEmailWebhook } from '@/app/api/v1/customer/email/webhooks/[provider]/route';
-import { processAccountEmailBatch } from '@/lib/account-email-worker';
+import { processAccountEmailBatch } from '@/server/accounts/account-email-worker';
 import {
   ACCOUNT_EMAIL_TEMPLATE_NAMES,
   type EmailProvider,
-} from '@/lib/account-email';
-import { encryptAccountEmailPayload } from '@/lib/phase6-account-security';
-import { registerCustomer } from '@/lib/phase6-account-service';
+} from '@/server/accounts/account-email';
+import { encryptAccountEmailPayload } from '@/server/auth/account-security';
+import { registerCustomer } from '@/server/accounts/account-service';
 
 if (process.env.ORBITOX_PLATFORM_REPOSITORY === 'prisma') {
   describe('Phase 6 account email worker database behavior', () => {

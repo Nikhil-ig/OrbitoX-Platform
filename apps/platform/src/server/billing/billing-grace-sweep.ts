@@ -1,6 +1,7 @@
+import 'server-only';
 import crypto from 'node:crypto';
 import type { PrismaClient } from '@prisma/client';
-import { billingEnforcementState } from '@/server/billing/phase6-razorpay-billing';
+import { billingEnforcementState } from '@/server/billing/razorpay-billing';
 import { queueAccountEmail } from '@/server/accounts/account-email-queue';
 
 const leaseDurationMs = 10 * 60 * 1000;

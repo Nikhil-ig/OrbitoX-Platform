@@ -29,7 +29,7 @@ ENV NEXT_TELEMETRY_DISABLED=1 \
     DATABASE_URL=postgresql://orbitox_build:orbitox_build@127.0.0.1:5432/orbitox_build \
     PLATFORM_AUDIT_DATABASE_URL=postgresql://orbitox_build:orbitox_build@127.0.0.1:5432/orbitox_build \
     HMS_AUDIT_DATABASE_URL=postgresql://orbitox_build:orbitox_build@127.0.0.1:5432/orbitox_build
-RUN pnpm exec turbo run build --filter=web...
+RUN pnpm exec turbo run build --filter=@orbitox-io/platform...
 
 # ---- 3. runtime: only the standalone server bundle, running as non-root ----
 FROM node:${NODE_VERSION}-slim AS runtime

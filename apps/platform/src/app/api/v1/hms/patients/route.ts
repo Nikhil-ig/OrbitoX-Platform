@@ -1,10 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { withApiGuard, PlatformApiState } from '../../_lib/api-guard';
-import { withTenantTx } from '@/lib/tenant-db';
-import { prisma } from '@/lib/prisma';
-import { mapDbError, errorBody } from '@/lib/db-errors';
-import { getPhiKeyRing } from '@/lib/phi-crypto';
-import { createPatient } from '@/lib/hms-repository';
+import { withTenantTx } from '@/server/db/tenant-db';
+import { prisma } from '@/server/db/prisma';
+import { mapDbError, errorBody } from '@/server/db/db-errors';
+import { getPhiKeyRing } from '@/server/hospital/phi-crypto';
+import { createPatient } from '@/server/hospital/hms-repository';
 
 export const GET = withApiGuard(
   {

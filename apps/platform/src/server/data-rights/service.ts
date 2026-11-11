@@ -1,3 +1,4 @@
+import 'server-only';
 import crypto from 'node:crypto';
 import type { Prisma, PrismaClient } from '@prisma/client';
 import {
@@ -14,7 +15,7 @@ import {
 } from '@orbitox-io/plugin-engine';
 import { queueAccountEmail } from '@/server/accounts/account-email-queue';
 import { HttpError } from '@/server/db/db-errors';
-import { buildAccountLink, newAccountToken } from '@/server/auth/phase6-account-security';
+import { buildAccountLink, newAccountToken } from '@/server/auth/account-security';
 import { platformRepository } from '@/server/db/platform-repository';
 import { prisma as defaultRuntimePrisma } from '@/server/db/prisma';
 import { withTenantTx } from '@/server/db/tenant-db';

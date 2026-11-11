@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { fetchGrantForService } from '@/app/api/_lib/route-auth';
 import { signBridgeRequest, getDefaultBridgeKeys, TENANT_RE } from '@orbitox-io/bridge';
-import { platformRepository } from '@/lib/platform-repository';
+import { platformRepository } from '@/server/db/platform-repository';
 
 // Programmatic link registry permitted strictly in test builds only
 const tenantLinkRegistry = new Map<string, string>();

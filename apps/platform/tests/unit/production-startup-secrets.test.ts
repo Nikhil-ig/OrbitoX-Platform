@@ -225,9 +225,9 @@ describe('Production startup secret validation', () => {
   });
 
   it('returns 503 DATABASE_ROLE_UNSAFE from /api/health when connected role has superuser or bypassrls', async () => {
-    const { createHealthHandler } = await import('@/lib/health-route-handler');
+    const { createHealthHandler } = await import('@/server/http/health-route-handler');
     const { REQUIRED_PLATFORM_MIGRATIONS, assertPlatformDatabaseReady } =
-      await import('@/lib/platform-database-readiness');
+      await import('@/server/db/platform-database-readiness');
     const mockUnsafeClient = {
       async $queryRaw(strings: any) {
         const sql = Array.isArray(strings) ? strings.join(' ') : String(strings?.sql || strings);

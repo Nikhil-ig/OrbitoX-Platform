@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { withApiGuard, PlatformApiState, isDatabaseError, classifyDatabaseError } from '../../_lib/api-guard';
 import { ClientProject, PLAN_TIER_PRESETS } from '@/app/admin/data/mock-data';
-import { platformRepository } from '@/lib/platform-repository';
+import { platformRepository } from '@/server/db/platform-repository';
 
 export const GET = withApiGuard(
   {

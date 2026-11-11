@@ -6,7 +6,7 @@ import * as fs from 'node:fs';
 import net from 'node:net';
 import { PrismaClient } from '@prisma/client';
 import { fileURLToPath } from 'node:url';
-import { hashAccountPassword } from '@/lib/phase6-account-security';
+import { hashAccountPassword } from '@/server/auth/account-security';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);

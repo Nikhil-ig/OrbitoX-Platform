@@ -45,10 +45,10 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile --ignore-scripts
       - name: Build workspace packages
-        run: pnpm exec turbo run build --filter='web^...'
+        run: pnpm exec turbo run build --filter='@orbitox-io/platform^...'
       - name: Build Next.js standalone application
         run: |
-          pnpm --filter web exec next build
+          pnpm --filter @orbitox-io/platform exec next build
           mkdir -p apps/platform/.next/standalone/apps/platform/.next
           cp -r apps/platform/.next/static apps/platform/.next/standalone/apps/platform/.next/
         env:
@@ -68,7 +68,7 @@ jobs:
           HMS_AUDIT_DB_PASSWORD: phase2-auditreader-nightly-${{ github.run_id }}
           OUTBOX_RELAY_DB_PASSWORD: phase2-relay-nightly-${{ github.run_id }}
       - name: Execute 200-Iteration Step 3 Resilience Stress Harness
-        run: pnpm --filter web test:step3-resilience
+        run: pnpm --filter @orbitox-io/platform test:step3-resilience
         env:
           RESILIENCE_ITERS: ${{ github.event.inputs.iterations || '200' }}
           MID_OP_ITERS: ${{ github.event.inputs.iterations || '200' }}

@@ -1,11 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { withHospitalGuard } from '@/app/api/_lib/route-auth';
-import { withTenantTx } from '@/lib/tenant-db';
-import { prisma } from '@/lib/prisma';
-import { mapDbError, errorBody } from '@/lib/db-errors';
-import { getPhiKeyRing } from '@/lib/phi-crypto';
-import { findPatientIdsByPhone, createPatient, generateMrn } from '@/lib/hms-repository';
-import { idempotent } from '@/lib/idempotency';
+import { withTenantTx } from '@/server/db/tenant-db';
+import { prisma } from '@/server/db/prisma';
+import { mapDbError, errorBody } from '@/server/db/db-errors';
+import { getPhiKeyRing } from '@/server/hospital/phi-crypto';
+import { findPatientIdsByPhone, createPatient, generateMrn } from '@/server/hospital/hms-repository';
+import { idempotent } from '@/server/db/idempotency';
 
 const injected503Keys = new Set<string>();
 

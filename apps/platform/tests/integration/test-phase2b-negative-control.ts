@@ -7,10 +7,10 @@ import { describe, it, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import crypto from 'node:crypto';
 import { Pool } from 'pg';
-import { withTenantTx } from '@/lib/tenant-db';
-import { mapDbError } from '@/lib/db-errors';
-import { PhiKeyRing } from '@/lib/phi-crypto';
-import * as hms from '@/lib/hms-repository';
+import { withTenantTx } from '@/server/db/tenant-db';
+import { mapDbError } from '@/server/db/db-errors';
+import { PhiKeyRing } from '@/server/hospital/phi-crypto';
+import * as hms from '@/server/hospital/hms-repository';
 
 const A = 'org/negative-ctrl/project/p1/environment/prod';
 const runtimeUrl = process.env.APP_DATABASE_URL || process.env.HMS_IT_RUNTIME_URL || 'postgresql://orbitox_runtime@127.0.0.1:5432/orbitox_phase2';

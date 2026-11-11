@@ -1,3 +1,4 @@
+import 'server-only';
 /**
  * PHI field encryption (AES-256-GCM) with key rotation and tenant-salted blind indexes.
  *

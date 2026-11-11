@@ -1,10 +1,10 @@
 import crypto from 'node:crypto';
 import { NextRequest, NextResponse } from 'next/server';
-import { withCustomerAuth } from '@/lib/customer-auth';
-import { prisma } from '@/lib/prisma';
-import { canCustomerDashboardAction } from '@/lib/customer-dashboard';
-import { tenantBelongsToOrganization } from '@/lib/billing-tenant';
-import { changePlan } from '@/lib/razorpay-client';
+import { withCustomerAuth } from '@/server/auth/customer-auth';
+import { prisma } from '@/server/db/prisma';
+import { canCustomerDashboardAction } from '@/server/organizations/customer-dashboard';
+import { tenantBelongsToOrganization } from '@/server/billing/billing-tenant';
+import { changePlan } from '@/server/billing/razorpay-client';
 
 type RouteContext = { params: Promise<{ organizationId: string; subscriptionId: string }> };
 

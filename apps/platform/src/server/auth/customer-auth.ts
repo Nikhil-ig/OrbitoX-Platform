@@ -1,3 +1,4 @@
+import 'server-only';
 import crypto from 'node:crypto';
 import { NextRequest, NextResponse } from 'next/server';
 import {
@@ -5,7 +6,7 @@ import {
   CUSTOMER_SESSION_COOKIE,
   getCustomerSession,
   type CustomerSessionContext,
-} from '@/server/accounts/phase6-account-service';
+} from '@/server/accounts/account-service';
 
 export type CustomerHandler<Context = undefined> = (
   request: NextRequest,

@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { withApiGuard } from '@/app/api/v1/_lib/api-guard';
 import { ApiResponse, ApiRequestContext } from '@/app/api/v1/_lib/api-types';
-import { platformRepository } from '@/lib/platform-repository';
+import { platformRepository } from '@/server/db/platform-repository';
 
 export const dynamic = 'force-dynamic';
 

@@ -4,7 +4,7 @@ import {
   createEntitlementGrantToken,
 } from '@orbitox-io/plugin-engine';
 import { getDefaultBridgeKeys, verifyBridgeRequest, MemoryNonceStore } from '@orbitox-io/bridge';
-import { platformRepository } from '@/lib/platform-repository';
+import { platformRepository } from '@/server/db/platform-repository';
 import { grantStatusForInstallation } from '@/app/api/_lib/route-auth';
 
 const bridgeNonceStore = new MemoryNonceStore();

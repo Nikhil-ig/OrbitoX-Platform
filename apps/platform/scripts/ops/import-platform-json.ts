@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { PrismaClient, Prisma } from '@prisma/client';
 import { PlatformKeyEngine } from '@orbitox-io/plugin-engine';
-import { loadPepperRing, candidateVerifiers, type PepperRing } from '@/lib/pepper';
+import { loadPepperRing, candidateVerifiers, type PepperRing } from '@/server/auth/pepper';
 
 export interface ImporterOptions {
   filePath?: string;

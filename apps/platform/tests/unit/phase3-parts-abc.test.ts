@@ -10,7 +10,7 @@ import assert from 'node:assert/strict';
 import * as crypto from 'crypto';
 import { NextRequest } from 'next/server';
 import { PrismaClient } from '@prisma/client';
-import { platformRepository } from '@/lib/platform-repository';
+import { platformRepository } from '@/server/db/platform-repository';
 import {
   SEED_PLANS,
   SEED_PLUGINS,

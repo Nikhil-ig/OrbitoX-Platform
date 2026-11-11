@@ -10,15 +10,15 @@ import {
 import {
   getOperatorSession,
   OPERATOR_SESSION_COOKIE,
-} from './lib/phase6-account-service';
-import { operatorRoleAllows, requiredOperatorRole, requiresRecentReauthentication } from './lib/operator-route-policy';
+} from '@/server/accounts/account-service';
+import { operatorRoleAllows, requiredOperatorRole, requiresRecentReauthentication } from '@/server/organizations/operator-route-policy';
 
 import {
   isStaticAsset,
   isExplicitPublicRoute,
   isSelfGuardedApiRoute,
-} from './lib/route-classification';
-import { applySecurityHeaders } from './lib/security-headers';
+} from '@/server/http/route-classification';
+import { applySecurityHeaders } from '@/server/http/security-headers';
 
 /**
  * Access control for the OrbitoX control plane. Two credentials, two roles:

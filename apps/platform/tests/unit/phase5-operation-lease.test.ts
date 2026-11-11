@@ -10,11 +10,11 @@ process.env.ORBITOX_SYNC_SAGA = 'true';
 import { describe, it, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import crypto from 'node:crypto';
-import { platformRepository } from '@/lib/platform-repository';
-import { operationStore } from '@/lib/tenant-provisioning/operation-store';
-import { provisioningSaga } from '@/lib/tenant-provisioning/provisioning-saga';
-import { PlatformOperationRecord } from '@/lib/tenant-provisioning/types';
-import { prisma } from '@/lib/prisma';
+import { platformRepository } from '@/server/db/platform-repository';
+import { operationStore } from '@/server/provisioning/operation-store';
+import { provisioningSaga } from '@/server/provisioning/provisioning-saga';
+import { PlatformOperationRecord } from '@/server/provisioning/types';
+import { prisma } from '@/server/db/prisma';
 
 describe('Phase 5 Fix 1: Distributed Operation Lease & Crash Recovery Concurrency', () => {
   let testOrg: any;

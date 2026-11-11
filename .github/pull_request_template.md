@@ -20,6 +20,6 @@
 - [ ] **Migration immutability**: `bash scripts/ci/verify-migration-immutability.sh` passes.
 - [ ] **Tests pass**:
   - `pnpm run test`
-  - `pnpm --filter web test`
-  - `pnpm --filter restaurant-os test`
+  - `pnpm --filter @orbitox-io/platform test`
+  - `pnpm --filter @orbitox-io/restaurant-api test`
 

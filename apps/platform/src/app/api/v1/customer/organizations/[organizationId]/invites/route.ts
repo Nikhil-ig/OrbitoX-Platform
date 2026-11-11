@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { resolveClientIp } from '@/app/api/v1/_lib/ip-guard';
-import { withCustomerAuth } from '@/lib/customer-auth';
-import { accountPublicBaseUrl, consumeAuthRateLimit, inviteCustomerMember } from '@/lib/phase6-account-service';
+import { withCustomerAuth } from '@/server/auth/customer-auth';
+import { accountPublicBaseUrl, consumeAuthRateLimit, inviteCustomerMember } from '@/server/accounts/account-service';
 
 type RouteContext = { params: Promise<{ organizationId: string }> };
 

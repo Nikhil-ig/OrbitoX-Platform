@@ -1,9 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { withHospitalGuard } from '@/app/api/_lib/route-auth';
-import { withTenantTx } from '@/lib/tenant-db';
-import { prisma } from '@/lib/prisma';
-import { verifyStaffSession, revokeStaffSession } from '@/lib/hms-auth';
-import { mapDbError, errorBody, HttpError } from '@/lib/db-errors';
+import { withTenantTx } from '@/server/db/tenant-db';
+import { prisma } from '@/server/db/prisma';
+import { verifyStaffSession, revokeStaffSession } from '@/server/auth/hms-auth';
+import { mapDbError, errorBody, HttpError } from '@/server/db/db-errors';
 
 function extractSessionToken(req: NextRequest): string {
   const staffHeader = req.headers.get('x-staff-session') || req.headers.get('x-staff-token');

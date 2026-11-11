@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { restaurantBridgeClient } from '@/lib/restaurant-bridge-client';
+import { restaurantBridgeClient } from '@/server/restaurant-bridge/restaurant-bridge-client';
 
 export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;

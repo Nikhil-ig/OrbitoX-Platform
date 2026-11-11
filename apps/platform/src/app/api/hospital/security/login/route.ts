@@ -1,12 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { withHospitalGuard } from '@/app/api/_lib/route-auth';
-import { withTenantTx } from '@/lib/tenant-db';
-import { prisma } from '@/lib/prisma';
-import { checkPassword, recordFailure, createSession } from '@/lib/hms-auth';
-import { getPhiKeyRing, blindIndex } from '@/lib/phi-crypto';
-import { mapDbError, errorBody, HttpError } from '@/lib/db-errors';
+import { withTenantTx } from '@/server/db/tenant-db';
+import { prisma } from '@/server/db/prisma';
+import { checkPassword, recordFailure, createSession } from '@/server/auth/hms-auth';
+import { getPhiKeyRing, blindIndex } from '@/server/hospital/phi-crypto';
+import { mapDbError, errorBody, HttpError } from '@/server/db/db-errors';
 import { resolveClientIp } from '@/app/api/v1/_lib/ip-guard';
-import { platformRepository } from '@/lib/platform-repository';
+import { platformRepository } from '@/server/db/platform-repository';
 
 export const POST = withHospitalGuard(async (req: NextRequest, _routeContext, authContext) => {
   try {

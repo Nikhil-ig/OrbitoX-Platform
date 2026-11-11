@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { withOperatorAuth } from '@/lib/operator-auth';
+import { withOperatorAuth } from '@/server/auth/operator-auth';
 
 export const GET = withOperatorAuth(async (_request, session) => NextResponse.json({
   success: true,

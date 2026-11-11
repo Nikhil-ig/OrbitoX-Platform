@@ -1,12 +1,12 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import crypto from 'node:crypto';
-import { PhiKeyRing, seal, open, needsReseal, reseal, blindIndex, PhiCryptoError } from '@/lib/phi-crypto';
-import { loadPepperRing, activeVerifier, candidateVerifiers, whichPepper } from '@/lib/pepper';
-import { signBridgeRequest, verifyBridgeRequest, MemoryNonceStore } from '@/lib/bridge-signature';
-import { demoSeedAllowed, assertDemoSeedAllowed, newTableToken, tableTokenMatches } from '@/lib/seed-gate';
-import { canonicalJson } from '@/lib/idempotency';
-import { mapDbError, CONSTRAINT_ERRORS, extractSqlStateAndConstraint } from '@/lib/db-errors';
+import { PhiKeyRing, seal, open, needsReseal, reseal, blindIndex, PhiCryptoError } from '@/server/hospital/phi-crypto';
+import { loadPepperRing, activeVerifier, candidateVerifiers, whichPepper } from '@/server/auth/pepper';
+import { signBridgeRequest, verifyBridgeRequest, MemoryNonceStore } from '@/server/restaurant-bridge/bridge-signature';
+import { demoSeedAllowed, assertDemoSeedAllowed, newTableToken, tableTokenMatches } from '@/server/db/seed-gate';
+import { canonicalJson } from '@/server/db/idempotency';
+import { mapDbError, CONSTRAINT_ERRORS, extractSqlStateAndConstraint } from '@/server/db/db-errors';
 
 const k = () => crypto.randomBytes(32).toString('base64');
 const A = 'org/a/project/p1/environment/prod';

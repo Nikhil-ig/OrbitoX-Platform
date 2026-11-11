@@ -1,14 +1,14 @@
 import { NextResponse } from 'next/server';
-import { withCustomerAuth } from '@/lib/customer-auth';
+import { withCustomerAuth } from '@/server/auth/customer-auth';
 import {
   canCustomerDashboardAction,
   getCustomerOrganizationRole,
   noStoreHeaders,
-} from '@/lib/customer-dashboard';
-import { prisma } from '@/lib/prisma';
-import { operationStore } from '@/lib/tenant-provisioning/operation-store';
-import { provisioningSaga } from '@/lib/tenant-provisioning/provisioning-saga';
-import { tenantBelongsToOrganization } from '@/lib/billing-tenant';
+} from '@/server/organizations/customer-dashboard';
+import { prisma } from '@/server/db/prisma';
+import { operationStore } from '@/server/provisioning/operation-store';
+import { provisioningSaga } from '@/server/provisioning/provisioning-saga';
+import { tenantBelongsToOrganization } from '@/server/billing/billing-tenant';
 
 type RouteContext = { params: Promise<{ organizationId: string; operationId: string }> };
 

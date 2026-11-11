@@ -9,12 +9,12 @@ import { PrismaClient } from '@prisma/client';
 import {
   CUSTOMER_CSRF_COOKIE,
   CUSTOMER_SESSION_COOKIE,
-} from '@/lib/phase6-account-service';
-import { newSessionTokens } from '@/lib/phase6-account-security';
+} from '@/server/accounts/account-service';
+import { newSessionTokens } from '@/server/auth/account-security';
 import {
   canCustomerDashboardAction,
   type CustomerDashboardAction,
-} from '@/lib/customer-dashboard';
+} from '@/server/organizations/customer-dashboard';
 
 const ownerUrl = process.env.TEST_DATABASE_URL || process.env.DATABASE_URL || 'postgresql://apple@127.0.0.1:5432/orbitox_phase2';
 const runtimeUrl = process.env.APP_DATABASE_URL || 'postgresql://orbitox_runtime:test_runtime_pass@127.0.0.1:5432/orbitox_phase2';

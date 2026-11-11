@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { platformRepository } from '@/lib/platform-repository';
-import { operationStore } from '@/lib/tenant-provisioning/operation-store';
-import { provisioningSaga } from '@/lib/tenant-provisioning/provisioning-saga';
-import { PlatformOperationRecord } from '@/lib/tenant-provisioning/types';
+import { platformRepository } from '@/server/db/platform-repository';
+import { operationStore } from '@/server/provisioning/operation-store';
+import { provisioningSaga } from '@/server/provisioning/provisioning-saga';
+import { PlatformOperationRecord } from '@/server/provisioning/types';
 
 function sanitizeOperation(op: PlatformOperationRecord) {
   let sanitizedResult: any = null;

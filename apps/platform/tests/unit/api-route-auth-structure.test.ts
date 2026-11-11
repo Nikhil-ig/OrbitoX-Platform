@@ -9,8 +9,8 @@ import {
     ALLOWED_PUBLIC_FILES,
     PROTECTED_PAGE_PREFIXES,
     SELF_GUARDED_API_PREFIXES,
-} from '@/lib/route-classification';
-import { requiredOperatorRole } from '@/lib/operator-route-policy';
+} from '@/server/http/route-classification';
+import { requiredOperatorRole } from '@/server/organizations/operator-route-policy';
 import { middleware } from '@/middleware';
 import { NextRequest } from 'next/server';
 

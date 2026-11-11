@@ -1,16 +1,16 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { withCustomerAuth } from '@/lib/customer-auth';
+import { withCustomerAuth } from '@/server/auth/customer-auth';
 import {
   canCustomerDashboardAction,
   getCustomerOrganizationRole,
   noStoreHeaders,
-} from '@/lib/customer-dashboard';
-import { mapDbError } from '@/lib/db-errors';
+} from '@/server/organizations/customer-dashboard';
+import { mapDbError } from '@/server/db/db-errors';
 import {
   cancelOrganizationDeletion,
   getOrganizationDeletionStatusForOwner,
   scheduleOrganizationDeletion,
-} from '@/lib/data-rights/service';
+} from '@/server/data-rights/service';
 
 type RouteContext = { params: Promise<{ organizationId: string }> };
 

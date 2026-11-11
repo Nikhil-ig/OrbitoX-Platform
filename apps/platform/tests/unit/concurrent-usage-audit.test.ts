@@ -2,7 +2,7 @@ import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import { PrismaClient } from '@prisma/client';
-import { platformRepository } from '@/lib/platform-repository';
+import { platformRepository } from '@/server/db/platform-repository';
 
 describe('Correction B1.3: Atomic Previous-Value Under Concurrent Billable Load', () => {
   it('captures the exact atomic previous value under concurrent increments', async () => {

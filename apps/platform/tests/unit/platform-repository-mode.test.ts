@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { platformRepository } from '@/lib/platform-repository';
+import { platformRepository } from '@/server/db/platform-repository';
 
 describe('platform repository mode policy', () => {
     it('defaults to Prisma and permits JSON only with explicit non-production NODE_ENV', () => {

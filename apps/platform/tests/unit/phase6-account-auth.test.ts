@@ -2,8 +2,8 @@ import { after, describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import crypto from 'node:crypto';
 import { PrismaClient } from '@prisma/client';
-import { prisma } from '@/lib/prisma';
-import { loginCustomer, loginOperator } from '@/lib/phase6-account-service';
+import { prisma } from '@/server/db/prisma';
+import { loginCustomer, loginOperator } from '@/server/accounts/account-service';
 import {
   generateTotpSecret,
   getTotpStep,
@@ -11,7 +11,7 @@ import {
   hashBackupCode,
   makeBackupCodes,
   sealTotpSecret,
-} from '@/lib/phase6-account-security';
+} from '@/server/auth/account-security';
 
 const ownerUrl = process.env.TEST_DATABASE_URL || process.env.DATABASE_URL || 'postgresql://apple@127.0.0.1:5432/orbitox_phase2';
 const runtimeUrl = process.env.APP_DATABASE_URL || 'postgresql://orbitox_runtime:test_runtime_pass@127.0.0.1:5432/orbitox_phase2';

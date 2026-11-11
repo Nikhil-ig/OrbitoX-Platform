@@ -2,13 +2,13 @@ import { NextRequest, NextResponse } from 'next/server';
 import {
   validCustomerCsrf,
   setCustomerSessionCookies,
-} from '@/lib/customer-auth';
+} from '@/server/auth/customer-auth';
 import {
   acceptCustomerInvite,
   createCustomerSessionForUser,
   CUSTOMER_SESSION_COOKIE,
   getCustomerSession,
-} from '@/lib/phase6-account-service';
+} from '@/server/accounts/account-service';
 import { resolveClientIp } from '@/app/api/v1/_lib/ip-guard';
 
 export async function POST(request: NextRequest) {

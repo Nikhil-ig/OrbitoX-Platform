@@ -1,3 +1,4 @@
+import 'server-only';
 import crypto from 'node:crypto';
 
 export type InstallationState = 'ACTIVE' | 'READ_ONLY' | 'SUSPENDED';

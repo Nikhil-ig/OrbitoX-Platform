@@ -1,4 +1,5 @@
-import { prisma } from '@/lib/prisma';
+import 'server-only';
+import { prisma } from '@/server/db/prisma';
 import { PlatformOperationRecord, OperationStep } from '@/server/provisioning/types';
 
 // In-memory fallback for JSON / mock test adapter modes

@@ -17,7 +17,7 @@ import {
     clearRestaurantTenantLinks,
     resolveLinkedRestaurantTenant,
 } from '@/app/api/restaurant/_lib/restaurant-routing';
-import { platformRepository } from '@/lib/platform-repository';
+import { platformRepository } from '@/server/db/platform-repository';
 
 // Ensure test environment
 Reflect.set(process.env, 'NODE_ENV', 'test');

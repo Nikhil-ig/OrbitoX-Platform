@@ -1,3 +1,4 @@
+import 'server-only';
 /**
  * Maps PostgreSQL and Prisma errors to stable API errors by SQLSTATE + constraint NAME (never by message text).
  * Unknown errors become 500 with no database detail leaked to the client.

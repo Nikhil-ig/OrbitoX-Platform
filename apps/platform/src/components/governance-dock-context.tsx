@@ -6,7 +6,7 @@ import {
   BusinessProvider,
   INITIAL_SERVICES,
   BUSINESS_PROVIDERS,
-} from '@/server/organizations/platform-catalogue-presets';
+} from './platform-catalogue-presets';
 
 export interface GovernanceDockContextType {
   services: ServiceItem[];

@@ -1,3 +1,4 @@
+import 'server-only';
 /**
  * Tenant-scoped transactions on node-postgres and Prisma.
  *

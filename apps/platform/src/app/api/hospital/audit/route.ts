@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { withHospitalGuard } from '@/app/api/_lib/route-auth';
-import { withTenantTx } from '@/lib/tenant-db';
-import { mapDbError, errorBody } from '@/lib/db-errors';
+import { withTenantTx } from '@/server/db/tenant-db';
+import { mapDbError, errorBody } from '@/server/db/db-errors';
 import { PrismaClient } from '@prisma/client';
 
 const globalForAudit = globalThis as typeof globalThis & { hmsAuditPrisma?: PrismaClient };

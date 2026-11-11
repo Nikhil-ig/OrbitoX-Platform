@@ -5,7 +5,7 @@ import {
   ProvisioningSaga,
   ProvisioningValidationError,
   validateProvisioningPlugins,
-} from '@/lib/tenant-provisioning/provisioning-saga';
+} from '@/server/provisioning/provisioning-saga';
 
 describe('Tenant provisioning catalogue plan validation', () => {
   const listPlans = async (pluginId: string) =>

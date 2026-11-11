@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
-import { withCustomerAuth } from '@/lib/customer-auth';
-import { getCustomerOrganizationRole, noStoreHeaders } from '@/lib/customer-dashboard';
-import { prisma } from '@/lib/prisma';
+import { withCustomerAuth } from '@/server/auth/customer-auth';
+import { getCustomerOrganizationRole, noStoreHeaders } from '@/server/organizations/customer-dashboard';
+import { prisma } from '@/server/db/prisma';
 
 type RouteContext = { params: Promise<{ organizationId: string }> };
 

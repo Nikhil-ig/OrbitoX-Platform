@@ -20,9 +20,9 @@ import { fork, ChildProcess } from 'node:child_process';
 import crypto from 'node:crypto';
 import path from 'node:path';
 import { Pool } from 'pg';
-import { withTenantTx } from '@/lib/tenant-db';
-import { PhiKeyRing, seal, blindIndex } from '@/lib/phi-crypto';
-import { recordPayment } from '@/lib/hms-repository';
+import { withTenantTx } from '@/server/db/tenant-db';
+import { PhiKeyRing, seal, blindIndex } from '@/server/hospital/phi-crypto';
+import { recordPayment } from '@/server/hospital/hms-repository';
 
 export type KillPoint = 'before-statement' | 'mid-tx' | 'post-commit';
 

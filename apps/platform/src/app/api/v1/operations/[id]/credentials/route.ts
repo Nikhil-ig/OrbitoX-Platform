@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { platformRepository } from '@/lib/platform-repository';
-import { operationStore, oneTimeSecretStore } from '@/lib/tenant-provisioning/operation-store';
+import { platformRepository } from '@/server/db/platform-repository';
+import { operationStore, oneTimeSecretStore } from '@/server/provisioning/operation-store';
 
 /**
  * Ephemeral Credential Retrieval Endpoint (Self-Guarded).

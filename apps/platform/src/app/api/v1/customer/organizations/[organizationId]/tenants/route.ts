@@ -1,16 +1,16 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { withCustomerAuth } from '@/lib/customer-auth';
+import { withCustomerAuth } from '@/server/auth/customer-auth';
 import {
   canCustomerDashboardAction,
   getCustomerOrganizationRole,
   noStoreHeaders,
-} from '@/lib/customer-dashboard';
+} from '@/server/organizations/customer-dashboard';
 import {
   ProvisioningValidationError,
   provisioningSaga,
-} from '@/lib/tenant-provisioning/provisioning-saga';
-import type { TenantProvisionPluginInput } from '@/lib/tenant-provisioning/types';
-import { prisma } from '@/lib/prisma';
+} from '@/server/provisioning/provisioning-saga';
+import type { TenantProvisionPluginInput } from '@/server/provisioning/types';
+import { prisma } from '@/server/db/prisma';
 
 type RouteContext = { params: Promise<{ organizationId: string }> };
 

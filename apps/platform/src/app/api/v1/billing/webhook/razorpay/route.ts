@@ -1,14 +1,14 @@
 import crypto from 'node:crypto';
 import { Prisma } from '@prisma/client';
 import { NextRequest, NextResponse } from 'next/server';
-import { prisma } from '@/lib/prisma';
+import { prisma } from '@/server/db/prisma';
 import {
   decideBillingEvent,
   verifyWebhookSignature,
   type BillingSubscriptionSnapshot,
   type RazorpayWebhookEvent,
-} from '@/lib/phase6-razorpay-billing';
-import { queueAccountEmail } from '@/lib/account-email-queue';
+} from '@/server/billing/razorpay-billing';
+import { queueAccountEmail } from '@/server/accounts/account-email-queue';
 
 type LockedSubscription = {
   razorpaySubscriptionId: string;

@@ -1,3 +1,4 @@
+import 'server-only';
 import { Prisma, PrismaClient } from '@prisma/client';
 
 export const REQUIRED_PLATFORM_MIGRATIONS = [

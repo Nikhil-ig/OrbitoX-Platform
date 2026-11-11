@@ -3,9 +3,9 @@ import { execFileSync } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import { PrismaClient } from '@prisma/client';
 import { NextRequest, NextResponse } from 'next/server';
-import { createHealthHandler } from '@/lib/health-route-handler';
-import { assertPlatformDatabaseReady } from '@/lib/platform-database-readiness';
-import { createPrismaPlatformRepository } from '@/lib/platform-repository';
+import { createHealthHandler } from '@/server/http/health-route-handler';
+import { assertPlatformDatabaseReady } from '@/server/db/platform-database-readiness';
+import { createPrismaPlatformRepository } from '@/server/db/platform-repository';
 
 const databaseUrl = process.env.TEST_DATABASE_URL || process.env.DATABASE_URL;
 const runtimeUrl = process.env.APP_DATABASE_URL;

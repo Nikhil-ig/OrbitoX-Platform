@@ -2,7 +2,7 @@ import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import { NextRequest } from 'next/server';
 import { middleware } from '@/middleware';
-import { SECURITY_HEADERS, applySecurityHeaders } from '@/lib/security-headers';
+import { SECURITY_HEADERS, applySecurityHeaders } from '@/server/http/security-headers';
 
 describe('Phase 6F Edge Security Headers', () => {
   it('applies all mandatory security headers via applySecurityHeaders', () => {

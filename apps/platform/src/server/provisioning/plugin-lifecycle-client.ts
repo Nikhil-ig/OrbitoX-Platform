@@ -1,3 +1,4 @@
+import 'server-only';
 import { signBridgeRequest, getDefaultBridgeKeys } from '@orbitox-io/bridge';
 import { NextRequest } from 'next/server';
 

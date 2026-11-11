@@ -1,6 +1,7 @@
 {
-  "name": "restaurant-os",
+  "name": "@orbitox-io/restaurant-api",
   "version": "1.0.0",
+  "private": true,
   "description": "OrbitoX RestaurantOS Independent Runtime Product",
   "main": "src/server.ts",
   "scripts": {

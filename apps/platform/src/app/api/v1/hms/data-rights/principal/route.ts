@@ -1,9 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 import type { ErasureMode, PrincipalRef } from '@orbitox-io/plugin-engine';
-import { errorBody, HttpError, mapDbError } from '@/lib/db-errors';
-import { executePrincipalDataRightsRequest } from '@/lib/data-rights/service';
-import { prisma } from '@/lib/prisma';
-import { withTenantTx } from '@/lib/tenant-db';
+import { errorBody, HttpError, mapDbError } from '@/server/db/db-errors';
+import { executePrincipalDataRightsRequest } from '@/server/data-rights/service';
+import { prisma } from '@/server/db/prisma';
+import { withTenantTx } from '@/server/db/tenant-db';
 import { withApiGuard } from '../../../_lib/api-guard';
 
 export const POST = withApiGuard(

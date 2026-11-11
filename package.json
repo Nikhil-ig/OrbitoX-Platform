@@ -4,10 +4,10 @@
   "private": true,
   "description": "OrbitoX Platform OS \u2014 A plugin-driven SaaS operating system",
   "scripts": {
-    "bootstrap": "pnpm install && turbo run build --filter=web^...",
+    "bootstrap": "pnpm install && turbo run build --filter=@orbitox-io/platform^...",
     "init:env": "node scripts/ci/init-env.mjs",
     "check:env": "node scripts/ci/check-production-env.mjs",
-    "dev:web": "pnpm --filter web dev",
+    "dev:web": "pnpm --filter @orbitox-io/platform dev",
     "smoke": "node scripts/ci/smoke-control-plane.mjs",
     "build": "turbo run build",
     "dev": "turbo run dev",

@@ -21,10 +21,10 @@ import {
   hasCapability,
   PLAN_DEFAULT_QUOTAS,
 } from '@orbitox-io/plugin-engine';
-import { platformRepository } from '@/lib/platform-repository';
+import { platformRepository } from '@/server/db/platform-repository';
 import type { PlatformProject } from '@orbitox-io/types';
-import { withOperatorActor } from '@/lib/operator-actor-context';
-import { prisma } from '@/lib/prisma';
+import { withOperatorActor } from '@/server/organizations/operator-actor-context';
+import { prisma } from '@/server/db/prisma';
 
 export { PlatformRepository };
 

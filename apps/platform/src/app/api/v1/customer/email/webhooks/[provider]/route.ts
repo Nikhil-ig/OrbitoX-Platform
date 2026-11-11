@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { prisma } from '@/lib/prisma';
-import { verifyResendWebhookSignature } from '@/lib/account-email';
+import { prisma } from '@/server/db/prisma';
+import { verifyResendWebhookSignature } from '@/server/accounts/account-email';
 
 type RouteContext = { params: Promise<{ provider: string }> };
 

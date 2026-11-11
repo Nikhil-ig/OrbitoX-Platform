@@ -3,8 +3,8 @@ import assert from 'node:assert/strict';
 import crypto from 'node:crypto';
 import { NextRequest, NextResponse } from 'next/server';
 import { withApiGuard } from '@/app/api/v1/_lib/api-guard';
-import { platformRepository } from '@/lib/platform-repository';
-import { prisma } from '@/lib/prisma';
+import { platformRepository } from '@/server/db/platform-repository';
+import { prisma } from '@/server/db/prisma';
 import { createEntitlementGrantToken, PlatformRepository } from '@orbitox-io/plugin-engine';
 
 describe('withApiGuard Billing State Enforcement & Query Budget', () => {

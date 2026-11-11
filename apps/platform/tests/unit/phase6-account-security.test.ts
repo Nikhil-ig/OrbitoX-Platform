@@ -20,15 +20,15 @@ import {
   unsealTotpSecret,
   verifyAccountPassword,
   verifyTotp,
-} from '@/lib/phase6-account-security';
+} from '@/server/auth/account-security';
 import { adminTokenAllowsRequest } from '@/app/api/v1/_lib/auth-pipeline';
-import { currentOperatorActor, withOperatorActor } from '@/lib/operator-actor-context';
-import { platformRepository } from '@/lib/platform-repository';
+import { currentOperatorActor, withOperatorActor } from '@/server/organizations/operator-actor-context';
+import { platformRepository } from '@/server/db/platform-repository';
 import {
   operatorRoleAllows,
   requiredOperatorRole,
   requiresRecentReauthentication,
-} from '@/lib/operator-route-policy';
+} from '@/server/organizations/operator-route-policy';
 
 describe('Phase 6 account security primitives', () => {
   it('creates 256-bit purpose-bound tokens with the specified lifetimes and hash-only identifiers', () => {

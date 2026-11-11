@@ -6,11 +6,11 @@ import { describe, it, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import crypto from 'node:crypto';
 import { Pool } from 'pg';
-import { withTenantTx, TenantScopeError } from '@/lib/tenant-db';
-import { mapDbError } from '@/lib/db-errors';
-import { idempotent } from '@/lib/idempotency';
-import { PhiKeyRing } from '@/lib/phi-crypto';
-import * as hms from '@/lib/hms-repository';
+import { withTenantTx, TenantScopeError } from '@/server/db/tenant-db';
+import { mapDbError } from '@/server/db/db-errors';
+import { idempotent } from '@/server/db/idempotency';
+import { PhiKeyRing } from '@/server/hospital/phi-crypto';
+import * as hms from '@/server/hospital/hms-repository';
 
 const A = 'org/a/project/p1/environment/prod';
 const B = 'org/b/project/p1/environment/prod';

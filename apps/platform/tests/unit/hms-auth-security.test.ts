@@ -30,12 +30,12 @@ import {
   unlockStaffCredential,
   DUMMY_SALT,
   DUMMY_HASH,
-} from '@/lib/hms-auth';
-import { withTenantTx } from '@/lib/tenant-db';
+} from '@/server/auth/hms-auth';
+import { withTenantTx } from '@/server/db/tenant-db';
 import { POST as loginRoute } from '@/app/api/hospital/security/login/route';
 import { POST as unlockStaffRoute } from '@/app/api/hospital/security/staff/[id]/unlock/route';
-import { PhiKeyRing, seal } from '@/lib/phi-crypto';
-import { platformRepository } from '@/lib/platform-repository';
+import { PhiKeyRing, seal } from '@/server/hospital/phi-crypto';
+import { platformRepository } from '@/server/db/platform-repository';
 
 function median(values: number[]): number {
   if (values.length === 0) return 0;

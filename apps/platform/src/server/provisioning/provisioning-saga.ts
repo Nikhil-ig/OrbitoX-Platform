@@ -1,5 +1,6 @@
+import 'server-only';
 import { randomUUID } from 'node:crypto';
-import { platformRepository } from '@/lib/platform-repository';
+import { platformRepository } from '@/server/db/platform-repository';
 import { createEntitlementGrantToken, canonicalizePluginId } from '@orbitox-io/plugin-engine';
 import {
   TenantProvisionRequest,

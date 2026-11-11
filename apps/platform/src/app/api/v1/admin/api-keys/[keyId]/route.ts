@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { withApiGuard, PlatformApiState } from '../../../_lib/api-guard';
 import { ApiResponse } from '../../../_lib/api-types';
-import { platformRepository } from '@/lib/platform-repository';
+import { platformRepository } from '@/server/db/platform-repository';
 
 export async function GET(
   req: NextRequest,

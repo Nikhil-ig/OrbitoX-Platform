@@ -1,12 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { withCustomerAuth } from '@/lib/customer-auth';
+import { withCustomerAuth } from '@/server/auth/customer-auth';
 import {
   canCustomerDashboardAction,
   getCustomerOrganizationRole,
   noStoreHeaders,
-} from '@/lib/customer-dashboard';
-import { platformRepository } from '@/lib/platform-repository';
-import { prisma } from '@/lib/prisma';
+} from '@/server/organizations/customer-dashboard';
+import { platformRepository } from '@/server/db/platform-repository';
+import { prisma } from '@/server/db/prisma';
 
 type RouteContext = { params: Promise<{ organizationId: string; keyId: string }> };
 

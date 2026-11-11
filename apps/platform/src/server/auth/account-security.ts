@@ -1,3 +1,4 @@
+import 'server-only';
 import crypto from 'node:crypto';
 import localBreachedPasswordHashes from '@/server/config/data/breached-password-hashes.json';
 

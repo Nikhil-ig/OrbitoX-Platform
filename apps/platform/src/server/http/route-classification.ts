@@ -1,3 +1,4 @@
+import 'server-only';
 /**
  * OrbitoX Control Plane Route Classification & Security Boundaries.
  *

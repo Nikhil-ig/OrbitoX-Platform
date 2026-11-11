@@ -1,6 +1,6 @@
 import { PrismaClient } from '@prisma/client';
-import { addOperator } from '@/lib/phase6-account-service';
-import { generateTotpSecret, makeBackupCodes } from '@/lib/phase6-account-security';
+import { addOperator } from '@/server/accounts/account-service';
+import { generateTotpSecret, makeBackupCodes } from '@/server/auth/account-security';
 import type { PlatformOperatorRole } from '@prisma/client';
 
 const roles: PlatformOperatorRole[] = ['PLATFORM_OWNER', 'OPERATOR', 'SUPPORT_READONLY', 'BILLING'];

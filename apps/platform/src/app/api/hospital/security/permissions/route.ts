@@ -1,9 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { withHospitalGuard } from '@/app/api/_lib/route-auth';
-import { withTenantTx } from '@/lib/tenant-db';
-import { prisma } from '@/lib/prisma';
-import { DEFAULT_SYSTEM_ROLES } from '@/lib/hms-auth';
-import { mapDbError, errorBody } from '@/lib/db-errors';
+import { withTenantTx } from '@/server/db/tenant-db';
+import { prisma } from '@/server/db/prisma';
+import { DEFAULT_SYSTEM_ROLES } from '@/server/auth/hms-auth';
+import { mapDbError, errorBody } from '@/server/db/db-errors';
 
 const ALL_SYSTEM_PERMISSIONS = [
   { key: 'patients:read', description: 'View patient records and search MRN' },

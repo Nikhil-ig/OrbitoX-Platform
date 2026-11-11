@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { resetCustomerPassword } from '@/lib/phase6-account-service';
+import { resetCustomerPassword } from '@/server/accounts/account-service';
 
 export async function POST(request: NextRequest) {
   const body = await request.json().catch(() => ({}));

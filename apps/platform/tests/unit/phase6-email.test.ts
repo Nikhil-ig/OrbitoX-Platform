@@ -7,8 +7,8 @@ import {
   createEmailProvider,
   renderAccountEmail,
   verifyResendWebhookSignature,
-} from '@/lib/account-email';
-import { buildAccountLink } from '@/lib/phase6-account-security';
+} from '@/server/accounts/account-email';
+import { buildAccountLink } from '@/server/auth/account-security';
 
 describe('Phase 6 transactional email', () => {
   it('renders every template without including tenant patient names or arbitrary payload fields', () => {

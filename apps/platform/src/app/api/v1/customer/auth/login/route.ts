@@ -1,11 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { resolveClientIp } from '@/app/api/v1/_lib/ip-guard';
-import { setCustomerSessionCookies } from '@/lib/customer-auth';
+import { setCustomerSessionCookies } from '@/server/auth/customer-auth';
 import {
   consumeAuthRateLimit,
   loginCustomer,
-} from '@/lib/phase6-account-service';
-import { assertValidEmail } from '@/lib/phase6-account-security';
+} from '@/server/accounts/account-service';
+import { assertValidEmail } from '@/server/auth/account-security';
 
 export async function POST(request: NextRequest) {
   const body = await request.json().catch(() => ({}));

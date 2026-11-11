@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import crypto from 'node:crypto';
 import { describe, it } from 'node:test';
 import { fetchGrantForService, grantStatusForInstallation } from '@/app/api/_lib/route-auth';
-import { platformRepository } from '@/lib/platform-repository';
+import { platformRepository } from '@/server/db/platform-repository';
 
 describe('Phase 6 entitlement grant construction', () => {
   it('maps provisioning and unknown statuses to non-active grants', () => {

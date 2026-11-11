@@ -1,3 +1,4 @@
+import 'server-only';
 import crypto from 'node:crypto';
 
 export const DELETION_CERTIFICATE_PURPOSE = 'orbitox.deletion_certificate.v1' as const;

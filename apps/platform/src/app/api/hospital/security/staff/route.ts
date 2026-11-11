@@ -1,9 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { withHospitalGuard } from '@/app/api/_lib/route-auth';
-import { withTenantTx } from '@/lib/tenant-db';
-import { prisma } from '@/lib/prisma';
-import { mapDbError, errorBody, HttpError } from '@/lib/db-errors';
-import { getPhiKeyRing, seal, blindIndex } from '@/lib/phi-crypto';
+import { withTenantTx } from '@/server/db/tenant-db';
+import { prisma } from '@/server/db/prisma';
+import { mapDbError, errorBody, HttpError } from '@/server/db/db-errors';
+import { getPhiKeyRing, seal, blindIndex } from '@/server/hospital/phi-crypto';
 
 export const GET = withHospitalGuard(async (_req: NextRequest, _routeContext, authContext) => {
   try {

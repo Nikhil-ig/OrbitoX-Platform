@@ -1,3 +1,4 @@
+import 'server-only';
 import crypto from 'node:crypto';
 import { NextRequest, NextResponse } from 'next/server';
 import {
@@ -5,7 +6,7 @@ import {
   OPERATOR_CSRF_COOKIE,
   OPERATOR_SESSION_COOKIE,
   type OperatorSessionContext,
-} from '@/server/accounts/phase6-account-service';
+} from '@/server/accounts/account-service';
 import { operatorRoleAllows, type RequiredOperatorRole, requiresRecentReauthentication } from '@/server/organizations/operator-route-policy';
 
 type OperatorHandler<Context = undefined> = (

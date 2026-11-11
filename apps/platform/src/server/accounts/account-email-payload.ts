@@ -1,3 +1,4 @@
+import 'server-only';
 import crypto from 'node:crypto';
 
 /**
@@ -5,7 +6,7 @@ import crypto from 'node:crypto';
  * OrbitoX Account Email Payload Encryption & Decryption
  * ─────────────────────────────────────────────────────────────
  * Dedicated, isolated helper for AES-256-GCM encrypted payload handling.
- * Kept separate from phase6-account-security.ts so that the outbox
+ * Kept separate from account-security.ts so that the outbox
  * email worker (worker_email) does not pull in MFA or breached password
  * dependencies into its runtime closure.
  * ─────────────────────────────────────────────────────────────

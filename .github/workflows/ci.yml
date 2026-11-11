@@ -16,6 +16,9 @@ concurrency:
 permissions:
   contents: read
 
+env:
+  NODE_OPTIONS: "--conditions=react-server"
+
 jobs:
   build:
     name: Build, test & smoke
@@ -94,7 +97,7 @@ jobs:
 
       - name: Bootstrap CI owner through operator:bootstrap
         run: |
-          pnpm --filter web operator:bootstrap > "$RUNNER_TEMP/operator-bootstrap.stdout" 2> "$RUNNER_TEMP/operator-bootstrap.stderr" || {
+          pnpm --filter @orbitox-io/platform operator:bootstrap > "$RUNNER_TEMP/operator-bootstrap.stdout" 2> "$RUNNER_TEMP/operator-bootstrap.stderr" || {
             cat "$RUNNER_TEMP/operator-bootstrap.stderr"
             exit 1
           }
@@ -108,7 +111,7 @@ jobs:
           echo "ORBITOX_OPERATOR_TEST_TOTP_SECRET=$secret" >> "$GITHUB_ENV"
 
       - name: Build workspace packages
-        run: pnpm exec turbo run build --filter='web^...'
+        run: pnpm exec turbo run build --filter='@orbitox-io/platform^...'
 
       - name: Verify Phase 6 identity privileges and MFA protections
         run: |
@@ -143,7 +146,7 @@ jobs:
           pnpm --filter @orbitox-io/external-project-engine test
 
       - name: Build control plane
-        run: pnpm --filter web exec next build
+        run: pnpm --filter @orbitox-io/platform exec next build
         env:
           NEXT_TELEMETRY_DISABLED: "1"
           DATABASE_URL: postgresql://orbitox_runtime:phase2-smoke-${{ github.run_id }}-${{ github.run_attempt }}@127.0.0.1:5432/orbitox_smoke
@@ -191,7 +194,7 @@ jobs:
           OUTBOX_RELAY_DATABASE_URL: postgresql://orbitox_outbox_relay:phase2-relay-smoke-${{ github.run_id }}-${{ github.run_attempt }}@127.0.0.1:5432/orbitox_smoke
 
       - name: Sweep every API route without a customer or API session
-        run: pnpm --filter web test:api-no-token-sweep
+        run: pnpm --filter @orbitox-io/platform test:api-no-token-sweep
 
   pack-and-verify:
     name: Package Tarball & External Install Smoke
@@ -367,7 +370,7 @@ jobs:
       - name: Verify zero schema drift (migrate diff)
         working-directory: services/restaurant-api
         run: |
-          pnpm exec prisma migrate diff --exit-code --from-schema-datasource prisma/schema.prisma --to-schema-datamodel apps/platform/prisma/schema.prisma
+          pnpm exec prisma migrate diff --exit-code --from-schema-datasource prisma/schema.prisma --to-schema-datamodel prisma/schema.prisma
         env:
           DATABASE_URL: postgresql://postgres:postgrespassword@127.0.0.1:5432/restaurant_os
 
@@ -415,7 +418,7 @@ jobs:
           APP_DATABASE_URL: postgresql://restaurantos_app:test_app_pass_123@127.0.0.1:5432/restaurant_os
 
       - name: "Suite 5: Platform <-> RestaurantOS Lifecycle Bridge E2E (Cross-Process)"
-        run: pnpm --filter web exec tsx --test test/restaurant-lifecycle-bridge-e2e.test.ts
+        run: pnpm --filter @orbitox-io/platform exec tsx --test tests/unit/restaurant-lifecycle-bridge-e2e.test.ts
         env:
           NODE_ENV: test
           DATABASE_URL: postgresql://postgres:postgrespassword@127.0.0.1:5432/restaurant_os
@@ -452,7 +455,7 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile --ignore-scripts
       - name: Build workspace packages
-        run: pnpm exec turbo run build --filter='web^...'
+        run: pnpm exec turbo run build --filter='@orbitox-io/platform^...'
       - name: Validate Prisma schema and generate client
         run: |
           pnpm exec prisma validate --schema apps/platform/prisma/schema.prisma
@@ -479,7 +482,7 @@ jobs:
           HMS_AUDIT_DB_PASSWORD: phase2-auditreader-${{ github.run_id }}-${{ github.run_attempt }}
           OUTBOX_RELAY_DB_PASSWORD: phase2-relay-${{ github.run_id }}-${{ github.run_attempt }}
       - name: Verify RLS, audit immutability, and readiness
-        run: pnpm --filter web test:integration
+        run: pnpm --filter @orbitox-io/platform test:integration
         env:
           DATABASE_URL: postgresql://postgres:postgrespassword@127.0.0.1:5432/orbitox_phase2
           TEST_DATABASE_URL: postgresql://postgres:postgrespassword@127.0.0.1:5432/orbitox_phase2
@@ -488,7 +491,7 @@ jobs:
           HMS_AUDIT_DATABASE_URL: postgresql://hms_audit_reader:phase2-auditreader-${{ github.run_id }}-${{ github.run_attempt }}@127.0.0.1:5432/orbitox_phase2
           OUTBOX_RELAY_DATABASE_URL: postgresql://orbitox_outbox_relay:phase2-relay-${{ github.run_id }}-${{ github.run_attempt }}@127.0.0.1:5432/orbitox_phase2
       - name: Verify async Prisma repository and authorization query budget
-        run: pnpm --filter web test:repository
+        run: pnpm --filter @orbitox-io/platform test:repository
         env:
           DATABASE_URL: postgresql://postgres:postgrespassword@127.0.0.1:5432/orbitox_phase2
           TEST_DATABASE_URL: postgresql://postgres:postgrespassword@127.0.0.1:5432/orbitox_phase2
@@ -502,7 +505,7 @@ jobs:
           echo "ORBITOX_ADMIN_TOKEN=$(openssl rand -hex 32)" >> "$GITHUB_ENV"
           echo "ORBITOX_SERVER_PEPPER=$(openssl rand -hex 32)" >> "$GITHUB_ENV"
       - name: Run full web suite against explicit JSON test adapter
-        run: pnpm --filter web test
+        run: pnpm --filter @orbitox-io/platform test
         env:
           NODE_ENV: test
           DATABASE_URL: postgresql://postgres:postgrespassword@127.0.0.1:5432/orbitox_phase2
@@ -513,7 +516,7 @@ jobs:
           MAINTENANCE_DATABASE_URL: postgresql://orbitox_maintenance:phase2-maint-${{ github.run_id }}-${{ github.run_attempt }}@127.0.0.1:5432/orbitox_phase2
           OUTBOX_RELAY_DATABASE_URL: postgresql://orbitox_outbox_relay:phase2-relay-${{ github.run_id }}-${{ github.run_attempt }}@127.0.0.1:5432/orbitox_phase2
       - name: Run full web suite against PostgreSQL runtime role
-        run: pnpm --filter web test:postgres
+        run: pnpm --filter @orbitox-io/platform test:postgres
         env:
           NODE_ENV: test
           ORBITOX_PLATFORM_REPOSITORY: prisma
@@ -525,20 +528,20 @@ jobs:
           MAINTENANCE_DATABASE_URL: postgresql://orbitox_maintenance:phase2-maint-${{ github.run_id }}-${{ github.run_attempt }}@127.0.0.1:5432/orbitox_phase2
           OUTBOX_RELAY_DATABASE_URL: postgresql://orbitox_outbox_relay:phase2-relay-${{ github.run_id }}-${{ github.run_attempt }}@127.0.0.1:5432/orbitox_phase2
       - name: Run 62-check adversarial SQL suite against real HospitalOS migration
-        run: bash scripts/test-hms-adversarial-sql.sh orbitox_phase2 5432
+        run: bash scripts/ci/test-hms-adversarial-sql.sh orbitox_phase2 5432
         env:
           PGPASSWORD: postgrespassword
           APP_DB_PASSWORD: phase2-ci-${{ github.run_id }}-${{ github.run_attempt }}
           AUDIT_READER_DB_PASSWORD: phase2-auditreader-${{ github.run_id }}-${{ github.run_attempt }}
       - name: Run Phase 2b Negative Control Suite (Invariants failure proof)
-        run: pnpm --filter web test:negative-control
+        run: pnpm --filter @orbitox-io/platform test:negative-control
         env:
           DATABASE_URL: postgresql://postgres:postgrespassword@127.0.0.1:5432/orbitox_phase2
           APP_DATABASE_URL: postgresql://orbitox_runtime:phase2-ci-${{ github.run_id }}-${{ github.run_attempt }}@127.0.0.1:5432/orbitox_phase2
           HMS_AUDIT_DATABASE_URL: postgresql://hms_audit_reader:phase2-auditreader-${{ github.run_id }}-${{ github.run_attempt }}@127.0.0.1:5432/orbitox_phase2
           OUTBOX_RELAY_DATABASE_URL: postgresql://orbitox_outbox_relay:phase2-relay-${{ github.run_id }}-${{ github.run_attempt }}@127.0.0.1:5432/orbitox_phase2
       - name: Run Phase 2b-3 HMS Crash Durability Harness (SIGKILL Mid-Op)
-        run: pnpm --filter web test:hms-crash-durability
+        run: pnpm --filter @orbitox-io/platform test:hms-crash-durability
         env:
           DATABASE_URL: postgresql://postgres:postgrespassword@127.0.0.1:5432/orbitox_phase2
           APP_DATABASE_URL: postgresql://orbitox_runtime:phase2-ci-${{ github.run_id }}-${{ github.run_attempt }}@127.0.0.1:5432/orbitox_phase2
@@ -552,7 +555,7 @@ jobs:
           APP_DATABASE_URL: postgresql://orbitox_runtime:phase2-ci-${{ github.run_id }}-${{ github.run_attempt }}@127.0.0.1:5432/orbitox_phase2
           PLATFORM_AUDIT_DATABASE_URL: postgresql://orbitox_platform_admin_audit:phase2-audit-${{ github.run_id }}-${{ github.run_attempt }}@127.0.0.1:5432/orbitox_phase2
           OUTBOX_RELAY_DATABASE_URL: postgresql://orbitox_outbox_relay:phase2-relay-${{ github.run_id }}-${{ github.run_attempt }}@127.0.0.1:5432/orbitox_phase2
-        run: pnpm --filter web test:database-outage
+        run: pnpm --filter @orbitox-io/platform test:database-outage
 
   platform-phase2-step3:
     name: Phase 2 Step 3 Resilience & Transaction Safety
@@ -585,7 +588,7 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile --ignore-scripts
       - name: Build workspace packages
-        run: pnpm exec turbo run build --filter='web^...'
+        run: pnpm exec turbo run build --filter='@orbitox-io/platform^...'
       - name: Apply all Prisma migrations and configure roles
         run: |
           pnpm exec prisma generate --schema apps/platform/prisma/schema.prisma
@@ -613,7 +616,7 @@ jobs:
           echo "ORBITOX_BREACHED_PASSWORD_API=off" >> "$GITHUB_ENV"
       - name: Bootstrap CI owner through operator:bootstrap
         run: |
-          pnpm --filter web operator:bootstrap > "$RUNNER_TEMP/operator-bootstrap.stdout" 2> "$RUNNER_TEMP/operator-bootstrap.stderr" || {
+          pnpm --filter @orbitox-io/platform operator:bootstrap > "$RUNNER_TEMP/operator-bootstrap.stdout" 2> "$RUNNER_TEMP/operator-bootstrap.stderr" || {
             cat "$RUNNER_TEMP/operator-bootstrap.stderr"
             exit 1
           }
@@ -621,7 +624,7 @@ jobs:
           MAINTENANCE_DATABASE_URL: postgresql://orbitox_maintenance:phase2-maint-${{ github.run_id }}-${{ github.run_attempt }}@127.0.0.1:5432/orbitox_phase2
       - name: Build Next.js standalone application
         run: |
-          ORBITOX_SERVER_PEPPER="$(openssl rand -hex 32)" pnpm --filter web exec next build
+          ORBITOX_SERVER_PEPPER="$(openssl rand -hex 32)" pnpm --filter @orbitox-io/platform exec next build
           mkdir -p apps/platform/.next/standalone/apps/platform/.next
           cp -r apps/platform/.next/static apps/platform/.next/standalone/apps/platform/.next/
         env:
@@ -632,9 +635,9 @@ jobs:
           HMS_AUDIT_DATABASE_URL: postgresql://hms_audit_reader:phase2-auditreader-${{ github.run_id }}-${{ github.run_attempt }}@127.0.0.1:5432/orbitox_phase2
           OUTBOX_RELAY_DATABASE_URL: postgresql://orbitox_outbox_relay:phase2-relay-${{ github.run_id }}-${{ github.run_attempt }}@127.0.0.1:5432/orbitox_phase2
       - name: Verify S3-1 Route and Page Security Architecture
-        run: pnpm --filter web exec tsx --test test/api-route-auth-structure.test.ts
+        run: pnpm --filter @orbitox-io/platform exec tsx --test tests/unit/api-route-auth-structure.test.ts
       - name: Verify S3-5 Audit Role Permissions & Immutability
-        run: pnpm --filter web exec tsx --test test/audit-role-permissions.test.ts
+        run: pnpm --filter @orbitox-io/platform exec tsx --test tests/unit/audit-role-permissions.test.ts
         env:
           DATABASE_URL: postgresql://postgres:postgrespassword@127.0.0.1:5432/orbitox_phase2
           TEST_DATABASE_URL: postgresql://postgres:postgrespassword@127.0.0.1:5432/orbitox_phase2
@@ -643,7 +646,7 @@ jobs:
           HMS_AUDIT_DATABASE_URL: postgresql://hms_audit_reader:phase2-auditreader-${{ github.run_id }}-${{ github.run_attempt }}@127.0.0.1:5432/orbitox_phase2
           OUTBOX_RELAY_DATABASE_URL: postgresql://orbitox_outbox_relay:phase2-relay-${{ github.run_id }}-${{ github.run_attempt }}@127.0.0.1:5432/orbitox_phase2
       - name: Verify B1.3 Concurrent Atomic Previous-Value
-        run: pnpm --filter web exec tsx --test test/concurrent-usage-audit.test.ts
+        run: pnpm --filter @orbitox-io/platform exec tsx --test tests/unit/concurrent-usage-audit.test.ts
         env:
           DATABASE_URL: postgresql://postgres:postgrespassword@127.0.0.1:5432/orbitox_phase2
           TEST_DATABASE_URL: postgresql://postgres:postgrespassword@127.0.0.1:5432/orbitox_phase2
@@ -652,7 +655,7 @@ jobs:
           HMS_AUDIT_DATABASE_URL: postgresql://hms_audit_reader:phase2-auditreader-${{ github.run_id }}-${{ github.run_attempt }}@127.0.0.1:5432/orbitox_phase2
           OUTBOX_RELAY_DATABASE_URL: postgresql://orbitox_outbox_relay:phase2-relay-${{ github.run_id }}-${{ github.run_attempt }}@127.0.0.1:5432/orbitox_phase2
       - name: Run Full Step 3 Resilience Harness (PostgreSQL 16 kill -9 & WAL Durability)
-        run: pnpm --filter web test:step3-resilience
+        run: pnpm --filter @orbitox-io/platform test:step3-resilience
         env:
           RESILIENCE_ITERS: "20"
           MID_OP_ITERS: "50"
@@ -696,7 +699,7 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile --ignore-scripts
       - name: Build workspace packages
-        run: pnpm exec turbo run build --filter='web^...'
+        run: pnpm exec turbo run build --filter='@orbitox-io/platform^...'
       - name: Apply all Prisma migrations and configure roles
         run: |
           pnpm exec prisma generate --schema apps/platform/prisma/schema.prisma
@@ -724,7 +727,7 @@ jobs:
           echo "ORBITOX_BREACHED_PASSWORD_API=off" >> "$GITHUB_ENV"
       - name: Bootstrap CI owner through operator:bootstrap
         run: |
-          pnpm --filter web operator:bootstrap > "$RUNNER_TEMP/operator-bootstrap.stdout" 2> "$RUNNER_TEMP/operator-bootstrap.stderr" || {
+          pnpm --filter @orbitox-io/platform operator:bootstrap > "$RUNNER_TEMP/operator-bootstrap.stdout" 2> "$RUNNER_TEMP/operator-bootstrap.stderr" || {
             cat "$RUNNER_TEMP/operator-bootstrap.stderr"
             exit 1
           }
@@ -732,7 +735,7 @@ jobs:
           MAINTENANCE_DATABASE_URL: postgresql://orbitox_maintenance:phase2-maint-${{ github.run_id }}-${{ github.run_attempt }}@127.0.0.1:5432/orbitox_phase2
       - name: Build Next.js standalone application
         run: |
-          ORBITOX_SERVER_PEPPER="$(openssl rand -hex 32)" pnpm --filter web exec next build
+          ORBITOX_SERVER_PEPPER="$(openssl rand -hex 32)" pnpm --filter @orbitox-io/platform exec next build
           mkdir -p apps/platform/.next/standalone/apps/platform/.next
           cp -r apps/platform/.next/static apps/platform/.next/standalone/apps/platform/.next/
         env:
@@ -743,7 +746,7 @@ jobs:
           HMS_AUDIT_DATABASE_URL: postgresql://hms_audit_reader:phase2-auditreader-${{ github.run_id }}-${{ github.run_attempt }}@127.0.0.1:5432/orbitox_phase2
           OUTBOX_RELAY_DATABASE_URL: postgresql://orbitox_outbox_relay:phase2-relay-${{ github.run_id }}-${{ github.run_attempt }}@127.0.0.1:5432/orbitox_phase2
       - name: Run C2 Live Unauthenticated & Wrong-Scope Sweep (220 Endpoints)
-        run: pnpm --filter web test:api-no-token-sweep
+        run: pnpm --filter @orbitox-io/platform test:api-no-token-sweep
         env:
           DATABASE_URL: postgresql://postgres:postgrespassword@127.0.0.1:5432/orbitox_phase2
           TEST_DATABASE_URL: postgresql://postgres:postgrespassword@127.0.0.1:5432/orbitox_phase2
@@ -753,7 +756,7 @@ jobs:
           MAINTENANCE_DATABASE_URL: postgresql://orbitox_maintenance:phase2-maint-${{ github.run_id }}-${{ github.run_attempt }}@127.0.0.1:5432/orbitox_phase2
           OUTBOX_RELAY_DATABASE_URL: postgresql://orbitox_outbox_relay:phase2-relay-${{ github.run_id }}-${{ github.run_attempt }}@127.0.0.1:5432/orbitox_phase2
       - name: Run Step 4 Multi-Process Quota, Partitioned Rate Limiting & Hot-Row Benchmark
-        run: pnpm --filter web test:step4-concurrency
+        run: pnpm --filter @orbitox-io/platform test:step4-concurrency
         env:
           DATABASE_URL: postgresql://postgres:postgrespassword@127.0.0.1:5432/orbitox_phase2
           TEST_DATABASE_URL: postgresql://postgres:postgrespassword@127.0.0.1:5432/orbitox_phase2
@@ -794,7 +797,7 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile --ignore-scripts
       - name: Build workspace packages
-        run: pnpm exec turbo run build --filter='web^...'
+        run: pnpm exec turbo run build --filter='@orbitox-io/platform^...'
       - name: Apply all Prisma migrations and configure roles
         run: |
           pnpm exec prisma generate --schema apps/platform/prisma/schema.prisma
@@ -822,7 +825,7 @@ jobs:
           echo "ORBITOX_BREACHED_PASSWORD_API=off" >> "$GITHUB_ENV"
       - name: Bootstrap CI owner through operator:bootstrap
         run: |
-          pnpm --filter web operator:bootstrap > "$RUNNER_TEMP/operator-bootstrap.stdout" 2> "$RUNNER_TEMP/operator-bootstrap.stderr" || {
+          pnpm --filter @orbitox-io/platform operator:bootstrap > "$RUNNER_TEMP/operator-bootstrap.stdout" 2> "$RUNNER_TEMP/operator-bootstrap.stderr" || {
             cat "$RUNNER_TEMP/operator-bootstrap.stderr"
             exit 1
           }
@@ -830,7 +833,7 @@ jobs:
           MAINTENANCE_DATABASE_URL: postgresql://orbitox_maintenance:phase2-maint-${{ github.run_id }}-${{ github.run_attempt }}@127.0.0.1:5432/orbitox_phase2
       - name: Build Next.js standalone application
         run: |
-          ORBITOX_SERVER_PEPPER="$(openssl rand -hex 32)" pnpm --filter web exec next build
+          ORBITOX_SERVER_PEPPER="$(openssl rand -hex 32)" pnpm --filter @orbitox-io/platform exec next build
           mkdir -p apps/platform/.next/standalone/apps/platform/.next
           cp -r apps/platform/.next/static apps/platform/.next/standalone/apps/platform/.next/
         env:
@@ -841,7 +844,7 @@ jobs:
           HMS_AUDIT_DATABASE_URL: postgresql://hms_audit_reader:phase2-auditreader-${{ github.run_id }}-${{ github.run_attempt }}@127.0.0.1:5432/orbitox_phase2
           OUTBOX_RELAY_DATABASE_URL: postgresql://orbitox_outbox_relay:phase2-relay-${{ github.run_id }}-${{ github.run_attempt }}@127.0.0.1:5432/orbitox_phase2
       - name: Run Step 5 JSON Importer, Mid-Transaction Kill -9 & Verification Harness
-        run: pnpm --filter web test:step5-import
+        run: pnpm --filter @orbitox-io/platform test:step5-import
         env:
           DATABASE_URL: postgresql://postgres:postgrespassword@127.0.0.1:5432/orbitox_phase2
           TEST_DATABASE_URL: postgresql://postgres:postgrespassword@127.0.0.1:5432/orbitox_phase2
@@ -882,7 +885,7 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile --ignore-scripts
       - name: Build workspace packages
-        run: pnpm exec turbo run build --filter='web^...'
+        run: pnpm exec turbo run build --filter='@orbitox-io/platform^...'
       - name: Setup RDS non-superuser admin and simulate RDS master
         run: |
           PGPASSWORD=postgrespassword psql -h 127.0.0.1 -U postgres -d orbitox_staging_sim -c "
@@ -906,7 +909,7 @@ jobs:
           PGPASSWORD=rdsmasterpass psql -h 127.0.0.1 -U rds_master -d orbitox_staging_sim \
             -v ON_ERROR_STOP=1 \
             -v migrator_password="migrator_test_password" \
-            -f ../scripts/rds-bootstrap-roles.sql
+            -f scripts/db/rds-bootstrap-roles.sql
       - name: Run Prisma migrations as orbitox_migrator
         run: |
           pnpm exec prisma migrate deploy --schema apps/platform/prisma/schema.prisma
@@ -921,7 +924,7 @@ jobs:
             -v platform_admin_audit_password="audit_test_password" \
             -v hms_audit_reader_password="auditreader_test_password" \
             -v outbox_relay_password="relay_test_password" \
-            -f ../scripts/rds-enable-roles.sql
+            -f scripts/db/rds-enable-roles.sql
       - name: Run Step 1 Role and RLS inventory under restricted roles
         run: |
           pnpm exec prisma generate --schema apps/platform/prisma/schema.prisma
@@ -967,7 +970,7 @@ jobs:
         run: |
           pnpm install --frozen-lockfile --ignore-scripts
           pnpm exec prisma generate --schema apps/platform/prisma/schema.prisma
-          pnpm exec turbo run build --filter='web^...'
+          pnpm exec turbo run build --filter='@orbitox-io/platform^...'
 
       - name: Generate RestaurantOS Prisma client
         working-directory: services/restaurant-api
@@ -1005,7 +1008,7 @@ jobs:
       - name: Run Phase 6G Data Rights Integration Suite (G1-G5)
         run: |
           (cd services/restaurant-api && pnpm exec tsx --test test/data-rights-model-coverage.test.ts)
-          pnpm --filter web test:data-rights-6g
+          pnpm --filter @orbitox-io/platform test:data-rights-6g
         env:
           NODE_ENV: test
           DATABASE_URL: postgresql://postgres:postgrespassword@127.0.0.1:5432/orbitox_phase2

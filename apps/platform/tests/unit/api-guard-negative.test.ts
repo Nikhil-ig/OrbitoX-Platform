@@ -8,13 +8,13 @@ import { PrismaClient } from '@prisma/client';
 import { withApiGuard, PlatformApiState } from '@/app/api/v1/_lib/api-guard';
 import { isIpAllowed, resolveClientIp } from '@/app/api/v1/_lib/ip-guard';
 import { PlatformRepository, PlatformKeyEngine } from '@orbitox-io/plugin-engine';
-import { platformRepository } from '@/lib/platform-repository';
+import { platformRepository } from '@/server/db/platform-repository';
 import { createInternalAuthToken } from '@/app/api/v1/_lib/auth-pipeline';
 import { GET as getPatients, POST as createPatient } from '@/app/api/hospital/patients/route';
 import { POST as provisionProject } from '@/app/api/v1/admin/projects/route';
 import { PATCH as updateProject } from '@/app/api/v1/admin/projects/[projectId]/route';
 import { POST as updateProjectUsage } from '@/app/api/v1/admin/projects/[projectId]/usage/route';
-import { createProjectUsageHandler } from '@/lib/project-usage-handler';
+import { createProjectUsageHandler } from '@/server/organizations/project-usage-handler';
 
 async function listUsageResetAuditEvents(projectId: string): Promise<Array<{ action: string; metadata: any }>> {
   if (!platformRepository.isPrismaBacked()) return PlatformRepository.listAuditEvents({ projectId }) as Array<{ action: string; metadata: any }>;

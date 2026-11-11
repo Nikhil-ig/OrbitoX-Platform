@@ -1,3 +1,4 @@
+import 'server-only';
 /**
  * Rotation-aware API key verifiers (fixes N1).
  *

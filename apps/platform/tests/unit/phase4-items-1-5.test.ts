@@ -6,14 +6,14 @@ import { describe, it, before } from 'node:test';
 import assert from 'node:assert/strict';
 import crypto from 'node:crypto';
 import { NextRequest } from 'next/server';
-import { platformRepository } from '@/lib/platform-repository';
+import { platformRepository } from '@/server/db/platform-repository';
 import { POST as postTenants } from '@/app/api/v1/tenants/route';
 import { GET as getOperation, POST as postOperation } from '@/app/api/v1/operations/[id]/route';
 import { GET as getCredentials } from '@/app/api/v1/operations/[id]/credentials/route';
 import { POST as hospitalLifecycleHandler } from '@/app/api/hospital/lifecycle/[action]/route';
-import { provisioningSaga } from '@/lib/tenant-provisioning/provisioning-saga';
-import { operationStore } from '@/lib/tenant-provisioning/operation-store';
-import { getEmittedWebhooks, clearEmittedWebhooks } from '@/lib/tenant-provisioning/webhook-emitter';
+import { provisioningSaga } from '@/server/provisioning/provisioning-saga';
+import { operationStore } from '@/server/provisioning/operation-store';
+import { getEmittedWebhooks, clearEmittedWebhooks } from '@/server/provisioning/webhook-emitter';
 import { signBridgeRequest, getDefaultBridgeKeys } from '@orbitox-io/bridge';
 import { PlatformRepository } from '@orbitox-io/plugin-engine';
 

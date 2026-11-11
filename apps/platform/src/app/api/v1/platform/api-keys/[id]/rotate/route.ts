@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { withApiGuard, isDatabaseError, classifyDatabaseError } from '@/app/api/v1/_lib/api-guard';
 import { ApiResponse, ApiRequestContext } from '@/app/api/v1/_lib/api-types';
 import { auditService } from '@/app/api/v1/_lib/platform-governance';
-import { platformRepository } from '@/lib/platform-repository';
+import { platformRepository } from '@/server/db/platform-repository';
 
 export const POST = withApiGuard(
   {

@@ -54,8 +54,8 @@ The monorepo operates as a single pnpm + Turborepo workspace (`pnpm-workspace.ya
 pnpm install
 
 # 2. Generate Prisma clients (isolated generation per service)
-pnpm --filter web run prisma:generate
-pnpm --filter restaurant-os run prisma:generate
+pnpm --filter @orbitox-io/platform run prisma:generate
+pnpm --filter @orbitox-io/restaurant-api run prisma:generate
 
 # 3. Build workspace packages
 pnpm run build
@@ -68,13 +68,13 @@ pnpm run build
 pnpm run dev:web
 
 # RestaurantOS API (http://localhost:4010)
-pnpm --filter restaurant-os run dev
+pnpm --filter @orbitox-io/restaurant-api run dev
 ```
 
 Background workers can be run independently:
-- **Email Outbox Worker**: `pnpm --filter web run email:worker`
-- **Billing Grace Sweep**: `pnpm --filter web run billing:grace-sweep`
-- **Data Rights Worker**: `pnpm --filter web exec tsx src/workers/data-rights.ts`
+- **Email Outbox Worker**: `pnpm --filter @orbitox-io/platform run email:worker`
+- **Billing Grace Sweep**: `pnpm --filter @orbitox-io/platform run billing:grace-sweep`
+- **Data Rights Worker**: `pnpm --filter @orbitox-io/platform exec tsx src/workers/data-rights.ts`
 
 ---
 
@@ -106,11 +106,11 @@ bash scripts/ci/verify-migration-immutability.sh
 pnpm run test
 
 # Platform Control Plane & HospitalOS unit tests (346 tests)
-pnpm --filter web test
+pnpm --filter @orbitox-io/platform test
 
 # RestaurantOS event bus isolation & core milestone tests
-pnpm --filter restaurant-os run test:isolation
-pnpm --filter restaurant-os run test:core
+pnpm --filter @orbitox-io/restaurant-api run test:isolation
+pnpm --filter @orbitox-io/restaurant-api run test:core
 ```
 
 ---

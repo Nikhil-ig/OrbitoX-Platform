@@ -1,6 +1,7 @@
+import 'server-only';
 import { NextRequest, NextResponse } from 'next/server';
 import { withApiGuard, PlatformApiState } from '@/app/api/v1/_lib/api-guard';
-import { AsyncPlatformRepository, platformRepository } from '@/lib/platform-repository';
+import { AsyncPlatformRepository, platformRepository } from '@/server/db/platform-repository';
 
 type UsageRepository = Pick<
     AsyncPlatformRepository,

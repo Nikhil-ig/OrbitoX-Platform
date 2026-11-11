@@ -1,3 +1,4 @@
+import 'server-only';
 import type { PrismaClient } from '@prisma/client';
 import crypto from 'node:crypto';
 import {

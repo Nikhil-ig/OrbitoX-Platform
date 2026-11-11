@@ -7,8 +7,8 @@ import { POST as postCheckout } from '@/app/api/v1/customer/organizations/[organ
 import {
   CUSTOMER_CSRF_COOKIE,
   CUSTOMER_SESSION_COOKIE,
-} from '@/lib/phase6-account-service';
-import { newSessionTokens } from '@/lib/phase6-account-security';
+} from '@/server/accounts/account-service';
+import { newSessionTokens } from '@/server/auth/account-security';
 
 if (process.env.ORBITOX_PLATFORM_REPOSITORY === 'prisma') {
   describe('Phase 6 Razorpay checkout idempotency', () => {

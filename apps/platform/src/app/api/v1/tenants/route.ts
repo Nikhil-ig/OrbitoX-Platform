@@ -1,12 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { platformRepository } from '@/lib/platform-repository';
+import { platformRepository } from '@/server/db/platform-repository';
 import {
   ProvisioningValidationError,
   provisioningSaga,
-} from '@/lib/tenant-provisioning/provisioning-saga';
-import { TenantProvisionRequest } from '@/lib/tenant-provisioning/types';
-import { getOperatorSession, OPERATOR_SESSION_COOKIE } from '@/lib/phase6-account-service';
-import { operatorRoleAllows } from '@/lib/operator-route-policy';
+} from '@/server/provisioning/provisioning-saga';
+import { TenantProvisionRequest } from '@/server/provisioning/types';
+import { getOperatorSession, OPERATOR_SESSION_COOKIE } from '@/server/accounts/account-service';
+import { operatorRoleAllows } from '@/server/organizations/operator-route-policy';
 import { verifyAdminTokenForRequestSync } from '../_lib/auth-pipeline';
 import { canonicalizePluginId } from '@orbitox-io/plugin-engine';
 

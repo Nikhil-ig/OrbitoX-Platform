@@ -10,7 +10,7 @@ import {
   verifyPepperSamples,
   sanitizeDatabaseUrl,
 } from '../../scripts/ops/import-platform-json';
-import { loadPepperRing, activeVerifier } from '@/lib/pepper';
+import { loadPepperRing, activeVerifier } from '@/server/auth/pepper';
 
 const databaseUrl =
   process.env.TEST_DATABASE_URL ||

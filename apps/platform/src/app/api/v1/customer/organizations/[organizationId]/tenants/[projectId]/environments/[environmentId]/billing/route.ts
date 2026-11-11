@@ -1,15 +1,15 @@
 import crypto from 'node:crypto';
 import { Prisma } from '@prisma/client';
 import { NextResponse } from 'next/server';
-import { withCustomerAuth } from '@/lib/customer-auth';
+import { withCustomerAuth } from '@/server/auth/customer-auth';
 import {
   canCustomerDashboardAction,
   getCustomerOrganizationRole,
   noStoreHeaders,
-} from '@/lib/customer-dashboard';
-import { prisma } from '@/lib/prisma';
-import { tenantBelongsToOrganization } from '@/lib/billing-tenant';
-import { listRazorpayInvoices, listRazorpayPayments } from '@/lib/razorpay-client';
+} from '@/server/organizations/customer-dashboard';
+import { prisma } from '@/server/db/prisma';
+import { tenantBelongsToOrganization } from '@/server/billing/billing-tenant';
+import { listRazorpayInvoices, listRazorpayPayments } from '@/server/billing/razorpay-client';
 
 type RouteContext = {
   params: Promise<{ organizationId: string; projectId: string; environmentId: string }>;

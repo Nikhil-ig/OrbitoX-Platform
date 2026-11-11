@@ -1,3 +1,4 @@
+import 'server-only';
 /**
  * 🛰️ OrbitoX Platform -> RestaurantOS Bridge Lifecycle Client
  * ─────────────────────────────────────────────────────────────────────────────

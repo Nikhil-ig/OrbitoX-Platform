@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { platformRepository } from '@/lib/platform-repository';
-import { pluginLifecycleClient } from '@/lib/tenant-provisioning/plugin-lifecycle-client';
+import { platformRepository } from '@/server/db/platform-repository';
+import { pluginLifecycleClient } from '@/server/provisioning/plugin-lifecycle-client';
 
 async function authenticateCustomerOrAdmin(req: NextRequest) {
   const authHeader = req.headers.get('authorization') || '';

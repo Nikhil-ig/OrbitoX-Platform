@@ -1,3 +1,4 @@
+import 'server-only';
 /**
  * HospitalOS repository on the plugin schema. Every function takes a TenantTx (never a pool),
  * so it cannot run outside a tenant-scoped transaction.

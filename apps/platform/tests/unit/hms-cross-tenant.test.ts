@@ -5,9 +5,9 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { NextRequest } from 'next/server';
 import { Pool } from 'pg';
-import { withTenantTx } from '@/lib/tenant-db';
-import { PhiKeyRing, seal, blindIndex } from '@/lib/phi-crypto';
-import { hashPassword, generateSalt } from '@/lib/hms-auth';
+import { withTenantTx } from '@/server/db/tenant-db';
+import { PhiKeyRing, seal, blindIndex } from '@/server/hospital/phi-crypto';
+import { hashPassword, generateSalt } from '@/server/auth/hms-auth';
 
 // Hospital route handlers
 import { GET as getDepts } from '@/app/api/hospital/departments/route';
@@ -52,7 +52,7 @@ if (!process.env.DATABASE_URL) {
   process.env.DATABASE_URL = process.env.APP_DATABASE_URL;
 }
 
-import { platformRepository } from '@/lib/platform-repository';
+import { platformRepository } from '@/server/db/platform-repository';
 
 const ADMIN_TOKEN = 'phase2b3_cross_tenant_test_admin_token_32chars';
 const TENANT_A = 'org/cross-a/project/p1/environment/prod';

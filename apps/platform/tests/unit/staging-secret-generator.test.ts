@@ -7,14 +7,14 @@ import {
   EXTERNAL_PROVIDER_SECRETS,
   DATABASE_URL_SECRETS,
   getGeneratedSecretNames,
-} from '@/lib/platform-service-contracts';
+} from '@/server/organizations/platform-service-contracts';
 import {
   runSecretGenerator,
   getExpectedSecretNames,
   SECRET_GENERATORS,
 } from '../../../../scripts/secrets/generate-secrets';
-import { loadPepperRing, activeVerifier, whichPepper } from '@/lib/pepper';
-import { PhiKeyRing, seal, open } from '@/lib/phi-crypto';
+import { loadPepperRing, activeVerifier, whichPepper } from '@/server/auth/pepper';
+import { PhiKeyRing, seal, open } from '@/server/hospital/phi-crypto';
 import {
   createEntitlementGrantToken,
   initializeGrantKeys,
@@ -32,14 +32,14 @@ import {
   buildSignedDeletionCertificate,
   extractDeletionCertPublicKeys,
   verifyDeletionCertificate,
-} from '@/lib/data-rights/deletion-certificate';
+} from '@/server/data-rights/deletion-certificate';
 import {
   createObjectStoreFromEnv,
   loadExportEncryptionKeyRingFromEnv,
   S3ObjectStore,
   type S3CommandExecutor,
-} from '@/lib/data-rights/object-store';
-import { buildZipArchive, readZipArchive } from '@/lib/data-rights/archive';
+} from '@/server/data-rights/object-store';
+import { buildZipArchive, readZipArchive } from '@/server/data-rights/archive';
 
 describe('Phase 6F B0: Staging Secret Generator Verification', () => {
   it('dry-run mode lists the exact names it would set without writing secrets', () => {

@@ -20,7 +20,7 @@ import {
 } from '@orbitox-io/core/control-plane';
 
 import { auditService, approvalEngine } from './platform-governance';
-import { platformRepository } from '@/lib/platform-repository';
+import { platformRepository } from '@/server/db/platform-repository';
 
 // Authoritative Resource Provider mapping PlatformRepository into the Materialized DAG
 export const platformRepoProvider: AuthoritativeResourceProvider = {

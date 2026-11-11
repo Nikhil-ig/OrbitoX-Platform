@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { resolveClientIp } from '@/app/api/v1/_lib/ip-guard';
-import { setOperatorSessionCookies } from '@/lib/operator-auth';
-import { consumeAuthRateLimit, loginOperator } from '@/lib/phase6-account-service';
-import { assertValidEmail } from '@/lib/phase6-account-security';
+import { setOperatorSessionCookies } from '@/server/auth/operator-auth';
+import { consumeAuthRateLimit, loginOperator } from '@/server/accounts/account-service';
+import { assertValidEmail } from '@/server/auth/account-security';
 
 export async function POST(request: NextRequest) {
   const body = await request.json().catch(() => ({}));

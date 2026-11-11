@@ -6,8 +6,8 @@ import net from 'node:net';
 import os from 'node:os';
 import path from 'node:path';
 import { PrismaClient } from '@prisma/client';
-import { assertPlatformDatabaseReady } from '@/lib/platform-database-readiness';
-import { platformRepository, PlatformRateLimitPartitionExhaustedError } from '@/lib/platform-repository';
+import { assertPlatformDatabaseReady } from '@/server/db/platform-database-readiness';
+import { platformRepository, PlatformRateLimitPartitionExhaustedError } from '@/server/db/platform-repository';
 
 const databaseUrl = process.env.TEST_DATABASE_URL || process.env.DATABASE_URL || 'postgresql://apple@127.0.0.1:5432/orbitox_phase2';
 const runtimeUrl = process.env.APP_DATABASE_URL || 'postgresql://orbitox_runtime:test_runtime_pass@127.0.0.1:5432/orbitox_phase2';

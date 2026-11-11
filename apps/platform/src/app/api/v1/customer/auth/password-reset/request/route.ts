@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { resolveClientIp } from '@/app/api/v1/_lib/ip-guard';
-import { uniformAccountResponse } from '@/lib/phase6-account-security';
-import { accountPublicBaseUrl, consumeAuthRateLimit, requestCustomerPasswordReset } from '@/lib/phase6-account-service';
+import { uniformAccountResponse } from '@/server/auth/account-security';
+import { accountPublicBaseUrl, consumeAuthRateLimit, requestCustomerPasswordReset } from '@/server/accounts/account-service';
 
 export async function POST(request: NextRequest) {
   const body = await request.json().catch(() => ({}));

@@ -37,8 +37,8 @@ Thank you for your interest in contributing to OrbitoX! To maintain high enginee
 pnpm install
 
 # 2. Generate Prisma clients
-pnpm --filter web run prisma:generate
-pnpm --filter restaurant-os run prisma:generate
+pnpm --filter @orbitox-io/platform run prisma:generate
+pnpm --filter @orbitox-io/restaurant-api run prisma:generate
 
 # 3. Build workspace
 pnpm run build
@@ -50,7 +50,7 @@ pnpm run build
 pnpm run dev:web
 
 # RestaurantOS API (Fastify/Node on http://localhost:4010)
-pnpm --filter restaurant-os run dev
+pnpm --filter @orbitox-io/restaurant-api run dev
 ```
 
 ---
@@ -68,8 +68,8 @@ pnpm run type-check
 
 # 2. Unit and isolation tests
 pnpm run test
-pnpm --filter web test
-pnpm --filter restaurant-os test
+pnpm --filter @orbitox-io/platform test
+pnpm --filter @orbitox-io/restaurant-api test
 
 # 3. Database migration immutability
 bash scripts/ci/verify-migration-immutability.sh

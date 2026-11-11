@@ -1,3 +1,4 @@
+import 'server-only';
 /**
  * Platform -> RestaurantOS (and any runtime plugin) request signing.
  *

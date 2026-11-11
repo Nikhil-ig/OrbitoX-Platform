@@ -1,9 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { withHospitalGuard } from '@/app/api/_lib/route-auth';
-import { withTenantTx } from '@/lib/tenant-db';
-import { prisma } from '@/lib/prisma';
-import { mapDbError, errorBody, HttpError } from '@/lib/db-errors';
-import { assertPatientActive } from '@/lib/hms-repository';
+import { withTenantTx } from '@/server/db/tenant-db';
+import { prisma } from '@/server/db/prisma';
+import { mapDbError, errorBody, HttpError } from '@/server/db/db-errors';
+import { assertPatientActive } from '@/server/hospital/hms-repository';
 
 export const GET = withHospitalGuard(async (req: NextRequest, _routeContext, authContext) => {
   try {

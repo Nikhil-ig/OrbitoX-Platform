@@ -1,3 +1,4 @@
+import 'server-only';
 /**
  * ─────────────────────────────────────────────────────────────
  * OrbitoX Platform Service Settings & Secrets Contract (Phase 6F R4)

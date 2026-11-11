@@ -9,7 +9,7 @@ import {
   verifyWebhookSignature,
   type BillingSubscriptionSnapshot,
   type RazorpayWebhookEvent,
-} from '@/lib/phase6-razorpay-billing';
+} from '@/server/billing/razorpay-billing';
 
 const key = crypto.randomBytes(24).toString('hex');
 const policy = { readOnlyAfterDays: 7, suspendAfterDays: 30 };

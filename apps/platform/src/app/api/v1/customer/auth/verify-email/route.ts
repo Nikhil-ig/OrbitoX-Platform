@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { verifyCustomerEmail } from '@/lib/phase6-account-service';
+import { verifyCustomerEmail } from '@/server/accounts/account-service';
 
 export async function POST(request: NextRequest) {
   const body = await request.json().catch(() => ({}));

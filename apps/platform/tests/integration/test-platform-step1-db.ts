@@ -1,12 +1,12 @@
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import { PrismaClient } from '@prisma/client';
-import { createHealthHandler } from '@/lib/health-route-handler';
+import { createHealthHandler } from '@/server/http/health-route-handler';
 import {
   assertPlatformDatabaseReady,
   REQUIRED_PLATFORM_MIGRATIONS,
-} from '@/lib/platform-database-readiness';
-import { buildPlatformTenantScope } from '@/lib/platform-tenant-scope';
+} from '@/server/db/platform-database-readiness';
+import { buildPlatformTenantScope } from '@/server/organizations/platform-tenant-scope';
 
 const databaseUrl = process.env.TEST_DATABASE_URL || process.env.DATABASE_URL;
 const appDatabaseUrl = process.env.APP_DATABASE_URL;

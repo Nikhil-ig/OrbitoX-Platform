@@ -1,3 +1,4 @@
+import 'server-only';
 /**
  * Demo seed data and table tokens (fixes A5: predictable QR secrets in source).
  */

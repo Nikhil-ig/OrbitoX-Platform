@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { withCustomerAuth } from '@/lib/customer-auth';
-import { transferCustomerOwnership } from '@/lib/phase6-account-service';
-import { platformRepository } from '@/lib/platform-repository';
+import { withCustomerAuth } from '@/server/auth/customer-auth';
+import { transferCustomerOwnership } from '@/server/accounts/account-service';
+import { platformRepository } from '@/server/db/platform-repository';
 import { resolveClientIp } from '@/app/api/v1/_lib/ip-guard';
 
 type RouteContext = { params: Promise<{ organizationId: string }> };

@@ -20,7 +20,7 @@ import {
   REVIEWED_SECRET_COLUMN_ALLOWLIST,
   SECRET_COLUMN_NAME_REGEX,
   verifyExportArchive,
-} from '@/lib/data-rights/archive';
+} from '@/server/data-rights/archive';
 import {
   createObjectStoreFromEnv,
   loadExportEncryptionKeyRingFromEnv,
@@ -28,12 +28,12 @@ import {
   S3ObjectStore,
   type S3CommandExecutor,
   type S3PutObjectInput,
-} from '@/lib/data-rights/object-store';
+} from '@/server/data-rights/object-store';
 import {
   buildSignedDeletionCertificate,
   extractDeletionCertPublicKeys,
   verifyDeletionCertificate,
-} from '@/lib/data-rights/deletion-certificate';
+} from '@/server/data-rights/deletion-certificate';
 
 function genEd25519() {
   const pair = crypto.generateKeyPairSync('ed25519');
@@ -133,7 +133,7 @@ describe('Phase 6G Foundations: Contract, ObjectStore, Export Bundle & Deletion 
         ? Buffer.from('[{"tampered":true}]')
         : content,
     }));
-    const { buildZipArchive } = await import('@/lib/data-rights/archive');
+    const { buildZipArchive } = await import('@/server/data-rights/archive');
     const tamperedZip = buildZipArchive(badEntries, generatedAt);
     assert.throws(() => verifyExportArchive(tamperedZip), /Checksum or size mismatch/);
   });

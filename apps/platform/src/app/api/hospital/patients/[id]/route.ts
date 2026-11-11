@@ -1,9 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { withHospitalGuard } from '@/app/api/_lib/route-auth';
-import { withTenantTx } from '@/lib/tenant-db';
-import { prisma } from '@/lib/prisma';
-import { mapDbError, errorBody, HttpError } from '@/lib/db-errors';
-import { getPhiKeyRing } from '@/lib/phi-crypto';
+import { withTenantTx } from '@/server/db/tenant-db';
+import { prisma } from '@/server/db/prisma';
+import { mapDbError, errorBody, HttpError } from '@/server/db/db-errors';
+import { getPhiKeyRing } from '@/server/hospital/phi-crypto';
 import {
   readPatientForPurpose,
   admitPatient,
@@ -11,7 +11,7 @@ import {
   assertPatientActive,
   Purpose,
   PhiField,
-} from '@/lib/hms-repository';
+} from '@/server/hospital/hms-repository';
 
 export const GET = withHospitalGuard(async (req: NextRequest, context: { params: Promise<{ id: string }> }, authContext) => {
   try {

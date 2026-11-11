@@ -4,8 +4,8 @@ import { after, before, beforeEach, describe, it } from 'node:test';
 import { Prisma, PrismaClient } from '@prisma/client';
 import { NextRequest } from 'next/server';
 import { POST as postRazorpayWebhook } from '@/app/api/v1/billing/webhook/razorpay/route';
-import { sweepBillingGrace } from '@/lib/billing-grace-sweep';
-import type { RazorpayWebhookEvent } from '@/lib/phase6-razorpay-billing';
+import { sweepBillingGrace } from '@/server/billing/billing-grace-sweep';
+import type { RazorpayWebhookEvent } from '@/server/billing/razorpay-billing';
 
 if (process.env.ORBITOX_PLATFORM_REPOSITORY === 'prisma') {
 describe('Phase 6 durable Razorpay webhook', () => {

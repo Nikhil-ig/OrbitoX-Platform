@@ -1,3 +1,4 @@
+import 'server-only';
 import { NextResponse } from 'next/server';
 import { assertPlatformDatabaseReady } from '@/server/db/platform-database-readiness';
 import { hasConfiguredGrantKeys, initializeGrantKeys } from '@orbitox-io/plugin-engine';

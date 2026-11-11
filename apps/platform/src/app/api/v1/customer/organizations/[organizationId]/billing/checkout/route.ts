@@ -1,14 +1,14 @@
 import crypto from 'node:crypto';
 import { Prisma } from '@prisma/client';
 import { NextRequest, NextResponse } from 'next/server';
-import { withCustomerAuth } from '@/lib/customer-auth';
-import { prisma } from '@/lib/prisma';
-import { canCustomerDashboardAction } from '@/lib/customer-dashboard';
+import { withCustomerAuth } from '@/server/auth/customer-auth';
+import { prisma } from '@/server/db/prisma';
+import { canCustomerDashboardAction } from '@/server/organizations/customer-dashboard';
 import {
   createRazorpaySubscription,
   getRazorpayPublicKeyId,
-} from '@/lib/razorpay-client';
-import { parseBillingTenantScope, tenantBelongsToOrganization } from '@/lib/billing-tenant';
+} from '@/server/billing/razorpay-client';
+import { parseBillingTenantScope, tenantBelongsToOrganization } from '@/server/billing/billing-tenant';
 
 type RouteContext = { params: Promise<{ organizationId: string }> };
 

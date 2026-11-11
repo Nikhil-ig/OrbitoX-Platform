@@ -1,9 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { withHospitalGuard } from '@/app/api/_lib/route-auth';
-import { withTenantTx } from '@/lib/tenant-db';
-import { prisma } from '@/lib/prisma';
-import { ensureDefaultRoles } from '@/lib/hms-auth';
-import { mapDbError, errorBody, HttpError } from '@/lib/db-errors';
+import { withTenantTx } from '@/server/db/tenant-db';
+import { prisma } from '@/server/db/prisma';
+import { ensureDefaultRoles } from '@/server/auth/hms-auth';
+import { mapDbError, errorBody, HttpError } from '@/server/db/db-errors';
 import crypto from 'node:crypto';
 
 export const GET = withHospitalGuard(async (_req: NextRequest, _routeContext, authContext) => {

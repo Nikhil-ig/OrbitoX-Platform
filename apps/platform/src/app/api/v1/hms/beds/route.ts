@@ -1,9 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { withApiGuard, PlatformApiState } from '../../_lib/api-guard';
-import { withTenantTx } from '@/lib/tenant-db';
-import { prisma } from '@/lib/prisma';
-import { mapDbError, errorBody, HttpError } from '@/lib/db-errors';
-import { admitPatient, dischargePatient } from '@/lib/hms-repository';
+import { withTenantTx } from '@/server/db/tenant-db';
+import { prisma } from '@/server/db/prisma';
+import { mapDbError, errorBody, HttpError } from '@/server/db/db-errors';
+import { admitPatient, dischargePatient } from '@/server/hospital/hms-repository';
 
 export const GET = withApiGuard(
   {

@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
-import { clearCustomerSessionCookies, withCustomerAuth } from '@/lib/customer-auth';
-import { revokeCustomerSession } from '@/lib/phase6-account-service';
+import { clearCustomerSessionCookies, withCustomerAuth } from '@/server/auth/customer-auth';
+import { revokeCustomerSession } from '@/server/accounts/account-service';
 
 export const POST = withCustomerAuth(async (_request, session) => {
   await revokeCustomerSession(session.id);

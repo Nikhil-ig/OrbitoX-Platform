@@ -10,8 +10,8 @@ import assert from 'node:assert/strict';
 import * as crypto from 'crypto';
 import { NextRequest } from 'next/server';
 import { PrismaClient } from '@prisma/client';
-import { prisma } from '@/lib/prisma';
-import { platformRepository, closePlatformRepositoryClients } from '@/lib/platform-repository';
+import { prisma } from '@/server/db/prisma';
+import { platformRepository, closePlatformRepositoryClients } from '@/server/db/platform-repository';
 import {
   signGrant,
   verifyGrant,
@@ -34,9 +34,9 @@ import { GET as getGrants } from '@/app/api/v1/platform/grants/[...slug]/route';
 import { POST as postPatient, GET as getPatients } from '@/app/api/hospital/patients/route';
 import { POST as postLogin } from '@/app/api/hospital/security/login/route';
 import { hmsGrantEnforcer, hmsRevisionStore } from '@/app/api/_lib/route-auth';
-import { withTenantTx } from '@/lib/tenant-db';
-import { createPatient } from '@/lib/hms-repository';
-import { getPhiKeyRing } from '@/lib/phi-crypto';
+import { withTenantTx } from '@/server/db/tenant-db';
+import { createPatient } from '@/server/hospital/hms-repository';
+import { getPhiKeyRing } from '@/server/hospital/phi-crypto';
 import { signBridgeRequest, getDefaultBridgeKeys } from '@orbitox-io/bridge';
 
 describe('Phase 3 Parts D–G: Rights, Licensing, Enforcement, Webhooks & SDK', () => {
@@ -270,7 +270,7 @@ describe('Phase 3 Parts D–G: Rights, Licensing, Enforcement, Webhooks & SDK', 
     it('production check refuses startup and health check returns 503 without ORBITOX_GRANT_SIGNING_KEYS (G5)', async () => {
       const { spawnSync } = await import('child_process');
       const path = await import('path');
-      const { createHealthHandler } = await import('@/lib/health-route-handler');
+      const { createHealthHandler } = await import('@/server/http/health-route-handler');
       const { initializeGrantKeys } = await import('@orbitox-io/plugin-engine');
 
       const origNodeEnv = process.env.NODE_ENV;
@@ -799,7 +799,7 @@ describe('Phase 3 Parts D–G: Rights, Licensing, Enforcement, Webhooks & SDK', 
       const http = await import('http');
       const path = await import('path');
       const { Client } = await import('pg');
-      const { RestaurantBridgeClient } = await import('@/lib/restaurant-bridge-client');
+      const { RestaurantBridgeClient } = await import('@/server/restaurant-bridge/restaurant-bridge-client');
 
       let platformHttpServer: any = null;
       let restProcess: any = null;

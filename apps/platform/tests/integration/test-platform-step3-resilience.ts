@@ -8,7 +8,7 @@ import { Client } from 'pg';
 import {
   assertPlatformDatabaseReady,
   REQUIRED_PLATFORM_MIGRATIONS,
-} from '@/lib/platform-database-readiness';
+} from '@/server/db/platform-database-readiness';
 import { classifyDatabaseError } from '@/app/api/v1/_lib/api-guard';
 import {
   createTestOperatorSession,

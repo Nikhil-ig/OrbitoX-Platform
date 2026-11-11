@@ -15,12 +15,12 @@ import * as net from 'net';
 import * as http from 'http';
 import { spawn, ChildProcess } from 'child_process';
 import { PrismaClient } from '@prisma/client';
-import { platformRepository } from '@/lib/platform-repository';
-import { provisioningSaga } from '@/lib/tenant-provisioning/provisioning-saga';
-import { operationStore } from '@/lib/tenant-provisioning/operation-store';
-import { RestaurantBridgeClient } from '@/lib/restaurant-bridge-client';
-import { withTenantTx } from '@/lib/tenant-db';
-import { getPhiKeyRing, seal, blindIndex } from '@/lib/phi-crypto';
+import { platformRepository } from '@/server/db/platform-repository';
+import { provisioningSaga } from '@/server/provisioning/provisioning-saga';
+import { operationStore } from '@/server/provisioning/operation-store';
+import { RestaurantBridgeClient } from '@/server/restaurant-bridge/restaurant-bridge-client';
+import { withTenantTx } from '@/server/db/tenant-db';
+import { getPhiKeyRing, seal, blindIndex } from '@/server/hospital/phi-crypto';
 
 const RESTRICTED_PORTS = new Set([3659, 4045, 5060, 5061, 6000, 6566, 6665, 6666, 6667, 6668, 6669, 6697]);
 

@@ -1,3 +1,4 @@
+import 'server-only';
 export interface TenantProvisionPluginInput {
   id: string; // e.g. "hospital-os", "@orbitox/hms", "restaurant-os", "@orbitox/restaurant"
   plan?: string;

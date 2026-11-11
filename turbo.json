@@ -36,28 +36,28 @@
     "test:database-outage": {
       "outputs": []
     },
-    "web#test": {
+    "@orbitox-io/platform#test": {
       "dependsOn": [
         "^build",
-        "web#prisma:generate",
-        "restaurant-os#test"
+        "@orbitox-io/platform#prisma:generate",
+        "@orbitox-io/restaurant-api#test"
       ]
     },
-    "web#test:integration": {
+    "@orbitox-io/platform#test:integration": {
       "dependsOn": [
         "^build",
-        "web#prisma:generate"
+        "@orbitox-io/platform#prisma:generate"
       ]
     },
-    "web#test:repository": {
+    "@orbitox-io/platform#test:repository": {
       "dependsOn": [
         "^build",
-        "web#prisma:generate"
+        "@orbitox-io/platform#prisma:generate"
       ]
     },
-    "web#test:database-outage": {
+    "@orbitox-io/platform#test:database-outage": {
       "dependsOn": [
-        "web#prisma:generate"
+        "@orbitox-io/platform#prisma:generate"
       ]
     },
     "prisma:generate": {

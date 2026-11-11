@@ -8,9 +8,9 @@
  */
 import crypto from 'node:crypto';
 import { Pool } from 'pg';
-import { withTenantTx } from '@/lib/tenant-db';
-import { PhiKeyRing, seal } from '@/lib/phi-crypto';
-import { recordPayment } from '@/lib/hms-repository';
+import { withTenantTx } from '@/server/db/tenant-db';
+import { PhiKeyRing, seal } from '@/server/hospital/phi-crypto';
+import { recordPayment } from '@/server/hospital/hms-repository';
 
 const url = process.env.APP_DATABASE_URL || process.env.DATABASE_URL || 'postgresql://orbitox_runtime@127.0.0.1:5432/orbitox_phase2';
 const pool = new Pool({ connectionString: url });

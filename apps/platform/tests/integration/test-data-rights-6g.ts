@@ -15,12 +15,12 @@ import {
   FORBIDDEN_EXPORT_COLUMNS,
   readZipArchive,
   verifyExportArchive,
-} from '@/lib/data-rights/archive';
+} from '@/server/data-rights/archive';
 import {
   extractDeletionCertPublicKeys,
   verifyDeletionCertificate,
-} from '@/lib/data-rights/deletion-certificate';
-import { LocalObjectStore } from '@/lib/data-rights/object-store';
+} from '@/server/data-rights/deletion-certificate';
+import { LocalObjectStore } from '@/server/data-rights/object-store';
 import {
   createDefaultDataRightsAdapters,
   processDueOrganizationDeletions,
@@ -28,13 +28,13 @@ import {
   purgeExpiredExports,
   setBillingCancellationProviderForTesting,
   type BillingCancellationProvider,
-} from '@/lib/data-rights/service';
-import { createPatient, generateMrn } from '@/lib/hms-repository';
+} from '@/server/data-rights/service';
+import { createPatient, generateMrn } from '@/server/hospital/hms-repository';
 import {
   CUSTOMER_CSRF_COOKIE,
   CUSTOMER_SESSION_COOKIE,
   loginCustomer,
-} from '@/lib/phase6-account-service';
+} from '@/server/accounts/account-service';
 import {
   decryptAccountEmailPayload,
   generateTotpSecret,
@@ -42,10 +42,10 @@ import {
   newAccountToken,
   newSessionTokens,
   sealTotpSecret,
-} from '@/lib/phase6-account-security';
-import { getPhiKeyRing } from '@/lib/phi-crypto';
-import { platformRepository } from '@/lib/platform-repository';
-import { withTenantTx } from '@/lib/tenant-db';
+} from '@/server/auth/account-security';
+import { getPhiKeyRing } from '@/server/hospital/phi-crypto';
+import { platformRepository } from '@/server/db/platform-repository';
+import { withTenantTx } from '@/server/db/tenant-db';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -650,8 +650,8 @@ describe('Phase 6G G1-G5 End-to-End PostgreSQL Integration Suite', () => {
       hmsBedAId = `bed_a_${suffix}`;
       await tx.query(`INSERT INTO "HmsBed"(id, "wardId", label, "dailyRateMinor") VALUES ($1, $2, $3, 150000)`, [hmsBedAId, `ward_a_${suffix}`, 'A-101']);
       hmsStaffAId = `doc_a_${suffix}`;
-      const sealedDocName = (await import('@/lib/phi-crypto')).seal(ring, 'Dr. Alpha', { tenantId: tenantA, column: 'name', rowId: hmsStaffAId });
-      const docEmailBlind = (await import('@/lib/phi-crypto')).blindIndex(ring, `doc-a-${suffix}@hms.test`, 'email', tenantA, 'email');
+      const sealedDocName = (await import('@/server/hospital/phi-crypto')).seal(ring, 'Dr. Alpha', { tenantId: tenantA, column: 'name', rowId: hmsStaffAId });
+      const docEmailBlind = (await import('@/server/hospital/phi-crypto')).blindIndex(ring, `doc-a-${suffix}@hms.test`, 'email', tenantA, 'email');
       await tx.query(`INSERT INTO "HmsStaff"(id, "nameSealed", "emailBlind", role) VALUES ($1, $2, $3, 'DOCTOR')`, [hmsStaffAId, sealedDocName, docEmailBlind]);
 
       const p1 = await createPatient(tx, ring, {
@@ -683,8 +683,8 @@ describe('Phase 6G G1-G5 End-to-End PostgreSQL Integration Suite', () => {
       await tx.query(`INSERT INTO "HmsWard"(id, "departmentId", name) VALUES ($1, $2, $3)`, [`ward_b_${suffix}`, `dep_b_${suffix}`, 'Ward B1']);
       await tx.query(`INSERT INTO "HmsBed"(id, "wardId", label, "dailyRateMinor") VALUES ($1, $2, $3, 250000)`, [`bed_b_${suffix}`, `ward_b_${suffix}`, 'B-101']);
       hmsStaffBId = `doc_b_${suffix}`;
-      const sealedDocName = (await import('@/lib/phi-crypto')).seal(ring, 'Dr. Beta', { tenantId: tenantB, column: 'name', rowId: hmsStaffBId });
-      const docEmailBlind = (await import('@/lib/phi-crypto')).blindIndex(ring, `doc-b-${suffix}@hms.test`, 'email', tenantB, 'email');
+      const sealedDocName = (await import('@/server/hospital/phi-crypto')).seal(ring, 'Dr. Beta', { tenantId: tenantB, column: 'name', rowId: hmsStaffBId });
+      const docEmailBlind = (await import('@/server/hospital/phi-crypto')).blindIndex(ring, `doc-b-${suffix}@hms.test`, 'email', tenantB, 'email');
       await tx.query(`INSERT INTO "HmsStaff"(id, "nameSealed", "emailBlind", role) VALUES ($1, $2, $3, 'DOCTOR')`, [hmsStaffBId, sealedDocName, docEmailBlind]);
 
       const pB = await createPatient(tx, ring, {

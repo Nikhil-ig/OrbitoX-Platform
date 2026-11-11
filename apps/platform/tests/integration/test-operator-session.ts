@@ -6,12 +6,12 @@ import {
   OPERATOR_CSRF_COOKIE,
   OPERATOR_SESSION_COOKIE,
   reauthenticateOperator,
-} from '@/lib/phase6-account-service';
+} from '@/server/accounts/account-service';
 import {
   generateTotpSecret,
   hashAccountPassword,
   sealTotpSecret,
-} from '@/lib/phase6-account-security';
+} from '@/server/auth/account-security';
 
 export interface TestOperatorSession {
   operatorId: string;

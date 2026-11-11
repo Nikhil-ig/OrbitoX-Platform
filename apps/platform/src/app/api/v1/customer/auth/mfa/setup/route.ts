@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
-import { withCustomerAuth } from '@/lib/customer-auth';
-import { setupCustomerMfa } from '@/lib/phase6-account-service';
+import { withCustomerAuth } from '@/server/auth/customer-auth';
+import { setupCustomerMfa } from '@/server/accounts/account-service';
 
 export const POST = withCustomerAuth(async (_request, session) => {
   const enrollment = await setupCustomerMfa(session.userId);

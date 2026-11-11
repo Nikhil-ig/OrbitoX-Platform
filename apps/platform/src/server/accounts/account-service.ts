@@ -1,3 +1,4 @@
+import 'server-only';
 import crypto from 'node:crypto';
 import type {
   Prisma,
@@ -26,7 +27,7 @@ import {
   unsealTotpSecret,
   uniformAccountResponse,
   verifyAccountPassword,
-} from '@/server/auth/phase6-account-security';
+} from '@/server/auth/account-security';
 
 type Tx = Prisma.TransactionClient;
 

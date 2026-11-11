@@ -1,5 +1,5 @@
 import { PrismaClient } from '@prisma/client';
-import { sweepBillingGrace } from '../lib/billing-grace-sweep';
+import { sweepBillingGrace } from '@/server/billing/billing-grace-sweep';
 
 async function main(): Promise<void> {
   const nodeEnv = process.env.NODE_ENV || 'production';

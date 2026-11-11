@@ -3,7 +3,7 @@
  * In production it refuses to boot with missing or weak secrets, so a
  * misconfigured deployment fails loudly at startup instead of at first request.
  */
-import { assertEmailProviderConfiguration } from './lib/account-email';
+import { assertEmailProviderConfiguration } from '@/server/accounts/account-email';
 
 export async function registerNode() {
   // Build validation must not depend on a runtime-controlled environment variable.
@@ -128,7 +128,7 @@ export async function registerNode() {
       } else {
         try {
           const { loadDeletionCertSigningKeysFromEnv } = await import(
-            './lib/data-rights/deletion-certificate'
+            '@/server/data-rights/deletion-certificate'
           );
           loadDeletionCertSigningKeysFromEnv(process.env);
         } catch (certKeyErr: any) {
@@ -141,7 +141,7 @@ export async function registerNode() {
 
     // ObjectStore configuration validation (Phase 6G G-7: explicit s3 driver, region, encryption mode)
     try {
-      const { createObjectStoreFromEnv } = await import('./lib/data-rights/object-store');
+      const { createObjectStoreFromEnv } = await import('@/server/data-rights/object-store');
       createObjectStoreFromEnv(process.env);
     } catch (objectStoreErr: unknown) {
       problems.push(
@@ -245,7 +245,7 @@ export async function registerNode() {
       );
     } else {
       try {
-        const { prisma } = await import('@/lib/prisma');
+        const { prisma } = await import('@/server/db/prisma');
         const roleRows = await prisma.$queryRaw<
           Array<{ current_user: string; rolsuper: boolean; rolbypassrls: boolean }>
         >`
@@ -363,8 +363,8 @@ export async function registerNode() {
   if (process.env.ORBITOX_DISABLE_AUTO_RESUME !== 'true') {
     setTimeout(async () => {
       try {
-        const { operationStore } = await import('@/lib/tenant-provisioning/operation-store');
-        const { provisioningSaga } = await import('@/lib/tenant-provisioning/provisioning-saga');
+        const { operationStore } = await import('@/server/provisioning/operation-store');
+        const { provisioningSaga } = await import('@/server/provisioning/provisioning-saga');
         const resumableOps = await operationStore.listResumableOperations();
         for (const op of resumableOps) {
           console.log(

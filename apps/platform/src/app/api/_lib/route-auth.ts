@@ -11,8 +11,8 @@ import {
   MemoryRevisionStore,
   PostgresRevisionStore,
 } from '@orbitox-io/plugin-engine';
-import { platformRepository } from '@/lib/platform-repository';
-import { prisma } from '@/lib/prisma';
+import { platformRepository } from '@/server/db/platform-repository';
+import { prisma } from '@/server/db/prisma';
 
 type RouteContext = any;
 type GuardedRouteHandler = (

@@ -3,10 +3,10 @@ import assert from 'node:assert/strict';
 import crypto from 'node:crypto';
 import { NextRequest } from 'next/server';
 import { Pool } from 'pg';
-import { blindIndex, getPhiKeyRing, seal } from '@/lib/phi-crypto';
-import { withTenantTx } from '@/lib/tenant-db';
-import { mapDbError } from '@/lib/db-errors';
-import { platformRepository } from '@/lib/platform-repository';
+import { blindIndex, getPhiKeyRing, seal } from '@/server/hospital/phi-crypto';
+import { withTenantTx } from '@/server/db/tenant-db';
+import { mapDbError } from '@/server/db/db-errors';
+import { platformRepository } from '@/server/db/platform-repository';
 
 // Hospital & V1 HMS write endpoints
 import { POST as postHospitalAdmission } from '@/app/api/hospital/admissions/route';

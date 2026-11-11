@@ -1,5 +1,5 @@
 import { PrismaClient } from '@prisma/client';
-import { processAccountEmailBatch } from '../lib/account-email-worker';
+import { processAccountEmailBatch } from '@/server/accounts/account-email-worker';
 
 async function main(): Promise<void> {
   const nodeEnv = process.env.NODE_ENV || 'production';

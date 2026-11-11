@@ -1,11 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getDefaultBridgeKeys, verifyBridgeRequest, MemoryNonceStore } from '@orbitox-io/bridge';
-import { withTenantTx } from '@/lib/tenant-db';
-import { prisma } from '@/lib/prisma';
-import { ensureDefaultRoles } from '@/lib/hms-auth';
-import { platformRepository } from '@/lib/platform-repository';
+import { withTenantTx } from '@/server/db/tenant-db';
+import { prisma } from '@/server/db/prisma';
+import { ensureDefaultRoles } from '@/server/auth/hms-auth';
+import { platformRepository } from '@/server/db/platform-repository';
 import { hmsGrantEnforcer } from '@/app/api/_lib/route-auth';
-import { ProvisioningValidationError, validateProvisioningPlugins } from '@/lib/tenant-provisioning/provisioning-saga';
+import { ProvisioningValidationError, validateProvisioningPlugins } from '@/server/provisioning/provisioning-saga';
 
 const bridgeNonceStore = new MemoryNonceStore();
 

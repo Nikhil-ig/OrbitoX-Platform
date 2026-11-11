@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { withApiGuard, PlatformApiState } from '../../../_lib/api-guard';
 import { PLAN_TIER_PRESETS } from '@/app/admin/data/mock-data';
-import { platformRepository } from '@/lib/platform-repository';
-import { restaurantBridgeClient } from '@/lib/restaurant-bridge-client';
+import { platformRepository } from '@/server/db/platform-repository';
+import { restaurantBridgeClient } from '@/server/restaurant-bridge/restaurant-bridge-client';
 
 export const GET = withApiGuard(
   {

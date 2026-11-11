@@ -1,3 +1,4 @@
+import 'server-only';
 export interface PlatformTenantScope {
     organizationId: string;
     projectId: string;

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { withOperatorAuth } from '@/lib/operator-auth';
-import { reauthenticateOperator } from '@/lib/phase6-account-service';
+import { withOperatorAuth } from '@/server/auth/operator-auth';
+import { reauthenticateOperator } from '@/server/accounts/account-service';
 
 export const POST = withOperatorAuth(async (request: NextRequest, session) => {
   const body = await request.json().catch(() => ({}));

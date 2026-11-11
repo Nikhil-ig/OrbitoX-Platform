@@ -1,10 +1,10 @@
 import { PrismaClient } from '@prisma/client';
-import { createObjectStoreFromEnv } from '../lib/data-rights/object-store';
+import { createObjectStoreFromEnv } from '@/server/data-rights/object-store';
 import {
   processDueOrganizationDeletions,
   processExportJobs,
   purgeExpiredExports,
-} from '../lib/data-rights/service';
+} from '@/server/data-rights/service';
 
 async function main(): Promise<void> {
   if ((process.env.ORBITOX_PLATFORM_REPOSITORY || 'prisma') !== 'prisma') {

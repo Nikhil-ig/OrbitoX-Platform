@@ -5,7 +5,7 @@ import {
   PLATFORM_SERVICE_CONTRACTS,
   EXTERNAL_SECRETS,
   getGeneratedSecretNames,
-} from '../../apps/platform/src/lib/platform-service-contracts';
+} from '../../apps/platform/src/server/organizations/platform-service-contracts';
 
 /**
  * ─────────────────────────────────────────────────────────────

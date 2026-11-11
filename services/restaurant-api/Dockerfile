@@ -22,7 +22,7 @@ COPY services/restaurant-api/prisma ./services/restaurant-api/prisma
 RUN --mount=type=cache,id=pnpm-restaurantos,target=/root/.local/share/pnpm/store \
     pnpm install --frozen-lockfile --ignore-scripts
 RUN pnpm --filter @orbitox-io/bridge... --filter @orbitox-io/external-runtime-sdk... --filter @orbitox-io/pos... --filter @orbitox-io/plugin-engine... run build
-RUN pnpm --filter restaurant-os run prisma:generate
+RUN pnpm --filter @orbitox-io/restaurant-api run prisma:generate
 
 # ---- 2. build: verify type safety ----
 FROM deps AS build
@@ -30,7 +30,7 @@ COPY services/restaurant-api/tsconfig.json ./services/restaurant-api/tsconfig.js
 COPY services/restaurant-api/src ./services/restaurant-api/src
 COPY services/restaurant-api/packages ./services/restaurant-api/packages
 COPY services/restaurant-api/orbitox.project.json ./services/restaurant-api/orbitox.project.json
-RUN pnpm --filter restaurant-os exec tsc --noEmit
+RUN pnpm --filter @orbitox-io/restaurant-api exec tsc --noEmit
 
 # ---- 3. runtime: lightweight production runtime ----
 FROM node:${NODE_VERSION}-slim AS runtime

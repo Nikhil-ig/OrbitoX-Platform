@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { accountPublicBaseUrl, consumeAuthRateLimit, registerCustomer } from '@/lib/phase6-account-service';
+import { accountPublicBaseUrl, consumeAuthRateLimit, registerCustomer } from '@/server/accounts/account-service';
 import { resolveClientIp } from '@/app/api/v1/_lib/ip-guard';
 
 export async function POST(request: NextRequest) {

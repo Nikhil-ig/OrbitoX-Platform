@@ -1,5 +1,6 @@
+import 'server-only';
 import type { Prisma } from '@prisma/client';
-import { assertValidEmail, encryptAccountEmailPayload } from '@/server/auth/phase6-account-security';
+import { assertValidEmail, encryptAccountEmailPayload } from '@/server/auth/account-security';
 
 export async function queueAccountEmail(
   transaction: Prisma.TransactionClient,

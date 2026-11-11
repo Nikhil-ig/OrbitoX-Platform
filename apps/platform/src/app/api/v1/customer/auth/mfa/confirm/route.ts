@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { withCustomerAuth } from '@/lib/customer-auth';
-import { confirmCustomerMfa } from '@/lib/phase6-account-service';
+import { withCustomerAuth } from '@/server/auth/customer-auth';
+import { confirmCustomerMfa } from '@/server/accounts/account-service';
 
 export const POST = withCustomerAuth(async (request: NextRequest, session) => {
   const body = await request.json().catch(() => ({}));

@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { createHealthHandler } from '@/lib/health-route-handler';
+import { createHealthHandler } from '@/server/http/health-route-handler';
 
 describe('Control-plane health route', () => {
     it('returns healthy when the repository has a readable store', async () => {

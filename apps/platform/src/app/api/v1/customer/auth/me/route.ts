@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { withCustomerAuth } from '@/lib/customer-auth';
+import { withCustomerAuth } from '@/server/auth/customer-auth';
 
 export const GET = withCustomerAuth(async (_request, session) => NextResponse.json({
   ok: true,

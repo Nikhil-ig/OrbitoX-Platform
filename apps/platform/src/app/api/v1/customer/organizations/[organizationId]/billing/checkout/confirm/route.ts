@@ -1,9 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { withCustomerAuth } from '@/lib/customer-auth';
-import { prisma } from '@/lib/prisma';
-import { canCustomerDashboardAction } from '@/lib/customer-dashboard';
-import { verifyCheckoutSignature } from '@/lib/razorpay-client';
-import { tenantBelongsToOrganization } from '@/lib/billing-tenant';
+import { withCustomerAuth } from '@/server/auth/customer-auth';
+import { prisma } from '@/server/db/prisma';
+import { canCustomerDashboardAction } from '@/server/organizations/customer-dashboard';
+import { verifyCheckoutSignature } from '@/server/billing/razorpay-client';
+import { tenantBelongsToOrganization } from '@/server/billing/billing-tenant';
 
 type RouteContext = { params: Promise<{ organizationId: string }> };
 
