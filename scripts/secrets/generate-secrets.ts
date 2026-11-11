@@ -5,7 +5,7 @@ import {
   PLATFORM_SERVICE_CONTRACTS,
   EXTERNAL_SECRETS,
   getGeneratedSecretNames,
-} from '../../orbitox/apps/web/lib/platform-service-contracts';
+} from '../../apps/web/lib/platform-service-contracts';
 
 /**
  * ─────────────────────────────────────────────────────────────

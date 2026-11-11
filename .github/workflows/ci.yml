@@ -51,7 +51,7 @@ jobs:
           pnpm exec prisma generate --schema prisma/schema.prisma
           pnpm exec prisma migrate deploy --schema prisma/schema.prisma
           pnpm exec prisma migrate diff --from-url "$DATABASE_URL" --to-schema-datamodel prisma/schema.prisma --exit-code
-          PGPASSWORD=postgrespassword psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -v app_role_password="$APP_DB_PASSWORD" -v maintenance_role_password="$MAINTENANCE_DB_PASSWORD" -v platform_admin_audit_password="$PLATFORM_ADMIN_AUDIT_DB_PASSWORD" -v hms_audit_reader_password="$HMS_AUDIT_DB_PASSWORD" -v outbox_relay_password="$OUTBOX_RELAY_DB_PASSWORD" -f scripts/configure-step1-runtime-role.sql
+          PGPASSWORD=postgrespassword psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -v app_role_password="$APP_DB_PASSWORD" -v maintenance_role_password="$MAINTENANCE_DB_PASSWORD" -v platform_admin_audit_password="$PLATFORM_ADMIN_AUDIT_DB_PASSWORD" -v hms_audit_reader_password="$HMS_AUDIT_DB_PASSWORD" -v outbox_relay_password="$OUTBOX_RELAY_DB_PASSWORD" -f scripts/db/configure-step1-runtime-role.sql
         env:
           DATABASE_URL: postgresql://postgres:postgrespassword@127.0.0.1:5432/orbitox_smoke
           APP_DB_PASSWORD: phase2-smoke-${{ github.run_id }}-${{ github.run_attempt }}
@@ -173,7 +173,7 @@ jobs:
             curl -fsS http://127.0.0.1:3005/api/health >/dev/null 2>&1 && break
             sleep 1
           done
-          ORBITOX_URL=http://127.0.0.1:3005 node scripts/smoke-control-plane.mjs || { cat "$RUNNER_TEMP/server.log"; exit 1; }
+          ORBITOX_URL=http://127.0.0.1:3005 node scripts/ci/smoke-control-plane.mjs || { cat "$RUNNER_TEMP/server.log"; exit 1; }
         env:
           DATABASE_URL: postgresql://orbitox_runtime:phase2-smoke-${{ github.run_id }}-${{ github.run_attempt }}@127.0.0.1:5432/orbitox_smoke
           APP_DATABASE_URL: postgresql://orbitox_runtime:phase2-smoke-${{ github.run_id }}-${{ github.run_attempt }}@127.0.0.1:5432/orbitox_smoke
@@ -200,9 +200,9 @@ jobs:
           cache-dependency-path: pnpm-lock.yaml
       - run: pnpm install --frozen-lockfile --ignore-scripts
       - name: Pack packages, install into clean isolated temp dir, and verify
-        run: bash scripts/pack-and-verify.sh
+        run: bash scripts/ci/pack-and-verify.sh
       - name: Scaffold & Multi-Template End-to-End Smoke Test
-        run: pnpm exec tsx scripts/test-scaffold-smoke.ts
+        run: pnpm exec tsx scripts/ci/test-scaffold-smoke.ts
 
   secret-scan:
     name: Secret scan (working tree)
@@ -221,7 +221,7 @@ jobs:
         with:
           fetch-depth: 0
       - name: Verify migration files are immutable against main and baseline
-        run: bash scripts/verify-migration-immutability.sh
+        run: bash scripts/ci/verify-migration-immutability.sh
 
   restaurantos-e2e:
     name: RestaurantOS HTTP Multi-Tenant & RLS Suite
@@ -467,7 +467,7 @@ jobs:
         env:
           DATABASE_URL: postgresql://postgres:postgrespassword@127.0.0.1:5432/orbitox_phase2
       - name: Configure restricted runtime and maintenance logins
-        run: PGPASSWORD=postgrespassword psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -v app_role_password="$APP_DB_PASSWORD" -v maintenance_role_password="$MAINTENANCE_DB_PASSWORD" -v platform_admin_audit_password="$PLATFORM_ADMIN_AUDIT_DB_PASSWORD" -v hms_audit_reader_password="$HMS_AUDIT_DB_PASSWORD" -v outbox_relay_password="$OUTBOX_RELAY_DB_PASSWORD" -f scripts/configure-step1-runtime-role.sql
+        run: PGPASSWORD=postgrespassword psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -v app_role_password="$APP_DB_PASSWORD" -v maintenance_role_password="$MAINTENANCE_DB_PASSWORD" -v platform_admin_audit_password="$PLATFORM_ADMIN_AUDIT_DB_PASSWORD" -v hms_audit_reader_password="$HMS_AUDIT_DB_PASSWORD" -v outbox_relay_password="$OUTBOX_RELAY_DB_PASSWORD" -f scripts/db/configure-step1-runtime-role.sql
         env:
           DATABASE_URL: postgresql://postgres:postgrespassword@127.0.0.1:5432/orbitox_phase2
           APP_DB_PASSWORD: phase2-ci-${{ github.run_id }}-${{ github.run_attempt }}
@@ -587,7 +587,7 @@ jobs:
         run: |
           pnpm exec prisma generate --schema prisma/schema.prisma
           pnpm exec prisma migrate deploy --schema prisma/schema.prisma
-          PGPASSWORD=postgrespassword psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -v app_role_password="$APP_DB_PASSWORD" -v maintenance_role_password="$MAINTENANCE_DB_PASSWORD" -v platform_admin_audit_password="$PLATFORM_ADMIN_AUDIT_DB_PASSWORD" -v hms_audit_reader_password="$HMS_AUDIT_DB_PASSWORD" -v outbox_relay_password="$OUTBOX_RELAY_DB_PASSWORD" -f scripts/configure-step1-runtime-role.sql
+          PGPASSWORD=postgrespassword psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -v app_role_password="$APP_DB_PASSWORD" -v maintenance_role_password="$MAINTENANCE_DB_PASSWORD" -v platform_admin_audit_password="$PLATFORM_ADMIN_AUDIT_DB_PASSWORD" -v hms_audit_reader_password="$HMS_AUDIT_DB_PASSWORD" -v outbox_relay_password="$OUTBOX_RELAY_DB_PASSWORD" -f scripts/db/configure-step1-runtime-role.sql
         env:
           DATABASE_URL: postgresql://postgres:postgrespassword@127.0.0.1:5432/orbitox_phase2
           APP_DB_PASSWORD: phase2-ci-${{ github.run_id }}-${{ github.run_attempt }}
@@ -698,7 +698,7 @@ jobs:
         run: |
           pnpm exec prisma generate --schema prisma/schema.prisma
           pnpm exec prisma migrate deploy --schema prisma/schema.prisma
-          PGPASSWORD=postgrespassword psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -v app_role_password="$APP_DB_PASSWORD" -v maintenance_role_password="$MAINTENANCE_DB_PASSWORD" -v platform_admin_audit_password="$PLATFORM_ADMIN_AUDIT_DB_PASSWORD" -v hms_audit_reader_password="$HMS_AUDIT_DB_PASSWORD" -v outbox_relay_password="$OUTBOX_RELAY_DB_PASSWORD" -f scripts/configure-step1-runtime-role.sql
+          PGPASSWORD=postgrespassword psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -v app_role_password="$APP_DB_PASSWORD" -v maintenance_role_password="$MAINTENANCE_DB_PASSWORD" -v platform_admin_audit_password="$PLATFORM_ADMIN_AUDIT_DB_PASSWORD" -v hms_audit_reader_password="$HMS_AUDIT_DB_PASSWORD" -v outbox_relay_password="$OUTBOX_RELAY_DB_PASSWORD" -f scripts/db/configure-step1-runtime-role.sql
         env:
           DATABASE_URL: postgresql://postgres:postgrespassword@127.0.0.1:5432/orbitox_phase2
           APP_DB_PASSWORD: phase2-ci-${{ github.run_id }}-${{ github.run_attempt }}
@@ -796,7 +796,7 @@ jobs:
         run: |
           pnpm exec prisma generate --schema prisma/schema.prisma
           pnpm exec prisma migrate deploy --schema prisma/schema.prisma
-          PGPASSWORD=postgrespassword psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -v app_role_password="$APP_DB_PASSWORD" -v maintenance_role_password="$MAINTENANCE_DB_PASSWORD" -v platform_admin_audit_password="$PLATFORM_ADMIN_AUDIT_DB_PASSWORD" -v hms_audit_reader_password="$HMS_AUDIT_DB_PASSWORD" -v outbox_relay_password="$OUTBOX_RELAY_DB_PASSWORD" -f scripts/configure-step1-runtime-role.sql
+          PGPASSWORD=postgrespassword psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -v app_role_password="$APP_DB_PASSWORD" -v maintenance_role_password="$MAINTENANCE_DB_PASSWORD" -v platform_admin_audit_password="$PLATFORM_ADMIN_AUDIT_DB_PASSWORD" -v hms_audit_reader_password="$HMS_AUDIT_DB_PASSWORD" -v outbox_relay_password="$OUTBOX_RELAY_DB_PASSWORD" -f scripts/db/configure-step1-runtime-role.sql
         env:
           DATABASE_URL: postgresql://postgres:postgrespassword@127.0.0.1:5432/orbitox_phase2
           APP_DB_PASSWORD: phase2-ci-${{ github.run_id }}-${{ github.run_attempt }}
@@ -987,7 +987,7 @@ jobs:
               -v platform_admin_audit_password="$PLATFORM_ADMIN_AUDIT_DB_PASSWORD" \
               -v hms_audit_reader_password="$HMS_AUDIT_DB_PASSWORD" \
               -v outbox_relay_password="$OUTBOX_RELAY_DB_PASSWORD" \
-              -f scripts/configure-step1-runtime-role.sql
+              -f scripts/db/configure-step1-runtime-role.sql
           )
           (
             cd projects/external-os/restaurant-os

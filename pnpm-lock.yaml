@@ -78,12 +78,12 @@ importers:
         specifier: ^19.0.0
         version: 19.2.8(react@19.2.8)
     devDependencies:
-      '@orbitox/eslint-config':
+      '@orbitox-io/eslint-config':
         specifier: workspace:*
-        version: link:../../packages/config/eslint
-      '@orbitox/tsconfig':
+        version: link:../../packages/eslint-config
+      '@orbitox-io/tsconfig':
         specifier: workspace:*
-        version: link:../../packages/config/tsconfig
+        version: link:../../packages/tsconfig
       '@types/node':
         specifier: ^20
         version: 20.19.43
@@ -102,44 +102,15 @@ importers:
 
   packages/bridge:
     devDependencies:
-      '@orbitox/tsconfig':
+      '@orbitox-io/tsconfig':
         specifier: workspace:*
-        version: link:../config/tsconfig
+        version: link:../tsconfig
       '@types/node':
         specifier: ^20.0.0
         version: 20.19.43
       typescript:
         specifier: ~5.9.3
         version: 5.9.3
-
-  packages/config/eslint:
-    dependencies:
-      '@typescript-eslint/eslint-plugin':
-        specifier: ^8.0.0
-        version: 8.66.0(@typescript-eslint/parser@8.66.0(eslint@9.39.5(jiti@2.7.0))(typescript@5.9.3))(eslint@9.39.5(jiti@2.7.0))(typescript@5.9.3)
-      '@typescript-eslint/parser':
-        specifier: ^8.0.0
-        version: 8.66.0(eslint@9.39.5(jiti@2.7.0))(typescript@5.9.3)
-      eslint-config-prettier:
-        specifier: ^10.0.0
-        version: 10.1.8(eslint@9.39.5(jiti@2.7.0))
-      eslint-plugin-import:
-        specifier: ^2.31.0
-        version: 2.32.0(@typescript-eslint/parser@8.66.0(eslint@9.39.5(jiti@2.7.0))(typescript@5.9.3))(eslint@9.39.5(jiti@2.7.0))
-
-  packages/config/jest:
-    dependencies:
-      '@types/jest':
-        specifier: ^29.5.0
-        version: 29.5.14
-      jest:
-        specifier: ^29.7.0
-        version: 29.7.0(@types/node@20.19.43)
-      ts-jest:
-        specifier: ^29.3.0
-        version: 29.4.12(@babel/core@7.29.7)(@jest/transform@29.7.0)(@jest/types@29.6.3)(babel-jest@29.7.0(@babel/core@7.29.7))(jest-util@29.7.0)(jest@29.7.0(@types/node@20.19.43))(typescript@5.9.3)
-
-  packages/config/tsconfig: {}
 
   packages/core:
     dependencies:
@@ -219,15 +190,15 @@ importers:
         specifier: ^14.0.2
         version: 14.0.2
     devDependencies:
-      '@orbitox/eslint-config':
+      '@orbitox-io/eslint-config':
         specifier: workspace:*
-        version: link:../config/eslint
-      '@orbitox/jest-config':
+        version: link:../eslint-config
+      '@orbitox-io/jest-config':
         specifier: workspace:*
-        version: link:../config/jest
-      '@orbitox/tsconfig':
+        version: link:../jest-config
+      '@orbitox-io/tsconfig':
         specifier: workspace:*
-        version: link:../config/tsconfig
+        version: link:../tsconfig
       '@types/express':
         specifier: ^5.0.6
         version: 5.0.6
@@ -250,17 +221,44 @@ importers:
         specifier: ~5.9.3
         version: 5.9.3
 
+  packages/eslint-config:
+    dependencies:
+      '@typescript-eslint/eslint-plugin':
+        specifier: ^8.0.0
+        version: 8.66.0(@typescript-eslint/parser@8.66.0(eslint@9.39.5(jiti@2.7.0))(typescript@5.9.3))(eslint@9.39.5(jiti@2.7.0))(typescript@5.9.3)
+      '@typescript-eslint/parser':
+        specifier: ^8.0.0
+        version: 8.66.0(eslint@9.39.5(jiti@2.7.0))(typescript@5.9.3)
+      eslint-config-prettier:
+        specifier: ^10.0.0
+        version: 10.1.8(eslint@9.39.5(jiti@2.7.0))
+      eslint-plugin-import:
+        specifier: ^2.31.0
+        version: 2.32.0(@typescript-eslint/parser@8.66.0(eslint@9.39.5(jiti@2.7.0))(typescript@5.9.3))(eslint@9.39.5(jiti@2.7.0))
+
   packages/external-runtime-sdk:
     devDependencies:
-      '@orbitox/tsconfig':
+      '@orbitox-io/tsconfig':
         specifier: workspace:*
-        version: link:../config/tsconfig
+        version: link:../tsconfig
       '@types/node':
         specifier: ^20.0.0
         version: 20.19.43
       typescript:
         specifier: ~5.9.3
         version: 5.9.3
+
+  packages/jest-config:
+    dependencies:
+      '@types/jest':
+        specifier: ^29.5.0
+        version: 29.5.14
+      jest:
+        specifier: ^29.7.0
+        version: 29.7.0(@types/node@20.19.43)
+      ts-jest:
+        specifier: ^29.3.0
+        version: 29.4.12(@babel/core@7.29.7)(@jest/transform@29.7.0)(@jest/types@29.6.3)(babel-jest@29.7.0(@babel/core@7.29.7))(jest-util@29.7.0)(jest@29.7.0)(typescript@5.9.3)
 
   packages/plugin-engine:
     dependencies:
@@ -280,15 +278,15 @@ importers:
         specifier: ^6.19.0
         version: 6.19.3(prisma@6.19.3(typescript@5.9.3))(typescript@5.9.3)
     devDependencies:
-      '@orbitox/eslint-config':
+      '@orbitox-io/eslint-config':
         specifier: workspace:*
-        version: link:../config/eslint
-      '@orbitox/jest-config':
+        version: link:../eslint-config
+      '@orbitox-io/jest-config':
         specifier: workspace:*
-        version: link:../config/jest
-      '@orbitox/tsconfig':
+        version: link:../jest-config
+      '@orbitox-io/tsconfig':
         specifier: workspace:*
-        version: link:../config/tsconfig
+        version: link:../tsconfig
       '@types/jest':
         specifier: ^29.5.0
         version: 29.5.14
@@ -300,7 +298,7 @@ importers:
         version: 29.7.0(@types/node@20.19.43)
       ts-jest:
         specifier: ^29.1.0
-        version: 29.4.12(@babel/core@7.29.7)(@jest/transform@29.7.0)(@jest/types@29.6.3)(babel-jest@29.7.0(@babel/core@7.29.7))(jest-util@29.7.0)(jest@29.7.0(@types/node@20.19.43))(typescript@5.9.3)
+        version: 29.4.12(@babel/core@7.29.7)(@jest/transform@29.7.0)(@jest/types@29.6.3)(babel-jest@29.7.0(@babel/core@7.29.7))(jest-util@29.7.0)(jest@29.7.0)(typescript@5.9.3)
       typescript:
         specifier: ~5.9.3
         version: 5.9.3
@@ -326,9 +324,9 @@ importers:
         specifier: ^5.2.1
         version: 5.2.1
     devDependencies:
-      '@orbitox/jest-config':
+      '@orbitox-io/jest-config':
         specifier: workspace:*
-        version: link:../config/jest
+        version: link:../jest-config
       '@types/express':
         specifier: ^5.0.6
         version: 5.0.6
@@ -343,7 +341,7 @@ importers:
         version: 29.7.0(@types/node@20.19.43)
       ts-jest:
         specifier: ^29.1.0
-        version: 29.4.12(@babel/core@7.29.7)(@jest/transform@29.7.0)(@jest/types@29.6.3)(babel-jest@29.7.0(@babel/core@7.29.7))(jest-util@29.7.0)(jest@29.7.0(@types/node@20.19.43))(typescript@5.9.3)
+        version: 29.4.12(@babel/core@7.29.7)(@jest/transform@29.7.0)(@jest/types@29.6.3)(babel-jest@29.7.0(@babel/core@7.29.7))(jest-util@29.7.0)(jest@29.7.0)(typescript@5.9.3)
       typescript:
         specifier: ~5.9.3
         version: 5.9.3
@@ -360,15 +358,15 @@ importers:
         specifier: ^0.2.2
         version: 0.2.2
     devDependencies:
-      '@orbitox/eslint-config':
+      '@orbitox-io/eslint-config':
         specifier: workspace:*
-        version: link:../config/eslint
-      '@orbitox/jest-config':
+        version: link:../eslint-config
+      '@orbitox-io/jest-config':
         specifier: workspace:*
-        version: link:../config/jest
-      '@orbitox/tsconfig':
+        version: link:../jest-config
+      '@orbitox-io/tsconfig':
         specifier: workspace:*
-        version: link:../config/tsconfig
+        version: link:../tsconfig
       '@types/jest':
         specifier: ^29.5.0
         version: 29.5.14
@@ -386,10 +384,12 @@ importers:
         version: 19.2.8
       ts-jest:
         specifier: ^29.1.0
-        version: 29.4.12(@babel/core@7.29.7)(@jest/transform@29.7.0)(@jest/types@29.6.3)(babel-jest@29.7.0(@babel/core@7.29.7))(jest-util@29.7.0)(jest@29.7.0(@types/node@20.19.43))(typescript@5.9.3)
+        version: 29.4.12(@babel/core@7.29.7)(@jest/transform@29.7.0)(@jest/types@29.6.3)(babel-jest@29.7.0(@babel/core@7.29.7))(jest-util@29.7.0)(jest@29.7.0)(typescript@5.9.3)
       typescript:
         specifier: ~5.9.3
         version: 5.9.3
+
+  packages/tsconfig: {}
 
   packages/types:
     devDependencies:
@@ -418,15 +418,15 @@ importers:
         specifier: ^19.0.0
         version: 19.2.8(react@19.2.8)
     devDependencies:
-      '@orbitox/eslint-config':
+      '@orbitox-io/eslint-config':
         specifier: workspace:*
-        version: link:../config/eslint
-      '@orbitox/jest-config':
+        version: link:../eslint-config
+      '@orbitox-io/jest-config':
         specifier: workspace:*
-        version: link:../config/jest
-      '@orbitox/tsconfig':
+        version: link:../jest-config
+      '@orbitox-io/tsconfig':
         specifier: workspace:*
-        version: link:../config/tsconfig
+        version: link:../tsconfig
       '@types/jest':
         specifier: ^29.5.0
         version: 29.5.14
@@ -444,7 +444,7 @@ importers:
         version: 29.7.0(@types/node@20.19.43)
       ts-jest:
         specifier: ^29.1.0
-        version: 29.4.12(@babel/core@7.29.7)(@jest/transform@29.7.0)(@jest/types@29.6.3)(babel-jest@29.7.0(@babel/core@7.29.7))(jest-util@29.7.0)(jest@29.7.0(@types/node@20.19.43))(typescript@5.9.3)
+        version: 29.4.12(@babel/core@7.29.7)(@jest/transform@29.7.0)(@jest/types@29.6.3)(babel-jest@29.7.0(@babel/core@7.29.7))(jest-util@29.7.0)(jest@29.7.0)(typescript@5.9.3)
       typescript:
         specifier: ~5.9.3
         version: 5.9.3
@@ -474,9 +474,9 @@ importers:
         specifier: workspace:*
         version: link:../../packages/types
     devDependencies:
-      '@orbitox/tsconfig':
+      '@orbitox-io/tsconfig':
         specifier: workspace:*
-        version: link:../../packages/config/tsconfig
+        version: link:../../packages/tsconfig
       '@types/node':
         specifier: ^20.0.0
         version: 20.19.43
@@ -499,12 +499,12 @@ importers:
         specifier: workspace:*
         version: link:../../packages/types
     devDependencies:
-      '@orbitox/jest-config':
+      '@orbitox-io/jest-config':
         specifier: workspace:*
-        version: link:../../packages/config/jest
-      '@orbitox/tsconfig':
+        version: link:../../packages/jest-config
+      '@orbitox-io/tsconfig':
         specifier: workspace:*
-        version: link:../../packages/config/tsconfig
+        version: link:../../packages/tsconfig
       '@types/jest':
         specifier: ^29.5.0
         version: 29.5.14
@@ -516,7 +516,7 @@ importers:
         version: 29.7.0(@types/node@20.19.43)
       ts-jest:
         specifier: ^29.1.0
-        version: 29.4.12(@babel/core@7.29.7)(@jest/transform@29.7.0)(@jest/types@29.6.3)(babel-jest@29.7.0(@babel/core@7.29.7))(jest-util@29.7.0)(jest@29.7.0(@types/node@20.19.43))(typescript@5.9.3)
+        version: 29.4.12(@babel/core@7.29.7)(@jest/transform@29.7.0)(@jest/types@29.6.3)(babel-jest@29.7.0(@babel/core@7.29.7))(jest-util@29.7.0)(jest@29.7.0)(typescript@5.9.3)
       typescript:
         specifier: ~5.9.3
         version: 5.9.3
@@ -527,9 +527,9 @@ importers:
         specifier: workspace:*
         version: link:../../packages/sdk
     devDependencies:
-      '@orbitox/tsconfig':
+      '@orbitox-io/tsconfig':
         specifier: workspace:*
-        version: link:../../packages/config/tsconfig
+        version: link:../../packages/tsconfig
       '@types/node':
         specifier: ^20.0.0
         version: 20.19.43
@@ -7627,7 +7627,7 @@ snapshots:
     dependencies:
       typescript: 5.9.3
 
-  ts-jest@29.4.12(@babel/core@7.29.7)(@jest/transform@29.7.0)(@jest/types@29.6.3)(babel-jest@29.7.0(@babel/core@7.29.7))(jest-util@29.7.0)(jest@29.7.0(@types/node@20.19.43))(typescript@5.9.3):
+  ts-jest@29.4.12(@babel/core@7.29.7)(@jest/transform@29.7.0)(@jest/types@29.6.3)(babel-jest@29.7.0(@babel/core@7.29.7))(jest-util@29.7.0)(jest@29.7.0)(typescript@5.9.3):
     dependencies:
       bs-logger: 0.2.6
       fast-json-stable-stringify: 2.1.0

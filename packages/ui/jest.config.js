@@ -1,4 +1,4 @@
-const baseConfig = require('@orbitox/jest-config');
+const baseConfig = require('@orbitox-io/jest-config');
 
 /** @type {import('ts-jest').JestConfigWithTsJest} */
 module.exports = {

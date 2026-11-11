@@ -24,9 +24,9 @@
     "lucide-react": "^1.43.0"
   },
   "devDependencies": {
-    "@orbitox/eslint-config": "workspace:*",
-    "@orbitox/jest-config": "workspace:*",
-    "@orbitox/tsconfig": "workspace:*",
+    "@orbitox-io/eslint-config": "workspace:*",
+    "@orbitox-io/jest-config": "workspace:*",
+    "@orbitox-io/tsconfig": "workspace:*",
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
     "typescript": "^5.0.0",

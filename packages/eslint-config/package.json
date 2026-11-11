@@ -1,5 +1,5 @@
 {
-  "name": "@orbitox/eslint-config",
+  "name": "@orbitox-io/eslint-config",
   "version": "0.0.0",
   "private": true,
   "main": "index.js",

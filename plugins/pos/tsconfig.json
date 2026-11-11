@@ -1,5 +1,5 @@
 {
-  "extends": "@orbitox/tsconfig/base.json",
+  "extends": "@orbitox-io/tsconfig/base.json",
   "compilerOptions": {
     "outDir": "dist",
     "rootDir": "src",

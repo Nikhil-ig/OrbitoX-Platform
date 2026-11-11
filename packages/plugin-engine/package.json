@@ -30,9 +30,9 @@
     "@prisma/client": "^6.19.0"
   },
   "devDependencies": {
-    "@orbitox/eslint-config": "workspace:*",
-    "@orbitox/jest-config": "workspace:*",
-    "@orbitox/tsconfig": "workspace:*",
+    "@orbitox-io/eslint-config": "workspace:*",
+    "@orbitox-io/jest-config": "workspace:*",
+    "@orbitox-io/tsconfig": "workspace:*",
     "typescript": "^5.0.0",
     "@types/node": "^20.0.0",
     "@types/jest": "^29.5.0",

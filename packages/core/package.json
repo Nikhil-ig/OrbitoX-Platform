@@ -59,9 +59,9 @@
     "uuid": "^14.0.2"
   },
   "devDependencies": {
-    "@orbitox/eslint-config": "workspace:*",
-    "@orbitox/jest-config": "workspace:*",
-    "@orbitox/tsconfig": "workspace:*",
+    "@orbitox-io/eslint-config": "workspace:*",
+    "@orbitox-io/jest-config": "workspace:*",
+    "@orbitox-io/tsconfig": "workspace:*",
     "@types/express": "^5.0.6",
     "@types/jest": "^29.5.14",
     "@types/json-logic-js": "^2.0.8",

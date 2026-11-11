@@ -8,7 +8,7 @@ console.log('===================================================================
 console.log('🚀 OrbitoX Scaffold & Multi-Template End-to-End Smoke Test');
 console.log('======================================================================');
 
-const REPO_ROOT = path.resolve(__dirname, '..');
+const REPO_ROOT = path.resolve(__dirname, '../..');
 const TEMP_ROOT = fs.mkdtempSync(path.join(os.tmpdir(), 'orbitox-scaffold-e2e-'));
 const TARBALL_DIR = path.join(TEMP_ROOT, 'tarballs');
 fs.mkdirSync(TARBALL_DIR, { recursive: true });

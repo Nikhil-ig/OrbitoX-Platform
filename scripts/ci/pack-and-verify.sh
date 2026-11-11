@@ -5,7 +5,7 @@ echo "======================================================================"
 echo "📦 OrbitoX Unified Scope & Package Packing Verification"
 echo "======================================================================"
 
-REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "$REPO_ROOT"
 
 TARBALL_DIR="$(mktemp -d -t orbitox-tarballs-XXXXXX)"

@@ -20,7 +20,7 @@
     "@orbitox-io/sdk": "workspace:*"
   },
   "devDependencies": {
-    "@orbitox/tsconfig": "workspace:*",
+    "@orbitox-io/tsconfig": "workspace:*",
     "@types/node": "^20.0.0",
     "typescript": "^5.0.0"
   }

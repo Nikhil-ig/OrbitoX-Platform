@@ -24,8 +24,8 @@
     "@orbitox-io/plugin-engine": "workspace:*"
   },
   "devDependencies": {
-    "@orbitox/tsconfig": "workspace:*",
-    "@orbitox/jest-config": "workspace:*",
+    "@orbitox-io/tsconfig": "workspace:*",
+    "@orbitox-io/jest-config": "workspace:*",
     "typescript": "^5.0.0",
     "@types/node": "^20.0.0",
     "@types/jest": "^29.5.0",

@@ -12,7 +12,7 @@ import {
   runSecretGenerator,
   getExpectedSecretNames,
   SECRET_GENERATORS,
-} from '../../../../scripts/staging/generate-secrets';
+} from '../../../scripts/secrets/generate-secrets';
 import { loadPepperRing, activeVerifier, whichPepper } from '../lib/pepper';
 import { PhiKeyRing, seal, open } from '../lib/phi-crypto';
 import {
@@ -20,14 +20,14 @@ import {
   initializeGrantKeys,
   getPublicGrantKeys,
   clearGrantKeysForTesting,
-} from '../../../../orbitox/packages/plugin-engine/src/platform/grant-keys';
-import { verifyGrant } from '../../../../orbitox/packages/plugin-engine/src/platform/entitlement-token';
+} from '../../../packages/plugin-engine/src/platform/grant-keys';
+import { verifyGrant } from '../../../packages/plugin-engine/src/platform/entitlement-token';
 import {
   getDefaultBridgeKeys,
   signBridgeRequest,
   verifyBridgeRequest,
   MemoryNonceStore,
-} from '../../../../orbitox/packages/bridge/src';
+} from '../../../packages/bridge/src';
 import {
   buildSignedDeletionCertificate,
   extractDeletionCertPublicKeys,

@@ -10,7 +10,7 @@
     "test": "NODE_ENV=test ORBITOX_PLATFORM_REPOSITORY=json pnpm run prisma:generate && NODE_ENV=test ORBITOX_PLATFORM_REPOSITORY=json pnpm exec tsx --test test/**/*.test.ts",
     "test:postgres": "pnpm run prisma:generate && NODE_ENV=test ORBITOX_PLATFORM_REPOSITORY=prisma pnpm exec tsx --test test/**/*.test.ts",
     "test:negative-control": "pnpm run prisma:generate && pnpm exec tsx scripts/test-phase2b-negative-control.ts",
-    "test:hms-adversarial-sql": "bash ../scripts/test-hms-adversarial-sql.sh orbitox_phase2",
+    "test:hms-adversarial-sql": "bash ../../scripts/ci/test-hms-adversarial-sql.sh orbitox_phase2",
     "test:hms-crash-durability": "pnpm run prisma:generate && pnpm exec tsx scripts/test-hms-crash-durability.ts",
     "test:integration": "pnpm run prisma:generate && pnpm exec tsx scripts/test-platform-step1-db.ts",
     "test:repository": "pnpm run prisma:generate && pnpm exec tsx scripts/test-platform-step2-repository.ts",
@@ -25,7 +25,7 @@
     "email:worker": "pnpm exec tsx scripts/account-email-worker.ts",
     "billing:grace-sweep": "pnpm exec tsx scripts/billing-grace-sweep.ts",
     "operator:bootstrap": "pnpm exec tsx scripts/bootstrap-platform-operator.ts",
-    "start": "node ../../scripts/check-production-env.mjs && next start -p 3005",
+    "start": "node ../../scripts/ci/check-production-env.mjs && next start -p 3005",
     "lint": "next lint"
   },
   "dependencies": {
@@ -46,8 +46,8 @@
     "react-dom": "^19.0.0"
   },
   "devDependencies": {
-    "@orbitox/eslint-config": "workspace:*",
-    "@orbitox/tsconfig": "workspace:*",
+    "@orbitox-io/eslint-config": "workspace:*",
+    "@orbitox-io/tsconfig": "workspace:*",
     "@types/node": "^20",
     "@types/pg": "^8.23.1",
     "@types/react": "^19",
