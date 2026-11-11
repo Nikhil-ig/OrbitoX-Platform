@@ -1,7 +1,7 @@
 import * as crypto from 'crypto';
 import { CryptoSigner, PackageSignature } from './security/crypto-signer';
 import { IntegrityVerifier } from './security/integrity-verifier';
-import { OrbitoXClusterMode } from './client';
+import type { OrbitoXClusterMode } from './cluster.types';
 
 export interface SnapshotMetadata {
   version: string;

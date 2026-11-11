@@ -1,4 +1,4 @@
-import { WorkflowsFacade } from '../facades/workflows.facade';
+import type { WorkflowsFacadeContract } from './facade-contracts';
 
 export class WorkflowBuilder {
   private _name: string = '';
@@ -8,7 +8,7 @@ export class WorkflowBuilder {
   constructor(
     private readonly id: string,
     private readonly contextId: string,
-    private readonly workflowsFacade: WorkflowsFacade
+    private readonly workflowsFacade: WorkflowsFacadeContract
   ) {}
 
   name(name: string): this {

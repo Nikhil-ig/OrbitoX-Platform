@@ -2,7 +2,10 @@ import { LicenseEnforcer, LicenseValidationOptions, LicensePayload } from './sec
 import { IntegrityVerifier } from './security/integrity-verifier';
 import { SandboxGuard } from './security/sandbox-guard';
 import { PackageSignature } from './security/crypto-signer';
-import { ModeSwitcherService, OrbitoXSnapshotPayload, SwitchResult, DrainStatus } from './modeSwitcher';
+import type { OrbitoXClusterMode } from './cluster.types';
+import { ModeSwitcherService, OrbitoXSnapshotPayload } from './modeSwitcher';
+
+export type { OrbitoXClusterMode };
 
 export interface OrbitoXPluginDefinition {
   id?: string;
@@ -12,8 +15,6 @@ export interface OrbitoXPluginDefinition {
   service?: any;
   [key: string]: any;
 }
-
-export type OrbitoXClusterMode = 'standalone' | 'distributed';
 
 export interface ClusterStatus {
   mode: OrbitoXClusterMode;

@@ -1,4 +1,4 @@
-import { SecurityFacade } from '../facades/security.facade';
+import type { SecurityFacadeContract } from './facade-contracts';
 
 export class PolicyBuilder {
   private _resourceType: string = '*';
@@ -7,7 +7,7 @@ export class PolicyBuilder {
 
   constructor(
     private readonly id: string,
-    private readonly securityFacade: SecurityFacade
+    private readonly securityFacade: SecurityFacadeContract
   ) {}
 
   resource(resourceType: string): this {

@@ -1,4 +1,4 @@
-import { BillingFacade } from '../facades/billing.facade';
+import type { BillingFacadeContract } from './facade-contracts';
 
 export class PlanBuilder {
   private _description?: string;
@@ -10,7 +10,7 @@ export class PlanBuilder {
 
   constructor(
     private readonly name: string,
-    private readonly billingFacade: BillingFacade
+    private readonly billingFacade: BillingFacadeContract
   ) {}
 
   description(desc: string): this {

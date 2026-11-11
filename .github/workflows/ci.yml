@@ -126,6 +126,9 @@ jobs:
       - name: Type-check monorepo packages & control plane
         run: pnpm exec turbo run type-check
 
+      - name: Check circular dependencies
+        run: pnpm run check:circular
+
       - name: Unit tests (Core, Plugin Engine, POS, External Project Engine)
         run: |
           pnpm --filter @orbitox-io/core test
