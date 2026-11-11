@@ -12,24 +12,7 @@
     "duplicates": "off"
   },
   "ignore": [
-    "docs/**",
-    "packages/types/**",
-    "services/restaurant-api/packages/config/index.ts",
-    "services/restaurant-api/packages/domain/recommendation-engine.ts",
-    "services/restaurant-api/packages/runtime/index.ts",
-    "services/restaurant-api/src/http/errors.ts",
-    "services/restaurant-api/src/shared/index.ts",
-    "services/restaurant-api/src/shared/logger.ts",
-    "apps/platform/src/app/(console)/admin/components/activity-pill-row.tsx",
-    "apps/platform/src/app/(console)/admin/components/glow-spline-chart.tsx",
-    "apps/platform/src/app/(console)/admin/components/neon-bar-chart.tsx",
-    "apps/platform/src/app/(console)/admin/components/project-provision-modal.tsx",
-    "apps/platform/src/app/components/orbitox-logo.tsx",
-    "apps/platform/src/components/plugin-coming-soon.tsx",
-    "apps/platform/src/server/organizations/governance-dock-context.tsx",
-    "apps/platform/src/server/organizations/platform-catalogue-presets.ts",
-    "apps/platform/src/lib/**",
-    "apps/platform/src/hooks/useHospitalOS.ts"
+    "docs/**"
   ],
   "ignoreBinaries": [
     "terraform"
@@ -58,7 +41,8 @@
         "src/workers/*.ts",
         "src/app/**/page.tsx",
         "src/app/**/layout.tsx",
-        "src/app/api/**/route.ts"
+        "src/app/api/**/route.ts",
+        "src/components/governance-dock-context.tsx"
       ],
       "ignoreDependencies": [
         "@orbitox-io/pos",
@@ -67,7 +51,7 @@
     },
     "services/restaurant-api": {
       "entry": [
-        "src/main.ts",
+        "src/server.ts",
         "scripts/*.{ts,js}",
         "test/**/*.test.ts"
       ],
@@ -81,8 +65,17 @@
       ]
     },
     "packages/plugin-engine": {
+      "entry": [
+        "src/index.ts",
+        "src/plugin-engine.module.ts"
+      ],
       "ignoreDependencies": [
         "@prisma/client"
+      ]
+    },
+    "packages/types": {
+      "entry": [
+        "src/**/*.ts!"
       ]
     },
     "packages/runtime": {
