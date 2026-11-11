@@ -10,12 +10,12 @@
 | I want to... | Read |
 |---|---|
 | Run OrbitoX and connect my first project | [Root README](../README.md) |
-| Understand the architecture | [architecture/02_ARCHITECTURE.md](architecture/02_ARCHITECTURE.md) |
-| Deploy to production | [runbooks/12_PRODUCTION_DEPLOYMENT.md](runbooks/12_PRODUCTION_DEPLOYMENT.md) |
-| Onboard client projects, plans and quotas | [architecture/CLIENT_PROJECTS_AND_ECOSYSTEM_GUIDE.md](architecture/CLIENT_PROJECTS_AND_ECOSYSTEM_GUIDE.md) |
-| Rotate secrets and clean git history | [security/SECURITY_CLEANUP.md](security/SECURITY_CLEANUP.md) |
-| Read the full spec | [architecture/ORBITOX_MASTER_DOC.md](architecture/ORBITOX_MASTER_DOC.md), [architecture/ORBITOX_MASTER_ARCHITECTURE_AND_API_SPECIFICATION.md](architecture/ORBITOX_MASTER_ARCHITECTURE_AND_API_SPECIFICATION.md) |
-| Browse program cleanup inventory & historical GO specs | [cleanup/inventory.md](cleanup/inventory.md), [history/](history/) |
+| Understand the restructured system architecture | [System Architecture](architecture.md) |
+| Review Architectural Decision Records (ADRs) | [Architecture Decision Records](adr/README.md) |
+| Inspect OpenAPI 3.1.0 specifications | [API Contracts](api/) |
+| Security threat models, secrets & data rights | [Security Documentation](security/) |
+| Operational runbooks (deploy, backup, key rotation) | [Operations Runbooks](runbooks/) |
+| Browse historical GO specs & reference packs | [History Archive](history/) |
 
 ---
 
