@@ -56,19 +56,9 @@ import {
   DEFAULT_GROCERY_SKUS,
   DEFAULT_BRANCH_MENU_OVERRIDES,
 } from '../domain';
+import type { DomainEvent } from '../domain/events.types';
 
-export interface DomainEvent<T = any> {
-  id: string;
-  sequence: number;
-  type: string;
-  timestamp: string;
-  producer: string;
-  branchId: string;
-  floorId?: string;
-  tableNumber?: string;
-  tenantId?: string;
-  payload: T;
-}
+export type { DomainEvent };
 
 export interface SettlementRecord {
   method: 'CASH' | 'CARD' | 'UPI' | 'COMP' | 'VOID' | 'REFUND' | 'EMERGENCY_OVERRIDE';

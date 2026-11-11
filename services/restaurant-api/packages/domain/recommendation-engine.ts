@@ -6,12 +6,10 @@
  * Observation -> Reason -> Confidence -> Quantified Impact -> Actionable Operation.
  */
 
-import {
-  MenuItem,
-  KitchenTask,
-  TableFloorRecord,
-  SmartRecommendation,
-} from './index';
+import type { MenuItem } from './menu';
+import type { KitchenTask } from './kds';
+import type { TableFloorRecord } from './floor';
+import type { SmartRecommendation } from './orders';
 
 export class RestaurantRecommendationEngine {
   /**

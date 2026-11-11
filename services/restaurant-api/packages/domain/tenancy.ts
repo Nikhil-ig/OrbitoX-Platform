@@ -14,7 +14,7 @@
 import { AsyncLocalStorage } from 'async_hooks';
 import * as http from 'http';
 import { PrismaClient } from '../../generated/prisma';
-import { verifyPlatformAuth } from './provisioning';
+import { verifyPlatformAuth } from './platform-auth';
 
 export interface ActiveTenantContext {
   tenantId: string;

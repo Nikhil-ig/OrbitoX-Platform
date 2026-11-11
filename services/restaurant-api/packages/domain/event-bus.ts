@@ -15,9 +15,11 @@
 import * as http from 'http';
 import * as url from 'url';
 import { EventEmitter } from 'events';
-import { DomainEvent } from '../storage';
+import { DomainEvent } from './events.types';
 import { resolveAllowedOrigin } from './security';
 import { tryGetActiveTenant } from './tenancy';
+
+export type { DomainEvent };
 
 export interface ClientScope {
   tenantId?: string;
