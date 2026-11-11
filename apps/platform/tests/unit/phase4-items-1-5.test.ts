@@ -879,7 +879,7 @@ describe('Phase 4 Items 1–5: The 2-Minute Tenant & Lifecycle Hooks', () => {
       // In RestaurantOS server.ts, POST /internal/tenants is deleted and returns 410 ROUTE_DEPRECATED
       // Test the contract against the server code or direct module
       const serverSource = require('fs').readFileSync(
-        require('path').resolve(__dirname, '../../../../projects/external-os/restaurant-os/src/server.ts'),
+        require('path').resolve(__dirname, '../../../../services/restaurant-api/src/server.ts'),
         'utf8'
       );
 
@@ -903,7 +903,7 @@ describe('Phase 4 Items 1–5: The 2-Minute Tenant & Lifecycle Hooks', () => {
 
     it('verifies RestaurantOS treats non-development and non-test NODE_ENV as production (fail-closed)', () => {
       const serverSource = require('fs').readFileSync(
-        require('path').resolve(__dirname, '../../../../projects/external-os/restaurant-os/src/server.ts'),
+        require('path').resolve(__dirname, '../../../../services/restaurant-api/src/server.ts'),
         'utf8'
       );
       assert.ok(

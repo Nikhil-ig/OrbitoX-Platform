@@ -46,7 +46,7 @@ const grantKeyPair = crypto.generateKeyPairSync('ed25519');
 const grantPrivateKeyPem = grantKeyPair.privateKey.export({ type: 'pkcs8', format: 'pem' }).toString();
 const grantPublicKeyPem = grantKeyPair.publicKey.export({ type: 'spki', format: 'pem' }).toString();
 
-const restoCwd = path.resolve(__dirname, '../../../../projects/external-os/restaurant-os');
+const restoCwd = path.resolve(__dirname, '../../../../services/restaurant-api');
 const isRestoInstalled = fs.existsSync(path.resolve(restoCwd, 'node_modules/@prisma/client'));
 
 async function getFreePort(): Promise<number> {
@@ -84,7 +84,7 @@ before(async () => {
   // 1. Start independent cross-process RestaurantOS server
   rotateGrantSigningKey('phase6-m1', grantPrivateKeyPem, grantPublicKeyPem);
   restaurantPort = await getFreePort();
-  const serverPath = path.resolve(__dirname, '../../../../projects/external-os/restaurant-os/src/server.ts');
+  const serverPath = path.resolve(__dirname, '../../../../services/restaurant-api/src/server.ts');
   const tsxCli = require.resolve('tsx/cli');
 
   restaurantProcess = spawn(

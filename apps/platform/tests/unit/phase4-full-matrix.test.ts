@@ -912,8 +912,8 @@ describe('Phase 4 Item 8: Comprehensive Tenant Provisioning Matrix', () => {
     // 1. Spawn a real separately running RestaurantOS process on a safe port
     const restoPort = await allocateSafePort(3940);
     const tsxCli = require.resolve('tsx/cli');
-    const restoServerPath = path.resolve(__dirname, '../../../../projects/external-os/restaurant-os/src/server.ts');
-    const restoCwd = path.resolve(__dirname, '../../../../projects/external-os/restaurant-os');
+    const restoServerPath = path.resolve(__dirname, '../../../../services/restaurant-api/src/server.ts');
+    const restoCwd = path.resolve(__dirname, '../../../../services/restaurant-api');
 
     const restoDbUrl = process.env.RESTAURANT_DATABASE_URL || databaseUrl.replace(/\/orbitox_phase2$/, '/restaurant_os');
     const restoProcess = spawn(

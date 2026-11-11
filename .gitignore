@@ -50,7 +50,8 @@ keys/
 **/data/platform-repository-store.json*
 **/data/test-*.json
 **/data/phase*-audit/
-projects/external-os/restaurant-os/data/
+services/restaurant-api/data/
+services/restaurant-api/generated/
 apps/web/data/
 apps/platform/data/
 packages/storage/test_*.json

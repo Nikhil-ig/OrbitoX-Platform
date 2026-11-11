@@ -689,7 +689,7 @@ describe('Phase 6G Foundations: Contract, ObjectStore, Export Bundle & Deletion 
     const repoRoot = path.resolve(__dirname, '../../../..');
     const schemaPaths = [
       path.resolve(repoRoot, 'apps/platform/prisma/schema.prisma'),
-      path.resolve(repoRoot, 'projects/external-os/restaurant-os/prisma/schema.prisma'),
+      path.resolve(repoRoot, 'services/restaurant-api/prisma/schema.prisma'),
     ];
 
     const forbiddenSet = new Set(FORBIDDEN_EXPORT_COLUMNS.map((c) => c.toLowerCase()));

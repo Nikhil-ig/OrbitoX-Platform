@@ -40,21 +40,21 @@ paths = [
   '''(?i)(orbitox/)?packages/plugin-engine/src/security/credential-vault\.spec\.ts$''',
 
   # Individually Justified False Positive 2: Log Redaction Hardening Tests
-  # File: projects/external-os/restaurant-os/scripts/test-phase6c-stage-a.js
+  # File: services/restaurant-api/scripts/test-phase6c-stage-a.js
   # Justification: Validates that redactSensitiveData() algorithmically catches and masks synthetic
   # Base64 tokens and sample test JWTs before writing to stdout.
-  '''(?i)projects/external-os/restaurant-os/scripts/test-phase6c-stage-a\.js$''',
+  '''(?i)services/restaurant-api/scripts/test-phase6c-stage-a\.js$''',
 
   # Individually Justified False Positive 3: Observability Security Audit
-  # File: projects/external-os/restaurant-os/scripts/test-phase6a-observability.js
+  # File: services/restaurant-api/scripts/test-phase6a-observability.js
   # Justification: Integration test confirming recursive audit log sanitization of dummy bearer/order tokens.
-  '''(?i)projects/external-os/restaurant-os/scripts/test-phase6a-observability\.js$''',
+  '''(?i)services/restaurant-api/scripts/test-phase6a-observability\.js$''',
 
   # Individually Justified False Positive 4: Owner Self-Service Payment Encryption & Masking
-  # File: projects/external-os/restaurant-os/scripts/test-owner-self-service.ts
+  # File: services/restaurant-api/scripts/test-owner-self-service.ts
   # Justification: Integration test verifying AES-256-GCM envelope encryption and prefix/suffix masking
   # (e.g. rzp_live...91zP) of tenant payment gateway configurations.
-  '''(?i)projects/external-os/restaurant-os/scripts/test-owner-self-service\.ts$''',
+  '''(?i)services/restaurant-api/scripts/test-owner-self-service\.ts$''',
 
   # Individually Justified False Positive 5: POS Station Token Hardware Binding & Rejection
   # File: scripts/test-phase6-1-identity-lifecycle.js

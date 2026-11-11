@@ -1,0 +1,37 @@
+{
+  "name": "restaurant-os",
+  "version": "1.0.0",
+  "description": "OrbitoX RestaurantOS Independent Runtime Product",
+  "main": "src/server.ts",
+  "scripts": {
+    "dev": "tsx src/server.ts",
+    "start": "tsx src/server.ts",
+    "prisma:generate": "prisma generate --schema prisma/schema.prisma",
+    "build": "pnpm run prisma:generate && tsc --noEmit",
+    "test": "pnpm run prisma:generate && tsx scripts/test-event-bus-tenants.ts && node scripts/test-milestone2-core.js",
+    "test:isolation": "pnpm run prisma:generate && tsx scripts/test-event-bus-tenants.ts",
+    "test:core": "pnpm run prisma:generate && node scripts/test-milestone2-core.js",
+    "test:bridge": "pnpm run prisma:generate && tsx scripts/test-restaurant-bridge-and-lifecycle.ts",
+    "test:2servers": "pnpm run prisma:generate && tsx scripts/test-restaurant-2servers.ts",
+    "test:cross-tenant": "pnpm run prisma:generate && tsx scripts/test-restaurant-cross-tenant.ts",
+    "test:durability": "pnpm run prisma:generate && tsx scripts/test-restaurant-crash-durability.ts",
+    "test:all": "pnpm run prisma:generate && tsx scripts/test-restaurant-bridge-and-lifecycle.ts && tsx scripts/test-restaurant-2servers.ts && tsx scripts/test-restaurant-cross-tenant.ts && tsx scripts/test-restaurant-crash-durability.ts",
+    "type-check": "pnpm run prisma:generate && tsc --noEmit"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "@types/pg": "^8.16.0",
+    "playwright": "^1.64.0",
+    "prisma": "^6.19.3",
+    "tsx": "^4.23.15",
+    "typescript": "^5.0.0"
+  },
+  "dependencies": {
+    "@orbitox-io/bridge": "workspace:*",
+    "@orbitox-io/external-runtime-sdk": "workspace:*",
+    "@orbitox-io/plugin-engine": "workspace:*",
+    "@orbitox-io/pos": "workspace:*",
+    "@prisma/client": "^6.19.3",
+    "pg": "^8.23.1"
+  }
+}

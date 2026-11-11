@@ -879,7 +879,7 @@ describe('Phase 3 Parts D–G: Rights, Licensing, Enforcement, Webhooks & SDK', 
         });
 
         const fs = await import('fs');
-        const restaurantDir = path.resolve(__dirname, '../../../../projects/external-os/restaurant-os');
+        const restaurantDir = path.resolve(__dirname, '../../../../services/restaurant-api');
         const tsxPath = path.resolve(restaurantDir, 'node_modules/tsx/dist/cli.mjs');
         const isRestoInstalled = fs.existsSync(path.resolve(restaurantDir, 'node_modules/@prisma/client')) && fs.existsSync(tsxPath);
         if (!isRestoInstalled) {

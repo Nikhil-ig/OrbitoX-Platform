@@ -179,7 +179,7 @@ describe('OpenAPI Route Parity & Drift CI Tests (Phase 5 Item 4)', () => {
     const restaurantSpec = JSON.parse(fs.readFileSync(restaurantSpecPath, 'utf8'));
     const specPaths = Object.keys(restaurantSpec.paths);
 
-    const serverFile = path.join(repoRoot, 'projects/external-os/restaurant-os/src/server.ts');
+    const serverFile = path.join(repoRoot, 'services/restaurant-api/src/server.ts');
 
     it('asserts restaurant-os server.ts exists', () => {
       assert.ok(fs.existsSync(serverFile), `Missing restaurant-os server: ${serverFile}`);

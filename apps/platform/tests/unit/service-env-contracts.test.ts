@@ -437,8 +437,8 @@ describe('Phase 6F B0-5: Service Environment & Secret Static Code Contract Verif
 
   it('verifies exact bidirectional parity between code reads, contract, and terraform for restaurant_os service', () => {
     const rosFiles = [
-      ...scanDirectory(path.resolve(repoRoot, 'projects/external-os/restaurant-os/src')),
-      ...scanDirectory(path.resolve(repoRoot, 'projects/external-os/restaurant-os/packages')),
+      ...scanDirectory(path.resolve(repoRoot, 'services/restaurant-api/src')),
+      ...scanDirectory(path.resolve(repoRoot, 'services/restaurant-api/packages')),
       ...scanDirectory(path.resolve(repoRoot, 'packages/bridge/src')),
     ];
 

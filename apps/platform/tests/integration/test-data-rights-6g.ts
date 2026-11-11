@@ -51,7 +51,7 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const repoRoot = path.resolve(__dirname, '../../../..');
 const orbitoxRoot = path.resolve(repoRoot, 'orbitox');
-const restaurantRoot = path.resolve(repoRoot, 'projects/external-os/restaurant-os');
+const restaurantRoot = path.resolve(repoRoot, 'services/restaurant-api');
 
 function allocateFreePort(preferred: number): Promise<number> {
   return new Promise((resolve, reject) => {
