@@ -12,6 +12,7 @@ RUN corepack enable && corepack prepare pnpm@9.15.0 --activate
 WORKDIR /repo
 COPY pnpm-lock.yaml pnpm-workspace.yaml package.json turbo.json tsconfig.base.json tsconfig.prod.json ./
 COPY apps/platform/package.json apps/platform/
+COPY services/restaurant-api/package.json services/restaurant-api/
 COPY packages ./packages
 COPY plugins ./plugins
 COPY tools ./tools
