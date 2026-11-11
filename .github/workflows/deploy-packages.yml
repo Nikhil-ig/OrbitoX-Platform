@@ -56,7 +56,7 @@ jobs:
           ORBITOX_SIGNING_KEY: ${{ secrets.ORBITOX_RELEASE_PRIVATE_KEY }}
         run: |
           # Build CLI
-          pnpm --filter @orbitox/cli build
+          pnpm --filter @orbitox-io/cli build
           
           # Package & Sign Plugins
           if [ "${{ github.event.inputs.plugin_name }}" != "" ] && [ "${{ github.event.inputs.plugin_name }}" != "all" ]; then
