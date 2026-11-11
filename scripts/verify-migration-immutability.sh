@@ -20,10 +20,10 @@ FAILED=0
 
 get_approved_exception_old() {
   case "$1" in
-    "orbitox/prisma/migrations/20261027000600_orbitox_phase2_step2_audit_intents/migration.sql")
+    "prisma/migrations/20261027000600_orbitox_phase2_step2_audit_intents/migration.sql"|"apps/platform/prisma/migrations/20261027000600_orbitox_phase2_step2_audit_intents/migration.sql"|"orbitox/prisma/migrations/20261027000600_orbitox_phase2_step2_audit_intents/migration.sql")
       echo "67447bf30d01a5d9de58146d762d4796c7bfd3aaed3db8c6cef0dbb5d5322848"
       ;;
-    "orbitox/prisma/migrations/20261027000700_orbitox_phase2_step3_audit_previous_value/migration.sql")
+    "prisma/migrations/20261027000700_orbitox_phase2_step3_audit_previous_value/migration.sql"|"apps/platform/prisma/migrations/20261027000700_orbitox_phase2_step3_audit_previous_value/migration.sql"|"orbitox/prisma/migrations/20261027000700_orbitox_phase2_step3_audit_previous_value/migration.sql")
       echo "5e4baa6838518b803f21aeb11614c73ffb8ba9a90a799fd8d8086912e1a0c66b"
       ;;
     *)
@@ -34,10 +34,10 @@ get_approved_exception_old() {
 
 get_approved_exception_new() {
   case "$1" in
-    "orbitox/prisma/migrations/20261027000600_orbitox_phase2_step2_audit_intents/migration.sql")
+    "prisma/migrations/20261027000600_orbitox_phase2_step2_audit_intents/migration.sql"|"apps/platform/prisma/migrations/20261027000600_orbitox_phase2_step2_audit_intents/migration.sql"|"orbitox/prisma/migrations/20261027000600_orbitox_phase2_step2_audit_intents/migration.sql")
       echo "9493ebd3537d946b9159a64d0f6505e9f81d5778ee501a1b4065ab06d6379820"
       ;;
-    "orbitox/prisma/migrations/20261027000700_orbitox_phase2_step3_audit_previous_value/migration.sql")
+    "prisma/migrations/20261027000700_orbitox_phase2_step3_audit_previous_value/migration.sql"|"apps/platform/prisma/migrations/20261027000700_orbitox_phase2_step3_audit_previous_value/migration.sql"|"orbitox/prisma/migrations/20261027000700_orbitox_phase2_step3_audit_previous_value/migration.sql")
       echo "500d115baa4287da0a3ffecc2db1724042e0db253af4fe1606f773086d7db50a"
       ;;
     *)

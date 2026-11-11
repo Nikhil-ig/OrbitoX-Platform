@@ -34,10 +34,10 @@ paths = [
   '''(?i)keys/private\.pem$''',
 
   # Individually Justified False Positive 1: Credential Vault Masking Unit Tests
-  # File: orbitox/packages/plugin-engine/src/security/credential-vault.spec.ts
+  # File: packages/plugin-engine/src/security/credential-vault.spec.ts
   # Justification: Validates that CredentialVault.maskSecret correctly preserves public provider prefixes
   # (AWS AKIA..., GitHub ghp_...) while completely redacting secret bodies in production logs.
-  '''(?i)orbitox/packages/plugin-engine/src/security/credential-vault\.spec\.ts$''',
+  '''(?i)(orbitox/)?packages/plugin-engine/src/security/credential-vault\.spec\.ts$''',
 
   # Individually Justified False Positive 2: Log Redaction Hardening Tests
   # File: projects/external-os/restaurant-os/scripts/test-phase6c-stage-a.js
@@ -68,9 +68,9 @@ paths = [
   '''(?i)scripts/test-kds-security-adversarial\.js$''',
 
   # Individually Justified False Positive 7: Razorpay Webhook Banned Literal Rejection Test
-  # File: orbitox/apps/web/test/phase3-parts-defg.test.ts
+  # File: apps/web/test/phase3-parts-defg.test.ts (or apps/platform/tests/unit/phase3-parts-defg.test.ts)
   # Justification: Verifies that webhook requests signed with the legacy banned test_razorpay_webhook_secret literal are rejected with 401.
-  '''(?i)orbitox/apps/web/test/phase3-parts-defg\.test\.ts$''',
+  '''(?i)(orbitox/)?apps/(web|platform)/tests?/(unit/)?phase3-parts-defg\.test\.ts$''',
 
   # Scanner configuration defining the banned regexes
   '''(?i)\.gitleaks\.toml$'''

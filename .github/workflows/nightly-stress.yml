@@ -32,9 +32,6 @@ jobs:
           --health-interval 5s
           --health-timeout 5s
           --health-retries 10
-    defaults:
-      run:
-        working-directory: orbitox
     steps:
       - uses: actions/checkout@v5
       - uses: pnpm/action-setup@v5
@@ -44,7 +41,7 @@ jobs:
         with:
           node-version: 22
           cache: pnpm
-          cache-dependency-path: orbitox/pnpm-lock.yaml
+          cache-dependency-path: pnpm-lock.yaml
       - name: Install dependencies
         run: pnpm install --frozen-lockfile --ignore-scripts
       - name: Build workspace packages

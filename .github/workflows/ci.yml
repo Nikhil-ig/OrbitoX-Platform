@@ -34,9 +34,6 @@ jobs:
           --health-interval 5s
           --health-timeout 5s
           --health-retries 10
-    defaults:
-      run:
-        working-directory: orbitox
     steps:
       - uses: actions/checkout@v5
       - uses: pnpm/action-setup@v5
@@ -46,7 +43,7 @@ jobs:
         with:
           node-version: 22
           cache: pnpm
-          cache-dependency-path: orbitox/pnpm-lock.yaml
+          cache-dependency-path: pnpm-lock.yaml
       - run: pnpm install --frozen-lockfile --ignore-scripts
 
       - name: Apply control-plane baseline and configure runtime roles
@@ -191,9 +188,6 @@ jobs:
     name: Package Tarball & External Install Smoke
     runs-on: ubuntu-24.04
     timeout-minutes: 20
-    defaults:
-      run:
-        working-directory: orbitox
     steps:
       - uses: actions/checkout@v5
       - uses: pnpm/action-setup@v5
@@ -203,7 +197,7 @@ jobs:
         with:
           node-version: 22
           cache: pnpm
-          cache-dependency-path: orbitox/pnpm-lock.yaml
+          cache-dependency-path: pnpm-lock.yaml
       - run: pnpm install --frozen-lockfile --ignore-scripts
       - name: Pack packages, install into clean isolated temp dir, and verify
         run: bash scripts/pack-and-verify.sh
@@ -267,7 +261,6 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       - name: Build linked OrbitoX external-runtime-sdk
-        working-directory: orbitox
         run: |
           pnpm install --frozen-lockfile --filter @orbitox-io/bridge... --filter @orbitox-io/external-runtime-sdk... --filter @orbitox-io/pos... --filter @orbitox-io/plugin-engine...
           pnpm --filter @orbitox-io/bridge... --filter @orbitox-io/external-runtime-sdk... --filter @orbitox-io/pos... --filter @orbitox-io/plugin-engine... run build
@@ -347,11 +340,10 @@ jobs:
           node-version: 22
           cache: pnpm
           cache-dependency-path: |
-            orbitox/pnpm-lock.yaml
+            pnpm-lock.yaml
             projects/external-os/restaurant-os/pnpm-lock.yaml
 
       - name: Build linked OrbitoX packages (@orbitox-io/bridge, SDK, POS, Plugin Engine)
-        working-directory: orbitox
         run: |
           pnpm install --frozen-lockfile
           pnpm exec prisma generate --schema prisma/schema.prisma
@@ -420,7 +412,6 @@ jobs:
           APP_DATABASE_URL: postgresql://restaurantos_app:test_app_pass_123@127.0.0.1:5432/restaurant_os
 
       - name: "Suite 5: Platform <-> RestaurantOS Lifecycle Bridge E2E (Cross-Process)"
-        working-directory: orbitox
         run: pnpm --filter web exec tsx --test test/restaurant-lifecycle-bridge-e2e.test.ts
         env:
           NODE_ENV: test
@@ -445,9 +436,6 @@ jobs:
           --health-interval 5s
           --health-timeout 5s
           --health-retries 10
-    defaults:
-      run:
-        working-directory: orbitox
     steps:
       - uses: actions/checkout@v5
       - uses: pnpm/action-setup@v5
@@ -457,7 +445,7 @@ jobs:
         with:
           node-version: 22
           cache: pnpm
-          cache-dependency-path: orbitox/pnpm-lock.yaml
+          cache-dependency-path: pnpm-lock.yaml
       - name: Install dependencies
         run: pnpm install --frozen-lockfile --ignore-scripts
       - name: Build workspace packages
@@ -581,9 +569,6 @@ jobs:
           --health-interval 5s
           --health-timeout 5s
           --health-retries 10
-    defaults:
-      run:
-        working-directory: orbitox
     steps:
       - uses: actions/checkout@v5
       - uses: pnpm/action-setup@v5
@@ -593,7 +578,7 @@ jobs:
         with:
           node-version: 22
           cache: pnpm
-          cache-dependency-path: orbitox/pnpm-lock.yaml
+          cache-dependency-path: pnpm-lock.yaml
       - name: Install dependencies
         run: pnpm install --frozen-lockfile --ignore-scripts
       - name: Build workspace packages
@@ -695,9 +680,6 @@ jobs:
           --health-interval 5s
           --health-timeout 5s
           --health-retries 10
-    defaults:
-      run:
-        working-directory: orbitox
     steps:
       - uses: actions/checkout@v5
       - uses: pnpm/action-setup@v5
@@ -707,7 +689,7 @@ jobs:
         with:
           node-version: 22
           cache: pnpm
-          cache-dependency-path: orbitox/pnpm-lock.yaml
+          cache-dependency-path: pnpm-lock.yaml
       - name: Install dependencies
         run: pnpm install --frozen-lockfile --ignore-scripts
       - name: Build workspace packages
@@ -796,9 +778,6 @@ jobs:
           --health-interval 5s
           --health-timeout 5s
           --health-retries 10
-    defaults:
-      run:
-        working-directory: orbitox
     steps:
       - uses: actions/checkout@v5
       - uses: pnpm/action-setup@v5
@@ -808,7 +787,7 @@ jobs:
         with:
           node-version: 22
           cache: pnpm
-          cache-dependency-path: orbitox/pnpm-lock.yaml
+          cache-dependency-path: pnpm-lock.yaml
       - name: Install dependencies
         run: pnpm install --frozen-lockfile --ignore-scripts
       - name: Build workspace packages
@@ -887,9 +866,6 @@ jobs:
           --health-interval 5s
           --health-timeout 5s
           --health-retries 10
-    defaults:
-      run:
-        working-directory: orbitox
     steps:
       - uses: actions/checkout@v5
       - uses: pnpm/action-setup@v5
@@ -899,7 +875,7 @@ jobs:
         with:
           node-version: 22
           cache: pnpm
-          cache-dependency-path: orbitox/pnpm-lock.yaml
+          cache-dependency-path: pnpm-lock.yaml
       - name: Install dependencies
         run: pnpm install --frozen-lockfile --ignore-scripts
       - name: Build workspace packages
@@ -983,11 +959,10 @@ jobs:
           node-version: 22
           cache: pnpm
           cache-dependency-path: |
-            orbitox/pnpm-lock.yaml
+            pnpm-lock.yaml
             projects/external-os/restaurant-os/pnpm-lock.yaml
 
       - name: Install and build OrbitoX workspace packages
-        working-directory: orbitox
         run: |
           pnpm install --frozen-lockfile --ignore-scripts
           pnpm exec prisma generate --schema prisma/schema.prisma
@@ -1030,9 +1005,8 @@ jobs:
           REST_APP_DB_PASSWORD: test_app_pass_123
 
       - name: Run Phase 6G Data Rights Integration Suite (G1-G5)
-        working-directory: orbitox
         run: |
-          (cd ../projects/external-os/restaurant-os && pnpm exec tsx --test test/data-rights-model-coverage.test.ts)
+          (cd projects/external-os/restaurant-os && pnpm exec tsx --test test/data-rights-model-coverage.test.ts)
           pnpm --filter web test:data-rights-6g
         env:
           NODE_ENV: test
@@ -1074,7 +1048,7 @@ jobs:
         uses: docker/build-push-action@v6
         with:
           context: orbitox
-          file: orbitox/apps/web/Dockerfile
+          file: apps/web/Dockerfile
           push: false
           cache-from: type=gha
           cache-to: type=gha,mode=max

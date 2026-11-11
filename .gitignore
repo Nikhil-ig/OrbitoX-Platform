@@ -11,8 +11,8 @@ build/
 *.tsbuildinfo
 
 # Temporary CLI test outputs & scratch plugins
-orbitox/tools/cli/super-restaurant/
-orbitox/plugins/my-noob-plugin/
+tools/cli/super-restaurant/
+plugins/my-noob-plugin/
 
 # Environment
 .env
@@ -51,7 +51,8 @@ keys/
 **/data/test-*.json
 **/data/phase*-audit/
 projects/external-os/restaurant-os/data/
-orbitox/apps/web/orbitox/data/
+apps/web/data/
+apps/platform/data/
 packages/storage/test_*.json
 
 # ---- Backups, archives, generated artifacts ----
