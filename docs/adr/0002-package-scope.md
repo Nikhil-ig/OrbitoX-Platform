@@ -18,3 +18,4 @@ All published packages and internal shared libraries must strictly use the `@orb
 - **Positive**: Strict adherence to `AGENTS.md` Rule 1.
 - **Positive**: Clean separation between npm package names (`@orbitox-io/*`) and database plugin IDs (`@orbitox/*`).
 - **Negative**: Requires configuring `npm.pkg.github.com` registry in CI publishing steps.
+

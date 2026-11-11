@@ -21,3 +21,4 @@ We provision a single hardened VPS instance for the staging environment:
 - **Positive**: Substantially reduced infrastructure cost while maintaining high fidelity with production container configurations.
 - **Positive**: Verifies inter-service HTTP bridge communication, TLS termination, and real multi-tenant databases.
 - **Negative**: Vertical scaling limit of a single VPS; not intended for high-concurrency production workloads.
+

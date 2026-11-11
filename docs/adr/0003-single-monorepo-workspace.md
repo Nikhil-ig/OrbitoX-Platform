@@ -25,3 +25,4 @@ Adopt a strict single-workspace monorepo architecture:
 - **Positive**: Single dependency tree, deterministic installations, fast CI builds via Turborepo caching.
 - **Positive**: Zero confusion regarding repository entry points or nested package manager commands.
 - **Negative**: Requires careful isolation of generated code (such as Prisma clients) across different projects.
+

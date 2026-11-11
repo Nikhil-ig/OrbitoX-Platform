@@ -22,3 +22,4 @@
   - `pnpm run test`
   - `pnpm --filter web test`
   - `pnpm --filter restaurant-os test`
+

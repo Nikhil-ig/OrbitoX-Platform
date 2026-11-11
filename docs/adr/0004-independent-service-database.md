@@ -26,3 +26,4 @@ Each deployable service owns its own database:
 - **Positive**: Complete fault domain isolation; platform outages do not crash restaurant order execution, and restaurant database migrations can be deployed independently.
 - **Positive**: Strict compile-time and runtime data boundary between control plane and downstream verticals.
 - **Negative**: Requires inter-service bridge APIs for operations like tenant lifecycle provisioning.
+

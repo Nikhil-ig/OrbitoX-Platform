@@ -39,7 +39,8 @@
     "web#test": {
       "dependsOn": [
         "^build",
-        "web#prisma:generate"
+        "web#prisma:generate",
+        "restaurant-os#test"
       ]
     },
     "web#test:integration": {

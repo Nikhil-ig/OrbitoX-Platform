@@ -82,3 +82,4 @@ bash scripts/ci/verify-migration-immutability.sh
 - Scoped packages must be published and imported under the `@orbitox-io` namespace.
 - Handlers should be thin; business rules live in `src/server/` or `service.ts` modules.
 - Every commit message should follow Conventional Commits (e.g. `feat(billing): ...`, `fix(auth): ...`, `refactor(platform): ...`).
+

@@ -39,3 +39,4 @@ All pull requests and code modifications must uphold these security invariants:
 4. **Secret Management**:
    - Never commit `private.pem`, `.env`, or `.npmrc` files containing authentication tokens.
    - Run `gitleaks` locally before pushing (`.gitleaks.toml`).
+

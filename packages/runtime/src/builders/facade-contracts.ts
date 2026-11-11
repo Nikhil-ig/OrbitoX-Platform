@@ -31,3 +31,4 @@ export interface WorkflowsFacadeContract {
   update(id: string, updates: Partial<WorkflowDefinition>): Promise<WorkflowDefinition>;
   delete(id: string): Promise<boolean>;
 }
+
