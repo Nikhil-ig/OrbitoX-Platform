@@ -55,7 +55,7 @@ jobs:
 
           # Scan for accidental hardcoded production PHI keys or raw secret tokens
           echo "Scanning for hardcoded PHI secrets or tokens..."
-          if git grep -EI "ORBITOX_PHI_KEYS=.*[a-zA-Z0-9+/]{40}" -- ':!*.md' ':!apps/web/test' ':!*reference-pack*' ; then
+          if git grep -EI "ORBITOX_PHI_KEYS=.*[a-zA-Z0-9+/]{40}" -- ':!*.md' ':!apps/platform/tests' ':!*reference-pack*' ; then
             echo "❌ CRITICAL: Accidental hardcoded PHI secret detected!"
             exit 1
           fi

@@ -50,7 +50,7 @@ jobs:
           FULL_TAG="$ECR_REGISTRY/orbitox/staging/web:$IMAGE_TAG"
           echo "Building $FULL_TAG from orbitox monorepo root..."
           docker build \
-            -f apps/web/Dockerfile \
+            -f apps/platform/Dockerfile \
             -t "$FULL_TAG" \
             orbitox
           echo "image_tag=$FULL_TAG" >> "$GITHUB_OUTPUT"

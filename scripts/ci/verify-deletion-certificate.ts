@@ -11,7 +11,7 @@ import fs from 'node:fs';
 import {
   extractDeletionCertPublicKeys,
   verifyDeletionCertificate,
-} from '../apps/web/lib/data-rights/deletion-certificate';
+} from '../../apps/platform/src/server/data-rights/deletion-certificate';
 
 function parseArgs(argv: string[]): {
   certPath?: string;
