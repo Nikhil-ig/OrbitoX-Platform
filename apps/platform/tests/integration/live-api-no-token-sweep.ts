@@ -36,7 +36,9 @@ async function allocateSafePort(preferred: number): Promise<number> {
   throw new Error('No available safe port found');
 }
 
-const serverScript = path.resolve(__dirname, '../.next/standalone/apps/web/server.js');
+import { getStandaloneScript } from '../standalone-helper';
+
+const serverScript = getStandaloneScript(__dirname);
 const apiDir = path.resolve(__dirname, '../app/api');
 
 function findRoutes(dir: string): string[] {

@@ -87,8 +87,10 @@ function sendRawHttpRequest(options: {
   });
 }
 
+import { getStandaloneScript, getStandaloneCwd } from '../standalone-helper';
+
 describe('Phase 4 Item 8: Comprehensive Tenant Provisioning Matrix', () => {
-  const serverScript = path.resolve(__dirname, '../.next/standalone/apps/web/server.js');
+  const serverScript = getStandaloneScript(__dirname);
   const databaseUrl = process.env.TEST_DATABASE_URL || process.env.DATABASE_URL || 'postgresql://postgres:postgrespassword@127.0.0.1:5432/orbitox_phase2';
   const isStandaloneBuilt = fs.existsSync(serverScript);
 
@@ -319,7 +321,7 @@ describe('Phase 4 Item 8: Comprehensive Tenant Provisioning Matrix', () => {
     };
 
     child = spawn('node', [serverScript], {
-      cwd: path.resolve(__dirname, '../.next/standalone/apps/web'),
+      cwd: getStandaloneCwd(__dirname),
       env,
       stdio: ['ignore', 'pipe', 'pipe'],
     });
@@ -618,7 +620,7 @@ describe('Phase 4 Item 8: Comprehensive Tenant Provisioning Matrix', () => {
     };
 
     const server1 = spawn('node', [serverScript], {
-      cwd: path.resolve(__dirname, '../.next/standalone/apps/web'),
+      cwd: getStandaloneCwd(__dirname),
       env: env1,
       stdio: ['ignore', 'pipe', 'pipe'],
     });
@@ -685,7 +687,7 @@ describe('Phase 4 Item 8: Comprehensive Tenant Provisioning Matrix', () => {
     };
 
     const server2 = spawn('node', [serverScript], {
-      cwd: path.resolve(__dirname, '../.next/standalone/apps/web'),
+      cwd: getStandaloneCwd(__dirname),
       env: env2,
       stdio: ['ignore', 'pipe', 'pipe'],
     });

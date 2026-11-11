@@ -15,7 +15,20 @@
 import * as http from 'http';
 import * as url from 'url';
 import { EventEmitter } from 'events';
-import { DomainEvent } from '../storage';
+export interface DomainEvent<T = any> {
+  id?: string;
+  eventId?: string;
+  sequence?: number;
+  type: string;
+  timestamp: string;
+  producer?: string;
+  branchId?: string;
+  floorId?: string;
+  tableNumber?: string;
+  tenantId?: string;
+  payload: T;
+  version?: number;
+}
 import { resolveAllowedOrigin } from './security';
 import { tryGetActiveTenant } from './tenancy';
 

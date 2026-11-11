@@ -2,8 +2,10 @@ import { spawn, ChildProcess } from 'node:child_process';
 import crypto from 'node:crypto';
 import path from 'node:path';
 
+import { getStandaloneScript } from '../standalone-helper';
+
 const PORT = 3680;
-const serverScript = path.resolve(__dirname, '../.next/standalone/apps/web/server.js');
+const serverScript = getStandaloneScript(__dirname);
 
 const sweepGrantPair = crypto.generateKeyPairSync('ed25519');
 const sweepCertPair = crypto.generateKeyPairSync('ed25519');

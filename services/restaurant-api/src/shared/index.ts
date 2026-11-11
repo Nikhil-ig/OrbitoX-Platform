@@ -129,14 +129,8 @@ export type TableStatus =
   | 'DIRTY'
   | 'DISABLED';
 
-export interface SeatRecord {
-  id: string;
-  seatNumber: number;
-  label: string;
-  guestId?: string;
-  guestName?: string;
-  isOccupied: boolean;
-}
+import { generateSeats, SeatRecord } from './tables';
+export * from './tables';
 
 export interface GuestRecord {
   id: string;
@@ -565,19 +559,7 @@ export const DEFAULT_SERVICE_REQUESTS: ServiceRequest[] = [
   },
 ];
 
-// Helper to generate seats for a given capacity
-export function generateSeats(capacity: number, tableId: number): SeatRecord[] {
-  const seats: SeatRecord[] = [];
-  for (let i = 1; i <= capacity; i++) {
-    seats.push({
-      id: `seat_${tableId}_${i}`,
-      seatNumber: i,
-      label: `S${i}`,
-      isOccupied: false,
-    });
-  }
-  return seats;
-}
+// Helper to generate seats for a given capacity (re-exported from ./tables)
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Default Spatial Tables (Seed with Seats and Live State)

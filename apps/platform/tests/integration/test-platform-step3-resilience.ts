@@ -108,8 +108,10 @@ const step3CertKeysJson = JSON.stringify({
 const step3PublicOrigin = 'https://console.orbitox.test';
 const step3ServerPepper = crypto.randomBytes(32).toString('hex');
 
+import { getStandaloneScript } from '../standalone-helper';
+
 function spawnServer(port: number, envOverrides: Record<string, string> = {}): ChildProcess {
-  const standaloneScript = path.resolve(__dirname, '../.next/standalone/apps/web/server.js');
+  const standaloneScript = getStandaloneScript(__dirname);
   const child = spawn(process.execPath, [standaloneScript], {
     cwd: path.resolve(__dirname, '..'),
     env: {

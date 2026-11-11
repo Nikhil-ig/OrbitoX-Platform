@@ -30,8 +30,10 @@ async function allocateSafePort(preferred: number): Promise<number> {
   throw new Error('No available safe port found');
 }
 
+import { getStandaloneScript, getStandaloneCwd } from '../standalone-helper';
+
 describe('Standalone Server Customer Tenant Provisioning Gate (N1)', () => {
-  const serverScript = path.resolve(__dirname, '../.next/standalone/apps/web/server.js');
+  const serverScript = getStandaloneScript(__dirname);
   const databaseUrl = process.env.TEST_DATABASE_URL || process.env.DATABASE_URL || 'postgresql://postgres:postgrespassword@127.0.0.1:5432/orbitox_phase2';
   const isStandaloneBuilt = fs.existsSync(serverScript);
 
@@ -300,7 +302,7 @@ describe('Standalone Server Customer Tenant Provisioning Gate (N1)', () => {
     };
 
     child = spawn('node', [serverScript], {
-      cwd: path.resolve(__dirname, '../.next/standalone/apps/web'),
+      cwd: getStandaloneCwd(__dirname),
       env,
       stdio: ['ignore', 'pipe', 'pipe'],
     });

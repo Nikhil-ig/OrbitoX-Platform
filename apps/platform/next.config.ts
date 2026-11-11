@@ -1,12 +1,16 @@
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 import type { NextConfig } from "next";
 
+const appDir = path.dirname(fileURLToPath(import.meta.url));
+const workspaceRoot = path.resolve(appDir, "../../");
+
 const nextConfig: NextConfig = {
-  // Self-contained server bundle: `node apps/web/server.js` runs without a full
+  // Self-contained server bundle: `node apps/platform/server.js` runs without a full
   // node_modules tree, which keeps the production Docker image small.
   output: "standalone",
   // The app lives inside a pnpm monorepo, so file tracing must start at the workspace root.
-  outputFileTracingRoot: path.join(__dirname, "../../"),
+  outputFileTracingRoot: workspaceRoot,
   serverExternalPackages: [
     "@aws-sdk/client-s3",
     "@aws-sdk/s3-request-presigner",

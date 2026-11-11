@@ -53,11 +53,17 @@ export function runNextBuild() {
 
         const serverOutputDirectories = [
             path.join(webDirectory, '.next', 'server'),
+            path.join(webDirectory, '.next', 'standalone', 'apps', 'platform', '.next', 'server'),
             path.join(webDirectory, '.next', 'standalone', 'apps', 'web', '.next', 'server'),
         ];
-        const standaloneServer = path.join(webDirectory, '.next', 'standalone', 'apps', 'web', 'server.js');
+        const standaloneCandidates = [
+            path.join(webDirectory, '.next', 'standalone', 'apps', 'platform', 'server.js'),
+            path.join(webDirectory, '.next', 'standalone', 'apps', 'web', 'server.js'),
+            path.join(webDirectory, '.next', 'standalone', 'server.js'),
+        ];
+        const standaloneServer = standaloneCandidates.find((f) => fs.existsSync(f)) || standaloneCandidates[0];
         if (serverOutputDirectories.some((directory) => containsBuildPepper(directory, buildPepper)) ||
-            containsBuildPepper(standaloneServer, buildPepper)) {
+            (fs.existsSync(standaloneServer) && containsBuildPepper(standaloneServer, buildPepper))) {
             console.error('Build-only pepper leaked into generated server output; build aborted.');
             return 1;
         }

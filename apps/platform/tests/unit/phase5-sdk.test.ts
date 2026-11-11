@@ -33,8 +33,10 @@ import {
   scrubSecrets,
 } from '@orbitox-io/sdk';
 
+import { getStandaloneScript, getStandaloneCwd } from '../standalone-helper';
+
 const databaseUrl = process.env.DATABASE_URL || 'postgresql://postgres:postgrespassword@127.0.0.1:5432/orbitox_phase2';
-const serverScript = path.resolve(__dirname, '../.next/standalone/apps/web/server.js');
+const serverScript = getStandaloneScript(__dirname);
 const isStandaloneBuilt = fs.existsSync(serverScript);
 
 async function allocateSafePort(preferred: number): Promise<number> {
@@ -190,7 +192,7 @@ describe('🪐 Phase 5: @orbitox-io/sdk Integration & Real Server Suite', () => 
     };
 
     child = spawn('node', [serverScript], {
-      cwd: path.resolve(__dirname, '../.next/standalone/apps/web'),
+      cwd: getStandaloneCwd(__dirname),
       env: childEnv,
       stdio: ['ignore', 'pipe', 'pipe'],
     });

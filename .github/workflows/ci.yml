@@ -624,7 +624,7 @@ jobs:
           MAINTENANCE_DATABASE_URL: postgresql://orbitox_maintenance:phase2-maint-${{ github.run_id }}-${{ github.run_attempt }}@127.0.0.1:5432/orbitox_phase2
       - name: Build Next.js standalone application
         run: |
-          ORBITOX_SERVER_PEPPER="$(openssl rand -hex 32)" pnpm --filter @orbitox-io/platform exec next build
+          pnpm --filter @orbitox-io/platform build
           mkdir -p apps/platform/.next/standalone/apps/platform/.next
           cp -r apps/platform/.next/static apps/platform/.next/standalone/apps/platform/.next/
         env:
@@ -735,7 +735,7 @@ jobs:
           MAINTENANCE_DATABASE_URL: postgresql://orbitox_maintenance:phase2-maint-${{ github.run_id }}-${{ github.run_attempt }}@127.0.0.1:5432/orbitox_phase2
       - name: Build Next.js standalone application
         run: |
-          ORBITOX_SERVER_PEPPER="$(openssl rand -hex 32)" pnpm --filter @orbitox-io/platform exec next build
+          pnpm --filter @orbitox-io/platform build
           mkdir -p apps/platform/.next/standalone/apps/platform/.next
           cp -r apps/platform/.next/static apps/platform/.next/standalone/apps/platform/.next/
         env:
@@ -833,7 +833,7 @@ jobs:
           MAINTENANCE_DATABASE_URL: postgresql://orbitox_maintenance:phase2-maint-${{ github.run_id }}-${{ github.run_attempt }}@127.0.0.1:5432/orbitox_phase2
       - name: Build Next.js standalone application
         run: |
-          ORBITOX_SERVER_PEPPER="$(openssl rand -hex 32)" pnpm --filter @orbitox-io/platform exec next build
+          pnpm --filter @orbitox-io/platform build
           mkdir -p apps/platform/.next/standalone/apps/platform/.next
           cp -r apps/platform/.next/static apps/platform/.next/standalone/apps/platform/.next/
         env:

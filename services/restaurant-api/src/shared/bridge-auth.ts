@@ -9,6 +9,8 @@
  *    and unconditionally rejects spoofed x-tenant-id headers from clients.
  */
 
+import * as http from 'http';
+import * as crypto from 'crypto';
 import { PrismaClient } from '../../generated/prisma';
 import {
   BridgeKeys,
@@ -56,5 +58,40 @@ export class PostgresNonceStore implements NonceStore {
 
   async purgeExpired(): Promise<number> {
     return this.prisma.$executeRaw`DELETE FROM "BridgeNonce" WHERE "expiresAt" < now()`;
+  }
+}
+
+export function verifyPlatformAuth(req: http.IncomingMessage): boolean {
+  const envToken = process.env.RESTAURANTOS_PLATFORM_TOKEN;
+  const isProd = process.env.NODE_ENV === 'production';
+
+  if (!envToken || envToken.length < 32) {
+    if (isProd) {
+      console.error('🚨 [Security] RESTAURANTOS_PLATFORM_TOKEN missing or < 32 chars in production. Rejecting request.');
+      return false;
+    }
+  }
+
+  const expectedToken = envToken;
+  if (!expectedToken) {
+    return false;
+  }
+
+  const authHeader = req.headers['authorization'] || (req.headers['x-platform-token'] as string);
+  if (!authHeader || typeof authHeader !== 'string') {
+    return false;
+  }
+
+  const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : authHeader;
+
+  try {
+    const a = Buffer.from(token);
+    const b = Buffer.from(expectedToken);
+    if (a.length !== b.length) {
+      return false;
+    }
+    return crypto.timingSafeEqual(a, b);
+  } catch {
+    return false;
   }
 }

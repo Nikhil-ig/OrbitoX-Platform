@@ -229,8 +229,17 @@ export const ownersRoutes: RouteDefinition[] = [
     path: '/api/restaurant/staff',
     handler: async (req, res, context) => {
       const identity = context.requestIdentity;
-      if (identity.type === 'ANONYMOUS' || identity.type === 'DINER') {
-        sendJson(res, 401, { error: 'AUTHENTICATION_REQUIRED', message: 'Staff credentials required.' });
+      if (
+        identity.type === 'ANONYMOUS' ||
+        identity.type === 'DINER' ||
+        identity.type === 'REVOKED_CAPABILITY' ||
+        identity.type === 'INVALID_CREDENTIAL'
+      ) {
+        sendJson(res, 401, {
+          error: 'AUTHENTICATION_REQUIRED',
+          code: 'AUTHENTICATION_REQUIRED',
+          message: 'Staff credentials required.',
+        });
         return;
       }
       const queryBranch = (context.parsedUrl.query.branchId as string) || (identity.branchId !== '*' ? identity.branchId : undefined);
@@ -246,6 +255,19 @@ export const ownersRoutes: RouteDefinition[] = [
     path: '/api/restaurant/staff/:id',
     handler: async (req, res, context) => {
       const identity = context.requestIdentity;
+      if (
+        identity.type === 'ANONYMOUS' ||
+        identity.type === 'DINER' ||
+        identity.type === 'REVOKED_CAPABILITY' ||
+        identity.type === 'INVALID_CREDENTIAL'
+      ) {
+        sendJson(res, 401, {
+          error: 'AUTHENTICATION_REQUIRED',
+          code: 'AUTHENTICATION_REQUIRED',
+          message: 'Staff credentials required.',
+        });
+        return;
+      }
       if (!identity.isPrivileged) {
         sendJson(res, 403, { error: 'FORBIDDEN', message: 'Manager credentials required.' });
         return;
@@ -277,6 +299,19 @@ export const ownersRoutes: RouteDefinition[] = [
     path: '/api/restaurant/staff/:id',
     handler: async (_req, res, context) => {
       const identity = context.requestIdentity;
+      if (
+        identity.type === 'ANONYMOUS' ||
+        identity.type === 'DINER' ||
+        identity.type === 'REVOKED_CAPABILITY' ||
+        identity.type === 'INVALID_CREDENTIAL'
+      ) {
+        sendJson(res, 401, {
+          error: 'AUTHENTICATION_REQUIRED',
+          code: 'AUTHENTICATION_REQUIRED',
+          message: 'Staff credentials required.',
+        });
+        return;
+      }
       if (!identity.isPrivileged) {
         sendJson(res, 403, { error: 'FORBIDDEN', message: 'Manager credentials required.' });
         return;
@@ -296,6 +331,19 @@ export const ownersRoutes: RouteDefinition[] = [
     path: '/api/restaurant/staff/reset-lockout',
     handler: async (req, res, context) => {
       const identity = context.requestIdentity;
+      if (
+        identity.type === 'ANONYMOUS' ||
+        identity.type === 'DINER' ||
+        identity.type === 'REVOKED_CAPABILITY' ||
+        identity.type === 'INVALID_CREDENTIAL'
+      ) {
+        sendJson(res, 401, {
+          error: 'AUTHENTICATION_REQUIRED',
+          code: 'AUTHENTICATION_REQUIRED',
+          message: 'Staff credentials required.',
+        });
+        return;
+      }
       if (!identity.isPrivileged) {
         sendJson(res, 403, { error: 'FORBIDDEN', message: 'Manager privileges required to reset lockouts.' });
         return;

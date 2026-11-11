@@ -18,7 +18,7 @@ cleanup() {
 trap cleanup EXIT
 
 echo "1. Building fresh dist bundles across workspace..."
-pnpm exec turbo run build --filter='@orbitox-io/*'
+pnpm exec turbo run build --filter='./packages/*' --filter='./plugins/*' --filter='./tools/*'
 
 PACKAGES=(
   "packages/types"

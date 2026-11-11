@@ -50,7 +50,7 @@ import { withTenantTx } from '@/server/db/tenant-db';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const repoRoot = path.resolve(__dirname, '../../../..');
-const orbitoxRoot = path.resolve(repoRoot, 'orbitox');
+const orbitoxRoot = repoRoot;
 const restaurantRoot = path.resolve(repoRoot, 'services/restaurant-api');
 
 function allocateFreePort(preferred: number): Promise<number> {
@@ -1657,18 +1657,18 @@ describe('Phase 6G G1-G5 End-to-End PostgreSQL Integration Suite', () => {
     await fs.writeFile(tamperedFile, JSON.stringify(tamperedCert, null, 2));
     await fs.writeFile(pubFile, JSON.stringify(pubKeys, null, 2));
 
-    const cliScript = path.resolve(orbitoxRoot, 'scripts/verify-deletion-certificate.ts');
+    const cliScript = path.resolve(repoRoot, 'scripts/ci/verify-deletion-certificate.ts');
     const okCli = execFileSync(
       'pnpm',
       ['exec', 'tsx', cliScript, '--cert', certFile, '--public-key', pubFile],
-      { cwd: orbitoxRoot, encoding: 'utf8' },
+      { cwd: repoRoot, encoding: 'utf8', env: process.env },
     );
     assert.equal(JSON.parse(okCli).valid, true);
 
     const badCli = spawnSync(
       'pnpm',
       ['exec', 'tsx', cliScript, '--cert', tamperedFile, '--public-key', pubFile],
-      { cwd: orbitoxRoot, encoding: 'utf8' },
+      { cwd: repoRoot, encoding: 'utf8', env: process.env },
     );
     assert.equal(badCli.status, 1);
 

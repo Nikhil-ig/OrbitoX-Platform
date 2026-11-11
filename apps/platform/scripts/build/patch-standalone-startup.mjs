@@ -43,6 +43,16 @@ if (process.argv[1] && pathToFileURL(path.resolve(process.argv[1])).href === imp
         path.resolve('.next/standalone/apps/web/server.js'),
         path.resolve('.next/standalone/server.js'),
     ];
-    const target = candidates.find((f) => fs.existsSync(f)) || candidates[0];
-    patchStandaloneStartup(target);
+    const target = candidates.find((f) => fs.existsSync(f));
+    if (target) {
+        patchStandaloneStartup(target);
+        const appsDir = path.resolve('.next/standalone/apps');
+        const platformDir = path.join(appsDir, 'platform');
+        const webDir = path.join(appsDir, 'web');
+        if (fs.existsSync(platformDir) && !fs.existsSync(webDir)) {
+            try {
+                fs.symlinkSync('platform', webDir, 'junction');
+            } catch {}
+        }
+    }
 }

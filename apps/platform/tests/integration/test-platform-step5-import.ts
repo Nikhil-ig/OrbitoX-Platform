@@ -92,8 +92,10 @@ const step5CertKeysJson = JSON.stringify({
   },
 });
 
+import { getStandaloneScript } from '../standalone-helper';
+
 function spawnServer(port: number, envOverrides: Record<string, string> = {}): ChildProcess {
-  const standaloneScript = path.resolve(__dirname, '../.next/standalone/apps/web/server.js');
+  const standaloneScript = getStandaloneScript(__dirname);
   const child = spawn(process.execPath, [standaloneScript], {
     cwd: path.resolve(__dirname, '..'),
     env: {
