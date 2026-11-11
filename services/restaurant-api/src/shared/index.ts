@@ -1,3 +1,6 @@
+export * from './config';
+export * from './integrations';
+
 /**
  * 🍷 RestaurantOS 2.0 Domain Engine
  * ─────────────────────────────────────────────────────────────────────────────
