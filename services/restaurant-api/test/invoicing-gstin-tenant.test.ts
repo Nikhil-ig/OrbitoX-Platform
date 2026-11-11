@@ -6,7 +6,7 @@ import {
   buildGSTInvoice,
   renderPrintableInvoiceHtml,
   SAC_RESTAURANT_SERVICES,
-} from '../packages/domain/invoicing';
+} from '../src/shared/invoicing';
 
 const SAMPLE_ORDER = {
   orderId: 'ord_test_101',

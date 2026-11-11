@@ -23,7 +23,7 @@ import * as crypto from 'crypto';
 import { spawn, ChildProcess } from 'child_process';
 import * as path from 'path';
 import { PrismaClient } from '../generated/prisma';
-import { signBridgeRequest, getDefaultBridgeKeys } from '../packages/domain/bridge-auth';
+import { signBridgeRequest, getDefaultBridgeKeys } from '../src/shared/bridge-auth';
 
 const prisma = new PrismaClient();
 const keys = getDefaultBridgeKeys();

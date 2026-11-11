@@ -27,7 +27,7 @@ const {
   maskPhoneNumber,
   redactSensitiveData,
   eventLoopMonitor,
-} = require('../packages/domain/logger');
+} = require('../src/shared/logger');
 
 const BASE_URL = 'http://localhost:4010';
 
@@ -108,7 +108,7 @@ async function runPhase6ATests() {
 
     // 4. Readiness degradation reflection
     // Test checkWritable response logic
-    const storeModule = require('../packages/storage/store');
+    const storeModule = require('../src/storage/store');
     const storeInstance = new storeModule.RestaurantRuntimeStore();
     const canCheckWritable = typeof storeInstance.checkWritable === 'function';
     const isStorageWritable = canCheckWritable ? storeInstance.checkWritable() : false;
@@ -201,7 +201,7 @@ async function runPhase6ATests() {
       capturedNdjson += chunk;
       return true;
     };
-    const { logger } = require('../packages/domain/logger');
+    const { logger } = require('../src/shared/logger');
     logger.info('Order fulfillment step completed', {
       orderId: 'ord_123',
       branchId: 'branch_ldh',

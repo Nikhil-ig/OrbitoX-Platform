@@ -37,7 +37,7 @@ import {
   verifyStaffSecret,
   issueDeviceToken,
   withTenantRlsTransaction,
-} from '../packages/domain';
+} from '../src/shared';
 
 const DATABASE_URL = process.env.DATABASE_URL;
 const prisma = new PrismaClient({ datasources: { db: { url: DATABASE_URL } } });

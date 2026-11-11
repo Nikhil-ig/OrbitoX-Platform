@@ -21,7 +21,7 @@ import {
   OnboardingStepKey,
   ALL_ONBOARDING_STEPS,
   issueStaffToken,
-} from '../packages/domain';
+} from '../src/shared';
 
 const DATABASE_URL = process.env.DATABASE_URL;
 if (!DATABASE_URL) throw new Error('DATABASE_URL is required to run the owner self-service test.');

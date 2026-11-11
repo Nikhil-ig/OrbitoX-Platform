@@ -20,8 +20,8 @@ const {
   redactSensitiveData,
   maskPhoneNumber,
   logger,
-} = require('../packages/domain/logger');
-const { RestaurantRuntimeStore } = require('../packages/storage/store');
+} = require('../src/shared/logger');
+const { RestaurantRuntimeStore } = require('../src/storage/store');
 
 const BASE_URL = process.env.RESTAURANTOS_URL || 'http://localhost:4010';
 

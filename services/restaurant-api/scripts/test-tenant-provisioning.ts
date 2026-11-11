@@ -20,8 +20,8 @@ import {
   validateTenantSlug,
   verifyPlatformAuth,
   RESERVED_SLUGS,
-} from '../packages/domain/provisioning';
-import { getCleanStarterTemplate, CLEAN_STARTER_TEMPLATES } from '../packages/domain/templates';
+} from '../src/shared/provisioning';
+import { getCleanStarterTemplate, CLEAN_STARTER_TEMPLATES } from '../src/shared/templates';
 
 const DATABASE_URL = process.env.DATABASE_URL || 'postgresql://apple@localhost:5432/restaurant_os';
 process.env.DATABASE_URL = DATABASE_URL;

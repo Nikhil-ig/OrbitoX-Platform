@@ -14,9 +14,9 @@
 const assert = require('assert');
 const http = require('http');
 
-const { RestaurantTokens } = require('../packages/ui/tokens');
-const { BASE_STYLE_SHEET } = require('../packages/ui/styles');
-const { renderShell } = require('../packages/ui/shell');
+const { RestaurantTokens } = require('../src/views/tokens');
+const { BASE_STYLE_SHEET } = require('../src/views/styles');
+const { renderShell } = require('../src/views/shell');
 
 const BASE_URL = process.env.RESTAURANTOS_URL || 'http://localhost:4010';
 

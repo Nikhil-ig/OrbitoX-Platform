@@ -1,17 +1,17 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { assertRestaurantOsProductionConfig } from '../packages/domain/production-config';
+import { assertRestaurantOsProductionConfig } from '../src/shared/production-config';
 import {
   getStaffAuthSecret,
   resolveClientIp,
   resolveAllowedOrigin,
   getRegisteredStationSecrets,
   isIpInCidr,
-} from '../packages/domain/security';
-import { buildGSTInvoice } from '../packages/domain/invoicing';
-import { CustomDomainService } from '../packages/domain/domains';
-import { TenantProvisioningService } from '../packages/domain/provisioning';
-import { resolveTenantFromHost } from '../packages/domain/tenancy';
+} from '../src/shared/security';
+import { buildGSTInvoice } from '../src/shared/invoicing';
+import { CustomDomainService } from '../src/shared/domains';
+import { TenantProvisioningService } from '../src/shared/provisioning';
+import { resolveTenantFromHost } from '../src/shared/tenancy';
 
 const VALID_PROD_ENV: Record<string, string> = {
   NODE_ENV: 'production',

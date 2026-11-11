@@ -11,7 +11,7 @@
  */
 
 import { PrismaClient } from '../generated/prisma';
-import { withTenantRlsTransaction } from '../packages/domain';
+import { withTenantRlsTransaction } from '../src/shared';
 
 const DATABASE_URL = process.env.DATABASE_URL || 'postgresql://apple@localhost:5432/restaurant_os?connection_limit=25';
 const prisma = new PrismaClient({ datasources: { db: { url: DATABASE_URL } } });

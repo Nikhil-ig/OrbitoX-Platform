@@ -72,17 +72,17 @@ import {
   PostgresNonceStore,
   MemoryNonceStore,
   PostgresEventListener,
-} from '../packages/domain';
+} from './shared';
 import {
   buildGSTInvoice,
   computeFiscalYear,
   SAC_RESTAURANT_SERVICES,
   renderPrintableInvoiceHtml,
-} from '../packages/domain/invoicing';
-import { RestaurantRuntimeStore, DomainEvent, getTenantRepository, RestaurantRepository } from '../packages/storage';
+} from './shared/invoicing';
+import { RestaurantRuntimeStore, DomainEvent, getTenantRepository, RestaurantRepository } from './storage';
 import { PosService } from '@orbitox-io/pos';
-import { PostgresRestaurantStore } from '../packages/storage/postgres-store';
-import { RealtimeEventBus } from '../packages/domain/event-bus';
+import { PostgresRestaurantStore } from './storage/postgres-store';
+import { RealtimeEventBus } from './shared/event-bus';
 import { RestaurantControlBridge, restaurantControlBridge } from './bridge';
 import {
   assertPlatformBridgeCaller,
@@ -92,7 +92,7 @@ import {
   correctRestaurantPrincipalData,
   eraseRestaurantPrincipalData,
 } from './data-rights';
-import { RazorpayPaymentGatewayAdapter } from '../packages/integrations';
+import { RazorpayPaymentGatewayAdapter } from './shared/integrations';
 import {
   PluginGrantEnforcer,
   PostgresRevisionStore,
@@ -126,7 +126,7 @@ import {
   renderPantryRushPage,
   renderOwnerInvitePage,
   renderSuspendedTenantPage,
-} from '../packages/ui';
+} from './views';
 
 const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 4010;
 const HOSTNAME = process.env.HOSTNAME || '0.0.0.0';
@@ -244,7 +244,7 @@ export function getPinnedGrantKeys(): Record<string, crypto.KeyObject> {
 import {
   assertRestaurantOsProductionConfig,
   GSTIN_REGEX,
-} from '../packages/domain/production-config';
+} from './shared/production-config';
 export { assertRestaurantOsProductionConfig, GSTIN_REGEX };
 
 // C3: Refuse to start in production if PostgreSQL is unavailable or configuration is invalid

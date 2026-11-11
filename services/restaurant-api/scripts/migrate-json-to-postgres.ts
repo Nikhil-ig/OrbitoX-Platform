@@ -17,7 +17,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { PrismaClient } from '../generated/prisma';
-import { PostgresRestaurantStore } from '../packages/storage/postgres-store';
+import { PostgresRestaurantStore } from '../src/storage/postgres-store';
 
 interface MigrationSummary {
   tenant: { id: string; name: string; slug: string };

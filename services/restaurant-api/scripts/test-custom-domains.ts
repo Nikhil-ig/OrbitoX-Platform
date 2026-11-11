@@ -24,7 +24,7 @@ import {
   validateDomainSyntax,
   issueStaffToken,
   invalidateTenantResolutionCache,
-} from '../packages/domain';
+} from '../src/shared';
 
 const DATABASE_URL = process.env.DATABASE_URL || 'postgresql://apple@localhost:5432/restaurant_os';
 const TEST_PLATFORM_TOKEN = 'test_platform_token_secret_key_1234567890123456';

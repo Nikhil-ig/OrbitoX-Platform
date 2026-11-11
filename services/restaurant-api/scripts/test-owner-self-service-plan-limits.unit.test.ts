@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import { SEED_PLANS } from '@orbitox-io/plugin-engine';
-import { getRestaurantPlanQuotaLimit } from '../packages/domain/owner-self-service';
+import { getRestaurantPlanQuotaLimit } from '../src/shared/owner-self-service';
 
 describe('RestaurantOS catalogue plan limits', () => {
   const starter = SEED_PLANS.find((plan) => plan.planId === 'restaurant-starter');

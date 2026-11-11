@@ -15,8 +15,8 @@
 
 import assert from 'assert';
 import { PrismaClient } from '../generated/prisma';
-import { PostgresRestaurantStore } from '../packages/storage/postgres-store';
-import { withTenantContext } from '../packages/domain/tenancy';
+import { PostgresRestaurantStore } from '../src/storage/postgres-store';
+import { withTenantContext } from '../src/shared/tenancy';
 
 const DATABASE_URL = process.env.DATABASE_URL || 'postgresql://apple@localhost:5432/restaurant_os';
 

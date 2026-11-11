@@ -15,18 +15,18 @@ import assert from 'assert';
 import * as crypto from 'crypto';
 import * as http from 'http';
 import { PrismaClient } from '../generated/prisma';
-import { PostgresRestaurantStore } from '../packages/storage/postgres-store';
+import { PostgresRestaurantStore } from '../src/storage/postgres-store';
 import {
   RazorpayPaymentGatewayAdapter,
   MockPaymentGatewayAdapter,
-} from '../packages/integrations';
+} from '../src/shared/integrations';
 import {
   buildGSTInvoice,
   computeFiscalYear,
   formatInvoiceNumber,
   SAC_RESTAURANT_SERVICES,
-} from '../packages/domain/invoicing';
-import { withTenantContext } from '../packages/domain/tenancy';
+} from '../src/shared/invoicing';
+import { withTenantContext } from '../src/shared/tenancy';
 
 // Test fixture GSTIN
 const TEST_PILOT_GSTIN = '27AAPFU0939F1ZV';

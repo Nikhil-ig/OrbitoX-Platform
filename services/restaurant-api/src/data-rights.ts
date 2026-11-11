@@ -5,7 +5,7 @@
 
 import crypto from 'node:crypto';
 import { PrismaClient } from '../generated/prisma';
-import { withTenantRlsTransaction } from '../packages/domain/tenancy';
+import { withTenantRlsTransaction } from './shared/tenancy';
 
 export type RestaurantErasureMode = 'DELETE' | 'RESTRICT';
 

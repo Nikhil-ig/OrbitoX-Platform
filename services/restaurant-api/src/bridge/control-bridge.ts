@@ -28,7 +28,7 @@ import {
   SignedRuntimeConfiguration,
   ControlCommand,
 } from '@orbitox-io/external-runtime-sdk';
-import { tryGetActiveTenant, ActiveTenantContext } from '../../packages/domain/tenancy';
+import { tryGetActiveTenant, ActiveTenantContext } from '../shared/tenancy';
 
 export class RestaurantControlBridge {
   public client: ControlClient;

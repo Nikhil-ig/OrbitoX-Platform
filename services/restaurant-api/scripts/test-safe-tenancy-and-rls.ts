@@ -26,7 +26,7 @@ import {
   invalidateTenantResolutionCache,
   renderTenantNotFoundPage,
   withTenantRlsTransaction,
-} from '../packages/domain';
+} from '../src/shared';
 
 if (!process.env.DATABASE_URL) {
   process.env.DATABASE_URL = 'postgresql://apple@localhost:5432/restaurant_os';

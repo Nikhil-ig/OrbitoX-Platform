@@ -1,11 +1,11 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { resolveTenantDisplayName, withTenantContext } from '../packages/domain/tenancy';
-import { renderShell } from '../packages/ui/shell';
-import { renderTableQrStand } from '../packages/ui/pages/tables';
-import { renderOnboardingWorkspace } from '../packages/ui/pages/onboarding';
-import { renderDeveloperInspector } from '../packages/ui/pages/inspector';
-import { DEFAULT_BRANCHES, DEFAULT_FLOORS } from '../packages/domain';
+import { resolveTenantDisplayName, withTenantContext } from '../src/shared/tenancy';
+import { renderShell } from '../src/views/shell';
+import { renderTableQrStand } from '../src/views/pages/tables';
+import { renderOnboardingWorkspace } from '../src/views/pages/onboarding';
+import { renderDeveloperInspector } from '../src/views/pages/inspector';
+import { DEFAULT_BRANCHES, DEFAULT_FLOORS } from '../src/shared';
 
 const TEST_TABLE: any = {
   id: 'tbl_1',

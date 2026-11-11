@@ -24,7 +24,7 @@ import assert from 'node:assert/strict';
 import * as http from 'http';
 import * as crypto from 'crypto';
 import { PrismaClient } from '../generated/prisma';
-import { signBridgeRequest, getDefaultBridgeKeys } from '../packages/domain/bridge-auth';
+import { signBridgeRequest, getDefaultBridgeKeys } from '../src/shared/bridge-auth';
 
 function hasCatalogueCheckError(error: unknown): boolean {
   if (!error || typeof error !== 'object') return false;

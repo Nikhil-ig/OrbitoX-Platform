@@ -361,7 +361,7 @@ async function runProofSuite() {
     const origStationEnv = process.env.RESTAURANT_STATION_SECRETS;
     try {
       process.env.NODE_ENV = 'production';
-      const secMod = require('../packages/domain/security');
+      const secMod = require('../src/shared/security');
 
       // 1. Production rejects dev fixture PINs (8899, 5566, etc.)
       const prodPinRes = secMod.authenticateStaffByPin('8899', { branchId: 'branch_ldh' });
@@ -402,7 +402,7 @@ async function runProofSuite() {
     // ─────────────────────────────────────────────────────────────────────────
     console.log('\n💾 [TEST 3] Storage Transaction Rollback & State Restoration');
 
-    const { RestaurantRuntimeStore } = require('../packages/storage/store');
+    const { RestaurantRuntimeStore } = require('../src/storage/store');
     const isolatedStorePath = path.join(os.tmpdir(), `store-rollback-proof-${Date.now()}.json`);
     const testStore = new RestaurantRuntimeStore(isolatedStorePath);
 
@@ -510,7 +510,7 @@ async function runProofSuite() {
     assert.ok(overviewRes.text.includes('Open tabs:'), 'Overview documents active open table tabs');
 
     // Verify empty state truthfulness (No fabricated Table T-14 seated events when empty)
-    const { renderOperationsHome } = require('../packages/ui/pages/overview');
+    const { renderOperationsHome } = require('../src/views/pages/overview');
     const emptyOverviewHtml = renderOperationsHome(
       [],
       [],

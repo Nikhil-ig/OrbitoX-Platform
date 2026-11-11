@@ -7,8 +7,8 @@
  * - Un-tenanted events are never leaked to tenanted streams
  */
 
-import { RealtimeEventBus } from '../packages/domain/event-bus';
-import { DomainEvent } from '../packages/storage';
+import { RealtimeEventBus } from '../src/shared/event-bus';
+import { DomainEvent } from '../src/storage';
 import { EventEmitter } from 'events';
 
 class MockResponse extends EventEmitter {

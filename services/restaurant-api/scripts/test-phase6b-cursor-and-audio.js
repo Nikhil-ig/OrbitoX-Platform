@@ -121,7 +121,7 @@ async function runPhase6BTests() {
   }
 
   try {
-    const storeModule = require('../packages/storage/store');
+    const storeModule = require('../src/storage/store');
     const storeInstance = new storeModule.RestaurantRuntimeStore();
 
     // 1. Cursor endpoint verification

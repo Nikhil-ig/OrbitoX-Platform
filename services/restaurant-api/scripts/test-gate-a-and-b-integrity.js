@@ -236,7 +236,7 @@ async function run() {
 
   // A.4: In-memory atomic rollback on persistence failure
   console.log('  🛡️ Verifying atomic rollback invariant in store...');
-  const { RestaurantRuntimeStore } = require('../packages/storage/store');
+  const { RestaurantRuntimeStore } = require('../src/storage/store');
   const testStore = new RestaurantRuntimeStore(storeFilePath);
   const testTbl = testStore.getTableByNumber('T-05') || testStore.getTable(5);
   testTbl.status = 'OCCUPIED';

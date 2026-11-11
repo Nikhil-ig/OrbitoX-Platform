@@ -137,7 +137,7 @@ if [[ "$MODE" == "tenant" ]]; then
     
     DATABASE_URL="${DATABASE_URL}" npx tsx -e "
       import { PrismaClient } from '@prisma/client';
-      import { TenantProvisioningService } from './packages/domain';
+      import { TenantProvisioningService } from './src/shared';
       const prisma = new PrismaClient({ datasources: { db: { url: process.env.DATABASE_URL } } });
       const service = new TenantProvisioningService(prisma);
       service.exportTenantData('${TENANT_ID}').then(data => {

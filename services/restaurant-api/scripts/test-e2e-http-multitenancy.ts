@@ -30,7 +30,7 @@ import http from 'http';
 import { spawn, ChildProcess } from 'child_process';
 import crypto from 'crypto';
 import { PrismaClient } from '../generated/prisma';
-import { issueStaffToken, hashStaffSecretSync } from '../packages/domain/security';
+import { issueStaffToken, hashStaffSecretSync } from '../src/shared/security';
 import { signBridgeRequest, getDefaultBridgeKeys } from '@orbitox-io/bridge';
 
 const TEST_PORT = 4026;
