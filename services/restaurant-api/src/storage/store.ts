@@ -57,6 +57,7 @@ import {
   DEFAULT_BRANCH_MENU_OVERRIDES,
 } from '../shared';
 
+import { DomainEvent } from '../shared/event-bus';
 export type { DomainEvent } from '../shared/event-bus';
 
 export interface SettlementRecord {
