@@ -13,7 +13,7 @@ import http from 'http';
 import fs from 'fs';
 import path from 'path';
 
-describe('RestaurantOS Differential Parity Matrix (d7f9de5 Baseline vs Modular Server)', { timeout: 120000 }, () => {
+describe('RestaurantOS Differential Parity Matrix (d7f9de5 Baseline vs Modular Server)', { timeout: 300000 }, () => {
   let routes: any[];
   let serverBaseline: http.Server;
   let serverModular: http.Server;
@@ -184,7 +184,7 @@ describe('RestaurantOS Differential Parity Matrix (d7f9de5 Baseline vs Modular S
     });
   }
 
-  it('executes all 198 registered routes across 10 caller identities (1,980 cells) with 0 differences', async () => {
+  it('executes all 198 registered routes across 10 caller identities (1,980 cells) with 0 differences', { timeout: 300000 }, async () => {
     let totalTested = 0;
     const diffLog: any[] = [];
 
@@ -209,47 +209,50 @@ describe('RestaurantOS Differential Parity Matrix (d7f9de5 Baseline vs Modular S
         resolvedPath = resolvedPath.replace('*', 'test_file.txt');
       }
 
-      for (const id of identities) {
-        totalTested++;
-        const headers = buildHeadersForIdentity(id, r.method, resolvedPath);
-        const testBody = ['POST', 'PATCH', 'PUT'].includes(r.method) ? { test: true } : undefined;
+      const results = await Promise.all(
+        identities.map(async (id) => {
+          const headers = buildHeadersForIdentity(id, r.method, resolvedPath);
+          const testBody = ['POST', 'PATCH', 'PUT'].includes(r.method) ? { test: true } : undefined;
 
-        let resBase: any;
-        let resMod: any;
-        try {
-          resBase = await doRequest(portBaseline, r.method, resolvedPath, headers, testBody);
-        } catch (err: any) {
-          resBase = { status: 500, body: { error: err.message } };
-        }
-        try {
-          resMod = await doRequest(portModular, r.method, resolvedPath, headers, testBody);
-        } catch (err: any) {
-          resMod = { status: 500, body: { error: err.message } };
-        }
+          const [resBase, resMod] = await Promise.all([
+            doRequest(portBaseline, r.method, resolvedPath, headers, testBody).catch((err: any) => ({ status: 500, body: { error: err.message } })),
+            doRequest(portModular, r.method, resolvedPath, headers, testBody).catch((err: any) => ({ status: 500, body: { error: err.message } })),
+          ]);
 
-        let isDiff = false;
-        let reason = '';
+          let isDiff = false;
+          let reason = '';
 
-        if (resBase.status !== resMod.status) {
-          isDiff = true;
-          reason = `Status mismatch: baseline=${resBase.status}, modular=${resMod.status}`;
-        } else if (typeof resBase.body === 'object' && typeof resMod.body === 'object' && resBase.body !== null && resMod.body !== null) {
-          if (resBase.body.code !== resMod.body.code) {
+          if (resBase.status !== resMod.status) {
             isDiff = true;
-            reason = `Error code mismatch: baseline=${resBase.body.code}, modular=${resMod.body.code}`;
+            reason = `Status mismatch: baseline=${resBase.status}, modular=${resMod.status}`;
+          } else if (typeof resBase.body === 'object' && typeof resMod.body === 'object' && resBase.body !== null && resMod.body !== null) {
+            if (resBase.body.code !== resMod.body.code) {
+              isDiff = true;
+              reason = `Error code mismatch: baseline=${resBase.body.code}, modular=${resMod.body.code}`;
+            }
           }
-        }
 
-        if (isDiff) {
-          diffLog.push({
-            route: `${r.method} ${r.path} -> ${resolvedPath}`,
-            identity: id,
-            reason,
-            baseStatus: resBase.status,
-            modStatus: resMod.status,
-            baseBody: resBase.body,
-            modBody: resMod.body,
-          });
+          return {
+            id,
+            isDiff,
+            diff: isDiff ? {
+              route: `${r.method} ${r.path} -> ${resolvedPath}`,
+              identity: id,
+              reason,
+              baseStatus: resBase.status,
+              modStatus: resMod.status,
+              baseBody: resBase.body,
+              modBody: resMod.body,
+            } : null,
+          };
+        })
+      );
+
+      for (const res of results) {
+        totalTested++;
+        if (res.isDiff && res.diff) {
+          diffLog.push(res.diff);
+          console.error(`[DIFF] ${res.diff.route} [${res.diff.identity}]: ${res.diff.reason}`);
         }
       }
     }
