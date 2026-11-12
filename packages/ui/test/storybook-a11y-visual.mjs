@@ -11,7 +11,8 @@ import pixelmatch from 'pixelmatch';
 const DIST_DIR = path.resolve(import.meta.dirname, '../dist-storybook');
 const SNAPSHOT_DIR = path.resolve(import.meta.dirname, '../test/visual/__snapshots__');
 const DIFF_DIR = path.resolve(import.meta.dirname, '../test/visual/__diffs__');
-const MAX_DIFF_RATIO = 0.005; // 0.5% tight threshold for cross-run stability
+const MAX_DIFF_RATIO = 0.002; // 0.2% tight threshold for same-OS baseline comparisons
+const PLATFORM_TAG = process.platform === 'linux' ? 'linux' : 'darwin';
 
 const MIME_TYPES = {
   '.html': 'text/html; charset=utf-8',
@@ -160,8 +161,8 @@ async function run() {
             }
           }
 
-          // F-2: Visual regression comparison against committed PNG baselines
-          const snapName = `${storyId}--${vp.name}--${theme}.png`;
+          // F-2: Visual regression comparison against committed platform-specific PNG baselines
+          const snapName = `${storyId}--${vp.name}--${theme}--${PLATFORM_TAG}.png`;
           const baselinePath = path.join(SNAPSHOT_DIR, snapName);
           const actualBuf = await page.screenshot({ fullPage: false, animations: 'disabled' });
 

@@ -61,7 +61,7 @@ describe('Security Components Guard (B3.7 / F-5)', () => {
     });
 
     it('auto-hides revealed PHI after 60s timer, on window blur, and on document visibilitychange (F-5.2)', async (t) => {
-      const secretPhi = 'PATIENT-PHI-SECRET-441';
+      const secretPhi = 'orb_test_patient_phi_441';
       let revealCount = 0;
 
       const { getByText, getByLabelText, queryByText } = render(
