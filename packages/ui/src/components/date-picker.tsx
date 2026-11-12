@@ -4,6 +4,7 @@ import * as PopoverPrimitive from '@radix-ui/react-popover';
 import { cn } from '../utils/cn';
 import { Button } from './button';
 import { formatDate } from '../format';
+import { t } from '../i18n';
 
 export interface DatePickerProps {
   value?: Date | string | null;
@@ -85,13 +86,13 @@ export function DatePicker({
           sideOffset={4}
         >
           <div className="flex items-center justify-between pb-2 mb-2 border-b border-[var(--color-border)]">
-            <Button variant="ghost" size="sm" onClick={handlePrevMonth} aria-label="Previous month" className="h-7 w-7 p-0">
+            <Button variant="ghost" size="sm" onClick={handlePrevMonth} aria-label={t('datePicker.previousMonth')} className="h-7 w-7 p-0">
               <ChevronLeft className="h-4 w-4" />
             </Button>
             <span className="text-sm font-semibold text-[var(--color-text)]">
               {monthNames[month]} {year}
             </span>
-            <Button variant="ghost" size="sm" onClick={handleNextMonth} aria-label="Next month" className="h-7 w-7 p-0">
+            <Button variant="ghost" size="sm" onClick={handleNextMonth} aria-label={t('datePicker.nextMonth')} className="h-7 w-7 p-0">
               <ChevronRight className="h-4 w-4" />
             </Button>
           </div>

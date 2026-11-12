@@ -2,6 +2,7 @@ import * as React from 'react';
 import { UploadCloud, File, X, AlertCircle } from 'lucide-react';
 import { cn } from '../utils/cn';
 import { Button } from './button';
+import { t } from '../i18n';
 
 export interface UploadedFileItem {
   id: string;
@@ -112,7 +113,8 @@ export function FileUpload({
         }}
         tabIndex={disabled ? -1 : 0}
         role="button"
-        aria-label="Upload files dropzone"
+        aria-disabled={disabled || undefined}
+        aria-label={t('fileUpload.dropzoneAria')}
         className={cn(
           'flex flex-col items-center justify-center rounded-lg border-2 border-dashed p-6 text-center transition-colors cursor-pointer focus:outline-none focus:ring-2 focus:ring-[var(--color-focus-ring)]',
           isDragOver
@@ -136,10 +138,10 @@ export function FileUpload({
         </div>
 
         <p className="text-xs font-semibold text-[var(--color-text)]">
-          Click to upload or drag and drop
+          {t('fileUpload.prompt')}
         </p>
         <p className="text-[11px] text-[var(--color-text-muted)] mt-1">
-          {accept ? `Supported formats: ${accept}` : 'Any supported file'} (max {maxSizeMb} MB)
+          {accept ? `${accept} ` : ''}{t('fileUpload.maxSize', { max: maxSizeMb })}
         </p>
       </div>
 
@@ -164,7 +166,7 @@ export function FileUpload({
                 <div className="truncate">
                   <span className="font-medium text-[var(--color-text)] truncate block">{item.file.name}</span>
                   <span className="text-[10px] text-[var(--color-text-muted)]">
-                    {(item.file.size / (1024 * 1024)).toFixed(2)} MB
+                    {(item.file.size / (1024 * 1024)).toFixed(2)} {t('fileUpload.mbUnit')}
                   </span>
                 </div>
               </div>

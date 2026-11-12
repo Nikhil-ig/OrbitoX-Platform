@@ -1,6 +1,7 @@
 import * as React from 'react';
 import { AlertCircle, AlertTriangle, CheckCircle, Info, X } from 'lucide-react';
 import { cn } from '../utils/cn';
+import { t } from '../i18n';
 
 export interface InlineAlertProps extends React.HTMLAttributes<HTMLDivElement> {
   variant?: 'info' | 'success' | 'warning' | 'danger';
@@ -49,7 +50,7 @@ export function InlineAlert({
         <button
           onClick={onClose}
           className="rounded p-0.5 opacity-70 hover:opacity-100 transition-opacity cursor-pointer"
-          aria-label="Dismiss alert"
+          aria-label={t('alert.dismiss')}
         >
           <X className="h-3.5 w-3.5" />
         </button>

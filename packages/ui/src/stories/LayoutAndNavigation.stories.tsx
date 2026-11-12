@@ -7,8 +7,9 @@ import { DescriptionList } from '../components/description-list';
 import { Timeline } from '../components/timeline';
 import { Stepper } from '../components/stepper';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '../components/tabs';
+import { CommandPalette } from '../components/command-palette';
 import { Button } from '../components/button';
-import { LayoutDashboard, Settings, Users, CreditCard } from 'lucide-react';
+import { LayoutDashboard, Settings, Users, CreditCard, Terminal } from 'lucide-react';
 import { formatINR } from '../format';
 
 const meta: Meta = {
@@ -100,5 +101,54 @@ export const FullAppShellDemo: StoryObj = {
       </div>
     </AppShell>
   ),
+};
+
+export const CommandPaletteDemo: StoryObj = {
+  render: () => {
+    const [open, setOpen] = React.useState(false);
+
+    return (
+      <div className="p-6 max-w-2xl space-y-4">
+        <PageHeader
+          title="Command Palette & Keyboard Navigation Showcase with Extended Multi-Tenant Breadcrumbs Truncation Handling"
+          description="Press ⌘K / Ctrl+K or click below to open the role-filtered command palette."
+          actions={
+            <Button size="sm" variant="outline" icon={<Terminal className="h-4 w-4" />} onClick={() => setOpen(true)}>
+              Open Command Palette
+            </Button>
+          }
+        />
+
+        <CommandPalette
+          open={open}
+          onOpenChange={setOpen}
+          currentRole="operator"
+          groups={[
+            {
+              group: 'Tenant Navigation',
+              items: [
+                {
+                  id: 'tenants',
+                  label: 'Browse Suspended Tenants',
+                  description: 'Review compliance holds across ap-south-1',
+                  shortcut: ['G', 'T'],
+                  roles: ['operator', 'admin'],
+                  onSelect: () => undefined,
+                },
+                {
+                  id: 'rotate-keys',
+                  label: 'Rotate Ed25519 Signing Key',
+                  description: 'Issue new cryptographic plugin bundle key',
+                  shortcut: ['⌘', 'R'],
+                  roles: ['operator'],
+                  onSelect: () => undefined,
+                },
+              ],
+            },
+          ]}
+        />
+      </div>
+    );
+  },
 };
 

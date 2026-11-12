@@ -12,6 +12,8 @@ export interface ComboboxOption {
 }
 
 export interface ComboboxProps {
+  id?: string;
+  'aria-label'?: string;
   options: ComboboxOption[];
   value?: string;
   onChange?: (value: string) => void;
@@ -23,6 +25,8 @@ export interface ComboboxProps {
 }
 
 export function Combobox({
+  id,
+  'aria-label': ariaLabel,
   options,
   value,
   onChange,
@@ -49,6 +53,8 @@ export function Combobox({
     <PopoverPrimitive.Root open={open} onOpenChange={setOpen}>
       <PopoverPrimitive.Trigger asChild>
         <Button
+          id={id}
+          aria-label={ariaLabel || selectedOption?.label || displayPlaceholder}
           variant="outline"
           role="combobox"
           aria-expanded={open}

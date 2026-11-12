@@ -33,6 +33,12 @@ const nextConfig: NextConfig = {
     ];
   },
   webpack: (config, { isServer, nextRuntime }) => {
+    // lucide-react sets "type": "module" in package.json while exposing CJS files under dist/cjs.
+    // Force webpack to treat dist/cjs/*.js as javascript/auto so CJS callers do not lose exports.
+    config.module.rules.push({
+      test: /lucide-react[\\/]dist[\\/]cjs[\\/].*\.js$/,
+      type: 'javascript/auto',
+    });
     if (!isServer || nextRuntime === 'edge') {
       config.resolve.fallback = {
         ...config.resolve.fallback,

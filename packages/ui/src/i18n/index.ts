@@ -53,6 +53,50 @@ export const MESSAGES: Record<Locale, Record<string, string>> = {
 
     'form.submit': 'Submit',
     'form.unsavedChanges': 'You have unsaved changes. Are you sure you want to discard them?',
+
+    'shell.expandSidebar': 'Expand sidebar',
+    'shell.collapseSidebar': 'Collapse sidebar',
+    'shell.openMobileNav': 'Open mobile navigation',
+    'shell.toggleTheme': 'Toggle theme',
+
+    'copyOnceSecret.ackTitle': 'Secret Acknowledged',
+    'copyOnceSecret.ackDescription': 'This sensitive credential has been securely cleared from memory and cannot be viewed again.',
+
+    'dangerousAction.stepUpTitle': 'Step-Up Authentication',
+    'dangerousAction.verified': 'Verified',
+    'dangerousAction.authenticate': 'Authenticate',
+
+    'table.selectAll': 'Select all',
+    'table.selectRow': 'Select row',
+    'table.exportCsv': 'Export CSV',
+    'table.columns': 'Columns',
+
+    'datePicker.previousMonth': 'Previous month',
+    'datePicker.nextMonth': 'Next month',
+
+    'errorState.requestId': 'Request ID:',
+    'errorState.copyRequestId': 'Copy request id',
+
+    'fileUpload.dropzoneAria': 'Upload files dropzone',
+    'fileUpload.prompt': 'Click to upload or drag and drop',
+    'fileUpload.maxSize': '(max {max} MB)',
+    'fileUpload.mbUnit': 'MB',
+
+    'filter.clearSearch': 'Clear search',
+    'alert.dismiss': 'Dismiss alert',
+    'pagination.totalRecords': 'total records',
+    'pagination.firstPage': 'First page',
+    'pagination.lastPage': 'Last page',
+    'stepper.progress': 'Progress',
+    'toast.notifications': 'Notifications',
+    'toast.dismiss': 'Dismiss toast',
+
+    'charts.tableFallback': '{title} data table fallback',
+    'charts.showChart': 'Show Chart',
+    'charts.dataTable': 'Data Table',
+    'charts.segment': 'Segment',
+    'charts.count': 'Count',
+    'charts.share': 'Share',
   },
   'hi-IN': {
     'common.save': 'सुरक्षित करें',
@@ -100,6 +144,50 @@ export const MESSAGES: Record<Locale, Record<string, string>> = {
 
     'form.submit': 'सबमिट करें',
     'form.unsavedChanges': 'आपके पास असहेजे गए बदलाव हैं। क्या आप वाकई उन्हें छोड़ना चाहते हैं?',
+
+    'shell.expandSidebar': 'साइडबार खोलें',
+    'shell.collapseSidebar': 'साइडबार बंद करें',
+    'shell.openMobileNav': 'मोबाइल नेविगेशन खोलें',
+    'shell.toggleTheme': 'थीम बदलें',
+
+    'copyOnceSecret.ackTitle': 'सीक्रेट की पुष्टि हो गई',
+    'copyOnceSecret.ackDescription': 'यह संवेदनशील क्रेडेंशियल मेमोरी से हटा दिया गया है और इसे दोबारा नहीं देखा जा सकता।',
+
+    'dangerousAction.stepUpTitle': 'अतिरिक्त प्रमाणीकरण',
+    'dangerousAction.verified': 'सत्यापित',
+    'dangerousAction.authenticate': 'प्रमाणीकरण करें',
+
+    'table.selectAll': 'सभी चुनें',
+    'table.selectRow': 'पंक्ति चुनें',
+    'table.exportCsv': 'CSV निर्यात करें',
+    'table.columns': 'कॉलम',
+
+    'datePicker.previousMonth': 'पिछला महीना',
+    'datePicker.nextMonth': 'अगला महीना',
+
+    'errorState.requestId': 'अनुरोध आईडी:',
+    'errorState.copyRequestId': 'अनुरोध आईडी कॉपी करें',
+
+    'fileUpload.dropzoneAria': 'फ़ाइल अपलोड क्षेत्र',
+    'fileUpload.prompt': 'अपलोड करने के लिए क्लिक करें या ड्रैग एंड ड्रॉप करें',
+    'fileUpload.maxSize': '(अधिकतम {max} MB)',
+    'fileUpload.mbUnit': 'MB',
+
+    'filter.clearSearch': 'खोज साफ़ करें',
+    'alert.dismiss': 'अलर्ट बंद करें',
+    'pagination.totalRecords': 'कुल रिकॉर्ड',
+    'pagination.firstPage': 'पहला पृष्ठ',
+    'pagination.lastPage': 'अंतिम पृष्ठ',
+    'stepper.progress': 'प्रगति',
+    'toast.notifications': 'सूचनाएं',
+    'toast.dismiss': 'सूचना बंद करें',
+
+    'charts.tableFallback': '{title} डेटा तालिका',
+    'charts.showChart': 'चार्ट दिखाएं',
+    'charts.dataTable': 'डेटा तालिका',
+    'charts.segment': 'खंड',
+    'charts.count': 'संख्या',
+    'charts.share': 'हिस्सा',
   },
 };
 

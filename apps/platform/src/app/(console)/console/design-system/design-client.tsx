@@ -73,14 +73,16 @@ interface BranchRecord {
   activeOrders: number;
 }
 
+const REFERENCE_NOW = Date.UTC(2026, 10, 12, 12, 0, 0);
+
 const MOCK_BRANCHES: BranchRecord[] = [
-  { id: 'BR-001', name: 'Koramangala Flagship', location: 'Bengaluru, KA', status: 'active', turnoverPaise: 125000000, lastActive: Date.now() - 120000, activeOrders: 18 },
-  { id: 'BR-002', name: 'Indiranagar Hub', location: 'Bengaluru, KA', status: 'active', turnoverPaise: 84500000, lastActive: Date.now() - 3600000, activeOrders: 12 },
-  { id: 'BR-003', name: 'Bandra West Dining', location: 'Mumbai, MH', status: 'active', turnoverPaise: 215000000, lastActive: Date.now() - 7200000, activeOrders: 29 },
-  { id: 'BR-004', name: 'Connaught Place Central', location: 'New Delhi, DL', status: 'pending', turnoverPaise: 32000000, lastActive: Date.now() - 86400000, activeOrders: 0 },
-  { id: 'BR-005', name: 'Hitec City Express', location: 'Hyderabad, TS', status: 'suspended', turnoverPaise: 65000000, lastActive: Date.now() - 604800000, activeOrders: 0 },
-  { id: 'BR-006', name: 'Salt Lake Sector V', location: 'Kolkata, WB', status: 'active', turnoverPaise: 74000000, lastActive: Date.now() - 1800000, activeOrders: 15 },
-  { id: 'BR-007', name: 'Anna Nagar Bistro', location: 'Chennai, TN', status: 'active', turnoverPaise: 91000000, lastActive: Date.now() - 14400000, activeOrders: 22 },
+  { id: 'BR-001', name: 'Koramangala Flagship', location: 'Bengaluru, KA', status: 'active', turnoverPaise: 125000000, lastActive: REFERENCE_NOW - 120000, activeOrders: 18 },
+  { id: 'BR-002', name: 'Indiranagar Hub', location: 'Bengaluru, KA', status: 'active', turnoverPaise: 84500000, lastActive: REFERENCE_NOW - 3600000, activeOrders: 12 },
+  { id: 'BR-003', name: 'Bandra West Dining', location: 'Mumbai, MH', status: 'active', turnoverPaise: 215000000, lastActive: REFERENCE_NOW - 7200000, activeOrders: 29 },
+  { id: 'BR-004', name: 'Connaught Place Central', location: 'New Delhi, DL', status: 'pending', turnoverPaise: 32000000, lastActive: REFERENCE_NOW - 86400000, activeOrders: 0 },
+  { id: 'BR-005', name: 'Hitec City Express', location: 'Hyderabad, TS', status: 'suspended', turnoverPaise: 65000000, lastActive: REFERENCE_NOW - 604800000, activeOrders: 0 },
+  { id: 'BR-006', name: 'Salt Lake Sector V', location: 'Kolkata, WB', status: 'active', turnoverPaise: 74000000, lastActive: REFERENCE_NOW - 1800000, activeOrders: 15 },
+  { id: 'BR-007', name: 'Anna Nagar Bistro', location: 'Chennai, TN', status: 'active', turnoverPaise: 91000000, lastActive: REFERENCE_NOW - 14400000, activeOrders: 22 },
 ];
 
 // Mock Chart Series
@@ -125,9 +127,20 @@ export default function DesignSystemClient() {
     },
   });
 
-  // Toggle Theme mode on root
+  // Toggle Theme mode on root (sync with RootLayout's data-theme attribute)
+  React.useEffect(() => {
+    const active = document.documentElement.getAttribute('data-theme') === 'light' ? 'light' : 'dark';
+    setThemeMode(active);
+  }, []);
+
   const toggleTheme = () => {
-    const next = themeMode === 'dark' ? 'light' : 'dark';
+    const active =
+      typeof document !== 'undefined'
+        ? document.documentElement.getAttribute('data-theme') === 'light'
+          ? 'light'
+          : 'dark'
+        : themeMode;
+    const next = active === 'dark' ? 'light' : 'dark';
     setThemeMode(next);
     if (typeof document !== 'undefined') {
       document.documentElement.setAttribute('data-theme', next);
@@ -205,7 +218,7 @@ export default function DesignSystemClient() {
       accessorKey: 'lastActive',
       cell: ({ row }: { row: { original: BranchRecord } }) => (
         <span className="text-[11px] text-[var(--color-text-muted)]">
-          {formatRelative(row.original.lastActive)}
+          {formatRelative(row.original.lastActive, REFERENCE_NOW)}
         </span>
       ),
     },
@@ -232,7 +245,7 @@ export default function DesignSystemClient() {
         appName="OrbitoX Console"
         navItems={[
           { id: 'admin', label: 'Overview', href: '/console/admin', icon: <Layers className="h-4 w-4" /> },
-          { id: 'design', label: 'Design System', href: '/console/_design', icon: <Palette className="h-4 w-4" />, active: true },
+          { id: 'design', label: 'Design System', href: '/console/design-system', icon: <Palette className="h-4 w-4" />, active: true },
           { id: 'platform', label: 'Tenants & POS', href: '/console/platform', icon: <Building2 className="h-4 w-4" /> },
           { id: 'keys', label: 'Security & Access', href: '/console/admin/api-keys', icon: <ShieldCheck className="h-4 w-4" /> },
         ]}

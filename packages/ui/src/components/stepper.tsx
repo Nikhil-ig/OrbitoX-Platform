@@ -1,6 +1,7 @@
 import * as React from 'react';
 import { Check } from 'lucide-react';
 import { cn } from '../utils/cn';
+import { t } from '../i18n';
 
 export interface StepItem {
   id: string;
@@ -22,7 +23,7 @@ export function Stepper({
   ...props
 }: StepperProps) {
   return (
-    <nav aria-label="Progress" className={cn('w-full', className)} {...props}>
+    <nav aria-label={t('stepper.progress')} className={cn('w-full', className)} {...props}>
       <ol className="flex items-center justify-between gap-2 sm:gap-4">
         {steps.map((step, index) => {
           const isCompleted = index < activeStep;

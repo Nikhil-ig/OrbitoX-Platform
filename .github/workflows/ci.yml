@@ -185,12 +185,31 @@ jobs:
             sleep 1
           done
           ORBITOX_URL=http://127.0.0.1:3005 node scripts/ci/smoke-control-plane.mjs || { cat "$RUNNER_TEMP/server.log"; exit 1; }
+
+          NODE_ENV=production ORBITOX_ENVIRONMENT=staging PORT=3006 HOSTNAME=127.0.0.1 ORBITOX_DATA_DIR="$RUNNER_TEMP/orbitox-data-staging" \
+            node apps/platform/.next/standalone/apps/platform/server.js > "$RUNNER_TEMP/server-staging.log" 2>&1 &
+          for i in $(seq 1 60); do
+            curl -fsS http://127.0.0.1:3006/api/health >/dev/null 2>&1 && break
+            sleep 1
+          done
+          pnpm --filter @orbitox-io/platform exec playwright install chromium --with-deps
+          ORBITOX_URL=http://127.0.0.1:3006 \
+          ORBITOX_PROD_CHECK_URL=http://127.0.0.1:3005 \
+          ORBITOX_DESIGN_SYSTEM_SCREENSHOTS_DIR="$RUNNER_TEMP/design-system-screenshots" \
+            pnpm --filter @orbitox-io/platform test:design-system-e2e || { cat "$RUNNER_TEMP/server-staging.log"; exit 1; }
         env:
           DATABASE_URL: postgresql://orbitox_runtime:phase2-smoke-${{ github.run_id }}-${{ github.run_attempt }}@127.0.0.1:5432/orbitox_smoke
           APP_DATABASE_URL: postgresql://orbitox_runtime:phase2-smoke-${{ github.run_id }}-${{ github.run_attempt }}@127.0.0.1:5432/orbitox_smoke
           PLATFORM_AUDIT_DATABASE_URL: postgresql://orbitox_platform_admin_audit:phase2-audit-smoke-${{ github.run_id }}-${{ github.run_attempt }}@127.0.0.1:5432/orbitox_smoke
           HMS_AUDIT_DATABASE_URL: postgresql://hms_audit_reader:phase2-auditreader-smoke-${{ github.run_id }}-${{ github.run_attempt }}@127.0.0.1:5432/orbitox_smoke
           OUTBOX_RELAY_DATABASE_URL: postgresql://orbitox_outbox_relay:phase2-relay-smoke-${{ github.run_id }}-${{ github.run_attempt }}@127.0.0.1:5432/orbitox_smoke
+
+      - name: Upload /console/design-system E2E screenshots
+        uses: actions/upload-artifact@v4
+        with:
+          name: design-system-console-screenshots
+          path: ${{ runner.temp }}/design-system-screenshots
+          if-no-files-found: error
 
       - name: Sweep every API route without a customer or API session
         run: pnpm --filter @orbitox-io/platform test:api-no-token-sweep
@@ -1079,8 +1098,15 @@ jobs:
         run: pnpm --filter @orbitox-io/ui run build-storybook
       - name: Install Playwright Chromium for WCAG 2.2 AA & visual audit
         run: pnpm --filter @orbitox-io/ui exec playwright install chromium --with-deps
-      - name: Run WCAG 2.2 AA Accessibility & Responsive Viewport Audit
+      - name: Run WCAG 2.2 AA Accessibility & Visual Regression Audit
         run: pnpm --filter @orbitox-io/ui run test:a11y
+      - name: Upload visual regression diff images on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: design-system-visual-diffs
+          path: packages/ui/test/visual/__diffs__
+          if-no-files-found: ignore
       - name: Upload Storybook build artifact
         uses: actions/upload-artifact@v4
         with:

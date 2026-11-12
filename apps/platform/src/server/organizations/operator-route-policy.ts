@@ -19,7 +19,7 @@ const OWNER_ONLY_PREFIXES = [
 const DANGEROUS_ACTION = /(?:suspend|resume|plan|price|rotate|force|deprovision|delete|revoke|unlock|ownership|secret|key)/i;
 
 export function requiredOperatorRole(pathname: string, method: string): RequiredOperatorRole | null {
-  if (!pathname.startsWith('/api/') && !pathname.startsWith('/platform') && !pathname.startsWith('/admin')) return null;
+  if (!pathname.startsWith('/api/') && !pathname.startsWith('/platform') && !pathname.startsWith('/admin') && !pathname.startsWith('/console')) return null;
   if (pathname.startsWith('/api/v1/customer/') || pathname.startsWith('/api/hospital/') || pathname.startsWith('/api/restaurant/')) return null;
   if (pathname === '/api/health' || pathname === '/api/v1/openapi.json' || pathname.startsWith('/api/v1/billing/webhook')) return null;
   if (pathname === '/api/v1/platform/auth/login') return null;

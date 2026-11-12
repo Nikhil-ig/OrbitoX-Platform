@@ -3,6 +3,12 @@
 @import "./components.css";
 @import "./motion.css";
 
+@source "../components";
+@source "../charts";
+@source "../legacy";
+
+@custom-variant dark (&:where([data-theme="dark"], [data-theme="dark"] *));
+
 /**
  * Tailwind CSS v4 Theme Bridge
  * Maps utility classes to OrbitoX CSS Custom Properties.

@@ -53,9 +53,9 @@ export function DangerousAction({
     try {
       setIsVerifyingStepUp(true);
       const success = await onStepUpAuth();
-      if (success) {
-        setStepUpVerified(true);
-      }
+      setStepUpVerified(success === true);
+    } catch {
+      setStepUpVerified(false);
     } finally {
       setIsVerifyingStepUp(false);
     }
@@ -108,10 +108,10 @@ export function DangerousAction({
               <div className="flex items-center justify-between">
                 <span className="font-semibold flex items-center gap-1.5 text-[var(--color-text)]">
                   <Lock className="h-3.5 w-3.5" />
-                  Step-Up Authentication
+                  {t('dangerousAction.stepUpTitle')}
                 </span>
                 {stepUpVerified ? (
-                  <span className="text-[var(--color-success)] font-medium">Verified</span>
+                  <span className="text-[var(--color-success)] font-medium">{t('dangerousAction.verified')}</span>
                 ) : (
                   <Button
                     type="button"
@@ -121,7 +121,7 @@ export function DangerousAction({
                     onClick={handleStepUpAuth}
                     className="h-7 text-xs"
                   >
-                    Authenticate
+                    {t('dangerousAction.authenticate')}
                   </Button>
                 )}
               </div>

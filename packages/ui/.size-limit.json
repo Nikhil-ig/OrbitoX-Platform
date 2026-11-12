@@ -1,28 +1,44 @@
 [
   {
-    "name": "Full Library Index",
-    "path": "dist/index.js",
-    "limit": "25 KB"
+    "name": "Full Library Index (ESM all deps bundled)",
+    "path": "dist/esm/index.js",
+    "import": "*",
+    "ignore": ["react", "react-dom"],
+    "limit": "235 KB"
   },
   {
-    "name": "AppShell Component",
-    "path": "dist/components/app-shell.js",
-    "limit": "15 KB"
+    "name": "Tokens & Theme Sanitizer (dist/esm/tokens/index.js)",
+    "path": "dist/esm/tokens/index.js",
+    "import": "{ applyTenantTheme, validateColor }",
+    "ignore": ["react", "react-dom"],
+    "limit": "5 KB"
   },
   {
-    "name": "DataTable Component",
-    "path": "dist/components/data-table.js",
-    "limit": "25 KB"
+    "name": "AppShell Layout ({ AppShell })",
+    "path": "dist/esm/index.js",
+    "import": "{ AppShell }",
+    "ignore": ["react", "react-dom"],
+    "limit": "65 KB"
   },
   {
-    "name": "Form Component",
-    "path": "dist/components/form.js",
-    "limit": "15 KB"
+    "name": "DataTable ({ DataTable } + @tanstack/react-table)",
+    "path": "dist/esm/index.js",
+    "import": "{ DataTable }",
+    "ignore": ["react", "react-dom"],
+    "limit": "75 KB"
   },
   {
-    "name": "Tokens & Theming",
-    "path": "dist/tokens/index.js",
-    "limit": "10 KB"
+    "name": "Form ({ Form } + react-hook-form + zod)",
+    "path": "dist/esm/index.js",
+    "import": "{ Form }",
+    "ignore": ["react", "react-dom"],
+    "limit": "65 KB"
+  },
+  {
+    "name": "Charts ({ LineChart, BarChart, AreaChart, DonutChart, Sparkline } + recharts)",
+    "path": "dist/esm/index.js",
+    "import": "{ LineChart, BarChart, AreaChart, DonutChart, Sparkline }",
+    "ignore": ["react", "react-dom"],
+    "limit": "175 KB"
   }
 ]
-

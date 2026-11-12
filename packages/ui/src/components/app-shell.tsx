@@ -2,8 +2,9 @@ import * as React from 'react';
 import { Menu, ChevronLeft, ChevronRight, Moon, Sun } from 'lucide-react';
 import { cn } from '../utils/cn';
 import { Button } from './button';
-import { Sheet, SheetContent } from './sheet';
+import { Sheet, SheetContent, SheetTitle, SheetDescription } from './sheet';
 import { toggleTheme } from '../tokens/theme-script';
+import { t } from '../i18n';
 
 export interface NavItem {
   id: string;
@@ -109,7 +110,7 @@ export function AppShell({
                 'p-1 rounded text-[var(--color-text-muted)] hover:text-[var(--color-text)] hover:bg-[var(--color-surface-raised)] transition-colors cursor-pointer',
                 isCollapsed && 'hidden'
               )}
-              aria-label={isCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+              aria-label={isCollapsed ? t('shell.expandSidebar') : t('shell.collapseSidebar')}
             >
               <ChevronLeft className="h-4 w-4" />
             </button>
@@ -131,7 +132,7 @@ export function AppShell({
               <button
                 onClick={toggleCollapsed}
                 className="p-2 rounded text-[var(--color-text-muted)] hover:text-[var(--color-text)] hover:bg-[var(--color-surface-raised)] transition-colors cursor-pointer"
-                aria-label="Expand sidebar"
+                aria-label={t('shell.expandSidebar')}
               >
                 <ChevronRight className="h-4 w-4" />
               </button>
@@ -144,7 +145,8 @@ export function AppShell({
           <SheetContent side="left" className="w-72 p-0 flex flex-col bg-[var(--color-surface)]">
             <div className="flex h-14 items-center border-b border-[var(--color-border)] px-4 gap-3">
               {logo || <div className="h-6 w-6 rounded bg-[var(--color-primary)] shrink-0" />}
-              <span className="font-bold text-sm tracking-tight">{appName}</span>
+              <SheetTitle className="font-bold text-sm tracking-tight">{appName}</SheetTitle>
+              <SheetDescription className="sr-only">{appName}</SheetDescription>
             </div>
             {tenantSwitcher && <div className="border-b border-[var(--color-border)] p-3">{tenantSwitcher}</div>}
             {renderNavList(true)}
@@ -160,7 +162,7 @@ export function AppShell({
               <button
                 onClick={() => setIsMobileOpen(true)}
                 className="md:hidden p-1.5 rounded text-[var(--color-text-muted)] hover:text-[var(--color-text)] cursor-pointer"
-                aria-label="Open mobile navigation"
+                aria-label={t('shell.openMobileNav')}
               >
                 <Menu className="h-5 w-5" />
               </button>
@@ -176,7 +178,7 @@ export function AppShell({
                 size="sm"
                 onClick={() => toggleTheme()}
                 className="h-8 w-8 p-0"
-                aria-label="Toggle theme"
+                aria-label={t('shell.toggleTheme')}
               >
                 <Sun className="h-4 w-4 rotate-0 scale-100 transition-all dark:-rotate-90 dark:scale-0" />
                 <Moon className="absolute h-4 w-4 rotate-90 scale-0 transition-all dark:rotate-0 dark:scale-100" />

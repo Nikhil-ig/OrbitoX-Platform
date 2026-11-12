@@ -11,6 +11,7 @@ import {
     SELF_GUARDED_API_PREFIXES,
 } from '@/server/http/route-classification';
 import { requiredOperatorRole } from '@/server/organizations/operator-route-policy';
+import { isDesignSystemEnabled } from '@/server/http/design-system-gate';
 import { middleware } from '@/middleware';
 import { NextRequest } from 'next/server';
 
@@ -281,5 +282,41 @@ describe('Route & Page Security Boundary Architecture', () => {
         assert.equal(fs.existsSync(runtimePath), false, 'restaurant-runtime.ts must not exist on disk');
 
         assert.deepEqual(violations, [], `Found in-memory restaurant runtime references: ${violations.join(', ')}`);
+    });
+
+    it('protects /console/* routes fail-closed and gates /console/design-system in production (F-1 & F-6)', async () => {
+        // 1. /console is listed in PROTECTED_PAGE_PREFIXES and is NOT explicit public
+        assert.equal(PROTECTED_PAGE_PREFIXES.includes('/console'), true);
+        assert.equal(isExplicitPublicRoute('/console'), false);
+        assert.equal(isExplicitPublicRoute('/console/design-system'), false);
+        assert.equal(requiredOperatorRole('/console/design-system', 'GET'), 'SUPPORT_READONLY');
+
+        // 2. Unauthenticated request to /console/design-system redirects to /platform/login
+        const prevToken = process.env.ORBITOX_ADMIN_TOKEN;
+        const prevBypass = process.env.ALLOW_UNAUTHENTICATED_DEV_MODE;
+        process.env.ORBITOX_ADMIN_TOKEN = 'test_admin_token_0123456789abcdef0123456789';
+        delete process.env.ALLOW_UNAUTHENTICATED_DEV_MODE;
+        try {
+            const req = new NextRequest('http://127.0.0.1:3000/console/design-system');
+            const res = await middleware(req);
+            assert.equal(res.status, 307);
+            assert.equal(new URL(res.headers.get('location')!).pathname, '/platform/login');
+        } finally {
+            if (prevToken === undefined) delete process.env.ORBITOX_ADMIN_TOKEN;
+            else process.env.ORBITOX_ADMIN_TOKEN = prevToken;
+            if (prevBypass !== undefined) process.env.ALLOW_UNAUTHENTICATED_DEV_MODE = prevBypass;
+        }
+
+        // 3. Environment gate: production returns false -> notFound(); dev & staging return true
+        assert.equal(isDesignSystemEnabled({ NODE_ENV: 'production', ORBITOX_ENVIRONMENT: 'production' }), false);
+        assert.equal(isDesignSystemEnabled({ NODE_ENV: 'production' }), false);
+        assert.equal(isDesignSystemEnabled({ NODE_ENV: 'production', ORBITOX_ENVIRONMENT: 'staging' }), true);
+        assert.equal(isDesignSystemEnabled({ NODE_ENV: 'development' }), true);
+        assert.equal(isDesignSystemEnabled({ NODE_ENV: 'test' }), true);
+
+        // 4. Font license files are registered as allowed static assets
+        assert.equal(isStaticAsset('/fonts/LICENSES/OFL-Inter.txt'), true);
+        assert.equal(isStaticAsset('/fonts/LICENSES/OFL-JetBrainsMono.txt'), true);
+        assert.equal(isStaticAsset('/fonts/LICENSES/OFL-NotoSansDevanagari.txt'), true);
     });
 });

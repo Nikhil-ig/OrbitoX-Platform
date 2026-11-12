@@ -17,6 +17,7 @@ export const PLATFORM_SERVICE_CONTRACTS = {
   web: {
     environment: [
       'NODE_ENV',
+      'ORBITOX_ENVIRONMENT',
       'PORT',
       'HOSTNAME',
       'ORBITOX_PUBLIC_BASE_URL',

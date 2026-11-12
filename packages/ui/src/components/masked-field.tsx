@@ -25,7 +25,7 @@ export function MaskedField({
   maskedPreview = '••••••••••••',
   onReveal,
   autoHideDurationMs = 60000,
-  allowCopy = true,
+  allowCopy = false,
   className,
   ...props
 }: MaskedFieldProps) {
@@ -43,16 +43,25 @@ export function MaskedField({
     setCopied(false);
   }, []);
 
-  // Window blur listener: hides value immediately when user switches tabs or apps
+  // Window blur and document visibilitychange listeners: hides value immediately on tab/app switch
   React.useEffect(() => {
     if (!isRevealed) return;
 
     const handleWindowBlur = () => {
       hideValue();
     };
+    const handleVisibilityChange = () => {
+      if (typeof document !== 'undefined' && document.visibilityState === 'hidden') {
+        hideValue();
+      }
+    };
 
     window.addEventListener('blur', handleWindowBlur);
-    return () => window.removeEventListener('blur', handleWindowBlur);
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    return () => {
+      window.removeEventListener('blur', handleWindowBlur);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
   }, [isRevealed, hideValue]);
 
   // 60-second auto-hide timer

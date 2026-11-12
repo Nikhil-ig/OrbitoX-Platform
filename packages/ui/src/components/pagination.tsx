@@ -39,7 +39,7 @@ export function Pagination({
     >
       {/* Total rows & Page size selector */}
       <div className="flex items-center gap-4">
-        <span>{totalRows} total records</span>
+        <span>{totalRows} {t('pagination.totalRecords')}</span>
 
         {onPageSizeChange && (
           <div className="flex items-center gap-2">
@@ -48,7 +48,7 @@ export function Pagination({
               value={String(pageSize)}
               onValueChange={(val) => onPageSizeChange(Number(val))}
             >
-              <SelectTrigger className="h-8 w-18 text-xs">
+              <SelectTrigger className="h-8 w-18 text-xs" aria-label={t('table.rowsPerPage')}>
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -75,7 +75,7 @@ export function Pagination({
           onClick={() => onPageChange(0)}
           disabled={!canPrevious}
           className="h-8 w-8 p-0"
-          aria-label="First page"
+          aria-label={t('pagination.firstPage')}
         >
           <ChevronsLeft className="h-4 w-4" />
         </Button>
@@ -105,7 +105,7 @@ export function Pagination({
           onClick={() => onPageChange(pageCount - 1)}
           disabled={!canNext}
           className="h-8 w-8 p-0"
-          aria-label="Last page"
+          aria-label={t('pagination.lastPage')}
         >
           <ChevronsRight className="h-4 w-4" />
         </Button>

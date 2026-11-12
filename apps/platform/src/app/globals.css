@@ -1,5 +1,6 @@
 @import "tailwindcss";
 @import "../../../../packages/ui/src/tokens/theme.css";
+@source "../../../../packages/ui/src";
 
 /* Platform Root Base */
 :root {

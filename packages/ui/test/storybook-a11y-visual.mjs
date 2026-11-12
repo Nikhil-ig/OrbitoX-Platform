@@ -1,12 +1,17 @@
 import http from 'node:http';
 import fs from 'node:fs';
 import path from 'node:path';
+import os from 'node:os';
 import assert from 'node:assert/strict';
 import { chromium } from 'playwright';
 import AxeBuilder from '@axe-core/playwright';
+import { PNG } from 'pngjs';
+import pixelmatch from 'pixelmatch';
 
 const DIST_DIR = path.resolve(import.meta.dirname, '../dist-storybook');
-const SNAPSHOT_DIR = path.resolve(import.meta.dirname, '../test/__snapshots__');
+const SNAPSHOT_DIR = path.resolve(import.meta.dirname, '../test/visual/__snapshots__');
+const DIFF_DIR = path.resolve(import.meta.dirname, '../test/visual/__diffs__');
+const MAX_DIFF_RATIO = 0.005; // 0.5% tight threshold for cross-run stability
 
 const MIME_TYPES = {
   '.html': 'text/html; charset=utf-8',
@@ -37,8 +42,6 @@ function startStaticServer() {
   });
 }
 
-import os from 'node:os';
-
 async function launchBrowser() {
   try {
     return await chromium.launch({ headless: true });
@@ -54,6 +57,7 @@ async function launchBrowser() {
           path.join(root, dir, 'chrome-headless-shell-mac-x64', 'chrome-headless-shell'),
           path.join(root, dir, 'chrome-headless-shell-mac-arm64', 'chrome-headless-shell'),
           path.join(root, dir, 'chrome-headless-shell-linux', 'chrome-headless-shell'),
+          path.join(root, dir, 'chrome-headless-shell-linux-arm64', 'chrome-headless-shell'),
         ];
         for (const exe of candidates) {
           if (fs.existsSync(exe)) {
@@ -76,8 +80,8 @@ async function run() {
     .filter((e) => e.type === 'story')
     .map((e) => e.id);
 
-  console.log(`Discovered ${storyIds.length} Storybook stories for WCAG 2.2 AA & Visual audit.`);
-  assert.ok(storyIds.length >= 10, `Expected >= 10 stories, found ${storyIds.length}`);
+  console.log(`Discovered ${storyIds.length} Storybook stories for WCAG 2.2 AA & Visual Regression.`);
+  assert.ok(storyIds.length >= 20, `Expected >= 20 stories, found ${storyIds.length}`);
 
   const { server, port } = await startStaticServer();
   const baseUrl = `http://127.0.0.1:${port}`;
@@ -88,18 +92,24 @@ async function run() {
     { name: 'mobile', width: 390, height: 844 },
   ];
   const themes = ['dark', 'light'];
+  const updateSnapshots = process.env.UPDATE_SNAPSHOTS === '1';
 
-  if (process.env.UPDATE_SNAPSHOTS === '1') {
+  if (updateSnapshots) {
     fs.mkdirSync(SNAPSHOT_DIR, { recursive: true });
   }
+  fs.rmSync(DIFF_DIR, { recursive: true, force: true });
 
   let totalChecks = 0;
+  let visualPasses = 0;
   const failures = [];
 
   try {
     for (const vp of viewports) {
       for (const theme of themes) {
-        const context = await browser.newContext({ viewport: { width: vp.width, height: vp.height } });
+        const context = await browser.newContext({
+          viewport: { width: vp.width, height: vp.height },
+          deviceScaleFactor: 1,
+        });
         const page = await context.newPage();
 
         const consoleErrors = [];
@@ -109,21 +119,22 @@ async function run() {
           const url = `${baseUrl}/iframe.html?id=${storyId}&viewMode=story`;
           await page.goto(url, { waitUntil: 'networkidle' });
 
-          // Set theme mode on documentElement
+          // Set theme mode on documentElement & stabilize animations for deterministic pixels
           await page.evaluate((t) => {
             document.documentElement.setAttribute('data-theme', t);
             document.body.style.backgroundColor = 'var(--color-bg)';
             document.body.style.color = 'var(--color-text)';
+            const style = document.createElement('style');
+            style.textContent = '*, *::before, *::after { animation-duration: 0s !important; transition-duration: 0s !important; }';
+            document.head.appendChild(style);
           }, theme);
 
-          // Wait briefly for CSS custom properties and Recharts ResizeObserver to settle
           await page.waitForTimeout(150);
 
-          // Ensure root element rendered non-empty content
           const rootBox = await page.locator('#storybook-root').boundingBox();
           assert.ok(rootBox && rootBox.height > 0, `Story ${storyId} rendered empty height in ${vp.name}/${theme}`);
 
-          // Run WCAG 2.2 AA Axe audit on desktop viewport
+          // Run WCAG 2.2 AA Axe audit on desktop viewport across both light & dark themes
           if (vp.name === 'desktop') {
             const axeResults = await new AxeBuilder({ page })
               .withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa', 'wcag22aa'])
@@ -131,6 +142,7 @@ async function run() {
 
             if (axeResults.violations.length > 0) {
               failures.push({
+                type: 'a11y',
                 storyId,
                 viewport: vp.name,
                 theme,
@@ -138,25 +150,83 @@ async function run() {
                   id: v.id,
                   impact: v.impact,
                   description: v.description,
-                  nodes: v.nodes.length,
+                  nodeCount: v.nodes.length,
+                  nodes: v.nodes.slice(0, 3).map((n) => ({
+                    target: n.target,
+                    failureSummary: n.failureSummary,
+                  })),
                 })),
               });
             }
           }
 
-          if (process.env.SAVE_SCREENSHOTS === '1') {
-            fs.mkdirSync(SNAPSHOT_DIR, { recursive: true });
-            await page.screenshot({
-              path: path.join(SNAPSHOT_DIR, `${storyId}--${vp.name}--${theme}.png`),
-              fullPage: false,
+          // F-2: Visual regression comparison against committed PNG baselines
+          const snapName = `${storyId}--${vp.name}--${theme}.png`;
+          const baselinePath = path.join(SNAPSHOT_DIR, snapName);
+          const actualBuf = await page.screenshot({ fullPage: false, animations: 'disabled' });
+
+          if (updateSnapshots) {
+            fs.writeFileSync(baselinePath, actualBuf);
+            visualPasses++;
+          } else if (!fs.existsSync(baselinePath)) {
+            failures.push({
+              type: 'missing-baseline',
+              storyId,
+              viewport: vp.name,
+              theme,
+              baselinePath,
             });
+          } else {
+            const expectedPng = PNG.sync.read(fs.readFileSync(baselinePath));
+            const actualPng = PNG.sync.read(actualBuf);
+            if (expectedPng.width !== actualPng.width || expectedPng.height !== actualPng.height) {
+              fs.mkdirSync(DIFF_DIR, { recursive: true });
+              fs.writeFileSync(path.join(DIFF_DIR, snapName), actualBuf);
+              failures.push({
+                type: 'dimension-mismatch',
+                storyId,
+                viewport: vp.name,
+                theme,
+                expected: `${expectedPng.width}x${expectedPng.height}`,
+                actual: `${actualPng.width}x${actualPng.height}`,
+              });
+            } else {
+              const diffPng = new PNG({ width: expectedPng.width, height: expectedPng.height });
+              const diffPixels = pixelmatch(
+                expectedPng.data,
+                actualPng.data,
+                diffPng.data,
+                expectedPng.width,
+                expectedPng.height,
+                { threshold: 0.1 }
+              );
+              const totalPixels = expectedPng.width * expectedPng.height;
+              const diffRatio = diffPixels / totalPixels;
+
+              if (diffRatio > MAX_DIFF_RATIO) {
+                fs.mkdirSync(DIFF_DIR, { recursive: true });
+                fs.writeFileSync(path.join(DIFF_DIR, snapName.replace('.png', '.diff.png')), PNG.sync.write(diffPng));
+                fs.writeFileSync(path.join(DIFF_DIR, snapName.replace('.png', '.actual.png')), actualBuf);
+                failures.push({
+                  type: 'visual-diff',
+                  storyId,
+                  viewport: vp.name,
+                  theme,
+                  diffPixels,
+                  diffRatio: Number(diffRatio.toFixed(5)),
+                  maxAllowedRatio: MAX_DIFF_RATIO,
+                });
+              } else {
+                visualPasses++;
+              }
+            }
           }
 
           totalChecks++;
         }
 
         if (consoleErrors.length > 0) {
-          failures.push({ viewport: vp.name, theme, pageErrors: consoleErrors });
+          failures.push({ type: 'pageerror', viewport: vp.name, theme, pageErrors: consoleErrors });
         }
 
         await context.close();
@@ -167,14 +237,14 @@ async function run() {
     server.close();
   }
 
-  console.log(`Completed ${totalChecks} Playwright render & WCAG 2.2 AA accessibility checks.`);
+  console.log(`Completed ${totalChecks} Playwright WCAG 2.2 AA & Visual Regression checks (${visualPasses} baseline matches).`);
 
   if (failures.length > 0) {
-    console.error('Accessibility / Render Failures:', JSON.stringify(failures, null, 2));
+    console.error('Accessibility / Visual Regression Failures:', JSON.stringify(failures, null, 2));
     process.exit(1);
   }
 
-  console.log('ALL STORYBOOK ACCESSIBILITY & VISUAL VIEWPORT CHECKS PASSED (0 VIOLATIONS).');
+  console.log('ALL STORYBOOK ACCESSIBILITY & VISUAL REGRESSION CHECKS PASSED (0 VIOLATIONS).');
 }
 
 run().catch((err) => {

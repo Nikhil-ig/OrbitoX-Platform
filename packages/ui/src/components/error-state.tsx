@@ -52,13 +52,13 @@ export function ErrorState({
 
       {requestId && (
         <div className="flex items-center gap-2 mb-6 bg-[var(--color-surface)] px-3 py-1.5 rounded-md border border-[var(--color-border)]">
-          <span className="text-xs text-[var(--color-text-muted)]">Request ID:</span>
+          <span className="text-xs text-[var(--color-text-muted)]">{t('errorState.requestId')}</span>
           <Kbd className="text-xs font-mono">{requestId}</Kbd>
           <button
             type="button"
             onClick={handleCopyRequestId}
             className="p-1 rounded hover:bg-[var(--color-surface-raised)] text-[var(--color-text-muted)] hover:text-[var(--color-text)] transition-colors cursor-pointer"
-            aria-label="Copy request id"
+            aria-label={t('errorState.copyRequestId')}
           >
             {copied ? <Check className="h-3.5 w-3.5 text-[var(--color-success)]" /> : <Copy className="h-3.5 w-3.5" />}
           </button>

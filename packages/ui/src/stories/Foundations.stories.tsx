@@ -86,6 +86,28 @@ export const PalettesComparison: StoryObj = {
           </CardContent>
         </Card>
       </div>
+
+      {/* Live Token Preview under Brand Option B */}
+      <div
+        data-brand="obsidian-amber"
+        className="rounded-lg border border-[var(--color-border)] bg-[var(--color-bg)] text-[var(--color-text)] p-5 space-y-3"
+      >
+        <div className="flex items-center justify-between">
+          <div>
+            <h3 className="text-sm font-semibold">Live CSS Token Scope: Obsidian Amber (`data-brand="obsidian-amber"`)</h3>
+            <p className="text-xs text-[var(--color-text-muted)]">Verifies warm charcoal surfaces + violet/amber contrast pairs.</p>
+          </div>
+          <Badge variant="default">Option B Token Scope</Badge>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <span className="px-3 py-1.5 rounded text-xs font-medium bg-[var(--color-primary)] text-[var(--color-primary-fg)]">
+            Primary Action Surface
+          </span>
+          <span className="px-3 py-1.5 rounded text-xs font-medium bg-[var(--color-accent)] text-[var(--color-accent-fg)]">
+            Accent Highlight Surface
+          </span>
+        </div>
+      </div>
     </div>
   ),
 };

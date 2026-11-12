@@ -42,16 +42,16 @@ We adopt the following stack and pin exact versions across `packages/ui` and con
 
 ### 3. Typography & Self-Hosted Fonts
 - **Fonts**: Self-hosted via `next/font/local`:
-  - `Inter` (UI default)
-  - `Noto Sans Devanagari` (Hindi and Indic script fallback)
-  - `JetBrains Mono` (identifiers, codes, API keys, JSON)
+  - `Inter` (UI default) — SIL Open Font License 1.1 (`apps/platform/public/fonts/LICENSES/OFL-Inter.txt`)
+  - `Noto Sans Devanagari` (Hindi and Indic script fallback) — SIL Open Font License 1.1 (`apps/platform/public/fonts/LICENSES/OFL-NotoSansDevanagari.txt`)
+  - `JetBrains Mono` (identifiers, codes, API keys, JSON) — SIL Open Font License 1.1 (`apps/platform/public/fonts/LICENSES/OFL-JetBrainsMono.txt`)
   - Strictly no Google Fonts CDN (satisfying strict CSP and privacy regulations).
 
 ### 4. Documentation, Visual Testing & Quality Gates
-- **Storybook**: Storybook 8 (`storybook@8.6.4`, `@storybook/react-vite@8.6.4`, `@storybook/addon-essentials@8.6.4`, `@storybook/addon-a11y@8.6.4`, `@storybook/addon-interactions@8.6.4`).
-- **Accessibility Testing**: `@storybook/test-runner@0.21.0` with `axe-playwright@2.0.3` (asserting 0 WCAG 2.2 AA violations in light and dark modes).
-- **Visual Regression**: `@playwright/test@1.50.1` (capturing desktop 1440px and mobile 390px in light and dark themes).
-- **Bundle Budget**: `size-limit@11.1.6` with `@size-limit/file@11.1.6`.
+- **Storybook**: Storybook 8 (`storybook@8.6.4`, `@storybook/react@8.6.4`, `@storybook/react-vite@8.6.4`, `@storybook/addon-essentials@8.6.4`, `@storybook/addon-a11y@8.6.4`, `@storybook/addon-interactions@8.6.4`).
+- **Accessibility & Visual Regression**: `playwright@1.65.0` with `@axe-core/playwright@4.10.2` (asserting 0 WCAG 2.2 AA violations across all stories in desktop 1440px & mobile 390px, light & dark modes) and committed PNG visual regression baselines (`packages/ui/test/visual/__snapshots__`).
+- **Security & Component Unit Tests**: `jsdom@26.0.0`, `@testing-library/react@16.2.0`.
+- **Bundle Budget**: `size-limit@11.1.6` with `@size-limit/preset-small-lib@11.1.6` in `import` mode (`ignore: ["react", "react-dom"]` only, bundling Radix, TanStack Table, React Hook Form, Zod, and Recharts).
 
 ### 5. Architectural Invariants
 1. **Additive Legacy Migration**:

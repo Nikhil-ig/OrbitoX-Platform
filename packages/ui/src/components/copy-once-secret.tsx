@@ -6,6 +6,20 @@ import { Checkbox } from './checkbox';
 import { Label } from './label';
 import { t } from '../i18n';
 
+// Tracks one-way non-reversible fingerprints of secrets already shown and acknowledged or unmounted
+const consumedFingerprints = new Set<string>();
+
+function fingerprintSecret(value: string): string {
+  let h1 = 0x811c9dc5;
+  let h2 = 0x01000193;
+  for (let i = 0; i < value.length; i++) {
+    const c = value.charCodeAt(i);
+    h1 = Math.imul(h1 ^ c, 0x01000193) >>> 0;
+    h2 = Math.imul(h2 ^ (c + i), 0x85ebca6b) >>> 0;
+  }
+  return `${h1.toString(16)}:${h2.toString(16)}:${value.length}`;
+}
+
 export interface CopyOnceSecretProps extends React.HTMLAttributes<HTMLDivElement> {
   secret: string;
   title?: string;
@@ -21,15 +35,26 @@ export function CopyOnceSecret({
   className,
   ...props
 }: CopyOnceSecretProps) {
+  const fingerprint = React.useMemo(() => fingerprintSecret(secret), [secret]);
   const [copied, setCopied] = React.useState(false);
   const [hasConfirmedStorage, setHasConfirmedStorage] = React.useState(false);
-  const [isDismissed, setIsDismissed] = React.useState(false);
+  const [isDismissed, setIsDismissed] = React.useState(() => consumedFingerprints.has(fingerprint));
 
-  // Volatile internal copy: once dismissed, secret is set to empty string
-  const [volatileSecret, setVolatileSecret] = React.useState<string | null>(secret);
+  // Volatile internal copy: initialized only if not previously consumed/unmounted
+  const [volatileSecret, setVolatileSecret] = React.useState<string | null>(() =>
+    consumedFingerprints.has(fingerprint) ? null : secret
+  );
+
+  // Mark secret consumed and wipe volatile state on unmount
+  React.useEffect(() => {
+    return () => {
+      consumedFingerprints.add(fingerprint);
+      setVolatileSecret(null);
+    };
+  }, [fingerprint]);
 
   const handleCopy = () => {
-    if (volatileSecret && typeof navigator !== 'undefined') {
+    if (volatileSecret && typeof navigator !== 'undefined' && navigator.clipboard) {
       navigator.clipboard.writeText(volatileSecret);
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
@@ -38,6 +63,7 @@ export function CopyOnceSecret({
 
   const handleDone = () => {
     if (!hasConfirmedStorage) return;
+    consumedFingerprints.add(fingerprint);
     setVolatileSecret(null); // Wipe secret from memory
     setIsDismissed(true);
     onAcknowledged?.();
@@ -54,9 +80,9 @@ export function CopyOnceSecret({
       >
         <CheckCircle2 className="h-5 w-5 text-[var(--color-success)] shrink-0" />
         <div>
-          <h5 className="font-semibold text-xs text-[var(--color-text)]">Secret Acknowledged</h5>
+          <h5 className="font-semibold text-xs text-[var(--color-text)]">{t('copyOnceSecret.ackTitle')}</h5>
           <p className="text-[11px] text-[var(--color-text-muted)] mt-0.5">
-            This sensitive credential has been securely cleared from memory and cannot be viewed again.
+            {t('copyOnceSecret.ackDescription')}
           </p>
         </div>
       </div>

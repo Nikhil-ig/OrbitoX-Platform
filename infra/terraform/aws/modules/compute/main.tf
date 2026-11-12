@@ -614,6 +614,7 @@ resource "aws_ecs_task_definition" "web" {
       ]
       environment = [
         { name = "NODE_ENV", value = "production" },
+        { name = "ORBITOX_ENVIRONMENT", value = var.environment },
         { name = "PORT", value = "3005" },
         { name = "HOSTNAME", value = "0.0.0.0" },
         { name = "ORBITOX_PUBLIC_BASE_URL", value = var.public_base_url },

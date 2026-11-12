@@ -78,7 +78,7 @@ export function DataTable<TData, TValue>({
         <Checkbox
           checked={table.getIsAllPageRowsSelected() || (table.getIsSomePageRowsSelected() && 'indeterminate')}
           onCheckedChange={(value) => table.toggleAllPageRowsSelected(!!value)}
-          aria-label="Select all"
+          aria-label={t('table.selectAll')}
           className="translate-y-[2px]"
         />
       ),
@@ -86,7 +86,7 @@ export function DataTable<TData, TValue>({
         <Checkbox
           checked={row.getIsSelected()}
           onCheckedChange={(value) => row.toggleSelected(!!value)}
-          aria-label="Select row"
+          aria-label={t('table.selectRow')}
           className="translate-y-[2px]"
         />
       ),
@@ -172,7 +172,7 @@ export function DataTable<TData, TValue>({
               icon={<Download className="h-3.5 w-3.5" />}
               className="h-8 text-xs"
             >
-              Export CSV
+              {t('table.exportCsv')}
             </Button>
           )}
 
@@ -180,7 +180,7 @@ export function DataTable<TData, TValue>({
             <DropdownMenuTrigger asChild>
               <Button variant="outline" size="sm" className="h-8 text-xs gap-1.5">
                 <Columns className="h-3.5 w-3.5" />
-                Columns
+                {t('table.columns')}
                 <ChevronDown className="h-3 w-3 opacity-50" />
               </Button>
             </DropdownMenuTrigger>

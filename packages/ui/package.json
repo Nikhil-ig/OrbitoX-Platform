@@ -2,6 +2,7 @@
   "name": "@orbitox-io/ui",
   "version": "1.0.0",
   "main": "./dist/index.js",
+  "module": "./dist/esm/index.js",
   "types": "./dist/index.d.ts",
   "sideEffects": [
     "**/*.css"
@@ -9,34 +10,40 @@
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
-      "import": "./dist/index.js",
-      "default": "./dist/index.js"
+      "import": "./dist/esm/index.js",
+      "require": "./dist/index.js",
+      "default": "./dist/esm/index.js"
     },
     "./tokens": {
       "types": "./dist/tokens/index.d.ts",
-      "import": "./dist/tokens/index.js",
-      "default": "./dist/tokens/index.js"
+      "import": "./dist/esm/tokens/index.js",
+      "require": "./dist/tokens/index.js",
+      "default": "./dist/esm/tokens/index.js"
     },
     "./tokens/*": "./dist/tokens/*",
     "./components/*": {
       "types": "./dist/components/*.d.ts",
-      "import": "./dist/components/*.js",
-      "default": "./dist/components/*.js"
+      "import": "./dist/esm/components/*.js",
+      "require": "./dist/components/*.js",
+      "default": "./dist/esm/components/*.js"
     },
     "./format": {
       "types": "./dist/format/index.d.ts",
-      "import": "./dist/format/index.js",
-      "default": "./dist/format/index.js"
+      "import": "./dist/esm/format/index.js",
+      "require": "./dist/format/index.js",
+      "default": "./dist/esm/format/index.js"
     },
     "./charts": {
       "types": "./dist/charts/index.d.ts",
-      "import": "./dist/charts/index.js",
-      "default": "./dist/charts/index.js"
+      "import": "./dist/esm/charts/index.js",
+      "require": "./dist/charts/index.js",
+      "default": "./dist/esm/charts/index.js"
     },
     "./legacy": {
       "types": "./dist/legacy/index.d.ts",
-      "import": "./dist/legacy/index.js",
-      "default": "./dist/legacy/index.js"
+      "import": "./dist/esm/legacy/index.js",
+      "require": "./dist/legacy/index.js",
+      "default": "./dist/esm/legacy/index.js"
     },
     "./theme.css": "./src/tokens/theme.css",
     "./styles/*": "./src/styles/*",
@@ -52,7 +59,7 @@
     "registry": "https://npm.pkg.github.com"
   },
   "scripts": {
-    "build": "tsc -p tsconfig.json",
+    "build": "tsc -p tsconfig.json && tsc -p tsconfig.esm.json && node -e \"require('node:fs').writeFileSync('dist/esm/package.json', JSON.stringify({type:'module'},null,2))\"",
     "type-check": "tsc -p tsconfig.json --noEmit",
     "test": "tsx --test 'test/**/*.test.ts'",
     "size": "size-limit",
@@ -95,17 +102,23 @@
     "@axe-core/playwright": "4.10.2",
     "@orbitox-io/eslint-config": "workspace:*",
     "@orbitox-io/tsconfig": "workspace:*",
-    "@size-limit/file": "11.1.6",
+    "@size-limit/preset-small-lib": "11.1.6",
     "@storybook/addon-a11y": "8.6.4",
     "@storybook/addon-essentials": "8.6.4",
     "@storybook/addon-interactions": "8.6.4",
     "@storybook/react": "8.6.4",
     "@storybook/react-vite": "8.6.4",
     "@tailwindcss/postcss": "4.0.9",
+    "@testing-library/react": "16.2.0",
+    "@types/jsdom": "21.1.7",
     "@types/node": "^20.0.0",
+    "@types/pngjs": "6.0.5",
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
+    "jsdom": "26.0.0",
+    "pixelmatch": "6.0.0",
     "playwright": "1.65.0",
+    "pngjs": "7.0.0",
     "size-limit": "11.1.6",
     "storybook": "8.6.4",
     "tailwindcss": "4.0.9",

@@ -1,6 +1,7 @@
 import * as React from 'react';
 import { AlertCircle, CheckCircle, Info, X, AlertTriangle } from 'lucide-react';
 import { cn } from '../utils/cn';
+import { t } from '../i18n';
 
 export type ToastVariant = 'info' | 'success' | 'warning' | 'error';
 
@@ -31,7 +32,7 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
   const [toasts, setToasts] = React.useState<ToastItem[]>([]);
 
   const dismiss = React.useCallback((id: string) => {
-    setToasts((prev) => prev.filter((t) => t.id !== id));
+    setToasts((prev) => prev.filter((toastItem) => toastItem.id !== id));
   }, []);
 
   const toast = React.useCallback(
@@ -58,7 +59,7 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
       {/* Toast Viewport with aria-live for accessibility */}
       <div
         role="region"
-        aria-label="Notifications"
+        aria-label={t('toast.notifications')}
         aria-live="polite"
         className="fixed bottom-0 right-0 z-50 m-4 flex max-h-screen w-full flex-col-reverse gap-2 sm:bottom-0 sm:right-0 sm:top-auto sm:flex-col md:max-w-[420px]"
       >
@@ -88,7 +89,7 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
             <button
               onClick={() => dismiss(item.id)}
               className="rounded-sm opacity-70 transition-opacity hover:opacity-100 focus:outline-none focus:ring-1 focus:ring-[var(--color-focus-ring)] cursor-pointer"
-              aria-label="Dismiss toast"
+              aria-label={t('toast.dismiss')}
             >
               <X className="h-4 w-4" />
             </button>

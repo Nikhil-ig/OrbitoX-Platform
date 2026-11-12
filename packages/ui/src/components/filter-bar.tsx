@@ -49,7 +49,7 @@ export function FilterBar({
                 type="button"
                 onClick={() => onSearchChange('')}
                 className="absolute right-2.5 top-2.5 text-[var(--color-text-muted)] hover:text-[var(--color-text)] cursor-pointer"
-                aria-label="Clear search"
+                aria-label={t('filter.clearSearch')}
               >
                 <X className="h-4 w-4" />
               </button>

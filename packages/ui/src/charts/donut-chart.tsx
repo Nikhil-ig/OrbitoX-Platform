@@ -10,6 +10,7 @@ import {
 import { Table as TableIcon } from 'lucide-react';
 import { cn } from '../utils/cn';
 import { Button } from '../components/button';
+import { t } from '../i18n';
 
 export interface DonutSegment {
   name: string;
@@ -75,19 +76,19 @@ export function DonutChart({
           aria-expanded={showTable}
         >
           <TableIcon className="h-3.5 w-3.5" />
-          <span>{showTable ? 'Show Chart' : 'Data Table'}</span>
+          <span>{showTable ? t('charts.showChart') : t('charts.dataTable')}</span>
         </Button>
       </div>
 
       {showTable ? (
         <div className="overflow-x-auto max-h-[300px]">
           <table className="w-full text-left text-xs border-collapse">
-            <caption className="sr-only">{title} data table fallback</caption>
+            <caption className="sr-only">{t('charts.tableFallback', { title })}</caption>
             <thead className="border-b border-[var(--color-border)] bg-[var(--color-surface-raised)] text-[var(--color-text-muted)] font-semibold">
               <tr>
-                <th className="p-2">Segment</th>
-                <th className="p-2">Count</th>
-                <th className="p-2">Share</th>
+                <th className="p-2">{t('charts.segment')}</th>
+                <th className="p-2">{t('charts.count')}</th>
+                <th className="p-2">{t('charts.share')}</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-[var(--color-border)]">
