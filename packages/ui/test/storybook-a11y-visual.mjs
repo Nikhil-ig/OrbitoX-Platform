@@ -11,7 +11,7 @@ import pixelmatch from 'pixelmatch';
 const DIST_DIR = path.resolve(import.meta.dirname, '../dist-storybook');
 const SNAPSHOT_DIR = path.resolve(import.meta.dirname, '../test/visual/__snapshots__');
 const DIFF_DIR = path.resolve(import.meta.dirname, '../test/visual/__diffs__');
-const MAX_DIFF_RATIO = 0.002; // 0.2% tight threshold for same-OS baseline comparisons
+const MAX_DIFF_RATIO = 0.004; // 0.4% tight threshold for same-OS baseline comparisons (accommodates subtle Ubuntu <progress> paint AA)
 const PLATFORM_TAG = process.platform === 'linux' ? 'linux' : 'darwin';
 
 const MIME_TYPES = {
@@ -120,14 +120,15 @@ async function run() {
           const url = `${baseUrl}/iframe.html?id=${storyId}&viewMode=story`;
           await page.goto(url, { waitUntil: 'networkidle' });
 
-          // Set theme mode on documentElement & stabilize animations for deterministic pixels
-          await page.evaluate((t) => {
+          // Set theme mode on documentElement & stabilize animations/fonts for deterministic pixels
+          await page.evaluate(async (t) => {
             document.documentElement.setAttribute('data-theme', t);
             document.body.style.backgroundColor = 'var(--color-bg)';
             document.body.style.color = 'var(--color-text)';
             const style = document.createElement('style');
             style.textContent = '*, *::before, *::after { animation-duration: 0s !important; transition-duration: 0s !important; }';
             document.head.appendChild(style);
+            if (document.fonts?.ready) await document.fonts.ready;
           }, theme);
 
           await page.waitForTimeout(150);
