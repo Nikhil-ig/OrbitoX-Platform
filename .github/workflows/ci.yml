@@ -1069,8 +1069,8 @@ jobs:
           cache: pnpm
           cache-dependency-path: pnpm-lock.yaml
       - run: pnpm install --frozen-lockfile --ignore-scripts
-      - name: Build @orbitox-io/ui library
-        run: pnpm --filter @orbitox-io/ui build
+      - name: Build @orbitox-io/ui library and workspace dependencies
+        run: pnpm exec turbo run build --filter=@orbitox-io/ui...
       - name: Run unit & security invariant tests
         run: pnpm --filter @orbitox-io/ui test
       - name: Check bundle size budget (size-limit)

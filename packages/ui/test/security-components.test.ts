@@ -46,7 +46,7 @@ describe('Security Components Guard (B3.7)', () => {
 
   describe('CopyOnceSecret (Volatile Memory Wipe)', () => {
     it('renders volatile secret in initial markup', () => {
-      const secret = 'sk_live_orbitox_prod_9988776655';
+      const secret = 'orb_test_volatile_token_preview';
       const html = ReactDOMServer.renderToString(
         React.createElement(CopyOnceSecret, {
           secret,

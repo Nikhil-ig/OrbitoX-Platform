@@ -80,7 +80,7 @@ export const CopyOnceSecretDemo: StoryObj = {
       </p>
 
       <CopyOnceSecret
-        secret="sk_live_orbitox_prod_0987654321fedcba"
+        secret="orb_test_webhook_signing_preview_01"
         title="Production Webhook Signing Key"
         description="Store this key immediately in your secret manager. You will never be able to view it again once acknowledged."
         onAcknowledged={() => {
