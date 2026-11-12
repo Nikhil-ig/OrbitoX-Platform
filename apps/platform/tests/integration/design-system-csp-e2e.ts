@@ -13,6 +13,7 @@ const PROD_CHECK_BASE = process.env.ORBITOX_PROD_CHECK_URL?.replace(/\/$/, '');
 const OPERATOR_EMAIL = process.env.ORBITOX_OPERATOR_INITIAL_EMAIL;
 const OPERATOR_PASSWORD = process.env.ORBITOX_OPERATOR_INITIAL_PASSWORD;
 const OPERATOR_TOTP_SECRET = process.env.ORBITOX_OPERATOR_TEST_TOTP_SECRET;
+const TOTP_STEP_OFFSET = Number.parseInt(process.env.ORBITOX_TOTP_STEP_OFFSET || '0', 10) || 0;
 
 const SCREENSHOT_DIR =
   process.env.ORBITOX_DESIGN_SYSTEM_SCREENSHOTS_DIR ||
@@ -116,7 +117,9 @@ async function main() {
     // 3. Authenticate via real operator login form + live TOTP
     await page.locator('input[type="email"]').fill(OPERATOR_EMAIL);
     await page.locator('input[type="password"]').fill(OPERATOR_PASSWORD);
-    await page.locator('input[autocomplete="one-time-code"]').fill(currentTotpCode(OPERATOR_TOTP_SECRET));
+    await page.locator('input[autocomplete="one-time-code"]').fill(
+      currentTotpCode(OPERATOR_TOTP_SECRET, Date.now() + TOTP_STEP_OFFSET * 30_000),
+    );
 
     const [docResponse] = await Promise.all([
       page.waitForResponse((res) => new URL(res.url()).pathname === '/console/design-system' && res.request().resourceType() === 'document'),
