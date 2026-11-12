@@ -1,4 +1,5 @@
 import * as crypto from 'crypto';
+import * as http from 'http';
 import { RouteDefinition } from '../../http/routes';
 import {
   sendJson,
@@ -6,6 +7,7 @@ import {
   ownerSelfService,
   extractImageBuffer,
   runtimeController,
+  RequestContext,
 } from '../../http/context';
 import {
   OnboardingStepKey,
@@ -302,120 +304,12 @@ export const ownersRoutes: RouteDefinition[] = [
   {
     method: 'PATCH',
     path: '/api/restaurant/staff/:id',
-    handler: async (req, res, context) => {
-      const identity = context.requestIdentity;
-      if (
-        identity.type === 'ANONYMOUS' ||
-        identity.type === 'INVALID_CREDENTIAL' ||
-        identity.type === 'REVOKED_CAPABILITY'
-      ) {
-        sendJson(res, 401, { error: 'AUTHENTICATION_REQUIRED', code: 'AUTHENTICATION_REQUIRED' });
-        return;
-      }
-
-      if (identity.role !== 'MANAGER' && identity.role !== 'ADMIN' && identity.role !== 'OWNER' && identity.type !== 'ADMIN') {
-        sendJson(res, 403, { error: 'FORBIDDEN', code: 'FORBIDDEN', message: 'Manager credentials required.' });
-        return;
-      }
-
-      const staffId = context.params.id || context.pathname.split('/')[4];
-      const targetMember = await context.repo.getStaffMember(staffId);
-      if (!targetMember) {
-        sendJson(res, 404, { error: 'STAFF_NOT_FOUND', code: 'STAFF_NOT_FOUND', message: `Staff member ${staffId} not found.` });
-        return;
-      }
-
-      // Branch scoping
-      if (identity.branchId && identity.branchId !== '*' && targetMember.branchId !== '*' && targetMember.branchId !== identity.branchId) {
-        sendJson(res, 403, {
-          error: 'BRANCH_MISMATCH',
-          code: 'BRANCH_MISMATCH',
-          message: `Manager for branch ${identity.branchId} cannot modify staff in branch ${targetMember.branchId}.`,
-        });
-        return;
-      }
-
-      const body = await context.parseBody();
-      // Privilege escalation guard
-      if (body.role === 'ADMIN' && identity.role !== 'ADMIN' && identity.role !== 'OWNER') {
-        sendJson(res, 403, {
-          error: 'PRIVILEGE_ESCALATION',
-          code: 'PRIVILEGE_ESCALATION',
-          message: 'Only platform administrators or owners can grant the ADMIN role.',
-        });
-        return;
-      }
-
-      if (body.name !== undefined) targetMember.name = body.name.trim();
-      if (body.role !== undefined) targetMember.role = body.role;
-      if (body.branchId !== undefined) targetMember.branchId = body.branchId;
-      if (body.station !== undefined) targetMember.station = body.station;
-      if (body.status !== undefined) targetMember.status = body.status;
-      if (body.permissions !== undefined) targetMember.permissions = body.permissions;
-      if (body.pin || body.secret) {
-        targetMember.salt = `salt_${targetMember.branchId}_${crypto.randomBytes(8).toString('hex')}`;
-        targetMember.pinHash = hashStaffSecretSync(body.secret || body.pin, targetMember.salt);
-      }
-
-      await context.repo.saveStaffMember(targetMember);
-      await runtimeController.emitAudit('STAFF_MEMBER_UPDATED', identity.id, {
-        staffId,
-        updates: { role: body.role, station: body.station, branchId: body.branchId, status: body.status },
-      });
-
-      const { salt: _s, pinHash: _p, ...safe } = targetMember;
-      sendJson(res, 200, { success: true, data: safe });
-    },
+    handler: (req, res, context) => handleUpdateStaffMember(req, res, context),
   },
   {
-    method: 'DELETE',
-    path: '/api/restaurant/staff/:id',
-    handler: async (_req, res, context) => {
-      const identity = context.requestIdentity;
-      if (
-        identity.type === 'ANONYMOUS' ||
-        identity.type === 'INVALID_CREDENTIAL' ||
-        identity.type === 'REVOKED_CAPABILITY'
-      ) {
-        sendJson(res, 401, { error: 'AUTHENTICATION_REQUIRED', code: 'AUTHENTICATION_REQUIRED' });
-        return;
-      }
-
-      const staffId = context.params.id || context.pathname.split('/')[4];
-      const targetMember = await context.repo.getStaffMember(staffId);
-      if (!targetMember) {
-        sendJson(res, 404, { error: 'STAFF_NOT_FOUND', code: 'STAFF_NOT_FOUND', message: `Staff member ${staffId} not found.` });
-        return;
-      }
-
-      const isSelf = identity.id === staffId;
-      if (!identity.isPrivileged && !isSelf) {
-        sendJson(res, 403, {
-          error: 'FORBIDDEN',
-          code: 'FORBIDDEN',
-          message: 'Manager privileges required to revoke staff credentials.',
-        });
-        return;
-      }
-
-      // Branch scoping
-      if (identity.branchId && identity.branchId !== '*' && targetMember.branchId !== '*' && targetMember.branchId !== identity.branchId) {
-        sendJson(res, 403, {
-          error: 'BRANCH_MISMATCH',
-          code: 'BRANCH_MISMATCH',
-          message: `Manager for branch ${identity.branchId} cannot revoke staff in branch ${targetMember.branchId}.`,
-        });
-        return;
-      }
-
-      await context.repo.revokeStaffMember(staffId);
-      await runtimeController.emitAudit('STAFF_MEMBER_REVOKED', identity.id, { staffId });
-
-      sendJson(res, 200, {
-        success: true,
-        message: `All current and future tokens for staff member ${staffId} have been durably revoked.`,
-      });
-    },
+    method: 'POST',
+    path: '/api/restaurant/staff/:id/revoke',
+    handler: (req, res, context) => handleRevokeStaffMember(req, res, context),
   },
   {
     method: 'POST',
@@ -590,4 +484,115 @@ export async function handleCreateStaff(req: any, res: any, context: any): Promi
     return;
   }
 }
+
+async function handleUpdateStaffMember(req: http.IncomingMessage, res: http.ServerResponse, context: RequestContext): Promise<void> {
+  const identity = context.requestIdentity;
+  if (
+    identity.type === 'ANONYMOUS' ||
+    identity.type === 'INVALID_CREDENTIAL' ||
+    identity.type === 'REVOKED_CAPABILITY'
+  ) {
+    sendJson(res, 401, { error: 'AUTHENTICATION_REQUIRED', code: 'AUTHENTICATION_REQUIRED' });
+    return;
+  }
+
+  if (identity.role !== 'MANAGER' && identity.role !== 'ADMIN' && identity.role !== 'OWNER' && identity.type !== 'ADMIN') {
+    sendJson(res, 403, { error: 'FORBIDDEN', code: 'FORBIDDEN', message: 'Manager credentials required.' });
+    return;
+  }
+
+  const staffId = context.params.id || context.pathname.split('/')[4];
+  const targetMember = await context.repo.getStaffMember(staffId);
+  if (!targetMember) {
+    sendJson(res, 404, { error: 'STAFF_NOT_FOUND', code: 'STAFF_NOT_FOUND', message: `Staff member ${staffId} not found.` });
+    return;
+  }
+
+  // Branch scoping
+  if (identity.branchId && identity.branchId !== '*' && targetMember.branchId !== '*' && targetMember.branchId !== identity.branchId) {
+    sendJson(res, 403, {
+      error: 'BRANCH_MISMATCH',
+      code: 'BRANCH_MISMATCH',
+      message: `Manager for branch ${identity.branchId} cannot modify staff in branch ${targetMember.branchId}.`,
+    });
+    return;
+  }
+
+  const body = await context.parseBody();
+  // Privilege escalation guard
+  if (body.role === 'ADMIN' && identity.role !== 'ADMIN' && identity.role !== 'OWNER') {
+    sendJson(res, 403, {
+      error: 'PRIVILEGE_ESCALATION',
+      code: 'PRIVILEGE_ESCALATION',
+      message: 'Only platform administrators or owners can grant the ADMIN role.',
+    });
+    return;
+  }
+
+  if (body.name !== undefined) targetMember.name = body.name.trim();
+  if (body.role !== undefined) targetMember.role = body.role;
+  if (body.branchId !== undefined) targetMember.branchId = body.branchId;
+  if (body.station !== undefined) targetMember.station = body.station;
+  if (body.status !== undefined) targetMember.status = body.status;
+  if (body.permissions !== undefined) targetMember.permissions = body.permissions;
+  if (body.pin || body.secret) {
+    targetMember.salt = `salt_${targetMember.branchId}_${crypto.randomBytes(8).toString('hex')}`;
+    targetMember.pinHash = hashStaffSecretSync(body.secret || body.pin, targetMember.salt);
+  }
+
+  await context.repo.saveStaffMember(targetMember);
+  await runtimeController.emitAudit('STAFF_MEMBER_UPDATED', identity.id, {
+    staffId,
+    updates: { role: body.role, station: body.station, branchId: body.branchId, status: body.status },
+  });
+
+  const { salt: _s, pinHash: _p, ...safe } = targetMember;
+  sendJson(res, 200, { success: true, data: safe });
+}
+
+export async function handleRevokeStaffMember(
+  _req: http.IncomingMessage,
+  res: http.ServerResponse,
+  context: RequestContext
+): Promise<void> {
+  const identity = context.requestIdentity;
+  if (
+    identity.type === 'ANONYMOUS' ||
+    identity.type === 'INVALID_CREDENTIAL' ||
+    identity.type === 'REVOKED_CAPABILITY'
+  ) {
+    sendJson(res, 401, { error: 'AUTHENTICATION_REQUIRED', code: 'AUTHENTICATION_REQUIRED' });
+    return;
+  }
+  const staffId = context.params.id || context.pathname.split('/')[4];
+  const targetMember = await context.repo.getStaffMember(staffId);
+  if (!targetMember) {
+    sendJson(res, 404, { error: 'STAFF_NOT_FOUND', code: 'STAFF_NOT_FOUND', message: `Staff member ${staffId} not found.` });
+    return;
+  }
+  const isSelf = identity.id === staffId;
+  if (!identity.isPrivileged && !isSelf) {
+    sendJson(res, 403, {
+      error: 'FORBIDDEN',
+      code: 'FORBIDDEN',
+      message: 'Manager privileges required to revoke staff credentials.',
+    });
+    return;
+  }
+  if (identity.branchId && identity.branchId !== '*' && targetMember.branchId !== '*' && targetMember.branchId !== identity.branchId) {
+    sendJson(res, 403, {
+      error: 'BRANCH_MISMATCH',
+      code: 'BRANCH_MISMATCH',
+      message: `Manager for branch ${identity.branchId} cannot revoke staff in branch ${targetMember.branchId}.`,
+    });
+    return;
+  }
+  await context.repo.revokeStaffMember(staffId);
+  await runtimeController.emitAudit('STAFF_MEMBER_REVOKED', identity.id, { staffId });
+  sendJson(res, 200, {
+    success: true,
+    message: `All current and future tokens for staff member ${staffId} have been durably revoked.`,
+  });
+}
+
 

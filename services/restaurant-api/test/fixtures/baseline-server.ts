@@ -337,9 +337,6 @@ const tenantGuestRateLimits = new Map<string, RateLimitBucket>();
 const tenantStaffRateLimits = new Map<string, RateLimitBucket>();
 
 function checkTenantRateLimit(tenantId: string, isStaff: boolean): { allowed: boolean; remaining: number; resetSeconds: number } {
-  if (process.env.DISABLE_RATE_LIMITER === 'true') {
-    return { allowed: true, remaining: 999999, resetSeconds: 0 };
-  }
   // Public guest limit: 100 req/min (refill ~1.67/s); Staff limit: 300 req/min (refill ~5/s)
   const maxTokens = isStaff ? 300 : 100;
   const refillRatePerSec = maxTokens / 60;
@@ -1144,7 +1141,7 @@ export async function handleRequest(req: http.IncomingMessage, res: http.ServerR
   }
 
   // Static Tenant Uploads Serving (with strict path-traversal protection and security headers)
-  if ((pathname.startsWith('/uploads/') || pathname.startsWith('/assets/')) && method === 'GET') {
+  if (pathname.startsWith('/uploads/') && method === 'GET') {
     const safeUploadsRoot = path.resolve(
       process.env.RESTAURANT_STORE_PATH
         ? path.join(path.dirname(process.env.RESTAURANT_STORE_PATH), 'uploads')
@@ -2025,7 +2022,6 @@ export async function handleRequest(req: http.IncomingMessage, res: http.ServerR
         pathname === '/api/restaurant/auth/token' ||
         pathname === '/api/restaurant/auth/api-token' ||
         pathname === '/api/restaurant/auth/login' ||
-        pathname === '/api/restaurant/auth/verify-pin' ||
         pathname === '/api/restaurant/auth/staff') &&
       method === 'POST'
     ) {
@@ -2374,47 +2370,6 @@ export async function handleRequest(req: http.IncomingMessage, res: http.ServerR
       return;
     }
 
-    if (pathname === '/api/restaurant/auth/station/login' && method === 'POST') {
-      const body = await parseBody(req);
-      const stationToken = body.stationToken || body.secret || (req.headers['x-station-token'] as string) || '';
-      const registered = REGISTERED_STATION_SECRETS[stationToken];
-      if (registered) {
-        sendJson(res, 200, {
-          success: true,
-          station: registered.station,
-          branchId: registered.branchId,
-          isPrivileged: registered.isPrivileged,
-        });
-        return;
-      }
-      sendJson(res, 401, { error: 'INVALID_CREDENTIAL', message: 'Unregistered station token.' });
-      return;
-    }
-
-    if (pathname === '/api/restaurant/auth/staff' && method === 'GET') {
-      const identity = requestIdentity;
-      if (identity.type === 'ANONYMOUS' || identity.type === 'INVALID_CREDENTIAL') {
-        sendJson(res, 401, { error: 'AUTHENTICATION_REQUIRED', message: 'Staff credentials required.' });
-        return;
-      }
-      const members = await repo.getStaffMembers();
-      const safe = members.map(({ pinHash, salt, ...m }: any) => m);
-      sendJson(res, 200, { success: true, data: safe });
-      return;
-    }
-
-    if (pathname === '/api/restaurant/auth/api-token' && method === 'GET') {
-      const identity = requestIdentity;
-      sendJson(res, 200, {
-        type: identity.type,
-        id: identity.id,
-        role: identity.role,
-        branchId: identity.branchId,
-        isPrivileged: identity.isPrivileged,
-      });
-      return;
-    }
-
     // --- STAFF MANAGEMENT API ---
     // List staff directory (PIN hashes & salts stripped)
     if (pathname === '/api/restaurant/staff' && method === 'GET') {
@@ -2600,44 +2555,6 @@ export async function handleRequest(req: http.IncomingMessage, res: http.ServerR
 
       const { salt: _s, pinHash: _p, ...safe } = targetMember;
       sendJson(res, 200, { success: true, data: safe });
-      return;
-    }
-
-    if (pathname.startsWith('/api/restaurant/staff/') && !pathname.endsWith('/revoke') && method === 'DELETE') {
-      const identity = requestIdentity;
-      if (
-        identity.type === 'ANONYMOUS' ||
-        identity.type === 'INVALID_CREDENTIAL' ||
-        identity.type === 'REVOKED_CAPABILITY'
-      ) {
-        sendJson(res, 401, { error: 'AUTHENTICATION_REQUIRED', code: 'AUTHENTICATION_REQUIRED' });
-        return;
-      }
-      const staffId = pathname.replace('/api/restaurant/staff/', '');
-      const targetMember = await repo.getStaffMember(staffId);
-      if (!targetMember) {
-        sendJson(res, 404, { error: 'STAFF_NOT_FOUND', code: 'STAFF_NOT_FOUND', message: `Staff member ${staffId} not found.` });
-        return;
-      }
-      const isSelf = identity.id === staffId;
-      if (!identity.isPrivileged && !isSelf) {
-        sendJson(res, 403, {
-          error: 'FORBIDDEN',
-          code: 'FORBIDDEN',
-          message: 'Manager privileges required to revoke staff credentials.',
-        });
-        return;
-      }
-      if (identity.branchId && identity.branchId !== '*' && targetMember.branchId !== '*' && targetMember.branchId !== identity.branchId) {
-        sendJson(res, 403, {
-          error: 'BRANCH_MISMATCH',
-          code: 'BRANCH_MISMATCH',
-          message: `Manager for branch ${identity.branchId} cannot revoke staff in branch ${targetMember.branchId}.`,
-        });
-        return;
-      }
-      await repo.revokeStaffMember(staffId);
-      sendJson(res, 200, { success: true, message: `Staff member ${staffId} deleted` });
       return;
     }
 
@@ -5082,16 +4999,6 @@ export async function handleRequest(req: http.IncomingMessage, res: http.ServerR
       return;
     }
 
-    if (pathname === '/api/restaurant/layout' && method === 'GET') {
-      const [branches, floors, tables] = await Promise.all([
-        repo.getBranches(),
-        repo.getFloors(),
-        repo.getTables(),
-      ]);
-      sendJson(res, 200, { branches, floors, tables });
-      return;
-    }
-
     // 14a. Table Bill & Authoritative Breakdown (GET /api/restaurant/tables/:id/bill)
     if (pathname.startsWith('/api/restaurant/tables/') && pathname.endsWith('/bill') && method === 'GET') {
       const rawId = pathname.replace('/api/restaurant/tables/', '').replace('/bill', '');
@@ -5968,17 +5875,6 @@ export async function handleRequest(req: http.IncomingMessage, res: http.ServerR
     if ((pathname === '/api/restaurant/branding' || pathname === '/api/restaurant/settings/whitelabel') && method === 'GET') {
       const reqBranchId = (parsedUrl.query.branchId as string) || (parsedUrl.query.branch as string);
       sendJson(res, 200, { success: true, data: await repo.getTenantBrand(reqBranchId) });
-      return;
-    }
-
-    if (pathname === '/api/restaurant/branding/css' && method === 'GET') {
-      const brand = await repo.getTenantBrand();
-      const css = brand?.customCss || '';
-      res.writeHead(200, {
-        'Content-Type': 'text/css; charset=utf-8',
-        'Cache-Control': 'public, max-age=300',
-      });
-      res.end(css);
       return;
     }
 
@@ -8008,3 +7904,49 @@ export async function handleRequest(req: http.IncomingMessage, res: http.ServerR
 
 export const server = http.createServer(handleRequest);
 
+if (process.env.NODE_ENV === 'production' && process.env.ALLOW_DANGEROUS_RESET === 'true') {
+  console.error('🚨 [SECURITY FATAL] Dangerous reset flags cannot be enabled in production mode! Halting startup.');
+  process.exit(1);
+}
+
+if (
+  process.env.RESTAURANTOS_DISABLE_AUTOLISTEN !== 'true' &&
+  !process.argv.includes('--test')
+) {
+  server.listen(PORT, HOSTNAME, async () => {
+    if (postgresStore?.prisma) {
+      try {
+        console.log('🔒 Executing Database Security Self-Check (RLS & non-superuser role enforcement)...');
+        const checkResult = await runDatabaseSecuritySelfCheck(postgresStore.prisma, {
+          isProduction: process.env.NODE_ENV === 'production',
+        });
+        if (!checkResult.ok && process.env.NODE_ENV === 'production') {
+          console.error('🚨 [DATABASE SECURITY FAILED] RLS self-check failed in production! Halting startup.', checkResult.errors);
+          process.exit(1);
+        }
+      } catch (checkErr: any) {
+        if (process.env.NODE_ENV === 'production') {
+          console.error('🚨 [DATABASE SECURITY FATAL] Error running security self-check:', checkErr.message);
+          process.exit(1);
+        } else {
+          console.warn('⚠️ [Storage] Database security self-check deferred in non-prod:', checkErr.message);
+        }
+      }
+    }
+
+    console.log(`\n🍷 =========================================================`);
+    console.log(`🍷  RestaurantOS 2.x (Hospitality Runtime Plane) Active`);
+    console.log(`🍷  Operations Command: http://localhost:${PORT}/`);
+    console.log(`🍷  Spatial Floor Studio: http://localhost:${PORT}/operations/floor`);
+    console.log(`🍷  Tables Fleet: http://localhost:${PORT}/operations/tables`);
+    console.log(`🍷  Branches Management: http://localhost:${PORT}/operations/locations`);
+    console.log(`🍷  Floor Plans: http://localhost:${PORT}/operations/floors`);
+    console.log(`🍷  Kitchen KDS: http://localhost:${PORT}/kds`);
+    console.log(`🍷  Diner Mobile PWA: http://localhost:${PORT}/dine/7Kp9xQ8m2L`);
+    console.log(`🍷  Developer Inspector: http://localhost:${PORT}/developer/inspector`);
+    console.log(`🍷  Realtime SSE Gateway: http://localhost:${PORT}/api/restaurant/events`);
+    console.log(`🍷 =========================================================\n`);
+
+    await runtimeController.start();
+  });
+}

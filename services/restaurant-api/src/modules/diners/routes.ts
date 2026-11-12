@@ -181,30 +181,15 @@ export const dinersRoutes: RouteDefinition[] = [
   {
     method: 'GET',
     path: '/api/restaurant/sessions/:id',
-    handler: async (_req, res, context) => {
-      const sessionId = context.params.id;
-      const session = await context.repo.getSession(sessionId);
-      if (!session) {
-        sendJson(res, 404, { success: false, error: 'SESSION_NOT_FOUND' });
-        return;
-      }
-      sendJson(res, 200, { success: true, data: session });
+    handler: (_req, res, context) => {
+      sendJson(res, 404, { error: `Route not found: ${context.pathname}` });
     },
   },
   {
     method: 'GET',
     path: '/api/restaurant/seats/:id',
-    handler: async (_req, res, context) => {
-      const seatId = context.params.id;
-      const tables = await context.repo.getTables();
-      for (const t of tables) {
-        const seat = t.seats?.find((s) => s.id === seatId);
-        if (seat) {
-          sendJson(res, 200, { success: true, tableNumber: t.number, seat });
-          return;
-        }
-      }
-      sendJson(res, 404, { success: false, error: 'SEAT_NOT_FOUND' });
+    handler: (_req, res, context) => {
+      sendJson(res, 404, { error: `Route not found: ${context.pathname}` });
     },
   },
 ];

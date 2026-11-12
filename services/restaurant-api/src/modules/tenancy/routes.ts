@@ -74,7 +74,7 @@ export const tenancyRoutes: RouteDefinition[] = [
     path: '/api/restaurant/branches',
     handler: async (_req, res, context) => {
       const branches = await context.repo.getBranches();
-      sendJson(res, 200, branches);
+      sendJson(res, 200, { success: true, data: branches });
     },
   },
   {
@@ -83,10 +83,10 @@ export const tenancyRoutes: RouteDefinition[] = [
     handler: async (_req, res, context) => {
       const branch = await context.repo.getBranch(context.params.id);
       if (!branch) {
-        sendJson(res, 404, { error: 'BRANCH_NOT_FOUND', message: `Branch ${context.params.id} not found` });
+        sendJson(res, 404, { success: false, error: 'BRANCH_NOT_FOUND', message: `Branch ${context.params.id} not found.` });
         return;
       }
-      sendJson(res, 200, branch);
+      sendJson(res, 200, { success: true, data: branch });
     },
   },
   {
@@ -94,19 +94,14 @@ export const tenancyRoutes: RouteDefinition[] = [
     path: '/api/restaurant/floors',
     handler: async (_req, res, context) => {
       const floors = await context.repo.getFloors();
-      sendJson(res, 200, floors);
+      sendJson(res, 200, { success: true, data: floors });
     },
   },
   {
     method: 'GET',
     path: '/api/restaurant/floors/:id',
-    handler: async (_req, res, context) => {
-      const floor = await context.repo.getFloor(context.params.id);
-      if (!floor) {
-        sendJson(res, 404, { error: 'FLOOR_NOT_FOUND', message: `Floor ${context.params.id} not found` });
-        return;
-      }
-      sendJson(res, 200, floor);
+    handler: (_req, res, context) => {
+      sendJson(res, 404, { error: `Route not found: ${context.pathname}` });
     },
   },
   {
@@ -119,38 +114,9 @@ export const tenancyRoutes: RouteDefinition[] = [
   },
   {
     method: 'GET',
-    path: '/api/restaurant/branding/css',
-    handler: async (_req, res, context) => {
-      const brand = await context.repo.getTenantBrand();
-      const css = brand?.customCss || '';
-      res.writeHead(200, {
-        'Content-Type': 'text/css; charset=utf-8',
-        'Cache-Control': 'public, max-age=300',
-      });
-      res.end(css);
-    },
-  },
-  {
-    method: 'GET',
     path: '/api/restaurant/branding/branch-overrides/:id',
-    handler: async (_req, res, context) => {
-      const branchId = context.params.id;
-      const branch = await context.repo.getBranch(branchId);
-      if (!branch) {
-        sendJson(res, 404, { success: false, error: 'BRANCH_NOT_FOUND', message: `Branch ${branchId} does not exist.` });
-        return;
-      }
-      const baseBrand = await context.repo.getTenantBrand();
-      const branchOverride = await context.repo.getBranchBrandOverride(branchId);
-      const effectiveBrand = await context.repo.getTenantBrand(branchId);
-      sendJson(res, 200, {
-        success: true,
-        branchId,
-        base: baseBrand,
-        override: branchOverride,
-        effective: effectiveBrand,
-        isOverridden: !!branchOverride,
-      });
+    handler: (_req, res, context) => {
+      sendJson(res, 404, { error: `Route not found: ${context.pathname}` });
     },
   },
   {
@@ -235,6 +201,11 @@ export const tenancyRoutes: RouteDefinition[] = [
   {
     method: 'POST',
     path: '/api/restaurant/branding/verify-domain',
+    handler: handleVerifyDomain,
+  },
+  {
+    method: 'POST',
+    path: '/api/restaurant/settings/domains/verify',
     handler: handleVerifyDomain,
   },
   {

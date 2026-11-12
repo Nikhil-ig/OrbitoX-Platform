@@ -19,7 +19,6 @@ import {
   verifyDeviceToken,
   eventBus,
   verifyPlatformAuth,
-  REGISTERED_STATION_SECRETS,
 } from '../../shared';
 import { renderOwnerInvitePage } from '../../views';
 
@@ -55,30 +54,6 @@ export const authRoutes: RouteDefinition[] = [
     method: 'POST',
     path: '/api/restaurant/auth/login',
     handler: (req, res, context) => handleStaffAuthLogin(req, res, context),
-  },
-  {
-    method: 'POST',
-    path: '/api/restaurant/auth/verify-pin',
-    handler: (req, res, context) => handleStaffAuthLogin(req, res, context),
-  },
-  {
-    method: 'POST',
-    path: '/api/restaurant/auth/station/login',
-    handler: async (req, res, context) => {
-      const body = await context.parseBody();
-      const stationToken = body.stationToken || body.secret || (req.headers['x-station-token'] as string) || '';
-      const registered = REGISTERED_STATION_SECRETS[stationToken];
-      if (registered) {
-        sendJson(res, 200, {
-          success: true,
-          station: registered.station,
-          branchId: registered.branchId,
-          isPrivileged: registered.isPrivileged,
-        });
-        return;
-      }
-      sendJson(res, 401, { error: 'INVALID_CREDENTIAL', message: 'Unregistered station token.' });
-    },
   },
   {
     method: 'POST',
@@ -189,20 +164,6 @@ export const authRoutes: RouteDefinition[] = [
     },
   },
   {
-    method: 'GET',
-    path: '/api/restaurant/auth/staff',
-    handler: async (_req, res, context) => {
-      const identity = context.requestIdentity;
-      if (identity.type === 'ANONYMOUS' || identity.type === 'INVALID_CREDENTIAL') {
-        sendJson(res, 401, { error: 'AUTHENTICATION_REQUIRED', message: 'Staff credentials required.' });
-        return;
-      }
-      const members = await context.repo.getStaffMembers();
-      const safe = members.map(({ pinHash, salt, ...m }) => m);
-      sendJson(res, 200, { success: true, data: safe });
-    },
-  },
-  {
     method: 'POST',
     path: '/api/restaurant/auth/staff',
     handler: (req, res, context) => handleStaffAuthLogin(req, res, context),
@@ -213,18 +174,9 @@ export const authRoutes: RouteDefinition[] = [
     handler: (req, res, context) => handleStaffAuthLogin(req, res, context),
   },
   {
-    method: 'GET',
+    method: 'POST',
     path: '/api/restaurant/auth/api-token',
-    handler: (_req, res, context) => {
-      const identity = context.requestIdentity;
-      sendJson(res, 200, {
-        type: identity.type,
-        id: identity.id,
-        role: identity.role,
-        branchId: identity.branchId,
-        isPrivileged: identity.isPrivileged,
-      });
-    },
+    handler: (req, res, context) => handleStaffAuthLogin(req, res, context),
   },
 ];
 

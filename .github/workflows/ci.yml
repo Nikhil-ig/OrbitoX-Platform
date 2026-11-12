@@ -333,6 +333,9 @@ jobs:
           DATABASE_URL: postgresql://postgres:postgrespassword@127.0.0.1:5432/restaurant_os
           APP_DATABASE_URL: postgresql://restaurantos_app:test_app_pass_123@127.0.0.1:5432/restaurant_os
 
+      - name: Baseline Parity Integrity Guard (R-1)
+        run: pnpm exec tsx --test test/baseline-integrity.test.ts
+
       - name: Differential Parity Matrix (d7f9de5 vs Modular Server)
         run: pnpm exec tsx --test test/differential-parity.test.ts
         env:

@@ -132,13 +132,6 @@ export const httpRoutes: RouteDefinition[] = [
       serveStaticUpload(res, context.pathname.replace(/^\/uploads\/?/, ''));
     },
   },
-  {
-    method: 'GET',
-    path: '/assets/*',
-    handler: (_req, res, context) => {
-      serveStaticUpload(res, context.pathname.replace(/^\/assets\/?/, ''));
-    },
-  },
 ];
 
 async function handleReadiness(res: http.ServerResponse): Promise<void> {

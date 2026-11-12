@@ -89,10 +89,11 @@ export const tablesRoutes: RouteDefinition[] = [
       const id = context.params.id;
       const table = /^\d+$/.test(id) ? await context.repo.getTable(parseInt(id, 10)) : await context.repo.getTableByNumber(id);
       if (!table) {
-        sendJson(res, 404, { success: false, error: `Table ${id} not found` });
+        sendJson(res, 404, { error: 'Table not found' });
         return;
       }
-      sendJson(res, 200, { success: true, data: table });
+      const bill = await context.repo.getTableBill(table.id);
+      sendJson(res, 200, { success: true, table, bill });
     },
   },
   {
@@ -178,9 +179,8 @@ export const tablesRoutes: RouteDefinition[] = [
         });
         return;
       }
-      const id = context.params.id;
-      const tableId = /^\d+$/.test(id) ? parseInt(id, 10) : id;
-      const table = typeof tableId === 'number' ? await context.repo.getTable(tableId) : await context.repo.getTableByNumber(tableId);
+      const tableId = parseInt(context.params.id, 10);
+      const table = await context.repo.getTable(tableId);
       if (!table) {
         sendJson(res, 404, { error: 'Table not found', deletedTableId: tableId });
         return;
@@ -204,7 +204,6 @@ export const tablesRoutes: RouteDefinition[] = [
       const table = await context.repo.getTableByLocator(locator);
       if (!table) {
         sendJson(res, 404, {
-          success: false,
           error: 'TABLE_NOT_FOUND',
           code: 'TABLE_NOT_FOUND',
           message: `No active dining table found for QR locator "${locator}".`,
@@ -310,7 +309,7 @@ export const tablesRoutes: RouteDefinition[] = [
       const floorId = (context.parsedUrl.query.floorId as string) || context.currentFloor?.id;
       const tables = await context.repo.getTables(branchId);
       const filtered = floorId ? tables.filter((t) => t.floorId === floorId) : tables;
-      sendJson(res, 200, { success: true, branchId, floorId, tables: filtered });
+      sendJson(res, 200, { success: true, tables: filtered });
     },
   },
   {
@@ -361,18 +360,6 @@ export const tablesRoutes: RouteDefinition[] = [
         return;
       }
       sendJson(res, 400, { error: 'Invalid tables payload' });
-    },
-  },
-  {
-    method: 'GET',
-    path: '/api/restaurant/layout',
-    handler: async (_req, res, context) => {
-      const [branches, floors, tables] = await Promise.all([
-        context.repo.getBranches(),
-        context.repo.getFloors(),
-        context.repo.getTables(),
-      ]);
-      sendJson(res, 200, { branches, floors, tables });
     },
   },
   {

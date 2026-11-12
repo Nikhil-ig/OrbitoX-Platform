@@ -281,7 +281,7 @@ export const tenantGuestRateLimits = new Map<string, RateLimitBucket>();
 export const tenantStaffRateLimits = new Map<string, RateLimitBucket>();
 
 export function checkTenantRateLimit(tenantId: string, isStaff: boolean): { allowed: boolean; remaining: number; resetSeconds: number } {
-  if (Boolean((globalThis as Record<string, unknown>).__DISABLE_RATE_LIMITER)) {
+  if (process.env.NODE_ENV === 'test' && Boolean((globalThis as any).__DISABLE_RATE_LIMITER)) {
     return { allowed: true, remaining: 999999, resetSeconds: 0 };
   }
   const maxTokens = isStaff ? 300 : 100;

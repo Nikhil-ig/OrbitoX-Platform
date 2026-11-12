@@ -265,6 +265,14 @@ export const menuRoutes: RouteDefinition[] = [
     },
   },
   {
+    method: 'GET',
+    path: '/api/restaurant/menu/branch-override',
+    handler: async (_req, res, context) => {
+      const bId = context.parsedUrl.query.branchId as string | undefined;
+      sendJson(res, 200, { success: true, data: await context.repo.getBranchMenuOverrides(bId) });
+    },
+  },
+  {
     method: 'POST',
     path: '/api/restaurant/menu/branch-overrides',
     handler: async (req, res, context) => {

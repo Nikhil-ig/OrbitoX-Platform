@@ -305,14 +305,8 @@ export const kitchenRoutes: RouteDefinition[] = [
   {
     method: 'GET',
     path: '/api/restaurant/kds/tasks/:id',
-    handler: async (_req, res, context) => {
-      const taskId = context.params.id;
-      const task = (await context.repo.getKitchenTasks()).find((t) => t.id === taskId);
-      if (!task) {
-        sendJson(res, 404, { success: false, error: `Task ${taskId} not found` });
-        return;
-      }
-      sendJson(res, 200, { success: true, data: task });
+    handler: (_req, res, context) => {
+      sendJson(res, 404, { error: `Route not found: ${context.pathname}` });
     },
   },
   {

@@ -58,7 +58,7 @@ export const ordersRoutes: RouteDefinition[] = [
         });
       }
 
-      sendJson(res, 200, { success: true, count: orders.length, data: orders });
+      sendJson(res, 200, { success: true, count: orders.length, data: orders, orders });
     },
   },
   {

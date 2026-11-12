@@ -298,8 +298,8 @@ describe('RestaurantOS Permanent Cross-Branch Authorization & Isolation (B-6)', 
     assert.equal(res.body.code, 'BRANCH_MISMATCH');
   });
 
-  it('4. DELETE /api/restaurant/staff/:id: manager scoped to branch A cannot revoke staff in branch B', async () => {
-    const res = await api('DELETE', `/api/restaurant/staff/${staffBetaId}`, tokenManagerAlpha);
+  it('4. POST /api/restaurant/staff/:id/revoke: manager scoped to branch A cannot revoke staff in branch B', async () => {
+    const res = await api('POST', `/api/restaurant/staff/${staffBetaId}/revoke`, tokenManagerAlpha);
     assert.equal(res.status, 403);
     assert.equal(res.body.code, 'BRANCH_MISMATCH');
   });

@@ -55,9 +55,9 @@
     "module": "http"
   },
   {
-    "method": "GET",
-    "path": "/assets/*",
-    "module": "http"
+    "method": "POST",
+    "path": "/api/restaurant/settings/domains/verify",
+    "module": "tenancy"
   },
   {
     "method": "POST",
@@ -191,16 +191,6 @@
   },
   {
     "method": "POST",
-    "path": "/api/restaurant/auth/verify-pin",
-    "module": "auth"
-  },
-  {
-    "method": "POST",
-    "path": "/api/restaurant/auth/station/login",
-    "module": "auth"
-  },
-  {
-    "method": "POST",
     "path": "/api/restaurant/auth/device-enroll",
     "module": "auth"
   },
@@ -220,11 +210,6 @@
     "module": "auth"
   },
   {
-    "method": "GET",
-    "path": "/api/restaurant/auth/staff",
-    "module": "auth"
-  },
-  {
     "method": "POST",
     "path": "/api/restaurant/auth/staff",
     "module": "auth"
@@ -235,9 +220,14 @@
     "module": "auth"
   },
   {
-    "method": "GET",
+    "method": "POST",
     "path": "/api/restaurant/auth/api-token",
     "module": "auth"
+  },
+  {
+    "method": "GET",
+    "path": "/api/restaurant/menu/branch-override",
+    "module": "menu"
   },
   {
     "method": "GET",
@@ -277,11 +267,6 @@
   {
     "method": "GET",
     "path": "/api/restaurant/branding",
-    "module": "tenancy"
-  },
-  {
-    "method": "GET",
-    "path": "/api/restaurant/branding/css",
     "module": "tenancy"
   },
   {
@@ -532,11 +517,6 @@
   {
     "method": "POST",
     "path": "/api/restaurant/floor/save",
-    "module": "tables"
-  },
-  {
-    "method": "GET",
-    "path": "/api/restaurant/layout",
     "module": "tables"
   },
   {
@@ -795,8 +775,8 @@
     "module": "owners"
   },
   {
-    "method": "DELETE",
-    "path": "/api/restaurant/staff/:id",
+    "method": "POST",
+    "path": "/api/restaurant/staff/:id/revoke",
     "module": "owners"
   },
   {
