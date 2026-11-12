@@ -1,64 +1,77 @@
-import React from 'react';
+import * as React from 'react';
+import { Slot } from '@radix-ui/react-slot';
+import { cva, type VariantProps } from 'class-variance-authority';
+import { cn } from '../utils/cn';
+import { Spinner } from './spinner';
 
-export interface ButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement> {
-  variant?: 'primary' | 'secondary' | 'outline' | 'danger';
-  size?: 'sm' | 'md' | 'lg';
+export const buttonVariants = cva(
+  'inline-flex items-center justify-center whitespace-nowrap rounded-md text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 select-none cursor-pointer',
+  {
+    variants: {
+      variant: {
+        primary:
+          'bg-[var(--color-primary)] text-[var(--color-primary-fg)] hover:bg-[var(--color-primary-hover)] focus-visible:ring-[var(--color-focus-ring)] shadow-sm',
+        secondary:
+          'bg-[var(--color-surface)] text-[var(--color-text)] hover:bg-[var(--color-surface-raised)] border border-[var(--color-border)] focus-visible:ring-[var(--color-focus-ring)]',
+        destructive:
+          'bg-[var(--color-danger)] text-[var(--color-danger-fg)] hover:opacity-90 focus-visible:ring-[var(--color-danger)] shadow-sm',
+        danger:
+          'bg-[var(--color-danger)] text-[var(--color-danger-fg)] hover:opacity-90 focus-visible:ring-[var(--color-danger)] shadow-sm',
+        outline:
+          'border border-[var(--color-border)] bg-transparent text-[var(--color-text)] hover:bg-[var(--color-surface)] focus-visible:ring-[var(--color-focus-ring)]',
+        ghost:
+          'bg-transparent text-[var(--color-text)] hover:bg-[var(--color-surface)] hover:text-[var(--color-text)] focus-visible:ring-[var(--color-focus-ring)]',
+        link:
+          'text-[var(--color-primary)] underline-offset-4 hover:underline focus-visible:ring-[var(--color-focus-ring)] p-0 h-auto',
+      },
+      size: {
+        sm: 'h-8 rounded-md px-3 text-xs gap-1.5',
+        md: 'h-10 px-4 py-2 text-sm gap-2',
+        lg: 'h-11 rounded-md px-8 text-base gap-2.5',
+        icon: 'h-10 w-10 p-0',
+      },
+    },
+    defaultVariants: {
+      variant: 'primary',
+      size: 'md',
+    },
+  }
+);
+
+export interface ButtonProps
+  extends React.ButtonHTMLAttributes<HTMLButtonElement>,
+    VariantProps<typeof buttonVariants> {
+  asChild?: boolean;
+  loading?: boolean;
+  icon?: React.ReactNode;
 }
 
-export const Button: React.FC<ButtonProps> = ({
-  children,
-  variant = 'primary',
-  size = 'md',
-  className = '',
-  ...props
-}) => {
-  const baseStyle: React.CSSProperties = {
-    display: 'inline-flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    fontWeight: 600,
-    borderRadius: 'var(--radius-sm, 6px)',
-    border: 'none',
-    cursor: 'pointer',
-    transition: 'var(--transition-fast, all 0.2s ease)',
-    outline: 'none',
-  };
+export const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
+  ({ className, variant, size, asChild = false, loading = false, icon, children, disabled, ...props }, ref) => {
+    const Comp = asChild ? Slot : 'button';
 
-  const variants: Record<string, React.CSSProperties> = {
-    primary: {
-      backgroundColor: 'var(--accent-primary, #6366f1)',
-      color: '#ffffff',
-      boxShadow: '0 4px 12px rgba(99, 102, 241, 0.3)',
-    },
-    secondary: {
-      backgroundColor: 'rgba(255, 255, 255, 0.08)',
-      color: 'var(--text-primary, #ffffff)',
-      border: '1px solid var(--border-glass, rgba(255,255,255,0.1))',
-    },
-    outline: {
-      backgroundColor: 'transparent',
-      color: 'var(--accent-primary, #6366f1)',
-      border: '1px solid var(--accent-primary, #6366f1)',
-    },
-    danger: {
-      backgroundColor: 'var(--danger, #ef4444)',
-      color: '#ffffff',
-    },
-  };
+    return (
+      <Comp
+        className={cn(buttonVariants({ variant, size, className }))}
+        ref={ref}
+        disabled={disabled || loading}
+        aria-busy={loading}
+        {...props}
+      >
+        {loading ? (
+          <>
+            <Spinner className="mr-2 h-4 w-4" />
+            {children}
+          </>
+        ) : (
+          <>
+            {icon && <span className="inline-flex shrink-0">{icon}</span>}
+            {children}
+          </>
+        )}
+      </Comp>
+    );
+  }
+);
+Button.displayName = 'Button';
 
-  const sizes: Record<string, React.CSSProperties> = {
-    sm: { padding: '6px 12px', fontSize: '13px' },
-    md: { padding: '10px 18px', fontSize: '14px' },
-    lg: { padding: '14px 24px', fontSize: '16px' },
-  };
-
-  return (
-    <button
-      style={{ ...baseStyle, ...variants[variant], ...sizes[size] }}
-      className={`glow-effect ${className}`}
-      {...props}
-    >
-      {children}
-    </button>
-  );
-};

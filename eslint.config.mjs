@@ -76,19 +76,19 @@ const LEGACY_INLINE_STYLE_ALLOWLIST = [
   'apps/platform/src/app/(restaurant-legacy)/dine/[locator]/page.tsx',
   'apps/platform/src/app/(restaurant-legacy)/kds/page.tsx',
   'apps/platform/src/app/layout.tsx',
-  'packages/ui/src/components/badge.tsx',
-  'packages/ui/src/components/button.tsx',
-  'packages/ui/src/components/card.tsx',
-  'packages/ui/src/components/glass-card.tsx',
-  'packages/ui/src/components/modern-tabs.tsx',
-  'packages/ui/src/components/neon-badge.tsx',
-  'packages/ui/src/components/stat-metric-widget.tsx',
-  'packages/ui/src/components/studio-button.tsx',
-  'packages/ui/src/dynamic/dynamic-copilot.tsx',
-  'packages/ui/src/dynamic/dynamic-dashboard.tsx',
-  'packages/ui/src/dynamic/dynamic-marketplace.tsx',
-  'packages/ui/src/dynamic/dynamic-sidebar.tsx',
-  'packages/ui/src/dynamic/dynamic-workflow-builder.tsx',
+  'packages/ui/src/legacy/components/badge.tsx',
+  'packages/ui/src/legacy/components/button.tsx',
+  'packages/ui/src/legacy/components/card.tsx',
+  'packages/ui/src/legacy/components/glass-card.tsx',
+  'packages/ui/src/legacy/components/modern-tabs.tsx',
+  'packages/ui/src/legacy/components/neon-badge.tsx',
+  'packages/ui/src/legacy/components/stat-metric-widget.tsx',
+  'packages/ui/src/legacy/components/studio-button.tsx',
+  'packages/ui/src/legacy/dynamic/dynamic-copilot.tsx',
+  'packages/ui/src/legacy/dynamic/dynamic-dashboard.tsx',
+  'packages/ui/src/legacy/dynamic/dynamic-marketplace.tsx',
+  'packages/ui/src/legacy/dynamic/dynamic-sidebar.tsx',
+  'packages/ui/src/legacy/dynamic/dynamic-workflow-builder.tsx',
 ];
 
 const PLATFORM_APP_BOUNDARY_PATTERNS = [
@@ -107,6 +107,7 @@ export default [
     ignores: [
       '**/node_modules/**',
       '**/dist/**',
+      '**/dist-storybook/**',
       '**/.next/**',
       '**/coverage/**',
       '**/generated/**',
@@ -280,9 +281,9 @@ export default [
       ],
     },
   },
-  // Boundary 4: Design system (packages/ui) must remain free of data fetching and backend access
+  // Boundary 4: Design system (packages/ui/src) must remain free of data fetching and backend access
   {
-    files: ['packages/ui/**/*.{ts,tsx,js,jsx}'],
+    files: ['packages/ui/src/**/*.{ts,tsx,js,jsx}'],
     rules: {
       'no-restricted-globals': [
         'error',

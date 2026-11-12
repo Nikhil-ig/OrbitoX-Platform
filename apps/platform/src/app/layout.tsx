@@ -1,5 +1,7 @@
 import React from 'react';
 import '@orbitox-io/ui/src/styles/theme.css';
+import './globals.css';
+import { fontInter, fontNotoDevanagari, fontJetBrainsMono } from './fonts';
 import { GlobalProviders } from './providers';
 
 export const metadata = {
@@ -9,7 +11,11 @@ export const metadata = {
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en" suppressHydrationWarning>
+    <html
+      lang="en"
+      suppressHydrationWarning
+      className={`${fontInter.variable} ${fontNotoDevanagari.variable} ${fontJetBrainsMono.variable}`}
+    >
       <head>
         <script
           dangerouslySetInnerHTML={{

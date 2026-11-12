@@ -1,0 +1,28 @@
+[
+  {
+    "name": "Full Library Index",
+    "path": "dist/index.js",
+    "limit": "25 KB"
+  },
+  {
+    "name": "AppShell Component",
+    "path": "dist/components/app-shell.js",
+    "limit": "15 KB"
+  },
+  {
+    "name": "DataTable Component",
+    "path": "dist/components/data-table.js",
+    "limit": "25 KB"
+  },
+  {
+    "name": "Form Component",
+    "path": "dist/components/form.js",
+    "limit": "15 KB"
+  },
+  {
+    "name": "Tokens & Theming",
+    "path": "dist/tokens/index.js",
+    "limit": "10 KB"
+  }
+]
+

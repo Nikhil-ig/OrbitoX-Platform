@@ -22,6 +22,10 @@ import 'server-only';
 export const ALLOWED_PUBLIC_FILES: ReadonlySet<string> = new Set([
     '/favicon.ico',
     '/robots.txt',
+    '/fonts/inter-latin-400.woff2',
+    '/fonts/inter-latin-600.woff2',
+    '/fonts/jetbrains-mono-latin-400.woff2',
+    '/fonts/noto-sans-devanagari.woff2',
 ]);
 
 export const PROTECTED_PAGE_PREFIXES: readonly string[] = [

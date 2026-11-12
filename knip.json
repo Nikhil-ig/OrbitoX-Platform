@@ -94,12 +94,11 @@
     "packages/ui": {
       "entry": [
         "src/components/*.tsx",
-        "src/dynamic/*.tsx"
-      ],
-      "ignoreDependencies": [
-        "react-dom",
-        "@types/react-dom",
-        "lucide-react"
+        "src/stories/*.tsx",
+        "src/legacy/**/*.tsx",
+        "test/**/*.ts",
+        "test/**/*.mjs",
+        ".storybook/*.ts"
       ]
     },
     "packages/eslint-config": {

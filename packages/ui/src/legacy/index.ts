@@ -1,0 +1,23 @@
+/**
+ * @deprecated Legacy OrbitoX UI Components (Stage 7A and earlier).
+ * Retained for backward-compatibility during Stages 7B-7F.
+ * These components will be deleted in Stage 7F once caller migrations complete.
+ */
+
+export * from './components/button';
+export * from './components/card';
+export * from './components/badge';
+export * from './components/glass-card';
+export * from './components/neon-badge';
+export * from './components/studio-button';
+export * from './components/stat-metric-widget';
+export * from './components/modern-tabs';
+export * from './components/theme-provider';
+export * from './dynamic/dynamic-sidebar';
+export * from './dynamic/dynamic-table';
+export * from './dynamic/dynamic-dashboard';
+export * from './dynamic/dynamic-marketplace';
+export * from './dynamic/dynamic-form';
+export * from './dynamic/dynamic-copilot';
+export * from './dynamic/dynamic-workflow-builder';
+

@@ -135,12 +135,14 @@ jobs:
       - name: Dead code and dependency check (Knip)
         run: pnpm run check:knip
 
-      - name: Unit tests (Core, Plugin Engine, POS, External Project Engine)
+      - name: Unit tests (Core, Plugin Engine, POS, External Project Engine, UI)
         run: |
           pnpm --filter @orbitox-io/core test
           pnpm --filter @orbitox-io/plugin-engine test
           pnpm --filter @orbitox-io/pos test
           pnpm --filter @orbitox-io/external-project-engine test
+          pnpm --filter @orbitox-io/ui test
+          pnpm --filter @orbitox-io/ui run size
 
       - name: Build control plane
         run: pnpm --filter @orbitox-io/platform exec next build
@@ -1052,12 +1054,47 @@ jobs:
           path: ${{ runner.temp }}/6g-export-manifest.json
           if-no-files-found: error
 
+  design-system:
+    name: Design System (Storybook, Axe WCAG 2.2 AA & Size Budget)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v5
+      - uses: pnpm/action-setup@v5
+        with:
+          version: 9.15.0
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+      - run: pnpm install --frozen-lockfile --ignore-scripts
+      - name: Build @orbitox-io/ui library
+        run: pnpm --filter @orbitox-io/ui build
+      - name: Run unit & security invariant tests
+        run: pnpm --filter @orbitox-io/ui test
+      - name: Check bundle size budget (size-limit)
+        run: pnpm --filter @orbitox-io/ui run size
+      - name: Build Storybook 8
+        run: pnpm --filter @orbitox-io/ui run build-storybook
+      - name: Install Playwright Chromium for WCAG 2.2 AA & visual audit
+        run: pnpm --filter @orbitox-io/ui exec playwright install chromium --with-deps
+      - name: Run WCAG 2.2 AA Accessibility & Responsive Viewport Audit
+        run: pnpm --filter @orbitox-io/ui run test:a11y
+      - name: Upload Storybook build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: design-system-storybook
+          path: packages/ui/dist-storybook
+          if-no-files-found: error
+
   docker:
     name: Docker image builds
     runs-on: ubuntu-24.04
     needs:
       [
         build,
+        design-system,
         restaurantos-e2e,
         restaurantos-phase2b4,
         platform-phase2-step3,

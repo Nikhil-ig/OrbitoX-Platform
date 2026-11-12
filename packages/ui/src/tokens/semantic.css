@@ -1,0 +1,133 @@
+/**
+ * Layer 2: Semantic Tokens (Theme Mappings)
+ * Light and Dark modes. Components consume semantic tokens only.
+ */
+
+/* Default Light Theme */
+:root,
+[data-theme="light"] {
+  --color-bg: var(--neutral-0);
+  --color-surface: var(--neutral-50);
+  --color-surface-raised: var(--neutral-0);
+
+  --color-border: var(--neutral-200);
+  --color-border-subtle: var(--neutral-100);
+
+  --color-text: var(--neutral-900);
+  --color-text-muted: var(--neutral-600);
+  --color-text-subtle: var(--neutral-500);
+
+  --color-primary: var(--primary-600);
+  --color-primary-fg: var(--neutral-0);
+  --color-primary-hover: var(--primary-700);
+
+  --color-accent: var(--accent-600);
+  --color-accent-fg: var(--neutral-0);
+  --color-accent-hover: var(--accent-700);
+
+  --color-success: var(--success-700);
+  --color-success-fg: var(--neutral-0);
+  --color-success-subtle: var(--success-50);
+
+  --color-warning: var(--warning-700);
+  --color-warning-fg: var(--neutral-0);
+  --color-warning-subtle: var(--warning-50);
+
+  --color-danger: var(--danger-700);
+  --color-danger-fg: var(--neutral-0);
+  --color-danger-subtle: var(--danger-50);
+
+  --color-info: var(--info-700);
+  --color-info-fg: var(--neutral-0);
+  --color-info-subtle: var(--info-50);
+
+  --color-focus-ring: var(--primary-500);
+
+  color-scheme: light;
+}
+
+/* System Dark Theme Fallback */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --color-bg: var(--neutral-950);
+    --color-surface: var(--neutral-900);
+    --color-surface-raised: var(--neutral-800);
+
+    --color-border: var(--neutral-800);
+    --color-border-subtle: var(--neutral-900);
+
+    --color-text: var(--neutral-50);
+    --color-text-muted: var(--neutral-400);
+    --color-text-subtle: var(--neutral-400);
+
+    --color-primary: var(--primary-400);
+    --color-primary-fg: var(--neutral-950);
+    --color-primary-hover: var(--primary-300);
+
+    --color-accent: var(--accent-400);
+    --color-accent-fg: var(--neutral-950);
+    --color-accent-hover: var(--accent-300);
+
+    --color-success: var(--success-500);
+    --color-success-fg: var(--neutral-950);
+    --color-success-subtle: var(--success-950);
+
+    --color-warning: var(--warning-400);
+    --color-warning-fg: var(--neutral-950);
+    --color-warning-subtle: var(--warning-950);
+
+    --color-danger: var(--danger-400);
+    --color-danger-fg: var(--neutral-950);
+    --color-danger-subtle: var(--danger-950);
+
+    --color-info: var(--info-400);
+    --color-info-fg: var(--neutral-950);
+    --color-info-subtle: var(--info-950);
+
+    --color-focus-ring: var(--primary-400);
+
+    color-scheme: dark;
+  }
+}
+
+/* Explicit Dark Theme */
+[data-theme="dark"] {
+  --color-bg: var(--neutral-950);
+  --color-surface: var(--neutral-900);
+  --color-surface-raised: var(--neutral-800);
+
+  --color-border: var(--neutral-800);
+  --color-border-subtle: var(--neutral-900);
+
+  --color-text: var(--neutral-50);
+  --color-text-muted: var(--neutral-400);
+  --color-text-subtle: var(--neutral-400);
+
+  --color-primary: var(--primary-400);
+  --color-primary-fg: var(--neutral-950);
+  --color-primary-hover: var(--primary-300);
+
+  --color-accent: var(--accent-400);
+  --color-accent-fg: var(--neutral-950);
+  --color-accent-hover: var(--accent-300);
+
+  --color-success: var(--success-500);
+  --color-success-fg: var(--neutral-950);
+  --color-success-subtle: var(--success-950);
+
+  --color-warning: var(--warning-400);
+  --color-warning-fg: var(--neutral-950);
+  --color-warning-subtle: var(--warning-950);
+
+  --color-danger: var(--danger-400);
+  --color-danger-fg: var(--neutral-950);
+  --color-danger-subtle: var(--danger-950);
+
+  --color-info: var(--info-400);
+  --color-info-fg: var(--neutral-950);
+  --color-info-subtle: var(--info-950);
+
+  --color-focus-ring: var(--primary-400);
+
+  color-scheme: dark;
+}

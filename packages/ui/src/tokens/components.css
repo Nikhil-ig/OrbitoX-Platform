@@ -1,0 +1,23 @@
+/**
+ * Layer 3: Component-Specific Tokens
+ * Structural measurements, heights, and component-specific dimensions.
+ */
+
+:root {
+  --sidebar-width: 16.25rem;          /* 260px */
+  --sidebar-collapsed-width: 4rem;     /* 64px */
+  --header-height: 3.5rem;             /* 56px */
+  --banner-height: 2.25rem;            /* 36px */
+
+  --input-height-sm: 2rem;             /* 32px */
+  --input-height-md: 2.5rem;           /* 40px */
+  --input-height-lg: 3rem;             /* 48px */
+
+  --btn-height-sm: 2rem;               /* 32px */
+  --btn-height-md: 2.5rem;             /* 40px */
+  --btn-height-lg: 3rem;               /* 48px */
+
+  --table-row-height: 3rem;            /* 48px */
+  --table-header-height: 2.5rem;       /* 40px */
+}
+
