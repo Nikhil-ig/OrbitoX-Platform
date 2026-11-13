@@ -106,16 +106,20 @@ describe('Appearance Settings & Server Enforcement (7B.1)', () => {
 
   describe('User Preference Isolation', () => {
     it('isolates operator preferences so one operator never affects another', async (t) => {
+      const ownerUrl = process.env.TEST_DATABASE_URL || process.env.DATABASE_URL;
       const hasDb =
-        Boolean(process.env.DATABASE_URL || process.env.TEST_DATABASE_URL) &&
+        Boolean(ownerUrl) &&
         process.env.ORBITOX_PLATFORM_REPOSITORY !== 'json';
       if (!hasDb) {
         t.skip('Skipping live DB isolation test: DATABASE_URL not set in this environment');
         return;
       }
 
-      // Create two distinct operators
-      const op1 = await prisma.platformOperator.create({
+      const { PrismaClient } = await import('@prisma/client');
+      const owner = new PrismaClient({ datasourceUrl: ownerUrl });
+
+      // Create two distinct operators via owner connection
+      const op1 = await owner.platformOperator.create({
         data: {
           email: `op1_${Date.now()}@test.orbitox.local`,
           passwordHash: 'dummy',
@@ -124,7 +128,7 @@ describe('Appearance Settings & Server Enforcement (7B.1)', () => {
         },
       });
 
-      const op2 = await prisma.platformOperator.create({
+      const op2 = await owner.platformOperator.create({
         data: {
           email: `op2_${Date.now()}@test.orbitox.local`,
           passwordHash: 'dummy',
@@ -175,29 +179,34 @@ describe('Appearance Settings & Server Enforcement (7B.1)', () => {
         assert.notEqual(fetchedOp1.density, fetchedOp2.density);
         assert.notEqual(fetchedOp1.radius, fetchedOp2.radius);
       } finally {
-        await prisma.platformOperator.deleteMany({
+        await owner.platformOperator.deleteMany({
           where: { id: { in: [op1.id, op2.id] } },
         });
+        await owner.$disconnect();
       }
     });
 
     it('isolates customer user preferences cleanly', async (t) => {
+      const ownerUrl = process.env.TEST_DATABASE_URL || process.env.DATABASE_URL;
       const hasDb =
-        Boolean(process.env.DATABASE_URL || process.env.TEST_DATABASE_URL) &&
+        Boolean(ownerUrl) &&
         process.env.ORBITOX_PLATFORM_REPOSITORY !== 'json';
       if (!hasDb) {
         t.skip('Skipping live DB isolation test: DATABASE_URL not set in this environment');
         return;
       }
 
-      const u1 = await prisma.customerUser.create({
+      const { PrismaClient } = await import('@prisma/client');
+      const owner = new PrismaClient({ datasourceUrl: ownerUrl });
+
+      const u1 = await owner.customerUser.create({
         data: {
           email: `u1_${Date.now()}@test.orbitox.local`,
           passwordHash: 'dummy',
         },
       });
 
-      const u2 = await prisma.customerUser.create({
+      const u2 = await owner.customerUser.create({
         data: {
           email: `u2_${Date.now()}@test.orbitox.local`,
           passwordHash: 'dummy',
@@ -236,9 +245,10 @@ describe('Appearance Settings & Server Enforcement (7B.1)', () => {
 
         assert.notEqual(fetchedU1.accent, fetchedU2.accent);
       } finally {
-        await prisma.customerUser.deleteMany({
+        await owner.customerUser.deleteMany({
           where: { id: { in: [u1.id, u2.id] } },
         });
+        await owner.$disconnect();
       }
     });
   });

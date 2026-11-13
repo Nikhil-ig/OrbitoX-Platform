@@ -207,7 +207,7 @@ async function main() {
     console.log('PASS  Appearance settings persisted across page reload in Playwright (7B.1)');
 
     // 6.2 Multi-user Database Precedence & Isolation in Fresh Browser Context (R2-3)
-    const dbUrl = process.env.DATABASE_URL || process.env.APP_DATABASE_URL;
+    const dbUrl = process.env.TEST_DATABASE_URL || process.env.MAINTENANCE_DATABASE_URL || process.env.DATABASE_URL;
     if (dbUrl) {
       const { PrismaClient } = await import('@prisma/client');
       const prismaClient = new PrismaClient({ datasourceUrl: dbUrl });
