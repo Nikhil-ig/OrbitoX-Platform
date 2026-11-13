@@ -528,8 +528,17 @@ async function main() {
     },
   });
 
+  const ensureRateLimitWindowRunway = async (minMsRemaining = 15000): Promise<void> => {
+    const msRemaining = 60000 - (Date.now() % 60000);
+    if (msRemaining < minMsRemaining) {
+      console.log(`Waiting ${msRemaining + 500}ms for fresh 60s rate limit window...`);
+      await new Promise((r) => setTimeout(r, msRemaining + 500));
+    }
+  };
+
   // Sub-test 2A: Cumulative Enforcement Across Both Standalone Servers
   console.log('Sub-test 2A: Cumulative rate limit enforcement across both servers');
+  await ensureRateLimitWindowRunway();
   const sub2aResults: number[] = [];
   for (let i = 0; i < RATE_LIMIT_L + 10; i++) {
     const res = await fetch(`http://127.0.0.1:${proxyPort}/api/v1/hms/patients`, {
@@ -593,6 +602,7 @@ async function main() {
     },
   });
 
+  await ensureRateLimitWindowRunway();
   const burstPromises = Array.from({ length: 40 }, async () => {
     const res = await fetch(`http://127.0.0.1:${proxyPort}/api/v1/hms/patients`, {
       headers: { 'x-api-key': burstSecret, 'x-tenant-id': burstTenantId },
@@ -657,6 +667,7 @@ async function main() {
   });
 
   // Send 12 requests directly to Server 1
+  await ensureRateLimitWindowRunway();
   console.log(`Sending 12 requests directly to Server 1 (port ${port1})...`);
   for (let i = 0; i < 12; i++) {
     const res = await fetch(`http://127.0.0.1:${port1}/api/v1/hms/patients`, {
@@ -740,6 +751,7 @@ async function main() {
   });
 
   // Alternate requests across Server 1 and Server 2
+  await ensureRateLimitWindowRunway();
   const pkStatuses: number[] = [];
   for (let i = 0; i < KEY_LIMIT_K + 6; i++) {
     const port = i % 2 === 0 ? port1 : port2;
