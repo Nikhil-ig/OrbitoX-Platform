@@ -4,6 +4,18 @@
  */
 
 :root {
+  /* ─── 8 Accent Presets ─── */
+  --accent-ocean: #3D6EF5;
+  --accent-ocean-light: #2F5BD8;
+  --accent-ocean-dark: #3D6EF5;
+  --accent-emerald: #047857;
+  --accent-sunflower: #F59E0B;
+  --accent-saffron: #C2410C;
+  --accent-ruby: #E11D48;
+  --accent-coral: #D9381E;
+  --accent-violet: #7C3AED;
+  --accent-teal: #0F766E;
+
   /* ─── Neutral Scale (Zinc / Slate Base) ─── */
   --neutral-0: #ffffff;
   --neutral-50: #fafafa;
@@ -17,6 +29,7 @@
   --neutral-800: #27272a;
   --neutral-900: #18181b;
   --neutral-950: #09090b;
+  --near-black: #14161a;
 
   /* ─── Primary Scale (Electric Indigo / Violet) ─── */
   --primary-50: #eef2ff;
@@ -112,15 +125,19 @@
   --space-12: 3rem;    /* 48px */
 
   /* ─── Radius Scale ─── */
+  --corner-radius: 28px;
   --radius-none: 0px;
   --radius-sm: 0.25rem; /* 4px */
   --radius-md: 0.5rem;  /* 8px */
   --radius-lg: 0.75rem; /* 12px */
   --radius-xl: 1rem;    /* 16px */
+  --radius-row: 1.125rem; /* 18px */
+  --radius-card: var(--corner-radius, 28px);
+  --radius-hero: calc(var(--corner-radius, 28px) + 4px);
   --radius-full: 9999px;
 
   /* ─── Typography & Font Stack (Self-Hosted) ─── */
-  --font-sans: 'Inter', 'Noto Sans Devanagari', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  --font-sans: 'Plus Jakarta Sans', 'Noto Sans Devanagari', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
   --font-mono: 'JetBrains Mono', 'Fira Code', Menlo, Monaco, Consolas, monospace;
 
   --font-size-xs: 0.75rem;   /* 12px */

@@ -146,7 +146,7 @@ export function MaskedField({
               variant="ghost"
               size="sm"
               onClick={handleOpenDialog}
-              className="h-6 px-1.5 text-xs text-[var(--color-primary)] hover:text-[var(--color-primary)] hover:bg-[var(--color-surface-raised)]"
+              className="h-6 px-1.5 text-xs text-[var(--color-link)] hover:text-[var(--color-link)] hover:bg-[var(--color-surface-raised)]"
               icon={<Eye className="h-3.5 w-3.5" />}
             >
               {t('common.reveal')}

@@ -27,6 +27,8 @@ export const MESSAGES: Record<Locale, Record<string, string>> = {
     'common.filter': 'Filter',
     'common.clear': 'Clear',
     'common.select': 'Select an option',
+    'common.table': 'Table',
+    'common.seats': 'Seats',
 
     'banner.staging': 'STAGING ENVIRONMENT — TEST DATA ONLY',
 
@@ -61,8 +63,10 @@ export const MESSAGES: Record<Locale, Record<string, string>> = {
 
     'copyOnceSecret.ackTitle': 'Secret Acknowledged',
     'copyOnceSecret.ackDescription': 'This sensitive credential has been securely cleared from memory and cannot be viewed again.',
+    'copyOnceSecret.storedIt': "I've stored it",
 
     'dangerousAction.stepUpTitle': 'Step-Up Authentication',
+    'dangerousAction.stepUpNotice': 'Next, confirm with your password and authenticator code',
     'dangerousAction.verified': 'Verified',
     'dangerousAction.authenticate': 'Authenticate',
 
@@ -97,6 +101,23 @@ export const MESSAGES: Record<Locale, Record<string, string>> = {
     'charts.segment': 'Segment',
     'charts.count': 'Count',
     'charts.share': 'Share',
+    'charts.orders': 'Orders',
+
+    'dangerousAction.reauthNotice': 'Next, confirm with your password and authenticator code.',
+    'dangerousAction.reasonLabelNew': 'Reason (saved to the audit log)',
+    'copyOnceSecret.keyRotated': "Key rotated · copy it now, it won't be shown again",
+    'copyOnceSecret.retentionNotice': 'The old key keeps working for 24 hours so integrations can switch over, then stops.',
+    'copyOnceSecret.storedButton': "I've stored it",
+    'stepper.stepDone': 'Completed',
+    'stepper.stepFailed': 'Failed',
+    'stepper.stepWaiting': 'Waiting',
+    'stepper.stepActive': 'In progress',
+    'quantity.decrease': 'Decrease quantity',
+    'quantity.increase': 'Increase quantity',
+    'menuItem.addToOrder': 'Add to order',
+    'menuItem.inclGst': 'incl. GST',
+    'liveStatus.order': 'Live order status',
+    'appearance.themeUpdated': 'Theme updated · saved to your account',
   },
   'hi-IN': {
     'common.save': 'सुरक्षित करें',
@@ -118,6 +139,8 @@ export const MESSAGES: Record<Locale, Record<string, string>> = {
     'common.filter': 'फ़िल्टर',
     'common.clear': 'साफ़ करें',
     'common.select': 'एक विकल्प चुनें',
+    'common.table': 'मेज',
+    'common.seats': 'सीटें',
 
     'banner.staging': 'स्टेजिंग वातावरण — केवल परीक्षण डेटा',
 
@@ -152,8 +175,10 @@ export const MESSAGES: Record<Locale, Record<string, string>> = {
 
     'copyOnceSecret.ackTitle': 'सीक्रेट की पुष्टि हो गई',
     'copyOnceSecret.ackDescription': 'यह संवेदनशील क्रेडेंशियल मेमोरी से हटा दिया गया है और इसे दोबारा नहीं देखा जा सकता।',
+    'copyOnceSecret.storedIt': 'मैंने इसे सहेज लिया है',
 
     'dangerousAction.stepUpTitle': 'अतिरिक्त प्रमाणीकरण',
+    'dangerousAction.stepUpNotice': 'इसके बाद, अपने पासवर्ड और प्रमाणक कोड से पुष्टि करें',
     'dangerousAction.verified': 'सत्यापित',
     'dangerousAction.authenticate': 'प्रमाणीकरण करें',
 
@@ -188,6 +213,23 @@ export const MESSAGES: Record<Locale, Record<string, string>> = {
     'charts.segment': 'खंड',
     'charts.count': 'संख्या',
     'charts.share': 'हिस्सा',
+    'charts.orders': 'ऑर्डर',
+
+    'dangerousAction.reauthNotice': 'इसके बाद, अपने पासवर्ड और प्रमाणक कोड से पुष्टि करें।',
+    'dangerousAction.reasonLabelNew': 'कारण (ऑडिट लॉग में सुरक्षित)',
+    'copyOnceSecret.keyRotated': 'कुंजी बदली गई · इसे अभी कॉपी करें, यह दोबारा नहीं दिखेगी',
+    'copyOnceSecret.retentionNotice': 'पुरानी कुंजी 24 घंटे काम करती रहेगी ताकि एकीकरण बदल सके, फिर बंद हो जाएगी।',
+    'copyOnceSecret.storedButton': 'मैंने इसे सुरक्षित कर लिया है',
+    'stepper.stepDone': 'पूर्ण',
+    'stepper.stepFailed': 'असफल',
+    'stepper.stepWaiting': 'प्रतीक्षारत',
+    'stepper.stepActive': 'प्रगति पर',
+    'quantity.decrease': 'मात्रा घटाएं',
+    'quantity.increase': 'मात्रा बढ़ाएं',
+    'menuItem.addToOrder': 'ऑर्डर में जोड़ें',
+    'menuItem.inclGst': 'जीएसटी सहित',
+    'liveStatus.order': 'लाइव ऑर्डर स्थिति',
+    'appearance.themeUpdated': 'थीम अपडेट की गई · आपके खाते में सुरक्षित',
   },
 };
 
@@ -204,16 +246,28 @@ export function getLocale(): Locale {
 }
 
 /**
- * Translates a key with optional dynamic parameter interpolation.
+ * Translates a key with optional dynamic parameter interpolation or default fallback string.
  * Example: t('table.pageOf', { current: 1, total: 5 }) => "Page 1 of 5"
+ * Example: t('unknown.key', 'Fallback Label') => "Fallback Label"
  */
-export function t(key: string, params?: Record<string, string | number>, overrideLocale?: Locale): string {
+export function t(
+  key: string,
+  paramsOrFallback?: Record<string, string | number> | string,
+  overrideLocale?: Locale
+): string {
   const locale = overrideLocale || currentLocale;
   const catalog = MESSAGES[locale] || MESSAGES['en-IN'];
-  let template = catalog[key] || MESSAGES['en-IN'][key] || key;
+  let template = catalog[key] || MESSAGES['en-IN'][key];
 
-  if (params) {
-    for (const [paramKey, paramVal] of Object.entries(params)) {
+  if (!template) {
+    if (typeof paramsOrFallback === 'string') {
+      return paramsOrFallback;
+    }
+    template = key;
+  }
+
+  if (paramsOrFallback && typeof paramsOrFallback === 'object') {
+    for (const [paramKey, paramVal] of Object.entries(paramsOrFallback)) {
       template = template.replace(new RegExp(`\\{${paramKey}\\}`, 'g'), String(paramVal));
     }
   }

@@ -12,15 +12,15 @@ export const badgeVariants = cva(
         secondary:
           'border-transparent bg-[var(--color-surface)] text-[var(--color-text)] border border-[var(--color-border)]',
         destructive:
-          'border-transparent bg-[var(--color-danger)] text-[var(--color-danger-fg)]',
+          'border border-[var(--color-danger)]/30 bg-[var(--color-danger-subtle)] text-[var(--color-danger)]',
         outline:
           'text-[var(--color-text)] border-[var(--color-border)] bg-transparent',
         success:
-          'border-transparent bg-[var(--color-success)] text-[var(--color-success-fg)]',
+          'border border-[var(--color-success)]/30 bg-[var(--color-success-subtle)] text-[var(--color-success)]',
         warning:
-          'border-transparent bg-[var(--color-warning)] text-[var(--color-warning-fg)]',
+          'border border-[var(--color-warning)]/30 bg-[var(--color-warning-subtle)] text-[var(--color-warning)]',
         info:
-          'border-transparent bg-[var(--color-info)] text-[var(--color-info-fg)]',
+          'border border-[var(--color-info)]/30 bg-[var(--color-info-subtle)] text-[var(--color-info)]',
       },
     },
     defaultVariants: {

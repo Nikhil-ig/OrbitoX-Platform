@@ -24,11 +24,14 @@ export const ALLOWED_PUBLIC_FILES: ReadonlySet<string> = new Set([
     '/robots.txt',
     '/fonts/inter-latin-400.woff2',
     '/fonts/inter-latin-600.woff2',
+    '/fonts/plus-jakarta-sans-latin.woff2',
+    '/fonts/plus-jakarta-sans-OFL.txt',
     '/fonts/jetbrains-mono-latin-400.woff2',
     '/fonts/noto-sans-devanagari.woff2',
     '/fonts/LICENSES/OFL-Inter.txt',
     '/fonts/LICENSES/OFL-JetBrainsMono.txt',
     '/fonts/LICENSES/OFL-NotoSansDevanagari.txt',
+    '/fonts/LICENSES/OFL-PlusJakartaSans.txt',
 ]);
 
 export const PROTECTED_PAGE_PREFIXES: readonly string[] = [

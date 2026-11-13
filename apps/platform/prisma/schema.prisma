@@ -718,6 +718,13 @@ model PlatformOperator {
   failureWindowStartedAt DateTime?            @db.Timestamptz
   lockedUntil           DateTime?             @db.Timestamptz
   lastTotpStep          Int?
+  appearanceTheme            String               @default("dark")
+  appearanceAccent           String               @default("ocean")
+  appearanceDensity          String               @default("standard")
+  appearanceRadius           Int                  @default(28)
+  appearanceSmoothAnimations Boolean              @default(true)
+  appearanceBoldFocusRings   Boolean              @default(false)
+  appearanceCompactSidebar   Boolean              @default(false)
   createdAt             DateTime              @default(now()) @db.Timestamptz
   updatedAt             DateTime              @default(now()) @updatedAt @db.Timestamptz
 
@@ -771,6 +778,13 @@ model CustomerUser {
   failureWindowStartedAt DateTime? @db.Timestamptz
   lockedUntil           DateTime? @db.Timestamptz
   lastTotpStep          Int?
+  appearanceTheme            String               @default("light")
+  appearanceAccent           String               @default("ocean")
+  appearanceDensity          String               @default("standard")
+  appearanceRadius           Int                  @default(28)
+  appearanceSmoothAnimations Boolean              @default(true)
+  appearanceBoldFocusRings   Boolean              @default(false)
+  appearanceCompactSidebar   Boolean              @default(false)
   createdAt             DateTime  @default(now()) @db.Timestamptz
   updatedAt             DateTime  @default(now()) @updatedAt @db.Timestamptz
 

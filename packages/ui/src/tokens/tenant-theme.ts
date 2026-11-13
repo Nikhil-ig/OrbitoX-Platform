@@ -1,16 +1,44 @@
 /**
  * Tenant Theming Engine (White-Label & Custom Branding for RestaurantOS and Platform).
  * Enforces strict color validation, sanitization against injection, and WCAG 2.2 AA contrast rules.
+ * Supports whole diner template token-sets with brand overrides (Stage 7B.1 & 7F).
  */
 
 import { validateColor, calculateContrast, ContrastResult } from './color-validator';
 
+export interface DinerTemplateTokenSet {
+  id?: string;
+  name?: string;
+  version?: number | string;
+  tokens?: {
+    primary?: string;
+    accent?: string;
+    radius?: 'none' | 'sm' | 'md' | 'lg' | 'xl' | 'full' | string;
+    font?: string;
+    bg?: string;
+    surface?: string;
+  };
+  layout?: {
+    viewMode?: 'cards' | 'list' | 'photo-grid';
+    sectionSwitches?: {
+      topDishes?: boolean;
+      liveStatusBar?: boolean;
+      vegFilter?: boolean;
+    };
+  };
+}
+
 export interface TenantThemeInput {
   tenantId?: string;
-  primary: string; // Hex or OKLCH
-  accent: string;  // Hex or OKLCH
+  primary?: string; // Hex or OKLCH
+  accent?: string;  // Hex or OKLCH
   radius?: 'none' | 'sm' | 'md' | 'lg' | 'xl' | 'full' | string;
   font?: string;
+  template?: DinerTemplateTokenSet;
+  brandOverride?: {
+    primary?: string;
+    accent?: string;
+  };
 }
 
 export interface AppliedTenantTheme {
@@ -19,6 +47,8 @@ export interface AppliedTenantTheme {
   accent: string;
   accentFg: string;
   radius: string;
+  font?: string;
+  templateId?: string;
 }
 
 export interface TenantThemeResult {
@@ -33,11 +63,11 @@ export interface TenantThemeResult {
 }
 
 export const DEFAULT_TENANT_THEME: AppliedTenantTheme = {
-  primary: '#4f46e5', // Indigo-600
+  primary: '#3569F5', // Ocean
   primaryFg: '#ffffff',
-  accent: '#06b6d4',  // Cyan-500
-  accentFg: '#09090b',
-  radius: '0.5rem',
+  accent: '#3569F5',  // Ocean
+  accentFg: '#ffffff',
+  radius: '1.75rem',  // 28px
 };
 
 const RADIUS_MAP: Record<string, string> = {
@@ -46,31 +76,56 @@ const RADIUS_MAP: Record<string, string> = {
   md: '0.5rem',
   lg: '0.75rem',
   xl: '1rem',
+  card: '1.75rem',
+  hero: '2rem',
   full: '9999px',
 };
 
 /**
  * Validates and sanitizes a tenant theme configuration.
+ * Accepts whole template token sets (Saffron, Noir, Fresh) plus brand overrides.
  * Emits strictly scoped CSS custom property overrides under [data-tenant-theme].
  * If invalid, falls back to safe defaults and returns detailed error diagnostics.
  */
 export function applyTenantTheme(input: TenantThemeInput): TenantThemeResult {
   const errors: string[] = [];
 
+  // Resolve base values from template if provided, with brand overrides taking highest precedence
+  const rawPrimary =
+    input.brandOverride?.primary ??
+    input.primary ??
+    input.template?.tokens?.primary ??
+    DEFAULT_TENANT_THEME.primary;
+
+  const rawAccent =
+    input.brandOverride?.accent ??
+    input.accent ??
+    input.template?.tokens?.accent ??
+    DEFAULT_TENANT_THEME.accent;
+
+  const rawRadius =
+    input.radius ??
+    input.template?.tokens?.radius ??
+    DEFAULT_TENANT_THEME.radius;
+
+  const rawFont =
+    input.font ??
+    input.template?.tokens?.font;
+
   // 1. Validate Primary Color
-  const primaryVal = validateColor(input.primary);
+  const primaryVal = validateColor(rawPrimary);
   if (!primaryVal.valid || !primaryVal.color) {
     errors.push(`Primary color invalid: ${primaryVal.error || 'unknown error'}`);
   }
 
   // 2. Validate Accent Color
-  const accentVal = validateColor(input.accent);
+  const accentVal = validateColor(rawAccent);
   if (!accentVal.valid || !accentVal.color) {
     errors.push(`Accent color invalid: ${accentVal.error || 'unknown error'}`);
   }
 
   // Determine optimal foreground colors (Light or Dark) to satisfy WCAG AA (>= 4.5:1)
-  const candidateFgs = ['#ffffff', '#09090b'];
+  const candidateFgs = ['#ffffff', '#09090b', '#0D0F12'];
 
   let bestPrimaryFg = '#ffffff';
   let bestPrimaryContrast: ContrastResult = { ratio: 1, passesAA: false, passesAALarge: false };
@@ -112,13 +167,13 @@ export function applyTenantTheme(input: TenantThemeInput): TenantThemeResult {
 
   // Validate Radius
   let resolvedRadius = DEFAULT_TENANT_THEME.radius;
-  if (input.radius) {
-    if (RADIUS_MAP[input.radius]) {
-      resolvedRadius = RADIUS_MAP[input.radius]!;
-    } else if (/^[0-9.]+(?:px|rem|em|%)$/.test(input.radius)) {
-      resolvedRadius = input.radius;
+  if (rawRadius) {
+    if (RADIUS_MAP[rawRadius]) {
+      resolvedRadius = RADIUS_MAP[rawRadius]!;
+    } else if (/^[0-9.]+(?:px|rem|em|%)$/.test(rawRadius)) {
+      resolvedRadius = rawRadius;
     } else {
-      errors.push(`Invalid radius value: "${input.radius}". Must be named step or valid CSS length.`);
+      errors.push(`Invalid radius value: "${rawRadius}". Must be named step or valid CSS length.`);
     }
   }
 
@@ -131,10 +186,14 @@ export function applyTenantTheme(input: TenantThemeInput): TenantThemeResult {
         accent: accentVal.color!,
         accentFg: bestAccentFg,
         radius: resolvedRadius,
+        font: rawFont,
+        templateId: input.template?.id,
       }
     : DEFAULT_TENANT_THEME;
 
   const scope = input.tenantId ? `[data-tenant-theme="${sanitizeSelector(input.tenantId)}"]` : `[data-tenant-theme]`;
+
+  const fontLine = appliedTheme.font ? `\n  --font-sans: ${appliedTheme.font};` : '';
 
   const css = `
 ${scope} {
@@ -142,7 +201,8 @@ ${scope} {
   --color-primary-fg: ${appliedTheme.primaryFg};
   --color-accent: ${appliedTheme.accent};
   --color-accent-fg: ${appliedTheme.accentFg};
-  --radius-md: ${appliedTheme.radius};
+  --radius-card: ${appliedTheme.radius};
+  --radius-md: ${appliedTheme.radius};${fontLine}
 }
 `.trim();
 

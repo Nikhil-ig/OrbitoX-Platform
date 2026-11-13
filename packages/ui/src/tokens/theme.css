@@ -54,11 +54,15 @@
   --radius-md: var(--radius-md);
   --radius-lg: var(--radius-lg);
   --radius-xl: var(--radius-xl);
+  --radius-row: var(--radius-row);
+  --radius-card: var(--radius-card);
+  --radius-hero: var(--radius-hero);
   --radius-full: var(--radius-full);
 
   --shadow-sm: var(--shadow-sm);
   --shadow-md: var(--shadow-md);
   --shadow-lg: var(--shadow-lg);
   --shadow-xl: var(--shadow-xl);
+  --shadow-accent-glow: var(--shadow-accent-glow);
 }
 

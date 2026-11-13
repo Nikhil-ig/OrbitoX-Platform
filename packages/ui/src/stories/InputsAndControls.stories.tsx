@@ -30,6 +30,8 @@ import { Skeleton } from '../components/skeleton';
 import { Separator } from '../components/separator';
 import { Kbd } from '../components/kbd';
 import { Link } from '../components/link';
+import { QuantityStepper } from '../components/quantity-stepper';
+import { ProgressBar, MeterRow } from '../components/progress-bar';
 import { Bell, Copy, RefreshCw, Settings } from 'lucide-react';
 
 const meta: Meta = {
@@ -276,3 +278,35 @@ export const BadgesAndStatusPills: StoryObj = {
     </div>
   ),
 };
+
+export const QuantityStepperDemo: StoryObj = {
+  render: () => {
+    const [qty, setQty] = React.useState(2);
+    return (
+      <div className="p-4 max-w-xs space-y-3">
+        <h3 className="text-sm font-semibold text-[var(--color-text)]">Split Pill Quantity Stepper</h3>
+        <QuantityStepper value={qty} onChange={setQty} min={1} max={10} />
+      </div>
+    );
+  },
+};
+
+export const ProgressBarAndMeters: StoryObj = {
+  render: () => (
+    <div className="p-4 max-w-md space-y-6">
+      <div className="space-y-3">
+        <h3 className="text-sm font-semibold text-[var(--color-text)]">Progress Bars</h3>
+        <ProgressBar value={65} max={100} variant="primary" ariaLabel="System task progress" />
+        <ProgressBar value={90} max={100} variant="success" ariaLabel="Cache rebuild progress" />
+        <ProgressBar value={40} max={100} variant="warning" ariaLabel="Audit export progress" />
+      </div>
+
+      <div className="space-y-3">
+        <h3 className="text-sm font-semibold text-[var(--color-text)]">Meter Rows</h3>
+        <MeterRow label="API Requests (Monthly Quota)" current={8500} total={10000} variant="primary" />
+        <MeterRow label="Storage Allocation" current={14} total={20} valueDisplay="14 GB of 20 GB" variant="success" />
+      </div>
+    </div>
+  ),
+};
+

@@ -20,10 +20,13 @@ export interface AppShellProps {
   appName?: string;
   logo?: React.ReactNode;
   navItems: NavItem[];
+  pluginNavItems?: NavItem[];
+  pluginSectionTitle?: string;
   tenantSwitcher?: React.ReactNode;
   breadcrumbs?: React.ReactNode;
   userMenu?: React.ReactNode;
   banner?: React.ReactNode;
+  bottomCard?: React.ReactNode;
   children: React.ReactNode;
   defaultCollapsed?: boolean;
 }
@@ -32,10 +35,13 @@ export function AppShell({
   appName = 'OrbitoX',
   logo,
   navItems,
+  pluginNavItems,
+  pluginSectionTitle,
   tenantSwitcher,
   breadcrumbs,
   userMenu,
   banner,
+  bottomCard,
   children,
   defaultCollapsed = false,
 }: AppShellProps) {
@@ -45,49 +51,91 @@ export function AppShell({
   const toggleCollapsed = () => setIsCollapsed((prev) => !prev);
 
   const renderNavList = (isMobile = false) => (
-    <nav className="flex-1 space-y-1 p-3">
-      {navItems.map((item) => (
-        <a
-          key={item.id}
-          href={item.href || '#'}
-          onClick={(e) => {
-            if (item.onClick) {
-              e.preventDefault();
-              item.onClick();
-            }
-            if (isMobile) setIsMobileOpen(false);
-          }}
-          className={cn(
-            'flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors select-none cursor-pointer',
-            item.active
-              ? 'bg-[var(--color-primary)] text-[var(--color-primary-fg)] font-semibold shadow-xs'
-              : 'text-[var(--color-text-muted)] hover:bg-[var(--color-surface)] hover:text-[var(--color-text)]',
-            isCollapsed && !isMobile && 'justify-center px-2'
-          )}
-          title={isCollapsed && !isMobile ? item.label : undefined}
-        >
-          {item.icon && <span className="h-5 w-5 shrink-0 flex items-center justify-center">{item.icon}</span>}
-          {(!isCollapsed || isMobile) && (
-            <span className="flex-1 truncate">{item.label}</span>
-          )}
-          {(!isCollapsed || isMobile) && item.badge && (
-            <span className="shrink-0">{item.badge}</span>
-          )}
-        </a>
-      ))}
-    </nav>
+    <div className="flex-1 overflow-y-auto space-y-4 p-3">
+      <nav className="space-y-1">
+        {navItems.map((item) => (
+          <a
+            key={item.id}
+            href={item.href || '#'}
+            onClick={(e) => {
+              if (item.onClick) {
+                e.preventDefault();
+                item.onClick();
+              }
+              if (isMobile) setIsMobileOpen(false);
+            }}
+            className={cn(
+              'flex items-center gap-3 rounded-full px-4 py-2 text-sm font-medium transition-all select-none cursor-pointer',
+              item.active
+                ? 'bg-[var(--color-primary)] text-[var(--color-primary-fg)] font-semibold shadow-[var(--shadow-accent-glow)]'
+                : 'text-[var(--color-text-muted)] hover:bg-[var(--color-surface-raised)] hover:text-[var(--color-text)]',
+              isCollapsed && !isMobile && 'justify-center px-2'
+            )}
+            title={isCollapsed && !isMobile ? item.label : undefined}
+          >
+            {item.icon && <span className="h-4 w-4 shrink-0 flex items-center justify-center">{item.icon}</span>}
+            {(!isCollapsed || isMobile) && (
+              <span className="flex-1 truncate">{item.label}</span>
+            )}
+            {(!isCollapsed || isMobile) && item.badge && (
+              <span className="shrink-0">{item.badge}</span>
+            )}
+          </a>
+        ))}
+      </nav>
+
+      {/* Optional Plugins Section */}
+      {pluginNavItems && pluginNavItems.length > 0 && (!isCollapsed || isMobile) && (
+        <div className="pt-2">
+          <p className="px-4 text-[10px] font-bold uppercase tracking-wider text-[var(--color-text-subtle)]">
+            {pluginSectionTitle || 'Plugins'}
+          </p>
+          <nav className="mt-1 space-y-1">
+            {pluginNavItems.map((item) => (
+              <a
+                key={item.id}
+                href={item.href || '#'}
+                onClick={(e) => {
+                  if (item.onClick) {
+                    e.preventDefault();
+                    item.onClick();
+                  }
+                  if (isMobile) setIsMobileOpen(false);
+                }}
+                className={cn(
+                  'flex items-center gap-3 rounded-full px-4 py-2 text-sm font-medium transition-all select-none cursor-pointer',
+                  item.active
+                    ? 'bg-[var(--color-primary)] text-[var(--color-primary-fg)] font-semibold shadow-[var(--shadow-accent-glow)]'
+                    : 'text-[var(--color-text-muted)] hover:bg-[var(--color-surface-raised)] hover:text-[var(--color-text)]'
+                )}
+              >
+                {item.icon && <span className="h-4 w-4 shrink-0 flex items-center justify-center">{item.icon}</span>}
+                <span className="flex-1 truncate">{item.label}</span>
+                {item.badge && <span className="shrink-0">{item.badge}</span>}
+              </a>
+            ))}
+          </nav>
+        </div>
+      )}
+    </div>
   );
 
   return (
-    <div className="min-h-screen bg-[var(--color-bg)] text-[var(--color-text)] flex flex-col">
+    <div className="relative min-h-screen bg-[var(--color-bg)] text-[var(--color-text)] flex flex-col overflow-x-hidden">
+      {/* Top Accent Radial Glow (Dark console mood, 20% opacity) */}
+      <div
+        className="pointer-events-none fixed top-0 left-1/2 -translate-x-1/2 h-96 w-full max-w-4xl opacity-20 bg-[radial-gradient(ellipse_at_top,var(--color-primary),transparent_70%)] blur-3xl"
+        aria-hidden="true"
+      />
+
       {/* Optional Top Alert / Staging Banner */}
       {banner}
 
       <div className="flex flex-1 overflow-hidden">
-        {/* Desktop Collapsible Sidebar */}
+        {/* Desktop Collapsible Sidebar (Rounded Card) */}
         <aside
           className={cn(
-            'hidden md:flex flex-col border-r border-[var(--color-border)] bg-[var(--color-surface)] transition-all duration-200 select-none',
+            'hidden md:flex flex-col m-3 md:m-4 rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] shadow-sm transition-all duration-200 select-none overflow-hidden shrink-0 z-10',
             isCollapsed ? 'w-16' : 'w-64'
           )}
         >
@@ -95,19 +143,19 @@ export function AppShell({
           <div className="flex h-14 items-center justify-between border-b border-[var(--color-border)] px-4">
             {!isCollapsed && (
               <div className="flex items-center gap-2.5 truncate">
-                {logo || <div className="h-6 w-6 rounded bg-[var(--color-primary)] shrink-0" />}
+                {logo || <div className="h-6 w-6 rounded-full bg-[var(--color-primary)] shrink-0" />}
                 <span className="font-bold text-sm tracking-tight text-[var(--color-text)] truncate">{appName}</span>
               </div>
             )}
             {isCollapsed && (
               <div className="mx-auto">
-                {logo || <div className="h-6 w-6 rounded bg-[var(--color-primary)]" />}
+                {logo || <div className="h-6 w-6 rounded-full bg-[var(--color-primary)]" />}
               </div>
             )}
             <button
               onClick={toggleCollapsed}
               className={cn(
-                'p-1 rounded text-[var(--color-text-muted)] hover:text-[var(--color-text)] hover:bg-[var(--color-surface-raised)] transition-colors cursor-pointer',
+                'p-1.5 rounded-full text-[var(--color-text-muted)] hover:text-[var(--color-text)] hover:bg-[var(--color-surface-raised)] transition-colors cursor-pointer',
                 isCollapsed && 'hidden'
               )}
               aria-label={isCollapsed ? t('shell.expandSidebar') : t('shell.collapseSidebar')}
@@ -123,15 +171,22 @@ export function AppShell({
             </div>
           )}
 
-          {/* Navigation Links */}
+          {/* Navigation Links & Plugins */}
           {renderNavList(false)}
+
+          {/* Staging / Custom Bottom Card */}
+          {!isCollapsed && bottomCard && (
+            <div className="p-3 mt-auto border-t border-[var(--color-border)]">
+              {bottomCard}
+            </div>
+          )}
 
           {/* Collapse Footer Toggle when collapsed */}
           {isCollapsed && (
-            <div className="p-2 border-t border-[var(--color-border)] flex justify-center">
+            <div className="p-2 border-t border-[var(--color-border)] flex justify-center mt-auto">
               <button
                 onClick={toggleCollapsed}
-                className="p-2 rounded text-[var(--color-text-muted)] hover:text-[var(--color-text)] hover:bg-[var(--color-surface-raised)] transition-colors cursor-pointer"
+                className="p-2 rounded-full text-[var(--color-text-muted)] hover:text-[var(--color-text)] hover:bg-[var(--color-surface-raised)] transition-colors cursor-pointer"
                 aria-label={t('shell.expandSidebar')}
               >
                 <ChevronRight className="h-4 w-4" />
@@ -144,12 +199,13 @@ export function AppShell({
         <Sheet open={isMobileOpen} onOpenChange={setIsMobileOpen}>
           <SheetContent side="left" className="w-72 p-0 flex flex-col bg-[var(--color-surface)]">
             <div className="flex h-14 items-center border-b border-[var(--color-border)] px-4 gap-3">
-              {logo || <div className="h-6 w-6 rounded bg-[var(--color-primary)] shrink-0" />}
+              {logo || <div className="h-6 w-6 rounded-full bg-[var(--color-primary)] shrink-0" />}
               <SheetTitle className="font-bold text-sm tracking-tight">{appName}</SheetTitle>
               <SheetDescription className="sr-only">{appName}</SheetDescription>
             </div>
             {tenantSwitcher && <div className="border-b border-[var(--color-border)] p-3">{tenantSwitcher}</div>}
             {renderNavList(true)}
+            {bottomCard && <div className="p-3 mt-auto border-t border-[var(--color-border)]">{bottomCard}</div>}
           </SheetContent>
         </Sheet>
 
@@ -161,7 +217,7 @@ export function AppShell({
               {/* Mobile Menu Hamburger Toggle */}
               <button
                 onClick={() => setIsMobileOpen(true)}
-                className="md:hidden p-1.5 rounded text-[var(--color-text-muted)] hover:text-[var(--color-text)] cursor-pointer"
+                className="md:hidden p-1.5 rounded-full text-[var(--color-text-muted)] hover:text-[var(--color-text)] cursor-pointer"
                 aria-label={t('shell.openMobileNav')}
               >
                 <Menu className="h-5 w-5" />
@@ -177,7 +233,7 @@ export function AppShell({
                 variant="ghost"
                 size="sm"
                 onClick={() => toggleTheme()}
-                className="h-8 w-8 p-0"
+                className="h-9 w-9 p-0 rounded-full"
                 aria-label={t('shell.toggleTheme')}
               >
                 <Sun className="h-4 w-4 rotate-0 scale-100 transition-all dark:-rotate-90 dark:scale-0" />

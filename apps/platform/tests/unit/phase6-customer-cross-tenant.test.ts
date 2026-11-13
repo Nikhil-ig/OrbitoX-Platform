@@ -87,6 +87,7 @@ const nonDashboardCustomerRoutes = [
   'auth/signup/route.ts',
   'auth/verify-email/route.ts',
   'email/webhooks/[provider]/route.ts',
+  'me/appearance/route.ts',
 ].sort();
 
 describe('Phase 6 customer dashboard tenant isolation', () => {

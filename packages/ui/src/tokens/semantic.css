@@ -1,191 +1,283 @@
 /**
  * Layer 2: Semantic Tokens (Theme Mappings)
- * Light and Dark modes. Components consume semantic tokens only.
+ * OrbitoX 7B.1 Visual Language (Console Dark Mood, Customer Light Mood, 8 Presets, 3 Densities).
  */
 
-/* Default Light Theme */
+/* ─── 1. Accent Presets (8 Tokens) ─── */
 :root,
-[data-theme="light"] {
-  --color-bg: var(--neutral-0);
-  --color-surface: var(--neutral-50);
-  --color-surface-raised: var(--neutral-0);
-
-  --color-border: var(--neutral-200);
-  --color-border-subtle: var(--neutral-100);
-
-  --color-text: var(--neutral-900);
-  --color-text-muted: var(--neutral-600);
-  --color-text-subtle: var(--neutral-500);
-
-  --color-primary: var(--primary-600);
-  --color-primary-fg: var(--neutral-0);
-  --color-primary-hover: var(--primary-700);
-
-  --color-accent: var(--accent-600);
-  --color-accent-fg: var(--neutral-0);
-  --color-accent-hover: var(--accent-700);
-
-  --color-success: var(--success-700);
-  --color-success-fg: var(--neutral-0);
-  --color-success-subtle: var(--success-50);
-
-  --color-warning: var(--warning-700);
-  --color-warning-fg: var(--neutral-0);
-  --color-warning-subtle: var(--warning-50);
-
-  --color-danger: var(--danger-700);
-  --color-danger-fg: var(--neutral-0);
-  --color-danger-subtle: var(--danger-50);
-
-  --color-info: var(--info-700);
-  --color-info-fg: var(--neutral-0);
-  --color-info-subtle: var(--info-50);
-
-  --color-focus-ring: var(--primary-500);
-
-  color-scheme: light;
+[data-accent="ocean"] {
+  --color-accent: #3A6BF5;
+  --color-accent-fg: #FFFFFF;
+  --color-accent-hover: #2658E8;
+  --color-accent-subtle: rgba(58, 107, 245, 0.16);
+  --shadow-accent-glow: 0 18px 40px -18px rgba(58, 107, 245, 0.50);
 }
 
-/* System Dark Theme Fallback */
-@media (prefers-color-scheme: dark) {
-  :root:not([data-theme="light"]) {
-    --color-bg: var(--neutral-950);
-    --color-surface: var(--neutral-900);
-    --color-surface-raised: var(--neutral-800);
-
-    --color-border: var(--neutral-800);
-    --color-border-subtle: var(--neutral-900);
-
-    --color-text: var(--neutral-50);
-    --color-text-muted: var(--neutral-400);
-    --color-text-subtle: var(--neutral-400);
-
-    --color-primary: var(--primary-400);
-    --color-primary-fg: var(--neutral-950);
-    --color-primary-hover: var(--primary-300);
-
-    --color-accent: var(--accent-400);
-    --color-accent-fg: var(--neutral-950);
-    --color-accent-hover: var(--accent-300);
-
-    --color-success: var(--success-500);
-    --color-success-fg: var(--neutral-950);
-    --color-success-subtle: var(--success-950);
-
-    --color-warning: var(--warning-400);
-    --color-warning-fg: var(--neutral-950);
-    --color-warning-subtle: var(--warning-950);
-
-    --color-danger: var(--danger-400);
-    --color-danger-fg: var(--neutral-950);
-    --color-danger-subtle: var(--danger-950);
-
-    --color-info: var(--info-400);
-    --color-info-fg: var(--neutral-950);
-    --color-info-subtle: var(--info-950);
-
-    --color-focus-ring: var(--primary-400);
-
-    color-scheme: dark;
-  }
+[data-theme="light"][data-accent="ocean"],
+[data-theme="light"] [data-accent="ocean"] {
+  --color-accent: #2F5BD8;
+  --color-accent-fg: #FFFFFF;
+  --color-accent-hover: #1E40AF;
+  --color-accent-subtle: rgba(47, 91, 216, 0.14);
+  --shadow-accent-glow: 0 18px 40px -18px rgba(47, 91, 216, 0.35);
 }
 
-/* Explicit Dark Theme */
+[data-accent="emerald"] {
+  --color-accent: #047857;
+  --color-accent-fg: #FFFFFF;
+  --color-accent-hover: #065F46;
+  --color-accent-subtle: rgba(4, 120, 87, 0.16);
+  --shadow-accent-glow: 0 18px 40px -18px rgba(4, 120, 87, 0.50);
+}
+
+[data-accent="sunflower"] {
+  --color-accent: #F59E0B;
+  --color-accent-fg: #0D0F12;
+  --color-accent-hover: #D97706;
+  --color-accent-subtle: rgba(245, 158, 11, 0.16);
+  --shadow-accent-glow: 0 18px 40px -18px rgba(245, 158, 11, 0.50);
+}
+
+[data-accent="saffron"] {
+  --color-accent: #C2410C;
+  --color-accent-fg: #FFFFFF;
+  --color-accent-hover: #9A3412;
+  --color-accent-subtle: rgba(194, 65, 12, 0.16);
+  --shadow-accent-glow: 0 18px 40px -18px rgba(194, 65, 12, 0.50);
+}
+
+[data-accent="ruby"] {
+  --color-accent: #E11D48;
+  --color-accent-fg: #FFFFFF;
+  --color-accent-hover: #BE123C;
+  --color-accent-subtle: rgba(225, 29, 72, 0.16);
+  --shadow-accent-glow: 0 18px 40px -18px rgba(225, 29, 72, 0.50);
+}
+
+[data-accent="coral"] {
+  --color-accent: #D9381E;
+  --color-accent-fg: #FFFFFF;
+  --color-accent-hover: #B82C15;
+  --color-accent-subtle: rgba(217, 56, 30, 0.16);
+  --shadow-accent-glow: 0 18px 40px -18px rgba(217, 56, 30, 0.50);
+}
+
+[data-accent="violet"] {
+  --color-accent: #7C3AED;
+  --color-accent-fg: #FFFFFF;
+  --color-accent-hover: #6D28D9;
+  --color-accent-subtle: rgba(124, 58, 237, 0.16);
+  --shadow-accent-glow: 0 18px 40px -18px rgba(124, 58, 237, 0.50);
+}
+
+[data-accent="teal"] {
+  --color-accent: #0F766E;
+  --color-accent-fg: #FFFFFF;
+  --color-accent-hover: #115E59;
+  --color-accent-subtle: rgba(15, 118, 110, 0.16);
+  --shadow-accent-glow: 0 18px 40px -18px rgba(15, 118, 110, 0.50);
+}
+
+/* ─── 2. Functional Status Colors (Soft Tint + Strong Text) ─── */
+:root {
+  --status-good-bg: rgba(16, 185, 129, 0.14);
+  --status-good-fg: #10B981;
+  --status-good-border: rgba(16, 185, 129, 0.28);
+
+  --status-warning-bg: rgba(245, 158, 11, 0.14);
+  --status-warning-fg: #F59E0B;
+  --status-warning-border: rgba(245, 158, 11, 0.28);
+
+  --status-problem-bg: rgba(239, 68, 68, 0.14);
+  --status-problem-fg: #F87171;
+  --status-problem-border: rgba(239, 68, 68, 0.28);
+
+  --status-info-bg: rgba(59, 130, 246, 0.14);
+  --status-info-fg: #60A5FA;
+  --status-info-border: rgba(59, 130, 246, 0.28);
+}
+
+/* ─── 3. Default Mood: Dark Console Mood ─── */
+:root,
 [data-theme="dark"] {
-  --color-bg: var(--neutral-950);
-  --color-surface: var(--neutral-900);
-  --color-surface-raised: var(--neutral-800);
+  --color-bg: #0D0F12;
+  --color-surface: #14171C;
+  --color-surface-raised: #1B1F25;
 
-  --color-border: var(--neutral-800);
-  --color-border-subtle: var(--neutral-900);
+  --color-border: rgba(255, 255, 255, 0.06);
+  --color-border-subtle: rgba(255, 255, 255, 0.04);
 
-  --color-text: var(--neutral-50);
-  --color-text-muted: var(--neutral-400);
-  --color-text-subtle: var(--neutral-400);
+  --color-text: #F2F4F7;
+  --color-text-muted: #9AA3AF;
+  --color-text-subtle: #9AA3AF;
+  --color-pill-dark: var(--near-black, #14161a);
+  --color-link: #60A5FA;
 
-  --color-primary: var(--primary-400);
-  --color-primary-fg: var(--neutral-950);
-  --color-primary-hover: var(--primary-300);
+  --color-primary: var(--color-accent);
+  --color-primary-fg: var(--color-accent-fg);
+  --color-primary-hover: var(--color-accent-hover);
 
-  --color-accent: var(--accent-400);
-  --color-accent-fg: var(--neutral-950);
-  --color-accent-hover: var(--accent-300);
+  --color-success: #34D399;
+  --color-success-fg: #0D0F12;
+  --color-success-subtle: rgba(16, 185, 129, 0.15);
 
-  --color-success: var(--success-500);
-  --color-success-fg: var(--neutral-950);
-  --color-success-subtle: var(--success-950);
+  --color-warning: #FBBF24;
+  --color-warning-fg: #0D0F12;
+  --color-warning-subtle: rgba(245, 158, 11, 0.15);
 
-  --color-warning: var(--warning-400);
-  --color-warning-fg: var(--neutral-950);
-  --color-warning-subtle: var(--warning-950);
+  --color-danger: #FB7185;
+  --color-danger-solid: #BE123C;
+  --color-danger-fg: #FFFFFF;
+  --color-danger-subtle: rgba(244, 63, 94, 0.15);
 
-  --color-danger: var(--danger-400);
-  --color-danger-fg: var(--neutral-950);
-  --color-danger-subtle: var(--danger-950);
+  --color-info: #38BDF8;
+  --color-info-fg: #0D0F12;
+  --color-info-subtle: rgba(14, 165, 233, 0.15);
 
-  --color-info: var(--info-400);
-  --color-info-fg: var(--neutral-950);
-  --color-info-subtle: var(--info-950);
+  --color-focus-ring: var(--color-accent);
 
-  --color-focus-ring: var(--primary-400);
+  --color-page-glow: radial-gradient(circle at 50% -20%, var(--color-accent-subtle) 0%, transparent 60%);
 
   color-scheme: dark;
 }
 
-/* ─── Candidate Brand Option B: Obsidian Amber (Warm Neutral + Violet + Amber) ─── */
-[data-brand="obsidian-amber"],
-[data-theme="light"] [data-brand="obsidian-amber"],
-[data-theme="light"][data-brand="obsidian-amber"] {
-  --color-bg: #fbfaf8;
-  --color-surface: #f5f3ef;
-  --color-surface-raised: #ffffff;
-  --color-border: #e7e5e4;
-  --color-border-subtle: #f5f5f4;
+/* ─── 4. Customer Mood: Light Mood ─── */
+[data-theme="light"] {
+  --color-accent: #2F5BD8;
+  --color-accent-fg: #FFFFFF;
+  --color-accent-hover: #1E40AF;
+  --color-accent-subtle: rgba(47, 91, 216, 0.14);
+  --shadow-accent-glow: 0 18px 40px -18px rgba(47, 91, 216, 0.35);
 
-  --color-primary: #6d28d9;
-  --color-primary-fg: #ffffff;
-  --color-primary-hover: #5b21b6;
+  --color-bg: #EEF1F5;
+  --color-bg-gradient: linear-gradient(180deg, #EEF1F5 0%, #E3E7EE 100%);
+  --color-surface: #FFFFFF;
+  --color-surface-raised: #F8FAFC;
 
-  --color-accent: #b45309;
-  --color-accent-fg: #ffffff;
-  --color-accent-hover: #92400e;
-  --color-focus-ring: #7c3aed;
+  --color-border: #E2E8F0;
+  --color-border-subtle: #F1F5F9;
+
+  --color-text: #14161A;
+  --color-text-muted: #4B5563;
+  --color-text-subtle: #4B5563;
+  --color-link: #1D4ED8;
+
+  --color-primary: var(--color-accent);
+  --color-primary-fg: var(--color-accent-fg);
+  --color-primary-hover: var(--color-accent-hover);
+
+  --color-success: #065F46;
+  --color-success-fg: #FFFFFF;
+  --color-success-subtle: rgba(6, 95, 70, 0.08);
+
+  --color-warning: #78350F;
+  --color-warning-fg: #FFFFFF;
+  --color-warning-subtle: rgba(120, 53, 15, 0.08);
+
+  --color-danger: #9F1239;
+  --color-danger-solid: #9F1239;
+  --color-danger-fg: #FFFFFF;
+  --color-danger-subtle: rgba(159, 18, 57, 0.08);
+
+  --color-info: #1E40AF;
+  --color-info-fg: #FFFFFF;
+  --color-info-subtle: rgba(30, 64, 175, 0.08);
+
+  --status-good-bg: rgba(6, 95, 70, 0.08);
+  --status-good-fg: #065F46;
+  --status-good-border: rgba(6, 95, 70, 0.22);
+
+  --status-warning-bg: rgba(120, 53, 15, 0.08);
+  --status-warning-fg: #78350F;
+  --status-warning-border: rgba(120, 53, 15, 0.22);
+
+  --status-problem-bg: rgba(159, 18, 57, 0.08);
+  --status-problem-fg: #9F1239;
+  --status-problem-border: rgba(159, 18, 57, 0.22);
+
+  --status-info-bg: rgba(30, 64, 175, 0.08);
+  --status-info-fg: #1E40AF;
+  --status-info-border: rgba(30, 64, 175, 0.22);
+
+  --color-focus-ring: var(--color-accent);
+  --color-page-glow: none;
+
+  color-scheme: light;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root:not([data-theme="light"]) [data-brand="obsidian-amber"],
-  :root:not([data-theme="light"])[data-brand="obsidian-amber"] {
-    --color-bg: #12100e;
-    --color-surface: #1c1917;
-    --color-surface-raised: #292524;
-    --color-border: #292524;
-    --color-border-subtle: #1c1917;
-
-    --color-primary: #a78bfa;
-    --color-primary-fg: #09090b;
-    --color-primary-hover: #c4b5fd;
-
-    --color-accent: #fbbf24;
-    --color-accent-fg: #09090b;
-    --color-accent-hover: #fcd34d;
-    --color-focus-ring: #a78bfa;
+/* ─── 5. Auto / System Theme ─── */
+@media (prefers-color-scheme: light) {
+  [data-theme="auto"] {
+    --color-bg: #EEF1F5;
+    --color-bg-gradient: linear-gradient(180deg, #EEF1F5 0%, #E3E7EE 100%);
+    --color-surface: #FFFFFF;
+    --color-surface-raised: #F8FAFC;
+    --color-border: #E2E8F0;
+    --color-border-subtle: #F1F5F9;
+    --color-text: #14161A;
+    --color-text-muted: #5A6170;
+    --color-text-subtle: #8A94A6;
+    --color-page-glow: none;
+    color-scheme: light;
   }
 }
 
-[data-theme="dark"] [data-brand="obsidian-amber"],
-[data-theme="dark"][data-brand="obsidian-amber"] {
-  --color-bg: #12100e;
-  --color-surface: #1c1917;
-  --color-surface-raised: #292524;
-  --color-border: #292524;
-  --color-border-subtle: #1c1917;
+/* ─── 6. Density Settings ─── */
+:root,
+[data-density="standard"] {
+  --density-multiplier: 1.0;
+  --space-card-p: 1.5rem;   /* 24px */
+  --space-grid-gap: 1.25rem; /* 20px */
+  --space-row-p: 1rem;
+}
 
-  --color-primary: #a78bfa;
-  --color-primary-fg: #09090b;
-  --color-primary-hover: #c4b5fd;
+[data-density="relaxed"] {
+  --density-multiplier: 1.25;
+  --space-card-p: 2rem;      /* 32px */
+  --space-grid-gap: 1.5rem;  /* 24px */
+  --space-row-p: 1.25rem;
+}
 
-  --color-accent: #fbbf24;
-  --color-accent-fg: #09090b;
-  --color-accent-hover: #fcd34d;
-  --color-focus-ring: #a78bfa;
+[data-density="compact"] {
+  --density-multiplier: 0.65;
+  --space-card-p: 1rem;      /* 16px */
+  --space-grid-gap: 0.8125rem; /* 13px */
+  --space-row-p: 0.65rem;
+}
+
+/* ─── 7. Corner Radius Settings (4px to 32px) ─── */
+[data-radius="4"]  { --corner-radius: 4px; }
+[data-radius="8"]  { --corner-radius: 8px; }
+[data-radius="12"] { --corner-radius: 12px; }
+[data-radius="16"] { --corner-radius: 16px; }
+[data-radius="20"] { --corner-radius: 20px; }
+[data-radius="24"] { --corner-radius: 24px; }
+[data-radius="28"] { --corner-radius: 28px; }
+[data-radius="32"] { --corner-radius: 32px; }
+
+/* ─── 8. Bold Focus Rings ─── */
+[data-focus="bold"] {
+  --focus-ring-width: 3px;
+  --focus-ring-offset: 3px;
+}
+
+/* ─── 9. Compact Sidebar ─── */
+[data-sidebar="compact"] {
+  --sidebar-width: 5rem;
+}
+
+/* ─── 10. Smooth Motion & Reduced Motion ─── */
+[data-motion="reduced"] {
+  --duration-fast: 0s !important;
+  --duration-normal: 0s !important;
+  --duration-slow: 0s !important;
+}
+
+[data-motion="reduced"] *,
+[data-motion="reduced"] *::before,
+[data-motion="reduced"] *::after {
+  animation-duration: 0.001ms !important;
+  animation-iteration-count: 1 !important;
+  transition-duration: 0.001ms !important;
+  scroll-behavior: auto !important;
 }

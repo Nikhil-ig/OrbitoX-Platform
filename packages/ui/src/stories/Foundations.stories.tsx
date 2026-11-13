@@ -111,3 +111,68 @@ export const PalettesComparison: StoryObj = {
     </div>
   ),
 };
+
+const ALL_ACCENTS = [
+  { id: 'ocean', name: 'Ocean' },
+  { id: 'emerald', name: 'Emerald' },
+  { id: 'sunflower', name: 'Sunflower' },
+  { id: 'saffron', name: 'Saffron' },
+  { id: 'ruby', name: 'Ruby' },
+  { id: 'coral', name: 'Coral' },
+  { id: 'violet', name: 'Violet' },
+  { id: 'teal', name: 'Teal' },
+] as const;
+
+export const AccentPresetsMatrix: StoryObj = {
+  render: () => (
+    <div className="space-y-8 p-6 max-w-5xl mx-auto">
+      <div>
+        <h2 className="text-2xl font-bold tracking-tight text-[var(--color-text)]">
+          8 Accent Presets × 2 Moods (WCAG 2.2 AA Accessibility)
+        </h2>
+        <p className="text-sm text-[var(--color-text-muted)] mt-1">
+          Every preset defines its own high-contrast foreground color passing 4.5:1 contrast in both light and dark modes.
+        </p>
+      </div>
+
+      {(['dark', 'light'] as const).map((mood) => (
+        <div
+          key={mood}
+          data-theme={mood}
+          className="rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-bg)] text-[var(--color-text)] p-6 space-y-4"
+        >
+          <div className="flex items-center justify-between border-b border-[var(--color-border)] pb-3">
+            <h3 className="text-lg font-bold capitalize">{mood} Mood Surface</h3>
+            <span className="text-xs font-mono text-[var(--color-text-muted)]">data-theme="{mood}"</span>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+            {ALL_ACCENTS.map((preset) => (
+              <div
+                key={preset.id}
+                data-accent={preset.id}
+                className="rounded-[var(--radius-row)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4 space-y-3"
+              >
+                <div className="flex items-center justify-between">
+                  <span className="text-sm font-semibold text-[var(--color-text)]">{preset.name}</span>
+                  <span className="text-[10px] font-mono text-[var(--color-text-muted)]">{preset.id}</span>
+                </div>
+                <button
+                  type="button"
+                  className="w-full h-10 rounded-full font-medium text-xs px-4 bg-[var(--color-primary)] text-[var(--color-primary-fg)] shadow-xs transition-opacity hover:opacity-90"
+                >
+                  Primary Action Pill
+                </button>
+                <div className="flex items-center justify-between text-[11px] text-[var(--color-text-muted)] pt-1">
+                  <span>Active Tab</span>
+                  <span className="h-2 w-2 rounded-full bg-[var(--color-primary)]" />
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      ))}
+    </div>
+  ),
+};
+

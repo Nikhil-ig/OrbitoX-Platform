@@ -2,6 +2,14 @@
 @import "../src/tokens/theme.css";
 
 @font-face {
+  font-family: 'Plus Jakarta Sans';
+  font-style: normal;
+  font-weight: 300 800;
+  font-display: swap;
+  src: url('/fonts/plus-jakarta-sans-latin.woff2') format('woff2');
+}
+
+@font-face {
   font-family: 'Inter';
   font-style: normal;
   font-weight: 400;
@@ -28,5 +36,5 @@
 body {
   background-color: var(--color-bg);
   color: var(--color-text);
-  font-family: 'Inter', var(--font-sans);
+  font-family: 'Plus Jakarta Sans', var(--font-sans);
 }

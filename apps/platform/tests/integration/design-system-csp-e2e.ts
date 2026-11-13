@@ -175,6 +175,31 @@ async function main() {
     assert.deepEqual(consoleErrors, [], `Console errors detected: ${JSON.stringify(consoleErrors)}`);
     console.log(`PASS  /console/design-system rendered in staging with real CSP, 0 violations, 0 console/page errors. Screenshots in ${SCREENSHOT_DIR}`);
 
+    // 6.1 Verify Appearance Settings persistence (7B.1)
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await page.goto(`${BROWSER_BASE}/console/settings/appearance`, { waitUntil: 'networkidle' });
+    assert.equal(new URL(page.url()).pathname, '/console/settings/appearance');
+
+    const emeraldBtn = page.getByRole('button', { name: /Emerald/i });
+    if (await emeraldBtn.isVisible()) {
+      await emeraldBtn.click();
+      await page.waitForTimeout(400);
+      assert.equal(await page.evaluate(() => document.documentElement.getAttribute('data-accent')), 'emerald');
+    }
+
+    const compactBtn = page.getByRole('radio', { name: /Compact/i });
+    if (await compactBtn.isVisible()) {
+      await compactBtn.click();
+      await page.waitForTimeout(400);
+      assert.equal(await page.evaluate(() => document.documentElement.getAttribute('data-density')), 'compact');
+    }
+
+    // Reload page to verify preferences persist on <html> without FOUC
+    await page.reload({ waitUntil: 'networkidle' });
+    assert.equal(await page.evaluate(() => document.documentElement.getAttribute('data-accent')), 'emerald');
+    assert.equal(await page.evaluate(() => document.documentElement.getAttribute('data-density')), 'compact');
+    console.log('PASS  Appearance settings persisted across page reload in Playwright (7B.1)');
+
     // 7. Verify production gate returns 404 even for authenticated operator (reuse active session cookie to respect TOTP anti-replay)
     if (PROD_CHECK_BASE) {
       const browserCookies = await context.cookies();

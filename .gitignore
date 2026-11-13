@@ -52,11 +52,16 @@ keys/
 **/data/platform-repository-store.json*
 **/data/test-*.json
 **/data/phase*-audit/
+apps/platform/orbitox/
 services/restaurant-api/data/
 services/restaurant-api/generated/
 apps/web/data/
 apps/platform/data/
 packages/storage/test_*.json
+
+# ---- Design reference raw captures ----
+OrbitoX — new look concept-png/
+
 
 # ---- Backups, archives, generated artifacts ----
 *.bak

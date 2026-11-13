@@ -8,11 +8,13 @@ import { fileURLToPath } from 'node:url';
 export function createBuildEnvironment(environment = process.env) {
     return {
         ...environment,
+        ORBITOX_PLATFORM_REPOSITORY: 'prisma',
         ORBITOX_SERVER_PEPPER: environment.ORBITOX_SERVER_PEPPER || randomBytes(32).toString('hex'),
         APP_DATABASE_URL: environment.APP_DATABASE_URL || 'postgresql://orbitox_build:orbitox_build@127.0.0.1:5432/orbitox_build',
         DATABASE_URL: environment.DATABASE_URL || 'postgresql://orbitox_build:orbitox_build@127.0.0.1:5432/orbitox_build',
         PLATFORM_AUDIT_DATABASE_URL: environment.PLATFORM_AUDIT_DATABASE_URL || 'postgresql://orbitox_build:orbitox_build@127.0.0.1:5432/orbitox_build',
         HMS_AUDIT_DATABASE_URL: environment.HMS_AUDIT_DATABASE_URL || 'postgresql://orbitox_build:orbitox_build@127.0.0.1:5432/orbitox_build',
+        OUTBOX_RELAY_DATABASE_URL: environment.OUTBOX_RELAY_DATABASE_URL || 'postgresql://orbitox_build:orbitox_build@127.0.0.1:5432/orbitox_build',
     };
 }
 

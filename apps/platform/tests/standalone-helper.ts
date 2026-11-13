@@ -30,5 +30,7 @@ export function createCleanStandaloneEnv(baseEnv: NodeJS.ProcessEnv = process.en
       delete env.NODE_OPTIONS;
     }
   }
+  delete env.ORBITOX_ENABLE_DEMO_SEED;
+  delete env.ALLOW_UNAUTHENTICATED_DEV_MODE;
   return env;
 }

@@ -138,27 +138,48 @@ async function run() {
 
           // Run WCAG 2.2 AA Axe audit on desktop viewport across both light & dark themes
           if (vp.name === 'desktop') {
-            const axeResults = await new AxeBuilder({ page })
-              .withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa', 'wcag22aa'])
-              .analyze();
+            if (storyId.includes('accent-presets-matrix')) {
+              // Explicitly verify each of the 8 accents individually in both moods
+              const accents = ['ocean', 'emerald', 'sunflower', 'saffron', 'ruby', 'coral', 'violet', 'teal'];
+              for (const acc of accents) {
+                await page.evaluate((a) => document.documentElement.setAttribute('data-accent', a), acc);
+                const accAxe = await new AxeBuilder({ page })
+                  .withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa', 'wcag22aa'])
+                  .analyze();
+                if (accAxe.violations.length > 0) {
+                  failures.push({
+                    type: 'a11y-accent-matrix',
+                    storyId,
+                    viewport: vp.name,
+                    theme,
+                    accent: acc,
+                    violations: accAxe.violations,
+                  });
+                }
+              }
+            } else {
+              const axeResults = await new AxeBuilder({ page })
+                .withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa', 'wcag22aa'])
+                .analyze();
 
-            if (axeResults.violations.length > 0) {
-              failures.push({
-                type: 'a11y',
-                storyId,
-                viewport: vp.name,
-                theme,
-                violations: axeResults.violations.map((v) => ({
-                  id: v.id,
-                  impact: v.impact,
-                  description: v.description,
-                  nodeCount: v.nodes.length,
-                  nodes: v.nodes.slice(0, 3).map((n) => ({
-                    target: n.target,
-                    failureSummary: n.failureSummary,
+              if (axeResults.violations.length > 0) {
+                failures.push({
+                  type: 'a11y',
+                  storyId,
+                  viewport: vp.name,
+                  theme,
+                  violations: axeResults.violations.map((v) => ({
+                    id: v.id,
+                    impact: v.impact,
+                    description: v.description,
+                    nodeCount: v.nodes.length,
+                    nodes: v.nodes.slice(0, 3).map((n) => ({
+                      target: n.target,
+                      failureSummary: n.failureSummary,
+                    })),
                   })),
-                })),
-              });
+                });
+              }
             }
           }
 

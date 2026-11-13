@@ -1,38 +1,40 @@
 import React from 'react';
+import { cookies } from 'next/headers';
 import '@orbitox-io/ui/src/styles/theme.css';
 import './globals.css';
 import { fontInter, fontNotoDevanagari, fontJetBrainsMono } from './fonts';
 import { GlobalProviders } from './providers';
+import {
+  APPEARANCE_COOKIE,
+  parseAppearanceCookie,
+} from '@/server/appearance/appearance-service';
 
 export const metadata = {
   title: 'OrbitoX Platform OS',
   description: 'The Universal Modular B2B2C SaaS Operating System',
 };
 
-export default function RootLayout({ children }: { children: React.ReactNode }) {
+export default async function RootLayout({ children }: { children: React.ReactNode }) {
+  const cookieStore = await cookies();
+  const rawCookie = cookieStore.get(APPEARANCE_COOKIE)?.value;
+  const appearance = parseAppearanceCookie(rawCookie);
+
   return (
     <html
       lang="en"
       suppressHydrationWarning
       className={`${fontInter.variable} ${fontNotoDevanagari.variable} ${fontJetBrainsMono.variable}`}
+      data-theme={appearance.theme}
+      data-accent={appearance.accent}
+      data-density={appearance.density}
+      data-radius={appearance.radius}
+      data-motion={appearance.smoothAnimations ? 'smooth' : 'reduced'}
+      data-focus={appearance.boldFocusRings ? 'bold' : 'default'}
+      data-sidebar={appearance.compactSidebar ? 'compact' : 'default'}
     >
-      <head>
-        <script
-          dangerouslySetInnerHTML={{
-            __html: `
-try {
-  var t = localStorage.getItem('orbitox-theme');
-  if (!t && window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches) t = 'light';
-  if (t === 'light') document.documentElement.setAttribute('data-theme', 'light');
-  else document.documentElement.setAttribute('data-theme', 'dark');
-} catch (e) {}
-`,
-          }}
-        />
-      </head>
       <body
         suppressHydrationWarning
-        style={{ margin: 0, padding: 0, background: 'var(--ui-bg-root, #07080D)', color: 'var(--ui-text-primary, #ffffff)' }}
+        className="m-0 p-0 bg-[var(--color-bg)] text-[var(--color-text)] font-sans antialiased min-h-screen selection:bg-[var(--color-primary)] selection:text-[var(--color-primary-fg)]"
       >
         <GlobalProviders>
           {children}
@@ -41,4 +43,3 @@ try {
     </html>
   );
 }
-

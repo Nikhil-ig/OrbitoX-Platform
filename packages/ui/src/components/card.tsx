@@ -5,15 +5,17 @@ export interface CardProps extends React.HTMLAttributes<HTMLDivElement> {
   title?: string;
   subtitle?: string;
   action?: React.ReactNode;
+  hero?: boolean;
 }
 
 export const Card = React.forwardRef<HTMLDivElement, CardProps>(
-  ({ className, title, subtitle, action, children, ...props }, ref) => {
+  ({ className, title, subtitle, action, hero = false, children, ...props }, ref) => {
     return (
       <div
         ref={ref}
         className={cn(
-          'rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] text-[var(--color-text)] shadow-xs transition-shadow duration-150',
+          hero ? 'rounded-[var(--radius-hero)]' : 'rounded-[var(--radius-card)]',
+          'border border-[var(--color-border)] bg-[var(--color-surface)] text-[var(--color-text)] shadow-xs transition-shadow duration-150',
           className
         )}
         {...props}

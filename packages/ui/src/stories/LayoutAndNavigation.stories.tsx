@@ -9,7 +9,16 @@ import { Stepper } from '../components/stepper';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '../components/tabs';
 import { CommandPalette } from '../components/command-palette';
 import { Button } from '../components/button';
-import { LayoutDashboard, Settings, Users, CreditCard, Terminal } from 'lucide-react';
+import { SegmentedControl } from '../components/segmented-control';
+import { HeroStat, StatStrip } from '../components/hero-stat';
+import { PillNav } from '../components/pill-nav';
+import { ListRowLink } from '../components/list-row-link';
+import { ActivityFeed } from '../components/activity-feed';
+import { BottomTabBar } from '../components/bottom-tab-bar';
+import { BottomSheet, BottomSheetTrigger, BottomSheetContent, BottomSheetHeader, BottomSheetTitle, BottomSheetDescription, BottomSheetFooter } from '../components/bottom-sheet';
+import { ActionCard } from '../components/action-card';
+import { SwipeActions } from '../components/swipe-actions';
+import { LayoutDashboard, Settings, Users, CreditCard, Terminal, Sparkles, Building, Key, CheckCircle2, Trash2 } from 'lucide-react';
 import { formatINR } from '../format';
 
 const meta: Meta = {
@@ -151,4 +160,207 @@ export const CommandPaletteDemo: StoryObj = {
     );
   },
 };
+
+export const SegmentedControlDemo: StoryObj = {
+  render: () => {
+    const [val, setVal] = React.useState('standard');
+    return (
+      <div className="p-6 max-w-md space-y-4">
+        <h3 className="text-sm font-semibold text-[var(--color-text)]">Segmented Control</h3>
+        <SegmentedControl
+          value={val}
+          onChange={setVal}
+          options={[
+            { id: 'relaxed', label: 'Relaxed' },
+            { id: 'standard', label: 'Standard' },
+            { id: 'compact', label: 'Compact' },
+          ]}
+        />
+      </div>
+    );
+  },
+};
+
+export const HeroStatDemo: StoryObj = {
+  render: () => (
+    <div className="p-6 max-w-3xl space-y-6">
+      <HeroStat
+        value="₹1,24,500"
+        label="Today's live turnover"
+        delta={{ value: '+18.4%', trend: 'up' }}
+      />
+      <StatStrip
+        stats={[
+          { label: 'Active Terminals', value: '142', delta: '+4' },
+          { label: 'Diners Seated', value: '389', delta: '+12%' },
+          { label: 'Avg Order Value', value: '₹640', delta: '+5%' },
+        ]}
+      />
+    </div>
+  ),
+};
+
+export const PillNavDemo: StoryObj = {
+  render: () => {
+    const [active, setActive] = React.useState('overview');
+    return (
+      <div className="p-6 max-w-2xl space-y-4">
+        <h3 className="text-sm font-semibold text-[var(--color-text)]">Pill Navigation (Customer Mood)</h3>
+        <PillNav
+          activeId={active}
+          onChange={setActive}
+          items={[
+            { id: 'overview', label: 'Overview' },
+            { id: 'orders', label: 'Live Orders', badge: '12' },
+            { id: 'menus', label: 'Menus & Catalog' },
+            { id: 'settings', label: 'Settings' },
+          ]}
+        />
+      </div>
+    );
+  },
+};
+
+export const ListRowLinkAndActivityDemo: StoryObj = {
+  render: () => (
+    <div className="p-6 max-w-xl space-y-6">
+      <div className="space-y-2">
+        <h3 className="text-sm font-semibold text-[var(--color-text)]">Rounded List Rows</h3>
+        <ListRowLink
+          title="Cafe Oasis Koramangala"
+          subtitle="Tenant ID: tenant_oasis_blr · ap-south-1"
+          status="good"
+          badge="Healthy"
+          highlighted
+        />
+        <ListRowLink
+          title="Bandra Kitchens Express"
+          subtitle="Tenant ID: tenant_bandra_bom · ap-south-1"
+          status="warning"
+          badge="High Latency"
+        />
+      </div>
+
+      <div className="space-y-2">
+        <h3 className="text-sm font-semibold text-[var(--color-text)]">Activity Feed Timeline</h3>
+        <ActivityFeed
+          items={[
+            {
+              id: '1',
+              actor: 'Operator Maya',
+              action: 'rotated production Ed25519 signing key',
+              tag: 'Security',
+              time: '12 min ago',
+            },
+            {
+              id: '2',
+              actor: 'Provisioning Engine',
+              action: 'completed database migration for tenant_oasis_blr',
+              tag: 'DB',
+              time: '1 hour ago',
+            },
+          ]}
+        />
+      </div>
+    </div>
+  ),
+};
+
+export const MobileActionCardAndSwipe: StoryObj = {
+  name: 'ActionCard & SwipeActions (Mobile First)',
+  render: () => (
+    <div className="p-6 max-w-md mx-auto space-y-4">
+      <h3 className="text-sm font-semibold text-[var(--color-text)]">Swipeable Order Cards</h3>
+      <SwipeActions
+        leftAction={{
+          id: 'ready',
+          label: 'Ready',
+          icon: <CheckCircle2 className="h-4 w-4" />,
+          onTrigger: () => alert('Order marked ready'),
+          variant: 'success',
+        }}
+        rightAction={{
+          id: 'cancel',
+          label: 'Cancel',
+          icon: <Trash2 className="h-4 w-4" />,
+          onTrigger: () => alert('Order cancelled'),
+          variant: 'destructive',
+        }}
+      >
+        <ActionCard
+          title="Order #104 · Table 4"
+          subtitle="2x Truffle Risotto, 1x San Pellegrino"
+          progress={75}
+          progressLabel="Cooking (12m elapsed)"
+          highlighted
+        />
+      </SwipeActions>
+
+      <ActionCard
+        title="Bandra Kitchens Fleet"
+        subtitle="Active tenant: tenant_bandra_bom"
+        progress={92}
+        progressLabel="Cluster Storage (92% used)"
+      />
+    </div>
+  ),
+};
+
+export const BottomTabBarAndSheetDemo: StoryObj = {
+  name: 'BottomTabBar & BottomSheet (Mobile Phone & Tablet)',
+  render: () => (
+    <div className="relative min-h-[360px] p-6 max-w-sm mx-auto border border-[var(--color-border)] rounded-[32px] bg-[var(--color-bg)] overflow-hidden">
+      <div className="space-y-4">
+        <h3 className="text-base font-bold text-[var(--color-text)]">Service Stand</h3>
+        <p className="text-xs text-[var(--color-text-muted)]">
+          Demonstrating floating pill tab bar with center primary action and bottom sheet detail.
+        </p>
+
+        <BottomSheet>
+          <BottomSheetTrigger asChild>
+            <Button variant="secondary" size="sm" className="w-full rounded-full">
+              Open Order Detail (Bottom Sheet)
+            </Button>
+          </BottomSheetTrigger>
+          <BottomSheetContent>
+            <BottomSheetHeader>
+              <BottomSheetTitle>Table 4 · Order #104</BottomSheetTitle>
+              <BottomSheetDescription>
+                Seated 4 guests · Server: Rahul · ₹2,450 incl. GST
+              </BottomSheetDescription>
+            </BottomSheetHeader>
+            <div className="space-y-3 py-2 text-xs">
+              <div className="flex justify-between border-b border-[var(--color-border)]/50 pb-2">
+                <span className="font-medium text-[var(--color-text)]">2x Truffle Risotto</span>
+                <span className="font-semibold text-[var(--color-text)]">₹1,700</span>
+              </div>
+              <div className="flex justify-between border-b border-[var(--color-border)]/50 pb-2">
+                <span className="font-medium text-[var(--color-text)]">1x San Pellegrino</span>
+                <span className="font-semibold text-[var(--color-text)]">₹750</span>
+              </div>
+            </div>
+            <BottomSheetFooter>
+              <Button variant="primary" className="w-full rounded-full">
+                Print Bill & Settle
+              </Button>
+            </BottomSheetFooter>
+          </BottomSheetContent>
+        </BottomSheet>
+      </div>
+
+      <BottomTabBar
+        items={[
+          { id: 'tables', label: 'Tables', icon: <LayoutDashboard className="h-4 w-4" /> },
+          { id: 'orders', label: 'Orders', icon: <CreditCard className="h-4 w-4" />, badge: 3 },
+          { id: 'new', label: 'Take Order', icon: <Sparkles className="h-5 w-5" />, isPrimaryAction: true },
+          { id: 'kds', label: 'Kitchen', icon: <Terminal className="h-4 w-4" /> },
+          { id: 'more', label: 'More', icon: <Settings className="h-4 w-4" /> },
+        ]}
+        activeId="tables"
+        className="absolute bottom-2 inset-x-2"
+      />
+    </div>
+  ),
+};
+
 

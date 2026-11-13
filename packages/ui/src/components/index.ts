@@ -40,11 +40,15 @@ export * from './inline-alert';
 // Layout & Structural
 export * from './card';
 export * from './stat-card';
+export * from './hero-stat';
 export * from './tabs';
+export * from './segmented-control';
+export * from './pill-nav';
 export * from './page-header';
 export * from './description-list';
 export * from './timeline';
 export * from './stepper';
+export * from './activity-feed';
 export * from './command-palette';
 export * from './app-shell';
 
@@ -52,6 +56,22 @@ export * from './app-shell';
 export * from './pagination';
 export * from './filter-bar';
 export * from './data-table';
+export * from './list-row-link';
+export * from './progress-bar';
+
+// Diner & POS Commerce Primitives
+export * from './live-status-bar';
+export * from './quantity-stepper';
+export * from './menu-item-card';
+export * from './veg-mark';
+export * from './ring-timer';
+export * from './floor-plan';
+
+// Navigation & Actions
+export * from './bottom-tab-bar';
+export * from './bottom-sheet';
+export * from './swipe-actions';
+export * from './action-card';
 
 // Forms & Validation
 export * from './form';
