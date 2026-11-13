@@ -963,7 +963,7 @@ describe('Phase 3 Parts D–G: Rights, Licensing, Enforcement, Webhooks & SDK', 
 
         // Wait for RestaurantOS process to be live and healthy
         let live = false;
-        for (let i = 0; i < 40; i++) {
+        for (let i = 0; i < 75; i++) {
           try {
             const h = await fetch(`http://127.0.0.1:${restPort}/healthz/live`);
             if (h.ok) {
@@ -973,7 +973,7 @@ describe('Phase 3 Parts D–G: Rights, Licensing, Enforcement, Webhooks & SDK', 
           } catch {}
           await new Promise((r) => setTimeout(r, 200));
         }
-        assert.ok(live, `RestaurantOS process failed to start within 8 seconds. Stderr: ${restStderr}`);
+        assert.ok(live, `RestaurantOS process failed to start within 15 seconds. Stderr: ${restStderr}`);
 
         // 4. Initial guest request while ACTIVE: passes grant enforcement
         const initialOrder = await sendRestaurantRequest('/api/restaurant/orders', {

@@ -377,6 +377,7 @@ async function run() {
     const urlPath = convertRouteToUrl(file);
     const isCustomerAuth = urlPath.startsWith('/api/v1/customer/auth/');
     const isCustomerDashboard = urlPath.startsWith('/api/v1/customer/organizations/');
+    const isCustomerSelf = urlPath.startsWith('/api/v1/customer/me/');
     const isEmailWebhook = urlPath.startsWith('/api/v1/customer/email/webhooks/');
     if (urlPath.startsWith('/api/v1/customer/')) {
       const expectedStatus = publicCustomerAuthStatuses[urlPath];
@@ -389,6 +390,7 @@ async function run() {
             methods.length === 1 &&
             methods[0] === protectedMethod))) ||
           (isCustomerDashboard && methods.length > 0) ||
+          (isCustomerSelf && methods.length > 0) ||
           (isEmailWebhook && methods.length === 1 && methods[0] === 'POST'),
         `Customer route ${urlPath} must be explicitly classified as public auth, session-protected, or signed webhook`,
       );
@@ -413,7 +415,7 @@ async function run() {
           ? `exactly ${expectedPublicAuthStatus} for invalid unauthenticated input`
           : isProtectedCustomerAuth
             ? '401 or 403 without a customer session'
-            : isCustomerDashboard
+            : isCustomerDashboard || isCustomerSelf
               ? '401 or 403 without a customer session'
             : isWebhook
               ? '400 / 401 / 403'
@@ -449,7 +451,7 @@ async function run() {
           isPass = status === expectedPublicAuthStatus;
         } else if (isProtectedCustomerAuth) {
           isPass = status === 401 || status === 403;
-        } else if (isCustomerDashboard) {
+        } else if (isCustomerDashboard || isCustomerSelf) {
           isPass = status === 401 || status === 403;
         } else if (isWebhook) {
           isPass = status === 400 || status === 401 || status === 403;
@@ -466,7 +468,7 @@ async function run() {
             ? 'Explicit Public Customer Auth Route'
             : isProtectedCustomerAuth
               ? 'Customer Session Required'
-              : isCustomerDashboard
+              : isCustomerDashboard || isCustomerSelf
                 ? 'Customer Session Required'
               : isWebhook
                 ? 'Webhook Signature Guard'

@@ -130,9 +130,9 @@
   --color-danger-fg: #FFFFFF;
   --color-danger-subtle: rgba(244, 63, 94, 0.15);
 
-  --color-info: #38BDF8;
+  --color-info: #60A5FA;
   --color-info-fg: #0D0F12;
-  --color-info-subtle: rgba(14, 165, 233, 0.15);
+  --color-info-subtle: rgba(59, 130, 246, 0.15);
 
   --color-focus-ring: var(--color-accent);
 

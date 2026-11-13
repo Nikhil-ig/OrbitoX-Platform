@@ -191,7 +191,15 @@ async function run() {
           if (updateSnapshots) {
             fs.writeFileSync(baselinePath, actualBuf);
             visualPasses++;
-          } else if (fs.existsSync(baselinePath)) {
+          } else if (!fs.existsSync(baselinePath)) {
+            failures.push({
+              type: 'missing-baseline',
+              storyId,
+              viewport: vp.name,
+              theme,
+              baselinePath,
+            });
+          } else {
             const expectedPng = PNG.sync.read(fs.readFileSync(baselinePath));
             const actualPng = PNG.sync.read(actualBuf);
             if (expectedPng.width !== actualPng.width || expectedPng.height !== actualPng.height) {
@@ -235,14 +243,6 @@ async function run() {
                 visualPasses++;
               }
             }
-          } else if (!storyId.startsWith('showcase-') || storyId.startsWith('showcase-visual-language-7b-1-')) {
-            failures.push({
-              type: 'missing-baseline',
-              storyId,
-              viewport: vp.name,
-              theme,
-              baselinePath,
-            });
           }
 
           totalChecks++;

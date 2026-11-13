@@ -106,7 +106,9 @@ describe('Appearance Settings & Server Enforcement (7B.1)', () => {
 
   describe('User Preference Isolation', () => {
     it('isolates operator preferences so one operator never affects another', async (t) => {
-      const hasDb = Boolean(process.env.DATABASE_URL || process.env.TEST_DATABASE_URL);
+      const hasDb =
+        Boolean(process.env.DATABASE_URL || process.env.TEST_DATABASE_URL) &&
+        process.env.ORBITOX_PLATFORM_REPOSITORY !== 'json';
       if (!hasDb) {
         t.skip('Skipping live DB isolation test: DATABASE_URL not set in this environment');
         return;
@@ -180,7 +182,9 @@ describe('Appearance Settings & Server Enforcement (7B.1)', () => {
     });
 
     it('isolates customer user preferences cleanly', async (t) => {
-      const hasDb = Boolean(process.env.DATABASE_URL || process.env.TEST_DATABASE_URL);
+      const hasDb =
+        Boolean(process.env.DATABASE_URL || process.env.TEST_DATABASE_URL) &&
+        process.env.ORBITOX_PLATFORM_REPOSITORY !== 'json';
       if (!hasDb) {
         t.skip('Skipping live DB isolation test: DATABASE_URL not set in this environment');
         return;

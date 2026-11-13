@@ -750,13 +750,13 @@ export const C6_SecurityAndKeys: StoryObj = {
               <div className="space-y-3">
                 <ListRowLink
                   title="Cluster Root Signing Key (k1)"
-                  subtitle="Key ID: key_root_ed25519 · SHA-256: 7f83b1657ff1... · Created 12 days ago"
+                  subtitle="Key ID: orb_test_key_root_ed25519 · SHA-256: 7f83b1657ff1... · Created 12 days ago"
                   status="good"
                   badge="Active"
                 />
                 <ListRowLink
                   title="Staging Sandbox Key (k2)"
-                  subtitle="Key ID: key_stage_ed25519 · SHA-256: 3c99021da491... · Rotated yesterday"
+                  subtitle="Key ID: orb_test_key_stage_ed25519 · SHA-256: 3c99021da491... · Rotated yesterday"
                   status="good"
                   badge="Active"
                 />

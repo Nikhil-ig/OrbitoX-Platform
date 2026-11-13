@@ -7,7 +7,16 @@ import { GlobalProviders } from './providers';
 import {
   APPEARANCE_COOKIE,
   parseAppearanceCookie,
+  getOperatorAppearance,
+  getCustomerAppearance,
+  type AppearancePreferences,
 } from '@/server/appearance/appearance-service';
+import {
+  OPERATOR_SESSION_COOKIE,
+  CUSTOMER_SESSION_COOKIE,
+  getOperatorSession,
+  getCustomerSession,
+} from '@/server/accounts/account-service';
 
 export const metadata = {
   title: 'OrbitoX Platform OS',
@@ -16,8 +25,35 @@ export const metadata = {
 
 export default async function RootLayout({ children }: { children: React.ReactNode }) {
   const cookieStore = await cookies();
-  const rawCookie = cookieStore.get(APPEARANCE_COOKIE)?.value;
-  const appearance = parseAppearanceCookie(rawCookie);
+  const operatorToken = cookieStore.get(OPERATOR_SESSION_COOKIE)?.value;
+  const customerToken = cookieStore.get(CUSTOMER_SESSION_COOKIE)?.value;
+
+  let appearance: AppearancePreferences | null = null;
+
+  if (operatorToken) {
+    try {
+      const opSession = await getOperatorSession(operatorToken);
+      if (opSession?.operatorId) {
+        appearance = await getOperatorAppearance(opSession.operatorId);
+      }
+    } catch {
+      // Ignore database / session errors
+    }
+  } else if (customerToken) {
+    try {
+      const custSession = await getCustomerSession(customerToken);
+      if (custSession?.userId) {
+        appearance = await getCustomerAppearance(custSession.userId);
+      }
+    } catch {
+      // Ignore database / session errors
+    }
+  }
+
+  if (!appearance) {
+    const rawCookie = cookieStore.get(APPEARANCE_COOKIE)?.value;
+    appearance = parseAppearanceCookie(rawCookie);
+  }
 
   return (
     <html

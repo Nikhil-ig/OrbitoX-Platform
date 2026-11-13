@@ -7,6 +7,7 @@ import {
   OPERATOR_SESSION_COOKIE,
   type OperatorSessionContext,
 } from '@/server/accounts/account-service';
+import { APPEARANCE_COOKIE } from '@/server/appearance/appearance-service';
 import { operatorRoleAllows, type RequiredOperatorRole, requiresRecentReauthentication } from '@/server/organizations/operator-route-policy';
 
 type OperatorHandler<Context = undefined> = (
@@ -108,6 +109,13 @@ export function clearOperatorSessionCookies(response: NextResponse): NextRespons
     httpOnly: false,
     secure: secureCookie(),
     sameSite: 'strict',
+    path: '/',
+    maxAge: 0,
+  });
+  response.cookies.set(APPEARANCE_COOKIE, '', {
+    httpOnly: false,
+    secure: secureCookie(),
+    sameSite: 'lax',
     path: '/',
     maxAge: 0,
   });

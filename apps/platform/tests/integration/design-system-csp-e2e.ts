@@ -175,22 +175,28 @@ async function main() {
     assert.deepEqual(consoleErrors, [], `Console errors detected: ${JSON.stringify(consoleErrors)}`);
     console.log(`PASS  /console/design-system rendered in staging with real CSP, 0 violations, 0 console/page errors. Screenshots in ${SCREENSHOT_DIR}`);
 
-    // 6.1 Verify Appearance Settings persistence (7B.1)
+    // 6.1 Verify Appearance Settings persistence (7B.1 & R2-3)
     await page.setViewportSize({ width: 1440, height: 900 });
     await page.goto(`${BROWSER_BASE}/console/settings/appearance`, { waitUntil: 'networkidle' });
     assert.equal(new URL(page.url()).pathname, '/console/settings/appearance');
 
     const emeraldBtn = page.getByRole('button', { name: /Emerald/i });
     if (await emeraldBtn.isVisible()) {
-      await emeraldBtn.click();
-      await page.waitForTimeout(400);
+      await Promise.all([
+        page.waitForResponse((res) => res.url().includes('/api/v1/platform/me/appearance') && res.request().method() === 'PUT'),
+        emeraldBtn.click(),
+      ]);
+      await page.waitForTimeout(200);
       assert.equal(await page.evaluate(() => document.documentElement.getAttribute('data-accent')), 'emerald');
     }
 
     const compactBtn = page.getByRole('radio', { name: /Compact/i });
     if (await compactBtn.isVisible()) {
-      await compactBtn.click();
-      await page.waitForTimeout(400);
+      await Promise.all([
+        page.waitForResponse((res) => res.url().includes('/api/v1/platform/me/appearance') && res.request().method() === 'PUT'),
+        compactBtn.click(),
+      ]);
+      await page.waitForTimeout(200);
       assert.equal(await page.evaluate(() => document.documentElement.getAttribute('data-density')), 'compact');
     }
 
@@ -199,6 +205,108 @@ async function main() {
     assert.equal(await page.evaluate(() => document.documentElement.getAttribute('data-accent')), 'emerald');
     assert.equal(await page.evaluate(() => document.documentElement.getAttribute('data-density')), 'compact');
     console.log('PASS  Appearance settings persisted across page reload in Playwright (7B.1)');
+
+    // 6.2 Multi-user Database Precedence & Isolation in Fresh Browser Context (R2-3)
+    const dbUrl = process.env.DATABASE_URL || process.env.APP_DATABASE_URL;
+    if (dbUrl) {
+      const { PrismaClient } = await import('@prisma/client');
+      const prismaClient = new PrismaClient({ datasourceUrl: dbUrl });
+      try {
+        const emailB = `ci-operator-b-${Date.now()}@example.invalid`;
+        const passwordB = 'Password123!SecureTest';
+        const { generateTotpSecret, hashAccountPassword, sealTotpSecret } = await import(
+          '@/server/auth/account-security'
+        );
+        process.env.ORBITOX_MFA_ENCRYPTION_KEY ||= 'ci_test_mfa_encryption_key_32bytes!!';
+        const secretB = generateTotpSecret();
+        const operatorB = await prismaClient.platformOperator.create({
+          data: {
+            email: emailB,
+            passwordHash: await hashAccountPassword(passwordB),
+            role: 'PLATFORM_OWNER',
+            mfaTotpSealed: sealTotpSecret(secretB),
+            appearanceAccent: 'ruby',
+            appearanceDensity: 'relaxed',
+          },
+        });
+
+        // Reset lastTotpStep for Operator A so A can log in again on a new context without waiting
+        await prismaClient.platformOperator.updateMany({
+          where: { email: OPERATOR_EMAIL },
+          data: { lastTotpStep: null },
+        });
+
+        // Open a fresh context with NO cookies
+        const freshContext = await browser.newContext({ viewport: { width: 1440, height: 900 } });
+        assert.equal((await freshContext.cookies()).length, 0, 'Fresh context must have no cookies');
+
+        const freshPage = await freshContext.newPage();
+        await freshPage.goto(`${BROWSER_BASE}/console/settings/appearance`, { waitUntil: 'networkidle' });
+        assert.equal(new URL(freshPage.url()).pathname, '/platform/login', 'Must redirect to login when unauthenticated');
+
+        // Operator A logs in
+        await freshPage.locator('input[type="email"]').fill(OPERATOR_EMAIL);
+        await freshPage.locator('input[type="password"]').fill(OPERATOR_PASSWORD);
+        await freshPage.locator('input[autocomplete="one-time-code"]').fill(
+          currentTotpCode(OPERATOR_TOTP_SECRET, Date.now() + TOTP_STEP_OFFSET * 30_000),
+        );
+        await Promise.all([
+          freshPage.waitForResponse((res) => res.request().resourceType() === 'document' && res.status() === 200),
+          freshPage.locator('button[type="submit"]').click(),
+        ]);
+
+        if (new URL(freshPage.url()).pathname !== '/console/settings/appearance') {
+          await freshPage.goto(`${BROWSER_BASE}/console/settings/appearance`, { waitUntil: 'networkidle' });
+        }
+
+        // Verify Operator A gets emerald + compact from database
+        assert.equal(await freshPage.evaluate(() => document.documentElement.getAttribute('data-accent')), 'emerald');
+        assert.equal(await freshPage.evaluate(() => document.documentElement.getAttribute('data-density')), 'compact');
+        console.log('PASS  Fresh context with NO cookies: Operator A signed in and loaded emerald + compact from database (R2-3)');
+
+        // Operator A logs out; clears session and appearance cookies
+        const freshCookies = await freshContext.cookies();
+        const csrfCookie = freshCookies.find((c) => c.name === 'orbitox_operator_csrf')?.value;
+        await freshPage.request.post(`${BROWSER_BASE}/api/v1/platform/auth/logout`, {
+          headers: {
+            'x-csrf-token': csrfCookie || '',
+            origin: BROWSER_BASE,
+          },
+        });
+        const cookiesAfterLogout = await freshContext.cookies();
+        assert.ok(
+          !cookiesAfterLogout.some((c) => c.name === 'orbitox_appearance'),
+          'Appearance cookie must be cleared on logout',
+        );
+
+        // Operator B logs in on the SAME context
+        await freshPage.goto(`${BROWSER_BASE}/platform/login`, { waitUntil: 'networkidle' });
+        await freshPage.locator('input[type="email"]').fill(emailB);
+        await freshPage.locator('input[type="password"]').fill(passwordB);
+        await freshPage.locator('input[autocomplete="one-time-code"]').fill(currentTotpCode(secretB));
+        await Promise.all([
+          freshPage.waitForResponse((res) => res.request().resourceType() === 'document' && res.status() === 200),
+          freshPage.locator('button[type="submit"]').click(),
+        ]);
+
+        if (new URL(freshPage.url()).pathname !== '/console/settings/appearance') {
+          await freshPage.goto(`${BROWSER_BASE}/console/settings/appearance`, { waitUntil: 'networkidle' });
+        }
+
+        // Verify Operator B gets ruby + relaxed (B's settings from DB), never Operator A's emerald + compact
+        assert.equal(await freshPage.evaluate(() => document.documentElement.getAttribute('data-accent')), 'ruby');
+        assert.equal(await freshPage.evaluate(() => document.documentElement.getAttribute('data-density')), 'relaxed');
+        assert.notEqual(await freshPage.evaluate(() => document.documentElement.getAttribute('data-accent')), 'emerald');
+        assert.notEqual(await freshPage.evaluate(() => document.documentElement.getAttribute('data-density')), 'compact');
+        console.log('PASS  Same context: Operator B signed in and loaded ruby + relaxed from database (user isolation verified) (R2-3)');
+
+        await freshContext.close();
+        await prismaClient.platformOperatorSession.deleteMany({ where: { operatorId: operatorB.id } });
+        await prismaClient.platformOperator.delete({ where: { id: operatorB.id } });
+      } finally {
+        await prismaClient.$disconnect();
+      }
+    }
 
     // 7. Verify production gate returns 404 even for authenticated operator (reuse active session cookie to respect TOTP anti-replay)
     if (PROD_CHECK_BASE) {

@@ -7,6 +7,7 @@ import {
   getCustomerSession,
   type CustomerSessionContext,
 } from '@/server/accounts/account-service';
+import { APPEARANCE_COOKIE } from '@/server/appearance/appearance-service';
 
 export type CustomerHandler<Context = undefined> = (
   request: NextRequest,
@@ -71,6 +72,7 @@ export function setCustomerSessionCookies(
 export function clearCustomerSessionCookies(response: NextResponse): NextResponse {
   response.cookies.set(CUSTOMER_SESSION_COOKIE, '', { httpOnly: true, secure: secureCookie(), sameSite: 'strict', path: '/', maxAge: 0 });
   response.cookies.set(CUSTOMER_CSRF_COOKIE, '', { httpOnly: false, secure: secureCookie(), sameSite: 'strict', path: '/', maxAge: 0 });
+  response.cookies.set(APPEARANCE_COOKIE, '', { httpOnly: false, secure: secureCookie(), sameSite: 'lax', path: '/', maxAge: 0 });
   return response;
 }
 

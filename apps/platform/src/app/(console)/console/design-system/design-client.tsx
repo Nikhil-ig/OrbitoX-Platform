@@ -968,7 +968,7 @@ export default function DesignSystemClient() {
                         <p className="text-xs text-[var(--color-text-muted)] mt-1">Single-use display for newly generated secrets.</p>
                       </div>
                       <CopyOnceSecret
-                        secret="ox_live_sec_9a8f27b31e0c4d82f7a93b51e048c27d14"
+                        secret="orb_test_sec_9a8f27b31e0c4d82f7a93b51e048c27d14"
                         title="New Production Signing Secret Generated"
                         description="This key is displayed exactly once. Store it in a secure secret manager immediately. It will be wiped permanently on confirmation."
                         confirmLabel="I've stored it"
