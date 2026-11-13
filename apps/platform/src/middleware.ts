@@ -209,9 +209,11 @@ function sameOrigin(req: NextRequest): boolean {
   const origin = req.headers.get('origin');
   if (!origin) return false;
   try {
+    const originUrl = new URL(origin).origin;
+    if (originUrl === req.nextUrl.origin) return true;
     const configuredOrigin = process.env.ORBITOX_PUBLIC_BASE_URL?.trim();
-    const expectedOrigin = configuredOrigin ? new URL(configuredOrigin).origin : req.nextUrl.origin;
-    return new URL(origin).origin === expectedOrigin;
+    if (configuredOrigin && originUrl === new URL(configuredOrigin).origin) return true;
+    return false;
   } catch {
     return false;
   }

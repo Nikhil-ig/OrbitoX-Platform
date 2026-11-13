@@ -182,20 +182,22 @@ async function main() {
 
     const emeraldBtn = page.getByRole('button', { name: /Emerald/i });
     if (await emeraldBtn.isVisible()) {
-      await Promise.all([
+      const [putRes] = await Promise.all([
         page.waitForResponse((res) => res.url().includes('/api/v1/platform/me/appearance') && res.request().method() === 'PUT'),
         emeraldBtn.click(),
       ]);
+      assert.equal(putRes.status(), 200, `Expected PUT appearance to succeed with 200, got ${putRes.status()}`);
       await page.waitForTimeout(200);
       assert.equal(await page.evaluate(() => document.documentElement.getAttribute('data-accent')), 'emerald');
     }
 
     const compactBtn = page.getByRole('radio', { name: /Compact/i });
     if (await compactBtn.isVisible()) {
-      await Promise.all([
+      const [putRes2] = await Promise.all([
         page.waitForResponse((res) => res.url().includes('/api/v1/platform/me/appearance') && res.request().method() === 'PUT'),
         compactBtn.click(),
       ]);
+      assert.equal(putRes2.status(), 200, `Expected PUT appearance density to succeed with 200, got ${putRes2.status()}`);
       await page.waitForTimeout(200);
       assert.equal(await page.evaluate(() => document.documentElement.getAttribute('data-density')), 'compact');
     }

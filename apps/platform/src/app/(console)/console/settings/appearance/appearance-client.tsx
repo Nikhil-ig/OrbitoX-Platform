@@ -65,9 +65,17 @@ export function AppearanceClient({
 
     setIsSaving(true);
     try {
+      const csrfToken = typeof document !== 'undefined'
+        ? document.cookie.split('; ').find((row) => row.startsWith('orbitox_operator_csrf='))?.split('=')[1]
+          || document.cookie.split('; ').find((row) => row.startsWith('orbitox_customer_csrf='))?.split('=')[1]
+        : undefined;
+
       const res = await fetch(apiEndpoint, {
         method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          ...(csrfToken ? { 'x-csrf-token': csrfToken } : {}),
+        },
         body: JSON.stringify(nextAppearance),
       });
 
