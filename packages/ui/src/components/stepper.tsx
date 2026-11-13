@@ -38,10 +38,10 @@ export function Stepper({
             const rawStatus = step.status || step.state;
             const normalizedStatus =
               rawStatus === 'complete' ? 'done' :
-              rawStatus === 'current' ? 'in_progress' :
-              rawStatus === 'upcoming' ? 'waiting' :
-              rawStatus === 'error' ? 'failed' :
-              rawStatus;
+                rawStatus === 'current' ? 'in_progress' :
+                  rawStatus === 'upcoming' ? 'waiting' :
+                    rawStatus === 'error' ? 'failed' :
+                      rawStatus;
             const stepStatus = normalizedStatus || (
               index < activeStep ? 'done' : index === activeStep ? 'in_progress' : 'waiting'
             );

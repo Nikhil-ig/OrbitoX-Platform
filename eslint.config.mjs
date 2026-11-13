@@ -108,6 +108,7 @@ export default [
       '**/node_modules/**',
       '**/dist/**',
       '**/dist-storybook/**',
+      '**/storybook-static/**',
       '**/.next/**',
       '**/coverage/**',
       '**/generated/**',

@@ -145,8 +145,8 @@ export function HourlyBarChart({
                         isSelected
                           ? 'var(--color-primary)'
                           : isPeak
-                          ? 'var(--color-primary)'
-                          : 'var(--color-surface-raised)'
+                            ? 'var(--color-primary)'
+                            : 'var(--color-surface-raised)'
                       }
                       className={cn(
                         'cursor-pointer transition-opacity',

@@ -226,34 +226,63 @@
 :root,
 [data-density="standard"] {
   --density-multiplier: 1.0;
-  --space-card-p: 1.5rem;   /* 24px */
-  --space-grid-gap: 1.25rem; /* 20px */
+  --space-card-p: 1.5rem;
+  /* 24px */
+  --space-grid-gap: 1.25rem;
+  /* 20px */
   --space-row-p: 1rem;
 }
 
 [data-density="relaxed"] {
   --density-multiplier: 1.25;
-  --space-card-p: 2rem;      /* 32px */
-  --space-grid-gap: 1.5rem;  /* 24px */
+  --space-card-p: 2rem;
+  /* 32px */
+  --space-grid-gap: 1.5rem;
+  /* 24px */
   --space-row-p: 1.25rem;
 }
 
 [data-density="compact"] {
   --density-multiplier: 0.65;
-  --space-card-p: 1rem;      /* 16px */
-  --space-grid-gap: 0.8125rem; /* 13px */
+  --space-card-p: 1rem;
+  /* 16px */
+  --space-grid-gap: 0.8125rem;
+  /* 13px */
   --space-row-p: 0.65rem;
 }
 
 /* ─── 7. Corner Radius Settings (4px to 32px) ─── */
-[data-radius="4"]  { --corner-radius: 4px; }
-[data-radius="8"]  { --corner-radius: 8px; }
-[data-radius="12"] { --corner-radius: 12px; }
-[data-radius="16"] { --corner-radius: 16px; }
-[data-radius="20"] { --corner-radius: 20px; }
-[data-radius="24"] { --corner-radius: 24px; }
-[data-radius="28"] { --corner-radius: 28px; }
-[data-radius="32"] { --corner-radius: 32px; }
+[data-radius="4"] {
+  --corner-radius: 4px;
+}
+
+[data-radius="8"] {
+  --corner-radius: 8px;
+}
+
+[data-radius="12"] {
+  --corner-radius: 12px;
+}
+
+[data-radius="16"] {
+  --corner-radius: 16px;
+}
+
+[data-radius="20"] {
+  --corner-radius: 20px;
+}
+
+[data-radius="24"] {
+  --corner-radius: 24px;
+}
+
+[data-radius="28"] {
+  --corner-radius: 28px;
+}
+
+[data-radius="32"] {
+  --corner-radius: 32px;
+}
 
 /* ─── 8. Bold Focus Rings ─── */
 [data-focus="bold"] {

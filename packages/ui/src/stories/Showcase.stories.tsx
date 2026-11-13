@@ -411,11 +411,10 @@ export const A3_AppearanceSettings: StoryObj = {
                       key={p.id}
                       type="button"
                       onClick={() => setAccent(p.id)}
-                      className={`flex items-center gap-2.5 px-3.5 py-2.5 rounded-full border text-xs font-medium transition-all cursor-pointer ${
-                        isSelected
+                      className={`flex items-center gap-2.5 px-3.5 py-2.5 rounded-full border text-xs font-medium transition-all cursor-pointer ${isSelected
                           ? 'border-[var(--color-primary)] bg-[var(--color-surface-raised)] ring-2 ring-[var(--color-primary)]/30 text-[var(--color-text)]'
                           : 'border-[var(--color-border)] bg-[var(--color-surface)] text-[var(--color-text-muted)] hover:bg-[var(--color-surface-raised)]'
-                      }`}
+                        }`}
                     >
                       <span className={`h-3.5 w-3.5 rounded-full shrink-0 shadow-xs ${p.colorClass}`} />
                       <span className="truncate">{p.name}</span>
