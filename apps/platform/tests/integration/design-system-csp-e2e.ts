@@ -253,13 +253,10 @@ async function main() {
           currentTotpCode(OPERATOR_TOTP_SECRET, Date.now() + TOTP_STEP_OFFSET * 30_000),
         );
         await Promise.all([
-          freshPage.waitForResponse((res) => res.request().resourceType() === 'document' && res.status() === 200),
+          freshPage.waitForURL((url) => url.pathname === '/console/settings/appearance', { timeout: 15000 }),
           freshPage.locator('button[type="submit"]').click(),
         ]);
-
-        if (new URL(freshPage.url()).pathname !== '/console/settings/appearance') {
-          await freshPage.goto(`${BROWSER_BASE}/console/settings/appearance`, { waitUntil: 'networkidle' });
-        }
+        await freshPage.waitForLoadState('networkidle');
 
         // Verify Operator A gets emerald + compact from database
         assert.equal(await freshPage.evaluate(() => document.documentElement.getAttribute('data-accent')), 'emerald');
@@ -282,18 +279,15 @@ async function main() {
         );
 
         // Operator B logs in on the SAME context
-        await freshPage.goto(`${BROWSER_BASE}/platform/login`, { waitUntil: 'networkidle' });
+        await freshPage.goto(`${BROWSER_BASE}/platform/login?next=/console/settings/appearance`, { waitUntil: 'networkidle' });
         await freshPage.locator('input[type="email"]').fill(emailB);
         await freshPage.locator('input[type="password"]').fill(passwordB);
         await freshPage.locator('input[autocomplete="one-time-code"]').fill(currentTotpCode(secretB));
         await Promise.all([
-          freshPage.waitForResponse((res) => res.request().resourceType() === 'document' && res.status() === 200),
+          freshPage.waitForURL((url) => url.pathname === '/console/settings/appearance', { timeout: 15000 }),
           freshPage.locator('button[type="submit"]').click(),
         ]);
-
-        if (new URL(freshPage.url()).pathname !== '/console/settings/appearance') {
-          await freshPage.goto(`${BROWSER_BASE}/console/settings/appearance`, { waitUntil: 'networkidle' });
-        }
+        await freshPage.waitForLoadState('networkidle');
 
         // Verify Operator B gets ruby + relaxed (B's settings from DB), never Operator A's emerald + compact
         assert.equal(await freshPage.evaluate(() => document.documentElement.getAttribute('data-accent')), 'ruby');
