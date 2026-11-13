@@ -197,6 +197,7 @@ jobs:
           ORBITOX_PROD_CHECK_URL=http://127.0.0.1:3005 \
           ORBITOX_TOTP_STEP_OFFSET=1 \
           ORBITOX_DESIGN_SYSTEM_SCREENSHOTS_DIR="$RUNNER_TEMP/design-system-screenshots" \
+          NODE_OPTIONS='--conditions=react-server' \
             pnpm --filter @orbitox-io/platform test:design-system-e2e || { cat "$RUNNER_TEMP/server-staging.log"; exit 1; }
         env:
           DATABASE_URL: postgresql://orbitox_runtime:phase2-smoke-${{ github.run_id }}-${{ github.run_attempt }}@127.0.0.1:5432/orbitox_smoke

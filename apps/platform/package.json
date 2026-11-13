@@ -20,7 +20,7 @@
     "test:step5-import": "pnpm run prisma:generate && NODE_OPTIONS='--conditions=react-server' pnpm exec tsx tests/integration/test-platform-step5-import.ts",
     "platform:import": "pnpm run prisma:generate && NODE_OPTIONS='--conditions=react-server' pnpm exec tsx scripts/ops/import-platform-json.ts",
     "test:api-no-token-sweep": "NODE_OPTIONS='--conditions=react-server' pnpm exec tsx tests/integration/live-api-no-token-sweep.ts",
-    "test:design-system-e2e": "tsx tests/integration/design-system-csp-e2e.ts",
+    "test:design-system-e2e": "NODE_OPTIONS='--conditions=react-server' pnpm exec tsx tests/integration/design-system-csp-e2e.ts",
     "test:data-rights-6g": "pnpm run prisma:generate && NODE_OPTIONS='--conditions=react-server' pnpm exec tsx --test tests/integration/test-data-rights-6g.ts",
     "recover:platform-audit-intents": "NODE_OPTIONS='--conditions=react-server' pnpm exec tsx scripts/ops/recover-platform-audit-intents.ts",
     "email:worker": "NODE_OPTIONS='--conditions=react-server' pnpm exec tsx src/workers/email.ts",
