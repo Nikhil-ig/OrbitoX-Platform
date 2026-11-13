@@ -47,49 +47,49 @@ Each existing page is assigned an architectural disposition:
 - **Drop**: Scaffolding, static mockups, or developer harnesses with no runtime operator role.
 - **Live**: Already built, verified, and active in production.
 
-| # | Route | Current Purpose | Disposition | Target Screen / Architectural Destination |
-|---|---|---|---|---|
-| 1 | `/admin` | Prototype dashboard overview | **Merge** | Merge into `A1` (Overview) |
-| 2 | `/admin/api-keys` | Basic API key generation table | **Merge** | Merge into `C6` (Security & Keys) |
-| 3 | `/admin/audit` | Flat audit log viewer | **Merge** | Merge into unified `Audit Log` |
-| 4 | `/admin/business` | Plugin categories directory | **Merge** | Merge into `C2` (Tenants Plugin Sub-view) |
-| 5 | `/admin/business/[category]` | Filtered category plugins | **Merge** | Merge into `C2` (Tenant Plugin Configuration) |
-| 6 | `/admin/business/[category]/[providerId]` | Plugin detail & mock settings | **Merge** | Merge into `C2` (Tenant Plugin Detail) |
-| 7 | `/admin/developer-apis` | OpenAPI static explorer | **Merge** | Merge into `C6` (Security & Developer APIs) |
-| 8 | `/admin/marketplace` | Legacy plugin store mockup | **HOLD** | Replaced in `C2` via `@orbitox-io/plugin-engine` & `C3` billing entitlements |
-| 9 | `/admin/projects` | Project table with legacy schema | **Merge** | Merge into `C2` (Tenants) |
-| 10 | `/admin/projects/[projectId]` | Project detail view | **Merge** | Merge into `C2` (Tenant Detail) |
-| 11 | `/admin/projects/create` | Project creation wizard | **Merge** | Merge into `C4` (Provisioning Job Flow) |
-| 12 | `/admin/quotas` | Basic quota slider UI | **Merge** | Merge into `C2` (Tenant Resource Limits) |
-| 13 | `/admin/restaurant` | Hardcoded restaurant shortcut | **HOLD** | Replaced in `C2` by filtered tenant view (`plugin = @orbitox/pos`) |
-| 14 | `/admin/services` | In-memory microservices view | **Merge** | Merge into `A1` (Cluster Health Strip) |
-| 15 | `/admin/services/[serviceId]` | Service health detail | **Merge** | Merge into `A1` (Service Telemetry Drawer) |
-| 16 | `/admin/system` | Prototype system toggles | **Merge** | Merge into `Settings` (Platform Parameters) |
-| 17 | `/platform` | Operator overview redirect | **Merge** | Merge into `A1` (Overview) |
-| 18 | `/platform/ai` | Early AI assistant prototype | **HOLD** | Preserved intact until Stage 7G (*Ask OrbitoX* MCP assistant) |
-| 19 | `/platform/api-keys` | Cryptographic API keys list | **Migrate** | Primary source for `C6` (Security & Keys) |
-| 20 | `/platform/approvals` | Operator step-up approval queue | **Merge** | Merge into `C4` (Provisioning) & `Audit Log` |
-| 21 | `/platform/audit` | Audited action feed | **Migrate** | Primary source for unified `Audit Log` |
-| 22 | `/platform/configuration` | JSON configuration editor | **Merge** | Merge into `Settings` (Configuration tab) |
-| 23 | `/platform/connect` | Bridge protocol diagnostic | **Merge** | Merge into `C6` (Security / Bridge tab) |
-| 24 | `/platform/credentials` | Vault credential listing | **Merge** | Merge into `C6` (Security & Keys) |
-| 25 | `/platform/explorer` | Database table explorer | **Drop** | Security risk: internal debugging tool that bypasses tenant RLS |
-| 26 | `/platform/fleet` | Fleet instance telemetry | **Merge** | Merge into `A1` (Fleet Health Strip) |
-| 27 | `/platform/login` | Operator authentication & TOTP | **Retain** | Gated security auth barrier (retained without breaking changes) |
-| 28 | `/platform/observability` | Raw Prometheus/metrics graphs | **Merge** | Merge into `A1` (Lollipop throughput & line charts) |
-| 29 | `/platform/operations` | Async operation store listing | **Migrate** | Primary source for `C4` (Provisioning) |
-| 30 | `/platform/packages` | npm package release status | **Drop** | Build artifact: CI/CD concern, not operator runtime work |
-| 31 | `/platform/plans` | Tier catalog & entitlement matrix | **Merge** | Merge into `C3` (Billing & Plan Entitlements) |
-| 32 | `/platform/projects` | Project environments table | **Merge** | Merge into `C2` (Tenants) |
-| 33 | `/platform/projects/[projectId]` | Project deep detail | **Merge** | Merge into `C2` (Tenant Detail) |
-| 34 | `/platform/restaurants` | External OS instance list | **Merge** | Filtered query view in `C2` (`plugin = @orbitox/pos`) |
-| 35 | `/platform/restaurants/[id]` | External restaurant detail | **Merge** | Tenant detail sub-view in `C2` |
-| 36 | `/platform/security` | Key rotation & session security | **Migrate** | Primary source for `C6` (Security & Keys) |
-| 37 | `/platform/settings` | Platform system settings | **Migrate** | Primary source for `Settings` (System tab) |
-| 38 | `/platform/tenants` | Multi-tenant cluster manager | **Migrate** | Primary source for `C2` (Tenants) |
-| 39 | `/platform/tenants/new` | Multi-tenant creation wizard | **Migrate** | Modal creation workflow in `C2` |
-| 40 | `/platform/tests` | In-browser test runner | **Drop** | Developer tool: replaced by Playwright and Vitest in CI |
-| 41 | `/console/settings/appearance` | Interactive appearance controls | **Live** | Production user appearance engine built in Stage 7B.1 |
+| # | Route | Current Purpose | Disposition | Target Screen / Destination | APIs & Actions Used |
+|---|---|---|---|---|---|
+| 1 | `/admin` | Prototype dashboard overview | **Merge** | Merge into `A1` (Overview) | Static overview cards, prototype navigation links |
+| 2 | `/admin/api-keys` | Basic API key generation table | **Merge** | Merge into `C6` (Security & Keys) | Static key listing, mock copy action |
+| 3 | `/admin/audit` | Flat audit log viewer | **Merge** | Merge into unified `Audit Log` | `GET /api/v1/projects/project_restaurant_os/audit` (audit log pagination) |
+| 4 | `/admin/business` | Plugin categories directory | **Merge** | Merge into `C2` (Tenants Plugin Sub-view) | Static directory category cards |
+| 5 | `/admin/business/[category]` | Filtered category plugins | **Merge** | Merge into `C2` (Tenant Plugin Configuration) | Static plugin tile listing per category |
+| 6 | `/admin/business/[category]/[providerId]` | Plugin detail & mock settings | **Merge** | Merge into `C2` (Tenant Plugin Detail) | Static configuration form, mock save toggle |
+| 7 | `/admin/developer-apis` | OpenAPI static explorer | **Merge** | Merge into `C6` (Security & Developer APIs) | `GET /api/v1/openapi` (schema viewer, test request console) |
+| 8 | `/admin/marketplace` | Legacy plugin store mockup | **HOLD** | Replaced in `C2` via `@orbitox-io/plugin-engine` & `C3` billing entitlements | Client-side plugin catalog filter, mock install triggers |
+| 9 | `/admin/projects` | Project table with legacy schema | **Merge** | Merge into `C2` (Tenants) | Static project cards, mock environment toggles |
+| 10 | `/admin/projects/[projectId]` | Project detail view | **Merge** | Merge into `C2` (Tenant Detail) | Static project overview, mock metrics |
+| 11 | `/admin/projects/create` | Project creation wizard | **Merge** | Merge into `C4` (Provisioning Job Flow) | `POST /api/v1/projects/factory` (multi-step project bootstrap) |
+| 12 | `/admin/quotas` | Basic quota slider UI | **Merge** | Merge into `C2` (Tenant Resource Limits) | Static resource sliders, mock update toast |
+| 13 | `/admin/restaurant` | Hardcoded restaurant shortcut | **HOLD** | Replaced in `C2` by filtered tenant view (`plugin = @orbitox/pos`) | Static dashboard cards for legacy restaurant view |
+| 14 | `/admin/services` | In-memory microservices view | **Merge** | Merge into `A1` (Cluster Health Strip) | Static microservice health tiles |
+| 15 | `/admin/services/[serviceId]` | Service health detail | **Merge** | Merge into `A1` (Service Telemetry Drawer) | Static service metrics and logs viewer |
+| 16 | `/admin/system` | Prototype system toggles | **Merge** | Merge into `Settings` (Platform Parameters) | Static maintenance mode and feature toggles |
+| 17 | `/platform` | Operator overview redirect | **Merge** | Merge into `A1` (Overview) | `GET /api/v1/overview` (redirects to `/platform/fleet` or overview) |
+| 18 | `/platform/ai` | Early AI assistant prototype | **HOLD** | Preserved intact until Stage 7G (*Ask OrbitoX* MCP assistant) | `POST /api/v1/platform/ai` (chat query execution & streaming) |
+| 19 | `/platform/api-keys` | Cryptographic API keys list | **Migrate** | Primary source for `C6` (Security & Keys) | `GET /api/v1/platform/api-keys`, `GET /api/v1/platform/projects`, key revocation |
+| 20 | `/platform/approvals` | Operator step-up approval queue | **Merge** | Merge into `C4` (Provisioning) & `Audit Log` | `GET /api/v1/platform/approvals`, approve/reject step-up mutations |
+| 21 | `/platform/audit` | Audited action feed | **Migrate** | Primary source for unified `Audit Log` | `GET /api/v1/platform/audit` (paginated audit query & filtering) |
+| 22 | `/platform/configuration` | JSON configuration editor | **Merge** | Merge into `Settings` (Configuration tab) | `GET /api/v1/platform/configuration`, save schema configuration |
+| 23 | `/platform/connect` | Bridge protocol diagnostic | **Merge** | Merge into `C6` (Security / Bridge tab) | `GET /api/v1/system/runtime-token`, `POST /api/v1/projects/template-provision`, `GET /api/v1/fleet` |
+| 24 | `/platform/credentials` | Vault credential listing | **Merge** | Merge into `C6` (Security & Keys) | `GET /api/v1/platform/credentials`, `GET /api/v1/platform/projects`, test secret connection |
+| 25 | `/platform/explorer` | Database table explorer | **Drop** | Security risk: internal debugging tool that bypasses tenant RLS | Queries across internal platform models (bypasses RLS) |
+| 26 | `/platform/fleet` | Fleet instance telemetry | **Merge** | Merge into `A1` (Fleet Health Strip) | `GET /api/v1/fleet`, `POST /api/v1/projects/[id]/commands` (reboot/pause) |
+| 27 | `/platform/login` | Operator authentication & TOTP | **Retain** | Gated security auth barrier (retained without breaking changes) | `POST /api/v1/platform/auth/login` (session cookie + CSRF issuance) |
+| 28 | `/platform/observability` | Raw Prometheus/metrics graphs | **Merge** | Merge into `A1` (Lollipop throughput & line charts) | Static Prometheus charts wrapper |
+| 29 | `/platform/operations` | Async operation store listing | **Migrate** | Primary source for `C4` (Provisioning) | `GET /api/v1/platform/operations`, `POST /api/v1/platform/reconcile` (retry saga) |
+| 30 | `/platform/packages` | npm package release status | **Drop** | Build artifact: CI/CD concern, not operator runtime work | `GET /api/v1/platform/packages` (scans local/published tarballs) |
+| 31 | `/platform/plans` | Tier catalog & entitlement matrix | **Merge** | Merge into `C3` (Billing & Plan Entitlements) | `GET /api/v1/platform/plans`, update plan entitlement boundaries |
+| 32 | `/platform/projects` | Project environments table | **Merge** | Merge into `C2` (Tenants) | Static project listing / environment overview |
+| 33 | `/platform/projects/[projectId]` | Project deep detail | **Merge** | Merge into `C2` (Tenant Detail) | `GET /api/v1/projects/[id]`, commands, activity, plans, entitlements, quotes |
+| 34 | `/platform/restaurants` | External OS instance list | **Merge** | Filtered query view in `C2` (`plugin = @orbitox/pos`) | `GET /api/v1/platform/restaurants`, check slug, suspend/resume |
+| 35 | `/platform/restaurants/[id]` | External restaurant detail | **Merge** | Tenant detail sub-view in `C2` | `GET /api/v1/platform/restaurants/[id]`, suspend/resume, export data |
+| 36 | `/platform/security` | Key rotation & session security | **Migrate** | Primary source for `C6` (Security & Keys) | `GET /api/v1/platform/security` (key rotation, session invalidation) |
+| 37 | `/platform/settings` | Platform system settings | **Migrate** | Primary source for `Settings` (System tab) | `GET /api/v1/system/settings`, update global runtime flags |
+| 38 | `/platform/tenants` | Multi-tenant cluster manager | **Migrate** | Primary source for `C2` (Tenants) | `GET /api/v1/fleet` (cluster tenant listing, health, status) |
+| 39 | `/platform/tenants/new` | Multi-tenant creation wizard | **Migrate** | Modal creation workflow in `C2` | `POST /api/v1/tenants` (provision tenant), poll `/api/v1/operations/[id]` |
+| 40 | `/platform/tests` | In-browser test runner | **Drop** | Developer tool: replaced by Playwright and Vitest in CI | In-browser test runner execution hooks |
+| 41 | `/console/settings/appearance` | Interactive appearance controls | **Live** | Production user appearance engine built in Stage 7B.1 | `GET/PUT /api/v1/platform/me/appearance`, `GET/PUT /api/v1/customer/me/appearance` |
 
 ---
 
@@ -120,6 +120,7 @@ Each existing page is assigned an architectural disposition:
 
 | Screen ID | Target Functionality | Existing API Endpoints | Missing APIs to Build in 7C |
 |---|---|---|---|
+| **A1**<br>Operator Overview | Telemetry cards, cluster health strip, active alerts, throughput & latency charts | • `GET /api/v1/overview`<br>• `GET /api/v1/fleet`<br>• `GET /api/health` | • `GET /api/v1/platform/overview/telemetry` (Fleet-wide request rate, p99 latency)<br>• `GET /api/v1/platform/overview/alerts` (Aggregated platform alerts & approvals) |
 | **C1**<br>Organization Detail | Metadata, member roster, plan quotas, tenant listing, ownership transfer | • `GET /api/v1/customer/organizations/[id]`<br>• `GET /api/v1/customer/organizations/[id]/members`<br>• `GET /api/v1/customer/organizations/[id]/tenants` | • `GET /api/v1/platform/organizations/[id]` (Cross-tenant elevated operator view)<br>• `PUT /api/v1/platform/organizations/[id]/plan` |
 | **C2**<br>Tenant Detail & Suspend | Domain config, database isolation, resource usage, step-up gated `DangerousAction` suspend | • `GET /api/v1/tenants/[id]`<br>• `POST /api/v1/tenants/[id]/suspend`<br>• `POST /api/v1/tenants/[id]/resume` | • `GET /api/v1/platform/tenants/[id]/telemetry` (Real-time latency & error rate)<br>• `PUT /api/v1/platform/tenants/[id]/domain` |
 | **C3**<br>Billing & Payments | Invoices, payment gateway status (Razorpay / Stripe), grace period countdown, retry payment | • `GET /api/v1/billing/webhook`<br>• `GET /api/v1/customer/organizations/[id]/billing` | • `GET /api/v1/platform/billing/invoices`<br>• `POST /api/v1/platform/billing/invoices/[id]/retry`<br>• `PUT /api/v1/platform/billing/grace-period` |
