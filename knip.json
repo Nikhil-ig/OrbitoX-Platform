@@ -1,0 +1,137 @@
+{
+  "$schema": "https://unpkg.com/knip@6/schema.json",
+  "rules": {
+    "files": "error",
+    "dependencies": "error",
+    "devDependencies": "error",
+    "unlisted": "error",
+    "unresolved": "error",
+    "binaries": "error",
+    "exports": "warn",
+    "types": "warn",
+    "duplicates": "off"
+  },
+  "ignore": [
+    "docs/**"
+  ],
+  "ignoreBinaries": [
+    "terraform"
+  ],
+  "ignoreDependencies": [
+    "@orbitox-io/tsconfig",
+    "@orbitox-io/eslint-config",
+    "@orbitox-io/types",
+    "@orbitox-io/sdk",
+    "reflect-metadata",
+    "express",
+    "ts-jest",
+    "pino-pretty"
+  ],
+  "workspaces": {
+    ".": {
+      "entry": [
+        "scripts/**/*.{ts,mjs,js}"
+      ]
+    },
+    "apps/platform": {
+      "entry": [
+        "src/instrumentation*.ts",
+        "scripts/**/*.{ts,mjs,js}",
+        "tests/**/*.{ts,tsx}",
+        "src/workers/*.ts",
+        "src/app/**/page.tsx",
+        "src/app/**/layout.tsx",
+        "src/app/api/**/route.ts",
+        "src/components/governance-dock-context.tsx"
+      ],
+      "ignoreDependencies": [
+        "@orbitox-io/pos",
+        "@orbitox-io/runtime"
+      ]
+    },
+    "services/restaurant-api": {
+      "entry": [
+        "src/server.ts",
+        "scripts/*.{ts,js}",
+        "test/**/*.test.ts"
+      ],
+      "ignoreDependencies": [
+        "@prisma/client"
+      ]
+    },
+    "packages/core": {
+      "ignoreDependencies": [
+        "@orbitox-io/utils"
+      ]
+    },
+    "packages/plugin-engine": {
+      "entry": [
+        "src/plugin-engine.module.ts"
+      ],
+      "ignoreDependencies": [
+        "@prisma/client"
+      ]
+    },
+    "packages/types": {
+      "entry": [
+        "src/**/*.ts!"
+      ]
+    },
+    "packages/runtime": {
+      "entry": [
+        "src/test*.ts"
+      ],
+      "ignoreDependencies": [
+        "@nestjs/common",
+        "@orbitox-io/sdk"
+      ]
+    },
+    "packages/sdk": {
+      "ignoreDependencies": [
+        "@nestjs/common"
+      ]
+    },
+    "packages/ui": {
+      "entry": [
+        "src/components/*.tsx",
+        "src/stories/*.tsx",
+        "src/legacy/**/*.tsx",
+        "test/**/*.ts",
+        "test/**/*.mjs",
+        ".storybook/*.ts"
+      ]
+    },
+    "packages/eslint-config": {
+      "ignoreDependencies": [
+        "eslint-plugin-import"
+      ]
+    },
+    "packages/jest-config": {
+      "entry": [
+        "jest.config.base.ts"
+      ]
+    },
+    "plugins/external-project-engine": {
+      "entry": [
+        "src/**/*.test.ts"
+      ],
+      "ignoreDependencies": [
+        "@orbitox-io/core"
+      ]
+    },
+    "plugins/pos": {
+      "entry": [
+        "src/pos-plugin.ts",
+        "src/domain/__tests__/*.ts"
+      ],
+      "ignoreDependencies": [
+        "@orbitox-io/sdk"
+      ]
+    },
+    "tools/cli": {
+      "entry": [
+        "test/**/*.test.ts"
+      ]
+    }
+  }
+}

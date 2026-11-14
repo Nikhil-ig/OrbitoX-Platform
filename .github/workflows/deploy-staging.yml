@@ -1,0 +1,245 @@
+name: Deploy Staging (Phase 6F)
+
+on:
+  workflow_dispatch:
+    inputs:
+      force_deploy:
+        description: 'Force deployment without git push'
+        required: false
+        type: boolean
+        default: false
+
+permissions:
+  id-token: write # Required for AWS OIDC authentication (Zero static keys)
+  contents: read
+
+concurrency:
+  group: deploy-staging
+  cancel-in-progress: false
+
+jobs:
+  build-and-scan:
+    name: Build & Vulnerability Scan (Trivy / ECR)
+    environment: staging # Bounded strictly to repo:Nikhil-ig/OrbitoX-Platform:environment:staging (H2)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    outputs:
+      web_image_digest: ${{ steps.push-web.outputs.digest }}
+    steps:
+      - name: Checkout source tree
+        uses: actions/checkout@v5
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Configure AWS Credentials via OIDC
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_STAGING_DEPLOY_ROLE_ARN || 'arn:aws:iam::123456789012:role/orbitox-staging-github-actions-deploy-role' }}
+          aws-region: ap-south-1
+
+      - name: Log in to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Build Web Application Container Image
+        id: build-web
+        run: |
+          ECR_REGISTRY="${{ steps.login-ecr.outputs.registry }}"
+          IMAGE_TAG="${{ github.sha }}"
+          FULL_TAG="$ECR_REGISTRY/orbitox/staging/web:$IMAGE_TAG"
+          echo "Building $FULL_TAG from orbitox monorepo root..."
+          docker build \
+            -f apps/platform/Dockerfile \
+            -t "$FULL_TAG" \
+            orbitox
+          echo "image_tag=$FULL_TAG" >> "$GITHUB_OUTPUT"
+
+      - name: Scan Web Image for High/Critical Vulnerabilities (Trivy)
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: ${{ steps.build-web.outputs.image_tag }}
+          format: 'table'
+          exit-code: '1'
+          ignore-unfixed: true
+          severity: 'CRITICAL,HIGH'
+
+      - name: Push Web Image to ECR by Digest
+        id: push-web
+        run: |
+          FULL_TAG="${{ steps.build-web.outputs.image_tag }}"
+          docker push "$FULL_TAG"
+          DIGEST=$(docker inspect --format='{{index .RepoDigests 0}}' "$FULL_TAG")
+          echo "Pushed immutable digest: $DIGEST"
+          echo "digest=$DIGEST" >> "$GITHUB_OUTPUT"
+
+  migrate-and-verify:
+    name: Staging Migration & Step 1 RLS/Role Inventory (Private ECS Tasks)
+    needs: build-and-scan
+    environment: staging # Bounded strictly to repo:Nikhil-ig/OrbitoX-Platform:environment:staging (H2)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Configure AWS Credentials via OIDC
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_STAGING_DEPLOY_ROLE_ARN || 'arn:aws:iam::123456789012:role/orbitox-staging-github-actions-deploy-role' }}
+          aws-region: ap-south-1
+
+      - name: Fetch Private Subnets and ECS Security Group
+        id: network
+        run: |
+          CLUSTER_NAME="orbitox-staging-cluster"
+          echo "Retrieving network configuration from $CLUSTER_NAME..."
+          SERVICE_JSON=$(aws ecs describe-services --cluster "$CLUSTER_NAME" --services "orbitox-staging-web-service" --query "services[0].networkConfiguration.awsvpcConfiguration")
+          SUBNETS=$(echo "$SERVICE_JSON" | jq -r '.subnets | join(",")')
+          SG=$(echo "$SERVICE_JSON" | jq -r '.securityGroups[0]')
+          echo "subnets=$SUBNETS" >> "$GITHUB_OUTPUT"
+          echo "security_group=$SG" >> "$GITHUB_OUTPUT"
+
+      # B2 Fix: Run migrations as one-off private ECS task (zero database credentials on runner)
+      - name: Run Staging Migration as One-Off Private ECS Task
+        id: run-migration
+        run: |
+          CLUSTER_NAME="orbitox-staging-cluster"
+          SUBNETS="${{ steps.network.outputs.subnets }}"
+          SG="${{ steps.network.outputs.security_group }}"
+          TASK_DEF_FAMILY="orbitox-staging-db-migrate"
+
+          echo "Launching one-off migration task in private subnets..."
+          TASK_ARN=$(aws ecs run-task \
+            --cluster "$CLUSTER_NAME" \
+            --task-definition "$TASK_DEF_FAMILY" \
+            --launch-type FARGATE \
+            --network-configuration "awsvpcConfiguration={subnets=[$SUBNETS],securityGroups=[$SG],assignPublicIp=DISABLED}" \
+            --query "tasks[0].taskArn" --output text)
+
+          echo "Migration task launched: $TASK_ARN"
+          echo "Waiting for migration task completion..."
+          aws ecs wait tasks-stopped --cluster "$CLUSTER_NAME" --tasks "$TASK_ARN"
+
+          TASK_DESC=$(aws ecs describe-tasks --cluster "$CLUSTER_NAME" --tasks "$TASK_ARN")
+          EXIT_CODE=$(echo "$TASK_DESC" | jq -r '.tasks[0].containers[0].exitCode')
+          STOP_REASON=$(echo "$TASK_DESC" | jq -r '.tasks[0].stoppedReason // "None"')
+          echo "Migration task finished with exit code: $EXIT_CODE (Stop reason: $STOP_REASON)"
+
+          TASK_ID=$(basename "$TASK_ARN")
+          LOG_STREAM="db-migrate/db-migrate/$TASK_ID"
+          echo "=== CloudWatch Task Logs ($LOG_STREAM) ==="
+          aws logs get-log-events \
+            --log-group-name "/ecs/orbitox-staging-db-migrate" \
+            --log-stream-name "$LOG_STREAM" \
+            --query "events[*].message" --output text || echo "Log stream not yet flushed"
+
+          if [ "$EXIT_CODE" != "0" ]; then
+            echo "❌ Migration task failed with exit code $EXIT_CODE"
+            exit 1
+          fi
+          echo "✓ Migration task completed successfully."
+
+      # B2 Fix: Run Step 1 RLS/Role Inventory test as one-off private ECS task
+      - name: Run Step 1 RLS/Role Inventory Verification as One-Off Private ECS Task
+        id: run-inventory
+        run: |
+          CLUSTER_NAME="orbitox-staging-cluster"
+          SUBNETS="${{ steps.network.outputs.subnets }}"
+          SG="${{ steps.network.outputs.security_group }}"
+          TASK_DEF_FAMILY="orbitox-staging-db-inventory"
+
+          echo "Launching one-off inventory verification task in private subnets..."
+          TASK_ARN=$(aws ecs run-task \
+            --cluster "$CLUSTER_NAME" \
+            --task-definition "$TASK_DEF_FAMILY" \
+            --launch-type FARGATE \
+            --network-configuration "awsvpcConfiguration={subnets=[$SUBNETS],securityGroups=[$SG],assignPublicIp=DISABLED}" \
+            --query "tasks[0].taskArn" --output text)
+
+          echo "Inventory task launched: $TASK_ARN"
+          echo "Waiting for inventory task completion..."
+          aws ecs wait tasks-stopped --cluster "$CLUSTER_NAME" --tasks "$TASK_ARN"
+
+          TASK_DESC=$(aws ecs describe-tasks --cluster "$CLUSTER_NAME" --tasks "$TASK_ARN")
+          EXIT_CODE=$(echo "$TASK_DESC" | jq -r '.tasks[0].containers[0].exitCode')
+          STOP_REASON=$(echo "$TASK_DESC" | jq -r '.tasks[0].stoppedReason // "None"')
+          echo "Inventory task finished with exit code: $EXIT_CODE (Stop reason: $STOP_REASON)"
+
+          TASK_ID=$(basename "$TASK_ARN")
+          LOG_STREAM="db-inventory/db-inventory/$TASK_ID"
+          echo "=== CloudWatch Task Logs ($LOG_STREAM) ==="
+          aws logs get-log-events \
+            --log-group-name "/ecs/orbitox-staging-db-inventory" \
+            --log-stream-name "$LOG_STREAM" \
+            --query "events[*].message" --output text || echo "Log stream not yet flushed"
+
+          if [ "$EXIT_CODE" != "0" ]; then
+            echo "❌ Step 1 Inventory task failed with exit code $EXIT_CODE"
+            exit 1
+          fi
+          echo "✓ Step 1 Inventory task completed successfully."
+
+  deploy-ecs:
+    name: Rolling ECS Fargate Deployment & Health Gate
+    needs: [build-and-scan, migrate-and-verify]
+    environment: staging # Bounded strictly to repo:Nikhil-ig/OrbitoX-Platform:environment:staging (H2)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Configure AWS Credentials via OIDC
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_STAGING_DEPLOY_ROLE_ARN || 'arn:aws:iam::123456789012:role/orbitox-staging-github-actions-deploy-role' }}
+          aws-region: ap-south-1
+
+      - name: Update ECS Task Definition with Scanned Image Digest
+        id: update-task-def
+        run: |
+          CLUSTER_NAME="orbitox-staging-cluster"
+          SERVICE_NAME="orbitox-staging-web-service"
+          NEW_DIGEST="${{ needs.build-and-scan.outputs.web_image_digest }}"
+
+          echo "Fetching current task definition for $SERVICE_NAME..."
+          TASK_DEF=$(aws ecs describe-services --cluster "$CLUSTER_NAME" --services "$SERVICE_NAME" --query "services[0].taskDefinition" --output text)
+          aws ecs describe-task-definition --task-definition "$TASK_DEF" --query "taskDefinition" > current-task-def.json
+
+          echo "Updating container image to $NEW_DIGEST..."
+          jq --arg IMG "$NEW_DIGEST" \
+             '.containerDefinitions[0].image = $IMG | del(.taskDefinitionArn, .revision, .status, .requiresAttributes, .compatibilities, .registeredAt, .registeredBy)' \
+             current-task-def.json > new-task-def.json
+
+          NEW_TASK_DEF_ARN=$(aws ecs register-task-definition --cli-input-json file://new-task-def.json --query "taskDefinition.taskDefinitionArn" --output text)
+          echo "Registered new task definition: $NEW_TASK_DEF_ARN"
+          echo "new_task_def_arn=$NEW_TASK_DEF_ARN" >> "$GITHUB_OUTPUT"
+
+      - name: Rolling Deploy to ECS with Health Check Gate
+        run: |
+          CLUSTER_NAME="orbitox-staging-cluster"
+          SERVICE_NAME="orbitox-staging-web-service"
+          NEW_TASK_DEF="${{ steps.update-task-def.outputs.new_task_def_arn }}"
+
+          echo "Deploying $NEW_TASK_DEF to $SERVICE_NAME..."
+          aws ecs update-service \
+            --cluster "$CLUSTER_NAME" \
+            --service "$SERVICE_NAME" \
+            --task-definition "$NEW_TASK_DEF" \
+            --force-new-deployment
+
+          echo "Waiting for ECS service stability (automatic rollback on failure)..."
+          aws ecs wait services-stable \
+            --cluster "$CLUSTER_NAME" \
+            --services "$SERVICE_NAME"
+
+      - name: Verify Live Staging Health Check
+        run: |
+          echo "Verifying live staging health endpoint..."
+          HEALTH_URL="https://staging.orbitox.io/health"
+          for i in $(seq 1 12); do
+            STATUS=$(curl -s -o /dev/null -w "%{http_code}" "$HEALTH_URL" || true)
+            echo "Attempt $i: $HEALTH_URL returned HTTP $STATUS"
+            if [ "$STATUS" = "200" ]; then
+              echo "Staging deployment is healthy!"
+              exit 0
+            fi
+            sleep 5
+          done
+          echo "Staging health verification timed out."
+          exit 1

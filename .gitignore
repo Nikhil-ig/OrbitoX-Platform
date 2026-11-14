@@ -4,6 +4,8 @@ node_modules/
 
 # Build outputs & tarballs
 dist/
+dist-storybook/
+storybook-static/
 .next/
 out/
 build/
@@ -11,8 +13,8 @@ build/
 *.tsbuildinfo
 
 # Temporary CLI test outputs & scratch plugins
-orbitox/tools/cli/super-restaurant/
-orbitox/plugins/my-noob-plugin/
+tools/cli/super-restaurant/
+plugins/my-noob-plugin/
 
 # Environment
 .env
@@ -47,11 +49,19 @@ keys/
 /data/
 **/data/keystore.json
 **/data/*runtime-store*.json
+**/data/platform-repository-store.json*
 **/data/test-*.json
 **/data/phase*-audit/
-projects/external-os/restaurant-os/data/
-orbitox/apps/web/orbitox/data/
+apps/platform/orbitox/
+services/restaurant-api/data/
+services/restaurant-api/generated/
+apps/web/data/
+apps/platform/data/
 packages/storage/test_*.json
+
+# ---- Design reference raw captures ----
+OrbitoX — new look concept-png/
+
 
 # ---- Backups, archives, generated artifacts ----
 *.bak
@@ -66,3 +76,11 @@ packages/storage/test_*.json
 .turbo/
 .gemini/
 **/.tempmediaStorage/
+phase6-fix/
+
+# Terraform
+**/.terraform/
+*.tfstate
+*.tfstate.*
+*.tfvars
+!*.tfvars.example

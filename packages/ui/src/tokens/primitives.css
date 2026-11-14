@@ -1,0 +1,197 @@
+/**
+ * Layer 1: Primitive Tokens (Raw Scales)
+ * Palettes, spacing, radii, shadows, typography, and base motion.
+ */
+
+:root {
+  /* ─── 8 Accent Presets ─── */
+  --accent-ocean: #3D6EF5;
+  --accent-ocean-light: #2F5BD8;
+  --accent-ocean-dark: #3D6EF5;
+  --accent-emerald: #047857;
+  --accent-sunflower: #F59E0B;
+  --accent-saffron: #C2410C;
+  --accent-ruby: #E11D48;
+  --accent-coral: #D9381E;
+  --accent-violet: #7C3AED;
+  --accent-teal: #0F766E;
+
+  /* ─── Neutral Scale (Zinc / Slate Base) ─── */
+  --neutral-0: #ffffff;
+  --neutral-50: #fafafa;
+  --neutral-100: #f4f4f5;
+  --neutral-200: #e4e4e7;
+  --neutral-300: #d4d4d8;
+  --neutral-400: #a1a1aa;
+  --neutral-500: #71717a;
+  --neutral-600: #52525b;
+  --neutral-700: #3f3f46;
+  --neutral-800: #27272a;
+  --neutral-900: #18181b;
+  --neutral-950: #09090b;
+  --near-black: #14161a;
+
+  /* ─── Primary Scale (Electric Indigo / Violet) ─── */
+  --primary-50: #eef2ff;
+  --primary-100: #e0e7ff;
+  --primary-200: #c7d2fe;
+  --primary-300: #a5b4fc;
+  --primary-400: #818cf8;
+  --primary-500: #6366f1;
+  --primary-600: #4f46e5;
+  --primary-700: #4338ca;
+  --primary-800: #3730a3;
+  --primary-900: #312e81;
+  --primary-950: #1e1b4b;
+
+  /* ─── Accent Scale (Cyan / Teal) ─── */
+  --accent-50: #ecfeff;
+  --accent-100: #cffafe;
+  --accent-200: #a5f3fc;
+  --accent-300: #67e8f9;
+  --accent-400: #22d3ee;
+  --accent-500: #06b6d4;
+  --accent-600: #0891b2;
+  --accent-700: #0e7490;
+  --accent-800: #155e75;
+  --accent-900: #164e63;
+  --accent-950: #083344;
+
+  /* ─── Functional Semantic Primitives ─── */
+  /* Success (Emerald) */
+  --success-50: #ecfdf5;
+  --success-100: #d1fae5;
+  --success-200: #a7f3d0;
+  --success-300: #6ee7b7;
+  --success-400: #34d399;
+  --success-500: #10b981;
+  --success-600: #059669;
+  --success-700: #047857;
+  --success-800: #065f46;
+  --success-900: #064e3b;
+  --success-950: #022c22;
+
+  /* Warning (Amber) */
+  --warning-50: #fffbeb;
+  --warning-100: #fef3c7;
+  --warning-200: #fde68a;
+  --warning-300: #fcd34d;
+  --warning-400: #fbbf24;
+  --warning-500: #f59e0b;
+  --warning-600: #d97706;
+  --warning-700: #b45309;
+  --warning-800: #92400e;
+  --warning-900: #78350f;
+  --warning-950: #451a03;
+
+  /* Danger (Rose / Crimson) */
+  --danger-50: #fff1f2;
+  --danger-100: #ffe4e6;
+  --danger-200: #fecdd3;
+  --danger-300: #fda4af;
+  --danger-400: #fb7185;
+  --danger-500: #f43f5e;
+  --danger-600: #e11d48;
+  --danger-700: #be123c;
+  --danger-800: #9f1239;
+  --danger-900: #881337;
+  --danger-950: #4c0519;
+
+  /* Info (Sky) */
+  --info-50: #f0f9ff;
+  --info-100: #e0f2fe;
+  --info-200: #bae6fd;
+  --info-300: #7dd3fc;
+  --info-400: #38bdf8;
+  --info-500: #0ea5e9;
+  --info-600: #0284c7;
+  --info-700: #0369a1;
+  --info-800: #075985;
+  --info-900: #0c4a6e;
+  --info-950: #082f49;
+
+  /* ─── Spacing Scale (4px Base Unit) ─── */
+  --space-1: 0.25rem;
+  /* 4px */
+  --space-2: 0.5rem;
+  /* 8px */
+  --space-3: 0.75rem;
+  /* 12px */
+  --space-4: 1rem;
+  /* 16px */
+  --space-5: 1.25rem;
+  /* 20px */
+  --space-6: 1.5rem;
+  /* 24px */
+  --space-7: 1.75rem;
+  /* 28px */
+  --space-8: 2rem;
+  /* 32px */
+  --space-9: 2.25rem;
+  /* 36px */
+  --space-10: 2.5rem;
+  /* 40px */
+  --space-11: 2.75rem;
+  /* 44px */
+  --space-12: 3rem;
+  /* 48px */
+
+  /* ─── Radius Scale ─── */
+  --corner-radius: 28px;
+  --radius-none: 0px;
+  --radius-sm: 0.25rem;
+  /* 4px */
+  --radius-md: 0.5rem;
+  /* 8px */
+  --radius-lg: 0.75rem;
+  /* 12px */
+  --radius-xl: 1rem;
+  /* 16px */
+  --radius-row: 1.125rem;
+  /* 18px */
+  --radius-card: var(--corner-radius, 28px);
+  --radius-hero: calc(var(--corner-radius, 28px) + 4px);
+  --radius-full: 9999px;
+
+  /* ─── Typography & Font Stack (Self-Hosted) ─── */
+  --font-sans: 'Plus Jakarta Sans', 'Noto Sans Devanagari', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  --font-mono: 'JetBrains Mono', 'Fira Code', Menlo, Monaco, Consolas, monospace;
+
+  --font-size-xs: 0.75rem;
+  /* 12px */
+  --font-size-sm: 0.875rem;
+  /* 14px */
+  --font-size-md: 1rem;
+  /* 16px */
+  --font-size-lg: 1.125rem;
+  /* 18px */
+  --font-size-xl: 1.25rem;
+  /* 20px */
+  --font-size-2xl: 1.5rem;
+  /* 24px */
+  --font-size-3xl: 1.875rem;
+  /* 30px */
+  --font-size-4xl: 2.25rem;
+  /* 36px */
+
+  --font-weight-normal: 400;
+  --font-weight-medium: 500;
+  --font-weight-semibold: 600;
+  --font-weight-bold: 700;
+
+  /* ─── Shadow Hierarchy ─── */
+  --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+  --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -2px rgba(0, 0, 0, 0.1);
+  --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -4px rgba(0, 0, 0, 0.1);
+  --shadow-xl: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.1);
+
+  /* ─── Motion Timings ─── */
+  --duration-fast: 100ms;
+  --duration-normal: 200ms;
+  --duration-slow: 300ms;
+
+  --ease-default: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-in: cubic-bezier(0.4, 0, 1, 1);
+  --ease-out: cubic-bezier(0, 0, 0.2, 1);
+  --ease-in-out: cubic-bezier(0.4, 0, 0.2, 1);
+}

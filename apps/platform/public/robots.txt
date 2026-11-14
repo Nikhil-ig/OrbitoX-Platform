@@ -1,0 +1,5 @@
+# OrbitoX Platform
+User-agent: *
+Disallow: /admin
+Disallow: /platform
+Disallow: /api/

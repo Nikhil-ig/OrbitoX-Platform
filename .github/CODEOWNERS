@@ -1,0 +1,12 @@
+# Global default code owners
+* @OrbitoX-io/platform-leads
+
+# Architecture & Security Critical Paths
+/apps/platform/src/server/auth/ @OrbitoX-io/security-reviewers
+/apps/platform/src/server/billing/ @OrbitoX-io/billing-reviewers
+/apps/platform/src/server/data-rights/ @OrbitoX-io/security-reviewers
+/services/restaurant-api/src/bridge/ @OrbitoX-io/platform-leads
+/packages/bridge/ @OrbitoX-io/platform-leads
+/packages/plugin-engine/ @OrbitoX-io/platform-leads
+/infra/ @OrbitoX-io/infra-leads
+

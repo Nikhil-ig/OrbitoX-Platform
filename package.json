@@ -1,0 +1,58 @@
+{
+  "name": "orbitox",
+  "version": "0.0.0",
+  "private": true,
+  "description": "OrbitoX Platform OS \u2014 A plugin-driven SaaS operating system",
+  "scripts": {
+    "bootstrap": "pnpm install && turbo run build --filter=@orbitox-io/platform^...",
+    "init:env": "node scripts/ci/init-env.mjs",
+    "check:env": "node scripts/ci/check-production-env.mjs",
+    "dev:web": "pnpm --filter @orbitox-io/platform dev",
+    "smoke": "node scripts/ci/smoke-control-plane.mjs",
+    "build": "turbo run build",
+    "dev": "turbo run dev",
+    "test": "turbo run test",
+    "test:integration": "turbo run test:integration",
+    "lint": "eslint . --quiet",
+    "check:knip": "knip",
+    "type-check": "turbo run type-check",
+    "check:circular": "madge --circular --extensions ts,tsx --exclude '(^|/)(dist|\\.next|node_modules|coverage)(/|$)' packages/*/src plugins/*/src tools/*/src apps/platform/src services/restaurant-api/src",
+    "clean": "turbo run clean",
+    "migrate": "turbo run migrate",
+    "seed": "turbo run seed",
+    "doctor": "turbo run doctor",
+    "maintain:rate-limit-partitions": "tsx scripts/db/maintain-rate-limit-partitions.ts",
+    "check:rate-limit-runway": "tsx scripts/db/check-rate-limit-partition-runway.ts",
+    "keygen": "node tools/cli/dist/bin.js keygen",
+    "package:plugins": "turbo run build && node tools/cli/dist/bin.js package pos",
+    "verify:plugins": "node tools/cli/dist/bin.js verify pos",
+    "switch:standalone": "node scripts/cliSwitch.js --target=standalone",
+    "switch:cluster": "node scripts/cliSwitch.js --target=distributed",
+    "snapshot:export": "node scripts/cliSwitch.js --export-snapshot",
+    "snapshot:status": "node scripts/cliSwitch.js --status",
+    "format": "prettier --write \"**/*.{ts,tsx,js,jsx,json,md}\"",
+    "format:check": "prettier --check \"**/*.{ts,tsx,js,jsx,json,md}\""
+  },
+  "devDependencies": {
+    "@orbitox-io/eslint-config": "workspace:*",
+    "@prisma/client": "^6.19.0",
+    "eslint": "^9",
+    "knip": "6.45.0",
+    "madge": "8.0.0",
+    "prettier": "^3.5.0",
+    "prisma": "^6.19.0",
+    "tsx": "^4.19.3",
+    "turbo": "^2.10.12",
+    "typescript": "~5.9.3"
+  },
+  "engines": {
+    "node": ">=20.0.0",
+    "pnpm": ">=9.0.0"
+  },
+  "packageManager": "pnpm@9.15.0",
+  "pnpm": {
+    "overrides": {
+      "typescript": "~5.9.3"
+    }
+  }
+}

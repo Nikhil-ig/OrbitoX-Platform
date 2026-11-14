@@ -1,0 +1,1778 @@
+// OrbitoX Platform OS - Multi-Tenant E-Commerce Prisma Schema
+// Database Engine: PostgreSQL 16
+// Multi-Tenancy Architecture: Context / Tenant ID Partitioning
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// 4. RESTAURANT OPERATING SYSTEM (RESTAURANTOS)
+// ─────────────────────────────────────────────────────────────
+
+enum RestaurantTableStatus {
+  AVAILABLE
+  OCCUPIED
+  RESERVED
+  CLEANING
+  OUT_OF_SERVICE
+}
+
+enum DiningSessionStatus {
+  ACTIVE
+  BILL_REQUESTED
+  SETTLING
+  CLOSED
+  ABANDONED
+}
+
+enum DiningJoinPolicy {
+  OPEN_JOIN
+  HOST_APPROVAL
+  STAFF_APPROVAL
+}
+
+enum ParticipantRole {
+  HOST
+  GUEST
+  STAFF
+}
+
+enum JoinRequestStatus {
+  REQUESTED
+  APPROVED
+  REJECTED
+  EXPIRED
+  CANCELLED
+}
+
+enum CommercialState {
+  DRAFT
+  SUBMITTED
+  CONFIRMED
+  REJECTED
+  VOIDED
+}
+
+enum FulfillmentState {
+  UNFULFILLED
+  PREPARING
+  READY_TO_SERVE
+  SERVED
+  CANCELLED
+}
+
+enum OrderPaymentState {
+  UNPAID
+  AUTHORIZED
+  PARTIALLY_PAID
+  PAID
+  REFUNDED
+}
+
+enum KitchenState {
+  NOT_SENT
+  QUEUED
+  IN_PROGRESS
+  EXPEDITED
+  COMPLETED
+}
+
+enum ItemPrepStatus {
+  PENDING
+  PREPARING
+  READY
+  SERVED
+  CANCELLED
+}
+
+enum KitchenStationType {
+  HOT_LINE
+  COLD_LINE
+  TANDOOR
+  BAR
+  DESSERT
+  EXPO
+}
+
+enum PreparationTaskStatus {
+  QUEUED
+  IN_PROGRESS
+  READY
+  DELAYED
+  REOPENED
+  BUMPED
+}
+
+enum PaymentRecordStatus {
+  INITIATED
+  AUTHORIZED
+  SETTLED
+  FAILED
+  REFUNDED
+}
+
+enum OutboxStatus {
+  PENDING
+  DISPATCHED
+  FAILED
+}
+
+model RestaurantLocation {
+  id              String                  @id @default(cuid())
+  tenantId        String
+  companyId       String
+  name            String
+  slug            String
+  timezone        String                  @default("Asia/Kolkata")
+  currency        String                  @default("INR")
+  address         String?
+  phone           String?
+  email           String?
+  operatingHours  Json?
+  isActive        Boolean                 @default(true)
+  createdAt       DateTime                @default(now())
+  updatedAt       DateTime                @updatedAt
+
+  serviceAreas    RestaurantServiceArea[]
+  tables          RestaurantTable[]
+  diningSessions  RestaurantDiningSession[]
+  menus           RestaurantMenu[]
+  catalogItems    RestaurantCatalogItem[]
+  kitchenStations KitchenStation[]
+  orders          RestaurantOrder[]
+
+  @@unique([tenantId, companyId, slug])
+  @@index([tenantId, companyId])
+}
+
+model RestaurantServiceArea {
+  id          String             @id @default(cuid())
+  tenantId    String
+  companyId   String
+  locationId  String
+  name        String
+  code        String
+  floorNumber Int?               @default(1)
+  capacity    Int?
+  isActive    Boolean            @default(true)
+  createdAt   DateTime           @default(now())
+  updatedAt   DateTime           @updatedAt
+
+  location    RestaurantLocation @relation(fields: [locationId], references: [id], onDelete: Cascade)
+  tables      RestaurantTable[]
+
+  @@unique([locationId, code])
+  @@index([tenantId, companyId])
+  @@index([locationId])
+}
+
+model RestaurantTable {
+  id              String                    @id @default(cuid())
+  tenantId        String
+  companyId       String
+  locationId      String
+  serviceAreaId   String
+  tableNumber     String
+  capacity        Int                       @default(4)
+  status          RestaurantTableStatus     @default(AVAILABLE)
+  activeSessionId String?
+  version         Int                       @default(1)
+  createdAt       DateTime                  @default(now())
+  updatedAt       DateTime                  @updatedAt
+
+  location        RestaurantLocation        @relation(fields: [locationId], references: [id], onDelete: Cascade)
+  serviceArea     RestaurantServiceArea     @relation(fields: [serviceAreaId], references: [id], onDelete: Cascade)
+  qrIdentity      RestaurantQRIdentity?
+  diningSessions  RestaurantDiningSession[]
+
+  @@unique([locationId, tableNumber])
+  @@index([tenantId, companyId])
+  @@index([locationId, serviceAreaId])
+  @@index([status])
+}
+
+model RestaurantQRIdentity {
+  id              String          @id @default(cuid())
+  tenantId        String
+  companyId       String
+  locationId      String
+  tableId         String          @unique
+  locator         String          @unique
+  tokenHash       String          @unique
+  redirectUrl     String?
+  securityVersion Int             @default(1)
+  isActive        Boolean         @default(true)
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+
+  table           RestaurantTable @relation(fields: [tableId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, locationId])
+  @@index([locator])
+  @@index([tokenHash])
+}
+
+model RestaurantDiningSession {
+  id                String                  @id @default(cuid())
+  tenantId          String
+  companyId         String
+  locationId        String
+  tableId           String
+  sessionCode       String
+  status            DiningSessionStatus     @default(ACTIVE)
+  joinPolicy        DiningJoinPolicy        @default(OPEN_JOIN)
+  hostParticipantId String?
+  accessEpoch       Int                     @default(1)
+  version           Int                     @default(1)
+  openedAt          DateTime                @default(now())
+  closedAt          DateTime?
+  createdAt         DateTime                @default(now())
+  updatedAt         DateTime                @updatedAt
+
+  location          RestaurantLocation      @relation(fields: [locationId], references: [id], onDelete: Cascade)
+  table             RestaurantTable         @relation(fields: [tableId], references: [id], onDelete: Cascade)
+  participants      SessionParticipant[]
+  joinRequests      SessionJoinRequest[]
+  orders            RestaurantOrder[]
+
+  @@index([tenantId, companyId])
+  @@index([locationId, tableId])
+  @@index([tableId, status])
+  @@index([status])
+}
+
+model SessionParticipant {
+  id                  String                  @id @default(cuid())
+  tenantId            String
+  companyId           String
+  locationId          String
+  diningSessionId     String
+  role                ParticipantRole         @default(GUEST)
+  displayName         String
+  avatarUrl           String?
+  capabilityTokenHash String
+  joinedAt            DateTime                @default(now())
+  leftAt              DateTime?
+  isActive            Boolean                 @default(true)
+  createdAt           DateTime                @default(now())
+  updatedAt           DateTime                @updatedAt
+
+  diningSession       RestaurantDiningSession @relation(fields: [diningSessionId], references: [id], onDelete: Cascade)
+  orders              RestaurantOrder[]
+
+  @@index([tenantId, locationId])
+  @@index([diningSessionId, isActive])
+  @@index([capabilityTokenHash])
+}
+
+model SessionJoinRequest {
+  id               String                  @id @default(cuid())
+  tenantId         String
+  companyId        String
+  locationId       String
+  diningSessionId  String
+  displayName      String
+  status           JoinRequestStatus       @default(REQUESTED)
+  requestTokenHash String                  @unique
+  decidedBy        String?
+  decidedAt        DateTime?
+  expiresAt        DateTime
+  createdAt        DateTime                @default(now())
+  updatedAt        DateTime                @updatedAt
+
+  diningSession    RestaurantDiningSession @relation(fields: [diningSessionId], references: [id], onDelete: Cascade)
+
+  @@index([diningSessionId, status])
+  @@index([tenantId, locationId])
+}
+
+model RestaurantMenu {
+  id          String                  @id @default(cuid())
+  tenantId    String
+  companyId   String
+  locationId  String
+  name        String
+  version     Int                     @default(1)
+  channel     String                  @default("DINE_IN")
+  isPublished Boolean                 @default(false)
+  schedule    Json?
+  createdAt   DateTime                @default(now())
+  updatedAt   DateTime                @updatedAt
+
+  location    RestaurantLocation      @relation(fields: [locationId], references: [id], onDelete: Cascade)
+  items       RestaurantCatalogItem[]
+
+  @@unique([locationId, name, version])
+  @@index([tenantId, locationId, isPublished])
+}
+
+model RestaurantCatalogItem {
+  id                         String                    @id @default(cuid())
+  tenantId                   String
+  companyId                  String
+  locationId                 String
+  menuId                     String?
+  name                       String
+  description                String?
+  sku                        String?
+  basePriceMinor             BigInt
+  currency                   String                    @default("INR")
+  category                   String
+  imageUrl                   String?
+  allergens                  String[]                  @default([])
+  dietaryFlags               String[]                  @default([])
+  isAvailable                Boolean                   @default(true)
+  maxDailyQuantity           Int?
+  preparationDurationMinutes Int                       @default(10)
+  stationRouting             String                    @default("KITCHEN")
+  version                    Int                       @default(1)
+  createdAt                  DateTime                  @default(now())
+  updatedAt                  DateTime                  @updatedAt
+
+  location                   RestaurantLocation        @relation(fields: [locationId], references: [id], onDelete: Cascade)
+  menu                       RestaurantMenu?           @relation(fields: [menuId], references: [id], onDelete: SetNull)
+  modifierGroups             RestaurantModifierGroup[]
+  orderItems                 RestaurantOrderItem[]
+
+  @@index([tenantId, locationId, category])
+  @@index([locationId, isAvailable])
+  @@index([menuId])
+}
+
+model RestaurantModifierGroup {
+  id            String                @id @default(cuid())
+  tenantId      String
+  companyId     String
+  itemId        String
+  name          String
+  minSelections Int                   @default(0)
+  maxSelections Int                   @default(1)
+  isRequired    Boolean               @default(false)
+  createdAt     DateTime              @default(now())
+  updatedAt     DateTime              @updatedAt
+
+  item          RestaurantCatalogItem @relation(fields: [itemId], references: [id], onDelete: Cascade)
+  modifiers     RestaurantModifier[]
+
+  @@index([itemId])
+}
+
+model RestaurantModifier {
+  id              String                  @id @default(cuid())
+  tenantId        String
+  companyId       String
+  groupId         String
+  name            String
+  priceDeltaMinor BigInt                  @default(0)
+  isDefault       Boolean                 @default(false)
+  isAvailable     Boolean                 @default(true)
+  createdAt       DateTime                @default(now())
+  updatedAt       DateTime                @updatedAt
+
+  group           RestaurantModifierGroup @relation(fields: [groupId], references: [id], onDelete: Cascade)
+
+  @@index([groupId])
+}
+
+model RestaurantRecipeBOM {
+  id               String   @id @default(cuid())
+  tenantId         String
+  companyId        String
+  itemId           String
+  ingredientId     String
+  quantityRequired Float
+  unit             String
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  @@unique([itemId, ingredientId])
+  @@index([tenantId, companyId])
+  @@index([ingredientId])
+}
+
+model RestaurantInventoryStock {
+  id               String   @id @default(cuid())
+  tenantId         String
+  companyId        String
+  locationId       String
+  ingredientId     String
+  name             String
+  onHandQuantity   Float
+  reservedQuantity Float    @default(0)
+  unit             String
+  safetyThreshold  Float    @default(5.0)
+  version          Int      @default(1)
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  @@unique([locationId, ingredientId])
+  @@index([tenantId, locationId])
+}
+
+model RestaurantPricingQuote {
+  id              String   @id @default(cuid())
+  tenantId        String
+  companyId       String
+  locationId      String
+  sessionId       String
+  inputHash       String
+  resultHash      String
+  subtotalMinor   BigInt
+  taxMinor        BigInt
+  serviceFeeMinor BigInt   @default(0)
+  discountMinor   BigInt   @default(0)
+  totalMinor      BigInt
+  currency        String   @default("INR")
+  breakdown       Json
+  expiresAt       DateTime
+  isRedeemed      Boolean  @default(false)
+  createdAt       DateTime @default(now())
+
+  @@index([tenantId, sessionId])
+  @@index([inputHash, resultHash])
+  @@index([expiresAt, isRedeemed])
+}
+
+model RestaurantOrder {
+  id                  String                  @id @default(cuid())
+  tenantId            String
+  companyId           String
+  locationId          String
+  sessionId           String
+  participantId       String
+  orderNumber         String
+  commercialState     CommercialState         @default(SUBMITTED)
+  fulfillmentState    FulfillmentState        @default(UNFULFILLED)
+  paymentState        OrderPaymentState       @default(UNPAID)
+  kitchenState        KitchenState            @default(QUEUED)
+  quoteId             String?
+  idempotencyKey      String?                 @unique
+  totalMinor          BigInt
+  currency            String                  @default("INR")
+  specialInstructions String?
+  version             Int                     @default(1)
+  createdAt           DateTime                @default(now())
+  updatedAt           DateTime                @updatedAt
+
+  location            RestaurantLocation      @relation(fields: [locationId], references: [id], onDelete: Cascade)
+  diningSession       RestaurantDiningSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  participant         SessionParticipant      @relation(fields: [participantId], references: [id], onDelete: Cascade)
+  items               RestaurantOrderItem[]
+
+  @@index([tenantId, companyId])
+  @@index([locationId, sessionId])
+  @@index([sessionId, createdAt])
+  @@index([commercialState, fulfillmentState])
+}
+
+model RestaurantOrderItem {
+  id                String                @id @default(cuid())
+  tenantId          String
+  companyId         String
+  locationId        String
+  orderId           String
+  itemId            String
+  name              String
+  quantity          Int                   @default(1)
+  unitPriceMinor    BigInt
+  totalMinor        BigInt
+  selectedModifiers Json                  @default("[]")
+  preparationStatus ItemPrepStatus        @default(PENDING)
+  version           Int                   @default(1)
+  createdAt         DateTime              @default(now())
+  updatedAt         DateTime              @updatedAt
+
+  order             RestaurantOrder       @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  catalogItem       RestaurantCatalogItem @relation(fields: [itemId], references: [id], onDelete: Restrict)
+
+  @@index([orderId, preparationStatus])
+  @@index([itemId])
+}
+
+model KitchenStation {
+  id                    String                   @id @default(cuid())
+  tenantId              String
+  companyId             String
+  locationId            String
+  name                  String
+  stationType           KitchenStationType       @default(HOT_LINE)
+  displayOrder          Int                      @default(0)
+  isActive              Boolean                  @default(true)
+  maxConcurrentCapacity Int                      @default(10)
+  createdAt             DateTime                 @default(now())
+  updatedAt             DateTime                 @updatedAt
+
+  location              RestaurantLocation       @relation(fields: [locationId], references: [id], onDelete: Cascade)
+  tasks                 KitchenPreparationTask[]
+
+  @@unique([locationId, name])
+  @@index([tenantId, locationId, isActive])
+}
+
+model KitchenPreparationTask {
+  id                       String                @id @default(cuid())
+  tenantId                 String
+  companyId                String
+  locationId               String
+  orderId                  String
+  orderItemId              String
+  stationId                String
+  status                   PreparationTaskStatus @default(QUEUED)
+  targetServeAt            DateTime
+  fireAt                   DateTime
+  estimatedDurationMinutes Int                   @default(10)
+  startedAt                DateTime?
+  completedAt              DateTime?
+  bumpedBy                 String?
+  dependencies             Json?
+  version                  Int                   @default(1)
+  createdAt                DateTime              @default(now())
+  updatedAt                DateTime              @updatedAt
+
+  station                  KitchenStation        @relation(fields: [stationId], references: [id], onDelete: Cascade)
+
+  @@index([stationId, status, fireAt])
+  @@index([orderId])
+  @@index([tenantId, locationId])
+}
+
+model RestaurantPaymentRecord {
+  id                   String              @id @default(cuid())
+  tenantId             String
+  companyId            String
+  locationId           String
+  sessionId            String
+  orderId              String?
+  participantId        String?
+  paymentGateway       String
+  gatewayTransactionId String?
+  amountMinor          BigInt
+  currency             String              @default("INR")
+  status               PaymentRecordStatus @default(INITIATED)
+  metadata             Json?
+  createdAt            DateTime            @default(now())
+  updatedAt            DateTime            @updatedAt
+
+  @@index([tenantId, locationId])
+  @@index([sessionId, status])
+  @@index([gatewayTransactionId])
+}
+
+model PlatformIdempotencyRecord {
+  id             String   @id @default(cuid())
+  tenantId       String
+  key            String
+  scope          String
+  requestHash    String
+  responseStatus Int
+  responseBody   Json
+  expiresAt      DateTime
+  createdAt      DateTime @default(now())
+
+  @@unique([tenantId, key, scope])
+  @@index([expiresAt])
+}
+
+model PlatformOutboxMessage {
+  id            String       @id @default(cuid())
+  tenantId      String
+  eventType     String
+  aggregateType String
+  aggregateId   String
+  payload       Json
+  status        OutboxStatus @default(PENDING)
+  retryCount    Int          @default(0)
+  lastError     String?
+  createdAt     DateTime     @default(now())
+  dispatchedAt  DateTime?
+
+  @@index([status, createdAt])
+  @@index([tenantId, aggregateType, aggregateId])
+}
+
+// ─────────────────────────────────────────────────────────────
+// 10. PLATFORM CONTROL CENTER: MULTI-TENANT OS & SECURITY GOVERNANCE
+// ─────────────────────────────────────────────────────────────
+
+enum PlatformProjectStatus {
+  PROVISIONING
+  ACTIVE
+  DEGRADED
+  THROTTLED
+  SUSPENDED
+  ARCHIVED
+  DEPROVISIONING
+}
+
+enum PlatformOperatorRole {
+  PLATFORM_OWNER
+  OPERATOR
+  SUPPORT_READONLY
+  BILLING
+}
+
+enum CustomerMembershipRole {
+  OWNER
+  ADMIN
+  MEMBER
+  BILLING
+}
+
+enum AccountTokenPurpose {
+  VERIFY_EMAIL
+  RESET_PASSWORD
+  INVITE
+  EMAIL_CHANGE
+}
+
+enum EnvironmentTier {
+  DEVELOPMENT
+  STAGING
+  PRODUCTION
+  SANDBOX
+  DISASTER_RECOVERY
+}
+
+enum KeyLifecycleState {
+  PRE_ACTIVE
+  ACTIVE
+  SUSPENDED
+  EXPIRED
+  COMPROMISED
+  REVOKED
+  DESTROYED
+}
+
+enum PlatformRiskLevel {
+  LOW
+  MEDIUM
+  HIGH
+  CRITICAL
+}
+
+enum CredentialHealthState {
+  HEALTHY
+  EXPIRING_SOON
+  EXPIRED
+  FAILED_VALIDATION
+  ROTATION_PENDING
+}
+
+enum PackageStatusState {
+  ACTIVE
+  UPGRADING
+  SUSPENDED
+  SECURITY_BLOCKED
+}
+
+enum DomainDnsStatus {
+  PENDING_DNS
+  VERIFIED
+  FAILED
+}
+
+enum TlsCertStatus {
+  PENDING
+  ISSUED
+  RENEWING
+  FAILED
+}
+
+model PlatformOrganization {
+  id              String            @id @default(cuid())
+  slug            String            @unique
+  name            String
+  billingEmail    String
+  complianceTier  String            @default("STANDARD")
+  status          String            @default("ACTIVE")
+  createdAt       DateTime          @default(now())
+  updatedAt       DateTime          @updatedAt
+
+  projects        PlatformProject[]
+  customerMemberships CustomerMembership[]
+  accountTokens   AccountToken[]
+
+  @@index([slug])
+}
+
+model CustomerOrganizationClosureContext {
+  transactionId  BigInt @db.BigInt
+  organizationId String @db.Text
+
+  @@id([transactionId, organizationId])
+}
+
+model PlatformOperator {
+  id                    String               @id @default(cuid())
+  email                 String
+  passwordHash          String
+  role                  PlatformOperatorRole
+  status                String               @default("ACTIVE")
+  mfaTotpSealed         String
+  failedLogins          Int                  @default(0)
+  failureWindowStartedAt DateTime?            @db.Timestamptz
+  lockedUntil           DateTime?             @db.Timestamptz
+  lastTotpStep          Int?
+  appearanceTheme            String               @default("dark")
+  appearanceAccent           String               @default("ocean")
+  appearanceDensity          String               @default("standard")
+  appearanceRadius           Int                  @default(28)
+  appearanceSmoothAnimations Boolean              @default(true)
+  appearanceBoldFocusRings   Boolean              @default(false)
+  appearanceCompactSidebar   Boolean              @default(false)
+  createdAt             DateTime              @default(now()) @db.Timestamptz
+  updatedAt             DateTime              @default(now()) @updatedAt @db.Timestamptz
+
+  sessions              PlatformOperatorSession[]
+  backupCodes           PlatformOperatorBackupCode[]
+
+  @@index([status])
+}
+
+model PlatformOperatorSession {
+  id                String    @id @default(cuid())
+  operatorId        String
+  tokenHash         String    @unique
+  csrfTokenHash     String
+  createdAt         DateTime  @default(now()) @db.Timestamptz
+  lastSeenAt        DateTime  @default(now()) @db.Timestamptz
+  idleExpiresAt     DateTime  @db.Timestamptz
+  absoluteExpiresAt DateTime  @db.Timestamptz
+  reauthenticatedAt DateTime? @db.Timestamptz
+  revokedAt         DateTime? @db.Timestamptz
+  ipAddress         String?
+  userAgent         String?
+
+  operator PlatformOperator @relation(fields: [operatorId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([operatorId, revokedAt])
+  @@index([idleExpiresAt])
+}
+
+model PlatformOperatorBackupCode {
+  operatorId String    @db.Text
+  codeHash   String    @db.Text
+  createdAt  DateTime  @default(now()) @db.Timestamptz
+  usedAt     DateTime? @db.Timestamptz
+
+  operator PlatformOperator @relation(fields: [operatorId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@id([operatorId, codeHash])
+  @@index([operatorId, usedAt])
+}
+
+model CustomerUser {
+  id                    String    @id @default(cuid())
+  email                 String
+  emailVerifiedAt       DateTime? @db.Timestamptz
+  passwordHash          String?
+  mfaTotpSealed         String?
+  mfaTotpPendingSealed  String?
+  status                String    @default("ACTIVE")
+  failedLogins          Int       @default(0)
+  failureWindowStartedAt DateTime? @db.Timestamptz
+  lockedUntil           DateTime? @db.Timestamptz
+  lastTotpStep          Int?
+  appearanceTheme            String               @default("light")
+  appearanceAccent           String               @default("ocean")
+  appearanceDensity          String               @default("standard")
+  appearanceRadius           Int                  @default(28)
+  appearanceSmoothAnimations Boolean              @default(true)
+  appearanceBoldFocusRings   Boolean              @default(false)
+  appearanceCompactSidebar   Boolean              @default(false)
+  createdAt             DateTime  @default(now()) @db.Timestamptz
+  updatedAt             DateTime  @default(now()) @updatedAt @db.Timestamptz
+
+  memberships CustomerMembership[]
+  tokens      AccountToken[]
+  sessions    CustomerSession[]
+
+  @@index([status])
+}
+
+model CustomerMembership {
+  organizationId String                 @db.Text
+  userId         String                 @db.Text
+  role           CustomerMembershipRole
+  createdAt      DateTime               @default(now()) @db.Timestamptz
+
+  organization PlatformOrganization @relation(fields: [organizationId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  user         CustomerUser         @relation(fields: [userId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@id([organizationId, userId])
+  @@index([userId, role])
+}
+
+// Migration 20261103000000 creates the partial index AccountToken_user_purpose
+// on ("userId", "purpose") WHERE "usedAt" IS NULL; Prisma cannot describe it.
+// Reject any generated migration that drops this index.
+model AccountToken {
+  tokenHash      String            @id
+  purpose        AccountTokenPurpose
+  userId         String?
+  organizationId String?
+  email          String
+  role           CustomerMembershipRole?
+  expiresAt      DateTime          @db.Timestamptz
+  usedAt         DateTime?         @db.Timestamptz
+  createdAt      DateTime          @default(now()) @db.Timestamptz
+
+  user         CustomerUser? @relation(fields: [userId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  organization PlatformOrganization? @relation(fields: [organizationId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([expiresAt])
+}
+
+model CustomerSession {
+  id                String    @id @default(cuid())
+  userId            String
+  tokenHash         String    @unique
+  csrfTokenHash     String
+  createdAt         DateTime  @default(now()) @db.Timestamptz
+  lastSeenAt        DateTime  @default(now()) @db.Timestamptz
+  idleExpiresAt     DateTime  @db.Timestamptz
+  absoluteExpiresAt DateTime  @db.Timestamptz
+  reauthenticatedAt DateTime? @db.Timestamptz
+  revokedAt         DateTime? @db.Timestamptz
+  ipAddress         String?
+  userAgent         String?
+
+  user CustomerUser @relation(fields: [userId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([userId, revokedAt])
+  @@index([idleExpiresAt])
+}
+
+model AccountAuthRateLimitBucket {
+  scopeType    String
+  scopeId      String
+  windowStart  DateTime @db.Timestamptz
+  requestCount Int      @default(0)
+  expiresAt    DateTime @db.Timestamptz
+
+  @@id([scopeType, scopeId, windowStart])
+  @@index([expiresAt])
+}
+
+model AccountEmailOutbox {
+  id              String    @id @default(cuid())
+  recipient       String
+  template        String
+  encryptedPayload String
+  status          String    @default("PENDING")
+  retryCount      Int       @default(0)
+  lastError       String?
+  createdAt       DateTime  @default(now()) @db.Timestamptz
+  dispatchedAt    DateTime? @db.Timestamptz
+  claimedAt       DateTime? @db.Timestamptz
+  claimToken      String?
+  nextAttemptAt   DateTime  @default(now()) @db.Timestamptz
+
+  @@index([status, createdAt])
+}
+
+model AccountEmailSuppression {
+  email       String   @id
+  reason      String
+  provider    String
+  suppressedAt DateTime @default(now()) @db.Timestamptz
+}
+
+model AccountEmailWebhookEvent {
+  eventId    String   @id
+  provider   String
+  eventType  String
+  receivedAt DateTime @default(now()) @db.Timestamptz
+}
+
+model BillingGraceSweepLease {
+  id            String   @id @default("global")
+  leaseOwner    String
+  leaseExpiresAt DateTime @db.Timestamptz
+  updatedAt     DateTime @default(now()) @db.Timestamptz
+}
+
+model DataRightsJob {
+  id                String    @id
+  kind              String
+  status            String    @default("QUEUED")
+  organizationId    String?
+  requestedByUserId String
+  leaseOwner        String?
+  leaseExpiresAt    DateTime? @db.Timestamptz
+  attempts          Int       @default(0)
+  maxAttempts       Int       @default(5)
+  checkpoint        Json      @default("{}")
+  result            Json?
+  lastError         String?
+  expiresAt         DateTime? @db.Timestamptz
+  purgedAt          DateTime? @db.Timestamptz
+  runAfter          DateTime  @default(now()) @db.Timestamptz
+  startedAt         DateTime? @db.Timestamptz
+  completedAt       DateTime? @db.Timestamptz
+  createdAt         DateTime  @default(now()) @db.Timestamptz
+  updatedAt         DateTime  @default(now()) @db.Timestamptz
+
+  downloadTokens DataExportDownloadToken[]
+
+  @@index([organizationId, kind, createdAt])
+  @@index([status, runAfter])
+}
+
+model DataExportDownloadToken {
+  id               String    @id
+  jobId            String
+  organizationId   String
+  tokenHash        String    @unique
+  objectKey        String
+  expiresAt        DateTime  @db.Timestamptz
+  consumedAt       DateTime? @db.Timestamptz
+  consumedByUserId String?
+  createdAt        DateTime  @default(now()) @db.Timestamptz
+
+  job DataRightsJob @relation(fields: [jobId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([organizationId, expiresAt])
+}
+
+model OrganizationDeletionRequest {
+  id                 String    @id
+  organizationId     String?
+  organizationDigest String
+  status             String    @default("SCHEDULED")
+  requestedByUserId  String
+  authorizedOwnerIds String[]  @default([])
+  suspendedKeyIds    String[]  @default([])
+  reason             String?
+  requestedAt        DateTime  @default(now()) @db.Timestamptz
+  scheduledFor       DateTime  @db.Timestamptz
+  cancelledAt        DateTime? @db.Timestamptz
+  cancelledByUserId  String?
+  completedAt        DateTime? @db.Timestamptz
+  certificate        Json?
+  checkpoint         Json      @default("{}")
+  updatedAt          DateTime  @default(now()) @db.Timestamptz
+
+  @@index([organizationDigest, status])
+  @@index([status, scheduledFor])
+}
+
+model DataRightsSweepLease {
+  id             String   @id @default("global")
+  leaseOwner     String
+  leaseExpiresAt DateTime @db.Timestamptz
+  updatedAt      DateTime @default(now()) @db.Timestamptz
+}
+
+model PlatformPluginUsage {
+  tenantId      String   @db.Text
+  projectId     String   @db.Text
+  environmentId String   @db.Text
+  pluginId      String   @db.Text
+  period        String   @db.Text
+  requestCount  BigInt   @default(0)
+  updatedAt     DateTime @default(now()) @updatedAt @db.Timestamptz
+
+  @@id([tenantId, pluginId, period])
+  @@index([projectId, environmentId, period])
+}
+
+model BillingProviderCache {
+  cacheKey       String   @db.Text
+  tenantId       String   @db.Text
+  subscriptionId String   @db.Text
+  payload        Json
+  expiresAt      DateTime @db.Timestamptz
+  updatedAt      DateTime @default(now()) @updatedAt @db.Timestamptz
+
+  @@id([tenantId, cacheKey])
+  @@index([tenantId, expiresAt])
+}
+
+model BillingPlanMap {
+  razorpayPlanId String   @id
+  pluginId       String
+  internalPlanId String
+  amountMinor   Int
+  currency      String
+  period        String
+  interval      Int
+  active        Boolean  @default(true)
+  createdAt     DateTime @default(now()) @db.Timestamptz
+
+  subscriptions BillingSubscription[]
+
+  @@index([pluginId, internalPlanId])
+}
+
+model BillingSubscription {
+  razorpaySubscriptionId String   @id
+  organizationId         String
+  tenantId               String
+  pluginId               String
+  razorpayPlanId         String
+  status                 String   @default("created")
+  currentStart           DateTime? @db.Timestamptz
+  currentEnd             DateTime? @db.Timestamptz
+  graceStartedAt         DateTime? @db.Timestamptz
+  lastEventAt            BigInt   @default(0)
+  cancelAtPeriodEnd      Boolean  @default(false)
+  createdAt              DateTime @default(now()) @db.Timestamptz
+  updatedAt              DateTime @default(now()) @updatedAt @db.Timestamptz
+
+  planMap BillingPlanMap @relation(fields: [razorpayPlanId], references: [razorpayPlanId], onDelete: NoAction, onUpdate: NoAction)
+
+  @@index([organizationId])
+  @@index([tenantId, pluginId])
+}
+
+model BillingUnknownEvent {
+  eventId        String   @id
+  subscriptionId String
+  eventType      String
+  reason         String
+  payload        Json
+  receivedAt     DateTime @default(now()) @db.Timestamptz
+
+  @@index([subscriptionId, receivedAt])
+}
+
+model BillingWebhookAlertMetric {
+  name      String   @id
+  count     BigInt   @default(0)
+  lastAt    DateTime @default(now()) @db.Timestamptz
+}
+
+model PlatformProject {
+  id              String                @id @default(cuid())
+  slug            String                @unique
+  name            String
+  organizationId  String
+  businessModel   String                // O2O2B2B2C, HEALTHCARE_NETWORK, D2C, B2B_SAAS
+  planTier        String                // starter, growth, pro, enterprise, hyperscale
+  plan            String                @default("starter")
+  planLabel       String?
+  enabledServices String[]              @default([])
+  apiCallQuota         BigInt?
+  monthlyApiCalls      BigInt                @default(0)
+  currentBillingPeriod String?
+  rateLimitPerMin      Int?
+  customDomain    String?
+  storageQuotaGb  Float?
+  status          PlatformProjectStatus @default(ACTIVE)
+  technicalLead   String
+  contactEmail    String
+  createdAt       DateTime              @default(now())
+  updatedAt       DateTime              @updatedAt
+
+  organization    PlatformOrganization  @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  environments    ProjectEnvironment[]
+
+  @@index([organizationId])
+  @@index([slug])
+  @@index([status])
+}
+
+model ProjectEnvironment {
+  id                    String                      @id @default(cuid())
+  projectId             String
+  slug                  String                      // development, staging, production
+  name                  String                      // "Production Main", "Staging QA"
+  type                  EnvironmentTier             @default(DEVELOPMENT)
+  isProduction          Boolean                     @default(false)
+  status                String                      @default("ACTIVE") // ACTIVE, FROZEN, DECOMMISSIONED
+  description           String?
+  requireMtls           Boolean                     @default(false)
+  strictIpAllowlist     Boolean                     @default(false)
+  enforceFourEyes       Boolean                     @default(false)
+  createdAt             DateTime                    @default(now())
+  updatedAt             DateTime                    @updatedAt
+
+  project               PlatformProject             @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  apiKeys               PlatformApiKey[]
+  credentials           PlatformCredential[]
+  packageInstallations  PackageInstallation[]
+  domains               ProjectDomain[]
+  quotaPolicy           EnvironmentQuotaPolicy?
+  rateLimitPolicy       EnvironmentRateLimitPolicy?
+
+  @@unique([projectId, slug])
+  @@index([projectId])
+  @@index([type])
+}
+
+model PlatformApiKey {
+  id                  String             @id @default(cuid())
+  keyId               String             @unique // Public correlation handle: key_live_01j7x4
+  name                String
+  environmentId       String
+  keyType             String             @default("PROJECT_SCOPED") // PLATFORM_ROOT, PROJECT_SCOPED, SERVICE_MACHINE
+  keyPrefix           String             // orb_live_proj_
+  secretFingerprint   String             // SHA-256(rawSecret).hex (display only)
+  authVerifier        String             // HMAC-SHA-256(pepper, rawSecret).hex (auth check)
+  verifierPepperId    String?            // Active pepper ID at key creation (for rotation tracking)
+  maskedDisplay       String             // orb_live_••••••••0zE
+  status              KeyLifecycleState  @default(ACTIVE)
+  capabilities        String[]           // Typed: ["restaurant.orders.read", "restaurant.orders.create"]
+  ipAllowlist         String[]           @default([])
+  rateLimitPerMin     Int                @default(1200)
+  tenantScope         String[]           @default([])
+  
+  riskScore           Int                @default(15) // 0 to 100
+  riskLevel           PlatformRiskLevel  @default(LOW)
+  riskFactors         Json               @default("[]") // Array of { code, weight, message }
+
+  issuedAt            DateTime           @default(now())
+  activatedAt         DateTime           @default(now())
+  expiresAt           DateTime?
+  lastUsedAt          DateTime?
+  lastUsedIp          String?
+  lastUsedRegion      String?
+  
+  compromisedAt       DateTime?
+  revokedAt           DateTime?
+  revokeReason        String?
+  createdBy           String
+  version             Int                @default(1)
+
+  environment         ProjectEnvironment @relation(fields: [environmentId], references: [id], onDelete: Cascade)
+
+  @@index([environmentId])
+  @@unique([authVerifier])
+  @@index([secretFingerprint])
+  @@index([status])
+  @@index([riskLevel])
+}
+
+model PlatformCredential {
+  id                    String                @id @default(cuid())
+  name                  String                // "Stripe Production Live", "AWS S3 Cold Storage"
+  provider              String                // stripe, aws_s3, meta, twilio, redis, postgres
+  environmentId         String
+  
+  // Envelope Encryption Fields
+  envelopeVersion       Int                   @default(1)
+  kekIdentifier         String                // kms:us-east-1:orbitox-master-kek-v2
+  encryptedDek          String                // Encrypted Data Encryption Key (DEK)
+  dekIv                 String                @default("") // Base64 IV used for DEK encryption
+  dekTag                String                @default("") // Base64 AuthTag for DEK encryption
+  initializationVector  String                // 96-bit Base64 IV
+  authenticationTag     String                // 128-bit Base64 GCM Auth Tag
+  encryptedCiphertext   String                // AES-256-GCM Encrypted Secret Payload
+  
+  secretFingerprint     String                // SHA-256(plaintext).hex
+  maskedDisplay         String                // sk_live_••••••••9F2A
+  health                CredentialHealthState @default(HEALTHY)
+  lastRotatedAt         DateTime              @default(now())
+  nextRotationDueAt     DateTime
+  lastValidatedAt       DateTime?
+  validationError       String?
+  ownerEmail            String
+  
+  createdAt             DateTime              @default(now())
+  updatedAt             DateTime              @updatedAt
+
+  environment           ProjectEnvironment    @relation(fields: [environmentId], references: [id], onDelete: Cascade)
+
+  @@index([environmentId])
+  @@index([provider])
+  @@index([health])
+}
+
+model PlatformPackage {
+  id                    String                @id @default(cuid())
+  packageId             String                @unique // @orbitox/restaurant
+  name                  String
+  category              String
+  publisher             String
+  currentStableVersion  String
+  signingPublicKeyPem   String
+  isCore                Boolean               @default(false)
+  createdAt             DateTime              @default(now())
+  updatedAt             DateTime              @updatedAt
+
+  versions              PackageVersion[]
+  installations         PackageInstallation[]
+
+  @@index([packageId])
+}
+
+model PackageVersion {
+  id                    String                @id @default(cuid())
+  packageId             String
+  version               String
+  tarballSha256         String
+  manifestHash          String
+  signerId              String
+  signature             String
+  minPlatformVersion    String
+  releaseNotes          String?
+  releasedAt            DateTime              @default(now())
+
+  package               PlatformPackage       @relation(fields: [packageId], references: [id], onDelete: Cascade)
+  installations         PackageInstallation[]
+
+  @@unique([packageId, version])
+  @@index([packageId])
+}
+
+model PackageInstallation {
+  id                    String             @id @default(cuid())
+  environmentId         String
+  packageId             String
+  installedVersionId    String
+  status                PackageStatusState @default(ACTIVE)
+  configOverrides       Json               @default("{}")
+  installedAt           DateTime           @default(now())
+  updatedAt             DateTime           @updatedAt
+
+  environment           ProjectEnvironment @relation(fields: [environmentId], references: [id], onDelete: Cascade)
+  package               PlatformPackage    @relation(fields: [packageId], references: [id], onDelete: Cascade)
+  version               PackageVersion     @relation(fields: [installedVersionId], references: [id])
+
+  @@unique([environmentId, packageId])
+  @@index([environmentId])
+  @@index([packageId])
+}
+
+model PluginInstallation {
+  id                  String   @id @default(cuid())
+  tenantId            String
+  pluginId            String
+  runtimeTenantId     String
+  status              String   @default("ACTIVE")
+  statusReason        String?
+  entitlementRevision Int      @default(1)
+  planId              String?
+  config              Json     @default("{}")
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  plan                Plan?    @relation(fields: [planId], references: [planId], onDelete: Restrict, onUpdate: Restrict)
+
+  @@unique([tenantId, pluginId])
+  @@unique([runtimeTenantId, pluginId])
+  @@index([tenantId])
+  @@index([runtimeTenantId])
+  @@index([pluginId])
+}
+
+model Plugin {
+  id          String   @id @default(cuid())
+  pluginId    String   @unique
+  name        String
+  description String?
+  version     String   @default("1.0.0")
+  status      String   @default("ACTIVE")
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  plans       Plan[]
+
+  @@index([pluginId])
+}
+
+model Plan {
+  id                  String        @id @default(cuid())
+  planId              String        @unique
+  pluginId            String
+  name                String
+  description         String?
+  tier                String        @default("starter")
+  priceMinor          Int           @default(0)
+  currency            String        @default("INR")
+  billingInterval     String        @default("month")
+  gracePeriodDays     Int           @default(7)
+  suspensionGraceDays Int           @default(30)
+  status              String        @default("ACTIVE")
+  createdAt           DateTime      @default(now())
+  updatedAt           DateTime      @updatedAt
+
+  plugin              Plugin        @relation(fields: [pluginId], references: [pluginId], onDelete: Cascade)
+  features            PlanFeature[]
+  quotas              PlanQuota[]
+  installations       PluginInstallation[]
+
+  @@index([pluginId])
+  @@index([planId])
+}
+
+model PlanFeature {
+  id          String   @id @default(cuid())
+  planId      String
+  featureKey  String
+  description String?
+  enabled     Boolean  @default(true)
+  createdAt   DateTime @default(now())
+
+  plan        Plan     @relation(fields: [planId], references: [planId], onDelete: Cascade)
+
+  @@unique([planId, featureKey])
+  @@index([planId])
+}
+
+model PlanQuota {
+  id        String   @id @default(cuid())
+  planId    String
+  quotaKey  String
+  limit     Int
+  window    String   @default("none")
+  unit      String   @default("records")
+  createdAt DateTime @default(now())
+
+  plan      Plan     @relation(fields: [planId], references: [planId], onDelete: Cascade)
+
+  @@unique([planId, quotaKey])
+  @@index([planId])
+}
+
+
+model ProjectDomain {
+  id                    String             @id @default(cuid())
+  environmentId         String
+  domainName            String             @unique
+  isApex                Boolean            @default(false)
+  verificationStatus    DomainDnsStatus    @default(PENDING_DNS)
+  cnameTarget           String
+  tlsCertificateStatus  TlsCertStatus      @default(PENDING)
+  sslExpiresAt          DateTime?
+  strictLicenseToken    String?
+  edgeLatencyMs         Int                @default(0)
+  createdAt             DateTime           @default(now())
+  verifiedAt            DateTime?
+
+  environment           ProjectEnvironment @relation(fields: [environmentId], references: [id], onDelete: Cascade)
+
+  @@index([environmentId])
+  @@index([domainName])
+}
+
+model EnvironmentQuotaPolicy {
+  id                      String             @id @default(cuid())
+  environmentId           String             @unique
+  monthlyCallLimit        BigInt             @default(1000000)
+  monthlyCallsUsed        BigInt             @default(0)
+  storageQuotaGb          Float              @default(50.0)
+  storageUsedGb           Float              @default(0.0)
+  warningThreshold        Int                @default(80)
+  projectedExhaustionDays Float?
+  updatedAt               DateTime           @updatedAt
+
+  environment             ProjectEnvironment @relation(fields: [environmentId], references: [id], onDelete: Cascade)
+}
+
+model EnvironmentRateLimitPolicy {
+  id                     String             @id @default(cuid())
+  environmentId          String             @unique
+  requestsPerMinute      Int                @default(1200)
+  requestsPerSecondBurst Int                @default(100)
+  slidingWindowType      String             @default("HYBRID_REDIS_RAM")
+  updatedAt              DateTime           @updatedAt
+
+  environment            ProjectEnvironment @relation(fields: [environmentId], references: [id], onDelete: Cascade)
+}
+
+model PlatformAuditEvent {
+  id             String   @id @default(cuid())
+  actorId        String?
+  actorEmail     String?
+  action         String
+  entityType     String
+  entityId       String?
+  organizationId String?
+  projectId      String?
+  environmentId  String?
+  ipAddress      String?
+  requestId      String?
+  reason         String?
+  metadata       Json     @default("{}")
+  status         String   @default("COMMITTED")
+  failureReason  String?
+  occurredAt     DateTime @default(now())
+
+  @@index([occurredAt])
+  @@index([organizationId, occurredAt])
+  @@index([projectId, occurredAt])
+  @@index([entityType, entityId])
+  @@index([action, occurredAt])
+  @@index([status, occurredAt])
+}
+
+model PlatformRateLimitBucket {
+  scopeType    String
+  scopeId      String
+  windowStart  DateTime @db.Timestamp(3)
+  requestCount BigInt   @default(0)
+  expiresAt    DateTime @db.Timestamp(3)
+
+  @@id([scopeType, scopeId, windowStart])
+  @@index([expiresAt])
+}
+
+model PlatformImporterLease {
+  id        String   @id @default("singleton")
+  holder    String
+  expiresAt DateTime @db.Timestamptz
+}
+
+model BridgeNonce {
+  nonce     String   @id
+  expiresAt DateTime @db.Timestamptz
+}
+
+// ─────────────────────────────────────────────────────────────
+// HospitalOS Plugin Schema Models (Phase 2b-2)
+// ─────────────────────────────────────────────────────────────
+
+model HmsDepartment {
+  tenantId  String   @default(dbgenerated("app_current_tenant()"))
+  id        String
+  name      String
+  createdAt DateTime @default(now()) @db.Timestamptz
+
+  wards HmsWard[]
+  staff HmsStaff[]
+
+  @@id([tenantId, id])
+  @@unique([tenantId, name])
+}
+
+model HmsWard {
+  tenantId     String @default(dbgenerated("app_current_tenant()"))
+  id           String
+  departmentId String
+  name         String
+
+  department HmsDepartment @relation(fields: [tenantId, departmentId], references: [tenantId, id], onDelete: NoAction, onUpdate: NoAction)
+  beds       HmsBed[]
+
+  @@id([tenantId, id])
+}
+
+model HmsBed {
+  tenantId       String @default(dbgenerated("app_current_tenant()"))
+  id             String
+  wardId         String
+  label          String
+  dailyRateMinor BigInt
+  serviceState   String @default("IN_SERVICE")
+
+  ward       HmsWard        @relation(fields: [tenantId, wardId], references: [tenantId, id], onDelete: NoAction, onUpdate: NoAction)
+  admissions HmsAdmission[]
+
+  @@id([tenantId, id])
+  @@unique([tenantId, wardId, label])
+}
+
+model HmsStaff {
+  tenantId     String  @default(dbgenerated("app_current_tenant()"))
+  id           String
+  nameSealed   String
+  emailBlind   String
+  role         String
+  departmentId String?
+  status       String  @default("ACTIVE")
+  onDuty       Boolean @default(false)
+
+  department         HmsDepartment?       @relation(fields: [tenantId, departmentId], references: [tenantId, id], onDelete: NoAction, onUpdate: NoAction)
+  admissions         HmsAdmission[]       @relation("HmsAttendingStaff")
+  appointments       HmsAppointment[]
+  orderedLabOrders   HmsLabOrder[]        @relation("HmsLabOrderedBy")
+  resultedLabOrders  HmsLabOrder[]        @relation("HmsLabResultedBy")
+  verifiedLabOrders  HmsLabOrder[]        @relation("HmsLabVerifiedBy")
+  receivedPayments   HmsPayment[]
+  breakGlassGrants   HmsBreakGlassGrant[]
+  credential         HmsStaffCredential?
+  sessions           HmsStaffSession[]
+
+  @@id([tenantId, id])
+  @@unique([tenantId, emailBlind])
+}
+
+model HmsRole {
+  tenantId    String   @default(dbgenerated("app_current_tenant()"))
+  id          String
+  name        String
+  description String?
+  isSystem    Boolean  @default(false)
+  createdAt   DateTime @default(now()) @db.Timestamptz
+  updatedAt   DateTime @default(now()) @db.Timestamptz
+
+  permissions HmsRolePermission[]
+  sessions    HmsStaffSession[]
+
+  @@id([tenantId, id])
+  @@unique([tenantId, name])
+}
+
+model HmsRolePermission {
+  tenantId   String @default(dbgenerated("app_current_tenant()"))
+  roleId     String
+  permission String
+
+  role HmsRole @relation(fields: [tenantId, roleId], references: [tenantId, id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@id([tenantId, roleId, permission])
+}
+
+model HmsStaffCredential {
+  tenantId       String    @default(dbgenerated("app_current_tenant()"))
+  staffId        String
+  passwordHash   String
+  salt           String
+  failedAttempts Int       @default(0)
+  lockedUntil    DateTime? @db.Timestamptz
+  lastLoginAt    DateTime? @db.Timestamptz
+  createdAt      DateTime  @default(now()) @db.Timestamptz
+  updatedAt      DateTime  @default(now()) @db.Timestamptz
+
+  staff HmsStaff @relation(fields: [tenantId, staffId], references: [tenantId, id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@id([tenantId, staffId])
+}
+
+model HmsStaffSession {
+  tenantId          String    @default(dbgenerated("app_current_tenant()"))
+  id                String
+  staffId           String
+  roleId            String
+  tokenHash         String
+  expiresAt         DateTime  @db.Timestamptz
+  absoluteExpiresAt DateTime  @db.Timestamptz
+  revokedAt         DateTime? @db.Timestamptz
+  userAgent         String?
+  ipAddress         String?
+  createdAt         DateTime  @default(now()) @db.Timestamptz
+  updatedAt         DateTime  @default(now()) @db.Timestamptz
+
+  staff HmsStaff @relation(fields: [tenantId, staffId], references: [tenantId, id], onDelete: Cascade, onUpdate: NoAction)
+  role  HmsRole  @relation(fields: [tenantId, roleId], references: [tenantId, id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@id([tenantId, id])
+  @@unique([tenantId, tokenHash])
+  @@index([tenantId, staffId])
+}
+
+model HmsPatient {
+  tenantId               String   @default(dbgenerated("app_current_tenant()"))
+  id                     String
+  mrn                    String
+  nameSealed             String
+  nameBlind              String
+  phoneSealed            String?
+  phoneBlind             String?
+  dateOfBirthSealed      String?
+  ageBand                String?
+  gender                 String?
+  bloodGroup             String?
+  allergiesSealed        String?
+  emergencyContactSealed String?
+  triageLevel            Int?     @db.SmallInt
+  processingStatus       String   @default("ACTIVE")
+  restrictedAt           DateTime? @db.Timestamptz
+  restrictedReason       String?
+  restrictedBy           String?
+  createdAt              DateTime @default(now()) @db.Timestamptz
+  updatedAt              DateTime @default(now()) @db.Timestamptz
+  version                Int      @default(1)
+
+  admissions       HmsAdmission[]
+  appointments     HmsAppointment[]
+  labOrders        HmsLabOrder[]
+  invoices         HmsInvoice[]
+  breakGlassGrants HmsBreakGlassGrant[]
+
+  @@id([tenantId, id])
+  @@unique([tenantId, mrn])
+  @@index([tenantId, nameBlind], map: "HmsPatient_nameBlind")
+  @@index([tenantId, processingStatus])
+}
+
+model HmsAdmission {
+  tenantId         String    @default(dbgenerated("app_current_tenant()"))
+  id               String
+  patientId        String
+  bedId            String
+  attendingStaffId String
+  admittedAt       DateTime  @default(now()) @db.Timestamptz
+  dischargedAt     DateTime? @db.Timestamptz
+  notesSealed      String?
+
+  patient        HmsPatient @relation(fields: [tenantId, patientId], references: [tenantId, id], onDelete: NoAction, onUpdate: NoAction)
+  bed            HmsBed     @relation(fields: [tenantId, bedId], references: [tenantId, id], onDelete: NoAction, onUpdate: NoAction)
+  attendingStaff HmsStaff   @relation("HmsAttendingStaff", fields: [tenantId, attendingStaffId], references: [tenantId, id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@id([tenantId, id])
+}
+
+model HmsAppointment {
+  tenantId     String                   @default(dbgenerated("app_current_tenant()"))
+  id           String
+  patientId    String
+  doctorId     String
+  slot         Unsupported("tstzrange")
+  status       String                   @default("SCHEDULED")
+  reasonSealed String?
+
+  patient HmsPatient @relation(fields: [tenantId, patientId], references: [tenantId, id], onDelete: NoAction, onUpdate: NoAction)
+  doctor  HmsStaff   @relation(fields: [tenantId, doctorId], references: [tenantId, id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@id([tenantId, id])
+}
+
+model HmsLabOrder {
+  tenantId     String    @default(dbgenerated("app_current_tenant()"))
+  id           String
+  patientId    String
+  orderedById  String
+  testType     String
+  status       String    @default("ORDERED")
+  resultSealed String?
+  resultedById String?
+  verifiedById String?
+  verifiedAt   DateTime? @db.Timestamptz
+  version      Int       @default(1)
+  updatedAt    DateTime  @default(now()) @db.Timestamptz
+
+  patient    HmsPatient @relation(fields: [tenantId, patientId], references: [tenantId, id], onDelete: NoAction, onUpdate: NoAction)
+  orderedBy  HmsStaff   @relation("HmsLabOrderedBy", fields: [tenantId, orderedById], references: [tenantId, id], onDelete: NoAction, onUpdate: NoAction)
+  resultedBy HmsStaff?  @relation("HmsLabResultedBy", fields: [tenantId, resultedById], references: [tenantId, id], onDelete: NoAction, onUpdate: NoAction)
+  verifiedBy HmsStaff?  @relation("HmsLabVerifiedBy", fields: [tenantId, verifiedById], references: [tenantId, id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@id([tenantId, id])
+}
+
+model HmsInvoice {
+  tenantId   String   @default(dbgenerated("app_current_tenant()"))
+  id         String
+  patientId  String
+  currency   String   @default("INR") @db.Char(3)
+  totalMinor BigInt
+  paidMinor  BigInt   @default(0)
+  status     String   @default("OPEN")
+  createdAt  DateTime @default(now()) @db.Timestamptz
+
+  patient  HmsPatient   @relation(fields: [tenantId, patientId], references: [tenantId, id], onDelete: NoAction, onUpdate: NoAction)
+  payments HmsPayment[]
+
+  @@id([tenantId, id])
+}
+
+model HmsPayment {
+  tenantId       String   @default(dbgenerated("app_current_tenant()"))
+  id             String
+  invoiceId      String
+  amountMinor    BigInt
+  method         String
+  idempotencyKey String
+  receivedById   String
+  receivedAt     DateTime @default(now()) @db.Timestamptz
+
+  invoice    HmsInvoice @relation(fields: [tenantId, invoiceId], references: [tenantId, id], onDelete: NoAction, onUpdate: NoAction)
+  receivedBy HmsStaff   @relation(fields: [tenantId, receivedById], references: [tenantId, id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@id([tenantId, id])
+  @@unique([tenantId, idempotencyKey])
+}
+
+model HmsPhiAccessLog {
+  tenantId  String   @default(dbgenerated("app_current_tenant()"))
+  seq       BigInt   @default(autoincrement())
+  actorId   String
+  patientId String
+  columns   String[]
+  purpose   String
+  requestId String
+  at        DateTime @default(now()) @db.Timestamptz
+
+  @@id([tenantId, seq])
+}
+
+model HmsBreakGlassGrant {
+  tenantId  String   @default(dbgenerated("app_current_tenant()"))
+  id        String
+  staffId   String
+  patientId String
+  reason    String
+  grantedAt DateTime @default(now()) @db.Timestamptz
+  expiresAt DateTime @db.Timestamptz
+
+  staff   HmsStaff   @relation(fields: [tenantId, staffId], references: [tenantId, id], onDelete: NoAction, onUpdate: NoAction)
+  patient HmsPatient @relation(fields: [tenantId, patientId], references: [tenantId, id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@id([tenantId, id])
+}
+
+model TenantIdempotencyKey {
+  tenantId       String   @default(dbgenerated("app_current_tenant()"))
+  scope          String
+  key            String
+  requestHash    String
+  responseStatus Int?
+  responseBody   Json?
+  createdAt      DateTime @default(now()) @db.Timestamptz
+
+  @@id([tenantId, scope, key])
+}
+
+model TenantOutbox {
+  tenantId  String   @default(dbgenerated("app_current_tenant()"))
+  seq       BigInt   @default(autoincrement())
+  topic     String
+  payload   Json
+  createdAt DateTime @default(now()) @db.Timestamptz
+
+  @@id([tenantId, seq])
+}
+
+model BillingWebhookEvent {
+  eventId     String    @id
+  provider    String    @default("razorpay")
+  receivedAt  DateTime  @default(now())
+  payload     Json
+  processedAt DateTime?
+  result      Json?
+
+  @@index([provider, receivedAt])
+}
+
+model PluginGrantRevision {
+  tenantId        String
+  pluginId        String
+  highestRevision Int      @default(0)
+  updatedAt       DateTime @default(now()) @updatedAt
+
+  @@id([tenantId, pluginId])
+  @@index([tenantId])
+}
+
+model PlatformOperation {
+  id             String    @id @default(cuid())
+  type           String    @default("TENANT_PROVISION")
+  tenantId       String
+  organizationId String
+  idempotencyKey String?
+  status         String    @default("PROVISIONING")
+  leaseOwner     String?
+  leaseExpiresAt DateTime?
+  steps          Json      @default("[]")
+  request        Json      @default("{}")
+  result         Json?
+  error          String?
+  operatorId     String?
+  requestId      String?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+  completedAt    DateTime?
+
+  @@index([organizationId])
+  @@index([tenantId])
+  @@index([status])
+  @@index([leaseExpiresAt])
+  @@unique([organizationId, idempotencyKey])
+}
