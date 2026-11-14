@@ -1,4 +1,4 @@
-import { describe, it, beforeEach, afterEach } from 'node:test';
+import { describe, it, beforeEach, afterEach, after } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   requireOperatorAuthorization,
@@ -11,11 +11,9 @@ import {
 } from '../../src/server/tenants/tenants-service';
 import type { OperatorSessionContext } from '../../src/server/accounts/account-service';
 
-// Explicitly ensure in-memory unit tests run with no database configured (B-4 requirement 4)
+// Save original database environment variables
 const initialDbUrl = process.env.DATABASE_URL;
 const initialAppDbUrl = process.env.APP_DATABASE_URL;
-delete process.env.DATABASE_URL;
-delete process.env.APP_DATABASE_URL;
 
 const mockOperator: OperatorSessionContext = {
   id: 'sess_test_123',
@@ -27,6 +25,11 @@ const mockOperator: OperatorSessionContext = {
 };
 
 describe('Tenants Service Unit Tests (Step C2, Rule 4.11 MCP-ready)', () => {
+  beforeEach(() => {
+    // Explicitly ensure in-memory unit tests run with no database configured (B-4 requirement 4)
+    delete process.env.DATABASE_URL;
+    delete process.env.APP_DATABASE_URL;
+  });
   it('enforces operator authorization', () => {
     assert.throws(
       () => requireOperatorAuthorization(null),
@@ -372,6 +375,8 @@ describe('Database Error Handling & Strict Non-Fallback Invariants (B-4)', () =>
   });
 });
 
-// Restore environment at end of file if original variables were set
-if (initialDbUrl) process.env.DATABASE_URL = initialDbUrl;
-if (initialAppDbUrl) process.env.APP_DATABASE_URL = initialAppDbUrl;
+// Restore environment in after hook if original variables were set
+after(() => {
+  if (initialDbUrl) process.env.DATABASE_URL = initialDbUrl;
+  if (initialAppDbUrl) process.env.APP_DATABASE_URL = initialAppDbUrl;
+});
