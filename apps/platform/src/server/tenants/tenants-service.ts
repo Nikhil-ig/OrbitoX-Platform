@@ -5,6 +5,46 @@ import type { OperatorSessionContext } from '@/server/accounts/account-service';
 // Module-level in-memory store for offline unit tests and fallback
 export const IN_MEMORY_TENANTS: any[] = [
   {
+    id: 'tenant_hyatt_bom',
+    slug: 'grand-hyatt-bom',
+    name: 'Grand Hyatt Regency (Mumbai)',
+    organizationId: 'org_hyatt_hotels',
+    organization: { name: 'Hyatt Hotels Group' },
+    planTier: 'enterprise',
+    plan: 'enterprise',
+    status: 'ACTIVE',
+    customDomain: 'hyatt.mumbai.orbitox.net',
+    monthlyApiCalls: 489200n,
+    apiCallQuota: 2000000n,
+    rateLimitPerMin: 1500,
+    storageQuotaGb: 150,
+    enabledServices: ['@orbitox-io/plugin-engine', '@orbitox/pos'],
+    installedPlugins: ['@orbitox-io/plugin-engine', '@orbitox/pos'],
+    createdAt: new Date('2026-01-10T00:00:00Z'),
+    updatedAt: new Date(),
+    auditEvents: [],
+  },
+  {
+    id: 'tenant_hyatt_bom',
+    slug: 'grand-hyatt-bom',
+    name: 'Grand Hyatt Regency (Mumbai)',
+    organizationId: 'org_hyatt_hospitality',
+    organization: { name: 'Hyatt International Hospitality' },
+    planTier: 'enterprise',
+    plan: 'enterprise',
+    status: 'ACTIVE',
+    customDomain: 'hyatt.mumbai.orbitox.net',
+    monthlyApiCalls: 450000n,
+    apiCallQuota: 2000000n,
+    rateLimitPerMin: 1500,
+    storageQuotaGb: 250,
+    enabledServices: ['@orbitox-io/plugin-engine', '@orbitox/hospital'],
+    installedPlugins: ['@orbitox-io/plugin-engine', '@orbitox/hospital'],
+    createdAt: new Date('2026-01-05T00:00:00Z'),
+    updatedAt: new Date(),
+    auditEvents: [],
+  },
+  {
     id: 'proj_oasis_blr',
     slug: 'oasis-medical-center',
     name: 'Oasis Medical Center',
@@ -321,12 +361,20 @@ export async function getTenantDetail(
   }
 
   const cleanId = idOrSlug.trim();
+  const lookupIds = [
+    cleanId,
+    cleanId.toLowerCase(),
+    cleanId === 'tenant_oasis_blr' ? 'proj_oasis_blr' : '',
+    cleanId === 'proj_oasis_blr' ? 'tenant_oasis_blr' : '',
+    cleanId === 'tenant_bandra_bom' ? 'proj_rest_mumbai' : '',
+    cleanId === 'oasis-medical' ? 'oasis-medical-center' : '',
+  ].filter(Boolean);
   let project: any = null;
 
   if (hasDatabase()) {
     project = await prisma.platformProject.findFirst({
       where: {
-        OR: [{ id: cleanId }, { slug: cleanId.toLowerCase() }],
+        OR: lookupIds.flatMap((id) => [{ id }, { slug: id }]),
       },
       include: {
         organization: true,
@@ -341,7 +389,7 @@ export async function getTenantDetail(
     }
   } else {
     project = IN_MEMORY_TENANTS.find(
-      (t) => t.id === cleanId || t.slug === cleanId.toLowerCase()
+      (t) => lookupIds.includes(t.id) || lookupIds.includes(t.slug)
     );
 
     if (!project) {

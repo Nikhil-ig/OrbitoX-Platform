@@ -1,6 +1,7 @@
 'use client';
 
 import * as React from 'react';
+import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { RefreshCw, Plus, ShieldCheck, AlertTriangle } from 'lucide-react';
 import {
@@ -96,11 +97,19 @@ export function OverviewClient({
 
       {/* Cluster Health Banner if Degraded */}
       {summary.clusterStatus !== 'healthy' && (
-        <div className="p-4 rounded-[var(--radius-row)] border border-[var(--status-warning-border)] bg-[var(--status-warning-bg)] text-[var(--status-warning-fg)] flex items-center gap-3">
-          <AlertTriangle className="h-5 w-5 shrink-0" />
-          <div className="text-sm font-medium">
-            Cluster attention: {summary.failedJobsCount} asynchronous provisioning operation(s) require operator review.
+        <div className="p-4 rounded-[var(--radius-row)] border border-[var(--status-warning-border)] bg-[var(--status-warning-bg)] text-[var(--status-warning-fg)] flex items-center justify-between gap-3">
+          <div className="flex items-center gap-3">
+            <AlertTriangle className="h-5 w-5 shrink-0" />
+            <div className="text-sm font-medium">
+              Cluster attention: {summary.failedJobsCount} asynchronous provisioning operation(s) require operator review.
+            </div>
           </div>
+          <Link
+            href="/console/provisioning?status=FAILED"
+            className="text-xs font-semibold underline shrink-0 hover:opacity-80 transition-opacity"
+          >
+            Review provisioning jobs →
+          </Link>
         </div>
       )}
 
@@ -184,6 +193,15 @@ export function OverviewClient({
             </CardHeader>
             <CardContent>
               <ActivityFeed items={alerts.auditFeed} />
+              <div className="pt-3 border-t border-[var(--color-border)] mt-4">
+                <Link
+                  href="/console/audit"
+                  className="text-xs text-[var(--color-primary)] hover:underline inline-flex items-center gap-1"
+                >
+                  <span>View full audit log</span>
+                  <span aria-hidden="true">→</span>
+                </Link>
+              </div>
             </CardContent>
           </Card>
         </div>
@@ -195,9 +213,13 @@ export function OverviewClient({
           <h3 className="text-sm font-semibold tracking-wide uppercase text-[var(--color-text-muted)]">
             Tenants Requiring Attention
           </h3>
-          <span className="text-xs text-[var(--color-text-muted)]">
-            Showing top priority environments
-          </span>
+          <Link
+            href="/console/tenants"
+            className="text-xs font-medium text-[var(--color-primary)] hover:underline flex items-center gap-1"
+          >
+            <span>Open tenants</span>
+            <span aria-hidden="true">→</span>
+          </Link>
         </div>
         <div className="space-y-2">
           {alerts.tenantsRequiringAttention.map((tenant) => {

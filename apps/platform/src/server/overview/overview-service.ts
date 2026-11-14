@@ -42,6 +42,7 @@ export interface AuditItem {
   action: string;
   tag: string;
   time: string;
+  href?: string;
 }
 
 export interface TenantAttentionItem {
@@ -181,17 +182,29 @@ export async function getOverviewAlerts(operator?: OperatorSessionContext | null
         actorEmail: true,
         reason: true,
         occurredAt: true,
+        entityType: true,
+        entityId: true,
+        projectId: true,
       },
     });
 
     if (rawAudits.length > 0) {
-      auditFeed = rawAudits.map((a) => ({
-        id: a.id,
-        actor: a.actorEmail || 'Operator Session',
-        action: a.action,
-        tag: 'Audit',
-        time: `${Math.max(1, Math.floor((Date.now() - a.occurredAt.getTime()) / 60000))}m ago`,
-      }));
+      auditFeed = rawAudits.map((a) => {
+        let href = `/console/audit?entity=${encodeURIComponent(a.entityId || a.id)}`;
+        if (a.projectId) {
+          href = `/console/tenants/${a.projectId}`;
+        } else if (a.entityType === 'TENANT' && a.entityId) {
+          href = `/console/tenants/${a.entityId}`;
+        }
+        return {
+          id: a.id,
+          actor: a.actorEmail || 'Operator Session',
+          action: a.action,
+          tag: 'Audit',
+          time: `${Math.max(1, Math.floor((Date.now() - a.occurredAt.getTime()) / 60000))}m ago`,
+          href,
+        };
+      });
     }
   } catch {
     // Database fallback
@@ -205,6 +218,7 @@ export async function getOverviewAlerts(operator?: OperatorSessionContext | null
         action: 'rotated production signing keypair for @orbitox/hms',
         tag: 'Security',
         time: '8m ago',
+        href: '/console/security',
       },
       {
         id: '2',
@@ -212,6 +226,7 @@ export async function getOverviewAlerts(operator?: OperatorSessionContext | null
         action: 'provisioned PostgreSQL tenant db for Taj Hospitality',
         tag: 'DB',
         time: '24m ago',
+        href: '/console/provisioning?job=saga_db_taj',
       },
       {
         id: '3',
@@ -219,6 +234,7 @@ export async function getOverviewAlerts(operator?: OperatorSessionContext | null
         action: 'blocked anomalous token request from CIDR 194.26.29.0/24',
         tag: 'WAF',
         time: '1h ago',
+        href: '/console/security',
       },
     ];
   }
@@ -235,18 +251,18 @@ export async function getOverviewAlerts(operator?: OperatorSessionContext | null
       highlighted: true,
     },
     {
-      id: 'tenant_bandra_bom',
-      name: 'Bandra Kitchens Fleet',
-      slug: 'bandra-kitchens',
-      domain: 'order.bandrakitchens.com',
+      id: 'proj_rest_mumbai',
+      name: 'Bombay Brasserie Fleet',
+      slug: 'bombay-brasserie',
+      domain: 'order.bombaybrasserie.in',
       status: 'warning',
       badge: 'High Quota',
       reason: 'Rate limit budget 94% exhausted',
     },
     {
-      id: 'tenant_oasis_blr',
+      id: 'proj_oasis_blr',
       name: 'Oasis Medical Center',
-      slug: 'oasis-medical',
+      slug: 'oasis-medical-center',
       domain: 'care.oasismedical.in',
       status: 'problem',
       badge: 'Action Required',

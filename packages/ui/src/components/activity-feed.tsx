@@ -8,6 +8,7 @@ export interface ActivityItem {
   tag?: string;
   tagVariant?: 'default' | 'success' | 'warning' | 'danger' | 'info';
   time: string;
+  href?: string;
 }
 
 export interface ActivityFeedProps extends React.HTMLAttributes<HTMLUListElement> {
@@ -45,7 +46,16 @@ export function ActivityFeed({
             <span className="h-1.5 w-1.5 rounded-full bg-[var(--color-primary)] shrink-0" aria-hidden="true" />
             <div className="truncate">
               <span className="font-semibold text-[var(--color-text)] mr-1">{item.actor}</span>
-              <span className="text-[var(--color-text-muted)]">{item.action}</span>
+              {item.href ? (
+                <a
+                  href={item.href}
+                  className="text-[var(--color-text-muted)] hover:text-[var(--color-primary)] hover:underline transition-colors"
+                >
+                  {item.action}
+                </a>
+              ) : (
+                <span className="text-[var(--color-text-muted)]">{item.action}</span>
+              )}
             </div>
           </div>
 

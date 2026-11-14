@@ -214,6 +214,19 @@ export function TenantDetailClient({ initialTenant }: TenantDetailClientProps) {
 
   return (
     <div className="space-y-6 max-w-5xl mx-auto py-2">
+      {/* Breadcrumbs */}
+      <nav aria-label="Breadcrumb" className="flex items-center gap-2 text-xs text-[var(--color-text-muted)]">
+        <Link href="/console/overview" className="hover:text-[var(--color-text)] transition-colors">
+          Overview
+        </Link>
+        <span aria-hidden="true">/</span>
+        <Link href="/console/tenants" className="hover:text-[var(--color-text)] transition-colors">
+          Tenants
+        </Link>
+        <span aria-hidden="true">/</span>
+        <span className="text-[var(--color-text)] font-medium truncate">{tenant.name}</span>
+      </nav>
+
       {/* Back button */}
       <div>
         <Link
@@ -359,6 +372,21 @@ export function TenantDetailClient({ initialTenant }: TenantDetailClientProps) {
                     {tenant.topology.region}
                   </p>
                 </div>
+                <div className="p-4 rounded-[var(--radius-row)] bg-[var(--color-surface-raised)] border border-[var(--color-border)] sm:col-span-2 flex items-center justify-between">
+                  <div>
+                    <span className="text-[var(--color-text-muted)] block mb-1">Provisioning Job</span>
+                    <p className="font-mono text-sm font-semibold text-[var(--color-text)]">
+                      prov_{tenant.slug || tenant.id}
+                    </p>
+                  </div>
+                  <Link
+                    href={`/console/provisioning?tenant=${tenant.id}`}
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium border border-[var(--color-border)] bg-[var(--color-surface)] text-[var(--color-text)] hover:text-[var(--color-primary)] transition-colors"
+                  >
+                    <span>View Provisioning State</span>
+                    <ExternalLink className="h-3 w-3" />
+                  </Link>
+                </div>
               </div>
             </CardContent>
           </Card>
@@ -373,11 +401,37 @@ export function TenantDetailClient({ initialTenant }: TenantDetailClientProps) {
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 text-xs">
                 <div>
                   <span className="text-[var(--color-text-muted)] block mb-1">Organization</span>
-                  <p className="font-semibold text-[var(--color-text)]">{tenant.organizationName}</p>
+                  <Link
+                    href={`/console/organizations?org=${encodeURIComponent(tenant.organizationName || 'default')}`}
+                    className="font-semibold text-[var(--color-primary)] hover:underline inline-flex items-center gap-1"
+                  >
+                    <span>{tenant.organizationName}</span>
+                    <ExternalLink className="h-3 w-3" />
+                  </Link>
                 </div>
                 <div>
-                  <span className="text-[var(--color-text-muted)] block mb-1">Plan Tier</span>
-                  <p className="font-semibold text-[var(--color-text)] uppercase">{tenant.planTier}</p>
+                  <span className="text-[var(--color-text-muted)] block mb-1">Plan Tier & Billing</span>
+                  <div className="flex items-center gap-2">
+                    <span className="font-semibold text-[var(--color-text)] uppercase">{tenant.planTier}</span>
+                    <Link
+                      href={`/console/billing?tenant=${tenant.id}`}
+                      className="text-xs text-[var(--color-primary)] hover:underline inline-flex items-center gap-0.5"
+                    >
+                      <span>(Billing)</span>
+                      <ExternalLink className="h-2.5 w-2.5" />
+                    </Link>
+                  </div>
+                  <div className="mt-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      disabled
+                      className="rounded-full text-[11px] h-7 cursor-not-allowed"
+                      title="needs C1 API"
+                    >
+                      Change plan (needs C1 API)
+                    </Button>
+                  </div>
                 </div>
                 <div>
                   <span className="text-[var(--color-text-muted)] block mb-1">Created At</span>
@@ -551,13 +605,22 @@ export function TenantDetailClient({ initialTenant }: TenantDetailClientProps) {
       {/* Tab 5: Audit History */}
       {activeTab === 'audit' && (
         <Card className="rounded-[28px] border border-[var(--color-border)] bg-[var(--color-surface)] p-6">
-          <CardHeader className="p-0 pb-4">
-            <CardTitle className="text-base text-[var(--color-text)]">
-              Tenant Audit Trail
-            </CardTitle>
-            <CardDescription className="text-xs text-[var(--color-text-muted)]">
-              Append-only tamper-evident compliance audit trail for this tenant.
-            </CardDescription>
+          <CardHeader className="p-0 pb-4 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+            <div>
+              <CardTitle className="text-base text-[var(--color-text)]">
+                Tenant Audit Trail
+              </CardTitle>
+              <CardDescription className="text-xs text-[var(--color-text-muted)]">
+                Append-only tamper-evident compliance audit trail for this tenant.
+              </CardDescription>
+            </div>
+            <Link
+              href={`/console/audit?entity=TENANT:${tenant.id}`}
+              className="text-xs text-[var(--color-primary)] hover:underline inline-flex items-center gap-1 shrink-0"
+            >
+              <span>Full Audit Log</span>
+              <ExternalLink className="h-3 w-3" />
+            </Link>
           </CardHeader>
           <CardContent className="p-0 space-y-3">
             {tenant.recentAuditEvents.length === 0 ? (
@@ -566,9 +629,10 @@ export function TenantDetailClient({ initialTenant }: TenantDetailClientProps) {
               </div>
             ) : (
               tenant.recentAuditEvents.map((aud) => (
-                <div
+                <Link
                   key={aud.id}
-                  className="flex items-center justify-between p-3 rounded-[var(--radius-row)] bg-[var(--color-surface-raised)] border border-[var(--color-border)] text-xs"
+                  href={`/console/audit?entity=TENANT:${tenant.id}&event=${aud.id}`}
+                  className="flex items-center justify-between p-3 rounded-[var(--radius-row)] bg-[var(--color-surface-raised)] border border-[var(--color-border)] text-xs hover:border-[var(--color-primary)]/40 transition-colors"
                 >
                   <div>
                     <div className="font-semibold text-[var(--color-text)]">{aud.action}</div>
@@ -579,7 +643,7 @@ export function TenantDetailClient({ initialTenant }: TenantDetailClientProps) {
                   <span className="font-mono text-[11px] text-[var(--color-text-muted)]">
                     {new Date(aud.occurredAt).toLocaleTimeString()}
                   </span>
-                </div>
+                </Link>
               ))
             )}
           </CardContent>

@@ -284,10 +284,10 @@ export default function DesignSystemClient() {
       <AppShell
         appName="OrbitoX Console"
         navItems={[
-          { id: 'admin', label: 'Overview', href: '/console/admin', icon: <Layers className="h-4 w-4" /> },
+          { id: 'admin', label: 'Overview', href: '/console/overview', icon: <Layers className="h-4 w-4" /> },
           { id: 'design', label: 'Design System', href: '/console/design-system', icon: <Palette className="h-4 w-4" />, active: true },
-          { id: 'platform', label: 'Tenants & POS', href: '/console/platform', icon: <Building2 className="h-4 w-4" /> },
-          { id: 'keys', label: 'Security & Access', href: '/console/admin/api-keys', icon: <ShieldCheck className="h-4 w-4" /> },
+          { id: 'platform', label: 'Tenants', href: '/console/tenants', icon: <Building2 className="h-4 w-4" /> },
+          { id: 'keys', label: 'Security & Access', href: '/admin/api-keys', icon: <ShieldCheck className="h-4 w-4" /> },
         ]}
         tenantSwitcher={
           <div className="flex items-center gap-2">

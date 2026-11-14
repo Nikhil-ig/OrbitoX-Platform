@@ -15,6 +15,8 @@ import {
   Palette,
   LogOut,
   Sparkles,
+  ExternalLink,
+  Layers,
 } from 'lucide-react';
 import { AppShell, type NavItem } from '@orbitox-io/ui';
 import { Button } from '@orbitox-io/ui';
@@ -30,7 +32,10 @@ export interface ConsoleShellProps {
     | 'billing'
     | 'data-rights'
     | 'audit'
-    | 'appearance';
+    | 'appearance'
+    | 'design-system'
+    | 'legacy-admin'
+    | 'legacy-platform';
   operatorEmail?: string;
   operatorRole?: string;
 }
@@ -68,6 +73,11 @@ export function ConsoleShell({
       label: 'Organizations',
       href: '/console/organizations',
       icon: <Building2 className="h-4 w-4" />,
+      badge: (
+        <span className="text-[10px] px-1.5 py-0.5 rounded-full border border-[var(--color-border)] bg-[var(--color-surface-raised)] text-[var(--color-text-muted)] font-mono">
+          C3
+        </span>
+      ),
       active: activeId === 'orgs',
     },
     {
@@ -82,21 +92,23 @@ export function ConsoleShell({
       label: 'Provisioning',
       href: '/console/provisioning',
       icon: <Terminal className="h-4 w-4" />,
-      badge: <span className="h-2 w-2 rounded-full bg-[var(--color-warning)]" />,
+      badge: (
+        <span className="text-[10px] px-1.5 py-0.5 rounded-full border border-[var(--color-border)] bg-[var(--color-surface-raised)] text-[var(--color-text-muted)] font-mono">
+          C4
+        </span>
+      ),
       active: activeId === 'provisioning',
-    },
-    {
-      id: 'security',
-      label: 'Security & Keys',
-      href: '/console/security',
-      icon: <Key className="h-4 w-4" />,
-      active: activeId === 'security',
     },
     {
       id: 'billing',
       label: 'Billing',
       href: '/console/billing',
       icon: <CreditCard className="h-4 w-4" />,
+      badge: (
+        <span className="text-[10px] px-1.5 py-0.5 rounded-full border border-[var(--color-border)] bg-[var(--color-surface-raised)] text-[var(--color-text-muted)] font-mono">
+          C3
+        </span>
+      ),
       active: activeId === 'billing',
     },
     {
@@ -104,13 +116,35 @@ export function ConsoleShell({
       label: 'Data Rights',
       href: '/console/data-rights',
       icon: <ShieldAlert className="h-4 w-4" />,
+      badge: (
+        <span className="text-[10px] px-1.5 py-0.5 rounded-full border border-[var(--color-border)] bg-[var(--color-surface-raised)] text-[var(--color-text-muted)] font-mono">
+          C5
+        </span>
+      ),
       active: activeId === 'data-rights',
+    },
+    {
+      id: 'security',
+      label: 'Security & Keys',
+      href: '/console/security',
+      icon: <Key className="h-4 w-4" />,
+      badge: (
+        <span className="text-[10px] px-1.5 py-0.5 rounded-full border border-[var(--color-border)] bg-[var(--color-surface-raised)] text-[var(--color-text-muted)] font-mono">
+          C6
+        </span>
+      ),
+      active: activeId === 'security',
     },
     {
       id: 'audit',
       label: 'Audit Log',
       href: '/console/audit',
       icon: <FileText className="h-4 w-4" />,
+      badge: (
+        <span className="text-[10px] px-1.5 py-0.5 rounded-full border border-[var(--color-border)] bg-[var(--color-surface-raised)] text-[var(--color-text-muted)] font-mono">
+          Draft
+        </span>
+      ),
       active: activeId === 'audit',
     },
     {
@@ -119,6 +153,42 @@ export function ConsoleShell({
       href: '/console/settings/appearance',
       icon: <Palette className="h-4 w-4" />,
       active: activeId === 'appearance',
+    },
+    {
+      id: 'design-system',
+      label: 'Design System',
+      href: '/console/design-system',
+      icon: <Sparkles className="h-4 w-4" />,
+      badge: (
+        <span className="text-[10px] px-1.5 py-0.5 rounded-full border border-[var(--color-border)] bg-[var(--color-surface-raised)] text-[var(--color-text-muted)]">
+          Internal
+        </span>
+      ),
+      active: activeId === 'design-system',
+    },
+    {
+      id: 'legacy-admin',
+      label: 'Admin',
+      href: '/admin',
+      icon: <ExternalLink className="h-4 w-4" />,
+      badge: (
+        <span className="text-[10px] px-1.5 py-0.5 rounded-full border border-[var(--status-warning-border)] bg-[var(--status-warning-bg)] text-[var(--status-warning-fg)] font-medium">
+          Legacy
+        </span>
+      ),
+      active: activeId === 'legacy-admin',
+    },
+    {
+      id: 'legacy-platform',
+      label: 'Platform',
+      href: '/platform',
+      icon: <Layers className="h-4 w-4" />,
+      badge: (
+        <span className="text-[10px] px-1.5 py-0.5 rounded-full border border-[var(--status-warning-border)] bg-[var(--status-warning-bg)] text-[var(--status-warning-fg)] font-medium">
+          Legacy
+        </span>
+      ),
+      active: activeId === 'legacy-platform',
     },
   ];
 
