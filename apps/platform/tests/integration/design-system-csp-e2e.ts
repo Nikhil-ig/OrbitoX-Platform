@@ -208,7 +208,38 @@ async function main() {
     assert.equal(await page.evaluate(() => document.documentElement.getAttribute('data-density')), 'compact');
     console.log('PASS  Appearance settings persisted across page reload in Playwright (7B.1)');
 
-    // 6.2 Multi-user Database Precedence & Isolation in Fresh Browser Context (R2-3)
+    // 6.2 Step C1: Operator Overview (/console/overview, Screen A1)
+    await page.goto(`${BROWSER_BASE}/console/overview`, { waitUntil: 'networkidle' });
+    assert.equal(new URL(page.url()).pathname, '/console/overview');
+
+    const overviewHeading = page.getByRole('heading', { name: /Fleet Operations & Telemetry/i });
+    assert.ok(await overviewHeading.isVisible(), 'Expected overview heading to be visible');
+
+    const heroARR = page.getByText(/Monthly Platform ARR/i);
+    assert.ok(await heroARR.isVisible(), 'Expected Monthly Platform ARR to be visible');
+
+    // Test responsive viewports and assert zero horizontal page scroll
+    const viewports = [
+      { width: 1440, height: 900, name: 'desktop' },
+      { width: 834, height: 1194, name: 'tablet' },
+      { width: 390, height: 844, name: 'mobile' },
+    ];
+    for (const vp of viewports) {
+      await page.setViewportSize({ width: vp.width, height: vp.height });
+      await page.waitForTimeout(100);
+      const hasHorizontalScroll = await page.evaluate(
+        () => document.documentElement.scrollWidth > window.innerWidth,
+      );
+      assert.equal(
+        hasHorizontalScroll,
+        false,
+        `Detected horizontal overflow on /console/overview at ${vp.name} (${vp.width}x${vp.height})`,
+      );
+    }
+    await page.setViewportSize({ width: 1440, height: 900 });
+    console.log('PASS  /console/overview (Screen A1) verified in Playwright with zero horizontal overflow across viewports (Step C1)');
+
+    // 6.3 Multi-user Database Precedence & Isolation in Fresh Browser Context (R2-3)
     const dbUrl = process.env.TEST_DATABASE_URL || process.env.MAINTENANCE_DATABASE_URL || process.env.DATABASE_URL;
     if (dbUrl) {
       const { PrismaClient } = await import('@prisma/client');

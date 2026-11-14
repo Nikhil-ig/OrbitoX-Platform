@@ -10,7 +10,9 @@ import {
 import {
   OPERATOR_SESSION_COOKIE,
   getOperatorSession,
+  type OperatorSessionContext,
 } from '@/server/accounts/account-service';
+import { ConsoleShell } from '../../components/console-shell';
 import { AppearanceClient } from './appearance-client';
 
 export const metadata = {
@@ -23,9 +25,10 @@ export default async function AppearanceSettingsPage() {
   const operatorToken = cookieStore.get(OPERATOR_SESSION_COOKIE)?.value;
 
   let initialAppearance: AppearancePreferences | null = null;
+  let opSession: OperatorSessionContext | null = null;
   if (operatorToken) {
     try {
-      const opSession = await getOperatorSession(operatorToken);
+      opSession = await getOperatorSession(operatorToken);
       if (opSession?.operatorId) {
         initialAppearance = await getOperatorAppearance(opSession.operatorId);
       }
@@ -40,9 +43,15 @@ export default async function AppearanceSettingsPage() {
   }
 
   return (
-    <div className="w-full">
-      <AppearanceClient initialAppearance={initialAppearance || DEFAULT_APPEARANCE} />
-    </div>
+    <ConsoleShell
+      activeId="appearance"
+      operatorEmail={opSession?.email || 'operator@orbitox.io'}
+      operatorRole={opSession?.role || 'PLATFORM_OWNER'}
+    >
+      <div className="w-full">
+        <AppearanceClient initialAppearance={initialAppearance || DEFAULT_APPEARANCE} />
+      </div>
+    </ConsoleShell>
   );
 }
 
