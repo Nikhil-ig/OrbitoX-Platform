@@ -53,6 +53,7 @@
     "zod": "3.24.2"
   },
   "devDependencies": {
+    "@axe-core/playwright": "4.10.2",
     "@orbitox-io/eslint-config": "workspace:*",
     "@orbitox-io/tsconfig": "workspace:*",
     "@tailwindcss/postcss": "4.0.9",

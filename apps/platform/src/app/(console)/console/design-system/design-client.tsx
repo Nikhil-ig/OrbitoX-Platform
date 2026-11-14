@@ -1052,7 +1052,7 @@ export default function DesignSystemClient() {
                   )}
 
                   {showcaseScreen === 'S1' && (
-                    <div className="space-y-6 max-w-5xl mx-auto rounded-[28px] border border-[var(--color-border)] bg-[#0D0F12] text-[#F2F4F7] p-6 select-none shadow-2xl">
+                    <div className="space-y-6 max-w-5xl mx-auto rounded-[28px] border border-[var(--color-border)] bg-[var(--color-bg)] text-[var(--color-text)] p-6 select-none shadow-2xl">
                       <header className="flex items-center justify-between border-b border-white/10 pb-4">
                         <div className="flex items-center gap-3">
                           <div className="h-10 w-10 rounded-full bg-[var(--color-primary)] flex items-center justify-center">
@@ -1076,7 +1076,7 @@ export default function DesignSystemClient() {
                       </header>
 
                       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                        <div className="rounded-[28px] border-2 border-[var(--color-danger)]/50 bg-[#14171C] p-5 space-y-4 shadow-xl">
+                        <div className="rounded-[28px] border-2 border-[var(--color-danger)]/50 bg-[var(--color-surface)] p-5 space-y-4 shadow-xl">
                           <div className="flex items-center justify-between">
                             <div>
                               <span className="text-[10px] font-bold uppercase tracking-wider text-[var(--color-danger)]">Overdue (22m)</span>
@@ -1104,7 +1104,7 @@ export default function DesignSystemClient() {
                           </Button>
                         </div>
 
-                        <div className="rounded-[28px] border border-white/10 bg-[#14171C] p-5 space-y-4">
+                        <div className="rounded-[28px] border border-white/10 bg-[var(--color-surface)] p-5 space-y-4">
                           <div className="flex items-center justify-between">
                             <div>
                               <span className="text-[10px] font-bold uppercase tracking-wider text-[var(--color-warning)]">Preparing (8m)</span>
@@ -1132,7 +1132,7 @@ export default function DesignSystemClient() {
                           </Button>
                         </div>
 
-                        <div className="rounded-[28px] border border-white/10 bg-[#14171C] p-5 space-y-4">
+                        <div className="rounded-[28px] border border-white/10 bg-[var(--color-surface)] p-5 space-y-4">
                           <div className="flex items-center justify-between">
                             <div>
                               <span className="text-[10px] font-bold uppercase tracking-wider text-[var(--color-success)]">Just Arrived</span>
@@ -1164,14 +1164,14 @@ export default function DesignSystemClient() {
 
                   {showcaseScreen === 'D1' && (
                     <div className="flex justify-center p-4">
-                      <div className="w-full max-w-[390px] min-h-[700px] bg-white text-[#14161A] rounded-[44px] shadow-2xl border-8 border-[#14161A] flex flex-col overflow-hidden relative">
-                        <div className="px-6 pt-5 pb-3 flex items-center justify-between border-b border-[#E2E8F0]">
+                      <div className="w-full max-w-[390px] min-h-[700px] bg-[var(--color-surface)] text-[var(--color-text)] rounded-[44px] shadow-2xl border-8 border-[var(--color-border)] flex flex-col overflow-hidden relative">
+                        <div className="px-6 pt-5 pb-3 flex items-center justify-between border-b border-[var(--color-border)]">
                           <div>
-                            <h3 className="font-bold text-base text-[#14161A]">Today's Performance (D1)</h3>
-                            <p className="text-[11px] text-[#5A6170]">Saturday, 12 Nov · Bukhara</p>
+                            <h3 className="font-bold text-base text-[var(--color-text)]">Today's Performance (D1)</h3>
+                            <p className="text-[11px] text-[var(--color-text-muted)]">Saturday, 12 Nov · Bukhara</p>
                           </div>
                           <button type="button" className="p-2 rounded-full hover:bg-black/5 cursor-pointer">
-                            <Bell className="h-4 w-4 text-[#14161A]" />
+                            <Bell className="h-4 w-4 text-[var(--color-text)]" />
                           </button>
                         </div>
 
@@ -1183,7 +1183,7 @@ export default function DesignSystemClient() {
                             delta={{ value: '+16.2% vs yesterday', trend: 'up' }}
                           />
 
-                          <h4 className="text-xs font-bold uppercase tracking-wider text-[#5A6170]">Live Orders Requiring Action</h4>
+                          <h4 className="text-xs font-bold uppercase tracking-wider text-[var(--color-text-muted)]">Live Orders Requiring Action</h4>
                           <SwipeActions
                             leftAction={{
                               id: 'done',
@@ -1232,7 +1232,7 @@ export default function DesignSystemClient() {
 
                   {showcaseScreen === 'D4' && (
                     <div className="flex justify-center p-4">
-                      <div className="w-full max-w-[390px] min-h-[700px] bg-[#14171C] text-[#F2F4F7] rounded-[44px] shadow-2xl border-8 border-[#1B1F25] flex flex-col overflow-hidden relative">
+                      <div className="w-full max-w-[390px] min-h-[700px] bg-[var(--color-surface)] text-[var(--color-text)] rounded-[44px] shadow-2xl border-8 border-[var(--color-surface-raised)] flex flex-col overflow-hidden relative">
                         <div className="px-6 pt-5 pb-3 flex items-center justify-between border-b border-white/10">
                           <div>
                             <h3 className="font-bold text-base text-white">Waiter Stand (D4)</h3>

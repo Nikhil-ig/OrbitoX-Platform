@@ -254,9 +254,15 @@ export function TenantDetailClient({ initialTenant }: TenantDetailClientProps) {
                   : 'outline'
               }
               className="rounded-full text-xs font-semibold uppercase tracking-wider"
+              data-testid="tenant-status-badge"
             >
-              {tenant.status === 'SUSPENDED' ? 'SUSPENDED (402 PAYMENT_REQUIRED)' : tenant.status}
+              {tenant.status}
             </Badge>
+            {tenant.status === 'SUSPENDED' && (
+              <span className="text-[11px] font-mono text-[var(--color-danger)] bg-[var(--color-danger)]/10 px-2.5 py-0.5 rounded-full">
+                External APIs: 402 PAYMENT_REQUIRED
+              </span>
+            )}
           </div>
           <p className="text-xs text-[var(--color-text-muted)] mt-1.5">
             Tenant ID: <span className="font-mono text-[var(--color-text)]">{tenant.id}</span> · Slug:{' '}

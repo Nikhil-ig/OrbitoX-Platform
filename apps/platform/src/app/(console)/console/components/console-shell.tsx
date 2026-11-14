@@ -197,11 +197,21 @@ export function ConsoleShell({
       id: 'restaurant-os',
       label: 'RestaurantOS',
       href: '/admin/restaurant',
+      badge: (
+        <span className="ml-auto text-[10px] font-medium px-2 py-0.5 rounded-full bg-[var(--color-warning)]/15 text-[var(--color-warning)]">
+          Hold
+        </span>
+      ),
     },
     {
       id: 'hms',
       label: 'Hospitality HMS',
       href: '/hms',
+      badge: (
+        <span className="ml-auto text-[10px] font-medium px-2 py-0.5 rounded-full bg-[var(--color-primary)]/15 text-[var(--color-primary)]">
+          Live
+        </span>
+      ),
     },
   ];
 

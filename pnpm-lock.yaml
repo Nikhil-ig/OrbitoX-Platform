@@ -105,6 +105,9 @@ importers:
         specifier: 3.24.2
         version: 3.24.2
     devDependencies:
+      '@axe-core/playwright':
+        specifier: 4.10.2
+        version: 4.10.2(playwright-core@1.65.0)
       '@orbitox-io/eslint-config':
         specifier: workspace:*
         version: link:../../packages/eslint-config
