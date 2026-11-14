@@ -45,6 +45,15 @@ async function expectStatus(name, want, path, init) {
   const got = await status(path, init);
   check(name, got === want, `want ${want}, got ${got}`);
 }
+async function expectPermanentRedirect(name, path, expectedTarget, init) {
+  const res = await response(path, init);
+  const location = res.headers.get('location');
+  check(
+    name,
+    (res.status === 301 || res.status === 308) && location === expectedTarget,
+    `want 301/308 to ${expectedTarget}, got ${res.status} ${location || ''}`.trim(),
+  );
+}
 async function expectLoginRedirect(name, path, init) {
   const res = await response(path, init);
   const location = res.headers.get('location');
@@ -101,8 +110,15 @@ async function checkSignedInOperatorPages() {
   if (login.status !== 200 || cookies.length === 0) return;
 
   const headers = { cookie: cookies.join('; ') };
-  for (const path of ['/platform', '/platform/fleet', `/platform/projects/${projectId}`]) {
+  for (const path of ['/console/overview', '/console/tenants']) {
     await expectStatus(`signed-in operator can access ${path}`, 200, path, { headers });
+  }
+  for (const [legacyPath, target] of [
+    ['/platform', '/console/overview'],
+    ['/platform/fleet', '/console/overview'],
+    [`/platform/projects/${projectId}`, `/console/tenants/${projectId}`],
+  ]) {
+    await expectPermanentRedirect(`signed-in operator on ${legacyPath} permanently redirects to ${target}`, legacyPath, target, { headers });
   }
 }
 
@@ -116,10 +132,23 @@ await expectStatus('GET /api/health is public', 200, '/api/health');
 
 console.log('\nAdmin surface rejects anonymous callers');
 for (const path of [
-  '/platform', '/platform/restaurants', '/platform/fleet', '/platform/plans', '/platform/connect', '/platform/settings', '/admin',
-  '/hms'
+  '/console/overview', '/console/organizations', '/console/tenants',
+  '/console/provisioning', '/console/billing', '/console/data-rights',
+  '/console/security', '/console/audit', '/console/settings/appearance',
+  '/hms',
 ]) {
   await expectLoginRedirect(`GET ${path} redirects anonymous caller to login`, path);
+}
+for (const [legacyPath, target] of [
+  ['/platform', '/console/overview'],
+  ['/platform/restaurants', '/console/overview'],
+  ['/platform/fleet', '/console/overview'],
+  ['/platform/plans', '/console/billing'],
+  ['/platform/connect', '/console/settings/appearance'],
+  ['/platform/settings', '/console/settings/appearance'],
+  ['/admin', '/console/overview'],
+]) {
+  await expectPermanentRedirect(`GET ${legacyPath} permanently redirects to ${target}`, legacyPath, target);
 }
 for (const path of [
   '/api/v1/platform/restaurants', '/api/v1/fleet', '/api/v1/overview',
@@ -143,8 +172,10 @@ await expectStatus('GET /api/v1/platform/restaurants/check-slug with Bearer', 20
 
 console.log('\nAPI-scoped admin token cannot access operator pages');
 for (const path of [
-  '/platform', '/platform/restaurants', '/platform/fleet', '/platform/plans',
-  '/platform/connect', '/platform/settings', '/hms'
+  '/console/overview', '/console/organizations', '/console/tenants',
+  '/console/provisioning', '/console/billing', '/console/data-rights',
+  '/console/security', '/console/audit', '/console/settings/appearance',
+  '/hms',
 ]) {
   await expectLoginRedirect(
     `API-scoped admin token on ${path} redirects to operator login`,
@@ -152,12 +183,33 @@ for (const path of [
     { headers: bearer(ADMIN) },
   );
 }
+for (const [legacyPath, target] of [
+  ['/platform', '/console/overview'],
+  ['/platform/restaurants', '/console/overview'],
+  ['/platform/fleet', '/console/overview'],
+  ['/platform/plans', '/console/billing'],
+  ['/platform/connect', '/console/settings/appearance'],
+  ['/platform/settings', '/console/settings/appearance'],
+]) {
+  await expectPermanentRedirect(
+    `API-scoped admin token on ${legacyPath} permanently redirects to ${target}`,
+    legacyPath,
+    target,
+    { headers: bearer(ADMIN) },
+  );
+}
 
 console.log('\nRuntime token cannot escalate to admin');
 await expectStatus('runtime token on /api/v1/fleet -> 401', 401, '/api/v1/fleet', { headers: bearer(RUNTIME) });
-await expectLoginRedirect(
-  'runtime token on /platform/fleet redirects to operator login',
+await expectPermanentRedirect(
+  'runtime token on /platform/fleet permanently redirects to /console/overview',
   '/platform/fleet',
+  '/console/overview',
+  { headers: bearer(RUNTIME) },
+);
+await expectLoginRedirect(
+  'runtime token on /console/overview redirects to operator login',
+  '/console/overview',
   { headers: bearer(RUNTIME) },
 );
 await expectStatus('runtime token on non-runtime project route -> 401', 401, `/api/v1/projects/${projectId}/environments`, { headers: bearer(RUNTIME) });
@@ -353,9 +405,15 @@ try {
 
   await expectStatus('GET /api/v1/projects/{id} -> 200', 200, `/api/v1/projects/${projectId}`, { headers: bearer(ADMIN) });
   await expectStatus('GET /api/v1/projects/{id}/activity -> 200', 200, `/api/v1/projects/${projectId}/activity`, { headers: bearer(ADMIN) });
-  await expectLoginRedirect(
-    'API-scoped admin token on project UI details redirects to operator login',
+  await expectPermanentRedirect(
+    `API-scoped admin token on project UI details permanently redirects to /console/tenants/${projectId}`,
     `/platform/projects/${projectId}`,
+    `/console/tenants/${projectId}`,
+    { headers: bearer(ADMIN) },
+  );
+  await expectLoginRedirect(
+    'API-scoped admin token on /console/tenants/:id redirects to operator login',
+    `/console/tenants/${projectId}`,
     { headers: bearer(ADMIN) },
   );
 

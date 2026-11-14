@@ -49,6 +49,9 @@ interface LinkCheckResult {
   url: string;
   category: 'Sidebar' | 'Cross-link' | 'Product / Legacy';
   status: number;
+  initialStatus?: number;
+  redirectTarget?: string;
+  finalUrl: string;
   heading: string;
   has404: boolean;
 }
@@ -122,65 +125,87 @@ async function run() {
       category: 'Sidebar' | 'Cross-link' | 'Product / Legacy',
     ): Promise<LinkCheckResult> => {
       const fullUrl = `${BASE_URL}${targetPath}`;
+
+      // Check initial response without following redirects to capture 301/308
+      let initialStatus: number | undefined;
+      let redirectTarget: string | undefined;
+      try {
+        const preflight = await context.request.fetch(fullUrl, { maxRedirects: 0 });
+        initialStatus = preflight.status();
+        redirectTarget = preflight.headers()['location'];
+      } catch {
+        // fetch may fail if non-HTTP error, ignore
+      }
+
       const response = await page.goto(fullUrl, { waitUntil: 'domcontentloaded', timeout: 30000 });
       const status = response ? response.status() : 0;
+      const finalUrl = page.url();
 
-    // Check for 404 indicators via HTTP status and error DOM elements
-    const pageTitle = (await page.title()) || '';
-    const errorHeading = await page.$('.next-error-h1, h1:has-text("404"), h2:has-text("This page could not be found")');
-    const has404 = status === 404 || status >= 500 || pageTitle.includes('404: This page could not be found') || Boolean(errorHeading);
+      // Check for 404 indicators via HTTP status and error DOM elements
+      const pageTitle = (await page.title()) || '';
+      const errorHeading = await page.$('.next-error-h1, h1:has-text("404"), h2:has-text("This page could not be found")');
+      const has404 = status === 404 || status >= 500 || pageTitle.includes('404: This page could not be found') || Boolean(errorHeading);
 
-    // Extract heading or title
-    let heading = '';
-    const h1 = await page.$('h1');
-    if (h1) {
-      heading = (await h1.textContent())?.trim() || '';
-    } else {
-      const h2 = await page.$('h2');
-      if (h2) {
-        heading = (await h2.textContent())?.trim() || '';
+      // Extract heading or title
+      let heading = '';
+      const h1 = await page.$('h1');
+      if (h1) {
+        heading = (await h1.textContent())?.trim() || '';
       } else {
-        heading = (await page.title()) || 'No heading element found';
+        const h2 = await page.$('h2');
+        if (h2) {
+          heading = (await h2.textContent())?.trim() || '';
+        } else {
+          heading = (await page.title()) || 'No heading element found';
+        }
       }
-    }
 
-    const res: LinkCheckResult = {
-      url: targetPath,
-      category,
-      status,
-      heading,
-      has404: Boolean(has404),
+      const res: LinkCheckResult = {
+        url: targetPath,
+        category,
+        status,
+        initialStatus,
+        redirectTarget,
+        finalUrl,
+        heading,
+        has404: Boolean(has404),
+      };
+      results.push(res);
+      return res;
     };
-    results.push(res);
-    return res;
-  };
 
-  // 1. Sidebar Links Verification
-  console.log('--- 1. Testing Sidebar Navigation Links ---');
-  const sidebarLinks = [
-    '/console/overview',
-    '/console/organizations',
-    '/console/tenants',
-    '/console/provisioning',
-    '/console/billing',
-    '/console/data-rights',
-    '/console/security',
-    '/console/audit',
-    '/console/settings/appearance',
-    '/console/design-system',
-    '/admin',
-    '/platform',
-    '/admin/restaurant',
-    '/hms',
-  ];
+    // 1. Sidebar Links Verification
+    console.log('--- 1. Testing Sidebar Navigation Links ---');
+    const sidebarLinks = [
+      '/console/overview',
+      '/console/organizations',
+      '/console/tenants',
+      '/console/provisioning',
+      '/console/billing',
+      '/console/data-rights',
+      '/console/security',
+      '/console/audit',
+      '/console/settings/appearance',
+      '/console/design-system',
+      '/admin',
+      '/platform',
+      '/admin/restaurant',
+      '/hms',
+    ];
 
-  for (const sPath of sidebarLinks) {
-    const r = await visitAndCheck(sPath, sPath.startsWith('/console') ? 'Sidebar' : 'Product / Legacy');
-    const badge = r.status === 200 && !r.has404 ? 'PASS' : 'FAIL';
-    console.log(`[${badge}] ${r.status} ${r.url.padEnd(35)} -> "${r.heading}"`);
-    assert.equal(r.has404, false, `Link ${r.url} returned 404 or error page!`);
-    assert.equal(r.status, 200, `Link ${r.url} returned HTTP ${r.status}, expected 200`);
-  }
+    for (const sPath of sidebarLinks) {
+      const r = await visitAndCheck(sPath, sPath.startsWith('/console') ? 'Sidebar' : 'Product / Legacy');
+      const badge = r.status === 200 && !r.has404 ? 'PASS' : 'FAIL';
+      if (r.initialStatus && (r.initialStatus === 301 || r.initialStatus === 308)) {
+        console.log(`[${badge}] ${r.initialStatus} -> ${r.status} ${r.url.padEnd(25)} -> ${r.redirectTarget} (lands on ${r.finalUrl}) -> "${r.heading}"`);
+        assert.equal(r.initialStatus, 301, `Legacy route ${r.url} should issue HTTP 301 redirect`);
+        assert.ok(r.finalUrl.includes(r.redirectTarget || ''), `Final landing URL ${r.finalUrl} should match target ${r.redirectTarget}`);
+      } else {
+        console.log(`[${badge}] ${r.status} ${r.url.padEnd(35)} -> "${r.heading}"`);
+      }
+      assert.equal(r.has404, false, `Link ${r.url} returned 404 or error page!`);
+      assert.equal(r.status, 200, `Link ${r.url} returned HTTP ${r.status}, expected 200`);
+    }
 
   // 2. Cross-Links Verification from Overview, Tenants Index, and Detail
   console.log('\n--- 2. Testing Live Page Cross-Links ---');
@@ -312,6 +337,11 @@ async function run() {
     '/console/tenants/proj_oasis_blr',
     '/console/organizations',
     '/console/provisioning',
+    '/console/billing',
+    '/console/data-rights',
+    '/console/security',
+    '/console/audit',
+    '/console/settings/appearance',
   ];
 
   for (const p of testedPages) {
