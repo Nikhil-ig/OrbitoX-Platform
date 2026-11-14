@@ -239,6 +239,55 @@ async function main() {
     await page.setViewportSize({ width: 1440, height: 900 });
     console.log('PASS  /console/overview (Screen A1) verified in Playwright with zero horizontal overflow across viewports (Step C1)');
 
+    // 6.4 Step C2: Operator Tenants Fleet & Tenant Detail (/console/tenants & /console/tenants/[id], Screen C2)
+    await page.goto(`${BROWSER_BASE}/console/tenants`, { waitUntil: 'networkidle' });
+    assert.equal(new URL(page.url()).pathname, '/console/tenants');
+
+    const tenantsHeading = page.getByRole('heading', { name: /Tenant Fleet Registry/i });
+    assert.ok(await tenantsHeading.isVisible(), 'Expected tenants heading to be visible');
+
+    for (const vp of viewports) {
+      await page.setViewportSize({ width: vp.width, height: vp.height });
+      await page.waitForTimeout(100);
+      const hasHorizontalScroll = await page.evaluate(
+        () => document.documentElement.scrollWidth > window.innerWidth,
+      );
+      assert.equal(
+        hasHorizontalScroll,
+        false,
+        `Detected horizontal overflow on /console/tenants at ${vp.name} (${vp.width}x${vp.height})`,
+      );
+    }
+    await page.setViewportSize({ width: 1440, height: 900 });
+    console.log('PASS  /console/tenants verified in Playwright with zero horizontal overflow across viewports (Step C2)');
+
+    // Navigate to tenant detail (Screen C2)
+    const manageLink = page.locator('a[href^="/console/tenants/"]').first();
+    let detailUrl = `${BROWSER_BASE}/console/tenants/proj_oasis_blr`;
+    if ((await manageLink.count()) > 0) {
+      const href = await manageLink.getAttribute('href');
+      if (href) detailUrl = `${BROWSER_BASE}${href}`;
+    }
+
+    await page.goto(detailUrl, { waitUntil: 'networkidle' });
+    const topologyTitle = page.getByText(/Tenant Isolation & Database Topology/i);
+    assert.ok(await topologyTitle.isVisible(), 'Expected Screen C2 topology card to be visible');
+
+    for (const vp of viewports) {
+      await page.setViewportSize({ width: vp.width, height: vp.height });
+      await page.waitForTimeout(100);
+      const hasHorizontalScroll = await page.evaluate(
+        () => document.documentElement.scrollWidth > window.innerWidth,
+      );
+      assert.equal(
+        hasHorizontalScroll,
+        false,
+        `Detected horizontal overflow on /console/tenants/[id] (Screen C2) at ${vp.name} (${vp.width}x${vp.height})`,
+      );
+    }
+    await page.setViewportSize({ width: 1440, height: 900 });
+    console.log('PASS  /console/tenants/[id] (Screen C2) verified in Playwright with zero horizontal overflow across viewports (Step C2)');
+
     // 6.3 Multi-user Database Precedence & Isolation in Fresh Browser Context (R2-3)
     const dbUrl = process.env.TEST_DATABASE_URL || process.env.MAINTENANCE_DATABASE_URL || process.env.DATABASE_URL;
     if (dbUrl) {
