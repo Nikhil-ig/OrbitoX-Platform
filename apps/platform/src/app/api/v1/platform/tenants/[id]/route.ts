@@ -51,3 +51,4 @@ export const PATCH = withOperatorAuth<{ params: Promise<{ id: string }> }>(
   },
   { write: true }
 );
+

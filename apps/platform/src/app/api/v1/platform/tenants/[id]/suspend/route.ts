@@ -11,9 +11,9 @@ export const POST = withOperatorAuth<{ params: Promise<{ id: string }> }>(
       const body = await request.json().catch(() => ({}));
       const reason = body.reason?.trim();
 
-      if (!reason) {
+      if (!reason || reason.length < 5) {
         return NextResponse.json(
-          { success: false, error: { message: 'A valid reason is required for tenant suspension.' } },
+          { success: false, error: { message: 'A valid reason of at least 5 characters is required for tenant suspension.' } },
           { status: 400, headers: noStore }
         );
       }
@@ -31,12 +31,15 @@ export const POST = withOperatorAuth<{ params: Promise<{ id: string }> }>(
 
       return NextResponse.json({ success: true, data: result }, { headers: noStore });
     } catch (err: any) {
-      const status = err.message?.includes('not exist') ? 404 : 500;
+      const isReauth = err.message?.includes('STEP_UP_REAUTH_REQUIRED');
+      const isMinLen = err.message?.includes('SUSPEND_REASON_MIN_LENGTH');
+      const isNotFound = err.message?.includes('not exist');
+      const status = isReauth ? 403 : isMinLen ? 400 : isNotFound ? 404 : 500;
       return NextResponse.json(
         { success: false, error: { message: err.message || 'Failed to suspend tenant' } },
         { status, headers: noStore }
       );
     }
   },
-  { write: true }
+  { write: true, reauth: true }
 );

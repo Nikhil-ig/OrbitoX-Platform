@@ -22,3 +22,4 @@ export const GET = withOperatorAuth(async (request: NextRequest, session) => {
     );
   }
 });
+

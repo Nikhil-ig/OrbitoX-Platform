@@ -54,3 +54,4 @@ describe('Operator Console Overview Service (Step C1 & Screen A1)', () => {
     assert.doesNotThrow(() => requireOperatorAuthorization(mockOperator));
   });
 });
+

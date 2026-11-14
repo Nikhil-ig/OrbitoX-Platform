@@ -297,3 +297,4 @@ export function TenantsIndexClient({ initialData }: TenantsIndexClientProps) {
     </div>
   );
 }
+
