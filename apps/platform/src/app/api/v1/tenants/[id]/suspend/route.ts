@@ -58,6 +58,16 @@ export async function POST(
   const requestId = req.headers.get('x-request-id') || `req_${Date.now()}`;
   const idempotencyKey = req.headers.get('idempotency-key') || req.headers.get('x-idempotency-key') || undefined;
 
+  const body = await req.json().catch(() => ({}));
+  const rawReason = typeof body?.reason === 'string' ? body.reason.trim() : undefined;
+  if (rawReason !== undefined && rawReason.length < 5) {
+    return NextResponse.json(
+      { error: 'BAD_REQUEST', message: 'A valid reason of at least 5 characters is required for tenant suspension.' },
+      { status: 400 }
+    );
+  }
+  const reason = rawReason && rawReason.length >= 5 ? rawReason : 'Admin tenant suspension';
+
   const installations = await platformRepository.listPluginInstallations(id);
   const effectiveInstallations =
     installations.length > 0 ? installations : await platformRepository.listPluginInstallations(project.id);
@@ -70,7 +80,7 @@ export async function POST(
       inst.pluginId,
       'suspend',
       targetTenantId,
-      { reason: 'Admin tenant suspension' },
+      { reason },
       { idempotencyKey }
     );
     pluginResults[inst.pluginId] = lifecycleRes;

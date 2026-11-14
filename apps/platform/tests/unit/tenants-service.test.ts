@@ -1,4 +1,4 @@
-import { describe, it } from 'node:test';
+import { describe, it, beforeEach, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   requireOperatorAuthorization,
@@ -7,8 +7,15 @@ import {
   suspendTenant,
   resumeTenant,
   updateTenantCustomDomain,
+  IN_MEMORY_TENANTS,
 } from '../../src/server/tenants/tenants-service';
 import type { OperatorSessionContext } from '../../src/server/accounts/account-service';
+
+// Explicitly ensure in-memory unit tests run with no database configured (B-4 requirement 4)
+const initialDbUrl = process.env.DATABASE_URL;
+const initialAppDbUrl = process.env.APP_DATABASE_URL;
+delete process.env.DATABASE_URL;
+delete process.env.APP_DATABASE_URL;
 
 const mockOperator: OperatorSessionContext = {
   id: 'sess_test_123',
@@ -237,3 +244,134 @@ describe('Tenants Service Unit Tests (Step C2, Rule 4.11 MCP-ready)', () => {
     }
   });
 });
+
+describe('Database Error Handling & Strict Non-Fallback Invariants (B-4)', () => {
+  beforeEach(() => {
+    process.env.DATABASE_URL = 'postgresql://orbitox_test:testpass@127.0.0.1:5432/orbitox_phase2';
+  });
+
+  afterEach(() => {
+    delete process.env.DATABASE_URL;
+    delete process.env.APP_DATABASE_URL;
+  });
+
+  it('a database error during plugin suspension returns an error, and the tenant is not reported as suspended', async () => {
+    let projectStatus = 'ACTIVE';
+    const mockRepo = {
+      getProject: async (id: string) => ({
+        id: 'proj_oasis_blr',
+        slug: 'oasis-blr',
+        name: 'Oasis Cafe Bangalore',
+        status: projectStatus,
+        organizationId: 'org_oasis',
+      }),
+      listPluginInstallations: async (projectId: string) => [
+        { pluginId: '@orbitox/hospital', tenantId: projectId, status: 'ACTIVE' },
+      ],
+      updateProject: async (id: string, updates: any) => {
+        if (updates.status) projectStatus = updates.status;
+        return { id, ...updates };
+      },
+      updatePluginInstallationStatus: async () => {
+        throw new Error('PG_PLUGIN_UPDATE_ERROR: Deadlock detected updating plugin installations');
+      },
+      recordPlatformAdminAudit: async () => 'audit_123',
+    };
+
+    await assert.rejects(
+      async () => {
+        await suspendTenant(
+          'proj_oasis_blr',
+          { reason: 'Database error test reason' },
+          mockOperator,
+          { repository: mockRepo as any }
+        );
+      },
+      /PG_PLUGIN_UPDATE_ERROR/,
+      'Must re-throw the database error without falling back to in-memory'
+    );
+
+    // Verify rollback: projectStatus must be rolled back to ACTIVE, NOT reported as SUSPENDED
+    assert.equal(projectStatus, 'ACTIVE', 'Tenant status must be rolled back to ACTIVE on plugin DB failure');
+  });
+
+  it('the audit write failing fails the action', async () => {
+    let projectStatus = 'ACTIVE';
+    let pluginStatus = 'ACTIVE';
+    const mockRepo = {
+      getProject: async (id: string) => ({
+        id: 'proj_oasis_blr',
+        slug: 'oasis-blr',
+        name: 'Oasis Cafe Bangalore',
+        status: projectStatus,
+        organizationId: 'org_oasis',
+      }),
+      listPluginInstallations: async (projectId: string) => [
+        { pluginId: '@orbitox/hospital', tenantId: projectId, status: pluginStatus },
+      ],
+      updateProject: async (id: string, updates: any) => {
+        if (updates.status) projectStatus = updates.status;
+        return { id, ...updates };
+      },
+      updatePluginInstallationStatus: async (tId: string, pId: string, status: string) => {
+        pluginStatus = status;
+      },
+      recordPlatformAdminAudit: async () => {
+        throw new Error('AUDIT_STORE_UNAVAILABLE: Connection refused to platform-admin audit database');
+      },
+    };
+
+    await assert.rejects(
+      async () => {
+        await suspendTenant(
+          'proj_oasis_blr',
+          { reason: 'Audit failure test reason' },
+          mockOperator,
+          { repository: mockRepo as any }
+        );
+      },
+      /AUDIT_STORE_UNAVAILABLE/,
+      'Audit store failure must fail the suspension action'
+    );
+
+    // Verify project and plugin are rolled back
+    assert.equal(projectStatus, 'ACTIVE', 'Tenant status must be rolled back to ACTIVE on audit write failure');
+    assert.equal(pluginStatus, 'ACTIVE', 'Plugin status must be rolled back to ACTIVE on audit write failure');
+  });
+
+  it('suspending a seeded demo ID while a database is configured does not succeed without a database write', async () => {
+    // Database returns null for seeded demo ID
+    const mockRepo = {
+      getProject: async () => null,
+      updateProject: async () => {
+        throw new Error('SHOULD_NOT_BE_CALLED');
+      },
+    };
+
+    // Ensure demo tenant in-memory object is initially ACTIVE
+    const seeded = IN_MEMORY_TENANTS.find((t) => t.id === 'proj_oasis_blr');
+    if (seeded) seeded.status = 'ACTIVE';
+
+    await assert.rejects(
+      async () => {
+        await suspendTenant(
+          'proj_oasis_blr',
+          { reason: 'Demo ID without DB write test' },
+          mockOperator,
+          { repository: mockRepo as any }
+        );
+      },
+      /TENANT_NOT_FOUND/,
+      'Must reject with TENANT_NOT_FOUND instead of falling back to in-memory demo tenant'
+    );
+
+    // In-memory demo tenant must NOT have been mutated
+    if (seeded) {
+      assert.equal(seeded.status, 'ACTIVE', 'In-memory demo tenant must not be mutated when database is configured');
+    }
+  });
+});
+
+// Restore environment at end of file if original variables were set
+if (initialDbUrl) process.env.DATABASE_URL = initialDbUrl;
+if (initialAppDbUrl) process.env.APP_DATABASE_URL = initialAppDbUrl;

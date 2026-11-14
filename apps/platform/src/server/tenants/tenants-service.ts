@@ -3,7 +3,7 @@ import { prisma } from '@/server/db/prisma';
 import type { OperatorSessionContext } from '@/server/accounts/account-service';
 
 // Module-level in-memory store for offline unit tests and fallback
-const IN_MEMORY_TENANTS: any[] = [
+export const IN_MEMORY_TENANTS: any[] = [
   {
     id: 'proj_oasis_blr',
     slug: 'oasis-medical-center',
@@ -226,63 +226,64 @@ export async function listTenants(
     ];
   }
 
-  let projects: any[] = [];
-  let total = 0;
-  let allPluginInstallations: any[] = [];
-
   if (hasDatabase()) {
-    try {
-      const [fetchedProjects, count, plugins] = await Promise.all([
-        prisma.platformProject.findMany({
-          where: whereClause,
-          include: { organization: true },
-          orderBy: { createdAt: 'desc' },
-          skip,
-          take: pageSize,
-        }),
-        prisma.platformProject.count({ where: whereClause }),
-        prisma.pluginInstallation.findMany({
-          select: { tenantId: true, pluginId: true },
-        }).catch(() => []),
-      ]);
+    const [fetchedProjects, count, plugins] = await Promise.all([
+      prisma.platformProject.findMany({
+        where: whereClause,
+        include: { organization: true },
+        orderBy: { createdAt: 'desc' },
+        skip,
+        take: pageSize,
+      }),
+      prisma.platformProject.count({ where: whereClause }),
+      prisma.pluginInstallation.findMany({
+        select: { tenantId: true, pluginId: true },
+      }).catch(() => []),
+    ]);
 
-      projects = fetchedProjects;
-      total = count;
-      allPluginInstallations = plugins;
-    } catch {
-      // Fall through to in-memory store
-    }
-  }
+    let items = fetchedProjects.map((p) => {
+      const installed = plugins
+        .filter((pi) => pi.tenantId === p.id || pi.tenantId === p.slug)
+        .map((pi) => pi.pluginId);
+      return toTenantSummary(p, p.organization?.name, installed.length > 0 ? installed : (p.enabledServices || []));
+    });
 
-  // Fallback if no database configured or database empty
-  if (projects.length === 0 && total === 0) {
-    let filtered = [...IN_MEMORY_TENANTS];
-    if (filter.status && filter.status !== 'ALL') {
-      filtered = filtered.filter((t) => t.status === filter.status!.toUpperCase());
-    }
-    if (filter.search && filter.search.trim()) {
-      const s = filter.search.trim().toLowerCase();
-      filtered = filtered.filter(
-        (t) =>
-          t.name.toLowerCase().includes(s) ||
-          t.slug.toLowerCase().includes(s) ||
-          t.id.toLowerCase().includes(s) ||
-          (t.customDomain && t.customDomain.toLowerCase().includes(s))
+    if (filter.plugin && filter.plugin !== 'ALL') {
+      const pluginId = filter.plugin.toLowerCase();
+      items = items.filter(
+        (item) =>
+          item.installedPlugins.some((p) => p.toLowerCase().includes(pluginId)) ||
+          item.enabledServices.some((s) => s.toLowerCase().includes(pluginId))
       );
     }
-    total = filtered.length;
-    projects = filtered.slice(skip, skip + pageSize);
+
+    return {
+      items,
+      total: count,
+      page,
+      pageSize,
+      totalPages: Math.max(1, Math.ceil(count / pageSize)),
+    };
   }
 
-  // Filter by plugin if requested
-  let items = projects.map((p) => {
-    const installed = allPluginInstallations.length > 0
-      ? allPluginInstallations
-          .filter((pi) => pi.tenantId === p.id || pi.tenantId === p.slug)
-          .map((pi) => pi.pluginId)
-      : (p.installedPlugins || p.enabledServices || []);
-    return toTenantSummary(p, p.organization?.name, installed);
-  });
+  // Pure in-memory path ONLY when !hasDatabase()
+  let filtered = [...IN_MEMORY_TENANTS];
+  if (filter.status && filter.status !== 'ALL') {
+    filtered = filtered.filter((t) => t.status === filter.status!.toUpperCase());
+  }
+  if (filter.search && filter.search.trim()) {
+    const s = filter.search.trim().toLowerCase();
+    filtered = filtered.filter(
+      (t) =>
+        t.name.toLowerCase().includes(s) ||
+        t.slug.toLowerCase().includes(s) ||
+        t.id.toLowerCase().includes(s) ||
+        (t.customDomain && t.customDomain.toLowerCase().includes(s))
+    );
+  }
+  const total = filtered.length;
+  const paged = filtered.slice(skip, skip + pageSize);
+  let items = paged.map((t) => toTenantSummary(t, t.organization?.name, t.installedPlugins));
 
   if (filter.plugin && filter.plugin !== 'ALL') {
     const pluginId = filter.plugin.toLowerCase();
@@ -323,46 +324,40 @@ export async function getTenantDetail(
   let project: any = null;
 
   if (hasDatabase()) {
-    try {
-      project = await prisma.platformProject.findFirst({
-        where: {
-          OR: [{ id: cleanId }, { slug: cleanId.toLowerCase() }],
+    project = await prisma.platformProject.findFirst({
+      where: {
+        OR: [{ id: cleanId }, { slug: cleanId.toLowerCase() }],
+      },
+      include: {
+        organization: true,
+        environments: {
+          include: { domains: true },
         },
-        include: {
-          organization: true,
-          environments: {
-            include: { domains: true },
-          },
-        },
-      });
-    } catch {
-      // Fall through to in-memory store
-    }
-  }
+      },
+    });
 
-  if (!project) {
+    if (!project) {
+      return null;
+    }
+  } else {
     project = IN_MEMORY_TENANTS.find(
       (t) => t.id === cleanId || t.slug === cleanId.toLowerCase()
     );
-  }
 
-  if (!project) {
-    return null;
+    if (!project) {
+      return null;
+    }
   }
 
   // Fetch plugin installations
   let rawPlugins: any[] = [];
   if (hasDatabase()) {
-    try {
-      rawPlugins = await prisma.pluginInstallation.findMany({
-        where: {
-          OR: [{ tenantId: project.id }, { tenantId: project.slug }, { runtimeTenantId: project.id }],
-        },
-      });
-    } catch {}
-  }
-
-  if (rawPlugins.length === 0 && (project.installedPlugins || project.enabledServices)) {
+    rawPlugins = await prisma.pluginInstallation.findMany({
+      where: {
+        OR: [{ tenantId: project.id }, { tenantId: project.slug }, { runtimeTenantId: project.id }],
+      },
+    }).catch(() => []);
+  } else if (project.installedPlugins || project.enabledServices) {
     rawPlugins = (project.installedPlugins || project.enabledServices).map((p: string) => ({
       id: `pi_${p}`,
       pluginId: p,
@@ -414,29 +409,25 @@ export async function getTenantDetail(
   // Fetch recent audit events - strictly scoped by tenant projectId / entityId (B-2 fix: zero free-text leaks)
   let recentAuditEvents: TenantAuditEventItem[] = [];
   if (hasDatabase()) {
-    try {
-      const audits = await prisma.platformAuditEvent.findMany({
-        where: {
-          OR: [
-            { projectId: project.id },
-            { entityId: project.id, entityType: 'TENANT' },
-          ],
-        },
-        orderBy: { occurredAt: 'desc' },
-        take: 5,
-      });
+    const audits = await prisma.platformAuditEvent.findMany({
+      where: {
+        OR: [
+          { projectId: project.id },
+          { entityId: project.id, entityType: 'TENANT' },
+        ],
+      },
+      orderBy: { occurredAt: 'desc' },
+      take: 5,
+    }).catch(() => []);
 
-      recentAuditEvents = audits.map((a) => ({
-        id: a.id,
-        action: a.action || 'AUDIT_RECORD',
-        actorEmail: a.actorEmail || 'platform-operator@orbitox.io',
-        occurredAt: new Date(a.occurredAt).toISOString(),
-        reason: a.reason,
-      }));
-    } catch {}
-  }
-
-  if (recentAuditEvents.length === 0 && project.auditEvents && project.auditEvents.length > 0) {
+    recentAuditEvents = audits.map((a) => ({
+      id: a.id,
+      action: a.action || 'AUDIT_RECORD',
+      actorEmail: a.actorEmail || 'platform-operator@orbitox.io',
+      occurredAt: new Date(a.occurredAt).toISOString(),
+      reason: a.reason,
+    }));
+  } else if (project.auditEvents && project.auditEvents.length > 0) {
     recentAuditEvents = project.auditEvents.map((a: any) => ({
       id: a.id,
       action: a.action || 'AUDIT_RECORD',
@@ -502,8 +493,12 @@ export async function getTenantDetail(
 export async function suspendTenant(
   idOrSlug: string,
   input: { reason: string; operatorEmail?: string; requestId?: string },
-  operator?: OperatorSessionContext | null
-): Promise<{ success: boolean; tenantId: string; status: string; message: string }> {
+  operator?: OperatorSessionContext | null,
+  deps?: {
+    repository?: any;
+    lifecycleClient?: any;
+  }
+): Promise<{ success: boolean; tenantId: string; status: string; message: string; pluginState?: string }> {
   // Step-up verification enforcement on the server (B-3 blocker)
   if (operator) {
     requireOperatorAuthorization(operator);
@@ -522,56 +517,92 @@ export async function suspendTenant(
   const requestId = input.requestId || `req_suspend_${Date.now()}`;
 
   if (hasDatabase()) {
+    const { platformRepository: repo } = deps?.repository
+      ? { platformRepository: deps.repository }
+      : await import('@/server/db/platform-repository');
+    const { pluginLifecycleClient: lifecycle } = deps?.lifecycleClient
+      ? { pluginLifecycleClient: deps.lifecycleClient }
+      : await import('@/server/provisioning/plugin-lifecycle-client');
+
+    const project = await repo.getProject(cleanId);
+    if (!project) {
+      throw new Error(`TENANT_NOT_FOUND: Tenant ${cleanId} does not exist.`);
+    }
+
+    const previousStatus = project.status;
+    const installations = await repo.listPluginInstallations(project.id);
+    const updatedPlugins: Array<{ targetTenantId: string; pluginId: string; previousStatus: string }> = [];
+
     try {
-      const { platformRepository } = await import('@/server/db/platform-repository');
-      const { pluginLifecycleClient } = await import('@/server/provisioning/plugin-lifecycle-client');
+      // 1. Update project status in DB
+      await repo.updateProject(project.id, { status: 'SUSPENDED' });
 
-      const project = await platformRepository.getProject(cleanId);
-      if (project) {
-        await platformRepository.updateProject(project.id, { status: 'SUSPENDED' });
-        const installations = await platformRepository.listPluginInstallations(project.id);
-        const pluginResults: Record<string, any> = {};
-
-        for (const inst of installations) {
-          const targetTenantId = inst.tenantId || project.id;
-          await platformRepository.updatePluginInstallationStatus(targetTenantId, inst.pluginId, 'SUSPENDED');
-          try {
-            const res = await pluginLifecycleClient.invokeLifecycle(
-              inst.pluginId,
-              'suspend',
-              targetTenantId,
-              { reason }
-            );
-            pluginResults[inst.pluginId] = res;
-          } catch {
-            pluginResults[inst.pluginId] = { invoked: false };
-          }
-        }
+      // 2. Update plugin installations in DB
+      const pluginResults: Record<string, any> = {};
+      for (const inst of installations) {
+        const targetTenantId = inst.tenantId || project.id;
+        await repo.updatePluginInstallationStatus(targetTenantId, inst.pluginId, 'SUSPENDED');
+        updatedPlugins.push({ targetTenantId, pluginId: inst.pluginId, previousStatus: inst.status || 'ACTIVE' });
 
         try {
-          await platformRepository.recordPlatformAdminAudit({
-            action: 'TENANT_SUSPENDED',
-            entityType: 'TENANT',
-            entityId: project.id,
-            projectId: project.id,
-            actorId: actorEmail,
-            organizationId: project.organizationId,
-            requestId,
-            metadata: { tenantId: project.id, slug: project.slug, reason, pluginResults },
-          });
-        } catch {}
-
-        return {
-          success: true,
-          tenantId: project.id,
-          status: 'SUSPENDED',
-          message: `Tenant ${project.name} has been suspended. Reason: ${reason}`,
-        };
+          const res = await lifecycle.invokeLifecycle(
+            inst.pluginId,
+            'suspend',
+            targetTenantId,
+            { reason }
+          );
+          pluginResults[inst.pluginId] = res;
+        } catch {
+          pluginResults[inst.pluginId] = { status: 'HOOK_FAILED', invoked: false, error: 'Lifecycle hook execution failed' };
+        }
       }
-    } catch {}
+
+      const hasPluginFailures = Object.values(pluginResults).some(
+        (r: any) => r?.status === 'HOOK_FAILED' || r?.invoked === false
+      );
+
+      // 3. Record platform admin audit in DB - failure MUST fail the action
+      await repo.recordPlatformAdminAudit({
+        action: 'TENANT_SUSPENDED',
+        entityType: 'TENANT',
+        entityId: project.id,
+        projectId: project.id,
+        actorId: actorEmail,
+        organizationId: project.organizationId,
+        requestId,
+        metadata: {
+          tenantId: project.id,
+          slug: project.slug,
+          reason,
+          pluginResults,
+          pluginState: hasPluginFailures ? 'PARTIALLY_DEGRADED' : 'SUSPENDED',
+        },
+      });
+
+      return {
+        success: true,
+        tenantId: project.id,
+        status: 'SUSPENDED',
+        pluginState: hasPluginFailures ? 'PARTIALLY_DEGRADED' : 'SUSPENDED',
+        message: hasPluginFailures
+          ? `Tenant ${project.name} has been suspended, but one or more plugins failed their suspension hook.`
+          : `Tenant ${project.name} has been suspended. Reason: ${reason}`,
+      };
+    } catch (err: any) {
+      // Rollback database modifications on failure
+      try {
+        await repo.updateProject(project.id, { status: previousStatus });
+        for (const p of updatedPlugins) {
+          await repo.updatePluginInstallationStatus(p.targetTenantId, p.pluginId, p.previousStatus as any);
+        }
+      } catch {
+        // Rollback is best-effort
+      }
+      throw err; // Fail the action; NEVER swallow and NEVER fall through to in-memory!
+    }
   }
 
-  // Fallback for offline tests or when tenant is in memory (B-1 fix)
+  // Pure in-memory path ONLY when !hasDatabase()
   const target = IN_MEMORY_TENANTS.find((t) => t.id === cleanId || t.slug === cleanId.toLowerCase());
   if (!target) {
     throw new Error(`TENANT_NOT_FOUND: Tenant ${cleanId} does not exist.`);
@@ -600,7 +631,11 @@ export async function suspendTenant(
 export async function resumeTenant(
   idOrSlug: string,
   input: { reason?: string; operatorEmail?: string; requestId?: string } = {},
-  operator?: OperatorSessionContext | null
+  operator?: OperatorSessionContext | null,
+  deps?: {
+    repository?: any;
+    lifecycleClient?: any;
+  }
 ): Promise<{ success: boolean; tenantId: string; status: string; message: string }> {
   if (process.env.NODE_ENV === 'production' || operator) {
     requireOperatorAuthorization(operator);
@@ -612,56 +647,73 @@ export async function resumeTenant(
   const reason = input.reason || 'Operator reactivation';
 
   if (hasDatabase()) {
+    const { platformRepository: repo } = deps?.repository
+      ? { platformRepository: deps.repository }
+      : await import('@/server/db/platform-repository');
+    const { pluginLifecycleClient: lifecycle } = deps?.lifecycleClient
+      ? { pluginLifecycleClient: deps.lifecycleClient }
+      : await import('@/server/provisioning/plugin-lifecycle-client');
+
+    const project = await repo.getProject(cleanId);
+    if (!project) {
+      throw new Error(`TENANT_NOT_FOUND: Tenant ${cleanId} does not exist.`);
+    }
+
+    const previousStatus = project.status;
+    const installations = await repo.listPluginInstallations(project.id);
+    const updatedPlugins: Array<{ targetTenantId: string; pluginId: string; previousStatus: string }> = [];
+
     try {
-      const { platformRepository } = await import('@/server/db/platform-repository');
-      const { pluginLifecycleClient } = await import('@/server/provisioning/plugin-lifecycle-client');
+      await repo.updateProject(project.id, { status: 'ACTIVE' });
 
-      const project = await platformRepository.getProject(cleanId);
-      if (project) {
-        await platformRepository.updateProject(project.id, { status: 'ACTIVE' });
-        const installations = await platformRepository.listPluginInstallations(project.id);
-        const pluginResults: Record<string, any> = {};
-
-        for (const inst of installations) {
-          const targetTenantId = inst.tenantId || project.id;
-          await platformRepository.updatePluginInstallationStatus(targetTenantId, inst.pluginId, 'ACTIVE');
-          try {
-            const res = await pluginLifecycleClient.invokeLifecycle(
-              inst.pluginId,
-              'resume',
-              targetTenantId,
-              { reason }
-            );
-            pluginResults[inst.pluginId] = res;
-          } catch {
-            pluginResults[inst.pluginId] = { invoked: false };
-          }
-        }
+      const pluginResults: Record<string, any> = {};
+      for (const inst of installations) {
+        const targetTenantId = inst.tenantId || project.id;
+        await repo.updatePluginInstallationStatus(targetTenantId, inst.pluginId, 'ACTIVE');
+        updatedPlugins.push({ targetTenantId, pluginId: inst.pluginId, previousStatus: inst.status || 'SUSPENDED' });
 
         try {
-          await platformRepository.recordPlatformAdminAudit({
-            action: 'TENANT_RESUMED',
-            entityType: 'TENANT',
-            entityId: project.id,
-            projectId: project.id,
-            actorId: actorEmail,
-            organizationId: project.organizationId,
-            requestId,
-            metadata: { tenantId: project.id, slug: project.slug, reason, pluginResults },
-          });
-        } catch {}
-
-        return {
-          success: true,
-          tenantId: project.id,
-          status: 'ACTIVE',
-          message: `Tenant ${project.name} has been restored to active status.`,
-        };
+          const res = await lifecycle.invokeLifecycle(
+            inst.pluginId,
+            'resume',
+            targetTenantId,
+            { reason }
+          );
+          pluginResults[inst.pluginId] = res;
+        } catch {
+          pluginResults[inst.pluginId] = { status: 'HOOK_FAILED', invoked: false, error: 'Lifecycle hook execution failed' };
+        }
       }
-    } catch {}
+
+      await repo.recordPlatformAdminAudit({
+        action: 'TENANT_RESUMED',
+        entityType: 'TENANT',
+        entityId: project.id,
+        projectId: project.id,
+        actorId: actorEmail,
+        organizationId: project.organizationId,
+        requestId,
+        metadata: { tenantId: project.id, slug: project.slug, reason, pluginResults },
+      });
+
+      return {
+        success: true,
+        tenantId: project.id,
+        status: 'ACTIVE',
+        message: `Tenant ${project.name} has been restored to active status.`,
+      };
+    } catch (err: any) {
+      try {
+        await repo.updateProject(project.id, { status: previousStatus });
+        for (const p of updatedPlugins) {
+          await repo.updatePluginInstallationStatus(p.targetTenantId, p.pluginId, p.previousStatus as any);
+        }
+      } catch {}
+      throw err;
+    }
   }
 
-  // Fallback for offline tests or when tenant is in memory (B-1 fix)
+  // Pure in-memory path ONLY when !hasDatabase()
   const target = IN_MEMORY_TENANTS.find((t) => t.id === cleanId || t.slug === cleanId.toLowerCase());
   if (!target) {
     throw new Error(`TENANT_NOT_FOUND: Tenant ${cleanId} does not exist.`);
@@ -690,7 +742,10 @@ export async function resumeTenant(
 export async function updateTenantCustomDomain(
   idOrSlug: string,
   input: { customDomain: string; operatorEmail?: string },
-  operator?: OperatorSessionContext | null
+  operator?: OperatorSessionContext | null,
+  deps?: {
+    repository?: any;
+  }
 ): Promise<{ success: boolean; tenantId: string; customDomain: string }> {
   if (process.env.NODE_ENV === 'production' || operator) {
     requireOperatorAuthorization(operator);
@@ -700,22 +755,25 @@ export async function updateTenantCustomDomain(
   const domain = input.customDomain.trim().toLowerCase();
 
   if (hasDatabase()) {
-    try {
-      const { platformRepository } = await import('@/server/db/platform-repository');
-      const project = await platformRepository.getProject(cleanId);
-      if (project) {
-        await platformRepository.updateProject(project.id, { customDomain: domain });
+    const { platformRepository: repo } = deps?.repository
+      ? { platformRepository: deps.repository }
+      : await import('@/server/db/platform-repository');
 
-        return {
-          success: true,
-          tenantId: project.id,
-          customDomain: domain,
-        };
-      }
-    } catch {}
+    const project = await repo.getProject(cleanId);
+    if (!project) {
+      throw new Error(`TENANT_NOT_FOUND: Tenant ${cleanId} does not exist.`);
+    }
+
+    await repo.updateProject(project.id, { customDomain: domain });
+
+    return {
+      success: true,
+      tenantId: project.id,
+      customDomain: domain,
+    };
   }
 
-  // Fallback for offline tests or when tenant is in memory (B-1 fix)
+  // Pure in-memory path ONLY when !hasDatabase()
   const target = IN_MEMORY_TENANTS.find((t) => t.id === cleanId || t.slug === cleanId.toLowerCase());
   if (!target) {
     throw new Error(`TENANT_NOT_FOUND: Tenant ${cleanId} does not exist.`);
