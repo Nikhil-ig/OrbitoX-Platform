@@ -152,7 +152,7 @@ export const POST = withCustomerAuth(async (request: NextRequest, session) => {
           hasGstin: Boolean(rawGstin),
         },
       });
-    } catch {}
+    } catch { }
 
     return org;
   });

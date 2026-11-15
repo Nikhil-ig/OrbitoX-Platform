@@ -154,20 +154,18 @@ export function F2OrganizationStep({ onSuccess, onBack, defaultBusinessName = ''
               <div className="grid grid-cols-3 gap-3 mt-2">
                 <div
                   onClick={() => setCategory('RESTAURANTS_CAFES')}
-                  className={`p-3.5 rounded-[20px] flex flex-col justify-between h-28 cursor-pointer transition-all ${
-                    category === 'RESTAURANTS_CAFES'
-                      ? 'border-2 border-[#14161A] bg-[#F8FAFC]'
-                      : 'border border-[#E2E8F0] bg-white hover:border-[#CBD5E1]'
-                  }`}
+                  className={`p-3.5 rounded-[20px] flex flex-col justify-between h-28 cursor-pointer transition-all ${category === 'RESTAURANTS_CAFES'
+                    ? 'border-2 border-[#14161A] bg-[#F8FAFC]'
+                    : 'border border-[#E2E8F0] bg-white hover:border-[#CBD5E1]'
+                    }`}
                 >
                   <div className="flex items-center justify-between">
                     <span className="text-lg">🍴</span>
                     <span
-                      className={`h-3.5 w-3.5 rounded-full ${
-                        category === 'RESTAURANTS_CAFES'
-                          ? 'border-4 border-[#14161A] bg-white'
-                          : 'border border-[#CBD5E1]'
-                      }`}
+                      className={`h-3.5 w-3.5 rounded-full ${category === 'RESTAURANTS_CAFES'
+                        ? 'border-4 border-[#14161A] bg-white'
+                        : 'border border-[#CBD5E1]'
+                        }`}
                     />
                   </div>
                   <div>
@@ -178,20 +176,18 @@ export function F2OrganizationStep({ onSuccess, onBack, defaultBusinessName = ''
 
                 <div
                   onClick={() => setCategory('HEALTHCARE')}
-                  className={`p-3.5 rounded-[20px] flex flex-col justify-between h-28 cursor-pointer transition-all ${
-                    category === 'HEALTHCARE'
-                      ? 'border-2 border-[#14161A] bg-[#F8FAFC]'
-                      : 'border border-[#E2E8F0] bg-white hover:border-[#CBD5E1]'
-                  }`}
+                  className={`p-3.5 rounded-[20px] flex flex-col justify-between h-28 cursor-pointer transition-all ${category === 'HEALTHCARE'
+                    ? 'border-2 border-[#14161A] bg-[#F8FAFC]'
+                    : 'border border-[#E2E8F0] bg-white hover:border-[#CBD5E1]'
+                    }`}
                 >
                   <div className="flex items-center justify-between">
                     <span className="text-lg">🏥</span>
                     <span
-                      className={`h-3.5 w-3.5 rounded-full ${
-                        category === 'HEALTHCARE'
-                          ? 'border-4 border-[#14161A] bg-white'
-                          : 'border border-[#CBD5E1]'
-                      }`}
+                      className={`h-3.5 w-3.5 rounded-full ${category === 'HEALTHCARE'
+                        ? 'border-4 border-[#14161A] bg-white'
+                        : 'border border-[#CBD5E1]'
+                        }`}
                     />
                   </div>
                   <div>
@@ -202,20 +198,18 @@ export function F2OrganizationStep({ onSuccess, onBack, defaultBusinessName = ''
 
                 <div
                   onClick={() => setCategory('MULTI')}
-                  className={`p-3.5 rounded-[20px] flex flex-col justify-between h-28 cursor-pointer transition-all ${
-                    category === 'MULTI'
-                      ? 'border-2 border-[#14161A] bg-[#F8FAFC]'
-                      : 'border border-[#E2E8F0] bg-white hover:border-[#CBD5E1]'
-                  }`}
+                  className={`p-3.5 rounded-[20px] flex flex-col justify-between h-28 cursor-pointer transition-all ${category === 'MULTI'
+                    ? 'border-2 border-[#14161A] bg-[#F8FAFC]'
+                    : 'border border-[#E2E8F0] bg-white hover:border-[#CBD5E1]'
+                    }`}
                 >
                   <div className="flex items-center justify-between">
                     <span className="text-lg">🏢</span>
                     <span
-                      className={`h-3.5 w-3.5 rounded-full ${
-                        category === 'MULTI'
-                          ? 'border-4 border-[#14161A] bg-white'
-                          : 'border border-[#CBD5E1]'
-                      }`}
+                      className={`h-3.5 w-3.5 rounded-full ${category === 'MULTI'
+                        ? 'border-4 border-[#14161A] bg-white'
+                        : 'border border-[#CBD5E1]'
+                        }`}
                     />
                   </div>
                   <div>
@@ -248,19 +242,17 @@ export function F2OrganizationStep({ onSuccess, onBack, defaultBusinessName = ''
                   value={gstin}
                   onChange={(e) => setGstin(e.target.value.toUpperCase())}
                   placeholder="e.g. 29ABCDE1234F1Z5"
-                  className={`w-full mt-1.5 px-4 py-2.5 rounded-full border bg-[#F8FAFC] text-xs text-[#14161A] focus:outline-none ${
-                    gstinStatus
-                      ? gstinStatus.valid
-                        ? 'border-emerald-600'
-                        : 'border-red-400'
-                      : 'border-[#E2E8F0]'
-                  }`}
+                  className={`w-full mt-1.5 px-4 py-2.5 rounded-full border bg-[#F8FAFC] text-xs text-[#14161A] focus:outline-none ${gstinStatus
+                    ? gstinStatus.valid
+                      ? 'border-emerald-600'
+                      : 'border-red-400'
+                    : 'border-[#E2E8F0]'
+                    }`}
                 />
                 {gstinStatus && (
                   <div
-                    className={`text-[10px] font-medium mt-1 ${
-                      gstinStatus.valid ? 'text-[#065F46]' : 'text-red-500'
-                    }`}
+                    className={`text-[10px] font-medium mt-1 ${gstinStatus.valid ? 'text-[#065F46]' : 'text-red-500'
+                      }`}
                   >
                     {gstinStatus.message}
                   </div>

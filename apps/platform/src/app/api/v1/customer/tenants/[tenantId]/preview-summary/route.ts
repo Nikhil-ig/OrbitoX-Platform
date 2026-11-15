@@ -89,7 +89,7 @@ export const GET = withCustomerAuth<RouteContext>(
     if (configuredUrl) {
       try {
         baseDomain = new URL(configuredUrl).hostname;
-      } catch {}
+      } catch { }
     }
     const subdomainUrl = `http://${project.slug}.${baseDomain}`;
     const sampleTable = runtimeTenant?.sampleTableLocator || {

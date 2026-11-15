@@ -16,18 +16,18 @@ export async function POST(request: NextRequest) {
     const hasOrgName = typeof body.organizationName === 'string' && body.organizationName.trim().length > 0;
     const result = hasOrgName
       ? await registerCustomer({
-          email,
-          password: typeof body.password === 'string' ? body.password : '',
-          organizationName: body.organizationName,
-          baseUrl: accountPublicBaseUrl(request.nextUrl.origin),
-        })
+        email,
+        password: typeof body.password === 'string' ? body.password : '',
+        organizationName: body.organizationName,
+        baseUrl: accountPublicBaseUrl(request.nextUrl.origin),
+      })
       : await registerCustomerAccount({
-          name: typeof body.name === 'string' ? body.name : undefined,
-          phone: typeof body.phone === 'string' ? body.phone : undefined,
-          email,
-          password: typeof body.password === 'string' ? body.password : '',
-          baseUrl: accountPublicBaseUrl(request.nextUrl.origin),
-        });
+        name: typeof body.name === 'string' ? body.name : undefined,
+        phone: typeof body.phone === 'string' ? body.phone : undefined,
+        email,
+        password: typeof body.password === 'string' ? body.password : '',
+        baseUrl: accountPublicBaseUrl(request.nextUrl.origin),
+      });
     return NextResponse.json(result.body, { status: result.status, headers: noStore });
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Account signup failed.';

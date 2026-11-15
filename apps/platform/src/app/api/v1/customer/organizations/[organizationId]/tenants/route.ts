@@ -42,23 +42,23 @@ export const GET = withCustomerAuth<RouteContext>(async (_request, session, cont
   ));
   const [installations, subscriptions] = tenantIds.length
     ? await Promise.all([
-        prisma.pluginInstallation.findMany({
-          where: { tenantId: { in: tenantIds } },
-          select: { tenantId: true, pluginId: true, status: true, statusReason: true, planId: true },
-        }),
-        prisma.billingSubscription.findMany({
-          where: { tenantId: { in: tenantIds } },
-          orderBy: { updatedAt: 'desc' },
-          select: {
-            tenantId: true,
-            pluginId: true,
-            status: true,
-            currentEnd: true,
-            cancelAtPeriodEnd: true,
-            planMap: { select: { internalPlanId: true } },
-          },
-        }),
-      ])
+      prisma.pluginInstallation.findMany({
+        where: { tenantId: { in: tenantIds } },
+        select: { tenantId: true, pluginId: true, status: true, statusReason: true, planId: true },
+      }),
+      prisma.billingSubscription.findMany({
+        where: { tenantId: { in: tenantIds } },
+        orderBy: { updatedAt: 'desc' },
+        select: {
+          tenantId: true,
+          pluginId: true,
+          status: true,
+          currentEnd: true,
+          cancelAtPeriodEnd: true,
+          planMap: { select: { internalPlanId: true } },
+        },
+      }),
+    ])
     : [[], []];
   return NextResponse.json({
     ok: true,
