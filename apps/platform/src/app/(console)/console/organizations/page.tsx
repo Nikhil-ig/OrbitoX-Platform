@@ -5,8 +5,9 @@ import {
   getOperatorSession,
   type OperatorSessionContext,
 } from '@/server/accounts/account-service';
+import { organizationService } from '@/server/organizations/organization-service';
 import { ConsoleShell } from '../components/console-shell';
-import { ConsolePlaceholder } from '../components/console-placeholder';
+import { OrganizationsClient } from './organizations-client';
 
 export const metadata = {
   title: 'Organizations · OrbitoX Operator Console',
@@ -34,18 +35,35 @@ export default async function ConsoleOrganizationsPage(props: {
   const operatorEmail = session?.email || 'operator@orbitox.io';
   const operatorRole = session?.role || 'PLATFORM_OWNER';
 
+  const orgParam =
+    typeof searchParams.org === 'string'
+      ? searchParams.org
+      : typeof searchParams.id === 'string'
+      ? searchParams.id
+      : '';
+  const statusParam = typeof searchParams.status === 'string' ? searchParams.status : 'ALL';
+  const tierParam = typeof searchParams.tier === 'string' ? searchParams.tier : 'ALL';
+
+  // Parallel data loading
+  const [summary, organizations, selectedOrgDetail] = await Promise.all([
+    organizationService.getSummary(),
+    organizationService.listOrganizations({
+      status: statusParam,
+      tier: tierParam,
+    }),
+    orgParam ? organizationService.getOrganization(orgParam).catch(() => null) : Promise.resolve(null),
+  ]);
+
   return (
     <ConsoleShell activeId="orgs" operatorEmail={operatorEmail} operatorRole={operatorRole}>
-      <ConsolePlaceholder
-        title="Organizations"
-        stageBadge="Stage C3"
-        stageName="Stage C3 — Organization Hierarchy & Tenancy Management"
-        description="Enterprise organization accounts, corporate hierarchy, and multi-tenant billing relationships."
-        detailedNotes="Organizations represent top-level corporate accounts that encompass one or more multi-tenant runtime cells, brand franchises, or hospital clusters. Organization-level plan upgrades and multi-tenant billing rollups will be fully interactive upon completion of Stage C3. (C1 organization detail is represented in the fleet overview telemetry)."
-        searchParams={searchParams}
-        actionType="change-plan"
+      <OrganizationsClient
+        initialSummary={summary}
+        initialOrganizations={organizations}
+        initialSelectedOrgDetail={selectedOrgDetail}
+        initialOrgParam={orgParam}
+        initialStatusFilter={statusParam}
+        initialTierFilter={tierParam}
       />
     </ConsoleShell>
   );
 }
-

@@ -154,7 +154,6 @@ describe('Stage 7C: Operator Console Wiring & Design Invariants', () => {
 
   it('7. Placeholder Pages contain Stage names and "Back to Overview" link', () => {
     const placeholderFiles = [
-      'app/(console)/console/organizations/page.tsx',
       'app/(console)/console/data-rights/page.tsx',
       'app/(console)/console/security/page.tsx',
       'app/(console)/console/audit/page.tsx',
@@ -169,7 +168,12 @@ describe('Stage 7C: Operator Console Wiring & Design Invariants', () => {
       assert.ok(content.includes('stageName='), `${relPath} missing stageName`);
     }
 
-    // Billing and Provisioning are now live Stage 7F screens
+    // Organizations, Billing, and Provisioning are now live Stage 7F screens
+    const orgsPath = path.join(PLATFORM_SRC, 'app/(console)/console/organizations/page.tsx');
+    assert.ok(fs.existsSync(orgsPath), 'Organizations page exists');
+    const orgsContent = fs.readFileSync(orgsPath, 'utf8');
+    assert.ok(!orgsContent.includes('ConsolePlaceholder'), 'Organizations page is a live screen, not a placeholder');
+
     const billingPath = path.join(PLATFORM_SRC, 'app/(console)/console/billing/page.tsx');
     assert.ok(fs.existsSync(billingPath), 'Billing page exists');
     const billingContent = fs.readFileSync(billingPath, 'utf8');
