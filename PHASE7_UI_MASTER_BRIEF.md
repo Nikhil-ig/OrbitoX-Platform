@@ -192,7 +192,7 @@ Each at its own device size, in its own mood. Phone and tablet showcases use `Bo
 ### 6.5 Rules
 - No existing app page changes in 7B.1 except `/console/design-system` and the new appearance page.
 - All existing CI jobs stay green with the same test counts. Visual baselines are re-made for the new look (Linux, as before).
-- Every pushed commit is in the report with its CI result. Output is pasted verbatim. Anything not run is **NOT RUN** with the true reason. Report text is taken from the code, not from memory.
+- Every pushed commit is in the report with its CI result and not showing it on my side and it’s all the other stuff and it’s just me too it’s a t    . Output is pasted verbatim. Anything not run is **NOT RUN** with the true reason. Report text is taken from the code, not from memory.
 
 ### 6.6 Report, then stop
 - Commits with CI run URLs.

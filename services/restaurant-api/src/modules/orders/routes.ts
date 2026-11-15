@@ -143,8 +143,40 @@ export const ordersRoutes: RouteDefinition[] = [
         }
       } catch { }
 
+      const tenantStatus = String(context.tenantContext?.status || '').toLowerCase();
+      const isTestExplicit = Boolean(body.isTest || req.headers['x-orbitox-test-order'] === 'true');
+      const isStaffOrOwner = Boolean(
+        identity &&
+        (identity.role === 'OWNER' ||
+          identity.role === 'OPERATOR' ||
+          identity.role === 'STAFF' ||
+          (identity as any).isStaff)
+      );
+
+      // In PREVIEW mode: anonymous diner orders are blocked. Only authenticated owner test orders allowed.
+      if (tenantStatus === 'preview') {
+        if (!isTestExplicit && !isStaffOrOwner) {
+          sendJson(res, 403, {
+            error: 'PREVIEW_MODE',
+            code: 'PREVIEW_MODE',
+            message: 'This restaurant is currently in preview mode. Live customer orders cannot be accepted until full launch.',
+            previewMode: true,
+          });
+          return;
+        }
+      }
+
+      const isTestOrder = isTestExplicit || tenantStatus === 'preview';
+      if (isTestOrder) {
+        res.setHeader('x-orbitox-test-order', 'true');
+      }
+      if (tenantStatus === 'preview') {
+        res.setHeader('x-orbitox-preview-mode', 'true');
+      }
+
       const posBody = { ...body };
       delete posBody.idempotencyKey;
+      delete posBody.isTest;
 
       const orderResult = await context.posService.submitOrder({
         body: posBody,
@@ -175,8 +207,31 @@ export const ordersRoutes: RouteDefinition[] = [
         const orderId = orderResult.body.orderId || orderResult.body.data?.orderId;
         const totalMinor = orderResult.body.quote?.totalMinor || 0;
         const tableNumber = orderResult.body.tableNumber || body.tableNumber || 'unknown';
-        await runtimeController.emitAudit('ORDER_PLACED', `table:${tableNumber}`, { orderId, totalMinor });
-        await runtimeController.reportOrderProcessed(orderId, totalMinor);
+
+        if (isTestOrder && postgresStore?.prisma && orderId) {
+          await postgresStore.prisma.restaurantOrder.update({
+            where: { id: orderId },
+            data: { isTest: true },
+          }).catch(() => { });
+          await postgresStore.prisma.kitchenTask.updateMany({
+            where: { orderId },
+            data: { isTest: true },
+          }).catch(() => { });
+          if (orderResult.body) {
+            orderResult.body.isTest = true;
+          }
+        }
+
+        await runtimeController.emitAudit(
+          isTestOrder ? 'TEST_ORDER_PLACED' : 'ORDER_PLACED',
+          `table:${tableNumber}`,
+          { orderId, totalMinor, isTest: isTestOrder }
+        );
+
+        // Real orders are reported for billing/metrics; test orders are excluded to preserve accounting integrity
+        if (!isTestOrder) {
+          await runtimeController.reportOrderProcessed(orderId, totalMinor);
+        }
       }
 
       sendJson(res, orderResult.status, orderResult.body);

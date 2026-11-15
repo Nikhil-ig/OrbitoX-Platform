@@ -1,5 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { accountPublicBaseUrl, consumeAuthRateLimit, registerCustomer } from '@/server/accounts/account-service';
+import {
+  accountPublicBaseUrl,
+  consumeAuthRateLimit,
+  registerCustomer,
+  registerCustomerAccount,
+} from '@/server/accounts/account-service';
 import { resolveClientIp } from '@/app/api/v1/_lib/ip-guard';
 
 export async function POST(request: NextRequest) {
@@ -8,12 +13,21 @@ export async function POST(request: NextRequest) {
   const rate = await consumeAuthRateLimit({ ipAddress: resolveClientIp(request.headers), email, action: 'signup' });
   if (!rate.allowed) return rateLimited(rate.retryAfterSeconds);
   try {
-    const result = await registerCustomer({
-      email,
-      password: typeof body.password === 'string' ? body.password : '',
-      organizationName: typeof body.organizationName === 'string' ? body.organizationName : '',
-      baseUrl: accountPublicBaseUrl(request.nextUrl.origin),
-    });
+    const hasOrgName = typeof body.organizationName === 'string' && body.organizationName.trim().length > 0;
+    const result = hasOrgName
+      ? await registerCustomer({
+          email,
+          password: typeof body.password === 'string' ? body.password : '',
+          organizationName: body.organizationName,
+          baseUrl: accountPublicBaseUrl(request.nextUrl.origin),
+        })
+      : await registerCustomerAccount({
+          name: typeof body.name === 'string' ? body.name : undefined,
+          phone: typeof body.phone === 'string' ? body.phone : undefined,
+          email,
+          password: typeof body.password === 'string' ? body.password : '',
+          baseUrl: accountPublicBaseUrl(request.nextUrl.origin),
+        });
     return NextResponse.json(result.body, { status: result.status, headers: noStore });
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Account signup failed.';

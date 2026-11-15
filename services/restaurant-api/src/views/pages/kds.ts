@@ -725,6 +725,7 @@ export function renderKdsWorkspace(
                 <div>
                   <span class="ticket-table-title">Table ${task.tableNumber}</span>
                   <span style="font-size: 11px; color: var(--color-stone); margin-left: 6px;">${task.seatNumber ? `· ${task.seatNumber}` : ''}</span>
+                  ${(task as any).isTest ? `<span style="display:inline-block; margin-left: 8px; background: rgba(245, 158, 11, 0.2); color: #f59e0b; border: 1px solid rgba(245, 158, 11, 0.5); font-size: 10px; font-weight: 800; padding: 1px 5px; border-radius: 4px; letter-spacing: 0.04em;">TEST</span>` : ''}
                 </div>
                 <span id="sla-badge-${task.id}" class="ticket-timer" style="${isDelayed ? 'color: var(--color-crimson); font-weight: 900;' : ''}">
                   ${task.elapsedMinutes || 0}m / ${slaMinutes}m

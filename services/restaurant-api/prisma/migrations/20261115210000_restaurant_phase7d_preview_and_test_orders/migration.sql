@@ -1,0 +1,12 @@
+-- AlterTable
+ALTER TABLE "Tenant" ADD COLUMN IF NOT EXISTS "previewExpiresAt" TIMESTAMP(3);
+
+-- AlterTable
+ALTER TABLE "MenuItem" ADD COLUMN IF NOT EXISTS "isSample" BOOLEAN NOT NULL DEFAULT false;
+
+-- AlterTable
+ALTER TABLE "RestaurantOrder" ADD COLUMN IF NOT EXISTS "isTest" BOOLEAN NOT NULL DEFAULT false;
+
+-- AlterTable
+ALTER TABLE "KitchenTask" ADD COLUMN IF NOT EXISTS "isTest" BOOLEAN NOT NULL DEFAULT false;
+

@@ -71,6 +71,80 @@ export const tenancyRoutes: RouteDefinition[] = [
   },
   {
     method: 'GET',
+    path: '/internal/tenants/:slug',
+    handler: async (req, res, context) => {
+      if (!verifyPlatformAuth(req)) {
+        sendJson(res, 401, {
+          error: 'UNAUTHORIZED',
+          message: 'Platform service credentials required (RESTAURANTOS_PLATFORM_TOKEN >= 32 chars).',
+        });
+        return;
+      }
+      const targetSlug = context.params.slug;
+      if (!targetSlug) {
+        sendJson(res, 400, { error: 'BAD_REQUEST', message: 'Tenant slug parameter required.' });
+        return;
+      }
+      try {
+        const tenant = await (provisioningService as any).prisma.tenant.findFirst({
+          where: {
+            OR: [
+              { slug: targetSlug },
+              { id: targetSlug },
+              { orbitoxProjectId: targetSlug },
+            ],
+          },
+          include: {
+            branches: true,
+            tables: { orderBy: { numericId: 'asc' }, take: 5 },
+            brandConfig: true,
+            categories: { where: { isArchived: false } },
+            menuItems: { where: { isArchived: false } },
+          },
+        });
+        if (!tenant) {
+          sendJson(res, 404, { ok: false, error: 'TENANT_NOT_FOUND', slug: targetSlug });
+          return;
+        }
+        const totalTables = await (provisioningService as any).prisma.tableFloor.count({
+          where: { tenantId: tenant.id },
+        });
+        const firstTable = tenant.tables[0];
+        const baseDomain = process.env.RESTAURANTOS_BASE_DOMAIN || 'orbitox.live';
+        sendJson(res, 200, {
+          ok: true,
+          tenant: {
+            id: tenant.id,
+            name: tenant.name,
+            slug: tenant.slug,
+            status: tenant.status,
+            previewExpiresAt: (tenant as any).previewExpiresAt || null,
+            planId: tenant.planId,
+            gstin: tenant.gstin,
+            subdomainUrl: `http://${tenant.slug}.${baseDomain}`,
+            branches: tenant.branches,
+            tableCount: totalTables,
+            sampleTableLocator: firstTable
+              ? {
+                  tableNumber: firstTable.number,
+                  locator: firstTable.locator,
+                  dinerUrl: `http://${tenant.slug}.${baseDomain}/dine/${firstTable.locator}`,
+                }
+              : null,
+            categoriesCount: tenant.categories.length,
+            menuItemsCount: tenant.menuItems.length,
+            sampleItemsCount: tenant.menuItems.filter((i: any) => i.isSample).length,
+            hasSampleMenu: tenant.menuItems.some((i: any) => i.isSample),
+            brandConfig: (tenant.brandConfig?.config as any) || null,
+          },
+        });
+      } catch (err: any) {
+        sendJson(res, 500, { error: 'INTERNAL_ERROR', message: err.message });
+      }
+    },
+  },
+  {
+    method: 'GET',
     path: '/api/restaurant/branches',
     handler: async (_req, res, context) => {
       const branches = await context.repo.getBranches();

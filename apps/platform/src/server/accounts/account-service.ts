@@ -27,6 +27,13 @@ import {
   unsealTotpSecret,
   uniformAccountResponse,
   verifyAccountPassword,
+  generateVerificationCode,
+  hashVerificationCode,
+  newVerificationCode,
+  maskEmail,
+  assertValidGstin,
+  VERIFICATION_CODE_TTL_SECONDS,
+  VERIFICATION_RESEND_COOLDOWN_SECONDS,
 } from '@/server/auth/account-security';
 
 type Tx = Prisma.TransactionClient;
@@ -128,6 +135,237 @@ export async function registerCustomer(input: {
     if (!isUniqueConstraintError(error)) throw error;
   }
   return uniformAccountResponse();
+}
+
+export async function registerCustomerAccount(
+  input: {
+    name?: string;
+    email: string;
+    phone?: string;
+    password: string;
+    baseUrl: string;
+  },
+  database: PrismaClient = prisma,
+): Promise<{
+  status: 202;
+  body: {
+    ok: true;
+    message: string;
+    email: string;
+    expiresInSeconds: number;
+    resendCooldownSeconds: number;
+  };
+}> {
+  const email = assertValidEmail(input.email);
+  assertValidPassword(input.password);
+  await assertPasswordNotBreached(input.password);
+  const passwordHash = await hashAccountPassword(input.password);
+  const codeRecord = newVerificationCode(email);
+  const encryptedPayload = encryptAccountEmailPayload({
+    code: codeRecord.code,
+    email,
+    purpose: 'VERIFY_EMAIL',
+  });
+
+  try {
+    await database.$transaction(async (tx) => {
+      const existing = await tx.customerUser.findFirst({
+        where: { email, status: { not: 'DELETED' } },
+        select: { id: true, emailVerifiedAt: true },
+      });
+      if (existing) {
+        if (!existing.emailVerifiedAt) {
+          await tx.accountToken.deleteMany({
+            where: { email, purpose: 'VERIFY_EMAIL' },
+          });
+          await tx.accountToken.create({
+            data: {
+              tokenHash: codeRecord.tokenHash,
+              purpose: codeRecord.purpose,
+              userId: existing.id,
+              email,
+              expiresAt: codeRecord.expiresAt,
+            },
+          });
+          await tx.accountEmailOutbox.createMany({
+            data: [{ recipient: email, template: 'VERIFY_EMAIL', encryptedPayload }],
+          });
+        }
+        return;
+      }
+
+      const user = await tx.customerUser.create({
+        data: {
+          name: input.name ? input.name.trim() : null,
+          phone: input.phone ? input.phone.trim() : null,
+          email,
+          passwordHash,
+          status: 'ACTIVE',
+        },
+      });
+
+      await tx.accountToken.create({
+        data: {
+          tokenHash: codeRecord.tokenHash,
+          purpose: codeRecord.purpose,
+          userId: user.id,
+          email,
+          expiresAt: codeRecord.expiresAt,
+        },
+      });
+
+      await tx.accountEmailOutbox.createMany({
+        data: [{ recipient: email, template: 'VERIFY_EMAIL', encryptedPayload }],
+      });
+    });
+  } catch (error) {
+    if (!isUniqueConstraintError(error)) throw error;
+  }
+
+  return {
+    status: 202,
+    body: {
+      ok: true,
+      message: "We've sent a 6-digit verification code to your email.",
+      email: maskEmail(email),
+      expiresInSeconds: VERIFICATION_CODE_TTL_SECONDS,
+      resendCooldownSeconds: VERIFICATION_RESEND_COOLDOWN_SECONDS,
+    },
+  };
+}
+
+export async function verifyCustomerEmailCode(input: {
+  email: string;
+  code: string;
+  ipAddress: string;
+  userAgent?: string;
+}): Promise<
+  | {
+      ok: true;
+      user: { id: string; name: string | null; email: string; phone: string | null; emailVerified: boolean };
+      sessionToken: string;
+      csrfToken: string;
+      expiresAt: Date;
+      absoluteExpiresAt: Date;
+    }
+  | { ok: false; error: string; code?: string }
+> {
+  const email = assertValidEmail(input.email);
+  const cleanCode = input.code?.trim() || '';
+  if (!/^\d{6}$/.test(cleanCode)) {
+    return { ok: false, error: 'Verification code must be exactly 6 digits.', code: 'INVALID_CODE_FORMAT' };
+  }
+
+  let tokenHash: string;
+  try {
+    tokenHash = hashVerificationCode(email, cleanCode);
+  } catch {
+    return { ok: false, error: 'Malformed verification code.', code: 'INVALID_CODE' };
+  }
+
+  return prisma.$transaction(async (tx) => {
+    const now = new Date();
+    const changed = await tx.accountToken.updateMany({
+      where: {
+        tokenHash,
+        email,
+        purpose: 'VERIFY_EMAIL',
+        usedAt: null,
+        expiresAt: { gt: now },
+      },
+      data: { usedAt: now },
+    });
+
+    if (changed.count !== 1) {
+      const user = await tx.customerUser.findFirst({
+        where: { email, status: 'ACTIVE' },
+        select: { id: true, name: true, email: true, phone: true, emailVerifiedAt: true },
+      });
+      if (user?.emailVerifiedAt) {
+        const session = await createCustomerSession(tx, user.id, input);
+        return {
+          ok: true as const,
+          user: { id: user.id, name: user.name, email: user.email, phone: user.phone, emailVerified: true },
+          ...session,
+        };
+      }
+      return { ok: false as const, error: 'Invalid or expired verification code.', code: 'INVALID_OR_EXPIRED_CODE' };
+    }
+
+    const token = await tx.accountToken.findUnique({ where: { tokenHash } });
+    if (!token?.userId) {
+      return { ok: false as const, error: 'User not found.', code: 'USER_NOT_FOUND' };
+    }
+
+    await tx.customerUser.update({
+      where: { id: token.userId },
+      data: { emailVerifiedAt: now },
+    });
+
+    const user = await tx.customerUser.findUniqueOrThrow({
+      where: { id: token.userId },
+      select: { id: true, name: true, email: true, phone: true },
+    });
+
+    const session = await createCustomerSession(tx, user.id, input);
+    return {
+      ok: true as const,
+      user: { id: user.id, name: user.name, email: user.email, phone: user.phone, emailVerified: true },
+      ...session,
+    };
+  });
+}
+
+export async function resendCustomerVerificationCode(input: {
+  email: string;
+  baseUrl: string;
+}): Promise<{ ok: boolean; message: string; resendCooldownSeconds: number }> {
+  const email = assertValidEmail(input.email);
+  const user = await prisma.customerUser.findFirst({
+    where: { email, status: { not: 'DELETED' } },
+    select: { id: true, emailVerifiedAt: true },
+  });
+
+  if (!user || user.emailVerifiedAt) {
+    return {
+      ok: true,
+      message: 'If an unverified account exists for this email, a fresh code has been sent.',
+      resendCooldownSeconds: VERIFICATION_RESEND_COOLDOWN_SECONDS,
+    };
+  }
+
+  const codeRecord = newVerificationCode(email);
+  const encryptedPayload = encryptAccountEmailPayload({
+    code: codeRecord.code,
+    email,
+    purpose: 'VERIFY_EMAIL',
+  });
+
+  await prisma.$transaction(async (tx) => {
+    await tx.accountToken.deleteMany({
+      where: { email, purpose: 'VERIFY_EMAIL', usedAt: null },
+    });
+
+    await tx.accountToken.create({
+      data: {
+        tokenHash: codeRecord.tokenHash,
+        purpose: codeRecord.purpose,
+        userId: user.id,
+        email,
+        expiresAt: codeRecord.expiresAt,
+      },
+    });
+
+    await tx.accountEmailOutbox.createMany({
+      data: [{ recipient: email, template: 'VERIFY_EMAIL', encryptedPayload }],
+    });
+  });
+
+  return {
+    ok: true,
+    message: 'A fresh 6-digit verification code has been dispatched.',
+    resendCooldownSeconds: VERIFICATION_RESEND_COOLDOWN_SECONDS,
+  };
 }
 
 export async function verifyCustomerEmail(rawToken: string): Promise<boolean> {

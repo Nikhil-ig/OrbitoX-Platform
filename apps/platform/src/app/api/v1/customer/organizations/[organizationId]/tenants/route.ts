@@ -94,7 +94,7 @@ export const GET = withCustomerAuth<RouteContext>(async (_request, session, cont
       };
     })),
   }, { headers: noStoreHeaders() });
-}, { write: false });
+}, { write: false, allowMfaSetup: true });
 
 export const POST = withCustomerAuth<RouteContext>(async (request: NextRequest, session, context) => {
   const { organizationId } = await context.params;
@@ -153,7 +153,7 @@ export const POST = withCustomerAuth<RouteContext>(async (request: NextRequest, 
     }
     return NextResponse.json({ ok: false, error: 'TENANT_PROVISIONING_FAILED' }, { status: 422, headers: noStoreHeaders() });
   }
-}, { write: true });
+}, { write: true, allowMfaSetup: true });
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);

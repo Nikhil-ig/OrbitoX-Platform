@@ -23,6 +23,7 @@ model Tenant {
   timezone         String   @default("Asia/Kolkata")
   gstin            String?  // Indian GST identification number (e.g. 03AAAAA0000A1Z5)
   retentionUntil   DateTime? // for scheduled deletion after cancellation
+  previewExpiresAt DateTime? // 14-day preview mode expiry for unlaunched tenants
   onboardingState  Json?    // onboarding checklist progress
   entitlementRevision Int   @default(0)
   lastLifecycleKey String?
@@ -176,6 +177,7 @@ model MenuItem {
   isPopular           Boolean  @default(false)
   isSignature         Boolean  @default(false)
   isArchived          Boolean  @default(false)
+  isSample            Boolean  @default(false) // Sample dish seeded during onboarding
   modifierGroups      Json?
   imageUrl            String?
   hsnCode             String?  @default("996331") // Indian SAC code for restaurant catering & food services
@@ -228,6 +230,7 @@ model RestaurantOrder {
   idempotencyKey    String?
   paymentStatus     String   @default("UNPAID") // UNPAID, AUTHORIZED, CAPTURED, REFUNDED
   paymentSessionId  String?
+  isTest            Boolean  @default(false) // Test order placed by owner during preview mode
   version           Int      @default(1)
   createdAt         DateTime @default(now())
   updatedAt         DateTime @updatedAt
@@ -258,6 +261,7 @@ model KitchenTask {
   modifiers          Json?
   course             String?
   fulfilledItemCount Int      @default(0)
+  isTest             Boolean  @default(false) // Mirrors test order status for KDS rendering
   version            Int      @default(1)
   createdAt          DateTime @default(now())
   updatedAt          DateTime @updatedAt

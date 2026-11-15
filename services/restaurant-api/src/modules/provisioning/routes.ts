@@ -78,14 +78,25 @@ async function handleProvision(req: http.IncomingMessage, res: http.ServerRespon
   }
 
   const cleanSlug = body.slug || targetTenantId.replace(/^org\/[^/]+\/project\/[^/]+\/environment\//, '').replace(/^tenant_/, '').replace(/[^a-z0-9-]/g, '-').slice(0, 30);
+  const cfg = (body.config && typeof body.config === 'object' ? body.config : {}) as Record<string, any>;
   const provResult = await provisioningService.provisionTenant({
     tenantId: targetTenantId,
-    restaurantName: body.restaurantName || body.name || `Restaurant ${cleanSlug}`,
+    restaurantName: cfg.restaurantName || body.restaurantName || body.name || `Restaurant ${cleanSlug}`,
     slug: cleanSlug,
     planId,
-    gstin: body.gstin,
-    address: body.address,
-    legalEntityName: body.legalEntityName,
+    gstin: cfg.gstin || body.gstin,
+    city: cfg.city || body.city,
+    firstBranchArea: cfg.firstBranchArea || body.firstBranchArea,
+    restaurantType: cfg.restaurantType || body.restaurantType,
+    tableCount: typeof cfg.tableCount === 'number' ? cfg.tableCount : (typeof body.tableCount === 'number' ? body.tableCount : undefined),
+    menuSource: cfg.menuSource || body.menuSource || 'sample',
+    templateId: cfg.templateId || body.templateId || 'saffron',
+    ownerName: cfg.ownerName || body.ownerName,
+    ownerEmail: cfg.ownerEmail || body.ownerEmail,
+    ownerPhone: cfg.ownerPhone || body.ownerPhone,
+    address: cfg.address || body.address,
+    legalEntityName: cfg.legalEntityName || body.legalEntityName,
+    status: body.status || 'preview',
     entitlementRevision: Math.max(1, incomingRevision),
     idempotencyKey,
   });
@@ -106,7 +117,7 @@ async function handleProvision(req: http.IncomingMessage, res: http.ServerRespon
   sendJson(res, 201, {
     ok: true,
     tenantId: targetTenantId,
-    status: 'active',
+    status: provResult.status || 'preview',
     revision: Math.max(1, incomingRevision),
     result: provResult,
   });

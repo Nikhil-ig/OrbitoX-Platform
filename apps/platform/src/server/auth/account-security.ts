@@ -38,6 +38,67 @@ export function normalizeEmail(email: string): string {
   return email.trim().toLowerCase();
 }
 
+export const GST_STATE_CODES: Record<string, string> = {
+  '01': 'Jammu & Kashmir',
+  '02': 'Himachal Pradesh',
+  '03': 'Punjab',
+  '04': 'Chandigarh',
+  '05': 'Uttarakhand',
+  '06': 'Haryana',
+  '07': 'Delhi',
+  '08': 'Rajasthan',
+  '09': 'Uttar Pradesh',
+  '10': 'Bihar',
+  '11': 'Sikkim',
+  '12': 'Arunachal Pradesh',
+  '13': 'Nagaland',
+  '14': 'Manipur',
+  '15': 'Mizoram',
+  '16': 'Tripura',
+  '17': 'Meghalaya',
+  '18': 'Assam',
+  '19': 'West Bengal',
+  '20': 'Jharkhand',
+  '21': 'Odisha',
+  '22': 'Chhattisgarh',
+  '23': 'Madhya Pradesh',
+  '24': 'Gujarat',
+  '26': 'Dadra & Nagar Haveli and Daman & Diu',
+  '27': 'Maharashtra',
+  '29': 'Karnataka',
+  '30': 'Goa',
+  '31': 'Lakshadweep',
+  '32': 'Kerala',
+  '33': 'Tamil Nadu',
+  '34': 'Puducherry',
+  '35': 'Andaman & Nicobar Islands',
+  '36': 'Telangana',
+  '37': 'Andhra Pradesh',
+  '38': 'Ladakh',
+};
+
+export function validateIndianGstin(gstin: string): {
+  valid: boolean;
+  stateCode?: string;
+  stateName?: string;
+  error?: string;
+} {
+  const clean = gstin.trim().toUpperCase();
+  if (!clean || clean.length !== 15) {
+    return { valid: false, error: 'GSTIN must be exactly 15 characters long.' };
+  }
+  const gstinRegex = /^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z]{1}[1-9A-Z]{1}Z[0-9A-Z]{1}$/;
+  if (!gstinRegex.test(clean)) {
+    return { valid: false, error: 'Invalid GSTIN format structure.' };
+  }
+  const stateCode = clean.slice(0, 2);
+  const stateName = GST_STATE_CODES[stateCode];
+  if (!stateName) {
+    return { valid: false, error: `Invalid GST state code "${stateCode}".` };
+  }
+  return { valid: true, stateCode, stateName };
+}
+
 export function assertValidEmail(email: string): string {
   const normalized = normalizeEmail(email);
   if (normalized.length > 254 || !EMAIL_PATTERN.test(normalized)) {
@@ -311,4 +372,95 @@ function decodeBase32(input: string): Buffer {
     }
   }
   return Buffer.from(output);
+}
+
+export const VERIFICATION_CODE_TTL_SECONDS = 10 * 60; // 10 minutes
+export const VERIFICATION_RESEND_COOLDOWN_SECONDS = 60; // 60 seconds
+
+export function generateVerificationCode(): string {
+  return crypto.randomInt(100000, 1000000).toString();
+}
+
+export function hashVerificationCode(email: string, code: string): string {
+  const cleanCode = code.trim();
+  if (!/^\d{6}$/.test(cleanCode)) {
+    throw new Error('Verification code must be exactly 6 digits.');
+  }
+  return crypto
+    .createHash('sha256')
+    .update(`orbitox:email-verification:v1:${normalizeEmail(email)}:${cleanCode}`)
+    .digest('hex');
+}
+
+export function newVerificationCode(email: string, now = Date.now(), ttlSeconds = VERIFICATION_CODE_TTL_SECONDS) {
+  const code = generateVerificationCode();
+  const tokenHash = hashVerificationCode(email, code);
+  return {
+    code,
+    tokenHash,
+    purpose: 'VERIFY_EMAIL' as const,
+    expiresAt: new Date(now + ttlSeconds * 1000),
+  };
+}
+
+export function maskEmail(email: string): string {
+  const [local, domain] = email.trim().toLowerCase().split('@');
+  if (!local || !domain) return email;
+  const visible = local.slice(0, 2);
+  return `${visible}***@${domain}`;
+}
+
+const INDIAN_GSTIN_REGEX = /^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z]{1}[1-9A-Z]{1}Z[0-9A-Z]{1}$/;
+const STATE_CODES: Record<string, string> = {
+  '01': 'Jammu and Kashmir',
+  '02': 'Himachal Pradesh',
+  '03': 'Punjab',
+  '04': 'Chandigarh',
+  '05': 'Uttarakhand',
+  '06': 'Haryana',
+  '07': 'Delhi',
+  '08': 'Rajasthan',
+  '09': 'Uttar Pradesh',
+  '10': 'Bihar',
+  '11': 'Sikkim',
+  '12': 'Arunachal Pradesh',
+  '13': 'Nagaland',
+  '14': 'Manipur',
+  '15': 'Mizoram',
+  '16': 'Tripura',
+  '17': 'Meghalaya',
+  '18': 'Assam',
+  '19': 'West Bengal',
+  '20': 'Jharkhand',
+  '21': 'Odisha',
+  '22': 'Chhattisgarh',
+  '23': 'Madhya Pradesh',
+  '24': 'Gujarat',
+  '26': 'Dadra and Nagar Haveli and Daman and Diu',
+  '27': 'Maharashtra',
+  '29': 'Karnataka',
+  '30': 'Goa',
+  '31': 'Lakshadweep',
+  '32': 'Kerala',
+  '33': 'Tamil Nadu',
+  '34': 'Puducherry',
+  '35': 'Andaman and Nicobar Islands',
+  '36': 'Telangana',
+  '37': 'Andhra Pradesh',
+  '38': 'Ladakh',
+};
+
+export function assertValidGstin(gstin: string): { valid: boolean; stateCode?: string; stateName?: string; error?: string } {
+  const clean = gstin.trim().toUpperCase();
+  if (!clean) return { valid: false, error: 'GSTIN cannot be empty.' };
+  if (clean.length !== 15) return { valid: false, error: 'GSTIN must contain exactly 15 characters.' };
+  if (!INDIAN_GSTIN_REGEX.test(clean)) {
+    return { valid: false, error: 'Invalid GSTIN format (e.g. 29ABCDE1234F1Z5).' };
+  }
+  const stateCode = clean.slice(0, 2);
+  const stateName = STATE_CODES[stateCode];
+  if (!stateName) {
+    return { valid: false, error: `Invalid GST state code "${stateCode}".` };
+  }
+  return { valid: true, stateCode, stateName };
 }

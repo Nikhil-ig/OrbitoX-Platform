@@ -87,6 +87,11 @@ export interface ProvisionTenantInput {
   currency?: string;
   timezone?: string;
   gstin?: string;
+  city?: string;
+  firstBranchArea?: string;
+  restaurantType?: string;
+  tableCount?: number;
+  menuSource?: 'sample' | 'empty';
   address?: string;
   legalEntityName?: string;
   planId: string;
@@ -101,12 +106,18 @@ export interface ProvisionTenantResult {
   name: string;
   planId: string;
   status: string;
+  previewExpiresAt?: string;
   subdomainUrl: string;
   inviteUrl: string;
   inviteToken: string;
   expiresAt: string;
   branchId: string;
   tableCount: number;
+  sampleTableLocator?: {
+    tableNumber: string;
+    locator: string;
+    dinerUrl: string;
+  };
 }
 
 let sharedPrisma: PrismaClient | null = null;
@@ -215,12 +226,26 @@ export class TenantProvisioningService {
     const result = await withTenantRlsTransaction(this.prisma, tenantId, async (tx: any) => {
       // 4a. Tenant entity
       const restaurantName = (input.restaurantName || (input as any).name || cleanSlug).trim();
+      const initialStatus = input.status || 'preview';
+      const previewExpiresAt =
+        initialStatus === 'preview'
+          ? new Date(Date.now() + 14 * 24 * 3600 * 1000)
+          : null;
+      const effectiveTableCount =
+        typeof input.tableCount === 'number' && input.tableCount > 0
+          ? input.tableCount
+          : template.defaultTableCount;
+      const effectiveCity = input.city?.trim() || 'Bengaluru';
+      const effectiveBranchAddress =
+        input.firstBranchArea?.trim() || input.address?.trim() || 'Main Dining Hall';
+
       const tenant = await tx.tenant.create({
         data: {
           id: tenantId,
           name: restaurantName,
           slug: cleanSlug,
-          status: input.status || 'active',
+          status: initialStatus,
+          previewExpiresAt,
           planId,
           orbitoxProjectId: input.tenantId || `restaurant-os-${cleanSlug}`,
           currency,
@@ -246,20 +271,19 @@ export class TenantProvisioningService {
       });
 
       // 4b. Primary Branch
-      const branchAddress = input.address || 'Main Dining Hall';
       await tx.branch.create({
         data: {
           id: branchId,
           tenantId,
           name: `${restaurantName} Main`,
           code: branchCode,
-          address: branchAddress,
-          city: 'Metropolis',
+          address: effectiveBranchAddress,
+          city: effectiveCity,
           timezone,
           currency,
           status: 'OPERATIONAL',
           serviceAreasCount: 1,
-          activeTablesCount: template.defaultTableCount,
+          activeTablesCount: effectiveTableCount,
           email: input.ownerEmail || null,
           phone: input.ownerPhone || null,
           openingHours: {
@@ -273,7 +297,7 @@ export class TenantProvisioningService {
 
       // 4c. Default Floor
       const tableIdsArray: number[] = [];
-      for (let i = 1; i <= template.defaultTableCount; i++) {
+      for (let i = 1; i <= effectiveTableCount; i++) {
         tableIdsArray.push(i);
       }
 
@@ -284,7 +308,7 @@ export class TenantProvisioningService {
           branchId,
           name: 'Main Dining Room',
           type: 'Dining',
-          capacity: template.defaultTableCount * 4,
+          capacity: effectiveTableCount * 4,
           activeLayout: 'Standard',
           status: 'ACTIVE',
           tableIds: tableIdsArray,
@@ -293,18 +317,22 @@ export class TenantProvisioningService {
               id: `lay_${cleanSlug}_std`,
               name: 'Standard Dining',
               description: 'Primary customer service floor configuration',
-              tableCount: template.defaultTableCount,
+              tableCount: effectiveTableCount,
             },
           ],
         },
       });
 
       // 4d. Tables with random 256-bit QR tokens, stored as hashes only
-      for (let i = 1; i <= template.defaultTableCount; i++) {
+      let firstTableLocator = '';
+      for (let i = 1; i <= effectiveTableCount; i++) {
         const tableNum = `T-${i < 10 ? '0' + i : i}`;
         // Random 256-bit token for QR codes; only SHA-256 hash is stored
         const rawTableToken = crypto.randomBytes(32).toString('base64url');
         const tokenHash = crypto.createHash('sha256').update(`orbitox-table-token:v1:${rawTableToken}`).digest('hex');
+        if (i === 1) {
+          firstTableLocator = tokenHash;
+        }
         const col = (i - 1) % 4;
         const row = Math.floor((i - 1) / 4);
 
@@ -350,28 +378,31 @@ export class TenantProvisioningService {
         });
       }
 
-      for (let itemIdx = 0; itemIdx < template.items.length; itemIdx++) {
-        const item = template.items[itemIdx];
-        const itemId = `item_${cleanSlug}_${itemIdx + 1}`;
-        const catId = categoryMap.get(item.categoryName) || `cat_${cleanSlug}_1`;
+      if (input.menuSource !== 'empty') {
+        for (let itemIdx = 0; itemIdx < template.items.length; itemIdx++) {
+          const item = template.items[itemIdx];
+          const itemId = `item_${cleanSlug}_${itemIdx + 1}`;
+          const catId = categoryMap.get(item.categoryName) || `cat_${cleanSlug}_1`;
 
-        await tx.menuItem.create({
-          data: {
-            id: itemId,
-            tenantId,
-            name: item.name,
-            description: item.description,
-            basePriceMinor: item.basePriceMinor,
-            formattedPrice: `₹${(item.basePriceMinor / 100).toFixed(2)}`,
-            category: item.categoryName,
-            categoryId: catId,
-            station: item.station,
-            prepDurationMinutes: item.prepDurationMinutes,
-            allergens: [],
-            dietaryFlags: item.isVegetarian ? ['VEG'] : ['NON_VEG'],
-            isArchived: false,
-          },
-        });
+          await tx.menuItem.create({
+            data: {
+              id: itemId,
+              tenantId,
+              name: item.name,
+              description: item.description,
+              basePriceMinor: item.basePriceMinor,
+              formattedPrice: `₹${(item.basePriceMinor / 100).toFixed(2)}`,
+              category: item.categoryName,
+              categoryId: catId,
+              station: item.station,
+              prepDurationMinutes: item.prepDurationMinutes,
+              allergens: [],
+              dietaryFlags: item.isVegetarian ? ['VEG'] : ['NON_VEG'],
+              isArchived: false,
+              isSample: true,
+            },
+          });
+        }
       }
 
       // 4f. Tenant Brand Configuration
@@ -380,7 +411,7 @@ export class TenantProvisioningService {
         restaurantName,
         legalEntityName: input.legalEntityName || restaurantName,
         gstin: input.gstin ? input.gstin.trim() : undefined,
-        address: input.address || 'Main Dining Hall, Metropolis',
+        address: `${effectiveBranchAddress}, ${effectiveCity}`,
         tagline: `${template.category} Experience`,
         logoUrl: `https://assets.orbitox.io/starter/logos/${template.slug}.svg`,
         faviconUrl: '/favicon.ico',
@@ -391,7 +422,7 @@ export class TenantProvisioningService {
         textColor: '#F3EEE5',
         fontFamilyHeading: template.fontHeading,
         fontFamilyBody: template.fontBody,
-        activeTemplateId: template.id,
+        activeTemplateId: input.templateId || template.id,
         subdomain: `${cleanSlug}.${this.baseDomain}`,
         customDomain: null,
         domainStatus: 'NOT_CONFIGURED',
@@ -446,13 +477,21 @@ export class TenantProvisioningService {
         slug: cleanSlug,
         name: restaurantName,
         planId,
-        status: 'trial',
+        status: initialStatus,
+        previewExpiresAt: previewExpiresAt ? previewExpiresAt.toISOString() : undefined,
         subdomainUrl,
         inviteUrl,
         inviteToken: rawInviteToken,
         expiresAt: inviteExpiresAt.toISOString(),
         branchId,
-        tableCount: template.defaultTableCount,
+        tableCount: effectiveTableCount,
+        sampleTableLocator: firstTableLocator
+          ? {
+            tableNumber: 'T-01',
+            locator: firstTableLocator,
+            dinerUrl: `http://${cleanSlug}.${this.baseDomain}/dine/${firstTableLocator}`,
+          }
+          : undefined,
       };
 
       // 4i. Store idempotency response if key provided

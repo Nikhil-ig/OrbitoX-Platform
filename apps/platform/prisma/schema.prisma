@@ -689,6 +689,9 @@ model PlatformOrganization {
   name            String
   billingEmail    String
   complianceTier  String            @default("STANDARD")
+  businessCategory String?          @default("RESTAURANTS_CAFES")
+  city            String?
+  gstin           String?
   status          String            @default("ACTIVE")
   createdAt       DateTime          @default(now())
   updatedAt       DateTime          @updatedAt
@@ -769,6 +772,8 @@ model PlatformOperatorBackupCode {
 model CustomerUser {
   id                    String    @id @default(cuid())
   email                 String
+  name                  String?
+  phone                 String?
   emailVerifiedAt       DateTime? @db.Timestamptz
   passwordHash          String?
   mfaTotpSealed         String?
