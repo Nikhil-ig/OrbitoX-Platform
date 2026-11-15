@@ -336,12 +336,13 @@ export class ProvisioningSaga {
         });
       } else {
         project = await platformRepository.getProject(cleanSlug);
-        environments = await platformRepository.listEnvironments(project.id);
-        targetEnv = environments.find((e: any) => e.slug.toLowerCase() === environmentSlug.toLowerCase());
-        if (!targetEnv) {
-          throw new Error(`Environment "${environmentSlug}" was not found for project "${project.id}".`);
+        if (project?.id) {
+          environments = await platformRepository.listEnvironments(project.id);
+          targetEnv = environments.find((e: any) => e.slug.toLowerCase() === environmentSlug.toLowerCase());
+          if (targetEnv) {
+            tenantId = `org/${org.id}/project/${project.id}/environment/${targetEnv.id}`;
+          }
         }
-        tenantId = `org/${org.id}/project/${project.id}/environment/${targetEnv.id}`;
       }
 
       // ─────────────────────────────────────────────────────────────

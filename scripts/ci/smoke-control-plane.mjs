@@ -141,10 +141,10 @@ for (const path of [
 }
 for (const [legacyPath, target] of [
   ['/platform', '/console/overview'],
-  ['/platform/restaurants', '/console/overview'],
+  ['/platform/restaurants', '/console/tenants'],
   ['/platform/fleet', '/console/overview'],
   ['/platform/plans', '/console/billing'],
-  ['/platform/connect', '/console/settings/appearance'],
+  ['/platform/connect', '/console/security'],
   ['/platform/settings', '/console/settings/appearance'],
   ['/admin', '/console/overview'],
 ]) {
@@ -185,10 +185,10 @@ for (const path of [
 }
 for (const [legacyPath, target] of [
   ['/platform', '/console/overview'],
-  ['/platform/restaurants', '/console/overview'],
+  ['/platform/restaurants', '/console/tenants'],
   ['/platform/fleet', '/console/overview'],
   ['/platform/plans', '/console/billing'],
-  ['/platform/connect', '/console/settings/appearance'],
+  ['/platform/connect', '/console/security'],
   ['/platform/settings', '/console/settings/appearance'],
 ]) {
   await expectPermanentRedirect(

@@ -1,42 +1,72 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { resourceGraph, reconciliation } from '../../_lib/control-plane-brain';
-import { auditService } from '../../_lib/platform-governance';
+import { withOperatorAuth } from '@/server/auth/operator-auth';
+import { provisioningService } from '@/server/provisioning/provisioning-service';
 
-export async function GET(req: NextRequest) {
+export const GET = withOperatorAuth(async (request: NextRequest, session) => {
   try {
-    const { searchParams } = new URL(req.url);
-    const limit = parseInt(searchParams.get('limit') || '50', 10);
-    
-    // Get recent audit log entries
-    const auditRecords = (auditService as any).queryLedger
-      ? (auditService as any).queryLedger({ limit })
-      : (auditService as any).getRecords
-      ? (auditService as any).getRecords()
-      : [];
+    const url = new URL(request.url);
+    const status = url.searchParams.get('status') || undefined;
+    const query = url.searchParams.get('query') || undefined;
+    const organizationId = url.searchParams.get('organizationId') || undefined;
 
-    // Scan for recent drifts / operations across graph
-    const nodes = resourceGraph.getAllNodes();
-    const activeNodes = nodes.filter((n) => n.driftState !== 'IN_SYNC' || n.lifecycleStatus === 'PROVISIONING');
+    const [summary, operations] = await Promise.all([
+      provisioningService.getSummary(),
+      provisioningService.listOperations({ status, query, organizationId }),
+    ]);
 
     return NextResponse.json({
       success: true,
       data: {
-        operations: auditRecords,
-        activeReconciliations: activeNodes.map((n) => ({
-          resourceId: n.resourceId,
-          name: n.name,
-          type: n.resourceType,
-          driftState: n.driftState,
-          status: n.lifecycleStatus,
-          updatedAt: n.updatedAt,
-        })),
-        totalNodes: nodes.length,
+        summary,
+        operations,
       },
     });
-  } catch (err: any) {
+  } catch (error: any) {
+    const status = error.message?.includes('DATABASE_ERROR') ? 500 : 400;
     return NextResponse.json(
-      { success: false, error: { message: err.message } },
-      { status: 500 }
+      {
+        success: false,
+        error: {
+          code: 'PROVISIONING_FETCH_FAILED',
+          message: error.message || 'Failed to list provisioning operations',
+        },
+      },
+      { status }
     );
   }
-}
+});
+
+export const POST = withOperatorAuth(
+  async (request: NextRequest, session) => {
+    try {
+      const body = await request.json();
+      const operation = await provisioningService.createProvisioning(body, {
+        id: session.id,
+        email: session.email,
+        role: session.role,
+        reauthenticatedAt: session.reauthenticatedAt,
+      });
+
+      return NextResponse.json(
+        {
+          success: true,
+          data: operation,
+        },
+        { status: 202 }
+      );
+    } catch (error: any) {
+      const isInput = error.message?.includes('INVALID_REQUEST');
+      return NextResponse.json(
+        {
+          success: false,
+          error: {
+            code: isInput ? 'INVALID_REQUEST' : 'PROVISIONING_CREATE_FAILED',
+            message: error.message || 'Failed to initiate tenant provisioning operation',
+          },
+        },
+        { status: isInput ? 400 : 500 }
+      );
+    }
+  },
+  { write: true }
+);

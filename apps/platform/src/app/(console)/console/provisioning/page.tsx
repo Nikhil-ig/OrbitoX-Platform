@@ -5,8 +5,10 @@ import {
   getOperatorSession,
   type OperatorSessionContext,
 } from '@/server/accounts/account-service';
+import { platformRepository } from '@/server/db/platform-repository';
+import { provisioningService } from '@/server/provisioning/provisioning-service';
 import { ConsoleShell } from '../components/console-shell';
-import { ConsolePlaceholder } from '../components/console-placeholder';
+import { ProvisioningClient } from './provisioning-client';
 
 export const metadata = {
   title: 'Provisioning Operations · OrbitoX Operator Console',
@@ -34,18 +36,34 @@ export default async function ConsoleProvisioningPage(props: {
   const operatorEmail = session?.email || 'operator@orbitox.io';
   const operatorRole = session?.role || 'PLATFORM_OWNER';
 
+  const statusParam = typeof searchParams.status === 'string' ? searchParams.status : 'ALL';
+  const tenantParam = typeof searchParams.tenant === 'string' ? searchParams.tenant : '';
+
+  // Parallel data loading
+  const [summary, operations, orgs] = await Promise.all([
+    provisioningService.getSummary(),
+    provisioningService.listOperations({
+      status: statusParam !== 'ALL' ? statusParam : undefined,
+      query: tenantParam || undefined,
+    }),
+    platformRepository.listOrganizations().catch(() => []),
+  ]);
+
+  const availableOrganizations = orgs.map((o) => ({
+    id: o.id,
+    name: o.name,
+    slug: o.slug,
+  }));
+
   return (
     <ConsoleShell activeId="provisioning" operatorEmail={operatorEmail} operatorRole={operatorRole}>
-      <ConsolePlaceholder
-        title="Provisioning Operations"
-        stageBadge="Stage C4"
-        stageName="Stage C4 — Saga Engine & Asynchronous Operations"
-        description="Asynchronous database cell creation, cryptographic key generation, and service bootstrap orchestrations."
-        detailedNotes="The Saga provisioning engine coordinates distributed infrastructure mutations across AWS RDS PostgreSQL databases, Cloudflare custom hostnames, and cryptographic signing keypairs. Jobs execute asynchronously with comprehensive compensating rollback handlers. Live operational control will be connected in Stage C4."
-        searchParams={searchParams}
-        actionType="retry-provisioning"
+      <ProvisioningClient
+        initialSummary={summary}
+        initialOperations={operations}
+        availableOrganizations={availableOrganizations}
+        initialStatusFilter={statusParam}
+        initialTenantParam={tenantParam}
       />
     </ConsoleShell>
   );
 }
-
