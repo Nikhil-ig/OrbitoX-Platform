@@ -5,8 +5,9 @@ import {
   getOperatorSession,
   type OperatorSessionContext,
 } from '@/server/accounts/account-service';
+import { dataRightsConsoleService } from '@/server/data-rights/data-rights-console-service';
 import { ConsoleShell } from '../components/console-shell';
-import { ConsolePlaceholder } from '../components/console-placeholder';
+import { DataRightsClient } from './data-rights-client';
 
 export const metadata = {
   title: 'Data Rights & Privacy · OrbitoX Operator Console',
@@ -34,17 +35,23 @@ export default async function ConsoleDataRightsPage(props: {
   const operatorEmail = session?.email || 'operator@orbitox.io';
   const operatorRole = session?.role || 'PLATFORM_OWNER';
 
+  const kindParam = typeof searchParams.kind === 'string' ? searchParams.kind : 'all';
+  const searchParam = typeof searchParams.search === 'string' ? searchParams.search : '';
+
+  // Parallel data loading
+  const [summary, requests] = await Promise.all([
+    dataRightsConsoleService.getSummary(),
+    dataRightsConsoleService.listRequests({ kind: kindParam, search: searchParam }),
+  ]);
+
   return (
     <ConsoleShell activeId="data-rights" operatorEmail={operatorEmail} operatorRole={operatorRole}>
-      <ConsolePlaceholder
-        title="Data Rights & Privacy"
-        stageBadge="Stage C5"
-        stageName="Stage C5 — GDPR & DPDP 2023 Compliance & Data Subject Rights"
-        description="Data Subject Requests (DSR), automated cryptographic erasure, personal data exports, and consent audits."
-        detailedNotes="Stage C5 provides zero-trust privacy orchestration supporting GDPR and India DPDP Act 2023 requirements. Operators can trigger and inspect verifiable cryptographic erasure workflows, download tamper-proof DSR exports, and verify tenant isolation compliance."
-        searchParams={searchParams}
+      <DataRightsClient
+        initialSummary={summary}
+        initialRequests={requests}
+        initialKindFilter={kindParam}
+        initialSearch={searchParam}
       />
     </ConsoleShell>
   );
 }
-

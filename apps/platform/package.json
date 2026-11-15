@@ -25,6 +25,7 @@
     "test:console-c3-billing": "NODE_OPTIONS='--conditions=react-server' pnpm exec tsx tests/integration/console-c3-billing.test.ts",
     "test:console-c4-provisioning": "NODE_OPTIONS='--conditions=react-server' pnpm exec tsx tests/integration/console-c4-provisioning.test.ts",
     "test:console-c1-organizations": "NODE_OPTIONS='--conditions=react-server' pnpm exec tsx tests/integration/console-c1-organizations.test.ts",
+    "test:console-c5-data-rights": "NODE_OPTIONS='--conditions=react-server' pnpm exec tsx tests/integration/console-c5-data-rights.test.ts",
     "test:legacy-routes-redirect": "NODE_OPTIONS='--conditions=react-server' pnpm exec tsx tests/integration/legacy-routes-redirect.test.ts",
     "test:data-rights-6g": "pnpm run prisma:generate && NODE_OPTIONS='--conditions=react-server' pnpm exec tsx --test tests/integration/test-data-rights-6g.ts",
     "recover:platform-audit-intents": "NODE_OPTIONS='--conditions=react-server' pnpm exec tsx scripts/ops/recover-platform-audit-intents.ts",

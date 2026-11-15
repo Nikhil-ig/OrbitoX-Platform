@@ -10,7 +10,7 @@
     "dev:web": "pnpm --filter @orbitox-io/platform dev",
     "smoke": "node scripts/ci/smoke-control-plane.mjs",
     "build": "turbo run build",
-    "dev": "turbo run dev",
+    "dev": "NODE_ENV=development turbo run dev",
     "test": "turbo run test",
     "test:integration": "turbo run test:integration",
     "lint": "eslint . --quiet",
