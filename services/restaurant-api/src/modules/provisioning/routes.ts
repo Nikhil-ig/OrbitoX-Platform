@@ -96,7 +96,7 @@ async function handleProvision(req: http.IncomingMessage, res: http.ServerRespon
     ownerPhone: cfg.ownerPhone || body.ownerPhone,
     address: cfg.address || body.address,
     legalEntityName: cfg.legalEntityName || body.legalEntityName,
-    status: body.status || 'preview',
+    status: cfg.status || body.status || 'active',
     entitlementRevision: Math.max(1, incomingRevision),
     idempotencyKey,
   });
@@ -117,7 +117,7 @@ async function handleProvision(req: http.IncomingMessage, res: http.ServerRespon
   sendJson(res, 201, {
     ok: true,
     tenantId: targetTenantId,
-    status: provResult.status || 'preview',
+    status: provResult.status || cfg.status || body.status || 'active',
     revision: Math.max(1, incomingRevision),
     result: provResult,
   });

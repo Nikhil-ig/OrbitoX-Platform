@@ -17,11 +17,26 @@ const INDIAN_STATE_CODES: Record<string, string> = {
   '29': 'Karnataka', '32': 'Kerala', '33': 'Tamil Nadu', '36': 'Telangana', '37': 'Andhra Pradesh',
 };
 
+export type RestaurantCategory = 'DINE_IN' | 'CAFE_BAKERY' | 'QSR' | 'BAR_BREWERY' | 'CLOUD_KITCHEN';
+
+export const RESTAURANT_CATEGORIES: Array<{
+  id: RestaurantCategory;
+  name: string;
+  icon: string;
+  description: string;
+}> = [
+  { id: 'DINE_IN', name: 'Dine-in restaurant', icon: '🍴', description: 'Table service & bistro' },
+  { id: 'CAFE_BAKERY', name: 'Café & bakery', icon: '☕', description: 'Espresso & fresh bake' },
+  { id: 'QSR', name: 'Quick-service (QSR)', icon: '⚡', description: 'Counter & takeaway' },
+  { id: 'BAR_BREWERY', name: 'Bar & brewery', icon: '🍺', description: 'Drinks & lounge' },
+  { id: 'CLOUD_KITCHEN', name: 'Cloud kitchen', icon: '🛵', description: 'Delivery only' },
+];
+
 export function F2OrganizationStep({ onSuccess, onBack, defaultBusinessName = '' }: F2Props) {
-  const [businessName, setBusinessName] = useState(defaultBusinessName || 'Shah Hospitality Group');
-  const [category, setCategory] = useState<'RESTAURANTS_CAFES' | 'HEALTHCARE' | 'MULTI'>('RESTAURANTS_CAFES');
-  const [city, setCity] = useState('Bengaluru');
-  const [gstin, setGstin] = useState('29ABCDE1234F1Z5');
+  const [businessName, setBusinessName] = useState(defaultBusinessName || '');
+  const [category, setCategory] = useState<RestaurantCategory>('DINE_IN');
+  const [city, setCity] = useState('');
+  const [gstin, setGstin] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -63,7 +78,7 @@ export function F2OrganizationStep({ onSuccess, onBack, defaultBusinessName = ''
         },
         body: JSON.stringify({
           name: businessName.trim(),
-          businessCategory: category === 'MULTI' ? 'RESTAURANTS_CAFES' : category,
+          businessCategory: 'RESTAURANTS_CAFES',
           city: city.trim(),
           gstin: gstin.trim() ? gstin.trim().toUpperCase() : undefined,
         }),
@@ -137,8 +152,10 @@ export function F2OrganizationStep({ onSuccess, onBack, defaultBusinessName = ''
 
           <form className="space-y-4" onSubmit={handleSubmit}>
             <div>
-              <label className="text-xs font-semibold text-[#14161A]">Business name</label>
+              <label htmlFor="f2-businessName" className="text-xs font-semibold text-[#14161A]">Business name</label>
               <input
+                id="f2-businessName"
+                name="businessName"
                 type="text"
                 required
                 aria-label="Business name"
@@ -150,80 +167,43 @@ export function F2OrganizationStep({ onSuccess, onBack, defaultBusinessName = ''
             </div>
 
             <div>
-              <label className="text-xs font-semibold text-[#14161A]">What do you run?</label>
-              <div className="grid grid-cols-3 gap-3 mt-2">
-                <div
-                  onClick={() => setCategory('RESTAURANTS_CAFES')}
-                  className={`p-3.5 rounded-[20px] flex flex-col justify-between h-28 cursor-pointer transition-all ${category === 'RESTAURANTS_CAFES'
-                    ? 'border-2 border-[#14161A] bg-[#F8FAFC]'
-                    : 'border border-[#E2E8F0] bg-white hover:border-[#CBD5E1]'
+              <label className="text-xs font-semibold text-[#14161A]">What kind of food business do you run?</label>
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 mt-2">
+                {RESTAURANT_CATEGORIES.map((cat) => (
+                  <div
+                    key={cat.id}
+                    onClick={() => setCategory(cat.id)}
+                    className={`p-3 rounded-[20px] flex flex-col justify-between h-24 cursor-pointer transition-all ${
+                      category === cat.id
+                        ? 'border-2 border-[#14161A] bg-[#F8FAFC]'
+                        : 'border border-[#E2E8F0] bg-white hover:border-[#CBD5E1]'
                     }`}
-                >
-                  <div className="flex items-center justify-between">
-                    <span className="text-lg">🍴</span>
-                    <span
-                      className={`h-3.5 w-3.5 rounded-full ${category === 'RESTAURANTS_CAFES'
-                        ? 'border-4 border-[#14161A] bg-white'
-                        : 'border border-[#CBD5E1]'
+                  >
+                    <div className="flex items-center justify-between">
+                      <span className="text-base">{cat.icon}</span>
+                      <span
+                        className={`h-3 w-3 rounded-full ${
+                          category === cat.id
+                            ? 'border-4 border-[#14161A] bg-white'
+                            : 'border border-[#CBD5E1]'
                         }`}
-                    />
+                      />
+                    </div>
+                    <div>
+                      <div className="font-bold text-xs text-[#14161A] truncate">{cat.name}</div>
+                      <div className="text-[10px] text-[#5A6170] truncate">{cat.description}</div>
+                    </div>
                   </div>
-                  <div>
-                    <div className="font-bold text-xs text-[#14161A]">Restaurants & cafés</div>
-                    <div className="text-[10px] text-[#5A6170]">RestaurantOS</div>
-                  </div>
-                </div>
-
-                <div
-                  onClick={() => setCategory('HEALTHCARE')}
-                  className={`p-3.5 rounded-[20px] flex flex-col justify-between h-28 cursor-pointer transition-all ${category === 'HEALTHCARE'
-                    ? 'border-2 border-[#14161A] bg-[#F8FAFC]'
-                    : 'border border-[#E2E8F0] bg-white hover:border-[#CBD5E1]'
-                    }`}
-                >
-                  <div className="flex items-center justify-between">
-                    <span className="text-lg">🏥</span>
-                    <span
-                      className={`h-3.5 w-3.5 rounded-full ${category === 'HEALTHCARE'
-                        ? 'border-4 border-[#14161A] bg-white'
-                        : 'border border-[#CBD5E1]'
-                        }`}
-                    />
-                  </div>
-                  <div>
-                    <div className="font-bold text-xs text-[#14161A]">Clinics & hospitals</div>
-                    <div className="text-[10px] text-[#5A6170]">HospitalOS</div>
-                  </div>
-                </div>
-
-                <div
-                  onClick={() => setCategory('MULTI')}
-                  className={`p-3.5 rounded-[20px] flex flex-col justify-between h-28 cursor-pointer transition-all ${category === 'MULTI'
-                    ? 'border-2 border-[#14161A] bg-[#F8FAFC]'
-                    : 'border border-[#E2E8F0] bg-white hover:border-[#CBD5E1]'
-                    }`}
-                >
-                  <div className="flex items-center justify-between">
-                    <span className="text-lg">🏢</span>
-                    <span
-                      className={`h-3.5 w-3.5 rounded-full ${category === 'MULTI'
-                        ? 'border-4 border-[#14161A] bg-white'
-                        : 'border border-[#CBD5E1]'
-                        }`}
-                    />
-                  </div>
-                  <div>
-                    <div className="font-bold text-xs text-[#14161A]">Both</div>
-                    <div className="text-[10px] text-[#5A6170]">Add each later</div>
-                  </div>
-                </div>
+                ))}
               </div>
             </div>
 
             <div className="grid grid-cols-2 gap-4">
               <div>
-                <label className="text-xs font-semibold text-[#14161A]">City</label>
+                <label htmlFor="f2-city" className="text-xs font-semibold text-[#14161A]">City</label>
                 <input
+                  id="f2-city"
+                  name="city"
                   type="text"
                   required
                   aria-label="City"
@@ -235,8 +215,10 @@ export function F2OrganizationStep({ onSuccess, onBack, defaultBusinessName = ''
               </div>
 
               <div>
-                <label className="text-xs font-semibold text-[#14161A]">GSTIN (optional now)</label>
+                <label htmlFor="f2-gstin" className="text-xs font-semibold text-[#14161A]">GSTIN (optional now)</label>
                 <input
+                  id="f2-gstin"
+                  name="gstin"
                   type="text"
                   aria-label="GSTIN"
                   value={gstin}

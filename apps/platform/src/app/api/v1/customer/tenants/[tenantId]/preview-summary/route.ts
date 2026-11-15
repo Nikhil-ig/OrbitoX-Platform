@@ -61,27 +61,29 @@ export const GET = withCustomerAuth<RouteContext>(
       'http://127.0.0.1:4010';
     const platformToken =
       process.env.RESTAURANTOS_PLATFORM_TOKEN ||
-      'orbitox_platform_token_restaurant_os_master_key_2026_super_secret_v1';
+      process.env.ORBITOX_RUNTIME_TOKEN;
 
     let runtimeTenant: any = null;
-    try {
-      const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), 3000);
-      const res = await fetch(
-        new URL(`/internal/tenants/${encodeURIComponent(project.slug)}`, runtimeUrl).toString(),
-        {
-          headers: { Authorization: `Bearer ${platformToken}` },
-          cache: 'no-store',
-          signal: controller.signal,
-        },
-      );
-      clearTimeout(timeout);
-      if (res.ok) {
-        const json = await res.json();
-        runtimeTenant = json.tenant;
+    if (platformToken) {
+      try {
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), 3000);
+        const res = await fetch(
+          new URL(`/internal/tenants/${encodeURIComponent(project.slug)}`, runtimeUrl).toString(),
+          {
+            headers: { Authorization: `Bearer ${platformToken}` },
+            cache: 'no-store',
+            signal: controller.signal,
+          },
+        );
+        clearTimeout(timeout);
+        if (res.ok) {
+          const json = await res.json();
+          runtimeTenant = json.tenant;
+        }
+      } catch {
+        // Runtime offline or unreachable
       }
-    } catch {
-      // Runtime fallback
     }
 
     const configuredUrl = process.env.ORBITOX_PUBLIC_BASE_URL;
@@ -92,13 +94,21 @@ export const GET = withCustomerAuth<RouteContext>(
       } catch { }
     }
     const subdomainUrl = `http://${project.slug}.${baseDomain}`;
-    const sampleTable = runtimeTenant?.sampleTableLocator || {
-      tableNumber: 'T-01',
-      locator: 'sample-locator',
-      dinerUrl: `${subdomainUrl}/dine/sample-locator`,
-    };
+    const sampleTable = runtimeTenant?.sampleTableLocator || null;
 
-    const isPreview = runtimeTenant?.status === 'preview' || project.status === 'PROVISIONING' || true;
+    let isPreview = true;
+    if (runtimeTenant) {
+      isPreview = runtimeTenant.status === 'preview';
+    } else {
+      const activeSub = await prisma.billingSubscription.findFirst({
+        where: {
+          organizationId: project.organizationId,
+          tenantId: { contains: project.id },
+          status: 'active',
+        },
+      });
+      isPreview = !activeSub;
+    }
     const previewExpiresAt =
       runtimeTenant?.previewExpiresAt ||
       new Date(Date.now() + 14 * 24 * 3600 * 1000).toISOString();
@@ -120,30 +130,32 @@ export const GET = withCustomerAuth<RouteContext>(
             organization: org,
           },
           tables: {
-            totalCount: runtimeTenant?.tableCount || 12,
+            totalCount: runtimeTenant?.tableCount ?? 0,
             sampleTable,
           },
           menu: {
-            categoriesCount: runtimeTenant?.categoriesCount || 4,
-            itemsCount: runtimeTenant?.menuItemsCount || 6,
-            sampleItemsCount: runtimeTenant?.sampleItemsCount || 6,
-            hasSampleMenu: runtimeTenant?.hasSampleMenu ?? true,
+            categoriesCount: runtimeTenant?.categoriesCount ?? 0,
+            categories: runtimeTenant?.categories ?? [],
+            itemsCount: runtimeTenant?.menuItemsCount ?? 0,
+            items: runtimeTenant?.menuItems ?? [],
+            sampleItemsCount: runtimeTenant?.sampleItemsCount ?? 0,
+            hasSampleMenu: runtimeTenant?.hasSampleMenu ?? false,
           },
           brand: {
             templateId: runtimeTenant?.brandConfig?.activeTemplateId || 'saffron',
-            primaryColor: runtimeTenant?.brandConfig?.primaryColor || '#C5A059',
-            accentColor: runtimeTenant?.brandConfig?.accentColor || '#C5A059',
+            primaryColor: runtimeTenant?.brandConfig?.primaryColor || '#FB923C',
+            accentColor: runtimeTenant?.brandConfig?.accentColor || '#FB923C',
           },
           checklist: {
             accountVerified: true,
             organizationCreated: true,
             restaurantProvisioned: true,
-            previewActive: true,
+            previewActive: isPreview,
             paymentGatewayConnected: false,
             customDomainConfigured: false,
           },
           actions: {
-            dinerPreviewUrl: sampleTable.dinerUrl,
+            dinerPreviewUrl: sampleTable?.dinerUrl || `${subdomainUrl}/dine`,
             kdsUrl: `${subdomainUrl}/kds`,
             tablesUrl: `${subdomainUrl}/tables`,
             testOrderEndpoint: `${runtimeUrl}/api/restaurant/orders`,

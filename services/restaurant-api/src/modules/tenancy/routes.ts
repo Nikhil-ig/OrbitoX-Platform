@@ -132,7 +132,18 @@ export const tenancyRoutes: RouteDefinition[] = [
                 }
               : null,
             categoriesCount: tenant.categories.length,
+            categories: tenant.categories.map((c: any) => c.name),
             menuItemsCount: tenant.menuItems.length,
+            menuItems: tenant.menuItems.map((i: any) => ({
+              id: i.id,
+              name: i.name,
+              categoryName: i.categoryName,
+              basePriceMinor: i.basePriceMinor,
+              station: i.station,
+              description: i.description,
+              isVegetarian: i.isVegetarian,
+              isSample: i.isSample,
+            })),
             sampleItemsCount: tenant.menuItems.filter((i: any) => i.isSample).length,
             hasSampleMenu: tenant.menuItems.some((i: any) => i.isSample),
             brandConfig: (tenant.brandConfig?.config as any) || null,

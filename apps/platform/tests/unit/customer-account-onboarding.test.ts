@@ -179,13 +179,34 @@ describe('Stage 1: Customer Account Onboarding & Verification Primitives', () =>
     });
     assert.ok(updatedUser?.emailVerifiedAt, 'User emailVerifiedAt must be set');
 
-    // 3. Replay succeeds safely for already verified user by issuing fresh session
+    // 3. Security invariant: Replay of consumed code MUST FAIL and issue ZERO sessions
     const replayAttempt = await verifyCustomerEmailCode({
       email,
       code,
       ipAddress: '127.0.0.1',
     });
-    assert.equal(replayAttempt.ok, true);
+    assert.equal(replayAttempt.ok, false);
+    assert.equal((replayAttempt as any).code, 'ACCOUNT_ALREADY_VERIFIED');
+    assert.equal((replayAttempt as any).sessionToken, undefined);
+
+    // 4. Security invariant: Arbitrary code against already verified account MUST FAIL
+    const arbitraryAttempt = await verifyCustomerEmailCode({
+      email,
+      code: '999999',
+      ipAddress: '127.0.0.1',
+    });
+    assert.equal(arbitraryAttempt.ok, false);
+    assert.equal((arbitraryAttempt as any).code, 'ACCOUNT_ALREADY_VERIFIED');
+    assert.equal((arbitraryAttempt as any).sessionToken, undefined);
+
+    // 5. Security invariant: Code belonging to another email MUST FAIL
+    const wrongEmailAttempt = await verifyCustomerEmailCode({
+      email: 'attacker@evil.corp',
+      code,
+      ipAddress: '127.0.0.1',
+    });
+    assert.equal(wrongEmailAttempt.ok, false);
+    assert.equal((wrongEmailAttempt as any).sessionToken, undefined);
   });
 
   it('handles expired verification codes and resend flow', async () => {
@@ -239,5 +260,47 @@ describe('Stage 1: Customer Account Onboarding & Verification Primitives', () =>
     assert.ok(freshToken, 'Fresh verification token must be created');
     assert.notEqual(freshToken.tokenHash, tokenHash, 'Must have a new token hash');
     assert.ok(freshToken.expiresAt > new Date(), 'New token must have future expiry');
+  });
+
+  it('prevents concurrent double-consumption of a single verification code', async () => {
+    const randomSuffix = crypto.randomBytes(4).toString('hex');
+    const email = `priya_race_${randomSuffix}@shahgroup.in`;
+    const code = '654321';
+    const tokenHash = hashVerificationCode(email, code);
+
+    const user = await prisma.customerUser.create({
+      data: {
+        name: 'Priya Race',
+        email,
+        phone: '+91 98450 77777',
+        passwordHash: 'dummy_hash',
+        status: 'ACTIVE',
+      },
+    });
+
+    await prisma.accountToken.create({
+      data: {
+        tokenHash,
+        purpose: 'VERIFY_EMAIL',
+        userId: user.id,
+        email,
+        expiresAt: new Date(Date.now() + 600 * 1000),
+      },
+    });
+
+    // Fire 5 concurrent requests with the same code
+    const results = await Promise.all([
+      verifyCustomerEmailCode({ email, code, ipAddress: '127.0.0.1' }),
+      verifyCustomerEmailCode({ email, code, ipAddress: '127.0.0.1' }),
+      verifyCustomerEmailCode({ email, code, ipAddress: '127.0.0.1' }),
+      verifyCustomerEmailCode({ email, code, ipAddress: '127.0.0.1' }),
+      verifyCustomerEmailCode({ email, code, ipAddress: '127.0.0.1' }),
+    ]);
+
+    const successes = results.filter((r) => r.ok === true);
+    const failures = results.filter((r) => r.ok === false);
+
+    assert.equal(successes.length, 1, 'Exactly one concurrent request must succeed');
+    assert.equal(failures.length, 4, 'All other concurrent requests must fail');
   });
 });

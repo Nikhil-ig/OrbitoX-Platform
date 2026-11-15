@@ -122,12 +122,34 @@ export const POST = withCustomerAuth<RouteContext>(async (request: NextRequest, 
     return NextResponse.json({ ok: false, error: 'INVALID_TENANT_INPUT' }, { status: 422, headers: noStoreHeaders() });
   }
   try {
+    const verifiedUser = await prisma.customerUser.findUnique({
+      where: { id: session.userId },
+      select: { name: true, email: true, phone: true },
+    });
+
+    const sanitizedPlugins = body.plugins.map((plugin) => {
+      const cfg = { ...(plugin.config || {}) };
+      const safeId = String(plugin.id).toLowerCase();
+      if (safeId.includes('restaurant') || safeId.includes('pos')) {
+        cfg.ownerName = verifiedUser?.name || session.email;
+        cfg.ownerEmail = session.email;
+        if (verifiedUser?.phone) {
+          cfg.ownerPhone = verifiedUser.phone;
+        }
+        cfg.status = 'preview';
+      }
+      return {
+        ...plugin,
+        config: cfg,
+      };
+    });
+
     const operation = await provisioningSaga.startProvisioning({
       organizationId,
       name: body.name,
       slug: body.slug,
       environment: isNonEmptyString(body.environment) ? body.environment : undefined,
-      plugins: body.plugins,
+      plugins: sanitizedPlugins,
       region: isNonEmptyString(body.region) ? body.region : undefined,
     }, {
       idempotencyKey,

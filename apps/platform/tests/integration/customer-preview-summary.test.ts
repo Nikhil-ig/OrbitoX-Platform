@@ -1,6 +1,7 @@
 import { describe, it, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import crypto from 'node:crypto';
+import * as http from 'node:http';
 import { NextRequest } from 'next/server';
 import { PrismaClient } from '@prisma/client';
 import { prisma } from '@/server/db/prisma';
@@ -29,6 +30,7 @@ describe('Stage 4 & 5: Customer Tenant Preview Summary & Access Control', () => 
   let foreignSession: { sessionToken: string; csrfToken: string };
   let testOrg: any;
   let testProject: any;
+  let mockRuntimeServer: http.Server;
 
   before(async () => {
     const salt = crypto.randomBytes(3).toString('hex');
@@ -102,9 +104,57 @@ describe('Stage 4 & 5: Customer Tenant Preview Summary & Access Control', () => 
         isProduction: true,
       },
     });
+
+    // Spin up mock runtime server to supply genuine restaurant preview tenant details
+    mockRuntimeServer = http.createServer((req, res) => {
+      const url = new URL(req.url || '', 'http://127.0.0.1');
+      const slug = decodeURIComponent(url.pathname.replace('/internal/tenants/', ''));
+      if (slug === testProject.slug) {
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({
+          ok: true,
+          tenant: {
+            id: `ten_${slug}`,
+            name: testProject.name,
+            slug: testProject.slug,
+            status: 'preview',
+            tableCount: 14,
+            sampleTableLocator: {
+              tableNumber: 'T-01',
+              locator: 'T-01',
+              dinerUrl: `http://${slug}.orbitox.io/dine/T-01`,
+            },
+            categoriesCount: 6,
+            categories: ['Starters', 'Mains', 'Breads', 'Desserts', 'Beverages', 'Chef Specials'],
+            menuItemsCount: 24,
+            menuItems: [
+              { id: 'item_1', name: 'Paneer Tikka', categoryName: 'Starters', basePriceMinor: 28000, station: 'TANDOOR', isVegetarian: true, isSample: true }
+            ],
+            sampleItemsCount: 14,
+            hasSampleMenu: true,
+            brandConfig: { activeTemplateId: 'saffron', primaryColor: '#FB923C', accentColor: '#FB923C' },
+          },
+        }));
+        return;
+      }
+      res.writeHead(404, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: 'NOT_FOUND' }));
+    });
+
+    await new Promise<void>((resolve) => {
+      mockRuntimeServer.listen(0, '127.0.0.1', () => {
+        const port = (mockRuntimeServer.address() as any).port;
+        process.env.RESTAURANTOS_RUNTIME_URL = `http://127.0.0.1:${port}`;
+        process.env.RESTAURANTOS_PLATFORM_TOKEN = 'test_token_32chars_long_platform_auth';
+        resolve();
+      });
+    });
   });
 
   after(async () => {
+    if (mockRuntimeServer) {
+      await new Promise<void>((resolve) => mockRuntimeServer.close(() => resolve()));
+    }
     if (testProject?.id) {
       await prisma.projectEnvironment.deleteMany({ where: { projectId: testProject.id } });
       await prisma.platformProject.deleteMany({ where: { id: testProject.id } });
@@ -175,5 +225,37 @@ describe('Stage 4 & 5: Customer Tenant Preview Summary & Access Control', () => 
     assert.equal(json.preview.checklist.paymentGatewayConnected, false);
     assert.ok(json.preview.actions.dinerPreviewUrl);
     assert.ok(json.preview.actions.kdsUrl);
+  });
+
+  it('returns genuine zero counts and null sampleTable without synthetic fallbacks when runtime is unreachable', async () => {
+    // Create an unprovisioned project that does not exist in runtime
+    const unprovProject = await prisma.platformProject.create({
+      data: {
+        slug: `unprov-cafe-${crypto.randomBytes(3).toString('hex')}`,
+        name: 'Unprovisioned Cafe',
+        organizationId: testOrg.id,
+        businessModel: 'O2O2B2B2C',
+        planTier: 'starter',
+        plan: 'restaurant-starter',
+        technicalLead: 'Owner Tester',
+        contactEmail: verifiedOwner.email,
+        status: 'ACTIVE',
+      },
+    });
+
+    try {
+      const req = makeGetRequest(unprovProject.slug, ownerSession);
+      const res = await GET(req, { params: Promise.resolve({ tenantId: unprovProject.slug }) });
+      assert.equal(res.status, 200);
+      const json = await res.json();
+      assert.equal(json.ok, true);
+      // Must NOT return hardcoded 12 tables or synthetic sample locator!
+      assert.equal(json.preview.tables.totalCount, 0, 'Must report actual 0 tables, not synthetic 12');
+      assert.equal(json.preview.tables.sampleTable, null, 'Must report null sampleTable, not synthetic sample locator');
+      assert.equal(json.preview.menu.categoriesCount, 0);
+      assert.equal(json.preview.menu.itemsCount, 0);
+    } finally {
+      await prisma.platformProject.deleteMany({ where: { id: unprovProject.id } });
+    }
   });
 });

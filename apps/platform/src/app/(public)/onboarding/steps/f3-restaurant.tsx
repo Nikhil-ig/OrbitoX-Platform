@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import { Store, AlertCircle, ArrowRight, ArrowLeft, RefreshCw, CheckCircle2, Check, Sparkles } from 'lucide-react';
-import { generateSubdomainSlugFromName } from '@/app/api/v1/customer/tenants/check-slug/route';
+import { generateSubdomainSlugFromName } from '@/lib/slug-utils';
 
 interface F3Props {
   organizationId: string;
@@ -15,6 +15,8 @@ interface F3Props {
     restaurantName: string;
     tableCount: number;
     templateId: string;
+    operationId?: string;
+    operationStatus?: string;
   }) => void;
   onBack: () => void;
 }
@@ -66,19 +68,19 @@ export function F3RestaurantStep({
   onSuccess,
   onBack,
 }: F3Props) {
-  const [restaurantName, setRestaurantName] = useState('Masala House');
-  const [slug, setSlug] = useState('masala');
+  const [restaurantName, setRestaurantName] = useState('');
+  const [slug, setSlug] = useState('');
   const [slugStatus, setSlugStatus] = useState<{
     checking: boolean;
     available?: boolean;
     reason?: string;
     suggestions?: string[];
-  }>({ checking: false, available: true });
+  }>({ checking: false });
   const [manualSlugEdit, setManualSlugEdit] = useState(false);
 
   const [restaurantType, setRestaurantType] = useState('Casual dining');
-  const [branchArea, setBranchArea] = useState('Indiranagar');
-  const [tableCount, setTableCount] = useState(14);
+  const [branchArea, setBranchArea] = useState('');
+  const [tableCount, setTableCount] = useState(12);
   const [menuSource, setMenuSource] = useState<'sample' | 'empty'>('sample');
   const [selectedTemplate, setSelectedTemplate] = useState('saffron');
 
@@ -129,10 +131,6 @@ export function F3RestaurantStep({
     }, 350);
   };
 
-  useEffect(() => {
-    triggerSlugCheck('masala');
-  }, []);
-
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
@@ -148,10 +146,11 @@ export function F3RestaurantStep({
 
     setLoading(true);
     try {
-      const idempotencyKey = `prov_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
+      const cleanSlug = slug.trim().toLowerCase();
+      const idempotencyKey = `prov_${organizationId.replace(/[^a-zA-Z0-9]/g, '').slice(0, 16)}_${cleanSlug}_v1`;
       const payload = {
         name: restaurantName.trim(),
-        slug: slug.trim(),
+        slug: cleanSlug,
         plugins: [
           {
             id: 'restaurant-os',
@@ -185,11 +184,13 @@ export function F3RestaurantStep({
       }
 
       onSuccess({
-        tenantId: data.operation?.tenantId || `tenant_${slug}`,
-        slug,
+        tenantId: data.operation?.tenantId || `tenant_${cleanSlug}`,
+        slug: cleanSlug,
         restaurantName: restaurantName.trim(),
         tableCount,
         templateId: selectedTemplate,
+        operationId: data.operation?.id,
+        operationStatus: data.operation?.status,
       });
     } catch (err: any) {
       setError(err.message);
@@ -236,8 +237,10 @@ export function F3RestaurantStep({
 
           <form className="space-y-5" onSubmit={handleSubmit}>
             <div>
-              <label className="text-xs font-semibold text-[#14161A]">Restaurant name</label>
+              <label htmlFor="f3-restaurantName" className="text-xs font-semibold text-[#14161A]">Restaurant name</label>
               <input
+                id="f3-restaurantName"
+                name="restaurantName"
                 type="text"
                 required
                 aria-label="Restaurant name"
@@ -249,7 +252,7 @@ export function F3RestaurantStep({
             </div>
 
             <div>
-              <label className="text-xs font-semibold text-[#14161A]">Web address</label>
+              <label htmlFor="f3-slug" className="text-xs font-semibold text-[#14161A]">Web address</label>
               <div
                 className={`flex items-center mt-1.5 rounded-full border px-4 py-2 text-xs bg-[#F8FAFC] transition-colors ${
                   slugStatus.checking
@@ -260,6 +263,8 @@ export function F3RestaurantStep({
                 }`}
               >
                 <input
+                  id="f3-slug"
+                  name="slug"
                   type="text"
                   required
                   aria-label="Web address slug"
@@ -281,7 +286,7 @@ export function F3RestaurantStep({
                 </div>
               ) : (
                 <div className="mt-1 space-y-1">
-                  <div className="text-[10px] text-red-500 font-medium">
+                  <div className="text-[10px] text-red-700 font-medium">
                     {slugStatus.reason || 'This subdomain is not available.'}
                   </div>
                   {slugStatus.suggestions && slugStatus.suggestions.length > 0 && (
@@ -328,8 +333,10 @@ export function F3RestaurantStep({
 
             <div className="grid grid-cols-2 gap-4">
               <div>
-                <label className="text-xs font-semibold text-[#14161A]">First branch area</label>
+                <label htmlFor="f3-branchArea" className="text-xs font-semibold text-[#14161A]">First branch area</label>
                 <input
+                  id="f3-branchArea"
+                  name="branchArea"
                   type="text"
                   required
                   aria-label="First branch area"
@@ -341,25 +348,30 @@ export function F3RestaurantStep({
               </div>
 
               <div>
-                <label className="text-xs font-semibold text-[#14161A]">About how many tables?</label>
+                <label htmlFor="f3-tableCount" className="text-xs font-semibold text-[#14161A]">About how many tables?</label>
                 <div className="flex items-center mt-1.5 rounded-full border border-[#E2E8F0] bg-[#F8FAFC] px-2 py-1">
                   <button
                     type="button"
+                    aria-label="Decrease table count"
                     onClick={() => setTableCount((c) => Math.max(1, c - 1))}
                     className="h-7 w-7 rounded-full bg-white border border-gray-200 flex items-center justify-center text-xs font-bold text-gray-700 hover:bg-gray-100 cursor-pointer"
                   >
                     -
                   </button>
                   <input
+                    id="f3-tableCount"
+                    name="tableCount"
                     type="number"
                     min={1}
                     max={120}
+                    aria-label="Table count"
                     value={tableCount}
                     onChange={(e) => setTableCount(Math.max(1, parseInt(e.target.value || '1', 10)))}
                     className="bg-transparent text-center text-xs font-bold text-[#14161A] focus:outline-none flex-1"
                   />
                   <button
                     type="button"
+                    aria-label="Increase table count"
                     onClick={() => setTableCount((c) => Math.min(120, c + 1))}
                     className="h-7 w-7 rounded-full bg-white border border-gray-200 flex items-center justify-center text-xs font-bold text-gray-700 hover:bg-gray-100 cursor-pointer"
                   >
@@ -470,7 +482,13 @@ export function F3RestaurantStep({
                   <div className="font-bold text-xs" style={{ color: tmpl.textColor }}>
                     {tmpl.name}
                   </div>
-                  <div className="text-[9px] font-semibold text-emerald-700">{tmpl.tag}</div>
+                  <div
+                    className={`text-[9px] font-semibold ${
+                      tmpl.textColor === '#FFFFFF' ? 'text-emerald-400' : 'text-emerald-900'
+                    }`}
+                  >
+                    {tmpl.tag}
+                  </div>
                 </div>
               ))}
             </div>

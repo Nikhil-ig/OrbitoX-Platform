@@ -32,6 +32,7 @@ import {
   recordSuccessfulStaffAttempt,
   issueDeviceToken,
   verifyDeviceToken,
+  verifyPreviewCapabilityToken,
   REGISTERED_STATION_SECRETS,
   resolveAllowedOrigin,
   DEV_TEST_STAFF_TOKENS,
@@ -517,7 +518,7 @@ export function sendHtml(res: http.ServerResponse, html: string, statusCode: num
 }
 
 export interface RequestIdentity {
-  type: 'ANONYMOUS' | 'DINER' | 'STAFF' | 'STATION' | 'ADMIN' | 'REVOKED_CAPABILITY' | 'INVALID_CREDENTIAL' | 'ORDER_TRACKER' | 'PLATFORM_BRIDGE';
+  type: 'ANONYMOUS' | 'DINER' | 'STAFF' | 'STATION' | 'ADMIN' | 'REVOKED_CAPABILITY' | 'INVALID_CREDENTIAL' | 'ORDER_TRACKER' | 'PLATFORM_BRIDGE' | 'PREVIEW_CAPABILITY';
   id: string;
   role?: string;
   station?: string;
@@ -635,6 +636,12 @@ export async function resolveRequestIdentity(
   } else if (queryCapToken && queryCapToken.startsWith('cap_')) {
     token = queryCapToken;
     authSource = 'BEARER';
+  } else if (req.headers['x-orbitox-preview-token']) {
+    const prevHeader = String(req.headers['x-orbitox-preview-token']).trim();
+    if (prevHeader.startsWith('orb_prev.')) {
+      token = prevHeader;
+      authSource = 'BEARER';
+    }
   }
 
   const resolve = async (): Promise<RequestIdentity> => {
@@ -697,6 +704,34 @@ export async function resolveRequestIdentity(
           sessionId: session.sessionId,
           branchId: session.branchId,
           isPrivileged: false,
+        };
+      }
+
+      if (token.startsWith('orb_prev.')) {
+        const activeTenant = tryGetActiveTenant();
+        const targetTenantId =
+          expectedTenantId ||
+          (activeTenant?.tenantId && !activeTenant.isPlatform
+            ? activeTenant.tenantId
+            : undefined);
+        const verification = verifyPreviewCapabilityToken(token, targetTenantId || '');
+        if (!verification.valid) {
+          return {
+            type: 'INVALID_CREDENTIAL',
+            id: token,
+            isPrivileged: false,
+            error: verification.error,
+          };
+        }
+        return {
+          type: 'PREVIEW_CAPABILITY',
+          id: verification.claims!.sub,
+          role: 'OWNER',
+          isPrivileged: true,
+          scopes: ['preview:test-order'],
+          tenantId: verification.claims!.tenantId,
+          authSource,
+          rawToken: token,
         };
       }
 

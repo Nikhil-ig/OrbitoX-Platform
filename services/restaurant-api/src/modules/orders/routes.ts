@@ -9,6 +9,7 @@ import {
   eventBus,
 } from '../../http/context';
 import { processCommerceOrder, processCommerceGroceryOrder } from './service';
+import { verifyPreviewCapabilityToken } from '../../shared';
 
 export const ordersRoutes: RouteDefinition[] = [
   {
@@ -144,29 +145,58 @@ export const ordersRoutes: RouteDefinition[] = [
       } catch { }
 
       const tenantStatus = String(context.tenantContext?.status || '').toLowerCase();
-      const isTestExplicit = Boolean(body.isTest || req.headers['x-orbitox-test-order'] === 'true');
-      const isStaffOrOwner = Boolean(
-        identity &&
-        (identity.role === 'OWNER' ||
-          identity.role === 'OPERATOR' ||
-          identity.role === 'STAFF' ||
-          (identity as any).isStaff)
-      );
 
-      // In PREVIEW mode: anonymous diner orders are blocked. Only authenticated owner test orders allowed.
-      if (tenantStatus === 'preview') {
-        if (!isTestExplicit && !isStaffOrOwner) {
-          sendJson(res, 403, {
-            error: 'PREVIEW_MODE',
-            code: 'PREVIEW_MODE',
-            message: 'This restaurant is currently in preview mode. Live customer orders cannot be accepted until full launch.',
-            previewMode: true,
-          });
-          return;
+      // Determine verified test-order authorization:
+      const previewTokenHeader = String(req.headers['x-orbitox-preview-token'] || req.headers['authorization'] || '').replace(/^Bearer\s+/i, '').trim();
+      let hasValidPreviewToken = false;
+      if (previewTokenHeader.startsWith('orb_prev.')) {
+        const verifyRes = verifyPreviewCapabilityToken(previewTokenHeader, context.tenantContext.tenantId);
+        if (verifyRes.valid) {
+          hasValidPreviewToken = true;
         }
       }
 
-      const isTestOrder = isTestExplicit || tenantStatus === 'preview';
+      const isVerifiedBridge = Boolean(
+        identity &&
+        identity.type === 'PLATFORM_BRIDGE' &&
+        (identity.scopes?.includes('preview:test-order') || identity.scopes?.includes('ADMIN') || identity.isPrivileged)
+      );
+
+      const isVerifiedPreviewCapability = Boolean(
+        hasValidPreviewToken ||
+        (identity && identity.type === 'PREVIEW_CAPABILITY' && identity.scopes?.includes('preview:test-order'))
+      );
+
+      const isStaffOwnerInPreview = Boolean(
+        tenantStatus === 'preview' &&
+        identity &&
+        (identity.role === 'OWNER' || identity.role === 'ADMIN')
+      );
+
+      const isAuthorizedTestOrder = isVerifiedBridge || isVerifiedPreviewCapability || isStaffOwnerInPreview;
+
+      // In PREVIEW mode: anonymous diner orders are strictly blocked. Only authenticated owner test orders allowed.
+      if (tenantStatus === 'preview' && !isAuthorizedTestOrder) {
+        sendJson(res, 403, {
+          error: 'PREVIEW_MODE',
+          code: 'PREVIEW_MODE',
+          message: 'This restaurant is currently in preview mode. Live customer orders cannot be accepted until full launch.',
+          previewMode: true,
+        });
+        return;
+      }
+
+      // If an unauthorized caller tries to assert test-order mode in a live tenant:
+      if (!isAuthorizedTestOrder && (body.isTest || req.headers['x-orbitox-test-order'])) {
+        sendJson(res, 403, {
+          error: 'UNAUTHORIZED_TEST_ORDER',
+          code: 'UNAUTHORIZED_TEST_ORDER',
+          message: 'Client cannot assert test-order mode without a verified preview capability token or bridge signature.',
+        });
+        return;
+      }
+
+      const isTestOrder = Boolean(isAuthorizedTestOrder && (tenantStatus === 'preview' || body.isTest || req.headers['x-orbitox-test-order'] === 'true'));
       if (isTestOrder) {
         res.setHeader('x-orbitox-test-order', 'true');
       }
@@ -174,17 +204,17 @@ export const ordersRoutes: RouteDefinition[] = [
         res.setHeader('x-orbitox-preview-mode', 'true');
       }
 
-      const posBody = { ...body };
+      const posBody = { ...body, isTest: isTestOrder };
       delete posBody.idempotencyKey;
-      delete posBody.isTest;
 
       const orderResult = await context.posService.submitOrder({
         body: posBody,
-        identity,
+        identity: isAuthorizedTestOrder ? { ...identity, role: 'OWNER', isPrivileged: true } : identity,
         idempotencyKey: undefined,
         branchId: body.branchId || context.currentBranch?.id || 'branch_main',
         branchName: context.currentBranch?.name || body.branchName || 'Main Branch',
-      });
+        isTest: isTestOrder,
+      } as any);
 
       if (idempotencyKey) {
         const payloadHash = crypto.createHash('sha256').update(JSON.stringify(body)).digest('hex');

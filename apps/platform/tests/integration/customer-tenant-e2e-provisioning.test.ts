@@ -1,6 +1,7 @@
 import { describe, it, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import crypto from 'node:crypto';
+import * as http from 'node:http';
 import { NextRequest } from 'next/server';
 import { PrismaClient } from '@prisma/client';
 import { prisma } from '@/server/db/prisma';
@@ -30,6 +31,7 @@ describe('Stage 4: End-to-End Customer Restaurant Provisioning & Working Preview
   let ownerSession: { sessionToken: string; csrfToken: string };
   let testOrg: any;
   let createdProjectSlug: string;
+  let mockRuntimeServer: http.Server;
 
   before(async () => {
     const salt = crypto.randomBytes(3).toString('hex');
@@ -61,9 +63,62 @@ describe('Stage 4: End-to-End Customer Restaurant Provisioning & Working Preview
         role: 'OWNER',
       },
     });
+
+    // Spin up mock RestaurantOS runtime server
+    mockRuntimeServer = http.createServer((req, res) => {
+      const url = new URL(req.url || '', 'http://127.0.0.1');
+      if (url.pathname === '/orbitox/lifecycle/provision') {
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ ok: true, status: 'preview' }));
+        return;
+      }
+      if (url.pathname.startsWith('/internal/tenants/')) {
+        const slug = decodeURIComponent(url.pathname.replace('/internal/tenants/', ''));
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({
+          ok: true,
+          tenant: {
+            id: `ten_${slug}`,
+            name: 'Masala Bay Bistro',
+            slug,
+            status: 'preview',
+            tableCount: 14,
+            sampleTableLocator: {
+              tableNumber: 'T-01',
+              locator: 'T-01',
+              dinerUrl: `http://${slug}.orbitox.io/dine/T-01`,
+            },
+            categoriesCount: 6,
+            categories: ['Starters', 'Mains', 'Breads', 'Desserts', 'Beverages', 'Chef Specials'],
+            menuItemsCount: 20,
+            menuItems: [],
+            sampleItemsCount: 14,
+            hasSampleMenu: true,
+            brandConfig: { activeTemplateId: 'saffron', primaryColor: '#FB923C', accentColor: '#FB923C' },
+          },
+        }));
+        return;
+      }
+      res.writeHead(404, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: 'NOT_FOUND' }));
+    });
+
+    await new Promise<void>((resolve) => {
+      mockRuntimeServer.listen(0, '127.0.0.1', () => {
+        const port = (mockRuntimeServer.address() as any).port;
+        process.env.RESTAURANTOS_URL = `http://127.0.0.1:${port}`;
+        process.env.RESTAURANT_URL = `http://127.0.0.1:${port}`;
+        process.env.RESTAURANTOS_RUNTIME_URL = `http://127.0.0.1:${port}`;
+        process.env.RESTAURANTOS_PLATFORM_TOKEN = 'test_token_32chars_long_platform_auth';
+        resolve();
+      });
+    });
   });
 
   after(async () => {
+    if (mockRuntimeServer) {
+      await new Promise<void>((resolve) => mockRuntimeServer.close(() => resolve()));
+    }
     if (createdProjectSlug) {
       const proj = await prisma.platformProject.findUnique({
         where: { slug: createdProjectSlug },

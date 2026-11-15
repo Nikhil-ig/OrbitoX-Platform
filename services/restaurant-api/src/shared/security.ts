@@ -399,6 +399,79 @@ export function verifyDeviceToken(
   return { valid: true, claims };
 }
 
+export interface PreviewCapabilityClaims {
+  sub: string;
+  orgId?: string;
+  tenantId: string;
+  scope: 'preview:test-order';
+  exp: number;
+  jti: string;
+}
+
+export function issuePreviewCapabilityToken(options: {
+  sub: string;
+  orgId?: string;
+  tenantId: string;
+  ttlSeconds?: number;
+  secret?: string;
+}): string {
+  const secret = options.secret || deriveTenantSigningSecret(options.tenantId);
+  const ttl = options.ttlSeconds || 900; // 15 minutes default
+  const now = Math.floor(Date.now() / 1000);
+  const claims: PreviewCapabilityClaims = {
+    sub: options.sub,
+    orgId: options.orgId,
+    tenantId: options.tenantId,
+    scope: 'preview:test-order',
+    exp: now + ttl,
+    jti: `prev_${crypto.randomBytes(8).toString('hex')}`,
+  };
+  const payloadBase64 = Buffer.from(JSON.stringify(claims)).toString('base64url');
+  const signature = crypto
+    .createHmac('sha256', secret)
+    .update(`orb_prev.${payloadBase64}`)
+    .digest('base64url');
+  return `orb_prev.${payloadBase64}.${signature}`;
+}
+
+export function verifyPreviewCapabilityToken(
+  token: string,
+  expectedTenantId: string,
+  secretOverride?: string
+): { valid: boolean; claims?: PreviewCapabilityClaims; error?: string } {
+  if (!token || typeof token !== 'string') return { valid: false, error: 'MISSING_TOKEN' };
+  const parts = token.trim().split('.');
+  if (parts.length !== 3 || parts[0] !== 'orb_prev') return { valid: false, error: 'INVALID_FORMAT' };
+  const [, payloadBase64, providedSig] = parts;
+  const secret = secretOverride || deriveTenantSigningSecret(expectedTenantId);
+  const expectedSig = crypto
+    .createHmac('sha256', secret)
+    .update(`orb_prev.${payloadBase64}`)
+    .digest('base64url');
+  const pBuf = Buffer.from(providedSig);
+  const eBuf = Buffer.from(expectedSig);
+  if (pBuf.length !== eBuf.length || !crypto.timingSafeEqual(pBuf, eBuf)) {
+    return { valid: false, error: 'INVALID_SIGNATURE' };
+  }
+  let claims: PreviewCapabilityClaims;
+  try {
+    claims = JSON.parse(Buffer.from(payloadBase64, 'base64url').toString('utf8'));
+  } catch {
+    return { valid: false, error: 'MALFORMED_PAYLOAD' };
+  }
+  if (claims.tenantId !== expectedTenantId) {
+    return { valid: false, error: 'TENANT_MISMATCH' };
+  }
+  if (claims.scope !== 'preview:test-order') {
+    return { valid: false, error: 'SCOPE_MISMATCH' };
+  }
+  const now = Math.floor(Date.now() / 1000);
+  if (claims.exp && claims.exp < now) {
+    return { valid: false, error: 'TOKEN_EXPIRED' };
+  }
+  return { valid: true, claims };
+}
+
 /**
  * DEV_TEST_STAFF_FIXTURES removed from runtime path.
  * Seeding occurs authoritatively through provisioning scripts.

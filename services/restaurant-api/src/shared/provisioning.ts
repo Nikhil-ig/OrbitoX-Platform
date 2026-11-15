@@ -226,7 +226,7 @@ export class TenantProvisioningService {
     const result = await withTenantRlsTransaction(this.prisma, tenantId, async (tx: any) => {
       // 4a. Tenant entity
       const restaurantName = (input.restaurantName || (input as any).name || cleanSlug).trim();
-      const initialStatus = input.status || 'preview';
+      const initialStatus = input.status || 'active';
       const previewExpiresAt =
         initialStatus === 'preview'
           ? new Date(Date.now() + 14 * 24 * 3600 * 1000)

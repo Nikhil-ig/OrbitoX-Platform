@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Smartphone,
   Monitor,
@@ -12,6 +12,7 @@ import {
   ExternalLink,
   ArrowLeft,
   Sparkles,
+  RefreshCw,
 } from 'lucide-react';
 
 interface D6Props {
@@ -36,13 +37,72 @@ export function D6MobilePreviewView({
   onSwitchToDesktop,
 }: D6Props) {
   const [activeTab, setActiveTab] = useState<'storefront' | 'kds' | 'checklist'>('storefront');
-  const [cartItems, setCartItems] = useState([
-    { name: 'Butter chicken', price: 420, qty: 1 },
-    { name: 'Garlic naan', price: 90, qty: 2 },
-  ]);
+  const [menuItems, setMenuItems] = useState<Array<{ id: string; name: string; price: number; qty: number }>>([]);
+  const [cartItems, setCartItems] = useState<Array<{ id: string; name: string; price: number; qty: number }>>([]);
+  const [kdsTasks, setKdsTasks] = useState<any[]>([]);
   const [kdsReady, setKdsReady] = useState(false);
+  const [placingOrder, setPlacingOrder] = useState(false);
+
+  useEffect(() => {
+    fetch(`/api/v1/customer/tenants/${encodeURIComponent(tenantId)}/preview-summary`)
+      .then((r) => r.json())
+      .then((data) => {
+        if (data.ok && data.preview?.menu?.items?.length) {
+          const formatted = data.preview.menu.items.map((i: any) => ({
+            id: i.id,
+            name: i.name,
+            price: Math.round(i.basePriceMinor / 100),
+            qty: 1,
+          }));
+          setMenuItems(formatted);
+          if (cartItems.length === 0 && formatted.length > 0) {
+            setCartItems([formatted[0], ...(formatted[1] ? [formatted[1]] : [])]);
+          }
+        }
+      })
+      .catch(() => {});
+
+    fetch(`/api/v1/customer/tenants/${encodeURIComponent(tenantId)}/kds`)
+      .then((r) => r.json())
+      .then((data) => {
+        if (data.ok && Array.isArray(data.tasks)) {
+          setKdsTasks(data.tasks);
+        }
+      })
+      .catch(() => {});
+  }, [tenantId]);
 
   const cartTotal = cartItems.reduce((acc, i) => acc + i.price * i.qty, 0);
+
+  const handlePlaceTestOrder = async () => {
+    if (cartItems.length === 0) return;
+    setPlacingOrder(true);
+    try {
+      await fetch(`/api/v1/customer/tenants/${encodeURIComponent(tenantId)}/test-orders`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          tableNumber: 'T-01',
+          items: cartItems.map((i) => ({
+            id: i.id,
+            name: i.name,
+            qty: i.qty,
+            quantity: i.qty,
+            priceMinor: i.price * 100,
+          })),
+        }),
+      });
+      setActiveTab('kds');
+      setKdsReady(false);
+      const res = await fetch(`/api/v1/customer/tenants/${encodeURIComponent(tenantId)}/kds`);
+      const data = await res.json();
+      if (data.ok && Array.isArray(data.tasks)) setKdsTasks(data.tasks);
+    } catch {
+      // Fallback
+    } finally {
+      setPlacingOrder(false);
+    }
+  };
 
   return (
     <div className="w-full flex flex-col items-center py-4">
@@ -83,50 +143,36 @@ export function D6MobilePreviewView({
           {activeTab === 'storefront' && (
             <div className="space-y-4">
               <div>
-                <h3 className="font-bold text-sm text-[#14161A]">Sample Menu (Indian Dining)</h3>
-                <p className="text-[11px] text-[#5A6170]">Place a test order to preview kitchen routing.</p>
+                <h3 className="font-bold text-sm text-[#14161A]">Starter Menu · {templateId.toUpperCase()}</h3>
+                <p className="text-[11px] text-[#5A6170]">Place an authorized test order to preview kitchen routing.</p>
               </div>
 
               <div className="space-y-2.5">
-                <div className="p-3 rounded-2xl bg-white border border-[#E2E8F0] shadow-sm flex items-center justify-between">
-                  <div>
-                    <div className="text-xs font-bold text-[#14161A]">Butter Chicken</div>
-                    <div className="text-[11px] text-[#5A6170]">₹420 · Tandoor & Curry</div>
+                {(menuItems.length > 0 ? menuItems : cartItems).map((item) => (
+                  <div key={item.id || item.name} className="p-3 rounded-2xl bg-white border border-[#E2E8F0] shadow-sm flex items-center justify-between">
+                    <div>
+                      <div className="text-xs font-bold text-[#14161A]">{item.name}</div>
+                      <div className="text-[11px] text-[#5A6170]">₹{item.price}</div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setCartItems((prev) => {
+                          const ex = prev.find((i) => i.id === item.id);
+                          if (ex) return prev.map((i) => (i.id === item.id ? { ...i, qty: i.qty + 1 } : i));
+                          return [...prev, { ...item, qty: 1 }];
+                        })
+                      }
+                      className="h-6 w-6 rounded-full bg-[#FB923C] text-white flex items-center justify-center font-bold text-xs"
+                    >
+                      +
+                    </button>
                   </div>
-                  <span className="h-6 w-6 rounded-full bg-[#FB923C] text-white flex items-center justify-center font-bold text-xs">
-                    1
-                  </span>
-                </div>
-
-                <div className="p-3 rounded-2xl bg-white border border-[#E2E8F0] shadow-sm flex items-center justify-between">
-                  <div>
-                    <div className="text-xs font-bold text-[#14161A]">Garlic Naan</div>
-                    <div className="text-[11px] text-[#5A6170]">₹90 × 2 = ₹180</div>
-                  </div>
-                  <span className="h-6 w-6 rounded-full bg-[#FB923C] text-white flex items-center justify-center font-bold text-xs">
-                    2
-                  </span>
-                </div>
-
-                <div className="p-3 rounded-2xl bg-white border border-[#E2E8F0] shadow-sm flex items-center justify-between">
-                  <div>
-                    <div className="text-xs font-bold text-[#14161A]">Dal Makhani</div>
-                    <div className="text-[11px] text-[#5A6170]">₹310 · Slow simmered</div>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() =>
-                      setCartItems((prev) => [...prev, { name: 'Dal Makhani', price: 310, qty: 1 }])
-                    }
-                    className="h-6 w-6 rounded-full bg-gray-100 text-[#14161A] flex items-center justify-center font-bold text-xs hover:bg-[#FB923C] hover:text-white"
-                  >
-                    +
-                  </button>
-                </div>
+                ))}
               </div>
 
               <div className="p-3 rounded-2xl bg-amber-50 border border-amber-200 text-[11px] text-amber-900">
-                ⚡ Test orders are free and immediately visible on kitchen screens.
+                ⚡ Test orders are free, bypass payment, and are strictly excluded from accounting.
               </div>
             </div>
           )}
@@ -148,12 +194,13 @@ export function D6MobilePreviewView({
                       TEST ORDER
                     </span>
                   </div>
-                  <span className="text-gray-400 text-[10px]">0:32</span>
+                  <span className="text-gray-400 text-[10px]">Just now</span>
                 </div>
 
                 <div className="text-xs space-y-1 text-gray-200">
-                  <p>1 × Butter chicken</p>
-                  <p>2 × Garlic naan</p>
+                  {cartItems.map((c, idx) => (
+                    <p key={idx}>{c.qty} × {c.name}</p>
+                  ))}
                 </div>
 
                 {kdsReady ? (
@@ -207,10 +254,15 @@ export function D6MobilePreviewView({
           {activeTab === 'storefront' && (
             <button
               type="button"
-              onClick={() => setActiveTab('kds')}
-              className="w-full py-2.5 rounded-full bg-[#14161A] text-white text-xs font-bold flex items-center justify-center gap-2 cursor-pointer shadow-md"
+              disabled={placingOrder}
+              onClick={handlePlaceTestOrder}
+              className="w-full py-2.5 rounded-full bg-[#14161A] text-white text-xs font-bold flex items-center justify-center gap-2 cursor-pointer shadow-md disabled:opacity-50"
             >
-              <span>Submit Test Order · ₹{cartTotal}</span>
+              {placingOrder ? (
+                <span className="flex items-center gap-1.5"><RefreshCw className="h-3 w-3 animate-spin" /> Submitting...</span>
+              ) : (
+                <span>Submit Test Order · ₹{cartTotal}</span>
+              )}
             </button>
           )}
 
@@ -252,4 +304,3 @@ export function D6MobilePreviewView({
     </div>
   );
 }
-

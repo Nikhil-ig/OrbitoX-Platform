@@ -50,7 +50,7 @@ export async function POST(request: NextRequest) {
 
   if (!result.ok) {
     return NextResponse.json(
-      { ok: false, error: result.error || 'Invalid or expired verification code.' },
+      { ok: false, error: result.error || 'Invalid or expired verification code.', code: result.code },
       { status: 400, headers: noStore },
     );
   }

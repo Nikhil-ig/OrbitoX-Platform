@@ -895,6 +895,7 @@ export class PostgresRestaurantRepository implements RestaurantRepository {
           subtotalMinor: order.subtotalMinor,
           taxMinor: order.taxMinor,
           totalMinor: order.totalMinor,
+          isTest: Boolean(order.isTest),
         },
         create: {
           id: orderId,
@@ -913,6 +914,7 @@ export class PostgresRestaurantRepository implements RestaurantRepository {
           orderToken: order.orderToken || null,
           paymentStatus: order.paymentStatus || 'UNPAID',
           paymentSessionId: order.paymentSessionId || null,
+          isTest: Boolean(order.isTest),
         },
       });
 
@@ -1218,6 +1220,7 @@ export class PostgresRestaurantRepository implements RestaurantRepository {
           status: task.status,
           quantity: task.quantity,
           fulfilledItemCount: task.fulfilledItemCount,
+          isTest: Boolean(task.isTest),
         },
         create: {
           id: task.id,
@@ -1238,6 +1241,7 @@ export class PostgresRestaurantRepository implements RestaurantRepository {
           modifiers: task.modifiers || null,
           course: task.course || null,
           fulfilledItemCount: task.fulfilledItemCount || 0,
+          isTest: Boolean(task.isTest),
         },
       });
 
@@ -2063,6 +2067,7 @@ export class PostgresRestaurantRepository implements RestaurantRepository {
     idempotencyKey: r.idempotencyKey || undefined,
     paymentStatus: r.paymentStatus as any,
     paymentSessionId: r.paymentSessionId || undefined,
+    isTest: Boolean(r.isTest),
     createdAt: r.createdAt ? r.createdAt.toISOString() : new Date().toISOString(),
     updatedAt: r.updatedAt ? r.updatedAt.toISOString() : new Date().toISOString(),
   });

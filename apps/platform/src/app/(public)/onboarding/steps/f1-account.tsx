@@ -10,10 +10,10 @@ interface F1Props {
 }
 
 export function F1AccountStep({ onSuccess, initialEmail = '', initialName = '' }: F1Props) {
-  const [name, setName] = useState(initialName || 'Priya Shah');
-  const [email, setEmail] = useState(initialEmail || 'priya@shahgroup.in');
-  const [phone, setPhone] = useState('+91 98450 12345');
-  const [password, setPassword] = useState('supersecurepassword123');
+  const [name, setName] = useState(initialName || '');
+  const [email, setEmail] = useState(initialEmail || '');
+  const [phone, setPhone] = useState('');
+  const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -251,10 +251,13 @@ export function F1AccountStep({ onSuccess, initialEmail = '', initialName = '' }
 
         <form className="space-y-4" onSubmit={handleRegister}>
           <div>
-            <label className="text-xs font-semibold text-[#14161A]">Your name</label>
+            <label htmlFor="f1-name" className="text-xs font-semibold text-[#14161A]">Your name</label>
             <input
+              id="f1-name"
+              name="fullName"
               type="text"
               required
+              autoComplete="name"
               aria-label="Your name"
               value={name}
               onChange={(e) => setName(e.target.value)}
@@ -264,10 +267,13 @@ export function F1AccountStep({ onSuccess, initialEmail = '', initialName = '' }
           </div>
 
           <div>
-            <label className="text-xs font-semibold text-[#14161A]">Work email</label>
+            <label htmlFor="f1-email" className="text-xs font-semibold text-[#14161A]">Work email</label>
             <input
+              id="f1-email"
+              name="email"
               type="email"
               required
+              autoComplete="email"
               aria-label="Work email"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
@@ -277,9 +283,12 @@ export function F1AccountStep({ onSuccess, initialEmail = '', initialName = '' }
           </div>
 
           <div>
-            <label className="text-xs font-semibold text-[#14161A]">Mobile number</label>
+            <label htmlFor="f1-phone" className="text-xs font-semibold text-[#14161A]">Mobile number</label>
             <input
+              id="f1-phone"
+              name="phone"
               type="tel"
+              autoComplete="tel"
               aria-label="Mobile number"
               value={phone}
               onChange={(e) => setPhone(e.target.value)}
@@ -289,10 +298,13 @@ export function F1AccountStep({ onSuccess, initialEmail = '', initialName = '' }
           </div>
 
           <div>
-            <label className="text-xs font-semibold text-[#14161A]">Password</label>
+            <label htmlFor="f1-password" className="text-xs font-semibold text-[#14161A]">Password</label>
             <input
+              id="f1-password"
+              name="password"
               type="password"
               required
+              autoComplete="new-password"
               aria-label="Password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
@@ -300,7 +312,7 @@ export function F1AccountStep({ onSuccess, initialEmail = '', initialName = '' }
               className="w-full mt-1.5 px-4 py-2.5 rounded-full border border-[#E2E8F0] bg-[#F8FAFC] text-xs text-[#14161A] focus:outline-none focus:border-[#14161A]"
             />
             {strength.label && (
-              <div className={`text-[11px] font-medium mt-1 ${strength.color}`}>{strength.label}</div>
+              <div role="status" aria-live="polite" className={`text-[11px] font-medium mt-1 ${strength.color}`}>{strength.label}</div>
             )}
           </div>
 

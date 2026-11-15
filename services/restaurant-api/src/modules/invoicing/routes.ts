@@ -138,6 +138,14 @@ export const invoicingRoutes: RouteDefinition[] = [
         sendJson(res, 404, { error: 'ORDER_NOT_FOUND', message: `Order ${orderId} not found.` });
         return;
       }
+      if (order.isTest) {
+        sendJson(res, 400, {
+          error: 'TEST_ORDER_CANNOT_BE_INVOICED',
+          code: 'TEST_ORDER_CANNOT_BE_INVOICED',
+          message: 'Test orders placed during preview mode cannot be invoiced or submitted for tax records.',
+        });
+        return;
+      }
       const { fiscalYear } = computeFiscalYear();
       const seq = await context.repo.getNextInvoiceSequence(fiscalYear);
       const tenantBrand = await context.repo.getTenantBrand();

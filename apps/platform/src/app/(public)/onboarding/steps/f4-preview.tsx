@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
+import QRCode from 'qrcode';
 import {
   QrCode,
   Check,
@@ -36,8 +37,16 @@ interface TestTicket {
   tableNumber: string;
   items: Array<{ name: string; qty: number; note?: string }>;
   timeAgo: string;
-  status: 'QUEUED' | 'IN_PROGRESS' | 'READY';
+  status: 'QUEUED' | 'IN_PROGRESS' | 'READY' | 'BUMPED';
   isTest: boolean;
+}
+
+interface MenuItemView {
+  id: string;
+  name: string;
+  categoryName: string;
+  basePriceMinor: number;
+  isVegetarian?: boolean;
 }
 
 export function F4WorkingPreviewStep({
@@ -50,97 +59,200 @@ export function F4WorkingPreviewStep({
   city,
   onSwitchToD6Mobile,
 }: F4Props) {
-  const [activeCategory, setActiveCategory] = useState('Mains');
-  const [cart, setCart] = useState<Array<{ id: string; name: string; price: number; qty: number }>>([
-    { id: '1', name: 'Butter chicken', price: 420, qty: 1 },
-    { id: '2', name: 'Dal makhani', price: 310, qty: 1 },
-  ]);
+  const [loadingSummary, setLoadingSummary] = useState(true);
+  const [previewData, setPreviewData] = useState<any>(null);
+  const [categories, setCategories] = useState<string[]>([]);
+  const [activeCategory, setActiveCategory] = useState<string>('');
+  const [dishesByCategory, setDishesByCategory] = useState<Record<string, MenuItemView[]>>({});
+  
+  const [cart, setCart] = useState<Array<{ id: string; name: string; price: number; qty: number }>>([]);
   const [placingOrder, setPlacingOrder] = useState(false);
   const [orderNotice, setOrderNotice] = useState<string | null>(null);
 
   // Live KDS tickets state
-  const [kdsTickets, setKdsTickets] = useState<TestTicket[]>([
-    {
-      id: 'task_demo_1',
-      tableNumber: 'Table T-01',
-      items: [
-        { name: 'Butter chicken', qty: 1 },
-        { name: 'Dal makhani', qty: 1, note: 'less spicy' },
-      ],
-      timeAgo: '0:42',
-      status: 'QUEUED',
-      isTest: true,
-    },
-  ]);
+  const [kdsTickets, setKdsTickets] = useState<TestTicket[]>([]);
+  const [kdsLoading, setKdsLoading] = useState(false);
+
+  // Genuine optical QR code data URL
+  const [qrCodeDataUrl, setQrCodeDataUrl] = useState<string>('');
 
   const baseDomain = 'orbitox.io';
-  const subdomainUrl = `http://${slug}.${baseDomain}`;
-  const dinerUrl = `${subdomainUrl}/dine/tbl_${slug}_1`;
+  const subdomainUrl = previewData?.restaurant?.subdomainUrl || `http://${slug}.${baseDomain}`;
+  const sampleTable = previewData?.tables?.sampleTable;
+  const dinerUrl = sampleTable?.dinerUrl || `${subdomainUrl}/dine`;
 
-  const dishes: Record<string, Array<{ id: string; name: string; price: number; isVeg: boolean }>> = {
-    Mains: [
-      { id: '1', name: 'Butter chicken', price: 420, isVeg: false },
-      { id: '2', name: 'Dal makhani', price: 310, isVeg: true },
-      { id: '3', name: 'Paneer tikka masala', price: 360, isVeg: true },
-    ],
-    Starters: [
-      { id: '4', name: 'Tandoori murgh half', price: 380, isVeg: false },
-      { id: '5', name: 'Amritsari fish fry', price: 440, isVeg: false },
-      { id: '6', name: 'Hara bhara kebab', price: 290, isVeg: true },
-    ],
-    Breads: [
-      { id: '7', name: 'Butter garlic naan', price: 90, isVeg: true },
-      { id: '8', name: 'Tandoori roti', price: 40, isVeg: true },
-    ],
-    Desserts: [
-      { id: '9', name: 'Gulab jamun with rabri', price: 180, isVeg: true },
-      { id: '10', name: 'Kesar kulfi', price: 160, isVeg: true },
-    ],
+  // 1. Fetch Authoritative Preview Summary
+  const fetchPreviewSummary = async () => {
+    try {
+      const res = await fetch(`/api/v1/customer/tenants/${encodeURIComponent(tenantId)}/preview-summary`);
+      if (res.ok) {
+        const json = await res.json();
+        if (json.ok && json.preview) {
+          setPreviewData(json.preview);
+
+          const items: MenuItemView[] = json.preview.menu?.items || [];
+          const cats: string[] = json.preview.menu?.categories?.length
+            ? json.preview.menu.categories
+            : Array.from(new Set(items.map((i) => i.categoryName))).filter(Boolean);
+
+          const grouped: Record<string, MenuItemView[]> = {};
+          for (const c of cats) {
+            grouped[c] = items.filter((i) => i.categoryName === c);
+          }
+          for (const item of items) {
+            if (!grouped[item.categoryName]) {
+              grouped[item.categoryName] = [item];
+              if (!cats.includes(item.categoryName)) cats.push(item.categoryName);
+            }
+          }
+
+          setCategories(cats);
+          setDishesByCategory(grouped);
+          if (cats.length > 0 && cats[0] && !activeCategory) {
+            setActiveCategory(cats[0]);
+          }
+
+          // Initialize cart with first item from real menu if empty
+          if (items.length > 0 && cart.length === 0 && items[0]) {
+            const first = items[0];
+            const second = items[1] || items[0];
+            setCart([
+              { id: first.id, name: first.name, price: Math.round(first.basePriceMinor / 100), qty: 1 },
+              ...(second && second.id !== first.id ? [{ id: second.id, name: second.name, price: Math.round(second.basePriceMinor / 100), qty: 1 }] : []),
+            ]);
+          }
+        }
+      }
+    } catch {
+      // Keep existing state
+    } finally {
+      setLoadingSummary(false);
+    }
   };
 
-  const handleAddToCart = (dish: { id: string; name: string; price: number }) => {
+  // 2. Fetch Live KDS Tasks
+  const fetchKdsTasks = async () => {
+    setKdsLoading(true);
+    try {
+      const res = await fetch(`/api/v1/customer/tenants/${encodeURIComponent(tenantId)}/kds`);
+      if (res.ok) {
+        const json = await res.json();
+        if (json.ok && Array.isArray(json.tasks)) {
+          // Group tasks by table or order
+          const formatted: TestTicket[] = json.tasks.map((t: any) => ({
+            id: t.id,
+            tableNumber: t.tableNumber ? `Table ${t.tableNumber}` : 'Table T-01',
+            items: [{ name: t.itemName || 'Dish', qty: t.quantity || 1, note: t.modifiers?.join(', ') }],
+            timeAgo: 'Just now',
+            status: t.status === 'READY' ? 'READY' : t.status === 'BUMPED' ? 'BUMPED' : 'QUEUED',
+            isTest: Boolean(t.isTest ?? true),
+          }));
+          setKdsTickets(formatted);
+        }
+      }
+    } catch {
+      // Fallback
+    } finally {
+      setKdsLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchPreviewSummary();
+    fetchKdsTasks();
+    const interval = setInterval(() => {
+      fetchKdsTasks();
+    }, 4000);
+    return () => clearInterval(interval);
+  }, [tenantId]);
+
+  // 3. Generate Standards-Compliant Optical QR Code
+  useEffect(() => {
+    if (dinerUrl) {
+      QRCode.toDataURL(dinerUrl, {
+        margin: 1,
+        width: 140,
+        color: { dark: '#14161A', light: '#FFFFFF' },
+      })
+        .then((url) => setQrCodeDataUrl(url))
+        .catch(() => {});
+    }
+  }, [dinerUrl]);
+
+  const handleAddToCart = (dish: MenuItemView) => {
+    const price = Math.round(dish.basePriceMinor / 100);
     setCart((prev) => {
       const existing = prev.find((i) => i.id === dish.id);
       if (existing) {
         return prev.map((i) => (i.id === dish.id ? { ...i, qty: i.qty + 1 } : i));
       }
-      return [...prev, { ...dish, qty: 1 }];
+      return [...prev, { id: dish.id, name: dish.name, price, qty: 1 }];
     });
   };
 
   const cartTotal = cart.reduce((acc, i) => acc + i.price * i.qty, 0);
   const cartCount = cart.reduce((acc, i) => acc + i.qty, 0);
 
+  // 4. Place Real Test Order via Authoritative Endpoint
   const handlePlaceTestOrder = async () => {
     if (cart.length === 0) return;
     setPlacingOrder(true);
     setOrderNotice(null);
 
-    // Call test order endpoint or simulate real test order submission
     try {
-      const newTicket: TestTicket = {
-        id: `task_${Date.now()}`,
-        tableNumber: 'Table T-01',
-        items: cart.map((i) => ({ name: i.name, qty: i.qty })),
-        timeAgo: 'Just now',
-        status: 'QUEUED',
-        isTest: true,
-      };
+      const res = await fetch(`/api/v1/customer/tenants/${encodeURIComponent(tenantId)}/test-orders`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          tableNumber: sampleTable?.tableNumber || 'T-01',
+          guestName: `${ownerName} (Preview)`,
+          items: cart.map((i) => ({
+            id: i.id,
+            itemId: i.id,
+            name: i.name,
+            qty: i.qty,
+            quantity: i.qty,
+            priceMinor: i.price * 100,
+          })),
+        }),
+      });
 
-      // Push to live KDS ticket stream
-      setKdsTickets((prev) => [newTicket, ...prev]);
-      setOrderNotice('✓ Test order placed! It arrived on the kitchen screen.');
+      if (!res.ok) {
+        const errJson = await res.json().catch(() => ({}));
+        throw new Error(errJson.message || 'Failed to place test order.');
+      }
+
+      setOrderNotice('✓ Test order submitted! It arrived on the kitchen screen.');
+      await fetchKdsTasks();
       setTimeout(() => setOrderNotice(null), 5000);
+    } catch (err: any) {
+      setOrderNotice(`Order error: ${err.message}`);
     } finally {
       setPlacingOrder(false);
     }
   };
 
-  const handleMarkReady = (ticketId: string) => {
-    setKdsTickets((prev) =>
-      prev.map((t) => (t.id === ticketId ? { ...t, status: 'READY' } : t))
-    );
+  // 5. Bump / Mark Ready on Kitchen Screen
+  const handleMarkReady = async (ticketId: string) => {
+    try {
+      await fetch(`/api/v1/customer/tenants/${encodeURIComponent(tenantId)}/kds`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ taskId: ticketId }),
+      });
+      setKdsTickets((prev) =>
+        prev.map((t) => (t.id === ticketId ? { ...t, status: 'READY' } : t))
+      );
+      setTimeout(fetchKdsTasks, 1000);
+    } catch {
+      // Optimistic update
+      setKdsTickets((prev) =>
+        prev.map((t) => (t.id === ticketId ? { ...t, status: 'READY' } : t))
+      );
+    }
   };
+
+  const activeDishes = dishesByCategory[activeCategory] || [];
 
   return (
     <div className="w-full flex flex-col items-center">
@@ -151,7 +263,7 @@ export function F4WorkingPreviewStep({
             PREVIEW
           </span>
           <span className="text-gray-200">
-            This is your real restaurant tenant with a sample menu. Diners can open it, but can&apos;t place live payment orders until full launch.
+            This is your real restaurant tenant with a starter menu. Diners can open it, but can&apos;t place live payment orders until full launch.
           </span>
         </div>
         <div className="flex items-center gap-2">
@@ -171,32 +283,54 @@ export function F4WorkingPreviewStep({
         </div>
       </div>
 
+      {/* Main 3-Column Preview Layout */}
       <div className="w-full max-w-6xl space-y-6">
-        {/* Header */}
-        <div className="flex items-center justify-between flex-wrap gap-4">
-          <div>
-            <div className="text-xs text-[#5A6170]">Welcome, {ownerName || 'Owner'}</div>
-            <h1 className="text-3xl font-bold tracking-tight text-[#14161A]">
-              {restaurantName} is ready to try
-            </h1>
+        {/* Restaurant Header */}
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div className="h-10 w-10 rounded-2xl bg-[#FB923C] text-white flex items-center justify-center font-bold text-lg shadow-md">
+              {restaurantName.charAt(0) || 'R'}
+            </div>
+            <div>
+              <h1 className="text-xl font-bold text-[#14161A] flex items-center gap-2">
+                <span>{restaurantName}</span>
+                <span className="text-[10px] bg-emerald-100 text-emerald-800 font-semibold px-2 py-0.5 rounded-full">
+                  LIVE TENANT
+                </span>
+              </h1>
+              <p className="text-xs text-[#5A6170] flex items-center gap-2">
+                <span>{city}</span>
+                <span>·</span>
+                <a
+                  href={subdomainUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="text-[#2F5BD8] hover:underline flex items-center gap-1"
+                >
+                  <span>{subdomainUrl.replace(/^https?:\/\//, '')}</span>
+                  <ExternalLink className="h-3 w-3" />
+                </a>
+              </p>
+            </div>
           </div>
-          <div className="flex items-center gap-2 px-3 py-1 rounded-full bg-white border border-[#E2E8F0] text-xs shadow-sm">
-            <span className="h-2 w-2 rounded-full bg-[#10B981] animate-pulse" />
-            <span className="font-semibold text-[#14161A]">{slug}.orbitox.io</span>
-            <a
-              href={dinerUrl}
-              target="_blank"
-              rel="noreferrer"
-              className="text-[#2F5BD8] hover:underline font-semibold ml-1 flex items-center gap-0.5"
+
+          <div className="flex items-center gap-3">
+            <button
+              type="button"
+              onClick={fetchPreviewSummary}
+              className="p-2 rounded-full border border-gray-300 bg-white hover:bg-gray-50 text-gray-700 cursor-pointer shadow-sm"
+              title="Refresh Preview Data"
             >
-              <span>Open</span>
-              <ExternalLink className="h-3 w-3" />
-            </a>
+              <RefreshCw className={`h-4 w-4 ${loadingSummary ? 'animate-spin' : ''}`} />
+            </button>
+            <span className="text-xs font-semibold px-3 py-1.5 rounded-full bg-[#14161A] text-white">
+              Template: {templateId.toUpperCase()}
+            </span>
           </div>
         </div>
 
-        {/* 3 Columns Layout: Phone Diner View, Step-by-Step Diner Guide, KDS Screen */}
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-start">
+        {/* 3 Columns Grid */}
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           {/* Column 1: Interactive Phone Mockup (390×844) */}
           <div className="flex flex-col items-center">
             <div className="w-[310px] h-[600px] bg-[#FFF7ED] rounded-[38px] border-8 border-[#14161A] shadow-2xl p-4 flex flex-col justify-between overflow-hidden relative">
@@ -206,19 +340,21 @@ export function F4WorkingPreviewStep({
               <div className="space-y-3 overflow-y-auto pr-1">
                 <div className="flex items-center justify-between">
                   <span className="text-[9px] font-semibold text-[#9A3412] bg-[#FED7AA] px-2 py-0.5 rounded-full inline-block">
-                    Sample menu
+                    Starter menu
                   </span>
                   <span className="text-[10px] text-[#5A6170]">{city}</span>
                 </div>
 
                 <div>
-                  <div className="text-[10px] text-[#5A6170]">{restaurantName} · Table T-01</div>
+                  <div className="text-[10px] text-[#5A6170]">
+                    {restaurantName} · {sampleTable?.tableNumber || 'Table T-01'}
+                  </div>
                   <h4 className="font-bold text-sm text-[#14161A]">What are you craving?</h4>
                 </div>
 
                 {/* Category Pills */}
                 <div className="flex gap-1 overflow-x-auto pb-1">
-                  {['Mains', 'Starters', 'Breads', 'Desserts'].map((cat) => (
+                  {(categories.length > 0 ? categories : ['Mains', 'Starters', 'Desserts']).map((cat) => (
                     <button
                       key={cat}
                       type="button"
@@ -234,33 +370,41 @@ export function F4WorkingPreviewStep({
                   ))}
                 </div>
 
-                {/* Dishes */}
+                {/* Real Dishes */}
                 <div className="space-y-2 pt-1">
-                  {(dishes[activeCategory] || []).map((dish) => (
-                    <div
-                      key={dish.id}
-                      className="p-2.5 rounded-[18px] bg-white border border-[#E2E8F0] shadow-sm flex items-center justify-between"
-                    >
-                      <div>
-                        <div className="flex items-center gap-1.5">
-                          <span
-                            className={`h-2 w-2 rounded-full ${
-                              dish.isVeg ? 'bg-emerald-600' : 'bg-red-600'
-                            }`}
-                          />
-                          <span className="font-semibold text-xs text-[#14161A]">{dish.name}</span>
-                        </div>
-                        <div className="text-[10px] text-[#5A6170] mt-0.5">₹{dish.price}</div>
-                      </div>
-                      <button
-                        type="button"
-                        onClick={() => handleAddToCart(dish)}
-                        className="h-6 w-6 rounded-full bg-[#FB923C] text-white flex items-center justify-center font-bold text-xs hover:bg-[#EA580C] cursor-pointer shadow-sm transition-all"
+                  {activeDishes.length > 0 ? (
+                    activeDishes.map((dish) => (
+                      <div
+                        key={dish.id}
+                        className="p-2.5 rounded-[18px] bg-white border border-[#E2E8F0] shadow-sm flex items-center justify-between"
                       >
-                        +
-                      </button>
+                        <div className="max-w-[200px]">
+                          <div className="flex items-center gap-1.5">
+                            <span
+                              className={`h-2 w-2 rounded-full shrink-0 ${
+                                dish.isVegetarian ? 'bg-emerald-600' : 'bg-red-600'
+                              }`}
+                            />
+                            <span className="font-semibold text-xs text-[#14161A] truncate">{dish.name}</span>
+                          </div>
+                          <div className="text-[10px] text-[#5A6170] mt-0.5">
+                            ₹{Math.round(dish.basePriceMinor / 100)}
+                          </div>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => handleAddToCart(dish)}
+                          className="h-6 w-6 rounded-full bg-[#FB923C] text-white flex items-center justify-center font-bold text-xs hover:bg-[#EA580C] cursor-pointer shadow-sm transition-all shrink-0"
+                        >
+                          +
+                        </button>
+                      </div>
+                    ))
+                  ) : (
+                    <div className="py-6 text-center text-xs text-gray-700">
+                      Loading menu catalogue...
                     </div>
-                  ))}
+                  )}
                 </div>
               </div>
 
@@ -268,7 +412,7 @@ export function F4WorkingPreviewStep({
               <div className="pt-2">
                 <button
                   type="button"
-                  disabled={placingOrder}
+                  disabled={placingOrder || cart.length === 0}
                   onClick={handlePlaceTestOrder}
                   className="w-full p-2.5 rounded-full bg-[#14161A] text-white text-[11px] font-semibold text-center cursor-pointer hover:bg-black/90 shadow-md transition-all disabled:opacity-50"
                 >
@@ -284,18 +428,18 @@ export function F4WorkingPreviewStep({
             </div>
 
             {orderNotice && (
-              <div className="mt-3 p-2 rounded-xl bg-emerald-50 border border-emerald-200 text-xs text-emerald-800 text-center animate-in fade-in">
+              <div className="mt-3 p-2 rounded-xl bg-emerald-50 border border-emerald-200 text-xs text-emerald-800 text-center animate-in fade-in max-w-[310px]">
                 {orderNotice}
               </div>
             )}
           </div>
 
-          {/* Column 2: Try It Like a Diner Guide & Table QR */}
+          {/* Column 2: Try It Like a Diner Guide & Genuine Table QR */}
           <div className="p-6 rounded-[32px] bg-white border border-[#E2E8F0] shadow-md space-y-5 flex flex-col justify-between">
             <div>
               <h3 className="font-bold text-base text-[#14161A]">Try it like a diner</h3>
               <p className="text-xs text-[#5A6170] mt-0.5">
-                Experience the real table ordering flow directly from your smartphone.
+                Scan the optical QR code or open the link directly in your browser.
               </p>
             </div>
 
@@ -309,33 +453,20 @@ export function F4WorkingPreviewStep({
                     Scan this QR code with your phone camera, or click the link below:
                   </p>
                   <div className="mt-2.5 p-3 rounded-[20px] bg-white border border-[#E2E8F0] shadow-sm inline-block">
-                    {/* SVG Stylized QR Code */}
-                    <svg
-                      viewBox="0 0 100 100"
-                      className="w-28 h-28 text-[#14161A]"
-                      fill="currentColor"
-                      aria-label="Table QR Code"
-                    >
-                      <rect x="0" y="0" width="30" height="30" rx="4" />
-                      <rect x="5" y="5" width="20" height="20" fill="white" rx="2" />
-                      <rect x="10" y="10" width="10" height="10" />
-                      <rect x="70" y="0" width="30" height="30" rx="4" />
-                      <rect x="75" y="5" width="20" height="20" fill="white" rx="2" />
-                      <rect x="80" y="10" width="10" height="10" />
-                      <rect x="0" y="70" width="30" height="30" rx="4" />
-                      <rect x="5" y="75" width="20" height="20" fill="white" rx="2" />
-                      <rect x="10" y="80" width="10" height="10" />
-                      {/* Data dots */}
-                      <circle cx="45" cy="15" r="4" />
-                      <circle cx="55" cy="25" r="4" />
-                      <circle cx="45" cy="45" r="5" />
-                      <circle cx="55" cy="55" r="4" />
-                      <circle cx="85" cy="45" r="4" />
-                      <circle cx="45" cy="85" r="4" />
-                      <circle cx="85" cy="85" r="5" />
-                    </svg>
+                    {/* Genuine optical QR Code */}
+                    {qrCodeDataUrl ? (
+                      <img
+                        src={qrCodeDataUrl}
+                        alt={`Optical Table QR Code for ${sampleTable?.tableNumber || 'Table T-01'}`}
+                        className="w-28 h-28 object-contain mx-auto"
+                      />
+                    ) : (
+                      <div className="w-28 h-28 bg-gray-100 flex items-center justify-center text-[10px] text-gray-400">
+                        Generating QR...
+                      </div>
+                    )}
                     <div className="text-[10px] font-mono font-bold text-center text-[#14161A] mt-1">
-                      Table T-01
+                      {sampleTable?.tableNumber || 'Table T-01'}
                     </div>
                   </div>
                   <div className="mt-2">
@@ -345,7 +476,7 @@ export function F4WorkingPreviewStep({
                       rel="noreferrer"
                       className="text-xs font-semibold text-[#2F5BD8] hover:underline flex items-center gap-1"
                     >
-                      <span>Open Table T-01 in new tab</span>
+                      <span>Open {sampleTable?.tableNumber || 'Table T-01'} in new tab</span>
                       <ExternalLink className="h-3 w-3" />
                     </a>
                   </div>
@@ -357,7 +488,7 @@ export function F4WorkingPreviewStep({
                   2
                 </span>
                 <p className="text-xs font-medium text-[#14161A]">
-                  Place a <span className="font-bold">test order</span>. Test orders are free, bypass payment, and are excluded from tax reports.
+                  Place an authorized <span className="font-bold">test order</span>. Test orders are free, bypass payment, and are strictly excluded from revenue & tax accounting.
                 </p>
               </div>
 
@@ -395,55 +526,62 @@ export function F4WorkingPreviewStep({
 
               {/* Tickets list */}
               <div className="space-y-2.5 max-h-[300px] overflow-y-auto pr-1">
-                {kdsTickets.map((ticket) => (
-                  <div
-                    key={ticket.id}
-                    className="p-3 rounded-[20px] bg-[#1E232B] border border-white/10 space-y-2"
-                  >
-                    <div className="flex items-center justify-between text-xs">
-                      <div className="flex items-center gap-2">
-                        <span className="font-bold text-white">{ticket.tableNumber}</span>
-                        {ticket.isTest && (
-                          <span className="text-[10px] font-bold text-[#14161A] bg-[#FBBF24] px-1.5 py-0.2 rounded-full">
-                            TEST
-                          </span>
-                        )}
+                {kdsTickets.length > 0 ? (
+                  kdsTickets.map((ticket) => (
+                    <div
+                      key={ticket.id}
+                      className="p-3 rounded-[20px] bg-[#1E232B] border border-white/10 space-y-2"
+                    >
+                      <div className="flex items-center justify-between text-xs">
+                        <div className="flex items-center gap-2">
+                          <span className="font-bold text-white">{ticket.tableNumber}</span>
+                          {ticket.isTest && (
+                            <span className="text-[10px] font-bold text-[#14161A] bg-[#FBBF24] px-1.5 py-0.2 rounded-full">
+                              TEST
+                            </span>
+                          )}
+                        </div>
+                        <span className="text-[#9AA3AF] text-[11px]">{ticket.timeAgo}</span>
                       </div>
-                      <span className="text-[#9AA3AF] text-[11px]">{ticket.timeAgo}</span>
-                    </div>
 
-                    <div className="text-xs text-white/90 space-y-1">
-                      {ticket.items.map((it, idx) => (
-                        <p key={idx}>
-                          {it.qty} × {it.name} {it.note && <span className="text-[#9AA3AF]">· {it.note}</span>}
-                        </p>
-                      ))}
-                    </div>
-
-                    {ticket.status === 'READY' ? (
-                      <div className="py-1 rounded-full bg-emerald-600/30 text-emerald-400 text-xs font-bold text-center">
-                        ✓ Dispatched / Ready
+                      <div className="text-xs text-white/90 space-y-1">
+                        {ticket.items.map((it, idx) => (
+                          <p key={idx}>
+                            {it.qty} × {it.name} {it.note && <span className="text-[#9AA3AF]">· {it.note}</span>}
+                          </p>
+                        ))}
                       </div>
-                    ) : (
-                      <button
-                        type="button"
-                        onClick={() => handleMarkReady(ticket.id)}
-                        className="w-full py-1.5 rounded-full bg-[#FB923C] text-[#14161A] text-xs font-bold cursor-pointer hover:bg-[#FB923C]/90 shadow-sm transition-all"
-                      >
-                        Mark ready
-                      </button>
-                    )}
+
+                      {ticket.status === 'READY' || ticket.status === 'BUMPED' ? (
+                        <div className="py-1 rounded-full bg-emerald-600/30 text-emerald-400 text-xs font-bold text-center">
+                          ✓ Dispatched / Ready
+                        </div>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => handleMarkReady(ticket.id)}
+                          className="w-full py-1.5 rounded-full bg-[#FB923C] text-[#14161A] text-xs font-bold cursor-pointer hover:bg-[#FB923C]/90 shadow-sm transition-all"
+                        >
+                          Mark ready
+                        </button>
+                      )}
+                    </div>
+                  ))
+                ) : (
+                  <div className="py-8 text-center text-xs text-gray-300">
+                    No active kitchen orders. Place a test order from the phone on the left!
                   </div>
-                ))}
+                )}
               </div>
 
               <button
                 type="button"
+                disabled={placingOrder}
                 onClick={handlePlaceTestOrder}
-                className="w-full py-2 rounded-full bg-white/10 hover:bg-white/15 text-white text-xs font-medium border border-white/10 cursor-pointer flex items-center justify-center gap-1.5"
+                className="w-full py-2 rounded-full bg-white/10 hover:bg-white/15 text-white text-xs font-medium border border-white/10 cursor-pointer flex items-center justify-center gap-1.5 disabled:opacity-50"
               >
                 <Zap className="h-3.5 w-3.5 text-amber-400" />
-                <span>Simulate Kitchen Order</span>
+                <span>Place Quick Test Order</span>
               </button>
             </div>
 
@@ -457,7 +595,7 @@ export function F4WorkingPreviewStep({
                 </p>
                 <p className="flex items-center gap-2">
                   <Check className="h-4 w-4 text-[#065F46] shrink-0" />
-                  <span>Curated menu in 4 categories with GST HSN tags</span>
+                  <span>Curated menu in {categories.length || 4} categories with GST HSN tags</span>
                 </p>
                 <p className="flex items-center gap-2">
                   <Check className="h-4 w-4 text-[#065F46] shrink-0" />
@@ -475,4 +613,3 @@ export function F4WorkingPreviewStep({
     </div>
   );
 }
-

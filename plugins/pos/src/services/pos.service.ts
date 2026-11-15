@@ -393,6 +393,7 @@ export class PosService {
     const taxBasisPoints = 500; // 5% GST
     const taxMinor = Math.round((subtotalMinor * taxBasisPoints) / 10000);
     const totalMinor = subtotalMinor + taxMinor;
+    const isTest = Boolean((input as any).isTest || (body as any).isTest);
 
     const newOrder: PosOrderRecord = {
       orderId,
@@ -409,6 +410,7 @@ export class PosService {
       totalMinor,
       currency: 'INR',
       idempotencyKey,
+      isTest,
       customer: {
         name: body.guestName || 'Patron',
         phone: body.phone || '+91 98765 43210',
@@ -419,9 +421,10 @@ export class PosService {
     };
 
     // G. Persist to Authoritative Repository
-    await this.repository.addOrder(newOrder);
+    await this.repository.addOrder(newOrder as any);
     for (const task of kitchenTasksToCreate) {
-      await this.repository.addKitchenTask(task);
+      task.isTest = isTest;
+      await this.repository.addKitchenTask(task as any);
     }
 
     // H. Build Public Response Payload

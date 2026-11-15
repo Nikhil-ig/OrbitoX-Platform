@@ -1,6 +1,7 @@
 import { describe, it, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import crypto from 'node:crypto';
+import * as http from 'node:http';
 import { NextRequest } from 'next/server';
 import { PrismaClient } from '@prisma/client';
 import { prisma } from '@/server/db/prisma';
@@ -27,6 +28,7 @@ describe('Stage 3: Customer Subdomain Slug Availability Checker', () => {
   let unverifiedSession: { sessionToken: string; csrfToken: string };
   let testOrgId: string;
   let existingProjectSlug: string;
+  let mockRuntimeServer: http.Server;
 
   before(async () => {
     const salt = crypto.randomBytes(3).toString('hex');
@@ -80,9 +82,39 @@ describe('Stage 3: Customer Subdomain Slug Availability Checker', () => {
         contactEmail: verifiedUser.email,
       },
     });
+
+    // Spin up mock RestaurantOS runtime server to test live checks and fail-closed availability
+    mockRuntimeServer = http.createServer((req, res) => {
+      const url = new URL(req.url || '', 'http://127.0.0.1');
+      const slug = decodeURIComponent(url.pathname.replace('/internal/tenants/', ''));
+      if (slug === 'down-service') {
+        res.writeHead(500, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'INTERNAL_ERROR' }));
+        return;
+      }
+      if (slug === existingProjectSlug || slug === 'taken-tenant') {
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ tenant: { slug } }));
+        return;
+      }
+      res.writeHead(404, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: 'NOT_FOUND' }));
+    });
+
+    await new Promise<void>((resolve) => {
+      mockRuntimeServer.listen(0, '127.0.0.1', () => {
+        const port = (mockRuntimeServer.address() as any).port;
+        process.env.RESTAURANTOS_RUNTIME_URL = `http://127.0.0.1:${port}`;
+        process.env.RESTAURANTOS_PLATFORM_TOKEN = 'test_token_32chars_long_platform_auth';
+        resolve();
+      });
+    });
   });
 
   after(async () => {
+    if (mockRuntimeServer) {
+      await new Promise<void>((resolve) => mockRuntimeServer.close(() => resolve()));
+    }
     if (existingProjectSlug) {
       await prisma.platformProject.deleteMany({ where: { slug: existingProjectSlug } });
     }
@@ -181,5 +213,15 @@ describe('Stage 3: Customer Subdomain Slug Availability Checker', () => {
     assert.equal(json.available, true);
     assert.equal(json.slug, uniqueSlug);
     assert.equal(json.url, `${uniqueSlug}.orbitox.io`);
+  });
+
+  it('fails closed with 503 SERVICE_UNAVAILABLE when runtime returns error or is unreachable', async () => {
+    const req = makeGetRequest('down-service', verifiedSession);
+    const res = await GET(req);
+    assert.equal(res.status, 503);
+    const json = await res.json();
+    assert.equal(json.ok, false);
+    assert.equal(json.error, 'SERVICE_UNAVAILABLE');
+    assert.match(json.reason, /Unable to authoritatively verify subdomain availability/i);
   });
 });

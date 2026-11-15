@@ -282,11 +282,10 @@ export async function verifyCustomerEmailCode(input: {
         select: { id: true, name: true, email: true, phone: true, emailVerifiedAt: true },
       });
       if (user?.emailVerifiedAt) {
-        const session = await createCustomerSession(tx, user.id, input);
         return {
-          ok: true as const,
-          user: { id: user.id, name: user.name, email: user.email, phone: user.phone, emailVerified: true },
-          ...session,
+          ok: false as const,
+          error: 'This email address is already verified. Please sign in with your password.',
+          code: 'ACCOUNT_ALREADY_VERIFIED',
         };
       }
       return { ok: false as const, error: 'Invalid or expired verification code.', code: 'INVALID_OR_EXPIRED_CODE' };
@@ -297,14 +296,17 @@ export async function verifyCustomerEmailCode(input: {
       return { ok: false as const, error: 'User not found.', code: 'USER_NOT_FOUND' };
     }
 
-    await tx.customerUser.update({
-      where: { id: token.userId },
-      data: { emailVerifiedAt: now },
-    });
-
-    const user = await tx.customerUser.findUniqueOrThrow({
-      where: { id: token.userId },
+    const user = await tx.customerUser.findFirst({
+      where: { id: token.userId, status: 'ACTIVE' },
       select: { id: true, name: true, email: true, phone: true },
+    });
+    if (!user) {
+      return { ok: false as const, error: 'User account is not active or eligible.', code: 'USER_NOT_ACTIVE' };
+    }
+
+    await tx.customerUser.update({
+      where: { id: user.id },
+      data: { emailVerifiedAt: now },
     });
 
     const session = await createCustomerSession(tx, user.id, input);

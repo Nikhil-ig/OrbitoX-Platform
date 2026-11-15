@@ -103,9 +103,9 @@ export default function OnboardingPage() {
   // D6 Mobile View Override
   if (viewMode === 'd6-mobile' && state.step === 'F4' && state.restaurant) {
     return (
-      <div className="min-h-screen bg-[#EEF1F5] flex items-center justify-center p-4">
+      <main className="min-h-screen bg-[#EEF1F5] flex items-center justify-center p-4">
         <D6MobilePreviewView
-          ownerName={state.user?.name || 'Priya Shah'}
+          ownerName={state.user?.name || 'Owner'}
           restaurantName={state.restaurant.restaurantName}
           slug={state.restaurant.slug}
           tenantId={state.restaurant.tenantId}
@@ -114,12 +114,12 @@ export default function OnboardingPage() {
           city={state.organization?.city || 'Bengaluru'}
           onSwitchToDesktop={() => setViewMode('desktop')}
         />
-      </div>
+      </main>
     );
   }
 
   return (
-    <div className="min-h-screen bg-[#EEF1F5] flex flex-col items-center justify-center p-6 md:p-12">
+    <main className="min-h-screen bg-[#EEF1F5] flex flex-col items-center justify-center p-6 md:p-12">
       {state.step === 'F1' && (
         <F1AccountStep
           onSuccess={handleF1Success}
@@ -159,7 +159,7 @@ export default function OnboardingPage() {
           onSwitchToD6Mobile={() => setViewMode('d6-mobile')}
         />
       )}
-    </div>
+    </main>
   );
 }
 

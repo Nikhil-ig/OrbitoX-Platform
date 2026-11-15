@@ -115,6 +115,7 @@ export interface KitchenTask {
   modifiers: string[];
   course?: 'FIRST_COURSE' | 'MAIN_COURSE' | 'DESSERT' | 'DRINKS';
   fulfilledItemCount?: number;
+  isTest?: boolean;
   createdAt?: string;
   updatedAt?: string;
 }
@@ -306,6 +307,7 @@ export interface RestaurantOrder {
   idempotencyKey?: string;
   paymentStatus?: string;
   paymentSessionId?: string;
+  isTest?: boolean;
   createdAt: string;
   updatedAt?: string;
 }

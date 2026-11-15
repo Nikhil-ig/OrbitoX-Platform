@@ -438,10 +438,10 @@ export class OwnerSelfService {
     } else if (resource === 'MENU_ITEMS') {
       current = await this.prisma.menuItem.count({ where: { tenantId, isArchived: false } });
     } else if (resource === 'ORDERS') {
-      // Count orders created this calendar month
+      // Count real commercial orders created this calendar month (exclude preview test orders)
       const startOfMonth = new Date(new Date().getFullYear(), new Date().getMonth(), 1);
       current = await this.prisma.restaurantOrder.count({
-        where: { tenantId, createdAt: { gte: startOfMonth } },
+        where: { tenantId, createdAt: { gte: startOfMonth }, isTest: false },
       });
     }
 

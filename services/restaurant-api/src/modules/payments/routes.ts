@@ -45,6 +45,15 @@ async function handleCreateRazorpayOrder(req: http.IncomingMessage, res: http.Se
     return;
   }
 
+  if (order.isTest) {
+    sendJson(res, 400, {
+      error: 'TEST_ORDER_CANNOT_BE_PAID',
+      code: 'TEST_ORDER_CANNOT_BE_PAID',
+      message: 'Test orders placed during preview mode cannot create live payment sessions.',
+    });
+    return;
+  }
+
   const amountMinor = order.totalMinor;
   const tableNumber = order.tableNumber || body.tableNumber;
   if (!tableNumber) {

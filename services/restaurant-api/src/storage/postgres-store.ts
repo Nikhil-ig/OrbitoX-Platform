@@ -582,6 +582,7 @@ export class PostgresRestaurantStore {
       currency: r.currency,
       customer: (r.customer as any) || undefined,
       orderToken: r.orderToken || undefined,
+      isTest: Boolean(r.isTest),
       createdAt: r.createdAt.toISOString(),
     };
   }
@@ -603,6 +604,7 @@ export class PostgresRestaurantStore {
         currency: order.currency,
         customer: (order.customer as any) || null,
         orderToken: order.orderToken,
+        isTest: Boolean(order.isTest),
       },
       create: {
         id: order.orderId,
@@ -619,6 +621,7 @@ export class PostgresRestaurantStore {
         currency: order.currency,
         customer: (order.customer as any) || null,
         orderToken: order.orderToken,
+        isTest: Boolean(order.isTest),
       },
     });
   }
