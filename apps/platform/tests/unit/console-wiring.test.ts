@@ -32,7 +32,7 @@ describe('Stage 7C: Operator Console Wiring & Design Invariants', () => {
       .filter(Boolean);
     assert.ok(hrefMatches.length >= 10, 'Expected at least 10 navigation destinations in console-shell.tsx');
 
-    // Expected required destinations per Stage 7C wiring brief
+    // Expected required destinations per Stage 7F sidebar specification
     const requiredHrefs = [
       '/console/overview',
       '/console/organizations',
@@ -44,8 +44,8 @@ describe('Stage 7C: Operator Console Wiring & Design Invariants', () => {
       '/console/audit',
       '/console/settings/appearance',
       '/console/design-system',
-      '/admin',
-      '/platform',
+      '/admin/restaurant',
+      '/hms',
     ];
 
     for (const href of requiredHrefs) {
@@ -156,7 +156,6 @@ describe('Stage 7C: Operator Console Wiring & Design Invariants', () => {
     const placeholderFiles = [
       'app/(console)/console/organizations/page.tsx',
       'app/(console)/console/provisioning/page.tsx',
-      'app/(console)/console/billing/page.tsx',
       'app/(console)/console/data-rights/page.tsx',
       'app/(console)/console/security/page.tsx',
       'app/(console)/console/audit/page.tsx',
@@ -170,6 +169,12 @@ describe('Stage 7C: Operator Console Wiring & Design Invariants', () => {
       assert.ok(content.includes('stageBadge='), `${relPath} missing stageBadge`);
       assert.ok(content.includes('stageName='), `${relPath} missing stageName`);
     }
+
+    // Billing is now a live Stage 7F screen
+    const billingPath = path.join(PLATFORM_SRC, 'app/(console)/console/billing/page.tsx');
+    assert.ok(fs.existsSync(billingPath), 'Billing page exists');
+    const billingContent = fs.readFileSync(billingPath, 'utf8');
+    assert.ok(!billingContent.includes('ConsolePlaceholder'), 'Billing page is a live screen, not a placeholder');
 
     const placeholderComponent = fs.readFileSync(
       path.join(PLATFORM_SRC, 'app/(console)/console/components/console-placeholder.tsx'),
