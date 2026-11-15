@@ -82,7 +82,7 @@ export function TenantsIndexClient({ initialData }: TenantsIndexClientProps) {
           <Button
             variant="primary"
             size="sm"
-            onClick={() => router.push('/platform/tenants/new')}
+            onClick={() => router.push('/console/provisioning?action=new')}
             className="rounded-full flex items-center gap-2"
           >
             <Plus className="h-3.5 w-3.5" />

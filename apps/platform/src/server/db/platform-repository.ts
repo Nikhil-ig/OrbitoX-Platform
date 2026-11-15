@@ -467,6 +467,7 @@ function toDatabaseProjectData(input: Partial<PlatformProject> & Record<string, 
     if (input.rateLimitPerMin !== undefined) data.rateLimitPerMin = input.rateLimitPerMin;
     if (input.technicalLead !== undefined) data.technicalLead = input.technicalLead;
     if (input.contactEmail !== undefined) data.contactEmail = input.contactEmail;
+    if (input.customDomain !== undefined) data.customDomain = input.customDomain;
     if (input.monthlyApiCalls !== undefined) data.monthlyApiCalls = BigInt(input.monthlyApiCalls);
     if (input.currentBillingPeriod !== undefined) (data as any).currentBillingPeriod = input.currentBillingPeriod;
     return data;

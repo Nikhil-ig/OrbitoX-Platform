@@ -834,3 +834,99 @@ export async function updateTenantCustomDomain(
     customDomain: domain,
   };
 }
+
+const REAUTH_WINDOW_MS = 5 * 60 * 1000;
+
+function assertTenantReauth(operator?: OperatorSessionContext | null): void {
+  if (!operator?.reauthenticatedAt) {
+    throw new Error('STEP_UP_REAUTH_REQUIRED: Operator must re-authenticate before performing this dangerous operation.');
+  }
+  const time =
+    operator.reauthenticatedAt instanceof Date
+      ? operator.reauthenticatedAt.getTime()
+      : new Date(operator.reauthenticatedAt).getTime();
+  const age = Date.now() - time;
+  if (isNaN(time) || age > REAUTH_WINDOW_MS) {
+    throw new Error('STEP_UP_REAUTH_EXPIRED: Step-up re-authentication expired (exceeded 5-minute validity window).');
+  }
+}
+
+function assertTenantReason(reason?: string | null): void {
+  const trimmed = reason ? reason.trim() : '';
+  if (trimmed.length < 5) {
+    throw new Error('INVALID_JUSTIFICATION: A valid justification of at least 5 characters is required.');
+  }
+}
+
+export async function updateTenant(
+  idOrSlug: string,
+  updates: { name?: string; customDomain?: string; planTier?: string },
+  operator?: OperatorSessionContext | null,
+): Promise<{ success: boolean; tenant: any }> {
+  if (process.env.NODE_ENV === 'production' || operator) {
+    requireOperatorAuthorization(operator);
+  }
+
+  const cleanId = idOrSlug.trim();
+  const { platformRepository: repo } = await import('@/server/db/platform-repository');
+  const project = await repo.getProject(cleanId);
+  if (!project) {
+    throw new Error(`TENANT_NOT_FOUND: Tenant ${cleanId} does not exist.`);
+  }
+
+  const updated = await repo.updateProject(project.id, updates as any);
+
+  await repo.recordPlatformAdminAudit({
+    action: 'TENANT_UPDATED',
+    entityType: 'TENANT',
+    entityId: project.id,
+    actorId: operator?.email || 'system:operator',
+    organizationId: project.organizationId,
+    reason: 'Updated tenant attributes via Operator Console',
+    metadata: {
+      tenantId: project.id,
+      updates,
+      operatorEmail: operator?.email,
+    },
+  });
+
+  return { success: true, tenant: updated };
+}
+
+export async function deleteTenant(
+  idOrSlug: string,
+  input: { reason: string },
+  operator?: OperatorSessionContext | null,
+): Promise<{ success: boolean; tenantId: string }> {
+  if (process.env.NODE_ENV === 'production' || operator) {
+    requireOperatorAuthorization(operator);
+  }
+  assertTenantReauth(operator);
+  assertTenantReason(input.reason);
+
+  const cleanId = idOrSlug.trim();
+  const { platformRepository: repo } = await import('@/server/db/platform-repository');
+  const project = await repo.getProject(cleanId);
+  if (!project) {
+    throw new Error(`TENANT_NOT_FOUND: Tenant ${cleanId} does not exist.`);
+  }
+
+  await repo.deleteProject(project.id);
+
+  await repo.recordPlatformAdminAudit({
+    action: 'TENANT_DELETED',
+    entityType: 'TENANT',
+    entityId: project.id,
+    actorId: operator?.email || 'system:operator',
+    organizationId: project.organizationId,
+    reason: input.reason,
+    metadata: {
+      tenantId: project.id,
+      tenantName: project.name,
+      slug: project.slug,
+      operatorEmail: operator?.email,
+    },
+  });
+
+  return { success: true, tenantId: project.id };
+}

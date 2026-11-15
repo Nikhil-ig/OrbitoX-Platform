@@ -46,6 +46,7 @@ export interface ProvisioningClientProps {
   availableOrganizations: Array<{ id: string; name: string; slug: string }>;
   initialStatusFilter?: string;
   initialTenantParam?: string;
+  initialOpenWizard?: boolean;
 }
 
 const STEP_DESCRIPTIONS: Record<string, string> = {
@@ -71,6 +72,7 @@ export function ProvisioningClient({
   availableOrganizations,
   initialStatusFilter = 'ALL',
   initialTenantParam = '',
+  initialOpenWizard = false,
 }: ProvisioningClientProps) {
   const [summary, setSummary] = React.useState<ProvisioningSummary>(initialSummary);
   const [operations, setOperations] = React.useState<ProvisioningOperationItem[]>(initialOperations);
@@ -81,7 +83,7 @@ export function ProvisioningClient({
   // Slide-in drawers
   const [selectedOperation, setSelectedOperation] = React.useState<ProvisioningOperationItem | null>(null);
   const [showInspectorDrawer, setShowInspectorDrawer] = React.useState<boolean>(false);
-  const [showWizardDrawer, setShowWizardDrawer] = React.useState<boolean>(false);
+  const [showWizardDrawer, setShowWizardDrawer] = React.useState<boolean>(initialOpenWizard);
 
   // Loading & action states
   const [isRefreshing, setIsRefreshing] = React.useState<boolean>(false);

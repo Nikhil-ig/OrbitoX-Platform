@@ -17,6 +17,8 @@ import {
   Clock,
   ExternalLink,
   Plus,
+  Pencil,
+  Trash2,
 } from 'lucide-react';
 import {
   Card,
@@ -29,6 +31,13 @@ import {
   DangerousAction,
   Input,
   ProgressBar,
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+  DialogFooter,
+  Label,
   useToast,
 } from '@orbitox-io/ui';
 import type { TenantDetail } from '@/server/tenants/tenants-service';
@@ -45,6 +54,12 @@ export function TenantDetailClient({ initialTenant }: TenantDetailClientProps) {
   const [isActionLoading, setIsActionLoading] = React.useState(false);
   const [newDomain, setNewDomain] = React.useState('');
   const [isUpdatingDomain, setIsUpdatingDomain] = React.useState(false);
+  const [isEditModalOpen, setIsEditModalOpen] = React.useState(false);
+  const [editForm, setEditForm] = React.useState({
+    name: initialTenant.name,
+    planTier: initialTenant.planTier,
+    customDomain: initialTenant.customDomain || '',
+  });
 
   const getCsrfToken = () => {
     if (typeof document === 'undefined') return undefined;
@@ -143,6 +158,96 @@ export function TenantDetailClient({ initialTenant }: TenantDetailClientProps) {
         toast({
           title: 'Reactivation failed',
           description: json.error?.message || 'Could not resume tenant.',
+          variant: 'error',
+        });
+      }
+    } catch (err: any) {
+      toast({
+        title: 'Error',
+        description: err.message || 'Network request failed',
+        variant: 'error',
+      });
+    } finally {
+      setIsActionLoading(false);
+    }
+  };
+
+  const handleEditTenant = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editForm.name.trim()) return;
+
+    try {
+      setIsActionLoading(true);
+      const csrfToken = getCsrfToken();
+      const res = await fetch(`/api/v1/platform/tenants/${tenant.id}`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(csrfToken ? { 'x-csrf-token': csrfToken } : {}),
+        },
+        body: JSON.stringify({
+          name: editForm.name.trim(),
+          planTier: editForm.planTier.trim(),
+          customDomain: editForm.customDomain.trim() || undefined,
+        }),
+      });
+
+      const json = await res.json();
+      if (res.ok && json.success) {
+        setTenant((prev) => ({
+          ...prev,
+          name: editForm.name.trim(),
+          planTier: editForm.planTier.trim(),
+          customDomain: editForm.customDomain.trim() || prev.customDomain,
+        }));
+        setIsEditModalOpen(false);
+        toast({
+          title: 'Tenant Updated',
+          description: `Updated attributes for ${editForm.name}.`,
+        });
+      } else {
+        toast({
+          title: 'Update Failed',
+          description: json.error?.message || 'Could not update tenant.',
+          variant: 'error',
+        });
+      }
+    } catch (err: any) {
+      toast({
+        title: 'Error',
+        description: err.message || 'Network request failed',
+        variant: 'error',
+      });
+    } finally {
+      setIsActionLoading(false);
+    }
+  };
+
+  const handleDelete = async ({ reason }: { reason?: string }) => {
+    try {
+      setIsActionLoading(true);
+      const csrfToken = getCsrfToken();
+      const res = await fetch(`/api/v1/platform/tenants/${tenant.id}`, {
+        method: 'DELETE',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(csrfToken ? { 'x-csrf-token': csrfToken } : {}),
+        },
+        body: JSON.stringify({ reason: reason || 'Operator decommissioned tenant environment' }),
+      });
+
+      const json = await res.json();
+      if (res.ok && json.success) {
+        toast({
+          title: 'Tenant Decommissioned',
+          description: `Tenant ${tenant.name} (${tenant.id}) has been permanently purged.`,
+          variant: 'error',
+        });
+        router.push('/console/tenants');
+      } else {
+        toast({
+          title: 'Decommission Failed',
+          description: json.error?.message || 'Could not delete tenant.',
           variant: 'error',
         });
       }
@@ -276,8 +381,26 @@ export function TenantDetailClient({ initialTenant }: TenantDetailClientProps) {
           </p>
         </div>
 
-        {/* Dangerous Action Suspend or Resume Button */}
-        <div>
+        {/* Actions: Edit, Suspend/Resume, and Decommission */}
+        <div className="flex items-center gap-2 flex-wrap">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => {
+              setEditForm({
+                name: tenant.name,
+                planTier: tenant.planTier,
+                customDomain: tenant.customDomain || '',
+              });
+              setIsEditModalOpen(true);
+            }}
+            disabled={isActionLoading}
+            className="rounded-full flex items-center gap-1.5"
+          >
+            <Pencil className="h-3.5 w-3.5" />
+            <span>Edit</span>
+          </Button>
+
           {tenant.status === 'SUSPENDED' ? (
             <Button
               variant="primary"
@@ -308,6 +431,26 @@ export function TenantDetailClient({ initialTenant }: TenantDetailClientProps) {
               onConfirm={handleSuspend}
             />
           )}
+
+          <DangerousAction
+            trigger={
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={isActionLoading}
+                className="rounded-full text-rose-500 hover:text-rose-600 border-rose-500/30 hover:border-rose-500/50 flex items-center gap-1"
+              >
+                <Trash2 className="h-3.5 w-3.5" />
+                <span>Delete</span>
+              </Button>
+            }
+            title={`Decommission Tenant: ${tenant.name}`}
+            description={`Permanently purge project cell ${tenant.id} and cascade de-register all plugin installations. This action is irreversible and requires fresh reauthentication.`}
+            expectedConfirmationText="DELETE"
+            requireReason
+            confirmButtonLabel="Decommission Tenant"
+            onConfirm={handleDelete}
+          />
         </div>
       </div>
 
@@ -655,6 +798,78 @@ export function TenantDetailClient({ initialTenant }: TenantDetailClientProps) {
           </CardContent>
         </Card>
       )}
+
+      {/* Edit Tenant Attributes Dialog */}
+      <Dialog open={isEditModalOpen} onOpenChange={setIsEditModalOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Edit Tenant Attributes</DialogTitle>
+            <DialogDescription>
+              Modify project attributes, plan tier, or configured custom domain for {tenant.name}.
+            </DialogDescription>
+          </DialogHeader>
+
+          <form onSubmit={handleEditTenant} className="space-y-4">
+            <div className="space-y-1.5">
+              <Label htmlFor="tenant-name" className="text-xs font-medium">Tenant Name</Label>
+              <Input
+                id="tenant-name"
+                value={editForm.name}
+                onChange={(e) => setEditForm({ ...editForm, name: e.target.value })}
+                required
+                className="text-xs"
+              />
+            </div>
+
+            <div className="space-y-1.5">
+              <Label htmlFor="tenant-plan" className="text-xs font-medium">Plan Tier</Label>
+              <select
+                id="tenant-plan"
+                value={editForm.planTier}
+                onChange={(e) => setEditForm({ ...editForm, planTier: e.target.value })}
+                className="w-full rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-1.5 text-xs text-[var(--color-text)] focus:outline-none focus:ring-1 focus:ring-[var(--color-primary)]"
+              >
+                <option value="starter">Starter</option>
+                <option value="growth">Growth</option>
+                <option value="pro">Pro</option>
+                <option value="enterprise">Enterprise</option>
+                <option value="hyperscale">Hyperscale</option>
+              </select>
+            </div>
+
+            <div className="space-y-1.5">
+              <Label htmlFor="tenant-domain" className="text-xs font-medium">Custom Domain (Optional)</Label>
+              <Input
+                id="tenant-domain"
+                value={editForm.customDomain}
+                onChange={(e) => setEditForm({ ...editForm, customDomain: e.target.value })}
+                placeholder="e.g. app.hospital.com"
+                className="text-xs"
+              />
+            </div>
+
+            <DialogFooter className="pt-2">
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => setIsEditModalOpen(false)}
+                disabled={isActionLoading}
+              >
+                Cancel
+              </Button>
+              <Button
+                type="submit"
+                variant="primary"
+                size="sm"
+                disabled={isActionLoading || !editForm.name.trim()}
+              >
+                {isActionLoading ? 'Saving…' : 'Save Changes'}
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

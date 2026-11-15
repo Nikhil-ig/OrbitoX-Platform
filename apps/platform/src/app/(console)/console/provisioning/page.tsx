@@ -38,6 +38,7 @@ export default async function ConsoleProvisioningPage(props: {
 
   const statusParam = typeof searchParams.status === 'string' ? searchParams.status : 'ALL';
   const tenantParam = typeof searchParams.tenant === 'string' ? searchParams.tenant : '';
+  const initialOpenWizard = searchParams.action === 'new';
 
   // Parallel data loading
   const [summary, operations, orgs] = await Promise.all([
@@ -63,6 +64,7 @@ export default async function ConsoleProvisioningPage(props: {
         availableOrganizations={availableOrganizations}
         initialStatusFilter={statusParam}
         initialTenantParam={tenantParam}
+        initialOpenWizard={initialOpenWizard}
       />
     </ConsoleShell>
   );
