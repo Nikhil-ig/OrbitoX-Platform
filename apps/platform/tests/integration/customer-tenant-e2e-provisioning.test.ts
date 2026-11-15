@@ -78,17 +78,17 @@ describe('Stage 4: End-to-End Customer Restaurant Provisioning & Working Preview
         if (envIds.length > 0) {
           await prisma.platformApiKey.deleteMany({
             where: { environmentId: { in: envIds } },
-          }).catch(() => { });
+          }).catch(() => {});
         }
         await prisma.pluginInstallation.deleteMany({
           where: { tenantId: { contains: proj.id } },
-        }).catch(() => { });
+        }).catch(() => {});
         await prisma.projectEnvironment.deleteMany({
           where: { projectId: proj.id },
-        }).catch(() => { });
+        }).catch(() => {});
         await prisma.platformProject.deleteMany({
           where: { id: proj.id },
-        }).catch(() => { });
+        }).catch(() => {});
       }
     }
     if (testOrg?.id) {

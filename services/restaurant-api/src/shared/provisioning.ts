@@ -487,10 +487,10 @@ export class TenantProvisioningService {
         tableCount: effectiveTableCount,
         sampleTableLocator: firstTableLocator
           ? {
-            tableNumber: 'T-01',
-            locator: firstTableLocator,
-            dinerUrl: `http://${cleanSlug}.${this.baseDomain}/dine/${firstTableLocator}`,
-          }
+              tableNumber: 'T-01',
+              locator: firstTableLocator,
+              dinerUrl: `http://${cleanSlug}.${this.baseDomain}/dine/${firstTableLocator}`,
+            }
           : undefined,
       };
 

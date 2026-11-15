@@ -148,9 +148,9 @@ export const ordersRoutes: RouteDefinition[] = [
       const isStaffOrOwner = Boolean(
         identity &&
         (identity.role === 'OWNER' ||
-          identity.role === 'OPERATOR' ||
-          identity.role === 'STAFF' ||
-          (identity as any).isStaff)
+         identity.role === 'OPERATOR' ||
+         identity.role === 'STAFF' ||
+         (identity as any).isStaff)
       );
 
       // In PREVIEW mode: anonymous diner orders are blocked. Only authenticated owner test orders allowed.
@@ -212,11 +212,11 @@ export const ordersRoutes: RouteDefinition[] = [
           await postgresStore.prisma.restaurantOrder.update({
             where: { id: orderId },
             data: { isTest: true },
-          }).catch(() => { });
+          }).catch(() => {});
           await postgresStore.prisma.kitchenTask.updateMany({
             where: { orderId },
             data: { isTest: true },
-          }).catch(() => { });
+          }).catch(() => {});
           if (orderResult.body) {
             orderResult.body.isTest = true;
           }
