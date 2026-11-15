@@ -5,20 +5,18 @@ import {
   getOperatorSession,
   type OperatorSessionContext,
 } from '@/server/accounts/account-service';
+import { securityConsoleService } from '@/server/security/security-console-service';
 import { ConsoleShell } from '../components/console-shell';
-import { ConsolePlaceholder } from '../components/console-placeholder';
+import { SecurityClient } from './security-client';
 
 export const metadata = {
   title: 'Security & Keys · OrbitoX Operator Console',
-  description: 'Cryptographic key rotation, Ed25519 plugin signature verification, operator MFA, and zero-trust perimeter telemetry.',
+  description: 'Cryptographic API keys, operator accounts, zero-trust session management, and lockout remediation.',
 };
 
 export const dynamic = 'force-dynamic';
 
-export default async function ConsoleSecurityPage(props: {
-  searchParams: Promise<Record<string, string | string[] | undefined>>;
-}) {
-  const searchParams = await props.searchParams;
+export default async function ConsoleSecurityPage() {
   const cookieStore = await cookies();
   const operatorToken = cookieStore.get(OPERATOR_SESSION_COOKIE)?.value;
 
@@ -34,17 +32,12 @@ export default async function ConsoleSecurityPage(props: {
   const operatorEmail = session?.email || 'operator@orbitox.io';
   const operatorRole = session?.role || 'PLATFORM_OWNER';
 
+  // Load security overview server-side
+  const overview = await securityConsoleService.getOverview();
+
   return (
     <ConsoleShell activeId="security" operatorEmail={operatorEmail} operatorRole={operatorRole}>
-      <ConsolePlaceholder
-        title="Security & Keys"
-        stageBadge="Stage C6"
-        stageName="Stage C6 — KMS Keyrings, Ed25519 Signatures & WAF Telemetry"
-        description="Cryptographic key rotation, Ed25519 plugin signature verification, operator MFA, and zero-trust perimeter telemetry."
-        detailedNotes="Stage C6 introduces hardware-backed key rotation, digital signature enforcement for @orbitox-io plugins via CryptoSigner, tenant API token revocation, and real-time WAF telemetry for unauthorized boundary crossings."
-        searchParams={searchParams}
-      />
+      <SecurityClient initialOverview={overview} />
     </ConsoleShell>
   );
 }
-
