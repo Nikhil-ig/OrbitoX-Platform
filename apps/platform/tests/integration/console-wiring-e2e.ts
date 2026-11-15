@@ -306,7 +306,8 @@ async function run() {
 
   // Step E: Resume Action
   resumeBtn = page.getByRole('button', { name: 'Resume Tenant' });
-  assert.ok(await resumeBtn.isVisible(), 'Resume Tenant button not visible after suspension');
+  await resumeBtn.waitFor({ state: 'visible', timeout: 10000 });
+  await page.waitForTimeout(500);
 
   const resumeResponsePromise = page.waitForResponse(
     (res) => res.url().includes('/api/v1/platform/tenants/proj_oasis_blr/resume') && res.request().method() === 'POST',

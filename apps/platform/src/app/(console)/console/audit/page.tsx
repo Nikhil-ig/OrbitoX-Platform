@@ -5,11 +5,12 @@ import {
   getOperatorSession,
   type OperatorSessionContext,
 } from '@/server/accounts/account-service';
+import { auditConsoleService } from '@/server/audit/audit-console-service';
 import { ConsoleShell } from '../components/console-shell';
-import { ConsolePlaceholder } from '../components/console-placeholder';
+import { AuditClient } from './audit-client';
 
 export const metadata = {
-  title: 'Audit Log · OrbitoX Operator Console',
+  title: 'Platform Audit Log · OrbitoX Operator Console',
   description: 'Append-only, cryptographically verified audit records for administrative platform operations.',
 };
 
@@ -34,17 +35,29 @@ export default async function ConsoleAuditPage(props: {
   const operatorEmail = session?.email || 'operator@orbitox.io';
   const operatorRole = session?.role || 'PLATFORM_OWNER';
 
+  // Read search/entity parameters from query URL
+  const initialCategory = typeof searchParams.category === 'string' ? searchParams.category : 'ALL';
+  const initialSearch = typeof searchParams.search === 'string' ? searchParams.search : '';
+  const rawEntity = searchParams.entity || searchParams.entityId;
+  const initialEntityId = typeof rawEntity === 'string' ? rawEntity : '';
+
+  // Query audit overview from PostgreSQL
+  const overview = await auditConsoleService.queryAuditLogs({
+    category: initialCategory,
+    search: initialSearch,
+    entityId: initialEntityId,
+    page: 1,
+    pageSize: 25,
+  });
+
   return (
     <ConsoleShell activeId="audit" operatorEmail={operatorEmail} operatorRole={operatorRole}>
-      <ConsolePlaceholder
-        title="Platform Audit Log"
-        stageBadge="Owner Sign-off Needed"
-        stageName="Operator Audit Log — Screen Pending Owner Decision"
-        description="Append-only, cryptographically verified audit records for administrative platform operations."
-        detailedNotes="Flagged for owner decision: A standalone audit log screen was not included in the original 44 concept screens list. This route serves as a verified placeholder until the owner decides whether to introduce a dedicated audit inspection screen (C-series) or fold platform audit trails directly into Security & Keys (C6)."
-        searchParams={searchParams}
+      <AuditClient
+        initialOverview={overview}
+        initialCategory={initialCategory}
+        initialSearch={initialSearch}
+        initialEntityId={initialEntityId}
       />
     </ConsoleShell>
   );
 }
-

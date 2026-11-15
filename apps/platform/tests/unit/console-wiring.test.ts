@@ -8,7 +8,6 @@ describe('Stage 7C: Operator Console Wiring & Design Invariants', () => {
 
   const TARGET_CONSOLE_FILES = [
     'app/(console)/console/components/console-shell.tsx',
-    'app/(console)/console/components/console-placeholder.tsx',
     'app/(console)/console/overview/overview-client.tsx',
     'app/(console)/console/tenants/tenants-index-client.tsx',
     'app/(console)/console/tenants/[id]/tenant-detail-client.tsx',
@@ -152,60 +151,32 @@ describe('Stage 7C: Operator Console Wiring & Design Invariants', () => {
     assert.ok(content.includes('href="/console/provisioning?status=FAILED"'), 'Overview missing link to /console/provisioning');
   });
 
-  it('7. Placeholder Pages contain Stage names and "Back to Overview" link', () => {
-    const placeholderFiles = [
+  it('7. All Core Console Screens are Live Full-Production Screens (Zero Placeholders Remaining)', () => {
+    // All 7 operational console sections are fully implemented live screens
+    const liveScreenFiles = [
+      'app/(console)/console/overview/page.tsx',
+      'app/(console)/console/tenants/page.tsx',
+      'app/(console)/console/organizations/page.tsx',
+      'app/(console)/console/provisioning/page.tsx',
+      'app/(console)/console/billing/page.tsx',
+      'app/(console)/console/data-rights/page.tsx',
+      'app/(console)/console/security/page.tsx',
       'app/(console)/console/audit/page.tsx',
     ];
 
-    for (const relPath of placeholderFiles) {
+    for (const relPath of liveScreenFiles) {
       const fullPath = path.join(PLATFORM_SRC, relPath);
-      assert.ok(fs.existsSync(fullPath), `Placeholder page ${relPath} does not exist`);
+      assert.ok(fs.existsSync(fullPath), `Live screen page ${relPath} does not exist`);
       const content = fs.readFileSync(fullPath, 'utf8');
-      assert.ok(content.includes('ConsolePlaceholder'), `${relPath} does not use ConsolePlaceholder`);
-      assert.ok(content.includes('stageBadge='), `${relPath} missing stageBadge`);
-      assert.ok(content.includes('stageName='), `${relPath} missing stageName`);
+      assert.ok(
+        !content.includes('ConsolePlaceholder'),
+        `${relPath} should be a live screen, not a ConsolePlaceholder`,
+      );
     }
 
-    // Security & Keys is now a live Stage 7F screen
-    const securityPath = path.join(PLATFORM_SRC, 'app/(console)/console/security/page.tsx');
-    assert.ok(fs.existsSync(securityPath), 'Security page exists');
-    const securityContent = fs.readFileSync(securityPath, 'utf8');
-    assert.ok(!securityContent.includes('ConsolePlaceholder'), 'Security page is a live screen, not a placeholder');
-
-    // Organizations, Billing, Provisioning, and Data Rights are now live Stage 7F screens
-    const dataRightsPath = path.join(PLATFORM_SRC, 'app/(console)/console/data-rights/page.tsx');
-    assert.ok(fs.existsSync(dataRightsPath), 'Data Rights page exists');
-    const dataRightsContent = fs.readFileSync(dataRightsPath, 'utf8');
-    assert.ok(!dataRightsContent.includes('ConsolePlaceholder'), 'Data Rights page is a live screen, not a placeholder');
-
-    // Organizations, Billing, and Provisioning are now live Stage 7F screens
-    const orgsPath = path.join(PLATFORM_SRC, 'app/(console)/console/organizations/page.tsx');
-    assert.ok(fs.existsSync(orgsPath), 'Organizations page exists');
-    const orgsContent = fs.readFileSync(orgsPath, 'utf8');
-    assert.ok(!orgsContent.includes('ConsolePlaceholder'), 'Organizations page is a live screen, not a placeholder');
-
-    const billingPath = path.join(PLATFORM_SRC, 'app/(console)/console/billing/page.tsx');
-    assert.ok(fs.existsSync(billingPath), 'Billing page exists');
-    const billingContent = fs.readFileSync(billingPath, 'utf8');
-    assert.ok(!billingContent.includes('ConsolePlaceholder'), 'Billing page is a live screen, not a placeholder');
-
-    const provisioningPath = path.join(PLATFORM_SRC, 'app/(console)/console/provisioning/page.tsx');
-    assert.ok(fs.existsSync(provisioningPath), 'Provisioning page exists');
-    const provisioningContent = fs.readFileSync(provisioningPath, 'utf8');
-    assert.ok(!provisioningContent.includes('ConsolePlaceholder'), 'Provisioning page is a live screen, not a placeholder');
-
-    const placeholderComponent = fs.readFileSync(
-      path.join(PLATFORM_SRC, 'app/(console)/console/components/console-placeholder.tsx'),
-      'utf8',
-    );
-    assert.ok(
-      placeholderComponent.includes('href="/console/overview"'),
-      'ConsolePlaceholder must include link back to /console/overview',
-    );
-    assert.ok(
-      placeholderComponent.includes('Back to Overview'),
-      'ConsolePlaceholder must include "Back to Overview" button label',
-    );
+    // Zero placeholder files remaining in console components
+    const placeholderPath = path.join(PLATFORM_SRC, 'app/(console)/console/components/console-placeholder.tsx');
+    assert.ok(!fs.existsSync(placeholderPath), 'console-placeholder.tsx should be deleted as all screens are live');
   });
 });
 
