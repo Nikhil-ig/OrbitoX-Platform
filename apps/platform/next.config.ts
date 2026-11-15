@@ -30,6 +30,10 @@ const nextConfig: NextConfig = {
         source: '/health',
         destination: '/api/health',
       },
+      {
+        source: '/platform/billing/:path*',
+        destination: '/api/v1/platform/billing/:path*',
+      },
     ];
   },
   async redirects() {

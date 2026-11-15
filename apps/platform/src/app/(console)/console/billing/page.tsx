@@ -6,7 +6,8 @@ import {
   type OperatorSessionContext,
 } from '@/server/accounts/account-service';
 import { ConsoleShell } from '../components/console-shell';
-import { ConsolePlaceholder } from '../components/console-placeholder';
+import { getBillingSummary, listBillingInvoices } from '@/server/billing/billing-service';
+import { BillingClient } from './billing-client';
 
 export const metadata = {
   title: 'Billing & Subscriptions · OrbitoX Operator Console',
@@ -27,24 +28,32 @@ export default async function ConsoleBillingPage(props: {
     try {
       session = await getOperatorSession(operatorToken);
     } catch {
-      // In development, middleware allows fallback
+      // Allow nominal operator context in development
     }
   }
 
   const operatorEmail = session?.email || 'operator@orbitox.io';
   const operatorRole = session?.role || 'PLATFORM_OWNER';
 
+  const [summary, invoices] = await Promise.all([
+    getBillingSummary(session),
+    listBillingInvoices(
+      {
+        search: typeof searchParams.search === 'string' ? searchParams.search : undefined,
+        status: typeof searchParams.status === 'string' ? searchParams.status : undefined,
+      },
+      session
+    ),
+  ]);
+
   return (
     <ConsoleShell activeId="billing" operatorEmail={operatorEmail} operatorRole={operatorRole}>
-      <ConsolePlaceholder
-        title="Billing & Subscriptions"
-        stageBadge="Stage C3"
-        stageName="Stage C3 — Stripe & Razorpay Subscriptions & Quota Enforcement"
-        description="Subscription tier management, quota enforcement, billing invoices, and automated payment recovery."
-        detailedNotes="Stage C3 connects the operator billing cockpit to real-time subscription lifecycle webhooks, recurring invoice generation, dynamic plan quota updates, and automated grace period suspensions for delinquent commercial accounts."
-        searchParams={searchParams}
+      <BillingClient
+        initialSummary={summary}
+        initialInvoices={invoices}
+        operatorEmail={operatorEmail}
+        operatorRole={operatorRole}
       />
     </ConsoleShell>
   );
 }
-

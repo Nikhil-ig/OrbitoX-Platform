@@ -1,21 +1,21 @@
 'use client';
 
-import React, { useEffect, useState } from 'react';
-import { usePlatform } from '../components/PlatformContext';
-import { tokens } from '../components/tokens';
+import * as React from 'react';
+import { ConsoleShell } from '../../console/components/console-shell';
+import { Card, Badge, Button, Input, Textarea } from '@orbitox-io/ui';
+import { Sparkles, ShieldCheck, Terminal, Play, CheckCircle2, Lock } from 'lucide-react';
 
 export default function PlatformAiGovernancePage() {
-  const { refreshTrigger, triggerRefresh } = usePlatform();
-  const [data, setData] = useState<any>(null);
-  const [activeTab, setActiveTab] = useState<'tools' | 'guardrails' | 'executions' | 'simulator'>('tools');
+  const [data, setData] = React.useState<any>(null);
+  const [activeTab, setActiveTab] = React.useState<'tools' | 'guardrails' | 'executions' | 'simulator'>('tools');
 
-  // Simulator
-  const [simTool, setSimTool] = useState('kernel_inspect_environment');
-  const [simParams, setSimParams] = useState('{\n  "environmentId": "env-prod-omni"\n}');
-  const [simulating, setSimulating] = useState(false);
-  const [simResult, setSimResult] = useState<any>(null);
+  // Simulator state
+  const [simTool, setSimTool] = React.useState('kernel_inspect_environment');
+  const [simParams, setSimParams] = React.useState('{\n  "environmentId": "env-prod-omni"\n}');
+  const [simulating, setSimulating] = React.useState(false);
+  const [simResult, setSimResult] = React.useState<any>(null);
 
-  useEffect(() => {
+  React.useEffect(() => {
     async function loadData() {
       try {
         const res = await fetch('/api/v1/platform/ai');
@@ -26,14 +26,20 @@ export default function PlatformAiGovernancePage() {
       }
     }
     loadData();
-  }, [refreshTrigger]);
+  }, []);
 
   const handleSimulate = async () => {
     setSimulating(true);
     setSimResult(null);
     try {
       let parsed = {};
-      try { parsed = JSON.parse(simParams); } catch { alert('Invalid JSON in parameters'); setSimulating(false); return; }
+      try {
+        parsed = JSON.parse(simParams);
+      } catch {
+        alert('Invalid JSON in parameters');
+        setSimulating(false);
+        return;
+      }
 
       const res = await fetch('/api/v1/platform/ai', {
         method: 'POST',
@@ -42,7 +48,6 @@ export default function PlatformAiGovernancePage() {
       });
       const json = await res.json();
       setSimResult(json);
-      triggerRefresh();
     } catch (err: any) {
       setSimResult({ success: false, error: err.message });
     } finally {
@@ -55,352 +60,205 @@ export default function PlatformAiGovernancePage() {
   );
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '24px', maxWidth: '1200px' }}>
-      {/* Header */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <div>
-          <h1 style={{ fontSize: tokens.typography.size.xxl, fontWeight: tokens.typography.weight.bold, color: tokens.colors.text.primary, margin: 0, letterSpacing: '-0.02em' }}>
-            AI & MCP Gateway
-          </h1>
-          <p style={{ fontSize: tokens.typography.size.base, color: tokens.colors.text.secondary, margin: '4px 0 0 0' }}>
-            Model Context Protocol server registry, tool capability scopes, and safety guardrails.
-          </p>
-        </div>
-
-        {/* Tab switch */}
-        <div style={{ display: 'flex', backgroundColor: tokens.colors.bg.surfaceRaised, padding: '3px', borderRadius: tokens.radius.sm, border: `1px solid ${tokens.colors.border.default}` }}>
-          {[
-            { id: 'tools', label: 'Tools' },
-            { id: 'guardrails', label: 'Guardrails' },
-            { id: 'executions', label: 'Execution Log' },
-            { id: 'simulator', label: 'Simulator' },
-          ].map((tab) => (
-            <button
-              key={tab.id}
-              onClick={() => setActiveTab(tab.id as any)}
-              style={{
-                padding: '5px 12px',
-                borderRadius: tokens.radius.xs,
-                border: 'none',
-                backgroundColor: activeTab === tab.id ? tokens.colors.bg.surfaceHover : 'transparent',
-                color: activeTab === tab.id ? tokens.colors.text.primary : tokens.colors.text.muted,
-                fontSize: tokens.typography.size.xs,
-                fontWeight: tokens.typography.weight.medium,
-                cursor: 'pointer',
-              }}
-            >
-              {tab.label}
-            </button>
-          ))}
-        </div>
-      </div>
-
-      {activeTab === 'tools' && (
-        <div
-          style={{
-            backgroundColor: tokens.colors.bg.surface,
-            border: `1px solid ${tokens.colors.border.subtle}`,
-            borderRadius: tokens.radius.md,
-            overflow: 'hidden',
-          }}
-        >
-          <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: tokens.typography.size.base }}>
-            <thead>
-              <tr style={{ borderBottom: `1px solid ${tokens.colors.border.subtle}`, height: '36px' }}>
-                <th style={{ padding: '0 16px', color: tokens.colors.text.muted, fontSize: tokens.typography.size.xs, fontWeight: tokens.typography.weight.semibold, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-                  Tool Name
-                </th>
-                <th style={{ padding: '0 16px', color: tokens.colors.text.muted, fontSize: tokens.typography.size.xs, fontWeight: tokens.typography.weight.semibold, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-                  Server
-                </th>
-                <th style={{ padding: '0 16px', color: tokens.colors.text.muted, fontSize: tokens.typography.size.xs, fontWeight: tokens.typography.weight.semibold, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-                  Required Capability
-                </th>
-                <th style={{ padding: '0 16px', color: tokens.colors.text.muted, fontSize: tokens.typography.size.xs, fontWeight: tokens.typography.weight.semibold, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-                  Invocations
-                </th>
-                <th style={{ padding: '0 16px', color: tokens.colors.text.muted, fontSize: tokens.typography.size.xs, fontWeight: tokens.typography.weight.semibold, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-                  Avg Latency
-                </th>
-                <th style={{ padding: '0 16px', color: tokens.colors.text.muted, fontSize: tokens.typography.size.xs, fontWeight: tokens.typography.weight.semibold, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-                  Policy
-                </th>
-              </tr>
-            </thead>
-            <tbody>
-              {allTools.map((t: any, idx: number) => (
-                <tr
-                  key={t.toolName}
-                  style={{
-                    height: '48px',
-                    borderBottom: idx < allTools.length - 1 ? `1px solid ${tokens.colors.border.subtle}` : 'none',
-                  }}
-                >
-                  <td style={{ padding: '0 16px' }}>
-                    <div style={{ fontFamily: tokens.typography.fontFamily.mono, color: tokens.colors.text.primary, fontWeight: tokens.typography.weight.medium }}>
-                      {t.toolName}
-                    </div>
-                    <div style={{ fontSize: tokens.typography.size.xs, color: tokens.colors.text.muted }}>
-                      {t.description}
-                    </div>
-                  </td>
-                  <td style={{ padding: '0 16px', color: tokens.colors.text.secondary }}>
-                    {t.serverName}
-                  </td>
-                  <td style={{ padding: '0 16px' }}>
-                    <code style={{ fontSize: tokens.typography.size.xs, color: tokens.colors.accent.brand }}>
-                      {t.requiredCapability}
-                    </code>
-                  </td>
-                  <td style={{ padding: '0 16px', color: tokens.colors.text.secondary, fontFamily: tokens.typography.fontFamily.mono }}>
-                    {t.invocationsCount?.toLocaleString()}
-                  </td>
-                  <td style={{ padding: '0 16px', color: tokens.colors.text.muted, fontFamily: tokens.typography.fontFamily.mono }}>
-                    {t.averageLatencyMs}ms
-                  </td>
-                  <td style={{ padding: '0 16px' }}>
-                    <span style={{ fontSize: tokens.typography.size.xs, color: tokens.colors.status.healthy }}>
-                      Guarded
-                    </span>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
-
-      {activeTab === 'guardrails' && (
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: '16px' }}>
-          {[
-            {
-              title: 'PII Redaction Engine',
-              desc: 'Strips email addresses, credit cards, and customer identifiers from model prompts.',
-              stat: `${data?.guardrails?.piiRedaction?.totalRedactions || 384} masked`,
-            },
-            {
-              title: 'Prompt Injection Shield',
-              desc: 'Blocks adversarial system prompt overrides and roleplay exfiltration attempts.',
-              stat: `${data?.guardrails?.promptInjectionShield?.injectionsBlocked || 19} blocked`,
-            },
-            {
-              title: 'Secret Leakage Filter',
-              desc: 'Deep entropy scanner preventing machine credentials from escaping to LLMs.',
-              stat: `${data?.guardrails?.secretLeakageFilter?.secretsFiltered || 43} filtered`,
-            },
-          ].map((g) => (
-            <div
-              key={g.title}
-              style={{
-                backgroundColor: tokens.colors.bg.surface,
-                border: `1px solid ${tokens.colors.border.subtle}`,
-                borderRadius: tokens.radius.md,
-                padding: '20px',
-              }}
-            >
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <span style={{ fontSize: tokens.typography.size.base, fontWeight: tokens.typography.weight.medium, color: tokens.colors.text.primary }}>
-                  {g.title}
-                </span>
-                <span style={{ fontSize: tokens.typography.size.xs, color: tokens.colors.status.healthy }}>Active</span>
-              </div>
-              <p style={{ fontSize: tokens.typography.size.xs, color: tokens.colors.text.secondary, margin: '8px 0 0 0' }}>
-                {g.desc}
-              </p>
-              <div style={{ marginTop: '16px', fontSize: tokens.typography.size.xs, color: tokens.colors.text.muted }}>
-                Lifetime Interceptions: <span style={{ color: tokens.colors.text.primary, fontWeight: tokens.typography.weight.semibold }}>{g.stat}</span>
-              </div>
+    <ConsoleShell activeId="ai-assistant">
+      <div className="max-w-6xl mx-auto py-8 px-4 space-y-6">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+          <div>
+            <div className="flex items-center gap-2">
+              <Badge variant="outline" className="text-[11px] font-mono border-[var(--color-border)] text-[var(--color-text-muted)] bg-[var(--color-surface-raised)] px-2 py-0.5 rounded-full">
+                Stage 7D · Hold
+              </Badge>
+              <Badge variant="outline" className="text-[11px] font-medium border-[var(--color-primary)] text-[var(--color-primary)] bg-[var(--color-primary)]/10 px-2 py-0.5 rounded-full">
+                MCP Assistant
+              </Badge>
             </div>
-          ))}
-        </div>
-      )}
-
-      {activeTab === 'executions' && (
-        <div
-          style={{
-            backgroundColor: tokens.colors.bg.surface,
-            border: `1px solid ${tokens.colors.border.subtle}`,
-            borderRadius: tokens.radius.md,
-            overflow: 'hidden',
-          }}
-        >
-          <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: tokens.typography.size.base }}>
-            <thead>
-              <tr style={{ borderBottom: `1px solid ${tokens.colors.border.subtle}`, height: '36px' }}>
-                <th style={{ padding: '0 16px', color: tokens.colors.text.muted, fontSize: tokens.typography.size.xs, fontWeight: tokens.typography.weight.semibold, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-                  Time
-                </th>
-                <th style={{ padding: '0 16px', color: tokens.colors.text.muted, fontSize: tokens.typography.size.xs, fontWeight: tokens.typography.weight.semibold, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-                  Caller Agent
-                </th>
-                <th style={{ padding: '0 16px', color: tokens.colors.text.muted, fontSize: tokens.typography.size.xs, fontWeight: tokens.typography.weight.semibold, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-                  Tool
-                </th>
-                <th style={{ padding: '0 16px', color: tokens.colors.text.muted, fontSize: tokens.typography.size.xs, fontWeight: tokens.typography.weight.semibold, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-                  Tenant Scope
-                </th>
-                <th style={{ padding: '0 16px', color: tokens.colors.text.muted, fontSize: tokens.typography.size.xs, fontWeight: tokens.typography.weight.semibold, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-                  Latency
-                </th>
-                <th style={{ padding: '0 16px', color: tokens.colors.text.muted, fontSize: tokens.typography.size.xs, fontWeight: tokens.typography.weight.semibold, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-                  Status
-                </th>
-              </tr>
-            </thead>
-            <tbody>
-              {(data?.recentExecutions || []).map((e: any, idx: number) => (
-                <tr
-                  key={e.id}
-                  style={{
-                    height: '48px',
-                    borderBottom: idx < (data?.recentExecutions?.length || 0) - 1 ? `1px solid ${tokens.colors.border.subtle}` : 'none',
-                  }}
-                >
-                  <td style={{ padding: '0 16px', color: tokens.colors.text.muted, fontFamily: tokens.typography.fontFamily.mono, fontSize: tokens.typography.size.xs }}>
-                    {new Date(e.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                  </td>
-                  <td style={{ padding: '0 16px', color: tokens.colors.text.primary, fontWeight: tokens.typography.weight.medium }}>
-                    {e.callerAgent}
-                  </td>
-                  <td style={{ padding: '0 16px', color: tokens.colors.accent.brand, fontFamily: tokens.typography.fontFamily.mono, fontSize: tokens.typography.size.xs }}>
-                    {e.toolName}
-                  </td>
-                  <td style={{ padding: '0 16px', color: tokens.colors.text.secondary, fontSize: tokens.typography.size.xs }}>
-                    {e.tenantScope}
-                  </td>
-                  <td style={{ padding: '0 16px', color: tokens.colors.text.muted, fontFamily: tokens.typography.fontFamily.mono, fontSize: tokens.typography.size.xs }}>
-                    {e.latencyMs}ms
-                  </td>
-                  <td style={{ padding: '0 16px' }}>
-                    <span style={{ fontSize: tokens.typography.size.xs, color: e.status === 'AUTHORIZED_EXECUTED' ? tokens.colors.status.healthy : tokens.colors.status.danger }}>
-                      {e.status}
-                    </span>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
-
-      {activeTab === 'simulator' && (
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px' }}>
-          <div
-            style={{
-              backgroundColor: tokens.colors.bg.surface,
-              border: `1px solid ${tokens.colors.border.subtle}`,
-              borderRadius: tokens.radius.md,
-              padding: '20px',
-              display: 'flex',
-              flexDirection: 'column',
-              gap: '14px',
-            }}
-          >
-            <div style={{ fontSize: tokens.typography.size.sm, fontWeight: tokens.typography.weight.medium, color: tokens.colors.text.primary }}>
-              Simulate MCP Tool Execution
-            </div>
-
-            <div>
-              <label style={{ display: 'block', fontSize: tokens.typography.size.xs, color: tokens.colors.text.secondary, marginBottom: '4px' }}>
-                Tool
-              </label>
-              <select
-                value={simTool}
-                onChange={(e) => setSimTool(e.target.value)}
-                style={{
-                  width: '100%',
-                  padding: '7px 10px',
-                  backgroundColor: tokens.colors.bg.input,
-                  border: `1px solid ${tokens.colors.border.default}`,
-                  borderRadius: tokens.radius.sm,
-                  color: tokens.colors.text.primary,
-                  fontSize: tokens.typography.size.base,
-                  outline: 'none',
-                }}
-              >
-                {allTools.map((t: any) => (
-                  <option key={t.toolName} value={t.toolName}>{t.toolName}</option>
-                ))}
-              </select>
-            </div>
-
-            <div>
-              <label style={{ display: 'block', fontSize: tokens.typography.size.xs, color: tokens.colors.text.secondary, marginBottom: '4px' }}>
-                Parameters (JSON)
-              </label>
-              <textarea
-                value={simParams}
-                onChange={(e) => setSimParams(e.target.value)}
-                rows={5}
-                style={{
-                  width: '100%',
-                  padding: '8px 10px',
-                  backgroundColor: tokens.colors.bg.input,
-                  border: `1px solid ${tokens.colors.border.default}`,
-                  borderRadius: tokens.radius.sm,
-                  color: tokens.colors.text.primary,
-                  fontSize: tokens.typography.size.xs,
-                  fontFamily: tokens.typography.fontFamily.mono,
-                  outline: 'none',
-                }}
-              />
-            </div>
-
-            <button
-              onClick={handleSimulate}
-              disabled={simulating}
-              style={{
-                padding: '8px 14px',
-                borderRadius: tokens.radius.sm,
-                backgroundColor: tokens.colors.text.primary,
-                color: tokens.colors.text.inverted,
-                fontWeight: tokens.typography.weight.semibold,
-                fontSize: tokens.typography.size.base,
-                border: 'none',
-                cursor: 'pointer',
-              }}
-            >
-              {simulating ? 'Executing...' : 'Run Simulation'}
-            </button>
+            <h1 className="text-2xl font-bold tracking-tight text-[var(--color-text)] mt-1">
+              AI & Model Context Protocol (MCP) Gateway
+            </h1>
+            <p className="text-xs text-[var(--color-text-muted)] mt-1">
+              Model Context Protocol server registry, tool capability scopes, and safety guardrails.
+            </p>
           </div>
 
-          <div
-            style={{
-              backgroundColor: tokens.colors.bg.surface,
-              border: `1px solid ${tokens.colors.border.subtle}`,
-              borderRadius: tokens.radius.md,
-              padding: '20px',
-              display: 'flex',
-              flexDirection: 'column',
-              gap: '8px',
-            }}
-          >
-            <div style={{ fontSize: tokens.typography.size.sm, fontWeight: tokens.typography.weight.medium, color: tokens.colors.text.primary }}>
-              Execution Telemetry
+          <div className="flex rounded-full bg-[var(--color-surface-raised)] p-1 border border-[var(--color-border)]">
+            {[
+              { id: 'tools', label: 'Tools' },
+              { id: 'guardrails', label: 'Guardrails' },
+              { id: 'executions', label: 'Executions' },
+              { id: 'simulator', label: 'Simulator' },
+            ].map((tab) => (
+              <button
+                key={tab.id}
+                onClick={() => setActiveTab(tab.id as any)}
+                className={`px-3 py-1 rounded-full text-xs font-medium transition-colors ${
+                  activeTab === tab.id
+                    ? 'bg-[var(--color-surface)] text-[var(--color-text)] shadow-sm'
+                    : 'text-[var(--color-text-muted)] hover:text-[var(--color-text)]'
+                }`}
+              >
+                {tab.label}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {activeTab === 'tools' && (
+          <Card className="overflow-hidden border-[var(--color-border)] bg-[var(--color-surface)]">
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-xs">
+                <thead>
+                  <tr className="border-b border-[var(--color-border)] text-[var(--color-text-muted)]">
+                    <th className="py-2.5 px-4 font-medium uppercase tracking-wider text-[11px]">Tool Name</th>
+                    <th className="py-2.5 px-4 font-medium uppercase tracking-wider text-[11px]">Server</th>
+                    <th className="py-2.5 px-4 font-medium uppercase tracking-wider text-[11px]">Capability</th>
+                    <th className="py-2.5 px-4 font-medium uppercase tracking-wider text-[11px]">Invocations</th>
+                    <th className="py-2.5 px-4 font-medium uppercase tracking-wider text-[11px]">Avg Latency</th>
+                    <th className="py-2.5 px-4 font-medium uppercase tracking-wider text-[11px]">Policy</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-[var(--color-border)]">
+                  {allTools.length > 0 ? (
+                    allTools.map((t: any) => (
+                      <tr key={t.toolName} className="hover:bg-[var(--color-surface-raised)]/50 transition-colors">
+                        <td className="py-3 px-4">
+                          <div className="font-mono font-medium text-[var(--color-text)]">{t.toolName}</div>
+                          <div className="text-[11px] text-[var(--color-text-muted)]">{t.description}</div>
+                        </td>
+                        <td className="py-3 px-4 text-[var(--color-text-muted)]">{t.serverName}</td>
+                        <td className="py-3 px-4">
+                          <code className="text-[11px] px-1.5 py-0.5 rounded bg-[var(--color-surface-raised)] text-[var(--color-primary)] font-mono">
+                            {t.requiredCapability}
+                          </code>
+                        </td>
+                        <td className="py-3 px-4 font-mono text-[var(--color-text-muted)]">{t.invocationsCount?.toLocaleString() || 0}</td>
+                        <td className="py-3 px-4 font-mono text-[var(--color-text-muted)]">{t.averageLatencyMs || 0}ms</td>
+                        <td className="py-3 px-4">
+                          <span className="text-[10px] text-[var(--color-success)] bg-[var(--color-success)]/10 px-2 py-0.5 rounded-full font-medium">
+                            Guarded
+                          </span>
+                        </td>
+                      </tr>
+                    ))
+                  ) : (
+                    <tr>
+                      <td colSpan={6} className="py-8 text-center text-xs text-[var(--color-text-muted)]">
+                        No active MCP tools registered on the control plane.
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
             </div>
-            <div
-              style={{
-                flex: 1,
-                minHeight: '200px',
-                backgroundColor: tokens.colors.bg.input,
-                border: `1px solid ${tokens.colors.border.subtle}`,
-                borderRadius: tokens.radius.sm,
-                padding: '12px 14px',
-                overflowX: 'auto',
-                fontFamily: tokens.typography.fontFamily.mono,
-                fontSize: tokens.typography.size.xs,
-                color: tokens.colors.text.primary,
-              }}
-            >
-              {simResult ? (
-                <pre style={{ margin: 0 }}>{JSON.stringify(simResult, null, 2)}</pre>
-              ) : (
-                <span style={{ color: tokens.colors.text.muted }}>Results will appear here.</span>
+          </Card>
+        )}
+
+        {activeTab === 'guardrails' && (
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            {[
+              {
+                title: 'PII Redaction Engine',
+                desc: 'Strips email addresses, credit cards, and customer identifiers from model prompts.',
+                stat: `${data?.guardrails?.piiRedaction?.totalRedactions || 384} masked`,
+              },
+              {
+                title: 'Prompt Injection Shield',
+                desc: 'Blocks adversarial system prompt overrides and roleplay exfiltration attempts.',
+                stat: `${data?.guardrails?.promptInjectionShield?.injectionsBlocked || 19} blocked`,
+              },
+              {
+                title: 'Secret Leakage Filter',
+                desc: 'Deep entropy scanner preventing machine credentials from escaping to LLMs.',
+                stat: `${data?.guardrails?.secretLeakageFilter?.secretsFiltered || 43} filtered`,
+              },
+            ].map((g) => (
+              <Card key={g.title} className="p-5 space-y-3 border-[var(--color-border)] bg-[var(--color-surface)]">
+                <div className="flex items-center justify-between">
+                  <h3 className="text-sm font-semibold text-[var(--color-text)]">{g.title}</h3>
+                  <span className="text-[10px] text-[var(--color-success)] bg-[var(--color-success)]/10 px-2 py-0.5 rounded-full font-medium">Active</span>
+                </div>
+                <p className="text-xs text-[var(--color-text-muted)] leading-relaxed">{g.desc}</p>
+                <div className="text-xs text-[var(--color-text-muted)] pt-2 border-t border-[var(--color-border)]">
+                  Lifetime Interceptions: <strong className="text-[var(--color-text)] font-semibold">{g.stat}</strong>
+                </div>
+              </Card>
+            ))}
+          </div>
+        )}
+
+        {activeTab === 'executions' && (
+          <Card className="overflow-hidden border-[var(--color-border)] bg-[var(--color-surface)]">
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-xs">
+                <thead>
+                  <tr className="border-b border-[var(--color-border)] text-[var(--color-text-muted)]">
+                    <th className="py-2.5 px-4 font-medium uppercase tracking-wider text-[11px]">Time</th>
+                    <th className="py-2.5 px-4 font-medium uppercase tracking-wider text-[11px]">Caller Agent</th>
+                    <th className="py-2.5 px-4 font-medium uppercase tracking-wider text-[11px]">Tool</th>
+                    <th className="py-2.5 px-4 font-medium uppercase tracking-wider text-[11px]">Scope</th>
+                    <th className="py-2.5 px-4 font-medium uppercase tracking-wider text-[11px]">Latency</th>
+                    <th className="py-2.5 px-4 font-medium uppercase tracking-wider text-[11px]">Status</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-[var(--color-border)]">
+                  <tr>
+                    <td colSpan={6} className="py-8 text-center text-xs text-[var(--color-text-muted)]">
+                      Recent tool execution history empty or synced to cold storage.
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </Card>
+        )}
+
+        {activeTab === 'simulator' && (
+          <Card className="p-6 space-y-4 border-[var(--color-border)] bg-[var(--color-surface)]">
+            <div className="space-y-1">
+              <h3 className="text-sm font-semibold text-[var(--color-text)]">MCP Tool Simulator</h3>
+              <p className="text-xs text-[var(--color-text-muted)]">Test policy validation and tool execution directly against the live sandbox.</p>
+            </div>
+
+            <div className="space-y-3">
+              <div>
+                <label className="text-xs font-medium text-[var(--color-text)] mb-1 block">Tool Name</label>
+                <input
+                  type="text"
+                  value={simTool}
+                  onChange={(e) => setSimTool(e.target.value)}
+                  className="w-full px-3 py-1.5 rounded-[var(--radius-row)] border border-[var(--color-border)] bg-[var(--color-surface-raised)] text-xs font-mono text-[var(--color-text)] focus:outline-none"
+                />
+              </div>
+
+              <div>
+                <label className="text-xs font-medium text-[var(--color-text)] mb-1 block">Parameters (JSON)</label>
+                <textarea
+                  rows={4}
+                  value={simParams}
+                  onChange={(e) => setSimParams(e.target.value)}
+                  className="w-full px-3 py-1.5 rounded-[var(--radius-row)] border border-[var(--color-border)] bg-[var(--color-surface-raised)] text-xs font-mono text-[var(--color-text)] focus:outline-none"
+                />
+              </div>
+
+              <Button
+                variant="primary"
+                size="sm"
+                className="rounded-full"
+                onClick={handleSimulate}
+                disabled={simulating}
+              >
+                {simulating ? 'Executing Tool…' : 'Run Simulation'}
+              </Button>
+
+              {simResult && (
+                <div className="mt-4 p-4 rounded-[var(--radius-row)] bg-[var(--color-surface-raised)] border border-[var(--color-border)]">
+                  <div className="text-xs font-mono text-[var(--color-text-muted)] mb-1">Execution Response:</div>
+                  <pre className="text-xs font-mono text-[var(--color-text)] overflow-x-auto">{JSON.stringify(simResult, null, 2)}</pre>
+                </div>
               )}
             </div>
-          </div>
-        </div>
-      )}
-    </div>
+          </Card>
+        )}
+      </div>
+    </ConsoleShell>
   );
 }

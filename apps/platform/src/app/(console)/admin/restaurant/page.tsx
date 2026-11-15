@@ -1,61 +1,69 @@
 'use client';
 
-import React from 'react';
+import * as React from 'react';
 import Link from 'next/link';
+import { ConsoleShell } from '../../console/components/console-shell';
+import { Card, Badge, Button } from '@orbitox-io/ui';
+import { ChefHat, ExternalLink, ArrowRight, ShieldCheck } from 'lucide-react';
 
 export default function RestaurantAdminRedirectPage() {
   return (
-    <div style={{ minHeight: '100vh', background: '#090C15', color: '#F8FAFC', padding: 40, fontFamily: 'system-ui, -apple-system, sans-serif' }}>
-      <div style={{ maxWidth: 800, margin: '0 auto', background: '#101426', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 20, padding: 40 }}>
-        <div style={{ display: 'inline-flex', alignItems: 'center', gap: 8, background: 'rgba(255, 122, 26, 0.1)', border: '1px solid rgba(255, 122, 26, 0.3)', borderRadius: 999, padding: '6px 14px', fontSize: 12, fontWeight: 800, color: '#FF7A1A', marginBottom: 20 }}>
-          <span>DECOUPLED ARCHITECTURE BOUNDARY</span>
+    <ConsoleShell activeId="tenants">
+      <div className="max-w-4xl mx-auto py-8 px-4 space-y-6">
+        <div className="flex items-center gap-2">
+          <Badge variant="outline" className="text-[11px] font-semibold border-[var(--color-warning)] text-[var(--color-warning)] bg-[var(--color-warning)]/10 px-2.5 py-0.5 rounded-full">
+            DECOUPLED ARCHITECTURE BOUNDARY
+          </Badge>
+          <Badge variant="outline" className="text-[11px] font-mono border-[var(--color-border)] text-[var(--color-text-muted)] bg-[var(--color-surface-raised)] px-2 py-0.5 rounded-full">
+            Stage 7D · Hold
+          </Badge>
         </div>
 
-        <h1 style={{ fontSize: 28, fontWeight: 900, marginBottom: 12 }}>
-          RestaurantOS is an Independent Runtime Product
-        </h1>
-
-        <p style={{ fontSize: 15, color: '#94A3B8', lineHeight: 1.6, marginBottom: 32 }}>
-          Per the OrbitoX Platform architecture, restaurant operational workflows (Floor Canvas, Touch KDS, and Diner Mobile PWA) are maintained in the decoupled external project located at <code>projects/external-os/restaurant-os</code>, executing independently on port <strong>4010</strong>.
-          <br /><br />
-          OrbitoX Platform operates purely as the <strong>Authoritative Control Plane</strong>. You can govern desired-state configuration, revisions, plugins, APIs, plans, and commands from the Project Control Center.
-        </p>
-
-        <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap' }}>
-          <Link
-            href="/admin/projects/project_restaurant_os"
-            style={{
-              padding: '12px 24px',
-              background: '#5865F2',
-              color: '#fff',
-              borderRadius: 10,
-              textDecoration: 'none',
-              fontWeight: 800,
-              fontSize: 14,
-            }}
-          >
-            Open Project Control Center →
-          </Link>
-
-          <a
-            href="http://localhost:4010"
-            target="_blank"
-            rel="noopener noreferrer"
-            style={{
-              padding: '12px 24px',
-              background: 'rgba(255, 122, 26, 0.15)',
-              border: '1px solid rgba(255, 122, 26, 0.4)',
-              color: '#FF9533',
-              borderRadius: 10,
-              textDecoration: 'none',
-              fontWeight: 800,
-              fontSize: 14,
-            }}
-          >
-            Launch Standalone Runtime (Port 4010) ↗
-          </a>
+        <div>
+          <h1 className="text-2xl font-bold tracking-tight text-[var(--color-text)]">
+            RestaurantOS is an Independent Runtime Product
+          </h1>
+          <p className="text-sm text-[var(--color-text-muted)] mt-2 leading-relaxed">
+            Per the OrbitoX zero-trust architecture, restaurant operational workflows (Floor Canvas, Touch KDS, and Diner Mobile PWA) are maintained in the decoupled external project executing independently on port <code className="px-1.5 py-0.5 rounded bg-[var(--color-surface-raised)] font-mono text-xs">4010</code>.
+          </p>
         </div>
+
+        <Card className="p-6 space-y-4 border-[var(--color-border)] bg-[var(--color-surface)]">
+          <div className="flex items-start gap-4">
+            <div className="h-10 w-10 rounded-full bg-[var(--color-warning)]/15 flex items-center justify-center text-[var(--color-warning)] shrink-0">
+              <ChefHat className="h-5 w-5" />
+            </div>
+            <div className="space-y-2">
+              <h3 className="text-base font-semibold text-[var(--color-text)]">
+                Authoritative Control Plane Governance
+              </h3>
+              <p className="text-xs text-[var(--color-text-muted)] leading-relaxed">
+                OrbitoX Platform operates purely as the <strong>Authoritative Control Plane</strong>. You can govern desired-state configuration, revisions, plugins, APIs, plans, and commands from the central Console Tenant Fleet Registry.
+              </p>
+            </div>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-3 pt-4 border-t border-[var(--color-border)]">
+            <Button asChild variant="primary" size="sm" className="rounded-full">
+              <Link href="/console/tenants" className="flex items-center gap-1.5">
+                <span>Open Tenant Fleet Registry</span>
+                <ArrowRight className="h-3.5 w-3.5" />
+              </Link>
+            </Button>
+            <Button asChild variant="secondary" size="sm" className="rounded-full">
+              <a
+                href="http://localhost:4010"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex items-center gap-1.5"
+              >
+                <span>Launch RestaurantOS (Port 4010)</span>
+                <ExternalLink className="h-3.5 w-3.5" />
+              </a>
+            </Button>
+          </div>
+        </Card>
       </div>
-    </div>
+    </ConsoleShell>
   );
 }

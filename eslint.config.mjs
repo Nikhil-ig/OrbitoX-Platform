@@ -35,8 +35,6 @@ const LEGACY_INLINE_STYLE_ALLOWLIST = [
   'apps/platform/src/app/(console)/platform/audit/page.tsx',
   'apps/platform/src/app/(console)/platform/components/CommandPaletteModal.tsx',
   'apps/platform/src/app/(console)/platform/components/ImpactPreviewModal.tsx',
-  'apps/platform/src/app/(console)/platform/components/PlatformSidebar.tsx',
-  'apps/platform/src/app/(console)/platform/components/ResourceInspectorDrawer.tsx',
   'apps/platform/src/app/(console)/platform/components/UniversalResourceEditor.tsx',
   'apps/platform/src/app/(console)/platform/configuration/page.tsx',
   'apps/platform/src/app/(console)/platform/connect/page.tsx',
