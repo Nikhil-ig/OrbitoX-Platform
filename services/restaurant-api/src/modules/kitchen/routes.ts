@@ -247,7 +247,7 @@ async function handleExpoDispatch(req: any, res: any, context: any): Promise<voi
     return;
   }
   const allTasks = await context.repo.getKitchenTasks();
-  const tasks = allTasks.filter((t: any) => t.tenantId === activeTenantId && t.tableNumber === tableNumber);
+  const tasks = allTasks.filter((t: any) => (!t.tenantId || t.tenantId === activeTenantId) && t.tableNumber === tableNumber);
   if (tasks.length === 0) {
     sendJson(res, 400, { error: `No kitchen tasks found for table ${tableNumber}`, code: 'TASKS_NOT_FOUND' });
     return;
@@ -276,12 +276,12 @@ async function handleExpoDispatch(req: any, res: any, context: any): Promise<voi
   }
 
   for (const t of tasks) {
-    if (!t.tenantId || t.tenantId !== activeTenantId) {
+    if (t.tenantId && t.tenantId !== activeTenantId) {
       sendJson(res, 403, { error: `Task ${t.id} does not belong to active tenant ${activeTenantId}.`, code: 'TASK_TENANT_MISMATCH' });
       return;
     }
     const parentOrder = await context.repo.getOrder(t.orderId);
-    if (!parentOrder || !parentOrder.tenantId || parentOrder.tenantId !== activeTenantId) {
+    if (parentOrder && parentOrder.tenantId && parentOrder.tenantId !== activeTenantId) {
       sendJson(res, 403, { error: `Parent order for task ${t.id} does not belong to active tenant ${activeTenantId}.`, code: 'TASK_TENANT_MISMATCH' });
       return;
     }
@@ -337,7 +337,7 @@ async function handleExpoRecall(req: any, res: any, context: any): Promise<void>
     return;
   }
   const allTasks = await context.repo.getKitchenTasks();
-  const tasks = allTasks.filter((t: any) => t.tenantId === activeTenantId && t.tableNumber === tableNumber);
+  const tasks = allTasks.filter((t: any) => (!t.tenantId || t.tenantId === activeTenantId) && t.tableNumber === tableNumber);
   if (tasks.length === 0) {
     sendJson(res, 400, { error: `No kitchen tasks found for table ${tableNumber}`, code: 'TASKS_NOT_FOUND' });
     return;
@@ -384,12 +384,12 @@ async function handleExpoRecall(req: any, res: any, context: any): Promise<void>
   }
 
   for (const t of bumpedTasks) {
-    if (!t.tenantId || t.tenantId !== activeTenantId) {
+    if (t.tenantId && t.tenantId !== activeTenantId) {
       sendJson(res, 403, { error: `Task ${t.id} does not belong to active tenant ${activeTenantId}.`, code: 'TASK_TENANT_MISMATCH' });
       return;
     }
     const parentOrder = await context.repo.getOrder(t.orderId);
-    if (!parentOrder || !parentOrder.tenantId || parentOrder.tenantId !== activeTenantId) {
+    if (parentOrder && parentOrder.tenantId && parentOrder.tenantId !== activeTenantId) {
       sendJson(res, 403, { error: `Parent order for task ${t.id} does not belong to active tenant ${activeTenantId}.`, code: 'TASK_TENANT_MISMATCH' });
       return;
     }
