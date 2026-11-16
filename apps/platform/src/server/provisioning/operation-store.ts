@@ -415,6 +415,7 @@ export class OperationStore {
         }
 
         // 2. Insert outbox message
+        await (tx as any).$queryRaw`SELECT set_config('app.current_tenant_id', ${input.tenantId}, true)`;
         await tx.platformOutboxMessage.create({
           data: {
             tenantId: input.tenantId,
