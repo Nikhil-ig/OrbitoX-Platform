@@ -109,6 +109,35 @@ describe('Stage 4 & 5: Customer Tenant Preview Summary & Access Control', () => 
     mockRuntimeServer = http.createServer((req, res) => {
       const url = new URL(req.url || '', 'http://127.0.0.1');
       const slug = decodeURIComponent(url.pathname.replace('/internal/tenants/', ''));
+      if (slug.startsWith('expired-')) {
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({
+          ok: true,
+          tenant: {
+            id: `ten_${slug}`,
+            name: 'Expired Lounge',
+            slug,
+            status: 'preview',
+            previewExpiresAt: new Date(Date.now() - 3600000).toISOString(),
+            tableCount: 10,
+          },
+        }));
+        return;
+      }
+      if (slug.startsWith('active-')) {
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({
+          ok: true,
+          tenant: {
+            id: `ten_${slug}`,
+            name: 'Active Bistro',
+            slug,
+            status: 'active',
+            tableCount: 12,
+          },
+        }));
+        return;
+      }
       if (slug === testProject.slug) {
         res.writeHead(200, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({
@@ -256,6 +285,106 @@ describe('Stage 4 & 5: Customer Tenant Preview Summary & Access Control', () => 
       assert.equal(json.preview.menu.itemsCount, 0);
     } finally {
       await prisma.platformProject.deleteMany({ where: { id: unprovProject.id } });
+    }
+  });
+
+  it('reports EXPIRED status and previewActive: false when preview period has passed', async () => {
+    const expiredProject = await prisma.platformProject.create({
+      data: {
+        slug: `expired-resto-${crypto.randomBytes(3).toString('hex')}`,
+        name: 'Expired Test Restaurant',
+        organizationId: testOrg.id,
+        businessModel: 'O2O2B2B2C',
+        planTier: 'starter',
+        plan: 'restaurant-starter',
+        technicalLead: 'Owner Tester',
+        contactEmail: verifiedOwner.email,
+        status: 'ACTIVE',
+      },
+    });
+
+    try {
+      const req = makeGetRequest(expiredProject.slug, ownerSession);
+      const res = await GET(req, { params: Promise.resolve({ tenantId: expiredProject.slug }) });
+      assert.equal(res.status, 200);
+      const json = await res.json();
+      assert.equal(json.ok, true);
+      assert.equal(json.preview.restaurant.status, 'EXPIRED');
+      assert.equal(json.preview.checklist.previewActive, false);
+    } finally {
+      await prisma.platformProject.deleteMany({ where: { id: expiredProject.id } });
+    }
+  });
+
+  it('reports ACTIVE status and previewActive: false for live commercial tenant', async () => {
+    const activeProject = await prisma.platformProject.create({
+      data: {
+        slug: `active-resto-${crypto.randomBytes(3).toString('hex')}`,
+        name: 'Active Commercial Restaurant',
+        organizationId: testOrg.id,
+        businessModel: 'O2O2B2B2C',
+        planTier: 'starter',
+        plan: 'restaurant-starter',
+        technicalLead: 'Owner Tester',
+        contactEmail: verifiedOwner.email,
+        status: 'ACTIVE',
+      },
+    });
+
+    try {
+      const req = makeGetRequest(activeProject.slug, ownerSession);
+      const res = await GET(req, { params: Promise.resolve({ tenantId: activeProject.slug }) });
+      assert.equal(res.status, 200);
+      const json = await res.json();
+      assert.equal(json.ok, true);
+      assert.equal(json.preview.restaurant.status, 'ACTIVE');
+      assert.equal(json.preview.checklist.previewActive, false);
+    } finally {
+      await prisma.platformProject.deleteMany({ where: { id: activeProject.id } });
+    }
+  });
+
+  it('reports PROVISIONING status when provisioning saga is actively in progress', async () => {
+    const provSlug = `prov-resto-${crypto.randomBytes(3).toString('hex')}`;
+    const provProject = await prisma.platformProject.create({
+      data: {
+        slug: provSlug,
+        name: 'Provisioning Restaurant',
+        organizationId: testOrg.id,
+        businessModel: 'O2O2B2B2C',
+        planTier: 'starter',
+        plan: 'restaurant-starter',
+        technicalLead: 'Owner Tester',
+        contactEmail: verifiedOwner.email,
+        status: 'PROVISIONING',
+      },
+    });
+
+    const opId = `op_test_prov_${crypto.randomBytes(4).toString('hex')}`;
+    await (prisma as any).platformOperation.create({
+      data: {
+        id: opId,
+        type: 'TENANT_PROVISION',
+        tenantId: `tenant_${provSlug}`,
+        organizationId: testOrg.id,
+        status: 'PROVISIONING',
+        steps: [],
+        request: { slug: provSlug },
+      },
+    });
+
+    try {
+      const req = makeGetRequest(provProject.slug, ownerSession);
+      const res = await GET(req, { params: Promise.resolve({ tenantId: provProject.slug }) });
+      assert.equal(res.status, 200);
+      const json = await res.json();
+      assert.equal(json.ok, true);
+      assert.equal(json.status, 'PROVISIONING');
+      assert.equal(json.restaurantProvisioned, false);
+      assert.equal(json.preview.restaurant.status, 'PROVISIONING');
+    } finally {
+      await (prisma as any).platformOperation.deleteMany({ where: { id: opId } });
+      await prisma.platformProject.deleteMany({ where: { id: provProject.id } });
     }
   });
 });

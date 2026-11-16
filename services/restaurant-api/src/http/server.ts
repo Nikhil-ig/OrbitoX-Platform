@@ -300,8 +300,8 @@ export async function handleRequest(req: http.IncomingMessage, res: http.ServerR
       ? {
         type: 'PLATFORM_BRIDGE',
         id: verifiedBridge.principal.sub,
-        role: 'ADMIN',
-        isPrivileged: true,
+        role: verifiedBridge.principal.scopes?.includes('ADMIN') ? 'ADMIN' : 'BRIDGE_CALLER',
+        isPrivileged: Boolean(verifiedBridge.principal.scopes?.includes('ADMIN')),
         scopes: verifiedBridge.principal.scopes,
         tenantId: tenantContext.tenantId,
         authSource: 'BRIDGE_SIGNATURE',

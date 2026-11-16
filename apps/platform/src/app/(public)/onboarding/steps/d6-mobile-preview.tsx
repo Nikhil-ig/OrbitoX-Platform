@@ -40,37 +40,59 @@ export function D6MobilePreviewView({
   const [activeTab, setActiveTab] = useState<'storefront' | 'kds' | 'checklist'>('storefront');
   const [menuItems, setMenuItems] = useState<Array<{ id: string; name: string; price: number; qty: number }>>([]);
   const [cartItems, setCartItems] = useState<Array<{ id: string; name: string; price: number; qty: number }>>([]);
+  const [sampleTable, setSampleTable] = useState<{ tableNumber: string; dinerUrl: string } | null>(null);
   const [kdsTasks, setKdsTasks] = useState<any[]>([]);
   const [kdsReady, setKdsReady] = useState(false);
   const [placingOrder, setPlacingOrder] = useState(false);
+  const [bumping, setBumping] = useState(false);
+  const [orderError, setOrderError] = useState<string | null>(null);
+  const [kdsError, setKdsError] = useState<string | null>(null);
+  const [previewExpiresAt, setPreviewExpiresAt] = useState<string | null>(null);
+
+  const fetchKdsTasks = async () => {
+    try {
+      const res = await fetch(`/api/v1/customer/tenants/${encodeURIComponent(tenantId)}/kds`);
+      if (res.ok) {
+        const data = await res.json();
+        if (data.ok && Array.isArray(data.tasks)) {
+          const testTasks = data.tasks.filter((t: any) => t.isTest === true);
+          setKdsTasks(testTasks);
+          if (testTasks.length > 0 && testTasks.every((t: any) => t.status === 'READY' || t.status === 'BUMPED')) {
+            setKdsReady(true);
+          }
+        }
+      }
+    } catch {}
+  };
 
   useEffect(() => {
     fetch(`/api/v1/customer/tenants/${encodeURIComponent(tenantId)}/preview-summary`)
       .then((r) => r.json())
       .then((data) => {
-        if (data.ok && data.preview?.menu?.items?.length) {
-          const formatted = data.preview.menu.items.map((i: any) => ({
-            id: i.id,
-            name: i.name,
-            price: Math.round(i.basePriceMinor / 100),
-            qty: 1,
-          }));
-          setMenuItems(formatted);
-          if (cartItems.length === 0 && formatted.length > 0) {
-            setCartItems([formatted[0], ...(formatted[1] ? [formatted[1]] : [])]);
+        if (data.ok && data.preview) {
+          if (data.preview.restaurant?.previewExpiresAt) {
+            setPreviewExpiresAt(data.preview.restaurant.previewExpiresAt);
+          }
+          if (data.preview.tables?.sampleTable) {
+            setSampleTable(data.preview.tables.sampleTable);
+          }
+          if (data.preview.menu?.items?.length) {
+            const formatted = data.preview.menu.items.map((i: any) => ({
+              id: i.id,
+              name: i.name,
+              price: Math.round(i.basePriceMinor / 100),
+              qty: 1,
+            }));
+            setMenuItems(formatted);
+            if (formatted.length > 0) {
+              setCartItems([formatted[0], ...(formatted[1] ? [formatted[1]] : [])]);
+            }
           }
         }
       })
       .catch(() => {});
 
-    fetch(`/api/v1/customer/tenants/${encodeURIComponent(tenantId)}/kds`)
-      .then((r) => r.json())
-      .then((data) => {
-        if (data.ok && Array.isArray(data.tasks)) {
-          setKdsTasks(data.tasks);
-        }
-      })
-      .catch(() => {});
+    fetchKdsTasks();
   }, [tenantId]);
 
   const cartTotal = cartItems.reduce((acc, i) => acc + i.price * i.qty, 0);
@@ -78,18 +100,20 @@ export function D6MobilePreviewView({
   const handlePlaceTestOrder = async () => {
     if (cartItems.length === 0) return;
     setPlacingOrder(true);
+    setOrderError(null);
     try {
       const csrfToken = getCustomerCsrfToken();
-      await fetch(`/api/v1/customer/tenants/${encodeURIComponent(tenantId)}/test-orders`, {
+      const res = await fetch(`/api/v1/customer/tenants/${encodeURIComponent(tenantId)}/test-orders`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           ...(csrfToken ? { 'x-csrf-token': csrfToken } : {}),
         },
         body: JSON.stringify({
-          tableNumber: 'T-01',
+          tableNumber: sampleTable?.tableNumber || 'T-01',
           items: cartItems.map((i) => ({
             id: i.id,
+            itemId: i.id,
             name: i.name,
             qty: i.qty,
             quantity: i.qty,
@@ -97,37 +121,47 @@ export function D6MobilePreviewView({
           })),
         }),
       });
+
+      if (!res.ok) {
+        const errJson = await res.json().catch(() => ({}));
+        throw new Error(errJson.message || errJson.error || 'Failed to place preview test order.');
+      }
+
       setActiveTab('kds');
       setKdsReady(false);
-      const res = await fetch(`/api/v1/customer/tenants/${encodeURIComponent(tenantId)}/kds`);
-      const data = await res.json();
-      if (data.ok && Array.isArray(data.tasks)) setKdsTasks(data.tasks.filter((t: any) => t.isTest === true));
-    } catch {
-      // Fallback
+      await fetchKdsTasks();
+    } catch (err: any) {
+      setOrderError(err.message || 'Failed to place test order.');
     } finally {
       setPlacingOrder(false);
     }
   };
 
-  const handleBumpKds = async () => {
-    const taskId = kdsTasks[0]?.id;
-    if (taskId) {
-      try {
-        const csrfToken = getCustomerCsrfToken();
-        const res = await fetch(`/api/v1/customer/tenants/${encodeURIComponent(tenantId)}/kds`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            ...(csrfToken ? { 'x-csrf-token': csrfToken } : {}),
-          },
-          body: JSON.stringify({ taskId }),
-        });
-        if (res.ok) {
-          setKdsReady(true);
-        }
-      } catch {}
-    } else {
+  const handleBumpKds = async (taskIdToBump?: string) => {
+    const taskId = taskIdToBump || kdsTasks[0]?.id;
+    if (!taskId) return;
+    setBumping(true);
+    setKdsError(null);
+    try {
+      const csrfToken = getCustomerCsrfToken();
+      const res = await fetch(`/api/v1/customer/tenants/${encodeURIComponent(tenantId)}/kds`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(csrfToken ? { 'x-csrf-token': csrfToken } : {}),
+        },
+        body: JSON.stringify({ taskId }),
+      });
+      if (!res.ok) {
+        const errJson = await res.json().catch(() => ({}));
+        throw new Error(errJson.message || errJson.error || 'Failed to bump KDS task on server.');
+      }
       setKdsReady(true);
+      await fetchKdsTasks();
+    } catch (err: any) {
+      setKdsError(err.message || 'Failed to update kitchen ticket.');
+    } finally {
+      setBumping(false);
     }
   };
 
@@ -159,7 +193,7 @@ export function D6MobilePreviewView({
             <span className="font-semibold text-[#9A3412] bg-[#FED7AA] px-2 py-0.5 rounded-full">
               Preview Mode
             </span>
-            <span>{city} · Table T-01</span>
+            <span>{city} · Table {sampleTable?.tableNumber || 'T-01'}</span>
           </div>
           <h2 className="text-lg font-bold text-[#14161A] mt-1">{restaurantName}</h2>
           <div className="text-[10px] text-gray-500">{slug}.orbitox.io</div>
@@ -173,6 +207,12 @@ export function D6MobilePreviewView({
                 <h3 className="font-bold text-sm text-[#14161A]">Starter Menu · {templateId.toUpperCase()}</h3>
                 <p className="text-[11px] text-[#5A6170]">Place an authorized test order to preview kitchen routing.</p>
               </div>
+
+              {orderError && (
+                <div className="p-3 rounded-2xl bg-red-50 border border-red-200 text-xs text-red-700">
+                  {orderError}
+                </div>
+              )}
 
               <div className="space-y-2.5">
                 {(menuItems.length > 0 ? menuItems : cartItems).map((item) => (
@@ -213,35 +253,50 @@ export function D6MobilePreviewView({
                 </span>
               </div>
 
-              <div className="p-4 rounded-[24px] bg-[#14161A] text-white space-y-3 shadow-lg">
-                <div className="flex items-center justify-between text-xs">
-                  <div className="flex items-center gap-2">
-                    <span className="font-bold text-white">Table T-01</span>
-                    <span className="text-[9px] font-extrabold text-[#14161A] bg-[#FBBF24] px-1.5 py-0.2 rounded-full">
-                      TEST ORDER
-                    </span>
-                  </div>
-                  <span className="text-gray-400 text-[10px]">Just now</span>
+              {kdsError && (
+                <div className="p-3 rounded-2xl bg-red-50 border border-red-200 text-xs text-red-700">
+                  {kdsError}
                 </div>
+              )}
 
-                <div className="text-xs space-y-1 text-gray-200">
-                  {cartItems.map((c, idx) => (
-                    <p key={idx}>{c.qty} × {c.name}</p>
-                  ))}
-                </div>
+              <div className="space-y-3">
+                {kdsTasks.length > 0 ? (
+                  kdsTasks.map((task) => (
+                    <div key={task.id} className="p-4 rounded-[24px] bg-[#14161A] text-white space-y-3 shadow-lg">
+                      <div className="flex items-center justify-between text-xs">
+                        <div className="flex items-center gap-2">
+                          <span className="font-bold text-white">Table {task.tableNumber || sampleTable?.tableNumber || 'T-01'}</span>
+                          <span className="text-[9px] font-extrabold text-[#14161A] bg-[#FBBF24] px-1.5 py-0.2 rounded-full">
+                            TEST ORDER
+                          </span>
+                        </div>
+                        <span className="text-gray-400 text-[10px]">{task.status}</span>
+                      </div>
 
-                {kdsReady ? (
-                  <div className="py-2 rounded-full bg-emerald-600 text-white text-xs font-bold text-center">
-                    ✓ Fulfilled & Ready
-                  </div>
+                      <div className="text-xs space-y-1 text-gray-200">
+                        <p>{task.quantity || 1} × {task.itemName || task.name}</p>
+                      </div>
+
+                      {task.status === 'READY' || task.status === 'BUMPED' ? (
+                        <div className="py-2 rounded-full bg-emerald-600 text-white text-xs font-bold text-center">
+                          ✓ Fulfilled &amp; Ready
+                        </div>
+                      ) : (
+                        <button
+                          type="button"
+                          disabled={bumping}
+                          onClick={() => handleBumpKds(task.id)}
+                          className="w-full py-2 rounded-full bg-[#FB923C] text-[#14161A] text-xs font-bold hover:bg-[#FB923C]/90 cursor-pointer disabled:opacity-50"
+                        >
+                          {bumping ? 'Bumping...' : 'Bump ticket (Mark ready)'}
+                        </button>
+                      )}
+                    </div>
+                  ))
                 ) : (
-                  <button
-                    type="button"
-                    onClick={handleBumpKds}
-                    className="w-full py-2 rounded-full bg-[#FB923C] text-[#14161A] text-xs font-bold hover:bg-[#FB923C]/90 cursor-pointer"
-                  >
-                    Bump ticket (Mark ready)
-                  </button>
+                  <div className="p-6 rounded-[24px] bg-[#14161A] text-center text-xs text-gray-400">
+                    No active kitchen tickets. Submit a test order from Storefront!
+                  </div>
                 )}
               </div>
             </div>

@@ -99,6 +99,7 @@ export type TaskStatus = 'QUEUED' | 'IN_PROGRESS' | 'READY' | 'BUMPED' | 'VOIDED
 
 export interface KitchenTask {
   id: string;
+  tenantId?: string;
   orderId: string;
   tableNumber: string;
   branchId?: string;
@@ -3203,4 +3204,5 @@ export * from './domains';
 export * from './owner-self-service';
 export * from './security-self-check';
 export * from './bridge-auth';
+export * from './security';
 export * from './postgres-event-listener';

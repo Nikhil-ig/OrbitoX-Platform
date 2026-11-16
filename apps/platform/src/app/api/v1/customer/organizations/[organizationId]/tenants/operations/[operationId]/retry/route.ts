@@ -25,9 +25,15 @@ export const POST = withCustomerAuth<RouteContext>(async (_request, session, con
   }
   const inOrganization = await prisma.$transaction(async (tx) => {
     const scope = await tenantBelongsToOrganization(tx, operation.tenantId, organizationId);
-    if (!scope) return false;
-    await tx.$queryRaw`SELECT set_config('app.current_tenant_id', ${operation.tenantId}, true)`;
-    return true;
+    if (scope) {
+      await tx.$queryRaw`SELECT set_config('app.current_tenant_id', ${operation.tenantId}, true)`;
+      return true;
+    }
+    // Fallback if tenant entities were not yet committed (e.g. failure in step 1 or 2)
+    if (operation.organizationId === organizationId) {
+      return true;
+    }
+    return false;
   });
   if (!inOrganization) return NextResponse.json({ ok: false, error: 'OPERATION_NOT_FOUND' }, { status: 404, headers: noStoreHeaders() });
   const retried = await provisioningSaga.retryOperation(operationId);

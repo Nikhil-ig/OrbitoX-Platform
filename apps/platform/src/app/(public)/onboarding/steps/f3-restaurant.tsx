@@ -24,7 +24,7 @@ interface F3Props {
 
 interface ProvisioningOperationState {
   id: string;
-  status: 'PENDING' | 'RUNNING' | 'COMPLETED' | 'FAILED' | 'ACTIVE';
+  status: 'PENDING' | 'RUNNING' | 'COMPLETED' | 'FAILED' | 'ACTIVE' | 'PARTIAL' | 'PROVISIONING';
   steps: Array<{
     id: string;
     name: string;
@@ -138,10 +138,15 @@ export function F3RestaurantStep({
     } catch {}
   }, [organizationId]);
 
-  // Poll operation status until COMPLETED / ACTIVE or FAILED
+  // Poll operation status until COMPLETED / ACTIVE or FAILED / PARTIAL
   useEffect(() => {
     if (!activeOperation?.id) return;
-    if (activeOperation.status === 'COMPLETED' || activeOperation.status === 'ACTIVE' || activeOperation.status === 'FAILED') {
+    if (
+      activeOperation.status === 'COMPLETED' ||
+      activeOperation.status === 'ACTIVE' ||
+      activeOperation.status === 'FAILED' ||
+      activeOperation.status === 'PARTIAL'
+    ) {
       return;
     }
 
@@ -184,6 +189,21 @@ export function F3RestaurantStep({
             return;
           }
 
+          if (updatedOp.status === 'FAILED' || updatedOp.status === 'PARTIAL') {
+            clearInterval(interval);
+            setActiveOperation((prev) =>
+              prev
+                ? {
+                    ...prev,
+                    status: updatedOp.status,
+                    steps: updatedOp.steps && updatedOp.steps.length > 0 ? updatedOp.steps : prev.steps,
+                    error: updatedOp.error || (updatedOp.status === 'PARTIAL' ? 'Provisioning stopped due to a partial failure.' : 'Provisioning failed.'),
+                  }
+                : null
+            );
+            return;
+          }
+
           setActiveOperation((prev) =>
             prev
               ? {
@@ -211,13 +231,20 @@ export function F3RestaurantStep({
     setRetrying(true);
     setError(null);
     try {
+      const csrfToken = getCustomerCsrfToken();
       const res = await fetch(
         `/api/v1/customer/organizations/${organizationId}/tenants/operations/${activeOperation.id}/retry`,
-        { method: 'POST' }
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            ...(csrfToken ? { 'x-csrf-token': csrfToken } : {}),
+          },
+        }
       );
       if (!res.ok) {
         const data = await res.json().catch(() => ({}));
-        throw new Error(data.message || 'Retry failed to launch.');
+        throw new Error(data.message || data.error || 'Retry failed to launch.');
       }
       const data = await res.json();
       setActiveOperation((prev) =>
@@ -226,6 +253,7 @@ export function F3RestaurantStep({
               ...prev,
               status: 'RUNNING',
               steps: data.operation?.steps || prev.steps,
+              error: undefined,
             }
           : null
       );
@@ -402,7 +430,7 @@ export function F3RestaurantStep({
         <div className="max-w-xl mx-auto p-8 rounded-[32px] bg-white border border-[#E2E8F0] shadow-xl space-y-6">
           <div className="text-center space-y-2">
             <div className="h-12 w-12 rounded-full bg-orange-100 text-[#FB923C] flex items-center justify-center mx-auto">
-              {activeOperation.status === 'FAILED' ? (
+              {activeOperation.status === 'FAILED' || activeOperation.status === 'PARTIAL' ? (
                 <AlertCircle className="h-6 w-6 text-red-600" />
               ) : activeOperation.status === 'COMPLETED' || activeOperation.status === 'ACTIVE' ? (
                 <CheckCircle2 className="h-6 w-6 text-emerald-600" />
@@ -413,6 +441,8 @@ export function F3RestaurantStep({
             <h2 className="text-xl font-bold text-[#14161A]">
               {activeOperation.status === 'FAILED'
                 ? 'Provisioning Interrupted'
+                : activeOperation.status === 'PARTIAL'
+                ? 'Provisioning Interrupted (Partial)'
                 : activeOperation.status === 'COMPLETED' || activeOperation.status === 'ACTIVE'
                 ? 'Restaurant Provisioned!'
                 : `Provisioning ${activeOperation.restaurantName}`}
@@ -420,6 +450,8 @@ export function F3RestaurantStep({
             <p className="text-xs text-[#5A6170]">
               {activeOperation.status === 'FAILED'
                 ? 'An error occurred while provisioning your restaurant tenant.'
+                : activeOperation.status === 'PARTIAL'
+                ? 'A provisioning step failed. You can retry to resume from the failed step.'
                 : activeOperation.status === 'COMPLETED' || activeOperation.status === 'ACTIVE'
                 ? 'Redirecting to your live working preview...'
                 : `Setting up database schema, catalog, and preview for ${activeOperation.slug}.orbitox.io`}
@@ -472,7 +504,7 @@ export function F3RestaurantStep({
             })}
           </div>
 
-          {activeOperation.status === 'FAILED' && (
+          {(activeOperation.status === 'FAILED' || activeOperation.status === 'PARTIAL') && (
             <div className="flex items-center gap-3 pt-2">
               <button
                 type="button"

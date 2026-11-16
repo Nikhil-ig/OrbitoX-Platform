@@ -78,6 +78,7 @@ export const GET = withCustomerAuth<RouteContext>(
     }
 
     let runtimeTenant: any = null;
+    let activeOp: any = null;
     try {
       const controller = new AbortController();
       const timeout = setTimeout(() => controller.abort(), 4000);
@@ -91,43 +92,28 @@ export const GET = withCustomerAuth<RouteContext>(
       );
       clearTimeout(timeout);
 
-      if (!res.ok) {
-        if (res.status === 404) {
-          // Runtime does not have this tenant. Check if provisioning saga is actively in progress.
-          const activeOp = await (prisma as any).platformOperation.findFirst({
-            where: {
-              organizationId: project.organizationId,
-              status: { in: ['PENDING', 'RUNNING'] },
-            },
-            orderBy: { createdAt: 'desc' },
-          }).catch(() => null);
-
-          if (activeOp) {
-            return NextResponse.json(
-              {
-                ok: true,
-                status: 'PROVISIONING',
-                restaurantProvisioned: false,
-                message: 'Restaurant provisioning is currently in progress.',
-              },
-              { status: 200, headers: noStoreHeaders() },
-            );
-          }
-
-          return NextResponse.json(
-            { ok: false, error: 'TENANT_NOT_FOUND', message: 'Restaurant tenant has not been provisioned in runtime.' },
-            { status: 404, headers: noStoreHeaders() },
-          );
-        }
-
+      if (res.ok) {
+        const json = await res.json();
+        runtimeTenant = json.tenant;
+      } else if (res.status === 404) {
+        // Runtime does not have this tenant. Check if provisioning saga is actively in progress.
+        activeOp = await (prisma as any).platformOperation.findFirst({
+          where: {
+            organizationId: project.organizationId,
+            status: { in: ['PROVISIONING', 'RUNNING', 'PENDING'] },
+            OR: [
+              { tenantId: { contains: project.slug } },
+              { tenantId: { contains: project.id } },
+            ],
+          },
+          orderBy: { createdAt: 'desc' },
+        }).catch(() => null);
+      } else {
         return NextResponse.json(
           { ok: false, error: 'RUNTIME_ERROR', message: 'Failed to fetch tenant status from restaurant runtime.' },
           { status: 502, headers: noStoreHeaders() },
         );
       }
-
-      const json = await res.json();
-      runtimeTenant = json.tenant;
     } catch {
       // P1.2: Runtime is offline or unreachable - fail closed with 503
       return NextResponse.json(
@@ -146,18 +132,42 @@ export const GET = withCustomerAuth<RouteContext>(
     const subdomainUrl = `http://${project.slug}.${baseDomain}`;
     const sampleTable = runtimeTenant?.sampleTableLocator || null;
 
-    const isPreview = String(runtimeTenant?.status || '').toLowerCase() === 'preview';
+    const rawStatus = String(runtimeTenant?.status || '').toUpperCase();
     const previewExpiresAt = runtimeTenant?.previewExpiresAt || null;
+    const isExpired = Boolean(
+      previewExpiresAt && new Date(previewExpiresAt).getTime() <= Date.now()
+    );
+
+    let lifecycleStatus = 'PREVIEW';
+    if (!runtimeTenant) {
+      lifecycleStatus = activeOp ? 'PROVISIONING' : 'NOT_PROVISIONED';
+    } else if (rawStatus === 'ACTIVE') {
+      lifecycleStatus = 'ACTIVE';
+    } else if (rawStatus === 'SUSPENDED') {
+      lifecycleStatus = 'SUSPENDED';
+    } else if (rawStatus === 'CANCELLED') {
+      lifecycleStatus = 'CANCELLED';
+    } else if (rawStatus === 'PREVIEW') {
+      lifecycleStatus = isExpired ? 'EXPIRED' : 'PREVIEW';
+    } else {
+      lifecycleStatus = rawStatus || 'PREVIEW';
+    }
+
+    const isPreviewActive = lifecycleStatus === 'PREVIEW';
+    const restaurantProvisioned = Boolean(
+      runtimeTenant && runtimeTenant.status && runtimeTenant.status !== 'NOT_FOUND'
+    );
 
     return NextResponse.json(
       {
         ok: true,
+        ...(activeOp ? { status: 'PROVISIONING', restaurantProvisioned: false, message: 'Restaurant provisioning is currently in progress.' } : {}),
         preview: {
           restaurant: {
             id: project.id,
             slug: project.slug,
             name: project.name,
-            status: isPreview ? 'PREVIEW' : 'ACTIVE',
+            status: lifecycleStatus,
             plan: project.plan,
             planTier: project.planTier,
             previewExpiresAt,
@@ -185,8 +195,8 @@ export const GET = withCustomerAuth<RouteContext>(
           checklist: {
             accountVerified: true,
             organizationCreated: true,
-            restaurantProvisioned: true,
-            previewActive: isPreview,
+            restaurantProvisioned,
+            previewActive: isPreviewActive,
             paymentGatewayConnected: false,
             customDomainConfigured: false,
           },

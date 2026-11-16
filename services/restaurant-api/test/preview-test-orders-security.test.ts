@@ -8,6 +8,7 @@ import {
   CLEAN_STARTER_TEMPLATES,
   issuePreviewCapabilityToken,
   verifyPreviewCapabilityToken,
+  issueStaffToken,
   signBridgeRequest,
   getDefaultBridgeKeys,
 } from '../src/shared';
@@ -589,6 +590,372 @@ describe('Phase 7 F1–F4 Security Remediation: Preview Test Orders & Accounting
       assert.ok(sTask, 'Sentinel kitchen task must exist untouched');
       assert.equal(sTask.tenantId, sentinelTenantId);
       assert.equal(sTask.orderId, sentinelOrderId);
+    });
+  });
+
+  // ─────────────────────────────────────────────────────────────────────────────
+  // 4. P0: Preview KDS Authorization Boundary
+  // ─────────────────────────────────────────────────────────────────────────────
+  describe('4. P0: Preview KDS Authorization Boundary', () => {
+    let previewTestOrderId: string;
+    let previewTestTaskId: string;
+    let commercialOrderId: string;
+    let commercialTaskId: string;
+    let staffPinToken: string;
+
+    before(async () => {
+      // 1. Create a test order and KDS task on preview tenant
+      previewTestOrderId = `ord_prev_test_${crypto.randomBytes(4).toString('hex')}`;
+      testOrderIds.add(previewTestOrderId);
+      await prisma.restaurantOrder.create({
+        data: {
+          id: previewTestOrderId,
+          tenantId: previewTenantId,
+          tableNumber: previewTableNumber,
+          sessionId: `sess_${previewTableNumber}`,
+          status: 'CONFIRMED',
+          subtotalMinor: 38000,
+          taxMinor: 1900,
+          totalMinor: 39900,
+          currency: 'INR',
+          items: sampleItems,
+          isTest: true,
+        },
+      });
+
+      previewTestTaskId = `task_prev_test_${crypto.randomBytes(4).toString('hex')}`;
+      testTaskIds.add(previewTestTaskId);
+      await prisma.kitchenTask.create({
+        data: {
+          id: previewTestTaskId,
+          tenantId: previewTenantId,
+          orderId: previewTestOrderId,
+          tableNumber: previewTableNumber,
+          itemName: 'Preview Butter Chicken',
+          quantity: 1,
+          station: 'CURRY_LINE',
+          status: 'QUEUED',
+          isTest: true,
+        },
+      });
+
+      // 2. Create a commercial order and KDS task on preview tenant
+      commercialOrderId = `ord_comm_${crypto.randomBytes(4).toString('hex')}`;
+      testOrderIds.add(commercialOrderId);
+      await prisma.restaurantOrder.create({
+        data: {
+          id: commercialOrderId,
+          tenantId: previewTenantId,
+          tableNumber: previewTableNumber,
+          sessionId: `sess_${previewTableNumber}`,
+          status: 'CONFIRMED',
+          subtotalMinor: 40000,
+          taxMinor: 2000,
+          totalMinor: 42000,
+          currency: 'INR',
+          items: sampleItems,
+          isTest: false,
+        },
+      });
+
+      commercialTaskId = `task_comm_${crypto.randomBytes(4).toString('hex')}`;
+      testTaskIds.add(commercialTaskId);
+      await prisma.kitchenTask.create({
+        data: {
+          id: commercialTaskId,
+          tenantId: previewTenantId,
+          orderId: commercialOrderId,
+          tableNumber: previewTableNumber,
+          itemName: 'Commercial Paneer Tikka',
+          quantity: 1,
+          station: 'TANDOOR',
+          status: 'QUEUED',
+          isTest: false,
+        },
+      });
+
+      // 3. Issue staff token for staff KDS workflow tests
+      staffPinToken = issueStaffToken({
+        tenantId: previewTenantId,
+        sub: 'staff_chef_1',
+        role: 'CHEF',
+        station: 'ALL',
+      });
+    });
+
+    it('1. platform-bridge with preview:kds:bump can bump test order KDS task on PREVIEW tenant', async () => {
+      const pathWithQuery = '/api/restaurant/kds/bump';
+      const body = { taskId: previewTestTaskId };
+      const bodyStr = JSON.stringify(body);
+      const signedHeaders = signBridgeRequest(bridgeKeys, {
+        method: 'POST',
+        pathWithQuery,
+        tenantId: previewTenantId,
+        principal: { sub: 'usr_owner_123', scopes: ['preview:kds:bump'] },
+        body: bodyStr,
+      });
+
+      const res = await makeRequest('POST', pathWithQuery, { ...signedHeaders, Host: `${previewSlug}.orbitox.live` }, body);
+      assert.equal(res.status, 200);
+      assert.equal(res.json.success, true);
+      assert.equal(res.json.data.status, 'IN_PROGRESS');
+    });
+
+    it('2. platform-bridge cannot bump commercial task (even on preview tenant)', async () => {
+      const pathWithQuery = '/api/restaurant/kds/bump';
+      const body = { taskId: commercialTaskId };
+      const bodyStr = JSON.stringify(body);
+      const signedHeaders = signBridgeRequest(bridgeKeys, {
+        method: 'POST',
+        pathWithQuery,
+        tenantId: previewTenantId,
+        principal: { sub: 'usr_owner_123', scopes: ['preview:kds:bump'] },
+        body: bodyStr,
+      });
+
+      const res = await makeRequest('POST', pathWithQuery, { ...signedHeaders, Host: `${previewSlug}.orbitox.live` }, body);
+      assert.equal(res.status, 403);
+      assert.equal(res.json.code, 'CANNOT_MUTATE_COMMERCIAL_TASK_IN_PREVIEW');
+    });
+
+    it('3. rejects preview KDS mutation on non-preview (ACTIVE) tenant', async () => {
+      const activeTestOrderId = `ord_act_test_${crypto.randomBytes(4).toString('hex')}`;
+      testOrderIds.add(activeTestOrderId);
+      await prisma.restaurantOrder.create({
+        data: {
+          id: activeTestOrderId,
+          tenantId: activeTenantId,
+          tableNumber: activeTableNumber,
+          sessionId: `sess_${activeTableNumber}`,
+          status: 'CONFIRMED',
+          subtotalMinor: 20000,
+          taxMinor: 1000,
+          totalMinor: 21000,
+          currency: 'INR',
+          items: sampleItems,
+          isTest: true,
+        },
+      });
+
+      const activeTestTaskId = `task_act_test_${crypto.randomBytes(4).toString('hex')}`;
+      testTaskIds.add(activeTestTaskId);
+      await prisma.kitchenTask.create({
+        data: {
+          id: activeTestTaskId,
+          tenantId: activeTenantId,
+          orderId: activeTestOrderId,
+          tableNumber: activeTableNumber,
+          itemName: 'Active Naan',
+          quantity: 1,
+          station: 'TANDOOR',
+          status: 'QUEUED',
+          isTest: true,
+        },
+      });
+
+      const pathWithQuery = '/api/restaurant/kds/bump';
+      const body = { taskId: activeTestTaskId };
+      const bodyStr = JSON.stringify(body);
+      const signedHeaders = signBridgeRequest(bridgeKeys, {
+        method: 'POST',
+        pathWithQuery,
+        tenantId: activeTenantId,
+        principal: { sub: 'usr_owner_123', scopes: ['preview:kds:bump'] },
+        body: bodyStr,
+      });
+
+      const res = await makeRequest('POST', pathWithQuery, { ...signedHeaders, Host: `${activeSlug}.orbitox.live` }, body);
+      assert.equal(res.status, 403);
+      assert.equal(res.json.code, 'TEST_TASKS_ONLY_IN_PREVIEW');
+    });
+
+    it('4. rejects preview KDS mutation on expired preview tenant', async () => {
+      const expiredTestOrderId = `ord_exp_test_${crypto.randomBytes(4).toString('hex')}`;
+      testOrderIds.add(expiredTestOrderId);
+      await prisma.restaurantOrder.create({
+        data: {
+          id: expiredTestOrderId,
+          tenantId: expiredTenantId,
+          tableNumber: expiredTableNumber,
+          sessionId: `sess_${expiredTableNumber}`,
+          status: 'CONFIRMED',
+          subtotalMinor: 20000,
+          taxMinor: 1000,
+          totalMinor: 21000,
+          currency: 'INR',
+          items: sampleItems,
+          isTest: true,
+        },
+      });
+
+      const expiredTestTaskId = `task_exp_test_${crypto.randomBytes(4).toString('hex')}`;
+      testTaskIds.add(expiredTestTaskId);
+      await prisma.kitchenTask.create({
+        data: {
+          id: expiredTestTaskId,
+          tenantId: expiredTenantId,
+          orderId: expiredTestOrderId,
+          tableNumber: expiredTableNumber,
+          itemName: 'Expired Roti',
+          quantity: 1,
+          station: 'TANDOOR',
+          status: 'QUEUED',
+          isTest: true,
+        },
+      });
+
+      const pathWithQuery = '/api/restaurant/kds/bump';
+      const body = { taskId: expiredTestTaskId };
+      const bodyStr = JSON.stringify(body);
+      const signedHeaders = signBridgeRequest(bridgeKeys, {
+        method: 'POST',
+        pathWithQuery,
+        tenantId: expiredTenantId,
+        principal: { sub: 'usr_owner_123', scopes: ['preview:kds:bump'] },
+        body: bodyStr,
+      });
+
+      const res = await makeRequest('POST', pathWithQuery, { ...signedHeaders, Host: `${expiredSlug}.orbitox.live` }, body);
+      assert.equal(res.status, 403);
+      assert.equal(res.json.code, 'PREVIEW_EXPIRED');
+    });
+
+    it('5. rejects cross-tenant KDS task bump', async () => {
+      const pathWithQuery = '/api/restaurant/kds/bump';
+      const body = { taskId: previewTestTaskId };
+      const bodyStr = JSON.stringify(body);
+      const signedHeaders = signBridgeRequest(bridgeKeys, {
+        method: 'POST',
+        pathWithQuery,
+        tenantId: activeTenantId,
+        principal: { sub: 'usr_owner_123', scopes: ['preview:kds:bump'] },
+        body: bodyStr,
+      });
+
+      const res = await makeRequest('POST', pathWithQuery, { ...signedHeaders, Host: `${activeSlug}.orbitox.live` }, body);
+      assert.ok([403, 404].includes(res.status));
+      if (res.status === 403) {
+        assert.ok(['TASK_TENANT_MISMATCH', 'TEST_TASKS_ONLY_IN_PREVIEW'].includes(res.json.code));
+      }
+    });
+
+    it('6. rejects platform-bridge request without narrow preview scope (arbitrary scope)', async () => {
+      const pathWithQuery = '/api/restaurant/kds/bump';
+      const body = { taskId: previewTestTaskId };
+      const bodyStr = JSON.stringify(body);
+      const signedHeaders = signBridgeRequest(bridgeKeys, {
+        method: 'POST',
+        pathWithQuery,
+        tenantId: previewTenantId,
+        principal: { sub: 'usr_owner_123', scopes: ['arbitrary:scope'] },
+        body: bodyStr,
+      });
+
+      const res = await makeRequest('POST', pathWithQuery, { ...signedHeaders, Host: `${previewSlug}.orbitox.live` }, body);
+      assert.equal(res.status, 403);
+      assert.equal(res.json.code, 'INSUFFICIENT_KDS_SCOPE');
+    });
+
+    it('7. rejects generic ADMIN platform-bridge request without preview:kds:bump scope', async () => {
+      const pathWithQuery = '/api/restaurant/kds/bump';
+      const body = { taskId: previewTestTaskId };
+      const bodyStr = JSON.stringify(body);
+      const signedHeaders = signBridgeRequest(bridgeKeys, {
+        method: 'POST',
+        pathWithQuery,
+        tenantId: previewTenantId,
+        principal: { sub: 'usr_owner_123', scopes: ['ADMIN'] },
+        body: bodyStr,
+      });
+
+      const res = await makeRequest('POST', pathWithQuery, { ...signedHeaders, Host: `${previewSlug}.orbitox.live` }, body);
+      assert.equal(res.status, 403);
+      assert.equal(res.json.code, 'INSUFFICIENT_KDS_SCOPE');
+    });
+
+    it('8. rejects task bump if task is test but parent order is commercial', async () => {
+      const mismatchedOrderId = `ord_mis_${crypto.randomBytes(4).toString('hex')}`;
+      testOrderIds.add(mismatchedOrderId);
+      await prisma.restaurantOrder.create({
+        data: {
+          id: mismatchedOrderId,
+          tenantId: previewTenantId,
+          tableNumber: previewTableNumber,
+          sessionId: `sess_${previewTableNumber}`,
+          status: 'CONFIRMED',
+          subtotalMinor: 10000,
+          taxMinor: 500,
+          totalMinor: 10500,
+          currency: 'INR',
+          items: sampleItems,
+          isTest: false,
+        },
+      });
+
+      const mismatchedTaskId = `task_mis_${crypto.randomBytes(4).toString('hex')}`;
+      testTaskIds.add(mismatchedTaskId);
+      await prisma.kitchenTask.create({
+        data: {
+          id: mismatchedTaskId,
+          tenantId: previewTenantId,
+          orderId: mismatchedOrderId,
+          tableNumber: previewTableNumber,
+          itemName: 'Mismatched Dal',
+          quantity: 1,
+          station: 'CURRY_LINE',
+          status: 'QUEUED',
+          isTest: true,
+        },
+      });
+
+      const pathWithQuery = '/api/restaurant/kds/bump';
+      const body = { taskId: mismatchedTaskId };
+      const bodyStr = JSON.stringify(body);
+      const signedHeaders = signBridgeRequest(bridgeKeys, {
+        method: 'POST',
+        pathWithQuery,
+        tenantId: previewTenantId,
+        principal: { sub: 'usr_owner_123', scopes: ['preview:kds:bump'] },
+        body: bodyStr,
+      });
+
+      const res = await makeRequest('POST', pathWithQuery, { ...signedHeaders, Host: `${previewSlug}.orbitox.live` }, body);
+      assert.equal(res.status, 403);
+      assert.equal(res.json.code, 'CANNOT_MUTATE_COMMERCIAL_TASK_IN_PREVIEW');
+    });
+
+    it('9. staff KDS workflows unaffected: CHEF can bump commercial task', async () => {
+      const pathWithQuery = '/api/restaurant/kds/bump';
+      const body = { taskId: commercialTaskId };
+      const res = await makeRequest(
+        'POST',
+        pathWithQuery,
+        {
+          Host: `${previewSlug}.orbitox.live`,
+          Authorization: `Bearer ${staffPinToken}`,
+        },
+        body
+      );
+
+      assert.equal(res.status, 200);
+      assert.equal(res.json.success, true);
+    });
+
+    it('10. staff KDS workflows unaffected: CHEF can bump test task', async () => {
+      const pathWithQuery = '/api/restaurant/kds/bump';
+      const body = { taskId: previewTestTaskId };
+      const res = await makeRequest(
+        'POST',
+        pathWithQuery,
+        {
+          Host: `${previewSlug}.orbitox.live`,
+          Authorization: `Bearer ${staffPinToken}`,
+        },
+        body
+      );
+
+      assert.equal(res.status, 200);
+      assert.equal(res.json.success, true);
     });
   });
 

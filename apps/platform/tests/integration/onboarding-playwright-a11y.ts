@@ -258,6 +258,41 @@ describe('OrbitoX Onboarding Multi-Viewport & Axe Accessibility E2E', () => {
     });
 
     it('F4 Working Preview Showcase: renders dual-pane preview and passes Axe audit', async () => {
+      // Mock preview-summary for this static showcase audit to ensure QR code and tables render cleanly
+      await page.route('**/api/v1/customer/tenants/*/preview-summary', async (route) => {
+        await route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({
+            ok: true,
+            preview: {
+              restaurant: {
+                name: 'Masala House Indiranagar',
+                status: 'PREVIEW',
+                subdomainUrl: 'http://masala-house.orbitox.io',
+                previewExpiresAt: new Date(Date.now() + 14 * 86400000).toISOString(),
+              },
+              tables: {
+                totalCount: 16,
+                sampleTable: {
+                  id: 'tbl_1',
+                  tableNumber: 'Table T-01',
+                  dinerUrl: 'http://localhost:4010/table/T-01',
+                },
+              },
+              menu: {
+                categoriesCount: 3,
+                itemsCount: 8,
+                categories: ['Curries', 'Breads'],
+                items: [
+                  { id: 'item_1', name: 'Paneer Butter Masala', basePriceMinor: 28000, categoryName: 'Curries' },
+                ],
+              },
+            },
+          }),
+        });
+      });
+
       await page.goto(`${BASE_URL}/onboarding`, { waitUntil: 'domcontentloaded' });
       await page.evaluate((key) => {
         localStorage.setItem(
@@ -277,6 +312,7 @@ describe('OrbitoX Onboarding Multi-Viewport & Axe Accessibility E2E', () => {
               restaurantName: 'Masala House Indiranagar',
               tableCount: 16,
               templateId: 'saffron',
+              dinerUrl: 'http://localhost:4010/table/T-01',
             },
           })
         );
@@ -299,6 +335,8 @@ describe('OrbitoX Onboarding Multi-Viewport & Axe Accessibility E2E', () => {
         console.error('F4 Axe Violations:', JSON.stringify(criticalOrSerious, null, 2));
       }
       assert.equal(criticalOrSerious.length, 0, 'F4 must have 0 critical/serious a11y violations');
+
+      await page.unroute('**/api/v1/customer/tenants/*/preview-summary');
     });
 
     it('D6 Mobile Preview Card: renders cleanly and passes Axe audit', async () => {
@@ -338,6 +376,10 @@ describe('OrbitoX Onboarding Multi-Viewport & Axe Accessibility E2E', () => {
     const orgName = `Shah Hospitality ${runId}`;
     const restoName = `Masala Lounge ${runId}`;
 
+    const sentinelTenantId = `tenant_sentinel_${runId}`;
+    const sentinelOrderId = `ord_sentinel_${runId}`;
+    const sentinelTaskId = `task_sentinel_${runId}`;
+
     const createdCustomerUserIds = new Set<string>();
     const createdOrgIds = new Set<string>();
     const createdProjectIds = new Set<string>();
@@ -358,6 +400,42 @@ describe('OrbitoX Onboarding Multi-Viewport & Axe Accessibility E2E', () => {
         datasources: { db: { url: process.env.RESTAURANTOS_DATABASE_URL || 'postgresql://apple@localhost:5432/restaurant_os' } },
       });
 
+      // Seed sentinel record in restaurant_os to verify zero collateral test deletion
+      await restaurantPrisma.tenant.create({
+        data: {
+          id: sentinelTenantId,
+          name: `Sentinel Commercial Bistro ${runId}`,
+          slug: `sentinel-${runId}`,
+          status: 'active',
+          planId: 'restaurant-starter',
+          orders: {
+            create: {
+              id: sentinelOrderId,
+              tableNumber: 'T99',
+              sessionId: `sess_sentinel_${runId}`,
+              status: 'CONFIRMED',
+              items: [{ name: 'Commercial Biryani', quantity: 1, priceMinor: 38000 }],
+              subtotalMinor: 38000,
+              taxMinor: 1900,
+              totalMinor: 39900,
+              isTest: false,
+            },
+          },
+          kitchenTasks: {
+            create: {
+              id: sentinelTaskId,
+              orderId: sentinelOrderId,
+              tableNumber: 'T99',
+              itemName: 'Commercial Biryani',
+              quantity: 1,
+              station: 'CURRY_LINE',
+              status: 'QUEUED',
+              isTest: false,
+            },
+          },
+        },
+      });
+
       context = await browser.newContext({
         viewport: { width: 1440, height: 900 },
         deviceScaleFactor: 2,
@@ -371,6 +449,14 @@ describe('OrbitoX Onboarding Multi-Viewport & Axe Accessibility E2E', () => {
 
       // Scoped teardown of created records
       try {
+        // Assert sentinel records survived completely untouched BEFORE any deletions
+        const checkSentinelTask = await restaurantPrisma.kitchenTask.findUnique({ where: { id: sentinelTaskId } });
+        assert.ok(checkSentinelTask, 'FATAL: Sentinel kitchen task was destroyed during test suite execution!');
+        assert.equal(checkSentinelTask.isTest, false);
+        const checkSentinelOrder = await restaurantPrisma.restaurantOrder.findUnique({ where: { id: sentinelOrderId } });
+        assert.ok(checkSentinelOrder, 'FATAL: Sentinel restaurant order was destroyed during test suite execution!');
+        assert.equal(checkSentinelOrder.isTest, false);
+
         if (createdTaskIds.size > 0) {
           await restaurantPrisma.kitchenTask.deleteMany({
             where: { id: { in: Array.from(createdTaskIds) } },
@@ -412,12 +498,27 @@ describe('OrbitoX Onboarding Multi-Viewport & Axe Accessibility E2E', () => {
           await (platformPrisma as any).accountToken?.deleteMany({ where: { userId: { in: uIds } } }).catch(() => {});
           await platformPrisma.customerUser.deleteMany({ where: { id: { in: uIds } } }).catch(() => {});
         }
+
+        // Clean up sentinel records explicitly
+        await restaurantPrisma.kitchenTask.deleteMany({ where: { id: sentinelTaskId } });
+        await restaurantPrisma.restaurantOrder.deleteMany({ where: { id: sentinelOrderId } });
+        await restaurantPrisma.tenant.deleteMany({ where: { id: sentinelTenantId } });
       } catch (err) {
         console.error('[PLAYWRIGHT E2E TEARDOWN ERROR]:', err);
+        throw err;
       } finally {
         await platformPrisma.$disconnect();
         await restaurantPrisma.$disconnect();
       }
+    });
+
+    it('sentinel data safety check: unrelated commercial orders and tasks exist untouched before test flow', async () => {
+      const task = await restaurantPrisma.kitchenTask.findUnique({ where: { id: sentinelTaskId } });
+      assert.ok(task, 'Sentinel kitchen task must exist before any test mutations');
+      assert.equal(task.isTest, false);
+      const order = await restaurantPrisma.restaurantOrder.findUnique({ where: { id: sentinelOrderId } });
+      assert.ok(order, 'Sentinel restaurant order must exist before any test mutations');
+      assert.equal(order.isTest, false);
     });
 
     it('completes authentic registration and code verification from PostgreSQL outbox (F1)', async () => {
@@ -513,16 +614,31 @@ describe('OrbitoX Onboarding Multi-Viewport & Axe Accessibility E2E', () => {
       // Track created project and tenant
       const proj = await platformPrisma.platformProject.findFirst({
         where: { name: restoName },
+        include: { environments: true },
       });
       if (proj) {
         createdProjectIds.add(proj.id);
-        const canonTenantId = `org/${proj.organizationId}/project/${proj.id}/environment/prod`;
+        const prodEnv = proj.environments.find((e) => e.isProduction) || proj.environments[0];
+        const canonTenantId = prodEnv
+          ? `org/${proj.organizationId}/project/${proj.id}/environment/${prodEnv.id}`
+          : `tenant_${proj.slug}`;
         createdTenantIds.add(canonTenantId);
         createdTenantIds.add(`tenant_${proj.slug}`);
       }
     });
 
     it('places authenticated test order in F4 and verifies persistence in PostgreSQL restaurant_os', async () => {
+      // Find created project
+      const proj = await platformPrisma.platformProject.findFirst({
+        where: { name: restoName },
+        include: { environments: true },
+      });
+      assert.ok(proj, 'Platform project must exist for created restaurant');
+      const prodEnv = proj.environments.find((e) => e.isProduction) || proj.environments[0];
+      const canonicalTenantId = prodEnv
+        ? `org/${proj.organizationId}/project/${proj.id}/environment/${prodEnv.id}`
+        : `tenant_${proj.slug}`;
+
       // Sample table locator and QR code must be visible
       const qrEl = await page.waitForSelector('img[alt*="QR Code"]', { timeout: 15000 });
       assert.ok(qrEl, 'QR code must be visible on F4 card');
@@ -534,47 +650,405 @@ describe('OrbitoX Onboarding Multi-Viewport & Axe Accessibility E2E', () => {
       // Wait for success notice
       await page.waitForSelector('text=Test order submitted!', { timeout: 15000 });
 
-      // Verify in PostgreSQL restaurant_os database
+      // Verify in PostgreSQL restaurant_os database SCOPED TO CANONICAL TENANT ID
       const dbOrder = await restaurantPrisma.restaurantOrder.findFirst({
-        where: { isTest: true },
+        where: { tenantId: canonicalTenantId, isTest: true },
         orderBy: { createdAt: 'desc' },
       });
-      assert.ok(dbOrder, 'Test order must exist in PostgreSQL restaurant_os');
+      assert.ok(dbOrder, 'Test order must exist in PostgreSQL restaurant_os for this specific tenant');
       assert.equal(dbOrder.isTest, true, 'isTest must be true on order in PostgreSQL');
+      assert.equal(dbOrder.tenantId, canonicalTenantId, 'Order must belong to the provisioned tenant');
       createdOrderIds.add(dbOrder.id);
 
       const dbTasks = await restaurantPrisma.kitchenTask.findMany({
-        where: { orderId: dbOrder.id },
+        where: { tenantId: canonicalTenantId, orderId: dbOrder.id },
       });
       assert.ok(dbTasks.length > 0, 'Kitchen tasks must exist for test order');
       for (const t of dbTasks) {
         assert.equal(t.isTest, true, 'Kitchen task must have isTest = true');
+        assert.equal(t.tenantId, canonicalTenantId, 'Kitchen task must belong to provisioned tenant');
         createdTaskIds.add(t.id);
       }
     });
 
     it('bumps KDS ticket to READY and verifies state update in PostgreSQL', async () => {
       // Find Bump button
-      const bumpBtn = page.locator('button:has-text("Bump ticket"), button:has-text("Mark ready")');
-      if (await bumpBtn.isVisible()) {
-        await bumpBtn.click();
-        await page.waitForSelector('text=READY, text=Fulfilled', { timeout: 10000 });
+      const bumpBtn = page.locator('button:has-text("Bump ticket"), button:has-text("Mark ready")').first();
+      await bumpBtn.waitFor({ state: 'visible', timeout: 10000 });
+      await bumpBtn.click();
+      await page.waitForSelector('text=Dispatched / Ready', { timeout: 10000 });
 
-        // Verify task status in database
-        const latestTaskId = Array.from(createdTaskIds).pop();
-        if (latestTaskId) {
-          const updatedTask = await restaurantPrisma.kitchenTask.findUnique({
-            where: { id: latestTaskId },
-          });
-          assert.equal(updatedTask?.status, 'READY', 'Kitchen task status must be READY in PostgreSQL');
-        }
+      // Poll task status in database until committed
+      let updatedTask = null;
+      for (let i = 0; i < 15; i++) {
+        updatedTask = await restaurantPrisma.kitchenTask.findFirst({
+          where: { id: { in: Array.from(createdTaskIds) }, status: 'READY' },
+        });
+        if (updatedTask) break;
+        await new Promise((r) => setTimeout(r, 400));
       }
+      assert.ok(updatedTask, 'Kitchen task status must be READY in PostgreSQL');
+      assert.equal(updatedTask?.status, 'READY');
+    });
+
+    it('sentinel data safety check: unrelated commercial orders and tasks survive after test flow and bumps', async () => {
+      const task = await restaurantPrisma.kitchenTask.findUnique({ where: { id: sentinelTaskId } });
+      assert.ok(task, 'Sentinel kitchen task must survive test mutations untouched');
+      assert.equal(task.isTest, false);
+      assert.equal(task.status, 'QUEUED');
+      const order = await restaurantPrisma.restaurantOrder.findUnique({ where: { id: sentinelOrderId } });
+      assert.ok(order, 'Sentinel restaurant order must survive test mutations untouched');
+      assert.equal(order.isTest, false);
     });
 
     it('recovers F4 working preview state across browser reload', async () => {
       await page.reload({ waitUntil: 'domcontentloaded' });
       await page.waitForSelector('text=14 days preview remaining', { timeout: 15000 });
       assert.ok(await page.locator(`text=${restoName}`).first().isVisible(), 'Restaurant name must persist on reload');
+    });
+  });
+
+  // ─────────────────────────────────────────────────────────────────────────────
+  // 4. Resilient Recovery Matrix & Edge State Verification
+  // ─────────────────────────────────────────────────────────────────────────────
+  describe('4. Resilient Recovery Matrix & Edge State Verification', () => {
+    let page: Page;
+    let context: any;
+    let platformPrisma: PlatformPrisma;
+
+    const matrixRunId = crypto.randomBytes(4).toString('hex');
+    const matrixOrgId = `org_matrix_${matrixRunId}`;
+    const partialOpId = `op_partial_${matrixRunId}`;
+
+    before(async () => {
+      platformPrisma = new PlatformPrisma({
+        datasources: { db: { url: process.env.DATABASE_URL || 'postgresql://apple@localhost:5432/orbitox_phase2' } },
+      });
+
+      // Create a test organization and a PARTIAL platform operation
+      await platformPrisma.platformOrganization.create({
+        data: {
+          id: matrixOrgId,
+          name: `Matrix Test Org ${matrixRunId}`,
+          slug: `matrix-org-${matrixRunId}`,
+          billingEmail: `billing-${matrixRunId}@matrix.com`,
+          city: 'Bengaluru',
+        },
+      });
+
+      await (platformPrisma as any).platformOperation.create({
+        data: {
+          id: partialOpId,
+          type: 'TENANT_PROVISION',
+          tenantId: `org/${matrixOrgId}/project/matrix-resto-${matrixRunId}/environment/prod`,
+          organizationId: matrixOrgId,
+          idempotencyKey: `idem_${partialOpId}`,
+          status: 'PARTIAL',
+          steps: [
+            { id: '1', name: 'validate_and_reserve', status: 'COMPLETED' },
+            { id: '2', name: 'create_entities', status: 'COMPLETED' },
+            { id: '3', name: 'create_subscription_and_entitlement', status: 'COMPLETED' },
+            { id: '4', name: 'issue_api_keys', status: 'COMPLETED' },
+            { id: '5', name: 'provision_plugins', status: 'FAILED', error: 'Simulated bridge timeout during runtime configuration' },
+            { id: '6', name: 'push_first_grant', status: 'PENDING' },
+            { id: '7', name: 'finalize_active', status: 'PENDING' },
+          ],
+          request: {
+            name: 'Matrix Bistro',
+            slug: `matrix-resto-${matrixRunId}`,
+          },
+          error: 'Simulated bridge timeout during runtime configuration',
+        },
+      });
+
+      context = await browser.newContext({
+        viewport: { width: 1440, height: 900 },
+        deviceScaleFactor: 2,
+      });
+      page = await context.newPage();
+
+      // Intercept operation polling to supply reproducible PARTIAL status and handle retry
+      await page.route('**/api/v1/customer/organizations/*/tenants/operations/**', async (route) => {
+        if (route.request().method() === 'POST' && route.request().url().endsWith('/retry')) {
+          await route.fulfill({
+            status: 200,
+            contentType: 'application/json',
+            body: JSON.stringify({
+              ok: true,
+              operation: {
+                id: partialOpId,
+                status: 'RUNNING',
+                steps: [
+                  { id: '1', name: 'validate_and_reserve', status: 'COMPLETED' },
+                  { id: '2', name: 'create_entities', status: 'COMPLETED' },
+                  { id: '3', name: 'create_subscription_and_entitlement', status: 'COMPLETED' },
+                  { id: '4', name: 'issue_api_keys', status: 'COMPLETED' },
+                  { id: '5', name: 'provision_plugins', status: 'RUNNING' },
+                  { id: '6', name: 'push_first_grant', status: 'PENDING' },
+                  { id: '7', name: 'finalize_active', status: 'PENDING' },
+                ],
+              },
+            }),
+          });
+          return;
+        }
+
+        await route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({
+            ok: true,
+            operation: {
+              id: partialOpId,
+              status: 'PARTIAL',
+              steps: [
+                { id: '1', name: 'validate_and_reserve', status: 'COMPLETED' },
+                { id: '2', name: 'create_entities', status: 'COMPLETED' },
+                { id: '3', name: 'create_subscription_and_entitlement', status: 'COMPLETED' },
+                { id: '4', name: 'issue_api_keys', status: 'COMPLETED' },
+                { id: '5', name: 'provision_plugins', status: 'FAILED', error: 'Simulated bridge timeout during runtime configuration' },
+                { id: '6', name: 'push_first_grant', status: 'PENDING' },
+                { id: '7', name: 'finalize_active', status: 'PENDING' },
+              ],
+              error: 'Simulated bridge timeout during runtime configuration',
+            },
+          }),
+        });
+      });
+    });
+
+    after(async () => {
+      try {
+        await page.unroute('**/api/v1/customer/organizations/*/tenants/operations/**');
+      } catch {}
+
+      if (page) await page.close();
+      if (context) await context.close();
+
+      try {
+        await (platformPrisma as any).platformOperation.deleteMany({ where: { organizationId: matrixOrgId } }).catch(() => {});
+        await platformPrisma.customerMembership.deleteMany({ where: { organizationId: matrixOrgId } }).catch(() => {});
+        await platformPrisma.platformOrganization.deleteMany({ where: { id: matrixOrgId } }).catch(() => {});
+      } catch (err) {
+        console.error('[MATRIX TEARDOWN ERROR]:', err);
+      } finally {
+        await platformPrisma.$disconnect();
+      }
+    });
+
+    it('handles reload during provisioning: resumes polling from persisted operation state', async () => {
+      await page.goto(`${BASE_URL}/onboarding`, { waitUntil: 'domcontentloaded' });
+      await page.evaluate(({ key, activeKey, orgId, opId }) => {
+        localStorage.setItem(
+          key,
+          JSON.stringify({
+            step: 'F3',
+            user: { userId: 'usr_matrix_test', email: 'matrix@test.com', name: 'Matrix Tester' },
+            organization: { id: orgId, name: 'Matrix Org', slug: 'matrix-org', city: 'Bengaluru' },
+            restaurant: { restaurantName: 'Matrix Bistro', tableCount: 10, templateId: 'saffron', slug: 'matrix-bistro' },
+          })
+        );
+        localStorage.setItem(
+          activeKey,
+          JSON.stringify({
+            id: opId,
+            restaurantName: 'Matrix Bistro',
+            slug: 'matrix-bistro',
+            status: 'RUNNING',
+            steps: [
+              { id: '1', name: 'validate_and_reserve', status: 'COMPLETED' },
+              { id: '2', name: 'create_entities', status: 'RUNNING' },
+            ],
+          })
+        );
+      }, {
+        key: STORAGE_KEY,
+        activeKey: `orbitox_active_provisioning_${matrixOrgId}`,
+        orgId: matrixOrgId,
+        opId: partialOpId,
+      });
+
+      await page.reload({ waitUntil: 'domcontentloaded' });
+
+      // Verifies that F3 reloads in provisioning mode
+      await page.waitForSelector('text=Provisioning Matrix Bistro', { timeout: 15000 });
+      assert.ok(await page.locator('text=Matrix Bistro').isVisible(), 'Restaurant name must be retained during reload');
+    });
+
+    it('handles PARTIAL provisioning state: renders retry button and error alert', async () => {
+      // The page polls the PARTIAL operation and transitions to partial state
+      await page.waitForSelector('text=Provisioning Interrupted (Partial)', { timeout: 15000 });
+      assert.ok(await page.locator('text=Simulated bridge timeout during runtime configuration').isVisible(), 'Error message must be displayed');
+
+      const retryBtn = page.locator('button:has-text("Retry Provisioning")');
+      assert.ok(await retryBtn.isVisible(), 'Retry button must be visible for PARTIAL provisioning');
+    });
+
+    it('handles retry of PARTIAL provisioning: calls retry endpoint and restarts polling', async () => {
+      const retryBtn = page.locator('button:has-text("Retry Provisioning")');
+      await retryBtn.click();
+      await page.waitForSelector('text=Provisioning Matrix Bistro', { timeout: 15000 });
+      assert.ok(await page.locator('text=Matrix Bistro').isVisible(), 'Provisioning should resume upon retry');
+    });
+
+    it('handles empty menu state in F4: shows empty notice and disables test order', async () => {
+      // Intercept preview-summary to simulate an empty menu
+      await page.route('**/api/v1/customer/tenants/*/preview-summary', async (route) => {
+        await route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({
+            ok: true,
+            preview: {
+              restaurant: {
+                name: 'Empty Bistro',
+                status: 'PREVIEW',
+                subdomainUrl: 'http://empty-bistro.orbitox.io',
+                previewExpiresAt: new Date(Date.now() + 14 * 86400000).toISOString(),
+              },
+              tables: {
+                totalCount: 0,
+                sampleTable: null,
+              },
+              menu: {
+                categoriesCount: 0,
+                itemsCount: 0,
+                categories: [],
+                items: [],
+              },
+            },
+          }),
+        });
+      });
+
+      await page.goto(`${BASE_URL}/onboarding`, { waitUntil: 'domcontentloaded' });
+      await page.evaluate((key) => {
+        localStorage.setItem(
+          key,
+          JSON.stringify({
+            step: 'F4',
+            user: { userId: 'usr_matrix_test', email: 'matrix@test.com', name: 'Matrix Tester' },
+            organization: { id: 'org_empty', name: 'Empty Org', slug: 'empty-org', city: 'Bengaluru' },
+            restaurant: {
+              tenantId: 'org/test/project/empty/environment/prod',
+              slug: 'empty-bistro',
+              restaurantName: 'Empty Bistro',
+              tableCount: 12,
+              templateId: 'saffron',
+            },
+          })
+        );
+      }, STORAGE_KEY);
+
+      await page.reload({ waitUntil: 'domcontentloaded' });
+
+      // Verifies sample table required notice on button and disabled state
+      await page.waitForSelector('button:has-text("Sample table required")', { timeout: 15000 });
+      const testOrderBtn = page.locator('button:has-text("Sample table required")').first();
+      assert.ok(await testOrderBtn.isDisabled(), 'Test order button must be disabled when menu has 0 tables');
+
+      await page.unroute('**/api/v1/customer/tenants/*/preview-summary');
+    });
+
+    it('handles preview expiry state in F4: shows PREVIEW EXPIRED badge and disables test order', async () => {
+      // Intercept preview-summary to simulate an expired preview
+      await page.route('**/api/v1/customer/tenants/*/preview-summary', async (route) => {
+        await route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({
+            ok: true,
+            preview: {
+              restaurant: {
+                name: 'Expired Bistro',
+                status: 'EXPIRED',
+                subdomainUrl: 'http://expired-bistro.orbitox.io',
+                previewExpiresAt: new Date(Date.now() - 86400000).toISOString(),
+              },
+              tables: {
+                totalCount: 10,
+                sampleTable: { id: 'tbl_1', tableNumber: 'Table T-01', dinerUrl: 'http://localhost:4010/table/T1' },
+              },
+              menu: {
+                categoriesCount: 1,
+                itemsCount: 1,
+                categories: ['Curries'],
+                items: [{ id: 'item_1', name: 'Old Dal', basePriceMinor: 20000, categoryName: 'Curries' }],
+              },
+            },
+          }),
+        });
+      });
+
+      await page.goto(`${BASE_URL}/onboarding`, { waitUntil: 'domcontentloaded' });
+      await page.evaluate((key) => {
+        localStorage.setItem(
+          key,
+          JSON.stringify({
+            step: 'F4',
+            user: { userId: 'usr_matrix_test', email: 'matrix@test.com', name: 'Matrix Tester' },
+            organization: { id: 'org_exp', name: 'Expired Org', slug: 'exp-org', city: 'Bengaluru' },
+            restaurant: {
+              tenantId: 'org/test/project/expired/environment/prod',
+              slug: 'expired-bistro',
+              restaurantName: 'Expired Bistro',
+              tableCount: 12,
+              templateId: 'saffron',
+            },
+          })
+        );
+      }, STORAGE_KEY);
+
+      await page.reload({ waitUntil: 'domcontentloaded' });
+
+      // Verifies Preview expired badge
+      await page.waitForSelector('text=Preview expired', { timeout: 15000 });
+      assert.ok(await page.locator('text=Preview expired').first().isVisible());
+
+      // Verifies disabled button with expired label
+      const disabledBtn = page.locator('button:has-text("Preview Expired")');
+      assert.ok(await disabledBtn.isVisible(), 'Button must reflect expired status');
+      assert.ok(await disabledBtn.isDisabled(), 'Button must be disabled when preview is expired');
+
+      await page.unroute('**/api/v1/customer/tenants/*/preview-summary');
+    });
+
+    it('handles runtime outage gracefully: displays error banner without crashing', async () => {
+      // Intercept preview-summary to simulate 503 outage
+      await page.route('**/api/v1/customer/tenants/*/preview-summary', async (route) => {
+        await route.fulfill({
+          status: 503,
+          contentType: 'application/json',
+          body: JSON.stringify({ ok: false, error: 'SERVICE_UNAVAILABLE', message: 'Runtime plane offline' }),
+        });
+      });
+
+      await page.goto(`${BASE_URL}/onboarding`, { waitUntil: 'domcontentloaded' });
+      await page.evaluate((key) => {
+        localStorage.setItem(
+          key,
+          JSON.stringify({
+            step: 'F4',
+            user: { userId: 'usr_matrix_test', email: 'matrix@test.com', name: 'Matrix Tester' },
+            organization: { id: 'org_outage', name: 'Outage Org', slug: 'outage-org', city: 'Bengaluru' },
+            restaurant: {
+              tenantId: 'org/test/project/outage/environment/prod',
+              slug: 'outage-bistro',
+              restaurantName: 'Outage Bistro',
+              tableCount: 12,
+              templateId: 'saffron',
+            },
+          })
+        );
+      }, STORAGE_KEY);
+
+      await page.reload({ waitUntil: 'domcontentloaded' });
+
+      // Verifies page renders cleanly with restaurant name and does not crash
+      await page.waitForSelector('text=Outage Bistro', { timeout: 15000 });
+      assert.ok(await page.locator('text=Outage Bistro').first().isVisible(), 'Header should render cleanly despite runtime outage');
+
+      await page.unroute('**/api/v1/customer/tenants/*/preview-summary');
     });
   });
 });

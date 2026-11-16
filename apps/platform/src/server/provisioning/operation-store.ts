@@ -106,6 +106,13 @@ function rowToRecord(row: any): PlatformOperationRecord {
   };
 }
 
+export class DatabasePersistenceError extends Error {
+  constructor(operation: string, cause?: any) {
+    super(`Database persistence failed during ${operation}: ${cause?.message || cause}`);
+    this.name = 'DatabasePersistenceError';
+  }
+}
+
 export class OperationStore {
   async createOperation(op: PlatformOperationRecord): Promise<PlatformOperationRecord> {
     const nowIso = new Date().toISOString();
@@ -116,128 +123,135 @@ export class OperationStore {
       result: sanitizeOperationResult(op.result),
     };
 
-    memoryOperations.set(sanitizedOp.id, { ...sanitizedOp });
-
-    if (process.env.ORBITOX_PLATFORM_REPOSITORY !== 'json') {
-      try {
-        await (prisma as any).platformOperation.create({
-          data: {
-            id: sanitizedOp.id,
-            type: sanitizedOp.type || 'TENANT_PROVISION',
-            tenantId: sanitizedOp.tenantId,
-            organizationId: sanitizedOp.organizationId,
-            idempotencyKey: sanitizedOp.idempotencyKey,
-            status: sanitizedOp.status,
-            leaseOwner: sanitizedOp.leaseOwner || null,
-            leaseExpiresAt: sanitizedOp.leaseExpiresAt ? new Date(sanitizedOp.leaseExpiresAt) : null,
-            steps: sanitizedOp.steps as any,
-            request: sanitizedOp.request as any,
-            result: sanitizedOp.result as any,
-            error: sanitizedOp.error,
-            operatorId: sanitizedOp.operatorId,
-            requestId: sanitizedOp.requestId,
-            createdAt: new Date(sanitizedOp.createdAt),
-            updatedAt: new Date(sanitizedOp.updatedAt),
-            completedAt: sanitizedOp.completedAt ? new Date(sanitizedOp.completedAt) : null,
-          },
-        });
-      } catch (err: any) {
-        // If Prisma not connected or table pending migration in test harness, fallback to memory
-        console.warn('[OperationStore] DB write fallback to memory:', err?.message || err);
-      }
+    if (process.env.ORBITOX_PLATFORM_REPOSITORY === 'json') {
+      memoryOperations.set(sanitizedOp.id, { ...sanitizedOp });
+      return sanitizedOp;
     }
 
-    return sanitizedOp;
+    try {
+      const row = await (prisma as any).platformOperation.create({
+        data: {
+          id: sanitizedOp.id,
+          type: sanitizedOp.type || 'TENANT_PROVISION',
+          tenantId: sanitizedOp.tenantId,
+          organizationId: sanitizedOp.organizationId,
+          idempotencyKey: sanitizedOp.idempotencyKey,
+          status: sanitizedOp.status,
+          leaseOwner: sanitizedOp.leaseOwner || null,
+          leaseExpiresAt: sanitizedOp.leaseExpiresAt ? new Date(sanitizedOp.leaseExpiresAt) : null,
+          steps: sanitizedOp.steps as any,
+          request: sanitizedOp.request as any,
+          result: sanitizedOp.result as any,
+          error: sanitizedOp.error,
+          operatorId: sanitizedOp.operatorId,
+          requestId: sanitizedOp.requestId,
+          createdAt: new Date(sanitizedOp.createdAt),
+          updatedAt: new Date(sanitizedOp.updatedAt),
+          completedAt: sanitizedOp.completedAt ? new Date(sanitizedOp.completedAt) : null,
+        },
+      });
+      return rowToRecord(row);
+    } catch (err: any) {
+      console.error('[OperationStore] createOperation DB write failed (fail-closed):', err?.message || err);
+      throw new DatabasePersistenceError('createOperation', err);
+    }
   }
 
   async getOperation(id: string): Promise<PlatformOperationRecord | null> {
-    if (process.env.ORBITOX_PLATFORM_REPOSITORY !== 'json') {
-      try {
-        const row = await (prisma as any).platformOperation.findUnique({
-          where: { id },
-        });
-        if (row) {
-          return rowToRecord(row);
-        }
-      } catch (err: any) {
-        // fallback to memory
-      }
+    if (process.env.ORBITOX_PLATFORM_REPOSITORY === 'json') {
+      const mem = memoryOperations.get(id);
+      return mem ? JSON.parse(JSON.stringify(mem)) : null;
     }
 
-    const mem = memoryOperations.get(id);
-    return mem ? JSON.parse(JSON.stringify(mem)) : null;
+    try {
+      const row = await (prisma as any).platformOperation.findUnique({
+        where: { id },
+      });
+      return row ? rowToRecord(row) : null;
+    } catch (err: any) {
+      console.error('[OperationStore] getOperation DB query failed (fail-closed):', err?.message || err);
+      throw new DatabasePersistenceError('getOperation', err);
+    }
   }
 
   async getOperationByIdempotencyKey(
     organizationId: string,
     idempotencyKey: string
   ): Promise<PlatformOperationRecord | null> {
-    if (process.env.ORBITOX_PLATFORM_REPOSITORY !== 'json') {
-      try {
-        const row = await (prisma as any).platformOperation.findFirst({
-          where: { organizationId, idempotencyKey },
-        });
-        if (row) {
-          return rowToRecord(row);
+    if (process.env.ORBITOX_PLATFORM_REPOSITORY === 'json') {
+      for (const op of memoryOperations.values()) {
+        if (op.organizationId === organizationId && op.idempotencyKey === idempotencyKey) {
+          return JSON.parse(JSON.stringify(op));
         }
-      } catch (err: any) {
-        // fallback to memory
       }
+      return null;
     }
 
-    for (const op of memoryOperations.values()) {
-      if (op.organizationId === organizationId && op.idempotencyKey === idempotencyKey) {
-        return op;
-      }
+    try {
+      const row = await (prisma as any).platformOperation.findFirst({
+        where: { organizationId, idempotencyKey },
+      });
+      return row ? rowToRecord(row) : null;
+    } catch (err: any) {
+      console.error('[OperationStore] getOperationByIdempotencyKey DB query failed (fail-closed):', err?.message || err);
+      throw new DatabasePersistenceError('getOperationByIdempotencyKey', err);
     }
-
-    return null;
   }
 
   async updateOperation(
     id: string,
     updates: Partial<PlatformOperationRecord>
   ): Promise<PlatformOperationRecord | null> {
+    if (process.env.ORBITOX_PLATFORM_REPOSITORY === 'json') {
+      const existing = memoryOperations.get(id);
+      if (!existing) return null;
+
+      const sanitizedResult = updates.result !== undefined ? sanitizeOperationResult(updates.result) : existing.result;
+
+      const merged: PlatformOperationRecord = {
+        ...existing,
+        ...updates,
+        result: sanitizedResult,
+        updatedAt: new Date().toISOString(),
+        ...(updates.status === 'ACTIVE' || updates.status === 'FAILED' || updates.status === 'PARTIAL' || updates.status === 'CANCELLED'
+          ? { completedAt: updates.completedAt || new Date().toISOString() }
+          : {}),
+      };
+
+      memoryOperations.set(id, merged);
+      return merged;
+    }
+
     const existing = await this.getOperation(id);
     if (!existing) return null;
 
     const sanitizedResult = updates.result !== undefined ? sanitizeOperationResult(updates.result) : existing.result;
+    const nowIso = new Date().toISOString();
+    const completedAtIso = (updates.status === 'ACTIVE' || updates.status === 'FAILED' || updates.status === 'PARTIAL' || updates.status === 'CANCELLED')
+      ? (updates.completedAt || nowIso)
+      : undefined;
 
-    const merged: PlatformOperationRecord = {
-      ...existing,
-      ...updates,
-      result: sanitizedResult,
-      updatedAt: new Date().toISOString(),
-      ...(updates.status === 'ACTIVE' || updates.status === 'FAILED' || updates.status === 'PARTIAL' || updates.status === 'CANCELLED'
-        ? { completedAt: updates.completedAt || new Date().toISOString() }
-        : {}),
-    };
-
-    memoryOperations.set(id, merged);
-
-    if (process.env.ORBITOX_PLATFORM_REPOSITORY !== 'json') {
-      try {
-        await (prisma as any).platformOperation.update({
-          where: { id },
-          data: {
-            ...(updates.status ? { status: updates.status } : {}),
-            ...(updates.steps ? { steps: updates.steps as any } : {}),
-            ...(updates.result !== undefined ? { result: sanitizedResult as any } : {}),
-            ...(updates.error !== undefined ? { error: updates.error } : {}),
-            ...(updates.leaseOwner !== undefined ? { leaseOwner: updates.leaseOwner } : {}),
-            ...(updates.leaseExpiresAt !== undefined
-              ? { leaseExpiresAt: updates.leaseExpiresAt ? new Date(updates.leaseExpiresAt) : null }
-              : {}),
-            updatedAt: new Date(merged.updatedAt),
-            ...(merged.completedAt ? { completedAt: new Date(merged.completedAt) } : {}),
-          },
-        });
-      } catch (err: any) {
-        // fallback to memory
-      }
+    try {
+      const row = await (prisma as any).platformOperation.update({
+        where: { id },
+        data: {
+          ...(updates.status ? { status: updates.status } : {}),
+          ...(updates.steps ? { steps: updates.steps as any } : {}),
+          ...(updates.result !== undefined ? { result: sanitizedResult as any } : {}),
+          ...(updates.error !== undefined ? { error: updates.error } : {}),
+          ...(updates.leaseOwner !== undefined ? { leaseOwner: updates.leaseOwner } : {}),
+          ...(updates.leaseExpiresAt !== undefined
+            ? { leaseExpiresAt: updates.leaseExpiresAt ? new Date(updates.leaseExpiresAt) : null }
+            : {}),
+          updatedAt: new Date(nowIso),
+          ...(completedAtIso ? { completedAt: new Date(completedAtIso) } : {}),
+        },
+      });
+      return rowToRecord(row);
+    } catch (err: any) {
+      console.error('[OperationStore] updateOperation DB write failed (fail-closed):', err?.message || err);
+      throw new DatabasePersistenceError('updateOperation', err);
     }
-
-    return merged;
   }
 
   /**
@@ -256,44 +270,37 @@ export class OperationStore {
         ? Number(process.env.OPERATION_LEASE_TTL_SECONDS)
         : (process.env.NODE_ENV === 'test' ? 2 : 30)
     );
-    if (process.env.ORBITOX_PLATFORM_REPOSITORY !== 'json') {
-      try {
-        const rows = await (prisma as any).$queryRaw<Array<{ id: string }>>`
-          UPDATE "PlatformOperation"
-          SET "leaseOwner" = ${leaseOwner},
-              "leaseExpiresAt" = NOW() + (${effectiveTtl} * INTERVAL '1 second'),
-              "updatedAt" = NOW()
-          WHERE "id" = ${id}
-            AND (${isForce} = true OR "leaseOwner" = ${leaseOwner} OR "leaseExpiresAt" IS NULL OR "leaseExpiresAt" < NOW())
-          RETURNING id
-        `;
-        const claimed = Array.isArray(rows) && rows.length > 0;
-        if (claimed) {
-          const mem = memoryOperations.get(id);
-          if (mem) {
-            mem.leaseOwner = leaseOwner;
-            mem.leaseExpiresAt = new Date(Date.now() + effectiveTtl * 1000).toISOString();
-          }
+
+    if (process.env.ORBITOX_PLATFORM_REPOSITORY === 'json') {
+      const mem = memoryOperations.get(id);
+      if (mem) {
+        const now = Date.now();
+        const expiresAt = mem.leaseExpiresAt ? new Date(mem.leaseExpiresAt).getTime() : 0;
+        if (isForce || mem.leaseOwner === leaseOwner || !mem.leaseExpiresAt || expiresAt < now) {
+          mem.leaseOwner = leaseOwner;
+          mem.leaseExpiresAt = new Date(now + effectiveTtl * 1000).toISOString();
           return true;
         }
         return false;
-      } catch (err: any) {
-        // Fallback to memory
-      }
-    }
-
-    const mem = memoryOperations.get(id);
-    if (mem) {
-      const now = Date.now();
-      const expiresAt = mem.leaseExpiresAt ? new Date(mem.leaseExpiresAt).getTime() : 0;
-      if (isForce || mem.leaseOwner === leaseOwner || !mem.leaseExpiresAt || expiresAt < now) {
-        mem.leaseOwner = leaseOwner;
-        mem.leaseExpiresAt = new Date(now + effectiveTtl * 1000).toISOString();
-        return true;
       }
       return false;
     }
-    return false;
+
+    try {
+      const rows = await (prisma as any).$queryRaw<Array<{ id: string }>>`
+        UPDATE "PlatformOperation"
+        SET "leaseOwner" = ${leaseOwner},
+            "leaseExpiresAt" = NOW() + (${effectiveTtl} * INTERVAL '1 second'),
+            "updatedAt" = NOW()
+        WHERE "id" = ${id}
+          AND (${isForce} = true OR "leaseOwner" = ${leaseOwner} OR "leaseExpiresAt" IS NULL OR "leaseExpiresAt" < NOW())
+        RETURNING id
+      `;
+      return Array.isArray(rows) && rows.length > 0;
+    } catch (err: any) {
+      console.error('[OperationStore] claimOperationLease DB update failed (fail-closed):', err?.message || err);
+      throw new DatabasePersistenceError('claimOperationLease', err);
+    }
   }
 
   /**
@@ -309,36 +316,30 @@ export class OperationStore {
         ? Number(process.env.OPERATION_LEASE_TTL_SECONDS)
         : (process.env.NODE_ENV === 'test' ? 2 : 30)
     );
-    if (process.env.ORBITOX_PLATFORM_REPOSITORY !== 'json') {
-      try {
-        const rows = await (prisma as any).$queryRaw<Array<{ id: string }>>`
-          UPDATE "PlatformOperation"
-          SET "leaseExpiresAt" = NOW() + (${effectiveTtl} * INTERVAL '1 second'),
-              "updatedAt" = NOW()
-          WHERE "id" = ${id}
-            AND "leaseOwner" = ${leaseOwner}
-          RETURNING id
-        `;
-        const renewed = Array.isArray(rows) && rows.length > 0;
-        if (renewed) {
-          const mem = memoryOperations.get(id);
-          if (mem) {
-            mem.leaseExpiresAt = new Date(Date.now() + effectiveTtl * 1000).toISOString();
-          }
-          return true;
-        }
-        return false;
-      } catch (err: any) {
-        // Fallback to memory
+
+    if (process.env.ORBITOX_PLATFORM_REPOSITORY === 'json') {
+      const mem = memoryOperations.get(id);
+      if (mem && mem.leaseOwner === leaseOwner) {
+        mem.leaseExpiresAt = new Date(Date.now() + effectiveTtl * 1000).toISOString();
+        return true;
       }
+      return false;
     }
 
-    const mem = memoryOperations.get(id);
-    if (mem && mem.leaseOwner === leaseOwner) {
-      mem.leaseExpiresAt = new Date(Date.now() + effectiveTtl * 1000).toISOString();
-      return true;
+    try {
+      const rows = await (prisma as any).$queryRaw<Array<{ id: string }>>`
+        UPDATE "PlatformOperation"
+        SET "leaseExpiresAt" = NOW() + (${effectiveTtl} * INTERVAL '1 second'),
+            "updatedAt" = NOW()
+        WHERE "id" = ${id}
+          AND "leaseOwner" = ${leaseOwner}
+        RETURNING id
+      `;
+      return Array.isArray(rows) && rows.length > 0;
+    } catch (err: any) {
+      console.error('[OperationStore] heartbeatOperationLease DB update failed (fail-closed):', err?.message || err);
+      throw new DatabasePersistenceError('heartbeatOperationLease', err);
     }
-    return false;
   }
 
   /**
@@ -348,22 +349,27 @@ export class OperationStore {
     id: string,
     leaseOwner: string
   ): Promise<void> {
-    if (process.env.ORBITOX_PLATFORM_REPOSITORY !== 'json') {
-      try {
-        await (prisma as any).$executeRaw`
-          UPDATE "PlatformOperation"
-          SET "leaseOwner" = NULL,
-              "leaseExpiresAt" = NULL,
-              "updatedAt" = NOW()
-          WHERE "id" = ${id}
-            AND "leaseOwner" = ${leaseOwner}
-        `;
-      } catch {}
+    if (process.env.ORBITOX_PLATFORM_REPOSITORY === 'json') {
+      const mem = memoryOperations.get(id);
+      if (mem && mem.leaseOwner === leaseOwner) {
+        mem.leaseOwner = null;
+        mem.leaseExpiresAt = null;
+      }
+      return;
     }
-    const mem = memoryOperations.get(id);
-    if (mem && mem.leaseOwner === leaseOwner) {
-      mem.leaseOwner = null;
-      mem.leaseExpiresAt = null;
+
+    try {
+      await (prisma as any).$executeRaw`
+        UPDATE "PlatformOperation"
+        SET "leaseOwner" = NULL,
+            "leaseExpiresAt" = NULL,
+            "updatedAt" = NOW()
+        WHERE "id" = ${id}
+          AND "leaseOwner" = ${leaseOwner}
+      `;
+    } catch (err: any) {
+      console.error('[OperationStore] releaseOperationLease DB update failed (fail-closed):', err?.message || err);
+      throw new DatabasePersistenceError('releaseOperationLease', err);
     }
   }
 
@@ -371,53 +377,53 @@ export class OperationStore {
    * Distributed Lease: lists operations eligible for resumption (status PROVISIONING with expired or null lease).
    */
   async listResumableOperations(): Promise<PlatformOperationRecord[]> {
-    if (process.env.ORBITOX_PLATFORM_REPOSITORY !== 'json') {
-      try {
-        const rows = await (prisma as any).$queryRaw<Array<any>>`
-          SELECT * FROM "PlatformOperation"
-          WHERE "status" = 'PROVISIONING'
-            AND ("leaseExpiresAt" IS NULL OR "leaseExpiresAt" < NOW())
-          ORDER BY "createdAt" ASC
-        `;
-        if (Array.isArray(rows) && rows.length > 0) {
-          return rows.map((r: any) => rowToRecord(r));
-        }
-      } catch {}
+    if (process.env.ORBITOX_PLATFORM_REPOSITORY === 'json') {
+      const now = Date.now();
+      return Array.from(memoryOperations.values())
+        .filter((o) => o.status === 'PROVISIONING' && (!o.leaseExpiresAt || new Date(o.leaseExpiresAt).getTime() < now))
+        .sort((a, b) => (b.createdAt > a.createdAt ? 1 : -1));
     }
 
-    const now = Date.now();
-    return Array.from(memoryOperations.values())
-      .filter((o) => o.status === 'PROVISIONING' && (!o.leaseExpiresAt || new Date(o.leaseExpiresAt).getTime() < now))
-      .sort((a, b) => (b.createdAt > a.createdAt ? 1 : -1));
+    try {
+      const rows = await (prisma as any).$queryRaw<Array<any>>`
+        SELECT * FROM "PlatformOperation"
+        WHERE "status" = 'PROVISIONING'
+          AND ("leaseExpiresAt" IS NULL OR "leaseExpiresAt" < NOW())
+        ORDER BY "createdAt" ASC
+      `;
+      return Array.isArray(rows) ? rows.map((r: any) => rowToRecord(r)) : [];
+    } catch (err: any) {
+      console.error('[OperationStore] listResumableOperations DB query failed (fail-closed):', err?.message || err);
+      throw new DatabasePersistenceError('listResumableOperations', err);
+    }
   }
 
   async listOperations(filter?: { organizationId?: string; status?: string }): Promise<PlatformOperationRecord[]> {
-    if (process.env.ORBITOX_PLATFORM_REPOSITORY !== 'json') {
-      try {
-        const where: any = {};
-        if (filter?.organizationId) where.organizationId = filter.organizationId;
-        if (filter?.status) where.status = filter.status;
-        const rows = await (prisma as any).platformOperation.findMany({
-          where,
-          orderBy: { createdAt: 'desc' },
-          take: 50,
-        });
-        if (rows && rows.length > 0) {
-          return rows.map((row: any) => rowToRecord(row));
-        }
-      } catch (err: any) {
-        // fallback to memory
+    if (process.env.ORBITOX_PLATFORM_REPOSITORY === 'json') {
+      let items = Array.from(memoryOperations.values());
+      if (filter?.organizationId) {
+        items = items.filter((o) => o.organizationId === filter.organizationId);
       }
+      if (filter?.status) {
+        items = items.filter((o) => o.status === filter.status);
+      }
+      return items.sort((a, b) => (b.createdAt > a.createdAt ? 1 : -1));
     }
 
-    let items = Array.from(memoryOperations.values());
-    if (filter?.organizationId) {
-      items = items.filter((o) => o.organizationId === filter.organizationId);
+    try {
+      const where: any = {};
+      if (filter?.organizationId) where.organizationId = filter.organizationId;
+      if (filter?.status) where.status = filter.status;
+      const rows = await (prisma as any).platformOperation.findMany({
+        where,
+        orderBy: { createdAt: 'desc' },
+        take: 50,
+      });
+      return rows ? rows.map((row: any) => rowToRecord(row)) : [];
+    } catch (err: any) {
+      console.error('[OperationStore] listOperations DB query failed (fail-closed):', err?.message || err);
+      throw new DatabasePersistenceError('listOperations', err);
     }
-    if (filter?.status) {
-      items = items.filter((o) => o.status === filter.status);
-    }
-    return items.sort((a, b) => (b.createdAt > a.createdAt ? 1 : -1));
   }
 }
 

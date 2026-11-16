@@ -828,7 +828,7 @@ export class ProvisioningSaga {
     const cleanSlug = req.slug;
     const environmentSlug = req.environment || 'production';
 
-    await this.executeWorkflow(
+    const workflowPromise = this.executeWorkflow(
       operationId,
       {
         name: req.name,
@@ -848,6 +848,14 @@ export class ProvisioningSaga {
         idempotencyKey: op.idempotencyKey || undefined,
       }
     );
+
+    if (process.env.ORBITOX_SYNC_SAGA === 'true') {
+      await workflowPromise;
+    } else {
+      workflowPromise.catch((err) => {
+        console.error(`[ProvisioningSaga] Async retry failed for operation ${operationId}:`, err);
+      });
+    }
 
     return await operationStore.getOperation(operationId);
   }

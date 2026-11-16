@@ -42,6 +42,18 @@ export function authorizeKdsRequest(
     };
   }
 
+  if (identity.type === 'PLATFORM_BRIDGE') {
+    if (identity.scopes?.includes('preview:kds:bump')) {
+      return { authorized: true };
+    }
+    return {
+      authorized: false,
+      statusCode: 403,
+      error: 'Platform bridge caller lacks required preview:kds:bump scope.',
+      code: 'INSUFFICIENT_KDS_SCOPE',
+    };
+  }
+
   const allowedRoles = ['CHEF', 'EXPO', 'OPERATIONS', 'MANAGER', 'ADMIN'];
   const effectiveRole = identity.role || (identity.type === 'ADMIN' ? 'ADMIN' : undefined);
   const isAuthorizedRole =

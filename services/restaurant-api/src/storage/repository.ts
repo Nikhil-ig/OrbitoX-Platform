@@ -2180,6 +2180,7 @@ export class PostgresRestaurantRepository implements RestaurantRepository {
 
   private mapKitchenTask = (r: any): KitchenTask => ({
     id: r.id,
+    tenantId: r.tenantId,
     orderId: r.orderId,
     tableNumber: r.tableNumber,
     branchId: r.branchId || undefined,
@@ -2196,6 +2197,7 @@ export class PostgresRestaurantRepository implements RestaurantRepository {
     modifiers: r.modifiers || [],
     course: r.course as any,
     fulfilledItemCount: r.fulfilledItemCount,
+    isTest: Boolean(r.isTest),
     createdAt: r.createdAt ? r.createdAt.toISOString() : new Date().toISOString(),
     updatedAt: r.updatedAt ? r.updatedAt.toISOString() : new Date().toISOString(),
   });

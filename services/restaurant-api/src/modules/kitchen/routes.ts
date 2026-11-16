@@ -4,6 +4,7 @@ import {
   runtimeController,
   activeDispatchLocks,
   checkTestKillPoint,
+  postgresStore,
 } from '../../http/context';
 import {
   authorizeKdsRequest,
@@ -23,10 +24,75 @@ async function handleBumpTask(req: any, res: any, context: any): Promise<void> {
     sendJson(res, 400, { error: 'Task ID is required', code: 'TASK_ID_REQUIRED' });
     return;
   }
-  const task = (await context.repo.getKitchenTasks()).find((t: any) => t.id === taskId);
+  let task = (await context.repo.getKitchenTasks()).find((t: any) => t.id === taskId);
   if (!task) {
+    if (postgresStore?.prisma) {
+      const crossTask = await postgresStore.prisma.kitchenTask.findUnique({
+        where: { id: taskId },
+        select: { id: true, tenantId: true },
+      }).catch(() => null);
+      if (crossTask && crossTask.tenantId !== context.tenantContext?.tenantId) {
+        sendJson(res, 403, {
+          error: `Task ${taskId} does not belong to active tenant ${context.tenantContext?.tenantId}.`,
+          code: 'TASK_TENANT_MISMATCH',
+        });
+        return;
+      }
+    }
     sendJson(res, 404, { error: `Task ${taskId} not found`, code: 'TASK_NOT_FOUND' });
     return;
+  }
+
+  if (context.requestIdentity.type === 'PLATFORM_BRIDGE') {
+    const tenantStatus = String(context.tenantContext?.status || '').toLowerCase();
+    if (tenantStatus !== 'preview') {
+      sendJson(res, 403, {
+        error: 'Preview KDS actions are only permitted for restaurants in PREVIEW status.',
+        code: 'TEST_TASKS_ONLY_IN_PREVIEW',
+      });
+      return;
+    }
+
+    let previewExpiryDate = context.tenantContext?.previewExpiresAt;
+    if (!previewExpiryDate && postgresStore?.prisma) {
+      const dbT = await postgresStore.prisma.tenant.findUnique({
+        where: { id: context.tenantContext.tenantId },
+        select: { previewExpiresAt: true },
+      }).catch(() => null);
+      previewExpiryDate = dbT?.previewExpiresAt;
+    }
+    if (previewExpiryDate && new Date(previewExpiryDate).getTime() <= Date.now()) {
+      sendJson(res, 403, {
+        error: 'The preview period for this restaurant has expired.',
+        code: 'PREVIEW_EXPIRED',
+      });
+      return;
+    }
+
+    if (task.tenantId && context.tenantContext?.tenantId && task.tenantId !== context.tenantContext.tenantId) {
+      sendJson(res, 403, {
+        error: `Task ${taskId} does not belong to active tenant ${context.tenantContext.tenantId}.`,
+        code: 'TASK_TENANT_MISMATCH',
+      });
+      return;
+    }
+
+    if (!task.isTest) {
+      sendJson(res, 403, {
+        error: 'Only test kitchen tasks can be mutated through the preview bridge.',
+        code: 'CANNOT_MUTATE_COMMERCIAL_TASK_IN_PREVIEW',
+      });
+      return;
+    }
+
+    const parentOrder = await context.repo.getOrder(task.orderId);
+    if (!parentOrder || !parentOrder.isTest) {
+      sendJson(res, 403, {
+        error: 'Only test orders can be mutated through the preview bridge.',
+        code: 'CANNOT_MUTATE_COMMERCIAL_TASK_IN_PREVIEW',
+      });
+      return;
+    }
   }
   const taskBranchRes = await resolveTaskAuthoritativeBranch(task, context.repo);
   if (!taskBranchRes.branchId && context.requestIdentity.branchId && context.requestIdentity.branchId !== '*') {
@@ -59,6 +125,11 @@ async function handleBumpTask(req: any, res: any, context: any): Promise<void> {
     station: body.station,
     expectedRevision: body.expectedRevision,
   });
+
+  if (!result.success) {
+    sendJson(res, 400, { error: result.error, code: result.code || 'INVALID_TRANSITION' });
+    return;
+  }
 
   const responsePayload = {
     success: true,

@@ -638,6 +638,7 @@ export class PostgresRestaurantStore {
     });
     return rows.map((r) => ({
       id: r.id,
+      tenantId: r.tenantId,
       orderId: r.orderId,
       tableNumber: r.tableNumber,
       branchId: r.branchId || undefined,
@@ -654,6 +655,7 @@ export class PostgresRestaurantStore {
       modifiers: (r.modifiers as any) || [],
       course: (r.course as any) || undefined,
       fulfilledItemCount: r.fulfilledItemCount,
+      isTest: Boolean(r.isTest),
       createdAt: r.createdAt.toISOString(),
       updatedAt: r.updatedAt.toISOString(),
     }));
@@ -680,6 +682,7 @@ export class PostgresRestaurantStore {
         modifiers: (task.modifiers as any) || [],
         course: task.course,
         fulfilledItemCount: task.fulfilledItemCount || 0,
+        isTest: Boolean(task.isTest),
       },
       create: {
         id: task.id,
@@ -700,6 +703,7 @@ export class PostgresRestaurantStore {
         modifiers: (task.modifiers as any) || [],
         course: task.course,
         fulfilledItemCount: task.fulfilledItemCount || 0,
+        isTest: Boolean(task.isTest),
       },
     });
   }

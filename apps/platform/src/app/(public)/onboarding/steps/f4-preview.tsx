@@ -171,17 +171,18 @@ export function F4WorkingPreviewStep({
 
   // 3. Generate Standards-Compliant Optical QR Code
   useEffect(() => {
-    const targetUrl = dinerUrl || subdomainUrl;
-    if (targetUrl) {
-      QRCode.toDataURL(targetUrl, {
+    if (dinerUrl && typeof dinerUrl === 'string' && dinerUrl.startsWith('http')) {
+      QRCode.toDataURL(dinerUrl, {
         margin: 1,
         width: 140,
         color: { dark: '#14161A', light: '#FFFFFF' },
       })
         .then((url) => setQrCodeDataUrl(url))
-        .catch(() => {});
+        .catch(() => setQrCodeDataUrl(''));
+    } else {
+      setQrCodeDataUrl('');
     }
-  }, [dinerUrl, subdomainUrl]);
+  }, [dinerUrl]);
 
   const handleAddToCart = (dish: MenuItemView) => {
     const price = Math.round(dish.basePriceMinor / 100);
@@ -197,8 +198,20 @@ export function F4WorkingPreviewStep({
   const cartTotal = cart.reduce((acc, i) => acc + i.price * i.qty, 0);
   const cartCount = cart.reduce((acc, i) => acc + i.qty, 0);
 
+  const previewExpiresAt = previewData?.restaurant?.previewExpiresAt;
+  const daysLeft = previewExpiresAt
+    ? Math.max(0, Math.ceil((new Date(previewExpiresAt).getTime() - Date.now()) / (1000 * 60 * 60 * 24)))
+    : 14;
+  const isPreviewExpired =
+    previewData?.restaurant?.status === 'EXPIRED' ||
+    Boolean(previewExpiresAt && new Date(previewExpiresAt).getTime() <= Date.now());
+
   // 4. Place Real Test Order via Authoritative Endpoint
   const handlePlaceTestOrder = async () => {
+    if (isPreviewExpired) {
+      setOrderNotice('Cannot place test order: Preview period has expired.');
+      return;
+    }
     let orderItems = cart;
     if (orderItems.length === 0) {
       const allDishes = Object.values(dishesByCategory).flat();
@@ -206,7 +219,8 @@ export function F4WorkingPreviewStep({
         const d = allDishes[0];
         orderItems = [{ id: d.id, name: d.name, price: Math.round(d.basePriceMinor / 100), qty: 1 }];
       } else {
-        orderItems = [{ id: 'item_sample_1', name: 'Dal Makhani', price: 280, qty: 1 }];
+        setOrderNotice('Cannot place test order: No menu items available in catalogue.');
+        return;
       }
     }
     if (!sampleTable) {
@@ -303,8 +317,10 @@ export function F4WorkingPreviewStep({
               <span>Mobile Phone View (D6)</span>
             </button>
           )}
-          <span className="text-xs bg-white text-[#14161A] font-semibold px-3 py-1 rounded-full">
-            14 days preview remaining
+          <span className={`text-xs font-semibold px-3 py-1 rounded-full ${
+            isPreviewExpired ? 'bg-red-500 text-white' : 'bg-white text-[#14161A]'
+          }`}>
+            {isPreviewExpired ? 'Preview expired' : `${daysLeft} days preview remaining`}
           </span>
         </div>
       </div>
@@ -320,8 +336,12 @@ export function F4WorkingPreviewStep({
             <div>
               <h1 className="text-xl font-bold text-[#14161A] flex items-center gap-2">
                 <span>{restaurantName}</span>
-                <span className="text-[10px] bg-emerald-100 text-emerald-800 font-semibold px-2 py-0.5 rounded-full">
-                  LIVE TENANT
+                <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full ${
+                  isPreviewExpired
+                    ? 'bg-red-100 text-red-800'
+                    : 'bg-amber-100 text-amber-800'
+                }`}>
+                  {isPreviewExpired ? 'PREVIEW EXPIRED' : 'PREVIEW MODE'}
                 </span>
               </h1>
               <p className="text-xs text-[#5A6170] flex items-center gap-2">
@@ -438,7 +458,7 @@ export function F4WorkingPreviewStep({
               <div className="pt-2">
                 <button
                   type="button"
-                  disabled={placingOrder || cart.length === 0 || !sampleTable}
+                  disabled={placingOrder || cart.length === 0 || !sampleTable || isPreviewExpired}
                   onClick={handlePlaceTestOrder}
                   className="w-full p-2.5 rounded-full bg-[#14161A] text-white text-[11px] font-semibold text-center cursor-pointer hover:bg-black/90 shadow-md transition-all disabled:opacity-50"
                 >
@@ -446,6 +466,8 @@ export function F4WorkingPreviewStep({
                     <span className="flex items-center justify-center gap-1.5">
                       <RefreshCw className="h-3 w-3 animate-spin" /> Placing test order...
                     </span>
+                  ) : isPreviewExpired ? (
+                    <span>Preview expired</span>
                   ) : !sampleTable ? (
                     <span>Sample table required</span>
                   ) : (
@@ -489,8 +511,8 @@ export function F4WorkingPreviewStep({
                         className="w-28 h-28 object-contain mx-auto"
                       />
                     ) : (
-                      <div className="w-28 h-28 bg-gray-100 flex items-center justify-center text-[10px] text-gray-400">
-                        Generating QR...
+                      <div className="w-28 h-28 bg-gray-100 flex items-center justify-center text-[10px] text-gray-400 text-center p-2">
+                        {sampleTable?.dinerUrl ? 'Generating QR...' : 'Sample table URL unavailable'}
                       </div>
                     )}
                     <div className="text-[10px] font-mono font-bold text-center text-[#14161A] mt-1">
