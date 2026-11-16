@@ -401,4 +401,221 @@ describe('Phase 3: Distributed Provisioning Lease Correctness, Attempt-Scoped To
     assert.strictEqual(res.ok, false);
     assert.match(res.error || '', /aborted/i);
   });
+
+  it('11. Late worker cannot restore CANCELLED operation to ACTIVE', async () => {
+    const slug = `cancel-slug-${crypto.randomBytes(4).toString('hex')}`;
+    const opId = `op_cancel_${crypto.randomBytes(6).toString('hex')}`;
+    createdOpIds.push(opId);
+    const worker = 'worker_node_1:att_1';
+
+    const op: PlatformOperationRecord = {
+      id: opId,
+      type: 'TENANT_PROVISION',
+      tenantId: `org/${testOrg.id}/project/${slug}/environment/production`,
+      organizationId: testOrg.id,
+      status: 'CANCELLED',
+      leaseOwner: null,
+      leaseExpiresAt: null,
+      steps: [{ id: '1', name: 'Step 1', status: 'COMPLETED' }],
+      request: { name: `Cancel Resto ${slug}`, slug, plugins: [{ id: 'restaurant-os', plan: 'restaurant-starter' }] },
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+    await operationStore.createOperation(op);
+
+    // Stale worker attempts to update status to ACTIVE
+    await assert.rejects(
+      async () => {
+        await operationStore.updateOperation(
+          opId,
+          { status: 'ACTIVE' },
+          { expectedLeaseOwner: worker }
+        );
+      },
+      /OPERATION_CANCELLED/,
+      'Must reject update on CANCELLED operation'
+    );
+
+    const record = await operationStore.getOperation(opId);
+    assert.strictEqual(record?.status, 'CANCELLED');
+  });
+
+  it('12. In-flight cancellation: aborts active worker via AbortController and compensates succeeded plugins', async () => {
+    const slug = `cancel-inflight-${crypto.randomBytes(4).toString('hex')}`;
+    const opId = `op_inflight_${crypto.randomBytes(6).toString('hex')}`;
+    createdOpIds.push(opId);
+
+    // Start a mock HTTP server that hangs the response to /orbitox/lifecycle/provision
+    const http = await import('node:http');
+    let requestReceived = false;
+
+    const server = http.createServer((req, res) => {
+      requestReceived = true;
+      // Intentionally do not respond; simulate hanging in-flight operation
+    });
+
+    await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', () => resolve()));
+    const port = (server.address() as any).port;
+    const oldRestUrl = process.env.RESTAURANT_URL;
+    process.env.RESTAURANT_URL = `http://127.0.0.1:${port}`;
+
+    try {
+      const worker = 'worker_inflight_1:att_1';
+      const op: PlatformOperationRecord = {
+        id: opId,
+        type: 'TENANT_PROVISION',
+        tenantId: `org/${testOrg.id}/project/${slug}/environment/production`,
+        organizationId: testOrg.id,
+        status: 'PROVISIONING',
+        leaseOwner: worker,
+        leaseExpiresAt: new Date(Date.now() + 10000).toISOString(),
+        steps: [
+          { id: '1', name: 'Step 1', status: 'COMPLETED' },
+          { id: '2', name: 'Step 2', status: 'COMPLETED' },
+          { id: '3', name: 'Step 3', status: 'COMPLETED' },
+          { id: '4', name: 'Step 4', status: 'COMPLETED' },
+          { id: '5', name: 'Plugin provisioning', status: 'PENDING' },
+          { id: '6', name: 'Initial grant push', status: 'PENDING' },
+          { id: '7', name: 'Final tenant activation', status: 'PENDING' },
+        ],
+        request: { name: `Inflight Resto ${slug}`, slug, plugins: [{ id: 'restaurant-os', plan: 'restaurant-starter' }] },
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      };
+      await operationStore.createOperation(op);
+
+      const asyncPromise = provisioningSaga.executeAsyncSteps(
+        opId,
+        {
+          name: `Inflight Resto ${slug}`,
+          slug,
+          organizationId: testOrg.id,
+          environment: 'production',
+          plugins: [{ id: 'restaurant-os', plan: 'restaurant-starter', planTier: 'STARTER', runtimeUrl: `http://127.0.0.1:${port}` } as any],
+        },
+        op.tenantId,
+        testOrg,
+        slug,
+        'production',
+        { workerId: worker }
+      );
+
+      // Wait until HTTP server receives the request
+      const start = Date.now();
+      while (!requestReceived && Date.now() - start < 3000) {
+        await new Promise((r) => setTimeout(r, 50));
+      }
+      assert.strictEqual(requestReceived, true, 'Mock server must receive lifecycle provision request');
+
+      // Now cancel the operation mid-flight
+      const cancelled = await provisioningSaga.cancelOperation(opId);
+      assert.strictEqual(cancelled, true, 'cancelOperation must succeed');
+
+      // Wait for async execution to settle
+      await asyncPromise;
+
+      // Assert operation is CANCELLED and lease was released
+      const finalOp = await operationStore.getOperation(opId);
+      assert.strictEqual(finalOp?.status, 'CANCELLED');
+      assert.strictEqual(finalOp?.leaseOwner, null);
+
+      // Assert project was NOT activated
+      const project = await platformRepository.getProject(slug);
+      assert.notStrictEqual(project?.status, 'ACTIVE');
+    } finally {
+      process.env.RESTAURANT_URL = oldRestUrl;
+      server.close();
+    }
+  });
+
+  it('13. Fenced Step 7: Stolen lease before project activation rolls back transaction and suppresses webhook', async () => {
+    const slug = `fenced-step7-${crypto.randomBytes(4).toString('hex')}`;
+    const opId = `op_fenced_step7_${crypto.randomBytes(6).toString('hex')}`;
+    createdOpIds.push(opId);
+
+    const workerA = 'worker_a:att_1';
+    const workerB = 'worker_b:att_2';
+
+    // Create project first (status: PROVISIONING)
+    const created = await platformRepository.createProject({
+      name: `Fenced Project ${slug}`,
+      slug,
+      organizationId: testOrg.id,
+      businessModel: 'B2B',
+      technicalLead: 'lead@orbitox.io',
+      contactEmail: 'contact@orbitox.io',
+    });
+    const projectId = (created as any).project?.id || (created as any).id;
+    await platformRepository.updateProject(projectId, { status: 'PROVISIONING' });
+
+    const op: PlatformOperationRecord = {
+      id: opId,
+      type: 'TENANT_PROVISION',
+      tenantId: `org/${testOrg.id}/project/${slug}/environment/production`,
+      organizationId: testOrg.id,
+      status: 'PROVISIONING',
+      leaseOwner: workerA,
+      leaseExpiresAt: new Date(Date.now() + 10000).toISOString(),
+      steps: [
+        { id: '1', name: 'Step 1', status: 'COMPLETED' },
+        { id: '2', name: 'Step 2', status: 'COMPLETED' },
+        { id: '3', name: 'Step 3', status: 'COMPLETED' },
+        { id: '4', name: 'Step 4', status: 'COMPLETED' },
+        { id: '5', name: 'Plugin provisioning', status: 'COMPLETED' },
+        { id: '6', name: 'Initial grant push', status: 'COMPLETED' },
+        { id: '7', name: 'Final tenant activation', status: 'PENDING' },
+      ],
+      request: { name: `Fenced Resto ${slug}`, slug, plugins: [{ id: 'restaurant-os', plan: 'restaurant-starter' }] },
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+    await operationStore.createOperation(op);
+
+    const { clearEmittedWebhooks, getEmittedWebhooks } = await import('@/server/provisioning/webhook-emitter');
+    clearEmittedWebhooks();
+
+    // Hook: right before Step 7's finalizeProjectActivationAndOutbox, worker B steals the lease!
+    (globalThis as any).__test_before_step7_activation = async (targetOpId: string) => {
+      if (targetOpId === opId) {
+        // Expire worker A's lease and let worker B claim it
+        await operationStore.updateOperation(opId, {
+          leaseExpiresAt: new Date(Date.now() - 1000).toISOString(),
+        });
+        await operationStore.claimOperationLease(opId, workerB, 30);
+      }
+    };
+
+    try {
+      await provisioningSaga.executeAsyncSteps(
+        opId,
+        {
+          name: `Fenced Resto ${slug}`,
+          slug,
+          organizationId: testOrg.id,
+          environment: 'production',
+          plugins: [{ id: 'restaurant-os', plan: 'restaurant-starter', planTier: 'STARTER', runtimeUrl: 'http://localhost:3000' } as any],
+        },
+        op.tenantId,
+        testOrg,
+        slug,
+        'production',
+        { workerId: workerA }
+      );
+    } finally {
+      delete (globalThis as any).__test_before_step7_activation;
+    }
+
+    // 1. Worker A's Step 7 must have failed due to LEASE_FENCING_ERROR
+    const finalOp = await operationStore.getOperation(opId);
+    assert.strictEqual(finalOp?.leaseOwner, workerB, 'Worker B must remain the lease owner');
+    assert.notStrictEqual(finalOp?.status, 'ACTIVE', 'Operation must NOT be marked ACTIVE by worker A');
+
+    // 2. Project status must NOT be ACTIVE (rolled back)
+    const freshProject = await platformRepository.getProject(slug);
+    assert.notStrictEqual(freshProject?.status, 'ACTIVE', 'Project must NOT be marked ACTIVE after lease was lost');
+
+    // 3. Webhook tenant.ready must NEVER have been emitted
+    const webhooks = getEmittedWebhooks({ tenantId: op.tenantId, event: 'tenant.ready' });
+    assert.strictEqual(webhooks.length, 0, 'Webhook tenant.ready must NOT be emitted when lease is fenced');
+  });
 });

@@ -21,11 +21,18 @@ export interface BridgeKeys {
   keys: Record<string, string>; // id -> secret (>= 32 bytes)
 }
 
+export interface BridgePrincipal {
+  sub: string;
+  scopes: string[];
+  stationId?: string;
+  branchId?: string;
+}
+
 export interface SignInput {
   method: string;
   pathWithQuery: string;
   tenantId: string;
-  principal: { sub: string; scopes: string[] };
+  principal: BridgePrincipal;
   body?: Buffer | string;
 }
 
@@ -78,10 +85,22 @@ export function signBridgeRequest(
     throw new Error('Bridge key is missing or does not meet 32-byte security requirement.');
   }
 
-  const principal = JSON.stringify({
+  const principalObj: {
+    sub: string;
+    scopes: string[];
+    stationId?: string;
+    branchId?: string;
+  } = {
     sub: input.principal.sub,
     scopes: [...input.principal.scopes].sort(),
-  });
+  };
+  if (typeof input.principal.stationId === 'string' && input.principal.stationId.trim()) {
+    principalObj.stationId = input.principal.stationId.trim();
+  }
+  if (typeof input.principal.branchId === 'string' && input.principal.branchId.trim()) {
+    principalObj.branchId = input.principal.branchId.trim();
+  }
+  const principal = JSON.stringify(principalObj);
   const ts = String(Math.floor(now / 1000));
   const nonce = crypto.randomBytes(16).toString('base64url');
   const bodyHash = sha256hex(input.body);
@@ -130,7 +149,7 @@ export async function verifyBridgeRequest(
   },
   now = Date.now(),
 ): Promise<
-  | { ok: true; tenantId: string; principal: { sub: string; scopes: string[] } }
+  | { ok: true; tenantId: string; principal: BridgePrincipal }
   | { ok: false; reason: VerifyFailure }
 > {
   const getHeader = (name: string): string | undefined => {
@@ -185,8 +204,25 @@ export async function verifyBridgeRequest(
   if (typeof p?.sub !== 'string' || !Array.isArray(p?.scopes) || !p.scopes.every((s: unknown) => typeof s === 'string')) {
     return { ok: false, reason: 'BAD_PRINCIPAL' };
   }
+  if (p.stationId !== undefined && (typeof p.stationId !== 'string' || !p.stationId.trim())) {
+    return { ok: false, reason: 'BAD_PRINCIPAL' };
+  }
+  if (p.branchId !== undefined && (typeof p.branchId !== 'string' || !p.branchId.trim())) {
+    return { ok: false, reason: 'BAD_PRINCIPAL' };
+  }
 
-  return { ok: true, tenantId: tenant, principal: { sub: p.sub, scopes: p.scopes } };
+  const verifiedPrincipal: BridgePrincipal = {
+    sub: p.sub,
+    scopes: p.scopes,
+  };
+  if (typeof p.stationId === 'string' && p.stationId.trim()) {
+    verifiedPrincipal.stationId = p.stationId.trim();
+  }
+  if (typeof p.branchId === 'string' && p.branchId.trim()) {
+    verifiedPrincipal.branchId = p.branchId.trim();
+  }
+
+  return { ok: true, tenantId: tenant, principal: verifiedPrincipal };
 }
 
 // Cached ephemeral development key per process

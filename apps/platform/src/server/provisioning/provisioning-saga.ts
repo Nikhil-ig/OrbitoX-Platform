@@ -94,6 +94,7 @@ export async function validateProvisioningPlugins(
 export class ProvisioningSaga {
   readonly workerInstanceId = `worker_${process.pid}_${randomUUID().slice(0, 8)}`;
   private inFlightResumes = new Set<string>();
+  private activeExecutions = new Map<string, { abortController: AbortController; attemptLeaseOwner: string }>();
   /**
    * Initializes and executes the durable 7-step tenant provisioning workflow.
    * Steps 1-4 execute synchronously so API credentials and canonical tenant ID
@@ -543,6 +544,7 @@ export class ProvisioningSaga {
 
     let leaseLost = false;
     const abortController = new AbortController();
+    this.activeExecutions.set(operationId, { abortController, attemptLeaseOwner });
 
     // Maintain heartbeat while executing asynchronous steps
     const heartbeatTtl = process.env.NODE_ENV === 'test' ? 2 : 30;
@@ -565,7 +567,7 @@ export class ProvisioningSaga {
 
     const assertActiveLease = async () => {
       if (leaseLost || abortController.signal.aborted) {
-        throw new Error(`LEASE_LOST: Aborting step execution because lease was lost for operation ${operationId}`);
+        throw new Error(`LEASE_LOST: Aborting step execution because lease was lost or cancelled for operation ${operationId}`);
       }
       const freshOp = await operationStore.getOperation(operationId);
       if (!freshOp || freshOp.leaseOwner !== attemptLeaseOwner) {
@@ -577,6 +579,11 @@ export class ProvisioningSaga {
         leaseLost = true;
         abortController.abort();
         throw new Error(`LEASE_LOST: Lease expired for operation ${operationId}`);
+      }
+      if (['CANCELLED', 'FAILED', 'COMPLETED'].includes(freshOp.status)) {
+        leaseLost = true;
+        abortController.abort();
+        throw new Error(`OPERATION_TERMINAL: Operation ${operationId} is in terminal state ${freshOp.status}`);
       }
     };
 
@@ -742,9 +749,51 @@ export class ProvisioningSaga {
 
         await assertActiveLease();
         const project = await platformRepository.getProject(cleanSlug);
-        if (project) {
-          await platformRepository.updateProject(project.id, { status: 'ACTIVE' });
+
+        // F2 hook for deterministic test verification of lease stealing before activation
+        const testHook = (globalThis as any).__test_before_step7_activation;
+        if (typeof testHook === 'function') {
+          await testHook(operationId);
         }
+
+        const existingOp = await operationStore.getOperation(operationId);
+        const existingApiKey = existingOp?.result?.apiKey;
+
+        const updatedSteps = currentSteps.map((s) =>
+          s.id === '7'
+            ? {
+                ...s,
+                status: 'COMPLETED' as const,
+                completedAt: new Date().toISOString(),
+                durationMs: Math.round(performance.now() - t7),
+              }
+            : s
+        );
+
+        // Atomic transaction: verify lease owner and unexpired validity, activate project, record outbox message, mark operation ACTIVE
+        const { webhookPayload } = await operationStore.finalizeProjectActivationAndOutbox({
+          operationId,
+          expectedLeaseOwner: attemptLeaseOwner,
+          projectId: project?.id || '',
+          tenantId,
+          organizationId: org.id,
+          cleanSlug,
+          environmentSlug,
+          plugins: input.plugins.map((p) => ({ id: p.id, plan: p.plan })),
+          operatorId: options.operatorId,
+          requestId: options.requestId,
+          steps: updatedSteps,
+          apiKey: existingApiKey
+            ? {
+                id: existingApiKey.id,
+                prefix: existingApiKey.prefix,
+                masked: existingApiKey.masked,
+                environmentId: existingApiKey.environmentId,
+              }
+            : undefined,
+        });
+
+        currentSteps = updatedSteps;
 
         try {
           await platformRepository.recordPlatformAdminAudit({
@@ -763,56 +812,13 @@ export class ProvisioningSaga {
           });
         } catch { }
 
+        // Emit platform webhook strictly AFTER transactional commit
         await emitPlatformWebhook({
           event: 'tenant.ready',
           tenantId,
-          payload: {
-            operationId,
-            tenantId,
-            organizationId: org.id,
-            slug: cleanSlug,
-            environment: environmentSlug,
-            status: 'ACTIVE',
-            plugins: input.plugins.map((p) => ({
-              id: p.id,
-              plan: p.plan,
-              status: 'ACTIVE',
-            })),
-          },
-        });
-
-        await updateStep('7', 'COMPLETED', {
-          completedAt: new Date().toISOString(),
-          durationMs: Math.round(performance.now() - t7),
+          payload: webhookPayload,
         });
       }
-
-      await assertActiveLease();
-      const existingOp = await operationStore.getOperation(operationId);
-      const existingApiKey = existingOp?.result?.apiKey;
-
-      // Mark operation ACTIVE (W1: NO secret in result!)
-      await operationStore.updateOperation(operationId, {
-        status: 'ACTIVE',
-        steps: currentSteps,
-        result: {
-          tenantId,
-          organizationId: org.id,
-          slug: cleanSlug,
-          status: 'ACTIVE',
-          plugins: input.plugins.map((p) => ({
-            id: p.id,
-            plan: p.plan,
-            status: 'ACTIVE',
-          })),
-          apiKey: existingApiKey ? {
-            id: existingApiKey.id,
-            prefix: existingApiKey.prefix,
-            masked: existingApiKey.masked,
-            environmentId: existingApiKey.environmentId,
-          } : undefined,
-        },
-      }, { expectedLeaseOwner: attemptLeaseOwner });
     } catch (err: any) {
       const errMsg = err?.message || String(err);
       const running = currentSteps.find((s) => s.status === 'RUNNING');
@@ -830,6 +836,7 @@ export class ProvisioningSaga {
         }, { expectedLeaseOwner: attemptLeaseOwner }).catch(() => { });
       }
     } finally {
+      this.activeExecutions.delete(operationId);
       clearInterval(heartbeatTimer);
       if (!leaseLost) {
         await operationStore.releaseOperationLease(operationId, attemptLeaseOwner);
@@ -1011,23 +1018,48 @@ export class ProvisioningSaga {
   }
 
   /**
-   * Compensation: runs deprovision on all plugins that succeeded.
+   * Compensation: aborts in-flight execution and runs deprovision strictly on plugins that succeeded.
    */
   async cancelOperation(operationId: string): Promise<boolean> {
     const op = await operationStore.getOperation(operationId);
     if (!op || op.status === 'CANCELLED') return false;
 
-    const tenantId = op.tenantId;
-    const reqPlugins = (op.request.plugins as any[]) || [];
-
-    for (const p of reqPlugins) {
-      await pluginLifecycleClient.invokeLifecycle(p.id, 'deprovision', tenantId, {});
+    // 1. Immediately abort active in-flight execution if running in this worker
+    const active = this.activeExecutions.get(operationId);
+    if (active) {
+      active.abortController.abort(new Error('OPERATION_CANCELLED'));
     }
 
+    // 2. Invalidate lease and mark operation CANCELLED
     await operationStore.updateOperation(operationId, {
       status: 'CANCELLED',
+      leaseOwner: null,
+      leaseExpiresAt: null,
       error: 'Operation cancelled by operator. Succeeded plugins compensated via deprovision.',
     });
+
+    const tenantId = op.tenantId;
+
+    // 3. Compensate strictly plugins that succeeded
+    const installed = await platformRepository.listPluginInstallations(tenantId).catch(() => []);
+    const installedPluginIds = new Set(
+      installed
+        .filter((inst) => inst.status !== 'FAILED')
+        .map((inst) => inst.pluginId)
+    );
+
+    if (Array.isArray(op.result?.succeededPlugins)) {
+      for (const p of op.result.succeededPlugins) {
+        installedPluginIds.add(p);
+      }
+    }
+
+    for (const pluginId of installedPluginIds) {
+      await pluginLifecycleClient.invokeLifecycle(pluginId, 'deprovision', tenantId, {}).catch((err) => {
+        console.warn(`[ProvisioningSaga] Deprovision compensation failed for ${pluginId}:`, err);
+      });
+      await platformRepository.uninstallPluginInstallation(tenantId, pluginId).catch(() => {});
+    }
 
     try {
       await platformRepository.recordPlatformAdminAudit({

@@ -43,6 +43,7 @@ import {
   resolveAllowedOrigin,
   verifyBridgeRequest,
   getDefaultBridgeKeys,
+  BridgePrincipal,
 } from '../shared';
 import { getTenantRepository } from '../storage';
 import { PosService } from '@orbitox-io/pos';
@@ -89,7 +90,7 @@ export async function handleRequest(req: http.IncomingMessage, res: http.ServerR
   const rawSig = req.headers['x-orbitox-signature'] || req.headers['bridge-signature'] || req.headers['x-bridge-signature'];
   const rawTenantHeader = req.headers['x-tenant-id'] || req.headers['x-orbitox-tenant'] || req.headers['bridge-tenant'];
 
-  let verifiedBridge: { tenantId: string; principal: { sub: string; scopes: string[] } } | null = null;
+  let verifiedBridge: { tenantId: string; principal: BridgePrincipal } | null = null;
 
   if (rawSig) {
     const rawBody = await readRawBody(req);
@@ -304,16 +305,44 @@ export async function handleRequest(req: http.IncomingMessage, res: http.ServerR
     const isBridgeStation = Boolean(
       verifiedBridge?.principal.scopes?.includes('station:kds')
     );
+
+    const rawStationHeader = (req.headers['x-station-id'] || req.headers['x-station']) as string | undefined;
+    const rawBranchHeader = (req.headers['x-branch-id'] || req.headers['x-branch']) as string | undefined;
+
+    if (isBridgeStation) {
+      if (!verifiedBridge?.principal.stationId || !verifiedBridge?.principal.branchId) {
+        sendJson(res, 403, {
+          error: 'Station credential lacks explicit station or branch binding in signed principal.',
+          code: 'STATION_BINDING_REQUIRED',
+        });
+        return;
+      }
+      if (rawStationHeader && rawStationHeader !== verifiedBridge.principal.stationId) {
+        sendJson(res, 403, {
+          error: 'Header x-station-id does not match cryptographically verified stationId claim.',
+          code: 'STATION_TAMPERED',
+        });
+        return;
+      }
+      if (rawBranchHeader && rawBranchHeader !== verifiedBridge.principal.branchId) {
+        sendJson(res, 403, {
+          error: 'Header x-branch-id does not match cryptographically verified branchId claim.',
+          code: 'BRANCH_TAMPERED',
+        });
+        return;
+      }
+    }
+
     const requestIdentity: any = verifiedBridge
       ? {
         type: isBridgeStation ? 'STATION' : 'PLATFORM_BRIDGE',
         id: verifiedBridge.principal.sub,
-        role: isBridgePrivileged ? 'ADMIN' : (isBridgeStation ? 'STATION' : 'BRIDGE_CALLER'),
+        role: isBridgePrivileged ? 'ADMIN' : (isBridgeStation ? undefined : 'BRIDGE_CALLER'),
         isPrivileged: isBridgePrivileged,
         scopes: verifiedBridge.principal.scopes,
         tenantId: tenantContext.tenantId,
-        station: (verifiedBridge.principal as any).station || (req.headers['x-station-id'] as string) || (req.headers['x-station'] as string) || undefined,
-        branchId: (verifiedBridge.principal as any).branchId || (req.headers['x-branch-id'] as string) || (req.headers['x-branch'] as string) || undefined,
+        station: verifiedBridge.principal.stationId || undefined,
+        branchId: verifiedBridge.principal.branchId || undefined,
         authSource: 'BRIDGE_SIGNATURE',
       }
       : await resolveRequestIdentity(req, tenantContext.tenantId, repo);

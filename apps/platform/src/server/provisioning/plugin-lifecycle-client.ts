@@ -85,6 +85,9 @@ export class PluginLifecycleClient {
             return await res.json();
           } else {
             // In-process Next.js execution
+            if (options.signal?.aborted) {
+              throw new Error('Operation aborted: lease expired or worker cancelled.');
+            }
             const req = new NextRequest(`http://127.0.0.1:3005${pathWithQuery}`, {
               method: 'POST',
               headers: {
@@ -93,6 +96,7 @@ export class PluginLifecycleClient {
                 ...(options.idempotencyKey ? { 'x-idempotency-key': options.idempotencyKey } : {}),
               },
               body: bodyStr,
+              signal: makeSignal(),
             });
             const { POST: hospitalLifecycleHandler } = await import('@/app/api/hospital/lifecycle/[action]/route');
             const res = await hospitalLifecycleHandler(req, {

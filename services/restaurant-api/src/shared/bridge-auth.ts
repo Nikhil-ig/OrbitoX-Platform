@@ -14,6 +14,7 @@ import * as crypto from 'crypto';
 import { PrismaClient } from '../../generated/prisma';
 import {
   BridgeKeys,
+  BridgePrincipal,
   NonceStore,
   MemoryNonceStore,
   SignInput,
@@ -28,6 +29,7 @@ import {
 
 export {
   BridgeKeys,
+  BridgePrincipal,
   NonceStore,
   MemoryNonceStore,
   SignInput,

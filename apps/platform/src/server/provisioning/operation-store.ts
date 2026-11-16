@@ -207,6 +207,12 @@ export class OperationStore {
       const existing = memoryOperations.get(id);
       if (!existing) return null;
 
+      if (existing.status === 'CANCELLED' && updates.status !== 'CANCELLED') {
+        throw new Error(
+          `OPERATION_CANCELLED: Operation ${id} is cancelled and cannot be updated.`
+        );
+      }
+
       if (options.expectedLeaseOwner) {
         const now = Date.now();
         const expiresAt = existing.leaseExpiresAt ? new Date(existing.leaseExpiresAt).getTime() : 0;
@@ -236,6 +242,12 @@ export class OperationStore {
     const existing = await this.getOperation(id);
     if (!existing) return null;
 
+    if (existing.status === 'CANCELLED' && updates.status !== 'CANCELLED') {
+      throw new Error(
+        `OPERATION_CANCELLED: Operation ${id} is cancelled and cannot be updated.`
+      );
+    }
+
     if (options.expectedLeaseOwner) {
       const now = Date.now();
       const expiresAt = existing.leaseExpiresAt ? new Date(existing.leaseExpiresAt).getTime() : 0;
@@ -254,6 +266,9 @@ export class OperationStore {
 
     try {
       const whereClause: any = { id };
+      if (updates.status !== 'CANCELLED') {
+        whereClause.status = { not: 'CANCELLED' };
+      }
       if (options.expectedLeaseOwner) {
         whereClause.leaseOwner = options.expectedLeaseOwner;
         whereClause.leaseExpiresAt = { gte: new Date() };
@@ -275,19 +290,173 @@ export class OperationStore {
         },
       });
 
-      if (updateResult.count === 0 && options.expectedLeaseOwner) {
+      if (updateResult.count === 0) {
         const current = await this.getOperation(id);
-        throw new Error(
-          `LEASE_FENCING_ERROR: Operation lease fencing failed for owner ${options.expectedLeaseOwner}. Current leaseOwner=${current?.leaseOwner}, expiresAt=${current?.leaseExpiresAt}`
-        );
+        if (current?.status === 'CANCELLED') {
+          throw new Error(`OPERATION_CANCELLED: Operation ${id} is cancelled.`);
+        }
+        if (options.expectedLeaseOwner) {
+          throw new Error(
+            `LEASE_FENCING_ERROR: Operation lease fencing failed for owner ${options.expectedLeaseOwner}. Current leaseOwner=${current?.leaseOwner}, expiresAt=${current?.leaseExpiresAt}`
+          );
+        }
       }
 
       const row = await (prisma as any).platformOperation.findUnique({ where: { id } });
       return row ? rowToRecord(row) : null;
     } catch (err: any) {
-      if (err.message?.includes('LEASE_FENCING_ERROR')) throw err;
+      if (err.message?.includes('LEASE_FENCING_ERROR') || err.message?.includes('OPERATION_CANCELLED')) throw err;
       console.error('[OperationStore] updateOperation DB write failed (fail-closed):', err?.message || err);
       throw new DatabasePersistenceError('updateOperation', err);
+    }
+  }
+
+  /**
+   * Fenced Step 7: Atomically verifies active unexpired lease owner and non-cancelled status,
+   * activates project, writes outbox message, and marks operation ACTIVE in a single transaction.
+   */
+  async finalizeProjectActivationAndOutbox(input: {
+    operationId: string;
+    expectedLeaseOwner: string;
+    projectId: string;
+    tenantId: string;
+    organizationId: string;
+    cleanSlug: string;
+    environmentSlug: string;
+    plugins: { id: string; plan: string }[];
+    operatorId?: string;
+    requestId?: string;
+    steps: OperationStep[];
+    apiKey?: {
+      id?: string;
+      prefix?: string;
+      masked?: string;
+      environmentId?: string;
+    };
+  }): Promise<{ webhookPayload: Record<string, any> }> {
+    const webhookPayload = {
+      operationId: input.operationId,
+      tenantId: input.tenantId,
+      organizationId: input.organizationId,
+      slug: input.cleanSlug,
+      environment: input.environmentSlug,
+      status: 'ACTIVE',
+      plugins: input.plugins.map((p) => ({
+        id: p.id,
+        plan: p.plan,
+        status: 'ACTIVE',
+      })),
+    };
+
+    if (process.env.ORBITOX_PLATFORM_REPOSITORY === 'json') {
+      const existing = memoryOperations.get(input.operationId);
+      if (!existing) {
+        throw new Error(`LEASE_FENCING_ERROR: Operation ${input.operationId} not found`);
+      }
+      if (existing.status === 'CANCELLED') {
+        throw new Error(`OPERATION_CANCELLED: Operation ${input.operationId} was cancelled.`);
+      }
+      const now = Date.now();
+      const expiresAt = existing.leaseExpiresAt ? new Date(existing.leaseExpiresAt).getTime() : 0;
+      if (existing.leaseOwner !== input.expectedLeaseOwner || expiresAt < now) {
+        throw new Error(
+          `LEASE_FENCING_ERROR: Lease owner mismatch or expired. Expected ${input.expectedLeaseOwner}, got ${existing.leaseOwner} (expiresAt=${existing.leaseExpiresAt})`
+        );
+      }
+
+      existing.status = 'ACTIVE';
+      existing.steps = input.steps;
+      existing.result = {
+        tenantId: input.tenantId,
+        organizationId: input.organizationId,
+        slug: input.cleanSlug,
+        status: 'ACTIVE',
+        plugins: input.plugins.map((p) => ({
+          id: p.id,
+          plan: p.plan,
+          status: 'ACTIVE',
+        })),
+        apiKey: input.apiKey,
+      };
+      existing.updatedAt = new Date().toISOString();
+      existing.completedAt = new Date().toISOString();
+      memoryOperations.set(input.operationId, existing);
+      return { webhookPayload };
+    }
+
+    try {
+      await (prisma as any).$transaction(async (tx: any) => {
+        const op = await tx.platformOperation.findUnique({
+          where: { id: input.operationId },
+        });
+        if (!op) {
+          throw new Error(`LEASE_FENCING_ERROR: Operation ${input.operationId} not found`);
+        }
+        if (op.status === 'CANCELLED') {
+          throw new Error(`OPERATION_CANCELLED: Operation ${input.operationId} was cancelled.`);
+        }
+        const now = new Date();
+        if (
+          op.leaseOwner !== input.expectedLeaseOwner ||
+          !op.leaseExpiresAt ||
+          new Date(op.leaseExpiresAt).getTime() < now.getTime()
+        ) {
+          throw new Error(
+            `LEASE_FENCING_ERROR: Lease owner mismatch or expired. Expected ${input.expectedLeaseOwner}, got ${op.leaseOwner} (expiresAt=${op.leaseExpiresAt})`
+          );
+        }
+
+        // 1. Activate project
+        if (input.projectId) {
+          await tx.platformProject.update({
+            where: { id: input.projectId },
+            data: { status: 'ACTIVE' },
+          });
+        }
+
+        // 2. Insert outbox message
+        await tx.platformOutboxMessage.create({
+          data: {
+            tenantId: input.tenantId,
+            eventType: 'tenant.ready',
+            aggregateType: 'TENANT',
+            aggregateId: input.tenantId,
+            payload: webhookPayload,
+            status: 'PENDING',
+          },
+        });
+
+        // 3. Mark operation ACTIVE
+        await tx.platformOperation.update({
+          where: { id: input.operationId },
+          data: {
+            status: 'ACTIVE',
+            steps: input.steps as any,
+            result: {
+              tenantId: input.tenantId,
+              organizationId: input.organizationId,
+              slug: input.cleanSlug,
+              status: 'ACTIVE',
+              plugins: input.plugins.map((p) => ({
+                id: p.id,
+                plan: p.plan,
+                status: 'ACTIVE',
+              })),
+              apiKey: input.apiKey,
+            } as any,
+            updatedAt: now,
+            completedAt: now,
+          },
+        });
+      });
+
+      return { webhookPayload };
+    } catch (err: any) {
+      if (err.message?.includes('LEASE_FENCING_ERROR') || err.message?.includes('OPERATION_CANCELLED')) {
+        throw err;
+      }
+      console.error('[OperationStore] finalizeProjectActivationAndOutbox failed (fail-closed):', err?.message || err);
+      throw new DatabasePersistenceError('finalizeProjectActivationAndOutbox', err);
     }
   }
 
