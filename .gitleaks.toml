@@ -24,7 +24,6 @@ regexes = [
   '''GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ''',
   '''PLUh1i\+W9CGug8MjeHHa5HHYjJtz7OI56fRktDhDcbM=''',
   '''suHqZrDHA7KY4K81QyTKR1vIR\+K9koUQWq0YlazJlNo=''',
-  '''obx_live_9fK2vN9sQ7wE3rT1yU8iO0pA2sD4fG6hJ8kL0zX2cV4bN6mQm7''',
   '''c8f1e7b29a4302d765fe1234abcd5678c8f1e7b29a4302d765fe1234abcd5678'''
 ]
 paths = [
@@ -34,8 +33,8 @@ paths = [
   '''(?i)dist/''',
   '''(?i)\.git/''',
 
-  # Gitignored offline development signing key (per AGENTS.md Rule 4: never committed to VCS)
-  '''(?i)keys/private\.pem$''',
+  # Gitignored offline development keys (per AGENTS.md Rule 4: keys/ is in .gitignore, never committed to VCS)
+  '''(?i)keys/.*''',
   '''(?i)\.env(\..+)?$''',
   '''(?i)orbitox/data/.*''',
 

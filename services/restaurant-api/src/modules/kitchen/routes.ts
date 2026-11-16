@@ -295,6 +295,87 @@ async function handleExpoDispatch(req: any, res: any, context: any): Promise<voi
   sendJson(res, 200, { success: true, message: `Dispatched ${unbumped.length} tasks for table ${tableNumber}` });
 }
 
+async function handleExpoRecall(req: any, res: any, context: any): Promise<void> {
+  const initialAuth = authorizeKdsRequest(context.requestIdentity, undefined, undefined, true, 'recall');
+  if (!initialAuth.authorized) {
+    sendJson(res, initialAuth.statusCode || 401, { error: initialAuth.error, code: initialAuth.code });
+    return;
+  }
+  const body = await context.parseBody().catch(() => ({}));
+  const tableNumber = body.tableNumber;
+  if (!tableNumber) {
+    sendJson(res, 400, { error: 'Table number is required', code: 'TABLE_NUMBER_REQUIRED' });
+    return;
+  }
+  const allTasks = await context.repo.getKitchenTasks();
+  const tasks = allTasks.filter((t: any) => t.tableNumber === tableNumber);
+  if (tasks.length === 0) {
+    sendJson(res, 400, { error: `No kitchen tasks found for table ${tableNumber}`, code: 'TASKS_NOT_FOUND' });
+    return;
+  }
+  const bumpedTasks = tasks.filter((t: any) => t.status === 'BUMPED');
+  if (bumpedTasks.length === 0) {
+    sendJson(res, 400, { error: `No bumped tasks to recall for table ${tableNumber}`, code: 'NO_BUMPED_TASKS' });
+    return;
+  }
+
+  if (context.requestIdentity.type === 'PLATFORM_BRIDGE') {
+    const isControlPlane = context.requestIdentity.scopes?.some((s: string) =>
+      ['tenant:admin', 'platform:superuser'].includes(s)
+    );
+    if (!isControlPlane) {
+      if (!context.requestIdentity.scopes?.includes('preview:kds:recall')) {
+        sendJson(res, 403, {
+          error: "Platform bridge caller lacks required preview:kds:recall scope for operation 'recall'.",
+          code: 'INSUFFICIENT_KDS_SCOPE',
+        });
+        return;
+      }
+      const prevCheck = await validatePreviewTenant(context.tenantContext, postgresStore?.prisma);
+      if (!prevCheck.valid) {
+        sendJson(res, 403, { error: prevCheck.error, code: prevCheck.code });
+        return;
+      }
+      for (const t of bumpedTasks) {
+        if (t.tenantId && context.tenantContext?.tenantId && t.tenantId !== context.tenantContext.tenantId) {
+          sendJson(res, 403, { error: `Task ${t.id} does not belong to active tenant ${context.tenantContext?.tenantId}.`, code: 'TASK_TENANT_MISMATCH' });
+          return;
+        }
+        if (!t.isTest) {
+          sendJson(res, 403, { error: 'Cannot recall commercial tasks through preview bridge.', code: 'CANNOT_MUTATE_COMMERCIAL_TASK_IN_PREVIEW' });
+          return;
+        }
+        const parentOrder = await context.repo.getOrder(t.orderId);
+        if (!parentOrder || !parentOrder.isTest) {
+          sendJson(res, 403, { error: 'Cannot recall commercial tasks through preview bridge.', code: 'CANNOT_MUTATE_COMMERCIAL_TASK_IN_PREVIEW' });
+          return;
+        }
+      }
+    }
+  }
+
+  for (const t of bumpedTasks) {
+    const taskBranchRes = await resolveTaskAuthoritativeBranch(t, context.repo);
+    if (!taskBranchRes.branchId && context.requestIdentity.branchId && context.requestIdentity.branchId !== '*') {
+      sendJson(res, 403, {
+        error: taskBranchRes.error || 'Task cannot be mutated due to unverified branch origin.',
+        code: taskBranchRes.code || 'BRANCH_MISMATCH',
+      });
+      return;
+    }
+    const authCheck = authorizeKdsRequest(context.requestIdentity, taskBranchRes.branchId || undefined, t.station, true, 'recall');
+    if (!authCheck.authorized) {
+      sendJson(res, authCheck.statusCode || 403, { error: authCheck.error, code: authCheck.code });
+      return;
+    }
+  }
+
+  for (const t of bumpedTasks) {
+    await context.repo.recallTask(t.id, 'READY');
+  }
+  sendJson(res, 200, { success: true, count: bumpedTasks.length, tableNumber });
+}
+
 async function handleFulfillItem(req: any, res: any, context: any): Promise<void> {
   const initialAuth = authorizeKdsRequest(context.requestIdentity, undefined, undefined, false, 'fulfill');
   if (!initialAuth.authorized) {
@@ -471,29 +552,7 @@ export const kitchenRoutes: RouteDefinition[] = [
   {
     method: 'POST',
     path: '/api/restaurant/kds/expo-recall',
-    handler: async (req, res, context) => {
-      const initialAuth = authorizeKdsRequest(context.requestIdentity, undefined, undefined, true);
-      if (!initialAuth.authorized) {
-        sendJson(res, initialAuth.statusCode || 401, { error: initialAuth.error, code: initialAuth.code });
-        return;
-      }
-      const body = await context.parseBody();
-      const tableNumber = body.tableNumber;
-      if (!tableNumber) {
-        sendJson(res, 400, { error: 'Table number is required', code: 'TABLE_NUMBER_REQUIRED' });
-        return;
-      }
-      const tasks = (await context.repo.getKitchenTasks()).filter((t) => t.tableNumber === tableNumber);
-      const bumpedTasks = tasks.filter((t) => t.status === 'BUMPED');
-      if (bumpedTasks.length === 0) {
-        sendJson(res, 400, { error: `No bumped tasks to recall for table ${tableNumber}`, code: 'NO_BUMPED_TASKS' });
-        return;
-      }
-      for (const t of bumpedTasks) {
-        await context.repo.recallTask(t.id, 'READY');
-      }
-      sendJson(res, 200, { success: true, count: bumpedTasks.length, tableNumber });
-    },
+    handler: handleExpoRecall,
   },
   {
     method: 'POST',

@@ -122,6 +122,22 @@ describe('RestaurantOS Differential Parity Matrix (d7f9de5 Baseline vs Modular S
     shared = await import('../src/shared/index');
     const storage = await import('../src/storage/index');
     bridgeMod = await import('../src/shared/bridge-auth');
+    const postgresStoreMod = await import('../src/storage/postgres-store');
+    const prisma = postgresStoreMod.postgresStore?.prisma;
+    if (prisma) {
+      await prisma.tenant.upsert({
+        where: { id: tenantId },
+        update: { status: 'ACTIVE', slug: tenantSlug, name: 'Diff Bistro' },
+        create: {
+          id: tenantId,
+          slug: tenantSlug,
+          name: 'Diff Bistro',
+          status: 'ACTIVE',
+          currency: 'INR',
+          baseDomain: 'restaurantos.local',
+        },
+      });
+    }
 
     const tenantSecret = shared.deriveTenantSigningSecret(tenantId);
     const tenantCtx = { tenantId, tenantSlug, tenantName: 'Diff Bistro', status: 'active' };
@@ -157,6 +173,11 @@ describe('RestaurantOS Differential Parity Matrix (d7f9de5 Baseline vs Modular S
     contextMod.eventLoopMonitor?.stop?.();
     if (contextMod.pgEventListener) {
       await contextMod.pgEventListener.stop?.();
+    }
+    const postgresStoreMod = await import('../src/storage/postgres-store');
+    const prisma = postgresStoreMod.postgresStore?.prisma;
+    if (prisma) {
+      await prisma.tenant.deleteMany({ where: { id: tenantId } }).catch(() => {});
     }
   });
 
@@ -289,7 +310,36 @@ describe('RestaurantOS Differential Parity Matrix (d7f9de5 Baseline vs Modular S
           let isDiff = false;
           let reason = '';
 
-          if (resBase.status !== resMod.status) {
+          // Intentional Security Hardening Contracts:
+          // 1. KDS Endpoints Hardening:
+          //    Legacy baseline had NO authentication on GET /api/restaurant/kds and /tasks (allowing anonymous access).
+          //    Modular server intentionally enforces fail-closed authentication (401 UNAUTHENTICATED / 403 FORBIDDEN).
+          const isKdsHardenedRoute = resolvedPath === '/api/restaurant/kds' || resolvedPath === '/api/restaurant/kds/tasks';
+          // 2. Platform Bridge Scope Isolation:
+          //    Bridge caller with only ['platform:fleet', 'bridge:call'] lacks 'tenant:admin' scope.
+          //    Modular server correctly rejects destructive management operations (menu, tables, domains) with 403 FORBIDDEN.
+          const isBridgeScopeEnforced = id === 'PLATFORM_BRIDGE' && (
+            resolvedPath.startsWith('/api/restaurant/menu/') ||
+            resolvedPath.startsWith('/api/restaurant/tables') ||
+            resolvedPath.startsWith('/api/restaurant/domains')
+          );
+
+          if (isKdsHardenedRoute) {
+            // Verify that modular server properly enforces fail-closed auth on KDS endpoints
+            if (['ANONYMOUS', 'DINER', 'REVOKED_TOKEN', 'INVALID_TOKEN', 'STATION', 'STAFF_A', 'MANAGER_A', 'STAFF_B', 'TENANT_ADMIN'].includes(id)) {
+              if (resMod.status !== 401) {
+                isDiff = true;
+                reason = `KDS security regression: modular server must enforce 401 for ${id}, got ${resMod.status}`;
+              }
+            } else if (id === 'PLATFORM_BRIDGE') {
+              if (resMod.status !== 403) {
+                isDiff = true;
+                reason = `KDS security regression: modular server must enforce 403 for unprivileged bridge, got ${resMod.status}`;
+              }
+            }
+          } else if (isBridgeScopeEnforced && resMod.status === 403) {
+            // Documented intentional hardening: unprivileged platform bridge cannot mutate/read administrative tenant resources
+          } else if (resBase.status !== resMod.status) {
             isDiff = true;
             reason = `Status mismatch: baseline=${resBase.status}, modular=${resMod.status}`;
           } else if (typeof resBase.body === 'object' && typeof resMod.body === 'object' && resBase.body !== null && resMod.body !== null) {

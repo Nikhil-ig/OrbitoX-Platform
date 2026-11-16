@@ -263,19 +263,25 @@ export function getDefaultBridgeKeys(): BridgeKeys {
     } catch {}
   }
 
-  // Optional gitignored file in dev/test
-  const gitignoredKeysPath = path.resolve(process.cwd(), 'keys', 'bridge-keys.json');
-  if (fs.existsSync(gitignoredKeysPath)) {
-    try {
-      const content = fs.readFileSync(gitignoredKeysPath, 'utf8');
-      const parsed = JSON.parse(content);
-      if (parsed?.activeKeyId && parsed?.keys?.[parsed.activeKeyId]) {
-        return {
-          activeKeyId: parsed.activeKeyId,
-          keys: { ...parsed.keys },
-        };
-      }
-    } catch {}
+  // Optional gitignored file in dev/test (search cwd and parent directories up to monorepo root)
+  const candidateKeyPaths = [
+    path.resolve(process.cwd(), 'keys', 'bridge-keys.json'),
+    path.resolve(process.cwd(), '..', 'keys', 'bridge-keys.json'),
+    path.resolve(process.cwd(), '..', '..', 'keys', 'bridge-keys.json'),
+  ];
+  for (const gitignoredKeysPath of candidateKeyPaths) {
+    if (fs.existsSync(gitignoredKeysPath)) {
+      try {
+        const content = fs.readFileSync(gitignoredKeysPath, 'utf8');
+        const parsed = JSON.parse(content);
+        if (parsed?.activeKeyId && parsed?.keys?.[parsed.activeKeyId]) {
+          return {
+            activeKeyId: parsed.activeKeyId,
+            keys: { ...parsed.keys },
+          };
+        }
+      } catch {}
+    }
   }
 
   // Fallback shared 32-byte key in non-prod

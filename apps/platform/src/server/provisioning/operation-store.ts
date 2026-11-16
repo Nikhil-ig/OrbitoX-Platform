@@ -207,8 +207,14 @@ export class OperationStore {
       const existing = memoryOperations.get(id);
       if (!existing) return null;
 
-      if (options.expectedLeaseOwner && existing.leaseOwner && existing.leaseOwner !== options.expectedLeaseOwner) {
-        throw new Error(`LEASE_FENCING_ERROR: Operation lease owner mismatch. Expected ${options.expectedLeaseOwner}, got ${existing.leaseOwner}`);
+      if (options.expectedLeaseOwner) {
+        const now = Date.now();
+        const expiresAt = existing.leaseExpiresAt ? new Date(existing.leaseExpiresAt).getTime() : 0;
+        if (existing.leaseOwner !== options.expectedLeaseOwner || expiresAt < now) {
+          throw new Error(
+            `LEASE_FENCING_ERROR: Operation lease fencing failed for owner ${options.expectedLeaseOwner}. Current leaseOwner=${existing.leaseOwner}, expiresAt=${existing.leaseExpiresAt}`
+          );
+        }
       }
 
       const sanitizedResult = updates.result !== undefined ? sanitizeOperationResult(updates.result) : existing.result;
@@ -230,8 +236,14 @@ export class OperationStore {
     const existing = await this.getOperation(id);
     if (!existing) return null;
 
-    if (options.expectedLeaseOwner && existing.leaseOwner && existing.leaseOwner !== options.expectedLeaseOwner) {
-      throw new Error(`LEASE_FENCING_ERROR: Operation lease owner mismatch. Expected ${options.expectedLeaseOwner}, got ${existing.leaseOwner}`);
+    if (options.expectedLeaseOwner) {
+      const now = Date.now();
+      const expiresAt = existing.leaseExpiresAt ? new Date(existing.leaseExpiresAt).getTime() : 0;
+      if (existing.leaseOwner !== options.expectedLeaseOwner || expiresAt < now) {
+        throw new Error(
+          `LEASE_FENCING_ERROR: Operation lease owner mismatch. Expected ${options.expectedLeaseOwner}, got ${existing.leaseOwner} (expiresAt=${existing.leaseExpiresAt})`
+        );
+      }
     }
 
     const sanitizedResult = updates.result !== undefined ? sanitizeOperationResult(updates.result) : existing.result;
@@ -243,10 +255,8 @@ export class OperationStore {
     try {
       const whereClause: any = { id };
       if (options.expectedLeaseOwner) {
-        whereClause.OR = [
-          { leaseOwner: options.expectedLeaseOwner },
-          { leaseOwner: null },
-        ];
+        whereClause.leaseOwner = options.expectedLeaseOwner;
+        whereClause.leaseExpiresAt = { gte: new Date() };
       }
 
       const updateResult = await (prisma as any).platformOperation.updateMany({
@@ -267,9 +277,9 @@ export class OperationStore {
 
       if (updateResult.count === 0 && options.expectedLeaseOwner) {
         const current = await this.getOperation(id);
-        if (current && current.leaseOwner !== options.expectedLeaseOwner) {
-          throw new Error(`LEASE_FENCING_ERROR: Operation lease owner mismatch. Expected ${options.expectedLeaseOwner}, got ${current.leaseOwner}`);
-        }
+        throw new Error(
+          `LEASE_FENCING_ERROR: Operation lease fencing failed for owner ${options.expectedLeaseOwner}. Current leaseOwner=${current?.leaseOwner}, expiresAt=${current?.leaseExpiresAt}`
+        );
       }
 
       const row = await (prisma as any).platformOperation.findUnique({ where: { id } });

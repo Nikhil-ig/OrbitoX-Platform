@@ -85,9 +85,9 @@ export class SecurityConsoleService {
     const benchmarkKeys: ApiKeyItem[] = [
       {
         id: 'key_masala_pos',
-        keyId: 'obx_live_9fK2',
+        keyId: 'bench_masala_pos',
         name: 'Masala House POS sync',
-        maskedDisplay: 'obx_live_9fK2...',
+        maskedDisplay: 'bench_masala_pos...',
         scopes: ['orders:write'],
         lastUsedDisplay: '2 min ago',
         status: 'ACTIVE',
@@ -96,9 +96,9 @@ export class SecurityConsoleService {
       },
       {
         id: 'key_city_hosp_lab',
-        keyId: 'obx_live_c71X',
+        keyId: 'bench_city_hosp_lab',
         name: 'City Hospital lab bridge',
-        maskedDisplay: 'obx_live_c71X...',
+        maskedDisplay: 'bench_city_hosp_lab...',
         scopes: ['labs:read'],
         lastUsedDisplay: '1 h ago',
         status: 'ACTIVE',

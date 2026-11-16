@@ -298,14 +298,17 @@ export async function handleRequest(req: http.IncomingMessage, res: http.ServerR
 
     const isBridgePrivileged = Boolean(
       verifiedBridge?.principal.scopes?.some((s: string) =>
-        ['ADMIN', 'tenant:admin', 'platform:superuser', 'station:kds'].includes(s)
+        ['ADMIN', 'tenant:admin', 'platform:superuser'].includes(s)
       )
+    );
+    const isBridgeStation = Boolean(
+      verifiedBridge?.principal.scopes?.includes('station:kds')
     );
     const requestIdentity: any = verifiedBridge
       ? {
         type: 'PLATFORM_BRIDGE',
         id: verifiedBridge.principal.sub,
-        role: isBridgePrivileged ? 'ADMIN' : 'BRIDGE_CALLER',
+        role: isBridgePrivileged ? 'ADMIN' : (isBridgeStation ? 'STATION' : 'BRIDGE_CALLER'),
         isPrivileged: isBridgePrivileged,
         scopes: verifiedBridge.principal.scopes,
         tenantId: tenantContext.tenantId,

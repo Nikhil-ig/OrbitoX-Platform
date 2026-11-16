@@ -113,6 +113,7 @@ export function authorizeKdsRequest(
   }
 
   if (isExpoDispatch) {
+    const actionVerb = operation === 'recall' ? 'recall' : 'dispatch';
     if (
       identity.type === 'STATION' &&
       identity.station &&
@@ -122,7 +123,7 @@ export function authorizeKdsRequest(
       return {
         authorized: false,
         statusCode: 403,
-        error: `Station credential for ${identity.station} cannot dispatch tables from Expo pass.`,
+        error: `Station credential for ${identity.station} cannot ${actionVerb} tables from Expo pass.`,
         code: 'STATION_MISMATCH',
       };
     }
@@ -135,7 +136,7 @@ export function authorizeKdsRequest(
       return {
         authorized: false,
         statusCode: 403,
-        error: `Chef assigned to ${identity.station} cannot dispatch tables from Expo pass.`,
+        error: `Chef assigned to ${identity.station} cannot ${actionVerb} tables from Expo pass.`,
         code: 'STATION_MISMATCH',
       };
     }

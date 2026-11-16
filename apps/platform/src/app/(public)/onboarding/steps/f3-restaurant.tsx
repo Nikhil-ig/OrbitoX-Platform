@@ -47,6 +47,9 @@ const TEMPLATES = [
     color: '#FB923C',
     bgColor: '#FFF7ED',
     textColor: '#14161A',
+    bgClass: 'bg-[#FFF7ED]',
+    accentClass: 'bg-[#FB923C]',
+    textClass: 'text-[#14161A]',
     description: 'Warm terracotta & turmeric gold',
   },
   {
@@ -56,6 +59,9 @@ const TEMPLATES = [
     color: '#E06D53',
     bgColor: '#181B20',
     textColor: '#FFFFFF',
+    bgClass: 'bg-[#181B20]',
+    accentClass: 'bg-[#E06D53]',
+    textClass: 'text-white',
     description: 'Charcoal hearth & dark fire',
   },
   {
@@ -65,6 +71,9 @@ const TEMPLATES = [
     color: '#34D399',
     bgColor: '#F0FDF4',
     textColor: '#14161A',
+    bgClass: 'bg-[#F0FDF4]',
+    accentClass: 'bg-[#34D399]',
+    textClass: 'text-[#14161A]',
     description: 'Fresh botanical & café bakery',
   },
   {
@@ -74,6 +83,9 @@ const TEMPLATES = [
     color: '#38BDF8',
     bgColor: '#F0F9FF',
     textColor: '#14161A',
+    bgClass: 'bg-[#F0F9FF]',
+    accentClass: 'bg-[#38BDF8]',
+    textClass: 'text-[#14161A]',
     description: 'Deep indigo & coastal brass',
   },
 ];
@@ -778,20 +790,18 @@ export function F3RestaurantStep({
                 <div
                   key={tmpl.id}
                   onClick={() => setSelectedTemplate(tmpl.id)}
-                  className={`p-3 rounded-[20px] text-center space-y-1.5 cursor-pointer transition-all ${
+                  className={`p-3 rounded-[20px] text-center space-y-1.5 cursor-pointer transition-all ${tmpl.bgClass} ${
                     selectedTemplate === tmpl.id
                       ? 'border-2 border-[#14161A] shadow-sm'
                       : 'border border-[#E2E8F0] hover:border-gray-300'
                   }`}
-                  style={{ backgroundColor: tmpl.bgColor }}
                 >
                   <div
-                    className="h-14 rounded-[12px] flex items-center justify-center text-white font-bold text-sm shadow-inner"
-                    style={{ backgroundColor: tmpl.color }}
+                    className={`h-14 rounded-[12px] flex items-center justify-center text-white font-bold text-sm shadow-inner ${tmpl.accentClass}`}
                   >
                     {selectedTemplate === tmpl.id && <Check className="h-5 w-5" />}
                   </div>
-                  <div className="font-bold text-xs" style={{ color: tmpl.textColor }}>
+                  <div className={`font-bold text-xs ${tmpl.textClass}`}>
                     {tmpl.name}
                   </div>
                   <div

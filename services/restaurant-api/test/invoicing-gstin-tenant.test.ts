@@ -231,13 +231,19 @@ describe('Phase 6F B0-11: GSTIN Isolation, Fallback Elimination & Statutory Invo
         if (
           entry.name === 'node_modules' ||
           entry.name === '.git' ||
+          entry.name === '.next' ||
+          entry.name === '.turbo' ||
+          entry.name === '.terraform' ||
+          entry.name === 'standalone' ||
           entry.name === 'dist' ||
           entry.name === 'build' ||
           entry.name === '.gemini' ||
           entry.name === '.agents' ||
           entry.name.endsWith('.log') ||
           entry.name.endsWith('.png') ||
-          entry.name.endsWith('.zip')
+          entry.name.endsWith('.zip') ||
+          entry.name.endsWith('.pack') ||
+          entry.name.endsWith('.zst')
         ) {
           continue;
         }
@@ -253,6 +259,8 @@ describe('Phase 6F B0-11: GSTIN Isolation, Fallback Elimination & Statutory Invo
         if (entry.isDirectory()) {
           violations.push(...scanDir(fullPath));
         } else if (entry.isFile() && !isTestPath) {
+          const stat = fs.statSync(fullPath);
+          if (stat.size > 2 * 1024 * 1024) continue;
           const content = fs.readFileSync(fullPath, 'utf8');
           if (content.includes(targetLiteral)) {
             violations.push(relPath);

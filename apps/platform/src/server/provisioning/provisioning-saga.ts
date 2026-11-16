@@ -223,7 +223,7 @@ export class ProvisioningSaga {
     org: any,
     cleanSlug: string,
     environmentSlug: string,
-    options: { operatorId?: string; requestId?: string; idempotencyKey?: string }
+    options: { operatorId?: string; requestId?: string; idempotencyKey?: string; workerId?: string }
   ): Promise<{ tenantId: string; rawApiKey?: { id?: string; prefix?: string; secret: string } }> {
     const op = await operationStore.getOperation(operationId);
     if (!op || op.status === 'CANCELLED') {
@@ -237,7 +237,11 @@ export class ProvisioningSaga {
       extra: Partial<OperationStep> = {}
     ) => {
       currentSteps = currentSteps.map((s) => (s.id === stepId ? { ...s, status, ...extra } : s));
-      await operationStore.updateOperation(operationId, { steps: currentSteps });
+      await operationStore.updateOperation(
+        operationId,
+        { steps: currentSteps },
+        options.workerId ? { expectedLeaseOwner: options.workerId } : {}
+      );
     };
 
     const isStepCompleted = (stepId: string) =>
@@ -497,13 +501,23 @@ export class ProvisioningSaga {
     if (!op || op.status === 'CANCELLED' || op.status === 'FAILED') return;
 
     // F1: Acquire distributed lease before running asynchronous steps 5–7 with attempt-scoped owner token
-    const attemptId = randomUUID().slice(0, 8);
     const baseWorkerId = options.workerId || this.workerInstanceId;
+    const attemptId = randomUUID().slice(0, 8);
     const attemptLeaseOwner = baseWorkerId.includes(':') ? baseWorkerId : `${baseWorkerId}:${attemptId}`;
-    const claimed = await operationStore.claimOperationLease(operationId, attemptLeaseOwner);
-    if (!claimed) {
-      console.log(`[ProvisioningSaga] Operation ${operationId} lease not acquired (held by another worker); skipping.`);
-      return;
+
+    // If the lease is already held by this worker and unexpired, reuse it without redundant re-claim
+    if (
+      !(
+        op.leaseOwner === attemptLeaseOwner &&
+        op.leaseExpiresAt &&
+        new Date(op.leaseExpiresAt).getTime() >= Date.now()
+      )
+    ) {
+      const claimed = await operationStore.claimOperationLease(operationId, attemptLeaseOwner);
+      if (!claimed) {
+        console.log(`[ProvisioningSaga] Operation ${operationId} lease not acquired (held by another worker); skipping.`);
+        return;
+      }
     }
 
     let leaseLost = false;
@@ -893,10 +907,12 @@ export class ProvisioningSaga {
     const op = await operationStore.getOperation(operationId);
     if (!op || op.status === 'ACTIVE' || op.status === 'CANCELLED') return op;
 
-    const workerId = options.workerId || this.workerInstanceId;
-    const claimed = await operationStore.claimOperationLease(operationId, workerId);
+    const baseWorkerId = options.workerId || this.workerInstanceId;
+    const attemptId = randomUUID().slice(0, 8);
+    const attemptLeaseOwner = baseWorkerId.includes(':') ? baseWorkerId : `${baseWorkerId}:${attemptId}`;
+    const claimed = await operationStore.claimOperationLease(operationId, attemptLeaseOwner);
     if (!claimed) {
-      console.log(`[ProvisioningSaga] Operation ${operationId} lease could not be claimed by ${workerId}; active lease held.`);
+      console.log(`[ProvisioningSaga] Operation ${operationId} lease could not be claimed by ${attemptLeaseOwner}; active lease held.`);
       return null;
     }
 
@@ -911,7 +927,7 @@ export class ProvisioningSaga {
       const cleanSlug = req.slug;
       const environmentSlug = req.environment || 'production';
 
-      await this.executeWorkflow(
+      const workflowPromise = this.executeWorkflow(
         operationId,
         {
           name: req.name,
@@ -929,9 +945,17 @@ export class ProvisioningSaga {
           operatorId: op.operatorId || 'orchestrator',
           requestId: op.requestId || randomUUID(),
           idempotencyKey: op.idempotencyKey || undefined,
-          workerId,
+          workerId: attemptLeaseOwner,
         }
       );
+
+      if (process.env.ORBITOX_SYNC_SAGA === 'true') {
+        await workflowPromise;
+      } else {
+        workflowPromise.catch((err) => {
+          console.error(`[ProvisioningSaga] Async resume failed for operation ${operationId}:`, err);
+        });
+      }
 
       return await operationStore.getOperation(operationId);
     } finally {

@@ -1091,6 +1091,206 @@ describe('Phase 7 F1–F4 Security Remediation: Preview Test Orders & Accounting
       assert.equal(res2.status, 403);
       assert.equal(res2.json.code, 'INSUFFICIENT_KDS_SCOPE');
     });
+
+    it('19. expo-recall rejects preview:kds:bump scope with 403 INSUFFICIENT_KDS_SCOPE', async () => {
+      const recallPath = '/api/restaurant/kds/expo-recall';
+      const recallBody = { tableNumber: previewTableNumber };
+      const signed = signBridgeRequest(bridgeKeys, {
+        method: 'POST',
+        pathWithQuery: recallPath,
+        tenantId: previewTenantId,
+        principal: { sub: 'usr_owner_123', scopes: ['preview:kds:bump'] },
+        body: JSON.stringify(recallBody),
+      });
+
+      const res = await makeRequest('POST', recallPath, { ...signed, Host: `${previewSlug}.orbitox.live` }, recallBody);
+      assert.equal(res.status, 403);
+      assert.equal(res.json.code, 'INSUFFICIENT_KDS_SCOPE');
+    });
+
+    it('20. expo-recall rejects caller on expired preview tenant with 403 PREVIEW_EXPIRED', async () => {
+      // Create a bumped test task on the expired tenant
+      const expiredTaskId = `task_exp_rec_${crypto.randomBytes(4).toString('hex')}`;
+      testTaskIds.add(expiredTaskId);
+      await prisma.kitchenTask.create({
+        data: {
+          id: expiredTaskId,
+          tenantId: expiredTenantId,
+          orderId: `ord_exp_${crypto.randomBytes(4).toString('hex')}`,
+          tableNumber: 'Table 99',
+          itemName: 'Expired Naan',
+          quantity: 1,
+          station: 'TANDOOR',
+          status: 'BUMPED',
+          isTest: true,
+        },
+      });
+
+      const recallPath = '/api/restaurant/kds/expo-recall';
+      const recallBody = { tableNumber: 'Table 99' };
+      const signed = signBridgeRequest(bridgeKeys, {
+        method: 'POST',
+        pathWithQuery: recallPath,
+        tenantId: expiredTenantId,
+        principal: { sub: 'usr_owner_123', scopes: ['preview:kds:recall'] },
+        body: JSON.stringify(recallBody),
+      });
+
+      const res = await makeRequest('POST', recallPath, { ...signed, Host: `${expiredSlug}.orbitox.live` }, recallBody);
+      assert.equal(res.status, 403);
+      assert.equal(res.json.code, 'PREVIEW_EXPIRED');
+    });
+
+    it('21. expo-recall rejects commercial bumped task in preview tenant with 403 CANNOT_MUTATE_COMMERCIAL_TASK_IN_PREVIEW', async () => {
+      // Update commercial task to BUMPED on previewTableNumber
+      await prisma.kitchenTask.update({
+        where: { id: commercialTaskId },
+        data: { status: 'BUMPED' },
+      });
+
+      const recallPath = '/api/restaurant/kds/expo-recall';
+      const recallBody = { tableNumber: previewTableNumber };
+      const signed = signBridgeRequest(bridgeKeys, {
+        method: 'POST',
+        pathWithQuery: recallPath,
+        tenantId: previewTenantId,
+        principal: { sub: 'usr_owner_123', scopes: ['preview:kds:recall'] },
+        body: JSON.stringify(recallBody),
+      });
+
+      const res = await makeRequest('POST', recallPath, { ...signed, Host: `${previewSlug}.orbitox.live` }, recallBody);
+      assert.equal(res.status, 403);
+      assert.equal(res.json.code, 'CANNOT_MUTATE_COMMERCIAL_TASK_IN_PREVIEW');
+
+      // Reset commercial task to QUEUED so it doesn't pollute subsequent test assertions
+      await prisma.kitchenTask.update({
+        where: { id: commercialTaskId },
+        data: { status: 'QUEUED' },
+      });
+    });
+
+    it('22. expo-recall rejects cross-tenant task with 403 TASK_TENANT_MISMATCH', async () => {
+      // Create a bumped test task belonging to activeTenantId on Table 77
+      const foreignOrderId = `ord_foreign_${crypto.randomBytes(4).toString('hex')}`;
+      testOrderIds.add(foreignOrderId);
+      await prisma.restaurantOrder.create({
+        data: {
+          id: foreignOrderId,
+          tenantId: activeTenantId,
+          tableNumber: 'Table 77',
+          sessionId: 'sess_77',
+          status: 'CONFIRMED',
+          subtotalMinor: 1000,
+          taxMinor: 50,
+          totalMinor: 1050,
+          currency: 'INR',
+          items: sampleItems,
+          isTest: true,
+        },
+      });
+
+      const foreignTaskId = `task_foreign_${crypto.randomBytes(4).toString('hex')}`;
+      testTaskIds.add(foreignTaskId);
+      await prisma.kitchenTask.create({
+        data: {
+          id: foreignTaskId,
+          tenantId: activeTenantId,
+          orderId: foreignOrderId,
+          tableNumber: 'Table 77',
+          itemName: 'Cross Roti',
+          quantity: 1,
+          station: 'TANDOOR',
+          status: 'BUMPED',
+          isTest: true,
+        },
+      });
+
+      const recallPath = '/api/restaurant/kds/expo-recall';
+      const recallBody = { tableNumber: 'Table 77' };
+      const signed = signBridgeRequest(bridgeKeys, {
+        method: 'POST',
+        pathWithQuery: recallPath,
+        tenantId: previewTenantId,
+        principal: { sub: 'usr_owner_123', scopes: ['preview:kds:recall'] },
+        body: JSON.stringify(recallBody),
+      });
+
+      const res = await makeRequest('POST', recallPath, { ...signed, Host: `${previewSlug}.orbitox.live` }, recallBody);
+      assert.ok([400, 403].includes(res.status), 'Cross-tenant task recall must be rejected with 400 or 403');
+      if (res.status === 403) {
+        assert.equal(res.json.code, 'TASK_TENANT_MISMATCH');
+      } else {
+        assert.equal(res.json.code, 'TASKS_NOT_FOUND');
+      }
+    });
+
+    it('23. expo-recall succeeds with preview:kds:recall on valid preview test task', async () => {
+      // Set preview test task to BUMPED
+      await prisma.kitchenTask.update({
+        where: { id: previewTestTaskId },
+        data: { status: 'BUMPED' },
+      });
+
+      const recallPath = '/api/restaurant/kds/expo-recall';
+      const recallBody = { tableNumber: previewTableNumber };
+      const signed = signBridgeRequest(bridgeKeys, {
+        method: 'POST',
+        pathWithQuery: recallPath,
+        tenantId: previewTenantId,
+        principal: { sub: 'usr_owner_123', scopes: ['preview:kds:recall'] },
+        body: JSON.stringify(recallBody),
+      });
+
+      const res = await makeRequest('POST', recallPath, { ...signed, Host: `${previewSlug}.orbitox.live` }, recallBody);
+      assert.equal(res.status, 200);
+      assert.equal(res.json.success, true);
+      assert.equal(res.json.tableNumber, previewTableNumber);
+
+      const dbTask = await prisma.kitchenTask.findUnique({ where: { id: previewTestTaskId } });
+      assert.equal(dbTask?.status, 'READY');
+    });
+
+    it('24. expo-recall succeeds for authorized staff (CHEF/EXPO)', async () => {
+      // Set task to BUMPED first
+      await prisma.kitchenTask.update({
+        where: { id: previewTestTaskId },
+        data: { status: 'BUMPED' },
+      });
+
+      const res = await makeRequest(
+        'POST',
+        '/api/restaurant/kds/expo-recall',
+        {
+          Host: `${previewSlug}.orbitox.live`,
+          Authorization: `Bearer ${staffPinToken}`,
+        },
+        { tableNumber: previewTableNumber }
+      );
+
+      assert.equal(res.status, 200);
+      assert.equal(res.json.success, true);
+      const dbTask = await prisma.kitchenTask.findUnique({ where: { id: previewTestTaskId } });
+      assert.equal(dbTask?.status, 'READY');
+    });
+
+    it('25. station:kds bridge principal cannot access admin/billing/domains or tables (scope isolation)', async () => {
+      const pathWithQuery = '/api/restaurant/tables';
+      const body = { tableNumber: 'Table 999', capacity: 4 };
+      const bodyStr = JSON.stringify(body);
+
+      // Sign bridge request with strictly station:kds (kitchen station role, NOT generic admin)
+      const signedHeaders = signBridgeRequest(bridgeKeys, {
+        method: 'POST',
+        pathWithQuery,
+        tenantId: previewTenantId,
+        principal: { sub: 'kds_hardware_terminal', scopes: ['station:kds'] },
+        body: bodyStr,
+      });
+
+      const res = await makeRequest('POST', pathWithQuery, { ...signedHeaders, Host: `${previewSlug}.orbitox.live` }, body);
+      assert.equal(res.status, 403);
+      assert.equal(res.json.error, 'FORBIDDEN');
+    });
   });
 
   after(async () => {

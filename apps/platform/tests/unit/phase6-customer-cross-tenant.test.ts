@@ -50,6 +50,7 @@ const routeCases = [
   { file: 'tenants/[projectId]/environments/[environmentId]/route.ts', methods: ['GET'] },
   { file: 'tenants/[projectId]/environments/[environmentId]/usage/route.ts', methods: ['GET'] },
   { file: 'tenants/operations/[operationId]/retry/route.ts', methods: ['POST'] },
+  { file: 'tenants/operations/[operationId]/route.ts', methods: ['GET'] },
   { file: 'tenants/route.ts', methods: ['GET', 'POST'] },
 ] as const;
 
@@ -84,10 +85,18 @@ const nonDashboardCustomerRoutes = [
   'auth/password-reset/consume/route.ts',
   'auth/password-reset/request/route.ts',
   'auth/reauth/route.ts',
+  'auth/resend-code/route.ts',
   'auth/signup/route.ts',
+  'auth/verify-code/route.ts',
   'auth/verify-email/route.ts',
   'email/webhooks/[provider]/route.ts',
   'me/appearance/route.ts',
+  'organizations/route.ts',
+  'tenants/[tenantId]/kds/route.ts',
+  'tenants/[tenantId]/preview-summary/route.ts',
+  'tenants/[tenantId]/preview-token/route.ts',
+  'tenants/[tenantId]/test-orders/route.ts',
+  'tenants/check-slug/route.ts',
 ].sort();
 
 describe('Phase 6 customer dashboard tenant isolation', () => {
@@ -131,9 +140,9 @@ describe('Phase 6 customer dashboard tenant isolation', () => {
   it('covers every organization dashboard route and refuses every cross-tenant request', async () => {
     const discovered = await discoverRoutes(customerRouteRoot);
     const organizationRoutes = discovered
-      .filter((file) => file.startsWith('organizations/'))
+      .filter((file) => file.startsWith('organizations/[organizationId]/'))
       .map((file) => file.slice('organizations/[organizationId]/'.length));
-    const nonDashboardRoutes = discovered.filter((file) => !file.startsWith('organizations/'));
+    const nonDashboardRoutes = discovered.filter((file) => !file.startsWith('organizations/[organizationId]/'));
     assert.deepEqual(organizationRoutes, routeCases.map(({ file }) => file).sort());
     assert.deepEqual(nonDashboardRoutes, nonDashboardCustomerRoutes);
 

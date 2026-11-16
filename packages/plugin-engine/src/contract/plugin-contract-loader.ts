@@ -1,8 +1,3 @@
-let expressModule: any;
-try {
-  expressModule = require('express');
-} catch {}
-
 import {
   OrbitoXPlugin,
   PluginManifestContract,
@@ -150,7 +145,11 @@ export class PluginContractLoader {
       tenantResolver?: (req: any) => Promise<any> | any;
     }
   ): any {
-    const router = options?.router || (expressModule ? expressModule.Router() : null);
+    let expressMod: any = null;
+    try {
+      expressMod = typeof require !== 'undefined' ? require('express') : null;
+    } catch {}
+    const router = options?.router || (expressMod ? expressMod.Router() : null);
     if (!router) {
       throw new Error(
         'PluginContractLoader.compileExpressRouter requires "express" to be installed or an injected router in options.router'
