@@ -33,7 +33,12 @@ regexes = [
   '''dGVzdF9sb25nX3Rva2VuX3dpdGhfbW9yZV90aGFuXzYwX2NoYXJhY3RlcnNfc29fc2hhbGxfYmVfcmVkYWN0ZWRfYXNfdG9rZW4=''',
   '''dGVzdF9kb3VibGVfcGFkZGVkX3ZhbHVlX2Zvcl9zZWN1cml0eV9hdWRpdF9yZWRhY3Rpb25fdGVzdA==''',
   '''idemp_stage_a_test_key_01''',
-  '''idemp_fail_key_02'''
+  '''idemp_fail_key_02''',
+  '''rzp_live_K82jD84ls91zP''',
+  '''rzp_live_abc123xyz789''',
+  '''secret_live_supersecret''',
+  '''whsec_secret123''',
+  '''test_platform_token_secret_key_1234567890123456'''
 ]
 paths = [
   # Local ephemeral dependencies, build outputs, and Git metadata (all in .gitignore)
