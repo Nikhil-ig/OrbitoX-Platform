@@ -43,7 +43,12 @@ let proxyServer: http.Server | null = null;
 let rrCounter = 0;
 const TEST_TENANT = `org/test-2servers-${crypto.randomBytes(4).toString('hex')}/project/p1/environment/prod`;
 const TEST_PRINCIPAL = { sub: 'platform_orchestrator', scopes: ['tenant:admin', 'platform:superuser'] };
-const KDS_PRINCIPAL = { sub: 'kds_screen_kitchen', scopes: ['tenant:admin', 'station:kds'] };
+let KDS_PRINCIPAL: any = {
+  sub: 'kds_screen_kitchen',
+  scopes: ['station:kds'],
+  stationId: 'GRILL',
+  branchId: 'main',
+};
 
 async function getFreePort(): Promise<number> {
   return new Promise((resolve) => {
@@ -259,6 +264,15 @@ before(async () => {
 
   const provRes = await sendRequest(proxyUrl, 'POST', provPath, signedProvHeaders, provPayload);
   assert.ok([200, 201].includes(provRes.status), `Provisioning failed: ${JSON.stringify(provRes.body)}`);
+
+  const branch = await prisma.branch.findFirst({ where: { tenantId: TEST_TENANT } });
+  const testBranchId = branch?.id || provRes.body?.result?.branchId || 'main';
+  KDS_PRINCIPAL = {
+    sub: 'kds_screen_kitchen',
+    scopes: ['station:kds'],
+    stationId: 'GRILL',
+    branchId: testBranchId,
+  };
 });
 
 after(async () => {

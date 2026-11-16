@@ -337,8 +337,10 @@ export async function handleRequest(req: http.IncomingMessage, res: http.ServerR
       ? {
         type: isBridgeStation ? 'STATION' : 'PLATFORM_BRIDGE',
         id: verifiedBridge.principal.sub,
-        role: isBridgePrivileged ? 'ADMIN' : (isBridgeStation ? undefined : 'BRIDGE_CALLER'),
-        isPrivileged: isBridgePrivileged,
+        role: isBridgeStation
+          ? (verifiedBridge.principal.stationId === 'EXPO' ? 'EXPO' : 'CHEF')
+          : (isBridgePrivileged ? 'ADMIN' : 'BRIDGE_CALLER'),
+        isPrivileged: isBridgePrivileged && !isBridgeStation,
         scopes: verifiedBridge.principal.scopes,
         tenantId: tenantContext.tenantId,
         station: verifiedBridge.principal.stationId || undefined,

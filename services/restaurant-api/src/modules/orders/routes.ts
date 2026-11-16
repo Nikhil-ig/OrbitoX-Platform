@@ -378,6 +378,7 @@ export const ordersRoutes: RouteDefinition[] = [
 
       const canUpdateStatus =
         identity.isPrivileged ||
+        identity.type === 'STATION' ||
         ['MANAGER', 'ADMIN', 'OPERATIONS', 'POS', 'CHEF', 'SERVER', 'EXPO'].includes(identity.role || '');
       if (!canUpdateStatus) {
         sendJson(res, 403, {
