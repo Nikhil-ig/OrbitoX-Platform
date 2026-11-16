@@ -541,6 +541,7 @@ describe('Phase 3: Distributed Provisioning Lease Correctness, Attempt-Scoped To
       name: `Fenced Project ${slug}`,
       slug,
       organizationId: testOrg.id,
+      planTier: 'free',
       businessModel: 'B2B',
       technicalLead: 'lead@orbitox.io',
       contactEmail: 'contact@orbitox.io',
