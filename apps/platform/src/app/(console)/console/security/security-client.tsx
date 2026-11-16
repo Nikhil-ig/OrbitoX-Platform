@@ -48,15 +48,7 @@ export function SecurityClient({ initialOverview }: SecurityClientProps) {
     keyId: string;
     notice: string;
     isNew?: boolean;
-  } | null>(
-    // Initial sample banner matching screenshot if desired
-    {
-      secret: 'obx_live_9fK2vN9sQ7wE3rT1yU8iO0pA2sD4fG6hJ8kL0zX2cV4bN6mQm7',
-      keyId: 'obx_live_9fK2',
-      notice: 'The old key keeps working for 24 hours so integrations can switch over, then stops.',
-      isNew: false,
-    },
-  );
+  } | null>(null);
   const [copied, setCopied] = React.useState(false);
 
   // Modals State

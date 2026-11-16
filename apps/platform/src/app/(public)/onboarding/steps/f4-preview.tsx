@@ -73,6 +73,7 @@ export function F4WorkingPreviewStep({
   // Live KDS tickets state
   const [kdsTickets, setKdsTickets] = useState<TestTicket[]>([]);
   const [kdsLoading, setKdsLoading] = useState(false);
+  const [kdsStatus, setKdsStatus] = useState<'LIVE' | 'LOADING' | 'OFFLINE' | 'UNAUTHORIZED'>('LOADING');
 
   // Genuine optical QR code data URL
   const [qrCodeDataUrl, setQrCodeDataUrl] = useState<string>('');
@@ -144,17 +145,22 @@ export function F4WorkingPreviewStep({
             .filter((t: any) => t.isTest === true)
             .map((t: any) => ({
               id: t.id,
-              tableNumber: t.tableNumber ? `Table ${t.tableNumber}` : 'Table T-01',
+              tableNumber: t.tableNumber ? `Table ${t.tableNumber}` : (sampleTable ? `Table ${sampleTable.tableNumber}` : 'Unassigned Table'),
               items: [{ name: t.itemName || 'Dish', qty: t.quantity || 1, note: t.modifiers?.join(', ') }],
               timeAgo: 'Just now',
               status: t.status === 'READY' ? 'READY' : t.status === 'BUMPED' ? 'BUMPED' : 'QUEUED',
               isTest: true,
             }));
           setKdsTickets(formatted);
+          setKdsStatus('LIVE');
         }
+      } else if (res.status === 401 || res.status === 403) {
+        setKdsStatus('UNAUTHORIZED');
+      } else {
+        setKdsStatus('OFFLINE');
       }
     } catch {
-      // Fallback
+      setKdsStatus('OFFLINE');
     } finally {
       setKdsLoading(false);
     }
@@ -199,12 +205,16 @@ export function F4WorkingPreviewStep({
   const cartCount = cart.reduce((acc, i) => acc + i.qty, 0);
 
   const previewExpiresAt = previewData?.restaurant?.previewExpiresAt;
-  const daysLeft = previewExpiresAt
+  const hasValidExpiry = Boolean(
+    previewExpiresAt && !isNaN(new Date(previewExpiresAt).getTime())
+  );
+  const daysLeft = hasValidExpiry
     ? Math.max(0, Math.ceil((new Date(previewExpiresAt).getTime() - Date.now()) / (1000 * 60 * 60 * 24)))
-    : 14;
+    : 0;
   const isPreviewExpired =
     previewData?.restaurant?.status === 'EXPIRED' ||
-    Boolean(previewExpiresAt && new Date(previewExpiresAt).getTime() <= Date.now());
+    !hasValidExpiry ||
+    Boolean(new Date(previewExpiresAt).getTime() <= Date.now());
 
   // 4. Place Real Test Order via Authoritative Endpoint
   const handlePlaceTestOrder = async () => {
@@ -239,7 +249,7 @@ export function F4WorkingPreviewStep({
           ...(csrfToken ? { 'x-csrf-token': csrfToken } : {}),
         },
         body: JSON.stringify({
-          tableNumber: sampleTable.tableNumber || 'T-01',
+          tableNumber: sampleTable.tableNumber,
           guestName: `${ownerName} (Preview)`,
           items: orderItems.map((i) => ({
             id: i.id,
@@ -393,7 +403,7 @@ export function F4WorkingPreviewStep({
 
                 <div>
                   <div className="text-[10px] text-[#5A6170]">
-                    {restaurantName} · {sampleTable?.tableNumber || 'Table T-01'}
+                    {restaurantName} · {sampleTable ? `Table ${sampleTable.tableNumber}` : 'No table provisioned'}
                   </div>
                   <h4 className="font-bold text-sm text-[#14161A]">What are you craving?</h4>
                 </div>
@@ -507,7 +517,7 @@ export function F4WorkingPreviewStep({
                     {qrCodeDataUrl ? (
                       <img
                         src={qrCodeDataUrl}
-                        alt={`Optical Table QR Code for ${sampleTable?.tableNumber || 'Table T-01'}`}
+                        alt={`Optical Table QR Code for ${sampleTable ? `Table ${sampleTable.tableNumber}` : 'unprovisioned table'}`}
                         className="w-28 h-28 object-contain mx-auto"
                       />
                     ) : (
@@ -516,17 +526,19 @@ export function F4WorkingPreviewStep({
                       </div>
                     )}
                     <div className="text-[10px] font-mono font-bold text-center text-[#14161A] mt-1">
-                      {sampleTable?.tableNumber || 'Table T-01'}
+                      {sampleTable ? `Table ${sampleTable.tableNumber}` : 'No table provisioned'}
                     </div>
                   </div>
                   <div className="mt-2">
                     <a
-                      href={dinerUrl}
+                      href={dinerUrl || '#'}
                       target="_blank"
                       rel="noreferrer"
-                      className="text-xs font-semibold text-[#2F5BD8] hover:underline flex items-center gap-1"
+                      className={`text-xs font-semibold flex items-center gap-1 ${
+                        dinerUrl ? 'text-[#2F5BD8] hover:underline' : 'text-gray-400 pointer-events-none'
+                      }`}
                     >
-                      <span>Open {sampleTable?.tableNumber || 'Table T-01'} in new tab</span>
+                      <span>{sampleTable ? `Open Table ${sampleTable.tableNumber} in new tab` : 'No sample table provisioned'}</span>
                       <ExternalLink className="h-3 w-3" />
                     </a>
                   </div>
@@ -569,9 +581,23 @@ export function F4WorkingPreviewStep({
                   <ChefHat className="h-4 w-4 text-[#FB923C]" />
                   <span className="font-semibold text-white">Kitchen screen (KDS)</span>
                 </div>
-                <span className="text-[#34D399] flex items-center gap-1 font-semibold text-[11px]">
-                  <span className="h-1.5 w-1.5 rounded-full bg-[#34D399] animate-ping" /> live
-                </span>
+                {kdsStatus === 'LIVE' ? (
+                  <span className="text-[#34D399] flex items-center gap-1 font-semibold text-[11px]">
+                    <span className="h-1.5 w-1.5 rounded-full bg-[#34D399] animate-ping" /> live
+                  </span>
+                ) : kdsStatus === 'LOADING' ? (
+                  <span className="text-gray-400 flex items-center gap-1 font-semibold text-[11px]">
+                    <RefreshCw className="h-3 w-3 animate-spin" /> connecting...
+                  </span>
+                ) : kdsStatus === 'UNAUTHORIZED' ? (
+                  <span className="text-amber-400 flex items-center gap-1 font-semibold text-[11px]">
+                    <AlertCircle className="h-3 w-3" /> unauthorized
+                  </span>
+                ) : (
+                  <span className="text-red-400 flex items-center gap-1 font-semibold text-[11px]">
+                    <AlertCircle className="h-3 w-3" /> offline
+                  </span>
+                )}
               </div>
 
               {/* Tickets list */}

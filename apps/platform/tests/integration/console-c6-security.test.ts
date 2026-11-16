@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
+import crypto from 'node:crypto';
 
-process.env.ORBITOX_MFA_ENCRYPTION_KEY ||= 'PLUh1i+W9CGug8MjeHHa5HHYjJtz7OI56fRktDhDcbM=';
+process.env.ORBITOX_MFA_ENCRYPTION_KEY ||= crypto.randomBytes(32).toString('base64');
 
 import { PrismaClient } from '@prisma/client';
 import {

@@ -496,21 +496,34 @@ export class ProvisioningSaga {
     const op = await operationStore.getOperation(operationId);
     if (!op || op.status === 'CANCELLED' || op.status === 'FAILED') return;
 
-    // F1: Acquire distributed lease before running asynchronous steps 5–7
-    const workerId = options.workerId || this.workerInstanceId;
-    const claimed = await operationStore.claimOperationLease(operationId, workerId);
+    // F1: Acquire distributed lease before running asynchronous steps 5–7 with attempt-scoped owner token
+    const attemptId = randomUUID().slice(0, 8);
+    const baseWorkerId = options.workerId || this.workerInstanceId;
+    const attemptLeaseOwner = baseWorkerId.includes(':') ? baseWorkerId : `${baseWorkerId}:${attemptId}`;
+    const claimed = await operationStore.claimOperationLease(operationId, attemptLeaseOwner);
     if (!claimed) {
       console.log(`[ProvisioningSaga] Operation ${operationId} lease not acquired (held by another worker); skipping.`);
       return;
     }
 
+    let leaseLost = false;
+    const abortController = new AbortController();
+
     // Maintain heartbeat while executing asynchronous steps
     const heartbeatTtl = process.env.NODE_ENV === 'test' ? 2 : 30;
-    const heartbeatInterval = process.env.NODE_ENV === 'test' ? 800 : 10000;
+    const heartbeatInterval = process.env.NODE_ENV === 'test' ? 400 : 10000;
     const heartbeatTimer = setInterval(async () => {
       try {
-        await operationStore.heartbeatOperationLease(operationId, workerId, heartbeatTtl);
-      } catch {}
+        const renewed = await operationStore.renewOperationLease(operationId, attemptLeaseOwner, heartbeatTtl);
+        if (!renewed) {
+          leaseLost = true;
+          abortController.abort();
+          console.warn(`[ProvisioningSaga] Lease lost during heartbeat for ${operationId}`);
+        }
+      } catch {
+        leaseLost = true;
+        abortController.abort();
+      }
     }, heartbeatInterval);
 
     let currentSteps = [...op.steps];
@@ -519,8 +532,11 @@ export class ProvisioningSaga {
       status: OperationStep['status'],
       extra: Partial<OperationStep> = {}
     ) => {
+      if (leaseLost || abortController.signal.aborted) {
+        throw new Error(`LEASE_LOST: Aborting step execution because lease was lost for operation ${operationId}`);
+      }
       currentSteps = currentSteps.map((s) => (s.id === stepId ? { ...s, status, ...extra } : s));
-      await operationStore.updateOperation(operationId, { steps: currentSteps });
+      await operationStore.updateOperation(operationId, { steps: currentSteps }, { expectedLeaseOwner: attemptLeaseOwner });
     };
 
     const isStepCompleted = (stepId: string) =>
@@ -613,7 +629,7 @@ export class ProvisioningSaga {
               failedPlugins,
               retryAction: `/v1/operations/${operationId}/retry`,
             },
-          });
+          }, { expectedLeaseOwner: attemptLeaseOwner });
           return;
         }
 
@@ -735,7 +751,7 @@ export class ProvisioningSaga {
             environmentId: existingApiKey.environmentId,
           } : undefined,
         },
-      });
+      }, { expectedLeaseOwner: attemptLeaseOwner });
     } catch (err: any) {
       const errMsg = err?.message || String(err);
       const running = currentSteps.find((s) => s.status === 'RUNNING');
@@ -743,16 +759,20 @@ export class ProvisioningSaga {
         await updateStep(running.id, 'FAILED', {
           completedAt: new Date().toISOString(),
           error: errMsg,
-        });
+        }).catch(() => {});
       }
 
-      await operationStore.updateOperation(operationId, {
-        status: 'FAILED',
-        error: errMsg,
-      });
+      if (!leaseLost) {
+        await operationStore.updateOperation(operationId, {
+          status: 'FAILED',
+          error: errMsg,
+        }, { expectedLeaseOwner: attemptLeaseOwner }).catch(() => {});
+      }
     } finally {
       clearInterval(heartbeatTimer);
-      await operationStore.releaseOperationLease(operationId, workerId);
+      if (!leaseLost) {
+        await operationStore.releaseOperationLease(operationId, attemptLeaseOwner);
+      }
     }
   }
 
@@ -806,10 +826,11 @@ export class ProvisioningSaga {
     if (op.status === 'ACTIVE') return op;
 
     // Retry must never use force: conditional claim only. If another live server holds the lease, reject retry.
-    const workerId = this.workerInstanceId;
-    const claimed = await operationStore.claimOperationLease(operationId, workerId);
+    const attemptId = randomUUID().slice(0, 8);
+    const attemptLeaseOwner = `${this.workerInstanceId}:${attemptId}`;
+    const claimed = await operationStore.claimOperationLease(operationId, attemptLeaseOwner);
     if (!claimed) {
-      console.log(`[ProvisioningSaga] Operation ${operationId} lease could not be claimed by ${workerId}; active lease held by another live server.`);
+      console.log(`[ProvisioningSaga] Operation ${operationId} lease could not be claimed by ${attemptLeaseOwner}; active lease held by another live server.`);
       return null;
     }
 
@@ -821,7 +842,7 @@ export class ProvisioningSaga {
       status: 'PROVISIONING',
       steps: resetSteps,
       error: null,
-    });
+    }, { expectedLeaseOwner: attemptLeaseOwner });
 
     const req = op.request as any;
     const orgId = op.organizationId;
@@ -846,6 +867,7 @@ export class ProvisioningSaga {
         operatorId: op.operatorId || 'orchestrator',
         requestId: op.requestId || randomUUID(),
         idempotencyKey: op.idempotencyKey || undefined,
+        workerId: attemptLeaseOwner,
       }
     );
 

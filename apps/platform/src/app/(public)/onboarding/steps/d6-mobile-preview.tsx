@@ -43,11 +43,18 @@ export function D6MobilePreviewView({
   const [sampleTable, setSampleTable] = useState<{ tableNumber: string; dinerUrl: string } | null>(null);
   const [kdsTasks, setKdsTasks] = useState<any[]>([]);
   const [kdsReady, setKdsReady] = useState(false);
+  const [kdsFetchState, setKdsFetchState] = useState<'loading' | 'live' | 'unauthorized' | 'outage' | 'empty'>('loading');
   const [placingOrder, setPlacingOrder] = useState(false);
   const [bumping, setBumping] = useState(false);
   const [orderError, setOrderError] = useState<string | null>(null);
   const [kdsError, setKdsError] = useState<string | null>(null);
   const [previewExpiresAt, setPreviewExpiresAt] = useState<string | null>(null);
+
+  const hasValidExpiry = Boolean(
+    previewExpiresAt && !isNaN(new Date(previewExpiresAt).getTime())
+  );
+  const isPreviewExpired =
+    !hasValidExpiry || Boolean(new Date(previewExpiresAt!).getTime() <= Date.now());
 
   const fetchKdsTasks = async () => {
     try {
@@ -57,12 +64,23 @@ export function D6MobilePreviewView({
         if (data.ok && Array.isArray(data.tasks)) {
           const testTasks = data.tasks.filter((t: any) => t.isTest === true);
           setKdsTasks(testTasks);
+          if (testTasks.length === 0) {
+            setKdsFetchState('empty');
+          } else {
+            setKdsFetchState('live');
+          }
           if (testTasks.length > 0 && testTasks.every((t: any) => t.status === 'READY' || t.status === 'BUMPED')) {
             setKdsReady(true);
           }
         }
+      } else if (res.status === 401 || res.status === 403) {
+        setKdsFetchState('unauthorized');
+      } else {
+        setKdsFetchState('outage');
       }
-    } catch {}
+    } catch {
+      setKdsFetchState('outage');
+    }
   };
 
   useEffect(() => {
@@ -98,6 +116,14 @@ export function D6MobilePreviewView({
   const cartTotal = cartItems.reduce((acc, i) => acc + i.price * i.qty, 0);
 
   const handlePlaceTestOrder = async () => {
+    if (isPreviewExpired) {
+      setOrderError('Cannot place test order: Preview period has expired.');
+      return;
+    }
+    if (!sampleTable) {
+      setOrderError('Cannot place test order: No sample table provisioned.');
+      return;
+    }
     if (cartItems.length === 0) return;
     setPlacingOrder(true);
     setOrderError(null);
@@ -110,7 +136,7 @@ export function D6MobilePreviewView({
           ...(csrfToken ? { 'x-csrf-token': csrfToken } : {}),
         },
         body: JSON.stringify({
-          tableNumber: sampleTable?.tableNumber || 'T-01',
+          tableNumber: sampleTable.tableNumber,
           items: cartItems.map((i) => ({
             id: i.id,
             itemId: i.id,
@@ -138,6 +164,10 @@ export function D6MobilePreviewView({
   };
 
   const handleBumpKds = async (taskIdToBump?: string) => {
+    if (isPreviewExpired) {
+      setKdsError('Cannot bump kitchen task: Preview period has expired.');
+      return;
+    }
     const taskId = taskIdToBump || kdsTasks[0]?.id;
     if (!taskId) return;
     setBumping(true);
@@ -193,7 +223,7 @@ export function D6MobilePreviewView({
             <span className="font-semibold text-[#9A3412] bg-[#FED7AA] px-2 py-0.5 rounded-full">
               Preview Mode
             </span>
-            <span>{city} · Table {sampleTable?.tableNumber || 'T-01'}</span>
+            <span>{city} · {sampleTable ? `Table ${sampleTable.tableNumber}` : 'No table provisioned'}</span>
           </div>
           <h2 className="text-lg font-bold text-[#14161A] mt-1">{restaurantName}</h2>
           <div className="text-[10px] text-gray-500">{slug}.orbitox.io</div>
@@ -248,9 +278,27 @@ export function D6MobilePreviewView({
             <div className="space-y-4">
               <div className="flex items-center justify-between">
                 <h3 className="font-bold text-sm text-[#14161A]">Kitchen Display System</h3>
-                <span className="text-emerald-700 font-bold text-[10px] flex items-center gap-1">
-                  <span className="h-1.5 w-1.5 rounded-full bg-emerald-600 animate-ping" /> Live
-                </span>
+                {kdsFetchState === 'live' ? (
+                  <span className="text-emerald-700 font-bold text-[10px] flex items-center gap-1">
+                    <span className="h-1.5 w-1.5 rounded-full bg-emerald-600 animate-ping" /> Live
+                  </span>
+                ) : kdsFetchState === 'loading' ? (
+                  <span className="text-gray-400 font-bold text-[10px] flex items-center gap-1">
+                    <RefreshCw className="h-3 w-3 animate-spin" /> Connecting...
+                  </span>
+                ) : kdsFetchState === 'unauthorized' ? (
+                  <span className="text-amber-600 font-bold text-[10px] flex items-center gap-1">
+                    Unauthorized (403)
+                  </span>
+                ) : kdsFetchState === 'outage' ? (
+                  <span className="text-red-600 font-bold text-[10px] flex items-center gap-1">
+                    Offline
+                  </span>
+                ) : (
+                  <span className="text-gray-500 font-bold text-[10px] flex items-center gap-1">
+                    Idle
+                  </span>
+                )}
               </div>
 
               {kdsError && (
@@ -265,7 +313,9 @@ export function D6MobilePreviewView({
                     <div key={task.id} className="p-4 rounded-[24px] bg-[#14161A] text-white space-y-3 shadow-lg">
                       <div className="flex items-center justify-between text-xs">
                         <div className="flex items-center gap-2">
-                          <span className="font-bold text-white">Table {task.tableNumber || sampleTable?.tableNumber || 'T-01'}</span>
+                          <span className="font-bold text-white">
+                            {task.tableNumber ? `Table ${task.tableNumber}` : (sampleTable ? `Table ${sampleTable.tableNumber}` : 'Unassigned Table')}
+                          </span>
                           <span className="text-[9px] font-extrabold text-[#14161A] bg-[#FBBF24] px-1.5 py-0.2 rounded-full">
                             TEST ORDER
                           </span>
@@ -336,12 +386,16 @@ export function D6MobilePreviewView({
           {activeTab === 'storefront' && (
             <button
               type="button"
-              disabled={placingOrder}
+              disabled={placingOrder || cartItems.length === 0 || !sampleTable || isPreviewExpired}
               onClick={handlePlaceTestOrder}
               className="w-full py-2.5 rounded-full bg-[#14161A] text-white text-xs font-bold flex items-center justify-center gap-2 cursor-pointer shadow-md disabled:opacity-50"
             >
               {placingOrder ? (
                 <span className="flex items-center gap-1.5"><RefreshCw className="h-3 w-3 animate-spin" /> Submitting...</span>
+              ) : isPreviewExpired ? (
+                <span>Preview Expired</span>
+              ) : !sampleTable ? (
+                <span>Sample Table Required</span>
               ) : (
                 <span>Submit Test Order · ₹{cartTotal}</span>
               )}

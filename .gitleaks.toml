@@ -21,7 +21,11 @@ regexes = [
   '''__orbitox_preflight_vector__''',
   '''stn_sec_tandoor_ldh_99x7''',
   '''e3fd2fa74174360f0984a7b9c9cd04e4059d3e57''',
-  '''GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ'''
+  '''GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ''',
+  '''PLUh1i\+W9CGug8MjeHHa5HHYjJtz7OI56fRktDhDcbM=''',
+  '''suHqZrDHA7KY4K81QyTKR1vIR\+K9koUQWq0YlazJlNo=''',
+  '''obx_live_9fK2vN9sQ7wE3rT1yU8iO0pA2sD4fG6hJ8kL0zX2cV4bN6mQm7''',
+  '''c8f1e7b29a4302d765fe1234abcd5678c8f1e7b29a4302d765fe1234abcd5678'''
 ]
 paths = [
   # Local ephemeral dependencies, build outputs, and Git metadata (all in .gitignore)
@@ -32,6 +36,8 @@ paths = [
 
   # Gitignored offline development signing key (per AGENTS.md Rule 4: never committed to VCS)
   '''(?i)keys/private\.pem$''',
+  '''(?i)\.env(\..+)?$''',
+  '''(?i)orbitox/data/.*''',
 
   # Individually Justified False Positive 1: Credential Vault Masking Unit Tests
   # File: packages/plugin-engine/src/security/credential-vault.spec.ts

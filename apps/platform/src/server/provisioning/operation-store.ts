@@ -200,11 +200,16 @@ export class OperationStore {
 
   async updateOperation(
     id: string,
-    updates: Partial<PlatformOperationRecord>
+    updates: Partial<PlatformOperationRecord>,
+    options: { expectedLeaseOwner?: string } = {}
   ): Promise<PlatformOperationRecord | null> {
     if (process.env.ORBITOX_PLATFORM_REPOSITORY === 'json') {
       const existing = memoryOperations.get(id);
       if (!existing) return null;
+
+      if (options.expectedLeaseOwner && existing.leaseOwner && existing.leaseOwner !== options.expectedLeaseOwner) {
+        throw new Error(`LEASE_FENCING_ERROR: Operation lease owner mismatch. Expected ${options.expectedLeaseOwner}, got ${existing.leaseOwner}`);
+      }
 
       const sanitizedResult = updates.result !== undefined ? sanitizeOperationResult(updates.result) : existing.result;
 
@@ -225,6 +230,10 @@ export class OperationStore {
     const existing = await this.getOperation(id);
     if (!existing) return null;
 
+    if (options.expectedLeaseOwner && existing.leaseOwner && existing.leaseOwner !== options.expectedLeaseOwner) {
+      throw new Error(`LEASE_FENCING_ERROR: Operation lease owner mismatch. Expected ${options.expectedLeaseOwner}, got ${existing.leaseOwner}`);
+    }
+
     const sanitizedResult = updates.result !== undefined ? sanitizeOperationResult(updates.result) : existing.result;
     const nowIso = new Date().toISOString();
     const completedAtIso = (updates.status === 'ACTIVE' || updates.status === 'FAILED' || updates.status === 'PARTIAL' || updates.status === 'CANCELLED')
@@ -232,8 +241,16 @@ export class OperationStore {
       : undefined;
 
     try {
-      const row = await (prisma as any).platformOperation.update({
-        where: { id },
+      const whereClause: any = { id };
+      if (options.expectedLeaseOwner) {
+        whereClause.OR = [
+          { leaseOwner: options.expectedLeaseOwner },
+          { leaseOwner: null },
+        ];
+      }
+
+      const updateResult = await (prisma as any).platformOperation.updateMany({
+        where: whereClause,
         data: {
           ...(updates.status ? { status: updates.status } : {}),
           ...(updates.steps ? { steps: updates.steps as any } : {}),
@@ -247,8 +264,18 @@ export class OperationStore {
           ...(completedAtIso ? { completedAt: new Date(completedAtIso) } : {}),
         },
       });
-      return rowToRecord(row);
+
+      if (updateResult.count === 0 && options.expectedLeaseOwner) {
+        const current = await this.getOperation(id);
+        if (current && current.leaseOwner !== options.expectedLeaseOwner) {
+          throw new Error(`LEASE_FENCING_ERROR: Operation lease owner mismatch. Expected ${options.expectedLeaseOwner}, got ${current.leaseOwner}`);
+        }
+      }
+
+      const row = await (prisma as any).platformOperation.findUnique({ where: { id } });
+      return row ? rowToRecord(row) : null;
     } catch (err: any) {
+      if (err.message?.includes('LEASE_FENCING_ERROR')) throw err;
       console.error('[OperationStore] updateOperation DB write failed (fail-closed):', err?.message || err);
       throw new DatabasePersistenceError('updateOperation', err);
     }
@@ -276,7 +303,7 @@ export class OperationStore {
       if (mem) {
         const now = Date.now();
         const expiresAt = mem.leaseExpiresAt ? new Date(mem.leaseExpiresAt).getTime() : 0;
-        if (isForce || mem.leaseOwner === leaseOwner || !mem.leaseExpiresAt || expiresAt < now) {
+        if (isForce || !mem.leaseExpiresAt || expiresAt < now) {
           mem.leaseOwner = leaseOwner;
           mem.leaseExpiresAt = new Date(now + effectiveTtl * 1000).toISOString();
           return true;
@@ -293,7 +320,7 @@ export class OperationStore {
             "leaseExpiresAt" = NOW() + (${effectiveTtl} * INTERVAL '1 second'),
             "updatedAt" = NOW()
         WHERE "id" = ${id}
-          AND (${isForce} = true OR "leaseOwner" = ${leaseOwner} OR "leaseExpiresAt" IS NULL OR "leaseExpiresAt" < NOW())
+          AND (${isForce} = true OR "leaseExpiresAt" IS NULL OR "leaseExpiresAt" < NOW())
         RETURNING id
       `;
       return Array.isArray(rows) && rows.length > 0;
@@ -304,9 +331,10 @@ export class OperationStore {
   }
 
   /**
-   * Distributed Lease: heartbeats an existing lease ownership.
+   * Distributed Lease: renews an unexpired lease ownership.
+   * Fails if lease has expired or owner does not match.
    */
-  async heartbeatOperationLease(
+  async renewOperationLease(
     id: string,
     leaseOwner: string,
     ttlSeconds?: number
@@ -320,8 +348,12 @@ export class OperationStore {
     if (process.env.ORBITOX_PLATFORM_REPOSITORY === 'json') {
       const mem = memoryOperations.get(id);
       if (mem && mem.leaseOwner === leaseOwner) {
-        mem.leaseExpiresAt = new Date(Date.now() + effectiveTtl * 1000).toISOString();
-        return true;
+        const now = Date.now();
+        const expiresAt = mem.leaseExpiresAt ? new Date(mem.leaseExpiresAt).getTime() : 0;
+        if (expiresAt >= now) {
+          mem.leaseExpiresAt = new Date(now + effectiveTtl * 1000).toISOString();
+          return true;
+        }
       }
       return false;
     }
@@ -333,13 +365,25 @@ export class OperationStore {
             "updatedAt" = NOW()
         WHERE "id" = ${id}
           AND "leaseOwner" = ${leaseOwner}
+          AND "leaseExpiresAt" >= NOW()
         RETURNING id
       `;
       return Array.isArray(rows) && rows.length > 0;
     } catch (err: any) {
-      console.error('[OperationStore] heartbeatOperationLease DB update failed (fail-closed):', err?.message || err);
-      throw new DatabasePersistenceError('heartbeatOperationLease', err);
+      console.error('[OperationStore] renewOperationLease DB update failed (fail-closed):', err?.message || err);
+      throw new DatabasePersistenceError('renewOperationLease', err);
     }
+  }
+
+  /**
+   * Distributed Lease: heartbeats an existing lease ownership.
+   */
+  async heartbeatOperationLease(
+    id: string,
+    leaseOwner: string,
+    ttlSeconds?: number
+  ): Promise<boolean> {
+    return this.renewOperationLease(id, leaseOwner, ttlSeconds);
   }
 
   /**

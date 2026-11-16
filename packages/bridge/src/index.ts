@@ -281,7 +281,7 @@ export function getDefaultBridgeKeys(): BridgeKeys {
   // Fallback shared 32-byte key in non-prod
   if (!ephemeralDevKeys) {
     const keyId = 'dev_shared_bridge_key';
-    const secret = 'c8f1e7b29a4302d765fe1234abcd5678c8f1e7b29a4302d765fe1234abcd5678';
+    const secret = crypto.randomBytes(32).toString('hex');
     ephemeralDevKeys = {
       activeKeyId: keyId,
       keys: { [keyId]: secret },

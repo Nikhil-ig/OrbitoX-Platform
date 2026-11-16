@@ -296,12 +296,17 @@ export async function handleRequest(req: http.IncomingMessage, res: http.ServerR
       });
     });
 
+    const isBridgePrivileged = Boolean(
+      verifiedBridge?.principal.scopes?.some((s: string) =>
+        ['ADMIN', 'tenant:admin', 'platform:superuser', 'station:kds'].includes(s)
+      )
+    );
     const requestIdentity: any = verifiedBridge
       ? {
         type: 'PLATFORM_BRIDGE',
         id: verifiedBridge.principal.sub,
-        role: verifiedBridge.principal.scopes?.includes('ADMIN') ? 'ADMIN' : 'BRIDGE_CALLER',
-        isPrivileged: Boolean(verifiedBridge.principal.scopes?.includes('ADMIN')),
+        role: isBridgePrivileged ? 'ADMIN' : 'BRIDGE_CALLER',
+        isPrivileged: isBridgePrivileged,
         scopes: verifiedBridge.principal.scopes,
         tenantId: tenantContext.tenantId,
         authSource: 'BRIDGE_SIGNATURE',

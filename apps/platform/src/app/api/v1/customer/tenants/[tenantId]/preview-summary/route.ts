@@ -134,8 +134,15 @@ export const GET = withCustomerAuth<RouteContext>(
 
     const rawStatus = String(runtimeTenant?.status || '').toUpperCase();
     const previewExpiresAt = runtimeTenant?.previewExpiresAt || null;
+    const hasValidExpiry = Boolean(
+      previewExpiresAt &&
+      !isNaN(new Date(previewExpiresAt).getTime()) &&
+      new Date(previewExpiresAt).getTime() > Date.now()
+    );
     const isExpired = Boolean(
-      previewExpiresAt && new Date(previewExpiresAt).getTime() <= Date.now()
+      !previewExpiresAt ||
+      isNaN(new Date(previewExpiresAt).getTime()) ||
+      new Date(previewExpiresAt).getTime() <= Date.now()
     );
 
     let lifecycleStatus = 'PREVIEW';
@@ -150,10 +157,10 @@ export const GET = withCustomerAuth<RouteContext>(
     } else if (rawStatus === 'PREVIEW') {
       lifecycleStatus = isExpired ? 'EXPIRED' : 'PREVIEW';
     } else {
-      lifecycleStatus = rawStatus || 'PREVIEW';
+      lifecycleStatus = rawStatus || 'NOT_PROVISIONED';
     }
 
-    const isPreviewActive = lifecycleStatus === 'PREVIEW';
+    const isPreviewActive = rawStatus === 'PREVIEW' && hasValidExpiry;
     const restaurantProvisioned = Boolean(
       runtimeTenant && runtimeTenant.status && runtimeTenant.status !== 'NOT_FOUND'
     );

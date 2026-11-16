@@ -6,7 +6,8 @@ export function authorizeKdsRequest(
   identity: RequestIdentity,
   targetBranchId?: string,
   targetStation?: string,
-  isExpoDispatch = false
+  isExpoDispatch = false,
+  operation: 'bump' | 'recall' | 'dispatch' | 'fulfill' | 'read' = 'bump'
 ): { authorized: boolean; statusCode?: number; error?: string; code?: string } {
   if (identity.type === 'ANONYMOUS') {
     return {
@@ -37,24 +38,47 @@ export function authorizeKdsRequest(
     return {
       authorized: false,
       statusCode: 403,
-      error: 'Diner capability cannot mutate kitchen display tasks.',
+      error: 'Diner capability cannot access or mutate kitchen display tasks.',
       code: 'FORBIDDEN',
     };
   }
 
   if (identity.type === 'PLATFORM_BRIDGE') {
-    if (identity.scopes?.includes('preview:kds:bump')) {
+    const isPrivilegedAdmin = identity.scopes?.some((s: string) =>
+      ['tenant:admin', 'platform:superuser', 'station:kds'].includes(s)
+    );
+    if (isPrivilegedAdmin) {
+      return { authorized: true };
+    }
+
+    const requiredScope =
+      operation === 'bump'
+        ? 'preview:kds:bump'
+        : operation === 'read'
+        ? 'preview:kds:read'
+        : operation === 'recall'
+        ? 'preview:kds:recall'
+        : operation === 'dispatch'
+        ? 'preview:kds:dispatch'
+        : operation === 'fulfill'
+        ? 'preview:kds:fulfill'
+        : 'preview:kds:bump';
+
+    if (identity.scopes?.includes(requiredScope)) {
       return { authorized: true };
     }
     return {
       authorized: false,
       statusCode: 403,
-      error: 'Platform bridge caller lacks required preview:kds:bump scope.',
+      error: `Platform bridge caller lacks required ${requiredScope} scope for operation '${operation}'.`,
       code: 'INSUFFICIENT_KDS_SCOPE',
     };
   }
 
-  const allowedRoles = ['CHEF', 'EXPO', 'OPERATIONS', 'MANAGER', 'ADMIN'];
+  const allowedRoles =
+    operation === 'read'
+      ? ['CHEF', 'EXPO', 'OPERATIONS', 'MANAGER', 'ADMIN', 'SERVER', 'WAITER', 'BARTENDER']
+      : ['CHEF', 'EXPO', 'OPERATIONS', 'MANAGER', 'ADMIN'];
   const effectiveRole = identity.role || (identity.type === 'ADMIN' ? 'ADMIN' : undefined);
   const isAuthorizedRole =
     (identity.type === 'STATION' && (!identity.role || allowedRoles.includes(identity.role))) ||
@@ -64,7 +88,7 @@ export function authorizeKdsRequest(
     return {
       authorized: false,
       statusCode: 403,
-      error: `Role ${identity.role || identity.type} is not authorized to mutate kitchen display tasks.`,
+      error: `Role ${identity.role || identity.type} is not authorized to access or mutate kitchen display tasks.`,
       code: 'FORBIDDEN',
     };
   }

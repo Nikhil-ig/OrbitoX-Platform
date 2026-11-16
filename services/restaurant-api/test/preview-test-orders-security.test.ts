@@ -957,6 +957,140 @@ describe('Phase 7 F1–F4 Security Remediation: Preview Test Orders & Accounting
       assert.equal(res.status, 200);
       assert.equal(res.json.success, true);
     });
+
+    it('11. anonymous GET /api/restaurant/kds and /tasks rejected with 401 UNAUTHENTICATED', async () => {
+      const res1 = await makeRequest('GET', '/api/restaurant/kds', { Host: `${previewSlug}.orbitox.live` });
+      assert.equal(res1.status, 401);
+      assert.equal(res1.json.code, 'UNAUTHENTICATED');
+
+      const res2 = await makeRequest('GET', '/api/restaurant/kds/tasks', { Host: `${previewSlug}.orbitox.live` });
+      assert.equal(res2.status, 401);
+      assert.equal(res2.json.code, 'UNAUTHENTICATED');
+    });
+
+    it('12. platform-bridge GET without preview:kds:read scope rejected with 403 INSUFFICIENT_KDS_SCOPE', async () => {
+      const pathWithQuery = '/api/restaurant/kds/tasks';
+      const signedHeaders = signBridgeRequest(bridgeKeys, {
+        method: 'GET',
+        pathWithQuery,
+        tenantId: previewTenantId,
+        principal: { sub: 'usr_owner_123', scopes: ['preview:kds:bump'] }, // wrong scope
+      });
+
+      const res = await makeRequest('GET', pathWithQuery, { ...signedHeaders, Host: `${previewSlug}.orbitox.live` });
+      assert.equal(res.status, 403);
+      assert.equal(res.json.code, 'INSUFFICIENT_KDS_SCOPE');
+    });
+
+    it('13. rejects preview KDS read on non-preview (ACTIVE) tenant', async () => {
+      const pathWithQuery = '/api/restaurant/kds/tasks';
+      const signedHeaders = signBridgeRequest(bridgeKeys, {
+        method: 'GET',
+        pathWithQuery,
+        tenantId: activeTenantId,
+        principal: { sub: 'usr_owner_123', scopes: ['preview:kds:read'] },
+      });
+
+      const res = await makeRequest('GET', pathWithQuery, { ...signedHeaders, Host: `${activeSlug}.orbitox.live` });
+      assert.equal(res.status, 403);
+      assert.equal(res.json.code, 'TEST_TASKS_ONLY_IN_PREVIEW');
+    });
+
+    it('14. rejects preview KDS read on expired preview tenant', async () => {
+      const pathWithQuery = '/api/restaurant/kds/tasks';
+      const signedHeaders = signBridgeRequest(bridgeKeys, {
+        method: 'GET',
+        pathWithQuery,
+        tenantId: expiredTenantId,
+        principal: { sub: 'usr_owner_123', scopes: ['preview:kds:read'] },
+      });
+
+      const res = await makeRequest('GET', pathWithQuery, { ...signedHeaders, Host: `${expiredSlug}.orbitox.live` });
+      assert.equal(res.status, 403);
+      assert.equal(res.json.code, 'PREVIEW_EXPIRED');
+    });
+
+    it('15. platform-bridge GET with preview:kds:read returns ONLY test tasks without commercial task leakage', async () => {
+      const pathWithQuery = '/api/restaurant/kds/tasks';
+      const signedHeaders = signBridgeRequest(bridgeKeys, {
+        method: 'GET',
+        pathWithQuery,
+        tenantId: previewTenantId,
+        principal: { sub: 'usr_owner_123', scopes: ['preview:kds:read'] },
+      });
+
+      const res = await makeRequest('GET', pathWithQuery, { ...signedHeaders, Host: `${previewSlug}.orbitox.live` });
+      assert.equal(res.status, 200);
+      assert.equal(res.json.success, true);
+      const tasks = res.json.tasks || res.json.data || [];
+      assert.ok(tasks.length > 0, 'Must contain test tasks');
+      for (const t of tasks) {
+        assert.equal(t.isTest, true, 'Every returned task must have isTest = true');
+        assert.notEqual(t.id, commercialTaskId, 'Must NEVER leak commercial tasks');
+      }
+    });
+
+    it('16. staff caller can GET all tasks including commercial tasks', async () => {
+      const res = await makeRequest(
+        'GET',
+        '/api/restaurant/kds/tasks',
+        {
+          Host: `${previewSlug}.orbitox.live`,
+          Authorization: `Bearer ${staffPinToken}`,
+        }
+      );
+
+      assert.equal(res.status, 200);
+      assert.equal(res.json.success, true);
+      const tasks = res.json.tasks || res.json.data || [];
+      const foundCommercial = tasks.some((t: any) => t.id === commercialTaskId);
+      assert.ok(foundCommercial, 'Staff must be able to see commercial tasks');
+    });
+
+    it('17. platform-bridge with preview:kds:bump scope attempting recall is rejected with 403 INSUFFICIENT_KDS_SCOPE', async () => {
+      const pathWithQuery = '/api/restaurant/kds/recall';
+      const body = { taskId: previewTestTaskId, targetStatus: 'READY' };
+      const bodyStr = JSON.stringify(body);
+      const signedHeaders = signBridgeRequest(bridgeKeys, {
+        method: 'POST',
+        pathWithQuery,
+        tenantId: previewTenantId,
+        principal: { sub: 'usr_owner_123', scopes: ['preview:kds:bump'] },
+        body: bodyStr,
+      });
+
+      const res = await makeRequest('POST', pathWithQuery, { ...signedHeaders, Host: `${previewSlug}.orbitox.live` }, body);
+      assert.equal(res.status, 403);
+      assert.equal(res.json.code, 'INSUFFICIENT_KDS_SCOPE');
+    });
+
+    it('18. platform-bridge with preview:kds:bump scope attempting expo-dispatch or fulfill is rejected with 403', async () => {
+      const dispatchPath = '/api/restaurant/kds/expo-dispatch';
+      const dispatchBody = { tableNumber: previewTableNumber };
+      const signedDispatch = signBridgeRequest(bridgeKeys, {
+        method: 'POST',
+        pathWithQuery: dispatchPath,
+        tenantId: previewTenantId,
+        principal: { sub: 'usr_owner_123', scopes: ['preview:kds:bump'] },
+        body: JSON.stringify(dispatchBody),
+      });
+      const res1 = await makeRequest('POST', dispatchPath, { ...signedDispatch, Host: `${previewSlug}.orbitox.live` }, dispatchBody);
+      assert.equal(res1.status, 403);
+      assert.equal(res1.json.code, 'INSUFFICIENT_KDS_SCOPE');
+
+      const fulfillPath = '/api/restaurant/kds/fulfill-item';
+      const fulfillBody = { taskId: previewTestTaskId, targetCount: 1 };
+      const signedFulfill = signBridgeRequest(bridgeKeys, {
+        method: 'POST',
+        pathWithQuery: fulfillPath,
+        tenantId: previewTenantId,
+        principal: { sub: 'usr_owner_123', scopes: ['preview:kds:bump'] },
+        body: JSON.stringify(fulfillBody),
+      });
+      const res2 = await makeRequest('POST', fulfillPath, { ...signedFulfill, Host: `${previewSlug}.orbitox.live` }, fulfillBody);
+      assert.equal(res2.status, 403);
+      assert.equal(res2.json.code, 'INSUFFICIENT_KDS_SCOPE');
+    });
   });
 
   after(async () => {

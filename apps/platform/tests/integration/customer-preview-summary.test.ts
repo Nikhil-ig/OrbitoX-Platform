@@ -109,6 +109,21 @@ describe('Stage 4 & 5: Customer Tenant Preview Summary & Access Control', () => 
     mockRuntimeServer = http.createServer((req, res) => {
       const url = new URL(req.url || '', 'http://127.0.0.1');
       const slug = decodeURIComponent(url.pathname.replace('/internal/tenants/', ''));
+      if (slug.startsWith('noexpiry-')) {
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({
+          ok: true,
+          tenant: {
+            id: `ten_${slug}`,
+            name: 'No Expiry Cafe',
+            slug,
+            status: 'preview',
+            previewExpiresAt: null,
+            tableCount: 10,
+          },
+        }));
+        return;
+      }
       if (slug.startsWith('expired-')) {
         res.writeHead(200, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({
@@ -147,6 +162,7 @@ describe('Stage 4 & 5: Customer Tenant Preview Summary & Access Control', () => 
             name: testProject.name,
             slug: testProject.slug,
             status: 'preview',
+            previewExpiresAt: new Date(Date.now() + 14 * 24 * 3600 * 1000).toISOString(),
             tableCount: 14,
             sampleTableLocator: {
               tableNumber: 'T-01',
@@ -313,6 +329,34 @@ describe('Stage 4 & 5: Customer Tenant Preview Summary & Access Control', () => 
       assert.equal(json.preview.checklist.previewActive, false);
     } finally {
       await prisma.platformProject.deleteMany({ where: { id: expiredProject.id } });
+    }
+  });
+
+  it('reports EXPIRED status and previewActive: false when previewExpiresAt is null/missing (fail-closed)', async () => {
+    const noExpProject = await prisma.platformProject.create({
+      data: {
+        slug: `noexpiry-resto-${crypto.randomBytes(3).toString('hex')}`,
+        name: 'No Expiry Cafe',
+        organizationId: testOrg.id,
+        businessModel: 'O2O2B2B2C',
+        planTier: 'starter',
+        plan: 'restaurant-starter',
+        technicalLead: 'Owner Tester',
+        contactEmail: verifiedOwner.email,
+        status: 'ACTIVE',
+      },
+    });
+
+    try {
+      const req = makeGetRequest(noExpProject.slug, ownerSession);
+      const res = await GET(req, { params: Promise.resolve({ tenantId: noExpProject.slug }) });
+      assert.equal(res.status, 200);
+      const json = await res.json();
+      assert.equal(json.ok, true);
+      assert.equal(json.preview.restaurant.status, 'EXPIRED');
+      assert.equal(json.preview.checklist.previewActive, false);
+    } finally {
+      await prisma.platformProject.deleteMany({ where: { id: noExpProject.id } });
     }
   });
 

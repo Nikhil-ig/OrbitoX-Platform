@@ -701,6 +701,7 @@ model PlatformOrganization {
   accountTokens   AccountToken[]
 
   @@index([slug])
+  @@index([slug, status], map: "idx_platform_org_slug_status")
 }
 
 model CustomerOrganizationClosureContext {
@@ -798,6 +799,7 @@ model CustomerUser {
   sessions    CustomerSession[]
 
   @@index([status])
+  @@index([email, status], map: "idx_customer_user_email_status")
 }
 
 model CustomerMembership {
