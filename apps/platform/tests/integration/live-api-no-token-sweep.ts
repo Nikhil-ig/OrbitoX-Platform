@@ -350,6 +350,8 @@ async function run() {
     '/api/v1/customer/auth/login': 401,
     '/api/v1/customer/auth/signup': 422,
     '/api/v1/customer/auth/verify-email': 400,
+    '/api/v1/customer/auth/verify-code': 400,
+    '/api/v1/customer/auth/resend-code': 400,
     '/api/v1/customer/auth/password-reset/request': 202,
     '/api/v1/customer/auth/password-reset/consume': 400,
     '/api/v1/customer/auth/accept-invite': 400,
@@ -376,7 +378,8 @@ async function run() {
     const methods = parseMethods(file);
     const urlPath = convertRouteToUrl(file);
     const isCustomerAuth = urlPath.startsWith('/api/v1/customer/auth/');
-    const isCustomerDashboard = urlPath.startsWith('/api/v1/customer/organizations/');
+    const isCustomerDashboard = urlPath.startsWith('/api/v1/customer/organizations');
+    const isCustomerTenants = urlPath.startsWith('/api/v1/customer/tenants');
     const isCustomerSelf = urlPath.startsWith('/api/v1/customer/me/');
     const isEmailWebhook = urlPath.startsWith('/api/v1/customer/email/webhooks/');
     if (urlPath.startsWith('/api/v1/customer/')) {
@@ -390,6 +393,7 @@ async function run() {
             methods.length === 1 &&
             methods[0] === protectedMethod))) ||
           (isCustomerDashboard && methods.length > 0) ||
+          (isCustomerTenants && methods.length > 0) ||
           (isCustomerSelf && methods.length > 0) ||
           (isEmailWebhook && methods.length === 1 && methods[0] === 'POST'),
         `Customer route ${urlPath} must be explicitly classified as public auth, session-protected, or signed webhook`,
@@ -415,7 +419,7 @@ async function run() {
           ? `exactly ${expectedPublicAuthStatus} for invalid unauthenticated input`
           : isProtectedCustomerAuth
             ? '401 or 403 without a customer session'
-            : isCustomerDashboard || isCustomerSelf
+            : isCustomerDashboard || isCustomerSelf || isCustomerTenants
               ? '401 or 403 without a customer session'
             : isWebhook
               ? '400 / 401 / 403'
@@ -451,7 +455,7 @@ async function run() {
           isPass = status === expectedPublicAuthStatus;
         } else if (isProtectedCustomerAuth) {
           isPass = status === 401 || status === 403;
-        } else if (isCustomerDashboard || isCustomerSelf) {
+        } else if (isCustomerDashboard || isCustomerSelf || isCustomerTenants) {
           isPass = status === 401 || status === 403;
         } else if (isWebhook) {
           isPass = status === 400 || status === 401 || status === 403;
@@ -468,7 +472,7 @@ async function run() {
             ? 'Explicit Public Customer Auth Route'
             : isProtectedCustomerAuth
               ? 'Customer Session Required'
-              : isCustomerDashboard || isCustomerSelf
+              : isCustomerDashboard || isCustomerSelf || isCustomerTenants
                 ? 'Customer Session Required'
               : isWebhook
                 ? 'Webhook Signature Guard'

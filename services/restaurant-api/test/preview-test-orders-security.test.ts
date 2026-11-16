@@ -604,6 +604,9 @@ describe('Phase 7 F1–F4 Security Remediation: Preview Test Orders & Accounting
     let staffPinToken: string;
 
     before(async () => {
+      const branches = await prisma.branch.findMany({ where: { tenantId: previewTenantId } });
+      testBranchId = branches[0]?.id || `branch_${previewSlug}_main`;
+
       // 1. Create a test order and KDS task on preview tenant
       previewTestOrderId = `ord_prev_test_${crypto.randomBytes(4).toString('hex')}`;
       testOrderIds.add(previewTestOrderId);
@@ -611,6 +614,7 @@ describe('Phase 7 F1–F4 Security Remediation: Preview Test Orders & Accounting
         data: {
           id: previewTestOrderId,
           tenantId: previewTenantId,
+          branchId: testBranchId,
           tableNumber: previewTableNumber,
           sessionId: `sess_${previewTableNumber}`,
           status: 'CONFIRMED',
@@ -629,6 +633,7 @@ describe('Phase 7 F1–F4 Security Remediation: Preview Test Orders & Accounting
         data: {
           id: previewTestTaskId,
           tenantId: previewTenantId,
+          branchId: testBranchId,
           orderId: previewTestOrderId,
           tableNumber: previewTableNumber,
           itemName: 'Preview Butter Chicken',
@@ -1290,6 +1295,217 @@ describe('Phase 7 F1–F4 Security Remediation: Preview Test Orders & Accounting
       const res = await makeRequest('POST', pathWithQuery, { ...signedHeaders, Host: `${previewSlug}.orbitox.live` }, body);
       assert.equal(res.status, 403);
       assert.equal(res.json.error, 'FORBIDDEN');
+    });
+
+    it('26. station:kds without branch/station headers is rejected on read and bump (cannot omit target identifiers)', async () => {
+      // 1. Read without branch/station headers
+      const readPath = '/api/restaurant/kds/tasks';
+      const signedRead = signBridgeRequest(bridgeKeys, {
+        method: 'GET',
+        pathWithQuery: readPath,
+        tenantId: previewTenantId,
+        principal: { sub: 'terminal_1', scopes: ['station:kds'] },
+      });
+      const resRead = await makeRequest('GET', readPath, { ...signedRead, Host: `${previewSlug}.orbitox.live` });
+      assert.equal(resRead.status, 403);
+      assert.equal(resRead.json.code, 'BRANCH_MISMATCH');
+
+      // 2. Bump without branch/station headers
+      const bumpPath = '/api/restaurant/kds/bump';
+      const body = { taskId: previewTestTaskId };
+      const signedBump = signBridgeRequest(bridgeKeys, {
+        method: 'POST',
+        pathWithQuery: bumpPath,
+        tenantId: previewTenantId,
+        principal: { sub: 'terminal_1', scopes: ['station:kds'] },
+        body: JSON.stringify(body),
+      });
+      const resBump = await makeRequest('POST', bumpPath, { ...signedBump, Host: `${previewSlug}.orbitox.live` }, body);
+      assert.equal(resBump.status, 403);
+      assert.equal(resBump.json.code, 'BRANCH_MISMATCH');
+    });
+
+    it('27. station:kds for GRILL is rejected when attempting to bump CURRY_LINE task (cross-station rejection)', async () => {
+      const bumpPath = '/api/restaurant/kds/bump';
+      const body = { taskId: previewTestTaskId };
+      const signedBump = signBridgeRequest(bridgeKeys, {
+        method: 'POST',
+        pathWithQuery: bumpPath,
+        tenantId: previewTenantId,
+        principal: { sub: 'terminal_grill_1', scopes: ['station:kds'] },
+        body: JSON.stringify(body),
+      });
+      const resBump = await makeRequest(
+        'POST',
+        bumpPath,
+        {
+          ...signedBump,
+          Host: `${previewSlug}.orbitox.live`,
+          'x-station-id': 'GRILL',
+          'x-branch-id': testBranchId,
+        },
+        body
+      );
+      assert.equal(resBump.status, 403);
+      assert.equal(resBump.json.code, 'STATION_MISMATCH');
+    });
+
+    it('28. station:kds for GRILL is rejected when attempting expo-dispatch or expo-recall (only EXPO station allowed)', async () => {
+      // 1. Attempt expo-dispatch from GRILL station
+      const dispatchPath = '/api/restaurant/kds/expo-dispatch';
+      const dispatchBody = { tableNumber: previewTableNumber };
+      const signedDispatch = signBridgeRequest(bridgeKeys, {
+        method: 'POST',
+        pathWithQuery: dispatchPath,
+        tenantId: previewTenantId,
+        principal: { sub: 'terminal_grill_1', scopes: ['station:kds'] },
+        body: JSON.stringify(dispatchBody),
+      });
+      const resDispatch = await makeRequest(
+        'POST',
+        dispatchPath,
+        {
+          ...signedDispatch,
+          Host: `${previewSlug}.orbitox.live`,
+          'x-station-id': 'GRILL',
+          'x-branch-id': testBranchId,
+        },
+        dispatchBody
+      );
+      assert.equal(resDispatch.status, 403);
+      assert.equal(resDispatch.json.code, 'STATION_MISMATCH');
+
+      // 2. Attempt expo-recall from GRILL station
+      const recallPath = '/api/restaurant/kds/expo-recall';
+      const recallBody = { tableNumber: previewTableNumber };
+      const signedRecall = signBridgeRequest(bridgeKeys, {
+        method: 'POST',
+        pathWithQuery: recallPath,
+        tenantId: previewTenantId,
+        principal: { sub: 'terminal_grill_1', scopes: ['station:kds'] },
+        body: JSON.stringify(recallBody),
+      });
+      const resRecall = await makeRequest(
+        'POST',
+        recallPath,
+        {
+          ...signedRecall,
+          Host: `${previewSlug}.orbitox.live`,
+          'x-station-id': 'GRILL',
+          'x-branch-id': testBranchId,
+        },
+        recallBody
+      );
+      assert.equal(resRecall.status, 403);
+      assert.equal(resRecall.json.code, 'STATION_MISMATCH');
+    });
+
+    it('29. station:kds with mismatched branchId is rejected (BRANCH_MISMATCH)', async () => {
+      const bumpPath = '/api/restaurant/kds/bump';
+      const body = { taskId: previewTestTaskId };
+      const signedBump = signBridgeRequest(bridgeKeys, {
+        method: 'POST',
+        pathWithQuery: bumpPath,
+        tenantId: previewTenantId,
+        principal: { sub: 'terminal_foreign_branch', scopes: ['station:kds'] },
+        body: JSON.stringify(body),
+      });
+      const resBump = await makeRequest(
+        'POST',
+        bumpPath,
+        {
+          ...signedBump,
+          Host: `${previewSlug}.orbitox.live`,
+          'x-station-id': 'CURRY_LINE',
+          'x-branch-id': 'branch_foreign_999',
+        },
+        body
+      );
+      assert.equal(resBump.status, 403);
+      assert.equal(resBump.json.code, 'BRANCH_MISMATCH');
+    });
+
+    it('30. station:kds bound to CURRY_LINE and testBranchId successfully bumps CURRY_LINE task', async () => {
+      // Reset task to QUEUED
+      await prisma.kitchenTask.update({
+        where: { id: previewTestTaskId },
+        data: { status: 'QUEUED' },
+      });
+
+      const bumpPath = '/api/restaurant/kds/bump';
+      const body = { taskId: previewTestTaskId };
+      const signedBump = signBridgeRequest(bridgeKeys, {
+        method: 'POST',
+        pathWithQuery: bumpPath,
+        tenantId: previewTenantId,
+        principal: { sub: 'terminal_curry_1', scopes: ['station:kds'] },
+        body: JSON.stringify(body),
+      });
+      const resBump = await makeRequest(
+        'POST',
+        bumpPath,
+        {
+          ...signedBump,
+          Host: `${previewSlug}.orbitox.live`,
+          'x-station-id': 'CURRY_LINE',
+          'x-branch-id': testBranchId,
+        },
+        body
+      );
+      assert.equal(resBump.status, 200);
+      assert.equal(resBump.json.success, true);
+      assert.equal(resBump.json.data.status, 'IN_PROGRESS');
+    });
+
+    it('31. expo-recall rejects task when parent order has mismatched tenantId (order tenant forgery)', async () => {
+      // Create a forged task belonging to previewTenantId but referencing an order from activeTenantId
+      const forgedOrderId = `ord_forged_${crypto.randomBytes(4).toString('hex')}`;
+      testOrderIds.add(forgedOrderId);
+      await prisma.restaurantOrder.create({
+        data: {
+          id: forgedOrderId,
+          tenantId: activeTenantId,
+          tableNumber: 'T-FORGED',
+          sessionId: 'sess_forged',
+          status: 'CONFIRMED',
+          subtotalMinor: 10000,
+          taxMinor: 500,
+          totalMinor: 10500,
+          currency: 'INR',
+          items: sampleItems,
+          isTest: true,
+        },
+      });
+
+      const forgedTaskId = `task_forged_${crypto.randomBytes(4).toString('hex')}`;
+      testTaskIds.add(forgedTaskId);
+      await prisma.kitchenTask.create({
+        data: {
+          id: forgedTaskId,
+          tenantId: previewTenantId,
+          orderId: forgedOrderId,
+          tableNumber: 'T-FORGED',
+          itemName: 'Forged Dish',
+          quantity: 1,
+          station: 'EXPO',
+          status: 'BUMPED',
+          isTest: true,
+        },
+      });
+
+      const recallPath = '/api/restaurant/kds/expo-recall';
+      const recallBody = { tableNumber: 'T-FORGED' };
+      const signed = signBridgeRequest(bridgeKeys, {
+        method: 'POST',
+        pathWithQuery: recallPath,
+        tenantId: previewTenantId,
+        principal: { sub: 'usr_owner_123', scopes: ['preview:kds:recall'] },
+        body: JSON.stringify(recallBody),
+      });
+
+      const res = await makeRequest('POST', recallPath, { ...signed, Host: `${previewSlug}.orbitox.live` }, recallBody);
+      assert.equal(res.status, 403);
+      assert.ok(['TASK_TENANT_MISMATCH', 'CANNOT_MUTATE_COMMERCIAL_TASK_IN_PREVIEW'].includes(res.json.code));
     });
   });
 

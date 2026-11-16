@@ -306,12 +306,14 @@ export async function handleRequest(req: http.IncomingMessage, res: http.ServerR
     );
     const requestIdentity: any = verifiedBridge
       ? {
-        type: 'PLATFORM_BRIDGE',
+        type: isBridgeStation ? 'STATION' : 'PLATFORM_BRIDGE',
         id: verifiedBridge.principal.sub,
         role: isBridgePrivileged ? 'ADMIN' : (isBridgeStation ? 'STATION' : 'BRIDGE_CALLER'),
         isPrivileged: isBridgePrivileged,
         scopes: verifiedBridge.principal.scopes,
         tenantId: tenantContext.tenantId,
+        station: (verifiedBridge.principal as any).station || (req.headers['x-station-id'] as string) || (req.headers['x-station'] as string) || undefined,
+        branchId: (verifiedBridge.principal as any).branchId || (req.headers['x-branch-id'] as string) || (req.headers['x-branch'] as string) || undefined,
         authSource: 'BRIDGE_SIGNATURE',
       }
       : await resolveRequestIdentity(req, tenantContext.tenantId, repo);

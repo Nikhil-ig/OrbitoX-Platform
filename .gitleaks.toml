@@ -35,8 +35,6 @@ paths = [
 
   # Gitignored offline development keys (per AGENTS.md Rule 4: keys/ is in .gitignore, never committed to VCS)
   '''(?i)keys/.*''',
-  '''(?i)\.env(\..+)?$''',
-  '''(?i)orbitox/data/.*''',
 
   # Individually Justified False Positive 1: Credential Vault Masking Unit Tests
   # File: packages/plugin-engine/src/security/credential-vault.spec.ts

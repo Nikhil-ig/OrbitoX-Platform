@@ -279,6 +279,7 @@ export interface RestaurantContext {
 }
 
 export interface RestaurantOrder {
+  tenantId?: string;
   orderId: string;
   tableNumber: string;
   sessionId: string;

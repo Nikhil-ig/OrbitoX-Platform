@@ -45,7 +45,7 @@ export function authorizeKdsRequest(
 
   if (identity.type === 'PLATFORM_BRIDGE') {
     const isPrivilegedAdmin = identity.scopes?.some((s: string) =>
-      ['tenant:admin', 'platform:superuser', 'station:kds'].includes(s)
+      ['tenant:admin', 'platform:superuser'].includes(s)
     );
     if (isPrivilegedAdmin) {
       return { authorized: true };
@@ -75,14 +75,102 @@ export function authorizeKdsRequest(
     };
   }
 
+  const isStationCaller = (identity.type === 'STATION' && !identity.role) || identity.scopes?.includes('station:kds') || identity.authSource === 'STATION';
+  if (isStationCaller) {
+    const assignedBranch = identity.branchId;
+    if (!assignedBranch || assignedBranch === '*' || assignedBranch === 'unknown') {
+      return {
+        authorized: false,
+        statusCode: 403,
+        error: 'Station credential lacks explicit branch binding.',
+        code: 'BRANCH_MISMATCH',
+      };
+    }
+
+    if (targetBranchId !== undefined) {
+      if (!targetBranchId || targetBranchId === '*' || targetBranchId === 'unknown') {
+        return {
+          authorized: false,
+          statusCode: 403,
+          error: `Task has missing, malformed, or untrusted branch identifier and cannot be mutated by branch-scoped credential (${assignedBranch}).`,
+          code: 'BRANCH_MISMATCH',
+        };
+      }
+      if (assignedBranch !== targetBranchId) {
+        return {
+          authorized: false,
+          statusCode: 403,
+          error: `Station credential for branch ${assignedBranch} cannot access kitchen resource in branch ${targetBranchId}.`,
+          code: 'BRANCH_MISMATCH',
+        };
+      }
+    } else if (operation === 'read') {
+      return {
+        authorized: false,
+        statusCode: 403,
+        error: 'Target branch identifier is missing for station credential.',
+        code: 'BRANCH_MISMATCH',
+      };
+    }
+
+    const assignedStation = identity.station;
+    if (!assignedStation || assignedStation === 'ALL') {
+      return {
+        authorized: false,
+        statusCode: 403,
+        error: 'Station credential lacks explicit station assignment.',
+        code: 'STATION_MISMATCH',
+      };
+    }
+
+    if (isExpoDispatch || operation === 'dispatch') {
+      if (assignedStation !== 'EXPO') {
+        const actionVerb = operation === 'recall' ? 'recall' : 'dispatch';
+        return {
+          authorized: false,
+          statusCode: 403,
+          error: `Station credential for ${assignedStation} cannot ${actionVerb} tables from Expo pass.`,
+          code: 'STATION_MISMATCH',
+        };
+      }
+      return { authorized: true };
+    }
+
+    if (targetStation !== undefined) {
+      if (!targetStation || targetStation === 'ALL') {
+        return {
+          authorized: false,
+          statusCode: 403,
+          error: 'Target station identifier is missing for station credential.',
+          code: 'STATION_MISMATCH',
+        };
+      }
+      if (assignedStation !== targetStation) {
+        return {
+          authorized: false,
+          statusCode: 403,
+          error: `Station credential for ${assignedStation} is not authorized for task assigned to ${targetStation}.`,
+          code: 'STATION_MISMATCH',
+        };
+      }
+    } else if (operation === 'read') {
+      return {
+        authorized: false,
+        statusCode: 403,
+        error: 'Target station identifier is missing for station credential.',
+        code: 'STATION_MISMATCH',
+      };
+    }
+
+    return { authorized: true };
+  }
+
   const allowedRoles =
     operation === 'read'
       ? ['CHEF', 'EXPO', 'OPERATIONS', 'MANAGER', 'ADMIN', 'SERVER', 'WAITER', 'BARTENDER']
       : ['CHEF', 'EXPO', 'OPERATIONS', 'MANAGER', 'ADMIN'];
   const effectiveRole = identity.role || (identity.type === 'ADMIN' ? 'ADMIN' : undefined);
-  const isAuthorizedRole =
-    (identity.type === 'STATION' && (!identity.role || allowedRoles.includes(identity.role))) ||
-    (effectiveRole && allowedRoles.includes(effectiveRole));
+  const isAuthorizedRole = effectiveRole && allowedRoles.includes(effectiveRole);
 
   if (!isAuthorizedRole) {
     return {
@@ -115,19 +203,6 @@ export function authorizeKdsRequest(
   if (isExpoDispatch) {
     const actionVerb = operation === 'recall' ? 'recall' : 'dispatch';
     if (
-      identity.type === 'STATION' &&
-      identity.station &&
-      identity.station !== 'ALL' &&
-      identity.station !== 'EXPO'
-    ) {
-      return {
-        authorized: false,
-        statusCode: 403,
-        error: `Station credential for ${identity.station} cannot ${actionVerb} tables from Expo pass.`,
-        code: 'STATION_MISMATCH',
-      };
-    }
-    if (
       identity.role === 'CHEF' &&
       identity.station &&
       identity.station !== 'ALL' &&
@@ -146,7 +221,7 @@ export function authorizeKdsRequest(
       return {
         authorized: false,
         statusCode: 403,
-        error: `Station credential for ${assignedStation} is not authorized for task assigned to ${targetStation}.`,
+        error: `Staff credential for ${assignedStation} is not authorized for task assigned to ${targetStation}.`,
         code: 'STATION_MISMATCH',
       };
     }

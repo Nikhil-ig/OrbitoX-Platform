@@ -7,6 +7,10 @@ export function getStandaloneScript(testDir: string): string {
     path.resolve(testDir, '../.next/standalone/apps/web/server.js'),
     path.resolve(testDir, '../../.next/standalone/apps/platform/server.js'),
     path.resolve(testDir, '../../.next/standalone/apps/web/server.js'),
+    path.resolve(testDir, '../../../.next/standalone/apps/platform/server.js'),
+    path.resolve(testDir, '../../../.next/standalone/apps/web/server.js'),
+    path.resolve(process.cwd(), '.next/standalone/apps/platform/server.js'),
+    path.resolve(process.cwd(), 'apps/platform/.next/standalone/apps/platform/server.js'),
   ];
   const found = candidates.find(fs.existsSync);
   return found ?? candidates[0] ?? '';
@@ -16,6 +20,12 @@ export function getStandaloneCwd(testDir: string): string {
   const candidates: string[] = [
     path.resolve(testDir, '../.next/standalone/apps/platform'),
     path.resolve(testDir, '../.next/standalone/apps/web'),
+    path.resolve(testDir, '../../.next/standalone/apps/platform'),
+    path.resolve(testDir, '../../.next/standalone/apps/web'),
+    path.resolve(testDir, '../../../.next/standalone/apps/platform'),
+    path.resolve(testDir, '../../../.next/standalone/apps/web'),
+    path.resolve(process.cwd(), '.next/standalone/apps/platform'),
+    path.resolve(process.cwd(), 'apps/platform/.next/standalone/apps/platform'),
     path.resolve(testDir, '..'),
   ];
   const found = candidates.find(fs.existsSync);

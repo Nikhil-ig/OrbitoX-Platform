@@ -175,8 +175,9 @@ export async function registerCustomerAccount(
       });
       if (existing) {
         if (!existing.emailVerifiedAt) {
-          await tx.accountToken.deleteMany({
-            where: { email, purpose: 'VERIFY_EMAIL' },
+          await tx.accountToken.updateMany({
+            where: { email, purpose: 'VERIFY_EMAIL', usedAt: null },
+            data: { usedAt: new Date() },
           });
           await tx.accountToken.create({
             data: {
@@ -344,8 +345,9 @@ export async function resendCustomerVerificationCode(input: {
   });
 
   await prisma.$transaction(async (tx) => {
-    await tx.accountToken.deleteMany({
+    await tx.accountToken.updateMany({
       where: { email, purpose: 'VERIFY_EMAIL', usedAt: null },
+      data: { usedAt: new Date() },
     });
 
     await tx.accountToken.create({

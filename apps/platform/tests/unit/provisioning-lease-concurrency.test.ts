@@ -14,6 +14,7 @@ import crypto from 'node:crypto';
 import { platformRepository } from '@/server/db/platform-repository';
 import { operationStore } from '@/server/provisioning/operation-store';
 import { provisioningSaga } from '@/server/provisioning/provisioning-saga';
+import { pluginLifecycleClient } from '@/server/provisioning/plugin-lifecycle-client';
 import { PlatformOperationRecord } from '@/server/provisioning/types';
 import { prisma } from '@/server/db/prisma';
 
@@ -313,5 +314,91 @@ describe('Phase 3: Distributed Provisioning Lease Correctness, Attempt-Scoped To
 
     const result = await provisioningSaga.retryOperation(opId);
     assert.strictEqual(result, null, 'retryOperation must return null when active unexpired lease is held');
+  });
+
+  it('9. Lease stealing / fence during async steps: lost lease aborts execution and protects subsequent writes', async () => {
+    const slug = `steal-slug-${crypto.randomBytes(4).toString('hex')}`;
+    const opId = `op_steal_${crypto.randomBytes(6).toString('hex')}`;
+    createdOpIds.push(opId);
+
+    const worker1 = 'worker_node_1:att_1';
+    const worker2 = 'worker_node_2:att_2';
+
+    const op: PlatformOperationRecord = {
+      id: opId,
+      type: 'TENANT_PROVISION',
+      tenantId: `org/${testOrg.id}/project/${slug}/environment/production`,
+      organizationId: testOrg.id,
+      status: 'PROVISIONING',
+      leaseOwner: worker1,
+      leaseExpiresAt: new Date(Date.now() + 5000).toISOString(),
+      steps: [
+        { id: '1', name: 'Step 1', status: 'COMPLETED' },
+        { id: '2', name: 'Step 2', status: 'COMPLETED' },
+        { id: '3', name: 'Step 3', status: 'COMPLETED' },
+        { id: '4', name: 'Step 4', status: 'COMPLETED' },
+        { id: '5', name: 'Plugin provisioning', status: 'PENDING' },
+        { id: '6', name: 'Initial grant push', status: 'PENDING' },
+        { id: '7', name: 'Final tenant activation', status: 'PENDING' },
+      ],
+      request: { name: `Steal Resto ${slug}`, slug, plugins: [{ id: 'restaurant-os', plan: 'restaurant-starter' }] },
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+    await operationStore.createOperation(op);
+
+    // Set a delay on step 5 so we can steal the lease concurrently
+    process.env.TEST_STEP5_DELAY_MS = '600';
+
+    const asyncExecPromise = provisioningSaga.executeAsyncSteps(
+      opId,
+      {
+        name: `Steal Resto ${slug}`,
+        slug,
+        organizationId: testOrg.id,
+        environment: 'production',
+        plugins: [{ id: 'restaurant-os', plan: 'restaurant-starter', planTier: 'STARTER', runtimeUrl: 'http://localhost:3000' } as any],
+      },
+      op.tenantId,
+      testOrg,
+      slug,
+      'production',
+      { workerId: worker1 }
+    );
+
+    // Wait 150ms for worker 1 to enter step 5
+    await new Promise((r) => setTimeout(r, 150));
+
+    // Force expire worker 1's lease and let worker 2 claim it
+    await operationStore.updateOperation(opId, {
+      leaseExpiresAt: new Date(Date.now() - 1000).toISOString(),
+    });
+    const stolen = await operationStore.claimOperationLease(opId, worker2, 30);
+    assert.strictEqual(stolen, true, 'Worker 2 must successfully claim expired lease');
+
+    // Wait for worker 1's async step execution to finish
+    await asyncExecPromise;
+    delete process.env.TEST_STEP5_DELAY_MS;
+
+    // Worker 1 must NOT have marked the operation ACTIVE or overwritten worker 2 as leaseOwner
+    const finalOp = await operationStore.getOperation(opId);
+    assert.strictEqual(finalOp?.leaseOwner, worker2, 'Worker 2 must remain the lease owner');
+    assert.notStrictEqual(finalOp?.status, 'ACTIVE', 'Worker 1 must not have marked operation ACTIVE after lease was lost');
+  });
+
+  it('10. Lifecycle client: immediately aborts on pre-aborted signal', async () => {
+    const ac = new AbortController();
+    ac.abort();
+
+    const res = await pluginLifecycleClient.invokeLifecycle(
+      'restaurant-os',
+      'provision',
+      'org/test/project/p1/environment/production',
+      { name: 'Test' },
+      { signal: ac.signal }
+    );
+
+    assert.strictEqual(res.ok, false);
+    assert.match(res.error || '', /aborted/i);
   });
 });

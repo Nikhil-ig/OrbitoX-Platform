@@ -105,6 +105,7 @@ export class ProvisioningSaga {
       idempotencyKey?: string;
       operatorId?: string;
       requestId?: string;
+      workerId?: string;
     } = {}
   ): Promise<ProvisioningSagaStartResult> {
     const validatedInput: ResolvedProvisionRequest = {
@@ -180,6 +181,10 @@ export class ProvisioningSaga {
 
     await operationStore.createOperation(operation);
 
+    const workerId = options.workerId || `${this.workerInstanceId}:${randomUUID().slice(0, 8)}`;
+    await operationStore.claimOperationLease(operationId, workerId);
+    const syncOptions = { ...options, workerId };
+
     // Execute steps 1-4 synchronously
     const { tenantId, rawApiKey } = await this.executeSyncSteps(
       operationId,
@@ -187,7 +192,7 @@ export class ProvisioningSaga {
       org,
       cleanSlug,
       environmentSlug,
-      options
+      syncOptions
     );
 
     // Launch steps 5-7 asynchronously in background (or await in test/sync mode)
@@ -198,7 +203,7 @@ export class ProvisioningSaga {
       org,
       cleanSlug,
       environmentSlug,
-      options
+      syncOptions
     ).catch((err) => {
       console.error(`[ProvisioningSaga] Operation ${operationId} background failure:`, err);
     });
@@ -313,7 +318,11 @@ export class ProvisioningSaga {
         // W3: Canonical tenant ID built from stored IDs: org/<org.id>/project/<project.id>/environment/<env.id>
         tenantId = `org/${org.id}/project/${project.id}/environment/${targetEnv.id}`;
 
-        await operationStore.updateOperation(operationId, { tenantId });
+        await operationStore.updateOperation(
+          operationId,
+          { tenantId },
+          options.workerId ? { expectedLeaseOwner: options.workerId } : {}
+        );
 
         try {
           await platformRepository.recordPlatformAdminAudit({
@@ -404,21 +413,25 @@ export class ProvisioningSaga {
           };
 
           // Result in DB only stores non-secret metadata
-          await operationStore.updateOperation(operationId, {
-            result: {
-              tenantId,
-              organizationId: org.id,
-              projectId: project.id,
-              environmentId: targetEnv.id,
-              slug: cleanSlug,
-              apiKey: {
-                id: keyId,
-                prefix,
-                masked: display,
+          await operationStore.updateOperation(
+            operationId,
+            {
+              result: {
+                tenantId,
+                organizationId: org.id,
+                projectId: project.id,
                 environmentId: targetEnv.id,
+                slug: cleanSlug,
+                apiKey: {
+                  id: keyId,
+                  prefix,
+                  masked: display,
+                  environmentId: targetEnv.id,
+                },
               },
             },
-          });
+            options.workerId ? { expectedLeaseOwner: options.workerId } : {}
+          );
 
           try {
             await platformRepository.recordPlatformAdminAudit({
@@ -451,18 +464,22 @@ export class ProvisioningSaga {
             durationMs: Math.round(performance.now() - t4),
             error: errMsg,
           });
-          await operationStore.updateOperation(operationId, {
-            status: 'FAILED',
-            error: `API key issuance failed: ${errMsg}`,
-            result: {
-              tenantId,
-              organizationId: org.id,
-              projectId: project?.id,
-              environmentId: targetEnv?.id,
+          await operationStore.updateOperation(
+            operationId,
+            {
               status: 'FAILED',
-              retryAction: `/v1/operations/${operationId}/retry`,
+              error: `API key issuance failed: ${errMsg}`,
+              result: {
+                tenantId,
+                organizationId: org.id,
+                projectId: project?.id,
+                environmentId: targetEnv?.id,
+                status: 'FAILED',
+                retryAction: `/v1/operations/${operationId}/retry`,
+              },
             },
-          });
+            options.workerId ? { expectedLeaseOwner: options.workerId } : {}
+          );
           throw keyErr;
         }
       }
@@ -477,10 +494,14 @@ export class ProvisioningSaga {
           error: errMsg,
         });
       }
-      await operationStore.updateOperation(operationId, {
-        status: 'FAILED',
-        error: errMsg,
-      });
+      await operationStore.updateOperation(
+        operationId,
+        {
+          status: 'FAILED',
+          error: errMsg,
+        },
+        options.workerId ? { expectedLeaseOwner: options.workerId } : {}
+      );
       throw err;
     }
   }
@@ -541,14 +562,30 @@ export class ProvisioningSaga {
     }, heartbeatInterval);
 
     let currentSteps = [...op.steps];
+
+    const assertActiveLease = async () => {
+      if (leaseLost || abortController.signal.aborted) {
+        throw new Error(`LEASE_LOST: Aborting step execution because lease was lost for operation ${operationId}`);
+      }
+      const freshOp = await operationStore.getOperation(operationId);
+      if (!freshOp || freshOp.leaseOwner !== attemptLeaseOwner) {
+        leaseLost = true;
+        abortController.abort();
+        throw new Error(`LEASE_LOST: Lease owner changed or lost for operation ${operationId}`);
+      }
+      if (!freshOp.leaseExpiresAt || new Date(freshOp.leaseExpiresAt).getTime() < Date.now()) {
+        leaseLost = true;
+        abortController.abort();
+        throw new Error(`LEASE_LOST: Lease expired for operation ${operationId}`);
+      }
+    };
+
     const updateStep = async (
       stepId: string,
       status: OperationStep['status'],
       extra: Partial<OperationStep> = {}
     ) => {
-      if (leaseLost || abortController.signal.aborted) {
-        throw new Error(`LEASE_LOST: Aborting step execution because lease was lost for operation ${operationId}`);
-      }
+      await assertActiveLease();
       currentSteps = currentSteps.map((s) => (s.id === stepId ? { ...s, status, ...extra } : s));
       await operationStore.updateOperation(operationId, { steps: currentSteps }, { expectedLeaseOwner: attemptLeaseOwner });
     };
@@ -563,6 +600,7 @@ export class ProvisioningSaga {
       // STEP 5: For each plugin: signed provision lifecycle call (in parallel), idempotent
       // ─────────────────────────────────────────────────────────────
       if (!isStepCompleted('5')) {
+        await assertActiveLease();
         const t5 = performance.now();
         await updateStep('5', 'RUNNING', { startedAt: new Date().toISOString() });
 
@@ -583,6 +621,7 @@ export class ProvisioningSaga {
         const pluginResults = await Promise.all(
           input.plugins.map(async (plugin) => {
             const canonical = canonicalizePluginId(plugin.id);
+            await assertActiveLease();
             const res = await pluginLifecycleClient.invokeLifecycle(
               plugin.id,
               'provision',
@@ -594,11 +633,12 @@ export class ProvisioningSaga {
                 name: input.name,
                 slug: cleanSlug,
               },
-              { idempotencyKey: options.idempotencyKey, retries: 2, timeoutMs: 20000 }
+              { idempotencyKey: options.idempotencyKey, retries: 2, timeoutMs: 20000, signal: abortController.signal }
             );
 
             if (res.ok) {
               succeededPlugins.push(canonical);
+              await assertActiveLease();
               await platformRepository.provisionPluginInstallation({
                 tenantId,
                 pluginId: canonical,
@@ -610,6 +650,7 @@ export class ProvisioningSaga {
               return { pluginId: canonical, ok: true };
             } else {
               try {
+                await assertActiveLease();
                 await platformRepository.provisionPluginInstallation({
                   tenantId,
                   pluginId: canonical,
@@ -618,6 +659,7 @@ export class ProvisioningSaga {
                   config: plugin.config || {},
                   entitlementRevision: 1,
                 });
+                await assertActiveLease();
                 await platformRepository.updatePluginInstallationStatus(tenantId, canonical, 'FAILED');
               } catch {}
               return { pluginId: canonical, ok: false, error: res.error };
@@ -657,10 +699,12 @@ export class ProvisioningSaga {
       // STEP 6: Push first grant to each plugin; plugins confirm READY
       // ─────────────────────────────────────────────────────────────
       if (!isStepCompleted('6')) {
+        await assertActiveLease();
         const t6 = performance.now();
         await updateStep('6', 'RUNNING', { startedAt: new Date().toISOString() });
 
         for (const plugin of input.plugins) {
+          await assertActiveLease();
           const canonical = canonicalizePluginId(plugin.id);
           const grantToken = createEntitlementGrantToken({
             tenantId,
@@ -678,7 +722,7 @@ export class ProvisioningSaga {
             'plan-changed',
             tenantId,
             { revision: 1, planId: plugin.plan, grantToken },
-            { retries: 1, timeoutMs: 5000 }
+            { retries: 1, timeoutMs: 5000, signal: abortController.signal }
           );
         }
 
@@ -692,9 +736,11 @@ export class ProvisioningSaga {
       // STEP 7: Mark tenant ACTIVE; emit tenant.ready; audit everything
       // ─────────────────────────────────────────────────────────────
       if (!isStepCompleted('7')) {
+        await assertActiveLease();
         const t7 = performance.now();
         await updateStep('7', 'RUNNING', { startedAt: new Date().toISOString() });
 
+        await assertActiveLease();
         const project = await platformRepository.getProject(cleanSlug);
         if (project) {
           await platformRepository.updateProject(project.id, { status: 'ACTIVE' });
@@ -741,6 +787,7 @@ export class ProvisioningSaga {
         });
       }
 
+      await assertActiveLease();
       const existingOp = await operationStore.getOperation(operationId);
       const existingApiKey = existingOp?.result?.apiKey;
 
@@ -769,7 +816,7 @@ export class ProvisioningSaga {
     } catch (err: any) {
       const errMsg = err?.message || String(err);
       const running = currentSteps.find((s) => s.status === 'RUNNING');
-      if (running) {
+      if (running && !leaseLost) {
         await updateStep(running.id, 'FAILED', {
           completedAt: new Date().toISOString(),
           error: errMsg,

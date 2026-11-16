@@ -2142,6 +2142,7 @@ export class PostgresRestaurantRepository implements RestaurantRepository {
   });
 
   private mapOrderRecord = (r: any): RestaurantOrder => ({
+    tenantId: r.tenantId || this.tenantId,
     orderId: r.id,
     id: r.id,
     tableNumber: r.tableNumber,

@@ -21,8 +21,11 @@ export class PluginLifecycleClient {
     action: 'provision' | 'suspend' | 'resume' | 'plan-changed' | 'deprovision',
     tenantId: string,
     payload: Record<string, any>,
-    options: { idempotencyKey?: string; retries?: number; timeoutMs?: number } = {}
+    options: { idempotencyKey?: string; retries?: number; timeoutMs?: number; signal?: AbortSignal } = {}
   ): Promise<PluginLifecycleResponse> {
+    if (options.signal?.aborted) {
+      return { ok: false, tenantId, error: 'Operation aborted: lease expired or worker cancelled.' };
+    }
     const safeId = String(pluginId || '');
     const isHospital = safeId.includes('hospital') || safeId.includes('hms');
     const isRestaurant = safeId.includes('restaurant') || safeId.includes('pos');
@@ -39,7 +42,17 @@ export class PluginLifecycleClient {
 
     let lastError = '';
 
+    const timeoutMs = options.timeoutMs || 10000;
+    const makeSignal = () =>
+      options.signal
+        ? AbortSignal.any([options.signal, AbortSignal.timeout(timeoutMs)])
+        : AbortSignal.timeout(timeoutMs);
+
     for (let attempt = 0; attempt <= retries; attempt++) {
+      if (options.signal?.aborted) {
+        lastError = 'Operation aborted: lease expired or worker cancelled.';
+        break;
+      }
       try {
         if (isHospital) {
           // 1. Direct Next.js route invocation or HTTP
@@ -63,7 +76,7 @@ export class PluginLifecycleClient {
                 ...(options.idempotencyKey ? { 'x-idempotency-key': options.idempotencyKey } : {}),
               },
               body: bodyStr,
-              signal: AbortSignal.timeout(options.timeoutMs || 10000),
+              signal: makeSignal(),
             });
             if (!res.ok) {
               const text = await res.text();
@@ -119,7 +132,7 @@ export class PluginLifecycleClient {
               ...(options.idempotencyKey ? { 'x-idempotency-key': options.idempotencyKey } : {}),
             },
             body: bodyStr,
-            signal: AbortSignal.timeout(options.timeoutMs || 10000),
+            signal: makeSignal(),
           });
 
           if (!res.ok) {
@@ -133,6 +146,9 @@ export class PluginLifecycleClient {
         }
       } catch (err: any) {
         lastError = err?.message || String(err);
+        if (options.signal?.aborted) {
+          break;
+        }
         if (attempt < retries) {
           // Exponential backoff
           await new Promise((r) => setTimeout(r, 50 * Math.pow(2, attempt)));

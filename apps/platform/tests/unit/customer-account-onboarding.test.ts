@@ -1,6 +1,7 @@
-import { describe, it } from 'node:test';
+import { describe, it, after } from 'node:test';
 import assert from 'node:assert/strict';
 import crypto from 'node:crypto';
+import { PrismaClient } from '@prisma/client';
 import { prisma } from '@/server/db/prisma';
 import {
   registerCustomerAccount,
@@ -18,6 +19,15 @@ describe('Stage 1: Customer Account Onboarding & Verification Primitives', () =>
   process.env.ORBITOX_BREACHED_PASSWORD_API = 'off';
   process.env.ORBITOX_ACCOUNT_TOKEN_ENCRYPTION_KEY ||= crypto.randomBytes(32).toString('base64');
   process.env.DATABASE_URL ||= process.env.TEST_DATABASE_URL || 'postgresql://apple@127.0.0.1:5432/orbitox_phase2';
+
+  const testDbUrl = process.env.TEST_DATABASE_URL || process.env.OUTBOX_RELAY_DATABASE_URL || process.env.DATABASE_URL;
+  const testPrisma = new PrismaClient({
+    datasources: { db: { url: testDbUrl } },
+  });
+
+  after(async () => {
+    await testPrisma.$disconnect().catch(() => {});
+  });
 
   it('generates a valid 6-digit verification code and secure hash', () => {
     const code = generateVerificationCode();
@@ -114,8 +124,8 @@ describe('Stage 1: Customer Account Onboarding & Verification Primitives', () =>
     assert.ok(token, 'Verification token must exist');
     assert.equal(token.usedAt, null);
 
-    // Verify outbox entry
-    const outbox = await prisma.accountEmailOutbox.findFirst({
+    // Verify outbox entry using privileged/test connection
+    const outbox = await testPrisma.accountEmailOutbox.findFirst({
       where: { recipient: email, template: 'VERIFY_EMAIL' },
     });
     assert.ok(outbox, 'Verification email must be enqueued in outbox');

@@ -89,7 +89,7 @@ async function handleBumpTask(req: any, res: any, context: any): Promise<void> {
       return;
     }
 
-    if (task.tenantId && context.tenantContext?.tenantId && task.tenantId !== context.tenantContext.tenantId) {
+    if (!task.tenantId || task.tenantId !== context.tenantContext.tenantId) {
       sendJson(res, 403, {
         error: `Task ${taskId} does not belong to active tenant ${context.tenantContext.tenantId}.`,
         code: 'TASK_TENANT_MISMATCH',
@@ -106,7 +106,7 @@ async function handleBumpTask(req: any, res: any, context: any): Promise<void> {
     }
 
     const parentOrder = await context.repo.getOrder(task.orderId);
-    if (!parentOrder || !parentOrder.isTest) {
+    if (!parentOrder || !parentOrder.tenantId || parentOrder.tenantId !== context.tenantContext.tenantId || !parentOrder.isTest) {
       sendJson(res, 403, {
         error: 'Only test orders can be mutated through the preview bridge.',
         code: 'CANNOT_MUTATE_COMMERCIAL_TASK_IN_PREVIEW',
@@ -198,8 +198,8 @@ async function handleRecallTask(req: any, res: any, context: any): Promise<void>
       sendJson(res, 403, { error: prevCheck.error, code: prevCheck.code });
       return;
     }
-    if (task.tenantId && context.tenantContext?.tenantId && task.tenantId !== context.tenantContext.tenantId) {
-      sendJson(res, 403, { error: `Task ${taskId} does not belong to active tenant ${context.tenantContext?.tenantId}.`, code: 'TASK_TENANT_MISMATCH' });
+    if (!task.tenantId || task.tenantId !== context.tenantContext.tenantId) {
+      sendJson(res, 403, { error: `Task ${taskId} does not belong to active tenant ${context.tenantContext.tenantId}.`, code: 'TASK_TENANT_MISMATCH' });
       return;
     }
     if (!task.isTest) {
@@ -207,7 +207,7 @@ async function handleRecallTask(req: any, res: any, context: any): Promise<void>
       return;
     }
     const parentOrder = await context.repo.getOrder(task.orderId);
-    if (!parentOrder || !parentOrder.isTest) {
+    if (!parentOrder || !parentOrder.tenantId || parentOrder.tenantId !== context.tenantContext.tenantId || !parentOrder.isTest) {
       sendJson(res, 403, { error: 'Only test orders can be recalled through preview bridge.', code: 'CANNOT_MUTATE_COMMERCIAL_TASK_IN_PREVIEW' });
       return;
     }
@@ -241,7 +241,13 @@ async function handleExpoDispatch(req: any, res: any, context: any): Promise<voi
     sendJson(res, 400, { error: 'Table number is required', code: 'TABLE_NUMBER_REQUIRED' });
     return;
   }
-  const tasks = (await context.repo.getKitchenTasks()).filter((t: any) => t.tableNumber === tableNumber);
+  const activeTenantId = context.tenantContext?.tenantId;
+  if (!activeTenantId) {
+    sendJson(res, 401, { error: 'Tenant context required', code: 'TENANT_REQUIRED' });
+    return;
+  }
+  const allTasks = await context.repo.getKitchenTasks();
+  const tasks = allTasks.filter((t: any) => t.tenantId === activeTenantId && t.tableNumber === tableNumber);
   if (tasks.length === 0) {
     sendJson(res, 400, { error: `No kitchen tasks found for table ${tableNumber}`, code: 'TASKS_NOT_FOUND' });
     return;
@@ -253,7 +259,7 @@ async function handleExpoDispatch(req: any, res: any, context: any): Promise<voi
       return;
     }
     for (const t of tasks) {
-      if (t.tenantId && context.tenantContext?.tenantId && t.tenantId !== context.tenantContext.tenantId) {
+      if (!t.tenantId || t.tenantId !== activeTenantId) {
         sendJson(res, 403, { error: 'Cross-tenant task dispatch rejected.', code: 'TASK_TENANT_MISMATCH' });
         return;
       }
@@ -261,21 +267,39 @@ async function handleExpoDispatch(req: any, res: any, context: any): Promise<voi
         sendJson(res, 403, { error: 'Cannot dispatch commercial tasks through preview bridge.', code: 'CANNOT_MUTATE_COMMERCIAL_TASK_IN_PREVIEW' });
         return;
       }
+      const parentOrder = await context.repo.getOrder(t.orderId);
+      if (!parentOrder || !parentOrder.tenantId || parentOrder.tenantId !== activeTenantId || !parentOrder.isTest) {
+        sendJson(res, 403, { error: 'Cannot dispatch commercial tasks through preview bridge.', code: 'CANNOT_MUTATE_COMMERCIAL_TASK_IN_PREVIEW' });
+        return;
+      }
     }
   }
-  const targetBranch = tasks[0].branchId;
-  if (context.requestIdentity.branchId && context.requestIdentity.branchId !== '*' && targetBranch && targetBranch !== context.requestIdentity.branchId) {
-    sendJson(res, 403, {
-      error: `Staff credential for branch ${context.requestIdentity.branchId} cannot dispatch tables in branch ${targetBranch}.`,
-      code: 'BRANCH_MISMATCH',
-    });
-    return;
+
+  for (const t of tasks) {
+    if (!t.tenantId || t.tenantId !== activeTenantId) {
+      sendJson(res, 403, { error: `Task ${t.id} does not belong to active tenant ${activeTenantId}.`, code: 'TASK_TENANT_MISMATCH' });
+      return;
+    }
+    const parentOrder = await context.repo.getOrder(t.orderId);
+    if (!parentOrder || !parentOrder.tenantId || parentOrder.tenantId !== activeTenantId) {
+      sendJson(res, 403, { error: `Parent order for task ${t.id} does not belong to active tenant ${activeTenantId}.`, code: 'TASK_TENANT_MISMATCH' });
+      return;
+    }
+    const taskBranchRes = await resolveTaskAuthoritativeBranch(t, context.repo);
+    if (!taskBranchRes.branchId && context.requestIdentity.branchId && context.requestIdentity.branchId !== '*') {
+      sendJson(res, 403, {
+        error: taskBranchRes.error || 'Task cannot be mutated due to unverified branch origin.',
+        code: taskBranchRes.code || 'BRANCH_MISMATCH',
+      });
+      return;
+    }
+    const authCheck = authorizeKdsRequest(context.requestIdentity, taskBranchRes.branchId || undefined, 'EXPO', true, 'dispatch');
+    if (!authCheck.authorized) {
+      sendJson(res, authCheck.statusCode || 403, { error: authCheck.error, code: authCheck.code });
+      return;
+    }
   }
-  const authCheck = authorizeKdsRequest(context.requestIdentity, tasks[0].branchId || undefined, undefined, true, 'dispatch');
-  if (!authCheck.authorized) {
-    sendJson(res, authCheck.statusCode || 403, { error: authCheck.error, code: authCheck.code });
-    return;
-  }
+
   const unbumped = tasks.filter((t: any) => t.status !== 'BUMPED');
   if (unbumped.length === 0) {
     sendJson(res, 200, { success: true, message: `All tasks for table ${tableNumber} already dispatched` });
@@ -307,8 +331,13 @@ async function handleExpoRecall(req: any, res: any, context: any): Promise<void>
     sendJson(res, 400, { error: 'Table number is required', code: 'TABLE_NUMBER_REQUIRED' });
     return;
   }
+  const activeTenantId = context.tenantContext?.tenantId;
+  if (!activeTenantId) {
+    sendJson(res, 401, { error: 'Tenant context required', code: 'TENANT_REQUIRED' });
+    return;
+  }
   const allTasks = await context.repo.getKitchenTasks();
-  const tasks = allTasks.filter((t: any) => t.tableNumber === tableNumber);
+  const tasks = allTasks.filter((t: any) => t.tenantId === activeTenantId && t.tableNumber === tableNumber);
   if (tasks.length === 0) {
     sendJson(res, 400, { error: `No kitchen tasks found for table ${tableNumber}`, code: 'TASKS_NOT_FOUND' });
     return;
@@ -337,8 +366,8 @@ async function handleExpoRecall(req: any, res: any, context: any): Promise<void>
         return;
       }
       for (const t of bumpedTasks) {
-        if (t.tenantId && context.tenantContext?.tenantId && t.tenantId !== context.tenantContext.tenantId) {
-          sendJson(res, 403, { error: `Task ${t.id} does not belong to active tenant ${context.tenantContext?.tenantId}.`, code: 'TASK_TENANT_MISMATCH' });
+        if (!t.tenantId || t.tenantId !== activeTenantId) {
+          sendJson(res, 403, { error: `Task ${t.id} does not belong to active tenant ${activeTenantId}.`, code: 'TASK_TENANT_MISMATCH' });
           return;
         }
         if (!t.isTest) {
@@ -346,7 +375,7 @@ async function handleExpoRecall(req: any, res: any, context: any): Promise<void>
           return;
         }
         const parentOrder = await context.repo.getOrder(t.orderId);
-        if (!parentOrder || !parentOrder.isTest) {
+        if (!parentOrder || !parentOrder.tenantId || parentOrder.tenantId !== activeTenantId || !parentOrder.isTest) {
           sendJson(res, 403, { error: 'Cannot recall commercial tasks through preview bridge.', code: 'CANNOT_MUTATE_COMMERCIAL_TASK_IN_PREVIEW' });
           return;
         }
@@ -355,6 +384,15 @@ async function handleExpoRecall(req: any, res: any, context: any): Promise<void>
   }
 
   for (const t of bumpedTasks) {
+    if (!t.tenantId || t.tenantId !== activeTenantId) {
+      sendJson(res, 403, { error: `Task ${t.id} does not belong to active tenant ${activeTenantId}.`, code: 'TASK_TENANT_MISMATCH' });
+      return;
+    }
+    const parentOrder = await context.repo.getOrder(t.orderId);
+    if (!parentOrder || !parentOrder.tenantId || parentOrder.tenantId !== activeTenantId) {
+      sendJson(res, 403, { error: `Parent order for task ${t.id} does not belong to active tenant ${activeTenantId}.`, code: 'TASK_TENANT_MISMATCH' });
+      return;
+    }
     const taskBranchRes = await resolveTaskAuthoritativeBranch(t, context.repo);
     if (!taskBranchRes.branchId && context.requestIdentity.branchId && context.requestIdentity.branchId !== '*') {
       sendJson(res, 403, {
@@ -363,7 +401,7 @@ async function handleExpoRecall(req: any, res: any, context: any): Promise<void>
       });
       return;
     }
-    const authCheck = authorizeKdsRequest(context.requestIdentity, taskBranchRes.branchId || undefined, t.station, true, 'recall');
+    const authCheck = authorizeKdsRequest(context.requestIdentity, taskBranchRes.branchId || undefined, 'EXPO', true, 'recall');
     if (!authCheck.authorized) {
       sendJson(res, authCheck.statusCode || 403, { error: authCheck.error, code: authCheck.code });
       return;
@@ -399,8 +437,8 @@ async function handleFulfillItem(req: any, res: any, context: any): Promise<void
       sendJson(res, 403, { error: prevCheck.error, code: prevCheck.code });
       return;
     }
-    if (task.tenantId && context.tenantContext?.tenantId && task.tenantId !== context.tenantContext.tenantId) {
-      sendJson(res, 403, { error: `Task ${taskId} does not belong to active tenant ${context.tenantContext?.tenantId}.`, code: 'TASK_TENANT_MISMATCH' });
+    if (!task.tenantId || task.tenantId !== context.tenantContext.tenantId) {
+      sendJson(res, 403, { error: `Task ${taskId} does not belong to active tenant ${context.tenantContext.tenantId}.`, code: 'TASK_TENANT_MISMATCH' });
       return;
     }
     if (!task.isTest) {
@@ -408,7 +446,7 @@ async function handleFulfillItem(req: any, res: any, context: any): Promise<void
       return;
     }
     const parentOrder = await context.repo.getOrder(task.orderId);
-    if (!parentOrder || !parentOrder.isTest) {
+    if (!parentOrder || !parentOrder.tenantId || parentOrder.tenantId !== context.tenantContext.tenantId || !parentOrder.isTest) {
       sendJson(res, 403, { error: 'Only test orders can be fulfilled through preview bridge.', code: 'CANNOT_MUTATE_COMMERCIAL_TASK_IN_PREVIEW' });
       return;
     }
@@ -494,16 +532,58 @@ async function handleGetKitchenTasks(req: any, res: any, context: any): Promise<
     return;
   }
 
-  // 4. Handle Staff & Station Callers
-  const authCheck = authorizeKdsRequest(identity, undefined, undefined, false, 'read');
+  // 4. Handle Station Callers
+  const isStationCaller = (identity.type === 'STATION' && !identity.role) || identity.scopes?.includes('station:kds') || identity.authSource === 'STATION';
+  if (isStationCaller) {
+    const requestedStation = (context.parsedUrl.query.station || context.parsedUrl.query.stationId) as string;
+    const requestedBranch = (context.parsedUrl.query.branchId || req.headers['x-branch-id']) as string;
+
+    if (requestedStation && requestedStation !== identity.station) {
+      sendJson(res, 403, {
+        error: `Station credential for ${identity.station} cannot query tasks for station ${requestedStation}.`,
+        code: 'STATION_MISMATCH',
+      });
+      return;
+    }
+    if (requestedBranch && requestedBranch !== identity.branchId) {
+      sendJson(res, 403, {
+        error: `Station credential for branch ${identity.branchId} cannot query tasks for branch ${requestedBranch}.`,
+        code: 'BRANCH_MISMATCH',
+      });
+      return;
+    }
+
+    const authCheck = authorizeKdsRequest(identity, identity.branchId, identity.station, false, 'read');
+    if (!authCheck.authorized) {
+      sendJson(res, authCheck.statusCode || 403, { error: authCheck.error, code: authCheck.code });
+      return;
+    }
+
+    const tasks = await context.posService.listKitchenTasks({
+      station: identity.station,
+      branchId: identity.branchId,
+    });
+    sendJson(res, 200, {
+      success: true,
+      data: tasks,
+      tasks,
+    });
+    return;
+  }
+
+  // 5. Handle Staff & Admin Callers
+  const requestedBranch = (context.parsedUrl.query.branchId || req.headers['x-branch-id']) as string;
+  const requestedStation = (context.parsedUrl.query.station || context.parsedUrl.query.stationId) as string;
+  const targetBranch = identity.isPrivileged ? requestedBranch : (identity.branchId && identity.branchId !== '*' ? identity.branchId : requestedBranch);
+  const authCheck = authorizeKdsRequest(identity, targetBranch || undefined, requestedStation || undefined, false, 'read');
   if (!authCheck.authorized) {
     sendJson(res, authCheck.statusCode || 403, { error: authCheck.error, code: authCheck.code });
     return;
   }
 
-  const stationFilter = (context.parsedUrl.query.station || context.parsedUrl.query.stationId) as string;
+  const stationFilter = requestedStation;
   const branchFilter = identity.isPrivileged
-    ? (context.parsedUrl.query.branchId as string)
+    ? requestedBranch
     : (identity.branchId && identity.branchId !== '*' ? identity.branchId : undefined);
   const tasks = await context.posService.listKitchenTasks({ station: stationFilter, branchId: branchFilter });
   sendJson(res, 200, {
