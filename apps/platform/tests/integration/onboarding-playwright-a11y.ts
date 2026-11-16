@@ -393,9 +393,8 @@ describe('OrbitoX Onboarding Multi-Viewport & Axe Accessibility E2E', () => {
         datasources: { db: { url: process.env.DATABASE_URL || 'postgresql://apple@localhost:5432/orbitox_phase2' } },
       });
 
-      const { PrismaClient: RestaurantPrismaClient } = await import(
-        '../../../../services/restaurant-api/generated/prisma'
-      );
+      const restaurantPrismaModule: any = '../../../../services/restaurant-api/generated/prisma';
+      const { PrismaClient: RestaurantPrismaClient } = await import(restaurantPrismaModule);
       restaurantPrisma = new RestaurantPrismaClient({
         datasources: { db: { url: process.env.RESTAURANTOS_DATABASE_URL || 'postgresql://apple@localhost:5432/restaurant_os' } },
       });
