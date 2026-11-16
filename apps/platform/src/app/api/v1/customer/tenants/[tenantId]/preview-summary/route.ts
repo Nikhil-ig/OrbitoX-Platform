@@ -16,6 +16,7 @@ export const GET = withCustomerAuth<RouteContext>(
         OR: [
           { slug: decodedParam },
           { id: decodedParam },
+          { slug: decodedParam.replace(/^tenant_/, '') },
         ],
       },
       include: {
@@ -26,8 +27,13 @@ export const GET = withCustomerAuth<RouteContext>(
     if (!project && decodedParam.includes('project/')) {
       const match = /project\/([^/]+)/.exec(decodedParam);
       if (match && match[1]) {
-        project = await prisma.platformProject.findUnique({
-          where: { id: match[1] },
+        project = await prisma.platformProject.findFirst({
+          where: {
+            OR: [
+              { id: match[1] },
+              { slug: match[1] },
+            ],
+          },
           include: { environments: true },
         });
       }
@@ -61,29 +67,73 @@ export const GET = withCustomerAuth<RouteContext>(
       'http://127.0.0.1:4010';
     const platformToken =
       process.env.RESTAURANTOS_PLATFORM_TOKEN ||
-      process.env.ORBITOX_RUNTIME_TOKEN;
+      process.env.ORBITOX_RUNTIME_TOKEN ||
+      (process.env.NODE_ENV !== 'production' ? 'test_platform_token_secret_key_1234567890123456' : undefined);
+
+    if (!platformToken) {
+      return NextResponse.json(
+        { ok: false, error: 'SERVICE_UNAVAILABLE', message: 'Runtime authentication token is not configured.' },
+        { status: 503, headers: noStoreHeaders() },
+      );
+    }
 
     let runtimeTenant: any = null;
-    if (platformToken) {
-      try {
-        const controller = new AbortController();
-        const timeout = setTimeout(() => controller.abort(), 3000);
-        const res = await fetch(
-          new URL(`/internal/tenants/${encodeURIComponent(project.slug)}`, runtimeUrl).toString(),
-          {
-            headers: { Authorization: `Bearer ${platformToken}` },
-            cache: 'no-store',
-            signal: controller.signal,
-          },
-        );
-        clearTimeout(timeout);
-        if (res.ok) {
-          const json = await res.json();
-          runtimeTenant = json.tenant;
+    try {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 4000);
+      const res = await fetch(
+        new URL(`/internal/tenants/${encodeURIComponent(project.slug)}`, runtimeUrl).toString(),
+        {
+          headers: { Authorization: `Bearer ${platformToken}` },
+          cache: 'no-store',
+          signal: controller.signal,
+        },
+      );
+      clearTimeout(timeout);
+
+      if (!res.ok) {
+        if (res.status === 404) {
+          // Runtime does not have this tenant. Check if provisioning saga is actively in progress.
+          const activeOp = await (prisma as any).platformOperation.findFirst({
+            where: {
+              organizationId: project.organizationId,
+              status: { in: ['PENDING', 'RUNNING'] },
+            },
+            orderBy: { createdAt: 'desc' },
+          }).catch(() => null);
+
+          if (activeOp) {
+            return NextResponse.json(
+              {
+                ok: true,
+                status: 'PROVISIONING',
+                restaurantProvisioned: false,
+                message: 'Restaurant provisioning is currently in progress.',
+              },
+              { status: 200, headers: noStoreHeaders() },
+            );
+          }
+
+          return NextResponse.json(
+            { ok: false, error: 'TENANT_NOT_FOUND', message: 'Restaurant tenant has not been provisioned in runtime.' },
+            { status: 404, headers: noStoreHeaders() },
+          );
         }
-      } catch {
-        // Runtime offline or unreachable
+
+        return NextResponse.json(
+          { ok: false, error: 'RUNTIME_ERROR', message: 'Failed to fetch tenant status from restaurant runtime.' },
+          { status: 502, headers: noStoreHeaders() },
+        );
       }
+
+      const json = await res.json();
+      runtimeTenant = json.tenant;
+    } catch {
+      // P1.2: Runtime is offline or unreachable - fail closed with 503
+      return NextResponse.json(
+        { ok: false, error: 'SERVICE_UNAVAILABLE', message: 'RestaurantOS runtime is temporarily unreachable.' },
+        { status: 503, headers: noStoreHeaders() },
+      );
     }
 
     const configuredUrl = process.env.ORBITOX_PUBLIC_BASE_URL;
@@ -96,22 +146,8 @@ export const GET = withCustomerAuth<RouteContext>(
     const subdomainUrl = `http://${project.slug}.${baseDomain}`;
     const sampleTable = runtimeTenant?.sampleTableLocator || null;
 
-    let isPreview = true;
-    if (runtimeTenant) {
-      isPreview = runtimeTenant.status === 'preview';
-    } else {
-      const activeSub = await prisma.billingSubscription.findFirst({
-        where: {
-          organizationId: project.organizationId,
-          tenantId: { contains: project.id },
-          status: 'active',
-        },
-      });
-      isPreview = !activeSub;
-    }
-    const previewExpiresAt =
-      runtimeTenant?.previewExpiresAt ||
-      new Date(Date.now() + 14 * 24 * 3600 * 1000).toISOString();
+    const isPreview = String(runtimeTenant?.status || '').toLowerCase() === 'preview';
+    const previewExpiresAt = runtimeTenant?.previewExpiresAt || null;
 
     return NextResponse.json(
       {
@@ -155,7 +191,7 @@ export const GET = withCustomerAuth<RouteContext>(
             customDomainConfigured: false,
           },
           actions: {
-            dinerPreviewUrl: sampleTable?.dinerUrl || `${subdomainUrl}/dine`,
+            dinerPreviewUrl: sampleTable?.dinerUrl || null,
             kdsUrl: `${subdomainUrl}/kds`,
             tablesUrl: `${subdomainUrl}/tables`,
             testOrderEndpoint: `${runtimeUrl}/api/restaurant/orders`,

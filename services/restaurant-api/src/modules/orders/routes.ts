@@ -156,10 +156,60 @@ export const ordersRoutes: RouteDefinition[] = [
         }
       }
 
+      const isTestOrderRequested = Boolean(
+        body.isTest ||
+        req.headers['x-orbitox-test-order'] === 'true' ||
+        previewTokenHeader.startsWith('orb_prev.') ||
+        identity?.type === 'PREVIEW_CAPABILITY' ||
+        identity?.scopes?.includes('preview:test-order')
+      );
+
+      // P0.2 Lifecycle check 1: Test orders are ONLY allowed when tenant status is 'preview'
+      if (isTestOrderRequested && tenantStatus !== 'preview') {
+        sendJson(res, 403, {
+          error: 'TEST_ORDERS_ONLY_IN_PREVIEW',
+          code: 'TEST_ORDERS_ONLY_IN_PREVIEW',
+          message: 'Test orders are only permitted for restaurants in PREVIEW status.',
+        });
+        return;
+      }
+
+      // P0.2 Lifecycle check 2: Check preview expiry for preview tenants
+      if (tenantStatus === 'preview') {
+        let previewExpiryDate = context.tenantContext?.previewExpiresAt;
+        if (!previewExpiryDate && postgresStore?.prisma) {
+          const dbT = await postgresStore.prisma.tenant.findUnique({
+            where: { id: context.tenantContext.tenantId },
+            select: { previewExpiresAt: true },
+          }).catch(() => null);
+          previewExpiryDate = dbT?.previewExpiresAt;
+        }
+        if (previewExpiryDate && new Date(previewExpiryDate).getTime() <= Date.now()) {
+          sendJson(res, 403, {
+            error: 'PREVIEW_EXPIRED',
+            code: 'PREVIEW_EXPIRED',
+            message: 'The preview period for this restaurant has expired.',
+          });
+          return;
+        }
+      }
+
+      // P0.2 Bridge check: Platform bridge callers requesting test orders MUST have dedicated preview:test-order scope
+      if (identity && identity.type === 'PLATFORM_BRIDGE' && (isTestOrderRequested || tenantStatus === 'preview')) {
+        if (!identity.scopes?.includes('preview:test-order')) {
+          sendJson(res, 403, {
+            error: 'INSUFFICIENT_TEST_ORDER_SCOPE',
+            code: 'INSUFFICIENT_TEST_ORDER_SCOPE',
+            message: 'Platform bridge caller lacks required preview:test-order scope.',
+          });
+          return;
+        }
+      }
+
       const isVerifiedBridge = Boolean(
         identity &&
         identity.type === 'PLATFORM_BRIDGE' &&
-        (identity.scopes?.includes('preview:test-order') || identity.scopes?.includes('ADMIN') || identity.isPrivileged)
+        identity.scopes?.includes('preview:test-order')
       );
 
       const isVerifiedPreviewCapability = Boolean(
@@ -237,20 +287,6 @@ export const ordersRoutes: RouteDefinition[] = [
         const orderId = orderResult.body.orderId || orderResult.body.data?.orderId;
         const totalMinor = orderResult.body.quote?.totalMinor || 0;
         const tableNumber = orderResult.body.tableNumber || body.tableNumber || 'unknown';
-
-        if (isTestOrder && postgresStore?.prisma && orderId) {
-          await postgresStore.prisma.restaurantOrder.update({
-            where: { id: orderId },
-            data: { isTest: true },
-          }).catch(() => { });
-          await postgresStore.prisma.kitchenTask.updateMany({
-            where: { orderId },
-            data: { isTest: true },
-          }).catch(() => { });
-          if (orderResult.body) {
-            orderResult.body.isTest = true;
-          }
-        }
 
         await runtimeController.emitAudit(
           isTestOrder ? 'TEST_ORDER_PLACED' : 'ORDER_PLACED',

@@ -4,7 +4,7 @@ import {
   normalizeSubdomainSlug,
   validateSlugSyntax,
   generateSubdomainSlugFromName,
-} from '@/app/api/v1/customer/tenants/check-slug/route';
+} from '@/lib/slug-utils';
 import { validateIndianGstin } from '@/server/auth/account-security';
 
 describe('Stage 5: Onboarding UI Components, State Machine & Multi-Viewport Verification', () => {

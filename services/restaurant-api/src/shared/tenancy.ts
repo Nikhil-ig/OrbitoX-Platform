@@ -22,6 +22,7 @@ export interface ActiveTenantContext {
   tenantName: string;
   orbitoxProjectId?: string;
   status?: string;
+  previewExpiresAt?: Date | string | null;
   isPlatform?: boolean;
 }
 
@@ -195,6 +196,7 @@ export async function resolveTenantFromHost(
             tenantName: tenant.name,
             orbitoxProjectId: tenant.orbitoxProjectId || `restaurant-os-${tenant.slug}`,
             status: tenant.status,
+            previewExpiresAt: (tenant as any).previewExpiresAt || null,
           };
           tenantResolutionCache.set(rawHost, { context, expiresAt: Date.now() + CACHE_TTL_MS });
           return context;
@@ -225,6 +227,7 @@ export async function resolveTenantFromHost(
           tenantName: customDomain.tenant.name,
           orbitoxProjectId: customDomain.tenant.orbitoxProjectId || `restaurant-os-${customDomain.tenant.slug}`,
           status: customDomain.tenant.status,
+          previewExpiresAt: (customDomain.tenant as any).previewExpiresAt || null,
         };
         tenantResolutionCache.set(rawHost, { context, expiresAt: Date.now() + CACHE_TTL_MS });
         return context;
@@ -265,6 +268,7 @@ export async function resolveTenantFromRequest(
           tenantName: dbTenant.name,
           orbitoxProjectId: dbTenant.orbitoxProjectId || `restaurant-os-${dbTenant.slug}`,
           status: dbTenant.status,
+          previewExpiresAt: (dbTenant as any).previewExpiresAt || null,
         };
       }
       // Fail closed: Named tenant does not exist in database
@@ -286,6 +290,7 @@ export async function resolveTenantFromRequest(
           tenantName: dbTenant.name,
           orbitoxProjectId: dbTenant.orbitoxProjectId || `restaurant-os-${dbTenant.slug}`,
           status: dbTenant.status,
+          previewExpiresAt: (dbTenant as any).previewExpiresAt || null,
         };
       }
       // Fail closed: Named tenant does not exist in database
@@ -343,6 +348,7 @@ export async function resolveTenantFromRequest(
             tenantName: invite.tenant.name,
             orbitoxProjectId: invite.tenant.orbitoxProjectId || `restaurant-os-${invite.tenant.slug}`,
             status: invite.tenant.status,
+            previewExpiresAt: (invite.tenant as any).previewExpiresAt || null,
           };
           return context;
         }

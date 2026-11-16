@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect } from 'react';
 import QRCode from 'qrcode';
+import { getCustomerCsrfToken } from './csrf';
 import {
   QrCode,
   Check,
@@ -78,8 +79,8 @@ export function F4WorkingPreviewStep({
 
   const baseDomain = 'orbitox.io';
   const subdomainUrl = previewData?.restaurant?.subdomainUrl || `http://${slug}.${baseDomain}`;
-  const sampleTable = previewData?.tables?.sampleTable;
-  const dinerUrl = sampleTable?.dinerUrl || `${subdomainUrl}/dine`;
+  const sampleTable = previewData?.tables?.sampleTable || null;
+  const dinerUrl = sampleTable?.dinerUrl || null;
 
   // 1. Fetch Authoritative Preview Summary
   const fetchPreviewSummary = async () => {
@@ -138,15 +139,17 @@ export function F4WorkingPreviewStep({
       if (res.ok) {
         const json = await res.json();
         if (json.ok && Array.isArray(json.tasks)) {
-          // Group tasks by table or order
-          const formatted: TestTicket[] = json.tasks.map((t: any) => ({
-            id: t.id,
-            tableNumber: t.tableNumber ? `Table ${t.tableNumber}` : 'Table T-01',
-            items: [{ name: t.itemName || 'Dish', qty: t.quantity || 1, note: t.modifiers?.join(', ') }],
-            timeAgo: 'Just now',
-            status: t.status === 'READY' ? 'READY' : t.status === 'BUMPED' ? 'BUMPED' : 'QUEUED',
-            isTest: Boolean(t.isTest ?? true),
-          }));
+          // Group tasks by table or order - strictly filter by isTest === true
+          const formatted: TestTicket[] = json.tasks
+            .filter((t: any) => t.isTest === true)
+            .map((t: any) => ({
+              id: t.id,
+              tableNumber: t.tableNumber ? `Table ${t.tableNumber}` : 'Table T-01',
+              items: [{ name: t.itemName || 'Dish', qty: t.quantity || 1, note: t.modifiers?.join(', ') }],
+              timeAgo: 'Just now',
+              status: t.status === 'READY' ? 'READY' : t.status === 'BUMPED' ? 'BUMPED' : 'QUEUED',
+              isTest: true,
+            }));
           setKdsTickets(formatted);
         }
       }
@@ -168,8 +171,9 @@ export function F4WorkingPreviewStep({
 
   // 3. Generate Standards-Compliant Optical QR Code
   useEffect(() => {
-    if (dinerUrl) {
-      QRCode.toDataURL(dinerUrl, {
+    const targetUrl = dinerUrl || subdomainUrl;
+    if (targetUrl) {
+      QRCode.toDataURL(targetUrl, {
         margin: 1,
         width: 140,
         color: { dark: '#14161A', light: '#FFFFFF' },
@@ -177,7 +181,7 @@ export function F4WorkingPreviewStep({
         .then((url) => setQrCodeDataUrl(url))
         .catch(() => {});
     }
-  }, [dinerUrl]);
+  }, [dinerUrl, subdomainUrl]);
 
   const handleAddToCart = (dish: MenuItemView) => {
     const price = Math.round(dish.basePriceMinor / 100);
@@ -195,18 +199,35 @@ export function F4WorkingPreviewStep({
 
   // 4. Place Real Test Order via Authoritative Endpoint
   const handlePlaceTestOrder = async () => {
-    if (cart.length === 0) return;
+    let orderItems = cart;
+    if (orderItems.length === 0) {
+      const allDishes = Object.values(dishesByCategory).flat();
+      if (allDishes.length > 0 && allDishes[0]) {
+        const d = allDishes[0];
+        orderItems = [{ id: d.id, name: d.name, price: Math.round(d.basePriceMinor / 100), qty: 1 }];
+      } else {
+        orderItems = [{ id: 'item_sample_1', name: 'Dal Makhani', price: 280, qty: 1 }];
+      }
+    }
+    if (!sampleTable) {
+      setOrderNotice('Cannot place test order: No sample table provisioned.');
+      return;
+    }
     setPlacingOrder(true);
     setOrderNotice(null);
 
     try {
+      const csrfToken = getCustomerCsrfToken();
       const res = await fetch(`/api/v1/customer/tenants/${encodeURIComponent(tenantId)}/test-orders`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          ...(csrfToken ? { 'x-csrf-token': csrfToken } : {}),
+        },
         body: JSON.stringify({
-          tableNumber: sampleTable?.tableNumber || 'T-01',
+          tableNumber: sampleTable.tableNumber || 'T-01',
           guestName: `${ownerName} (Preview)`,
-          items: cart.map((i) => ({
+          items: orderItems.map((i) => ({
             id: i.id,
             itemId: i.id,
             name: i.name,
@@ -235,20 +256,25 @@ export function F4WorkingPreviewStep({
   // 5. Bump / Mark Ready on Kitchen Screen
   const handleMarkReady = async (ticketId: string) => {
     try {
-      await fetch(`/api/v1/customer/tenants/${encodeURIComponent(tenantId)}/kds`, {
+      const csrfToken = getCustomerCsrfToken();
+      const res = await fetch(`/api/v1/customer/tenants/${encodeURIComponent(tenantId)}/kds`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          ...(csrfToken ? { 'x-csrf-token': csrfToken } : {}),
+        },
         body: JSON.stringify({ taskId: ticketId }),
       });
+      if (!res.ok) {
+        const errJson = await res.json().catch(() => ({}));
+        throw new Error(errJson.message || 'Failed to mark task ready on KDS.');
+      }
       setKdsTickets((prev) =>
         prev.map((t) => (t.id === ticketId ? { ...t, status: 'READY' } : t))
       );
       setTimeout(fetchKdsTasks, 1000);
-    } catch {
-      // Optimistic update
-      setKdsTickets((prev) =>
-        prev.map((t) => (t.id === ticketId ? { ...t, status: 'READY' } : t))
-      );
+    } catch (err: any) {
+      setOrderNotice(`KDS error: ${err.message}`);
     }
   };
 
@@ -412,7 +438,7 @@ export function F4WorkingPreviewStep({
               <div className="pt-2">
                 <button
                   type="button"
-                  disabled={placingOrder || cart.length === 0}
+                  disabled={placingOrder || cart.length === 0 || !sampleTable}
                   onClick={handlePlaceTestOrder}
                   className="w-full p-2.5 rounded-full bg-[#14161A] text-white text-[11px] font-semibold text-center cursor-pointer hover:bg-black/90 shadow-md transition-all disabled:opacity-50"
                 >
@@ -420,6 +446,8 @@ export function F4WorkingPreviewStep({
                     <span className="flex items-center justify-center gap-1.5">
                       <RefreshCw className="h-3 w-3 animate-spin" /> Placing test order...
                     </span>
+                  ) : !sampleTable ? (
+                    <span>Sample table required</span>
                   ) : (
                     <span>Test order · {cartCount} items · ₹{cartTotal}</span>
                   )}
@@ -576,12 +604,12 @@ export function F4WorkingPreviewStep({
 
               <button
                 type="button"
-                disabled={placingOrder}
+                disabled={placingOrder || !sampleTable}
                 onClick={handlePlaceTestOrder}
                 className="w-full py-2 rounded-full bg-white/10 hover:bg-white/15 text-white text-xs font-medium border border-white/10 cursor-pointer flex items-center justify-center gap-1.5 disabled:opacity-50"
               >
                 <Zap className="h-3.5 w-3.5 text-amber-400" />
-                <span>Place Quick Test Order</span>
+                <span>{sampleTable ? 'Place Quick Test Order' : 'Sample table required'}</span>
               </button>
             </div>
 

@@ -12,14 +12,25 @@ export const GET = withCustomerAuth<RouteContext>(
     const decodedParam = decodeURIComponent(rawParam).trim();
 
     let project = await prisma.platformProject.findFirst({
-      where: { OR: [{ slug: decodedParam }, { id: decodedParam }] },
+      where: {
+        OR: [
+          { slug: decodedParam },
+          { id: decodedParam },
+          { slug: decodedParam.replace(/^tenant_/, '') },
+        ],
+      },
       include: { environments: true },
     });
     if (!project && decodedParam.includes('project/')) {
       const match = /project\/([^/]+)/.exec(decodedParam);
       if (match && match[1]) {
-        project = await prisma.platformProject.findUnique({
-          where: { id: match[1] },
+        project = await prisma.platformProject.findFirst({
+          where: {
+            OR: [
+              { id: match[1] },
+              { slug: match[1] },
+            ],
+          },
           include: { environments: true },
         });
       }
@@ -82,7 +93,13 @@ export const POST = withCustomerAuth<RouteContext>(
     const decodedParam = decodeURIComponent(rawParam).trim();
 
     let project = await prisma.platformProject.findFirst({
-      where: { OR: [{ slug: decodedParam }, { id: decodedParam }] },
+      where: {
+        OR: [
+          { slug: decodedParam },
+          { id: decodedParam },
+          { slug: decodedParam.replace(/^tenant_/, '') },
+        ],
+      },
       include: { environments: true },
     });
     if (!project) {

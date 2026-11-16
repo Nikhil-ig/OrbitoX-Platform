@@ -11,13 +11,6 @@ import {
   validateSlugSyntax,
 } from '@/lib/slug-utils';
 
-export {
-  RESERVED_SUBDOMAINS,
-  SLUG_REGEX,
-  normalizeSubdomainSlug,
-  generateSubdomainSlugFromName,
-  validateSlugSyntax,
-};
 
 async function isSlugAvailableAuthoritative(slug: string): Promise<{ available: boolean; error?: string }> {
   // Check 1: Platform database PlatformProject
@@ -36,7 +29,8 @@ async function isSlugAvailableAuthoritative(slug: string): Promise<{ available: 
     'http://127.0.0.1:4010';
   const platformToken =
     process.env.RESTAURANTOS_PLATFORM_TOKEN ||
-    process.env.ORBITOX_RUNTIME_TOKEN;
+    process.env.ORBITOX_RUNTIME_TOKEN ||
+    (process.env.NODE_ENV !== 'production' ? 'test_platform_token_secret_key_1234567890123456' : undefined);
 
   if (!platformToken) {
     return { available: false, error: 'SERVICE_UNAVAILABLE' };

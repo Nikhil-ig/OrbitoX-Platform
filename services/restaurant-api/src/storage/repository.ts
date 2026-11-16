@@ -83,6 +83,7 @@ export interface RestaurantRepository extends PosRepository {
   getOrder(orderId: string): Promise<RestaurantOrder | undefined>;
   getOrderByOrderToken(orderToken: string): Promise<RestaurantOrder | undefined>;
   addOrder(order: RestaurantOrder): Promise<void>;
+  createOrderWithTasks?(order: RestaurantOrder, tasks: KitchenTask[]): Promise<void>;
   updateOrderStatus(
     orderId: string,
     status: string,
@@ -929,6 +930,97 @@ export class PostgresRestaurantRepository implements RestaurantRepository {
           branchId: order.branchId || 'main',
           tableNumber: order.tableNumber,
           payload: { ...order, tenantId: this.tenantId },
+        },
+      });
+      return this.mapDomainEvent(evt);
+    });
+
+    this.eventBus.broadcast(event);
+  }
+
+  async createOrderWithTasks(order: RestaurantOrder, tasks: KitchenTask[]): Promise<void> {
+    const orderId = order.orderId || order.id || `ord_${Date.now()}`;
+    const event = await withTenantRlsTransaction(this.prisma, this.tenantId, async (tx: any) => {
+      await tx.restaurantOrder.upsert({
+        where: { id: orderId },
+        update: {
+          status: order.status,
+          paymentStatus: order.paymentStatus || 'UNPAID',
+          items: order.items,
+          subtotalMinor: order.subtotalMinor,
+          taxMinor: order.taxMinor,
+          totalMinor: order.totalMinor,
+          isTest: Boolean(order.isTest),
+        },
+        create: {
+          id: orderId,
+          tenantId: this.tenantId,
+          tableNumber: order.tableNumber,
+          sessionId: order.sessionId || `sess_${order.tableNumber}`,
+          branchId: order.branchId || null,
+          guestName: order.guestName || null,
+          status: order.status || 'CONFIRMED',
+          items: order.items || [],
+          subtotalMinor: order.subtotalMinor || 0,
+          taxMinor: order.taxMinor || 0,
+          totalMinor: order.totalMinor || 0,
+          currency: order.currency || 'INR',
+          customer: order.customer || null,
+          orderToken: order.orderToken || null,
+          paymentStatus: order.paymentStatus || 'UNPAID',
+          paymentSessionId: order.paymentSessionId || null,
+          isTest: Boolean(order.isTest),
+        },
+      });
+
+      for (const task of tasks) {
+        await tx.kitchenTask.upsert({
+          where: { id: task.id },
+          update: {
+            status: task.status,
+            quantity: task.quantity,
+            fulfilledItemCount: task.fulfilledItemCount,
+            isTest: Boolean(task.isTest),
+          },
+          create: {
+            id: task.id,
+            tenantId: this.tenantId,
+            orderId: task.orderId,
+            tableNumber: task.tableNumber,
+            branchId: task.branchId || null,
+            seatNumber: task.seatNumber || null,
+            guestName: task.guestName || null,
+            itemName: task.itemName,
+            quantity: task.quantity,
+            station: task.station,
+            status: task.status || 'QUEUED',
+            fireAt: task.fireAt || null,
+            targetServeAt: task.targetServeAt || null,
+            elapsedMinutes: task.elapsedMinutes || 0,
+            slaMinutes: task.slaMinutes || 0,
+            modifiers: task.modifiers || null,
+            course: task.course || null,
+            fulfilledItemCount: task.fulfilledItemCount || 0,
+            isTest: Boolean(task.isTest),
+          },
+        });
+      }
+
+      const seq = await this.getNextEventSequence(tx);
+      const evt = await tx.domainEvent.create({
+        data: {
+          tenantId: this.tenantId,
+          sequence: seq,
+          type: 'order.created',
+          producer: 'pos',
+          branchId: order.branchId || 'main',
+          tableNumber: order.tableNumber,
+          payload: {
+            orderId,
+            totalMinor: order.totalMinor,
+            itemsCount: order.items?.length || 0,
+            isTest: Boolean(order.isTest),
+          },
         },
       });
       return this.mapDomainEvent(evt);
@@ -2801,6 +2893,12 @@ export class JsonRestaurantRepository implements RestaurantRepository {
     return orders.find((o: any) => o.orderToken === orderToken);
   }
   async addOrder(order: RestaurantOrder): Promise<void> { this.store.addOrder(order); }
+  async createOrderWithTasks(order: RestaurantOrder, tasks: KitchenTask[]): Promise<void> {
+    this.store.addOrder(order);
+    for (const t of tasks) {
+      this.store.addKitchenTask(t);
+    }
+  }
   async updateOrderStatus(
     orderId: string,
     status: string,

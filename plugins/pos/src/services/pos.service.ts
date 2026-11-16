@@ -420,11 +420,17 @@ export class PosService {
       updatedAt: nowIso,
     };
 
-    // G. Persist to Authoritative Repository
-    await this.repository.addOrder(newOrder as any);
+    // G. Persist to Authoritative Repository Atomically
     for (const task of kitchenTasksToCreate) {
       task.isTest = isTest;
-      await this.repository.addKitchenTask(task as any);
+    }
+    if (typeof (this.repository as any).createOrderWithTasks === 'function') {
+      await (this.repository as any).createOrderWithTasks(newOrder, kitchenTasksToCreate);
+    } else {
+      await this.repository.addOrder(newOrder as any);
+      for (const task of kitchenTasksToCreate) {
+        await this.repository.addKitchenTask(task as any);
+      }
     }
 
     // H. Build Public Response Payload
@@ -432,6 +438,7 @@ export class PosService {
       success: true,
       orderId: newOrder.orderId,
       orderToken: newOrder.orderToken,
+      isTest: newOrder.isTest ?? false,
       status: newOrder.status,
       statusLabel: 'Order Confirmed & Sent to Kitchen',
       branchId: newOrder.branchId || input.branchId || 'branch_main',

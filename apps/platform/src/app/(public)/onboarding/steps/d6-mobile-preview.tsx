@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
+import { getCustomerCsrfToken } from './csrf';
 import {
   Smartphone,
   Monitor,
@@ -78,9 +79,13 @@ export function D6MobilePreviewView({
     if (cartItems.length === 0) return;
     setPlacingOrder(true);
     try {
+      const csrfToken = getCustomerCsrfToken();
       await fetch(`/api/v1/customer/tenants/${encodeURIComponent(tenantId)}/test-orders`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          ...(csrfToken ? { 'x-csrf-token': csrfToken } : {}),
+        },
         body: JSON.stringify({
           tableNumber: 'T-01',
           items: cartItems.map((i) => ({
@@ -96,11 +101,33 @@ export function D6MobilePreviewView({
       setKdsReady(false);
       const res = await fetch(`/api/v1/customer/tenants/${encodeURIComponent(tenantId)}/kds`);
       const data = await res.json();
-      if (data.ok && Array.isArray(data.tasks)) setKdsTasks(data.tasks);
+      if (data.ok && Array.isArray(data.tasks)) setKdsTasks(data.tasks.filter((t: any) => t.isTest === true));
     } catch {
       // Fallback
     } finally {
       setPlacingOrder(false);
+    }
+  };
+
+  const handleBumpKds = async () => {
+    const taskId = kdsTasks[0]?.id;
+    if (taskId) {
+      try {
+        const csrfToken = getCustomerCsrfToken();
+        const res = await fetch(`/api/v1/customer/tenants/${encodeURIComponent(tenantId)}/kds`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            ...(csrfToken ? { 'x-csrf-token': csrfToken } : {}),
+          },
+          body: JSON.stringify({ taskId }),
+        });
+        if (res.ok) {
+          setKdsReady(true);
+        }
+      } catch {}
+    } else {
+      setKdsReady(true);
     }
   };
 
@@ -210,7 +237,7 @@ export function D6MobilePreviewView({
                 ) : (
                   <button
                     type="button"
-                    onClick={() => setKdsReady(true)}
+                    onClick={handleBumpKds}
                     className="w-full py-2 rounded-full bg-[#FB923C] text-[#14161A] text-xs font-bold hover:bg-[#FB923C]/90 cursor-pointer"
                   >
                     Bump ticket (Mark ready)

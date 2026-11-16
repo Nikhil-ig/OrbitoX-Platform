@@ -2,6 +2,7 @@
 
 import React, { useState } from 'react';
 import { Building, Store, AlertCircle, ArrowRight, ArrowLeft, RefreshCw, CheckCircle2, Info } from 'lucide-react';
+import { getCustomerCsrfToken } from './csrf';
 
 interface F2Props {
   onSuccess: (org: { id: string; name: string; slug: string; city: string; gstin?: string }) => void;
@@ -70,11 +71,13 @@ export function F2OrganizationStep({ onSuccess, onBack, defaultBusinessName = ''
 
     setLoading(true);
     try {
+      const csrfToken = getCustomerCsrfToken();
       const res = await fetch('/api/v1/customer/organizations', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           'idempotency-key': `org_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+          ...(csrfToken ? { 'x-csrf-token': csrfToken } : {}),
         },
         body: JSON.stringify({
           name: businessName.trim(),

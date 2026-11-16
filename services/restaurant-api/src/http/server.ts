@@ -194,6 +194,7 @@ export async function handleRequest(req: http.IncomingMessage, res: http.ServerR
         status: dbTenant.status,
         planId: dbTenant.planId,
         entitlementRevision: dbTenant.entitlementRevision,
+        previewExpiresAt: dbTenant.previewExpiresAt || null,
         isPlatform: true,
       };
     } else {

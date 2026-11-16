@@ -278,10 +278,10 @@ export function getDefaultBridgeKeys(): BridgeKeys {
     } catch {}
   }
 
-  // Generate ephemeral 32-byte key per process in non-prod
+  // Fallback shared 32-byte key in non-prod
   if (!ephemeralDevKeys) {
-    const keyId = 'dev_ephemeral_' + crypto.randomBytes(4).toString('hex');
-    const secret = crypto.randomBytes(32).toString('hex');
+    const keyId = 'dev_shared_bridge_key';
+    const secret = 'c8f1e7b29a4302d765fe1234abcd5678c8f1e7b29a4302d765fe1234abcd5678';
     ephemeralDevKeys = {
       activeKeyId: keyId,
       keys: { [keyId]: secret },
