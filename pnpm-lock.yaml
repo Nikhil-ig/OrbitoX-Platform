@@ -322,6 +322,9 @@ importers:
       '@prisma/client':
         specifier: ^6.19.0
         version: 6.19.3(prisma@6.19.3(typescript@5.9.3))(typescript@5.9.3)
+      express:
+        specifier: ^5.2.1
+        version: 5.2.1
     devDependencies:
       '@orbitox-io/eslint-config':
         specifier: workspace:*
@@ -332,6 +335,9 @@ importers:
       '@orbitox-io/tsconfig':
         specifier: workspace:*
         version: link:../tsconfig
+      '@types/express':
+        specifier: ^5.0.6
+        version: 5.0.6
       '@types/jest':
         specifier: ^29.5.0
         version: 29.5.14
