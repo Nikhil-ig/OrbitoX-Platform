@@ -341,7 +341,7 @@ export class ProvisioningSaga {
               operatorId: options.operatorId || 'orchestrator',
             },
           });
-        } catch {}
+        } catch { }
 
         await updateStep('2', 'COMPLETED', {
           completedAt: new Date().toISOString(),
@@ -450,7 +450,7 @@ export class ProvisioningSaga {
                 operatorId: options.operatorId || 'orchestrator',
               },
             });
-          } catch {}
+          } catch { }
 
           await updateStep('4', 'COMPLETED', {
             completedAt: new Date().toISOString(),
@@ -661,7 +661,7 @@ export class ProvisioningSaga {
                 });
                 await assertActiveLease();
                 await platformRepository.updatePluginInstallationStatus(tenantId, canonical, 'FAILED');
-              } catch {}
+              } catch { }
               return { pluginId: canonical, ok: false, error: res.error };
             }
           })
@@ -761,7 +761,7 @@ export class ProvisioningSaga {
               operatorId: options.operatorId || 'orchestrator',
             },
           });
-        } catch {}
+        } catch { }
 
         await emitPlatformWebhook({
           event: 'tenant.ready',
@@ -820,14 +820,14 @@ export class ProvisioningSaga {
         await updateStep(running.id, 'FAILED', {
           completedAt: new Date().toISOString(),
           error: errMsg,
-        }).catch(() => {});
+        }).catch(() => { });
       }
 
       if (!leaseLost) {
         await operationStore.updateOperation(operationId, {
           status: 'FAILED',
           error: errMsg,
-        }, { expectedLeaseOwner: attemptLeaseOwner }).catch(() => {});
+        }, { expectedLeaseOwner: attemptLeaseOwner }).catch(() => { });
       }
     } finally {
       clearInterval(heartbeatTimer);
@@ -1043,7 +1043,7 @@ export class ProvisioningSaga {
           operatorId: op.operatorId || 'orchestrator',
         },
       });
-    } catch {}
+    } catch { }
 
     return true;
   }
