@@ -63,6 +63,7 @@
 | `apps/platform/src/app/(console)/admin/data/admin-context.tsx` | **HOLD / AUDIT** | Mock state provider for `/admin/*` routes | Retain while `/admin/*` routes are being consolidated | Retire after Step C4 |
 | `apps/platform/src/app/(console)/admin/data/mock-data.ts` | **HOLD / AUDIT** | Mock data fixtures | Retain until dependent legacy admin routes are migrated | Retire after Step C4 |
 | `apps/platform/src/app/admin/data/admin-context.tsx` | **REFACTOR LATER** | Re-export shim | Remove after provider consolidation | Fully retired |
+| `apps/platform/src/app/(console)/platform/explorer/` | **RETAIN / HOLD** | Interactive API Explorer sending direct client requests | Retain under `C6` (Developer APIs); hold migration until security closure (Observe/Sandbox/Live Production per `18_API_EXPLORER_SECURITY.md`); do NOT describe as step-up protected until execution path is secured | Secured Developer APIs capability |
 | `docs/console/parity.md` | **UPDATE** | Route parity inventory | Reconcile route realities (`/platform`, `/platform/explorer`, etc.) | Authoritative parity doc |
 
 ---

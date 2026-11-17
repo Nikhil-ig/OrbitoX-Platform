@@ -102,11 +102,20 @@ graph TD
 - Displays mock widgets (`$124,500` revenue, `4,850` active users, `99.99%` uptime).
 - Uses deprecated `DynamicSidebar` and inline styling.
 
-### 4.2 Proposed Architectural Destination for `/`
-The root route `/` must be resolved according to the authenticated principal's role:
-1. **Unauthenticated Request:** Redirect to `/platform/login` (or public landing page `/onboarding`).
-2. **Authenticated Operator Principal (`OPERATOR_SESSION_COOKIE`):** Redirect `307 Temporary Redirect` to `/console/overview`.
-3. **Authenticated Customer Principal (`CUSTOMER_SESSION_COOKIE`):** Redirect `307 Temporary Redirect` to `/workspace` (or customer organization home).
-4. **Staff Principal (`STAFF_TOKEN`):** Redirect to `/kds` or `/hms`.
+### 4.2 Approved Permanent Root Destination Contract (Owner Approved)
 
-This eliminates the fake executive dashboard entirely while providing seamless entry into persona-specific shells.
+The permanent contract for root route (`/`) navigation is determined by session principal state:
+
+| Session State | Root Destination (`/`) |
+|---|---|
+| **No valid session** | Public OrbitoX entry / account sign-in selection |
+| **Valid operator session** | `/console/overview` |
+| **Valid customer session** | Customer's authorized workspace |
+| **Expired or invalid session** | Public entry / account sign-in selection |
+| **Customer with multiple organizations** | Organization selection, or a validated last-used organization |
+
+### 4.3 Architectural Safeguards & Implementation Timing
+1. **Operator vs Customer Auth Separation:** `/platform/login` is strictly an operator credential and TOTP barrier. It must NEVER become the universal login destination for customer users. Public/customer sign-in must use dedicated account selection/login entry.
+2. **No Invented Routes:** Do not invent a customer workspace route string before its canonical path is formally defined and built in Stage 7D.
+3. **Session Resolution Architecture:** Current `apps/platform/src/middleware.ts` recognizes operator sessions, but does not yet perform customer-session routing. The account service (`apps/platform/src/server/accounts/account-service.ts`) defines `CUSTOMER_SESSION_COOKIE` (`orbitox_customer_session`) and customer organization membership contexts. This change requires deliberate multi-principal session resolution in middleware, not a trivial client redirect on `/`.
+4. **Implementation Timing:** The contract is approved now, but physical modification of `/` and middleware is deferred to the shell/customer-workspace milestone. Root-route modification is strictly outside the restricted 7B.1 page-change scope.

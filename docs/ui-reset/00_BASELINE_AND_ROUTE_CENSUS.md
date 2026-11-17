@@ -10,14 +10,14 @@
 
 ## 1. Commit Freeze & Version Control State
 
-The authoritative commit baseline for the UI Reset program is frozen as:
+The authoritative commit baseline for the UI Reset program is established as:
 
 - **Branch:** `feat/compose-saas`
-- **Head Commit SHA:** `44a0e21c38de2d89ad6bd321a2e0e5ee656d6f7e`
-- **Short SHA:** `44a0e21`
-- **Commit Message:** `fix(prisma): map explicit index name PlatformOutboxMessage_claim_idx in schema`
-- **Working Tree:** Clean (0 unstaged changes, 0 untracked files)
-- **Tracking:** Up to date with `origin/feat/compose-saas`
+- **Application Codebase Freeze SHA:** `44a0e21c38de2d89ad6bd321a2e0e5ee656d6f7e` (`44a0e21`) — Verified green on CI workflow run #427.
+- **Phase 0 Governance Baseline Commit SHA:** The committed baseline containing all six reconciled governance documents (`docs/ui-reset/*` and `docs/console/parity.md`).
+- **Target Branch Base for Phase 7B.1:** `feat/ui-reset-7b1-foundation` will be branched directly from this reconciled commit once signed off by the owner.
+- **Working Tree:** Clean (0 unstaged changes, 0 untracked files).
+- **Rule:** Zero direct implementation commits to `feat/compose-saas`.
 
 ---
 
@@ -125,9 +125,9 @@ The platform application contains **67 physical Next.js page routes** across 7 r
 | `/platform/configuration` | `apps/platform/src/app/(console)/platform/configuration/page.tsx` | JSON platform configuration editor |
 | `/platform/connect` | `apps/platform/src/app/(console)/platform/connect/page.tsx` | Bridge protocol connection test |
 | `/platform/credentials` | `apps/platform/src/app/(console)/platform/credentials/page.tsx` | Envelope vault credential listing |
-| `/platform/explorer` | `apps/platform/src/app/(console)/platform/explorer/page.tsx` | **Interactive API Explorer & Execution Console** (endpoints, request editor, latency meter) |
+| `/platform/explorer` | `apps/platform/src/app/(console)/platform/explorer/page.tsx` | **Interactive API Explorer & Execution Console** (endpoints, request editor, latency meter; direct client requests; hold for C6 security closure per `18_API_EXPLORER_SECURITY.md`) |
 | `/platform/fleet` | `apps/platform/src/app/(console)/platform/fleet/page.tsx` | Fleet instance telemetry & commands |
-| `/platform/login` | `apps/platform/src/app/(console)/platform/login/page.tsx` | Operator authentication & TOTP verification |
+| `/platform/login` | `apps/platform/src/app/(console)/platform/login/page.tsx` | Operator authentication & TOTP verification (strictly operator login, not customer login) |
 | `/platform/observability` | `apps/platform/src/app/(console)/platform/observability/page.tsx` | Prometheus metrics and latency histograms |
 | `/platform/operations` | `apps/platform/src/app/(console)/platform/operations/page.tsx` | Async saga operation queue stream |
 | `/platform/packages` | `apps/platform/src/app/(console)/platform/packages/page.tsx` | Ed25519 signed package registry status |
