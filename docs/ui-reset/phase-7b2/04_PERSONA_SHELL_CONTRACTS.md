@@ -6,7 +6,7 @@
 **Governing Documents:** `PHASE7_UI_MASTER_BRIEF.md`, `docs/ui-reset/03_SHELL_AND_NAVIGATION_ARCHITECTURE.md`  
 **Accepted Baseline:** `f65698eab17b3a40842360eaeb387c74dca57ecc`  
 **Author:** Principal Frontend & Platform Architect  
-**Date:** November 17, 2026 (Revised)  
+**Date:** November 17, 2026 (Revised Blueprint)  
 
 ---
 
@@ -48,7 +48,7 @@ graph TD
 - **Content Frame:** Focused card layout (`--radius-card: 28px`), max-width 480px (for single cards) or 1200px (for split-screen onboarding preview in `F4`).
 - **Context Slots:** Breadcrumbs slot, progress stepper slot (e.g. `Step 1 of 3`).
 - **Primary Action Slot:** Full-width pill button (`h-12`, `rounded-full`) at the base of the card.
-- **Touch & Accessibility:** Touch targets $\ge 44\text{px}$, autofill compatible inputs, WCAG 2.1 AA focus rings.
+- **Touch & Accessibility:** Touch targets $\ge 44\text{px}$, icon buttons $44–48\text{px}$, autofill compatible inputs, WCAG 2.2 AA focus rings.
 
 ---
 
@@ -105,7 +105,7 @@ graph TD
   - **Tablet Portrait ($834\text{px} \times 1194\text{px}$):** Persistent high-density bottom bar.
   - **Phone ($390\text{px} \times 844\text{px}$):** High-contrast touch grid with persistent bottom bar.
 - **Operational Ergonomics & Invariants:**
-  - Minimum touch target $\ge 48\text{px}$ (exceeding standard 44px for fast, greasy kitchen touches).
+  - **Minimum touch target $\ge 52\text{px}$** for Kitchen/KDS and POS controls (as required by master brief Section 1).
   - High-contrast visual status indicators (`RingTimer`, `VegMark`).
   - Instant station switcher and full-screen toggle slot.
 
@@ -149,7 +149,7 @@ export interface ShellNavigationProps {
 
 ---
 
-### 4.2 Non-Breaking `NavItem` Backward Compatibility (Correction R6-B)
+### 4.2 Non-Breaking `NavItem` Backward Compatibility & Semantic Normalization (Correction R6-B)
 
 The existing `NavItem` interface keeps `href` optional to prevent breaking callers that pass `onClick` action handlers:
 
@@ -166,8 +166,8 @@ export interface NavItem {
 }
 ```
 
-### 4.3 Semantic Normalization Adapter (Eliminating Fake Anchors)
-Inside the rendering adapter of `SidebarCard`, `IconRail`, and `BottomTabBar`, items are normalized to ensure valid HTML semantics:
+### 4.3 Semantic Normalization Adapter (Eliminating Dead Controls)
+Inside the rendering adapter of `SidebarCard`, `IconRail`, and `BottomTabBar`, items are strictly normalized to ensure valid HTML semantics without dead controls:
 
 ```tsx
 export function NavItemRenderer({ item, isCollapsed }: { item: NavItem; isCollapsed?: boolean }) {
@@ -187,8 +187,8 @@ export function NavItemRenderer({ item, isCollapsed }: { item: NavItem; isCollap
     item.disabled && 'opacity-50 pointer-events-none cursor-not-allowed'
   );
 
-  // Invariant: Never render <a href="#">. Render real Link or accessible button.
-  if (item.href && item.href !== '#') {
+  // 1. Real Link Destination (Active Navigation)
+  if (item.href && item.href !== '#' && !item.disabled) {
     return (
       <Link href={item.href} className={className} aria-current={item.active ? 'page' : undefined}>
         {content}
@@ -196,22 +196,35 @@ export function NavItemRenderer({ item, isCollapsed }: { item: NavItem; isCollap
     );
   }
 
+  // 2. Action Callback (Real User Action)
+  if (item.onClick && !item.disabled) {
+    return (
+      <button
+        type="button"
+        onClick={item.onClick}
+        className={className}
+        aria-current={item.active ? 'page' : undefined}
+      >
+        {content}
+      </button>
+    );
+  }
+
+  // 3. Static Item or Disabled State: Renders <span> without dead click or fake anchor
   return (
-    <button
-      type="button"
-      onClick={item.onClick}
-      disabled={item.disabled}
-      className={className}
-      aria-current={item.active ? 'page' : undefined}
+    <span
+      className={cn(className, item.disabled && 'opacity-50 cursor-not-allowed pointer-events-none')}
+      aria-disabled={item.disabled ? 'true' : undefined}
     >
       {content}
-    </button>
+    </span>
   );
 }
 ```
 
 This guarantees that:
-1. Existing callers with `{ id, label, href }` compile and render real router links.
-2. Existing callers with `{ id, label, onClick }` compile and render accessible `<button type="button">`.
-3. If `href` is missing or empty, it **never renders fake `<a href="#">`**.
-4. Existing consumers compile with 100% backward compatibility.
+1. Real `href` $\to$ Next.js `<Link>`.
+2. Action `onClick` $\to$ `<button type="button">`.
+3. Neither $\to$ Static `<span>`.
+4. Disabled items $\to$ Rendered with `aria-disabled="true"` and pointer-events disabled; cannot navigate or invoke actions.
+5. **Zero dead `<button>` elements and zero fake `<a href="#">` anchors rendered under any scenario**.
