@@ -619,4 +619,588 @@ describe('Phase 3: Distributed Provisioning Lease Correctness, Attempt-Scoped To
     const webhooks = getEmittedWebhooks({ tenantId: op.tenantId, event: 'tenant.ready' });
     assert.strictEqual(webhooks.length, 0, 'Webhook tenant.ready must NOT be emitted when lease is fenced');
   });
+
+  it('14. Transaction-internal race: Lease stolen after initial Step 7 validation rolls back activation and outbox', async () => {
+    const slug = `race-step7-${crypto.randomBytes(4).toString('hex')}`;
+    const opId = `op_race_step7_${crypto.randomBytes(6).toString('hex')}`;
+    createdOpIds.push(opId);
+
+    const workerA = 'worker_race_a:att_1';
+    const workerB = 'worker_race_b:att_2';
+
+    const created = await platformRepository.createProject({
+      name: `Race Project ${slug}`,
+      slug,
+      organizationId: testOrg.id,
+      planTier: 'free',
+      businessModel: 'B2B',
+      technicalLead: 'lead@orbitox.io',
+      contactEmail: 'contact@orbitox.io',
+    });
+    const projectId = (created as any).project?.id || (created as any).id;
+    await platformRepository.updateProject(projectId, { status: 'PROVISIONING' });
+
+    const tenantId = `org/${testOrg.id}/project/${slug}/environment/production`;
+    const op: PlatformOperationRecord = {
+      id: opId,
+      type: 'TENANT_PROVISION',
+      tenantId,
+      organizationId: testOrg.id,
+      status: 'PROVISIONING',
+      leaseOwner: workerA,
+      leaseExpiresAt: new Date(Date.now() + 10000).toISOString(),
+      steps: [
+        { id: '1', name: 'Step 1', status: 'COMPLETED' },
+        { id: '2', name: 'Step 2', status: 'COMPLETED' },
+        { id: '3', name: 'Step 3', status: 'COMPLETED' },
+        { id: '4', name: 'Step 4', status: 'COMPLETED' },
+        { id: '5', name: 'Plugin provisioning', status: 'COMPLETED' },
+        { id: '6', name: 'Initial grant push', status: 'COMPLETED' },
+        { id: '7', name: 'Final tenant activation', status: 'PENDING' },
+      ],
+      request: { name: `Race Resto ${slug}`, slug, plugins: [{ id: 'restaurant-os', plan: 'restaurant-starter' }] },
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+    await operationStore.createOperation(op);
+
+    const { clearEmittedWebhooks, getEmittedWebhooks } = await import('@/server/provisioning/webhook-emitter');
+    clearEmittedWebhooks();
+
+    // Hook: right AFTER initial validation in finalizeProjectActivationAndOutbox transaction,
+    // another connection steals the lease directly in PostgreSQL!
+    (globalThis as any).__test_on_after_step7_validation = async () => {
+      await (prisma as any).$queryRaw`
+        UPDATE "PlatformOperation"
+        SET "leaseOwner" = ${workerB},
+            "leaseExpiresAt" = NOW() + INTERVAL '30 seconds',
+            "updatedAt" = NOW()
+        WHERE "id" = ${opId}
+      `;
+    };
+
+    try {
+      await provisioningSaga.executeAsyncSteps(
+        opId,
+        {
+          name: `Race Resto ${slug}`,
+          slug,
+          organizationId: testOrg.id,
+          environment: 'production',
+          plugins: [{ id: 'restaurant-os', plan: 'restaurant-starter', planTier: 'STARTER', runtimeUrl: 'http://localhost:3000' } as any],
+        },
+        tenantId,
+        testOrg,
+        slug,
+        'production',
+        { workerId: workerA }
+      );
+    } finally {
+      delete (globalThis as any).__test_on_after_step7_validation;
+    }
+
+    // 1. Stale worker A must not have restored operation to ACTIVE
+    const finalOp = await operationStore.getOperation(opId);
+    assert.strictEqual(finalOp?.leaseOwner, workerB);
+    assert.notStrictEqual(finalOp?.status, 'ACTIVE');
+
+    // 2. Project must remain PROVISIONING (rolled back)
+    const freshProject = await platformRepository.getProject(slug);
+    assert.strictEqual(freshProject?.status, 'PROVISIONING');
+
+    // 3. No outbox message committed
+    const outboxMsgs = await (prisma as any).platformOutboxMessage.findMany({
+      where: { tenantId, eventType: 'tenant.ready' },
+    });
+    assert.strictEqual(outboxMsgs.length, 0);
+
+    // 4. No webhook emitted
+    const webhooks = getEmittedWebhooks({ tenantId, event: 'tenant.ready' });
+    assert.strictEqual(webhooks.length, 0);
+  });
+
+  it('15. Transaction-internal race: Concurrent cancellation during Step 7 finalization rolls back and keeps CANCELLING/CANCELLED', async () => {
+    const slug = `canc-step7-${crypto.randomBytes(4).toString('hex')}`;
+    const opId = `op_canc_step7_${crypto.randomBytes(6).toString('hex')}`;
+    createdOpIds.push(opId);
+
+    const workerA = 'worker_canc_a:att_1';
+
+    const created = await platformRepository.createProject({
+      name: `Canc Step7 Project ${slug}`,
+      slug,
+      organizationId: testOrg.id,
+      planTier: 'free',
+      businessModel: 'B2B',
+      technicalLead: 'lead@orbitox.io',
+      contactEmail: 'contact@orbitox.io',
+    });
+    const projectId = (created as any).project?.id || (created as any).id;
+    await platformRepository.updateProject(projectId, { status: 'PROVISIONING' });
+
+    const tenantId = `org/${testOrg.id}/project/${slug}/environment/production`;
+    const op: PlatformOperationRecord = {
+      id: opId,
+      type: 'TENANT_PROVISION',
+      tenantId,
+      organizationId: testOrg.id,
+      status: 'PROVISIONING',
+      leaseOwner: workerA,
+      leaseExpiresAt: new Date(Date.now() + 10000).toISOString(),
+      steps: [
+        { id: '1', name: 'Step 1', status: 'COMPLETED' },
+        { id: '2', name: 'Step 2', status: 'COMPLETED' },
+        { id: '3', name: 'Step 3', status: 'COMPLETED' },
+        { id: '4', name: 'Step 4', status: 'COMPLETED' },
+        { id: '5', name: 'Plugin provisioning', status: 'COMPLETED' },
+        { id: '6', name: 'Initial grant push', status: 'COMPLETED' },
+        { id: '7', name: 'Final tenant activation', status: 'PENDING' },
+      ],
+      request: { name: `Canc Resto ${slug}`, slug, plugins: [] },
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+    await operationStore.createOperation(op);
+
+    const { clearEmittedWebhooks, getEmittedWebhooks } = await import('@/server/provisioning/webhook-emitter');
+    clearEmittedWebhooks();
+
+    // Hook: concurrent connection cancels operation after initial validation
+    (globalThis as any).__test_on_after_step7_validation = async () => {
+      await (prisma as any).$queryRaw`
+        UPDATE "PlatformOperation"
+        SET "status" = 'CANCELLING',
+            "leaseOwner" = NULL,
+            "leaseExpiresAt" = NULL,
+            "updatedAt" = NOW()
+        WHERE "id" = ${opId}
+      `;
+    };
+
+    try {
+      await provisioningSaga.executeAsyncSteps(
+        opId,
+        {
+          name: `Canc Resto ${slug}`,
+          slug,
+          organizationId: testOrg.id,
+          environment: 'production',
+          plugins: [],
+        },
+        tenantId,
+        testOrg,
+        slug,
+        'production',
+        { workerId: workerA }
+      );
+    } finally {
+      delete (globalThis as any).__test_on_after_step7_validation;
+    }
+
+    const finalOp = await operationStore.getOperation(opId);
+    assert.ok(['CANCELLING', 'CANCELLED'].includes(finalOp?.status || ''));
+    assert.notStrictEqual(finalOp?.status, 'ACTIVE');
+
+    const freshProject = await platformRepository.getProject(slug);
+    assert.strictEqual(freshProject?.status, 'PROVISIONING');
+
+    const outboxMsgs = await (prisma as any).platformOutboxMessage.findMany({
+      where: { tenantId, eventType: 'tenant.ready' },
+    });
+    assert.strictEqual(outboxMsgs.length, 0);
+
+    const webhooks = getEmittedWebhooks({ tenantId, event: 'tenant.ready' });
+    assert.strictEqual(webhooks.length, 0);
+  });
+
+  it('16. Cross-instance cancellation: Worker on instance A aborts promptly when cancellation is initiated from instance B', async () => {
+    const slug = `cross-inst-${crypto.randomBytes(4).toString('hex')}`;
+    const opId = `op_cross_inst_${crypto.randomBytes(6).toString('hex')}`;
+    createdOpIds.push(opId);
+
+    const { ProvisioningSaga } = await import('@/server/provisioning/provisioning-saga');
+    const instanceA = new ProvisioningSaga();
+    const instanceB = new ProvisioningSaga();
+
+    const workerA = `${instanceA.workerInstanceId}:att_1`;
+    const tenantId = `org/${testOrg.id}/project/${slug}/environment/production`;
+
+    const op: PlatformOperationRecord = {
+      id: opId,
+      type: 'TENANT_PROVISION',
+      tenantId,
+      organizationId: testOrg.id,
+      status: 'PROVISIONING',
+      leaseOwner: workerA,
+      leaseExpiresAt: new Date(Date.now() + 10000).toISOString(),
+      steps: [
+        { id: '1', name: 'Step 1', status: 'COMPLETED' },
+        { id: '2', name: 'Step 2', status: 'COMPLETED' },
+        { id: '3', name: 'Step 3', status: 'COMPLETED' },
+        { id: '4', name: 'Step 4', status: 'COMPLETED' },
+        { id: '5', name: 'Plugin provisioning', status: 'PENDING' },
+        { id: '6', name: 'Initial grant push', status: 'PENDING' },
+        { id: '7', name: 'Final tenant activation', status: 'PENDING' },
+      ],
+      request: { name: `Cross Inst ${slug}`, slug, plugins: [] },
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+    await operationStore.createOperation(op);
+
+    // Cancel from instance B
+    const cancelled = await instanceB.cancelOperation(opId);
+    assert.strictEqual(cancelled, true);
+
+    const freshOp = await operationStore.getOperation(opId);
+    assert.strictEqual(freshOp?.status, 'CANCELLED');
+    assert.strictEqual(freshOp?.leaseOwner, null);
+
+    // When instance A tries to run async steps, it detects terminal status immediately
+    await instanceA.executeAsyncSteps(
+      opId,
+      {
+        name: `Cross Inst ${slug}`,
+        slug,
+        organizationId: testOrg.id,
+        environment: 'production',
+        plugins: [],
+      },
+      tenantId,
+      testOrg,
+      slug,
+      'production',
+      { workerId: workerA }
+    );
+
+    const postOp = await operationStore.getOperation(opId);
+    assert.strictEqual(postOp?.status, 'CANCELLED');
+    assert.strictEqual(postOp?.steps.find((s) => s.id === '7')?.status, 'PENDING');
+  });
+
+  it('17. Reconciliation: External plugin succeeds remotely but response lost, cancellation cleans up via probe', async () => {
+    const slug = `reconcile-${crypto.randomBytes(4).toString('hex')}`;
+    const opId = `op_reconcile_${crypto.randomBytes(6).toString('hex')}`;
+    createdOpIds.push(opId);
+
+    const tenantId = `org/${testOrg.id}/project/${slug}/environment/production`;
+    const pluginId = '@orbitox/restaurant';
+
+    let deprovisionCalled = false;
+    const originalInvoke = pluginLifecycleClient.invokeLifecycle;
+    pluginLifecycleClient.invokeLifecycle = async (pId, action, tId, payload, opts) => {
+      if (action === 'deprovision') {
+        deprovisionCalled = true;
+        return { ok: true, tenantId: tId };
+      }
+      return originalInvoke.call(pluginLifecycleClient, pId, action, tId, payload, opts);
+    };
+
+    try {
+      const op: PlatformOperationRecord = {
+        id: opId,
+        type: 'TENANT_PROVISION',
+        tenantId,
+        organizationId: testOrg.id,
+        status: 'PROVISIONING',
+        leaseOwner: 'worker_rec:att_1',
+        leaseExpiresAt: new Date(Date.now() + 10000).toISOString(),
+        steps: [
+          { id: '1', name: 'Step 1', status: 'COMPLETED' },
+          { id: '2', name: 'Step 2', status: 'COMPLETED' },
+          { id: '3', name: 'Step 3', status: 'COMPLETED' },
+          { id: '4', name: 'Step 4', status: 'COMPLETED' },
+          { id: '5', name: 'Plugin provisioning', status: 'FAILED', error: 'Network dropped before response' },
+          { id: '6', name: 'Initial grant push', status: 'PENDING' },
+          { id: '7', name: 'Final tenant activation', status: 'PENDING' },
+        ],
+        request: { name: `Reconcile Resto ${slug}`, slug, plugins: [{ id: pluginId, plan: 'starter' }] },
+        result: {
+          inFlightPlugins: [pluginId],
+        },
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      };
+      await operationStore.createOperation(op);
+
+      // Probe returns true (remote resource was created before network drop)
+      const probe = async (p: string, t: string) => p === pluginId && t === tenantId;
+      const cancelled = await provisioningSaga.cancelOperation(opId, { probe });
+
+      assert.strictEqual(cancelled, true);
+      assert.strictEqual(deprovisionCalled, true, 'Deprovision must be called for reconciled remote plugin');
+
+      const finalOp = await operationStore.getOperation(opId);
+      assert.strictEqual(finalOp?.status, 'CANCELLED');
+    } finally {
+      pluginLifecycleClient.invokeLifecycle = originalInvoke;
+    }
+  });
+
+  it('18. Aborted request with remote commit: Compensation cleans up remote resource discovered via reconciliation probe', async () => {
+    const slug = `abort-commit-${crypto.randomBytes(4).toString('hex')}`;
+    const opId = `op_abort_commit_${crypto.randomBytes(6).toString('hex')}`;
+    createdOpIds.push(opId);
+
+    const tenantId = `org/${testOrg.id}/project/${slug}/environment/production`;
+    const pluginId = '@orbitox/hms';
+
+    let deprovisionInvoked = false;
+    const originalInvoke = pluginLifecycleClient.invokeLifecycle;
+    pluginLifecycleClient.invokeLifecycle = async (pId, action, tId, payload, opts) => {
+      if (action === 'deprovision') {
+        deprovisionInvoked = true;
+        return { ok: true, tenantId: tId };
+      }
+      return originalInvoke.call(pluginLifecycleClient, pId, action, tId, payload, opts);
+    };
+
+    try {
+      const op: PlatformOperationRecord = {
+        id: opId,
+        type: 'TENANT_PROVISION',
+        tenantId,
+        organizationId: testOrg.id,
+        status: 'PROVISIONING',
+        leaseOwner: 'worker_abort:att_1',
+        leaseExpiresAt: new Date(Date.now() + 10000).toISOString(),
+        steps: [
+          { id: '1', name: 'Step 1', status: 'COMPLETED' },
+          { id: '2', name: 'Step 2', status: 'COMPLETED' },
+          { id: '3', name: 'Step 3', status: 'COMPLETED' },
+          { id: '4', name: 'Step 4', status: 'COMPLETED' },
+          { id: '5', name: 'Plugin provisioning', status: 'FAILED', error: 'Client aborted HTTP request' },
+          { id: '6', name: 'Initial grant push', status: 'PENDING' },
+          { id: '7', name: 'Final tenant activation', status: 'PENDING' },
+        ],
+        request: { name: `Abort Commit ${slug}`, slug, plugins: [{ id: pluginId, plan: 'enterprise' }] },
+        result: {
+          inFlightPlugins: [pluginId],
+        },
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      };
+      await operationStore.createOperation(op);
+
+      const probe = async (p: string) => p === pluginId;
+      const cancelled = await provisioningSaga.cancelOperation(opId, { probe });
+
+      assert.strictEqual(cancelled, true);
+      assert.strictEqual(deprovisionInvoked, true, 'Deprovision must clean up committed remote resource');
+
+      const finalOp = await operationStore.getOperation(opId);
+      assert.strictEqual(finalOp?.status, 'CANCELLED');
+    } finally {
+      pluginLifecycleClient.invokeLifecycle = originalInvoke;
+    }
+  });
+
+  it('19. Compensation failure: Leaves operation in CANCELLING, records failures, and retries remaining plugins on next call', async () => {
+    const slug = `comp-fail-${crypto.randomBytes(4).toString('hex')}`;
+    const opId = `op_comp_fail_${crypto.randomBytes(6).toString('hex')}`;
+    createdOpIds.push(opId);
+
+    const tenantId = `org/${testOrg.id}/project/${slug}/environment/production`;
+    const pluginA = '@orbitox/hms';
+    const pluginB = '@orbitox/restaurant';
+
+    let deprovisionCalls: string[] = [];
+    let pluginBShouldFail = true;
+
+    const originalInvoke = pluginLifecycleClient.invokeLifecycle;
+    pluginLifecycleClient.invokeLifecycle = async (pId, action, tId, payload, opts) => {
+      if (action === 'deprovision') {
+        deprovisionCalls.push(pId);
+        if (pId === pluginB && pluginBShouldFail) {
+          return { ok: false, error: 'Remote service temporarily unavailable 503' };
+        }
+        return { ok: true, tenantId: tId };
+      }
+      return originalInvoke.call(pluginLifecycleClient, pId, action, tId, payload, opts);
+    };
+
+    try {
+      const op: PlatformOperationRecord = {
+        id: opId,
+        type: 'TENANT_PROVISION',
+        tenantId,
+        organizationId: testOrg.id,
+        status: 'PROVISIONING',
+        leaseOwner: 'worker_comp:att_1',
+        leaseExpiresAt: new Date(Date.now() + 10000).toISOString(),
+        steps: [
+          { id: '1', name: 'Step 1', status: 'COMPLETED' },
+          { id: '2', name: 'Step 2', status: 'COMPLETED' },
+          { id: '3', name: 'Step 3', status: 'COMPLETED' },
+          { id: '4', name: 'Step 4', status: 'COMPLETED' },
+          { id: '5', name: 'Plugin provisioning', status: 'COMPLETED' },
+          { id: '6', name: 'Initial grant push', status: 'PENDING' },
+          { id: '7', name: 'Final tenant activation', status: 'PENDING' },
+        ],
+        request: { name: `Comp Resto ${slug}`, slug, plugins: [{ id: pluginA, plan: 'p1' }, { id: pluginB, plan: 'p2' }] },
+        result: {
+          succeededPlugins: [pluginA, pluginB],
+        },
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      };
+      await operationStore.createOperation(op);
+
+      // Attempt 1: Plugin B fails deprovision
+      const result1 = await provisioningSaga.cancelOperation(opId);
+      assert.strictEqual(result1, false, 'cancelOperation must return false when compensation is incomplete');
+
+      const opState1 = await operationStore.getOperation(opId);
+      assert.strictEqual(opState1?.status, 'CANCELLING', 'Operation must remain CANCELLING on compensation failure');
+      assert.ok(Array.isArray(opState1?.result?.compensationFailures));
+      assert.strictEqual(opState1?.result?.compensationFailures.length, 1);
+      assert.strictEqual(opState1?.result?.compensationFailures[0].pluginId, pluginB);
+      assert.deepStrictEqual(opState1?.result?.compensatedPlugins, [pluginA]);
+
+      // Service B recovers
+      pluginBShouldFail = false;
+      deprovisionCalls = [];
+
+      // Attempt 2: Retry compensation
+      const result2 = await provisioningSaga.cancelOperation(opId);
+      assert.strictEqual(result2, true, 'cancelOperation must return true once all compensations succeed');
+
+      // Verify plugin A was NOT called again (idempotent skip of already-compensated plugins)
+      assert.strictEqual(deprovisionCalls.includes(pluginA), false, 'Already compensated plugin must not be re-invoked');
+      assert.strictEqual(deprovisionCalls.includes(pluginB), true, 'Pending failed plugin must be retried');
+
+      const opState2 = await operationStore.getOperation(opId);
+      assert.strictEqual(opState2?.status, 'CANCELLED');
+      assert.deepStrictEqual(opState2?.result?.compensationFailures, []);
+    } finally {
+      pluginLifecycleClient.invokeLifecycle = originalInvoke;
+    }
+  });
+
+  it('20. Terminal hardening: Cancelled or cancelling operations reject lease claims, retries, and updates', async () => {
+    const slug = `term-hard-${crypto.randomBytes(4).toString('hex')}`;
+    const opId = `op_term_hard_${crypto.randomBytes(6).toString('hex')}`;
+    createdOpIds.push(opId);
+
+    const tenantId = `org/${testOrg.id}/project/${slug}/environment/production`;
+    const op: PlatformOperationRecord = {
+      id: opId,
+      type: 'TENANT_PROVISION',
+      tenantId,
+      organizationId: testOrg.id,
+      status: 'CANCELLED',
+      leaseOwner: null,
+      leaseExpiresAt: null,
+      steps: [{ id: '1', name: 'Step 1', status: 'FAILED' }],
+      request: { name: `Term Hard ${slug}`, slug, plugins: [] },
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+    await operationStore.createOperation(op);
+
+    // 1. claimOperationLease returns false
+    const claimNormal = await operationStore.claimOperationLease(opId, 'worker_new:att_1', 30);
+    assert.strictEqual(claimNormal, false, 'claimOperationLease must reject CANCELLED operations');
+
+    // 2. Force claim returns false
+    const claimForce = await operationStore.claimOperationLease(opId, 'worker_new:att_1', 30, { force: true });
+    assert.strictEqual(claimForce, false, 'claimOperationLease with force must reject CANCELLED operations');
+
+    // 3. retryOperation returns null
+    const retryResult = await provisioningSaga.retryOperation(opId);
+    assert.strictEqual(retryResult, null, 'retryOperation must reject CANCELLED operations');
+
+    // 4. resumeWorkflow refuses to execute and returns op
+    const resumeResult = await provisioningSaga.resumeWorkflow(opId);
+    assert.strictEqual(resumeResult?.status, 'CANCELLED');
+
+    // 5. updateOperation throws OPERATION_CANCELLED when trying to restore status to PROVISIONING
+    await assert.rejects(
+      async () => {
+        await operationStore.updateOperation(opId, { status: 'PROVISIONING' });
+      },
+      /OPERATION_CANCELLED/
+    );
+  });
+
+  it('21. Exactly-once finalization: Recovery never duplicates outbox tenant.ready messages or webhooks', async () => {
+    const slug = `no-dup-${crypto.randomBytes(4).toString('hex')}`;
+    const opId = `op_no_dup_${crypto.randomBytes(6).toString('hex')}`;
+    createdOpIds.push(opId);
+
+    const worker = 'worker_nodup:att_1';
+    const tenantId = `org/${testOrg.id}/project/${slug}/environment/production`;
+
+    const created = await platformRepository.createProject({
+      name: `No Dup Project ${slug}`,
+      slug,
+      organizationId: testOrg.id,
+      planTier: 'free',
+      businessModel: 'B2B',
+      technicalLead: 'lead@orbitox.io',
+      contactEmail: 'contact@orbitox.io',
+    });
+    const projectId = (created as any).project?.id || (created as any).id;
+    await platformRepository.updateProject(projectId, { status: 'PROVISIONING' });
+
+    const op: PlatformOperationRecord = {
+      id: opId,
+      type: 'TENANT_PROVISION',
+      tenantId,
+      organizationId: testOrg.id,
+      status: 'PROVISIONING',
+      leaseOwner: worker,
+      leaseExpiresAt: new Date(Date.now() + 10000).toISOString(),
+      steps: [
+        { id: '1', name: 'Step 1', status: 'COMPLETED' },
+        { id: '2', name: 'Step 2', status: 'COMPLETED' },
+        { id: '3', name: 'Step 3', status: 'COMPLETED' },
+        { id: '4', name: 'Step 4', status: 'COMPLETED' },
+        { id: '5', name: 'Plugin provisioning', status: 'COMPLETED' },
+        { id: '6', name: 'Initial grant push', status: 'COMPLETED' },
+        { id: '7', name: 'Final tenant activation', status: 'PENDING' },
+      ],
+      request: { name: `No Dup Resto ${slug}`, slug, plugins: [] },
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+    await operationStore.createOperation(op);
+
+    const { clearEmittedWebhooks, getEmittedWebhooks } = await import('@/server/provisioning/webhook-emitter');
+    clearEmittedWebhooks();
+
+    // 1. Run execution to completion (Step 7 finalizes)
+    await provisioningSaga.executeAsyncSteps(
+      opId,
+      {
+        name: `No Dup Resto ${slug}`,
+        slug,
+        organizationId: testOrg.id,
+        environment: 'production',
+        plugins: [],
+      },
+      tenantId,
+      testOrg,
+      slug,
+      'production',
+      { workerId: worker }
+    );
+
+    const finalOp = await operationStore.getOperation(opId);
+    assert.strictEqual(finalOp?.status, 'ACTIVE');
+
+    // 2. Recovery attempts resumeWorkflow or retryOperation on completed operation
+    await provisioningSaga.resumeWorkflow(opId);
+    await provisioningSaga.retryOperation(opId);
+
+    // 3. Verify exactly 1 outbox message for tenant.ready
+    const outboxMsgs = await (prisma as any).platformOutboxMessage.findMany({
+      where: { tenantId, eventType: 'tenant.ready' },
+    });
+    assert.strictEqual(outboxMsgs.length, 1, 'Exactly one outbox message must be recorded');
+
+    // 4. Verify exactly 1 webhook emission
+    const webhooks = getEmittedWebhooks({ tenantId, event: 'tenant.ready' });
+    assert.strictEqual(webhooks.length, 1, 'Exactly one tenant.ready webhook must be emitted');
+  });
 });

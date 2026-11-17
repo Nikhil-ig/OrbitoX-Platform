@@ -20,6 +20,7 @@ export type OperationStatus =
   | 'ACTIVE'
   | 'PARTIAL'
   | 'FAILED'
+  | 'CANCELLING'
   | 'CANCELLED';
 
 export type OperationStepStatus =

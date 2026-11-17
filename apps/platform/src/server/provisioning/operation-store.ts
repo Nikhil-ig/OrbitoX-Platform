@@ -207,9 +207,13 @@ export class OperationStore {
       const existing = memoryOperations.get(id);
       if (!existing) return null;
 
-      if (existing.status === 'CANCELLED' && updates.status !== 'CANCELLED') {
+      if (
+        ['CANCELLED', 'CANCELLING'].includes(existing.status) &&
+        updates.status !== undefined &&
+        !['CANCELLED', 'CANCELLING'].includes(updates.status as string)
+      ) {
         throw new Error(
-          `OPERATION_CANCELLED: Operation ${id} is cancelled and cannot be updated.`
+          `OPERATION_CANCELLED: Operation ${id} is ${existing.status} and cannot be updated to ${updates.status}.`
         );
       }
 
@@ -242,9 +246,13 @@ export class OperationStore {
     const existing = await this.getOperation(id);
     if (!existing) return null;
 
-    if (existing.status === 'CANCELLED' && updates.status !== 'CANCELLED') {
+    if (
+      ['CANCELLED', 'CANCELLING'].includes(existing.status) &&
+      updates.status !== undefined &&
+      !['CANCELLED', 'CANCELLING'].includes(updates.status as string)
+    ) {
       throw new Error(
-        `OPERATION_CANCELLED: Operation ${id} is cancelled and cannot be updated.`
+        `OPERATION_CANCELLED: Operation ${id} is ${existing.status} and cannot be updated to ${updates.status}.`
       );
     }
 
@@ -266,8 +274,8 @@ export class OperationStore {
 
     try {
       const whereClause: any = { id };
-      if (updates.status !== 'CANCELLED') {
-        whereClause.status = { not: 'CANCELLED' };
+      if (updates.status !== undefined && !['CANCELLED', 'CANCELLING'].includes(updates.status as string)) {
+        whereClause.status = { notIn: ['CANCELLED', 'CANCELLING'] };
       }
       if (options.expectedLeaseOwner) {
         whereClause.leaseOwner = options.expectedLeaseOwner;
@@ -292,8 +300,8 @@ export class OperationStore {
 
       if (updateResult.count === 0) {
         const current = await this.getOperation(id);
-        if (current?.status === 'CANCELLED') {
-          throw new Error(`OPERATION_CANCELLED: Operation ${id} is cancelled.`);
+        if (current?.status === 'CANCELLED' || current?.status === 'CANCELLING') {
+          throw new Error(`OPERATION_CANCELLED: Operation ${id} is ${current.status}.`);
         }
         if (options.expectedLeaseOwner) {
           throw new Error(
@@ -333,6 +341,7 @@ export class OperationStore {
       masked?: string;
       environmentId?: string;
     };
+    onAfterValidation?: () => Promise<void>;
   }): Promise<{ webhookPayload: Record<string, any> }> {
     const webhookPayload = {
       operationId: input.operationId,
@@ -353,7 +362,7 @@ export class OperationStore {
       if (!existing) {
         throw new Error(`LEASE_FENCING_ERROR: Operation ${input.operationId} not found`);
       }
-      if (existing.status === 'CANCELLED') {
+      if (existing.status === 'CANCELLED' || existing.status === 'CANCELLING') {
         throw new Error(`OPERATION_CANCELLED: Operation ${input.operationId} was cancelled.`);
       }
       const now = Date.now();
@@ -364,9 +373,25 @@ export class OperationStore {
         );
       }
 
-      existing.status = 'ACTIVE';
-      existing.steps = input.steps;
-      existing.result = {
+      if (input.onAfterValidation) {
+        await input.onAfterValidation();
+      }
+
+      const recheck = memoryOperations.get(input.operationId);
+      if (!recheck || recheck.status === 'CANCELLED' || recheck.status === 'CANCELLING') {
+        throw new Error(`OPERATION_CANCELLED: Operation ${input.operationId} was cancelled during finalization.`);
+      }
+      const now2 = Date.now();
+      const expiresAt2 = recheck.leaseExpiresAt ? new Date(recheck.leaseExpiresAt).getTime() : 0;
+      if (recheck.leaseOwner !== input.expectedLeaseOwner || expiresAt2 < now2) {
+        throw new Error(
+          `LEASE_FENCING_ERROR: Lease owner mismatch or expired. Expected ${input.expectedLeaseOwner}, got ${recheck.leaseOwner} (expiresAt=${recheck.leaseExpiresAt})`
+        );
+      }
+
+      recheck.status = 'ACTIVE';
+      recheck.steps = input.steps;
+      recheck.result = {
         tenantId: input.tenantId,
         organizationId: input.organizationId,
         slug: input.cleanSlug,
@@ -378,9 +403,9 @@ export class OperationStore {
         })),
         apiKey: input.apiKey,
       };
-      existing.updatedAt = new Date().toISOString();
-      existing.completedAt = new Date().toISOString();
-      memoryOperations.set(input.operationId, existing);
+      recheck.updatedAt = new Date().toISOString();
+      recheck.completedAt = new Date().toISOString();
+      memoryOperations.set(input.operationId, recheck);
       return { webhookPayload };
     }
 
@@ -392,7 +417,7 @@ export class OperationStore {
         if (!op) {
           throw new Error(`LEASE_FENCING_ERROR: Operation ${input.operationId} not found`);
         }
-        if (op.status === 'CANCELLED') {
+        if (op.status === 'CANCELLED' || op.status === 'CANCELLING') {
           throw new Error(`OPERATION_CANCELLED: Operation ${input.operationId} was cancelled.`);
         }
         const now = new Date();
@@ -406,7 +431,52 @@ export class OperationStore {
           );
         }
 
-        // 1. Activate project
+        // Internal hook for testing transaction-internal races
+        if (input.onAfterValidation) {
+          await input.onAfterValidation();
+        }
+
+        // 1. Conditional Compare-And-Set (CAS) update on PlatformOperation
+        const resultPayload = {
+          tenantId: input.tenantId,
+          organizationId: input.organizationId,
+          slug: input.cleanSlug,
+          status: 'ACTIVE',
+          plugins: input.plugins.map((p) => ({
+            id: p.id,
+            plan: p.plan,
+            status: 'ACTIVE',
+          })),
+          apiKey: input.apiKey,
+        };
+
+        const updatedRows = await (tx as any).$queryRaw<Array<{ id: string }>>`
+          UPDATE "PlatformOperation"
+          SET "status" = 'ACTIVE',
+              "steps" = ${JSON.stringify(input.steps)}::jsonb,
+              "result" = ${JSON.stringify(resultPayload)}::jsonb,
+              "updatedAt" = NOW(),
+              "completedAt" = NOW()
+          WHERE "id" = ${input.operationId}
+            AND "leaseOwner" = ${input.expectedLeaseOwner}
+            AND "leaseExpiresAt" > NOW()
+            AND "status" NOT IN ('CANCELLED', 'CANCELLING', 'FAILED', 'COMPLETED')
+          RETURNING "id"
+        `;
+
+        if (!Array.isArray(updatedRows) || updatedRows.length === 0) {
+          const current = await tx.platformOperation.findUnique({
+            where: { id: input.operationId },
+          });
+          if (current?.status === 'CANCELLED' || current?.status === 'CANCELLING') {
+            throw new Error(`OPERATION_CANCELLED: Operation ${input.operationId} was cancelled during finalization.`);
+          }
+          throw new Error(
+            `LEASE_FENCING_ERROR: Operation lease fencing failed at finalization. Expected ${input.expectedLeaseOwner}, current leaseOwner=${current?.leaseOwner}, expiresAt=${current?.leaseExpiresAt}`
+          );
+        }
+
+        // 2. Activate project
         if (input.projectId) {
           await tx.platformProject.update({
             where: { id: input.projectId },
@@ -414,7 +484,7 @@ export class OperationStore {
           });
         }
 
-        // 2. Insert outbox message
+        // 3. Insert outbox message
         await (tx as any).$queryRaw`SELECT set_config('app.current_tenant_id', ${input.tenantId}, true)`;
         await tx.platformOutboxMessage.create({
           data: {
@@ -424,29 +494,6 @@ export class OperationStore {
             aggregateId: input.tenantId,
             payload: webhookPayload,
             status: 'PENDING',
-          },
-        });
-
-        // 3. Mark operation ACTIVE
-        await tx.platformOperation.update({
-          where: { id: input.operationId },
-          data: {
-            status: 'ACTIVE',
-            steps: input.steps as any,
-            result: {
-              tenantId: input.tenantId,
-              organizationId: input.organizationId,
-              slug: input.cleanSlug,
-              status: 'ACTIVE',
-              plugins: input.plugins.map((p) => ({
-                id: p.id,
-                plan: p.plan,
-                status: 'ACTIVE',
-              })),
-              apiKey: input.apiKey,
-            } as any,
-            updatedAt: now,
-            completedAt: now,
           },
         });
       });
@@ -481,6 +528,9 @@ export class OperationStore {
     if (process.env.ORBITOX_PLATFORM_REPOSITORY === 'json') {
       const mem = memoryOperations.get(id);
       if (mem) {
+        if (['CANCELLED', 'CANCELLING', 'COMPLETED'].includes(mem.status)) {
+          return false;
+        }
         const now = Date.now();
         const expiresAt = mem.leaseExpiresAt ? new Date(mem.leaseExpiresAt).getTime() : 0;
         if (isForce || !mem.leaseExpiresAt || expiresAt < now) {
@@ -501,6 +551,7 @@ export class OperationStore {
             "updatedAt" = NOW()
         WHERE "id" = ${id}
           AND (${isForce} = true OR "leaseExpiresAt" IS NULL OR "leaseExpiresAt" < NOW())
+          AND "status" NOT IN ('CANCELLED', 'CANCELLING', 'COMPLETED')
         RETURNING id
       `;
       return Array.isArray(rows) && rows.length > 0;
@@ -527,7 +578,7 @@ export class OperationStore {
 
     if (process.env.ORBITOX_PLATFORM_REPOSITORY === 'json') {
       const mem = memoryOperations.get(id);
-      if (mem && mem.leaseOwner === leaseOwner) {
+      if (mem && mem.leaseOwner === leaseOwner && !['CANCELLED', 'CANCELLING', 'COMPLETED'].includes(mem.status)) {
         const now = Date.now();
         const expiresAt = mem.leaseExpiresAt ? new Date(mem.leaseExpiresAt).getTime() : 0;
         if (expiresAt >= now) {
@@ -546,6 +597,7 @@ export class OperationStore {
         WHERE "id" = ${id}
           AND "leaseOwner" = ${leaseOwner}
           AND "leaseExpiresAt" >= NOW()
+          AND "status" NOT IN ('CANCELLED', 'CANCELLING', 'COMPLETED')
         RETURNING id
       `;
       return Array.isArray(rows) && rows.length > 0;

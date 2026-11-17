@@ -580,7 +580,7 @@ export class ProvisioningSaga {
         abortController.abort();
         throw new Error(`LEASE_LOST: Lease expired for operation ${operationId}`);
       }
-      if (['CANCELLED', 'FAILED', 'COMPLETED'].includes(freshOp.status)) {
+      if (['CANCELLED', 'CANCELLING', 'FAILED', 'COMPLETED'].includes(freshOp.status)) {
         leaseLost = true;
         abortController.abort();
         throw new Error(`OPERATION_TERMINAL: Operation ${operationId} is in terminal state ${freshOp.status}`);
@@ -610,6 +610,18 @@ export class ProvisioningSaga {
         await assertActiveLease();
         const t5 = performance.now();
         await updateStep('5', 'RUNNING', { startedAt: new Date().toISOString() });
+
+        const requestedPlugins = input.plugins.map((p) => canonicalizePluginId(p.id));
+        await operationStore.updateOperation(
+          operationId,
+          {
+            result: {
+              ...(op.result || {}),
+              inFlightPlugins: requestedPlugins,
+            },
+          },
+          { expectedLeaseOwner: attemptLeaseOwner }
+        ).catch(() => {});
 
         // F2: Honour TEST_STEP5_DELAY_MS only in test environments; strictly impossible in production
         const runtimeNodeEnv = process.env['NODE_' + 'ENV'] || process.env.NODE_ENV;
@@ -654,6 +666,17 @@ export class ProvisioningSaga {
                 config: plugin.config || {},
                 entitlementRevision: 1,
               });
+              await assertActiveLease();
+              await operationStore.updateOperation(
+                operationId,
+                {
+                  result: {
+                    ...(op.result || {}),
+                    succeededPlugins: [...succeededPlugins],
+                  },
+                },
+                { expectedLeaseOwner: attemptLeaseOwner }
+              ).catch(() => {});
               return { pluginId: canonical, ok: true };
             } else {
               try {
@@ -771,6 +794,7 @@ export class ProvisioningSaga {
         );
 
         // Atomic transaction: verify lease owner and unexpired validity, activate project, record outbox message, mark operation ACTIVE
+        const internalHook = (options as any)?.onAfterValidation || (globalThis as any).__test_on_after_step7_validation;
         const { webhookPayload } = await operationStore.finalizeProjectActivationAndOutbox({
           operationId,
           expectedLeaseOwner: attemptLeaseOwner,
@@ -791,6 +815,7 @@ export class ProvisioningSaga {
                 environmentId: existingApiKey.environmentId,
               }
             : undefined,
+          onAfterValidation: internalHook,
         });
 
         currentSteps = updatedSteps;
@@ -892,6 +917,10 @@ export class ProvisioningSaga {
     const op = await operationStore.getOperation(operationId);
     if (!op) return null;
     if (op.status === 'ACTIVE') return op;
+    if (op.status === 'CANCELLED' || op.status === 'CANCELLING') {
+      console.log(`[ProvisioningSaga] Operation ${operationId} cannot be retried because it is in status ${op.status}.`);
+      return null;
+    }
 
     // Retry must never use force: conditional claim only. If another live server holds the lease, reject retry.
     const attemptId = randomUUID().slice(0, 8);
@@ -959,7 +988,7 @@ export class ProvisioningSaga {
     options: { workerId?: string } = {}
   ): Promise<PlatformOperationRecord | null> {
     const op = await operationStore.getOperation(operationId);
-    if (!op || op.status === 'ACTIVE' || op.status === 'CANCELLED') return op;
+    if (!op || op.status === 'ACTIVE' || op.status === 'CANCELLED' || op.status === 'CANCELLING') return op;
 
     const baseWorkerId = options.workerId || this.workerInstanceId;
     const attemptId = randomUUID().slice(0, 8);
@@ -1020,7 +1049,10 @@ export class ProvisioningSaga {
   /**
    * Compensation: aborts in-flight execution and runs deprovision strictly on plugins that succeeded.
    */
-  async cancelOperation(operationId: string): Promise<boolean> {
+  async cancelOperation(
+    operationId: string,
+    options: { probe?: (pluginId: string, tenantId: string) => Promise<boolean> } = {}
+  ): Promise<boolean> {
     const op = await operationStore.getOperation(operationId);
     if (!op || op.status === 'CANCELLED') return false;
 
@@ -1030,36 +1062,99 @@ export class ProvisioningSaga {
       active.abortController.abort(new Error('OPERATION_CANCELLED'));
     }
 
-    // 2. Invalidate lease and mark operation CANCELLED
-    await operationStore.updateOperation(operationId, {
-      status: 'CANCELLED',
-      leaseOwner: null,
-      leaseExpiresAt: null,
-      error: 'Operation cancelled by operator. Succeeded plugins compensated via deprovision.',
-    });
+    // 2. Invalidate lease and transition to CANCELLING state
+    if (op.status !== 'CANCELLING') {
+      await operationStore.updateOperation(operationId, {
+        status: 'CANCELLING',
+        leaseOwner: null,
+        leaseExpiresAt: null,
+        error: 'Operation cancellation in progress. Succeeded plugins being compensated via deprovision.',
+      });
+    } else {
+      await operationStore.updateOperation(operationId, {
+        leaseOwner: null,
+        leaseExpiresAt: null,
+      });
+    }
 
     const tenantId = op.tenantId;
 
-    // 3. Compensate strictly plugins that succeeded
+    // 3. Compensate strictly plugins confirmed installed or succeeded
+    const targetPlugins = new Set<string>();
     const installed = await platformRepository.listPluginInstallations(tenantId).catch(() => []);
-    const installedPluginIds = new Set(
-      installed
-        .filter((inst) => inst.status !== 'FAILED')
-        .map((inst) => inst.pluginId)
-    );
-
-    if (Array.isArray(op.result?.succeededPlugins)) {
-      for (const p of op.result.succeededPlugins) {
-        installedPluginIds.add(p);
+    for (const inst of installed) {
+      if (inst.status === 'ACTIVE' || inst.status === 'INSTALLED') {
+        targetPlugins.add(inst.pluginId);
       }
     }
 
-    for (const pluginId of installedPluginIds) {
-      await pluginLifecycleClient.invokeLifecycle(pluginId, 'deprovision', tenantId, {}).catch((err) => {
-        console.warn(`[ProvisioningSaga] Deprovision compensation failed for ${pluginId}:`, err);
-      });
-      await platformRepository.uninstallPluginInstallation(tenantId, pluginId).catch(() => {});
+    if (Array.isArray(op.result?.succeededPlugins)) {
+      for (const p of op.result.succeededPlugins) {
+        targetPlugins.add(p);
+      }
     }
+
+    // Reconciliation: If an in-flight plugin cannot be confirmed installed from local state, probe if remote resource was created
+    if (Array.isArray(op.result?.inFlightPlugins)) {
+      for (const pluginId of op.result.inFlightPlugins) {
+        if (!targetPlugins.has(pluginId)) {
+          const probeFn = options?.probe || (globalThis as any).__test_probe_plugin_remote_resource;
+          if (typeof probeFn === 'function') {
+            const existsRemotely = await probeFn(pluginId, tenantId).catch(() => false);
+            if (existsRemotely) {
+              targetPlugins.add(pluginId);
+            }
+          }
+        }
+      }
+    }
+
+    const alreadyCompensated = new Set<string>(
+      Array.isArray(op.result?.compensatedPlugins) ? op.result.compensatedPlugins : []
+    );
+    const compensationFailures: Array<{ pluginId: string; error: string }> = [];
+
+    for (const pluginId of targetPlugins) {
+      if (alreadyCompensated.has(pluginId)) {
+        continue;
+      }
+      try {
+        const res = await pluginLifecycleClient.invokeLifecycle(pluginId, 'deprovision', tenantId, {});
+        if (!res.ok) {
+          compensationFailures.push({ pluginId, error: res.error || 'Deprovision returned failure status' });
+          continue;
+        }
+        await platformRepository.uninstallPluginInstallation(tenantId, pluginId).catch(() => {});
+        alreadyCompensated.add(pluginId);
+      } catch (err: any) {
+        compensationFailures.push({ pluginId, error: err?.message || String(err) });
+      }
+    }
+
+    if (compensationFailures.length > 0) {
+      await operationStore.updateOperation(operationId, {
+        status: 'CANCELLING',
+        error: `Cancellation compensation incomplete: ${compensationFailures.map((f) => `${f.pluginId} (${f.error})`).join(', ')}`,
+        result: {
+          ...(op.result || {}),
+          succeededPlugins: Array.from(targetPlugins),
+          compensatedPlugins: Array.from(alreadyCompensated),
+          compensationFailures,
+        },
+      });
+      return false;
+    }
+
+    await operationStore.updateOperation(operationId, {
+      status: 'CANCELLED',
+      error: 'Operation cancelled by operator. Succeeded plugins compensated via deprovision.',
+      result: {
+        ...(op.result || {}),
+        succeededPlugins: Array.from(targetPlugins),
+        compensatedPlugins: Array.from(alreadyCompensated),
+        compensationFailures: [],
+      },
+    });
 
     try {
       await platformRepository.recordPlatformAdminAudit({
