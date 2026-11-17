@@ -1216,4 +1216,359 @@ describe('Phase 3: Distributed Provisioning Lease Correctness, Attempt-Scoped To
     const webhooks = getEmittedWebhooks({ tenantId, event: 'tenant.ready' });
     assert.strictEqual(webhooks.length, 1, 'Exactly one tenant.ready webhook must be emitted');
   });
+
+  it('22. Cancellation wins before finalization CAS: CAS fails, transaction rolls back, project not active, zero outbox, zero webhooks', async () => {
+    const slug = `canc-cas-win-${crypto.randomBytes(4).toString('hex')}`;
+    const opId = `op_canc_cas_win_${crypto.randomBytes(6).toString('hex')}`;
+    createdOpIds.push(opId);
+
+    const workerA = 'worker_cas_a:att_1';
+
+    const created = await platformRepository.createProject({
+      name: `Canc CAS Win ${slug}`,
+      slug,
+      organizationId: testOrg.id,
+      planTier: 'free',
+      businessModel: 'B2B',
+      technicalLead: 'lead@orbitox.io',
+      contactEmail: 'contact@orbitox.io',
+    });
+    const projectId = (created as any).project?.id || (created as any).id;
+    await platformRepository.updateProject(projectId, { status: 'PROVISIONING' });
+
+    const tenantId = `org/${testOrg.id}/project/${slug}/environment/production`;
+    const op: PlatformOperationRecord = {
+      id: opId,
+      type: 'TENANT_PROVISION',
+      tenantId,
+      organizationId: testOrg.id,
+      status: 'PROVISIONING',
+      leaseOwner: workerA,
+      leaseExpiresAt: new Date(Date.now() + 10000).toISOString(),
+      steps: [
+        { id: '1', name: 'Step 1', status: 'COMPLETED' },
+        { id: '2', name: 'Step 2', status: 'COMPLETED' },
+        { id: '3', name: 'Step 3', status: 'COMPLETED' },
+        { id: '4', name: 'Step 4', status: 'COMPLETED' },
+        { id: '5', name: 'Plugin provisioning', status: 'COMPLETED' },
+        { id: '6', name: 'Initial grant push', status: 'COMPLETED' },
+        { id: '7', name: 'Final tenant activation', status: 'PENDING' },
+      ],
+      request: { name: `Canc CAS Win ${slug}`, slug, plugins: [{ id: 'restaurant-os', plan: 'restaurant-starter' }] },
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+    await operationStore.createOperation(op);
+
+    const { clearEmittedWebhooks, getEmittedWebhooks } = await import('@/server/provisioning/webhook-emitter');
+    clearEmittedWebhooks();
+
+    // Hook: right before CAS update in finalizeProjectActivationAndOutbox, cancellation arrives and wins!
+    (globalThis as any).__test_on_after_step7_validation = async () => {
+      const cancelResult = await provisioningSaga.cancelOperation(opId);
+      assert.strictEqual(cancelResult, true, 'Cancellation before CAS commit must succeed');
+    };
+
+    try {
+      await provisioningSaga.executeAsyncSteps(
+        opId,
+        {
+          name: `Canc CAS Win ${slug}`,
+          slug,
+          organizationId: testOrg.id,
+          environment: 'production',
+          plugins: [{ id: 'restaurant-os', plan: 'restaurant-starter', planTier: 'STARTER', runtimeUrl: 'http://localhost:3000' } as any],
+        },
+        tenantId,
+        testOrg,
+        slug,
+        'production',
+        { workerId: workerA }
+      );
+    } finally {
+      delete (globalThis as any).__test_on_after_step7_validation;
+    }
+
+    // 1. Worker A's CAS update must have failed and operation status must be CANCELLED or CANCELLING
+    const finalOp = await operationStore.getOperation(opId);
+    assert.strictEqual(['CANCELLED', 'CANCELLING'].includes(finalOp?.status || ''), true, 'Operation must not be ACTIVE');
+
+    // 2. Project must remain PROVISIONING (not ACTIVE)
+    const freshProject = await platformRepository.getProject(slug);
+    assert.notStrictEqual(freshProject?.status, 'ACTIVE', 'Project must NOT be marked ACTIVE');
+
+    // 3. No outbox message for tenant.ready
+    if (process.env.ORBITOX_PLATFORM_REPOSITORY !== 'json') {
+      const outboxMsgs = await (prisma as any).$transaction(async (tx: any) => {
+        await tx.$executeRawUnsafe(`SELECT set_config('app.current_tenant_id', $1, true)`, tenantId);
+        return tx.platformOutboxMessage.findMany({
+          where: { tenantId, eventType: 'tenant.ready' },
+        });
+      });
+      assert.strictEqual(outboxMsgs.length, 0, 'No outbox message should be committed');
+    }
+
+    // 4. Zero webhooks emitted
+    const webhooks = getEmittedWebhooks({ tenantId, event: 'tenant.ready' });
+    assert.strictEqual(webhooks.length, 0, 'No webhooks should be emitted');
+  });
+
+  it('23. Finalization wins before cancellation: CAS commits, cancelOperation returns false, operation and project remain ACTIVE', async () => {
+    const slug = `cas-fin-win-${crypto.randomBytes(4).toString('hex')}`;
+    const opId = `op_cas_fin_win_${crypto.randomBytes(6).toString('hex')}`;
+    createdOpIds.push(opId);
+
+    const workerA = 'worker_fin_a:att_1';
+
+    const created = await platformRepository.createProject({
+      name: `Fin Win ${slug}`,
+      slug,
+      organizationId: testOrg.id,
+      planTier: 'free',
+      businessModel: 'B2B',
+      technicalLead: 'lead@orbitox.io',
+      contactEmail: 'contact@orbitox.io',
+    });
+    const projectId = (created as any).project?.id || (created as any).id;
+    await platformRepository.updateProject(projectId, { status: 'PROVISIONING' });
+
+    const tenantId = `org/${testOrg.id}/project/${slug}/environment/production`;
+    const op: PlatformOperationRecord = {
+      id: opId,
+      type: 'TENANT_PROVISION',
+      tenantId,
+      organizationId: testOrg.id,
+      status: 'PROVISIONING',
+      leaseOwner: workerA,
+      leaseExpiresAt: new Date(Date.now() + 10000).toISOString(),
+      steps: [
+        { id: '1', name: 'Step 1', status: 'COMPLETED' },
+        { id: '2', name: 'Step 2', status: 'COMPLETED' },
+        { id: '3', name: 'Step 3', status: 'COMPLETED' },
+        { id: '4', name: 'Step 4', status: 'COMPLETED' },
+        { id: '5', name: 'Plugin provisioning', status: 'COMPLETED' },
+        { id: '6', name: 'Initial grant push', status: 'COMPLETED' },
+        { id: '7', name: 'Final tenant activation', status: 'PENDING' },
+      ],
+      request: { name: `Fin Win ${slug}`, slug, plugins: [{ id: 'restaurant-os', plan: 'restaurant-starter' }] },
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+    await operationStore.createOperation(op);
+
+    // Finalize operation successfully
+    await provisioningSaga.executeAsyncSteps(
+      opId,
+      {
+        name: `Fin Win ${slug}`,
+        slug,
+        organizationId: testOrg.id,
+        environment: 'production',
+        plugins: [{ id: 'restaurant-os', plan: 'restaurant-starter', planTier: 'STARTER', runtimeUrl: 'http://localhost:3000' } as any],
+      },
+      tenantId,
+      testOrg,
+      slug,
+      'production',
+      { workerId: workerA }
+    );
+
+    const activeOp = await operationStore.getOperation(opId);
+    assert.strictEqual(activeOp?.status, 'ACTIVE', 'Operation must be ACTIVE after successful Step 7');
+
+    // Attempt cancellation on ACTIVE operation
+    const cancelResult = await provisioningSaga.cancelOperation(opId);
+    assert.strictEqual(cancelResult, false, 'Provisioning cancellation must be rejected once ACTIVE');
+
+    // Operation and project must remain ACTIVE
+    const postOp = await operationStore.getOperation(opId);
+    assert.strictEqual(postOp?.status, 'ACTIVE', 'Operation must remain ACTIVE');
+
+    const postProj = await platformRepository.getProject(slug);
+    assert.strictEqual(postProj?.status, 'ACTIVE', 'Project must remain ACTIVE');
+  });
+
+  it('24. Cancellation attempted after transaction commit but before webhook delivery: rejected, operation remains ACTIVE', async () => {
+    const slug = `canc-after-commit-${crypto.randomBytes(4).toString('hex')}`;
+    const opId = `op_canc_after_commit_${crypto.randomBytes(6).toString('hex')}`;
+    createdOpIds.push(opId);
+
+    const workerA = 'worker_commit_a:att_1';
+
+    const created = await platformRepository.createProject({
+      name: `Canc After Commit ${slug}`,
+      slug,
+      organizationId: testOrg.id,
+      planTier: 'free',
+      businessModel: 'B2B',
+      technicalLead: 'lead@orbitox.io',
+      contactEmail: 'contact@orbitox.io',
+    });
+    const projectId = (created as any).project?.id || (created as any).id;
+    await platformRepository.updateProject(projectId, { status: 'PROVISIONING' });
+
+    const tenantId = `org/${testOrg.id}/project/${slug}/environment/production`;
+    const op: PlatformOperationRecord = {
+      id: opId,
+      type: 'TENANT_PROVISION',
+      tenantId,
+      organizationId: testOrg.id,
+      status: 'PROVISIONING',
+      leaseOwner: workerA,
+      leaseExpiresAt: new Date(Date.now() + 10000).toISOString(),
+      steps: [
+        { id: '1', name: 'Step 1', status: 'COMPLETED' },
+        { id: '2', name: 'Step 2', status: 'COMPLETED' },
+        { id: '3', name: 'Step 3', status: 'COMPLETED' },
+        { id: '4', name: 'Step 4', status: 'COMPLETED' },
+        { id: '5', name: 'Plugin provisioning', status: 'COMPLETED' },
+        { id: '6', name: 'Initial grant push', status: 'COMPLETED' },
+        { id: '7', name: 'Final tenant activation', status: 'PENDING' },
+      ],
+      request: { name: `Canc After Commit ${slug}`, slug, plugins: [{ id: 'restaurant-os', plan: 'restaurant-starter' }] },
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+    await operationStore.createOperation(op);
+
+    // Call finalizeProjectActivationAndOutbox directly (Step 7 transaction commit)
+    const { webhookPayload, outboxMessageId } = await operationStore.finalizeProjectActivationAndOutbox({
+      operationId: opId,
+      expectedLeaseOwner: workerA,
+      projectId,
+      tenantId,
+      organizationId: testOrg.id,
+      cleanSlug: slug,
+      environmentSlug: 'production',
+      plugins: [{ id: 'restaurant-os', plan: 'restaurant-starter' }],
+      steps: op.steps,
+    });
+
+    assert.ok(outboxMessageId, 'Outbox message id must be returned');
+
+    // Right now: transaction is committed, but webhook delivery has not yet been triggered.
+    // Late cancellation attempt arrives:
+    const cancelRes = await provisioningSaga.cancelOperation(opId);
+    assert.strictEqual(cancelRes, false, 'Late cancellation must be rejected because transaction committed ACTIVE');
+
+    const currentOp = await operationStore.getOperation(opId);
+    assert.strictEqual(currentOp?.status, 'ACTIVE');
+
+    const currentProj = await platformRepository.getProject(slug);
+    assert.strictEqual(currentProj?.status, 'ACTIVE');
+  });
+
+  it('25. Cancelled operation never leaves an ACTIVE project with removed plugins', async () => {
+    const slug = `canc-safe-proj-${crypto.randomBytes(4).toString('hex')}`;
+    const opId = `op_canc_safe_proj_${crypto.randomBytes(6).toString('hex')}`;
+    createdOpIds.push(opId);
+
+    const workerA = 'worker_safe_a:att_1';
+
+    const created = await platformRepository.createProject({
+      name: `Safe Proj ${slug}`,
+      slug,
+      organizationId: testOrg.id,
+      planTier: 'free',
+      businessModel: 'B2B',
+      technicalLead: 'lead@orbitox.io',
+      contactEmail: 'contact@orbitox.io',
+    });
+    const projectId = (created as any).project?.id || (created as any).id;
+    await platformRepository.updateProject(projectId, { status: 'PROVISIONING' });
+
+    const tenantId = `org/${testOrg.id}/project/${slug}/environment/production`;
+    const op: PlatformOperationRecord = {
+      id: opId,
+      type: 'TENANT_PROVISION',
+      tenantId,
+      organizationId: testOrg.id,
+      status: 'PROVISIONING',
+      leaseOwner: workerA,
+      leaseExpiresAt: new Date(Date.now() + 10000).toISOString(),
+      steps: [
+        { id: '1', name: 'Step 1', status: 'COMPLETED' },
+        { id: '2', name: 'Step 2', status: 'RUNNING' },
+        { id: '3', name: 'Step 3', status: 'PENDING' },
+      ],
+      request: { name: `Safe Proj ${slug}`, slug, plugins: [] },
+      result: {},
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+    await operationStore.createOperation(op);
+
+    // Cancel operation
+    const cancelResult = await provisioningSaga.cancelOperation(opId);
+    assert.strictEqual(cancelResult, true);
+
+    const finalOp = await operationStore.getOperation(opId);
+    assert.strictEqual(finalOp?.status, 'CANCELLED');
+
+    const projectAfter = await platformRepository.getProject(slug);
+    assert.notStrictEqual(projectAfter?.status, 'ACTIVE', 'Project must NOT be left ACTIVE after cancellation');
+  });
+
+  it('26. No stale tenant.ready notification delivered when cancellation supersedes provisioning', async () => {
+    const slug = `no-stale-whk-${crypto.randomBytes(4).toString('hex')}`;
+    const opId = `op_no_stale_${crypto.randomBytes(6).toString('hex')}`;
+    createdOpIds.push(opId);
+
+    const workerA = 'worker_stale_a:att_1';
+
+    const created = await platformRepository.createProject({
+      name: `No Stale Proj ${slug}`,
+      slug,
+      organizationId: testOrg.id,
+      planTier: 'free',
+      businessModel: 'B2B',
+      technicalLead: 'lead@orbitox.io',
+      contactEmail: 'contact@orbitox.io',
+    });
+    const projectId = (created as any).project?.id || (created as any).id;
+    await platformRepository.updateProject(projectId, { status: 'PROVISIONING' });
+
+    const tenantId = `org/${testOrg.id}/project/${slug}/environment/production`;
+    const op: PlatformOperationRecord = {
+      id: opId,
+      type: 'TENANT_PROVISION',
+      tenantId,
+      organizationId: testOrg.id,
+      status: 'PROVISIONING',
+      leaseOwner: workerA,
+      leaseExpiresAt: new Date(Date.now() + 10000).toISOString(),
+      steps: [
+        { id: '1', name: 'Step 1', status: 'COMPLETED' },
+        { id: '2', name: 'Step 2', status: 'COMPLETED' },
+      ],
+      request: { name: `No Stale Proj ${slug}`, slug, plugins: [{ id: 'restaurant-os', plan: 'restaurant-starter' }] },
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+    await operationStore.createOperation(op);
+
+    const { clearEmittedWebhooks, getEmittedWebhooks } = await import('@/server/provisioning/webhook-emitter');
+    clearEmittedWebhooks();
+
+    // Cancel early
+    await provisioningSaga.cancelOperation(opId);
+
+    // Stale worker tries to resume or retry
+    await provisioningSaga.retryOperation(opId);
+    await provisioningSaga.resumeWorkflow(opId);
+
+    // Verify 0 webhooks delivered
+    const webhooks = getEmittedWebhooks({ tenantId, event: 'tenant.ready' });
+    assert.strictEqual(webhooks.length, 0, 'No tenant.ready webhook should be delivered for cancelled operation');
+
+    if (process.env.ORBITOX_PLATFORM_REPOSITORY !== 'json') {
+      const outboxMsgs = await (prisma as any).$transaction(async (tx: any) => {
+        await tx.$executeRawUnsafe(`SELECT set_config('app.current_tenant_id', $1, true)`, tenantId);
+        return tx.platformOutboxMessage.findMany({
+          where: { tenantId, eventType: 'tenant.ready' },
+        });
+      });
+      assert.strictEqual(outboxMsgs.length, 0, 'No tenant.ready outbox message should exist');
+    }
+  });
 });

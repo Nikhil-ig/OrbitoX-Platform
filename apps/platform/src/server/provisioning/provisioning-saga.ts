@@ -10,7 +10,7 @@ import {
 } from '@/server/provisioning/types';
 import { operationStore, oneTimeSecretStore } from '@/server/provisioning/operation-store';
 import { pluginLifecycleClient } from '@/server/provisioning/plugin-lifecycle-client';
-import { emitPlatformWebhook } from '@/server/provisioning/webhook-emitter';
+import { emitPlatformWebhook, dispatchOutboxMessage } from '@/server/provisioning/webhook-emitter';
 
 export type ProvisioningSagaStartResult = PlatformOperationRecord & {
   rawApiKey?: {
@@ -795,7 +795,7 @@ export class ProvisioningSaga {
 
         // Atomic transaction: verify lease owner and unexpired validity, activate project, record outbox message, mark operation ACTIVE
         const internalHook = (options as any)?.onAfterValidation || (globalThis as any).__test_on_after_step7_validation;
-        const { webhookPayload } = await operationStore.finalizeProjectActivationAndOutbox({
+        const { webhookPayload, outboxMessageId } = await operationStore.finalizeProjectActivationAndOutbox({
           operationId,
           expectedLeaseOwner: attemptLeaseOwner,
           projectId: project?.id || '',
@@ -837,9 +837,10 @@ export class ProvisioningSaga {
           });
         } catch { }
 
-        // Emit platform webhook strictly AFTER transactional commit
-        await emitPlatformWebhook({
-          event: 'tenant.ready',
+        // Dispatch authoritative outbox message strictly AFTER transactional commit
+        await dispatchOutboxMessage({
+          id: outboxMessageId,
+          eventType: 'tenant.ready',
           tenantId,
           payload: webhookPayload,
         });
@@ -1054,7 +1055,7 @@ export class ProvisioningSaga {
     options: { probe?: (pluginId: string, tenantId: string) => Promise<boolean> } = {}
   ): Promise<boolean> {
     const op = await operationStore.getOperation(operationId);
-    if (!op || op.status === 'CANCELLED') return false;
+    if (!op || op.status === 'ACTIVE' || op.status === 'CANCELLED' || op.status === 'FAILED') return false;
 
     // 1. Immediately abort active in-flight execution if running in this worker
     const active = this.activeExecutions.get(operationId);
@@ -1062,14 +1063,15 @@ export class ProvisioningSaga {
       active.abortController.abort(new Error('OPERATION_CANCELLED'));
     }
 
-    // 2. Invalidate lease and transition to CANCELLING state
+    // 2. Invalidate lease and transition to CANCELLING state atomically
     if (op.status !== 'CANCELLING') {
-      await operationStore.updateOperation(operationId, {
-        status: 'CANCELLING',
-        leaseOwner: null,
-        leaseExpiresAt: null,
-        error: 'Operation cancellation in progress. Succeeded plugins being compensated via deprovision.',
-      });
+      const transitioned = await operationStore.transitionToCancelling(operationId);
+      if (!transitioned) {
+        const current = await operationStore.getOperation(operationId);
+        if (current?.status !== 'CANCELLING') {
+          return false;
+        }
+      }
     } else {
       await operationStore.updateOperation(operationId, {
         leaseOwner: null,
@@ -1143,6 +1145,17 @@ export class ProvisioningSaga {
         },
       });
       return false;
+    }
+
+    // Ensure project is not left ACTIVE if an operation was cancelled
+    const slug = op.request?.slug;
+    if (slug) {
+      try {
+        const proj = await platformRepository.getProject(slug).catch(() => null);
+        if (proj && proj.status === 'ACTIVE') {
+          await platformRepository.updateProject(proj.id, { status: 'PROVISIONING' }).catch(() => {});
+        }
+      } catch { }
     }
 
     await operationStore.updateOperation(operationId, {

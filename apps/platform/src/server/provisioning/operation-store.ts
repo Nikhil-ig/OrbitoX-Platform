@@ -1,5 +1,6 @@
 import 'server-only';
 import { prisma } from '@/server/db/prisma';
+import { platformRepository } from '@/server/db/platform-repository';
 import { PlatformOperationRecord, OperationStep } from '@/server/provisioning/types';
 
 // In-memory fallback for JSON / mock test adapter modes
@@ -208,6 +209,15 @@ export class OperationStore {
       if (!existing) return null;
 
       if (
+        updates.status === 'CANCELLING' &&
+        ['ACTIVE', 'CANCELLED', 'FAILED'].includes(existing.status)
+      ) {
+        throw new Error(
+          `OPERATION_ALREADY_ACTIVE: Operation ${id} is in status ${existing.status} and cannot be cancelled.`
+        );
+      }
+
+      if (
         ['CANCELLED', 'CANCELLING'].includes(existing.status) &&
         updates.status !== undefined &&
         !['CANCELLED', 'CANCELLING'].includes(updates.status as string)
@@ -247,6 +257,15 @@ export class OperationStore {
     if (!existing) return null;
 
     if (
+      updates.status === 'CANCELLING' &&
+      ['ACTIVE', 'CANCELLED', 'FAILED'].includes(existing.status)
+    ) {
+      throw new Error(
+        `OPERATION_ALREADY_ACTIVE: Operation ${id} is in status ${existing.status} and cannot be cancelled.`
+      );
+    }
+
+    if (
       ['CANCELLED', 'CANCELLING'].includes(existing.status) &&
       updates.status !== undefined &&
       !['CANCELLED', 'CANCELLING'].includes(updates.status as string)
@@ -274,7 +293,9 @@ export class OperationStore {
 
     try {
       const whereClause: any = { id };
-      if (updates.status !== undefined && !['CANCELLED', 'CANCELLING'].includes(updates.status as string)) {
+      if (updates.status === 'CANCELLING') {
+        whereClause.status = { notIn: ['ACTIVE', 'CANCELLED', 'FAILED'] };
+      } else if (updates.status !== undefined && !['CANCELLED', 'CANCELLING'].includes(updates.status as string)) {
         whereClause.status = { notIn: ['CANCELLED', 'CANCELLING'] };
       }
       if (options.expectedLeaseOwner) {
@@ -300,6 +321,9 @@ export class OperationStore {
 
       if (updateResult.count === 0) {
         const current = await this.getOperation(id);
+        if (updates.status === 'CANCELLING' && current?.status === 'ACTIVE') {
+          throw new Error(`OPERATION_ALREADY_ACTIVE: Operation ${id} is in status ${current.status} and cannot be cancelled.`);
+        }
         if (current?.status === 'CANCELLED' || current?.status === 'CANCELLING') {
           throw new Error(`OPERATION_CANCELLED: Operation ${id} is ${current.status}.`);
         }
@@ -313,9 +337,53 @@ export class OperationStore {
       const row = await (prisma as any).platformOperation.findUnique({ where: { id } });
       return row ? rowToRecord(row) : null;
     } catch (err: any) {
-      if (err.message?.includes('LEASE_FENCING_ERROR') || err.message?.includes('OPERATION_CANCELLED')) throw err;
+      if (
+        err.message?.includes('LEASE_FENCING_ERROR') ||
+        err.message?.includes('OPERATION_CANCELLED') ||
+        err.message?.includes('OPERATION_ALREADY_ACTIVE')
+      ) {
+        throw err;
+      }
       console.error('[OperationStore] updateOperation DB write failed (fail-closed):', err?.message || err);
       throw new DatabasePersistenceError('updateOperation', err);
+    }
+  }
+
+  /**
+   * Atomic state transition: moves operation to CANCELLING and revokes lease.
+   * Strictly fails if operation is already ACTIVE, CANCELLED, or FAILED.
+   */
+  async transitionToCancelling(id: string): Promise<boolean> {
+    if (process.env.ORBITOX_PLATFORM_REPOSITORY === 'json') {
+      const existing = memoryOperations.get(id);
+      if (!existing || ['ACTIVE', 'CANCELLED', 'FAILED'].includes(existing.status)) {
+        return false;
+      }
+      existing.status = 'CANCELLING';
+      existing.leaseOwner = null;
+      existing.leaseExpiresAt = null;
+      existing.error = 'Operation cancellation in progress. Succeeded plugins being compensated via deprovision.';
+      existing.updatedAt = new Date().toISOString();
+      memoryOperations.set(id, existing);
+      return true;
+    }
+
+    try {
+      const rows = await (prisma as any).$queryRaw<Array<{ id: string }>>`
+        UPDATE "PlatformOperation"
+        SET "status" = 'CANCELLING',
+            "leaseOwner" = NULL,
+            "leaseExpiresAt" = NULL,
+            "error" = 'Operation cancellation in progress. Succeeded plugins being compensated via deprovision.',
+            "updatedAt" = NOW()
+        WHERE "id" = ${id}
+          AND "status" NOT IN ('ACTIVE', 'CANCELLED', 'FAILED')
+        RETURNING "id"
+      `;
+      return Array.isArray(rows) && rows.length > 0;
+    } catch (err: any) {
+      console.error('[OperationStore] transitionToCancelling failed (fail-closed):', err?.message || err);
+      return false;
     }
   }
 
@@ -342,7 +410,7 @@ export class OperationStore {
       environmentId?: string;
     };
     onAfterValidation?: () => Promise<void>;
-  }): Promise<{ webhookPayload: Record<string, any> }> {
+  }): Promise<{ webhookPayload: Record<string, any>; outboxMessageId: string }> {
     const webhookPayload = {
       operationId: input.operationId,
       tenantId: input.tenantId,
@@ -406,10 +474,17 @@ export class OperationStore {
       recheck.updatedAt = new Date().toISOString();
       recheck.completedAt = new Date().toISOString();
       memoryOperations.set(input.operationId, recheck);
-      return { webhookPayload };
+
+      if (input.projectId) {
+        await platformRepository.updateProject(input.projectId, { status: 'ACTIVE' }).catch(() => {});
+      }
+
+      return { webhookPayload, outboxMessageId: `outbox_json_${input.operationId}` };
     }
 
     try {
+      let outboxMessageId = '';
+
       await (prisma as any).$transaction(async (tx: any) => {
         const op = await tx.platformOperation.findUnique({
           where: { id: input.operationId },
@@ -484,21 +559,34 @@ export class OperationStore {
           });
         }
 
-        // 3. Insert outbox message
+        // 3. Deduplicated insert of outbox message
         await (tx as any).$queryRaw`SELECT set_config('app.current_tenant_id', ${input.tenantId}, true)`;
-        await tx.platformOutboxMessage.create({
-          data: {
+        const existingOutbox = await tx.platformOutboxMessage.findFirst({
+          where: {
             tenantId: input.tenantId,
             eventType: 'tenant.ready',
-            aggregateType: 'TENANT',
             aggregateId: input.tenantId,
-            payload: webhookPayload,
-            status: 'PENDING',
           },
         });
+
+        if (existingOutbox) {
+          outboxMessageId = existingOutbox.id;
+        } else {
+          const createdOutbox = await tx.platformOutboxMessage.create({
+            data: {
+              tenantId: input.tenantId,
+              eventType: 'tenant.ready',
+              aggregateType: 'TENANT',
+              aggregateId: input.tenantId,
+              payload: webhookPayload,
+              status: 'PENDING',
+            },
+          });
+          outboxMessageId = createdOutbox.id;
+        }
       });
 
-      return { webhookPayload };
+      return { webhookPayload, outboxMessageId };
     } catch (err: any) {
       if (err.message?.includes('LEASE_FENCING_ERROR') || err.message?.includes('OPERATION_CANCELLED')) {
         throw err;
