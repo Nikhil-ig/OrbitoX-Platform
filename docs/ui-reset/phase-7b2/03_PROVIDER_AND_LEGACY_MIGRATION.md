@@ -171,8 +171,10 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   2. `PlatformGovernanceDock` (which calls `useAdmin()`) finds its context when HMS services are active.
   3. Zero context pollution leaks outside `(dashboard)`.
 
-### 4.3 Step 3: Localize AdminProvider (`apps/platform/src/app/(console)/layout.tsx`)
-- Keep `AdminProvider` in `apps/platform/src/app/(console)/layout.tsx` so legacy `admin/*` pages continue functioning without duplicate root nesting.
+### 4.3 Step 3: Localize AdminProvider (`apps/platform/src/app/(console)/layout.tsx`) & Intentional Scope Invariant
+- In Commit 2, `AdminProvider` scope will be audited against all consumers:
+  - **Intentional Scope Evaluation:** If modern `/console/*` pages (`/console/appearance`, `/console/security`, `/console/billing`) do not consume `AdminContext`, `AdminProvider` will be narrowed down from `(console)/layout.tsx` directly into `apps/platform/src/app/(console)/admin/layout.tsx`. This guarantees zero mock administrative state leaks into modern operator pages.
+  - If any modern `/console/*` pages temporarily reference `AdminContext` pending Phase 7C refactoring, `AdminProvider` remains at `(console)/layout.tsx` as an explicit, documented bridge with automated verification proving mock data does not override live operator settings.
 - **Do not mount `ConsoleShell` in `(console)/layout.tsx`**.
 - Keep modern `ConsoleShell` at the `/console` boundary, preserving existing page-level wrappers until their migration in Phase 7C.
 

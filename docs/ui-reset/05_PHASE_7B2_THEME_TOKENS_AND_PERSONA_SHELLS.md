@@ -46,7 +46,7 @@ This master blueprint is supported by six detailed technical architecture specif
 
 ## 3. Visual Reference Inventory Summary (Correction R1 & R1-A)
 
-All 44 reference images in `OrbitoX — new look concept-png/` were verified on disk using binary PNG IHDR chunks and full scanline bitstream decompression (`zlib.decompress` on concatenated `IDAT` chunks). 100% of images conform to 8-bit RGBA (Color Type 6) with zero corrupt scanlines:
+All 44 reference images in `OrbitoX — new look concept-png/` were rigorously verified on disk using [`scripts/verify-concept-assets.py`](../../scripts/verify-concept-assets.py). The test suite validated chunk-level CRC32 checksums, exact 8-bit RGBA (Color Type 6) headers, exact mathematical scanline buffer allocations ($H \times (1 + W \times 4)$ bytes), and individual scanline filter bytes (0..4) across all vertical lines, with zero corrupt chunks or scanlines:
 
 | Device Category | Screen Count | Screen Identifiers Included | Verified Dimensions |
 | :--- | :---: | :--- | :--- |
@@ -90,10 +90,18 @@ Detailed transition dynamics, edge-case resizing behavior, and touch interaction
 
 ## 5. Canonical Appearance Resolution Architecture & Precedence (Correction R3, R3-A, R3-B)
 
-### 5.1 Persona-Specific Explicit Defaults vs. Automatic Mode
+### 5.1 Persona-Specific Explicit Defaults vs. Automatic Mode & Middleware Header Invariant
 To resolve the ambiguity between `DEFAULT_APPEARANCE = { theme: 'auto' }` and persona requirements:
 
-1. **Unset / First-Time Visit (No DB or Cookie Preference):**
+1. **Trusted Route-Persona Resolution via Next.js Middleware:**
+   - Because Next.js App Router `RootLayout` does not receive `pathname` as a prop, `middleware.ts` executes trusted classification:
+     - Strips any client-supplied `x-orbito-route-persona` or `x-orbito-station` headers to prevent spoofing.
+     - Inspects `request.nextUrl.pathname` and attaches trusted header `x-orbito-route-persona` (`operator`, `owner`, `customer`, `staff_pos`, `staff_operational`, or `public`).
+     - `RootLayout` reads `headers()` to determine the server-render mood before first paint.
+     - Fallback: Unknown routes or middleware bypasses fall back safely to `public` (Light mood `#EEF1F5`).
+   - **Station Security Invariant:** The `orbitox_station` cookie is strictly an aesthetic UI layout hint; all operational capabilities require backend JWT/session RBAC verification.
+
+2. **Unset / First-Time Visit (No DB or Cookie Preference):**
    - The server **does not** fall back to `theme: 'auto'`.
    - Instead, the server applies the **Persona-Specific Explicit Default Mood**:
      - **Platform Operator (`/console/*`):** Explicitly `dark` (`#0D0F12`, compact density 0.65x).
@@ -102,10 +110,10 @@ To resolve the ambiguity between `DEFAULT_APPEARANCE = { theme: 'auto' }` and pe
      - **Public & Auth (`/login`, `/signup`, `/auth/*`, diner `/menu`):** Explicitly `light` (`#EEF1F5`) (matches `F1`–`F5`, `A4`).
      - **Customer Workspace (`/workspace/*`, `/customer/*`):** Explicitly `light` (`#EEF1F5`) (matches `A2`, `U1`).
      - **Product Owner Workspace (`/owner/*`, `/restaurants/*`):** Explicitly `light` (`#EEF1F5`) (matches `R1`–`R6`).
-2. **Explicitly Saved `theme: 'auto'`:**
+3. **Explicitly Saved `theme: 'auto'`:**
    - Active **only** when a user explicitly chooses "Auto (Match System)" in settings.
    - Evaluated by the browser via `@media (prefers-color-scheme)`.
-3. **Explicitly Saved `theme: 'light'` or `theme: 'dark'`:**
+4. **Explicitly Saved `theme: 'light'` or `theme: 'dark'`:**
    - Active when a user explicitly saves a choice. Fixed server rendering supersedes OS mode.
 
 ### 5.2 Server Resolution Flowchart
@@ -215,6 +223,7 @@ graph TD
 1. **Zero Premature Deletions:** Retain `packages/ui/src/styles/theme.css` with semantic bridging (`--ui-bg-card: var(--color-surface);`, etc.).
 2. **Local Dashboard Isolation:** Re-mount BOTH `ThemeProvider` AND `AdminProvider` locally in `apps/platform/src/app/(dashboard)/layout.tsx`. This preserves the legacy theme switcher (`useTheme`) AND the HospitalOS `PlatformGovernanceDock` (`useAdmin`, lines 6 & 189) without polluting the global root DOM or `providers.tsx`.
 3. **Route-Boundary Protection:** `ConsoleShell` is scoped to `/console` pages and is **not** mounted at `(console)/layout.tsx`, preventing double-shell rendering and preserving legacy `admin/*` isolation.
+4. **Intentional Provider Scope Audit in Commit 2:** Commit 2 will evaluate narrowing `AdminProvider` strictly to `apps/platform/src/app/(console)/admin/layout.tsx`. If modern `/console/*` pages do not consume `AdminContext`, narrowing the provider prevents mock administrative state from wrapping modern operator console pages.
 
 Detailed migration steps are documented in [`03_PROVIDER_AND_LEGACY_MIGRATION.md`](./phase-7b2/03_PROVIDER_AND_LEGACY_MIGRATION.md).
 
@@ -273,7 +282,7 @@ All unexecuted tests are cataloged with their exact verification criteria and ma
 
 | Category | Test IDs | Status | Standard / Invariant |
 | :--- | :--- | :---: | :--- |
-| **Token & Appearance** | `TST-TOK-01` to `TST-TOK-10` | **`NOT RUN`** | 16-variant computed contrast suite (WCAG 2.2 AA), persona default moods, auto mode, DB precedence, dual DB downtime degradation (valid cookie vs guest default), zero FOUC. |
+| **Token & Appearance** | `TST-TOK-01` to `TST-TOK-10` | **`NOT RUN`** | 16-variant computed contrast suite (WCAG 2.2 AA), persona default moods (Operator, Staff, POS override, Owner, Customer, Public), auto mode, DB precedence, dual DB downtime degradation (schema-valid cookie vs guest default), zero FOUC. |
 | **Shell Responsiveness** | `TST-SHL-01` to `TST-SHL-12` | **`NOT RUN`** | Viewport validation across all 4 viewports (`390×844`, `834×1194`, `1194×834`, `1440×900`), edge cases (phone landscape $844\times 390$, boundaries $639/640$, $1023/1024$, $1279/1280$, split-screen), keyboard traversal, touch targets ($\ge 52\text{px}$ station / $\ge 44\text{px}$ nav / $44–48\text{px}$ pointer), axe accessibility. |
 | **Compatibility & Legacy** | `TST-CMP-01` to `TST-CMP-07` | **`NOT RUN`** | Local legacy `ThemeProvider` and `AdminProvider` mount in dashboard layout (`TST-CMP-07`), root provider decoupling, `--ui-*` variable bridging across `/console/*`, `/platform/*`, and `/admin/*`, fake link elimination, package dependency check. |
 

@@ -72,14 +72,23 @@ To eliminate any ambiguity between the universal service constant `DEFAULT_APPEA
 
 1. **How the Server Identifies Persona & Station:**
    - **Session Context:** Presence of `OPERATOR_SESSION_COOKIE` designates Operator context; `CUSTOMER_SESSION_COOKIE` designates Customer context.
-   - **Route Prefix / Headers:** In Server Components and middleware, incoming request pathname establishes the operational context:
-     - `/console/*` $\to$ Persona: `OPERATOR`
-     - `/pos/*` $\to$ Station: `STAFF_POS`
-     - `/kds/*`, `/kitchen/*`, `/host/*`, `/waiter/*`, `/staff/*` $\to$ Station: `STAFF_OPERATIONAL`
-     - `/workspace/*`, `/customer/*` $\to$ Persona: `CUSTOMER`
-     - `/owner/*`, `/restaurants/*` $\to$ Persona: `PRODUCT_OWNER`
-     - `/login`, `/signup`, `/auth/*`, diner `/menu/*` $\to$ Persona: `PUBLIC_AUTH`
-   - **Station Terminal Cookie (`orbitox_station`):** On dedicated shared operational tablets, station role is stored in a signed cookie (`station=pos` vs `station=kds` vs `station=host`).
+   - **Trusted Route-Persona Resolution via Middleware (Next.js App Router Invariant):**
+     Because Next.js App Router `RootLayout` does not receive `pathname` as a component prop, route-class resolution is executed via a trusted server header mechanism:
+     1. **Header Stripping (Anti-Spoofing):** In `apps/platform/src/middleware.ts`, incoming requests have any client-supplied `x-orbito-route-persona` or `x-orbito-station` headers explicitly stripped from the request header map.
+     2. **Route Classification:** `middleware.ts` inspects `request.nextUrl.pathname` and sets the trusted internal header `x-orbito-route-persona`:
+        - `/console/*` $\to$ `operator`
+        - `/owner/*`, `/restaurants/*` $\to$ `owner`
+        - `/workspace/*`, `/customer/*` $\to$ `customer`
+        - `/pos/*` $\to$ `staff_pos`
+        - `/kds/*`, `/kitchen/*`, `/host/*`, `/waiter/*`, `/staff/*` $\to$ `staff_operational`
+        - `/login`, `/signup`, `/auth/*`, diner `/menu/*` $\to$ `public`
+        - Unknown / unmapped routes $\to$ `public` (deterministic safe fallback)
+     3. **Forwarding to RootLayout:** `middleware.ts` forwards the request with `requestHeaders` set.
+     4. **RootLayout Ingestion:** `RootLayout` (`apps/platform/src/app/layout.tsx`) calls `const headersList = await headers(); const routePersona = headersList.get('x-orbito-route-persona') ?? 'public';`.
+     5. **Bypass / Unreachable Middleware Fallback:** If headers are unavailable or middleware is bypassed in isolated unit tests, `RootLayout` deterministically defaults to `public` (Light mood `#EEF1F5`).
+   - **Station Terminal Context & Security Invariant (`orbitox_station`):**
+     - On shared physical terminals (e.g. iPad Pro in KDS or POS mount), station display layout is determined by the `orbitox_station` cookie (e.g. `station=pos` vs `station=kds` vs `station=host`).
+     - **Security Invariant:** The `orbitox_station` cookie is strictly an **aesthetic display hint**. It **never grants authorization or bypasses RBAC permissions**. All backend API routes and mutative mutations require valid authenticated staff session credentials / JWT tokens verifying terminal authorization.
 
 2. **Distinguishing Unset Preference from Explicitly Saved `theme: 'auto'`:**
    - In database models (`PlatformOperator` and `CustomerUser`), `appearanceTheme` is nullable (`String?`).
@@ -97,9 +106,10 @@ To eliminate any ambiguity between the universal service constant `DEFAULT_APPEA
    - **If `appearanceTheme === 'light'` or `'dark'` (Explicitly Saved Fixed Preference):**
      Fixed server rendering supersedes OS color schemes.
 
-3. **Database Outage Degradation Contracts:**
-   - **Case A (DB Timeout + Valid Cached Cookie):** If Prisma is unreachable but `orbitox_appearance` contains a valid, schema-compliant JSON payload, the server applies the cached preference provisionally with a `x-orbito-appearance-source: provisional-cache` header. It **never writes back** or overwrites DB state while offline.
-   - **Case B (DB Timeout + Missing/Corrupt Cookie):** If Prisma is unreachable and no valid cookie exists, the server immediately applies the route-based persona default mood without throwing a 500 error.
+3. **Database Outage Degradation Contracts & Schema Validation:**
+   - The client cookie `orbitox_appearance` is serialized as URL-encoded JSON and validated against the Zod schema (`AppearancePreferenceSchema`).
+   - **Case A (DB Timeout + Schema-Valid Cached Cookie):** If Prisma is unreachable but `orbitox_appearance` contains a schema-valid JSON payload, the server applies the cached preference provisionally with a `x-orbito-appearance-source: provisional-cache` header. It **never writes back** or overwrites DB state while offline.
+   - **Case B (DB Timeout + Missing/Corrupt Cookie):** If Prisma is unreachable and no schema-valid cookie exists, the server immediately applies the route-based persona default mood without throwing a 500 error.
 
 ---
 

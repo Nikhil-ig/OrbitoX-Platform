@@ -14,10 +14,12 @@
 The owner-approved concept canvas comprises **44 authoritative reference screens** establishing the OrbitoX visual language across five user personas and four device classes.
 
 ### 1.1 Bitstream Decoding & Visual Integrity Verification
-In addition to validating PNG `IHDR` chunks for logical dimensions, **all 44 PNG image bitstreams were fully decompressed and verified** using a binary chunk decompressor (`zlib.decompress` on concatenated `IDAT` chunks):
-- **Image Format Invariant:** 100% of images conform to the PNG specification (`\x89PNG\r\n\x1a\n`).
-- **Color Depth:** 8-bit depth per channel, Color Type 6 (RGBA with alpha channel).
-- **Scanline Integrity:** All decompressed scanline buffers matched or exceeded the expected pixel volume ($H \times (1 + W \times 4)$ bytes). Zero corrupt chunks or truncated bitstreams.
+In addition to validating PNG `IHDR` chunks for logical dimensions, **all 44 PNG image bitstreams were rigorously verified** using the committed verification tool [`scripts/verify-concept-assets.py`](../../scripts/verify-concept-assets.py):
+- **Image Format Invariant:** 100% of images conform to the PNG specification signature (`\x89PNG\r\n\x1a\n`).
+- **Chunk CRC32 Validation:** Every single PNG chunk (`IHDR`, `IDAT`, `pHYs`, `iTXt`, `IEND`) is validated against its 4-byte CRC32 checksum via `zlib.crc32(chunk_type + chunk_data)`. Zero CRC mismatches.
+- **Color Depth & Type Assertion:** Strictly asserted directly from `IHDR`: Bit Depth = 8, Color Type = 6 (8-bit RGBA with alpha channel) across all 44 assets.
+- **Exact Scanline Buffer Calculation:** Decompressed pixel data byte length is asserted to match the exact mathematical scanline buffer ($H \times (1 + W \times 4)$ bytes). Zero truncated or over-allocated buffers.
+- **Scanline Filter Byte Integrity:** Every individual scanline's leading filter byte across all $H$ vertical lines is validated to be an authorized PNG filter type (`0 = None`, `1 = Sub`, `2 = Up`, `3 = Average`, `4 = Paeth`). Zero corrupt scanlines.
 - **Visual Inspection:** Confirms zero visual artifacting, correct color gradients, intact typography, and absence of placeholder mockups.
 
 ### 1.2 Device Allocation Reconciliation

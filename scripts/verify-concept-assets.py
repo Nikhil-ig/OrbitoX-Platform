@@ -70,6 +70,7 @@ def verify_png(filepath, exp_w, exp_h):
         
         idat_chunks = []
         w, h, bit_depth, color_type = None, None, None, None
+        chunks_checked = 0
         
         while True:
             chunk_len_b = f.read(4)
@@ -78,7 +79,16 @@ def verify_png(filepath, exp_w, exp_h):
             chunk_len = struct.unpack('>I', chunk_len_b)[0]
             chunk_type = f.read(4)
             chunk_data = f.read(chunk_len)
-            crc = f.read(4)
+            crc_bytes = f.read(4)
+            if len(crc_bytes) < 4:
+                return False, 'Truncated chunk CRC'
+            
+            # 1. Strict CRC32 validation of every chunk
+            expected_crc = struct.unpack('>I', crc_bytes)[0]
+            calculated_crc = zlib.crc32(chunk_type + chunk_data) & 0xffffffff
+            if expected_crc != calculated_crc:
+                return False, f'CRC mismatch in {chunk_type.decode(errors="replace")}: expected {hex(expected_crc)}, got {hex(calculated_crc)}'
+            chunks_checked += 1
             
             if chunk_type == b'IHDR':
                 w, h, bit_depth, color_type, comp, filt, inter = struct.unpack('>IIBBBBB', chunk_data)
@@ -87,21 +97,38 @@ def verify_png(filepath, exp_w, exp_h):
             elif chunk_type == b'IEND':
                 break
         
+        # 2. Assert dimensions match expectation
         if (w, h) != (exp_w, exp_h):
             return False, f'Dimension mismatch: expected {exp_w}x{exp_h}, got {w}x{h}'
         
-        if not idat_chunks:
-            return False, 'No IDAT image data'
+        # 3. Assert exact 8-bit RGBA (bit depth 8, color type 6)
+        if bit_depth != 8:
+            return False, f'Bit depth mismatch: expected 8-bit, got {bit_depth}-bit'
+        if color_type != 6:
+            return False, f'Color type mismatch: expected 6 (RGBA), got {color_type}'
         
+        if not idat_chunks:
+            return False, 'No IDAT image data found'
+        
+        # 4. Decompress IDAT bitstream and assert exact scanline buffer length
         try:
             decompressed = zlib.decompress(b''.join(idat_chunks))
-            bytes_per_pixel = 4 if color_type == 6 else (3 if color_type == 2 else 1)
-            min_expected = h * (1 + w * bytes_per_pixel)
-            if len(decompressed) < min_expected:
-                return False, f'Incomplete scanlines: {len(decompressed)} < {min_expected}'
-            return True, f'Decoded {len(decompressed):,} bytes (8-bit RGBA)'
+            bytes_per_pixel = 4  # RGBA
+            stride = 1 + w * bytes_per_pixel  # 1 filter byte + W * 4 bytes per scanline
+            exact_expected = h * stride
+            
+            if len(decompressed) != exact_expected:
+                return False, f'Exact scanline buffer mismatch: expected {exact_expected} bytes, got {len(decompressed)}'
+            
+            # 5. Validate individual PNG scanline filter bytes (must be in 0..4)
+            for y in range(h):
+                filter_byte = decompressed[y * stride]
+                if filter_byte not in (0, 1, 2, 3, 4):
+                    return False, f'Corrupt filter byte {filter_byte} at scanline {y}'
+            
+            return True, f'Decoded {len(decompressed):,} bytes ({bit_depth}-bit RGBA, {chunks_checked} chunks validated, {h} scanlines verified)'
         except Exception as e:
-            return False, f'Decompression error: {e}'
+            return False, f'Decompression/verification error: {e}'
 
 def main():
     root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
