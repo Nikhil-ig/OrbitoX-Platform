@@ -64,13 +64,28 @@ export function AppearanceClient({
     });
   }
 
-  // React lifecycle boundary: pure render phase, side-effect DOM sync in useEffect
+  // React lifecycle boundary: pure render phase, side-effect DOM sync in useEffect.
+  // Compatible with React Strict Mode setup -> cleanup -> setup replay in development.
   React.useEffect(() => {
-    controllerRef.current?.syncDocument();
+    const controller = controllerRef.current;
+    if (controller) {
+      if (controller.isDisposed) {
+        controller.activate({
+          onToast: toast,
+          onStateChange: (state) => {
+            setAppearance(state.appearance);
+            setIsSaving(state.isSaving);
+            setIsReconciling(state.isReconciling);
+            setIsUnconfirmed(state.isUnconfirmed);
+          },
+        });
+      }
+      controller.syncDocument();
+    }
     return () => {
-      controllerRef.current?.dispose();
+      controller?.dispose();
     };
-  }, []);
+  }, [toast]);
 
   const updatePreferences = async (patch: Partial<AppearancePreferences>) => {
     if (controllerRef.current) {

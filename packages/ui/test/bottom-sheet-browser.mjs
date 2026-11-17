@@ -2,114 +2,42 @@ import http from 'node:http';
 import fs from 'node:fs';
 import path from 'node:path';
 import assert from 'node:assert/strict';
+import { execSync } from 'node:child_process';
 import { chromium } from 'playwright';
 
-const CSS_PATH = path.resolve(import.meta.dirname, '../src/tokens/components.css');
-const cssContent = fs.readFileSync(CSS_PATH, 'utf8');
+const DIST_DIR = path.resolve(import.meta.dirname, '../dist-storybook');
 
-const HTML_CONTENT = `<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1" />
-  <title>BottomSheet Real Browser Gesture Test</title>
-  <style>
-    * { box-sizing: border-box; margin: 0; padding: 0; }
-    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #0b0f17; color: #fff; height: 100vh; overflow: hidden; }
-    #sheet-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.6); z-index: 40; }
-    #sheet-content {
-      position: fixed; inset-x: 0; bottom: 0; left: 0; right: 0;
-      height: 320px; background: #131b2e; border-top: 1px solid #1e293b;
-      border-radius: 1.25rem 1.25rem 0 0; z-index: 50; touch-action: none;
-      will-change: transform;
-    }
-    .drag-handle-container {
-      width: 100%; padding: 12px 0 8px; cursor: grab; display: flex; justify-content: center;
-    }
-    .drag-handle-pill {
-      width: 48px; height: 6px; border-radius: 9999px; background: #334155;
-    }
-    .sheet-body { padding: 16px; }
-    /* Injected components.css rules below */
-    ${cssContent}
-  </style>
-</head>
-<body>
-  <div id="sheet-overlay"></div>
-  <div id="sheet-content" data-drag-state="idle">
-    <div id="drag-handle" class="drag-handle-container" role="region" aria-label="Drag handle">
-      <div class="drag-handle-pill"></div>
-    </div>
-    <div class="sheet-body">
-      <h2>BottomSheet Real Browser Test</h2>
-      <p>Testing 2px step stylesheet transforms with zero inline styles.</p>
-    </div>
-  </div>
+const MIME_TYPES = {
+  '.html': 'text/html; charset=utf-8',
+  '.js': 'application/javascript; charset=utf-8',
+  '.css': 'text/css; charset=utf-8',
+  '.json': 'application/json; charset=utf-8',
+  '.woff2': 'font/woff2',
+  '.png': 'image/png',
+  '.svg': 'image/svg+xml',
+};
 
-  <script>
-    const sheet = document.getElementById('sheet-content');
-    const handle = document.getElementById('drag-handle');
-    let startY = null;
-    let currentDelta = 0;
-    let isDismissing = false;
-
-    handle.addEventListener('pointerdown', (e) => {
-      if (isDismissing) return;
-      startY = e.clientY;
-      currentDelta = 0;
-      handle.setPointerCapture(e.pointerId);
-    });
-
-    handle.addEventListener('pointermove', (e) => {
-      if (startY === null || isDismissing) return;
-      const delta = e.clientY - startY;
-      if (delta > 0) {
-        currentDelta = delta;
-        sheet.setAttribute('data-drag-state', 'dragging');
-        const quantized = Math.min(80, Math.max(2, Math.round(delta / 2) * 2));
-        sheet.setAttribute('data-drag-offset', String(quantized));
-      } else {
-        currentDelta = 0;
-        sheet.setAttribute('data-drag-state', 'idle');
-        sheet.removeAttribute('data-drag-offset');
+function startStaticServer() {
+  return new Promise((resolve) => {
+    const server = http.createServer((req, res) => {
+      const reqPath = (req.url || '/').split('?')[0];
+      let filePath = path.join(DIST_DIR, reqPath === '/' ? 'index.html' : reqPath);
+      if (!fs.existsSync(filePath) || fs.statSync(filePath).isDirectory()) {
+        filePath = path.join(DIST_DIR, 'index.html');
       }
+      const ext = path.extname(filePath);
+      res.writeHead(200, { 'Content-Type': MIME_TYPES[ext] || 'application/octet-stream' });
+      fs.createReadStream(filePath).pipe(res);
     });
-
-    handle.addEventListener('pointerup', (e) => {
-      if (startY === null || isDismissing) return;
-      if (currentDelta > 75) {
-        isDismissing = true;
-        sheet.setAttribute('data-drag-state', 'dismissing');
-        sheet.removeAttribute('data-drag-offset');
-      } else {
-        sheet.setAttribute('data-drag-state', 'snapping');
-        sheet.removeAttribute('data-drag-offset');
-        setTimeout(() => {
-          if (!isDismissing) sheet.setAttribute('data-drag-state', 'idle');
-        }, 200);
-      }
-      startY = null;
-      currentDelta = 0;
+    server.listen(0, '127.0.0.1', () => {
+      const addr = server.address();
+      resolve({ server, port: addr.port });
     });
-
-    handle.addEventListener('pointercancel', (e) => {
-      if (!isDismissing) {
-        sheet.setAttribute('data-drag-state', 'snapping');
-        sheet.removeAttribute('data-drag-offset');
-        setTimeout(() => {
-          if (!isDismissing) sheet.setAttribute('data-drag-state', 'idle');
-        }, 200);
-      }
-      startY = null;
-      currentDelta = 0;
-    });
-  </script>
-</body>
-</html>`;
+  });
+}
 
 function parseTranslateY(transformString) {
   if (!transformString || transformString === 'none') return 0;
-  // matrix(1, 0, 0, 1, 0, 30) -> translateY is 6th item
   const matrixMatch = transformString.match(/matrix\(([^)]+)\)/);
   if (matrixMatch) {
     const parts = matrixMatch[1].split(',').map((s) => parseFloat(s.trim()));
@@ -124,131 +52,156 @@ function parseTranslateY(transformString) {
 }
 
 async function runBrowserVerification() {
-  console.log('🚀 [BottomSheet Playwright]: Starting browser verification suite...');
+  console.log('🚀 [BottomSheet Playwright]: Starting browser verification on REAL React component in Storybook...');
 
-  // 1. Start local test HTTP server
-  const server = http.createServer((req, res) => {
-    res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
-    res.end(HTML_CONTENT);
-  });
+  // 1. Ensure dist-storybook is built
+  if (!fs.existsSync(path.join(DIST_DIR, 'index.json'))) {
+    console.log('  ℹ dist-storybook not found; building Storybook 8...');
+    execSync('pnpm run build-storybook', {
+      cwd: path.resolve(import.meta.dirname, '..'),
+      stdio: 'inherit',
+    });
+  }
 
-  await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
-  const port = server.address().port;
-  const url = `http://127.0.0.1:${port}/`;
+  // 2. Start local static HTTP server
+  const { server, port } = await startStaticServer();
+  const storyUrl = `http://127.0.0.1:${port}/iframe.html?id=components-layout-navigation--bottom-tab-bar-and-sheet-demo&viewMode=story`;
 
   let browser;
   try {
     browser = await chromium.launch({ headless: true });
   } catch (err) {
-    console.log('  ℹ Standard chromium launch fallback, trying system chrome channel...');
+    console.log('  ℹ Standard chromium fallback: launching system Google Chrome channel...');
     browser = await chromium.launch({ channel: 'chrome', headless: true });
   }
 
   try {
-    // 2. Open page in mobile viewport (390 x 844 iPhone)
+    // 3. Open page in mobile viewport (390 x 844 iPhone)
     const context = await browser.newContext({
       viewport: { width: 390, height: 844 },
       hasTouch: true,
       isMobile: true,
     });
     const page = await context.newPage();
-    await page.goto(url);
+    await page.goto(storyUrl, { waitUntil: 'networkidle' });
 
-    const sheet = page.locator('#sheet-content');
-    const handle = page.locator('#drag-handle');
+    // Click trigger to open the real React BottomSheet
+    const trigger = page.locator('button:has-text("Open Order Detail")');
+    await trigger.waitFor({ state: 'visible' });
+    await trigger.click();
+
+    // Locate the actual Radix Dialog content element
+    const dialog = page.locator('[role="dialog"]');
+    await dialog.waitFor({ state: 'visible' });
+
+    // Locate the actual drag handle rendered by BottomSheetContent
+    const handle = dialog.locator('[role="region"][aria-label="Drag handle"]');
     await handle.waitFor({ state: 'visible' });
 
-    // Step 1: Initial resting state
-    const restingTransform = await sheet.evaluate((el) => window.getComputedStyle(el).transform);
+    // Step 1: Initial resting state on real React component
+    const restingTransform = await dialog.evaluate((el) => window.getComputedStyle(el).transform);
     const restingY = parseTranslateY(restingTransform);
     assert.equal(restingY, 0, 'Initial resting state must have translateY 0');
-    console.log('  ✔ Step 1: Initial resting state verified (translateY: 0px, matrix identity)');
+    console.log('  ✔ Step 1: Initial resting state verified on real React component (translateY: 0px)');
 
-    // Step 2: Drag down by 10px
+    // Drag handle coordinates
     const handleBox = await handle.boundingBox();
     assert.ok(handleBox, 'Drag handle must have bounding box');
     const startX = handleBox.x + handleBox.width / 2;
     const startY = handleBox.y + handleBox.height / 2;
 
+    // Step 2: Upward Drag Clamping (delta = -40px)
     await page.mouse.move(startX, startY);
     await page.mouse.down();
+    await page.mouse.move(startX, startY - 40);
+    let upState = await dialog.getAttribute('data-drag-state');
+    assert.equal(upState, 'idle', 'Upward drag must be clamped to idle');
+    let upTransform = await dialog.evaluate((el) => window.getComputedStyle(el).transform);
+    assert.equal(parseTranslateY(upTransform), 0, 'Upward drag transform must remain at 0px');
+    await page.mouse.up();
+    console.log('  ✔ Step 2: Upward mouse drag (-40px) clamped safely to resting state (0px)');
 
-    await page.mouse.move(startX, startY + 10);
-    let t10 = await sheet.evaluate((el) => window.getComputedStyle(el).transform);
-    assert.equal(parseTranslateY(t10), 10, 'At delta = 10px, computed translateY must be exactly 10px');
-    console.log('  ✔ Step 2: Downward drag 10px -> translateY = 10px (quantized: 10px via CSS rule)');
-
-    // Step 3: Drag down to 30px
+    // Step 3: Mouse Drag with Pointer Capture (cursor at +30px is below the 24px handle)
+    await page.mouse.move(startX, startY);
+    await page.mouse.down();
     await page.mouse.move(startX, startY + 30);
-    let t30 = await sheet.evaluate((el) => window.getComputedStyle(el).transform);
-    assert.equal(parseTranslateY(t30), 30, 'At delta = 30px, computed translateY must be exactly 30px');
-    console.log('  ✔ Step 3: Downward drag 30px -> translateY = 30px (quantized: 30px via CSS rule)');
+    let t30 = await dialog.evaluate((el) => window.getComputedStyle(el).transform);
+    assert.equal(parseTranslateY(t30), 30, 'Mouse drag with pointer capture: translateY must be 30px');
+    console.log('  ✔ Step 3: Mouse drag with pointer capture past handle boundary -> translateY = 30px (quantized: 30px)');
 
-    // Step 4: Drag down to 50px
+    // Step 4: Continuous fine-grained mouse tracking to 50px and 74px (<= 75px boundary)
     await page.mouse.move(startX, startY + 50);
-    let t50 = await sheet.evaluate((el) => window.getComputedStyle(el).transform);
-    assert.equal(parseTranslateY(t50), 50, 'At delta = 50px, computed translateY must be exactly 50px');
-    console.log('  ✔ Step 4: Downward drag 50px -> translateY = 50px (quantized: 50px via CSS rule)');
+    let t50 = await dialog.evaluate((el) => window.getComputedStyle(el).transform);
+    assert.equal(parseTranslateY(t50), 50, 'At delta = 50px, computed translateY must be 50px');
 
-    // Step 5: Drag down to 74px (exact small-drag boundary below 75px threshold)
     await page.mouse.move(startX, startY + 74);
-    let t74 = await sheet.evaluate((el) => window.getComputedStyle(el).transform);
-    assert.equal(parseTranslateY(t74), 74, 'At delta = 74px, computed translateY must be exactly 74px');
-    console.log('  ✔ Step 5: Downward drag 74px -> translateY = 74px (quantized: 74px below 75px threshold)');
+    let t74 = await dialog.evaluate((el) => window.getComputedStyle(el).transform);
+    assert.equal(parseTranslateY(t74), 74, 'At delta = 74px, computed translateY must be 74px');
+    console.log('  ✔ Step 4: Continuous fine-grained mouse tracking to 74px (<= 75px boundary)');
 
-    // Step 6: Release gesture at 74px -> snaps back to resting state
+    // Step 5: Small drag release at 74px -> snaps back to resting state, Radix Dialog stays OPEN
     await page.mouse.up();
     await page.waitForTimeout(300);
-    let snapBackState = await sheet.getAttribute('data-drag-state');
+    let snapBackState = await dialog.getAttribute('data-drag-state');
     assert.equal(snapBackState, 'idle', 'Sheet must snap back to idle state when released at <= 75px');
-    let snapTransform = await sheet.evaluate((el) => window.getComputedStyle(el).transform);
+    let snapTransform = await dialog.evaluate((el) => window.getComputedStyle(el).transform);
     assert.ok(
       Math.abs(parseTranslateY(snapTransform)) < 0.1,
       `Snap-back transform must return to resting translateY 0, got ${parseTranslateY(snapTransform)}`
     );
-    console.log('  ✔ Step 6: Release at 74px (<= 75px) -> snapped back cleanly to resting state (translateY: 0px)');
+    assert.ok(await dialog.isVisible(), 'Sheet must remain open after small drag snap-back');
+    console.log('  ✔ Step 5: Small mouse drag released at 74px -> snapped back cleanly (stays open)');
 
-    // Step 7: Drag down beyond 75px threshold to 80px
+    // Step 6: Drag down 40px and trigger pointer cancellation recovery
+    await page.mouse.move(startX, startY);
+    await page.mouse.down();
+    await page.mouse.move(startX, startY + 40);
+    let move40State = await dialog.getAttribute('data-drag-state');
+    assert.equal(move40State, 'dragging');
+    await handle.dispatchEvent('pointercancel', { pointerId: 1 });
+    await page.waitForTimeout(300);
+    let cancelState = await dialog.getAttribute('data-drag-state');
+    assert.equal(cancelState, 'idle', 'Sheet must return to idle after pointer cancel');
+    await page.mouse.up();
+    console.log('  ✔ Step 6: Gesture cancellation recovery verified (sheet returned to idle)');
+
+    // Step 7: Mouse Drag beyond 75px threshold (e.g. 80px) -> triggers real Radix Dialog dismissal
     await page.mouse.move(startX, startY);
     await page.mouse.down();
     await page.mouse.move(startX, startY + 80);
-    let t80 = await sheet.evaluate((el) => window.getComputedStyle(el).transform);
+    let t80 = await dialog.evaluate((el) => window.getComputedStyle(el).transform);
     assert.equal(parseTranslateY(t80), 80, 'At delta = 80px, computed translateY must be 80px');
-    console.log('  ✔ Step 7: Downward drag 80px (> 75px) -> translateY = 80px reached');
 
-    // Step 8: Release gesture at 80px -> dismisses
     await page.mouse.up();
-    await page.waitForTimeout(50);
-    let dismissState = await sheet.getAttribute('data-drag-state');
-    assert.equal(dismissState, 'dismissing', 'Sheet must transition to dismissing state when released at > 75px');
-    console.log('  ✔ Step 8: Release at 80px (> 75px) -> sheet dismiss triggered (data-drag-state="dismissing")');
+    await page.waitForTimeout(400);
 
-    // Step 9: Reset dismissing state for subsequent gesture assertions
-    await sheet.evaluate((el) => {
-      el.setAttribute('data-drag-state', 'idle');
-      el.removeAttribute('data-drag-offset');
-    });
+    // Verify Radix Dialog closed
+    const isClosed = !(await dialog.isVisible().catch(() => false));
+    assert.ok(isClosed, 'Radix Dialog must have closed after drag > 75px');
+    console.log('  ✔ Step 7: Mouse drag released at 80px (> 75px) -> real React component dismissed successfully');
 
-    // Step 10: Upward drag (delta = -40px) must be clamped to resting state
-    await page.mouse.move(startX, startY);
-    await page.mouse.down();
-    await page.mouse.move(startX, startY - 40);
-    let upDragState = await sheet.getAttribute('data-drag-state');
-    assert.equal(upDragState, 'idle', 'Upward drag must remain in idle state without offset');
-    let upTransform = await sheet.evaluate((el) => window.getComputedStyle(el).transform);
-    assert.equal(parseTranslateY(upTransform), 0, 'Upward drag transform must remain at 0px');
-    await page.mouse.up();
-    console.log('  ✔ Step 9: Upward drag (-40px) -> clamped safely to resting state (translateY: 0px)');
+    // Step 8: Reopen sheet via React trigger button
+    await trigger.click();
+    const reopenedDialog = page.locator('[role="dialog"]');
+    await reopenedDialog.waitFor({ state: 'visible' });
+    await page.waitForTimeout(300);
+    console.log('  ✔ Step 8: Sheet reopened successfully via React trigger');
 
-    // Step 11: Zero DOM inline-style invariant verified
-    const styleAttr = await sheet.getAttribute('style');
+    // Step 9: Zero DOM Inline-Style Mutation Invariant on Real React Component
+    // BottomSheet relies strictly on CSS attribute selectors (data-drag-state, data-drag-offset) rather than inline styles.
+    // Verify that neither transform nor transition was ever injected as an inline style.
+    const inlineTransform = await reopenedDialog.evaluate((el) => el.style.transform);
+    const inlineTransition = await reopenedDialog.evaluate((el) => el.style.transition);
+    assert.equal(inlineTransform, '', 'BottomSheet must not set inline style.transform');
+    assert.equal(inlineTransition, '', 'BottomSheet must not set inline style.transition');
+    const fullStyle = (await reopenedDialog.getAttribute('style')) || '';
     assert.ok(
-      !styleAttr || styleAttr.trim() === '',
-      `Zero inline styles invariant violated: found style="${styleAttr}"`
+      !fullStyle.includes('transform') && !fullStyle.includes('transition'),
+      `Zero inline-style invariant violated: found transform/transition in style="${fullStyle}"`
     );
-    console.log('  ✔ Step 10: Zero DOM inline-style invariant verified (sheet style attribute is completely empty)');
+    console.log('  ✔ Step 9: Zero DOM inline-style mutation invariant verified on real React component (no transform/transition)');
 
-    console.log('\n🏆 [BottomSheet Playwright]: ALL REAL BROWSER GESTURE CHECKS PASSED!\n');
+    console.log('\n🏆 [BottomSheet Playwright]: ALL REAL REACT COMPONENT BROWSER CHECKS PASSED!\n');
   } finally {
     if (browser) await browser.close();
     server.close();

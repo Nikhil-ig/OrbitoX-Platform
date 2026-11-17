@@ -336,6 +336,44 @@ describe('BottomSheet Component Guard (7B.1 / F-5)', () => {
     assert.equal(dialog.hasAttribute('data-drag-offset'), false);
   });
 
+  it('manages pointer capture and filters unrelated pointer IDs', async () => {
+    const { getByRole } = render(
+      React.createElement(
+        BottomSheet,
+        { open: true },
+        React.createElement(
+          BottomSheetContent,
+          null,
+          React.createElement(BottomSheetTitle, null, 'Title'),
+          React.createElement(BottomSheetDescription, null, 'Desc')
+        )
+      )
+    );
+
+    const dialog = getByRole('dialog');
+    const dragHandle = dialog.querySelector('.cursor-grab') as any;
+    assert.ok(dragHandle);
+
+    // Pointer down captures pointer 42
+    fireEvent.pointerDown(dragHandle, { pointerId: 42, button: 0, clientY: 100 });
+    assert.equal(dragHandle._capturedPointerId, 42, 'Must set pointer capture on pointer down');
+
+    // Unrelated pointer 99 move must be ignored
+    fireEvent.pointerMove(dragHandle, { pointerId: 99, clientY: 160 });
+    assert.equal(dialog.getAttribute('data-drag-state'), 'idle');
+
+    // Matching pointer 42 move updates offset
+    fireEvent.pointerMove(dragHandle, { pointerId: 42, clientY: 140 });
+    assert.equal(dialog.getAttribute('data-drag-state'), 'dragging');
+    assert.equal(dialog.getAttribute('data-drag-offset'), '40');
+
+    // Pointer up releases capture
+    await act(async () => {
+      fireEvent.pointerUp(dragHandle, { pointerId: 42, clientY: 140 });
+    });
+    assert.equal(dragHandle._capturedPointerId, undefined, 'Must release pointer capture on pointer up');
+  });
+
   it('prevents repeated gesture events from producing duplicate close calls', async () => {
     let closeCallCount = 0;
     const onOpenChange = (open: boolean) => {

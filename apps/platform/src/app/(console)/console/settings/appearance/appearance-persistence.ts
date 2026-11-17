@@ -68,7 +68,7 @@ export class AppearancePersistenceController {
   private isWriting: boolean = false;
   private isReconcilingState: boolean = false;
   private isUnconfirmedState: boolean = false;
-  private isDisposed: boolean = false;
+  public isDisposed: boolean = false;
   private waiters: RevisionWaiter[] = [];
 
   private apiEndpoint: string;
@@ -121,8 +121,20 @@ export class AppearancePersistenceController {
    * Called within React useEffect lifecycle to preserve render purity.
    */
   syncDocument(): void {
-    if (this.isDisposed) return;
+    this.isDisposed = false;
     applyAppearanceToDocument(this.desiredAppearance);
+  }
+
+  /**
+   * Reactivate controller and restore callbacks after a React Strict Mode simulated unmount replay.
+   */
+  activate(callbacks?: {
+    onToast?: (notification: ToastNotification) => void;
+    onStateChange?: (state: AppearancePersistenceState) => void;
+  }): void {
+    this.isDisposed = false;
+    if (callbacks?.onToast) this.onToast = callbacks.onToast;
+    if (callbacks?.onStateChange) this.onStateChange = callbacks.onStateChange;
   }
 
   /**
@@ -130,8 +142,6 @@ export class AppearancePersistenceController {
    */
   dispose(): void {
     this.isDisposed = true;
-    this.onToast = undefined;
-    this.onStateChange = undefined;
     // Drain any remaining waiters so callers don't hang
     const remaining = [...this.waiters];
     this.waiters = [];
@@ -206,9 +216,14 @@ export class AppearancePersistenceController {
         } catch {
           // Network connection dropped or unreachable during PUT.
           // Enter authoritative reconciliation to verify whether PostgreSQL committed.
-          await this.reconcileAuthoritativeState(snapshotRevision, snapshotPayload);
-          this.resolveWaitersUpTo(snapshotRevision);
-          break;
+          const outcome = await this.reconcileAuthoritativeState(snapshotRevision, snapshotPayload);
+          if (outcome === 'reconcile_continue') {
+            this.resolveWaitersUpTo(snapshotRevision);
+            continue;
+          } else {
+            this.resolveWaitersUpTo(snapshotRevision);
+            break;
+          }
         }
 
         if (res.ok) {
@@ -263,7 +278,6 @@ export class AppearancePersistenceController {
       }
     } finally {
       this.isWriting = false;
-      this.resolveWaitersUpTo(this.desiredRevision);
       this.notifyState();
     }
   }
@@ -289,7 +303,7 @@ export class AppearancePersistenceController {
   private async reconcileAuthoritativeState(
     snapshotRevision: number,
     _snapshotPayload: AppearancePreferences
-  ): Promise<void> {
+  ): Promise<'reconcile_continue' | 'reconciled_clean' | 'failed'> {
     this.isReconcilingState = true;
     this.notifyState();
 
@@ -311,13 +325,13 @@ export class AppearancePersistenceController {
 
           if (this.desiredRevision > snapshotRevision) {
             // Newer desired preferences exist. Retain them and continue queue!
-            return;
+            return 'reconcile_continue';
           } else {
             // No newer desired preferences. Synchronize UI and document with authoritative server state:
             this.desiredAppearance = { ...authoritative };
             this.persistedRevision = snapshotRevision;
             applyAppearanceToDocument(authoritative);
-            return;
+            return 'reconciled_clean';
           }
         }
       }
@@ -333,6 +347,7 @@ export class AppearancePersistenceController {
         variant: 'warning',
         duration: 5000,
       });
+      return 'failed';
     } finally {
       this.isReconcilingState = false;
       this.notifyState();

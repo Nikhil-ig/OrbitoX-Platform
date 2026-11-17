@@ -684,4 +684,86 @@ describe('Appearance Persistence Single-Writer & Concurrency Matrix (AP-01 to AP
     assert.equal(domAttributes.get('data-focus'), 'default');
     assert.equal(domAttributes.get('data-sidebar'), 'default');
   });
+
+  it('AP-18: First PUT fails with network error, newer update is queued -> Queue continues draining and persists newer update', async () => {
+    const server = new FakeAuthoritativeServerStore(DEFAULT_TEST_APPEARANCE);
+    let putAttempts = 0;
+    server.onPut = (payload) => {
+      putAttempts += 1;
+      if (putAttempts === 1) {
+        // First PUT fails with network error
+        throw new Error('Network dropped during PUT 1');
+      }
+      // Second PUT succeeds and commits payload
+      server.persistedPreferences = { ...payload };
+      return new Response(JSON.stringify({ success: true, appearance: payload }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    };
+    // GET reconciliation returns the initial server state (before PUT 1)
+    server.onGet = () =>
+      new Response(JSON.stringify({ success: true, appearance: server.persistedPreferences }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      });
+
+    globalThis.fetch = (url, init) => server.handleFetch(url, init);
+
+    const controller = new AppearancePersistenceController({
+      initialAppearance: DEFAULT_TEST_APPEARANCE,
+    });
+
+    // Queue first update (rev 1)
+    const p1 = controller.updatePreferences({ accent: 'emerald' });
+    // Immediately queue second update (rev 2) while first PUT is in flight
+    const p2 = controller.updatePreferences({ radius: 24 });
+
+    // Await both promises
+    await Promise.all([p1, p2]);
+
+    // Invariant: Controller, document, and authoritative server store agree on revision 2
+    assert.equal(putAttempts, 2, 'Must have attempted PUT 1 then drained PUT 2');
+    assert.equal(server.persistedPreferences.accent, 'emerald');
+    assert.equal(server.persistedPreferences.radius, 24);
+    assert.equal(controller.currentAppearance.accent, 'emerald');
+    assert.equal(controller.currentAppearance.radius, 24);
+    assert.equal(domAttributes.get('data-accent'), 'emerald');
+    assert.equal(domAttributes.get('data-radius'), '24');
+    assert.equal(controller.isSaving, false);
+    assert.equal(controller.isUnconfirmed, false);
+  });
+
+  it('React Strict Mode replay: Controller reactivates after unmount replay and persists preference changes', async () => {
+    const server = new FakeAuthoritativeServerStore(DEFAULT_TEST_APPEARANCE);
+    globalThis.fetch = (url, init) => server.handleFetch(url, init);
+
+    const toasts: ToastNotification[] = [];
+    const controller = new AppearancePersistenceController({
+      initialAppearance: DEFAULT_TEST_APPEARANCE,
+      onToast: (t) => toasts.push(t),
+    });
+
+    // Strict Mode effect setup 1
+    controller.syncDocument();
+    // Strict Mode effect cleanup 1 (disposes controller)
+    controller.dispose();
+    assert.equal(controller.isDisposed, true);
+
+    // Strict Mode effect setup 2 (reactivates controller & syncs document)
+    controller.activate({
+      onToast: (t: ToastNotification) => toasts.push(t),
+    });
+    controller.syncDocument();
+    assert.equal(controller.isDisposed, false);
+
+    // User updates preference after Strict Mode remount
+    await controller.updatePreferences({ accent: 'emerald' });
+
+    assert.equal(server.persistedPreferences.accent, 'emerald');
+    assert.equal(domAttributes.get('data-accent'), 'emerald');
+    assert.equal(controller.currentAppearance.accent, 'emerald');
+    assert.equal(toasts.length, 1);
+    assert.equal(toasts[0]?.variant, 'success');
+  });
 });

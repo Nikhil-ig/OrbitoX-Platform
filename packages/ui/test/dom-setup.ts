@@ -36,6 +36,19 @@ if (!dom.window.PointerEvent) {
   (dom.window.HTMLElement.prototype as any).onpointerup = null;
   (dom.window.HTMLElement.prototype as any).onpointercancel = null;
 }
+if (!dom.window.HTMLElement.prototype.setPointerCapture) {
+  dom.window.HTMLElement.prototype.setPointerCapture = function(pointerId: number) {
+    (this as any)._capturedPointerId = pointerId;
+  };
+  dom.window.HTMLElement.prototype.releasePointerCapture = function(pointerId: number) {
+    if ((this as any)._capturedPointerId === pointerId) {
+      delete (this as any)._capturedPointerId;
+    }
+  };
+  dom.window.HTMLElement.prototype.hasPointerCapture = function(pointerId: number) {
+    return (this as any)._capturedPointerId === pointerId;
+  };
+}
 g.PointerEvent = dom.window.PointerEvent;
 g.CustomEvent = dom.window.CustomEvent;
 g.getComputedStyle = dom.window.getComputedStyle;

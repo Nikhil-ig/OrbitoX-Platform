@@ -17,37 +17,92 @@ export function detectStyleMutationsInSource(filePath: string, sourceText: strin
   const violations: StyleMutationViolation[] = [];
   const styleAliases = new Set<string>();
 
-  // Pass 1: Statically trace style aliases and destructured identifiers
-  function findAliases(node: ts.Node) {
-    if (ts.isVariableDeclaration(node) && node.initializer) {
-      if (ts.isObjectBindingPattern(node.name)) {
-        for (const element of node.name.elements) {
-          const propName = element.propertyName
-            ? element.propertyName.getText(sf)
-            : element.name.getText(sf);
-          if (propName === 'style') {
-            styleAliases.add(element.name.getText(sf));
+  // Pass 1: Statically trace style aliases, destructuring, and transitive alias chains (fixpoint)
+  let foundNewAlias = true;
+  while (foundNewAlias) {
+    foundNewAlias = false;
+    function findAliases(node: ts.Node) {
+      // 1. Variable Declarations (const s = el.style, const alias = s, const { style } = el)
+      if (ts.isVariableDeclaration(node) && node.initializer) {
+        if (ts.isObjectBindingPattern(node.name)) {
+          for (const element of node.name.elements) {
+            const propName = element.propertyName
+              ? element.propertyName.getText(sf)
+              : element.name.getText(sf);
+            if (propName === 'style' || styleAliases.has(propName)) {
+              const aliasName = element.name.getText(sf);
+              if (!styleAliases.has(aliasName)) {
+                styleAliases.add(aliasName);
+                foundNewAlias = true;
+              }
+            }
+          }
+        }
+        if (ts.isIdentifier(node.name)) {
+          const varName = node.name.text;
+          if (!styleAliases.has(varName)) {
+            // Direct style property access: element.style
+            if (
+              ts.isPropertyAccessExpression(node.initializer) &&
+              (node.initializer.name.text === 'style' || styleAliases.has(node.initializer.name.text))
+            ) {
+              styleAliases.add(varName);
+              foundNewAlias = true;
+            }
+            // Direct element access: element['style']
+            else if (
+              ts.isElementAccessExpression(node.initializer) &&
+              node.initializer.argumentExpression &&
+              ts.isStringLiteral(node.initializer.argumentExpression) &&
+              (node.initializer.argumentExpression.text === 'style' ||
+                styleAliases.has(node.initializer.argumentExpression.text))
+            ) {
+              styleAliases.add(varName);
+              foundNewAlias = true;
+            }
+            // Transitive alias identifier: const alias = s (where s is in styleAliases)
+            else if (ts.isIdentifier(node.initializer) && styleAliases.has(node.initializer.text)) {
+              styleAliases.add(varName);
+              foundNewAlias = true;
+            }
           }
         }
       }
-      if (ts.isPropertyAccessExpression(node.initializer) && node.initializer.name.text === 'style') {
-        if (ts.isIdentifier(node.name)) {
-          styleAliases.add(node.name.text);
-        }
-      } else if (
-        ts.isElementAccessExpression(node.initializer) &&
-        node.initializer.argumentExpression &&
-        ts.isStringLiteral(node.initializer.argumentExpression) &&
-        node.initializer.argumentExpression.text === 'style'
+
+      // 2. Binary Assignment expressions (e.g. alias = s; or target = el.style;)
+      if (
+        ts.isBinaryExpression(node) &&
+        node.operatorToken.kind === ts.SyntaxKind.EqualsToken &&
+        ts.isIdentifier(node.left)
       ) {
-        if (ts.isIdentifier(node.name)) {
-          styleAliases.add(node.name.text);
+        const varName = node.left.text;
+        if (!styleAliases.has(varName)) {
+          if (
+            ts.isPropertyAccessExpression(node.right) &&
+            (node.right.name.text === 'style' || styleAliases.has(node.right.name.text))
+          ) {
+            styleAliases.add(varName);
+            foundNewAlias = true;
+          } else if (
+            ts.isElementAccessExpression(node.right) &&
+            node.right.argumentExpression &&
+            ts.isStringLiteral(node.right.argumentExpression) &&
+            (node.right.argumentExpression.text === 'style' ||
+              styleAliases.has(node.right.argumentExpression.text))
+          ) {
+            styleAliases.add(varName);
+            foundNewAlias = true;
+          } else if (ts.isIdentifier(node.right) && styleAliases.has(node.right.text)) {
+            styleAliases.add(varName);
+            foundNewAlias = true;
+          }
         }
       }
+
+      ts.forEachChild(node, findAliases);
     }
-    ts.forEachChild(node, findAliases);
+    findAliases(sf);
   }
-  findAliases(sf);
 
   function isStyleAccess(expr: ts.Expression): boolean {
     if (ts.isPropertyAccessExpression(expr)) {
@@ -250,6 +305,20 @@ describe('Design System Token & Style Invariants Guard (B2 / B3)', () => {
 
     const badSample6 = 'const s = el.style; s.backgroundColor = "white";';
     assert.ok(detectStyleMutationsInSource('test6.ts', badSample6).length >= 1);
+
+    // Adversarial sample 7: Transitive alias assignment (const s = el.style; const alias = s; alias.opacity = "0.5")
+    const badSample7 = 'const s = element.style; const alias = s; alias.opacity = "0.5";';
+    assert.ok(
+      detectStyleMutationsInSource('test7.ts', badSample7).length >= 1,
+      'Must detect transitive style alias mutations'
+    );
+
+    // Adversarial sample 8: Multi-hop transitive alias assignment (s -> a -> b)
+    const badSample8 = 'const s = el.style; const a = s; const b = a; b.setProperty("display", "none");';
+    assert.ok(
+      detectStyleMutationsInSource('test8.ts', badSample8).length >= 1,
+      'Must detect multi-hop transitive style alias mutations'
+    );
 
     // Benign sample: variable named style with no DOM mutation
     const benignSample = 'const buttonStyle = "p-4"; const isStyleActive = true;';

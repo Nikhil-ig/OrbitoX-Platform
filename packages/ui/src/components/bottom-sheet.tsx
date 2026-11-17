@@ -155,22 +155,53 @@ export const BottomSheetContent = React.forwardRef<
 
   const handlePointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
     if (e.button !== 0 && e.pointerType === 'mouse') return;
-    activePointerId.current = e.pointerId ?? 1;
+    const pid = e.pointerId ?? 1;
+    activePointerId.current = pid;
+    try {
+      e.currentTarget.setPointerCapture(pid);
+    } catch {
+      // Graceful fallback for synthetic or test environments lacking capture
+    }
     handleDragStart(e.clientY);
   };
 
   const handlePointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
     if (activePointerId.current === null) return;
+    if (e.pointerId !== undefined && e.pointerId !== 0 && e.pointerId !== activePointerId.current) return;
     handleDragMove(e.clientY);
   };
 
   const handlePointerUp = (e: React.PointerEvent<HTMLDivElement>) => {
     if (activePointerId.current === null) return;
+    if (e.pointerId !== undefined && e.pointerId !== 0 && e.pointerId !== activePointerId.current) return;
+    try {
+      if (typeof e.currentTarget.hasPointerCapture === 'function') {
+        if (e.currentTarget.hasPointerCapture(activePointerId.current)) {
+          e.currentTarget.releasePointerCapture(activePointerId.current);
+        }
+      } else if (typeof e.currentTarget.releasePointerCapture === 'function') {
+        e.currentTarget.releasePointerCapture(activePointerId.current);
+      }
+    } catch {
+      // Capture already released
+    }
     handleDragEnd();
   };
 
   const handlePointerCancel = (e: React.PointerEvent<HTMLDivElement>) => {
     if (activePointerId.current === null) return;
+    if (e.pointerId !== undefined && e.pointerId !== 0 && e.pointerId !== activePointerId.current) return;
+    try {
+      if (typeof e.currentTarget.hasPointerCapture === 'function') {
+        if (e.currentTarget.hasPointerCapture(activePointerId.current)) {
+          e.currentTarget.releasePointerCapture(activePointerId.current);
+        }
+      } else if (typeof e.currentTarget.releasePointerCapture === 'function') {
+        e.currentTarget.releasePointerCapture(activePointerId.current);
+      }
+    } catch {
+      // Capture already released
+    }
     handleDragCancel();
   };
 
