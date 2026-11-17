@@ -1,5 +1,5 @@
 import React from 'react';
-import { cookies } from 'next/headers';
+import { headers, cookies } from 'next/headers';
 import '@orbitox-io/ui/src/styles/theme.css';
 import './globals.css';
 import { fontInter, fontNotoDevanagari, fontJetBrainsMono } from './fonts';
@@ -10,6 +10,7 @@ import {
   getOperatorAppearance,
   getCustomerAppearance,
   type AppearancePreferences,
+  type PersonaRouteClass,
 } from '@/server/appearance/appearance-service';
 import {
   OPERATOR_SESSION_COOKIE,
@@ -24,6 +25,8 @@ export const metadata = {
 };
 
 export default async function RootLayout({ children }: { children: React.ReactNode }) {
+  const headersList = await headers();
+  const routePersona = (headersList.get('x-orbito-route-persona') as PersonaRouteClass) || 'public';
   const cookieStore = await cookies();
   const operatorToken = cookieStore.get(OPERATOR_SESSION_COOKIE)?.value;
   const customerToken = cookieStore.get(CUSTOMER_SESSION_COOKIE)?.value;
@@ -52,7 +55,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
 
   if (!appearance) {
     const rawCookie = cookieStore.get(APPEARANCE_COOKIE)?.value;
-    appearance = parseAppearanceCookie(rawCookie);
+    appearance = parseAppearanceCookie(rawCookie, routePersona);
   }
 
   return (

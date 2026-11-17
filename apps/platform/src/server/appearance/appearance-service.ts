@@ -46,16 +46,92 @@ export const DEFAULT_APPEARANCE: AppearancePreferences = {
   compactSidebar: false,
 };
 
+export type PersonaRouteClass = 'operator' | 'owner' | 'customer' | 'staff_pos' | 'staff_operational' | 'public';
+
+/**
+ * Authoritative persona-specific explicit default appearances.
+ * Applied when a user has not explicitly configured or saved an appearance preference.
+ */
+export function getPersonaDefaultAppearance(persona: PersonaRouteClass = 'public'): AppearancePreferences {
+  switch (persona) {
+    case 'operator':
+      return {
+        theme: 'dark',
+        accent: 'ocean',
+        density: 'compact',
+        radius: 16,
+        smoothAnimations: true,
+        boldFocusRings: false,
+        compactSidebar: false,
+      };
+    case 'staff_operational':
+      return {
+        theme: 'dark',
+        accent: 'ocean',
+        density: 'standard',
+        radius: 16,
+        smoothAnimations: true,
+        boldFocusRings: false,
+        compactSidebar: false,
+      };
+    case 'staff_pos':
+      return {
+        theme: 'light',
+        accent: 'ocean',
+        density: 'standard',
+        radius: 16,
+        smoothAnimations: true,
+        boldFocusRings: false,
+        compactSidebar: false,
+      };
+    case 'owner':
+      return {
+        theme: 'light',
+        accent: 'ocean',
+        density: 'standard',
+        radius: 20,
+        smoothAnimations: true,
+        boldFocusRings: false,
+        compactSidebar: false,
+      };
+    case 'customer':
+      return {
+        theme: 'light',
+        accent: 'ocean',
+        density: 'standard',
+        radius: 28,
+        smoothAnimations: true,
+        boldFocusRings: false,
+        compactSidebar: false,
+      };
+    case 'public':
+    default:
+      return {
+        theme: 'light',
+        accent: 'ocean',
+        density: 'standard',
+        radius: 24,
+        smoothAnimations: true,
+        boldFocusRings: false,
+        compactSidebar: false,
+      };
+  }
+}
+
 export const APPEARANCE_COOKIE = 'orbitox_appearance';
 
-export function parseAppearanceCookie(cookieValue?: string | null): AppearancePreferences {
-  if (!cookieValue) return DEFAULT_APPEARANCE;
+export function parseAppearanceCookie(
+  cookieValue?: string | null,
+  fallbackPersona: PersonaRouteClass = 'public'
+): AppearancePreferences {
+  const fallback = getPersonaDefaultAppearance(fallbackPersona);
+  if (!cookieValue) return fallback;
   try {
     const raw = JSON.parse(decodeURIComponent(cookieValue));
     const parsed = AppearanceSchema.safeParse(raw);
-    return parsed.success ? parsed.data : DEFAULT_APPEARANCE;
+    return parsed.success ? parsed.data : fallback;
   } catch {
-    return DEFAULT_APPEARANCE;
+    return fallback;
   }
 }
 
@@ -74,33 +150,38 @@ export function setAppearanceCookie(response: NextResponse, appearance: Appearan
 }
 
 export async function getOperatorAppearance(operatorId: string): Promise<AppearancePreferences> {
-  const operator = await prisma.platformOperator.findUnique({
-    where: { id: operatorId },
-    select: {
-      appearanceTheme: true,
-      appearanceAccent: true,
-      appearanceDensity: true,
-      appearanceRadius: true,
-      appearanceSmoothAnimations: true,
-      appearanceBoldFocusRings: true,
-      appearanceCompactSidebar: true,
-    },
-  });
+  const opDefault = getPersonaDefaultAppearance('operator');
+  try {
+    const operator = await prisma.platformOperator.findUnique({
+      where: { id: operatorId },
+      select: {
+        appearanceTheme: true,
+        appearanceAccent: true,
+        appearanceDensity: true,
+        appearanceRadius: true,
+        appearanceSmoothAnimations: true,
+        appearanceBoldFocusRings: true,
+        appearanceCompactSidebar: true,
+      },
+    });
 
-  if (!operator) return DEFAULT_APPEARANCE;
+    if (!operator) return opDefault;
 
-  const candidate = {
-    theme: operator.appearanceTheme || DEFAULT_APPEARANCE.theme,
-    accent: operator.appearanceAccent || DEFAULT_APPEARANCE.accent,
-    density: operator.appearanceDensity || DEFAULT_APPEARANCE.density,
-    radius: operator.appearanceRadius ?? DEFAULT_APPEARANCE.radius,
-    smoothAnimations: operator.appearanceSmoothAnimations ?? DEFAULT_APPEARANCE.smoothAnimations,
-    boldFocusRings: operator.appearanceBoldFocusRings ?? DEFAULT_APPEARANCE.boldFocusRings,
-    compactSidebar: operator.appearanceCompactSidebar ?? DEFAULT_APPEARANCE.compactSidebar,
-  };
+    const candidate = {
+      theme: operator.appearanceTheme || opDefault.theme,
+      accent: operator.appearanceAccent || opDefault.accent,
+      density: operator.appearanceDensity || opDefault.density,
+      radius: operator.appearanceRadius ?? opDefault.radius,
+      smoothAnimations: operator.appearanceSmoothAnimations ?? opDefault.smoothAnimations,
+      boldFocusRings: operator.appearanceBoldFocusRings ?? opDefault.boldFocusRings,
+      compactSidebar: operator.appearanceCompactSidebar ?? opDefault.compactSidebar,
+    };
 
-  const parsed = AppearanceSchema.safeParse(candidate);
-  return parsed.success ? parsed.data : DEFAULT_APPEARANCE;
+    const parsed = AppearanceSchema.safeParse(candidate);
+    return parsed.success ? parsed.data : opDefault;
+  } catch {
+    return opDefault;
+  }
 }
 
 export async function updateOperatorAppearance(
@@ -131,33 +212,38 @@ export async function updateOperatorAppearance(
 }
 
 export async function getCustomerAppearance(userId: string): Promise<AppearancePreferences> {
-  const user = await prisma.customerUser.findUnique({
-    where: { id: userId },
-    select: {
-      appearanceTheme: true,
-      appearanceAccent: true,
-      appearanceDensity: true,
-      appearanceRadius: true,
-      appearanceSmoothAnimations: true,
-      appearanceBoldFocusRings: true,
-      appearanceCompactSidebar: true,
-    },
-  });
+  const custDefault = getPersonaDefaultAppearance('customer');
+  try {
+    const user = await prisma.customerUser.findUnique({
+      where: { id: userId },
+      select: {
+        appearanceTheme: true,
+        appearanceAccent: true,
+        appearanceDensity: true,
+        appearanceRadius: true,
+        appearanceSmoothAnimations: true,
+        appearanceBoldFocusRings: true,
+        appearanceCompactSidebar: true,
+      },
+    });
 
-  if (!user) return DEFAULT_APPEARANCE;
+    if (!user) return custDefault;
 
-  const candidate = {
-    theme: user.appearanceTheme || DEFAULT_APPEARANCE.theme,
-    accent: user.appearanceAccent || DEFAULT_APPEARANCE.accent,
-    density: user.appearanceDensity || DEFAULT_APPEARANCE.density,
-    radius: user.appearanceRadius ?? DEFAULT_APPEARANCE.radius,
-    smoothAnimations: user.appearanceSmoothAnimations ?? DEFAULT_APPEARANCE.smoothAnimations,
-    boldFocusRings: user.appearanceBoldFocusRings ?? DEFAULT_APPEARANCE.boldFocusRings,
-    compactSidebar: user.appearanceCompactSidebar ?? DEFAULT_APPEARANCE.compactSidebar,
-  };
+    const candidate = {
+      theme: user.appearanceTheme || custDefault.theme,
+      accent: user.appearanceAccent || custDefault.accent,
+      density: user.appearanceDensity || custDefault.density,
+      radius: user.appearanceRadius ?? custDefault.radius,
+      smoothAnimations: user.appearanceSmoothAnimations ?? custDefault.smoothAnimations,
+      boldFocusRings: user.appearanceBoldFocusRings ?? custDefault.boldFocusRings,
+      compactSidebar: user.appearanceCompactSidebar ?? custDefault.compactSidebar,
+    };
 
-  const parsed = AppearanceSchema.safeParse(candidate);
-  return parsed.success ? parsed.data : DEFAULT_APPEARANCE;
+    const parsed = AppearanceSchema.safeParse(candidate);
+    return parsed.success ? parsed.data : custDefault;
+  } catch {
+    return custDefault;
+  }
 }
 
 export async function updateCustomerAppearance(

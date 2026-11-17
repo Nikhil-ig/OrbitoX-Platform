@@ -47,6 +47,55 @@ export const config = {
 
 export type Principal = 'admin' | 'runtime';
 
+export type PersonaRouteClass = 'operator' | 'owner' | 'customer' | 'staff_pos' | 'staff_operational' | 'public';
+
+/**
+ * Classifies an incoming route pathname into one of five authoritative OrbitoX personas.
+ */
+export function classifyRoutePersona(pathname: string): PersonaRouteClass {
+  if (pathname.startsWith('/console') || pathname.startsWith('/platform')) {
+    return 'operator';
+  }
+  if (pathname.startsWith('/pos')) {
+    return 'staff_pos';
+  }
+  if (
+    pathname.startsWith('/kds') ||
+    pathname.startsWith('/kitchen') ||
+    pathname.startsWith('/host') ||
+    pathname.startsWith('/waiter') ||
+    pathname.startsWith('/staff')
+  ) {
+    return 'staff_operational';
+  }
+  if (pathname.startsWith('/owner') || pathname.startsWith('/restaurants')) {
+    return 'owner';
+  }
+  if (pathname.startsWith('/workspace') || pathname.startsWith('/customer')) {
+    return 'customer';
+  }
+  return 'public';
+}
+
+/**
+ * Prepares forward headers: strips client-supplied persona/station headers and sets trusted values.
+ */
+export function createForwardHeaders(req: NextRequest, baseHeaders?: Headers): Headers {
+  const headers = baseHeaders ? new Headers(baseHeaders) : new Headers(req.headers);
+  headers.delete('x-orbito-route-persona');
+  headers.delete('x-orbito-station');
+
+  const persona = classifyRoutePersona(req.nextUrl.pathname);
+  headers.set('x-orbito-route-persona', persona);
+
+  const rawStation = req.cookies.get('orbitox_station')?.value;
+  if (rawStation && ['pos', 'kds', 'host', 'waiter'].includes(rawStation)) {
+    headers.set('x-orbito-station', rawStation);
+  }
+
+  return headers;
+}
+
 /** What a runtime token may do, per endpoint under /api/v1/projects/{id}/. */
 const RUNTIME_RULES: Record<string, ReadonlySet<string>> = {
   bridge: new Set(['GET', 'POST']),
@@ -77,7 +126,7 @@ async function allow(
   credential?: string | null,
   operatorId?: string,
 ): Promise<NextResponse> {
-  const headers = new Headers(req.headers);
+  const headers = createForwardHeaders(req);
   // Strip any client-supplied internal or principal headers before setting verified ones
   headers.delete('x-orbitox-principal');
   headers.delete('x-orbitox-internal-sig');
@@ -110,14 +159,16 @@ async function handleMiddleware(req: NextRequest): Promise<NextResponse> {
     return NextResponse.next();
   }
 
-  // 2. Explicit public routes bypass middleware
+  // 2. Explicit public routes bypass middleware (forward with trusted persona headers)
   if (isExplicitPublicRoute(pathname)) {
-    return NextResponse.next();
+    const headers = createForwardHeaders(req);
+    return NextResponse.next({ request: { headers } });
   }
 
   // 3. Customer API routes authenticate inside their own route guards (withApiGuard / withHospitalGuard / withGuestToken)
   if (isSelfGuardedApiRoute(pathname)) {
-    return NextResponse.next();
+    const headers = createForwardHeaders(req);
+    return NextResponse.next({ request: { headers } });
   }
 
   const rawNodeEnv = (process.env.NODE_ENV || '').toLowerCase().trim();

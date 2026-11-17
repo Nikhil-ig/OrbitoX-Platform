@@ -5,16 +5,29 @@
 
 :root {
   /* ─── 8 Accent Presets ─── */
-  --accent-ocean: #3D6EF5;
+  --accent-ocean: #3A6BF5;
   --accent-ocean-light: #2F5BD8;
-  --accent-ocean-dark: #3D6EF5;
+  --accent-ocean-dark: #3A6BF5;
   --accent-emerald: #047857;
   --accent-sunflower: #F59E0B;
+  --accent-sunflower-contrast-safe: #B45309;
   --accent-saffron: #C2410C;
   --accent-ruby: #E11D48;
+  --accent-ruby-light: #BE123C;
   --accent-coral: #D9381E;
   --accent-violet: #7C3AED;
+  --accent-violet-light: #6D28D9;
   --accent-teal: #0F766E;
+
+  /* ─── Canonical Canvas, Surface & Text Primitives ─── */
+  --color-canvas-dark: #0D0F12;
+  --color-surface-dark: #14171C;
+  --color-surface-pill: #14161A;
+  --color-text-dark: #F2F4F7;
+  --color-canvas-light: #EEF1F5;
+  --color-canvas-light-end: #E3E7EE;
+  --color-surface-light: #FFFFFF;
+  --color-text-light: #14161A;
 
   /* ─── Neutral Scale (Zinc / Slate Base) ─── */
   --neutral-0: #ffffff;
