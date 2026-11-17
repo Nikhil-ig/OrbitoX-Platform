@@ -167,21 +167,35 @@ export function detectStyleMutationsInSource(filePath: string, sourceText: strin
       }
     }
 
-    // 3. Mutating method calls
+    // 3. Mutating method calls (static property access and computed element access)
     if (ts.isCallExpression(node)) {
+      let methodName: string | null = null;
+      let targetExpr: ts.Expression | null = null;
+
       if (ts.isPropertyAccessExpression(node.expression)) {
-        const methodName = node.expression.name.text;
-        if (
-          ['setProperty', 'removeProperty'].includes(methodName) &&
-          isStyleAccess(node.expression.expression)
-        ) {
+        methodName = node.expression.name.text;
+        targetExpr = node.expression.expression;
+      } else if (ts.isElementAccessExpression(node.expression)) {
+        targetExpr = node.expression.expression;
+        if (node.expression.argumentExpression) {
+          if (ts.isStringLiteral(node.expression.argumentExpression)) {
+            methodName = node.expression.argumentExpression.text;
+          } else {
+            // Dynamic computed expression: e.g. el.style[fnName](...)
+            methodName = '<computed>';
+          }
+        }
+      }
+
+      if (methodName && targetExpr && isStyleAccess(targetExpr)) {
+        if (['setProperty', 'removeProperty', '<computed>'].includes(methodName)) {
           const { line, character } = sf.getLineAndCharacterOfPosition(node.getStart(sf));
           violations.push({
             file: path.basename(filePath),
             line: line + 1,
             column: character + 1,
             snippet: node.getText(sf).slice(0, 100),
-            kind: `Direct style.${methodName} call`,
+            kind: `Mutating style method call (${methodName})`,
           });
         }
       }
@@ -318,6 +332,27 @@ describe('Design System Token & Style Invariants Guard (B2 / B3)', () => {
     assert.ok(
       detectStyleMutationsInSource('test8.ts', badSample8).length >= 1,
       'Must detect multi-hop transitive style alias mutations'
+    );
+
+    // P2-03 Adversarial sample 9: Element access mutating method call (el.style['setProperty'](...))
+    const badSample9 = 'const el = document.getElementById("x"); el.style["setProperty"]("--custom-token", "10px");';
+    assert.ok(
+      detectStyleMutationsInSource('test9.ts', badSample9).length >= 1,
+      'Must detect element access style["setProperty"] mutations'
+    );
+
+    // P2-03 Adversarial sample 10: Computed dynamic method call (el.style[fnName](...))
+    const badSample10 = 'const el = document.getElementById("x"); const fn = "setProperty"; el.style[fn]("--color", "red");';
+    assert.ok(
+      detectStyleMutationsInSource('test10.ts', badSample10).length >= 1,
+      'Must detect dynamic computed method style[fn](...) mutations'
+    );
+
+    // P2-03 Adversarial sample 11: Computed dynamic property assignment (el.style[dynamicProp] = ...)
+    const badSample11 = 'const el = document.getElementById("x"); const prop = "opacity"; el.style[prop] = "0.8";';
+    assert.ok(
+      detectStyleMutationsInSource('test11.ts', badSample11).length >= 1,
+      'Must detect dynamic computed property assignment style[prop] = ...'
     );
 
     // Benign sample: variable named style with no DOM mutation

@@ -1,8 +1,8 @@
 import './dom-setup';
-import { describe, it } from 'node:test';
+import { describe, it, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
 import React from 'react';
-import { render } from '@testing-library/react';
+import { render, cleanup } from '@testing-library/react';
 import fs from 'node:fs';
 import path from 'node:path';
 
@@ -14,6 +14,9 @@ import { useAdmin } from '@/app/(console)/admin/data/admin-context';
 import { useTheme } from '@orbitox-io/ui';
 
 describe('Layer 3: Provider Ownership & Legacy Migration (TST-CMP-01..04, 07)', () => {
+  afterEach(() => {
+    cleanup();
+  });
   it('TST-CMP-02: GlobalProviders at root decouples Theme and Admin contexts', () => {
     // 1. Verify AST / file contents of providers.tsx has only ToastProvider
     const providersPath = path.resolve(__dirname, '../../src/app/providers.tsx');

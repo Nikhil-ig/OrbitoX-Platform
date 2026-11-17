@@ -4,7 +4,7 @@ import React from 'react';
 import { usePathname } from 'next/navigation';
 import { DynamicSidebar, MenuItem, ThemeProvider, useTheme, Button, DynamicCopilot } from '@orbitox-io/ui';
 import { PlatformGovernanceDock } from '../components/platform-governance-dock';
-import { AdminProvider } from '../(console)/admin/data/admin-context';
+import { AdminBoundary } from '../components/admin-boundary';
 
 const sampleMenuItems: MenuItem[] = [
   {
@@ -201,9 +201,9 @@ function PlatformLayoutInner({ children }: { children: React.ReactNode }) {
 export default function PlatformLayout({ children }: { children: React.ReactNode }) {
   return (
     <ThemeProvider initialThemeId="cosmic-obsidian">
-      <AdminProvider>
+      <AdminBoundary>
         <PlatformLayoutInner>{children}</PlatformLayoutInner>
-      </AdminProvider>
+      </AdminBoundary>
     </ThemeProvider>
   );
 }

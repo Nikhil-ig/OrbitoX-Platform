@@ -6,6 +6,8 @@ import { Sheet, SheetContent, SheetTitle, SheetDescription } from './sheet';
 import { toggleTheme } from '../tokens/theme-script';
 import { t } from '../i18n';
 import type { NavItem } from '../shells/types';
+import { NavItemRenderer } from '../shells/NavItemRenderer';
+
 export type { NavItem };
 
 export interface AppShellProps {
@@ -21,6 +23,8 @@ export interface AppShellProps {
   bottomCard?: React.ReactNode;
   children: React.ReactNode;
   defaultCollapsed?: boolean;
+  appearanceControl?: React.ReactNode;
+  onThemeToggle?: () => void;
 }
 
 export function AppShell({
@@ -36,6 +40,8 @@ export function AppShell({
   bottomCard,
   children,
   defaultCollapsed = false,
+  appearanceControl,
+  onThemeToggle,
 }: AppShellProps) {
   const [isCollapsed, setIsCollapsed] = React.useState(defaultCollapsed);
   const [isMobileOpen, setIsMobileOpen] = React.useState(false);
@@ -46,33 +52,14 @@ export function AppShell({
     <div className="flex-1 overflow-y-auto space-y-4 p-3">
       <nav className="space-y-1">
         {navItems.map((item) => (
-          <a
+          <NavItemRenderer
             key={item.id}
-            href={item.href || '#'}
-            onClick={(e) => {
-              if (item.onClick) {
-                e.preventDefault();
-                item.onClick();
-              }
+            item={item}
+            isCollapsed={isCollapsed && !isMobile}
+            onItemClick={() => {
               if (isMobile) setIsMobileOpen(false);
             }}
-            className={cn(
-              'flex items-center gap-3 rounded-full px-4 py-2 text-sm font-medium transition-all select-none cursor-pointer',
-              item.active
-                ? 'bg-[var(--color-primary)] text-[var(--color-primary-fg)] font-semibold shadow-[var(--shadow-accent-glow)]'
-                : 'text-[var(--color-text-muted)] hover:bg-[var(--color-surface-raised)] hover:text-[var(--color-text)]',
-              isCollapsed && !isMobile && 'justify-center px-2'
-            )}
-            title={isCollapsed && !isMobile ? item.label : undefined}
-          >
-            {item.icon && <span className="h-4 w-4 shrink-0 flex items-center justify-center">{item.icon}</span>}
-            {(!isCollapsed || isMobile) && (
-              <span className="flex-1 truncate">{item.label}</span>
-            )}
-            {(!isCollapsed || isMobile) && item.badge && (
-              <span className="shrink-0">{item.badge}</span>
-            )}
-          </a>
+          />
         ))}
       </nav>
 
@@ -84,27 +71,14 @@ export function AppShell({
           </p>
           <nav className="mt-1 space-y-1">
             {pluginNavItems.map((item) => (
-              <a
+              <NavItemRenderer
                 key={item.id}
-                href={item.href || '#'}
-                onClick={(e) => {
-                  if (item.onClick) {
-                    e.preventDefault();
-                    item.onClick();
-                  }
+                item={item}
+                isCollapsed={isCollapsed && !isMobile}
+                onItemClick={() => {
                   if (isMobile) setIsMobileOpen(false);
                 }}
-                className={cn(
-                  'flex items-center gap-3 rounded-full px-4 py-2 text-sm font-medium transition-all select-none cursor-pointer',
-                  item.active
-                    ? 'bg-[var(--color-primary)] text-[var(--color-primary-fg)] font-semibold shadow-[var(--shadow-accent-glow)]'
-                    : 'text-[var(--color-text-muted)] hover:bg-[var(--color-surface-raised)] hover:text-[var(--color-text)]'
-                )}
-              >
-                {item.icon && <span className="h-4 w-4 shrink-0 flex items-center justify-center">{item.icon}</span>}
-                <span className="flex-1 truncate">{item.label}</span>
-                {item.badge && <span className="shrink-0">{item.badge}</span>}
-              </a>
+              />
             ))}
           </nav>
         </div>
@@ -221,16 +195,20 @@ export function AppShell({
 
             {/* Top Bar Actions & User Menu */}
             <div className="flex items-center gap-3">
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => toggleTheme()}
-                className="h-9 w-9 p-0 rounded-full"
-                aria-label={t('shell.toggleTheme')}
-              >
-                <Sun className="h-4 w-4 rotate-0 scale-100 transition-all dark:-rotate-90 dark:scale-0" />
-                <Moon className="absolute h-4 w-4 rotate-90 scale-0 transition-all dark:rotate-0 dark:scale-100" />
-              </Button>
+              {appearanceControl ? (
+                appearanceControl
+              ) : (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => (onThemeToggle ? onThemeToggle() : toggleTheme())}
+                  className="h-9 w-9 p-0 rounded-full"
+                  aria-label={t('shell.toggleTheme')}
+                >
+                  <Sun className="h-4 w-4 rotate-0 scale-100 transition-all dark:-rotate-90 dark:scale-0" />
+                  <Moon className="absolute h-4 w-4 rotate-90 scale-0 transition-all dark:rotate-0 dark:scale-100" />
+                </Button>
+              )}
 
               {userMenu}
             </div>

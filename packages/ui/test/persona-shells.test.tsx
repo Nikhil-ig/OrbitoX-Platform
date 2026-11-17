@@ -15,6 +15,7 @@ import {
   NavItemRenderer,
   type NavItem,
 } from '../src/shells';
+import { AppShell } from '../src/components/app-shell';
 
 const SAMPLE_ITEMS: NavItem[] = [
   { id: 'item-link', label: 'Dashboard Link', href: '/dashboard', active: true },
@@ -188,5 +189,37 @@ describe('Layer 4: Persona Shell Primitives & Responsive Navigation', () => {
         `Forbidden dependency: ${file} must not import from @orbitox-io/platform`
       );
     }
+  });
+
+  it('AppShell backward-compatible adapter enforces 3-way NavItem normalization and controlled appearance', () => {
+    let themeToggled = false;
+    const { container } = render(
+      <AppShell
+        appName="Test Platform"
+        navItems={SAMPLE_ITEMS}
+        onThemeToggle={() => {
+          themeToggled = true;
+        }}
+        appearanceControl={<div data-testid="controlled-appearance-slot">Appearance Slot</div>}
+      >
+        <div>App Content</div>
+      </AppShell>
+    );
+
+    // Verifies 0 fake href="#"
+    const fakeAnchors = container.querySelectorAll('a[href="#"]');
+    assert.equal(fakeAnchors.length, 0, 'AppShell must contain zero fake href="#" anchors');
+
+    // Verifies real link
+    const linkEl = container.querySelector('a[href="/dashboard"]');
+    assert.ok(linkEl, 'AppShell must render real <a> link');
+
+    // Verifies action button
+    const buttonEl = container.querySelector('button[type="button"]');
+    assert.ok(buttonEl, 'AppShell must render semantic <button>');
+
+    // Verifies appearanceControl slot
+    const appearanceSlot = container.querySelector('[data-testid="controlled-appearance-slot"]');
+    assert.ok(appearanceSlot, 'AppShell must render controlled appearance slot when provided');
   });
 });
