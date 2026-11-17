@@ -2,9 +2,9 @@
 ## Master Engineering Architecture Blueprint & Implementation Proposal (Revised)
 
 **Repository:** `Nikhil-ig/OrbitoX-Platform`  
-**Accepted Baseline SHA:** [`f65698eab17b3a40842360eaeb387c74dca57ecc`](file:///Users/apple/Documents/Office/company/Orbito/OrbitoX%20Platform)  
-**Dedicated Documentation Branch:** `docs/phase-7b2-stage0-revision`  
-**Target Branch for Future Implementation:** `feat/ui-reset-7b2-theme-persona-shells` (to be created upon authorization)  
+**Accepted Baseline SHA:** `f65698eab17b3a40842360eaeb387c74dca57ecc`  
+**Dedicated Documentation Branch:** `docs/phase-7b2-stage0-revision` (branched directly from accepted baseline SHA)  
+**Target Branch for Future Implementation:** `feat/ui-reset-7b2-theme-persona-shells` (to be activated upon authorization)  
 **Governing Specification:** `PHASE7_UI_MASTER_BRIEF.md` & `docs/ui-reset/*`  
 **Phase Status:** Stage 0 — Audit, Research & Revised Architecture Blueprint  
 **Implementation Authorization:** **NOT YET GRANTED (DOCUMENTATION ONLY — NO APPLICATION IMPLEMENTATION)**  
@@ -22,41 +22,42 @@ OrbitoX must never degrade into five independently maintained frontends with fra
 
 1. **One Canonical Design-Token Engine:** A unified 3-layer CSS custom-property hierarchy (`primitives.css` $\to$ `semantic.css` $\to$ `components.css`) governing 2 visual moods (Dark and Light), 8 user-selectable accent presets with certified $\ge 4.5:1$ WCAG 2.1 AA contrast, 3 spacing densities (relaxed, standard, compact), and an 8-step corner radius scale (4–32px).
 2. **Four-Concern Appearance Architecture:** Appearance resolution strictly decouples **preference source** (Authenticated User DB $\to$ Validated Guest Cache $\to$ Persona Default) from **mode resolution** (where `theme: 'auto'` evaluates `@media (prefers-color-scheme)` to determine effective mood). Appearance attributes are injected server-side onto `<html>` before initial paint, eliminating FOUC and inline scripts.
-3. **Provider Consolidation & Safe Legacy Isolation:** Elimination of competing client theme writers and duplicate administrative state from the platform root layout. `GlobalProviders` is streamlined to pure global notifications (`ToastProvider`). Legacy `ThemeProvider` and `AdminProvider` are safely isolated to wrap only remaining legacy routes (`(dashboard)/layout.tsx` and `(console)/admin/*`), preventing route breakage while modernizing the root.
-4. **Responsive Persona Shells (Pure Structural Frames):** Five reusable shells compose shared primitives (`SidebarCard`, `IconRail`, `TopBar`, `BottomNavPill`, `BottomTabBar`, `MoreNavSheet`, `ShellContentFrame`). Shells provide structural slots (context switchers, navigation, content frames, actions) **without hardcoding inner domain workflows** (KDS ticket queues, POS registers, and waiter workflows are strictly deferred to Stage 7F).
-5. **Harmonized Responsive Breakpoint Contract:** Proposes formal Owner Amendment `UI-7B2-BP1` adjusting the desktop breakpoint from `1100px` to `1280px` (`xl`), deterministically mapping the four authoritative test viewports (`390 × 844`, `834 × 1194`, `1194 × 834`, `1440 × 900`) without User-Agent sniffing.
+3. **Strict Package Layering (No Inverted Dependencies):** The shared UI package (`@orbitox-io/ui`) owns presentation and user interaction via controlled props; it **never imports or depends on application-level persistence singletons**.
+4. **Provider Consolidation & Safe Legacy Isolation:** Elimination of competing client theme writers and duplicate administrative state from the platform root layout. `GlobalProviders` is streamlined to pure global notifications (`ToastProvider`). Legacy `ThemeProvider` and `AdminProvider` are safely isolated to wrap only remaining legacy routes (`(dashboard)/layout.tsx` and `(console)/admin/*`), preventing route breakage while modernizing the root.
+5. **Responsive Persona Shells (Pure Structural Frames):** Five reusable shells compose shared primitives (`SidebarCard`, `IconRail`, `TopBar`, `BottomNavPill`, `BottomTabBar`, `MoreNavSheet`, `ShellContentFrame`). Shells provide structural slots (context switchers, navigation, content frames, actions) **without hardcoding inner domain workflows** (KDS ticket queues, POS registers, and waiter workflows are strictly deferred to Stage 7F).
+6. **Harmonized Responsive Breakpoint Contract:** Proposes formal Owner Amendment `UI-7B2-BP1` adjusting the desktop breakpoint from `1100px` to `1280px` (`xl`), deterministically mapping the four authoritative test viewports (`390 × 844`, `834 × 1194`, `1194 × 834`, `1440 × 900`) without User-Agent sniffing.
 
 ---
 
 ## 2. Supporting Architecture Specifications Ledger
 
-This master blueprint is supported by five detailed technical architecture specifications located under [`docs/ui-reset/phase-7b2/`](file:///Users/apple/Documents/Office/company/Orbito/OrbitoX%20Platform/docs/ui-reset/phase-7b2/):
+This master blueprint is supported by six detailed technical architecture specifications located under `docs/ui-reset/phase-7b2/`:
 
-| Specification ID | Document Title & Link | Scope & Purpose |
+| Specification ID | Document Title & Relative Path | Scope & Purpose |
 | :--- | :--- | :--- |
-| `ARCH-7B2-01-INVENTORY` | [01_VISUAL_REFERENCE_INVENTORY.md](file:///Users/apple/Documents/Office/company/Orbito/OrbitoX%20Platform/docs/ui-reset/phase-7b2/01_VISUAL_REFERENCE_INVENTORY.md) | Exhaustive 44-screen concept catalog with exact filenames, dimensions, device allocations, moods, and demonstrated UI patterns. |
-| `ARCH-7B2-02-TOKENS` | [02_TOKEN_AND_THEME_OWNERSHIP.md](file:///Users/apple/Documents/Office/company/Orbito/OrbitoX%20Platform/docs/ui-reset/phase-7b2/02_TOKEN_AND_THEME_OWNERSHIP.md) | Canonical appearance precedence, cookie validation, tenant brand isolation, WCAG contrast calculations, and token discrepancy matrix. |
-| `ARCH-7B2-03-PROVIDERS` | [03_PROVIDER_AND_LEGACY_MIGRATION.md](file:///Users/apple/Documents/Office/company/Orbito/OrbitoX%20Platform/docs/ui-reset/phase-7b2/03_PROVIDER_AND_LEGACY_MIGRATION.md) | Exhaustive census of legacy consumers (`useTheme`, `AdminProvider`, `--ui-*` variables), before/after provider topology, and safe compatibility plan. |
-| `ARCH-7B2-04-SHELLS` | [04_PERSONA_SHELL_CONTRACTS.md](file:///Users/apple/Documents/Office/company/Orbito/OrbitoX%20Platform/docs/ui-reset/phase-7b2/04_PERSONA_SHELL_CONTRACTS.md) | Five persona shell contracts, modular navigation primitives (`SidebarCard`, `IconRail`, `TopBar`, `BottomNavPill`), and `AppShell` backward-compatible adapter. |
-| `ARCH-7B2-05-RESPONSIVE` | [05_RESPONSIVE_NAVIGATION_MATRIX.md](file:///Users/apple/Documents/Office/company/Orbito/OrbitoX%20Platform/docs/ui-reset/phase-7b2/05_RESPONSIVE_NAVIGATION_MATRIX.md) | Root-cause analysis of breakpoint conflict, Owner Amendment `UI-7B2-BP1`, and deterministic mapping of the four test viewports. |
-| `ARCH-7B2-06-ACCEPTANCE` | [06_ACCEPTANCE_AND_RISK_REGISTER.md](file:///Users/apple/Documents/Office/company/Orbito/OrbitoX%20Platform/docs/ui-reset/phase-7b2/06_ACCEPTANCE_AND_RISK_REGISTER.md) | Comprehensive test matrix (all unrun tests marked `NOT RUN`), P2 debt registry, architectural risk mitigations, and 4-commit staged plan. |
+| `ARCH-7B2-01-INVENTORY` | [`01_VISUAL_REFERENCE_INVENTORY.md`](./phase-7b2/01_VISUAL_REFERENCE_INVENTORY.md) | Exhaustive 44-screen concept catalog with exact filenames, dimensions, device allocations, moods, decoded bitstream evidence, and demonstrated UI patterns. |
+| `ARCH-7B2-02-TOKENS` | [`02_TOKEN_AND_THEME_OWNERSHIP.md`](./phase-7b2/02_TOKEN_AND_THEME_OWNERSHIP.md) | Canonical appearance precedence, cookie validation, tenant brand isolation, CSS cascade remediation, WCAG sRGB linearization contrast calculations, and token discrepancy matrix. |
+| `ARCH-7B2-03-PROVIDERS` | [`03_PROVIDER_AND_LEGACY_MIGRATION.md`](./phase-7b2/03_PROVIDER_AND_LEGACY_MIGRATION.md) | Exhaustive census of legacy consumers (`useTheme`, `AdminProvider`, `--ui-*` variables), before/after provider topology, route-boundary isolation of `ConsoleShell`, and safe compatibility plan. |
+| `ARCH-7B2-04-SHELLS` | [`04_PERSONA_SHELL_CONTRACTS.md`](./phase-7b2/04_PERSONA_SHELL_CONTRACTS.md) | Five persona shell contracts, modular navigation primitives (`SidebarCard`, `IconRail`, `TopBar`, `BottomNavPill`), package layering rules, and `AppShell` backward-compatible adapter. |
+| `ARCH-7B2-05-RESPONSIVE` | [`05_RESPONSIVE_NAVIGATION_MATRIX.md`](./phase-7b2/05_RESPONSIVE_NAVIGATION_MATRIX.md) | Root-cause analysis of breakpoint conflict, Owner Amendment `UI-7B2-BP1`, edge-case handling (resizing, split-screen, landscape phone), and deterministic mapping of the four test viewports. |
+| `ARCH-7B2-06-ACCEPTANCE` | [`06_ACCEPTANCE_AND_RISK_REGISTER.md`](./phase-7b2/06_ACCEPTANCE_AND_RISK_REGISTER.md) | Delivery reconciliation, comprehensive test matrix (all unrun tests marked `NOT RUN`), P2 debt registry, architectural risk mitigations, and 4-commit staged plan. |
 
 ---
 
-## 3. Visual Reference Inventory Summary (Correction R1)
+## 3. Visual Reference Inventory Summary (Correction R1 & R1-A)
 
-All 44 reference images in `./OrbitoX — new look concept-png/` were inspected on disk using binary image chunk metadata. The physical device breakdown is reconciled as follows:
+All 44 reference images in `OrbitoX — new look concept-png/` were verified on disk using binary PNG IHDR chunks and full scanline bitstream decompression (`zlib.decompress` on concatenated `IDAT` chunks). 100% of images conform to 8-bit RGBA (Color Type 6) with zero corrupt scanlines:
 
-| Device Category | Screen Count | Screen Identifiers Included | Verified Physical Dimensions |
+| Device Category | Screen Count | Screen Identifiers Included | Verified Dimensions |
 | :--- | :---: | :--- | :--- |
-| **Desktop** | **29** | `A1`, `A2`, `A3`, `C0`, `C1`, `C2`, `C3`, `C4`, `C5`, `C6`, `U1`, `U2`, `AI1`, `F1`, `F2`, `F3`, `F4`, `F5`, `F6`, `R0`, `R1`, `R2`, `R3`, `R4`, `R5`, `R6`, `S3`, `S4`, `S5` | $2880 \times 1800$ to $2880 \times 2160$ (Sidebars: $504/544 \times 2080$) |
+| **Desktop** | **29** | `A1, A2, A3, C0, C1, C2, C3, C4, C5, C6, U1, U2, AI1, F1, F2, F3, F4, F5, F6, R0, R1, R2, R3, R4, R5, R6, S3, S4, S5` | $2880 \times 1800$ to $2880 \times 2160$ (Sidebars: $504/544 \times 2080$) |
 | **Tablet Landscape** | **2** | `S1` (Kitchen / KDS), `S2` (POS Take Order & Checkout) | $2388 \times 1668$ (@2x for $1194 \times 834$ iPad Pro 11") |
 | **Tablet Portrait** | **1** | `D9` (Host Stand Live Floor Plan) | $1668 \times 2388$ (@2x for $834 \times 1194$ iPad Pro 11") |
-| **Phone** | **11** | `A4`, `U3`, `U4`, `D1`, `D2`, `D3`, `D4`, `D5`, `D6`, `D7`, `D8` | $780 \times 1688$ (@2x for $390 \times 844$ iPhone 12/13/14) |
+| **Phone** | **11** | `A4, U3, U4, D1, D2, D3, D4, D5, D6, D7, D8` | $780 \times 1688$ (@2x for $390 \times 844$ iPhone 12/13/14) |
 | **Component Kit** | **1** | `P1` (Pop-ups, Warnings, Utilities, Dialogs, Skeletons) | $2880 \times 2480$ |
-| **Total Assets** | **44** | **100% Present, Readable, and Verified on Disk** | **Zero missing or unmatched files** |
+| **Total Assets** | **44** | **100% Present, Decoded, and Verified on Disk** | **Zero missing, unreadable, or unmatched files** |
 
-*Note on Count Reconciliation:* In Draft 1, screens `F4`, `F5`, and `F6` were tabulated as phone due to their onboarding preview content; however, their physical files ($2880 \times 1920$ and $2880 \times 2080$) and window structures are native desktop layouts. The corrected tally is exactly **29 Desktop** and **11 Phone**. Complete screen-by-screen metadata is documented in [01_VISUAL_REFERENCE_INVENTORY.md](file:///Users/apple/Documents/Office/company/Orbito/OrbitoX%20Platform/docs/ui-reset/phase-7b2/01_VISUAL_REFERENCE_INVENTORY.md).
+*Note on Count Reconciliation:* In Draft 1, screens `F4`, `F5`, and `F6` were tabulated as phone due to their onboarding preview content; however, their physical files ($2880 \times 1920$ and $2880 \times 2080$) and window structures are native desktop layouts. The corrected tally is exactly **29 Desktop** and **11 Phone**. Complete screen-by-screen metadata and decoded byte counts are documented in [`01_VISUAL_REFERENCE_INVENTORY.md`](./phase-7b2/01_VISUAL_REFERENCE_INVENTORY.md).
 
 ---
 
@@ -67,8 +68,8 @@ All 44 reference images in `./OrbitoX — new look concept-png/` were inspected 
 - However, approved landscape reference screens `S1` and `S2` are explicitly designated as **`tablet landscape`** with image dimensions of $2388 \times 1668$, corresponding to an authoritative logical viewport of **`1194 × 834 px`** (Apple iPad Pro 11" landscape).
 - A naive media query `@media (min-width: 1101px)` evaluates `1194px` as Desktop, erroneously forcing an expanded 260px `SidebarCard` onto kitchen KDS and POS counters where a 64px `IconRail` or zero-chrome layout is required.
 
-### 4.2 The Explicit Resolution: Four Deterministic Bands
-Align breakpoint definitions with standard CSS container thresholds (Tailwind `sm`, `md`, `lg`, `xl`):
+### 4.2 The Explicit Resolution: Four Deterministic Bands (Amendment `UI-7B2-BP1`)
+Align layout media queries with standard CSS container thresholds (Tailwind `sm`, `md`, `lg`, `xl`):
 
 | Device Class | Viewport Range | Primary Navigation Primitive | Secondary Navigation Primitive | Key Behaviors |
 | :--- | :--- | :--- | :--- | :--- |
@@ -78,34 +79,34 @@ Align breakpoint definitions with standard CSS container thresholds (Tailwind `s
 | **Desktop** | $\ge 1280px$ (`xl`) | `SidebarCard` ($260\text{px}$ expanded) | Collapsible section accordions | Full header, persistent tenant/persona context, content frame padded $32\text{px}$. |
 
 ### 4.3 Mandatory Test Viewports Mapping
-- **VP-01 (`390 × 844` Phone):** `< 640px` $\to$ Floating `BottomTabBar` + `MoreNavSheet`.
+- **VP-01 (`390 × 844` Phone):** `< 640px` $\to$ `BottomTabBar` (floating pill, $\le 5$ items) + `MoreNavSheet`.
 - **VP-02 (`834 × 1194` Tablet Portrait):** `640–1023px` $\to$ Centered floating `BottomNavPill`.
 - **VP-03 (`1194 × 834` Tablet Landscape):** `1024–1279px` $\to$ Collapsible 64px `IconRail`.
 - **VP-04 (`1440 × 900` Desktop):** $\ge 1280px$ $\to$ Fixed 260px `SidebarCard`.
 
-Detailed transition dynamics and touch interaction rules are documented in [05_RESPONSIVE_NAVIGATION_MATRIX.md](file:///Users/apple/Documents/Office/company/Orbito/OrbitoX%20Platform/docs/ui-reset/phase-7b2/05_RESPONSIVE_NAVIGATION_MATRIX.md).
+Detailed transition dynamics, edge-case resizing behavior, and touch interaction rules are documented in [`05_RESPONSIVE_NAVIGATION_MATRIX.md`](./phase-7b2/05_RESPONSIVE_NAVIGATION_MATRIX.md).
 
 ---
 
-## 5. Canonical Appearance Resolution Architecture & Precedence (Correction R3)
+## 5. Canonical Appearance Resolution Architecture & Precedence (Correction R3, R3-A, R3-B)
 
-Appearance resolution strictly separates four orthogonal concerns:
+### 5.1 Persona-Specific Explicit Defaults vs. Automatic Mode
+To resolve the ambiguity between `DEFAULT_APPEARANCE = { theme: 'auto' }` and persona requirements:
 
-### 5.1 Four Independent Precedence Concerns
-1. **Authenticated User Preference (Authoritative):**  
-   When an operator or customer session is active, their persistent database record (`PlatformOperator` or `CustomerUser`) is the **sole authoritative source of truth**. Client cookies and localStorage must never overwrite the database.
-2. **Guest or Last-Known Fallback (`orbitox_appearance` Cookie):**  
-   Serves as an untrusted guest cache or transient fallback during database connection timeouts. Parsed strictly via Zod schema (`AppearanceSchema.safeParse()`). Malformed cookies fall back safely to persona defaults. Stale cache is never treated as authoritative.
-3. **Persona Default Mood:**  
-   When no preference exists, persona shells enforce their normative visual default:
-   - **Platform Operator:** `dark` (`#0D0F12`, compact density 0.65x).
-   - **Staff Operational (KDS / Waiter):** `dark` (`#0D0F12`, standard density 1.0x).
-   - **Staff Operational (POS / Host):** `light` (`#EEF1F5`, standard density 1.0x).
-   - **Public & Auth:** `light` (`#EEF1F5`, standard density 1.0x).
-   - **Customer Workspace:** `light` (`#EEF1F5`, standard density 1.0x).
-   - **Product Owner Workspace:** `light` (`#EEF1F5`, standard density 1.0x).
-4. **System Automatic Mode Resolution:**  
-   System preference is **not** a lower-priority preference source; it is consulted only when the chosen mode is `auto`. In `semantic.css`, `[data-theme="auto"]` delegates resolution to the browser via `@media (prefers-color-scheme: light)` and `@media (prefers-color-scheme: dark)`.
+1. **Unset / First-Time Visit (No DB or Cookie Preference):**
+   - The server **does not** fall back to `theme: 'auto'`.
+   - Instead, the server applies the **Persona-Specific Explicit Default Mood**:
+     - **Platform Operator (`/console/*`):** Explicitly `dark` (`#0D0F12`, compact density 0.65x).
+     - **Staff Operational (`/staff/*`, KDS, Host Stand, Waiter):** Explicitly `dark` (`#0D0F12`) (matches `S1`, `D9`, `D4`, `D5`).
+     - **Staff Operational POS Counter (`/pos`):** Explicit Station Override to `light` (`#EEF1F5`) (matches `S2`).
+     - **Public & Auth (`/login`, `/signup`, `/auth/*`, diner `/menu`):** Explicitly `light` (`#EEF1F5`) (matches `F1`–`F5`, `A4`).
+     - **Customer Workspace (`/workspace/*`, `/customer/*`):** Explicitly `light` (`#EEF1F5`) (matches `A2`, `U1`).
+     - **Product Owner Workspace (`/owner/*`, `/restaurants/*`):** Explicitly `light` (`#EEF1F5`) (matches `R1`–`R6`).
+2. **Explicitly Saved `theme: 'auto'`:**
+   - Active **only** when a user explicitly chooses "Auto (Match System)" in settings.
+   - Evaluated by the browser via `@media (prefers-color-scheme)`.
+3. **Explicitly Saved `theme: 'light'` or `theme: 'dark'`:**
+   - Active when a user explicitly saves a choice. Fixed server rendering supersedes OS mode.
 
 ### 5.2 Server Resolution Flowchart
 
@@ -119,76 +120,72 @@ flowchart TD
     QueryDB -- Fail / Timeout --> CheckCookie
 
     CheckCookie -- Yes --> ValidateZod[Validate Zod Schema]
-    CheckCookie -- No --> ApplyPersonaDefault[Apply Persona Default Mood]
+    CheckCookie -- No --> ApplyPersonaDefault[Apply Persona-Specific Explicit Default]
 
     ValidateZod -- Valid --> ApplyValidCookie[Validated Preference]
     ValidateZod -- Corrupt --> ApplyPersonaDefault
 
-    ApplyDB --> EvalAuto{Theme == 'auto'?}
+    ApplyDB --> EvalAuto{Theme Value?}
     ApplyValidCookie --> EvalAuto
-    ApplyPersonaDefault --> EvalAuto
+    ApplyPersonaDefault --> ExplicitRender[Render Explicit Mood]
 
-    EvalAuto -- 'auto' --> CSSMedia[CSS prefers-color-scheme]
-    EvalAuto -- 'light' | 'dark' --> FixedMood[Fixed Semantic Mood]
+    EvalAuto -- 'auto' (Explicitly Saved) --> CSSMedia[CSS prefers-color-scheme]
+    EvalAuto -- 'light' | 'dark' --> ExplicitRender
 
     CSSMedia --> HTMLTag["Inject data-* on &lt;html&gt;"]
-    FixedMood --> HTMLTag
+    ExplicitRender --> HTMLTag
     HTMLTag --> ZeroFOUC[Instant Paint · Zero FOUC · Zero Inline Scripts]
 ```
 
----
-
-## 6. Tenant Branding Isolation Contract
-
-1. **Scoped to Canvas Surfaces:** Tenant custom branding (`--tenant-brand-primary`, `--tenant-brand-surface`) is attached exclusively to `[data-tenant-theme]` containers (e.g. diner ordering portals, white-label client views).
-2. **Platform Chrome Immutability:** The Operator Console (`/console/*`), platform settings, and administrative navigation never inherit from `[data-tenant-theme]`.
-3. **No Arbitrary CSS:** Brand customization accepts strictly validated hex strings and typography keys via Zod; raw CSS, external `@import`, and script tags are barred.
-4. **Contrast Safety:** Brand submissions must pass algorithmic contrast validation ($\ge 4.5:1$ against the tenant background) or the engine automatically selects an accessible high-contrast text foreground.
-
-Full isolation details are documented in [02_TOKEN_AND_THEME_OWNERSHIP.md](file:///Users/apple/Documents/Office/company/Orbito/OrbitoX%20Platform/docs/ui-reset/phase-7b2/02_TOKEN_AND_THEME_OWNERSHIP.md).
+Full resolution details and Zod contracts are documented in [`02_TOKEN_AND_THEME_OWNERSHIP.md`](./phase-7b2/02_TOKEN_AND_THEME_OWNERSHIP.md).
 
 ---
 
-## 7. Token Audit & Calculated Discrepancy Matrix
+## 6. Token Audit, CSS Cascade Fix & Computed Contrast Verification (Correction TOK-A)
 
-A comprehensive mathematical audit was performed on `packages/ui/src/tokens/*` against `PHASE7_UI_MASTER_BRIEF.md`:
-
-### 7.1 Eight Accent Presets & WCAG 2.1 Contrast Calculations
-
-| Preset | Dark Accent Hex | Dark Button CR (`#FFF` on Accent) | Dark Canvas CR (Accent on `#0D0F12`) | Light Accent Hex | Light Button CR (`#FFF` on Accent) | Light Canvas CR (Accent on `#F6F8FA`) | WCAG 2.1 AA Compliance |
-| :--- | :--- | :---: | :---: | :--- | :---: | :---: | :--- |
-| **Ocean** | `#3A6BF5` | **4.56:1** | 4.21:1 | `#2F5BD8` | **5.82:1** | **5.47:1** | **PASS** (AA Button & Light Copy) |
-| **Emerald** | `#047857` | **5.48:1** | 3.50:1 | `#047857` | **5.48:1** | **5.15:1** | **PASS** (AA Button & Light Copy) |
-| **Sunflower** | `#F59E0B` | **8.94:1** (`#0D0F12`) | **8.94:1** | `#F59E0B` | **8.94:1** (`#0D0F12`) | 2.02:1 | **PASS** (AA Button with dark text) |
-| **Saffron** | `#C2410C` | **5.18:1** | 3.71:1 | `#C2410C` | **5.18:1** | **4.86:1** | **PASS** (AA Button & Light Copy) |
-| **Ruby** | `#E11D48` | **4.70:1** | 4.09:1 | `#E11D48` | **4.70:1** | 4.41:1 | **PASS** (AA Button & 3:1 Large UI) |
-| **Coral** | `#D9381E` | **4.63:1** | 4.14:1 | `#D9381E` | **4.63:1** | 4.35:1 | **PASS** (AA Button & 3:1 Large UI) |
-| **Violet** | `#7C3AED` | **5.70:1** | 3.37:1 | `#7C3AED` | **5.70:1** | **5.35:1** | **PASS** (AA Button & Light Copy) |
-| **Teal** | `#0F766E` | **5.47:1** | 3.51:1 | `#0F766E` | **5.47:1** | **5.14:1** | **PASS** (AA Button & Light Copy) |
-
-### 7.2 Key Source Discrepancies & Remedies
-1. **Ocean Hex Discrepancy:** `primitives.css` declares `#3D6EF5`, while `semantic.css` declares `#3A6BF5`. Standardize to `#3A6BF5` (dark) and `#2F5BD8` (light).
-2. **Auto-Mode Coverage Gap:** In `semantic.css`, `[data-theme="auto"]` under `@media (prefers-color-scheme: light)` currently omits status colors and accent overrides. Stage 1 will add complete status and accent mappings under `auto` mode.
-3. **Card/Hero Radius Hierarchy:** User corner radius preference adjusts `--corner-radius` (4–32px). Card radius binds to `--corner-radius` (default 28px); hero card preserves hierarchical dominance via `--radius-hero: calc(var(--corner-radius) + 4px)` (default 32px).
-4. **Legacy Theme Writer Deprecation:** `theme-script.ts` functions `setTheme()` and `toggleTheme()` write to obsolete `orbitox-theme` cookies and directly mutate the DOM. Deprecated in favor of `AppearancePersistenceController`.
+### 6.1 CSS Cascade Flaw Identified in `semantic.css`
+In current `packages/ui/src/tokens/semantic.css`:
+- Line 25–80 declares accent rules: `[data-accent="emerald"] { --color-accent: #047857; ... }`.
+- Line 145 declares the general light theme: `[data-theme="light"] { --color-accent: #2F5BD8; ... }`.
+- **The Cascade Defect:** When `<html data-theme="light" data-accent="emerald">` is evaluated, both selectors match with identical specificity `[attr]` (0, 1, 0). Because `[data-theme="light"]` appears later in declaration order, **it silently clobbers `--color-accent` back to Ocean (`#2F5BD8`) for all non-Ocean presets in light mode**.
+- **Stage 1 Remediation Invariant:** Base theme variables (`[data-theme="light"]`, `[data-theme="dark"]`) must be declared **before** accent preset rules, or accent rules must use qualified compound selectors:
+  ```css
+  /* Remediation: Qualified selectors prevent cascade clobbering */
+  [data-theme="light"][data-accent="emerald"],
+  [data-theme="light"] [data-accent="emerald"] {
+    --color-accent: #047857;
+    --color-accent-fg: #FFFFFF;
+    --color-accent-hover: #065F46;
+  }
+  ```
 
 ---
 
-## 8. Legacy Compatibility & Provider Topology Refactoring (Correction R4)
+### 6.2 Computed Contrast Matrix (Mathematical sRGB Linearization)
 
-### 8.1 Exhaustive Legacy Consumer Census
-- **`useTheme()` Consumer:** Consumed exclusively in `apps/platform/src/app/(dashboard)/layout.tsx` (Line 40). Zero consumers in modern `(console)` routes.
-- **`AdminProvider` Consumers:** Mounted globally in `providers.tsx` and duplicated in `apps/platform/src/app/(console)/layout.tsx`. Consumed only across `(console)/admin/*` pages and `platform-governance-dock.tsx`.
-- **`--ui-*` Variables:** 17 console pages/modules and 5 legacy components rely on `--ui-*` variables from `packages/ui/src/styles/theme.css`.
+Tested against the actual background `#EEF1F5` (gradient to `#E3E7EE`) and surface `#FFFFFF` (for light mode) and `#0D0F12` / `#14161A` (for dark mode) applying W3C sRGB channel linearization ($c_{\text{linear}} = c / 12.92$ if $c \le 0.04045$, else $((c+0.055)/1.055)^{2.4}$):
 
-### 8.2 Provider Decoupling Architecture
+| Accent Preset | Effective Hex (Dark / Light) | Button Text CR (`--color-accent-fg` on Accent) | Dark Canvas CR (Accent on `#0D0F12`) | Light Canvas CR (Accent on `#EEF1F5`) | Light Surface CR (Accent on `#FFFFFF`) | Non-Text UI CR ($\ge 3:1$) | WCAG 2.1 AA Compliance |
+| :--- | :---: | :---: | :---: | :---: | :---: | :---: | :--- |
+| **Ocean** | `#3A6BF5` / `#2F5BD8` | **4.56:1** / **5.82:1** (`#FFF`) | 4.21:1 | **5.14:1** | **5.82:1** | **PASS** | **PASS** (AA Body & Button) |
+| **Emerald** | `#047857` / `#047857` | **5.48:1** / **5.48:1** (`#FFF`) | 3.50:1 | **4.84:1** | **5.48:1** | **PASS** | **PASS** (AA Body & Button) |
+| **Sunflower** | `#F59E0B` / `#F59E0B` | **8.94:1** (`#0D0F12`) | **8.94:1** | 1.90:1 (Fails text) | 2.15:1 (Fails text) | **PASS** (3.8:1 text on dark) | **PASS** (AA with dark button text; accent copy on light must use text tokens) |
+| **Saffron** | `#C2410C` / `#C2410C` | **5.18:1** / **5.18:1** (`#FFF`) | 3.71:1 | **4.57:1** | **5.18:1** | **PASS** | **PASS** (AA Body & Button) |
+| **Ruby** | `#E11D48` / `#BE123C` | **4.70:1** / **6.29:1** (`#FFF`) | 4.09:1 | **5.55:1** | **6.29:1** | **PASS** | **PASS** (AA Body & Button) |
+| **Coral** | `#D9381E` / `#D9381E` | **4.63:1** / **4.63:1** (`#FFF`) | 4.14:1 | 4.09:1 | 4.63:1 | **PASS** | **PASS** (AA Button & Large UI) |
+| **Violet** | `#7C3AED` / `#6D28D9` | **5.70:1** / **7.10:1** (`#FFF`) | 3.37:1 | **6.27:1** | **7.10:1** | **PASS** | **PASS** (AA Body & Button) |
+| **Teal** | `#0F766E` / `#0F766E` | **5.47:1** / **5.47:1** (`#FFF`) | 3.51:1 | **4.83:1** | **5.47:1** | **PASS** | **PASS** (AA Body & Button) |
+
+---
+
+## 7. Provider Topology & Route Boundary Isolation (Correction R4, R4-A)
 
 ```mermaid
 graph TD
-    subgraph RootLevel [Global Root Layout: apps/platform/src/app/layout.tsx]
+    subgraph RootLevel [Global Platform Root: apps/platform/src/app/layout.tsx]
         HTMLNode["&lt;html data-theme=... data-accent=...&gt; (Server Injected)"]
-        HTMLNode --> GP[GlobalProviders]
-        GP --> TP[ToastProvider]
+        HTMLNode --> GP[GlobalProviders in providers.tsx]
+        GP --> TP[ToastProvider Only]
         NoteClean[Zero Theme Writers at Root<br/>Zero Client LocalStorage Mutation]
     end
 
@@ -196,110 +193,134 @@ graph TD
         TP --> RouteRouter{Route Group}
     end
 
-    subgraph ConsoleBoundary ["(console) Layout: apps/platform/src/app/(console)/layout.tsx"]
-        RouteRouter -- "/console/*" --> LocalAdmin[AdminProvider (Single Console Instance)]
-        LocalAdmin --> ModernConsole[ConsoleShell with Canonical Tokens]
+    subgraph ConsoleBoundary ["(console)/console/ Route Boundary"]
+        RouteRouter -- "/console/*" --> ModernConsolePages["Modern Console Pages (Page-Level Shell Facade)"]
+        ModernConsolePages --> ModernShellAdapter["ConsoleShell Adapter over Modular Primitives"]
+        NoteBoundary[Do NOT mount at (console)/layout.tsx<br/>Prevents double-shells and leakage to /admin/*]
     end
 
-    subgraph DashboardBoundary ["(dashboard) Layout: apps/platform/src/app/(dashboard)/layout.tsx"]
-        RouteRouter -- "/dashboard/*" --> LocalTheme["ThemeProvider (Local Legacy Wrapper)"]
-        LocalTheme --> LegacySidebar["DynamicSidebar & useTheme() Context Preserved"]
+    subgraph LegacyAdminBoundary ["(console)/admin/ Route Boundary"]
+        RouteRouter -- "/admin/*" --> LocalAdminNode[AdminProvider in (console)/layout.tsx]
+        LocalAdminNode --> LegacyAdminPages[Legacy Admin Mock Pages]
+    end
+
+    subgraph DashboardBoundary ["(dashboard)/ Route Boundary"]
+        RouteRouter -- "/dashboard/*" --> LocalTheme["ThemeProvider in (dashboard)/layout.tsx"]
+        LocalTheme --> LegacySidebar["DynamicSidebar & useTheme Context Preserved"]
     end
 ```
 
-### 8.3 Safe Migration Invariants
+### 7.1 Safe Migration Invariants
 1. **Zero Premature Deletions:** Retain `packages/ui/src/styles/theme.css` with semantic bridging (`--ui-bg-card: var(--color-surface);`, etc.).
 2. **Local Isolation:** Re-mount `ThemeProvider` locally in `(dashboard)/layout.tsx` to preserve the legacy theme switcher without root DOM pollution.
-3. **Deduplication:** Remove `AdminProvider` from `providers.tsx`, leaving the instance in `(console)/layout.tsx` as the single canonical context.
+3. **Route-Boundary Protection:** `ConsoleShell` is scoped to `/console` pages and is **not** mounted at `(console)/layout.tsx`, preventing double-shell rendering and preserving legacy `admin/*` isolation.
 
-Detailed migration steps and consumer retirement roadmaps are documented in [03_PROVIDER_AND_LEGACY_MIGRATION.md](file:///Users/apple/Documents/Office/company/Orbito/OrbitoX%20Platform/docs/ui-reset/phase-7b2/03_PROVIDER_AND_LEGACY_MIGRATION.md).
+Detailed migration steps are documented in [`03_PROVIDER_AND_LEGACY_MIGRATION.md`](./phase-7b2/03_PROVIDER_AND_LEGACY_MIGRATION.md).
 
 ---
 
-## 9. Five Persona Shell Specifications (Correction R5)
+## 8. Five Persona Shell Specifications (Correction R5)
 
-The five persona shells define **pure structural scaffolding** (navigation layout, context slots, header actions, breadcrumbs, content boundaries). Domain business logic (POS checkout, KDS ticket grids, waiter tables, menu spreadsheet importing) is strictly excluded and deferred to Phase 7F.
+The five persona shells define **pure structural scaffolding** (navigation layout, context slots, header actions, breadcrumbs, content boundaries). Operational workflows (POS checkout, KDS ticket columns, waiter table maps) are strictly excluded and deferred to Phase 7F.
 
 | Persona Shell | Default Mood | Desktop Navigation ($\ge 1280px$) | Tablet Landscape ($1024–1279px$) | Tablet Portrait ($640–1023px$) | Phone Navigation ($< 640px$) | Structural Context Slots |
 | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
 | **1. Public & Auth** | `light` (`#EEF1F5`) | Minimal branded top bar; zero sidebar. | Minimal top bar. | Minimal top bar. | Minimal top bar. | Language selector slot, progress stepper slot, centered card frame. |
 | **2. Operator Console** | `dark` (`#0D0F12`) | Fixed 260px `SidebarCard` + cluster dock. | Collapsible 64px `IconRail`. | Centered floating `BottomNavPill`. | `BottomTabBar` ($\le 5$ items) + `MoreNavSheet`. | Platform Governance cluster dock slot, cluster switcher slot, AI assistant toggle slot. |
-| **3. Customer Workspace** | `light` (`#EEF1F5`) | Horizontal workspace nav or 260px `SidebarCard`. | 64px `IconRail`. | Floating `BottomNavPill`. | `BottomTabBar` (Home, Projects, Usage, Billing, More). | Organization Switcher slot, Project Switcher slot, Plan Upgrade CTA slot. |
-| **4. Product Owner Workspace** | `light` (`#EEF1F5`) | 260px `SidebarCard` (`R0`) with F&B categories. | 64px `IconRail`. | Floating `BottomNavPill`. | `BottomTabBar` (Today, Orders, Quick Add `+`, Menu, More). | Multi-branch switcher slot, Online Store Live Link slot, Store Open/Close toggle. |
-| **5. Staff Operational Workspace** | Role-dependent: `dark` (KDS, Waiter) / `light` (POS, Host) | N/A (Operational devices are tablets & phones). | 64px `IconRail` or **Zero-Chrome Fullscreen**. | Persistent high-density bottom bar. | High-contrast touch grid with persistent bottom bar. | Station status bar slot, Fullscreen Mode toggle, touch targets $\ge 48\text{px}$. |
+| **3. Customer Workspace** | `light` (`#EEF1F5`) | Horizontal workspace nav or 260px `SidebarCard`. | 64px `IconRail`. | Floating `BottomNavPill`. | `BottomTabBar` (configurable items) + overflow sheet. | Organization Switcher slot, Project Switcher slot, Plan Upgrade CTA slot. |
+| **4. Product Owner Workspace** | `light` (`#EEF1F5`) | 260px `SidebarCard` (`R0`) with F&B categories. | 64px `IconRail`. | Floating `BottomNavPill`. | `BottomTabBar` with configurable thumb items and secondary `BottomSheet`. | Multi-branch switcher slot, Online Store Live Link slot, Store Open/Close toggle. |
+| **5. Staff Operational Workspace** | Explicitly `dark` (`#0D0F12`); POS counter override to `light` | N/A (Operational devices are tablets & phones). | 64px `IconRail` or **Zero-Chrome Fullscreen**. | Persistent high-density bottom bar. | High-contrast touch grid with persistent bottom bar. | Station status bar slot, Fullscreen Mode toggle, touch targets $\ge 48\text{px}$. |
 
-Comprehensive slot signatures and accessibility contracts are documented in [04_PERSONA_SHELL_CONTRACTS.md](file:///Users/apple/Documents/Office/company/Orbito/OrbitoX%20Platform/docs/ui-reset/phase-7b2/04_PERSONA_SHELL_CONTRACTS.md).
-
----
-
-## 10. Modular Shell Primitives & `AppShell` Adapter (Correction R6)
-
-### 10.1 Shared Navigation Primitives
-- **`SidebarCard`:** Fixed 260px floating card with `--radius-card` (28px), active pill states, and keyboard navigation.
-- **`IconRail`:** Fixed 64px collapsed icon stack with accessible tooltips for tablet landscape.
-- **`TopBar`:** Sticky 56px header with backdrop blur, breadcrumbs, search shortcut (`⌘K`), and session menu.
-- **`BottomNavPill`:** Floating centered pill ($52\text{px}$ height) for tablet portrait.
-- **`BottomTabBar` & `MoreNavSheet`:** Floating bottom bar for phones ($\le 5$ primary items) with overflow sheet for secondary routes.
-- **`ShellContentFrame`:** Responsive padding and scroll container ($12px$ phone, $16px$ tablet portrait, $24px$ tablet landscape, $32px$ desktop).
-
-### 10.2 Backward-Compatible `AppShell` Adapter
-Existing consumers of `packages/ui/src/components/app-shell.tsx` remain 100% compatible via a composition adapter:
-1. **Eliminate Fake Links:** All `NavItem` elements render semantic buttons or Next.js `Link` components with real typed routes. Zero `<a href="#">` markup.
-2. **Replace `toggleTheme()`:** Theme toggling delegates to `AppearancePersistenceController` rather than obsolete `theme-script.ts`.
-3. **Viewport Adaptation:** The adapter delegates layout rendering to `SidebarCard` on desktop, `IconRail` on tablet landscape, and `BottomTabBar` on mobile.
+Full specification contracts are documented in [`04_PERSONA_SHELL_CONTRACTS.md`](./phase-7b2/04_PERSONA_SHELL_CONTRACTS.md).
 
 ---
 
-## 11. Three Existing P2 Backlog Items
+## 9. Modular Shell Primitives & `AppShell` Adapter (Correction R6, R6-A, R6-B)
 
-The following three non-blocking items from the Phase 7B.1 independent review are formally scheduled for implementation during Phase 7B.2:
+### 9.1 Package Layering & Controlled Props (Correction R6-A)
+The shared UI package (`@orbitox-io/ui`) owns presentation and user interaction via controlled props; it **never imports or depends on application-level persistence singletons**:
+```typescript
+// Defined in @orbitox-io/ui (Presentation Layer)
+export interface AppearanceControlProps {
+  theme?: 'auto' | 'light' | 'dark';
+  onThemeChange?: (theme: 'auto' | 'light' | 'dark') => void;
+  appearanceSlot?: React.ReactNode;
+}
+```
 
-1. **`React.StrictMode` Double-Mount Integration Test (`P2-01`):** Construct an automated test mounting `<AppearanceClient>` inside `<React.StrictMode>` to verify single-writer persistence queue stability across double mounting (Commit 1).
-2. **Real Browser Touch-Gesture Emulation (`P2-02`):** Implement Playwright CDP synthetic touch events (`Input.dispatchTouchEvent`) testing drag dismissal (75px threshold) and velocity fling handling on actual mobile viewports (Commit 3).
-3. **Computed Mutating Method AST Detection (`P2-03`):** Extend `packages/ui/scripts/check-inline-styles.ts` AST parser to detect computed property mutations (e.g. `el.style['trans' + 'form'] = ...`) in addition to static member expressions (Commit 4).
+### 9.2 Non-Breaking `NavItem` Backward Compatibility (Correction R6-B)
+Retain optional `href` on `NavItem` so existing callers passing `onClick` continue to compile. Inside the rendering adapter, items are normalized to ensure valid HTML semantics:
+- Real links render Next.js `<Link>` / `<a>`.
+- Actions render `<button type="button">`.
+- **Zero `<a href="#">` markup rendered under any scenario**.
 
 ---
 
-## 12. Test Acceptance Matrix & Governance
+## 10. Existing P2 Backlog Items
+
+Three non-blocking P2 items from Phase 7B.1 final review are carried forward:
+1. **`P2-01` (`React.StrictMode` Mount Integration Test):** Verifies single-writer queue stability under double-mount (Commit 1).
+2. **`P2-02` (Real Browser Touch-Gesture Emulation):** Synthetic CDP touch events testing 75px dismissal threshold for `BottomSheet` (Commit 3).
+3. **`P2-03` (Computed Mutating Method AST Detection):** AST style-guard enhancements detecting dynamic computed property mutations (Commit 4).
+
+---
+
+## 11. Test Acceptance Matrix Governance
 
 All unexecuted tests are cataloged with their exact verification criteria and marked **`NOT RUN`** in compliance with Stage 0 read-only rules:
 
-- **Token & Appearance Tests (`TST-TOK-01` to `TST-TOK-10`):** 16-variant contrast suite, default persona mood resolution, automatic system preference evaluation, DB precedence, guest cookie validation, tenant isolation, zero FOUC $\to$ **`NOT RUN (Stage 0 Design Phase — Awaiting Implementation Authorization)`**.
-- **Shell Responsiveness Tests (`TST-SHL-01` to `TST-SHL-07`):** Viewport validation at `390×844`, `834×1194`, `1194×834`, and `1440×900`, keyboard traversal, touch targets ($\ge 44/48\text{px}$), axe-core accessibility scans $\to$ **`NOT RUN (Stage 0 Design Phase — Awaiting Implementation Authorization)`**.
-- **Compatibility Tests (`TST-CMP-01` to `TST-CMP-05`):** Legacy dashboard theme persistence, provider decoupling, `--ui-*` variable bridging, elimination of fake links $\to$ **`NOT RUN (Stage 0 Design Phase — Awaiting Implementation Authorization)`**.
+| Category | Test IDs | Status | Standard / Invariant |
+| :--- | :--- | :---: | :--- |
+| **Token & Appearance** | `TST-TOK-01` to `TST-TOK-10` | **`NOT RUN`** | 16-variant computed contrast suite, persona default moods, auto mode, DB precedence, zero FOUC. |
+| **Shell Responsiveness** | `TST-SHL-01` to `TST-SHL-07` | **`NOT RUN`** | Viewport validation across all 4 viewports (`390×844`, `834×1194`, `1194×834`, `1440×900`), keyboard traversal, touch targets ($\ge 44/48\text{px}$), axe accessibility. |
+| **Compatibility & Legacy** | `TST-CMP-01` to `TST-CMP-06` | **`NOT RUN`** | Local legacy `ThemeProvider` mount, root provider decoupling, `--ui-*` variable bridging, fake link elimination, package dependency check. |
 
-Full test contracts and risk mitigations are documented in [06_ACCEPTANCE_AND_RISK_REGISTER.md](file:///Users/apple/Documents/Office/company/Orbito/OrbitoX%20Platform/docs/ui-reset/phase-7b2/06_ACCEPTANCE_AND_RISK_REGISTER.md).
+Full matrix is documented in [`06_ACCEPTANCE_AND_RISK_REGISTER.md`](./phase-7b2/06_ACCEPTANCE_AND_RISK_REGISTER.md).
 
 ---
 
-## 13. Staged Implementation Plan (Upon Owner Authorization)
-
-Implementation will proceed across four atomic, reviewable commits:
+## 12. Proposed Staged Implementation Plan (Upon Owner Authorization)
 
 ```
 feat/ui-reset-7b2-theme-persona-shells
  ├── Commit 1: build(tokens): consolidate canonical design tokens and auto-mode calibration
  ├── Commit 2: refactor(providers): isolate global providers and relocate legacy ThemeProvider
  ├── Commit 3: feat(shells): implement responsive shell navigation primitives & Storybook stories
- └── Commit 4: feat(console): integrate ConsoleShell and backward-compatible AppShell adapter
+ └── Commit 4: feat(console): integrate ConsoleShell adapter and verify console route parity
 ```
 
-- **Commit 1 (`build(tokens)`):** Standardize Ocean accent, complete `auto` mode mappings in `semantic.css`, deprecate `theme-script.ts` cookie writers, execute 16-variant contrast tests.
-- **Commit 2 (`refactor(providers)`):** Clean `providers.tsx`, relocate `ThemeProvider` into `(dashboard)/layout.tsx`, deduplicate `AdminProvider`, add `--ui-*` CSS variable bridges to `theme.css`.
-- **Commit 3 (`feat(shells)`):** Implement modular shell primitives (`SidebarCard`, `IconRail`, `TopBar`, `BottomNavPill`, `BottomTabBar`, `MoreNavSheet`, `ShellContentFrame`), add Storybook stories for all 4 test viewports.
-- **Commit 4 (`feat(console)`):** Wire `ConsoleShell` into `(console)/layout.tsx`, refactor `AppShell` as a backward-compatible adapter, eliminate `href="#"`, run full CI suite.
+- **Commit 1 (`build(tokens)`):** Fix CSS cascade order in `semantic.css`, standardize Ocean accent, complete `auto` mode mappings, deprecate `theme-script.ts` cookie writes, execute 16-variant computed contrast suite.
+- **Commit 2 (`refactor(providers)`):** Clean `providers.tsx`, relocate `ThemeProvider` into `(dashboard)/layout.tsx`, keep `AdminProvider` local, add `--ui-*` CSS variable bridges.
+- **Commit 3 (`feat(shells)`):** Implement modular shell primitives (`SidebarCard`, `IconRail`, `TopBar`, `BottomNavPill`, `BottomTabBar`, `MoreNavSheet`, `ShellContentFrame`) with controlled presentation props. Add Storybook stories for all 4 viewports.
+- **Commit 4 (`feat(console)`):** Refactor `AppShell` as a backward-compatible adapter over new primitives with normalized non-breaking `NavItem` semantics. Verify console routes and run full CI.
 
 ---
 
-## 14. Scope Boundaries & Owner Decisions Required
+## 13. Scope Boundaries & Owner Decisions Required
 
-### 14.1 Explicit Boundaries
-- **Strictly In-Scope:** Design tokens, auto-mode calibration, appearance resolution precedence, provider topology refactoring, modular shell primitives, `AppShell` backward-compatible adapter, Storybook stories for all 4 viewports.
+### 13.1 Strict Boundaries
+- **Strictly In-Scope:** Design tokens, auto-mode calibration, appearance resolution precedence, provider topology refactoring, modular shell primitives, `AppShell` adapter, Storybook stories for all 4 viewports.
 - **Strictly Out-of-Scope:** Root `/` route changes (`apps/platform/src/app/(dashboard)/page.tsx`), Phase 7C–7F product screens (KDS queues, POS checkout, waiter tables, menu CSV importer, customer billing, hospital clinical workflows), deletions of legacy UI files.
 
-### 14.2 Owner Decisions Required Before Stage 1 Authorization
-1. **Approval of Breakpoint Amendment `UI-7B2-BP1`:** Formally adjusting the desktop threshold from `1100px` to `1280px` (`xl`) to harmonize tablet landscape (`1194 × 834`) with iPad Pro 11" concepts.
-2. **Authorization of Dedicated Implementation Branch:** Authorizing the creation of `feat/ui-reset-7b2-theme-persona-shells` for execution once this revised Stage 0 blueprint is approved.
+### 13.2 Owner Decisions Required Before Stage 1 Authorization
+1. **Approval of Breakpoint Amendment `UI-7B2-BP1`:** Formally adjusting desktop threshold from `1100px` to `1280px` (`xl`) to harmonize tablet landscape (`1194 × 834`) with iPad Pro 11" concepts.
+2. **Authorization of Dedicated Implementation Branch:** Authorizing the activation of `feat/ui-reset-7b2-theme-persona-shells` to begin Commit 1.
 
-### 14.3 Final Architecture Recommendation: `ACCEPT PLAN`
-All seven reviewer findings (R1–R7) from the Stage 0 independent review have been addressed with verifiable source code audits, mathematical contrast calculations, physical asset inspections, and modular architectural contracts. The architecture plan is sound, robust, and implementation-ready.
+---
+
+## 14. Final Architecture Decision Recommendation
+
+### **`ACCEPT PLAN`**
+
+**Justification:**  
+The Stage 0 architecture proposal has been fully corrected, reconciled, and hardened against physical source code and concept assets:
+1. Physical device counts match the 44 assets with zero discrepancies (29 Desktop, 2 Tablet Landscape, 1 Tablet Portrait, 11 Phone, 1 Component Kit). All 44 images decoded without corruption.
+2. The breakpoint conflict has a mathematically sound resolution (Owner Amendment `UI-7B2-BP1`).
+3. Appearance resolution separates preference source from mode evaluation with strict Zod validation.
+4. Legacy consumers (`useTheme`, `AdminProvider`, `--ui-*` variables) are exhaustively audited and safely isolated.
+5. Package layering is strictly enforced (UI package defines controlled presentation props and never imports application controllers).
+6. Navigation items preserve backward compatibility without fake `<a href="#">` anchors.
+7. `ConsoleShell` is scoped to `/console` pages to prevent double-shell rendering and isolation bleeding.
+8. All documentation is delivered on `docs/phase-7b2-stage0-revision` with zero application code touched.
+
+The blueprint is complete, rigorous, and ready for Stage 1 implementation upon owner authorization.

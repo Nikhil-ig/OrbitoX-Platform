@@ -6,7 +6,7 @@
 **Governing Documents:** `PHASE7_UI_MASTER_BRIEF.md`, `docs/ui-reset/02_DESIGN_SYSTEM_MIGRATION.md`  
 **Accepted Baseline:** `f65698eab17b3a40842360eaeb387c74dca57ecc`  
 **Author:** Principal Frontend & Platform Architect  
-**Date:** November 17, 2026  
+**Date:** November 17, 2026 (Revised)  
 
 ---
 
@@ -16,9 +16,10 @@ OrbitoX Platform requires a single, unified design-token and appearance engine a
 
 ### Core Architectural Principles:
 1. **Server-Authoritative Resolution:** Appearance attributes (`data-theme`, `data-accent`, `data-density`, `data-radius`, `data-motion`, `data-focus`, `data-sidebar`) are evaluated on the server and injected directly onto `<html>` before first byte transmission. No flash of unstyled content (FOUC) and zero inline scripts.
-2. **Single Persistence Ownership:** Appearance updates are dispatched through the canonical single-writer queue (`AppearancePersistenceController`) to `PUT /api/v1/platform/me/appearance` (operators) or `PUT /api/v1/customer/me/appearance` (customers). All ad-hoc cookie writers (such as `theme-script.ts`) are deprecated.
-3. **Strict Tenant Branding Isolation:** Tenant custom branding (diner templates, brand colors, custom typography) is strictly scoped to tenant surfaces via `[data-tenant-theme]` and isolated from platform/operator chrome.
-4. **WCAG 2.1 AA Mathematical Compliance:** Every accent preset across both light and dark modes must satisfy strict 4.5:1 text and 3:1 UI component contrast ratios.
+2. **Strict Package Layering (No Inverted Dependencies):** The shared UI package (`@orbitox-io/ui`) owns presentation and user interaction via controlled props; it **never imports or depends on application-level persistence singletons**.
+3. **Single Application Persistence Ownership:** Persistence is owned entirely by `apps/platform` via `AppearancePersistenceController`, dispatching serialized writes to `PUT /api/v1/platform/me/appearance` (operators) or `PUT /api/v1/customer/me/appearance` (customers). All ad-hoc cookie writers (such as `theme-script.ts`) are deprecated.
+4. **Strict Tenant Branding Isolation:** Tenant custom branding (diner templates, brand colors, custom typography) is strictly scoped to tenant surfaces via `[data-tenant-theme]` and isolated from platform/operator chrome.
+5. **WCAG 2.1 AA Mathematical Compliance:** Every accent preset across both light and dark modes must satisfy strict 4.5:1 text and 3:1 UI component contrast ratios calculated with true sRGB linearization against actual surface and canvas tokens.
 
 ---
 
@@ -44,7 +45,7 @@ flowchart TD
     DBCust -- DB Error / Null --> FallbackFromDB
     
     FallbackFromDB -- Yes --> ValidateCookie[Zod Schema Validation]
-    FallbackFromDB -- No --> PersonaDef[Apply Persona Default Mood]
+    FallbackFromDB -- No --> PersonaDef[Apply Persona-Specific Explicit Default]
     
     CookieCheck -- Yes --> ValidateCookie
     CookieCheck -- No --> PersonaDef
@@ -52,64 +53,52 @@ flowchart TD
     ValidateCookie -- Valid --> ValidPref[Validated Preference]
     ValidateCookie -- Corrupt / Invalid --> PersonaDef
     
-    DBPref --> EvaluateMode{Theme == 'auto'?}
+    DBPref --> EvaluateMode{Theme Value?}
     ValidPref --> EvaluateMode
-    PersonaDef --> EvaluateMode
+    PersonaDef --> ExplicitRender[Render Explicit Mood]
     
-    EvaluateMode -- 'auto' --> SystemQuery[Evaluate prefers-color-scheme via CSS]
-    EvaluateMode -- 'light' | 'dark' --> ExplicitMode[Fixed Semantic Mood]
+    EvaluateMode -- 'auto' (Explicitly Saved) --> SystemQuery[Evaluate prefers-color-scheme via CSS]
+    EvaluateMode -- 'light' | 'dark' --> ExplicitRender
     
     SystemQuery --> InjectHTML[Inject Server data-* on html]
-    ExplicitMode --> InjectHTML
+    ExplicitRender --> InjectHTML
     
     InjectHTML --> Render[Render CSS Tokens without FOUC]
 ```
 
-### 2.1 Four Independent Precedence Concerns
+### 2.1 Unambiguous Interaction: Persona Defaults vs. Automatic Mode
 
-#### A. Authenticated User Preference (Authoritative)
-- When a user possesses a valid session (`OPERATOR_SESSION_COOKIE` or `CUSTOMER_SESSION_COOKIE`), their persistent database record (`PlatformOperator` or `CustomerUser`) is the **sole authoritative source of truth**.
-- An existing browser cookie or cached state must **never silently overwrite** the database record.
-- If the authenticated database lookup succeeds, its stored preferences (`appearanceTheme`, `appearanceAccent`, `appearanceDensity`, `appearanceRadius`, `appearanceSmoothAnimations`, `appearanceBoldFocusRings`, `appearanceCompactSidebar`) are applied.
+To eliminate any ambiguity between the universal service constant `DEFAULT_APPEARANCE = { theme: 'auto' }` and persona visual requirements:
 
-#### B. Guest or Last-Known Fallback (`orbitox_appearance`)
-- The `orbitox_appearance` cookie serves exclusively as:
-  1. An unauthenticated guest preference cache (e.g., public signup, diner ordering).
-  2. A temporary last-known cache if the database connection experiences transient downtime.
-- **Untrusted Input Security:** Cookie values are client-controlled and must be parsed via `AppearanceSchema.safeParse()`. Any schema violation, unknown accent, or out-of-bounds radius falls back safely to the persona default.
-- **Ambiguous Failure Handling:** If an authenticated session exists but the database query times out or fails, the application serves the validated cookie as a transient fallback with a non-authoritative header, but **does not write back** or overwrite database state until a successful database connection is re-established.
-
-#### C. Persona Default Mood
-When neither a database preference nor a valid cookie exists, the shell applies the persona's normative default mood:
-
-| Persona | Default Theme Mood | Default Accent | Default Density | Default Radius | Justification |
-| :--- | :--- | :--- | :--- | :--- | :--- |
-| **Platform Operator** | `dark` (`#0D0F12`) | `ocean` (`#3A6BF5`) | `compact` (0.65x) | `28px` | Low eye-strain telemetry, SOC/SRE operations. |
-| **Staff Operational (KDS, Waiter)** | `dark` (`#0D0F12`) | `amber` / `emerald` | `standard` (1.0x) | `28px` | Kitchen heat contrast, low-light table service. |
-| **Staff Operational (POS, Host)** | `light` (`#EEF1F5`) | `ocean` (`#2F5BD8`) | `standard` (1.0x) | `28px` | Bright counter daylight visibility. |
-| **Public & Auth** | `light` (`#EEF1F5`) | `ocean` (`#2F5BD8`) | `standard` (1.0x) | `28px` | High-trust, approachable hospitality onboarding. |
-| **Customer Workspace** | `light` (`#EEF1F5`) | `ocean` (`#2F5BD8`) | `standard` (1.0x) | `28px` | Enterprise business management, tabular clarity. |
-| **Product Owner Workspace** | `light` (`#EEF1F5`) | `ocean` (`#2F5BD8`) | `standard` (1.0x) | `28px` | F&B catalog management, multi-branch control. |
-
-*Interaction with `DEFAULT_APPEARANCE`:* In `appearance-service.ts`, `DEFAULT_APPEARANCE.theme` is defined as `'auto'`. For route groups where no explicit persona default is hardcoded, `'auto'` defers to the user's OS color scheme. However, persona shells enforce their normative visual default when rendering anonymous or unconfigured sessions.
-
-#### D. System Automatic Mode Resolution
-- Operating system color scheme is **not** a lower-priority fallback; it is a dynamic resolution mode active whenever `theme: 'auto'` is selected.
-- In `semantic.css`, `[data-theme="auto"]` delegates resolution to the browser via `@media (prefers-color-scheme: light)` and `@media (prefers-color-scheme: dark)`.
+1. **Unset / First-Time Visit (No Saved Preference in DB or Cookie):**
+   - The server **does not** fall back to `theme: 'auto'`. A universal auto default would cause an operator on a light-mode OS to receive a light console, violating the core dark-mode requirement of `A1` and `C0`–`C6`.
+   - Instead, the server applies the **Persona-Specific Explicit Default Mood**:
+     - **Platform Operator (`/console/*`):** Explicitly `dark` (`#0D0F12`).
+     - **Staff Operational (`/staff/*`, KDS, Host Stand, Waiter):** Explicitly `dark` (`#0D0F12`) (matches `S1`, `D9`, `D4`, `D5`).
+     - **Staff Operational POS Counter (`/pos`):** Explicit Station Override to `light` (`#EEF1F5`) (matches `S2`).
+     - **Public & Auth (`/login`, `/signup`, `/auth/*`, diner `/menu`):** Explicitly `light` (`#EEF1F5`) (matches `F1`–`F5`, `A4`).
+     - **Customer Workspace (`/workspace/*`, `/customer/*`):** Explicitly `light` (`#EEF1F5`) (matches `A2`, `U1`).
+     - **Product Owner Workspace (`/owner/*`, `/restaurants/*`):** Explicitly `light` (`#EEF1F5`) (matches `R1`–`R6`).
+2. **Explicitly Saved `theme: 'auto'`:**
+   - Active **only** when a user explicitly navigated to Appearance Settings and chose "Auto (Match System)".
+   - In this state, the server renders `data-theme="auto"`, and the browser evaluates `@media (prefers-color-scheme: light)` to dynamically switch semantic tokens.
+3. **Explicitly Saved `theme: 'light'` or `theme: 'dark'`:**
+   - Active when a user explicitly saved a fixed theme choice. The server renders `data-theme="light"` or `data-theme="dark"`, completely superseding system OS preferences.
 
 ---
 
-## 3. Server Resolution & Client Write Sequence
+## 3. Server Resolution & Controlled UI Package Layering
 
 ```mermaid
 sequenceDiagram
     autonumber
-    actor User as Browser / Client
+    actor User as Browser Client
     participant Edge as Next.js Server (RootLayout)
     participant Auth as Account & Session Service
     participant DB as Prisma (PostgreSQL)
-    participant ClientController as AppearancePersistenceController
-    participant API as Appearance API Route
+    participant Page as Route Page / Shell Wrapper
+    participant UI as @orbitox-io/ui (Controlled Presentation)
+    participant Controller as AppearancePersistenceController (apps/platform)
 
     User->>Edge: HTTP GET /console/overview (Cookies: session, orbitox_appearance)
     Edge->>Auth: Resolve Session Token
@@ -119,93 +108,102 @@ sequenceDiagram
         Auth-->>Edge: AppearancePreferences (DB Authoritative)
     else Unauthenticated or DB Failure
         Edge->>Edge: parseAppearanceCookie(orbitox_appearance)
-        Note over Edge: Fallback to Persona Default if cookie invalid
+        Note over Edge: Fallback to Persona Default if cookie invalid or absent
     end
     Edge->>User: 200 OK (HTML with data-* attributes on <html>)
     Note over User: Browser paints instantly with zero FOUC
 
-    opt User Changes Appearance in UI
-        User->>ClientController: setAppearance({ accent: 'emerald', density: 'compact' })
-        ClientController->>ClientController: Optimistic DOM mutation (data-accent="emerald")
-        ClientController->>API: PUT /api/v1/platform/me/appearance (Serialized Single-Writer)
-        API->>DB: update(operatorId, appearanceData)
-        DB-->>API: 200 Success
-        API-->>ClientController: 200 OK + Set-Cookie: orbitox_appearance
-        ClientController->>User: Toast: "Theme updated · saved to your account"
-    end
+    User->>Page: User navigates / interacts with Appearance UI
+    Page->>UI: <TopBar theme="dark" onThemeChange={...} />
+    User->>UI: Clicks Theme Switcher
+    UI->>Page: onThemeChange("light") (Controlled Callback)
+    Page->>Controller: updatePreferences({ theme: "light" })
+    Controller->>Edge: PUT /api/v1/platform/me/appearance (Serialized Single-Writer)
+    Edge->>DB: update(operatorId, appearanceData)
+    Edge-->>Controller: 200 OK + Set-Cookie: orbitox_appearance
+    Controller->>User: Toast: "Theme updated · saved to your account"
 ```
+
+### 3.1 Strict Package Boundaries
+- **`@orbitox-io/ui`:** Defines controlled component interfaces:
+  ```typescript
+  export interface AppearanceControlProps {
+    theme?: 'auto' | 'light' | 'dark';
+    onThemeChange?: (theme: 'auto' | 'light' | 'dark') => void;
+    accent?: string;
+    onAccentChange?: (accent: string) => void;
+  }
+  ```
+- **`apps/platform`:** Provides the persistence implementation and binds the single-writer queue. The UI package has zero knowledge of Prisma, API endpoints, or database tables.
 
 ---
 
 ## 4. Tenant Branding Isolation Contract
 
-Tenant custom branding allows B2B customers to customize guest-facing diner templates and white-label portals without degrading platform security or polluting operator chrome.
-
-### 4.1 Strict Isolation Boundaries
-1. **Container Scoping:** Tenant custom variables (`--tenant-brand-primary`, `--tenant-brand-surface`, etc.) are attached exclusively to `[data-tenant-theme]` containers.
-2. **Platform Chrome Protection:** The Operator Console (`/console/*`), Platform Settings, and shared administrative shells never inherit from `[data-tenant-theme]`.
+1. **Scoped to Canvas Surfaces:** Tenant custom branding (`--tenant-brand-primary`, `--tenant-brand-surface`) is attached exclusively to `[data-tenant-theme]` containers (e.g. diner ordering portals, white-label client views).
+2. **Platform Chrome Immutability:** The Operator Console (`/console/*`), platform settings, and administrative navigation never inherit from `[data-tenant-theme]`.
 3. **No Freeform CSS Injection:** Tenant appearance configuration accepts strictly validated hexadecimal strings and typography keys; arbitrary CSS, `@import`, `url()`, or script payloads are rejected by Zod.
 4. **Contrast Safety Gate:** Tenant brand colors submitted via API must pass algorithmic contrast validation ($\ge 4.5:1$ against the tenant canvas background). If contrast fails, the system automatically selects an accessible dark/light text foreground.
 5. **Multi-Tenant Session Switching:** Switching active tenants or branches in the shell swaps the `data-tenant-theme` attributes on the workspace canvas without reloading or polluting global `:root`.
 
 ---
 
-## 5. Token Audit & Discrepancy Matrix
+## 5. Token Audit, CSS Cascade Fix & Computed Contrast Verification
 
-A comprehensive source-versus-specification audit was conducted comparing `PHASE7_UI_MASTER_BRIEF.md` against the current CSS token files (`primitives.css`, `semantic.css`, `components.css`, `motion.css`, `theme.css`).
-
-### 5.1 Eight Accent Presets & WCAG 2.1 Contrast Matrix
-
-Calculated mathematically using standard relative luminance ($L = 0.2126R + 0.7152G + 0.0722B$):
-
-| Preset | Dark Accent Hex | Dark Button CR (`#FFF` on Accent) | Dark Canvas CR (Accent on `#0D0F12`) | Light Accent Hex | Light Button CR (`#FFF` on Accent) | Light Canvas CR (Accent on `#F6F8FA`) | WCAG 2.1 Status |
-| :--- | :--- | :---: | :---: | :--- | :---: | :---: | :--- |
-| **Ocean** | `#3A6BF5` | **4.56:1** | 4.21:1 | `#2F5BD8` | **5.82:1** | **5.47:1** | **PASS** (AA Button & Light Copy) |
-| **Emerald** | `#047857` | **5.48:1** | 3.50:1 | `#047857` | **5.48:1** | **5.15:1** | **PASS** (AA Button & Light Copy) |
-| **Sunflower** | `#F59E0B` | **8.94:1** (`#0D0F12`) | **8.94:1** | `#F59E0B` | **8.94:1** (`#0D0F12`) | 2.02:1 | **PASS** (AA Button with dark text) |
-| **Saffron** | `#C2410C` | **5.18:1** | 3.71:1 | `#C2410C` | **5.18:1** | **4.86:1** | **PASS** (AA Button & Light Copy) |
-| **Ruby** | `#E11D48` | **4.70:1** | 4.09:1 | `#E11D48` | **4.70:1** | 4.41:1 | **PASS** (AA Button & 3:1 Large UI) |
-| **Coral** | `#D9381E` | **4.63:1** | 4.14:1 | `#D9381E` | **4.63:1** | 4.35:1 | **PASS** (AA Button & 3:1 Large UI) |
-| **Violet** | `#7C3AED` | **5.70:1** | 3.37:1 | `#7C3AED` | **5.70:1** | **5.35:1** | **PASS** (AA Button & Light Copy) |
-| **Teal** | `#0F766E` | **5.47:1** | 3.51:1 | `#0F766E` | **5.47:1** | **5.14:1** | **PASS** (AA Button & Light Copy) |
-
-### 5.2 Source Discrepancies Identified
-
-1. **Ocean Hex Mismatch:** `primitives.css` declares `--accent-ocean: #3D6EF5`, whereas `semantic.css` declares `--color-accent: #3A6BF5`.  
-   *Resolution:* Standardize canonical Ocean to `#3A6BF5` for dark mood and `#2F5BD8` for light mood across all token files.
-2. **Missing Light Overrides for 7 Accents:** In `semantic.css`, only `ocean` has an explicit `[data-theme="light"]` override (`#2F5BD8`). Emerald, Sunflower, Saffron, Ruby, Coral, Violet, and Teal currently use a single hex definition. While button contrast passes in both modes, dark canvas copy contrast for saturated accents requires calibrated light-mode tokens in Stage 1.
-3. **Incomplete `auto` Mode Semantic Tokens:** When `@media (prefers-color-scheme: light)` is triggered on `[data-theme="auto"]`, `semantic.css` currently overrides surfaces and text but **omits status colors and accent overrides**.  
-   *Resolution:* Add complete status and accent mappings under `[data-theme="auto"]` in `semantic.css`.
-4. **Card / Hero Radius vs Configurable Radius:** `PHASE7_UI_MASTER_BRIEF.md` defines card radius as 28px and hero card radius as 32px, while Appearance Settings supports a user-selected radius from 4px to 32px (step 4).  
-   *Resolution:* The default corner radius is 28px. When configured, `--corner-radius` dynamically adjusts from 4px to 32px. Hero cards preserve geometric hierarchy via `--radius-hero: calc(var(--corner-radius) + 4px)`.
+### 5.1 CSS Cascade Flaw Identified in `semantic.css`
+In current `packages/ui/src/tokens/semantic.css`:
+- Line 25–80 declares accent rules: `[data-accent="emerald"] { --color-accent: #047857; ... }`.
+- Line 145 declares the general light theme: `[data-theme="light"] { --color-accent: #2F5BD8; ... }`.
+- **The Cascade Defect:** When `<html data-theme="light" data-accent="emerald">` is evaluated, both selectors match with identical specificity `[attr]` (0, 1, 0). Because `[data-theme="light"]` appears later in declaration order, **it silently clobbers `--color-accent` back to Ocean (`#2F5BD8`) for all non-Ocean presets in light mode**.
+- **Stage 1 Remediation Invariant:** Base theme variables (`[data-theme="light"]`, `[data-theme="dark"]`) must be declared **before** accent preset rules, or accent rules must use qualified compound selectors:
+  ```css
+  /* Remediation: Qualified selectors prevent cascade clobbering */
+  [data-theme="light"][data-accent="emerald"],
+  [data-theme="light"] [data-accent="emerald"] {
+    --color-accent: #047857;
+    --color-accent-fg: #FFFFFF;
+    --color-accent-hover: #065F46;
+  }
+  ```
 
 ---
 
-## 6. Density, Focus, and Motion Contracts
+### 5.2 Mathematical WCAG 2.1 Formula & Relative Luminance
 
-### 6.1 Density Spacing Application
-- **Relaxed (`data-density="relaxed"`):** Spacing multiplier $\times 1.25$. Designed for touch-first dining and public onboarding.
-- **Standard (`data-density="standard"`):** Baseline 1.0x spacing scale (`4px`, `8px`, `12px`, `16px`, `24px`, `32px`).
-- **Compact (`data-density="compact"`):** Spacing multiplier $\times 0.65$. High-density telemetry tables, SRE fleet metrics, and KDS queues.
+All contrast calculations strictly apply the W3C WCAG 2.1 sRGB channel linearization:
 
-### 6.2 Focus Rings
-- **Default Focus (`data-focus="default"`):** 2px solid ring (`var(--color-focus-ring)` with 2px offset).
-- **Bold Focus (`data-focus="bold"`):** 3px solid high-contrast ring (`var(--color-focus-ring)` with 3px offset). Enforces WCAG 2.4.7 and 2.4.11 accessibility compliance.
+$$c_{\text{linear}} = \begin{cases} \frac{c}{12.92} & \text{if } c \le 0.04045 \\ \left(\frac{c + 0.055}{1.055}\right)^{2.4} & \text{if } c > 0.04045 \end{cases}$$
 
-### 6.3 Reduced Motion Invariants
-In `motion.css`, `@media (prefers-reduced-motion: reduce)` zeroes out all animation durations:
-- `--duration-fast: 0ms !important;`
-- `--duration-normal: 0ms !important;`
-- `--duration-slow: 0ms !important;`
-- All transforms and CSS transitions snap instantly to prevent vestibular disorientation.
+Relative luminance:
+$$L = 0.2126 \cdot R_{\text{linear}} + 0.7152 \cdot G_{\text{linear}} + 0.0722 \cdot B_{\text{linear}}$$
+
+Contrast ratio:
+$$\text{Contrast Ratio} = \frac{L_1 + 0.05}{L_2 + 0.05} \quad (L_1 \ge L_2)$$
+
+### 5.3 Computed Contrast Matrix (Tested on Real Canvases & Surfaces)
+
+Tested against the actual tokens specified in `PHASE7_UI_MASTER_BRIEF.md`:
+- **Dark Mode:** Canvas `#0D0F12`, Surface `#14161A`, Text `#FFFFFF`.
+- **Light Mode:** Canvas `#EEF1F5` (gradient to `#E3E7EE`), Surface `#FFFFFF`, Text `#14161A`.
+
+| Accent Preset | Effective Hex (Dark / Light) | Button Text CR (`--color-accent-fg` on Accent) | Dark Canvas CR (Accent on `#0D0F12`) | Light Canvas CR (Accent on `#EEF1F5`) | Light Surface CR (Accent on `#FFFFFF`) | Non-Text UI CR ($\ge 3:1$) | WCAG 2.1 AA Compliance |
+| :--- | :---: | :---: | :---: | :---: | :---: | :---: | :--- |
+| **Ocean** | `#3A6BF5` / `#2F5BD8` | **4.56:1** / **5.82:1** (`#FFF`) | 4.21:1 | **5.14:1** | **5.82:1** | **PASS** | **PASS** (AA Body & Button) |
+| **Emerald** | `#047857` / `#047857` | **5.48:1** / **5.48:1** (`#FFF`) | 3.50:1 | **4.84:1** | **5.48:1** | **PASS** | **PASS** (AA Body & Button) |
+| **Sunflower** | `#F59E0B` / `#F59E0B` | **8.94:1** (`#0D0F12`) | **8.94:1** | 1.90:1 (Fails text) | 2.15:1 (Fails text) | **PASS** (3.8:1 text on dark) | **PASS** (AA with dark button text; accent copy on light must use text tokens) |
+| **Saffron** | `#C2410C` / `#C2410C` | **5.18:1** / **5.18:1** (`#FFF`) | 3.71:1 | **4.57:1** | **5.18:1** | **PASS** | **PASS** (AA Body & Button) |
+| **Ruby** | `#E11D48` / `#BE123C` | **4.70:1** / **6.29:1** (`#FFF`) | 4.09:1 | **5.55:1** | **6.29:1** | **PASS** | **PASS** (AA Body & Button) |
+| **Coral** | `#D9381E` / `#D9381E` | **4.63:1** / **4.63:1** (`#FFF`) | 4.14:1 | 4.09:1 | 4.63:1 | **PASS** | **PASS** (AA Button & Large UI) |
+| **Violet** | `#7C3AED` / `#6D28D9` | **5.70:1** / **7.10:1** (`#FFF`) | 3.37:1 | **6.27:1** | **7.10:1** | **PASS** | **PASS** (AA Body & Button) |
+| **Teal** | `#0F766E` / `#0F766E` | **5.47:1** / **5.47:1** (`#FFF`) | 3.51:1 | **4.83:1** | **5.47:1** | **PASS** | **PASS** (AA Body & Button) |
 
 ---
 
-## 7. Deprecation of Legacy Theme Writers
+## 6. Deprecation of Legacy Theme Writers
 
 1. **`theme-script.ts`:**
-   - Functions `setTheme()` and `toggleTheme()` write to obsolete `orbitox-theme` cookie and directly mutate the DOM.
-   - **Deprecation Status:** Marked `@deprecated`. Modern shells replace all calls to `toggleTheme()` with `AppearancePersistenceController`.
+   - Functions `setTheme()` and `toggleTheme()` write to obsolete `orbitox-theme` cookies and directly mutate the DOM.
+   - **Deprecation Status:** Marked `@deprecated`. Modern shells replace all calls to `toggleTheme()` with controlled callbacks to `AppearancePersistenceController`.
 2. **`ThemeProvider` in `providers.tsx`:**
    - `packages/ui/src/legacy/components/theme-provider.tsx` mutates `document.documentElement` from `localStorage` on client mount.
    - **Deprecation Status:** Removed from platform root `providers.tsx` and isolated to legacy `(dashboard)/layout.tsx`.

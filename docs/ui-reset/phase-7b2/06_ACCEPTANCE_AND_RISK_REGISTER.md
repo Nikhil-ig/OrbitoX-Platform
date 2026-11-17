@@ -6,16 +6,27 @@
 **Governing Documents:** `PHASE7_UI_MASTER_BRIEF.md`, `docs/ui-reset/04_UI_ACCEPTANCE_MATRIX.md`  
 **Accepted Baseline:** `f65698eab17b3a40842360eaeb387c74dca57ecc`  
 **Author:** Principal Frontend & Platform Architect  
-**Date:** November 17, 2026  
+**Date:** November 17, 2026 (Revised)  
 
 ---
 
-## 1. Executive Summary
+## 1. Executive Summary & Delivery Governance
 
 This document establishes the binding quality assurance contract, automated testing harness requirements, risk mitigations, and execution governance for Phase 7B.2.
 
-**Current Stage Status:** Stage 0 (Architecture & Planning).  
-In accordance with Stage 0 restrictions, **no application source code has been altered**. Consequently, future implementation tests are cataloged with their exact verification criteria and are marked **`NOT RUN (Stage 0 Design Phase — Awaiting Implementation Authorization)`**.
+### 1.1 Documentation Delivery Reconciliation (Correction R7-A & R7-B)
+1. **Dedicated Documentation Branch:** All Stage 0 documentation deliverables reside on the dedicated branch `docs/phase-7b2-stage0-revision`, branched directly from the accepted Phase 7B.1 baseline SHA `f65698eab17b3a40842360eaeb387c74dca57ecc` and pushed to `origin/docs/phase-7b2-stage0-revision`.
+2. **Exhaustive Deliverables Census:** All seven specifications are delivered independently under `docs/ui-reset/`:
+   - Primary Blueprint: `docs/ui-reset/05_PHASE_7B2_THEME_TOKENS_AND_PERSONA_SHELLS.md`
+   - Supporting Specifications:
+     - `docs/ui-reset/phase-7b2/01_VISUAL_REFERENCE_INVENTORY.md`
+     - `docs/ui-reset/phase-7b2/02_TOKEN_AND_THEME_OWNERSHIP.md`
+     - `docs/ui-reset/phase-7b2/03_PROVIDER_AND_LEGACY_MIGRATION.md`
+     - `docs/ui-reset/phase-7b2/04_PERSONA_SHELL_CONTRACTS.md`
+     - `docs/ui-reset/phase-7b2/05_RESPONSIVE_NAVIGATION_MATRIX.md`
+     - `docs/ui-reset/phase-7b2/06_ACCEPTANCE_AND_RISK_REGISTER.md`
+3. **Implementation Branch Protection:** The feature branch `feat/ui-reset-7b2-theme-persona-shells` remains implementation-inactive until the repository owner grants formal authorization.
+4. **Current Execution Status:** Stage 0 (Architecture & Planning). In accordance with Stage 0 restrictions, **no application source code has been altered**. Future implementation tests are marked **`NOT RUN (Stage 0 Design Phase — Awaiting Implementation Authorization)`**.
 
 ---
 
@@ -37,15 +48,15 @@ The following three non-blocking P2 debt items from the Phase 7B.1 independent r
 
 | Test ID | Scenario Description | Expected Outcome | Verification Standard | Execution Status |
 | :--- | :--- | :--- | :--- | :--- |
-| **TST-TOK-01** | 16-Variant Contrast Suite (8 Accents × 2 Effective Moods) | Button text $\ge 4.5:1$ (or $\ge 8.0:1$ for Sunflower); large UI elements $\ge 3:1$. | WCAG 2.1 AA Relative Luminance Formula | **NOT RUN** (Stage 0 — Pending Commit 1) |
-| **TST-TOK-02** | Persona Default Mood Resolution | Platform Operator defaults to `dark`; Public/Auth defaults to `light`; Customer defaults to `light`. | Server DOM inspection (`data-theme` on `<html>`) | **NOT RUN** (Stage 0 — Pending Commit 1) |
-| **TST-TOK-03** | System Automatic Preference Resolution | When `theme: 'auto'`, browser evaluates `@media (prefers-color-scheme)` to select correct semantic tokens. | Headless Chrome media emulation | **NOT RUN** (Stage 0 — Pending Commit 1) |
+| **TST-TOK-01** | 16-Variant Computed Contrast Suite (8 Accents × 2 Effective Moods) | Button text $\ge 4.5:1$ (or $\ge 8.0:1$ for Sunflower); large UI elements $\ge 3:1$. Evaluated on **computed styles after CSS cascade**. | WCAG 2.1 AA Relative Luminance with sRGB Linearization | **NOT RUN** (Stage 0 — Pending Commit 1) |
+| **TST-TOK-02** | Persona-Specific Explicit Default Mood Resolution | Platform Operator defaults to `dark`; Staff defaults to `dark` (POS override `light`); Public/Auth/Customer defaults to `light`. | Server DOM inspection (`data-theme` on `<html>`) | **NOT RUN** (Stage 0 — Pending Commit 1) |
+| **TST-TOK-03** | System Automatic Preference Resolution | When user explicitly chose `theme: 'auto'`, browser evaluates `@media (prefers-color-scheme)` to select correct semantic tokens. | Headless Chrome media emulation | **NOT RUN** (Stage 0 — Pending Commit 1) |
 | **TST-TOK-04** | Authenticated Database Precedence | Authenticated user DB preference strictly overrides client cookie and browser cache. | Next.js Server Component render test | **NOT RUN** (Stage 0 — Pending Commit 1) |
 | **TST-TOK-05** | Guest Cookie Zod Validation | Valid `orbitox_appearance` cookie parses correctly; corrupted/tampered cookie falls back safely to persona default. | Vitest unit test with malformed payloads | **NOT RUN** (Stage 0 — Pending Commit 1) |
 | **TST-TOK-06** | Database Downtime Graceful Degradation | If DB connection times out, validated guest cookie is served as temporary fallback without throwing 500. | Integration test with mocked DB failure | **NOT RUN** (Stage 0 — Pending Commit 1) |
 | **TST-TOK-07** | Tenant Brand Isolation | Tenant custom variables in `[data-tenant-theme]` never override platform tokens in `:root` or Operator Console. | CSS cascade and specificity verification | **NOT RUN** (Stage 0 — Pending Commit 1) |
 | **TST-TOK-08** | Zero FOUC & Zero Inline Scripts | Appearance `data-*` attributes render in initial server HTML; zero flash of wrong theme; zero inline scripts. | Playwright CSP and network trace audit | **NOT RUN** (Stage 0 — Pending Commit 1) |
-| **TST-TOK-09** | Elimination of Competing Theme Writers | `theme-script.ts` cookie writes deprecated; modern shells route updates through `AppearancePersistenceController`. | Static analysis & bundle inspection | **NOT RUN** (Stage 0 — Pending Commit 1) |
+| **TST-TOK-09** | Elimination of Competing Theme Writers | `theme-script.ts` cookie writes deprecated; modern shells route updates through controlled callbacks to persistence controller. | Static analysis & bundle inspection | **NOT RUN** (Stage 0 — Pending Commit 1) |
 | **TST-TOK-10** | Reload Persistence & User Isolation | Changing accent persists across page reloads; User A's preferences never bleed into User B's session. | Playwright multi-context authentication test | **NOT RUN** (Stage 0 — Pending Commit 1) |
 
 ---
@@ -73,6 +84,7 @@ The following three non-blocking P2 debt items from the Phase 7B.1 independent r
 | **TST-CMP-03** | Console `AdminProvider` Deduplication | Single instance of `AdminProvider` in `(console)/layout.tsx`; zero duplicate provider nesting in React tree. | React DevTools tree depth inspection | **NOT RUN** (Stage 0 — Pending Commit 2) |
 | **TST-CMP-04** | Legacy `--ui-*` Variable Bridging | All 17 console pages referencing `--ui-*` variables continue to render without missing styles or contrast drops. | Visual regression check of `/console/*` | **NOT RUN** (Stage 0 — Pending Commit 2) |
 | **TST-CMP-05** | Elimination of Fake `href="#"` Links | All `AppShell` navigation items render semantic buttons or real router links; no fake hashes. | Automated link-crawler test | **NOT RUN** (Stage 0 — Pending Commit 4) |
+| **TST-CMP-06** | Package Dependency Invariant | `packages/ui` contains zero imports from `apps/platform`. | ESLint import rule / dep-check | **NOT RUN** (Stage 0 — Pending Commit 3) |
 
 ---
 
@@ -85,70 +97,33 @@ The following three non-blocking P2 debt items from the Phase 7B.1 independent r
 | **RSK-03** | **Database Failure Cascades to 500 Error in Root Layout:** Unhandled exception in `getOperatorAppearance()` crashes root layout during database blip. | **Critical** | Low | Enforce `try / catch` blocks in `RootLayout` with automatic fallback to validated `orbitox_appearance` cookie, then persona default. | Automated unit test injecting Prisma client failure and asserting 200 OK with persona default mood. |
 | **RSK-04** | **Legacy `--ui-*` Consumers Break on Unbridged Tokens:** Older console modules fail to render when root styling is modernized. | **Medium** | Low | Retain `packages/ui/src/styles/theme.css` with comprehensive semantic CSS variable bridges (`--ui-bg-card: var(--color-surface);`). | Zero deletions of legacy CSS during Phase 7B.2. |
 | **RSK-05** | **Tenant Custom CSS Injects Malicious Payloads:** Tenant custom branding introduces cross-site scripting or layout breakages. | **Critical** | Low | Tenant appearance endpoint accepts strictly validated hex strings and typography enum keys via Zod. Arbitrary CSS rejected. | Strict Content Security Policy (CSP) prohibiting inline styles and unsafe-inline scripts. |
+| **RSK-06** | **Nested ConsoleShell Rendering:** Centralizing `ConsoleShell` into `(console)/layout.tsx` wraps legacy `admin/*` and causes double-shells over existing page-level shells. | **High** | High | Retain `ConsoleShell` at the `/console` route boundary and keep existing page-level wrappers intact during 7B.2. | Automated Playwright selector test asserting exactly 1 `<header>` and 1 `<aside>` in DOM. |
 
 ---
 
 ## 5. Staged Implementation Plan (Upon Owner Authorization)
-
-Once formal implementation authorization is granted by the repository owner, implementation will proceed across four atomic commits:
 
 ```
 feat/ui-reset-7b2-theme-persona-shells
  ├── Commit 1: build(tokens): consolidate canonical design tokens and auto-mode calibration
  ├── Commit 2: refactor(providers): isolate global providers and relocate legacy ThemeProvider
  ├── Commit 3: feat(shells): implement responsive shell navigation primitives & Storybook stories
- └── Commit 4: feat(console): integrate ConsoleShell and backward-compatible AppShell adapter
+ └── Commit 4: feat(console): integrate ConsoleShell adapter and verify console route parity
 ```
 
-### Commit 1: `build(tokens)`
-- Consolidate canonical tokens in `primitives.css` and `semantic.css`.
-- Standardize Ocean accent (`#3A6BF5` dark, `#2F5BD8` light).
-- Add complete status color and accent overrides under `@media (prefers-color-scheme: light)` for `[data-theme="auto"]`.
-- Deprecate `theme-script.ts` cookie writers.
-- Execute automated 16-variant contrast test suite.
-
-### Commit 2: `refactor(providers)`
-- Remove `ThemeProvider` and `AdminProvider` from platform root `providers.tsx`.
-- Mount `ThemeProvider` locally in `apps/platform/src/app/(dashboard)/layout.tsx`.
-- Remove duplicate `AdminProvider` from `apps/platform/src/app/(console)/layout.tsx`.
-- Add legacy CSS variable bridges to `packages/ui/src/styles/theme.css`.
-- Verify legacy dashboard and console administrative routes.
-
-### Commit 3: `feat(shells)`
-- Implement modular primitives in `packages/ui/src/shells/primitives/`: `SidebarCard`, `IconRail`, `TopBar`, `BottomNavPill`, `BottomTabBar`, `MoreNavSheet`, `ShellContentFrame`.
-- Add comprehensive Storybook stories covering all 4 test viewports (`390×844`, `834×1194`, `1194×834`, `1440×900`).
-- Enforce touch-target minimums ($\ge 44\text{px}$ phone, $\ge 48\text{px}$ kitchen) and safe-area insets.
-
-### Commit 4: `feat(console)`
-- Refactor `packages/ui/src/components/app-shell.tsx` as a backward-compatible adapter over new primitives.
-- Replace fake `href="#"` links with accessible typed buttons/links.
-- Wire shell appearance toggle to `AppearancePersistenceController`.
-- Wire `ConsoleShell` in `apps/platform/src/app/(console)/layout.tsx`.
-- Run complete test suite, type-check, lint invariants, and Storybook build.
+- **Commit 1 (`build(tokens)`):** Fix CSS cascade order in `semantic.css`, standardize Ocean accent, complete `auto` mode mappings, deprecate `theme-script.ts` cookie writes, execute 16-variant computed contrast suite.
+- **Commit 2 (`refactor(providers)`):** Clean `providers.tsx`, relocate `ThemeProvider` into `(dashboard)/layout.tsx`, keep `AdminProvider` local, add `--ui-*` CSS variable bridges.
+- **Commit 3 (`feat(shells)`):** Implement modular shell primitives (`SidebarCard`, `IconRail`, `TopBar`, `BottomNavPill`, `BottomTabBar`, `MoreNavSheet`, `ShellContentFrame`) with controlled presentation props. Add Storybook stories for all 4 viewports.
+- **Commit 4 (`feat(console)`):** Refactor `AppShell` as a backward-compatible adapter over new primitives with normalized non-breaking `NavItem` semantics. Verify console routes and run full CI.
 
 ---
 
-## 6. Scope Boundaries & Owner Alignment
+## 6. Scope Boundaries & Owner Decisions Required
 
-### 6.1 Explicitly In-Scope for Phase 7B.2:
-- Canonical design tokens, auto-mode calibration, WCAG contrast verification.
-- Appearance resolution precedence, schema validation, and server-authoritative injection.
-- Provider topology refactoring and legacy provider isolation.
-- Modular shell navigation primitives (`SidebarCard`, `IconRail`, `TopBar`, `BottomNavPill`, `BottomTabBar`, `MoreNavSheet`, `ShellContentFrame`).
-- Backward-compatible `AppShell` adapter.
-- Storybook stories for all 4 device viewports.
+### 6.1 Strict Boundaries
+- **Strictly In-Scope:** Design tokens, auto-mode calibration, appearance resolution precedence, provider topology refactoring, modular shell primitives, `AppShell` backward-compatible adapter, Storybook stories for all 4 viewports.
+- **Strictly Out-of-Scope:** Root `/` route changes (`apps/platform/src/app/(dashboard)/page.tsx`), Phase 7C–7F product screens (KDS queues, POS checkout, waiter tables, menu CSV importer, customer billing, hospital clinical workflows), deletions of legacy UI files.
 
-### 6.2 Explicitly Out-of-Scope (Deferred to Later Phases):
-- Root `/` route modifications (`apps/platform/src/app/(dashboard)/page.tsx`).
-- Creation of Phase 7C Operator product screens (fleet telemetry, data rights, saga retry).
-- Creation of Phase 7D Customer product screens (plan change, customer billing).
-- Creation of Phase 7E HospitalOS screens.
-- Creation of Phase 7F RestaurantOS operational screens (KDS ticket queues, POS checkout, waiter tables, menu importer).
-- Deletion of legacy UI package components or stylesheets.
-
----
-
-## 7. Owner Decisions Required Before Stage 1 Authorization
-
-1. **Approval of Breakpoint Amendment `UI-7B2-BP1`:** Formally adjusting the desktop threshold from `1100px` to `1280px` (`xl`) to harmonize tablet landscape (`1194 × 834`) with iPad Pro 11" concepts.
-2. **Authorization of Dedicated Implementation Branch:** Approving creation of `feat/ui-reset-7b2-theme-persona-shells` for execution once Stage 0 documentation review is accepted.
+### 6.2 Owner Decisions Required Before Stage 1 Authorization
+1. **Approval of Breakpoint Amendment `UI-7B2-BP1`:** Formally adjusting desktop threshold from `1100px` to `1280px` (`xl`) to harmonize tablet landscape (`1194 × 834`) with iPad Pro 11" concepts.
+2. **Authorization of Dedicated Implementation Branch:** Authorizing the creation/activation of `feat/ui-reset-7b2-theme-persona-shells` to begin Commit 1.

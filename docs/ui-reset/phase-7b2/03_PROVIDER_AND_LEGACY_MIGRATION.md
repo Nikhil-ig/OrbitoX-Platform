@@ -6,7 +6,7 @@
 **Governing Documents:** `PHASE7_UI_MASTER_BRIEF.md`, `docs/ui-reset/01_UI_FILE_DISPOSITION_LEDGER.md`  
 **Accepted Baseline:** `f65698eab17b3a40842360eaeb387c74dca57ecc`  
 **Author:** Principal Frontend & Platform Architect  
-**Date:** November 17, 2026  
+**Date:** November 17, 2026 (Revised)  
 
 ---
 
@@ -18,6 +18,7 @@ The goal of Phase 7B.2 provider refactoring is to eliminate conflicting client-s
 1. **Zero Premature Deletions:** No legacy component (`packages/ui/src/legacy/*`), stylesheet (`packages/ui/src/styles/theme.css`), or provider will be deleted during Phase 7B.2.
 2. **Zero Route Breakage:** Existing dashboard routes (`(dashboard)/*`) and console administrative screens (`(console)/admin/*`) must continue to render correctly with full theme and quota state.
 3. **No Global Client Theme Mutation:** The platform root layout must never mount a client component that mutates `document.documentElement` attributes from `localStorage` on mount.
+4. **No Premature Shell Centralization at `(console)` Boundary:** `ConsoleShell` must **never be mounted at `(console)/layout.tsx`**, avoiding double-rendering over existing page-level wrappers and preventing shell bleeding onto legacy `/admin/*` routes.
 
 ---
 
@@ -38,16 +39,8 @@ A complete repository-wide audit was conducted across `apps/platform/src/` and `
   1. `apps/platform/src/app/providers.tsx` (Line 11): Mounted globally in `GlobalProviders`.
   2. `apps/platform/src/app/(console)/layout.tsx` (Line 7): Mounted a second time inside the console route layout!
   3. `apps/platform/src/app/(console)/admin/*`:
-     - `quotas/page.tsx`
-     - `business/[category]/page.tsx`
-     - `business/[category]/[providerId]/page.tsx`
-     - `business/page.tsx`
-     - `services/[serviceId]/page.tsx`
-     - `services/page.tsx`
-     - `components/service-card.tsx`
-     - `components/provider-card.tsx`
-     - `components/api-key-modal.tsx`
-     - `components/onboard-provider-modal.tsx`
+     - `quotas/page.tsx`, `business/[category]/page.tsx`, `business/[category]/[providerId]/page.tsx`, `business/page.tsx`, `services/[serviceId]/page.tsx`, `services/page.tsx`
+     - `components/service-card.tsx`, `components/provider-card.tsx`, `components/api-key-modal.tsx`, `components/onboard-provider-modal.tsx`
   4. `apps/platform/src/app/components/platform-governance-dock.tsx` (Line 5).
 - **Architectural Defect:** Global mounting forces non-console routes (public landing, login, customer workspace) to needlessly instantiate administrative mock services, service quota reducers, and API key managers.
 
@@ -69,60 +62,41 @@ Exhaustive scan of files referencing `--ui-*` variables from `packages/ui/src/st
 
 ---
 
-## 3. Provider Topology: Before vs. After
+## 3. Provider Topology & Route Boundary Decoupling
 
-### 3.1 Current Architecture (Flawed / Entangled)
+### 3.1 The Route Boundary Trap: `(console)` vs `/console` (Correction R4-A)
+The route group `apps/platform/src/app/(console)` contains three distinct sub-hierarchies:
+1. `(console)/admin/*` (legacy mock admin pages using `AdminProvider`).
+2. `(console)/platform/*` (legacy platform screens using `--ui-*` variables).
+3. `(console)/console/*` (modern operator console pages: `overview`, `appearance`, `tenants`, `billing`).
 
-```mermaid
-graph TD
-    subgraph PlatformRoot [apps/platform/src/app/layout.tsx]
-        RootHTML["<html data-theme=... (Server Resolved)>"]
-        RootHTML --> Body[<body>]
-        Body --> GP[GlobalProviders in providers.tsx]
-    end
+Furthermore, modern console pages **already render `<ConsoleShell>` individually at the page level**:
+- `apps/platform/src/app/(console)/console/overview/page.tsx` (Line 46): `<ConsoleShell activeId="overview">`
+- `apps/platform/src/app/(console)/console/settings/appearance/page.tsx` (Line 46): `<ConsoleShell activeId="appearance">`
 
-    subgraph GlobalProvidersWrapper [Global Scope Pollution]
-        GP --> TP["Legacy ThemeProvider (initialThemeId='cosmic-obsidian')"]
-        TP -- "Client useEffect Mutates DOM from localStorage!" --> RootHTML
-        TP --> ToastProv[ToastProvider]
-        ToastProv --> RootAP["AdminProvider (Mounted Globally)"]
-    end
+**Severe Risk of Centralizing into `(console)/layout.tsx`:**  
+If `ConsoleShell` is mounted in `apps/platform/src/app/(console)/layout.tsx`, it will:
+1. Forcibly wrap legacy `/admin/*` and `/platform/*` routes with the modern operator shell.
+2. Result in **double/nested `ConsoleShell` rendering** on all modern routes (`<ConsoleShell><ConsoleShell>...</ConsoleShell></ConsoleShell>`).
 
-    subgraph ConsoleLayout ["apps/platform/src/app/(console)/layout.tsx"]
-        RootAP --> ConLayout["Console Layout"]
-        ConLayout --> DupAP["AdminProvider (DUPLICATE NESTING!)"]
-        DupAP --> ConShell[ConsoleShell]
-        ConShell --> ConPages["(console) Routes & Telemetry"]
-    end
-
-    subgraph DashboardLayout ["apps/platform/src/app/(dashboard)/layout.tsx"]
-        RootAP --> DashLayout["Dashboard Layout"]
-        DashLayout --> DashTP["useTheme() Consumer"]
-        DashTP --> DashPages["(dashboard) Routes"]
-    end
-```
-
-### 3.2 Target Architecture (Decoupled & Isolated)
+### 3.2 Correct Architectural Boundary Mapping
 
 ```mermaid
 graph TD
-    subgraph ServerRoot [Global Platform Root: apps/platform/src/app/layout.tsx]
+    subgraph RootLevel [Global Platform Root: apps/platform/src/app/layout.tsx]
         ServerHTML["<html data-theme=... data-accent=... data-density=...>"]
-        ServerHTML --> ServerBody[<body className='bg-var(--color-bg)'>]
-        ServerBody --> CleanGP[GlobalProviders]
-        CleanGP --> SharedToast[ToastProvider]
+        ServerHTML --> ServerBody[<body>]
+        ServerBody --> CleanGP[GlobalProviders in providers.tsx]
+        CleanGP --> SharedToast[ToastProvider Only]
         Note1[Zero Theme Writers at Root<br/>Zero Client LocalStorage Clashing]
     end
 
-    subgraph RouteIsolation [Strict Persona & Route Boundary]
-        SharedToast --> DecoupleBranch{Route Dispatch}
-    end
+    SharedToast --> DecoupleBranch{Route Dispatch}
 
-    subgraph ConsoleRouteBoundary ["apps/platform/src/app/(console)/layout.tsx"]
-        DecoupleBranch -- "/console/*" --> LocalAP["AdminProvider (Single Console Instance)"]
-        LocalAP --> ModernConsoleShell[ConsoleShell]
-        ModernConsoleShell --> ModernTokens[Canonical Design Tokens]
-        ModernConsoleShell --> ConsoleContent["Console Routes & Parity Pages"]
+    subgraph LegacyAdminBoundary ["apps/platform/src/app/(console)/admin/"]
+        DecoupleBranch -- "/admin/*" --> AdminLayout["(console)/admin/layout.tsx"]
+        AdminLayout --> LocalAP["AdminProvider (Local Admin Instance)"]
+        LocalAP --> AdminPages["Legacy Admin Quota & Mock Pages"]
     end
 
     subgraph LegacyDashboardBoundary ["apps/platform/src/app/(dashboard)/layout.tsx"]
@@ -131,9 +105,11 @@ graph TD
         LegacyThemeState --> LegacyDashboardUI["Legacy DynamicSidebar & Dashboard UI"]
     end
 
-    subgraph ModernPersonaBoundary [Future Customer / Public Routes]
-        DecoupleBranch -- "/customer/*, /auth/*" --> ModernShells[Customer & Public Shells]
-        ModernShells --> CleanDOM[Zero Legacy Context Overhead]
+    subgraph ModernConsoleBoundary ["apps/platform/src/app/(console)/console/"]
+        DecoupleBranch -- "/console/*" --> ConsolePages["Modern Operator Pages (Page-Level Shell Facade)"]
+        ConsolePages --> ModernShellAdapter["ConsoleShell Adapter over Modular Primitives"]
+        ModernShellAdapter --> ModernTokens[Canonical Design Tokens]
+        Note2[No Double-Shell Nesting<br/>No Leaking to /admin/*]
     end
 ```
 
@@ -172,14 +148,14 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   );
 }
 ```
-- This ensures that `useTheme()` inside `DashboardInnerLayout` continues to find its context without polluting any other route group.
 
-### 4.3 Step 3: Deduplicate AdminProvider in `(console)/layout.tsx`
-- Because `AdminProvider` is removed from `providers.tsx`, the existing `AdminProvider` in `apps/platform/src/app/(console)/layout.tsx` becomes the **single, canonical provider instance** for all console administrative routes.
-- No duplicate provider nesting exists anywhere in the React tree.
+### 4.3 Step 3: Localize AdminProvider (`apps/platform/src/app/(console)/layout.tsx`)
+- Keep `AdminProvider` in `apps/platform/src/app/(console)/layout.tsx` so legacy `admin/*` pages continue functioning without disruption.
+- **Do not mount `ConsoleShell` in `(console)/layout.tsx`**.
+- Keep modern `ConsoleShell` at the `/console` boundary, preserving existing page-level wrappers until their migration in Phase 7C.
 
 ### 4.4 Step 4: Semantic CSS Variable Bridging
-In `packages/ui/src/styles/theme.css`, bridge legacy `--ui-*` variables to canonical semantic tokens so that legacy console platform modules render with seamless visual fidelity:
+In `packages/ui/src/styles/theme.css`, bridge legacy `--ui-*` variables to canonical semantic tokens:
 ```css
 :root,
 [data-theme] {
@@ -204,12 +180,10 @@ In `packages/ui/src/styles/theme.css`, bridge legacy `--ui-*` variables to canon
 
 ## 5. Consumer Retirement Roadmap
 
-Before legacy files can be permanently deleted in subsequent milestones, the following consumer migrations must be verified:
-
 | Legacy Asset | Current Consumers | Target Migration Milestone | Deletion Prerequisite |
 | :--- | :--- | :---: | :--- |
 | `ThemeProvider` (`packages/ui`) | `(dashboard)/layout.tsx` | Phase 7D | Full replacement of `/` route with Customer Workspace Shell. |
 | `useTheme()` hook | `(dashboard)/layout.tsx` | Phase 7D | Legacy dashboard sidebar retired. |
 | `AdminProvider` | `(console)/admin/*` | Phase 7C | Modernization of mock admin quota pages into real operator routes. |
 | `packages/ui/src/styles/theme.css` | 17 console pages & 5 legacy components | Phase 7C & 7F | CSS module migration to canonical semantic tokens. |
-| `theme-script.ts` (`toggleTheme`) | `AppShell` | Phase 7B.2 (Stage 1) | Replaced by `AppearancePersistenceController`. |
+| `theme-script.ts` (`toggleTheme`) | `AppShell` | Phase 7B.2 (Stage 1) | Replaced by controlled appearance props. |

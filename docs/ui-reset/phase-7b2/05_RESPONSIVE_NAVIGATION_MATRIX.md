@@ -6,7 +6,7 @@
 **Governing Documents:** `PHASE7_UI_MASTER_BRIEF.md` (Section 3), `docs/ui-reset/03_SHELL_AND_NAVIGATION_ARCHITECTURE.md`  
 **Accepted Baseline:** `f65698eab17b3a40842360eaeb387c74dca57ecc`  
 **Author:** Principal Frontend & Platform Architect  
-**Date:** November 17, 2026  
+**Date:** November 17, 2026 (Revised)  
 
 ---
 
@@ -77,15 +77,26 @@ To reconcile the conceptual text in `PHASE7_UI_MASTER_BRIEF.md` with physical re
 
 ---
 
-## 4. Behavior Across Intermediate Viewports
+## 4. Behavior Across Edge-Case Viewports & Constraints
 
-| Viewport Range | Physical Context | Layout Transformation & Behavior |
-| :--- | :--- | :--- |
-| **$0\text{px} – 639\text{px}$** | Modern smartphones (portrait & landscape) | `BottomTabBar` pinned to bottom with `env(safe-area-inset-bottom)`. Single-column card layout. Modals render as full-width `BottomSheet`. Horizontal scroll barred. |
-| **$640\text{px} – 767\text{px}$** | Large foldables & small mini-tablets | Single/dual column card layout. Floating `BottomNavPill`. Modals render as centered dialogs. |
-| **$768\text{px} – 1023\text{px}$** | Standard tablets portrait (iPad 10.2", iPad Pro 11") | Centered floating `BottomNavPill` ($52\text{px}$ height). Multi-column card grids (2 columns). Detail drawers render as right slide-over sheets. |
-| **$1024\text{px} – 1279\text{px}$** | Tablet landscape & desktop split-screen | 64px `IconRail` docked on left. Full horizontal data tables and wide operational canvases (POS dual-pane, KDS multi-column). Detail panels render as side panels. |
-| **$\ge 1280\text{px}$** | Laptops, external monitors, iMacs | Fixed 260px `SidebarCard` with active tenant context, cluster dock, and category accordions. 3–4 column grids, max-width $1280\text{px}$ or $1440\text{px}$ centered container. |
+### 4.1 Browser Window Resizing & Desktop Split-Screen
+When a desktop browser window is resized continuously from 1920px down to 800px:
+- **$\ge 1280px$:** Expanded 260px `SidebarCard` is visible.
+- **$1279px \to 1024px$:** The shell transitions smoothly to the collapsed 64px `IconRail`, reclaiming 196px of horizontal space for tables and grids without layout clipping.
+- **$1023px \to 640px$:** The `IconRail` transitions to the floating `BottomNavPill`, maximizing full-canvas width for tablet reading.
+- **$< 640px$:** Navigation transitions to thumb-friendly `BottomTabBar`.
+
+### 4.2 Landscape Phone Usage (Constrained Height: $844 \times 390$)
+When a phone is rotated into landscape mode:
+- Viewport width is 844px (falling in the tablet portrait width band), but viewport height is severely constrained ($< 500px$).
+- **Height-Constrained Rule (`@media (max-height: 500px)`):**
+  - TopBar collapses to 40px height with compact glyphs.
+  - Floating bottom navigation automatically docks or collapses to a minimal side rail, preventing vertical content obscuration.
+
+### 4.3 Constrained-Height Desktop / Laptop Viewports
+- On smaller laptops (e.g., $1366 \times 768$ or $1440 \times 900$ with large browser toolbars):
+  - Card padding transitions from 32px to 24px via `@media (max-height: 720px)`.
+  - Tables enable dedicated vertical scroll within their card containers (`overflow-y-auto max-h-[calc(100vh-220px)]`).
 
 ---
 
