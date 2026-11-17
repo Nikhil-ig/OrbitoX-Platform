@@ -53,14 +53,17 @@ export const BottomSheetContent = React.forwardRef<
   }, []);
 
   React.useEffect(() => {
+    isDismissingRef.current = false;
     return () => {
       clearPendingCleanup();
+      isDismissingRef.current = false;
     };
   }, [clearPendingCleanup]);
 
   const resetGesture = React.useCallback((snapping = true) => {
     clearPendingCleanup();
-    if (contentRef.current && !isDismissingRef.current) {
+    isDismissingRef.current = false;
+    if (contentRef.current) {
       if (snapping) {
         contentRef.current.setAttribute('data-drag-state', 'snapping');
         contentRef.current.removeAttribute('data-drag-offset');
@@ -86,6 +89,9 @@ export const BottomSheetContent = React.forwardRef<
   }, [clearPendingCleanup]);
 
   const handleDragStart = (clientY: number) => {
+    if (contentRef.current?.getAttribute('data-drag-state') === 'idle') {
+      isDismissingRef.current = false;
+    }
     if (isDismissingRef.current) return;
     clearPendingCleanup();
     touchStartY.current = clientY;

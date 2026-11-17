@@ -201,7 +201,58 @@ async function runBrowserVerification() {
     );
     console.log('  ✔ Step 9: Zero DOM inline-style mutation invariant verified on real React component (no transform/transition)');
 
-    console.log('\n🏆 [BottomSheet Playwright]: ALL REAL REACT COMPONENT BROWSER CHECKS PASSED!\n');
+    // Step 10 (P2-02): Real Browser Synthetic Touch-Gesture Emulation (75px Dismissal Threshold)
+    // Dispatches synthetic TouchEvents (touchstart -> touchmove -> touchend)
+    // verifying touch-gesture tracking, <= 75px snapback, and > 75px dismissal threshold
+    const openDialog = page.locator('[role="dialog"][data-state="open"]');
+    await openDialog.waitFor({ state: 'visible' });
+    const reopenedHandle = openDialog.locator('[role="region"][aria-label="Drag handle"]');
+    await reopenedHandle.waitFor({ state: 'visible' });
+
+    // 10a: Touch drag 50px (<= 75px) -> snaps back to resting, sheet remains open
+    await reopenedHandle.evaluate((el) => {
+      const t1 = new Touch({ identifier: 1, target: el, clientX: 100, clientY: 200 });
+      el.dispatchEvent(new TouchEvent('touchstart', { touches: [t1], targetTouches: [t1], changedTouches: [t1], bubbles: true, cancelable: true }));
+
+      const t2 = new Touch({ identifier: 1, target: el, clientX: 100, clientY: 250 });
+      el.dispatchEvent(new TouchEvent('touchmove', { touches: [t2], targetTouches: [t2], changedTouches: [t2], bubbles: true, cancelable: true }));
+    });
+
+    const state10a = await openDialog.getAttribute('data-drag-state');
+    const offset10a = await openDialog.getAttribute('data-drag-offset');
+    assert.equal(state10a, 'dragging', 'Sheet must be in dragging state during touch drag');
+    assert.equal(offset10a, '50', 'Offset must quantize to 50px during 50px touch drag');
+
+    await reopenedHandle.evaluate((el) => {
+      const t3 = new Touch({ identifier: 1, target: el, clientX: 100, clientY: 250 });
+      el.dispatchEvent(new TouchEvent('touchend', { touches: [], targetTouches: [], changedTouches: [t3], bubbles: true, cancelable: true }));
+    });
+    await page.waitForTimeout(300);
+    assert.ok(await openDialog.isVisible(), 'Sheet must remain open after touch drag <= 75px');
+    console.log('  ✔ Step 10a (P2-02): Synthetic touch drag (50px <= 75px) snapped back cleanly');
+
+    // 10b: Touch drag 85px (> 75px threshold) -> triggers real Radix Dialog dismissal
+    await reopenedHandle.evaluate((el) => {
+      const t1 = new Touch({ identifier: 2, target: el, clientX: 100, clientY: 200 });
+      el.dispatchEvent(new TouchEvent('touchstart', { touches: [t1], targetTouches: [t1], changedTouches: [t1], bubbles: true, cancelable: true }));
+
+      const t2 = new Touch({ identifier: 2, target: el, clientX: 100, clientY: 285 });
+      el.dispatchEvent(new TouchEvent('touchmove', { touches: [t2], targetTouches: [t2], changedTouches: [t2], bubbles: true, cancelable: true }));
+    });
+    const state10b = await openDialog.getAttribute('data-drag-state');
+    assert.equal(state10b, 'dragging', 'Sheet must be in dragging state during > 75px touch drag');
+
+    await reopenedHandle.evaluate((el) => {
+      const t3 = new Touch({ identifier: 2, target: el, clientX: 100, clientY: 285 });
+      el.dispatchEvent(new TouchEvent('touchend', { touches: [], targetTouches: [], changedTouches: [t3], bubbles: true, cancelable: true }));
+    });
+    await page.waitForTimeout(400);
+
+    const touchDismissed = !(await openDialog.isVisible().catch(() => false));
+    assert.ok(touchDismissed, 'Radix Dialog must have closed after touch drag > 75px (85px)');
+    console.log('  ✔ Step 10b (P2-02): Synthetic touch drag (85px > 75px) dismissed sheet successfully');
+
+    console.log('\n🏆 [BottomSheet Playwright]: ALL REAL REACT COMPONENT BROWSER CHECKS PASSED (Including P2-02 Touch Emulation)!\n');
   } finally {
     if (browser) await browser.close();
     server.close();

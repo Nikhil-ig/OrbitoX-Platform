@@ -5,16 +5,8 @@ import { Button } from './button';
 import { Sheet, SheetContent, SheetTitle, SheetDescription } from './sheet';
 import { toggleTheme } from '../tokens/theme-script';
 import { t } from '../i18n';
-
-export interface NavItem {
-  id: string;
-  label: string;
-  href?: string;
-  icon?: React.ReactNode;
-  active?: boolean;
-  badge?: React.ReactNode;
-  onClick?: () => void;
-}
+import type { NavItem } from '../shells/types';
+export type { NavItem };
 
 export interface AppShellProps {
   appName?: string;

@@ -3,6 +3,31 @@
 // Core Components
 export * from './components';
 
+// Persona Shell Primitives
+export {
+  SidebarCard,
+  type SidebarCardProps,
+  IconRail,
+  type IconRailProps,
+  TopBar,
+  type TopBarProps,
+  BottomNavPill,
+  type BottomNavPillProps,
+  ShellBottomTabBar,
+  type ShellBottomTabBarProps,
+  MoreNavSheet,
+  type MoreNavSheetProps,
+  ShellContentFrame,
+  type ShellContentFrameProps,
+  NavItemRenderer,
+  type NavItemRendererProps,
+  type NavItem,
+  type NavGroup,
+  type ViewportClass,
+  type AppearanceControlProps,
+  type ShellNavigationProps,
+} from './shells';
+
 // Design Tokens & Theming
 export * from './tokens';
 
