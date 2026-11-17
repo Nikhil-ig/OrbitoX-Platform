@@ -165,6 +165,8 @@ describe('Appearance Settings & Server Enforcement (7B.1)', () => {
         // Fetch op1 and op2 preferences
         const fetchedOp1 = await getOperatorAppearance(op1.id);
         const fetchedOp2 = await getOperatorAppearance(op2.id);
+        assert.ok(fetchedOp1, 'op1 must have saved appearance');
+        assert.ok(fetchedOp2, 'op2 must have saved appearance');
 
         assert.equal(fetchedOp1.accent, 'emerald');
         assert.equal(fetchedOp1.density, 'compact');
@@ -236,6 +238,8 @@ describe('Appearance Settings & Server Enforcement (7B.1)', () => {
 
         const fetchedU1 = await getCustomerAppearance(u1.id);
         const fetchedU2 = await getCustomerAppearance(u2.id);
+        assert.ok(fetchedU1, 'u1 must have saved appearance');
+        assert.ok(fetchedU2, 'u2 must have saved appearance');
 
         assert.equal(fetchedU1.accent, 'saffron');
         assert.equal(fetchedU1.radius, 20);

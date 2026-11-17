@@ -27,6 +27,7 @@ export const metadata = {
 export default async function RootLayout({ children }: { children: React.ReactNode }) {
   const headersList = await headers();
   const routePersona = (headersList.get('x-orbito-route-persona') as PersonaRouteClass) || 'public';
+  const stationHint = headersList.get('x-orbito-station');
   const cookieStore = await cookies();
   const operatorToken = cookieStore.get(OPERATOR_SESSION_COOKIE)?.value;
   const customerToken = cookieStore.get(CUSTOMER_SESSION_COOKIE)?.value;
@@ -40,7 +41,9 @@ export default async function RootLayout({ children }: { children: React.ReactNo
         appearance = await getOperatorAppearance(opSession.operatorId);
       }
     } catch {
-      // Ignore database / session errors
+      // Database timeout / error during session or appearance query:
+      // Degrade gracefully: leave appearance = null so cookie fallback runs!
+      appearance = null;
     }
   } else if (customerToken) {
     try {
@@ -49,13 +52,19 @@ export default async function RootLayout({ children }: { children: React.ReactNo
         appearance = await getCustomerAppearance(custSession.userId);
       }
     } catch {
-      // Ignore database / session errors
+      // Database timeout / error during session or appearance query:
+      // Degrade gracefully: leave appearance = null so cookie fallback runs!
+      appearance = null;
     }
   }
 
+  // Graceful degradation hierarchy:
+  // Level 1: Authenticated DB stored preference (resolved above)
+  // Level 2: Validated cache cookie (if DB is unreachable or unconfigured)
+  // Level 3: Persona default (with station override if present)
   if (!appearance) {
     const rawCookie = cookieStore.get(APPEARANCE_COOKIE)?.value;
-    appearance = parseAppearanceCookie(rawCookie, routePersona);
+    appearance = parseAppearanceCookie(rawCookie, routePersona, stationHint);
   }
 
   return (

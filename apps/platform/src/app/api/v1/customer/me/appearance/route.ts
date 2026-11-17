@@ -9,7 +9,7 @@ import {
 const noStore = { 'Cache-Control': 'no-store' };
 
 export const GET = withCustomerAuth(async (_request, session) => {
-  const appearance = await getCustomerAppearance(session.userId);
+  const appearance = (await getCustomerAppearance(session.userId)) || getPersonaDefaultAppearance('customer');
   const response = NextResponse.json({ success: true, appearance }, { headers: noStore });
   setAppearanceCookie(response, appearance);
   return response;

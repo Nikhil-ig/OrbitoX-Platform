@@ -52,7 +52,10 @@ export type PersonaRouteClass = 'operator' | 'owner' | 'customer' | 'staff_pos' 
  * Authoritative persona-specific explicit default appearances.
  * Applied when a user has not explicitly configured or saved an appearance preference.
  */
-export function getPersonaDefaultAppearance(persona: PersonaRouteClass = 'public'): AppearancePreferences {
+export function getPersonaDefaultAppearance(
+  persona: PersonaRouteClass = 'public',
+  station?: string | null
+): AppearancePreferences {
   switch (persona) {
     case 'operator':
       return {
@@ -75,8 +78,10 @@ export function getPersonaDefaultAppearance(persona: PersonaRouteClass = 'public
         compactSidebar: false,
       };
     case 'staff_pos':
+      // Station override: e.g. if terminal is configured with a dark station hint (like KDS or dark station)
+      const isDarkStation = station === 'kds' || station === 'dark' || station === 'night';
       return {
-        theme: 'light',
+        theme: isDarkStation ? 'dark' : 'light',
         accent: 'ocean',
         density: 'standard',
         radius: 16,
@@ -122,9 +127,10 @@ export const APPEARANCE_COOKIE = 'orbitox_appearance';
 
 export function parseAppearanceCookie(
   cookieValue?: string | null,
-  fallbackPersona: PersonaRouteClass = 'public'
+  fallbackPersona: PersonaRouteClass = 'public',
+  station?: string | null
 ): AppearancePreferences {
-  const fallback = getPersonaDefaultAppearance(fallbackPersona);
+  const fallback = getPersonaDefaultAppearance(fallbackPersona, station);
   if (!cookieValue) return fallback;
   try {
     const raw = JSON.parse(decodeURIComponent(cookieValue));
@@ -149,39 +155,40 @@ export function setAppearanceCookie(response: NextResponse, appearance: Appearan
   });
 }
 
-export async function getOperatorAppearance(operatorId: string): Promise<AppearancePreferences> {
-  const opDefault = getPersonaDefaultAppearance('operator');
-  try {
-    const operator = await prisma.platformOperator.findUnique({
-      where: { id: operatorId },
-      select: {
-        appearanceTheme: true,
-        appearanceAccent: true,
-        appearanceDensity: true,
-        appearanceRadius: true,
-        appearanceSmoothAnimations: true,
-        appearanceBoldFocusRings: true,
-        appearanceCompactSidebar: true,
-      },
-    });
+export async function getOperatorAppearance(operatorId: string): Promise<AppearancePreferences | null> {
+  const operator = await prisma.platformOperator.findUnique({
+    where: { id: operatorId },
+    select: {
+      appearanceTheme: true,
+      appearanceAccent: true,
+      appearanceDensity: true,
+      appearanceRadius: true,
+      appearanceSmoothAnimations: true,
+      appearanceBoldFocusRings: true,
+      appearanceCompactSidebar: true,
+    },
+  });
 
-    if (!operator) return opDefault;
+  if (!operator) return null;
 
-    const candidate = {
-      theme: operator.appearanceTheme || opDefault.theme,
-      accent: operator.appearanceAccent || opDefault.accent,
-      density: operator.appearanceDensity || opDefault.density,
-      radius: operator.appearanceRadius ?? opDefault.radius,
-      smoothAnimations: operator.appearanceSmoothAnimations ?? opDefault.smoothAnimations,
-      boldFocusRings: operator.appearanceBoldFocusRings ?? opDefault.boldFocusRings,
-      compactSidebar: operator.appearanceCompactSidebar ?? opDefault.compactSidebar,
-    };
-
-    const parsed = AppearanceSchema.safeParse(candidate);
-    return parsed.success ? parsed.data : opDefault;
-  } catch {
-    return opDefault;
+  // If user has not configured any explicit preference, return null so cookie/persona fallback runs
+  if (!operator.appearanceTheme && !operator.appearanceAccent && !operator.appearanceDensity) {
+    return null;
   }
+
+  const opDefault = getPersonaDefaultAppearance('operator');
+  const candidate = {
+    theme: operator.appearanceTheme || opDefault.theme,
+    accent: operator.appearanceAccent || opDefault.accent,
+    density: operator.appearanceDensity || opDefault.density,
+    radius: operator.appearanceRadius ?? opDefault.radius,
+    smoothAnimations: operator.appearanceSmoothAnimations ?? opDefault.smoothAnimations,
+    boldFocusRings: operator.appearanceBoldFocusRings ?? opDefault.boldFocusRings,
+    compactSidebar: operator.appearanceCompactSidebar ?? opDefault.compactSidebar,
+  };
+
+  const parsed = AppearanceSchema.safeParse(candidate);
+  return parsed.success ? parsed.data : null;
 }
 
 export async function updateOperatorAppearance(
@@ -211,39 +218,40 @@ export async function updateOperatorAppearance(
   return { success: true, appearance: data };
 }
 
-export async function getCustomerAppearance(userId: string): Promise<AppearancePreferences> {
-  const custDefault = getPersonaDefaultAppearance('customer');
-  try {
-    const user = await prisma.customerUser.findUnique({
-      where: { id: userId },
-      select: {
-        appearanceTheme: true,
-        appearanceAccent: true,
-        appearanceDensity: true,
-        appearanceRadius: true,
-        appearanceSmoothAnimations: true,
-        appearanceBoldFocusRings: true,
-        appearanceCompactSidebar: true,
-      },
-    });
+export async function getCustomerAppearance(userId: string): Promise<AppearancePreferences | null> {
+  const user = await prisma.customerUser.findUnique({
+    where: { id: userId },
+    select: {
+      appearanceTheme: true,
+      appearanceAccent: true,
+      appearanceDensity: true,
+      appearanceRadius: true,
+      appearanceSmoothAnimations: true,
+      appearanceBoldFocusRings: true,
+      appearanceCompactSidebar: true,
+    },
+  });
 
-    if (!user) return custDefault;
+  if (!user) return null;
 
-    const candidate = {
-      theme: user.appearanceTheme || custDefault.theme,
-      accent: user.appearanceAccent || custDefault.accent,
-      density: user.appearanceDensity || custDefault.density,
-      radius: user.appearanceRadius ?? custDefault.radius,
-      smoothAnimations: user.appearanceSmoothAnimations ?? custDefault.smoothAnimations,
-      boldFocusRings: user.appearanceBoldFocusRings ?? custDefault.boldFocusRings,
-      compactSidebar: user.appearanceCompactSidebar ?? custDefault.compactSidebar,
-    };
-
-    const parsed = AppearanceSchema.safeParse(candidate);
-    return parsed.success ? parsed.data : custDefault;
-  } catch {
-    return custDefault;
+  // If user has not configured any explicit preference, return null so cookie/persona fallback runs
+  if (!user.appearanceTheme && !user.appearanceAccent && !user.appearanceDensity) {
+    return null;
   }
+
+  const custDefault = getPersonaDefaultAppearance('customer');
+  const candidate = {
+    theme: user.appearanceTheme || custDefault.theme,
+    accent: user.appearanceAccent || custDefault.accent,
+    density: user.appearanceDensity || custDefault.density,
+    radius: user.appearanceRadius ?? custDefault.radius,
+    smoothAnimations: user.appearanceSmoothAnimations ?? custDefault.smoothAnimations,
+    boldFocusRings: user.appearanceBoldFocusRings ?? custDefault.boldFocusRings,
+    compactSidebar: user.appearanceCompactSidebar ?? custDefault.compactSidebar,
+  };
+
+  const parsed = AppearanceSchema.safeParse(candidate);
+  return parsed.success ? parsed.data : null;
 }
 
 export async function updateCustomerAppearance(
