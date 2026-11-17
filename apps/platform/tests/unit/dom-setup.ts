@@ -23,5 +23,7 @@ g.MouseEvent = dom.window.MouseEvent;
 g.CustomEvent = dom.window.CustomEvent;
 g.getComputedStyle = dom.window.getComputedStyle;
 g.MutationObserver = dom.window.MutationObserver;
+g.localStorage = dom.window.localStorage;
+g.sessionStorage = dom.window.sessionStorage;
 g.requestAnimationFrame = (cb: FrameRequestCallback) => setTimeout(() => cb(Date.now()), 0);
 g.cancelAnimationFrame = (id: any) => clearTimeout(id);

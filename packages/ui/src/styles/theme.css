@@ -381,3 +381,24 @@ html, body {
   pointer-events: none;
   z-index: 0;
 }
+
+/* ─── Semantic Token Bridges (Phase 7B.2 Unified Design Tokens) ─── */
+:root,
+[data-theme] {
+  --ui-bg-root: var(--color-bg);
+  --ui-bg-canvas: var(--color-bg);
+  --ui-bg-card: var(--color-surface);
+  --ui-bg-elevated: var(--color-surface-raised);
+  --ui-border-default: var(--color-border);
+  --ui-border-subtle: var(--color-border-subtle);
+  --ui-text-primary: var(--color-text);
+  --ui-text-secondary: var(--color-text-muted);
+  --ui-text-muted: var(--color-text-subtle);
+  --ui-accent-primary: var(--color-accent);
+  --ui-accent-primary-hover: var(--color-accent-hover);
+  --ui-success: var(--status-ready-fg, #10B981);
+  --ui-success-bg: var(--status-ready-bg, rgba(16, 185, 129, 0.15));
+  --ui-danger: var(--status-problem-fg, #EF4444);
+  --ui-danger-bg: var(--status-problem-bg, rgba(239, 68, 68, 0.15));
+}
+
