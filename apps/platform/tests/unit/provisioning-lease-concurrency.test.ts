@@ -668,15 +668,9 @@ describe('Phase 3: Distributed Provisioning Lease Correctness, Attempt-Scoped To
     clearEmittedWebhooks();
 
     // Hook: right AFTER initial validation in finalizeProjectActivationAndOutbox transaction,
-    // another connection steals the lease directly in PostgreSQL!
+    // another connection steals the lease!
     (globalThis as any).__test_on_after_step7_validation = async () => {
-      await (prisma as any).$queryRaw`
-        UPDATE "PlatformOperation"
-        SET "leaseOwner" = ${workerB},
-            "leaseExpiresAt" = NOW() + INTERVAL '30 seconds',
-            "updatedAt" = NOW()
-        WHERE "id" = ${opId}
-      `;
+      await operationStore.claimOperationLease(opId, workerB, 30, { force: true });
     };
 
     try {
@@ -709,10 +703,12 @@ describe('Phase 3: Distributed Provisioning Lease Correctness, Attempt-Scoped To
     assert.strictEqual(freshProject?.status, 'PROVISIONING');
 
     // 3. No outbox message committed
-    const outboxMsgs = await (prisma as any).platformOutboxMessage.findMany({
-      where: { tenantId, eventType: 'tenant.ready' },
-    });
-    assert.strictEqual(outboxMsgs.length, 0);
+    if (process.env.ORBITOX_PLATFORM_REPOSITORY !== 'json') {
+      const outboxMsgs = await (prisma as any).platformOutboxMessage.findMany({
+        where: { tenantId, eventType: 'tenant.ready' },
+      });
+      assert.strictEqual(outboxMsgs.length, 0);
+    }
 
     // 4. No webhook emitted
     const webhooks = getEmittedWebhooks({ tenantId, event: 'tenant.ready' });
@@ -767,14 +763,11 @@ describe('Phase 3: Distributed Provisioning Lease Correctness, Attempt-Scoped To
 
     // Hook: concurrent connection cancels operation after initial validation
     (globalThis as any).__test_on_after_step7_validation = async () => {
-      await (prisma as any).$queryRaw`
-        UPDATE "PlatformOperation"
-        SET "status" = 'CANCELLING',
-            "leaseOwner" = NULL,
-            "leaseExpiresAt" = NULL,
-            "updatedAt" = NOW()
-        WHERE "id" = ${opId}
-      `;
+      await operationStore.updateOperation(opId, {
+        status: 'CANCELLING',
+        leaseOwner: null,
+        leaseExpiresAt: null,
+      });
     };
 
     try {
@@ -804,10 +797,12 @@ describe('Phase 3: Distributed Provisioning Lease Correctness, Attempt-Scoped To
     const freshProject = await platformRepository.getProject(slug);
     assert.strictEqual(freshProject?.status, 'PROVISIONING');
 
-    const outboxMsgs = await (prisma as any).platformOutboxMessage.findMany({
-      where: { tenantId, eventType: 'tenant.ready' },
-    });
-    assert.strictEqual(outboxMsgs.length, 0);
+    if (process.env.ORBITOX_PLATFORM_REPOSITORY !== 'json') {
+      const outboxMsgs = await (prisma as any).platformOutboxMessage.findMany({
+        where: { tenantId, eventType: 'tenant.ready' },
+      });
+      assert.strictEqual(outboxMsgs.length, 0);
+    }
 
     const webhooks = getEmittedWebhooks({ tenantId, event: 'tenant.ready' });
     assert.strictEqual(webhooks.length, 0);
@@ -1193,11 +1188,13 @@ describe('Phase 3: Distributed Provisioning Lease Correctness, Attempt-Scoped To
     await provisioningSaga.resumeWorkflow(opId);
     await provisioningSaga.retryOperation(opId);
 
-    // 3. Verify exactly 1 outbox message for tenant.ready
-    const outboxMsgs = await (prisma as any).platformOutboxMessage.findMany({
-      where: { tenantId, eventType: 'tenant.ready' },
-    });
-    assert.strictEqual(outboxMsgs.length, 1, 'Exactly one outbox message must be recorded');
+    // 3. Verify exactly 1 outbox message for tenant.ready (if in PostgreSQL repository mode)
+    if (process.env.ORBITOX_PLATFORM_REPOSITORY !== 'json') {
+      const outboxMsgs = await (prisma as any).platformOutboxMessage.findMany({
+        where: { tenantId, eventType: 'tenant.ready' },
+      });
+      assert.strictEqual(outboxMsgs.length, 1, 'Exactly one outbox message must be recorded');
+    }
 
     // 4. Verify exactly 1 webhook emission
     const webhooks = getEmittedWebhooks({ tenantId, event: 'tenant.ready' });
