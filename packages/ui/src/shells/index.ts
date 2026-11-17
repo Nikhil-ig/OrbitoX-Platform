@@ -12,3 +12,4 @@ export {
 } from './BottomTabBar';
 export * from './MoreNavSheet';
 export * from './ShellContentFrame';
+export * from './ResponsiveShell';

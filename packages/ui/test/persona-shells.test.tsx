@@ -12,6 +12,7 @@ import {
   TopBar,
   BottomNavPill,
   BottomTabBar,
+  ResponsiveShell,
   NavItemRenderer,
   type NavItem,
 } from '../src/shells';
@@ -221,5 +222,32 @@ describe('Layer 4: Persona Shell Primitives & Responsive Navigation', () => {
     // Verifies appearanceControl slot
     const appearanceSlot = container.querySelector('[data-testid="controlled-appearance-slot"]');
     assert.ok(appearanceSlot, 'AppShell must render controlled appearance slot when provided');
+  });
+
+  it('ResponsiveShell renders all 4 viewport bands with correct semantic testids and classes', () => {
+    const { container } = render(
+      <ResponsiveShell
+        appName="OrbitoX Universal"
+        navItems={SAMPLE_ITEMS}
+      >
+        <div>Content Frame</div>
+      </ResponsiveShell>
+    );
+
+    const desktopBand = container.querySelector('[data-testid="desktop-sidebar-band"]');
+    assert.ok(desktopBand, 'Must contain desktop sidebar band');
+    assert.ok(desktopBand.className.includes('hidden xl:flex'), 'Desktop band must enforce xl:flex boundary');
+
+    const tabletLandBand = container.querySelector('[data-testid="tablet-landscape-rail-band"]');
+    assert.ok(tabletLandBand, 'Must contain tablet landscape rail band');
+    assert.ok(tabletLandBand.className.includes('hidden lg:flex xl:hidden'), 'Tablet landscape band must enforce lg:flex xl:hidden');
+
+    const tabletPortBand = container.querySelector('[data-testid="tablet-portrait-pill-band"]');
+    assert.ok(tabletPortBand, 'Must contain tablet portrait pill band');
+    assert.ok(tabletPortBand.className.includes('hidden sm:flex lg:hidden'), 'Tablet portrait band must enforce sm:flex lg:hidden');
+
+    const phoneBand = container.querySelector('[data-testid="phone-tabbar-band"]');
+    assert.ok(phoneBand, 'Must contain phone tab bar band');
+    assert.ok(phoneBand.className.includes('flex sm:hidden'), 'Phone band must enforce flex sm:hidden');
   });
 });

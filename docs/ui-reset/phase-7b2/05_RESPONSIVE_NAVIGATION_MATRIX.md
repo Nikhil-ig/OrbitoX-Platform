@@ -2,7 +2,7 @@
 
 **Specification ID:** `ARCH-7B2-05-RESPONSIVE`  
 **Phase:** Phase 7B.2 — Theme Tokens & Persona Shell Architecture  
-**Document Status:** Architecture Contract — Incorporating Proposed Amendment UI-7B2-BP1 (**Proposed — Pending Owner Approval**)  
+**Document Status:** Architecture Contract — Incorporating Owner-Approved Breakpoint Harmonization UI-7B2-BP1 (**APPROVED BY OWNER**)  
 **Governing Documents:** `PHASE7_UI_MASTER_BRIEF.md` (Section 3), `docs/ui-reset/03_SHELL_AND_NAVIGATION_ARCHITECTURE.md`  
 **Accepted Baseline:** `f65698eab17b3a40842360eaeb387c74dca57ecc`  
 **Author:** Principal Frontend & Platform Architect  
@@ -63,12 +63,12 @@ The four mandatory QA acceptance viewports map cleanly and deterministically:
 
 ---
 
-## 3. Formal Owner Breakpoint Amendment Request
+## 3. Formal Owner Breakpoint Amendment Decision
 
-To reconcile the conceptual text in `PHASE7_UI_MASTER_BRIEF.md` with physical reality, the following formal amendment is submitted for owner approval:
+To reconcile the conceptual text in `PHASE7_UI_MASTER_BRIEF.md` with physical reality, the following formal amendment has been reviewed and approved:
 
 > **Amendment UI-7B2-BP1 (Breakpoint Harmonization):**  
-> **Status:** `Proposed — Pending Owner Approval`  
+> **Status:** `APPROVED BY OWNER (November 17, 2026)`  
 > *"The boundary between Tablet Landscape and Desktop is formally adjusted from `1100px` to `1280px` (`xl`). The Tablet Landscape range is defined as `1024px – 1279px` (`lg`). Viewports below `1280px` shall never render the expanded 260px desktop sidebar card, ensuring that tablet viewports (including iPad Pro 11" landscape at 1194px) consistently render the 64px icon rail or zero-chrome layout as designed."*
 
 ### Why this amendment is mathematically sound:

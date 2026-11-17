@@ -98,10 +98,10 @@ export function AppShell({
       {banner}
 
       <div className="flex flex-1 overflow-hidden">
-        {/* Desktop Collapsible Sidebar (Rounded Card) */}
+        {/* Desktop Collapsible Sidebar (Rounded Card >= 1280px: UI-7B2-BP1) */}
         <aside
           className={cn(
-            'hidden md:flex flex-col m-3 md:m-4 rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] shadow-sm transition-all duration-200 select-none overflow-hidden shrink-0 z-10',
+            'hidden xl:flex flex-col m-3 xl:m-4 rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] shadow-sm transition-all duration-200 select-none overflow-hidden shrink-0 z-10',
             isCollapsed ? 'w-16' : 'w-64'
           )}
         >
@@ -180,10 +180,10 @@ export function AppShell({
           {/* Top Bar */}
           <header className="sticky top-0 z-40 flex h-14 items-center justify-between border-b border-[var(--color-border)] bg-[var(--color-surface)]/95 backdrop-blur-xs px-4 sm:px-6">
             <div className="flex items-center gap-3">
-              {/* Mobile Menu Hamburger Toggle */}
+              {/* Mobile / Tablet Menu Hamburger Toggle (< 1280px) */}
               <button
                 onClick={() => setIsMobileOpen(true)}
-                className="md:hidden p-1.5 rounded-full text-[var(--color-text-muted)] hover:text-[var(--color-text)] cursor-pointer"
+                className="xl:hidden p-1.5 rounded-full text-[var(--color-text-muted)] hover:text-[var(--color-text)] cursor-pointer"
                 aria-label={t('shell.openMobileNav')}
               >
                 <Menu className="h-5 w-5" />

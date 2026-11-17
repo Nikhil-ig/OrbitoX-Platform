@@ -63,6 +63,7 @@
     "type-check": "tsc -p tsconfig.json --noEmit",
     "test": "tsx --test 'test/**/*.test.ts' 'test/**/*.test.tsx'",
     "test:sheet-browser": "node test/bottom-sheet-browser.mjs",
+    "test:responsive-browser": "node test/responsive-shells-browser.mjs",
     "size": "size-limit",
     "storybook": "STORYBOOK_DISABLE_TELEMETRY=1 storybook dev -p 6006 --ci",
     "build-storybook": "STORYBOOK_DISABLE_TELEMETRY=1 storybook build -o dist-storybook --disable-telemetry",

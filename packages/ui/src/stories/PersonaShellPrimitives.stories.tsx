@@ -8,6 +8,7 @@ import {
   BottomTabBar,
   MoreNavSheet,
   ShellContentFrame,
+  ResponsiveShell,
   type NavItem,
 } from '../shells';
 import {
@@ -52,7 +53,12 @@ const OVERFLOW_NAV_ITEMS: NavItem[] = [
  */
 export const DesktopWide: StoryObj = {
   parameters: {
-    viewport: { defaultViewport: 'desktop' },
+    viewport: {
+      defaultViewport: 'desktop1440',
+      viewports: {
+        desktop1440: { name: 'Desktop (1440x900)', styles: { width: '1440px', height: '900px' } },
+      },
+    },
   },
   render: () => {
     return (
@@ -120,6 +126,14 @@ export const DesktopWide: StoryObj = {
  * 2. Tablet Landscape (1194 x 834) - Touch Station IconRail
  */
 export const TabletLandscapeTouchStation: StoryObj = {
+  parameters: {
+    viewport: {
+      defaultViewport: 'ipadPro11Landscape',
+      viewports: {
+        ipadPro11Landscape: { name: 'iPad Pro 11" Landscape (1194x834)', styles: { width: '1194px', height: '834px' } },
+      },
+    },
+  },
   render: () => {
     return (
       <div className="flex h-screen w-full bg-[var(--color-bg)] text-[var(--color-text)]">
@@ -152,6 +166,14 @@ export const TabletLandscapeTouchStation: StoryObj = {
  * 3. Tablet Portrait (834 x 1194) - Floating BottomNavPill
  */
 export const TabletPortraitFloatingPill: StoryObj = {
+  parameters: {
+    viewport: {
+      defaultViewport: 'ipadPro11Portrait',
+      viewports: {
+        ipadPro11Portrait: { name: 'iPad Pro 11" Portrait (834x1194)', styles: { width: '834px', height: '1194px' } },
+      },
+    },
+  },
   render: () => {
     return (
       <div className="flex flex-col h-screen w-full bg-[var(--color-bg)] text-[var(--color-text)] relative">
@@ -177,6 +199,14 @@ export const TabletPortraitFloatingPill: StoryObj = {
  * 4. Handheld Mobile (390 x 844) - BottomTabBar + MoreNavSheet
  */
 export const HandheldMobileTabBar: StoryObj = {
+  parameters: {
+    viewport: {
+      defaultViewport: 'iphone14',
+      viewports: {
+        iphone14: { name: 'iPhone 14 (390x844)', styles: { width: '390px', height: '844px' } },
+      },
+    },
+  },
   render: () => {
     const [isMoreOpen, setIsMoreOpen] = React.useState(false);
 
@@ -201,10 +231,41 @@ export const HandheldMobileTabBar: StoryObj = {
         />
         <MoreNavSheet
           isOpen={isMoreOpen}
-          onOpenChange={setIsMoreOpen}
+          onClose={() => setIsMoreOpen(false)}
           items={OVERFLOW_NAV_ITEMS}
         />
       </div>
+    );
+  },
+};
+
+/**
+ * 5. Adaptive 4-Band Responsive Shell (UI-7B2-BP1 Composition)
+ */
+export const AdaptiveResponsiveShell: StoryObj = {
+  render: () => {
+    return (
+      <ResponsiveShell
+        appName="OrbitoX Universal"
+        navItems={[...SAMPLE_NAV_ITEMS, ...OVERFLOW_NAV_ITEMS]}
+        bottomNavItems={OVERFLOW_NAV_ITEMS}
+        breadcrumbs={<span className="font-semibold text-sm">Dashboard</span>}
+      >
+        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
+          <div className="p-6 rounded-2xl bg-[var(--color-surface)] border border-[var(--color-border)]">
+            <h3 className="font-bold text-base">Responsive Navigation State</h3>
+            <p className="text-sm text-[var(--color-text-muted)] mt-2">
+              Resize your browser window across the 4 authoritative boundary widths:
+            </p>
+            <ul className="text-xs space-y-1.5 mt-3 text-[var(--color-text-muted)]">
+              <li>• &lt; 640px: <b>Phone BottomTabBar</b> + MoreSheet</li>
+              <li>• 640px–1023px: <b>Tablet Portrait BottomNavPill</b></li>
+              <li>• 1024px–1279px: <b>Tablet Landscape IconRail (64px)</b></li>
+              <li>• &ge; 1280px: <b>Desktop SidebarCard (260px)</b></li>
+            </ul>
+          </div>
+        </div>
+      </ResponsiveShell>
     );
   },
 };

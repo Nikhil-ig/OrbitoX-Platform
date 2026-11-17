@@ -28,7 +28,7 @@ export function BottomTabBar({
   return (
     <nav
       className={cn(
-        'fixed bottom-0 left-0 right-0 z-40 flex h-16 items-center justify-around border-t border-[var(--color-border)] bg-[var(--color-surface)]/95 backdrop-blur-sm px-2 select-none md:hidden',
+        'fixed bottom-0 left-0 right-0 z-40 flex h-16 items-center justify-around border-t border-[var(--color-border)] bg-[var(--color-surface)]/95 backdrop-blur-sm px-2 select-none sm:hidden',
         className
       )}
       aria-label="Mobile Bottom Tab Bar"

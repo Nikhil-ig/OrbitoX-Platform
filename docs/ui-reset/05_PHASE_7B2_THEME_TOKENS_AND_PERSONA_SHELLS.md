@@ -25,7 +25,7 @@ OrbitoX must never degrade into five independently maintained frontends with fra
 3. **Strict Package Layering (No Inverted Dependencies):** The shared UI package (`@orbitox-io/ui`) owns presentation and user interaction via controlled props; it **never imports or depends on application-level persistence singletons**.
 4. **Provider Consolidation & Safe Legacy Isolation:** Elimination of competing client theme writers and duplicate administrative state from the platform root layout. `GlobalProviders` is streamlined to pure global notifications (`ToastProvider`). Legacy `ThemeProvider` and `AdminProvider` are safely isolated to wrap only remaining legacy routes (`(dashboard)/layout.tsx` for both `DynamicSidebar` and `PlatformGovernanceDock`, and `(console)/admin/*`), preventing route breakage while modernizing the root.
 5. **Responsive Persona Shells (Pure Structural Frames):** Five reusable shells compose shared primitives (`SidebarCard`, `IconRail`, `TopBar`, `BottomNavPill`, `BottomTabBar`, `MoreNavSheet`, `ShellContentFrame`). Shells provide structural slots (context switchers, navigation, content frames, actions) **without hardcoding inner domain workflows** (KDS ticket queues, POS registers, and waiter workflows are strictly deferred to Stage 7F).
-6. **Harmonized Responsive Breakpoint Contract:** Proposes formal Owner Amendment `UI-7B2-BP1` (`Proposed — Pending Owner Approval`) adjusting the desktop breakpoint from `1100px` to `1280px` (`xl`), deterministically mapping the four authoritative test viewports (`390 × 844`, `834 × 1194`, `1194 × 834`, `1440 × 900`) without User-Agent sniffing.
+6. **Harmonized Responsive Breakpoint Contract:** Implements Owner Amendment `UI-7B2-BP1` (`APPROVED BY OWNER — November 17, 2026`) adjusting the desktop breakpoint from `1100px` to `1280px` (`xl`), deterministically mapping the four authoritative test viewports (`390 × 844`, `834 × 1194`, `1194 × 834`, `1440 × 900`) without User-Agent sniffing.
 
 ---
 
@@ -68,7 +68,7 @@ All 44 reference images in `OrbitoX — new look concept-png/` were rigorously v
 - However, approved landscape reference screens `S1` and `S2` are explicitly designated as **`tablet landscape`** with image dimensions of $2388 \times 1668$, corresponding to an authoritative logical viewport of **`1194 × 834 px`** (Apple iPad Pro 11" landscape).
 - A naive media query `@media (min-width: 1101px)` evaluates `1194px` as Desktop, erroneously forcing an expanded 260px `SidebarCard` onto kitchen KDS and POS counters where a 64px `IconRail` or zero-chrome layout is required.
 
-### 4.2 The Explicit Resolution: Four Deterministic Bands (Amendment `UI-7B2-BP1` — Proposed Pending Owner Approval)
+### 4.2 The Explicit Resolution: Four Deterministic Bands (Amendment `UI-7B2-BP1` — APPROVED BY OWNER)
 Align layout media queries with standard CSS container thresholds (Tailwind `sm`, `md`, `lg`, `xl`):
 
 | Device Class | Viewport Range | Primary Navigation Primitive | Secondary Navigation Primitive | Key Behaviors & Touch Ergonomics |
@@ -314,7 +314,7 @@ feat/ui-reset-7b2-theme-persona-shells
 - **Strictly Out-of-Scope:** Root `/` route changes (`apps/platform/src/app/(dashboard)/page.tsx`), Phase 7C–7F product screens (KDS queues, POS checkout, waiter tables, menu CSV importer, customer billing, hospital clinical workflows), deletions of legacy UI files.
 
 ### 13.2 Owner Decisions Required Before Stage 1 Authorization
-1. **Approval of Breakpoint Amendment `UI-7B2-BP1` (`Proposed — Pending Owner Approval`):** Formally adjusting desktop threshold from `1100px` to `1280px` (`xl`) to harmonize tablet landscape (`1194 × 834`) with iPad Pro 11" concepts.
+1. **Approval of Breakpoint Amendment `UI-7B2-BP1` (`APPROVED BY OWNER — November 17, 2026`):** Formally adjusting desktop threshold from `1100px` to `1280px` (`xl`) to harmonize tablet landscape (`1194 × 834`) with iPad Pro 11" concepts.
 2. **Authorization of Dedicated Implementation Branch:** Authorizing the activation of `feat/ui-reset-7b2-theme-persona-shells` to begin Commit 1.
 
 ---

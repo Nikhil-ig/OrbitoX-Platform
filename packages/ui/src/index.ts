@@ -19,6 +19,8 @@ export {
   type MoreNavSheetProps,
   ShellContentFrame,
   type ShellContentFrameProps,
+  ResponsiveShell,
+  type ResponsiveShellProps,
   NavItemRenderer,
   type NavItemRendererProps,
   type NavItem,
