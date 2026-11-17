@@ -25,10 +25,7 @@ describe('Layer 2: Database Outage Degradation & Station Context Hierarchy (P2 I
     const rawCookie = serializeAppearanceCookie(CUSTOM_SAVED_COOKIE);
 
     // Resolver hierarchy
-    let resolved = dbAppearance;
-    if (!resolved) {
-      resolved = parseAppearanceCookie(rawCookie, 'operator');
-    }
+    const resolved: AppearancePreferences = dbAppearance || parseAppearanceCookie(rawCookie, 'operator');
 
     assert.equal(resolved.accent, 'ruby', 'Must recover accent from validated cookie during DB outage');
     assert.equal(resolved.theme, 'dark');
@@ -40,10 +37,7 @@ describe('Layer 2: Database Outage Degradation & Station Context Hierarchy (P2 I
     const dbAppearance: AppearancePreferences | null = null;
     const rawCookie = null;
 
-    let resolved = dbAppearance;
-    if (!resolved) {
-      resolved = parseAppearanceCookie(rawCookie, 'operator');
-    }
+    const resolved: AppearancePreferences = dbAppearance || parseAppearanceCookie(rawCookie, 'operator');
 
     const opDefault = getPersonaDefaultAppearance('operator');
     assert.deepEqual(resolved, opDefault, 'Must fall back to operator persona default');
@@ -56,10 +50,7 @@ describe('Layer 2: Database Outage Degradation & Station Context Hierarchy (P2 I
     const dbAppearance: AppearancePreferences | null = null;
     const corruptCookie = 'corrupt-not-json';
 
-    let resolved = dbAppearance;
-    if (!resolved) {
-      resolved = parseAppearanceCookie(corruptCookie, 'customer');
-    }
+    const resolved: AppearancePreferences = dbAppearance || parseAppearanceCookie(corruptCookie, 'customer');
 
     const custDefault = getPersonaDefaultAppearance('customer');
     assert.deepEqual(resolved, custDefault, 'Must fall back to customer persona default on corrupted cookie');

@@ -9,6 +9,7 @@ import {
   MoreNavSheet,
   ShellContentFrame,
   ResponsiveShell,
+  NavItemRenderer,
   type NavItem,
 } from '../shells';
 import {
@@ -266,6 +267,33 @@ export const AdaptiveResponsiveShell: StoryObj = {
           </div>
         </div>
       </ResponsiveShell>
+    );
+  },
+};
+
+/**
+ * 6. Individual NavItemRenderer (Interactive Navigation Target)
+ */
+export const IndividualNavItemRenderer: StoryObj = {
+  render: () => {
+    return (
+      <div className="p-8 space-y-4 max-w-sm">
+        <h4 className="text-sm font-semibold text-[var(--color-text)]">NavItemRenderer States</h4>
+        <div className="space-y-2 p-4 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)]">
+          <NavItemRenderer
+            item={{ id: 'active', label: 'Active State', icon: <LayoutDashboard className="h-4 w-4" />, active: true }}
+            isCollapsed={false}
+          />
+          <NavItemRenderer
+            item={{ id: 'inactive', label: 'Inactive State', icon: <Server className="h-4 w-4" /> }}
+            isCollapsed={false}
+          />
+          <NavItemRenderer
+            item={{ id: 'with-badge', label: 'With Count Badge', icon: <Users className="h-4 w-4" />, badge: <span className="text-xs bg-emerald-500/20 text-emerald-400 px-1.5 py-0.5 rounded-full">5</span> }}
+            isCollapsed={false}
+          />
+        </div>
+      </div>
     );
   },
 };

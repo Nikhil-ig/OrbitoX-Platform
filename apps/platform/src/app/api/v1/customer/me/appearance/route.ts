@@ -4,6 +4,7 @@ import {
   getCustomerAppearance,
   updateCustomerAppearance,
   setAppearanceCookie,
+  getPersonaDefaultAppearance,
 } from '@/server/appearance/appearance-service';
 
 const noStore = { 'Cache-Control': 'no-store' };

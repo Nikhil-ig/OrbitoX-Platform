@@ -1,6 +1,7 @@
 import * as React from 'react';
 import { Menu } from 'lucide-react';
 import { cn } from '../utils/cn';
+import { t } from '../i18n';
 
 export interface TopBarProps {
   breadcrumbs?: React.ReactNode;
@@ -39,7 +40,7 @@ export function TopBar({
             type="button"
             onClick={onMenuToggle}
             className="md:hidden p-2 rounded-full text-[var(--color-text-muted)] hover:text-[var(--color-text)] hover:bg-[var(--color-surface-raised)] transition-colors cursor-pointer min-h-[44px] min-w-[44px] flex items-center justify-center"
-            aria-label="Toggle navigation menu"
+            aria-label={t('shell.toggleNav', 'Toggle navigation menu')}
           >
             <Menu className="h-5 w-5" />
           </button>

@@ -1,5 +1,6 @@
 import * as React from 'react';
 import { cn } from '../utils/cn';
+import { t } from '../i18n';
 import { TopBar } from './TopBar';
 import { SidebarCard } from './SidebarCard';
 import { IconRail } from './IconRail';
@@ -95,10 +96,14 @@ export function ResponsiveShell({
       <div className="flex-1 flex flex-col min-w-0 pb-20 sm:pb-24 lg:pb-0">
         {/* Responsive TopBar (visible across all viewports) */}
         <TopBar
-          brand={brandElement}
-          breadcrumbs={breadcrumbs}
-          actions={topBarActions}
-          onMenuClick={() => setIsMoreSheetOpen(true)}
+          breadcrumbs={
+            <div className="flex items-center gap-3">
+              {brandElement}
+              {breadcrumbs}
+            </div>
+          }
+          actionSlot={topBarActions}
+          onMenuToggle={() => setIsMoreSheetOpen(true)}
           showMenuButton={false}
           className="shrink-0"
         />
@@ -113,7 +118,6 @@ export function ResponsiveShell({
       <div className="hidden sm:flex lg:hidden fixed bottom-6 left-1/2 -translate-x-1/2 z-40" data-testid="tablet-portrait-pill-band">
         <BottomNavPill
           items={navItems.slice(0, 5)}
-          activeId={navItems.find((i) => i.active)?.id}
         />
       </div>
 
@@ -129,9 +133,9 @@ export function ResponsiveShell({
       {/* Phone More Navigation Sheet */}
       <MoreNavSheet
         isOpen={isMoreSheetOpen}
-        onClose={() => setIsMoreSheetOpen(false)}
+        onOpenChange={setIsMoreSheetOpen}
         items={navItems.slice(4)}
-        title="More Actions & Navigation"
+        title={t('shell.moreActions', 'More Actions & Navigation')}
       />
     </div>
   );

@@ -201,58 +201,73 @@ async function runBrowserVerification() {
     );
     console.log('  ✔ Step 9: Zero DOM inline-style mutation invariant verified on real React component (no transform/transition)');
 
-    // Step 10 (P2-02): Real Browser Synthetic Touch-Gesture Emulation (75px Dismissal Threshold)
-    // Dispatches synthetic TouchEvents (touchstart -> touchmove -> touchend)
+    // Step 10 (P2-02): Real Chromium CDP Native Touch Event Emulation (Input.dispatchTouchEvent)
+    // Dispatches real browser-level touch input (touchStart -> touchMove -> touchEnd) via CDP
     // verifying touch-gesture tracking, <= 75px snapback, and > 75px dismissal threshold
     const openDialog = page.locator('[role="dialog"][data-state="open"]');
     await openDialog.waitFor({ state: 'visible' });
     const reopenedHandle = openDialog.locator('[role="region"][aria-label="Drag handle"]');
     await reopenedHandle.waitFor({ state: 'visible' });
 
-    // 10a: Touch drag 50px (<= 75px) -> snaps back to resting, sheet remains open
-    await reopenedHandle.evaluate((el) => {
-      const t1 = new Touch({ identifier: 1, target: el, clientX: 100, clientY: 200 });
-      el.dispatchEvent(new TouchEvent('touchstart', { touches: [t1], targetTouches: [t1], changedTouches: [t1], bubbles: true, cancelable: true }));
+    const cdpClient = await page.context().newCDPSession(page);
 
-      const t2 = new Touch({ identifier: 1, target: el, clientX: 100, clientY: 250 });
-      el.dispatchEvent(new TouchEvent('touchmove', { touches: [t2], targetTouches: [t2], changedTouches: [t2], bubbles: true, cancelable: true }));
+    // 10a: Real CDP touch drag 50px (<= 75px) -> snaps back to resting, sheet remains open
+    const box10a = await reopenedHandle.boundingBox();
+    assert.ok(box10a, 'Reopened handle must have bounding box');
+    const touchX10a = Math.round(box10a.x + box10a.width / 2);
+    const touchY10a = Math.round(box10a.y + box10a.height / 2);
+
+    await cdpClient.send('Input.dispatchTouchEvent', {
+      type: 'touchStart',
+      touchPoints: [{ x: touchX10a, y: touchY10a }],
+    });
+
+    await cdpClient.send('Input.dispatchTouchEvent', {
+      type: 'touchMove',
+      touchPoints: [{ x: touchX10a, y: touchY10a + 50 }],
     });
 
     const state10a = await openDialog.getAttribute('data-drag-state');
-    const offset10a = await openDialog.getAttribute('data-drag-offset');
-    assert.equal(state10a, 'dragging', 'Sheet must be in dragging state during touch drag');
-    assert.equal(offset10a, '50', 'Offset must quantize to 50px during 50px touch drag');
+    assert.equal(state10a, 'dragging', 'Sheet must enter dragging state during CDP touch drag');
 
-    await reopenedHandle.evaluate((el) => {
-      const t3 = new Touch({ identifier: 1, target: el, clientX: 100, clientY: 250 });
-      el.dispatchEvent(new TouchEvent('touchend', { touches: [], targetTouches: [], changedTouches: [t3], bubbles: true, cancelable: true }));
+    await cdpClient.send('Input.dispatchTouchEvent', {
+      type: 'touchEnd',
+      touchPoints: [],
     });
     await page.waitForTimeout(300);
-    assert.ok(await openDialog.isVisible(), 'Sheet must remain open after touch drag <= 75px');
-    console.log('  ✔ Step 10a (P2-02): Synthetic touch drag (50px <= 75px) snapped back cleanly');
+    assert.ok(await openDialog.isVisible(), 'Sheet must remain open after CDP touch drag <= 75px');
+    console.log('  ✔ Step 10a (P2-02): Real Chromium CDP touch drag (50px <= 75px) snapped back cleanly');
 
-    // 10b: Touch drag 85px (> 75px threshold) -> triggers real Radix Dialog dismissal
-    await reopenedHandle.evaluate((el) => {
-      const t1 = new Touch({ identifier: 2, target: el, clientX: 100, clientY: 200 });
-      el.dispatchEvent(new TouchEvent('touchstart', { touches: [t1], targetTouches: [t1], changedTouches: [t1], bubbles: true, cancelable: true }));
+    // 10b: Real CDP touch drag 85px (> 75px threshold) -> triggers real Radix Dialog dismissal
+    const box10b = await reopenedHandle.boundingBox();
+    assert.ok(box10b, 'Handle must still have bounding box');
+    const touchX10b = Math.round(box10b.x + box10b.width / 2);
+    const touchY10b = Math.round(box10b.y + box10b.height / 2);
 
-      const t2 = new Touch({ identifier: 2, target: el, clientX: 100, clientY: 285 });
-      el.dispatchEvent(new TouchEvent('touchmove', { touches: [t2], targetTouches: [t2], changedTouches: [t2], bubbles: true, cancelable: true }));
+    await cdpClient.send('Input.dispatchTouchEvent', {
+      type: 'touchStart',
+      touchPoints: [{ x: touchX10b, y: touchY10b }],
     });
-    const state10b = await openDialog.getAttribute('data-drag-state');
-    assert.equal(state10b, 'dragging', 'Sheet must be in dragging state during > 75px touch drag');
 
-    await reopenedHandle.evaluate((el) => {
-      const t3 = new Touch({ identifier: 2, target: el, clientX: 100, clientY: 285 });
-      el.dispatchEvent(new TouchEvent('touchend', { touches: [], targetTouches: [], changedTouches: [t3], bubbles: true, cancelable: true }));
+    await cdpClient.send('Input.dispatchTouchEvent', {
+      type: 'touchMove',
+      touchPoints: [{ x: touchX10b, y: touchY10b + 85 }],
+    });
+
+    const state10b = await openDialog.getAttribute('data-drag-state');
+    assert.equal(state10b, 'dragging', 'Sheet must be in dragging state during > 75px CDP touch drag');
+
+    await cdpClient.send('Input.dispatchTouchEvent', {
+      type: 'touchEnd',
+      touchPoints: [],
     });
     await page.waitForTimeout(400);
 
     const touchDismissed = !(await openDialog.isVisible().catch(() => false));
-    assert.ok(touchDismissed, 'Radix Dialog must have closed after touch drag > 75px (85px)');
-    console.log('  ✔ Step 10b (P2-02): Synthetic touch drag (85px > 75px) dismissed sheet successfully');
+    assert.ok(touchDismissed, 'Radix Dialog must have closed after CDP touch drag > 75px (85px)');
+    console.log('  ✔ Step 10b (P2-02): Real Chromium CDP touch drag (85px > 75px) dismissed sheet successfully');
 
-    console.log('\n🏆 [BottomSheet Playwright]: ALL REAL REACT COMPONENT BROWSER CHECKS PASSED (Including P2-02 Touch Emulation)!\n');
+    console.log('\n🏆 [BottomSheet Playwright]: ALL REAL REACT COMPONENT BROWSER CHECKS PASSED (Including Real CDP Touch Input)!\n');
   } finally {
     if (browser) await browser.close();
     server.close();

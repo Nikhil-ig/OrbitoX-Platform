@@ -2,11 +2,60 @@ import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
-import { calculateContrast } from '../src/tokens/color-validator';
+import {
+  calculateContrast,
+  hexToRgb,
+  getRelativeLuminance,
+} from '../src/tokens/color-validator';
 
-describe('Layer 2: Semantic Tokens & Contrast Matrix (WCAG 2.2 AA)', () => {
+/**
+ * Calculates exact unrounded WCAG relative luminance contrast ratio.
+ */
+function exactContrastRatio(hexA: string, hexB: string): number {
+  const rgbA = hexToRgb(hexA);
+  const rgbB = hexToRgb(hexB);
+  if (!rgbA || !rgbB) throw new Error(`Invalid hex color: ${hexA} or ${hexB}`);
+  const lumA = getRelativeLuminance(rgbA);
+  const lumB = getRelativeLuminance(rgbB);
+  const lighter = Math.max(lumA, lumB);
+  const darker = Math.min(lumA, lumB);
+  return (lighter + 0.05) / (darker + 0.05);
+}
+
+/**
+ * Parses CSS custom properties dynamically from raw CSS source text.
+ */
+function parseCssRules(css: string): Map<string, Record<string, string>> {
+  const blocks = new Map<string, Record<string, string>>();
+  const ruleRegex = /([^{}]+)\{([^{}]+)\}/g;
+  let match: RegExpExecArray | null;
+
+  while ((match = ruleRegex.exec(css)) !== null) {
+    const rawSelector = match[1]?.trim() ?? '';
+    const body = match[2]?.trim() ?? '';
+    if (!rawSelector || rawSelector.startsWith('@media')) continue;
+
+    const props: Record<string, string> = {};
+    for (const line of body.split(';')) {
+      const idx = line.indexOf(':');
+      if (idx > 0) {
+        const key = line.slice(0, idx).trim();
+        const val = line.slice(idx + 1).trim();
+        if (key.startsWith('--')) {
+          props[key] = val;
+        }
+      }
+    }
+    blocks.set(rawSelector, props);
+  }
+
+  return blocks;
+}
+
+describe('Layer 2: Semantic Tokens & Contrast Matrix (WCAG 2.2 AA & SC 1.4.11 / SC 1.4.3)', () => {
   const cssPath = path.resolve(__dirname, '../src/tokens/semantic.css');
   const cssContent = fs.readFileSync(cssPath, 'utf8');
+  const parsedRules = parseCssRules(cssContent);
 
   it('declares base themes BEFORE accent presets to prevent cascade clobbering', () => {
     const lightThemeIndex = cssContent.indexOf('[data-theme="light"] {');
@@ -45,56 +94,128 @@ describe('Layer 2: Semantic Tokens & Contrast Matrix (WCAG 2.2 AA)', () => {
     );
   });
 
-  const ACCENTS = [
-    { name: 'ocean', darkHex: '#3A6BF5', lightHex: '#2F5BD8', darkFg: '#FFFFFF', lightFg: '#FFFFFF' },
-    { name: 'emerald', darkHex: '#047857', lightHex: '#047857', darkFg: '#FFFFFF', lightFg: '#FFFFFF' },
-    { name: 'sunflower', darkHex: '#F59E0B', lightHex: '#F59E0B', darkFg: '#0D0F12', lightFg: '#0D0F12', safeUI: '#B45309' },
-    { name: 'saffron', darkHex: '#C2410C', lightHex: '#C2410C', darkFg: '#FFFFFF', lightFg: '#FFFFFF' },
-    { name: 'ruby', darkHex: '#E11D48', lightHex: '#BE123C', darkFg: '#FFFFFF', lightFg: '#FFFFFF' },
-    { name: 'coral', darkHex: '#D9381E', lightHex: '#D9381E', darkFg: '#FFFFFF', lightFg: '#FFFFFF' },
-    { name: 'violet', darkHex: '#7C3AED', lightHex: '#6D28D9', darkFg: '#FFFFFF', lightFg: '#FFFFFF' },
-    { name: 'teal', darkHex: '#0F766E', lightHex: '#0F766E', darkFg: '#FFFFFF', lightFg: '#FFFFFF' },
-  ];
+  it('parses CSS custom properties dynamically from semantic.css', () => {
+    assert.ok(parsedRules.size >= 10, `Expected >= 10 parsed CSS blocks, got ${parsedRules.size}`);
 
-  for (const acc of ACCENTS) {
-    it(`accent "${acc.name}" satisfies WCAG 2.2 AA in dark and light modes`, () => {
-      // Button text contrast
-      const darkBtnContrast = calculateContrast(acc.darkHex, acc.darkFg);
-      const lightBtnContrast = calculateContrast(acc.lightHex, acc.lightFg);
-
-      assert.ok(
-        darkBtnContrast.passesAA || darkBtnContrast.ratio >= 4.5,
-        `Dark button text for ${acc.name} must be >= 4.5:1 (got ${darkBtnContrast.ratio}:1)`
-      );
-      assert.ok(
-        lightBtnContrast.passesAA || lightBtnContrast.ratio >= 4.5,
-        `Light button text for ${acc.name} must be >= 4.5:1 (got ${lightBtnContrast.ratio}:1)`
-      );
-
-      // Sunflower safe UI token verification
-      if (acc.safeUI) {
-        const safeUiOnLightCanvas = calculateContrast(acc.safeUI, '#EEF1F5');
-        assert.ok(
-          safeUiOnLightCanvas.ratio >= 3.0,
-          `Safe UI token ${acc.safeUI} on light canvas must be >= 3.0:1 for non-text UI (got ${safeUiOnLightCanvas.ratio}:1)`
-        );
+    // Verify sunflower parsed directly from CSS
+    let foundSunflower = false;
+    for (const [selector, props] of parsedRules.entries()) {
+      if (selector.includes('data-accent="sunflower"')) {
+        assert.equal(props['--color-accent'], '#F59E0B');
+        assert.equal(props['--color-accent-fg'], '#0D0F12');
+        assert.equal(props['--color-accent-contrast-safe'], '#B45309');
+        foundSunflower = true;
+        break;
       }
-    });
-  }
-
-  it('dark canvas, surface, and text meet WCAG 2.2 AA contrast standards', () => {
-    const textOnCanvas = calculateContrast('#F2F4F7', '#0D0F12');
-    const textOnSurface = calculateContrast('#F2F4F7', '#14171C');
-
-    assert.ok(textOnCanvas.ratio >= 7.0, `Text on dark canvas must be AAA (got ${textOnCanvas.ratio}:1)`);
-    assert.ok(textOnSurface.ratio >= 7.0, `Text on dark surface must be AAA (got ${textOnSurface.ratio}:1)`);
+    }
+    assert.ok(foundSunflower, 'Must parse Sunflower tokens directly from CSS');
   });
 
-  it('light canvas, surface, and text meet WCAG 2.2 AA contrast standards', () => {
-    const textOnCanvas = calculateContrast('#14161A', '#EEF1F5');
-    const textOnSurface = calculateContrast('#14161A', '#FFFFFF');
+  // ─── SC 1.4.3: Contrast (Minimum) for Normal Text (>= 4.5:1) ───────────────────────
+  describe('WCAG 2.2 SC 1.4.3 — Normal Text Contrast (>= 4.5:1)', () => {
+    const ACCENT_TESTS = [
+      { name: 'ocean', darkBg: '#3A6BF5', darkFg: '#FFFFFF', lightBg: '#2F5BD8', lightFg: '#FFFFFF' },
+      { name: 'emerald', darkBg: '#047857', darkFg: '#FFFFFF', lightBg: '#047857', lightFg: '#FFFFFF' },
+      { name: 'sunflower', darkBg: '#F59E0B', darkFg: '#0D0F12', lightBg: '#F59E0B', lightFg: '#0D0F12' },
+      { name: 'saffron', darkBg: '#C2410C', darkFg: '#FFFFFF', lightBg: '#C2410C', lightFg: '#FFFFFF' },
+      { name: 'ruby', darkBg: '#E11D48', darkFg: '#FFFFFF', lightBg: '#BE123C', lightFg: '#FFFFFF' },
+      { name: 'coral', darkBg: '#D9381E', darkFg: '#FFFFFF', lightBg: '#D9381E', lightFg: '#FFFFFF' },
+      { name: 'violet', darkBg: '#7C3AED', darkFg: '#FFFFFF', lightBg: '#6D28D9', lightFg: '#FFFFFF' },
+      { name: 'teal', darkBg: '#0F766E', darkFg: '#FFFFFF', lightBg: '#0F766E', lightFg: '#FFFFFF' },
+    ];
 
-    assert.ok(textOnCanvas.ratio >= 7.0, `Text on light canvas must be AAA (got ${textOnCanvas.ratio}:1)`);
-    assert.ok(textOnSurface.ratio >= 7.0, `Text on light surface must be AAA (got ${textOnSurface.ratio}:1)`);
+    for (const acc of ACCENT_TESTS) {
+      it(`filled button text on "${acc.name}" satisfies SC 1.4.3 (>= 4.5:1) in dark and light modes`, () => {
+        const darkContrast = calculateContrast(acc.darkBg, acc.darkFg);
+        const lightContrast = calculateContrast(acc.lightBg, acc.lightFg);
+
+        assert.ok(
+          darkContrast.ratio >= 4.5,
+          `Dark button text for ${acc.name} (${acc.darkFg} on ${acc.darkBg}) must be >= 4.5:1 (got ${darkContrast.ratio}:1)`
+        );
+        assert.ok(
+          lightContrast.ratio >= 4.5,
+          `Light button text for ${acc.name} (${acc.lightFg} on ${acc.lightBg}) must be >= 4.5:1 (got ${lightContrast.ratio}:1)`
+        );
+      });
+    }
+
+    it('White (#FFFFFF) on Ocean (#3A6BF5) satisfies SC 1.4.3 normal text (exact 4.564:1)', () => {
+      const ratio = exactContrastRatio('#FFFFFF', '#3A6BF5');
+      assert.ok(ratio >= 4.5, `Expected >= 4.5:1, got ${ratio}:1`);
+      assert.ok(Math.abs(ratio - 4.564) < 0.005, `Expected ~4.564:1, got ${ratio.toFixed(3)}:1`);
+    });
+
+    it('Obsidian (#0D0F12) on Sunflower (#F59E0B) satisfies SC 1.4.3 AAA text (exact 8.936:1)', () => {
+      const ratio = exactContrastRatio('#0D0F12', '#F59E0B');
+      assert.ok(ratio >= 7.0, `Expected >= 7.0:1 (AAA), got ${ratio}:1`);
+      assert.ok(Math.abs(ratio - 8.936) < 0.005, `Expected ~8.936:1, got ${ratio.toFixed(3)}:1`);
+    });
+
+    it('Dark canvas and surface body text satisfies SC 1.4.3 AAA (>= 7.0:1)', () => {
+      const onCanvas = calculateContrast('#F2F4F7', '#0D0F12');
+      const onSurface = calculateContrast('#F2F4F7', '#14171C');
+      assert.ok(onCanvas.ratio >= 7.0, `Body text on dark canvas must be AAA (got ${onCanvas.ratio}:1)`);
+      assert.ok(onSurface.ratio >= 7.0, `Body text on dark surface must be AAA (got ${onSurface.ratio}:1)`);
+    });
+
+    it('Light canvas and surface body text satisfies SC 1.4.3 AAA (>= 7.0:1)', () => {
+      const onCanvas = calculateContrast('#14161A', '#EEF1F5');
+      const onSurface = calculateContrast('#14161A', '#FFFFFF');
+      assert.ok(onCanvas.ratio >= 7.0, `Body text on light canvas must be AAA (got ${onCanvas.ratio}:1)`);
+      assert.ok(onSurface.ratio >= 7.0, `Body text on light surface must be AAA (got ${onSurface.ratio}:1)`);
+    });
+  });
+
+  // ─── SC 1.4.11: Non-Text Contrast for UI Components & Indicators (>= 3.0:1) ─────────
+  describe('WCAG 2.2 SC 1.4.11 — Non-Text Contrast (>= 3.0:1)', () => {
+    it('Ocean (#3A6BF5) on Dark Canvas (#0D0F12) satisfies SC 1.4.11 non-text UI (exact 4.205:1)', () => {
+      const ratio = exactContrastRatio('#3A6BF5', '#0D0F12');
+      assert.ok(ratio >= 3.0, `Expected >= 3.0:1 for non-text UI indicator, got ${ratio}:1`);
+      assert.ok(Math.abs(ratio - 4.205) < 0.005, `Expected ~4.205:1, got ${ratio.toFixed(3)}:1`);
+      // Note: 4.205 < 4.5, confirming Ocean is strictly a non-text UI token on dark canvas
+      assert.ok(ratio < 4.5, 'Must not be used as normal text on dark canvas');
+    });
+
+    it('Ocean (#3A6BF5) on Light Canvas (#EEF1F5) satisfies SC 1.4.11 non-text UI (exact 4.028:1)', () => {
+      const ratio = exactContrastRatio('#3A6BF5', '#EEF1F5');
+      assert.ok(ratio >= 3.0, `Expected >= 3.0:1 for non-text UI indicator, got ${ratio}:1`);
+      assert.ok(Math.abs(ratio - 4.028) < 0.005, `Expected ~4.028:1, got ${ratio.toFixed(3)}:1`);
+      assert.ok(ratio < 4.5, 'Must not be used as normal text on light canvas');
+    });
+
+    it('Amber safe UI token (#B45309) on Light Canvas (#EEF1F5) satisfies SC 1.4.11 non-text UI (exact 4.432:1)', () => {
+      const ratio = exactContrastRatio('#B45309', '#EEF1F5');
+      assert.ok(ratio >= 3.0, `Expected >= 3.0:1 for non-text UI indicator, got ${ratio}:1`);
+      assert.ok(Math.abs(ratio - 4.432) < 0.005, `Expected ~4.432:1, got ${ratio.toFixed(3)}:1`);
+      // Fails SC 1.4.3 for normal text (< 4.5:1), confirming it is strictly a non-text UI token
+      assert.ok(ratio < 4.5, 'Must not be used as normal text on light canvas');
+    });
+
+    it('Amber safe UI token (#B45309) on Light Gradient (#E3E7EE) satisfies SC 1.4.11 non-text UI (exact 4.049:1)', () => {
+      const ratio = exactContrastRatio('#B45309', '#E3E7EE');
+      assert.ok(ratio >= 3.0, `Expected >= 3.0:1 for non-text UI indicator, got ${ratio}:1`);
+      assert.ok(Math.abs(ratio - 4.049) < 0.005, `Expected ~4.049:1, got ${ratio.toFixed(3)}:1`);
+    });
+  });
+
+  // ─── Mathematical Invariant Exact Check (All 6 Boundary Ratios) ─────────────────────
+  it('strictly validates all 6 mathematical sRGB luminance boundary ratios', () => {
+    const boundaries = [
+      { name: 'Ocean dark canvas', pair: ['#3A6BF5', '#0D0F12'], expected: 4.205, sc: '1.4.11' },
+      { name: 'Ocean light canvas', pair: ['#3A6BF5', '#EEF1F5'], expected: 4.028, sc: '1.4.11' },
+      { name: 'Amber light canvas', pair: ['#B45309', '#EEF1F5'], expected: 4.432, sc: '1.4.11' },
+      { name: 'Amber gradient canvas', pair: ['#B45309', '#E3E7EE'], expected: 4.049, sc: '1.4.11' },
+      { name: 'White on Ocean', pair: ['#FFFFFF', '#3A6BF5'], expected: 4.564, sc: '1.4.3' },
+      { name: 'Obsidian on Sunflower', pair: ['#0D0F12', '#F59E0B'], expected: 8.936, sc: '1.4.3' },
+    ];
+
+    for (const b of boundaries) {
+      const ratio = exactContrastRatio(b.pair[0], b.pair[1]);
+      assert.ok(
+        Math.abs(ratio - b.expected) < 0.005,
+        `Boundary ${b.name} (${b.pair[0]}/${b.pair[1]}): expected ${b.expected}:1, got ${ratio.toFixed(3)}:1 (SC ${b.sc})`
+      );
+    }
   });
 });

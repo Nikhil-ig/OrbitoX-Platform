@@ -1,6 +1,7 @@
 import * as React from 'react';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
 import { cn } from '../utils/cn';
+import { t } from '../i18n';
 import { NavItemRenderer } from './NavItemRenderer';
 import type { NavItem } from './types';
 
@@ -47,7 +48,7 @@ export function SidebarCard({
               type="button"
               onClick={onToggleCollapse}
               className="p-1.5 rounded-full text-[var(--color-text-muted)] hover:text-[var(--color-text)] hover:bg-[var(--color-surface-raised)] transition-colors cursor-pointer"
-              aria-label="Collapse sidebar"
+              aria-label={t('shell.collapseSidebar', 'Collapse sidebar')}
             >
               <ChevronLeft className="h-4 w-4" />
             </button>
@@ -102,7 +103,7 @@ export function SidebarCard({
             type="button"
             onClick={onToggleCollapse}
             className="p-2 rounded-full text-[var(--color-text-muted)] hover:text-[var(--color-text)] hover:bg-[var(--color-surface-raised)] transition-colors cursor-pointer"
-            aria-label="Expand sidebar"
+            aria-label={t('shell.expandSidebar', 'Expand sidebar')}
           >
             <ChevronRight className="h-4 w-4" />
           </button>

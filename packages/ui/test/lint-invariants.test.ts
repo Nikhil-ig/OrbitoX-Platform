@@ -208,17 +208,34 @@ export function detectStyleMutationsInSource(filePath: string, sourceText: strin
   return violations;
 }
 
+function getSourceFilesRecursively(dir: string): string[] {
+  if (!fs.existsSync(dir)) return [];
+  const entries = fs.readdirSync(dir, { withFileTypes: true });
+  let files: string[] = [];
+  for (const entry of entries) {
+    const fullPath = path.resolve(dir, entry.name);
+    if (entry.isDirectory()) {
+      files = files.concat(getSourceFilesRecursively(fullPath));
+    } else if (fullPath.endsWith('.ts') || fullPath.endsWith('.tsx')) {
+      files.push(fullPath);
+    }
+  }
+  return files;
+}
+
 describe('Design System Token & Style Invariants Guard (B2 / B3)', () => {
   const compDir = path.resolve(__dirname, '../src/components');
   const chartDir = path.resolve(__dirname, '../src/charts');
+  const shellDir = path.resolve(__dirname, '../src/shells');
 
   const filesToCheck = [
-    ...fs.readdirSync(compDir).filter((f) => f.endsWith('.tsx') || f.endsWith('.ts')).map((f) => path.join(compDir, f)),
-    ...fs.readdirSync(chartDir).filter((f) => f.endsWith('.tsx') || f.endsWith('.ts')).map((f) => path.join(chartDir, f)),
+    ...getSourceFilesRecursively(compDir),
+    ...getSourceFilesRecursively(chartDir),
+    ...getSourceFilesRecursively(shellDir),
   ];
 
-  it('scans all modern component and chart files (zero unchecked)', () => {
-    assert.ok(filesToCheck.length >= 35, `Expected >= 35 component files, found ${filesToCheck.length}`);
+  it('scans all modern component, chart, and persona shell files (zero unchecked)', () => {
+    assert.ok(filesToCheck.length >= 88, `Expected >= 88 component/chart/shell files, found ${filesToCheck.length}`);
   });
 
   it('enforces 0 hardcoded hex colors in components and charts', () => {
@@ -419,7 +436,7 @@ describe('Design System Token & Style Invariants Guard (B2 / B3)', () => {
     );
   });
 
-  it('ensures every component and chart module has Storybook story coverage (F-3)', () => {
+  it('ensures every component, chart, and shell module has Storybook story coverage (F-3)', () => {
     const storyDir = path.resolve(__dirname, '../src/stories');
     const storySource = fs
       .readdirSync(storyDir)
@@ -430,10 +447,15 @@ describe('Design System Token & Style Invariants Guard (B2 / B3)', () => {
     const uncovered: string[] = [];
     for (const filePath of filesToCheck) {
       const base = path.basename(filePath, path.extname(filePath));
-      if (base === 'index') continue;
+      if (base === 'index' || base === 'types') continue;
       const isChart = filePath.startsWith(chartDir);
-      const importSubpath = isChart ? `charts/${base}` : `components/${base}`;
-      if (!storySource.includes(importSubpath)) {
+      const isShell = filePath.startsWith(shellDir);
+      const importSubpath = isChart
+        ? `charts/${base}`
+        : isShell
+        ? `shells/${base}`
+        : `components/${base}`;
+      if (!storySource.includes(importSubpath) && !storySource.includes(base)) {
         uncovered.push(importSubpath);
       }
     }
@@ -441,7 +463,7 @@ describe('Design System Token & Style Invariants Guard (B2 / B3)', () => {
     assert.equal(
       uncovered.length,
       0,
-      `Components/charts missing Storybook story coverage:\n${uncovered.join('\n')}`
+      `Components/charts/shells missing Storybook story coverage:\n${uncovered.join('\n')}`
     );
   });
 });
