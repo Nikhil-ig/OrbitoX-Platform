@@ -42,6 +42,25 @@ export const BottomSheetContent = React.forwardRef<
   const touchStartY = React.useRef<number | null>(null);
   const currentDeltaY = React.useRef<number>(0);
 
+  const resetGesture = React.useCallback((snapping = true) => {
+    if (contentRef.current) {
+      if (snapping) {
+        contentRef.current.setAttribute('data-drag-state', 'snapping');
+        setTimeout(() => {
+          if (contentRef.current && contentRef.current.getAttribute('data-drag-state') === 'snapping') {
+            contentRef.current.setAttribute('data-drag-state', 'idle');
+            contentRef.current.removeAttribute('data-drag-level');
+          }
+        }, 200);
+      } else {
+        contentRef.current.setAttribute('data-drag-state', 'idle');
+        contentRef.current.removeAttribute('data-drag-level');
+      }
+    }
+    touchStartY.current = null;
+    currentDeltaY.current = 0;
+  }, []);
+
   const handleTouchStart = (e: React.TouchEvent<HTMLDivElement>) => {
     touchStartY.current = e.touches[0]?.clientY ?? null;
     currentDeltaY.current = 0;
@@ -53,26 +72,33 @@ export const BottomSheetContent = React.forwardRef<
     const delta = clientY - touchStartY.current;
     if (delta > 0) {
       currentDeltaY.current = delta;
-      contentRef.current.style.transform = `translateY(${delta}px)`;
-      contentRef.current.style.transition = 'none';
+      contentRef.current.setAttribute('data-drag-state', 'dragging');
+      if (delta < 25) {
+        contentRef.current.setAttribute('data-drag-level', 'low');
+      } else if (delta < 50) {
+        contentRef.current.setAttribute('data-drag-level', 'medium');
+      } else {
+        contentRef.current.setAttribute('data-drag-level', 'high');
+      }
     }
   };
 
   const handleTouchEnd = () => {
     if (!contentRef.current) return;
     if (currentDeltaY.current > 75) {
+      contentRef.current.setAttribute('data-drag-state', 'dismissing');
       if (closeRef.current) {
         closeRef.current.click();
-      } else {
-        contentRef.current.style.transition = 'transform 200ms ease-out';
-        contentRef.current.style.transform = 'translateY(100%)';
       }
     } else {
-      contentRef.current.style.transition = 'transform 200ms ease-out';
-      contentRef.current.style.transform = 'translateY(0px)';
+      resetGesture(true);
     }
     touchStartY.current = null;
     currentDeltaY.current = 0;
+  };
+
+  const handleTouchCancel = () => {
+    resetGesture(true);
   };
 
   return (
@@ -81,9 +107,13 @@ export const BottomSheetContent = React.forwardRef<
       <DialogPrimitive.Content
         ref={(node) => {
           contentRef.current = node;
+          if (node && !node.hasAttribute('data-drag-state')) {
+            node.setAttribute('data-drag-state', 'idle');
+          }
           if (typeof ref === 'function') ref(node);
           else if (ref) (ref as React.MutableRefObject<HTMLDivElement | null>).current = node;
         }}
+        data-drag-state="idle"
         className={cn(
           'fixed bottom-0 inset-x-0 z-50 mx-auto max-w-lg w-full',
           'rounded-t-[28px] border-t border-x border-[var(--color-border)]',
@@ -92,6 +122,11 @@ export const BottomSheetContent = React.forwardRef<
           'data-[state=open]:animate-in data-[state=closed]:animate-out',
           'data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0',
           'data-[state=closed]:slide-out-to-bottom data-[state=open]:slide-in-from-bottom duration-250',
+          'data-[drag-state=idle]:translate-y-0',
+          'data-[drag-state=dragging]:transition-none',
+          'data-[drag-level=low]:translate-y-2 data-[drag-level=medium]:translate-y-6 data-[drag-level=high]:translate-y-12',
+          'data-[drag-state=snapping]:transition-transform data-[drag-state=snapping]:duration-200 data-[drag-state=snapping]:translate-y-0',
+          'data-[drag-state=dismissing]:transition-transform data-[drag-state=dismissing]:duration-200 data-[drag-state=dismissing]:translate-y-full',
           className
         )}
         {...props}
@@ -101,6 +136,7 @@ export const BottomSheetContent = React.forwardRef<
           onTouchStart={handleTouchStart}
           onTouchMove={handleTouchMove}
           onTouchEnd={handleTouchEnd}
+          onTouchCancel={handleTouchCancel}
           aria-hidden="true"
         >
           <div className="h-1.5 w-12 rounded-full bg-[var(--color-border)] shrink-0" />

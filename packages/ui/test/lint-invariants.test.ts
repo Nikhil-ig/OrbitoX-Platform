@@ -75,6 +75,25 @@ describe('Design System Token & Style Invariants Guard (B2 / B3)', () => {
     );
   });
 
+  it('enforces 0 direct DOM style mutations in components and charts', () => {
+    const domStyleRegex = /\.style(\.|\[)/g;
+    const violations: { file: string; matches: string[] }[] = [];
+
+    for (const filePath of filesToCheck) {
+      const content = fs.readFileSync(filePath, 'utf8');
+      const matches = content.match(domStyleRegex);
+      if (matches) {
+        violations.push({ file: path.basename(filePath), matches });
+      }
+    }
+
+    assert.equal(
+      violations.length,
+      0,
+      `Found direct DOM style mutations in components:\n${JSON.stringify(violations, null, 2)}`
+    );
+  });
+
   it('enforces 0 dangerouslySetInnerHTML usages in components and charts', () => {
     const dangerRegex = /dangerouslySetInnerHTML/g;
     const violations: { file: string; matches: string[] }[] = [];

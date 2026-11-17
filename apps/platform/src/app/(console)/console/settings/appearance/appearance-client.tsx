@@ -16,19 +16,23 @@ import {
   useToast,
 } from '@orbitox-io/ui';
 import type { AppearancePreferences } from '@/server/appearance/appearance-service';
+import {
+  ACCENT_PRESETS,
+  RADIUS_STEPS,
+  applyAppearanceToDocument,
+  AppearancePersistenceController,
+  type ToastNotification,
+  type AppearancePersistenceOptions,
+} from './appearance-persistence';
 
-export const ACCENT_PRESETS = [
-  { id: 'ocean', label: 'Ocean', bgClass: 'bg-[var(--accent-ocean)]' },
-  { id: 'emerald', label: 'Emerald', bgClass: 'bg-[var(--accent-emerald)]' },
-  { id: 'sunflower', label: 'Sunflower', bgClass: 'bg-[var(--accent-sunflower)]' },
-  { id: 'saffron', label: 'Saffron', bgClass: 'bg-[var(--accent-saffron)]' },
-  { id: 'ruby', label: 'Ruby', bgClass: 'bg-[var(--accent-ruby)]' },
-  { id: 'coral', label: 'Coral', bgClass: 'bg-[var(--accent-coral)]' },
-  { id: 'violet', label: 'Violet', bgClass: 'bg-[var(--accent-violet)]' },
-  { id: 'teal', label: 'Teal', bgClass: 'bg-[var(--accent-teal)]' },
-] as const;
-
-export const RADIUS_STEPS = [4, 8, 12, 16, 20, 24, 28, 32] as const;
+export {
+  ACCENT_PRESETS,
+  RADIUS_STEPS,
+  applyAppearanceToDocument,
+  AppearancePersistenceController,
+  type ToastNotification,
+  type AppearancePersistenceOptions,
+};
 
 export interface AppearanceClientProps {
   initialAppearance: AppearancePreferences;
@@ -43,73 +47,22 @@ export function AppearanceClient({
   const [isSaving, setIsSaving] = React.useState(false);
   const { toast } = useToast();
 
-  const applyToDocument = React.useCallback((prefs: AppearancePreferences) => {
-    if (typeof document === 'undefined') return;
-    const root = document.documentElement;
-    root.setAttribute('data-theme', prefs.theme);
-    root.setAttribute('data-accent', prefs.accent);
-    root.setAttribute('data-density', prefs.density);
-    root.setAttribute('data-radius', String(prefs.radius));
-    root.setAttribute('data-motion', prefs.smoothAnimations ? 'smooth' : 'reduced');
-    root.setAttribute('data-focus', prefs.boldFocusRings ? 'bold' : 'default');
-    root.setAttribute('data-sidebar', prefs.compactSidebar ? 'compact' : 'default');
-  }, []);
+  const controllerRef = React.useRef<AppearancePersistenceController | null>(null);
+  if (!controllerRef.current) {
+    controllerRef.current = new AppearancePersistenceController({
+      initialAppearance,
+      apiEndpoint,
+      onToast: toast,
+      onStateChange: (nextApp, saving) => {
+        setAppearance(nextApp);
+        setIsSaving(saving);
+      },
+    });
+  }
 
   const updatePreferences = async (patch: Partial<AppearancePreferences>) => {
-    const prevAppearance = appearance;
-    const nextAppearance: AppearancePreferences = {
-      ...appearance,
-      ...patch,
-    };
-    setAppearance(nextAppearance);
-    applyToDocument(nextAppearance);
-
-    setIsSaving(true);
-    try {
-      const csrfToken = typeof document !== 'undefined'
-        ? document.cookie.split('; ').find((row) => row.startsWith('orbitox_operator_csrf='))?.split('=')[1]
-          || document.cookie.split('; ').find((row) => row.startsWith('orbitox_customer_csrf='))?.split('=')[1]
-        : undefined;
-
-      const res = await fetch(apiEndpoint, {
-        method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-          ...(csrfToken ? { 'x-csrf-token': csrfToken } : {}),
-        },
-        body: JSON.stringify(nextAppearance),
-      });
-
-      if (res.ok) {
-        toast({
-          title: 'Theme updated',
-          description: 'Saved to your account',
-          variant: 'success',
-          duration: 3000,
-        });
-      } else {
-        const errorData = await res.json().catch(() => null);
-        const errorMessage = errorData?.error?.message || errorData?.message || 'Theme update failed. Reverting changes.';
-        setAppearance(prevAppearance);
-        applyToDocument(prevAppearance);
-        toast({
-          title: 'Failed to save appearance',
-          description: errorMessage,
-          variant: 'error',
-          duration: 4000,
-        });
-      }
-    } catch {
-      setAppearance(prevAppearance);
-      applyToDocument(prevAppearance);
-      toast({
-        title: 'Connection error',
-        description: 'Network failed while saving appearance. Reverted changes.',
-        variant: 'error',
-        duration: 4000,
-      });
-    } finally {
-      setIsSaving(false);
+    if (controllerRef.current) {
+      await controllerRef.current.updatePreferences(patch);
     }
   };
 
