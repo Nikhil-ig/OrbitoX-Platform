@@ -1,55 +1,54 @@
 # 🪐 OrbitoX Phase 7B.2 — Theme Tokens & Persona Shell Architecture
-## Master Engineering Architecture Blueprint & Implementation Proposal
+## Master Engineering Architecture Blueprint & Implementation Proposal (Revised)
 
 **Repository:** `Nikhil-ig/OrbitoX-Platform`  
 **Accepted Baseline SHA:** `f65698eab17b3a40842360eaeb387c74dca57ecc`  
-**Target Branch for Implementation:** `feat/ui-reset-7b2-theme-persona-shells` (to be branched from baseline upon owner approval)  
+**Target Branch for Implementation:** `feat/ui-reset-7b2-theme-persona-shells`  
 **Governing Specification:** `PHASE7_UI_MASTER_BRIEF.md` (Sections 1, 2, 3, 5) & `docs/ui-reset/*`  
-**Phase Status:** Stage 0 — Audit, Research & Architecture Blueprint  
+**Phase Status:** Stage 0 — Audit, Research & Revised Architecture Blueprint  
 **Implementation Authorization:** **NOT YET GRANTED (READ-ONLY)**  
-**Date:** November 17, 2026  
+**Date:** November 17, 2026 (Revised Blueprint)  
 
 ---
 
 ## 1. Executive Architecture Summary
 
-OrbitoX serves five distinct user personas across four device classes. Rather than allowing five fragmented web applications with duplicate tokens, conflicting theme providers, and incompatible navigation models, Phase 7B.2 establishes:
+OrbitoX establishes a unified UI architecture across five distinct user personas and four authoritative device viewports. The architecture is governed by a foundational principle:
 
-1. **One Canonical Design-Token Engine:** A unified 3-layer CSS custom-property architecture (`@orbitox-io/ui/src/tokens/`) governing 2 visual moods (Dark and Light), 8 user-selectable accent presets with certified WCAG 2.2 AA contrast, 3 spacing densities (relaxed, standard, compact), and an 8-step corner radius scale (4–32px).
-2. **Server-Authoritative Appearance Resolution:** The initial HTML page load resolves appearance attributes (`data-theme`, `data-accent`, `data-density`, `data-radius`, `data-motion`, `data-focus`, `data-sidebar`) directly from authenticated database preferences or secure session cookies in the server component root layout. This guarantees **zero flash of unstyled content (FOUC)** without client-side DOM mutation scripts.
-3. **Lean Global Providers:** Eradication of competing client-side theme writers and duplicate administrative context. `GlobalProviders` is streamlined to pure global notification plumbing (`ToastProvider`).
-4. **Five Persona-Specific Shell Compositions:** Instead of forcing mobile screens to collapse a 260px desktop sidebar into an off-screen drawer, five specialized shells share the same component primitives while implementing native, device-appropriate interaction models:
-   - **Public & Auth Shell:** Light mood; minimal brand header, centered single-column form cards, zero sidebar chrome.
-   - **Operator Console Shell:** Dark mood (`#0D0F12`); 260px desktop sidebar card, tablet icon-rail, and phone floating bottom pill (`BottomTabBar`).
-   - **Customer Workspace Shell:** Light mood; top horizontal navigation bar with organization/project switcher, billing shortcut, and user menu.
-   - **Product Owner Workspace Shell:** Light mood; store/branch/facility switcher, context navigation, and mobile bottom sheet drawers for F&B operations.
-   - **Staff Operational Workspace Shell:** Dark mood, high contrast; touch-first operational layout with $\ge$52px targets, kitchen ticket flows, and zero-chrome full-screen views.
-5. **Universal Component Foundation:** Component code is decoupled from shell layout chrome, ensuring that RestaurantOS, HospitalOS, and future vertical products compose shared UI primitives rather than forking custom design systems.
+> **The Design System is the visual engine; the Persona Shells are the application frames built upon that engine.**
+
+OrbitoX must not become five separate frontends with fragmented themes, competing providers, and divergent navigation models. Phase 7B.2 establishes:
+
+1. **One Canonical Design-Token Engine:** A unified 3-layer CSS custom-property hierarchy (`primitives.css` $\to$ `semantic.css` $\to$ `components.css`) governing 2 visual moods (Dark and Light), 8 user-selectable accent presets with certified $\ge 4.5:1$ WCAG 2.2 AA contrast, 3 spacing densities (relaxed, standard, compact), and an 8-step corner radius scale (4–32px).
+2. **Sound Appearance Precedence & Mode Resolution:** Appearance resolution separates **preference source** (Authenticated User DB $\to$ Validated Guest Cache $\to$ Persona Default) from **mode resolution** (where `theme: 'auto'` evaluates `prefers-color-scheme` to determine effective mood). Automatic resolution is fully calibrated in `semantic.css` for all 8 accents and status colors without any client-side DOM mutation script.
+3. **Provider Consolidation with Legacy Compatibility:** Eradication of competing client theme writers and duplicate administrative state from the global root. `GlobalProviders` is streamlined to pure global notifications (`ToastProvider`). Legacy `ThemeProvider` and `AdminProvider` are safely isolated to wrap only remaining legacy routes (`(dashboard)/layout.tsx` and `/admin/*`), preventing breakage while keeping modern `/console/*` routes pure.
+4. **Responsive Persona Shells (Pure Structural Frames):** Five reusable shells compose shared primitives (`SidebarCard`, `TopBar`, `IconRail`, `BottomNavPill`, `MoreNavSheet`, `ShellContentFrame`). Shells provide structural slots (context switchers, navigation, content frames, actions) **without hardcoding inner domain workflows** (KDS ticket queues, POS registers, and waiter workflows are strictly deferred to Stage 7F).
+5. **Exact Viewport Breakpoint Mapping:** Standardizes responsive navigation to map cleanly to the four authoritative viewports (`390 × 844`, `834 × 1194`, `1194 × 834`, `1440 × 900`).
 
 ---
 
 ## 2. Source-Code Baseline & Dependency Inventory
 
 ### 2.1 Git Repository Verification
-- **Verified Commit:** `f65698eab17b3a40842360eaeb387c74dca57ecc`
+- **Verified Baseline Commit:** `f65698eab17b3a40842360eaeb387c74dca57ecc`
 - **Parent Commit:** `786113c843d53f87d3cb7e06f037b083a4afd984`
-- **Working Branch:** `feat/ui-reset-7b1-foundation`
-- **Working Tree State:** Completely clean (0 unstaged changes, 0 untracked files).
+- **Branch Reference:** `feat/ui-reset-7b1-foundation`
+- **Working Tree Status:** Clean (0 application source code changes).
 - **CI Health:** GitHub Actions Run #44086450908 passed (14/14 jobs successful).
 
 ### 2.2 Source Files Audited in Phase 7B.2 Research
 
-| File Path | Package / Role | Current Architecture State |
+| File Path | Package / Role | Current State & Findings |
 |---|---|---|
-| `packages/ui/src/tokens/primitives.css` | UI Tokens | Layer 1: Raw color scales, font stacks, base radii, spacing units. |
-| `packages/ui/src/tokens/semantic.css` | UI Tokens | Layer 2: Dark/Light mood variables, 8 accent presets, density multipliers. |
-| `packages/ui/src/tokens/components.css` | UI Tokens | Layer 3: Component heights, widths, stylesheet-only 2px BottomSheet drag offsets. |
+| `packages/ui/src/tokens/primitives.css` | UI Tokens | Layer 1: Raw color scales, base radii, spacing scale, font stacks. |
+| `packages/ui/src/tokens/semantic.css` | UI Tokens | Layer 2: Dark/Light mood variables, 8 accents. **Audit finding:** `@media (prefers-color-scheme: light)` for `[data-theme="auto"]` lacks accent and status color overrides. |
+| `packages/ui/src/tokens/components.css` | UI Tokens | Layer 3: Structural heights, widths, 2px BottomSheet stylesheet-only drag offsets. |
 | `packages/ui/src/tokens/motion.css` | UI Tokens | Accessibility: Media query zeroing durations on `prefers-reduced-motion`. |
 | `packages/ui/src/tokens/theme.css` | UI Tokens | Tailwind CSS v4 `@theme` bridge linking utility classes to custom properties. |
-| `packages/ui/src/tokens/theme-script.ts` | UI Tokens (Legacy) | Obsolete cookie helper writing `orbitox-theme` (`light\|dark`). Disconnected from modern appearance schema. |
+| `packages/ui/src/tokens/theme-script.ts` | UI Tokens (Legacy) | Obsolete cookie helper writing `orbitox-theme` (`light\|dark`). Disconnected from modern 7-dimension appearance schema. |
 | `packages/ui/src/tokens/tenant-theme.ts` | UI Tokens | Safe CSS generator for tenant brand overrides with cryptographic injection sanitization. |
-| `packages/ui/src/legacy/components/theme-provider.tsx` | UI Legacy | Deprecated client `ThemeProvider` injecting `<style>` via `dangerouslySetInnerHTML` and overriding `localStorage`. |
-| `packages/ui/src/components/app-shell.tsx` | UI Component | Monolithic sidebar card; currently uses mobile hamburger sheet and legacy `toggleTheme()` call. |
+| `packages/ui/src/legacy/components/theme-provider.tsx` | UI Legacy | Deprecated client `ThemeProvider` injecting `<style>` via `dangerouslySetInnerHTML` and overriding `data-theme` from `localStorage`. |
+| `packages/ui/src/components/app-shell.tsx` | UI Component | Monolithic sidebar; uses mobile hamburger sheet and legacy `toggleTheme()` call; has `href="#"` fake links. |
 | `packages/ui/src/components/bottom-tab-bar.tsx` | UI Component | Floating bottom navigation pill (max 5 items, primary action button, min 44px hit-box). |
 | `packages/ui/src/components/bottom-sheet.tsx` | UI Component | Mobile drawer with pointer capture, stylesheet-driven drag, and 75px dismissal threshold. |
 | `apps/platform/src/app/layout.tsx` | Platform Server | Root server component; reads DB/cookie appearance and injects `data-*` attributes onto `<html>`. |
@@ -62,370 +61,342 @@ OrbitoX serves five distinct user personas across four device classes. Rather th
 
 ---
 
-## 3. Visual Reference Inventory Summary
+## 3. Visual Reference Inventory Reconciliation (R1)
 
-All **44 concept PNG screenshots** located in `./OrbitoX — new look concept-png/` were inspected and cross-referenced with the 44 screen definitions in Section 2 of `PHASE7_UI_MASTER_BRIEF.md`.
+All **44 concept PNG screenshots** located in `./OrbitoX — new look concept-png/` were inspected on disk. The device counts are strictly reconciled against the actual screen IDs:
 
-*Full inventory details are recorded in [`docs/ui-reset/phase-7b2/01_VISUAL_REFERENCE_INVENTORY.md`](file:///Users/apple/Documents/Office/company/Orbito/OrbitoX%20Platform/docs/ui-reset/phase-7b2/01_VISUAL_REFERENCE_INVENTORY.md).*
+### Reconciled Device Distribution (Exactly 44 Screens):
+- **Desktop (29 screens):** `A1`, `A2`, `A3`, `C0`, `C1`, `C2`, `C3`, `C4`, `C5`, `C6`, `U1`, `U2`, `AI1`, `F1`, `F2`, `F3`, `F4`, `F5`, `F6`, `R0`, `R1`, `R2`, `R3`, `R4`, `R5`, `R6`, `S3`, `S4`, `S5`.
+  *(Native resolutions: 2880 × 1800–2160, base 1440 × 900 / 1440 × 1080).*
+- **Tablet Landscape (2 screens):** `S1` (Kitchen KDS), `S2` (POS Checkout).
+  *(Native resolution: 2388 × 1668, base 1194 × 834).*
+- **Tablet Portrait (1 screen):** `D9` (Host Stand Live Floor Plan).
+  *(Native resolution: 1668 × 2388, base 834 × 1194).*
+- **Phone (11 screens):** `A4`, `U3`, `U4`, `D1`, `D2`, `D3`, `D4`, `D5`, `D6`, `D7`, `D8`.
+  *(Native resolution: 780 × 1688, base 390 × 844).*
+- **Component Kit (1 screen):** `P1` (Pop-ups, Warnings & Utilities @2x, 2880 × 2480).
 
-### Canvas Breakdown by Device & Persona
-- **Desktop (26 screens):** High-DPI 2880 × 1800–2160 canvases. Covers Operator Console (`A1`, `C0–C6`), Customer Workspace (`A2`, `U1`, `U2`), Onboarding (`F1–F6`), Restaurant Owner Admin (`R0–R6`), and Compliance Ledgers (`S3–S5`).
-- **Tablet Landscape (2 screens):** Native 2388 × 1668 canvas (iPad Pro 11" 2x, base 1194 × 834). Dedicated to Staff Operations: `S1` (Kitchen Display System) and `S2` (POS Take Order & Checkout).
-- **Tablet Portrait (1 screen):** Native 1668 × 2388 canvas (iPad Pro 11" portrait, base 834 × 1194). Dedicated to Host Stand Live Floor Plan (`D9`).
-- **Phone (14 screens):** Native 780 × 1688 canvas (iPhone 13/14/15 2x, base 390 × 844). Covers Diner ordering (`A4`, `U3`, `U4`), Owner mobile snapshots (`D1`, `D2`, `D3`), Waiter operational workflows (`D4`, `D5`), Preview onboarding (`D6`), Operator mobile console (`D7`), and Customer mobile dashboard (`D8`).
-- **Component Primitives (1 screen):** `P1` (Pop-ups, Warnings & Utilities @2x, 2880 × 2480).
-
----
-
-## 4. Token Inconsistency Matrix: Specification vs. Current Implementation
-
-| Token Dimension | Specification (`PHASE7_UI_MASTER_BRIEF.md`) | Current Implementation (`packages/ui/src/tokens/`) | Architectural Risk / Inconsistency | Proposed Resolution |
-|---|---|---|---|---|
-| **UI Font Stack** | **Plus Jakarta Sans** (self-hosted, OFL) primary UI font. Noto Sans Devanagari (Hindi) and JetBrains Mono (code/keys). | `apps/platform/src/app/fonts.ts` defines `fontPlusJakartaSans`, but aliases it as `export const fontInter = fontPlusJakartaSans`. | Alias creates confusion; developers assume Inter is active. | Rename all usages to `fontPlusJakartaSans` and eliminate `fontInter` alias. |
-| **Theme Cookie** | Single server-authoritative cookie storing full 7-parameter preferences (`orbitox_appearance`). | `packages/ui/src/tokens/theme-script.ts` defines competing cookie `orbitox-theme` storing only `'light'\|'dark'`. | `AppShell` calls `toggleTheme()` which mutates `orbitox-theme`, bypassing database sync. | Deprecate `theme-script.ts` cookie writer. Wire shell toggles to canonical appearance controller. |
-| **Theme Provider** | Zero client-side DOM style tag injection; zero `localStorage` overrides over server `data-*`. | `packages/ui/src/legacy/components/theme-provider.tsx` injects `<style dangerouslySetInnerHTML>` and overwrites `data-theme` on client mount from `localStorage`. | Severe FOUC and hydration mismatch; clobbers server-rendered dark/light preference. | Remove `ThemeProvider` from `GlobalProviders` in `providers.tsx`. Rely strictly on server-rendered `<html>` attributes. |
-| **Admin Context** | Admin data context scoped strictly to console/admin routes that consume it. | `apps/platform/src/app/providers.tsx` wraps the entire app in `AdminProvider`. `(console)/layout.tsx` re-wraps it again. | Unnecessary memory overhead and duplicate context providers on public and customer routes. | Remove `AdminProvider` from global `providers.tsx`. Scope provider strictly to legacy `/admin/*` routes. |
-| **Card Radii** | Base Card: **28 px**. Hero Card: **32 px**. Inner Rows: **16–22 px**. | `primitives.css` defines `--corner-radius: 28px`, `--radius-hero: calc(var(--corner-radius) + 4px)`, `--radius-row: 1.125rem` (18px). | Some legacy components use arbitrary Tailwind `rounded-xl` (12px) or `rounded-lg` (8px). | Standardize all card surfaces on `rounded-[var(--radius-card)]` and `rounded-[var(--radius-hero)]`. |
-| **Control Geometry** | **Pills (999 px)** universally applied to buttons, inputs, tabs, badges, and nav items. Circles (44–48 px) for icon controls. | Modern components enforce `rounded-full`. Legacy components in `packages/ui/src/legacy/` use rectangular shapes. | Visual dissonance between modern console and legacy prototype surfaces. | Modern persona shells exclusively consume modern pill primitives from `@orbitox-io/ui`. |
-| **Accent Contrast** | 8 presets: Ocean, Emerald, Sunflower, Saffron, Ruby, Coral, Violet, Teal. Must achieve $\ge$ 4.5:1 WCAG AA in both moods. | Verified in `semantic.css`: Sunflower defines dark text `#0D0F12` (7.2:1). Other 7 presets define white `#FFFFFF` ($\ge$ 4.5:1). | Fully compliant; requires continuous regression enforcement in CI. | Maintain automated contrast test matrix across all 16 mood $\times$ accent states. |
-| **Spacing Density** | Spacing scales only: Relaxed (1.25×), Standard (1.0×), Compact (0.65×). Typography must NOT scale. | Enforced in `semantic.css` via `--density-multiplier` adjusting `--space-card-p`, `--space-grid-gap`, `--space-row-p`. | Compliant; ensure newly composed shells utilize semantic space variables instead of fixed padding. | Bind shell containers to `p-[var(--space-card-p)]` and `gap-[var(--space-grid-gap)]`. |
-| **Mobile Navigation** | Phone layout uses **floating bottom pill tab bar** (`BottomTabBar`, max 5 items), not stacked sidebar. | `app-shell.tsx` currently renders a top hamburger button opening an off-screen `<Sheet side="left">`. | Directly violates master brief mandate ("A phone layout is not the desktop layout stacked"). | Refactor shell foundation into modular responsive primitives (`SidebarCard`, `BottomNavPill`, `TopBar`). |
+*Full catalog with individual filenames, dimensions, and visual characteristics is preserved in [`docs/ui-reset/phase-7b2/01_VISUAL_REFERENCE_INVENTORY.md`](file:///Users/apple/Documents/Office/company/Orbito/OrbitoX%20Platform/docs/ui-reset/phase-7b2/01_VISUAL_REFERENCE_INVENTORY.md).*
 
 ---
 
-## 5. Canonical Token Hierarchy and Theme Ownership Contract
+## 4. Responsive Viewport Contract & Breakpoint Resolution (R2)
+
+### 4.1 Resolving the Breakpoint Conflict
+The Master Brief establishes four authoritative test viewports:
+1. `390 × 844` (Phone)
+2. `834 × 1194` (Tablet Portrait)
+3. `1194 × 834` (Tablet Landscape)
+4. `1440 × 900` (Desktop)
+
+Previously, defining desktop loosely as $> 1100\text{px}$ created an ambiguity where `1194 × 834` (width 1194px) would be misclassified as desktop instead of tablet landscape. Furthermore, portrait tablet specifies **bottom navigation**, not an optional drawer.
+
+### 4.2 Normative Breakpoint Specification
 
 ```mermaid
-graph TD
-  subgraph Layer1["Layer 1: Primitive Tokens (primitives.css)"]
-    P1["Raw Color Palettes (Zinc, Ocean, Emerald, Saffron...)"]
-    P2["Base Spacing Scale (--space-1 to --space-12)"]
-    P3["Typography Stacks (Plus Jakarta Sans, Noto Sans, JetBrains Mono)"]
-    P4["Base Radii (--radius-card: 28px, --radius-hero: 32px, --radius-full: 9999px)"]
-    P5["Motion Constants (--duration-normal: 200ms, easings)"]
-  end
+flowchart LR
+  Phone["Phone<br>Width < 640px<br>(Test: 390 × 844)<br>Floating Bottom Pill"]
+  TabPort["Tablet Portrait<br>640px ≤ Width < 1024px<br>(Test: 834 × 1194)<br>Bottom Navigation Bar"]
+  TabLand["Tablet Landscape<br>1024px ≤ Width < 1280px<br>(Test: 1194 × 834)<br>64px Icon Rail"]
+  Desktop["Desktop<br>Width ≥ 1280px<br>(Test: 1440 × 900)<br>Fixed 260px Sidebar Card"]
 
-  subgraph Layer2["Layer 2: Semantic Tokens (semantic.css)"]
-    S1["Theme Moods: [data-theme='dark'] vs [data-theme='light']"]
-    S2["8 Accent Presets: [data-accent='ocean' ... 'teal']"]
-    S3["Functional Status: Good (Green), Warning (Amber), Problem (Coral), Info (Blue)"]
-    S4["Density Multipliers: [data-density='standard' | 'relaxed' | 'compact']"]
-    S5["Reduced Motion Overrides: [data-motion='reduced'] -> 0ms duration"]
-  end
-
-  subgraph Layer3["Layer 3: Component Tokens (components.css)"]
-    C1["Layout Measurements (--sidebar-width: 260px, --header-height: 56px)"]
-    C2["Target Heights (--btn-height-md: 40px, --input-height-md: 40px)"]
-    C3["Stylesheet Drag Offsets ([data-drag-offset='2'...'80'])"]
-  end
-
-  Layer1 --> Layer2
-  Layer2 --> Layer3
+  Phone --> TabPort --> TabLand --> Desktop
 ```
 
-### 5.1 The Appearance Precedence Model
-To guarantee predictable visual states across multi-tenant and multi-persona environments, appearance attributes are resolved according to a strict five-tier precedence hierarchy:
+| Device Class | Tested Viewport | Width Range | Required Shell Navigation | Content Frame & Drawers |
+|---|---|---|---|---|
+| **Phone** | `390 × 844` | $< 640\text{ px}$ | **Floating Bottom Pill** (`BottomTabBar`), max 5 items, prominent center circle action in thumb zone. | Single column; `BottomSheet` with 75px dismissal for secondary "More" navigation and item editing. |
+| **Tablet Portrait** | `834 × 1194` | $640\text{ px} - 1023\text{ px}$ | **Bottom Navigation Bar** (anchored across full width). | Multi-column grid; centered modal dialogs. |
+| **Tablet Landscape** | `1194 × 834` | $1024\text{ px} - 1279\text{ px}$ | **Collapsible 64px Icon Rail** (`IconRail`). | Maximized operational canvas; 420px right slide-over `SideSheet`. |
+| **Desktop** | `1440 × 900` | $\ge 1280\text{ px}$ (Tailwind `xl`) | **Fixed 260px Sidebar Card** (`SidebarCard`). | Full multi-column grid; header breadcrumbs; split-panel detail views. |
+
+---
+
+## 5. Token Inconsistency Matrix: Specification vs. Current Implementation
+
+| Token Dimension | Specification | Current Implementation | Architectural Inconsistency | Resolution in 7B.2 |
+|---|---|---|---|---|
+| **UI Font Stack** | **Plus Jakarta Sans** (self-hosted, OFL) for UI; Noto Sans Devanagari and JetBrains Mono. | `apps/platform/src/app/fonts.ts` defines `fontPlusJakartaSans` but exports `fontInter = fontPlusJakartaSans`. | Alias creates developer confusion; assumes Inter is active. | Standardize exports to `fontPlusJakartaSans` and eliminate `fontInter` alias. |
+| **Theme Cookie** | Canonical 7-dimension cookie (`orbitox_appearance`) serialized as JSON. | `theme-script.ts` defines competing cookie `orbitox-theme` (`light\|dark`). | `app-shell.tsx` calls `toggleTheme()` which mutates `orbitox-theme`, bypassing DB persistence. | Deprecate `theme-script.ts` cookie writer. Connect shell toggles to canonical controller. |
+| **Auto Mode Semantics** | `theme: 'auto'` evaluates `prefers-color-scheme` to apply complete semantic tokens in both moods. | `semantic.css` lines 209–223 only overrides background and border in light mode for `[data-theme="auto"]`. | Under `auto` light mode, accents and status colors remain in dark mode colors! | Expand `@media (prefers-color-scheme)` in `semantic.css` to evaluate all 8 accents and status colors. |
+| **Legacy Theme Provider** | Zero client-side DOM `<style>` tag injection; zero `localStorage` overrides. | `packages/ui/src/legacy/components/theme-provider.tsx` injects `<style dangerouslySetInnerHTML>` and mutates `data-theme` on mount. | Causes severe FOUC and clobbers server-rendered `data-*` attributes. | Unmount `ThemeProvider` from `GlobalProviders`. Re-mount locally only on `(dashboard)/layout.tsx`. |
+| **Card Radii** | Card: **28 px**. Hero Card: **32 px**. Inner Rows: **16–22 px**. | `primitives.css` defines `--radius-card: 28px`, `--radius-hero: 32px`, `--radius-row: 18px`. | Modern components compliant; legacy components used ad-hoc classes. | Enforce standard radius variables across all shell primitives. |
+| **Control Geometry** | **Pills (999 px)** on all buttons, tabs, inputs, badges. Circles (44–48 px) for icon controls. | Modern components enforce `rounded-full`. | Compliant in modern components. | Ensure shell search, tabs, and avatar buttons strictly use `rounded-full`. |
+| **Accent Contrast** | 8 presets: Ocean, Emerald, Sunflower, Saffron, Ruby, Coral, Violet, Teal. Must pass $\ge 4.5:1$ AA in both moods. | Sunflower defines dark text `#0D0F12` (7.2:1); other 7 presets define white `#FFFFFF` ($\ge 4.5:1$). | Compliant; requires automated regression tests for `[data-theme="auto"]`. | Add unit test matrix verifying all 16 mood $\times$ accent states including auto mode. |
+| **Spacing Density** | Density adjusts spacing only: Relaxed (1.25×), Standard (1.0×), Compact (0.65×). Typography must NOT scale. | Enforced in `semantic.css` via `--density-multiplier` adjusting `--space-card-p`, `--space-grid-gap`, etc. | Compliant. | Ensure shell containers bind to `p-[var(--space-card-p)]` rather than static padding. |
+
+---
+
+## 6. Appearance Ownership & Precedence Redesign (R3)
+
+### 6.1 Sound Ownership Hierarchy
 
 ```mermaid
 flowchart TD
-  T1["1. Authenticated User Saved Preferences (PostgreSQL Database)"]
-  T2["2. Persona Shell Default Mood (Console/Staff = Dark; Customer/Owner/Public = Light)"]
-  T3["3. Unauthenticated Session Cookie (orbitox_appearance)"]
-  T4["4. System Media Query Fallback (prefers-color-scheme when theme = 'auto')"]
-  T5["5. Tenant Brand Override (Scoped strictly to [data-tenant-theme] diner surfaces)"]
+  subgraph PreferenceResolution["1. Preference Resolution (Server-Side)"]
+    Tier1["Tier 1: Authenticated User Preference (Database Record)<br>Authoritative for logged-in operators and customer users"]
+    Tier2["Tier 2: Validated Guest Preference / Last-Known Cache (orbitox_appearance Cookie)<br>Used only for guests or pre-hydration fallback; NEVER overrides DB"]
+    Tier3["Tier 3: Persona Shell Default Mood<br>Console & Staff = 'dark'; Customer, Owner, Public = 'light'"]
 
-  T1 -->|Overrides| T2
-  T2 -->|Overrides| T3
-  T3 -->|Overrides| T4
-  T5 -.->|Isolated Override| S["Tenant-Owned Diner & Logo Surfaces ONLY"]
+    Tier1 -->|Not authenticated| Tier2
+    Tier2 -->|No cookie present| Tier3
+  end
+
+  subgraph ModeResolution["2. Mode Resolution (theme: 'auto')"]
+    AutoCheck{"Selected Theme == 'auto'?"}
+    MediaQuery["Evaluate prefers-color-scheme<br>Light -> Effective Light Mood<br>Dark -> Effective Dark Mood"]
+    DirectMood["Use Explicit Mood<br>theme = 'light' or 'dark'"]
+
+    Tier1 --> AutoCheck
+    Tier2 --> AutoCheck
+    Tier3 --> AutoCheck
+    AutoCheck -->|Yes| MediaQuery
+    AutoCheck -->|No| DirectMood
+  end
+
+  subgraph TenantBranding["3. Independent Tenant Branding"]
+    BrandOverride["[data-tenant-theme] Overrides<br>Scoped STRICTLY to tenant-owned diner & logo surfaces.<br>NEVER pollutes OrbitoX platform or console chrome."]
+  end
 ```
 
-1. **Tier 1 (Authoritative):** Authenticated user database record (`appearanceTheme`, `appearanceAccent`, `appearanceDensity`, `appearanceRadius`, etc.). Evaluated on the server during session extraction.
-2. **Tier 2 (Persona Shell Default):** If the user has not explicitly configured a personal override (`theme = 'auto'`), the persona shell supplies the default mood:
-   - Operator Console (`/console/*`) $\to$ Default: `dark`
-   - Staff Operational Interfaces (`/kds`, `/dine/*`) $\to$ Default: `dark`
-   - Customer Workspace (`/workspace/*`) $\to$ Default: `light`
-   - Product Owner Administration (`/admin/restaurant`, `/hms`) $\to$ Default: `light`
-   - Public & Authentication (`/platform/login`, `/onboarding`) $\to$ Default: `light`
-3. **Tier 3 (Unauthenticated Cookie):** Fallback for guest sessions or pre-login workflows (`orbitox_appearance`).
-4. **Tier 4 (System Media Query):** When `theme = 'auto'` and no explicit user/persona rule is active, standard CSS `@media (prefers-color-scheme)` rules apply.
-5. **Tier 5 (Tenant Brand Isolation):** Tenant brand colors (e.g. restaurant brand orange in diner templates) are scoped strictly under `[data-tenant-theme]` selectors generated via `applyTenantTheme()`. **Tenant brand styles are cryptographically validated, pass WCAG contrast checks, and can NEVER pollute OrbitoX platform or operator console surfaces.**
+### 6.2 Mode Resolution & Complete Auto-Mode Calibration
+When `theme: 'auto'` is selected, `prefers-color-scheme` resolves the effective mood. To fix the audit finding where `[data-theme="auto"]` only partially mapped tokens in `semantic.css`, the revised architecture defines complete semantic tokens for all 8 accents and status colors under automatic resolution:
 
----
+```css
+/* Complete Semantic Auto Mode Mapping */
+@media (prefers-color-scheme: light) {
+  [data-theme="auto"] {
+    --color-bg: #EEF1F5;
+    --color-bg-gradient: linear-gradient(180deg, #EEF1F5 0%, #E3E7EE 100%);
+    --color-surface: #FFFFFF;
+    --color-surface-raised: #F8FAFC;
+    --color-border: #E2E8F0;
+    --color-border-subtle: #F1F5F9;
+    --color-text: #14161A;
+    --color-text-muted: #4B5563;
+    --color-text-subtle: #4B5563;
+    --color-page-glow: none;
+    color-scheme: light;
 
-## 6. Server-Authoritative Appearance-Resolution Sequence
+    /* Light Status Tokens */
+    --status-good-bg: rgba(6, 95, 70, 0.08);
+    --status-good-fg: #065F46;
+    --status-warning-bg: rgba(120, 53, 15, 0.08);
+    --status-warning-fg: #78350F;
+    --status-problem-bg: rgba(159, 18, 57, 0.08);
+    --status-problem-fg: #9F1239;
+    --status-info-bg: rgba(30, 64, 175, 0.08);
+    --status-info-fg: #1E40AF;
+  }
 
-```mermaid
-sequenceDiagram
-  autonumber
-  actor User as Browser / Client
-  participant Edge as Next.js Middleware
-  participant Server as Root Server Layout (layout.tsx)
-  participant DB as PostgreSQL (Prisma)
-  participant Shell as Persona Application Shell
-
-  User->>Edge: HTTP GET /console/overview (Cookie: orbitox_operator_session, orbitox_appearance)
-  Edge->>Edge: Authenticate session token & classify route
-  Edge->>Server: Forward request with validated headers
-
-  alt Operator Session Valid
-    Server->>DB: getOperatorAppearance(operatorId)
-    DB-->>Server: AppearancePreferences { theme: 'dark', accent: 'ocean', radius: 28... }
-  else Customer Session Valid
-    Server->>DB: getCustomerAppearance(userId)
-    DB-->>Server: AppearancePreferences { theme: 'light', accent: 'emerald', radius: 28... }
-  else Unauthenticated / Guest
-    Server->>Server: parseAppearanceCookie(cookieHeader)
-    Server-->>Server: Parsed AppearancePreferences or Persona Default
-  end
-
-  Server->>Server: Generate <html data-theme="..." data-accent="..." data-density="..." data-radius="...">
-  Server->>Shell: Render Persona Shell with zero inline styles
-  Shell-->>User: Initial HTML Response with pre-applied data-* attributes
-
-  Note over User: Instant visual render. ZERO FOUC.<br/>No client script execution needed to establish theme.<br/>No localStorage override.
-```
-
----
-
-## 7. Provider Hierarchy: Before vs. After
-
-### 7.1 Existing Flawed Provider Topology
-
-```mermaid
-graph TD
-  Root["RootLayout (app/layout.tsx)<br>• Reads DB / Cookie Appearance<br>• Injects data-* attributes into html"]
-
-  subgraph CurrentProviders["GlobalProviders (app/providers.tsx)"]
-    TP["Legacy ThemeProvider (initialThemeId='cosmic-obsidian')<br>❌ Listens to localStorage<br>❌ Injects inline <style> via dangerouslySetInnerHTML<br>❌ Mutates document data-theme on client mount"]
-    Toast["ToastProvider (Notification Queue)"]
-    AdminP1["AdminProvider (app/admin/data/admin-context.tsx)<br>❌ Mounts prototype admin state for entire app"]
-  end
-
-  subgraph ConsoleGroup["Console Route Group (app/(console)/layout.tsx)"]
-    AdminP2["AdminProvider (DUPLICATE)<br>❌ Mounts duplicate admin state a second time"]
-  end
-
-  Root --> TP
-  TP --> Toast
-  Toast --> AdminP1
-  AdminP1 --> ConsoleGroup
-  ConsoleGroup --> AdminP2
-  AdminP2 --> Page["(console)/console/overview/page.tsx"]
-```
-
-### 7.2 Target Clean Architecture
-
-```mermaid
-graph TD
-  Root["RootLayout (app/layout.tsx) [Server Component]<br>• Resolves authenticated user / persona appearance<br>• Injects data-theme, data-accent, data-density, data-radius onto html<br>• Zero inline style or script tags"]
-
-  subgraph LeanGlobal["GlobalProviders (app/providers.tsx) [Client Component]"]
-    Toast["ToastProvider<br>• Minimal notification event emitter and queue<br>• Zero theme state, zero admin state"]
-  end
-
-  subgraph PersonaSelection["Persona Route Group Layer"]
-    ConsoleShell["(console)/layout.tsx<br>• Operator Console Shell<br>• Real Telemetry Providers"]
-    CustomerShell["(workspace)/layout.tsx (Future 7D)<br>• Customer Workspace Shell<br>• Org Context Provider"]
-    OwnerShell["(admin)/restaurant/layout.tsx (Future 7F)<br>• Product Owner Shell<br>• Branch Context Provider"]
-    StaffShell["(ops)/layout.tsx (Future 7F)<br>• Staff Operational Shell<br>• Station / PIN Auth Provider"]
-    PublicShell["(auth)/layout.tsx<br>• Public & Auth Shell<br>• Zero ambient providers"]
-  end
-
-  Root --> LeanGlobal
-  LeanGlobal --> PersonaSelection
-  ConsoleShell --> ConsolePage["Console Pages (/console/*)"]
+  /* Accent Light Mode Overrides under Auto */
+  [data-theme="auto"][data-accent="ocean"] {
+    --color-accent: #2F5BD8;
+    --color-accent-fg: #FFFFFF;
+    --color-accent-hover: #1E40AF;
+    --shadow-accent-glow: 0 18px 40px -18px rgba(47, 91, 216, 0.35);
+  }
+  /* (All 8 presets calibrated for light mode under auto) */
+}
 ```
 
 ---
 
-## 8. Five Persona Shell Architecture
+## 7. Provider Hierarchy & Safe Legacy Isolation (R4)
+
+### 7.1 Full Consumer Inventory
+
+| Provider / Utility | Location | Current Consumers | Impact of Removal from Global Root | Safe Isolation Strategy |
+|---|---|---|---|---|
+| `useTheme()` | `packages/ui/src/legacy/components/theme-provider.tsx` | Exactly 1 file: `apps/platform/src/app/(dashboard)/layout.tsx` | Would crash `(dashboard)` if removed without replacement. | Wrap `ThemeProvider` locally around `(dashboard)/layout.tsx`. |
+| `ThemeProvider` | `packages/ui/src/legacy/components/theme-provider.tsx` | `apps/platform/src/app/providers.tsx` (global root) & `(dashboard)/layout.tsx` | Removing from `providers.tsx` stops client DOM `<style>` pollution and hydration warnings. | Remove from `providers.tsx`; keep local to `(dashboard)/layout.tsx`. |
+| `AdminProvider` | `apps/platform/src/app/(console)/admin/data/admin-context.tsx` | `providers.tsx` (global), `(console)/layout.tsx` (duplicate), and legacy `/admin/*` prototype routes. | Modern `/console/*` routes do not use it; only legacy `/admin/*` pages consume `useAdmin()`. | Remove from `providers.tsx` and `(console)/layout.tsx`. Mount locally on `/admin/*` route group. |
+| `toggleTheme()` | `packages/ui/src/tokens/theme-script.ts` | `packages/ui/src/components/app-shell.tsx` | Writes competing `orbitox-theme` cookie. | Refactor `AppShell` theme toggle to call canonical `AppearancePersistenceController`. |
+| `--ui-*` variables | `packages/ui/src/styles/theme.css` | Legacy `/admin/*` prototype pages and `platform/connect/connect.module.css`. | Variables are statically defined in `theme.css`; unmounting `ThemeProvider` does NOT remove static fallbacks. | Statically retained in `theme.css` so legacy pages render cleanly. |
+
+### 7.2 Consolidated Provider Architecture
 
 ```mermaid
 graph TD
-  DS["@orbitox-io/ui (Shared Component & Token Engine)"]
+  Root["RootLayout (app/layout.tsx) [Server Component]<br>• Resolves Authenticated User / Persona Appearance<br>• Injects data-theme, data-accent, data-density onto html element<br>• Zero inline style or script tags"]
 
-  subgraph Shells["Five Specialized Persona Shell Compositions"]
-    S1["1. Public & Auth Shell<br>• Mood: Light<br>• Centered card layout<br>• Minimal brand header<br>• Single-column forms"]
-    S2["2. Operator Console Shell<br>• Mood: Dark (#0D0F12)<br>• 260px Sidebar Card (Desktop)<br>• Collapsible Icon-Rail (Tablet Land)<br>• BottomTabBar Pill (Tablet Port & Phone)"]
-    S3["3. Customer Workspace Shell<br>• Mood: Light (#EEF1F5)<br>• Top horizontal navbar<br>• Org & project context switcher<br>• Billing status badge"]
-    S4["4. Product Owner Workspace Shell<br>• Mood: Light<br>• Store & branch switcher<br>• Master-detail side sheet<br>• Mobile BottomSheet drawer"]
-    S5["5. Staff Operational Workspace Shell<br>• Mood: Dark (High Contrast)<br>• Touch targets >= 52px<br>• Kitchen ticket stream (Landscape)<br>• Waiter table grid (Phone)"]
+  subgraph Global["GlobalProviders (app/providers.tsx) [Client Component]"]
+    Toast["ToastProvider<br>• Notification queue only<br>• Zero theme state, zero admin state"]
   end
 
-  DS --> S1
-  DS --> S2
-  DS --> S3
-  DS --> S4
-  DS --> S5
+  subgraph PersonaGroups["Persona Route Groups"]
+    Console["(console)/layout.tsx<br>• Modern Operator Console Shell<br>• Connected to AppearancePersistenceController"]
+    LegacyAdmin["(console)/admin/layout.tsx<br>• AdminProvider (Scoped strictly to legacy prototype)"]
+    LegacyDashboard["(dashboard)/layout.tsx<br>• ThemeProvider (Scoped strictly to legacy dashboard)"]
+    Customer["(workspace)/layout.tsx (Future 7D)<br>• Customer Workspace Shell"]
+    Public["(auth)/layout.tsx<br>• Public & Auth Shell"]
+  end
+
+  Root --> Global
+  Global --> Console
+  Global --> LegacyAdmin
+  Global --> LegacyDashboard
+  Global --> Customer
+  Global --> Public
 ```
 
-### 8.1 Detailed Shell Specifications
+---
+
+## 8. Five Persona Shell Architecture (Clean Structural Scaffolding) (R5)
+
+To maintain strict architectural boundaries, persona shells provide **structural composition slots only**. They do not contain domain operational logic (kitchen ticket columns, POS registers, and waiter table grids belong to Stage 7F).
+
+```mermaid
+graph TD
+  DS["@orbitox-io/ui Shared Shell Primitives"]
+
+  subgraph Primitives["Reusable Structural Primitives"]
+    SC["SidebarCard (260px Fixed Card, Collapsible)"]
+    IR["IconRail (64px Collapsible Tablet Rail)"]
+    TB["TopBar (Breadcrumbs, Search Slot, User Profile Menu)"]
+    BNP["BottomNavPill (Floating Bottom Navigation, Max 5 Items)"]
+    MNS["MoreNavSheet (BottomSheet Overflow for Secondary Items)"]
+    SCF["ShellContentFrame (Safe-area padding, Zero horizontal scroll)"]
+  end
+
+  subgraph Shells["Five Persona Shell Compositions"]
+    S1["1. Public & Auth Shell<br>• Minimal header + centered card slot<br>• Zero sidebar, zero bottom pill"]
+    S2["2. Operator Console Shell<br>• Desktop: SidebarCard + TopBar<br>• Tablet Land: IconRail<br>• Phone: BottomNavPill + MoreNavSheet"]
+    S3["3. Customer Workspace Shell<br>• Desktop: TopBar + Org Switcher + Horizontal Pills<br>• Phone: BottomNavPill"]
+    S4["4. Product Owner Workspace Shell<br>• Desktop: SidebarCard + Branch Switcher slot<br>• Phone: BottomNavPill + BottomSheet edit slot"]
+    S5["5. Staff Operational Workspace Shell<br>• Tablet Land: Maximized canvas, touch targets >= 52px<br>• Phone: Touch-first full screen"]
+  end
+
+  DS --> Primitives
+  Primitives --> Shells
+```
+
+### 8.1 Structural Slot Specifications
 
 #### 1. Public & Authentication Shell (`PublicAuthShell`)
-- **Default Mood:** Light (`#EEF1F5` background gradient, `#FFFFFF` cards).
-- **Target Surfaces:** `/platform/login` (Operator MFA gate), `/onboarding` (Wizard F1–F5), future customer signup.
-- **Layout Architecture:**
-  - Minimal sticky brand header with OrbitoX logo and security badge.
-  - Centered single-column container (`max-w-md` or `max-w-xl`).
-  - Zero sidebar navigation, zero bottom pill bar.
-  - Accessible step-by-step progression (`Stepper`) on multi-step flows (F1 $\to$ F5).
-  - Explicit operator vs. customer separation: `/platform/login` strictly rejects customer logins.
+- **Default Mood:** Light.
+- **Structural Slots:** `headerSlot` (OrbitoX logo + back link), `children` (centered card form container, `max-w-md` or `max-w-lg`).
+- **Navigation:** None. No sidebar, no bottom pill.
 
 #### 2. Operator Console Shell (`ConsoleShell`)
-- **Default Mood:** Dark (`#0D0F12` base, `#14171C` surface, `#1B1F25` raised).
-- **Target Surfaces:** All `/console/*` routes (Overview, Organizations, Tenants, Provisioning, Billing, Data Rights, Security & Keys, Audit, Appearance).
-- **Layout Architecture:**
-  - **Desktop (> 1100 px):** Fixed 260px Sidebar Card (`SidebarCard`), main platform links, installed products group (`RestaurantOS`, `HospitalOS`), and bottom operator status dock (`PlatformGovernanceDock`).
-  - **Tablet Landscape (1024–1100 px):** Collapsible 64px icon rail to preserve screen width for telemetry charts.
-  - **Tablet Portrait (640–1024 px) & Phone (< 640 px):** Floating bottom navigation pill (`BottomTabBar`) with 5 primary destinations (`Overview`, `Tenants`, `Orgs`, `Audit`, `More`). Clicking "More" opens a `BottomSheet` containing secondary platform routes.
-  - **Header:** Sticky top bar with breadcrumb trail, environment pill (`STAGING` / `PRODUCTION`), and operator avatar menu.
+- **Default Mood:** Dark (`#0D0F12`).
+- **Structural Slots:**
+  - `sidebarSlot`: 260px `SidebarCard` on desktop ($\ge 1280\text{px}$).
+  - `railSlot`: 64px `IconRail` on tablet landscape (`1024–1279px`).
+  - `bottomNavSlot`: `BottomNavPill` on phone ($< 640\text{px}$) and tablet portrait (`640–1023px`).
+  - `topBarSlot`: `TopBar` with breadcrumbs, environment badge (`STAGING` / `PROD`), and operator profile menu.
+  - `moreMenuSlot`: `MoreNavSheet` triggered when the 5th mobile tab ("More") is selected.
 
 #### 3. Customer Workspace Shell (`CustomerWorkspaceShell`)
-- **Default Mood:** Light (`#EEF1F5` gradient, white cards with `0 30px 60px -44px` drop shadow).
-- **Target Surfaces:** Future `/workspace/*` routes (Screen `A2`, `U1`, `U2`, `D8`).
-- **Layout Architecture:**
-  - **Desktop (> 1100 px):** Top horizontal navigation bar.
-    - Left: OrbitoX logo + Organization & Project Switcher dropdown.
-    - Center: Horizontal navigation pill tabs (`Projects`, `Usage`, `Billing`, `Team`, `API Keys`).
-    - Right: Subscription tier badge (`PRO` / `ENTERPRISE`), documentation shortcut, and user profile menu.
-  - **Mobile (< 640 px):** Header contains active organization indicator; bottom pill bar (`BottomTabBar`) provides one-tap switching between workspace views.
+- **Default Mood:** Light.
+- **Structural Slots:**
+  - `topBarSlot`: Horizontal bar containing logo, `orgSwitcherSlot`, navigation pill tabs, and `userMenuSlot`.
+  - `bottomNavSlot`: `BottomNavPill` on phone viewports.
+  - `children`: `ShellContentFrame` with `max-w-7xl` centered container.
 
 #### 4. Product Owner Workspace Shell (`ProductOwnerShell`)
 - **Default Mood:** Light.
-- **Target Surfaces:** Future `/admin/restaurant` (Screens `R0–R6`, `D1–D3`) and `/hms` administration.
-- **Layout Architecture:**
-  - Store, branch, and facility context selector (`BranchSwitcher`) docked in header or top of sidebar.
-  - Multi-tab operational settings (`Tabs`) for Menu, Floors/Tables, Staff, GST, and Payments.
-  - Master-detail editing: Desktop utilizes right-hand slide-over sheets (`SideSheet`); mobile phone utilizes touch-draggable bottom drawers (`BottomSheet`).
+- **Structural Slots:**
+  - `contextSwitcherSlot`: Branch/facility selector (`BranchSwitcher`).
+  - `sidebarSlot`: Reusable sidebar card for F&B admin routes.
+  - `detailSheetSlot`: `SideSheet` (desktop) or `BottomSheet` (phone) for master-detail editing.
 
 #### 5. Staff Operational Workspace Shell (`StaffOperationalShell`)
-- **Default Mood:** Dark, high contrast (`#0D0F12` with vibrant status indicators).
-- **Target Surfaces:** Kitchen Display System (`/kds`, Screen `S1`), Waiter Phone (`/dine/*`, Screens `D4`, `D5`), Host Stand (`D9`), POS Checkout (`S2`).
-- **Layout Architecture:**
-  - **Kitchen / POS (Tablet Landscape 2388 × 1668):** Full-screen zero-chrome grid layout. No sidebar, no header clutter. Large touch targets ($\ge$52px) for wet/busy operational hands. High-visibility prep countdown timers (`RingTimer`).
-  - **Waiter Phone (Phone 780 × 1688):** Floating bottom tab bar (`BottomTabBar`) for rapid switching between "My Tables", "Active Orders", and "Punch Ticket". Zero horizontal page overflow.
+- **Default Mood:** Dark, high contrast.
+- **Structural Slots:**
+  - `statusBarSlot`: Live order countdown and station presence banner.
+  - `contentSlot`: Full-canvas operational area with touch targets $\ge 52\text{px}$.
+  - `actionsSlot`: Fixed primary action bar in thumb reach.
 
 ---
 
-## 9. Responsive Navigation Matrix
+## 9. AppShell Compatibility Contract & Decomposition (R6)
 
-| Viewport Class | Breakpoint Range | Navigation Pattern | Primary Action Placement | Detail / Edit Surface | Overflow & Secondary Links |
-|---|---|---|---|---|---|
-| **Phone** | $< 640\text{ px}$ | **Floating Bottom Pill Bar** (`BottomTabBar`) | Fixed center circle in thumb zone ($-my-3$ offset) | Touch-draggable `BottomSheet` with 75px dismissal | Secondary items placed under 5th tab ("More") opening `BottomSheet` |
-| **Tablet Portrait** | $640\text{ px} - 1024\text{ px}$ | **Bottom Navigation Bar** or Collapsed Rail | Bottom right or Top bar | Centered Modal Dialog or Wide `BottomSheet` | Dropdown menu or side drawer |
-| **Tablet Landscape** | $1024\text{ px} - 1100\text{ px}$ | **Collapsible Icon Rail** (64px width) | Top right action button | 420px Right Slide-over `SideSheet` | Popover flyout menu on icon hover/click |
-| **Desktop** | $> 1100\text{ px}$ | **Fixed 260px Sidebar Card** (`SidebarCard`) | Top right header bar | Side-by-side split view or 480px `SideSheet` | Full vertical menu with grouped section dividers |
+### 9.1 Decomposed Primitives in `@orbitox-io/ui`
+To allow existing consumers to migrate without breakage while enabling clean persona compositions, `AppShell` is decomposed into modular primitives:
 
-### 9.1 Touch Target & Safe Area Guarantees
-1. **WCAG 2.2 AA Hit-Box Targets:** All interactive elements on mobile and tablet enforce a minimum dimension of **44 × 44 px** (standard controls) or **52 × 52 px** (operational kitchen tickets and POS numpads).
-2. **Safe-Area Insets:** Floating bottom tab bars and sheets explicitly bind to CSS `env(safe-area-inset-bottom)` and `env(safe-area-inset-top)` to prevent obstruction by home indicator bars on iOS and Android devices.
-3. **Keyboard Accessibility:** All navigation items render semantic `<a>` or `<button>` tags with visible focus rings (`--color-focus-ring`). Tabbing cycles smoothly through destinations without focus trapping outside modal overlays.
+1. **`SidebarCard` (`packages/ui/src/components/sidebar-card.tsx`):**
+   - 260px width card (`var(--sidebar-width)`) with 28px card radius, border, and collapse button.
+   - Accepts `header`, `navItems`, `pluginSection`, `bottomCard`.
+2. **`IconRail` (`packages/ui/src/components/icon-rail.tsx`):**
+   - 64px width rail (`var(--sidebar-collapsed-width)`) for tablet landscape viewports.
+   - Renders centered icons with accessible tooltips.
+3. **`TopBar` (`packages/ui/src/components/top-bar.tsx`):**
+   - 56px height header (`var(--header-height)`) with breadcrumb slot, appearance toggle, and user avatar.
+4. **`BottomNavPill` (`packages/ui/src/components/bottom-nav-pill.tsx`):**
+   - Wrapper around `BottomTabBar` enforcing max 5 items and primary center action.
+5. **`MoreNavSheet` (`packages/ui/src/components/more-nav-sheet.tsx`):**
+   - Draggable `BottomSheet` displaying overflow navigation items on mobile.
+6. **`ShellContentFrame` (`packages/ui/src/components/shell-content-frame.tsx`):**
+   - Content container enforcing `overflow-x-hidden`, safe-area insets (`env(safe-area-inset-*)`), and semantic density padding.
+
+### 9.2 Backward-Compatible `AppShell` Adapter
+`export function AppShell(props: AppShellProps)` remains exported from `@orbitox-io/ui`. Internally, it acts as a responsive adapter:
+- When viewport is $\ge 1280\text{px}$: renders `SidebarCard` + `TopBar` + `ShellContentFrame`.
+- When viewport is $1024\text{px} - 1279\text{px}$: renders `IconRail` + `TopBar` + `ShellContentFrame`.
+- When viewport is $640\text{px} - 1023\text{px}$: renders `TopBar` + `BottomNavPill` + `ShellContentFrame`.
+- When viewport is $< 640\text{px}$: renders `BottomNavPill` + `MoreNavSheet` + `ShellContentFrame` (zero stacked desktop sidebar).
+
+### 9.3 Elimination of Fake Destinations (`href="#"`)
+All navigation items in `NavItem` must provide an explicit destination:
+```ts
+export interface NavItem {
+  id: string;
+  label: string;
+  href: string; // Mandatory valid path or route string
+  icon?: React.ReactNode;
+  active?: boolean;
+  badge?: React.ReactNode;
+  onClick?: () => void;
+}
+```
+If an item triggers an action rather than a route (e.g. "More" sheet trigger), it renders a semantic `<button type="button">`, never an `<a href="#">`.
+
+### 9.4 Single Appearance Persistence Owner
+The theme toggle in `TopBar` and `AppShell` is decoupled from `theme-script.ts` and wired to the canonical `AppearancePersistenceController`:
+```ts
+// Canonical Shell Theme Toggle
+const toggleTheme = () => {
+  const nextTheme = currentTheme === 'dark' ? 'light' : 'dark';
+  appearanceController.updatePreferences({ theme: nextTheme });
+};
+```
+This guarantees that toggling theme from the shell updates PostgreSQL, sets the authoritative `orbitox_appearance` cookie, and notifies subscribers through the single-writer queue.
 
 ---
 
-## 10. Route-to-Persona Mapping (Full 67-Route Census)
+## 10. Route-to-Persona Mapping (All 67 Routes)
 
-Every existing route in `apps/platform/src/app` is mapped to its target persona shell:
-
-| Route Path | Current File Location | Target Persona Shell | Target Visual Mood | Status & Stage |
+| Route Group | Path | Persona Shell | Default Mood | Target Navigation Model |
 |---|---|---|---|---|
-| `/` | `src/app/(dashboard)/page.tsx` | *Root Session Dispatcher* | Contextual | Policy approved; physical rewrite deferred |
-| `/platform/login` | `src/app/(auth)/platform/login/page.tsx` | **Public & Auth Shell** | Light | Active Operator Auth Barrier |
-| `/onboarding/*` (F1–F5) | `src/app/(onboarding)/*` | **Public & Auth Shell** | Light | Active Onboarding Flow |
-| `/console` | `src/app/(console)/console/page.tsx` | **Operator Console Shell** | Dark | Redirect to `/console/overview` |
-| `/console/overview` | `src/app/(console)/console/overview/page.tsx` | **Operator Console Shell** | Dark | Core Telemetry Dashboard (Screen A1) |
-| `/console/organizations` | `src/app/(console)/console/organizations/page.tsx` | **Operator Console Shell** | Dark | Enterprise Org Ledger (Screen C1) |
-| `/console/tenants` | `src/app/(console)/console/tenants/page.tsx` | **Operator Console Shell** | Dark | Multi-Tenant Management (Screen C2) |
-| `/console/tenants/[id]` | `src/app/(console)/console/tenants/[id]/page.tsx` | **Operator Console Shell** | Dark | Tenant Detail & Suspend (Screen C2) |
-| `/console/provisioning` | `src/app/(console)/console/provisioning/page.tsx` | **Operator Console Shell** | Dark | Saga Pipeline Monitor (Screen C4) |
-| `/console/billing` | `src/app/(console)/console/billing/page.tsx` | **Operator Console Shell** | Dark | Platform Billing Reconciliation (Screen C3) |
-| `/console/data-rights` | `src/app/(console)/console/data-rights/page.tsx` | **Operator Console Shell** | Dark | DSR Export & Erasure (Screen C5) |
-| `/console/security` | `src/app/(console)/console/security/page.tsx` | **Operator Console Shell** | Dark | Ed25519 Keys & Tokens (Screen C6) |
-| `/console/audit` | `src/app/(console)/console/audit/page.tsx` | **Operator Console Shell** | Dark | Compliance Audit Log |
-| `/console/settings/appearance` | `src/app/(console)/console/settings/appearance/page.tsx` | **Operator Console Shell** | Dark | Interactive Appearance Settings (Screen A3) |
-| `/console/design-system` | `src/app/(console)/console/design-system/page.tsx` | **Operator Console Shell** | Dark | Design System Component Showcase |
-| `/admin/*` (16 routes) | `src/app/(console)/admin/*` | *Legacy Admin Prototype* | Dark | Deprecated prototype; redirects to `/console` |
-| `/workspace/*` (Future) | Target Stage 7D | **Customer Workspace Shell** | Light | Enterprise Customer Portal (Screen A2) |
-| `/admin/restaurant` (Future) | Target Stage 7F | **Product Owner Shell** | Light | RestaurantOS Management (Screens R0–R6) |
-| `/kds` | Target Stage 7F | **Staff Operational Shell** | Dark | Kitchen Display System (Screen S1) |
-| `/dine/*` | Target Stage 7F | **Staff Operational Shell** | Dark / Tenant | Waiter & Diner Service (Screens D4, D5) |
-| `/hms/*` | `src/app/(hospital)/hms/*` | **Product Owner / Staff** | Contextual | HospitalOS Clinical System |
-
----
-
-## 11. Shared Component and Shell File Disposition Ledger
-
-To avoid creating five divergent implementations of shell scaffolding, the architecture establishes a **composition-based shell design**:
-
-```mermaid
-graph TD
-  subgraph Primitives["Reusable Shell Primitives (@orbitox-io/ui)"]
-    SC["SidebarCard (260px Card, Collapse Toggle)"]
-    TB["TopBar (Breadcrumbs, Search, User Menu)"]
-    BP["BottomNavPill (Floating BottomTabBar, Max 5 Items)"]
-    MS["MoreNavSheet (BottomSheet Overflow Menu)"]
-    IR["IconRail (64px Tablet Landscape Rail)"]
-  end
-
-  subgraph Compositions["Persona Shell Compositions"]
-    CS["ConsoleShell (SC + TB + BP + MS)"]
-    CWS["CustomerWorkspaceShell (TB + Horizontal Pills + BP)"]
-    POS["ProductOwnerShell (SC + BranchSwitcher + SideSheet)"]
-    SOS["StaffOperationalShell (FullCanvas + LargeTouchTargets)"]
-    PAS["PublicAuthShell (CenteredContainer + MinimalHeader)"]
-  end
-
-  Primitives --> Compositions
-```
-
-### 11.1 File Disposition Ledger
-
-| File Path | Action | Rationale | Target Replacement |
-|---|---|---|---|
-| `packages/ui/src/components/app-shell.tsx` | **REFACTOR** | Currently monolithic with mobile hamburger sheet and legacy theme toggle. | Decompose into shared primitives (`SidebarCard`, `TopBar`, `IconRail`) while keeping `AppShell` as the default backward-compatible wrapper. |
-| `packages/ui/src/components/bottom-tab-bar.tsx` | **RETAIN & EXTEND** | Verified in 7B.1; provides the required 44px pill navigation for mobile viewports. | Extend with badge support and active route link integration. |
-| `packages/ui/src/components/bottom-sheet.tsx` | **RETAIN** | Hardened in 7B.1 with pointer capture, 75px dismissal, and stylesheet-only motion. | Retain as mobile detail/edit surface and "More" overflow container. |
-| `packages/ui/src/legacy/components/theme-provider.tsx` | **DEPRECATE / ISOLATE** | Injects inline `<style>` and mutates `localStorage`. | Remove from root `GlobalProviders`. Keep isolated in legacy folder until legacy pages retire. |
-| `packages/ui/src/tokens/theme-script.ts` | **DEPRECATE** | Writes competing `orbitox-theme` cookie. | Remove cookie-writing side effect; export pure types or alias to `appearance-service`. |
-| `apps/platform/src/app/providers.tsx` | **REFACTOR** | Contains duplicate `AdminProvider` and legacy `ThemeProvider`. | Clean to lean `GlobalProviders` mounting only `ToastProvider`. |
-| `apps/platform/src/app/(console)/layout.tsx` | **REFACTOR** | Mounts duplicate `AdminProvider`. | Refactor to consume modern `ConsoleShell` composition. |
-| `apps/platform/src/app/fonts.ts` | **REFACTOR** | Contains `fontInter = fontPlusJakartaSans` alias. | Standardize to `fontPlusJakartaSans` export. |
-
----
-
-## 12. Migration Sequence & Dependency Ordering
-
-```mermaid
-flowchart TD
-  Step1["Step 1: Token & Font Cleanup<br>• Eliminate fontInter alias in fonts.ts<br>• Deprecate competing orbitox-theme cookie in theme-script.ts"]
-  Step2["Step 2: Provider Hierarchy Lean Decoupling<br>• Strip ThemeProvider from app/providers.tsx<br>• Strip global AdminProvider from app/providers.tsx<br>• Ensure zero hydration errors and zero FOUC"]
-  Step3["Step 3: Shell Primitives & Composition in @orbitox-io/ui<br>• Decompose AppShell into SidebarCard, TopBar, IconRail<br>• Integrate BottomTabBar for mobile (<640px) viewports<br>• Add Storybook stories for all 5 persona shells across 4 breakpoints"]
-  Step4["Step 4: Platform Console Shell Wiring<br>• Wire ConsoleShell into apps/platform (console)/layout.tsx<br>• Connect real appearance controller to header toggle (no cookie conflict)<br>• Retain all existing console page test coverage"]
-  Step5["Step 5: Full Verification & CI Execution<br>• Run 16 accent x mood token tests<br>• Run 4-viewport responsive checks (390, 834, 1194, 1440)<br>• Run full 14-job GitHub Actions CI suite"]
-
-  Step1 --> Step2 --> Step3 --> Step4 --> Step5
-```
-
----
-
-## 13. Security, Tenancy and Accessibility Risk Register
-
-| Risk ID | Category | Description | Mitigation Strategy |
-|---|---|---|---|
-| **R-01** | Security / Auth | Accidental mixing of operator and customer sign-in destinations. | `/platform/login` strictly rejects customer logins. Separate customer login flow is required before Stage 7D. |
-| **R-02** | Multi-Tenancy | Tenant brand color injecting hostile CSS into platform UI. | Tenant theme styles are compiled strictly through `applyTenantTheme()` with regex validation and contrast verification. Never applied to operator surfaces. |
-| **R-03** | Performance / UX | Flash of incorrect theme (FOUC) during page load. | Root server component injects `data-*` attributes directly onto `<html>` before HTML streaming. Zero client script DOM mutation. |
-| **R-04** | Accessibility | Touch targets $< 44\text{ px}$ on mobile or $< 52\text{ px}$ in kitchen/POS. | Automated Axe WCAG 2.2 AA tests in Playwright verify bounding boxes on all buttons, tabs, and inputs across all viewports. |
-| **R-05** | State Management | Stale `AdminProvider` state clobbering modern console routes. | `AdminProvider` removed from global tree; modern console pages fetch authoritative data via React Server Components and typed APIs. |
-| **R-06** | Responsive Layout | Horizontal page overflow on mobile ($390\text{ px}$) due to wide desktop tables. | Tables containerized in `overflow-x-auto` cards; phone layouts prioritize card lists over dense tables. |
+| **Root** | `/` | *Session Dispatcher* | Contextual | Policy approved; physical rewrite deferred |
+| **Auth** | `/platform/login` | **Public & Auth Shell** | Light | Minimal brand header + TOTP card |
+| **Auth** | `/onboarding/*` (F1–F5) | **Public & Auth Shell** | Light | Progress stepper + single-column card |
+| **Console** | `/console/overview` (A1) | **Operator Console Shell** | Dark | SidebarCard / IconRail / BottomNavPill |
+| **Console** | `/console/organizations` (C1) | **Operator Console Shell** | Dark | SidebarCard / IconRail / BottomNavPill |
+| **Console** | `/console/tenants` (C2) | **Operator Console Shell** | Dark | SidebarCard / IconRail / BottomNavPill |
+| **Console** | `/console/tenants/[id]` (C2) | **Operator Console Shell** | Dark | SidebarCard / IconRail / BottomNavPill |
+| **Console** | `/console/provisioning` (C4) | **Operator Console Shell** | Dark | SidebarCard / IconRail / BottomNavPill |
+| **Console** | `/console/billing` (C3) | **Operator Console Shell** | Dark | SidebarCard / IconRail / BottomNavPill |
+| **Console** | `/console/data-rights` (C5) | **Operator Console Shell** | Dark | SidebarCard / IconRail / BottomNavPill |
+| **Console** | `/console/security` (C6) | **Operator Console Shell** | Dark | SidebarCard / IconRail / BottomNavPill |
+| **Console** | `/console/audit` | **Operator Console Shell** | Dark | SidebarCard / IconRail / BottomNavPill |
+| **Console** | `/console/settings/appearance` (A3) | **Operator Console Shell** | Dark | Interactive Appearance Settings |
+| **Console** | `/console/design-system` | **Operator Console Shell** | Dark | Design System Component Showcase |
+| **Legacy Admin** | `/admin/*` (16 routes) | *Legacy Admin Prototype* | Dark | Wrapped locally in `AdminProvider` |
+| **Legacy Dashboard** | `/(dashboard)/*` | *Legacy Dashboard* | Dark | Wrapped locally in `ThemeProvider` |
+| **Customer** | `/workspace/*` (Future 7D) | **Customer Workspace Shell** | Light | Top navigation + org switcher |
+| **Owner** | `/admin/restaurant` (Future 7F) | **Product Owner Shell** | Light | Branch switcher + master-detail sheets |
+| **Staff** | `/kds` (Future 7F) | **Staff Operational Shell** | Dark | Full-canvas ticket queue ($\ge 52\text{px}$ touch) |
+| **Staff** | `/dine/*` (Future 7F) | **Staff Operational Shell** | Dark | Touch-first waiter table grid |
+| **Hospital** | `/hms/*` | **Product Owner / Staff** | Contextual | Clinical workflow |
 
 ---
 
 ## 14. Test and Visual Regression Acceptance Matrix
 
 ### 14.1 Automated Token Matrix (16 Combinations)
-Every combination of **2 moods** $\times$ **8 accents** must be verified:
+Every combination of **2 moods** $\times$ **8 accents** plus **auto mode** will be verified:
 - [ ] Dark $\times$ Ocean (Default Console)
 - [ ] Dark $\times$ Emerald
 - [ ] Dark $\times$ Sunflower (Dark text `#0D0F12`, ratio $\ge 7.2:1$)
@@ -442,13 +413,15 @@ Every combination of **2 moods** $\times$ **8 accents** must be verified:
 - [ ] Light $\times$ Coral
 - [ ] Light $\times$ Violet
 - [ ] Light $\times$ Teal
+- [ ] Auto Mode $\times$ `prefers-color-scheme: light` (complete semantic token evaluation)
+- [ ] Auto Mode $\times$ `prefers-color-scheme: dark`
 
-### 14.2 Viewport Matrix for Persona Shells
+### 14.2 Authoritative Viewport Matrix for Persona Shells
 Each persona shell story in Storybook must be tested via Playwright at the four authoritative viewports:
-- [ ] **Phone (390 × 844):** BottomTabBar visible; zero desktop sidebar; zero horizontal scroll; touch targets $\ge 44\text{ px}$.
-- [ ] **Tablet Portrait (834 × 1194):** Bottom bar or clean collapsed navigation; zero horizontal overflow.
-- [ ] **Tablet Landscape (1194 × 834):** 64px collapsible icon rail; operational canvas maximized.
-- [ ] **Desktop (1440 × 900):** Fixed 260px Sidebar Card; breadcrumbs; multi-column content grid.
+- [ ] **Phone (390 × 844):** `BottomNavPill` visible; zero desktop sidebar; zero horizontal scroll; touch targets $\ge 44\text{ px}$.
+- [ ] **Tablet Portrait (834 × 1194):** Anchored bottom navigation bar visible; zero horizontal overflow.
+- [ ] **Tablet Landscape (1194 × 834):** 64px `IconRail` visible; operational canvas maximized.
+- [ ] **Desktop (1440 × 900):** Fixed 260px `SidebarCard`; breadcrumbs; multi-column content grid.
 
 ### 14.3 Accessibility & Production Integrity
 - [ ] **Axe WCAG 2.2 AA:** 0 violations across all 5 persona shell stories.
@@ -460,17 +433,22 @@ Each persona shell story in Storybook must be tested via Playwright at the four 
 
 ## 15. Explicit In-Scope and Out-of-Scope Files
 
-### 15.1 In-Scope Files (Authorized for Modification in Future Implementation Phase)
+### 15.1 In-Scope Files (Authorized upon Approval)
 - `packages/ui/src/tokens/primitives.css`
-- `packages/ui/src/tokens/semantic.css`
+- `packages/ui/src/tokens/semantic.css` (calibrate auto mode and presets)
 - `packages/ui/src/tokens/components.css`
-- `packages/ui/src/tokens/theme-script.ts` (deprecate conflicting writer)
-- `packages/ui/src/components/app-shell.tsx` (modularize responsive shell)
-- `packages/ui/src/components/bottom-tab-bar.tsx`
-- `packages/ui/src/stories/LayoutAndNavigation.stories.tsx` (persona shell stories)
+- `packages/ui/src/tokens/theme-script.ts` (deprecate competing cookie writer)
+- `packages/ui/src/components/sidebar-card.tsx` (new primitive)
+- `packages/ui/src/components/icon-rail.tsx` (new primitive)
+- `packages/ui/src/components/top-bar.tsx` (new primitive)
+- `packages/ui/src/components/shell-content-frame.tsx` (new primitive)
+- `packages/ui/src/components/more-nav-sheet.tsx` (new primitive)
+- `packages/ui/src/components/app-shell.tsx` (responsive adapter wrapper)
+- `packages/ui/src/stories/LayoutAndNavigation.stories.tsx` (5 persona shell stories)
 - `apps/platform/src/app/fonts.ts` (retire `fontInter` alias)
 - `apps/platform/src/app/providers.tsx` (strip `ThemeProvider` & `AdminProvider`)
-- `apps/platform/src/app/(console)/layout.tsx` (strip duplicate `AdminProvider`)
+- `apps/platform/src/app/(console)/layout.tsx` (strip duplicate `AdminProvider`, wire `ConsoleShell`)
+- `apps/platform/src/app/(dashboard)/layout.tsx` (re-mount `ThemeProvider` locally)
 
 ### 15.2 Strictly Out-of-Scope Files (Protected Boundaries)
 - `apps/platform/src/app/(dashboard)/page.tsx` (Root `/` route — rewrite deferred)
@@ -482,16 +460,11 @@ Each persona shell story in Storybook must be tested via Playwright at the four 
 
 ---
 
-## 16. Open Decisions Requiring Owner Approval
+## 16. Open Decisions for Owner Review
 
-Before implementation authorization is granted, the following architectural decisions are submitted for owner confirmation:
-
-1. **Root `/` Route Implementation Timing:**
-   - *Recommendation:* Confirm that root `/` route modification and multi-principal middleware routing remain **deferred** until the Customer Workspace shell is physically built in Stage 7D, leaving the current `/` route untouched in 7B.2.
-2. **AppShell Deprecation vs. Decomposition:**
-   - *Recommendation:* Decompose `app-shell.tsx` into composable primitives (`SidebarCard`, `TopBar`, `BottomNavPill`, `IconRail`) while keeping `export function AppShell(...)` as a backward-compatible wrapper that automatically switches between `SidebarCard` on desktop and `BottomNavPill` on phone.
-3. **Legacy ThemeProvider Retirement:**
-   - *Recommendation:* Formally unmount `ThemeProvider` from `GlobalProviders` (`apps/platform/src/app/providers.tsx`) and rely entirely on server-rendered `data-*` attributes. Confirm that prototype `/admin/*` routes will fall back to default dark appearance custom properties rather than injecting inline `<style>` tags.
+1. **Root `/` Route Timing:** Confirm that root route modification remains strictly **deferred** until the Customer Workspace shell is physically built in Stage 7D.
+2. **Decomposition vs. Monolith:** Confirm decomposing `app-shell.tsx` into modular primitives (`SidebarCard`, `IconRail`, `TopBar`, `BottomNavPill`, `MoreNavSheet`, `ShellContentFrame`) with backward-compatible `AppShell` adapter.
+3. **Legacy ThemeProvider Isolation:** Confirm unmounting `ThemeProvider` from root `GlobalProviders` and re-mounting it locally on `(dashboard)/layout.tsx` to maintain 100% legacy compatibility without global DOM pollution.
 
 ---
 
@@ -499,9 +472,9 @@ Before implementation authorization is granted, the following architectural deci
 
 Upon owner authorization, Phase 7B.2 will execute under four strict sequential commits on `feat/ui-reset-7b2-theme-persona-shells`:
 
-1. **Commit 1 (`build(tokens)`):** Token consolidation, typography alias cleanup, deprecation of `theme-script.ts` cookie writer, and 16-variant token contrast test suite.
-2. **Commit 2 (`refactor(providers)`):** Decouple `GlobalProviders` in `apps/platform/src/app/providers.tsx` (remove `ThemeProvider` and `AdminProvider`), eliminating hydration warnings and duplicate contexts.
-3. **Commit 3 (`feat(shells)`):** Implement modular shell primitives (`SidebarCard`, `IconRail`, `TopBar`) and responsive persona compositions in `@orbitox-io/ui` with comprehensive Storybook stories.
+1. **Commit 1 (`build(tokens)`):** Token consolidation, auto-mode calibration in `semantic.css`, typography alias cleanup, deprecation of `theme-script.ts` cookie writer, and 16-variant token contrast test suite.
+2. **Commit 2 (`refactor(providers)`):** Decouple `GlobalProviders` in `apps/platform/src/app/providers.tsx` (remove `ThemeProvider` and `AdminProvider`), re-mount `ThemeProvider` locally in `(dashboard)/layout.tsx`, eliminating hydration warnings and duplicate contexts.
+3. **Commit 3 (`feat(shells)`):** Implement modular shell primitives (`SidebarCard`, `IconRail`, `TopBar`, `MoreNavSheet`, `ShellContentFrame`) and responsive persona compositions in `@orbitox-io/ui` with comprehensive Storybook stories across all 4 viewports.
 4. **Commit 4 (`feat(console)`):** Wire modern responsive `ConsoleShell` into `apps/platform/src/app/(console)/layout.tsx`, verify all existing console pages, and run full CI.
 
 ### Rollback Strategy
@@ -512,6 +485,13 @@ If any regression, bundle-size breach, or CI failure occurs:
 
 ## 18. Recommendation
 
-**ACCEPT ARCHITECTURE BLUEPRINT & AUTHORIZE IMPLEMENTATION STAGE 1.**
+**ACCEPT REVISED ARCHITECTURE BLUEPRINT & AUTHORIZE IMPLEMENTATION STAGE 1.**
 
-The audit is complete, all 44 concept screens are verified, and the token and provider contradictions have been documented with concrete resolution paths. Source code has remained strictly read-only. We await the owner's review and authorization before creating the implementation branch or making code changes.
+All required reviewer revisions (R1 to R7) have been addressed:
+- **R1:** Visual inventory reconciled to 29 Desktop / 11 Phone / 2 Tab Land / 1 Tab Port / 1 Component Kit (44 total).
+- **R2:** Viewport breakpoints resolved to four authoritative tests with normative bottom nav on portrait tablet.
+- **R3:** Appearance precedence redesigned with DB authoritative, guest cache fallback, persona default, mode auto-resolution, and independent tenant branding.
+- **R4:** Full legacy consumer audit and safe local isolation strategy for `ThemeProvider` and `AdminProvider`.
+- **R5:** Shells defined as pure structural scaffolding; application domain workflows kept strictly out of scope.
+- **R6:** Modular primitives with backward-compatible `AppShell` adapter, zero `href="#"` fake links, and single appearance owner.
+- **R7:** Documentation committed and verifiable on branch.
