@@ -5,8 +5,6 @@ process.env.PLATFORM_AUDIT_DATABASE_URL = process.env.PLATFORM_AUDIT_DATABASE_UR
 process.env.HMS_AUDIT_DATABASE_URL = process.env.HMS_AUDIT_DATABASE_URL || 'postgresql://hms_audit_reader:test_audit_pass@127.0.0.1:5432/orbitox_phase2';
 process.env.OUTBOX_RELAY_DATABASE_URL = process.env.OUTBOX_RELAY_DATABASE_URL || 'postgresql://orbitox_outbox_relay:test_outbox_pass@127.0.0.1:5432/orbitox_phase2';
 (process.env as any).NODE_ENV = 'test';
-process.env.ORBITOX_SYNC_SAGA = 'true';
-process.env.ORBITOX_TEST_STANDALONE = 'true';
 
 import { describe, it, before, after } from 'node:test';
 import assert from 'node:assert/strict';
@@ -21,8 +19,12 @@ import { prisma } from '@/server/db/prisma';
 describe('Phase 3: Distributed Provisioning Lease Correctness, Attempt-Scoped Tokens & Fencing', () => {
   let testOrg: any;
   const createdOpIds: string[] = [];
+  const priorSyncSaga = process.env.ORBITOX_SYNC_SAGA;
+  const priorStandalone = process.env.ORBITOX_TEST_STANDALONE;
 
   before(async () => {
+    process.env.ORBITOX_SYNC_SAGA = 'true';
+    process.env.ORBITOX_TEST_STANDALONE = 'true';
     const runId = crypto.randomBytes(4).toString('hex');
     testOrg = await platformRepository.createOrganization({
       name: `Lease Concurrency Org ${runId}`,
@@ -32,10 +34,15 @@ describe('Phase 3: Distributed Provisioning Lease Correctness, Attempt-Scoped To
   });
 
   after(async () => {
-    if (createdOpIds.length > 0) {
-      await (prisma as any).platformOperation.deleteMany({
-        where: { id: { in: createdOpIds } },
-      }).catch(() => {});
+    if (priorSyncSaga !== undefined) {
+      process.env.ORBITOX_SYNC_SAGA = priorSyncSaga;
+    } else {
+      delete process.env.ORBITOX_SYNC_SAGA;
+    }
+    if (priorStandalone !== undefined) {
+      process.env.ORBITOX_TEST_STANDALONE = priorStandalone;
+    } else {
+      delete process.env.ORBITOX_TEST_STANDALONE;
     }
   });
 
@@ -704,8 +711,11 @@ describe('Phase 3: Distributed Provisioning Lease Correctness, Attempt-Scoped To
 
     // 3. No outbox message committed
     if (process.env.ORBITOX_PLATFORM_REPOSITORY !== 'json') {
-      const outboxMsgs = await (prisma as any).platformOutboxMessage.findMany({
-        where: { tenantId, eventType: 'tenant.ready' },
+      const outboxMsgs = await (prisma as any).$transaction(async (tx: any) => {
+        await tx.$executeRawUnsafe(`SELECT set_config('app.current_tenant_id', $1, true)`, tenantId);
+        return tx.platformOutboxMessage.findMany({
+          where: { tenantId, eventType: 'tenant.ready' },
+        });
       });
       assert.strictEqual(outboxMsgs.length, 0);
     }
@@ -798,8 +808,11 @@ describe('Phase 3: Distributed Provisioning Lease Correctness, Attempt-Scoped To
     assert.strictEqual(freshProject?.status, 'PROVISIONING');
 
     if (process.env.ORBITOX_PLATFORM_REPOSITORY !== 'json') {
-      const outboxMsgs = await (prisma as any).platformOutboxMessage.findMany({
-        where: { tenantId, eventType: 'tenant.ready' },
+      const outboxMsgs = await (prisma as any).$transaction(async (tx: any) => {
+        await tx.$executeRawUnsafe(`SELECT set_config('app.current_tenant_id', $1, true)`, tenantId);
+        return tx.platformOutboxMessage.findMany({
+          where: { tenantId, eventType: 'tenant.ready' },
+        });
       });
       assert.strictEqual(outboxMsgs.length, 0);
     }
@@ -1190,8 +1203,11 @@ describe('Phase 3: Distributed Provisioning Lease Correctness, Attempt-Scoped To
 
     // 3. Verify exactly 1 outbox message for tenant.ready (if in PostgreSQL repository mode)
     if (process.env.ORBITOX_PLATFORM_REPOSITORY !== 'json') {
-      const outboxMsgs = await (prisma as any).platformOutboxMessage.findMany({
-        where: { tenantId, eventType: 'tenant.ready' },
+      const outboxMsgs = await (prisma as any).$transaction(async (tx: any) => {
+        await tx.$executeRawUnsafe(`SELECT set_config('app.current_tenant_id', $1, true)`, tenantId);
+        return tx.platformOutboxMessage.findMany({
+          where: { tenantId, eventType: 'tenant.ready' },
+        });
       });
       assert.strictEqual(outboxMsgs.length, 1, 'Exactly one outbox message must be recorded');
     }
