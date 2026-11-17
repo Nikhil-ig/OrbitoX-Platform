@@ -601,7 +601,7 @@ model PlatformOutboxMessage {
   @@index([status, createdAt])
   @@index([status, nextAttemptAt])
   @@index([tenantId, aggregateType, aggregateId])
-  @@index([claimOwner, claimExpiresAt])
+  @@index([claimOwner, claimExpiresAt], map: "PlatformOutboxMessage_claim_idx")
 }
 
 // ─────────────────────────────────────────────────────────────
