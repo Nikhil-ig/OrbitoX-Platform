@@ -118,6 +118,7 @@ enum PaymentRecordStatus {
 
 enum OutboxStatus {
   PENDING
+  PROCESSING
   DISPATCHED
   FAILED
 }
@@ -579,20 +580,28 @@ model PlatformIdempotencyRecord {
 }
 
 model PlatformOutboxMessage {
-  id            String       @id @default(cuid())
-  tenantId      String
-  eventType     String
-  aggregateType String
-  aggregateId   String
-  payload       Json
-  status        OutboxStatus @default(PENDING)
-  retryCount    Int          @default(0)
-  lastError     String?
-  createdAt     DateTime     @default(now())
-  dispatchedAt  DateTime?
+  id               String       @id @default(cuid())
+  tenantId         String
+  eventType        String
+  aggregateType    String
+  aggregateId      String
+  payload          Json
+  status           OutboxStatus @default(PENDING)
+  retryCount       Int          @default(0)
+  maxAttempts      Int          @default(5)
+  lastError        String?
+  claimOwner       String?
+  claimExpiresAt   DateTime?
+  nextAttemptAt    DateTime?
+  deduplicationKey String?
+  createdAt        DateTime     @default(now())
+  updatedAt        DateTime     @default(now()) @updatedAt
+  dispatchedAt     DateTime?
 
   @@index([status, createdAt])
+  @@index([status, nextAttemptAt])
   @@index([tenantId, aggregateType, aggregateId])
+  @@index([claimOwner, claimExpiresAt])
 }
 
 // ─────────────────────────────────────────────────────────────

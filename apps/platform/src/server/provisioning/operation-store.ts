@@ -1,10 +1,12 @@
 import 'server-only';
+import crypto from 'node:crypto';
 import { prisma } from '@/server/db/prisma';
 import { platformRepository } from '@/server/db/platform-repository';
 import { PlatformOperationRecord, OperationStep } from '@/server/provisioning/types';
 
 // In-memory fallback for JSON / mock test adapter modes
 const memoryOperations = new Map<string, PlatformOperationRecord>();
+const memoryOutboxByDedupKey = new Map<string, string>();
 
 /**
  * Ephemeral single-use secret store with 15-minute TTL (NEVER stored in DB).
@@ -479,7 +481,14 @@ export class OperationStore {
         await platformRepository.updateProject(input.projectId, { status: 'ACTIVE' }).catch(() => {});
       }
 
-      return { webhookPayload, outboxMessageId: `outbox_json_${input.operationId}` };
+      const jsonDedupKey = `tenant.ready:${input.tenantId}`;
+      let jsonOutboxId = memoryOutboxByDedupKey.get(jsonDedupKey);
+      if (!jsonOutboxId) {
+        jsonOutboxId = `outbox_json_${input.operationId}`;
+        memoryOutboxByDedupKey.set(jsonDedupKey, jsonOutboxId);
+      }
+
+      return { webhookPayload, outboxMessageId: jsonOutboxId };
     }
 
     try {
@@ -559,30 +568,33 @@ export class OperationStore {
           });
         }
 
-        // 3. Deduplicated insert of outbox message
+        // 3. Database-enforced deduplicated insert of outbox message
         await (tx as any).$queryRaw`SELECT set_config('app.current_tenant_id', ${input.tenantId}, true)`;
-        const existingOutbox = await tx.platformOutboxMessage.findFirst({
-          where: {
-            tenantId: input.tenantId,
-            eventType: 'tenant.ready',
-            aggregateId: input.tenantId,
-          },
-        });
+        const dedupKey = `tenant.ready:${input.tenantId}`;
+        const newOutboxId = `outbox_${crypto.randomUUID()}`;
 
-        if (existingOutbox) {
-          outboxMessageId = existingOutbox.id;
+        const outboxRows = await (tx as any).$queryRaw<Array<{ id: string }>>`
+          INSERT INTO "PlatformOutboxMessage" (
+            "id", "tenantId", "eventType", "aggregateType", "aggregateId", "payload", "status", "deduplicationKey", "createdAt", "updatedAt"
+          )
+          VALUES (
+            ${newOutboxId}, ${input.tenantId}, 'tenant.ready', 'TENANT', ${input.tenantId}, ${JSON.stringify(webhookPayload)}::jsonb, 'PENDING', ${dedupKey}, NOW(), NOW()
+          )
+          ON CONFLICT ("tenantId", "deduplicationKey") WHERE "deduplicationKey" IS NOT NULL
+          DO UPDATE SET "updatedAt" = "PlatformOutboxMessage"."updatedAt"
+          RETURNING "id"
+        `;
+
+        if (Array.isArray(outboxRows) && outboxRows.length > 0) {
+          outboxMessageId = outboxRows[0].id;
         } else {
-          const createdOutbox = await tx.platformOutboxMessage.create({
-            data: {
+          const existingOutbox = await tx.platformOutboxMessage.findFirst({
+            where: {
               tenantId: input.tenantId,
-              eventType: 'tenant.ready',
-              aggregateType: 'TENANT',
-              aggregateId: input.tenantId,
-              payload: webhookPayload,
-              status: 'PENDING',
+              deduplicationKey: dedupKey,
             },
           });
-          outboxMessageId = createdOutbox.id;
+          outboxMessageId = existingOutbox?.id || newOutboxId;
         }
       });
 
