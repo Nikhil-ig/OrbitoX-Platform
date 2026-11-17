@@ -4,6 +4,141 @@ import fs from 'node:fs';
 import path from 'node:path';
 import ts from 'typescript';
 
+export interface StyleMutationViolation {
+  file: string;
+  line: number;
+  column: number;
+  snippet: string;
+  kind: string;
+}
+
+export function detectStyleMutationsInSource(filePath: string, sourceText: string): StyleMutationViolation[] {
+  const sf = ts.createSourceFile(filePath, sourceText, ts.ScriptTarget.Latest, true);
+  const violations: StyleMutationViolation[] = [];
+  const styleAliases = new Set<string>();
+
+  // Pass 1: Statically trace style aliases and destructured identifiers
+  function findAliases(node: ts.Node) {
+    if (ts.isVariableDeclaration(node) && node.initializer) {
+      if (ts.isObjectBindingPattern(node.name)) {
+        for (const element of node.name.elements) {
+          const propName = element.propertyName
+            ? element.propertyName.getText(sf)
+            : element.name.getText(sf);
+          if (propName === 'style') {
+            styleAliases.add(element.name.getText(sf));
+          }
+        }
+      }
+      if (ts.isPropertyAccessExpression(node.initializer) && node.initializer.name.text === 'style') {
+        if (ts.isIdentifier(node.name)) {
+          styleAliases.add(node.name.text);
+        }
+      } else if (
+        ts.isElementAccessExpression(node.initializer) &&
+        node.initializer.argumentExpression &&
+        ts.isStringLiteral(node.initializer.argumentExpression) &&
+        node.initializer.argumentExpression.text === 'style'
+      ) {
+        if (ts.isIdentifier(node.name)) {
+          styleAliases.add(node.name.text);
+        }
+      }
+    }
+    ts.forEachChild(node, findAliases);
+  }
+  findAliases(sf);
+
+  function isStyleAccess(expr: ts.Expression): boolean {
+    if (ts.isPropertyAccessExpression(expr)) {
+      if (expr.name.text === 'style') return true;
+      return isStyleAccess(expr.expression);
+    }
+    if (ts.isElementAccessExpression(expr)) {
+      if (
+        expr.argumentExpression &&
+        ts.isStringLiteral(expr.argumentExpression) &&
+        expr.argumentExpression.text === 'style'
+      ) {
+        return true;
+      }
+      return isStyleAccess(expr.expression);
+    }
+    if (ts.isIdentifier(expr) && styleAliases.has(expr.text)) {
+      return true;
+    }
+    return false;
+  }
+
+  // Pass 2: Detect mutating expressions and calls
+  function findMutations(node: ts.Node) {
+    // 1. Assignment expressions
+    if (
+      ts.isBinaryExpression(node) &&
+      [
+        ts.SyntaxKind.EqualsToken,
+        ts.SyntaxKind.PlusEqualsToken,
+        ts.SyntaxKind.MinusEqualsToken,
+        ts.SyntaxKind.AsteriskEqualsToken,
+        ts.SyntaxKind.SlashEqualsToken,
+      ].includes(node.operatorToken.kind)
+    ) {
+      if (isStyleAccess(node.left)) {
+        const { line, character } = sf.getLineAndCharacterOfPosition(node.getStart(sf));
+        violations.push({
+          file: path.basename(filePath),
+          line: line + 1,
+          column: character + 1,
+          snippet: node.getText(sf).slice(0, 100),
+          kind: 'Assignment to style or style property',
+        });
+      }
+    }
+
+    // 2. Unary mutating expressions
+    if (
+      (ts.isPrefixUnaryExpression(node) || ts.isPostfixUnaryExpression(node)) &&
+      [ts.SyntaxKind.PlusPlusToken, ts.SyntaxKind.MinusMinusToken].includes(node.operator)
+    ) {
+      if (isStyleAccess(node.operand)) {
+        const { line, character } = sf.getLineAndCharacterOfPosition(node.getStart(sf));
+        violations.push({
+          file: path.basename(filePath),
+          line: line + 1,
+          column: character + 1,
+          snippet: node.getText(sf).slice(0, 100),
+          kind: 'Unary mutation of style property',
+        });
+      }
+    }
+
+    // 3. Mutating method calls
+    if (ts.isCallExpression(node)) {
+      if (ts.isPropertyAccessExpression(node.expression)) {
+        const methodName = node.expression.name.text;
+        if (
+          ['setProperty', 'removeProperty'].includes(methodName) &&
+          isStyleAccess(node.expression.expression)
+        ) {
+          const { line, character } = sf.getLineAndCharacterOfPosition(node.getStart(sf));
+          violations.push({
+            file: path.basename(filePath),
+            line: line + 1,
+            column: character + 1,
+            snippet: node.getText(sf).slice(0, 100),
+            kind: `Direct style.${methodName} call`,
+          });
+        }
+      }
+    }
+
+    ts.forEachChild(node, findMutations);
+  }
+
+  findMutations(sf);
+  return violations;
+}
+
 describe('Design System Token & Style Invariants Guard (B2 / B3)', () => {
   const compDir = path.resolve(__dirname, '../src/components');
   const chartDir = path.resolve(__dirname, '../src/charts');
@@ -75,16 +210,18 @@ describe('Design System Token & Style Invariants Guard (B2 / B3)', () => {
     );
   });
 
-  it('enforces 0 direct DOM style mutations in components and charts', () => {
-    const domStyleRegex = /\.style(\.|\[)/g;
-    const violations: { file: string; matches: string[] }[] = [];
+  it('enforces 0 direct DOM style mutations in components and charts (AST-based static guard)', () => {
+    // AST Static Analysis checking:
+    // 1. Direct assignment (el.style = ...)
+    // 2. Member mutation (el.style.transform = ..., el.style['transform'] = ...)
+    // 3. Mutating methods (el.style.setProperty(...), el.style.removeProperty(...))
+    // 4. Aliased and destructured style references (const { style } = el; style.color = ...; const s = el.style; s.color = ...)
+    const violations: { file: string; line: number; column: number; snippet: string; kind: string }[] = [];
 
     for (const filePath of filesToCheck) {
       const content = fs.readFileSync(filePath, 'utf8');
-      const matches = content.match(domStyleRegex);
-      if (matches) {
-        violations.push({ file: path.basename(filePath), matches });
-      }
+      const fileViolations = detectStyleMutationsInSource(filePath, content);
+      violations.push(...fileViolations);
     }
 
     assert.equal(
@@ -92,6 +229,31 @@ describe('Design System Token & Style Invariants Guard (B2 / B3)', () => {
       0,
       `Found direct DOM style mutations in components:\n${JSON.stringify(violations, null, 2)}`
     );
+  });
+
+  it('verifies AST style invariant guard correctly catches prohibited mutations in adversarial snippets', () => {
+    // Synthetic negative test samples verifying guard efficacy
+    const badSample1 = 'const el = document.getElementById("x"); el.style = "color: red";';
+    assert.ok(detectStyleMutationsInSource('test1.ts', badSample1).length >= 1);
+
+    const badSample2 = 'const el = document.getElementById("x"); el.style.transform = "translateY(10px)";';
+    assert.ok(detectStyleMutationsInSource('test2.ts', badSample2).length >= 1);
+
+    const badSample3 = 'const el = document.getElementById("x"); el.style["opacity"] = "0.5";';
+    assert.ok(detectStyleMutationsInSource('test3.ts', badSample3).length >= 1);
+
+    const badSample4 = 'const el = document.getElementById("x"); el.style.setProperty("--my-var", "10px");';
+    assert.ok(detectStyleMutationsInSource('test4.ts', badSample4).length >= 1);
+
+    const badSample5 = 'const { style } = el; style.color = "blue";';
+    assert.ok(detectStyleMutationsInSource('test5.ts', badSample5).length >= 1);
+
+    const badSample6 = 'const s = el.style; s.backgroundColor = "white";';
+    assert.ok(detectStyleMutationsInSource('test6.ts', badSample6).length >= 1);
+
+    // Benign sample: variable named style with no DOM mutation
+    const benignSample = 'const buttonStyle = "p-4"; const isStyleActive = true;';
+    assert.equal(detectStyleMutationsInSource('benign.ts', benignSample).length, 0);
   });
 
   it('enforces 0 dangerouslySetInnerHTML usages in components and charts', () => {

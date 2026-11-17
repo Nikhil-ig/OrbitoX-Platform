@@ -62,6 +62,7 @@
     "build": "tsc -p tsconfig.json && tsc -p tsconfig.esm.json && node -e \"require('node:fs').writeFileSync('dist/esm/package.json', JSON.stringify({type:'module'},null,2))\"",
     "type-check": "tsc -p tsconfig.json --noEmit",
     "test": "tsx --test 'test/**/*.test.ts'",
+    "test:sheet-browser": "node test/bottom-sheet-browser.mjs",
     "size": "size-limit",
     "storybook": "STORYBOOK_DISABLE_TELEMETRY=1 storybook dev -p 6006 --ci",
     "build-storybook": "STORYBOOK_DISABLE_TELEMETRY=1 storybook build -o dist-storybook --disable-telemetry",

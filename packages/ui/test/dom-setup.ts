@@ -20,7 +20,23 @@ g.NodeFilter = dom.window.NodeFilter;
 g.Event = dom.window.Event;
 g.KeyboardEvent = dom.window.KeyboardEvent;
 g.MouseEvent = dom.window.MouseEvent;
-g.PointerEvent = dom.window.PointerEvent || dom.window.MouseEvent;
+if (!dom.window.PointerEvent) {
+  class PointerEvent extends dom.window.MouseEvent {
+    pointerId: number;
+    pointerType: string;
+    constructor(type: string, props: any = {}) {
+      super(type, props);
+      this.pointerId = props.pointerId ?? 0;
+      this.pointerType = props.pointerType ?? 'mouse';
+    }
+  }
+  dom.window.PointerEvent = PointerEvent as any;
+  (dom.window.HTMLElement.prototype as any).onpointerdown = null;
+  (dom.window.HTMLElement.prototype as any).onpointermove = null;
+  (dom.window.HTMLElement.prototype as any).onpointerup = null;
+  (dom.window.HTMLElement.prototype as any).onpointercancel = null;
+}
+g.PointerEvent = dom.window.PointerEvent;
 g.CustomEvent = dom.window.CustomEvent;
 g.getComputedStyle = dom.window.getComputedStyle;
 g.MutationObserver = dom.window.MutationObserver;

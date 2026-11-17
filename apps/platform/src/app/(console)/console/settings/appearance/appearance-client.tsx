@@ -45,6 +45,8 @@ export function AppearanceClient({
 }: AppearanceClientProps) {
   const [appearance, setAppearance] = React.useState<AppearancePreferences>(initialAppearance);
   const [isSaving, setIsSaving] = React.useState(false);
+  const [isReconciling, setIsReconciling] = React.useState(false);
+  const [isUnconfirmed, setIsUnconfirmed] = React.useState(false);
   const { toast } = useToast();
 
   const controllerRef = React.useRef<AppearancePersistenceController | null>(null);
@@ -53,16 +55,32 @@ export function AppearanceClient({
       initialAppearance,
       apiEndpoint,
       onToast: toast,
-      onStateChange: (nextApp, saving) => {
-        setAppearance(nextApp);
-        setIsSaving(saving);
+      onStateChange: (state) => {
+        setAppearance(state.appearance);
+        setIsSaving(state.isSaving);
+        setIsReconciling(state.isReconciling);
+        setIsUnconfirmed(state.isUnconfirmed);
       },
     });
   }
 
+  // React lifecycle boundary: pure render phase, side-effect DOM sync in useEffect
+  React.useEffect(() => {
+    controllerRef.current?.syncDocument();
+    return () => {
+      controllerRef.current?.dispose();
+    };
+  }, []);
+
   const updatePreferences = async (patch: Partial<AppearancePreferences>) => {
     if (controllerRef.current) {
       await controllerRef.current.updatePreferences(patch);
+    }
+  };
+
+  const handleRetry = async () => {
+    if (controllerRef.current) {
+      await controllerRef.current.retry();
     }
   };
 
@@ -309,7 +327,20 @@ export function AppearanceClient({
               {/* Save status */}
               <div className="pt-3 border-t border-[var(--color-border)] text-xs text-[var(--color-text-muted)] flex items-center justify-between">
                 <span>Auto-saved to account</span>
-                {isSaving && <span className="animate-pulse text-[var(--color-primary)]">Syncing...</span>}
+                {isSaving && (
+                  <span className="animate-pulse text-[var(--color-primary)]">
+                    {isReconciling ? 'Reconciling...' : 'Syncing...'}
+                  </span>
+                )}
+                {isUnconfirmed && !isSaving && (
+                  <button
+                    type="button"
+                    onClick={handleRetry}
+                    className="text-[var(--color-warning)] hover:underline cursor-pointer"
+                  >
+                    Unconfirmed (Retry)
+                  </button>
+                )}
               </div>
             </CardContent>
           </Card>

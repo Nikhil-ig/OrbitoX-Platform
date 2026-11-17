@@ -41,52 +41,81 @@ export const BottomSheetContent = React.forwardRef<
   const closeRef = React.useRef<HTMLButtonElement | null>(null);
   const touchStartY = React.useRef<number | null>(null);
   const currentDeltaY = React.useRef<number>(0);
+  const snapTimeoutRef = React.useRef<NodeJS.Timeout | null>(null);
+  const isDismissingRef = React.useRef<boolean>(false);
+  const activePointerId = React.useRef<number | null>(null);
+
+  const clearPendingCleanup = React.useCallback(() => {
+    if (snapTimeoutRef.current) {
+      clearTimeout(snapTimeoutRef.current);
+      snapTimeoutRef.current = null;
+    }
+  }, []);
+
+  React.useEffect(() => {
+    return () => {
+      clearPendingCleanup();
+    };
+  }, [clearPendingCleanup]);
 
   const resetGesture = React.useCallback((snapping = true) => {
-    if (contentRef.current) {
+    clearPendingCleanup();
+    if (contentRef.current && !isDismissingRef.current) {
       if (snapping) {
         contentRef.current.setAttribute('data-drag-state', 'snapping');
-        setTimeout(() => {
-          if (contentRef.current && contentRef.current.getAttribute('data-drag-state') === 'snapping') {
+        contentRef.current.removeAttribute('data-drag-offset');
+        contentRef.current.removeAttribute('data-drag-level');
+        snapTimeoutRef.current = setTimeout(() => {
+          if (
+            contentRef.current &&
+            !isDismissingRef.current &&
+            contentRef.current.getAttribute('data-drag-state') === 'snapping'
+          ) {
             contentRef.current.setAttribute('data-drag-state', 'idle');
-            contentRef.current.removeAttribute('data-drag-level');
           }
         }, 200);
       } else {
         contentRef.current.setAttribute('data-drag-state', 'idle');
+        contentRef.current.removeAttribute('data-drag-offset');
         contentRef.current.removeAttribute('data-drag-level');
       }
     }
     touchStartY.current = null;
     currentDeltaY.current = 0;
-  }, []);
+    activePointerId.current = null;
+  }, [clearPendingCleanup]);
 
-  const handleTouchStart = (e: React.TouchEvent<HTMLDivElement>) => {
-    touchStartY.current = e.touches[0]?.clientY ?? null;
+  const handleDragStart = (clientY: number) => {
+    if (isDismissingRef.current) return;
+    clearPendingCleanup();
+    touchStartY.current = clientY;
     currentDeltaY.current = 0;
   };
 
-  const handleTouchMove = (e: React.TouchEvent<HTMLDivElement>) => {
-    if (touchStartY.current === null || !contentRef.current) return;
-    const clientY = e.touches[0]?.clientY ?? touchStartY.current;
+  const handleDragMove = (clientY: number) => {
+    if (touchStartY.current === null || !contentRef.current || isDismissingRef.current) return;
     const delta = clientY - touchStartY.current;
     if (delta > 0) {
       currentDeltaY.current = delta;
       contentRef.current.setAttribute('data-drag-state', 'dragging');
-      if (delta < 25) {
-        contentRef.current.setAttribute('data-drag-level', 'low');
-      } else if (delta < 50) {
-        contentRef.current.setAttribute('data-drag-level', 'medium');
-      } else {
-        contentRef.current.setAttribute('data-drag-level', 'high');
-      }
+      // 2px fine-grained resolution between 2px and 80px
+      const quantized = Math.min(80, Math.max(2, Math.round(delta / 2) * 2));
+      contentRef.current.setAttribute('data-drag-offset', String(quantized));
+    } else {
+      // Upward movement must not translate upward or trigger dismissal
+      currentDeltaY.current = 0;
+      contentRef.current.removeAttribute('data-drag-offset');
+      contentRef.current.setAttribute('data-drag-state', 'idle');
     }
   };
 
-  const handleTouchEnd = () => {
-    if (!contentRef.current) return;
+  const handleDragEnd = () => {
+    if (!contentRef.current || isDismissingRef.current) return;
     if (currentDeltaY.current > 75) {
+      isDismissingRef.current = true;
       contentRef.current.setAttribute('data-drag-state', 'dismissing');
+      contentRef.current.removeAttribute('data-drag-offset');
+      contentRef.current.removeAttribute('data-drag-level');
       if (closeRef.current) {
         closeRef.current.click();
       }
@@ -95,10 +124,54 @@ export const BottomSheetContent = React.forwardRef<
     }
     touchStartY.current = null;
     currentDeltaY.current = 0;
+    activePointerId.current = null;
+  };
+
+  const handleDragCancel = () => {
+    if (!isDismissingRef.current) {
+      resetGesture(true);
+    }
+  };
+
+  const handleTouchStart = (e: React.TouchEvent<HTMLDivElement>) => {
+    if (e.touches[0]) {
+      handleDragStart(e.touches[0].clientY);
+    }
+  };
+
+  const handleTouchMove = (e: React.TouchEvent<HTMLDivElement>) => {
+    if (e.touches[0]) {
+      handleDragMove(e.touches[0].clientY);
+    }
+  };
+
+  const handleTouchEnd = () => {
+    handleDragEnd();
   };
 
   const handleTouchCancel = () => {
-    resetGesture(true);
+    handleDragCancel();
+  };
+
+  const handlePointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (e.button !== 0 && e.pointerType === 'mouse') return;
+    activePointerId.current = e.pointerId ?? 1;
+    handleDragStart(e.clientY);
+  };
+
+  const handlePointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (activePointerId.current === null) return;
+    handleDragMove(e.clientY);
+  };
+
+  const handlePointerUp = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (activePointerId.current === null) return;
+    handleDragEnd();
+  };
+
+  const handlePointerCancel = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (activePointerId.current === null) return;
+    handleDragCancel();
   };
 
   return (
@@ -124,22 +197,26 @@ export const BottomSheetContent = React.forwardRef<
           'data-[state=closed]:slide-out-to-bottom data-[state=open]:slide-in-from-bottom duration-250',
           'data-[drag-state=idle]:translate-y-0',
           'data-[drag-state=dragging]:transition-none',
-          'data-[drag-level=low]:translate-y-2 data-[drag-level=medium]:translate-y-6 data-[drag-level=high]:translate-y-12',
-          'data-[drag-state=snapping]:transition-transform data-[drag-state=snapping]:duration-200 data-[drag-state=snapping]:translate-y-0',
-          'data-[drag-state=dismissing]:transition-transform data-[drag-state=dismissing]:duration-200 data-[drag-state=dismissing]:translate-y-full',
+          'data-[drag-state=snapping]:transition-transform data-[drag-state=snapping]:duration-200 data-[drag-state=snapping]:ease-out data-[drag-state=snapping]:translate-y-0',
+          'data-[drag-state=dismissing]:transition-transform data-[drag-state=dismissing]:duration-200 data-[drag-state=dismissing]:ease-out data-[drag-state=dismissing]:translate-y-full',
           className
         )}
         {...props}
       >
         <div
+          role="region"
+          aria-label={t('sheet.handle', 'Drag handle')}
           className="mx-auto -mt-2 mb-4 h-6 w-full flex items-center justify-center cursor-grab active:cursor-grabbing touch-none select-none"
           onTouchStart={handleTouchStart}
           onTouchMove={handleTouchMove}
           onTouchEnd={handleTouchEnd}
           onTouchCancel={handleTouchCancel}
-          aria-hidden="true"
+          onPointerDown={handlePointerDown}
+          onPointerMove={handlePointerMove}
+          onPointerUp={handlePointerUp}
+          onPointerCancel={handlePointerCancel}
         >
-          <div className="h-1.5 w-12 rounded-full bg-[var(--color-border)] shrink-0" />
+          <div className="h-1.5 w-12 rounded-full bg-[var(--color-border)] shrink-0" aria-hidden="true" />
         </div>
         {children}
         <DialogPrimitive.Close
