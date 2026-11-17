@@ -36,36 +36,90 @@ export interface BottomSheetContentProps
 export const BottomSheetContent = React.forwardRef<
   React.ElementRef<typeof DialogPrimitive.Content>,
   BottomSheetContentProps
->(({ className, children, showCloseButton = true, ...props }, ref) => (
-  <BottomSheetPortal>
-    <BottomSheetOverlay />
-    <DialogPrimitive.Content
-      ref={ref}
-      className={cn(
-        'fixed bottom-0 inset-x-0 z-50 mx-auto max-w-lg w-full',
-        'rounded-t-[28px] border-t border-x border-[var(--color-border)]',
-        'bg-[var(--color-surface)] p-6 shadow-2xl',
-        'focus:outline-none max-h-[90vh] overflow-y-auto',
-        'data-[state=open]:animate-in data-[state=closed]:animate-out',
-        'data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0',
-        'data-[state=closed]:slide-out-to-bottom data-[state=open]:slide-in-from-bottom duration-250',
-        className
-      )}
-      {...props}
-    >
-      <div className="mx-auto -mt-2 mb-4 h-1.5 w-12 rounded-full bg-[var(--color-border)] shrink-0" aria-hidden="true" />
-      {children}
-      {showCloseButton && (
+>(({ className, children, showCloseButton = true, ...props }, ref) => {
+  const contentRef = React.useRef<HTMLDivElement | null>(null);
+  const closeRef = React.useRef<HTMLButtonElement | null>(null);
+  const touchStartY = React.useRef<number | null>(null);
+  const currentDeltaY = React.useRef<number>(0);
+
+  const handleTouchStart = (e: React.TouchEvent<HTMLDivElement>) => {
+    touchStartY.current = e.touches[0]?.clientY ?? null;
+    currentDeltaY.current = 0;
+  };
+
+  const handleTouchMove = (e: React.TouchEvent<HTMLDivElement>) => {
+    if (touchStartY.current === null || !contentRef.current) return;
+    const clientY = e.touches[0]?.clientY ?? touchStartY.current;
+    const delta = clientY - touchStartY.current;
+    if (delta > 0) {
+      currentDeltaY.current = delta;
+      contentRef.current.style.transform = `translateY(${delta}px)`;
+      contentRef.current.style.transition = 'none';
+    }
+  };
+
+  const handleTouchEnd = () => {
+    if (!contentRef.current) return;
+    if (currentDeltaY.current > 75) {
+      if (closeRef.current) {
+        closeRef.current.click();
+      } else {
+        contentRef.current.style.transition = 'transform 200ms ease-out';
+        contentRef.current.style.transform = 'translateY(100%)';
+      }
+    } else {
+      contentRef.current.style.transition = 'transform 200ms ease-out';
+      contentRef.current.style.transform = 'translateY(0px)';
+    }
+    touchStartY.current = null;
+    currentDeltaY.current = 0;
+  };
+
+  return (
+    <BottomSheetPortal>
+      <BottomSheetOverlay />
+      <DialogPrimitive.Content
+        ref={(node) => {
+          contentRef.current = node;
+          if (typeof ref === 'function') ref(node);
+          else if (ref) (ref as React.MutableRefObject<HTMLDivElement | null>).current = node;
+        }}
+        className={cn(
+          'fixed bottom-0 inset-x-0 z-50 mx-auto max-w-lg w-full',
+          'rounded-t-[28px] border-t border-x border-[var(--color-border)]',
+          'bg-[var(--color-surface)] p-6 shadow-2xl',
+          'focus:outline-none max-h-[90vh] overflow-y-auto',
+          'data-[state=open]:animate-in data-[state=closed]:animate-out',
+          'data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0',
+          'data-[state=closed]:slide-out-to-bottom data-[state=open]:slide-in-from-bottom duration-250',
+          className
+        )}
+        {...props}
+      >
+        <div
+          className="mx-auto -mt-2 mb-4 h-6 w-full flex items-center justify-center cursor-grab active:cursor-grabbing touch-none select-none"
+          onTouchStart={handleTouchStart}
+          onTouchMove={handleTouchMove}
+          onTouchEnd={handleTouchEnd}
+          aria-hidden="true"
+        >
+          <div className="h-1.5 w-12 rounded-full bg-[var(--color-border)] shrink-0" />
+        </div>
+        {children}
         <DialogPrimitive.Close
-          className="absolute right-4 top-4 rounded-full p-2 text-[var(--color-text-muted)] hover:text-[var(--color-text)] hover:bg-[var(--color-surface-raised)] transition-colors cursor-pointer"
+          ref={closeRef}
+          className={cn(
+            'absolute right-4 top-4 rounded-full p-2 text-[var(--color-text-muted)] hover:text-[var(--color-text)] hover:bg-[var(--color-surface-raised)] transition-colors cursor-pointer',
+            !showCloseButton && 'sr-only'
+          )}
           aria-label={t('common.close', 'Close')}
         >
           <X className="h-4 w-4" />
         </DialogPrimitive.Close>
-      )}
-    </DialogPrimitive.Content>
-  </BottomSheetPortal>
-));
+      </DialogPrimitive.Content>
+    </BottomSheetPortal>
+  );
+});
 BottomSheetContent.displayName = 'BottomSheetContent';
 
 export const BottomSheetHeader = ({

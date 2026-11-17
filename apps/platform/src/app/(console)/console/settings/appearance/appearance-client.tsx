@@ -56,6 +56,7 @@ export function AppearanceClient({
   }, []);
 
   const updatePreferences = async (patch: Partial<AppearancePreferences>) => {
+    const prevAppearance = appearance;
     const nextAppearance: AppearancePreferences = {
       ...appearance,
       ...patch,
@@ -86,9 +87,27 @@ export function AppearanceClient({
           variant: 'success',
           duration: 3000,
         });
+      } else {
+        const errorData = await res.json().catch(() => null);
+        const errorMessage = errorData?.error?.message || errorData?.message || 'Theme update failed. Reverting changes.';
+        setAppearance(prevAppearance);
+        applyToDocument(prevAppearance);
+        toast({
+          title: 'Failed to save appearance',
+          description: errorMessage,
+          variant: 'error',
+          duration: 4000,
+        });
       }
     } catch {
-      // Offline fallback: the DOM already reflects the changes and cookie may be cached
+      setAppearance(prevAppearance);
+      applyToDocument(prevAppearance);
+      toast({
+        title: 'Connection error',
+        description: 'Network failed while saving appearance. Reverted changes.',
+        variant: 'error',
+        duration: 4000,
+      });
     } finally {
       setIsSaving(false);
     }
