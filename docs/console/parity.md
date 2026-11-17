@@ -49,7 +49,7 @@ Each existing page is assigned an architectural disposition:
 
 | # | Route | Current Purpose | Disposition | Target Screen / Destination | APIs & Actions Used |
 |---|---|---|---|---|---|
-| 1 | `/admin` | Prototype dashboard overview | **Merge** | Merge into `A1` (Overview) | Static overview cards, prototype navigation links |
+| 1 | `/admin` | Active 307 redirect to `/console/overview` | **Redirect** | `/console/overview` | Active redirect (`redirect('/console/overview')`) |
 | 2 | `/admin/api-keys` | Basic API key generation table | **Merge** | Merge into `C6` (Security & Keys) | Static key listing, mock copy action |
 | 3 | `/admin/audit` | Flat audit log viewer | **Merge** | Merge into unified `Audit Log` | `GET /api/v1/projects/project_restaurant_os/audit` (audit log pagination) |
 | 4 | `/admin/business` | Plugin categories directory | **Merge** | Merge into `C2` (Tenants Plugin Sub-view) | Static directory category cards |
@@ -65,7 +65,7 @@ Each existing page is assigned an architectural disposition:
 | 14 | `/admin/services` | In-memory microservices view | **Merge** | Merge into `A1` (Cluster Health Strip) | Static microservice health tiles |
 | 15 | `/admin/services/[serviceId]` | Service health detail | **Merge** | Merge into `A1` (Service Telemetry Drawer) | Static service metrics and logs viewer |
 | 16 | `/admin/system` | Prototype system toggles | **Merge** | Merge into `Settings` (Platform Parameters) | Static maintenance mode and feature toggles |
-| 17 | `/platform` | Operator overview redirect | **Merge** | Merge into `A1` (Overview) | `GET /api/v1/overview` (redirects to `/platform/fleet` or overview) |
+| 17 | `/platform` | Live Fleet Overview with polling (10s), status tags, and audit feed | **Migrate / Merge** | Merge into `A1` (Overview) | Polls `/api/v1/fleet` and `/api/v1/overview`, fleet attention filters |
 | 18 | `/platform/ai` | Early AI assistant prototype | **HOLD** | Preserved intact until Stage 7G (*Ask OrbitoX* MCP assistant) | `POST /api/v1/platform/ai` (chat query execution & streaming) |
 | 19 | `/platform/api-keys` | Cryptographic API keys list | **Migrate** | Primary source for `C6` (Security & Keys) | `GET /api/v1/platform/api-keys`, `GET /api/v1/platform/projects`, key revocation |
 | 20 | `/platform/approvals` | Operator step-up approval queue | **Merge** | Merge into `C4` (Provisioning) & `Audit Log` | `GET /api/v1/platform/approvals`, approve/reject step-up mutations |
@@ -73,7 +73,7 @@ Each existing page is assigned an architectural disposition:
 | 22 | `/platform/configuration` | JSON configuration editor | **Merge** | Merge into `Settings` (Configuration tab) | `GET /api/v1/platform/configuration`, save schema configuration |
 | 23 | `/platform/connect` | Bridge protocol diagnostic | **Merge** | Merge into `C6` (Security / Bridge tab) | `GET /api/v1/system/runtime-token`, `POST /api/v1/projects/template-provision`, `GET /api/v1/fleet` |
 | 24 | `/platform/credentials` | Vault credential listing | **Merge** | Merge into `C6` (Security & Keys) | `GET /api/v1/platform/credentials`, `GET /api/v1/platform/projects`, test secret connection |
-| 25 | `/platform/explorer` | Database table explorer | **Drop** | Security risk: internal debugging tool that bypasses tenant RLS | Queries across internal platform models (bypasses RLS) |
+| 25 | `/platform/explorer` | Interactive API Explorer & Execution Console (Endpoint selector, request payload editor, latency meter) | **Review / Hold** | Candidate for Developer Console or merge into `C6` (Developer APIs tab) | Executes live requests to `/api/v1/platform/*` with latency metrics |
 | 26 | `/platform/fleet` | Fleet instance telemetry | **Merge** | Merge into `A1` (Fleet Health Strip) | `GET /api/v1/fleet`, `POST /api/v1/projects/[id]/commands` (reboot/pause) |
 | 27 | `/platform/login` | Operator authentication & TOTP | **Retain** | Gated security auth barrier (retained without breaking changes) | `POST /api/v1/platform/auth/login` (session cookie + CSRF issuance) |
 | 28 | `/platform/observability` | Raw Prometheus/metrics graphs | **Merge** | Merge into `A1` (Lollipop throughput & line charts) | Static Prometheus charts wrapper |
@@ -95,13 +95,14 @@ Each existing page is assigned an architectural disposition:
 
 ## 4. Architectural Drop List & Formal Holds (Owner Sign-off)
 
-### 4.1 Agreed Drops (Recommended for Immediate Removal in 7C)
+### 4.1 Candidate Drops & Reconciled Source Review (Owner Sign-off)
 1. **`/platform/packages`**:
-   - *Technical Rationale*: Displays static npm release metadata. Package publishing is strictly automated via GitHub Actions (`build-and-test.yml`) and GitHub Packages (`@orbitox-io`). Operators manage tenant runtime services, not build packages.
+   - *Technical Rationale*: Displays static npm release metadata. Package publishing is strictly automated via GitHub Actions (`ci.yml`) and GitHub Packages (`@orbitox-io`). Operators manage tenant runtime services, not build packages. Recommended drop candidate.
 2. **`/platform/tests`**:
-   - *Technical Rationale*: In-browser test runner that exposes unauthenticated test execution endpoints. Testing is strictly automated in CI (Playwright, Node.js runner, Vitest).
-3. **`/platform/explorer`**:
-   - *Technical Rationale*: Unscoped SQL table browser created during early development. Violates zero-trust isolation by exposing raw multi-tenant rows without tenant filtering.
+   - *Technical Rationale*: In-browser test runner exposing unauthenticated test execution triggers. Testing is strictly automated in CI (Playwright, Node.js runner, Vitest). Recommended drop candidate.
+3. **`/platform/explorer` (Reconciled from Source — Hold for Review)**:
+   - *Source Reality*: Contrary to earlier descriptions as a raw database SQL table browser, the actual inspected route is an **Interactive API Explorer & Execution Console** with endpoint selection (`/api/v1/platform/*`), request body JSON editing, and latency measurement.
+   - *Architecture Direction*: Do NOT drop blindly. This capability is useful for operator developer testing. Candidate for retention under `C6` (Developer APIs tab) or behind operator step-up authentication. Retained on Hold pending owner decision.
 
 ### 4.2 Explicit Holds & Replacement Mapping (Preserved Until Successor Built)
 1. **`/admin/marketplace` (HOLD)**:
