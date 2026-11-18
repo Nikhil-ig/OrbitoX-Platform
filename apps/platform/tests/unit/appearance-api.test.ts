@@ -7,6 +7,7 @@ import {
   VALID_RADII,
   parseAppearanceCookie,
   serializeAppearanceCookie,
+  getPersonaDefaultAppearance,
   updateOperatorAppearance,
   getOperatorAppearance,
   updateCustomerAppearance,
@@ -96,11 +97,12 @@ describe('Appearance Settings & Server Enforcement (7B.1)', () => {
       assert.deepEqual(parsed, custom);
     });
 
-    it('falls back to DEFAULT_APPEARANCE on malformed or hostile cookie string without throwing', () => {
-      assert.deepEqual(parseAppearanceCookie(null), DEFAULT_APPEARANCE);
-      assert.deepEqual(parseAppearanceCookie(''), DEFAULT_APPEARANCE);
-      assert.deepEqual(parseAppearanceCookie('invalid-json{{{'), DEFAULT_APPEARANCE);
-      assert.deepEqual(parseAppearanceCookie(encodeURIComponent('{"accent":"malicious_hack"}')), DEFAULT_APPEARANCE);
+    it('falls back to persona default appearance on malformed or hostile cookie string without throwing', () => {
+      const publicDefault = getPersonaDefaultAppearance('public');
+      assert.deepEqual(parseAppearanceCookie(null), publicDefault);
+      assert.deepEqual(parseAppearanceCookie(''), publicDefault);
+      assert.deepEqual(parseAppearanceCookie('invalid-json{{{'), publicDefault);
+      assert.deepEqual(parseAppearanceCookie(encodeURIComponent('{"accent":"malicious_hack"}')), publicDefault);
     });
   });
 

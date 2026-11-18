@@ -88,8 +88,8 @@ describe('Layer 2: Database Outage Degradation & Station Context Hierarchy (P2 I
     }) as any;
 
     const rawCookie = serializeAppearanceCookie(CUSTOM_SAVED_COOKIE);
-    // 43-character valid base64url token structure to satisfy session token validation
-    const mockOperatorToken = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOP1';
+    // 43-character deterministic test token to satisfy session token validation without generic-api-key scanner flags
+    const mockOperatorToken = 'a'.repeat(43);
 
     try {
       // Execute the exact production resolver invoked by RootLayout
@@ -109,12 +109,19 @@ describe('Layer 2: Database Outage Degradation & Station Context Hierarchy (P2 I
   });
 
   it('executes production resolveInitialAppearance during Prisma outage with missing/corrupted cookie, falling back to persona default', async () => {
-    const originalFindUnique = prisma.platformOperatorSession.findUnique;
+    const originalOpSessionFindUnique = prisma.platformOperatorSession.findUnique;
+    const originalCustSessionFindUnique = prisma.customerSession.findUnique;
+
     prisma.platformOperatorSession.findUnique = (async () => {
       throw GENUINE_PRISMA_KNOWN_ERROR;
     }) as any;
 
-    const mockOperatorToken = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOP1';
+    prisma.customerSession.findUnique = (async () => {
+      throw GENUINE_PRISMA_KNOWN_ERROR;
+    }) as any;
+
+    const mockOperatorToken = 'a'.repeat(43);
+    const mockCustomerToken = 'c'.repeat(43);
 
     try {
       // 1. Missing cookie during outage -> operator default (dark mood)
@@ -127,9 +134,9 @@ describe('Layer 2: Database Outage Degradation & Station Context Hierarchy (P2 I
       assert.deepEqual(resolvedMissing, opDefault, 'Must fall back to operator default on missing cookie');
       assert.equal(resolvedMissing.theme, 'dark');
 
-      // 2. Corrupted cookie during outage -> customer default (light mood)
+      // 2. Corrupted cookie during outage -> customer default (light mood) with genuine Prisma error on customerSession
       const resolvedCorrupt = await resolveInitialAppearance({
-        customerToken: 'mock-cust-token',
+        customerToken: mockCustomerToken,
         rawAppearanceCookie: 'not-valid-json-cookie',
         routePersona: 'customer',
       });
@@ -138,7 +145,8 @@ describe('Layer 2: Database Outage Degradation & Station Context Hierarchy (P2 I
       assert.equal(resolvedCorrupt.theme, 'light');
       assert.equal(resolvedCorrupt.radius, 28);
     } finally {
-      prisma.platformOperatorSession.findUnique = originalFindUnique;
+      prisma.platformOperatorSession.findUnique = originalOpSessionFindUnique;
+      prisma.customerSession.findUnique = originalCustSessionFindUnique;
     }
   });
 
