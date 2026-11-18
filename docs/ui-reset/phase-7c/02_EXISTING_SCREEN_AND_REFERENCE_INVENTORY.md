@@ -3,8 +3,9 @@
 
 **Milestone:** Phase 7C Operations Console & System Screens  
 **Governing Baseline:** Phase 7B.2 Delivered HEAD `188680c27ce51ebb8ca6e998e504c51a24c34fa0`  
-**Date:** November 18, 2026 (Revised)  
-**Auditor / Role:** Principal Software Architect & Senior Staff Designer
+**Specification Branch:** `docs/phase-7c-stage0-specification`  
+**Date:** November 18, 2026 (Authoritative Census Revision)  
+**Auditor / Role:** Principal Software Architect & Lead Fullstack Engineer
 
 ---
 
@@ -16,7 +17,7 @@ The Phase 7C design directly translates the approved visual benchmarks located i
 | :--- | :--- | :--- |
 | `1 · Operator console — dark.png` | Dark background (`#0A0F1D`), crisp high-contrast cards, top stats row (Organizations, Active Tenants, Provisioning Sagas, System Load), search bar, and primary navigation sidebar. | **Master Console Layout (`/console`)** |
 | `Operator console · phone.png` | Compact mobile portrait view with sticky header, collapsible KPI summary cards, quick action pills, bottom navigation bar, and minimum $44 \times 44$px touch targets. | **Mobile Phone Breakpoint (`< 640px`)** |
-| `Shared console sidebar.png` | Grouped navigation items: Core Command (Overview), Fleet (Organizations, Tenants, Projects), Extensibility (Packages, Plugins), Ops (Provisioning, Observability, Approvals), Security (Keys, Operators, Audit, Data Rights), Commercial (Billing, Plans). | **`ConsoleNavItems` Hierarchy** |
+| `Shared console sidebar.png` | Grouped navigation items: Core Command (Overview), Fleet (Organizations, Tenants, Projects), Extensibility (Packages, Plugins), Ops (Provisioning, Approvals), Security (Keys, Operators, Audit, Data Rights), Commercial (Billing). | **`ConsoleNavItems` Hierarchy** |
 | `Organization detail.png` | Header with organization status badge, quick actions (Suspend, Edit, Export), multi-tab inspection (Overview, Projects, Branches, Domains, Audit, Billing). | **`/console/organizations/[id]` & `/console/tenants/[id]` Inspector** |
 | `Tenant detail · suspend with re-auth.png` | Red-accented destructive confirmation modal with reason selector, impacted project list, and TOTP MFA verification code input. | **Tenant Suspension Step-Up Modal** |
 | `Provisioning job · retry.png` | Step-by-step saga execution pipeline with timestamps, error log drawer, and safe idempotent retry button. | **`/console/provisioning` Saga Inspector** |
@@ -27,56 +28,87 @@ The Phase 7C design directly translates the approved visual benchmarks located i
 
 ---
 
-## 2. Complete Monorepo Route Census & Consolidation Matrix
+## 2. Authoritative Monorepo Route Census (52 Existing `page.tsx` Routes)
 
-A forensic scan of the entire `apps/platform/src/app/(console)` directory at commit `188680c` identified 36 distinct route endpoints across `admin`, `console`, and `platform`. Every single route is cataloged below with its current maturity and explicit consolidation disposition:
+An exhaustive forensic census of the `apps/platform/src/app/(console)` tree at baseline commit `188680c` identified **exactly 52 `page.tsx` route files** distributed across three legacy/current namespaces:
+- **16 routes** in `/admin/*`
+- **12 routes** in `/console/*`
+- **24 routes** in `/platform/*`
 
-### 2.1 Complete Route-by-Route Disposition Ledger
+Every single route is documented below with its exact source path, current purpose, maturity status, and unambiguous migration target:
 
-| Existing Route Path | Current Purpose & Implementation Status | Maturity Status | Explicit Consolidation Action in Phase 7C |
-| :--- | :--- | :--- | :--- |
-| **`/(console)/console/overview`** | Modern system overview dashboard | **Pilot-ready** | **RETAIN** as canonical `/console/overview`. Back with real `OverviewService` telemetry. |
-| **`/(console)/console/organizations`** | Customer parent organizations table | **Pilot-ready** | **RETAIN** as canonical `/console/organizations` (Legal entities, billing owners, user memberships). |
-| **`/(console)/console/tenants`** | Provisioned runtime application instances | **Pilot-ready** | **RETAIN** as canonical `/console/tenants` (Software runtime workspaces, branch bindings, runtime health). |
-| **`/(console)/console/tenants/[id]`** | Individual tenant inspector drawer/page | **Pilot-ready** | **RETAIN** as canonical `/console/tenants/[id]`. Enhance with full runtime tabs & suspension modal. |
-| **`/(console)/console/billing`** | Subscriptions, plans, and invoices | **Pilot-ready** | **RETAIN** as canonical `/console/billing`. Connect to live Razorpay & plan models. |
-| **`/(console)/console/provisioning`** | Asynchronous provisioning jobs & sagas | **Pilot-ready** | **RETAIN** as canonical `/console/provisioning`. Integrate retry/rollback actions from `/platform/operations`. |
-| **`/(console)/console/security`** | API credentials, key rotation & operators | **Pilot-ready** | **RETAIN** as canonical `/console/security`. Incorporate credential vault from `/platform/credentials`. |
-| **`/(console)/console/audit`** | Append-only audit search & inspection | **Pilot-ready** | **RETAIN** as canonical `/console/audit`. Wire to append-only `PlatformAuditEvent` repository. |
-| **`/(console)/console/data-rights`** | GDPR/DPDP Phase 6G data rights | **Production-ready**| **RETAIN** as canonical `/console/data-rights` with ZIP streaming and signed certificates. |
-| **`/(console)/console/design-system`** | Internal operator design system showcase | **Production-ready**| **RETAIN** as developer preview `/console/design-system` under `SUPPORT_READONLY`. |
-| **`/(console)/console/settings/appearance`** | Operator dark theme & accent persistence | **Production-ready**| **RETAIN** as canonical `/console/settings/appearance`. |
-| **`/(console)/console/page.tsx`** | Root console redirect | **Production-ready**| **RETAIN** as canonical redirect to `/console/overview`. |
-| **`/(console)/platform/observability`**| Fleet telemetry & service metrics | **Technical preview**| **REMEDIATE & MERGE** into `/console/overview` and dedicated `/console/observability` tab. Connect to real `/api/v1/platform/overview/telemetry`. |
-| **`/(console)/platform/operations`** | Distributed operations saga tracker | **Technical preview**| **MERGE** into `/console/provisioning` with full `PlatformOperation` lease and retry drawer. Deprecate path via 308. |
-| **`/(console)/platform/configuration`**| Global runtime configuration & flags | **Technical preview**| **MOVE** to canonical `/console/settings/configuration`. Preserve system config editing. |
-| **`/(console)/platform/credentials`** | Vault secrets & third-party keys | **Technical preview**| **MERGE** into `/console/security` under the "Vault Credentials" tab. Deprecate path via 308. |
-| **`/(console)/platform/approvals`** | Operator multi-person approvals queue | **Technical preview**| **RETAIN** under canonical `/console/approvals` as dedicated approval inbox. |
-| **`/(console)/platform/ai`** | AI Gateway & MCP tool execution | **Technical preview**| **RETAIN** under canonical `/console/ai` with explicit human approval gates. |
-| **`/(console)/platform/explorer`** | Interactive OpenAPI Explorer | **Pilot-ready** | **MOVE** to `/console/developer/explorer`. Retain as authenticated operator tool. |
-| **`/(console)/platform/fleet`** | Multi-server node & cluster view | **Technical preview**| **MERGE** into `/console/overview` under the "Cluster Topology" tab. |
-| **`/(console)/platform/packages`** | Package & plugin catalogue | **Pilot-ready** | **MOVE** to canonical `/console/packages`. |
-| **`/(console)/platform/plans`** | Pricing tier & quota definitions | **Pilot-ready** | **MERGE** into `/console/billing` under the "Plans & Quotas" tab. |
-| **`/(console)/platform/projects`** | Business software projects list | **Pilot-ready** | **MOVE** to canonical `/console/projects`. |
-| **`/(console)/platform/projects/[projectId]`**| Individual project inspector | **Pilot-ready** | **MOVE** to canonical `/console/projects/[id]`. |
-| **`/(console)/platform/restaurants`** | Vertical RestaurantOS fleet view | **Pilot-ready** | **MERGE** into `/console/tenants` with vertical filter `vertical=restaurant`. |
-| **`/(console)/platform/restaurants/[id]`**| RestaurantOS runtime inspector | **Pilot-ready** | **MERGE** into `/console/tenants/[id]` under the RestaurantOS vertical tab. |
-| **`/(console)/platform/tenants`** | Platform tenant list | **Pilot-ready** | **CONSOLIDATE** with `/console/tenants`. Deprecate `/platform/tenants` via 308. |
-| **`/(console)/platform/tenants/new`** | Provision new tenant wizard | **Pilot-ready** | **MOVE** to `/console/tenants/new`. |
-| **`/(console)/platform/tests`** | Automated in-browser test runner | **Technical preview**| **MOVE** to `/console/developer/tests`. Restricted to `PLATFORM_OWNER`. |
-| **`/(console)/admin/page.tsx`** | Legacy dashboard overview | **Prototype** | **DEPRECATE** via 308 redirect to `/console/overview` once replacement is verified. |
-| **`/(console)/admin/api-keys/page.tsx`**| Legacy API key screen | **Prototype** | **DEPRECATE** via 308 redirect to `/console/security`. |
-| **`/(console)/admin/audit/page.tsx`** | Legacy audit table | **Prototype** | **DEPRECATE** via 308 redirect to `/console/audit`. |
-| **`/(console)/admin/business/page.tsx`**| Legacy category/provider catalog | **Prototype** | **DEPRECATE** via 308 redirect to `/console/packages`. |
-| **`/(console)/admin/business/[category]`**| Legacy category drilldown | **Prototype** | **DEPRECATE** via 308 redirect to `/console/packages`. |
-| **`/(console)/admin/developer-apis`** | Legacy developer API list | **Prototype** | **DEPRECATE** via 308 redirect to `/console/developer/explorer`. |
-| **`/(console)/admin/projects/page.tsx`**| Legacy projects table | **Prototype** | **DEPRECATE** via 308 redirect to `/console/projects`. |
-| **`/(console)/admin/projects/create`** | Legacy project creation | **Prototype** | **DEPRECATE** via 308 redirect to `/console/projects/create`. |
-| **`/(console)/admin/projects/[projectId]`**| Legacy project detail | **Prototype** | **DEPRECATE** via 308 redirect to `/console/projects/[id]`. |
-| **`/(console)/admin/quotas/page.tsx`** | Legacy quotas view | **Prototype** | **DEPRECATE** via 308 redirect to `/console/billing`. |
-| **`/(console)/admin/restaurant/page.tsx`**| Legacy restaurant screen | **Prototype** | **DEPRECATE** via 308 redirect to `/console/tenants?vertical=restaurant`. |
-| **`/(console)/admin/services/page.tsx`**| Legacy services table | **Prototype** | **DEPRECATE** via 308 redirect to `/console/packages`. |
-| **`/(console)/admin/system/page.tsx`** | Legacy system status | **Prototype** | **DEPRECATE** via 308 redirect to `/console/overview`. |
+### 2.1 Legacy `/admin/*` Routes (16 Routes)
+
+All legacy `/admin/*` routes are scheduled for permanent HTTP 308 redirection to canonical `/console/*` routes once functional parity is certified in Phase 7C:
+
+| # | Existing Source Path | Current Purpose | Maturity | Migration Action & Single Target |
+| :- | :--- | :--- | :--- | :--- |
+| 1 | `apps/platform/src/app/(console)/admin/page.tsx` | Legacy admin root entry | Prototype | **308 Redirect** $\to$ `/console/overview` |
+| 2 | `apps/platform/src/app/(console)/admin/api-keys/page.tsx` | Legacy API key management | Prototype | **308 Redirect** $\to$ `/console/security` |
+| 3 | `apps/platform/src/app/(console)/admin/audit/page.tsx` | Legacy audit log table | Prototype | **308 Redirect** $\to$ `/console/audit` |
+| 4 | `apps/platform/src/app/(console)/admin/business/page.tsx` | Business marketplace catalog | Prototype | **308 Redirect** $\to$ `/console/packages` |
+| 5 | `apps/platform/src/app/(console)/admin/business/[category]/page.tsx` | Marketplace category drilldown | Prototype | **308 Redirect** $\to$ `/console/packages` |
+| 6 | `apps/platform/src/app/(console)/admin/business/[category]/[providerId]/page.tsx` | Provider detail view | Prototype | **308 Redirect** $\to$ `/console/packages` |
+| 7 | `apps/platform/src/app/(console)/admin/developer-apis/page.tsx` | Developer API documentation | Prototype | **308 Redirect** $\to$ `/console/developer/explorer` |
+| 8 | `apps/platform/src/app/(console)/admin/marketplace/page.tsx` | Plugin marketplace catalog | Prototype | **308 Redirect** $\to$ `/console/packages` |
+| 9 | `apps/platform/src/app/(console)/admin/projects/page.tsx` | Legacy project list | Prototype | **308 Redirect** $\to$ `/console/projects` |
+| 10 | `apps/platform/src/app/(console)/admin/projects/[projectId]/page.tsx` | Legacy project detail | Prototype | **308 Redirect** $\to$ `/console/projects/[id]` |
+| 11 | `apps/platform/src/app/(console)/admin/projects/create/page.tsx` | Legacy project creation wizard | Prototype | **308 Redirect** $\to$ `/console/projects/create` |
+| 12 | `apps/platform/src/app/(console)/admin/quotas/page.tsx` | Legacy quotas and usage limits | Prototype | **308 Redirect** $\to$ `/console/billing` |
+| 13 | `apps/platform/src/app/(console)/admin/restaurant/page.tsx` | Legacy restaurant runtime manager | Prototype | **308 Redirect** $\to$ `/console/tenants` |
+| 14 | `apps/platform/src/app/(console)/admin/services/page.tsx` | Microservices status catalog | Prototype | **308 Redirect** $\to$ `/console/packages` |
+| 15 | `apps/platform/src/app/(console)/admin/services/[serviceId]/page.tsx` | Individual service detail | Prototype | **308 Redirect** $\to$ `/console/packages` |
+| 16 | `apps/platform/src/app/(console)/admin/system/page.tsx` | Legacy system health & telemetry | Prototype | **308 Redirect** $\to$ `/console/overview` |
+
+### 2.2 Active `/console/*` Routes (12 Routes)
+
+The current `/console/*` routes provide the foundational shells established in Phase 7B.2 and are retained as the canonical home for console operations:
+
+| # | Existing Source Path | Current Purpose | Maturity | Migration Action & Single Target |
+| :- | :--- | :--- | :--- | :--- |
+| 17 | `apps/platform/src/app/(console)/console/page.tsx` | Console root entry point | Production-ready | **308 Redirect** $\to$ `/console/overview` |
+| 18 | `apps/platform/src/app/(console)/console/overview/page.tsx` | Command center & KPI summary | Pilot-ready | **Retain & Expand** as canonical `/console/overview` |
+| 19 | `apps/platform/src/app/(console)/console/organizations/page.tsx` | Customer legal entities table | Pilot-ready | **Retain & Harden** as canonical `/console/organizations` |
+| 20 | `apps/platform/src/app/(console)/console/tenants/page.tsx` | Tenant runtime fleet table | Pilot-ready | **Retain & Expand** as canonical `/console/tenants` |
+| 21 | `apps/platform/src/app/(console)/console/tenants/[id]/page.tsx` | Tenant runtime inspector drawer/view | Pilot-ready | **Retain & Expand** as canonical `/console/tenants/[id]` |
+| 22 | `apps/platform/src/app/(console)/console/provisioning/page.tsx` | Provisioning saga & jobs queue | Pilot-ready | **Retain & Expand** as canonical `/console/provisioning` |
+| 23 | `apps/platform/src/app/(console)/console/security/page.tsx` | Master API keys & operator security | Pilot-ready | **Retain & Expand** as canonical `/console/security` |
+| 24 | `apps/platform/src/app/(console)/console/billing/page.tsx` | Plans, subscriptions & billing | Pilot-ready | **Retain & Expand** as canonical `/console/billing` |
+| 25 | `apps/platform/src/app/(console)/console/audit/page.tsx` | Append-only audit log search | Pilot-ready | **Retain & Harden** as canonical `/console/audit` |
+| 26 | `apps/platform/src/app/(console)/console/data-rights/page.tsx` | GDPR/DPDP Phase 6G data rights | Production-ready | **Retain & Harden** as canonical `/console/data-rights` |
+| 27 | `apps/platform/src/app/(console)/console/settings/appearance/page.tsx` | Theme, mode & accent picker | Production-ready | **Retain & Harden** as canonical `/console/settings/appearance` |
+| 28 | `apps/platform/src/app/(console)/console/design-system/page.tsx` | Design system component gallery | Production-ready | **Retain** as canonical `/console/design-system` |
+
+### 2.3 Legacy `/platform/*` Routes (24 Routes)
+
+The `/platform/*` routes represent earlier operational screens that will be consolidated into canonical `/console/*` routes:
+
+| # | Existing Source Path | Current Purpose | Maturity | Migration Action & Single Target |
+| :- | :--- | :--- | :--- | :--- |
+| 29 | `apps/platform/src/app/(console)/platform/page.tsx` | Platform root entry | Prototype | **308 Redirect** $\to$ `/console/overview` |
+| 30 | `apps/platform/src/app/(console)/platform/ai/page.tsx` | AI Gateway & MCP diagnostic tools | Technical preview | **Move & 308 Redirect** $\to$ `/console/ai` |
+| 31 | `apps/platform/src/app/(console)/platform/api-keys/page.tsx` | Platform API key screen | Pilot-ready | **308 Redirect** $\to$ `/console/security` |
+| 32 | `apps/platform/src/app/(console)/platform/approvals/page.tsx` | Operational approvals inbox | Technical preview | **Move & 308 Redirect** $\to$ `/console/approvals` |
+| 33 | `apps/platform/src/app/(console)/platform/audit/page.tsx` | Platform audit log stream | Pilot-ready | **308 Redirect** $\to$ `/console/audit` |
+| 34 | `apps/platform/src/app/(console)/platform/configuration/page.tsx` | Global runtime system config | Technical preview | **Move & 308 Redirect** $\to$ `/console/settings/configuration` |
+| 35 | `apps/platform/src/app/(console)/platform/connect/page.tsx` | Third-party plugin connections | Technical preview | **308 Redirect** $\to$ `/console/packages` |
+| 36 | `apps/platform/src/app/(console)/platform/credentials/page.tsx` | Third-party credential vault | Technical preview | **308 Redirect** $\to$ `/console/security` |
+| 37 | `apps/platform/src/app/(console)/platform/explorer/page.tsx` | Interactive OpenAPI Explorer | Pilot-ready | **Move & 308 Redirect** $\to$ `/console/developer/explorer` |
+| 38 | `apps/platform/src/app/(console)/platform/fleet/page.tsx` | External project engine fleet connections | Technical preview | **308 Redirect** $\to$ `/console/provisioning` *(Unambiguous single target)* |
+| 39 | `apps/platform/src/app/(console)/platform/login/page.tsx` | Platform operator login screen | Pilot-ready | **Move & 308 Redirect** $\to$ `/console/login` |
+| 40 | `apps/platform/src/app/(console)/platform/observability/page.tsx` | Infrastructure telemetry metrics | Technical preview | **308 Redirect** $\to$ `/console/overview` |
+| 41 | `apps/platform/src/app/(console)/platform/operations/page.tsx` | Async operations saga tracker | Technical preview | **308 Redirect** $\to$ `/console/provisioning` |
+| 42 | `apps/platform/src/app/(console)/platform/packages/page.tsx` | Package & plugin registry catalogue | Pilot-ready | **Move & 308 Redirect** $\to$ `/console/packages` |
+| 43 | `apps/platform/src/app/(console)/platform/plans/page.tsx` | Commercial plans & pricing tiers | Pilot-ready | **308 Redirect** $\to$ `/console/billing` |
+| 44 | `apps/platform/src/app/(console)/platform/projects/page.tsx` | Business software projects list | Pilot-ready | **Move & 308 Redirect** $\to$ `/console/projects` |
+| 45 | `apps/platform/src/app/(console)/platform/projects/[projectId]/page.tsx` | Project details & environment graph | Pilot-ready | **Move & 308 Redirect** $\to$ `/console/projects/[id]` |
+| 46 | `apps/platform/src/app/(console)/platform/restaurants/page.tsx` | RestaurantOS locations fleet | Pilot-ready | **308 Redirect** $\to$ `/console/tenants` |
+| 47 | `apps/platform/src/app/(console)/platform/restaurants/[id]/page.tsx` | RestaurantOS location inspector | Pilot-ready | **308 Redirect** $\to$ `/console/tenants/[id]` |
+| 48 | `apps/platform/src/app/(console)/platform/security/page.tsx` | Master security dashboard | Pilot-ready | **308 Redirect** $\to$ `/console/security` |
+| 49 | `apps/platform/src/app/(console)/platform/settings/page.tsx` | General platform settings | Technical preview | **308 Redirect** $\to$ `/console/settings/configuration` |
+| 50 | `apps/platform/src/app/(console)/platform/tenants/page.tsx` | Platform tenants listing | Pilot-ready | **308 Redirect** $\to$ `/console/tenants` |
+| 51 | `apps/platform/src/app/(console)/platform/tenants/new/page.tsx` | Tenant manual provisioning wizard | Pilot-ready | **Move & 308 Redirect** $\to$ `/console/tenants/new` |
+| 52 | `apps/platform/src/app/(console)/platform/tests/page.tsx` | In-browser automated test runner | Technical preview | **Move & 308 Redirect** $\to$ `/console/developer/tests` |
 
 ---
 
@@ -86,7 +118,7 @@ A critical architectural distinction in OrbitoX is the separation between an **O
 
 ```mermaid
 graph TD
-    subgraph OrganizationLevel ["Organization (Legal & Commercial Entity)"]
+    subgraph OrganizationLevel ["Organization (Legal & Commercial Customer Entity)"]
         ORG["PlatformOrganization\n(ID, Name, Legal Entity, Tax GSTIN, Billing Owner)"]
         MEMBERS["CustomerMembership[]\n(Owners, Admins, Accountants, Staff)"]
         SUB["BillingSubscription\n(Razorpay Subscription, Plan, Invoices)"]
@@ -125,6 +157,6 @@ To eliminate all mocked responses in accordance with Governance Rule 3.4:
    - Replace static mock cards with live data from `GET /api/v1/platform/overview/telemetry`.
    - Queries `node:process` for memory usage (`rss`, `heapUsed`), `eventLoopDelay` histogram, and `platform-database-readiness.ts` for active/idle PostgreSQL connection pool metrics.
 2. **Cluster Reconciliation (`/api/v1/platform/reconcile`):**
-   - Replace simulated state cards with `POST /api/v1/platform/reconcile`, invoking `reconciliation.reconcileAll()` to compare desired resource graphs against live observed runtime state.
+   - Execute strictly as `POST /api/v1/platform/reconcile`, invoking `reconciliation.reconcileAll()` to compare desired resource graphs against live observed runtime state.
 3. **Plan Entitlements & Preflight Downgrades:**
    - Connect `POST /api/v1/platform/plan/preflight-downgrade` to inspect active tenant seat counts, branch counts, and dish items before rendering plan change options.

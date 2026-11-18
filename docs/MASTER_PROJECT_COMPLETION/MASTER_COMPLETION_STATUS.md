@@ -16,9 +16,9 @@
 | Phase | Milestone Name | Stage | Current Status | Commits / Artifacts | Verified CI Status |
 | :--- | :--- | :--- | :--- | :--- | :--- |
 | **Phase 7B.1** | Theme & Shell Foundation Baseline | Closed | **ACCEPTED** | `f65698e` | Green |
-| **Phase 7B.2** | Theme Tokens & Persona Shells | Stage 1.2 Closure | **DELIVERED & VERIFIED** | `188680c` (PR #10 open) | 100% Green (Run #447, #448) |
+| **Phase 7B.2** | Theme Tokens & Persona Shells | Stage 1.2 Closure | **APPROVED FOR RELEASE** | `188680c` (PR #10 approved) | 100% Green (Run #447, #448) |
 | **Phase 0** | Master Project Forensic Audit | Phase 0 Delivery | **COMPLETED** | `docs/MASTER_PROJECT_COMPLETION/*` | Documentation Complete |
-| **Phase 7C** | Operations Console & System Screens | Stage 0 Specification | **PENDING OWNER APPROVAL** | `docs/ui-reset/phase-7c/*` (`7b79f6051a76b3287dbbafbbad47e66756e9d72f`) | Specification Ready |
+| **Phase 7C** | Operations Console & System Screens | Stage 0 Specification | **PENDING OWNER APPROVAL** | `docs/ui-reset/phase-7c/*` (Anchor: `7b79f60` / Remediation: `f500998`) | Specification Ready |
 | **Phase 7D** | Customer Onboarding & Self-Service | Stage 0 | Planned | Roadmap registered | Pending Phase 7C |
 | **Phase 7E** | RestaurantOS Commercial Hardening | Stage 0 | Planned | Roadmap registered | Pending Phase 7D |
 | **Phase 7F** | Commercial Engine & Billing Integration| Stage 0 | Planned | Roadmap registered | Pending Phase 7E |
@@ -81,16 +81,15 @@
 
 * **Stage Name:** Phase 7C Stage 0 Architectural & Design Specification
 * **Specification Branch:** `docs/phase-7c-stage0-specification`
-* **Delivered Commit SHA:** `7b79f6051a76b3287dbbafbbad47e66756e9d72f`
-* **Parent Baseline:** `188680c27ce51ebb8ca6e998e504c51a24c34fa0` (Exact Phase 7B.2 Delivered HEAD)
-* **Status:** Complete & Remotely Verified on GitHub — Pending Owner Approval
-* **Corrective Revisions Completed:**
-  1. **Responsive Breakpoints:** Corrected Documents 01 and 07 to match Phase 7B.2 `UI-7B2-BP1` (`< 640px`, `640–1023px`, `1024–1279px`, `≥ 1280px`).
-  2. **Route Census & Consolidation:** Complete 36-route catalog in Document 02; full consolidation into 11 canonical `/console/*` routes with 308 permanent redirect mapping in Document 04.
-  3. **Domain Boundary Clarification:** Formal architectural separation between `Organization` (`PlatformOrganization`, legal customer entity) and `Tenant` (`RestaurantLocation`, runtime software instance).
-  4. **Canonical RBAC Roles:** Grounded strictly in production enum `PlatformOperatorRole` (`PLATFORM_OWNER`, `OPERATOR`, `BILLING`, `SUPPORT_READONLY`) and `operatorRoleAllows()`.
-  5. **Server-Side Security Enforcement:** Database-backed 15-minute idle timeout (`PlatformOperatorSession.idleExpiresAt`), TOTP replay prevention (`PlatformOperator.lastTotpStep`), and recursive audit log redaction policy in Document 06.
-  6. **Reconcile HTTP Semantics:** Confirmed and documented `/api/v1/platform/reconcile` as strictly `POST` mutation across all specifications and inventories.
+* **Initial Specification Anchor:** `7b79f6051a76b3287dbbafbbad47e66756e9d72f` (`7b79f60`)
+* **Remediation HEAD SHA:** `f50099813f62fd96650678e1a3da42832652c185` (`f500998`)
+* **Parent Baseline:** `188680c27ce51ebb8ca6e998e504c51a24c34fa0` (Exact Phase 7B.2 Approved Baseline)
+* **Status:** Complete, Remotely Pushed & Independently Grounded — Pending Final Owner Sign-Off
+* **Corrective Resolutions Completed:**
+  1. **Authoritative 52-Route Census & Consolidation (Finding A):** Fully cataloged all 52 existing `page.tsx` routes across `/admin/*` (16), `/console/*` (12), and `/platform/*` (24). Consolidated into 23 canonical `/console/*` routes. Eliminated redirect conflict by mapping `/platform/fleet` solely to `/console/provisioning`. Aligned Document 08 E2E test to the 12 primary navigation routes.
+  2. **Grounded Session Inactivity Timeout Contract (Finding B):** Accurately documented baseline implementation: 30-minute idle inactivity timeout (`ACCOUNT_SESSION_IDLE_MS = 30 * 60 * 1000`), `PlatformOperatorSession` schema (`revokedAt`, `idleExpiresAt`, `absoluteExpiresAt` - no `status` column), and `getOperatorSession()` null evaluation. Proposed Stage 1 hardening: 15-minute operator idle constant, active `revokedAt = now` setting on expiry detection, and cookie clearing headers on 401 response in `withOperatorAuth()`.
+  3. **Grounded TOTP Replay & Dual-Boundary Audit Redaction (Finding C):** Grounded step-up re-authentication in real baseline mechanics: `getTotpStep()` in `account-security.ts`, atomic step consumption via `SELECT public.consume_platform_operator_totp_step()` in `account-service.ts`, and 5-minute `reauthenticatedAt` freshness window. Specified recursive audit log redaction at both event-writing boundary (`sanitizeAuditPayload`) and event-reading/export boundary (`AuditConsoleService`).
+  4. **Responsive Breakpoints & Invariants:** Fully synchronized with approved Phase 7B.2 specification `UI-7B2-BP1` (`< 640px`, `640–1023px`, `1024–1279px`, `≥ 1280px`). Exact 0 lines modified in `apps/platform/src/app/page.tsx` and 0 platform imports in `@orbitox-io/ui`.
 * **Governing Rule:** Implementation coding for Stage 1 will NOT begin until the platform owner provides explicit authorization on this specification.
 
 ---

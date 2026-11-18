@@ -3,8 +3,8 @@
 
 **Milestone:** Phase 7C Operations Console & System Screens  
 **Governing Baseline:** Phase 7B.2 Delivered HEAD `188680c27ce51ebb8ca6e998e504c51a24c34fa0`  
-**Specification Branch:** `docs/phase-7c-stage0-specification` (`7b79f6051a76b3287dbbafbbad47e66756e9d72f`)  
-**Date:** November 18, 2026  
+**Specification Branch:** `docs/phase-7c-stage0-specification`  
+**Date:** November 18, 2026 (Authoritative Reconciliation Revision)  
 **Auditor / Role:** Principal QA Lead & Staff Architect
 
 ---
@@ -18,24 +18,24 @@ graph TD
     subgraph Tier1 ["Tier 1: Unit & Schema Contracts"]
         ZOD["Zod Schema Contracts (Input bounds, regex, UUIDs, enums)"]
         AUTH_UNIT["Canonical RBAC Unit Tests (operatorRoleAllows, PlatformOperatorRole)"]
-        REDACT_UNIT["Audit Redaction Unit Tests (Recursive sanitizeAuditPayload)"]
+        REDACT_UNIT["Audit Redaction Unit Tests (Recursive sanitizeAuditPayload across boundaries)"]
     end
 
     subgraph Tier2 ["Tier 2: Server Actions & Security Enforcement"]
         ACTION_AUTH["Server Action Guards (suspendTenant, rotateApiKey, reconcileCluster)"]
-        IDLE_EXP["Server-Side Idle Timeout (idleExpiresAt check in withOperatorAuth)"]
-        TOTP_REPLAY["TOTP Replay Defense (lastTotpStep single-use window)"]
+        IDLE_EXP["Server-Side Inactivity Timeout (idleExpiresAt & revokedAt setting)"]
+        TOTP_REPLAY["TOTP Replay Defense (getTotpStep & consume_platform_operator_totp_step)"]
         STEPUP_MFA["Step-Up MFA Session Elevation (reauthenticatedAt 5-min gate)"]
     end
 
     subgraph Tier3 ["Tier 3: Database & State Cascade Integrity"]
         TENANT_CASCADE["Tenant Suspension Cascade (Runtime Bridge call + status update)"]
         KEY_ROTATION["API Key Rotation (Grace period overlap & dual-key active state)"]
-        AUDIT_IMMUTABLE["Immutable Audit Trail (PlatformAuditEvent persistence)"]
+        AUDIT_IMMUTABLE["Immutable Audit Trail (PlatformAuditEvent append-only persistence)"]
     end
 
     subgraph Tier4 ["Tier 4: Playwright Browser E2E Tests"]
-        ROUTE_NAV["Console 11-Route Census Navigation & Route Consolidation (308 Redirects)"]
+        ROUTE_NAV["Console 12-Route Primary Navigation & Route Consolidation (308 Redirects)"]
         DRAWER_E2E["DetailDrawer Deep-Linking & History State (Push/Replace, Esc close)"]
         TABLE_E2E["OperationalDataTable (Virtualization, Server Sort/Filter, URL sync)"]
         STEPUP_E2E["Step-Up MFA Modal Dialog Flow (Valid vs Invalid TOTP code)"]
@@ -63,36 +63,47 @@ These tests execute against the server actions and authorization middleware powe
   Calling any mutating server action (`suspendTenantAction`, `resumeTenantAction`, `rotateApiKeyAction`, `reconcileClusterAction`) without an active session cookie returns `{ success: false, error: "UNAUTHORIZED", status: 401 }`.
 - **TST-7C-02 (Canonical RBAC Enforcement):**  
   Calling `suspendTenantAction` or `rotateApiKeyAction` with a session assigned `OPERATOR`, `BILLING`, or `SUPPORT_READONLY` returns `{ success: false, error: "FORBIDDEN", status: 403 }`. Only `PLATFORM_OWNER` possesses authority for destructive operations.
-- **TST-7C-03 (Server-Side 15-Minute Idle Timeout):**  
-  When `PlatformOperatorSession.idleExpiresAt` is older than the current timestamp ($t > t_{\text{idleExpiresAt}}$), any subsequent server action or route request returns HTTP 401 Unauthorized / redirects to `/console/login?reason=idle_timeout`, and marks the session record as `status: EXPIRED`.
-- **TST-7C-04 (TOTP Single-Use Replay Protection):**  
-  Submitting a valid 6-digit TOTP code for step-up MFA records the calculated step $S = \lfloor t / 30 \rfloor$ in `PlatformOperator.lastTotpStep`. Submitting the identical code or any code within the same 30-second window fails with `{ success: false, error: "TOTP_CODE_REPLAYED", message: "TOTP code has already been consumed" }`.
+- **TST-7C-03 (Server-Side Inactivity Timeout & Session Invalidation):**  
+  When `PlatformOperatorSession.idleExpiresAt` is older than the current timestamp ($t > t_{\text{idleExpiresAt}}$), `getOperatorSession()` returns `null`. Any subsequent request fails closed with HTTP 401 Unauthorized. In Stage 1 implementation, the test verifies that:
+  1. `PlatformOperatorSession.revokedAt` is actively updated to `now` in PostgreSQL via `tx.platformOperatorSession.updateMany` (using the existing `revokedAt` model, requiring zero schema migrations).
+  2. The response headers include `Set-Cookie` directives clearing `orbitox_op_session` and `orbitox_op_csrf` (`Max-Age=0`).
+- **TST-7C-04 (Grounded TOTP Atomic Step Consumption & Replay Prevention):**  
+  Submitting a valid 6-digit TOTP code for step-up verification calculates candidate step $S = \lfloor \text{Date.now()} / 30000 \rfloor$ via `getTotpStep()` and invokes `SELECT public.consume_platform_operator_totp_step(operatorId, S, now)`.  
+  Submitting the identical code or any code within the same 30-second window receives `consumed = false` from the PostgreSQL function and fails with `{ success: false, error: "TOTP_ALREADY_USED", message: "TOTP code has already been consumed" }`.
 - **TST-7C-05 (Step-Up MFA 5-Minute Freshness Window):**  
-  Executing destructive operations (`tenant:suspend`, `credentials:rotate`, `tenants:delete`) requires `session.reauthenticatedAt` within the last 300 seconds (5 minutes). If older or null, the action rejects with `{ success: false, error: "STEP_UP_REQUIRED" }`.
-- **TST-7C-06 (Recursive Audit Log Redaction):**  
-  All mutating server actions run `sanitizeAuditPayload()` prior to persisting `PlatformAuditEvent`. The test verifies that sensitive keys (`['password', 'token', 'secret', 'mfaTotpSealed', 'mfaToken', 'backupCode', 'credential', 'apiKey', 'pepper', 'privateKey', 'authorization', 'cookie']`) are recursively replaced with `"[REDACTED]"` in both `metadata` and change-diff blobs.
+  Executing destructive operations (`tenant:suspend`, `security-keys:rotate`, `data-rights:delete`) verifies that `Date.now() - session.reauthenticatedAt.getTime() <= 5 * 60 * 1000` (300 seconds). If older or null, the action rejects with `{ success: false, error: "REAUTH_REQUIRED" }`.
+- **TST-7C-06 (Dual-Boundary Recursive Audit Log Redaction):**  
+  Verifies that `sanitizeAuditPayload()` scrubbers execute at both boundaries:
+  - **Boundary 1 (Event Writing):** Mutating server actions verify that sensitive keys (`password`, `token`, `secret`, `mfaTotpSealed`, `mfaToken`, `backupCode`, `credential`, `apiKey`, `pepper`, `privateKey`, `authorization`, `cookie`) and nested objects (e.g., `{ config: { auth: { clientSecret: "xyz" } } }`) are replaced with `"[REDACTED]"` prior to persisting into `PlatformAuditEvent`.
+  - **Boundary 2 (Event Reading/Export):** `AuditConsoleService.queryAuditLogs()` and `GET /api/v1/platform/audit-logs/export` ensure all returned `metadata` objects are sanitized before reaching the browser or export streams.
 - **TST-7C-07 (Reconcile Cluster Action HTTP Semantics):**  
-  `reconcileClusterAction` executes strictly as a `POST` mutation against `/api/v1/platform/reconcile`, triggering idempotent state convergence and writing an audit event.
+  `reconcileClusterAction` executes strictly as a `POST` mutation against `/api/v1/platform/reconcile`, triggering idempotent state convergence via `reconciliation.reconcileAll()` and writing an audit event.
 
 ### 2.2 End-to-End Browser Playwright Tests (`tests/e2e/console-e2e.spec.ts`)
 
 - **TST-7C-08 (Operator Login & Route Protection):**  
-  Operator logs in with credentials and TOTP MFA code; successfully redirects to `/console/overview`. Unauthenticated requests to any `/console/*` route redirect cleanly to `/console/login` with preserved `returnUrl`.
-- **TST-7C-09 (Full 11-Route Census Navigation & HTTP 200 Verification):**  
-  Navigating through all 11 consolidated console views renders with HTTP 200, valid persona shell layout, and 0 uncaught client console errors:
-  1. `/console/overview`
-  2. `/console/tenants`
-  3. `/console/organizations`
-  4. `/console/subscriptions`
-  5. `/console/audit`
-  6. `/console/security`
-  7. `/console/telemetry`
-  8. `/console/runtime`
-  9. `/console/credentials`
-  10. `/console/dead-letter`
-  11. `/console/settings`
-- **TST-7C-10 (Legacy Route 308 Permanent Redirects):**  
-  Navigating to legacy admin paths (`/admin`, `/admin/tenants`, `/admin/metrics`, `/admin/security`, `/platform/observability`, `/platform/credentials`) issues HTTP 308 permanent redirects to their canonical `/console/*` targets while preserving URL query parameters.
+  Operator logs in at `/console/login` with credentials and TOTP MFA code; successfully redirects to `/console/overview`. Unauthenticated requests to any `/console/*` route redirect cleanly to `/console/login` with preserved `returnUrl`.
+- **TST-7C-09 (Full Authoritative Navigation Census — 12 Primary Console Routes):**  
+  Navigating through all 12 canonical primary navigation routes from Document 03 renders with HTTP 200, valid persona shell layout, and 0 uncaught client console errors:
+  1. `/console/overview` (Command center & telemetry)
+  2. `/console/organizations` (Legal entities & billing accounts)
+  3. `/console/tenants` (Runtime workspaces & software fleet)
+  4. `/console/projects` (Software projects & environments)
+  5. `/console/provisioning` (Sagas, operations & fleet connections)
+  6. `/console/packages` (Packages & plugin registry)
+  7. `/console/billing` (Plans, subscriptions & invoices)
+  8. `/console/approvals` (Operator approvals inbox)
+  9. `/console/security` (API keys, vault & operator security)
+  10. `/console/audit` (Append-only audit trail)
+  11. `/console/data-rights` (GDPR/DPDP compliance & erasure)
+  12. `/console/settings/appearance` (Theme, mode & accent settings)
+- **TST-7C-10 (Legacy Route 308 Permanent Redirects & Conflict-Free Mapping):**  
+  Navigating to legacy admin paths issues HTTP 308 permanent redirects to their single authoritative `/console/*` targets while preserving URL query parameters:
+  - `/admin`, `/platform`, `/console` $\to$ `/console/overview`
+  - `/platform/fleet`, `/platform/operations` $\to$ `/console/provisioning` *(Unambiguous single target)*
+  - `/admin/api-keys`, `/platform/credentials`, `/platform/security` $\to$ `/console/security`
+  - `/admin/quotas`, `/platform/plans` $\to$ `/console/billing`
+  - `/admin/restaurant`, `/platform/restaurants`, `/platform/tenants` $\to$ `/console/tenants`
 - **TST-7C-11 (OperationalDataTable URL Synchronization & Virtualization):**  
   Filtering, sorting, and pagination updates the browser URL query string (`?page=2&sort=createdAt:desc&status=ACTIVE`). Refreshing the browser restores the exact grid state. Rapid scrolling through 10,000 mock tenant records maintains 60fps virtualization with bounded DOM nodes.
 - **TST-7C-12 (DetailDrawer Deep-Linking & History State):**  
@@ -113,7 +124,7 @@ These tests execute against the server actions and authorization middleware powe
 - **TST-7C-16 (Touch Target Minimum Bounding Box — WCAG 2.2 SC 2.5.8):**  
   Automated Playwright layout evaluation verifies that every interactive element (buttons, pagination triggers, tab items, dropdown toggles, drawer close triggers) on viewport widths $< 640$px has a rendered bounding box of at least $44 \times 44$px or equivalent touch target spacing.
 - **TST-7C-17 (Axe-core WCAG 2.2 AA Automated Scan):**  
-  Running `@axe-core/playwright` across all 11 console views reports **0 violations** against WCAG 2.2 AA rules (`color-contrast`, `target-size`, `aria-roles`, `focus-order`, `landmark-one-main`). Contrast ratios satisfy $\ge 4.5:1$ for normal text and $\ge 3:1$ for UI components across dark and light operator themes.
+  Running `@axe-core/playwright` across all console views reports **0 violations** against WCAG 2.2 AA rules (`color-contrast`, `target-size`, `aria-roles`, `focus-order`, `landmark-one-main`). Contrast ratios satisfy $\ge 4.5:1$ for normal text and $\ge 3:1$ for UI controls across dark and light operator themes.
 - **TST-7C-18 (Visual Regression Diff Ratio Threshold):**  
   Visual snapshots captured at 1280px and 375px viewports against approved baseline snapshots maintain a pixel diff ratio $\le 0.05$ (5%), accommodating cross-platform Linux FreeType antialiasing while preventing structural visual regressions.
 
@@ -141,12 +152,12 @@ flowchart LR
 
 | Item | Requirement | Verification Method | Status |
 | :--- | :--- | :--- | :--- |
-| **1. Route Consolidation** | All console operations hosted on `/console/*`; legacy `/admin` and `/platform` routes redirect via 308. | Route curl & Playwright inspection | Pending Stage 1 |
+| **1. Route Consolidation** | All 52 legacy routes mapped to canonical `/console/*` routes; conflict-free 308 permanent redirect map. | Route curl & Playwright inspection | Pending Stage 1 |
 | **2. Zero Mocked Data** | Every metric, table, and inspector queries real backend services. Real telemetry charts consume actual time-series. | Code audit & API network inspection | Pending Stage 2 |
 | **3. Canonical RBAC** | Production `PlatformOperatorRole` enforced. Sensitive mutations restricted to `PLATFORM_OWNER`. | Unit & Action test execution | Pending Stage 1 |
-| **4. Server-Side Idle Timeout** | 15-minute sliding inactivity window verified server-side (`idleExpiresAt`). | Automated session expiration test | Pending Stage 1 |
-| **5. TOTP Replay Defense** | Single-use `lastTotpStep` checked within 30s window. 5-minute step-up freshness enforced. | Automated MFA security test | Pending Stage 2 |
-| **6. Audit Log Redaction** | Mutating actions recursively redact sensitive keys before persistence. | Automated audit payload test | Pending Stage 1 |
+| **4. Server-Side Inactivity Timeout** | Inactivity window verified server-side. Active `revokedAt = now` and cookie clearing verified. | Automated session expiration test | Pending Stage 1 |
+| **5. Grounded TOTP Replay Defense** | Atomic step consumption via `consume_platform_operator_totp_step`. 5-minute step-up freshness enforced. | Automated MFA security test | Pending Stage 2 |
+| **6. Dual-Boundary Audit Redaction** | Mutating actions and read/export services recursively redact sensitive keys and nested secrets. | Automated audit payload test | Pending Stage 1 |
 | **7. Responsive Layout (`UI-7B2-BP1`)** | 4-band responsive viewport adaptation verified on real browser bands. | CDP Playwright audit | Pending Stage 2 |
 | **8. WCAG 2.2 AA** | 0 Axe violations; contrast $\ge 4.5:1$ text and $\ge 3:1$ UI controls maintained. | Playwright Axe audit | Pending Stage 2 |
 | **9. Touch Targets** | Minimum $44 \times 44$px touch targets on mobile interactive controls. | Automated CSS layout test | Pending Stage 2 |
