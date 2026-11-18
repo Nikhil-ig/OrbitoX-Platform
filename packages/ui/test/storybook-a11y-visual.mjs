@@ -123,6 +123,7 @@ async function run() {
           // Set theme mode on documentElement & stabilize animations/fonts for deterministic pixels
           await page.evaluate(async (t) => {
             document.documentElement.setAttribute('data-theme', t);
+            document.documentElement.removeAttribute('data-accent');
             document.body.style.backgroundColor = 'var(--color-bg)';
             document.body.style.color = 'var(--color-text)';
             const style = document.createElement('style');
@@ -157,6 +158,8 @@ async function run() {
                   });
                 }
               }
+              // Restore documentElement so snapshot reflects clean story state
+              await page.evaluate(() => document.documentElement.removeAttribute('data-accent'));
             } else {
               const axeResults = await new AxeBuilder({ page })
                 .withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa', 'wcag22aa'])

@@ -173,6 +173,12 @@
 
 /* ─── 5. Accent Presets (8 Presets — Declared After Base Themes) ─── */
 
+[data-accent] {
+  --color-primary: var(--color-accent);
+  --color-primary-fg: var(--color-accent-fg);
+  --color-primary-hover: var(--color-accent-hover);
+}
+
 /* 5.1 Ocean Preset */
 :root,
 [data-accent="ocean"] {

@@ -37,7 +37,7 @@ export default meta;
 
 const SAMPLE_NAV_ITEMS: NavItem[] = [
   { id: 'overview', label: 'Overview', icon: <LayoutDashboard className="h-4 w-4" />, active: true },
-  { id: 'fleet', label: 'Fleet Clusters', icon: <Server className="h-4 w-4" />, badge: <span className="text-xs bg-emerald-500/20 text-emerald-400 px-1.5 py-0.5 rounded-full">12 Live</span> },
+  { id: 'fleet', label: 'Fleet Clusters', icon: <Server className="h-4 w-4" />, badge: <span className="text-xs bg-[var(--status-good-bg)] text-[var(--status-good-fg)] border border-[var(--status-good-border)] px-1.5 py-0.5 rounded-full font-medium">12 Live</span> },
   { id: 'tenants', label: 'Tenants & Orgs', icon: <Users className="h-4 w-4" /> },
   { id: 'security', label: 'Security & PKI', icon: <ShieldAlert className="h-4 w-4" /> },
   { id: 'billing', label: 'Billing & Plans', icon: <CreditCard className="h-4 w-4" /> },
@@ -101,7 +101,7 @@ export const DesktopWide: StoryObj = {
               </Button>
             }
             userMenu={
-              <div className="h-8 w-8 rounded-full bg-[var(--color-primary)]/20 text-[var(--color-primary)] flex items-center justify-center font-bold text-xs">
+              <div className="h-8 w-8 rounded-full bg-[var(--color-primary)] text-[var(--color-primary-fg)] flex items-center justify-center font-bold text-xs">
                 OP
               </div>
             }
@@ -118,7 +118,7 @@ export const DesktopWide: StoryObj = {
               </div>
               <div className="p-6 rounded-2xl bg-[var(--color-surface)] border border-[var(--color-border)]">
                 <div className="text-sm text-[var(--color-text-muted)]">Security Violations</div>
-                <div className="text-2xl font-bold mt-2 text-emerald-500">0 Leaks</div>
+                <div className="text-2xl font-bold mt-2 text-[var(--color-success)]">0 Leaks</div>
               </div>
             </div>
           </ShellContentFrame>
@@ -152,7 +152,7 @@ export const TabletLandscapeTouchStation: StoryObj = {
         <div className="flex flex-1 flex-col overflow-hidden">
           <TopBar
             breadcrumbs={<span className="font-semibold text-base">KDS Station 04 • Expeditor</span>}
-            contextSlot={<span className="text-xs bg-emerald-500/20 text-emerald-400 px-2 py-1 rounded-full font-medium">Rush Mode Active</span>}
+            contextSlot={<span className="text-xs bg-[var(--status-good-bg)] text-[var(--status-good-fg)] border border-[var(--status-good-border)] px-2 py-1 rounded-full font-medium">Rush Mode Active</span>}
           />
           <ShellContentFrame>
             <div className="p-6 rounded-2xl bg-[var(--color-surface)] border border-[var(--color-border)]">
@@ -185,7 +185,7 @@ export const TabletPortraitFloatingPill: StoryObj = {
       <div className="flex flex-col h-screen w-full bg-[var(--color-bg)] text-[var(--color-text)] relative">
         <TopBar
           breadcrumbs={<span className="font-semibold">RestaurantOS • Today</span>}
-          userMenu={<div className="h-8 w-8 rounded-full bg-[var(--color-primary)] text-xs flex items-center justify-center font-bold">JD</div>}
+          userMenu={<div className="h-8 w-8 rounded-full bg-[var(--color-primary)] text-[var(--color-primary-fg)] text-xs flex items-center justify-center font-bold">JD</div>}
         />
         <ShellContentFrame>
           <div className="p-6 rounded-2xl bg-[var(--color-surface)] border border-[var(--color-border)]">
@@ -220,7 +220,7 @@ export const HandheldMobileTabBar: StoryObj = {
       <div className="flex flex-col h-screen w-full max-w-[390px] mx-auto bg-[var(--color-bg)] text-[var(--color-text)] relative border-x border-[var(--color-border)]">
         <TopBar
           breadcrumbs={<span className="font-semibold text-sm">Customer Portal</span>}
-          userMenu={<div className="h-7 w-7 rounded-full bg-[var(--color-primary)] text-xs flex items-center justify-center font-bold">CP</div>}
+          userMenu={<div className="h-7 w-7 rounded-full bg-[var(--color-primary)] text-[var(--color-primary-fg)] text-xs flex items-center justify-center font-bold">CP</div>}
         />
         <ShellContentFrame>
           <div className="p-4 rounded-xl bg-[var(--color-surface)] border border-[var(--color-border)]">
@@ -327,7 +327,7 @@ export const IndividualNavItemRenderer: StoryObj = {
             isCollapsed={false}
           />
           <NavItemRenderer
-            item={{ id: 'with-badge', label: 'With Count Badge', icon: <Users className="h-4 w-4" />, badge: <span className="text-xs bg-emerald-500/20 text-emerald-400 px-1.5 py-0.5 rounded-full">5</span> }}
+            item={{ id: 'with-badge', label: 'With Count Badge', icon: <Users className="h-4 w-4" />, badge: <span className="text-xs bg-[var(--status-good-bg)] text-[var(--status-good-fg)] border border-[var(--status-good-border)] px-1.5 py-0.5 rounded-full font-medium">5</span> }}
             isCollapsed={false}
           />
         </div>
