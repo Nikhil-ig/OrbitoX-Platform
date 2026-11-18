@@ -47,7 +47,7 @@ export function BottomNavPill({
         <button
           type="button"
           onClick={onMoreClick}
-          className="rounded-full px-3 py-1.5 text-xs font-medium text-[var(--color-text-muted)] hover:bg-[var(--color-surface-raised)] hover:text-[var(--color-text)] transition-colors cursor-pointer flex items-center gap-1 min-h-[36px]"
+          className="rounded-full px-3 py-1.5 text-xs font-medium text-[var(--color-text-muted)] hover:bg-[var(--color-surface-raised)] hover:text-[var(--color-text)] transition-colors cursor-pointer flex items-center justify-center gap-1.5 min-h-[44px] min-w-[44px]"
           aria-label={t('shell.moreOptions', 'More navigation options')}
           data-testid="bottom-nav-pill-more-btn"
         >

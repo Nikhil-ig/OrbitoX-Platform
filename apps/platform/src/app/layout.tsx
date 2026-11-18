@@ -6,17 +6,13 @@ import { fontInter, fontNotoDevanagari, fontJetBrainsMono } from './fonts';
 import { GlobalProviders } from './providers';
 import {
   APPEARANCE_COOKIE,
-  parseAppearanceCookie,
-  getOperatorAppearance,
-  getCustomerAppearance,
+  resolveInitialAppearance,
   type AppearancePreferences,
   type PersonaRouteClass,
 } from '@/server/appearance/appearance-service';
 import {
   OPERATOR_SESSION_COOKIE,
   CUSTOMER_SESSION_COOKIE,
-  getOperatorSession,
-  getCustomerSession,
 } from '@/server/accounts/account-service';
 
 export const metadata = {
@@ -31,41 +27,15 @@ export default async function RootLayout({ children }: { children: React.ReactNo
   const cookieStore = await cookies();
   const operatorToken = cookieStore.get(OPERATOR_SESSION_COOKIE)?.value;
   const customerToken = cookieStore.get(CUSTOMER_SESSION_COOKIE)?.value;
+  const rawAppearanceCookie = cookieStore.get(APPEARANCE_COOKIE)?.value;
 
-  let appearance: AppearancePreferences | null = null;
-
-  if (operatorToken) {
-    try {
-      const opSession = await getOperatorSession(operatorToken);
-      if (opSession?.operatorId) {
-        appearance = await getOperatorAppearance(opSession.operatorId);
-      }
-    } catch {
-      // Database timeout / error during session or appearance query:
-      // Degrade gracefully: leave appearance = null so cookie fallback runs!
-      appearance = null;
-    }
-  } else if (customerToken) {
-    try {
-      const custSession = await getCustomerSession(customerToken);
-      if (custSession?.userId) {
-        appearance = await getCustomerAppearance(custSession.userId);
-      }
-    } catch {
-      // Database timeout / error during session or appearance query:
-      // Degrade gracefully: leave appearance = null so cookie fallback runs!
-      appearance = null;
-    }
-  }
-
-  // Graceful degradation hierarchy:
-  // Level 1: Authenticated DB stored preference (resolved above)
-  // Level 2: Validated cache cookie (if DB is unreachable or unconfigured)
-  // Level 3: Persona default (with station override if present)
-  if (!appearance) {
-    const rawCookie = cookieStore.get(APPEARANCE_COOKIE)?.value;
-    appearance = parseAppearanceCookie(rawCookie, routePersona, stationHint);
-  }
+  const appearance = await resolveInitialAppearance({
+    operatorToken,
+    customerToken,
+    rawAppearanceCookie,
+    routePersona,
+    stationHint,
+  });
 
   return (
     <html

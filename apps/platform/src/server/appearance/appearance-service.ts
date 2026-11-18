@@ -2,6 +2,10 @@ import 'server-only';
 import { z } from 'zod';
 import { NextResponse } from 'next/server';
 import { prisma } from '@/server/db/prisma';
+import {
+  getOperatorSession,
+  getCustomerSession,
+} from '@/server/accounts/account-service';
 
 export const ACCENT_PRESETS = [
   'ocean',
@@ -302,4 +306,64 @@ export async function updateCustomerAppearance(
 
   return { success: true, appearance: data };
 }
+
+export interface ResolveAppearanceParams {
+  operatorToken?: string | null;
+  customerToken?: string | null;
+  rawAppearanceCookie?: string | null;
+  routePersona?: PersonaRouteClass | null;
+  stationHint?: string | null;
+}
+
+/**
+ * Production Appearance Resolution Hierarchy (RootLayout authoritative resolver)
+ *
+ * Level 1: Authenticated DB stored preference (Operator or Customer User)
+ * Level 2: Validated cache cookie (during database outage / unreachable or unconfigured)
+ * Level 3: Persona default (with station hint override if present)
+ */
+export async function resolveInitialAppearance({
+  operatorToken,
+  customerToken,
+  rawAppearanceCookie,
+  routePersona = 'public',
+  stationHint,
+}: ResolveAppearanceParams): Promise<AppearancePreferences> {
+  let appearance: AppearancePreferences | null = null;
+
+  if (operatorToken) {
+    try {
+      const opSession = await getOperatorSession(operatorToken);
+      if (opSession?.operatorId) {
+        appearance = await getOperatorAppearance(opSession.operatorId);
+      }
+    } catch {
+      // Database timeout / outage during session or appearance query:
+      // Degrade gracefully: leave appearance = null so cookie fallback runs!
+      appearance = null;
+    }
+  } else if (customerToken) {
+    try {
+      const custSession = await getCustomerSession(customerToken);
+      if (custSession?.userId) {
+        appearance = await getCustomerAppearance(custSession.userId);
+      }
+    } catch {
+      // Database timeout / outage during session or appearance query:
+      // Degrade gracefully: leave appearance = null so cookie fallback runs!
+      appearance = null;
+    }
+  }
+
+  // Graceful degradation hierarchy:
+  // Level 1: Authenticated DB stored preference (resolved above)
+  // Level 2: Validated cache cookie (if DB is unreachable or unconfigured)
+  // Level 3: Persona default (with station override if present)
+  if (!appearance) {
+    appearance = parseAppearanceCookie(rawAppearanceCookie, routePersona || 'public', stationHint);
+  }
+
+  return appearance;
+}
+
 

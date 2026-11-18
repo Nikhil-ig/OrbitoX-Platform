@@ -1,8 +1,8 @@
 import './dom-setup';
-import { describe, it } from 'node:test';
+import { describe, it, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
 import React from 'react';
-import { render } from '@testing-library/react';
+import { render, cleanup } from '@testing-library/react';
 import fs from 'node:fs';
 import path from 'node:path';
 
@@ -27,6 +27,9 @@ const SAMPLE_ITEMS: NavItem[] = [
 ];
 
 describe('Layer 4: Persona Shell Primitives & Responsive Navigation', () => {
+  afterEach(() => {
+    cleanup();
+  });
   it('NavItemRenderer enforces 3-way semantic normalization without fake href="#" (TST-CMP-05)', () => {
     const { container } = render(
       <div>
@@ -252,42 +255,153 @@ describe('Layer 4: Persona Shell Primitives & Responsive Navigation', () => {
     assert.ok(phoneBand.className.includes('flex sm:hidden'), 'Phone band must enforce flex sm:hidden');
   });
 
-  it('ResponsiveShell manages overflow items cleanly without duplication across phone, tablet pill, and more sheet', () => {
-    const EIGHT_ITEMS: NavItem[] = [
-      { id: '1', label: 'Item 1' },
-      { id: '2', label: 'Item 2' },
-      { id: '3', label: 'Item 3' },
-      { id: '4', label: 'Item 4' },
-      { id: '5', label: 'Item 5' },
-      { id: '6', label: 'Item 6' },
-      { id: '7', label: 'Item 7' },
-      { id: '8', label: 'Item 8' },
+  it('ResponsiveShell manages overflow items and bottomNavItems cleanly without duplication across all 4 bands', () => {
+    const SIX_NAV_ITEMS: NavItem[] = [
+      { id: 'nav-1', label: 'Dashboard' },
+      { id: 'nav-2', label: 'Orders' },
+      { id: 'nav-3', label: 'Kitchen' },
+      { id: 'nav-4', label: 'Analytics' },
+      { id: 'nav-5', label: 'Inventory' },
+      { id: 'nav-6', label: 'Customers' },
+    ];
+
+    const TWO_BOTTOM_ITEMS: NavItem[] = [
+      { id: 'bot-1', label: 'System Health' },
+      { id: 'bot-2', label: 'API Reference' },
     ];
 
     const { container } = render(
       <ResponsiveShell
-        appName="Overflow Test"
-        navItems={EIGHT_ITEMS}
+        appName="Compact Navigation Contract Test"
+        navItems={SIX_NAV_ITEMS}
+        bottomNavItems={TWO_BOTTOM_ITEMS}
+      >
+        <div>Content Frame</div>
+      </ResponsiveShell>
+    );
+
+    // ─── Band 4: Desktop SidebarCard (>= 1280px) ───
+    const desktopBand = container.querySelector('[data-testid="desktop-sidebar-band"]');
+    assert.ok(desktopBand, 'Desktop sidebar band must exist');
+    const desktopText = desktopBand.textContent || '';
+    SIX_NAV_ITEMS.forEach((item) => {
+      assert.ok(desktopText.includes(item.label), `Desktop sidebar must contain ${item.label}`);
+    });
+    TWO_BOTTOM_ITEMS.forEach((item) => {
+      assert.ok(desktopText.includes(item.label), `Desktop sidebar must contain ${item.label}`);
+    });
+
+    // ─── Band 3: Tablet Landscape IconRail (1024px – 1279px) ───
+    const tabletLandBand = container.querySelector('[data-testid="tablet-landscape-rail-band"]');
+    assert.ok(tabletLandBand, 'Tablet landscape rail band must exist');
+    SIX_NAV_ITEMS.forEach((item) => {
+      const railItem = tabletLandBand.querySelector(`[title="${item.label}"]`);
+      assert.ok(railItem, `Tablet landscape rail must contain item with title ${item.label}`);
+    });
+    TWO_BOTTOM_ITEMS.forEach((item) => {
+      const railItem = tabletLandBand.querySelector(`[title="${item.label}"]`);
+      assert.ok(railItem, `Tablet landscape rail must contain bottom item with title ${item.label}`);
+    });
+
+    // ─── Band 2: Tablet Portrait BottomNavPill (640px – 1023px) ───
+    const tabletPill = container.querySelector('[data-testid="tablet-portrait-pill-band"]');
+    assert.ok(tabletPill);
+    const pillText = tabletPill.textContent || '';
+    // Primary 4 items must be in the pill:
+    assert.ok(pillText.includes('Dashboard'), 'Pill must contain item 0 (Dashboard)');
+    assert.ok(pillText.includes('Orders'), 'Pill must contain item 1 (Orders)');
+    assert.ok(pillText.includes('Kitchen'), 'Pill must contain item 2 (Kitchen)');
+    assert.ok(pillText.includes('Analytics'), 'Pill must contain item 3 (Analytics)');
+    // Overflow items and bottom items must NOT be duplicated in the pill:
+    assert.ok(!pillText.includes('Inventory'), 'Pill must NOT contain overflow item 4 (Inventory)');
+    assert.ok(!pillText.includes('Customers'), 'Pill must NOT contain overflow item 5 (Customers)');
+    assert.ok(!pillText.includes('System Health'), 'Pill must NOT contain bottom item 1 (System Health)');
+    assert.ok(!pillText.includes('API Reference'), 'Pill must NOT contain bottom item 2 (API Reference)');
+
+    // Pill More button must be present with >= 44x44px target classes
+    const pillMoreBtn = tabletPill.querySelector('[data-testid="bottom-nav-pill-more-btn"]') as HTMLElement;
+    assert.ok(pillMoreBtn, 'BottomNavPill must display More button when overflow exists');
+    assert.ok(pillMoreBtn.className.includes('min-h-[44px]'), 'More button must have min-h-[44px]');
+    assert.ok(pillMoreBtn.className.includes('min-w-[44px]'), 'More button must have min-w-[44px]');
+
+    // ─── Band 1: Phone BottomTabBar (< 640px) ───
+    const phoneTabBar = container.querySelector('[data-testid="phone-tabbar-band"]');
+    assert.ok(phoneTabBar);
+    const phoneText = phoneTabBar.textContent || '';
+    assert.ok(phoneText.includes('Dashboard'), 'Phone tab bar must contain item 0');
+    assert.ok(phoneText.includes('Orders'), 'Phone tab bar must contain item 1');
+    assert.ok(phoneText.includes('Kitchen'), 'Phone tab bar must contain item 2');
+    assert.ok(phoneText.includes('Analytics'), 'Phone tab bar must contain item 3');
+    assert.ok(!phoneText.includes('Inventory'), 'Phone tab bar must NOT contain overflow item 4');
+    assert.ok(!phoneText.includes('Customers'), 'Phone tab bar must NOT contain overflow item 5');
+    assert.ok(!phoneText.includes('System Health'), 'Phone tab bar must NOT contain bottom item 1');
+    assert.ok(!phoneText.includes('API Reference'), 'Phone tab bar must NOT contain bottom item 2');
+    const tabMoreBtn = phoneTabBar.querySelector('button[aria-label="More navigation options"]');
+    assert.ok(tabMoreBtn, 'Phone BottomTabBar must display More button when overflow exists');
+
+    // ─── MoreNavSheet Contents (Phone & Tablet Portrait) ───
+    const { baseElement: sheetBase } = render(
+      <MoreNavSheet
+        isOpen={true}
+        onOpenChange={() => {}}
+        items={SIX_NAV_ITEMS.slice(4)}
+        bottomItems={TWO_BOTTOM_ITEMS}
+        title="More Actions & Navigation"
+      />
+    );
+
+    const sheetContent = sheetBase.querySelector('[role="dialog"]');
+    assert.ok(sheetContent, 'MoreNavSheet dialog must be rendered');
+    const sheetText = sheetContent.textContent || '';
+
+    // Sheet MUST contain overflow items and bottomNavItems:
+    assert.ok(sheetText.includes('Inventory'), 'MoreNavSheet must contain overflow item 4 (Inventory)');
+    assert.ok(sheetText.includes('Customers'), 'MoreNavSheet must contain overflow item 5 (Customers)');
+    assert.ok(sheetText.includes('System Health'), 'MoreNavSheet must contain bottom item 1 (System Health)');
+    assert.ok(sheetText.includes('API Reference'), 'MoreNavSheet must contain bottom item 2 (API Reference)');
+
+    // Sheet must NOT contain primary items (zero duplication):
+    assert.ok(!sheetText.includes('Dashboard'), 'MoreNavSheet must NOT contain primary item 0');
+    assert.ok(!sheetText.includes('Orders'), 'MoreNavSheet must NOT contain primary item 1');
+    assert.ok(!sheetText.includes('Kitchen'), 'MoreNavSheet must NOT contain primary item 2');
+    assert.ok(!sheetText.includes('Analytics'), 'MoreNavSheet must NOT contain primary item 3');
+
+    // Verify structured sections:
+    const overflowList = sheetContent.querySelector('[data-testid="more-nav-sheet-list"]');
+    assert.ok(overflowList, 'Must contain overflow items list');
+    const bottomList = sheetContent.querySelector('[data-testid="more-nav-sheet-bottom-list"]');
+    assert.ok(bottomList, 'Must contain distinct bottomNavItems list');
+  });
+
+  it('ResponsiveShell triggers overflow when navItems <= 4 but bottomNavItems is present', () => {
+    const THREE_NAV_ITEMS: NavItem[] = [
+      { id: '1', label: 'Home' },
+      { id: '2', label: 'Menu' },
+      { id: '3', label: 'Orders' },
+    ];
+    const ONE_BOTTOM_ITEM: NavItem[] = [
+      { id: 'settings', label: 'Settings' },
+    ];
+
+    const { container } = render(
+      <ResponsiveShell
+        appName="Bottom Items Only Overflow Test"
+        navItems={THREE_NAV_ITEMS}
+        bottomNavItems={ONE_BOTTOM_ITEM}
       >
         <div>Content</div>
       </ResponsiveShell>
     );
 
-    // Primary items in tablet pill should be exactly items 0..3 (4 items) plus the More button
     const tabletPill = container.querySelector('[data-testid="tablet-portrait-pill-band"]');
     assert.ok(tabletPill);
     const pillMoreBtn = tabletPill.querySelector('[data-testid="bottom-nav-pill-more-btn"]');
-    assert.ok(pillMoreBtn, 'Tablet BottomNavPill must display More button when overflow exists');
+    assert.ok(pillMoreBtn, 'BottomNavPill must display More button because bottomNavItems is present');
 
-    // Phone tab bar should also display More button
     const phoneTabBar = container.querySelector('[data-testid="phone-tabbar-band"]');
     assert.ok(phoneTabBar);
     const tabMoreBtn = phoneTabBar.querySelector('button[aria-label="More navigation options"]');
-    assert.ok(tabMoreBtn, 'Phone BottomTabBar must display More button when overflow exists');
-
-    // TopBar hamburger button should be active when overflow exists
-    const topBarMenuBtn = container.querySelector('header button[aria-label="Toggle navigation menu"]');
-    assert.ok(topBarMenuBtn, 'TopBar must display menu button when overflow exists');
+    assert.ok(tabMoreBtn, 'Phone BottomTabBar must display More button because bottomNavItems is present');
   });
 
   it('MoreNavSheet renders single overlay without nested duplicate overlays', () => {

@@ -49,6 +49,11 @@ const OVERFLOW_NAV_ITEMS: NavItem[] = [
   { id: 'support', label: 'Help & Docs', icon: <HelpCircle className="h-4 w-4" /> },
 ];
 
+const SAMPLE_BOTTOM_NAV_ITEMS: NavItem[] = [
+  { id: 'system-status', label: 'System Health', icon: <Bell className="h-4 w-4" /> },
+  { id: 'documentation', label: 'API Reference', icon: <HelpCircle className="h-4 w-4" /> },
+];
+
 /**
  * 1. Desktop Wide (1440 x 900) - Operator & Owner Console Shell
  */
@@ -234,6 +239,7 @@ export const HandheldMobileTabBar: StoryObj = {
           isOpen={isMoreOpen}
           onOpenChange={setIsMoreOpen}
           items={OVERFLOW_NAV_ITEMS}
+          bottomItems={SAMPLE_BOTTOM_NAV_ITEMS}
         />
       </div>
     );
@@ -249,7 +255,7 @@ export const AdaptiveResponsiveShell: StoryObj = {
       <ResponsiveShell
         appName="OrbitoX Universal"
         navItems={[...SAMPLE_NAV_ITEMS, ...OVERFLOW_NAV_ITEMS]}
-        bottomNavItems={OVERFLOW_NAV_ITEMS}
+        bottomNavItems={SAMPLE_BOTTOM_NAV_ITEMS}
         breadcrumbs={<span className="font-semibold text-sm">Dashboard</span>}
       >
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
@@ -288,7 +294,7 @@ export const AdaptiveResponsiveShellTouchStation: StoryObj = {
       <ResponsiveShell
         appName="OrbitoX POS & KDS Station"
         navItems={[...SAMPLE_NAV_ITEMS, ...OVERFLOW_NAV_ITEMS]}
-        bottomNavItems={OVERFLOW_NAV_ITEMS}
+        bottomNavItems={SAMPLE_BOTTOM_NAV_ITEMS}
         touchStation={true}
         breadcrumbs={<span className="font-semibold text-sm">Kitchen Display Station (KDS)</span>}
       >

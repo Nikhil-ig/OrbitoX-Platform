@@ -50,9 +50,9 @@ export function ResponsiveShell({
   const [isSidebarCollapsed, setIsSidebarCollapsed] = React.useState(false);
   const [isMoreSheetOpen, setIsMoreSheetOpen] = React.useState(false);
 
-  const hasOverflow = navItems.length > 4;
-  const primaryNavItems = hasOverflow ? navItems.slice(0, 4) : navItems;
-  const overflowNavItems = hasOverflow ? navItems.slice(4) : [];
+  const hasOverflow = navItems.length > 4 || Boolean(bottomNavItems && bottomNavItems.length > 0);
+  const primaryNavItems = navItems.length > 4 ? navItems.slice(0, 4) : navItems;
+  const overflowNavItems = navItems.length > 4 ? navItems.slice(4) : [];
 
   const brandElement = brand || (
     <div className="flex items-center gap-2">
@@ -141,6 +141,7 @@ export function ResponsiveShell({
         isOpen={isMoreSheetOpen}
         onOpenChange={setIsMoreSheetOpen}
         items={overflowNavItems}
+        bottomItems={bottomNavItems}
         title={t('shell.moreActions', 'More Actions & Navigation')}
       />
     </div>

@@ -2,12 +2,14 @@ import './dom-setup';
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import { prisma } from '@/server/db/prisma';
+import { Prisma } from '@prisma/client';
 import {
   getOperatorAppearance,
   getCustomerAppearance,
   getPersonaDefaultAppearance,
   parseAppearanceCookie,
   serializeAppearanceCookie,
+  resolveInitialAppearance,
   type AppearancePreferences,
 } from '@/server/appearance/appearance-service';
 
@@ -22,10 +24,21 @@ describe('Layer 2: Database Outage Degradation & Station Context Hierarchy (P2 I
     compactSidebar: true,
   };
 
-  it('propagates real database errors from getOperatorAppearance without swallowing', async () => {
+  const GENUINE_PRISMA_OUTAGE = new Prisma.PrismaClientInitializationError(
+    "Can't reach database server at 'aws.postgres:5432'. Please make sure your database server is running.",
+    '6.19.3',
+    'P1001'
+  );
+
+  const GENUINE_PRISMA_KNOWN_ERROR = new Prisma.PrismaClientKnownRequestError(
+    'Database connection timed out during query execution',
+    { code: 'P1001', clientVersion: '6.19.3' }
+  );
+
+  it('propagates genuine Prisma outage error from getOperatorAppearance without swallowing', async () => {
     const originalFindUnique = prisma.platformOperator.findUnique;
     prisma.platformOperator.findUnique = (async () => {
-      throw new Error("P1001: Can't reach database server at postgres:5432");
+      throw GENUINE_PRISMA_OUTAGE;
     }) as any;
 
     try {
@@ -33,7 +46,11 @@ describe('Layer 2: Database Outage Degradation & Station Context Hierarchy (P2 I
         async () => {
           await getOperatorAppearance('operator-outage-test');
         },
-        /P1001: Can't reach database server/,
+        (err: any) => {
+          assert.ok(err instanceof Prisma.PrismaClientInitializationError, 'Error must be genuine PrismaClientInitializationError instance');
+          assert.equal(err.errorCode, 'P1001');
+          return true;
+        },
         'getOperatorAppearance must let Prisma outage errors bubble up'
       );
     } finally {
@@ -41,10 +58,10 @@ describe('Layer 2: Database Outage Degradation & Station Context Hierarchy (P2 I
     }
   });
 
-  it('propagates real database errors from getCustomerAppearance without swallowing', async () => {
+  it('propagates genuine Prisma outage error from getCustomerAppearance without swallowing', async () => {
     const originalFindUnique = prisma.customerUser.findUnique;
     prisma.customerUser.findUnique = (async () => {
-      throw new Error("P1001: Can't reach database server at postgres:5432");
+      throw GENUINE_PRISMA_OUTAGE;
     }) as any;
 
     try {
@@ -52,7 +69,11 @@ describe('Layer 2: Database Outage Degradation & Station Context Hierarchy (P2 I
         async () => {
           await getCustomerAppearance('customer-outage-test');
         },
-        /P1001: Can't reach database server/,
+        (err: any) => {
+          assert.ok(err instanceof Prisma.PrismaClientInitializationError, 'Error must be genuine PrismaClientInitializationError instance');
+          assert.equal(err.errorCode, 'P1001');
+          return true;
+        },
         'getCustomerAppearance must let Prisma outage errors bubble up'
       );
     } finally {
@@ -60,67 +81,64 @@ describe('Layer 2: Database Outage Degradation & Station Context Hierarchy (P2 I
     }
   });
 
-  it('executes RootLayout resolution path during database outage, recovering validated cookie before persona default', async () => {
-    const originalFindUnique = prisma.platformOperator.findUnique;
-    prisma.platformOperator.findUnique = (async () => {
-      throw new Error("P1001: Database connection timed out");
+  it('executes production resolveInitialAppearance during genuine Prisma outage, recovering validated cookie before persona default', async () => {
+    const originalFindUnique = prisma.platformOperatorSession.findUnique;
+    prisma.platformOperatorSession.findUnique = (async () => {
+      throw GENUINE_PRISMA_OUTAGE;
     }) as any;
 
     const rawCookie = serializeAppearanceCookie(CUSTOM_SAVED_COOKIE);
+    // 43-character valid base64url token structure to satisfy session token validation
+    const mockOperatorToken = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOP1';
 
     try {
-      // Simulate exact RootLayout server-side resolution path
-      let dbAppearance: AppearancePreferences | null = null;
-      try {
-        dbAppearance = await getOperatorAppearance('op-crash-1');
-      } catch (dbErr) {
-        // Layout catches failure and degrades gracefully
-        dbAppearance = null;
-      }
-
-      const resolved: AppearancePreferences = dbAppearance || parseAppearanceCookie(rawCookie, 'operator');
+      // Execute the exact production resolver invoked by RootLayout
+      const resolved = await resolveInitialAppearance({
+        operatorToken: mockOperatorToken,
+        rawAppearanceCookie: rawCookie,
+        routePersona: 'operator',
+      });
 
       assert.equal(resolved.accent, 'ruby', 'Must recover accent from validated cookie during DB outage');
       assert.equal(resolved.theme, 'dark');
       assert.equal(resolved.radius, 32);
       assert.equal(resolved.boldFocusRings, true);
     } finally {
-      prisma.platformOperator.findUnique = originalFindUnique;
+      prisma.platformOperatorSession.findUnique = originalFindUnique;
     }
   });
 
-  it('executes RootLayout resolution path during database outage when cookie is missing or corrupted, falling back to persona default', async () => {
-    const originalFindUnique = prisma.platformOperator.findUnique;
-    prisma.platformOperator.findUnique = (async () => {
-      throw new Error("P1001: Database connection timed out");
+  it('executes production resolveInitialAppearance during Prisma outage with missing/corrupted cookie, falling back to persona default', async () => {
+    const originalFindUnique = prisma.platformOperatorSession.findUnique;
+    prisma.platformOperatorSession.findUnique = (async () => {
+      throw GENUINE_PRISMA_KNOWN_ERROR;
     }) as any;
 
+    const mockOperatorToken = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOP1';
+
     try {
-      // 1. Missing cookie
-      let dbAppearance: AppearancePreferences | null = null;
-      try {
-        dbAppearance = await getOperatorAppearance('op-crash-2');
-      } catch {
-        dbAppearance = null;
-      }
-      const resolvedMissing: AppearancePreferences = dbAppearance || parseAppearanceCookie(null, 'operator');
+      // 1. Missing cookie during outage -> operator default (dark mood)
+      const resolvedMissing = await resolveInitialAppearance({
+        operatorToken: mockOperatorToken,
+        rawAppearanceCookie: null,
+        routePersona: 'operator',
+      });
       const opDefault = getPersonaDefaultAppearance('operator');
       assert.deepEqual(resolvedMissing, opDefault, 'Must fall back to operator default on missing cookie');
+      assert.equal(resolvedMissing.theme, 'dark');
 
-      // 2. Corrupted cookie
-      let dbAppearanceCust: AppearancePreferences | null = null;
-      try {
-        dbAppearanceCust = await getCustomerAppearance('cust-crash-2');
-      } catch {
-        dbAppearanceCust = null;
-      }
-      const resolvedCorrupt: AppearancePreferences = dbAppearanceCust || parseAppearanceCookie('invalid-not-json', 'customer');
+      // 2. Corrupted cookie during outage -> customer default (light mood)
+      const resolvedCorrupt = await resolveInitialAppearance({
+        customerToken: 'mock-cust-token',
+        rawAppearanceCookie: 'not-valid-json-cookie',
+        routePersona: 'customer',
+      });
       const custDefault = getPersonaDefaultAppearance('customer');
       assert.deepEqual(resolvedCorrupt, custDefault, 'Must fall back to customer default on corrupted cookie');
       assert.equal(resolvedCorrupt.theme, 'light');
       assert.equal(resolvedCorrupt.radius, 28);
     } finally {
-      prisma.platformOperator.findUnique = originalFindUnique;
+      prisma.platformOperatorSession.findUnique = originalFindUnique;
     }
   });
 

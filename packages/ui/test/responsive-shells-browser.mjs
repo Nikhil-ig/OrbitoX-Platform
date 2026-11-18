@@ -83,6 +83,12 @@ async function runResponsiveBrowserVerification() {
     assert.equal(await isElementVisible(page, '[data-testid="desktop-sidebar-band"]'), false, '390px: Desktop sidebar must be hidden');
     console.log('  ✔ Band 1 (390×844): Phone BottomTabBar active, all tablet/desktop sidebars hidden');
 
+    const phoneMoreBtn = page.locator('[data-testid="phone-tabbar-band"] button[aria-label="More navigation options"]');
+    const phoneMoreBox = await phoneMoreBtn.boundingBox();
+    assert.ok(phoneMoreBox !== null, 'Phone More button bounding box must be present');
+    assert.ok(phoneMoreBox.width >= 44 && phoneMoreBox.height >= 44, `Phone More button must be >= 44×44px (got ${phoneMoreBox.width}×${phoneMoreBox.height}px)`);
+    console.log(`  ✔ Phone More Button Hit Target: ${phoneMoreBox.width}×${phoneMoreBox.height}px satisfies >= 44×44px`);
+
     // 1b. Boundary 639px (< 640px)
     await page.setViewportSize({ width: 639, height: 844 });
     await page.waitForTimeout(100);
@@ -111,10 +117,41 @@ async function runResponsiveBrowserVerification() {
     // 2c. Tablet Portrait Overflow More Sheet Trigger & Non-Duplication
     const pillMoreBtn = page.locator('[data-testid="bottom-nav-pill-more-btn"]');
     assert.equal(await pillMoreBtn.isVisible(), true, 'BottomNavPill must display More button when overflow exists');
+
+    const pillMoreBox = await pillMoreBtn.boundingBox();
+    assert.ok(pillMoreBox !== null, 'More button bounding box must be present');
+    assert.ok(
+      pillMoreBox.width >= 44,
+      `More button width must be >= 44px for WCAG touch ergonomics (got ${pillMoreBox.width}px)`
+    );
+    assert.ok(
+      pillMoreBox.height >= 44,
+      `More button height must be >= 44px for WCAG touch ergonomics (got ${pillMoreBox.height}px)`
+    );
+    console.log(`  ✔ More Button Hit Target: ${pillMoreBox.width}×${pillMoreBox.height}px satisfies >= 44×44px`);
+
     await pillMoreBtn.click();
     await page.waitForTimeout(200);
     const dialog = page.locator('[role="dialog"]');
     assert.equal(await dialog.isVisible(), true, 'MoreNavSheet must open on tablet portrait when More button clicked');
+
+    // Assert rendered contents inside MoreNavSheet:
+    const sheetText = (await dialog.textContent()) || '';
+    // Assert overflow items are present:
+    assert.ok(sheetText.includes('Billing & Plans'), 'Sheet must contain overflow item (Billing & Plans)');
+    assert.ok(sheetText.includes('API Keys'), 'Sheet must contain overflow item (API Keys)');
+    assert.ok(sheetText.includes('Settings'), 'Sheet must contain overflow item (Settings)');
+    assert.ok(sheetText.includes('Help & Docs'), 'Sheet must contain overflow item (Help & Docs)');
+    // Assert bottomNavItems are present:
+    assert.ok(sheetText.includes('System Health'), 'Sheet must contain bottomNavItem (System Health)');
+    assert.ok(sheetText.includes('API Reference'), 'Sheet must contain bottomNavItem (API Reference)');
+    // Assert primary items are NOT duplicated in the sheet:
+    assert.ok(!sheetText.includes('Overview'), 'Sheet must NOT contain primary item 0 (Overview)');
+    assert.ok(!sheetText.includes('Fleet Clusters'), 'Sheet must NOT contain primary item 1 (Fleet Clusters)');
+    assert.ok(!sheetText.includes('Tenants & Orgs'), 'Sheet must NOT contain primary item 2 (Tenants & Orgs)');
+    assert.ok(!sheetText.includes('Security & PKI'), 'Sheet must NOT contain primary item 3 (Security & PKI)');
+    console.log('  ✔ Tablet Portrait More Sheet: Full item contents rendered without duplication (both overflow & bottomNavItems)');
+
     await page.keyboard.press('Escape');
     await page.waitForTimeout(200);
     console.log('  ✔ Tablet Portrait More Sheet: Accessible from BottomNavPill and cleanly dismissible');
