@@ -402,3 +402,18 @@ html, body {
   --ui-danger-bg: var(--status-problem-bg, rgba(239, 68, 68, 0.15));
 }
 
+/* ─── Landscape Phone (< 500px height) Adaptation (UI-7B2-BP1 / Matrix 4.3) ─── */
+@media (max-height: 500px) {
+  [data-testid="responsive-shell"] header {
+    height: 2.5rem !important; /* 40px compressed TopBar */
+  }
+  [data-testid="tablet-portrait-pill-band"] {
+    bottom: 0.5rem !important; /* 8px compact dock */
+  }
+  [data-testid="responsive-shell"] .shell-content-frame {
+    padding-top: 0.5rem !important;
+    padding-bottom: 3.5rem !important;
+  }
+}
+
+

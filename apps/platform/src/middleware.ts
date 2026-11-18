@@ -89,7 +89,7 @@ export function createForwardHeaders(req: NextRequest, baseHeaders?: Headers): H
   headers.set('x-orbito-route-persona', persona);
 
   const rawStation = req.cookies.get('orbitox_station')?.value;
-  if (rawStation && ['pos', 'kds', 'host', 'waiter'].includes(rawStation)) {
+  if (rawStation && ['pos', 'kds', 'host', 'waiter', 'dark', 'night'].includes(rawStation)) {
     headers.set('x-orbito-station', rawStation);
   }
 

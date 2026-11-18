@@ -29,7 +29,7 @@ export function TopBar({
   return (
     <header
       className={cn(
-        'sticky top-0 z-40 flex h-14 items-center justify-between border-b border-[var(--color-border)] bg-[var(--color-surface)]/95 backdrop-blur-xs px-4 sm:px-6 select-none',
+        'sticky top-0 z-40 flex h-14 [@media(max-height:500px)]:h-10 items-center justify-between border-b border-[var(--color-border)] bg-[var(--color-surface)]/95 backdrop-blur-xs px-4 sm:px-6 select-none transition-all',
         className
       )}
     >
@@ -39,7 +39,7 @@ export function TopBar({
           <button
             type="button"
             onClick={onMenuToggle}
-            className="md:hidden p-2 rounded-full text-[var(--color-text-muted)] hover:text-[var(--color-text)] hover:bg-[var(--color-surface-raised)] transition-colors cursor-pointer min-h-[44px] min-w-[44px] flex items-center justify-center"
+            className="lg:hidden p-2 rounded-full text-[var(--color-text-muted)] hover:text-[var(--color-text)] hover:bg-[var(--color-surface-raised)] transition-colors cursor-pointer min-h-[44px] min-w-[44px] flex items-center justify-center"
             aria-label={t('shell.toggleNav', 'Toggle navigation menu')}
           >
             <Menu className="h-5 w-5" />

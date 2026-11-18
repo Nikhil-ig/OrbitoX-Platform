@@ -90,14 +90,16 @@ describe('TST-TOK-02: Persona-Specific Route & Station Default Resolution', () =
   });
 
   it('allows authenticated station cookie values but rejects invalid injections', () => {
-    // Valid station cookie
-    const validReq = new NextRequest('http://localhost:3005/pos', {
-      headers: {
-        cookie: 'orbitox_station=pos',
-      },
-    });
-    const validHeaders = createForwardHeaders(validReq);
-    assert.equal(validHeaders.get('x-orbito-station'), 'pos');
+    // Valid station cookies
+    for (const stationVal of ['pos', 'kds', 'host', 'waiter', 'dark', 'night']) {
+      const req = new NextRequest('http://localhost:3005/pos', {
+        headers: {
+          cookie: `orbitox_station=${stationVal}`,
+        },
+      });
+      const headers = createForwardHeaders(req);
+      assert.equal(headers.get('x-orbito-station'), stationVal, `Station ${stationVal} must be allowed`);
+    }
 
     // Invalid/injected station cookie
     const invalidReq = new NextRequest('http://localhost:3005/pos', {

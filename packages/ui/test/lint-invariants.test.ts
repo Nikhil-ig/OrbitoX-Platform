@@ -235,7 +235,11 @@ describe('Design System Token & Style Invariants Guard (B2 / B3)', () => {
   ];
 
   it('scans all modern component, chart, and persona shell files (zero unchecked)', () => {
-    assert.ok(filesToCheck.length >= 88, `Expected >= 88 component/chart/shell files, found ${filesToCheck.length}`);
+    assert.equal(
+      filesToCheck.length,
+      89,
+      `Expected exact inventory of 89 component/chart/shell files (69 components, 9 charts, 11 shells), found ${filesToCheck.length}`
+    );
   });
 
   it('enforces 0 hardcoded hex colors in components and charts', () => {
@@ -438,25 +442,45 @@ describe('Design System Token & Style Invariants Guard (B2 / B3)', () => {
 
   it('ensures every component, chart, and shell module has Storybook story coverage (F-3)', () => {
     const storyDir = path.resolve(__dirname, '../src/stories');
-    const storySource = fs
-      .readdirSync(storyDir)
-      .filter((f) => f.endsWith('.stories.tsx'))
-      .map((f) => fs.readFileSync(path.join(storyDir, f), 'utf8'))
-      .join('\n');
+    const storyFiles = fs.readdirSync(storyDir).filter((f) => f.endsWith('.stories.tsx'));
+    const storySources = storyFiles.map((f) => fs.readFileSync(path.join(storyDir, f), 'utf8'));
+    const combinedStorySource = storySources.join('\n');
+
+    // Parse all imported identifiers from stories deterministically
+    const importedIdentifiers = new Set<string>();
+    const importRegex = /import\s+(?:\{([^}]+)\}|(\w+))\s+from/g;
+    let match: RegExpExecArray | null;
+    while ((match = importRegex.exec(combinedStorySource)) !== null) {
+      if (match[1]) {
+        for (const item of match[1].split(',')) {
+          const id = item.trim().split(/\s+as\s+/)[0]?.trim();
+          if (id) importedIdentifiers.add(id);
+        }
+      }
+      if (match[2]) {
+        importedIdentifiers.add(match[2].trim());
+      }
+    }
 
     const uncovered: string[] = [];
     for (const filePath of filesToCheck) {
       const base = path.basename(filePath, path.extname(filePath));
       if (base === 'index' || base === 'types') continue;
-      const isChart = filePath.startsWith(chartDir);
-      const isShell = filePath.startsWith(shellDir);
-      const importSubpath = isChart
-        ? `charts/${base}`
-        : isShell
-        ? `shells/${base}`
-        : `components/${base}`;
-      if (!storySource.includes(importSubpath) && !storySource.includes(base)) {
-        uncovered.push(importSubpath);
+
+      // Convert kebab-case file basename to PascalCase component name
+      const pascalName = base
+        .split('-')
+        .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+        .join('');
+
+      const isImported =
+        importedIdentifiers.has(pascalName) ||
+        importedIdentifiers.has(base) ||
+        combinedStorySource.includes(`/${base}'`) ||
+        combinedStorySource.includes(`/${base}"`);
+
+      if (!isImported) {
+        uncovered.push(`${base} (${pascalName})`);
       }
     }
 

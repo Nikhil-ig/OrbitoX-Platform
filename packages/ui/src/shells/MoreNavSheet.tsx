@@ -2,8 +2,6 @@ import * as React from 'react';
 import {
   BottomSheet,
   BottomSheetContent,
-  BottomSheetOverlay,
-  BottomSheetPortal,
 } from '../components/bottom-sheet';
 import { NavItemRenderer } from './NavItemRenderer';
 import type { NavItem } from './types';
@@ -32,27 +30,24 @@ export function MoreNavSheet({
 
   return (
     <BottomSheet open={isOpen} onOpenChange={onOpenChange}>
-      <BottomSheetPortal>
-        <BottomSheetOverlay />
-        <BottomSheetContent className="bg-[var(--color-surface)] border-t border-[var(--color-border)] p-4 max-h-[80vh] overflow-y-auto">
-          {title && (
-            <div className="text-base font-semibold text-[var(--color-text)] mb-4 px-2">
-              {title}
-            </div>
-          )}
-          <nav className="space-y-1">
-            {items.map((item) => (
-              <NavItemRenderer
-                key={item.id}
-                item={item}
-                isCollapsed={false}
-                onItemClick={handleItemSelect}
-                className="w-full justify-start text-sm py-3"
-              />
-            ))}
-          </nav>
-        </BottomSheetContent>
-      </BottomSheetPortal>
+      <BottomSheetContent className="bg-[var(--color-surface)] border-t border-[var(--color-border)] p-4 max-h-[80vh] overflow-y-auto">
+        {title && (
+          <div className="text-base font-semibold text-[var(--color-text)] mb-4 px-2">
+            {title}
+          </div>
+        )}
+        <nav className="space-y-1">
+          {items.map((item) => (
+            <NavItemRenderer
+              key={item.id}
+              item={item}
+              isCollapsed={false}
+              onItemClick={handleItemSelect}
+              className="w-full justify-start text-sm py-3"
+            />
+          ))}
+        </nav>
+      </BottomSheetContent>
     </BottomSheet>
   );
 }

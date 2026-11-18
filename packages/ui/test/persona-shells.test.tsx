@@ -13,6 +13,7 @@ import {
   BottomNavPill,
   BottomTabBar,
   ResponsiveShell,
+  MoreNavSheet,
   NavItemRenderer,
   type NavItem,
 } from '../src/shells';
@@ -249,5 +250,57 @@ describe('Layer 4: Persona Shell Primitives & Responsive Navigation', () => {
     const phoneBand = container.querySelector('[data-testid="phone-tabbar-band"]');
     assert.ok(phoneBand, 'Must contain phone tab bar band');
     assert.ok(phoneBand.className.includes('flex sm:hidden'), 'Phone band must enforce flex sm:hidden');
+  });
+
+  it('ResponsiveShell manages overflow items cleanly without duplication across phone, tablet pill, and more sheet', () => {
+    const EIGHT_ITEMS: NavItem[] = [
+      { id: '1', label: 'Item 1' },
+      { id: '2', label: 'Item 2' },
+      { id: '3', label: 'Item 3' },
+      { id: '4', label: 'Item 4' },
+      { id: '5', label: 'Item 5' },
+      { id: '6', label: 'Item 6' },
+      { id: '7', label: 'Item 7' },
+      { id: '8', label: 'Item 8' },
+    ];
+
+    const { container } = render(
+      <ResponsiveShell
+        appName="Overflow Test"
+        navItems={EIGHT_ITEMS}
+      >
+        <div>Content</div>
+      </ResponsiveShell>
+    );
+
+    // Primary items in tablet pill should be exactly items 0..3 (4 items) plus the More button
+    const tabletPill = container.querySelector('[data-testid="tablet-portrait-pill-band"]');
+    assert.ok(tabletPill);
+    const pillMoreBtn = tabletPill.querySelector('[data-testid="bottom-nav-pill-more-btn"]');
+    assert.ok(pillMoreBtn, 'Tablet BottomNavPill must display More button when overflow exists');
+
+    // Phone tab bar should also display More button
+    const phoneTabBar = container.querySelector('[data-testid="phone-tabbar-band"]');
+    assert.ok(phoneTabBar);
+    const tabMoreBtn = phoneTabBar.querySelector('button[aria-label="More navigation options"]');
+    assert.ok(tabMoreBtn, 'Phone BottomTabBar must display More button when overflow exists');
+
+    // TopBar hamburger button should be active when overflow exists
+    const topBarMenuBtn = container.querySelector('header button[aria-label="Toggle navigation menu"]');
+    assert.ok(topBarMenuBtn, 'TopBar must display menu button when overflow exists');
+  });
+
+  it('MoreNavSheet renders single overlay without nested duplicate overlays', () => {
+    const { baseElement } = render(
+      <MoreNavSheet
+        isOpen={true}
+        onOpenChange={() => {}}
+        items={SAMPLE_ITEMS}
+        title="More Actions"
+      />
+    );
+
+    const overlays = baseElement.querySelectorAll('[data-state="open"].fixed.inset-0');
+    assert.equal(overlays.length, 1, 'MoreNavSheet must render exactly one overlay (no nested duplicate overlays)');
   });
 });

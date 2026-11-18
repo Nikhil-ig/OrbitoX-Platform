@@ -232,7 +232,7 @@ export const HandheldMobileTabBar: StoryObj = {
         />
         <MoreNavSheet
           isOpen={isMoreOpen}
-          onClose={() => setIsMoreOpen(false)}
+          onOpenChange={setIsMoreOpen}
           items={OVERFLOW_NAV_ITEMS}
         />
       </div>
@@ -260,11 +260,43 @@ export const AdaptiveResponsiveShell: StoryObj = {
             </p>
             <ul className="text-xs space-y-1.5 mt-3 text-[var(--color-text-muted)]">
               <li>• &lt; 640px: <b>Phone BottomTabBar</b> + MoreSheet</li>
-              <li>• 640px–1023px: <b>Tablet Portrait BottomNavPill</b></li>
+              <li>• 640px–1023px: <b>Tablet Portrait BottomNavPill</b> (with More Sheet trigger)</li>
               <li>• 1024px–1279px: <b>Tablet Landscape IconRail (64px)</b></li>
               <li>• &ge; 1280px: <b>Desktop SidebarCard (260px)</b></li>
             </ul>
           </div>
+        </div>
+      </ResponsiveShell>
+    );
+  },
+};
+
+/**
+ * 5b. Adaptive Responsive Shell with Touch Station Mode (52px Touch Targets)
+ */
+export const AdaptiveResponsiveShellTouchStation: StoryObj = {
+  parameters: {
+    viewport: {
+      defaultViewport: 'ipadProLandscape',
+      viewports: {
+        ipadProLandscape: { name: 'iPad Pro Landscape (1194x834)', styles: { width: '1194px', height: '834px' } },
+      },
+    },
+  },
+  render: () => {
+    return (
+      <ResponsiveShell
+        appName="OrbitoX POS & KDS Station"
+        navItems={[...SAMPLE_NAV_ITEMS, ...OVERFLOW_NAV_ITEMS]}
+        bottomNavItems={OVERFLOW_NAV_ITEMS}
+        touchStation={true}
+        breadcrumbs={<span className="font-semibold text-sm">Kitchen Display Station (KDS)</span>}
+      >
+        <div className="p-6 rounded-2xl bg-[var(--color-surface)] border border-[var(--color-border)] max-w-xl">
+          <h3 className="font-bold text-base">Touch Station Mode (touchStation=true)</h3>
+          <p className="text-sm text-[var(--color-text-muted)] mt-2">
+            The tablet landscape rail renders with enlarged 52px touch targets and an 80px rail width to prevent mis-taps during high-throughput kitchen and POS station operations.
+          </p>
         </div>
       </ResponsiveShell>
     );

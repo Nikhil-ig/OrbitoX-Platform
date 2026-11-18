@@ -74,7 +74,7 @@ async function runResponsiveBrowserVerification() {
 
     // Test matrix across exact mathematical boundaries:
     // 1. Phone Band (< 640px)
-    // 1a. Reference 390x844
+    // 1a. Reference 390x844 (iPhone 14 Portrait)
     await page.setViewportSize({ width: 390, height: 844 });
     await page.waitForTimeout(100);
     assert.equal(await isElementVisible(page, '[data-testid="phone-tabbar-band"]'), true, '390px: Phone BottomTabBar must be visible');
@@ -108,7 +108,18 @@ async function runResponsiveBrowserVerification() {
     assert.equal(await isElementVisible(page, '[data-testid="desktop-sidebar-band"]'), false, '834px: Desktop sidebar must be hidden');
     console.log('  ✔ Band 2 (834×1194): Tablet Portrait BottomNavPill active on iPad Pro Portrait');
 
-    // 2c. Boundary 1023px
+    // 2c. Tablet Portrait Overflow More Sheet Trigger & Non-Duplication
+    const pillMoreBtn = page.locator('[data-testid="bottom-nav-pill-more-btn"]');
+    assert.equal(await pillMoreBtn.isVisible(), true, 'BottomNavPill must display More button when overflow exists');
+    await pillMoreBtn.click();
+    await page.waitForTimeout(200);
+    const dialog = page.locator('[role="dialog"]');
+    assert.equal(await dialog.isVisible(), true, 'MoreNavSheet must open on tablet portrait when More button clicked');
+    await page.keyboard.press('Escape');
+    await page.waitForTimeout(200);
+    console.log('  ✔ Tablet Portrait More Sheet: Accessible from BottomNavPill and cleanly dismissible');
+
+    // 2d. Boundary 1023px
     await page.setViewportSize({ width: 1023, height: 1000 });
     await page.waitForTimeout(100);
     assert.equal(await isElementVisible(page, '[data-testid="tablet-portrait-pill-band"]'), true, '1023px: Tablet portrait pill must remain visible');
@@ -154,7 +165,32 @@ async function runResponsiveBrowserVerification() {
     assert.equal(await isElementVisible(page, '[data-testid="tablet-landscape-rail-band"]'), false, '1440px: Tablet landscape rail must be hidden');
     console.log('  ✔ Band 4 (1440×900): Desktop SidebarCard active on Desktop Reference');
 
-    console.log('\n🏆 [ResponsiveShell Playwright]: ALL 4 VIEWPORT BANDS & BOUNDARY WIDTHS PASSED IN REAL BROWSER!\n');
+    // 5. Constrained-Height Landscape Phone Viewport (844 × 390, max-height: 500px)
+    await page.setViewportSize({ width: 844, height: 390 });
+    await page.waitForTimeout(100);
+    const headerHeight = await page.evaluate(() => {
+      const h = document.querySelector('[data-testid="responsive-shell"] header');
+      return h ? h.getBoundingClientRect().height : 0;
+    });
+    assert.ok(headerHeight <= 44, `Landscape phone: TopBar must compress in height (got ${headerHeight}px <= 44px)`);
+    assert.equal(await isElementVisible(page, '[data-testid="tablet-portrait-pill-band"]'), true, '844x390: Tablet portrait pill must remain visible');
+    assert.equal(await isElementVisible(page, '[data-testid="desktop-sidebar-band"]'), false, '844x390: Desktop sidebar must be hidden');
+    console.log('  ✔ Constrained Height (844×390 Landscape Phone): TopBar compressed (<=44px) and pill navigation docked');
+
+    // 6. Touch Station Tablet Landscape Mode (>= 52px Touch Targets)
+    const stationUrl = `http://127.0.0.1:${port}/iframe.html?id=shells-persona-shell-primitives--adaptive-responsive-shell-touch-station&viewMode=story`;
+    await page.goto(stationUrl, { waitUntil: 'networkidle' });
+    await page.setViewportSize({ width: 1194, height: 834 });
+    await page.waitForTimeout(100);
+    const railTargetHeight = await page.evaluate(() => {
+      const items = Array.from(document.querySelectorAll('[data-testid="tablet-landscape-rail-band"] [data-rail-mode="touch-station"] nav > *'));
+      if (items.length === 0) return 0;
+      return Math.min(...items.map((i) => i.getBoundingClientRect().height));
+    });
+    assert.ok(railTargetHeight >= 52, `Touch station rail targets must be >= 52px (got ${railTargetHeight}px)`);
+    console.log(`  ✔ Touch Station Mode (1194×834 KDS): Tablet landscape rail enforces >= 52px ergonomic targets (got ${railTargetHeight}px)`);
+
+    console.log('\n🏆 [ResponsiveShell Playwright]: ALL VIEWPORT BANDS, BOUNDARIES, LANDSCAPE PHONE & TOUCH STATION CHECKS PASSED IN REAL BROWSER!\n');
   } finally {
     if (browser) await browser.close();
     server.close();

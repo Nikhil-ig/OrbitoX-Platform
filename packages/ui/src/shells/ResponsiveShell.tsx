@@ -50,6 +50,10 @@ export function ResponsiveShell({
   const [isSidebarCollapsed, setIsSidebarCollapsed] = React.useState(false);
   const [isMoreSheetOpen, setIsMoreSheetOpen] = React.useState(false);
 
+  const hasOverflow = navItems.length > 4;
+  const primaryNavItems = hasOverflow ? navItems.slice(0, 4) : navItems;
+  const overflowNavItems = hasOverflow ? navItems.slice(4) : [];
+
   const brandElement = brand || (
     <div className="flex items-center gap-2">
       {brandIcon || <div className="h-6 w-6 rounded-full bg-[var(--color-primary)] shrink-0" />}
@@ -104,7 +108,7 @@ export function ResponsiveShell({
           }
           actionSlot={topBarActions}
           onMenuToggle={() => setIsMoreSheetOpen(true)}
-          showMenuButton={false}
+          showMenuButton={hasOverflow}
           className="shrink-0"
         />
 
@@ -115,26 +119,28 @@ export function ResponsiveShell({
       </div>
 
       {/* ─── Band 2: Tablet Portrait BottomNavPill (640px – 1023px: Tailwind sm & md) ─── */}
-      <div className="hidden sm:flex lg:hidden fixed bottom-6 left-1/2 -translate-x-1/2 z-40" data-testid="tablet-portrait-pill-band">
+      <div className="hidden sm:flex lg:hidden fixed bottom-6 [@media(max-height:500px)]:bottom-2 left-1/2 -translate-x-1/2 z-40" data-testid="tablet-portrait-pill-band">
         <BottomNavPill
-          items={navItems.slice(0, 5)}
+          items={primaryNavItems}
+          showMoreButton={hasOverflow}
+          onMoreClick={() => setIsMoreSheetOpen(true)}
         />
       </div>
 
       {/* ─── Band 1: Phone BottomTabBar (< 640px: Tailwind max-sm) ─── */}
       <div className="flex sm:hidden fixed bottom-0 left-0 right-0 z-40" data-testid="phone-tabbar-band">
         <BottomTabBar
-          items={navItems}
-          showMoreButton={navItems.length > 4}
+          items={primaryNavItems}
+          showMoreButton={hasOverflow}
           onMoreClick={() => setIsMoreSheetOpen(true)}
         />
       </div>
 
-      {/* Phone More Navigation Sheet */}
+      {/* Phone & Tablet More Navigation Sheet */}
       <MoreNavSheet
         isOpen={isMoreSheetOpen}
         onOpenChange={setIsMoreSheetOpen}
-        items={navItems.slice(4)}
+        items={overflowNavItems}
         title={t('shell.moreActions', 'More Actions & Navigation')}
       />
     </div>

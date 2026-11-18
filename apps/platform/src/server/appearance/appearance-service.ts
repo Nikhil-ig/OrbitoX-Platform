@@ -46,6 +46,9 @@ export const DEFAULT_APPEARANCE: AppearancePreferences = {
   compactSidebar: false,
 };
 
+export const ALLOWED_STATION_HINTS = ['pos', 'kds', 'host', 'waiter', 'dark', 'night'] as const;
+export type StationHint = (typeof ALLOWED_STATION_HINTS)[number];
+
 export type PersonaRouteClass = 'operator' | 'owner' | 'customer' | 'staff_pos' | 'staff_operational' | 'public';
 
 /**
@@ -171,8 +174,18 @@ export async function getOperatorAppearance(operatorId: string): Promise<Appeara
 
   if (!operator) return null;
 
+  // Check all seven persisted appearance fields:
   // If user has not configured any explicit preference, return null so cookie/persona fallback runs
-  if (!operator.appearanceTheme && !operator.appearanceAccent && !operator.appearanceDensity) {
+  const hasConfiguredPreference =
+    operator.appearanceTheme != null ||
+    operator.appearanceAccent != null ||
+    operator.appearanceDensity != null ||
+    operator.appearanceRadius != null ||
+    operator.appearanceSmoothAnimations != null ||
+    operator.appearanceBoldFocusRings != null ||
+    operator.appearanceCompactSidebar != null;
+
+  if (!hasConfiguredPreference) {
     return null;
   }
 
@@ -234,8 +247,18 @@ export async function getCustomerAppearance(userId: string): Promise<AppearanceP
 
   if (!user) return null;
 
+  // Check all seven persisted appearance fields:
   // If user has not configured any explicit preference, return null so cookie/persona fallback runs
-  if (!user.appearanceTheme && !user.appearanceAccent && !user.appearanceDensity) {
+  const hasConfiguredPreference =
+    user.appearanceTheme != null ||
+    user.appearanceAccent != null ||
+    user.appearanceDensity != null ||
+    user.appearanceRadius != null ||
+    user.appearanceSmoothAnimations != null ||
+    user.appearanceBoldFocusRings != null ||
+    user.appearanceCompactSidebar != null;
+
+  if (!hasConfiguredPreference) {
     return null;
   }
 

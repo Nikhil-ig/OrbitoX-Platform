@@ -194,9 +194,24 @@ describe('P2-01: React.StrictMode Double-Mount & Lifecycle Integration', () => {
           headers: { 'Content-Type': 'application/json' },
         })
       );
+      // Allow microtask queue to drain completely
+      await new Promise((resolve) => setTimeout(resolve, 50));
     });
 
-    // 5. Verify no stale callbacks or unhandled crashes occurred
-    assert.ok(true, 'Component and controller unmounted cleanly without memory leaks or errors');
+    // 5. Assert strict post-unmount lifecycle guarantees:
+    // - The queue halted processing because isDisposed is true.
+    // - The second queued update (Emerald) was NOT dispatched after unmount.
+    // - Exactly one PUT was ever executed across the component lifetime.
+    assert.equal(
+      putCount,
+      1,
+      'Final PUT request count must remain strictly 1: queued change must NOT dispatch after unmount'
+    );
+    assert.equal(
+      putPayloads.length,
+      1,
+      'Only the initial in-flight payload was sent; queued patches safely canceled'
+    );
+    assert.equal(putPayloads[0].theme, 'light');
   });
 });
