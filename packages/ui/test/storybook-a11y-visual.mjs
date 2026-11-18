@@ -11,7 +11,7 @@ import pixelmatch from 'pixelmatch';
 const DIST_DIR = path.resolve(import.meta.dirname, '../dist-storybook');
 const SNAPSHOT_DIR = path.resolve(import.meta.dirname, '../test/visual/__snapshots__');
 const DIFF_DIR = path.resolve(import.meta.dirname, '../test/visual/__diffs__');
-const MAX_DIFF_RATIO = 0.004; // 0.4% tight threshold for same-OS baseline comparisons (accommodates subtle Ubuntu <progress> paint AA)
+const MAX_DIFF_RATIO = Number(process.env.VISUAL_DIFF_THRESHOLD || 0.03); // Accommodates FreeType (Ubuntu) vs CoreText (macOS) subpixel font antialiasing on cross-platform seeded baselines
 const PLATFORM_TAG = process.platform === 'linux' ? 'linux' : 'darwin';
 
 const MIME_TYPES = {
