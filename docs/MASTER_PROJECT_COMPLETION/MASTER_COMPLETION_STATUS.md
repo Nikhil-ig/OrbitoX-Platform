@@ -18,7 +18,7 @@
 | **Phase 7B.1** | Theme & Shell Foundation Baseline | Closed | **ACCEPTED** | `f65698e` | Green |
 | **Phase 7B.2** | Theme Tokens & Persona Shells | Stage 1.2 Closure | **DELIVERED & VERIFIED** | `188680c` (PR #10 open) | 100% Green (Run #447, #448) |
 | **Phase 0** | Master Project Forensic Audit | Phase 0 Delivery | **COMPLETED** | `docs/MASTER_PROJECT_COMPLETION/*` | Documentation Complete |
-| **Phase 7C** | Operations Console & System Screens | Stage 0 Specification | **PENDING OWNER APPROVAL** | `docs/ui-reset/phase-7c/*` | Specification Ready |
+| **Phase 7C** | Operations Console & System Screens | Stage 0 Specification | **PENDING OWNER APPROVAL** | `docs/ui-reset/phase-7c/*` (`7b79f6051a76b3287dbbafbbad47e66756e9d72f`) | Specification Ready |
 | **Phase 7D** | Customer Onboarding & Self-Service | Stage 0 | Planned | Roadmap registered | Pending Phase 7C |
 | **Phase 7E** | RestaurantOS Commercial Hardening | Stage 0 | Planned | Roadmap registered | Pending Phase 7D |
 | **Phase 7F** | Commercial Engine & Billing Integration| Stage 0 | Planned | Roadmap registered | Pending Phase 7E |
@@ -77,7 +77,25 @@
 
 ---
 
-## 4. Live Subsystem Capability & Readiness Matrix
+## 4. Current Stage Record: Phase 7C Stage 0 (Operations Console Specification)
+
+* **Stage Name:** Phase 7C Stage 0 Architectural & Design Specification
+* **Specification Branch:** `docs/phase-7c-stage0-specification`
+* **Delivered Commit SHA:** `7b79f6051a76b3287dbbafbbad47e66756e9d72f`
+* **Parent Baseline:** `188680c27ce51ebb8ca6e998e504c51a24c34fa0` (Exact Phase 7B.2 Delivered HEAD)
+* **Status:** Complete & Remotely Verified on GitHub — Pending Owner Approval
+* **Corrective Revisions Completed:**
+  1. **Responsive Breakpoints:** Corrected Documents 01 and 07 to match Phase 7B.2 `UI-7B2-BP1` (`< 640px`, `640–1023px`, `1024–1279px`, `≥ 1280px`).
+  2. **Route Census & Consolidation:** Complete 36-route catalog in Document 02; full consolidation into 11 canonical `/console/*` routes with 308 permanent redirect mapping in Document 04.
+  3. **Domain Boundary Clarification:** Formal architectural separation between `Organization` (`PlatformOrganization`, legal customer entity) and `Tenant` (`RestaurantLocation`, runtime software instance).
+  4. **Canonical RBAC Roles:** Grounded strictly in production enum `PlatformOperatorRole` (`PLATFORM_OWNER`, `OPERATOR`, `BILLING`, `SUPPORT_READONLY`) and `operatorRoleAllows()`.
+  5. **Server-Side Security Enforcement:** Database-backed 15-minute idle timeout (`PlatformOperatorSession.idleExpiresAt`), TOTP replay prevention (`PlatformOperator.lastTotpStep`), and recursive audit log redaction policy in Document 06.
+  6. **Reconcile HTTP Semantics:** Confirmed and documented `/api/v1/platform/reconcile` as strictly `POST` mutation across all specifications and inventories.
+* **Governing Rule:** Implementation coding for Stage 1 will NOT begin until the platform owner provides explicit authorization on this specification.
+
+---
+
+## 5. Live Subsystem Capability & Readiness Matrix
 
 | Subsystem / Module | Scope / Location | Maturity Status | Primary Verification Evidence |
 | :--- | :--- | :--- | :--- |

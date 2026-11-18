@@ -75,7 +75,7 @@ OrbitoX provides two primary HTTP API surfaces: the Control Plane API (`apps/pla
   ├── GET /api/v1/platform/overview/summary          [Operator] Real-time platform summary metrics
   ├── GET /api/v1/platform/overview/telemetry        [Operator] System load, resource usage, active sessions
   ├── GET /api/v1/platform/overview/alerts           [Operator] Active infrastructure and security alerts
-  ├── GET /api/v1/platform/reconcile                 [Operator] Reconcile desired vs observed cluster state
+  ├── POST /api/v1/platform/reconcile                [Operator] Reconcile desired vs observed cluster state
   ├── GET /api/v1/platform/search                    [Operator] Global cross-tenant search
   ├── GET, POST /api/v1/platform/tenants             [Operator] List and create platform tenants
   ├── GET, PUT /api/v1/platform/tenants/:id          [Operator] Inspect and update tenant metadata

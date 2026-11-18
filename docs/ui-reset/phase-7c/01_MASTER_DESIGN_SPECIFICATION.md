@@ -60,8 +60,13 @@ graph TD
 
 1. **Authoritative Real-Time Data (Zero Mocked Screens):**  
    Every counter, graph, status indicator, and list must be directly backed by real server actions and validated Prisma queries under restricted connection roles (`orbitox_runtime`, `orbitox_platform_admin_audit`). No hardcoded statistics or decorative cards.
-2. **Phase 7B.2 Responsive Shell Primitives:**  
-   The Console utilizes the accepted `ResponsiveShell` primitive with `ConsoleNavItems`, responsive 4-band breakpoint behavior (Desktop $\ge 1280$px, Tablet Landscape $1024\text{--}1279$px, Tablet Portrait $768\text{--}1023$px, Mobile Phone $< 768$px), compact `MoreNavSheet`, and 44x44px minimum touch targets.
+2. **Phase 7B.2 Responsive Shell Primitives & Approved Breakpoints:**  
+   The Console strictly inherits and consumes the accepted `ResponsiveShell` primitive with `ConsoleNavItems` and preserves the approved Phase 7B.2 4-band breakpoint boundaries:
+   - **Phone:** `< 640px` (`< sm`) with sticky compact navigation, bottom bar, and `MoreNavSheet`.
+   - **Tablet Portrait:** `640px` to `1023px` (`sm` to `< lg`) with off-canvas drawer navigation.
+   - **Tablet Landscape:** `1024px` to `1279px` (`lg` to `< xl`) with compact 64px icon sidebar.
+   - **Desktop:** `1280px` and above (`>= 1280px`, `>= xl`) with full 260px expanded navigation sidebar.
+   - Minimum $44 \times 44$px touch targets enforced across all interactive controls.
 3. **High-Information-Density Design with Dark Operator Theme:**  
    In alignment with concept reference `1 · Operator console — dark.png`, the console defaults to an operator-optimized dark palette (`data-theme="dark"` with persistent accent selection), high-contrast tabular data, monospaced ID tokens, and clear operational badge hierarchies.
 4. **Step-Up MFA Re-Authentication for High-Risk Actions:**  
