@@ -666,6 +666,14 @@ class AuditConsoleService {
         targetOrgId = parts[1];
         targetProjId = parts[3];
         targetEnvId = parts[5];
+
+        if (typeof (readerClient as any).$executeRaw === 'function') {
+          try {
+            await (readerClient as any).$executeRaw`SELECT set_config('app.current_tenant_id', ${options.scope}, true)`;
+          } catch {
+            // Ignore if mock client
+          }
+        }
       }
 
       const whereClause: any = {};
@@ -673,41 +681,28 @@ class AuditConsoleService {
       if (targetProjId) whereClause.projectId = targetProjId;
       if (targetEnvId) whereClause.environmentId = targetEnvId;
 
-      const queryEvents = async (client: any) => {
-        if (options?.scope && typeof client.$executeRaw === 'function') {
-          try {
-            await client.$executeRaw`SELECT set_config('app.current_tenant_id', ${options.scope}, true)`;
-          } catch {
-            // Ignore if mock client
-          }
-        }
-        return client.platformAuditEvent.findMany({
-          where: whereClause,
-          orderBy: [{ occurredAt: 'asc' }, { id: 'asc' }],
-          select: {
-            id: true,
-            action: true,
-            entityType: true,
-            entityId: true,
-            actorId: true,
-            actorEmail: true,
-            organizationId: true,
-            projectId: true,
-            environmentId: true,
-            reason: true,
-            ipAddress: true,
-            requestId: true,
-            status: true,
-            failureReason: true,
-            occurredAt: true,
-            metadata: true,
-          },
-        });
-      };
-
-      const events = typeof readerClient.$transaction === 'function'
-        ? await readerClient.$transaction(async (tx: any) => queryEvents(tx))
-        : await queryEvents(readerClient);
+      const events = await readerClient.platformAuditEvent.findMany({
+        where: whereClause,
+        orderBy: [{ occurredAt: 'asc' }, { id: 'asc' }],
+        select: {
+          id: true,
+          action: true,
+          entityType: true,
+          entityId: true,
+          actorId: true,
+          actorEmail: true,
+          organizationId: true,
+          projectId: true,
+          environmentId: true,
+          reason: true,
+          ipAddress: true,
+          requestId: true,
+          status: true,
+          failureReason: true,
+          occurredAt: true,
+          metadata: true,
+        },
+      });
 
       if (events.length === 0) {
         if (!isPrivileged && process.env.NODE_ENV === 'production' && !options?.scope) {
