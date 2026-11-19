@@ -79,9 +79,11 @@ export function AuditClient({
   const [isVerifying, setIsVerifying] = React.useState(false);
   const [verifyResult, setVerifyResult] = React.useState<{
     valid: boolean;
+    status: 'VERIFIED' | 'FAILED' | 'UNKNOWN';
     total: number;
     algorithm: string;
     timestamp: string;
+    details?: string;
   } | null>(null);
 
   // Fetch updated records when filters change
@@ -155,28 +157,47 @@ export function AuditClient({
     setIsVerifying(true);
     try {
       const res = await fetch('/api/v1/platform/audit', { method: 'POST' });
-      if (res.ok) {
-        const payload = await res.json();
+      const payload = await res.json().catch(() => null);
+
+      if (res.ok && payload?.success) {
+        const v = payload.data?.verification;
+        const isValid = v?.valid === true;
+        const status = isValid ? 'VERIFIED' : (v?.status === 'UNKNOWN' ? 'UNKNOWN' : 'FAILED');
         setVerifyResult({
-          valid: payload.data?.verification?.valid ?? true,
-          total: payload.data?.verification?.totalEntries ?? summary.totalEvents,
-          algorithm: 'SHA-256 (Merkle Hash Chain: previousHash -> rowHash)',
+          valid: isValid,
+          status,
+          total: typeof v?.totalEntries === 'number' ? v.totalEntries : summary.totalEvents,
+          algorithm: v?.algorithm || 'SHA-256 (Merkle Hash Chain: previousHash -> rowHash)',
           timestamp: new Date().toISOString(),
+          details:
+            v?.details ||
+            (isValid
+              ? `All ${v?.totalEntries ?? summary.totalEvents} audit records cryptographically verified.`
+              : 'Cryptographic hash mismatch or tampered records detected.'),
         });
       } else {
+        const v = payload?.data?.verification;
+        const status = v?.status === 'FAILED' ? 'FAILED' : 'UNKNOWN';
         setVerifyResult({
-          valid: true,
-          total: summary.totalEvents,
-          algorithm: 'SHA-256 (PostgreSQL Durable Append-Only Sequence)',
+          valid: false,
+          status,
+          total: typeof v?.totalEntries === 'number' ? v.totalEntries : summary.totalEvents,
+          algorithm: v?.algorithm || 'SHA-256 (PostgreSQL Ledger Verification)',
           timestamp: new Date().toISOString(),
+          details:
+            v?.details ||
+            payload?.error?.message ||
+            `Verification failed with HTTP ${res.status}: ${res.statusText}`,
         });
       }
-    } catch {
+    } catch (err) {
       setVerifyResult({
-        valid: true,
+        valid: false,
+        status: 'UNKNOWN',
         total: summary.totalEvents,
-        algorithm: 'SHA-256 (PostgreSQL Durable Append-Only Sequence)',
+        algorithm: 'SHA-256 (PostgreSQL Ledger Verification)',
         timestamp: new Date().toISOString(),
+        details: err instanceof Error ? err.message : 'Network error communicating with verification service',
       });
     } finally {
       setIsVerifying(false);
@@ -609,15 +630,41 @@ export function AuditClient({
             </div>
           ) : verifyResult ? (
             <div className="space-y-3">
-              <div className="rounded-lg border border-emerald-500/20 bg-emerald-500/10 p-3 text-xs text-emerald-500 flex items-start gap-2">
-                <ShieldCheck className="h-4 w-4 shrink-0 mt-0.5" />
-                <div>
-                  <div className="font-semibold">Ledger Cryptographically Intact</div>
-                  <div className="text-[11px] mt-0.5">
-                    All {verifyResult.total} audit events have valid linear hash dependencies. Zero record tampering or truncation detected.
+              {verifyResult.status === 'VERIFIED' && (
+                <div className="rounded-lg border border-emerald-500/20 bg-emerald-500/10 p-3 text-xs text-emerald-500 flex items-start gap-2">
+                  <ShieldCheck className="h-4 w-4 shrink-0 mt-0.5" />
+                  <div>
+                    <div className="font-semibold">Ledger Cryptographically Intact</div>
+                    <div className="text-[11px] mt-0.5">
+                      {verifyResult.details || `All ${verifyResult.total} audit events have valid linear hash dependencies. Zero record tampering or truncation detected.`}
+                    </div>
                   </div>
                 </div>
-              </div>
+              )}
+
+              {verifyResult.status === 'FAILED' && (
+                <div className="rounded-lg border border-red-500/20 bg-red-500/10 p-3 text-xs text-red-500 flex items-start gap-2">
+                  <AlertTriangle className="h-4 w-4 shrink-0 mt-0.5" />
+                  <div>
+                    <div className="font-semibold">Cryptographic Integrity Breach Detected</div>
+                    <div className="text-[11px] mt-0.5">
+                      {verifyResult.details || 'Hash sequence discrepancy or record modification detected in audit trail.'}
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {verifyResult.status === 'UNKNOWN' && (
+                <div className="rounded-lg border border-amber-500/20 bg-amber-500/10 p-3 text-xs text-amber-500 flex items-start gap-2">
+                  <AlertTriangle className="h-4 w-4 shrink-0 mt-0.5" />
+                  <div>
+                    <div className="font-semibold">Verification Inconclusive / Service Unavailable</div>
+                    <div className="text-[11px] mt-0.5">
+                      {verifyResult.details || 'Unable to establish cryptographic verification state with the audit authority.'}
+                    </div>
+                  </div>
+                </div>
+              )}
 
               <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-raised)] p-3 text-xs space-y-1.5 font-mono">
                 <div>

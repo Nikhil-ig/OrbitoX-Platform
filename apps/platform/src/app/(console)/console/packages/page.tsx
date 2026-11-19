@@ -106,6 +106,7 @@ export default function ConsolePackagesPage() {
       header: 'Cryptographic Signature',
       cell: ({ row }) => {
         const verified = row.original.signatureVerified === true;
+        const integrityStatus = (row.original as any).integrityStatus;
         const hasKey = Boolean(
           (row.original as any).hasEd25519Signature ||
           (row.original as any).signingPublicKeyPem
@@ -124,6 +125,11 @@ export default function ConsolePackagesPage() {
               <>
                 <ShieldCheck className="h-4 w-4" />
                 <span>Ed25519 Verified</span>
+              </>
+            ) : integrityStatus === 'LEGACY_MANIFEST_ONLY' ? (
+              <>
+                <Package className="h-4 w-4" />
+                <span>Legacy Manifest Only</span>
               </>
             ) : hasKey ? (
               <>

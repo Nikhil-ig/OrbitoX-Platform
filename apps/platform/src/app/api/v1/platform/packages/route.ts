@@ -4,6 +4,7 @@ import { withApiGuard } from '@/app/api/v1/_lib/api-guard';
 import { ApiResponse, ApiRequestContext } from '@/app/api/v1/_lib/api-types';
 import { auditService } from '@/app/api/v1/_lib/platform-governance';
 import { platformRepository } from '@/server/db/platform-repository';
+import { packageSignatureService } from '@/server/governance/package-signature-service';
 import { canonicalizePluginId, IntegrityVerifier } from '@orbitox-io/plugin-engine';
 
 const INSTALLABLE_CATALOGUE_PACKAGES = new Set(['@orbitox/hms', '@orbitox/restaurant']);
@@ -33,91 +34,17 @@ export const GET = withApiGuard(
       const packageInstallations = installations.filter((i) => i.packageId === pkg.packageId || i.packageId === pkg.id);
 
       const isSupported = INSTALLABLE_CATALOGUE_PACKAGES.has(canonicalizePluginId(pkg.packageId));
-
-      const hasEd25519Signature = Boolean(pkg.signingPublicKeyPem);
-      let signatureVerified = false;
-
-      if (pkg.signingPublicKeyPem && Array.isArray(versions) && versions.length > 0) {
-        for (const ver of versions) {
-          if (ver.signature && ver.manifestHash) {
-            try {
-              let isValid = false;
-
-              // 1. Try serialized PackageSignature JSON
-              if (typeof ver.signature === 'string' && ver.signature.trim().startsWith('{')) {
-                try {
-                  const sigObj = JSON.parse(ver.signature);
-                  if (sigObj && sigObj.signature) {
-                    const fileTreeHash =
-                      sigObj.fileTreeHash ||
-                      (Array.isArray(sigObj.files)
-                        ? crypto.createHash('sha256').update(JSON.stringify(sigObj.files)).digest('hex')
-                        : ver.tarballSha256 || '');
-                    const payloadToVerify = {
-                      signerId: sigObj.signerId || ver.signerId || 'orbitox-release-mesh',
-                      manifestHash: sigObj.manifestHash || ver.manifestHash,
-                      fileTreeHash,
-                      signedAt: sigObj.signedAt || ver.releasedAt,
-                    };
-                    isValid = IntegrityVerifier.verifyPayloadSignature(
-                      payloadToVerify,
-                      sigObj.signature,
-                      pkg.signingPublicKeyPem
-                    );
-                  }
-                } catch {
-                  // Not valid JSON signature object
-                }
-              }
-
-              // 2. Standard CryptoSigner.signPackageDirectory composite payload verification
-              if (!isValid) {
-                const payloadToVerify = {
-                  signerId: ver.signerId || 'orbitox-release-mesh',
-                  manifestHash: ver.manifestHash,
-                  fileTreeHash: (ver as any).fileTreeHash || ver.tarballSha256 || crypto.createHash('sha256').update(ver.manifestHash).digest('hex'),
-                  signedAt: (ver as any).signedAt || ver.releasedAt,
-                };
-                isValid = IntegrityVerifier.verifyPayloadSignature(
-                  payloadToVerify,
-                  ver.signature,
-                  pkg.signingPublicKeyPem
-                );
-              }
-
-              // 3. Direct manifest hash payload fallback
-              if (!isValid) {
-                isValid = IntegrityVerifier.verifyPayloadSignature(
-                  ver.manifestHash,
-                  ver.signature,
-                  pkg.signingPublicKeyPem
-                );
-              }
-
-              if (isValid) {
-                signatureVerified = true;
-                break;
-              }
-            } catch {
-              // Cryptographic signature verification failed
-            }
-          }
-        }
-      }
-
-      const integrityStatus = signatureVerified
-        ? 'VERIFIED'
-        : hasEd25519Signature
-        ? 'UNVERIFIED_SIGNATURE'
-        : 'UNSIGNED';
+      const sigResult = packageSignatureService.verifyPackageRelease(pkg, versions);
 
       return {
         ...pkg,
         versions,
         installationsCount: packageInstallations.length,
-        hasEd25519Signature,
-        signatureVerified,
-        integrityStatus,
+        hasEd25519Signature: sigResult.hasEd25519Signature,
+        signatureVerified: sigResult.signatureVerified,
+        integrityStatus: sigResult.integrityStatus,
+        versionEvaluated: sigResult.versionEvaluated,
+        integrityDetails: sigResult.details,
         installable: isSupported,
         isInstallable: isSupported,
         installabilityStatus: isSupported ? 'AVAILABLE' : 'NOT_INSTALLABLE',

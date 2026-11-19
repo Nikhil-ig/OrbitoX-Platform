@@ -4,7 +4,12 @@ import * as crypto from 'node:crypto';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
+import { NextRequest } from 'next/server';
 import { CryptoSigner, IntegrityVerifier } from '@orbitox-io/plugin-engine';
+import { packageSignatureService } from '@/server/governance/package-signature-service';
+import { createInternalAuthToken } from '@/app/api/v1/_lib/auth-pipeline';
+import { GET as getPackages } from '@/app/api/v1/platform/packages/route';
+import type { PlatformPackageCatalogItem, PackageVersionRecord } from '@/server/db/platform-repository';
 
 describe('Phase 7C: Package Cryptographic Signature Verification Contract', () => {
   it('1. Generates authentic Ed25519 keypair and signs package directory with CryptoSigner', () => {
@@ -204,6 +209,159 @@ describe('Phase 7C: Package Cryptographic Signature Verification Contract', () =
       assert.strictEqual(serializedVerified, true, 'Serialized PackageSignature format verifies cleanly');
     } finally {
       fs.rmSync(tempDir, { recursive: true, force: true });
+    }
+  });
+
+  it('4. packageSignatureService: categorizes manifest-only signatures as LEGACY_MANIFEST_ONLY and rejects VERIFIED status', () => {
+    const keyPair = CryptoSigner.generateSigningKeyPair('ed25519');
+    const manifestContent = JSON.stringify({
+      id: '@orbitox/legacy-pkg',
+      name: 'Legacy Package',
+      version: '0.8.0',
+    });
+    const manifestHash = crypto.createHash('sha256').update(manifestContent).digest('hex');
+
+    // Sign manifestHash directly (legacy style)
+    const legacySignature = CryptoSigner.signPayload(manifestHash, keyPair.privateKey);
+
+    const version: PackageVersionRecord = {
+      id: 'ver_legacy_1',
+      packageId: '@orbitox/legacy-pkg',
+      version: '0.8.0',
+      manifestHash,
+      signature: legacySignature,
+      releasedAt: new Date().toISOString(),
+    };
+
+    const result = packageSignatureService.verifyVersionSignature(version, keyPair.publicKey);
+
+    assert.strictEqual(
+      result.status,
+      'LEGACY_MANIFEST_ONLY',
+      'Manifest-only signature must receive LEGACY_MANIFEST_ONLY status'
+    );
+    assert.strictEqual(
+      result.verified,
+      false,
+      'Manifest-only signature must NOT qualify as verified'
+    );
+  });
+
+  it('5. packageSignatureService: evaluates the CURRENT release version rather than historical signed versions', () => {
+    const keyPair = CryptoSigner.generateSigningKeyPair('ed25519');
+
+    // Historical version 1.0.0 with valid composite signature
+    const v1Payload = {
+      signerId: 'orbitox-release-mesh',
+      manifestHash: crypto.createHash('sha256').update('v1_manifest').digest('hex'),
+      fileTreeHash: crypto.createHash('sha256').update('v1_files').digest('hex'),
+      signedAt: '2025-01-01T00:00:00.000Z',
+    };
+    const v1Signature = CryptoSigner.signPayload(v1Payload, keyPair.privateKey);
+
+    const v1Record: PackageVersionRecord = {
+      id: 'ver_v1',
+      packageId: '@orbitox/hms',
+      version: '1.0.0',
+      manifestHash: v1Payload.manifestHash,
+      signerId: v1Payload.signerId,
+      signature: v1Signature,
+      releasedAt: v1Payload.signedAt,
+    };
+    (v1Record as any).fileTreeHash = v1Payload.fileTreeHash;
+    (v1Record as any).signedAt = v1Payload.signedAt;
+
+    // Current release version 2.0.0 is UNSIGNED or modified
+    const v2Record: PackageVersionRecord = {
+      id: 'ver_v2',
+      packageId: '@orbitox/hms',
+      version: '2.0.0',
+      manifestHash: crypto.createHash('sha256').update('v2_manifest').digest('hex'),
+      signature: null, // Unsigned current release!
+      releasedAt: '2026-11-01T00:00:00.000Z',
+    };
+
+    const pkg: PlatformPackageCatalogItem = {
+      id: 'pkg_hms',
+      packageId: '@orbitox/hms',
+      name: 'HospitalOS Core',
+      category: 'HEALTHCARE',
+      publisher: 'OrbitoX Core Team',
+      currentStableVersion: '2.0.0',
+      signingPublicKeyPem: keyPair.publicKey,
+      isCore: true,
+      createdAt: '2025-01-01T00:00:00.000Z',
+      updatedAt: '2026-11-01T00:00:00.000Z',
+    };
+
+    // Evaluate with versions sorted newest first [v2, v1]
+    const releaseResult = packageSignatureService.verifyPackageRelease(pkg, [v2Record, v1Record]);
+
+    assert.strictEqual(
+      releaseResult.versionEvaluated,
+      '2.0.0',
+      'Evaluation must target currentStableVersion 2.0.0'
+    );
+    assert.strictEqual(
+      releaseResult.signatureVerified,
+      false,
+      'Package must NOT verify when current release version is unsigned/unverified'
+    );
+    assert.strictEqual(
+      releaseResult.integrityStatus,
+      'UNSIGNED',
+      'Integrity status must be UNSIGNED for current release'
+    );
+
+    // Now sign v2 with valid composite signature and re-evaluate
+    const v2Payload = {
+      signerId: 'orbitox-release-mesh',
+      manifestHash: v2Record.manifestHash!,
+      fileTreeHash: crypto.createHash('sha256').update('v2_files').digest('hex'),
+      signedAt: '2026-11-01T00:00:00.000Z',
+    };
+    v2Record.signature = CryptoSigner.signPayload(v2Payload, keyPair.privateKey);
+    (v2Record as any).fileTreeHash = v2Payload.fileTreeHash;
+    (v2Record as any).signedAt = v2Payload.signedAt;
+
+    const validReleaseResult = packageSignatureService.verifyPackageRelease(pkg, [v2Record, v1Record]);
+
+    assert.strictEqual(validReleaseResult.versionEvaluated, '2.0.0');
+    assert.strictEqual(
+      validReleaseResult.signatureVerified,
+      true,
+      'Package must verify when current release version has valid composite signature'
+    );
+    assert.strictEqual(validReleaseResult.integrityStatus, 'VERIFIED');
+  });
+
+  it('6. GET /api/v1/platform/packages endpoint returns truthful package verification and integrity status', async () => {
+    const { signature, timestamp } = await createInternalAuthToken('admin');
+    const req = new NextRequest('http://localhost:3000/api/v1/platform/packages', {
+      headers: {
+        'x-orbitox-principal': 'admin',
+        'x-orbitox-internal-sig': signature,
+        'x-orbitox-internal-ts': timestamp,
+      },
+    });
+
+    const res = await getPackages(req);
+    assert.strictEqual(res.status, 200);
+
+    const body = await res.json();
+    assert.strictEqual(body.success, true);
+    assert.ok(Array.isArray(body.data), 'Data must be an array of packages');
+
+    for (const pkg of body.data) {
+      assert.ok('signatureVerified' in pkg, 'Package must include signatureVerified');
+      assert.ok('integrityStatus' in pkg, 'Package must include integrityStatus');
+      assert.ok(
+        ['VERIFIED', 'LEGACY_MANIFEST_ONLY', 'UNVERIFIED_SIGNATURE', 'UNSIGNED'].includes(pkg.integrityStatus),
+        `integrityStatus must be one of the canonical states, got ${pkg.integrityStatus}`
+      );
+      if (pkg.signatureVerified === true) {
+        assert.strictEqual(pkg.integrityStatus, 'VERIFIED');
+      }
     }
   });
 });
