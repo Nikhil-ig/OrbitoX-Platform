@@ -281,7 +281,7 @@ async function main() {
     }
 
     // Verify chain cryptographically using auditConsoleService
-    const verifyResult = await auditConsoleService.verifyPostgresAuditChain({ scope: auditScope });
+    const verifyResult = await auditConsoleService.verifyPostgresAuditChain({ scope: auditScope, client: prisma });
     assert.strictEqual(verifyResult.valid, true, 'Audit chain must verify cryptographically');
     assert.strictEqual(verifyResult.status, 'VERIFIED');
     assert.strictEqual(verifyResult.verifiedChainEntries, numConcurrent);
@@ -316,11 +316,11 @@ async function main() {
     assert.strictEqual((eventB.metadata as any)._chain.sequence, 1, 'Scope B must start at sequence 1');
     assert.strictEqual((eventB.metadata as any)._chain.previousHash, 'GENESIS');
 
-    const verifyA = await auditConsoleService.verifyPostgresAuditChain({ scope: scopeA });
+    const verifyA = await auditConsoleService.verifyPostgresAuditChain({ scope: scopeA, client: prisma });
     assert.strictEqual(verifyA.valid, true);
     assert.strictEqual(verifyA.status, 'VERIFIED');
 
-    const verifyB = await auditConsoleService.verifyPostgresAuditChain({ scope: scopeB });
+    const verifyB = await auditConsoleService.verifyPostgresAuditChain({ scope: scopeB, client: prisma });
     assert.strictEqual(verifyB.valid, true);
     assert.strictEqual(verifyB.status, 'VERIFIED');
     console.log('PASS  Independent tenant scopes maintain independent genesis states and sequences.');
@@ -333,7 +333,7 @@ async function main() {
       data: { action: 'MALICIOUS_UNAUTHORIZED_MUTATION' },
     });
 
-    const tamperCheck = await auditConsoleService.verifyPostgresAuditChain({ scope: auditScope });
+    const tamperCheck = await auditConsoleService.verifyPostgresAuditChain({ scope: auditScope, client: prisma });
     assert.strictEqual(tamperCheck.valid, false, 'Tampered ledger must fail verification');
     assert.strictEqual(tamperCheck.status, 'FAILED', 'Status must be FAILED on tampered record');
     assert.ok(
@@ -366,7 +366,7 @@ async function main() {
     assert.ok((pendingIntentRow.metadata as any)?._chain?.rowHash, 'Intent row must contain _chain rowHash');
 
     // Verify intent in PENDING state
-    const preResolveCheck = await auditConsoleService.verifyPostgresAuditChain({ scope: intentScope });
+    const preResolveCheck = await auditConsoleService.verifyPostgresAuditChain({ scope: intentScope, client: prisma });
     assert.strictEqual(preResolveCheck.valid, true);
     assert.strictEqual(preResolveCheck.status, 'VERIFIED');
 
@@ -383,7 +383,7 @@ async function main() {
     });
 
     // Verification must remain valid using initialStatus intent handling
-    const postResolveCheck = await auditConsoleService.verifyPostgresAuditChain({ scope: intentScope });
+    const postResolveCheck = await auditConsoleService.verifyPostgresAuditChain({ scope: intentScope, client: prisma });
     assert.strictEqual(postResolveCheck.valid, true, 'Resolved intent must verify with initialStatus');
     assert.strictEqual(postResolveCheck.status, 'VERIFIED');
     console.log('PASS  Platform repository audit intent creation and resolution verified.');

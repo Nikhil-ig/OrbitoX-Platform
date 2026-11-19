@@ -3,22 +3,7 @@ import crypto from 'node:crypto';
 import { prisma } from '@/server/db/prisma';
 import { PrismaClient, type Prisma } from '@prisma/client';
 
-let privilegedAuditClient: any = null;
-
 export function getAuditReaderClient(): { client: any; isPrivileged: boolean } {
-  const privilegedUrl =
-    process.env.PLATFORM_ADMIN_AUDIT_DATABASE_URL ||
-    process.env.PLATFORM_AUDIT_DATABASE_URL;
-
-  if (privilegedUrl) {
-    if (!privilegedAuditClient) {
-      privilegedAuditClient = new PrismaClient({
-        datasources: { db: { url: privilegedUrl } },
-      });
-    }
-    return { client: privilegedAuditClient, isPrivileged: true };
-  }
-
   return { client: prisma, isPrivileged: false };
 }
 
@@ -658,6 +643,7 @@ class AuditConsoleService {
    */
   async verifyPostgresAuditChain(options?: {
     scope?: string;
+    client?: any;
   }): Promise<{
     valid: boolean;
     totalEntries: number;
@@ -668,7 +654,8 @@ class AuditConsoleService {
     details?: string;
   }> {
     try {
-      const { client: readerClient, isPrivileged } = getAuditReaderClient();
+      const { client: defaultReaderClient, isPrivileged } = getAuditReaderClient();
+      const readerClient = options?.client || defaultReaderClient;
 
       let targetOrgId: string | undefined;
       let targetProjId: string | undefined;
@@ -679,14 +666,6 @@ class AuditConsoleService {
         targetOrgId = parts[1];
         targetProjId = parts[3];
         targetEnvId = parts[5];
-
-        if (typeof (readerClient as any).$executeRaw === 'function') {
-          try {
-            await (readerClient as any).$executeRaw`SELECT set_config('app.current_tenant_id', ${options.scope}, true)`;
-          } catch {
-            // Ignore if mock client
-          }
-        }
       }
 
       const whereClause: any = {};
@@ -694,28 +673,41 @@ class AuditConsoleService {
       if (targetProjId) whereClause.projectId = targetProjId;
       if (targetEnvId) whereClause.environmentId = targetEnvId;
 
-      const events = await readerClient.platformAuditEvent.findMany({
-        where: whereClause,
-        orderBy: [{ occurredAt: 'asc' }, { id: 'asc' }],
-        select: {
-          id: true,
-          action: true,
-          entityType: true,
-          entityId: true,
-          actorId: true,
-          actorEmail: true,
-          organizationId: true,
-          projectId: true,
-          environmentId: true,
-          reason: true,
-          ipAddress: true,
-          requestId: true,
-          status: true,
-          failureReason: true,
-          occurredAt: true,
-          metadata: true,
-        },
-      });
+      const queryEvents = async (client: any) => {
+        if (options?.scope && typeof client.$executeRaw === 'function') {
+          try {
+            await client.$executeRaw`SELECT set_config('app.current_tenant_id', ${options.scope}, true)`;
+          } catch {
+            // Ignore if mock client
+          }
+        }
+        return client.platformAuditEvent.findMany({
+          where: whereClause,
+          orderBy: [{ occurredAt: 'asc' }, { id: 'asc' }],
+          select: {
+            id: true,
+            action: true,
+            entityType: true,
+            entityId: true,
+            actorId: true,
+            actorEmail: true,
+            organizationId: true,
+            projectId: true,
+            environmentId: true,
+            reason: true,
+            ipAddress: true,
+            requestId: true,
+            status: true,
+            failureReason: true,
+            occurredAt: true,
+            metadata: true,
+          },
+        });
+      };
+
+      const events = typeof readerClient.$transaction === 'function'
+        ? await readerClient.$transaction(async (tx: any) => queryEvents(tx))
+        : await queryEvents(readerClient);
 
       if (events.length === 0) {
         if (!isPrivileged && process.env.NODE_ENV === 'production' && !options?.scope) {
