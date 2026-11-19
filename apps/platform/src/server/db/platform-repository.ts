@@ -40,7 +40,7 @@ import {
 } from '@orbitox-io/plugin-engine';
 import { TENANT_RE } from '@orbitox-io/bridge';
 import { loadPepperRing, activeVerifier, candidateVerifiers } from '@/server/auth/pepper';
-import { recordPlatformAuditEvent } from '@/server/audit/audit-console-service';
+import { computeAuditRowHash } from '@/server/audit/audit-console-service';
 
 export type { PlatformProject };
 
@@ -2513,50 +2513,182 @@ export function createPrismaPlatformRepository(
             return { id, createdAt: new Date().toISOString(), ...event };
         },
         async recordPlatformAdminAudit(event: PlatformAdminAuditInput): Promise<string> {
+            const id = `audit_${crypto.randomUUID()}`;
             const operatorId = event.actorId || event.actorEmail || 'system:orchestrator';
+            const orgId = event.organizationId || 'platform';
+            const projId = event.projectId || 'operations';
+            const envId = event.environmentId || 'platform-admin';
+            const scope = `org/${orgId}/project/${projId}/environment/${envId}`;
+
+            let previousHash = 'GENESIS';
+            let sequence = 1;
+            try {
+                if (typeof client.platformAuditEvent?.findFirst === 'function' && event.organizationId && event.projectId) {
+                    await client.$executeRaw`SELECT set_config('app.current_tenant_id', ${scope}, true)`;
+                    const lastEvent = await client.platformAuditEvent.findFirst({
+                        where: {
+                            organizationId: event.organizationId,
+                            projectId: event.projectId,
+                            environmentId: event.environmentId || 'platform-admin',
+                        },
+                        orderBy: [{ occurredAt: 'desc' }, { id: 'desc' }],
+                        select: { id: true, metadata: true },
+                    });
+                    if (lastEvent?.metadata && typeof lastEvent.metadata === 'object') {
+                        const chain = (lastEvent.metadata as any)._chain;
+                        if (chain?.rowHash) {
+                            previousHash = chain.rowHash;
+                            sequence = (typeof chain.sequence === 'number' ? chain.sequence : 1) + 1;
+                        }
+                    }
+                }
+            } catch {
+                // If runtime cannot read or scope is unscoped, fallback to genesis
+            }
+
             const metadataObj =
                 typeof event.metadata === 'object' && event.metadata !== null
                     ? (event.metadata as Record<string, unknown>)
                     : {};
-            const created = await recordPlatformAuditEvent(adminAuditClient as any, {
+            const occurredAt = new Date();
+            const rowHash = computeAuditRowHash({
+                scope,
+                sequence,
+                previousHash,
                 action: event.action,
                 entityType: event.entityType,
-                entityId: event.entityId,
+                entityId: event.entityId ?? null,
                 actorId: operatorId,
-                actorEmail: event.actorEmail,
-                organizationId: event.organizationId,
-                projectId: event.projectId,
-                environmentId: event.environmentId,
-                ipAddress: event.ipAddress,
-                requestId: event.requestId,
-                reason: event.reason,
-                metadata: { operatorId, ...metadataObj },
+                actorEmail: event.actorEmail ?? null,
+                organizationId: event.organizationId ?? null,
+                projectId: event.projectId ?? null,
+                environmentId: event.environmentId ?? null,
+                reason: event.reason ?? null,
+                ipAddress: event.ipAddress ?? null,
+                requestId: event.requestId ?? null,
                 status: 'COMMITTED',
+                failureReason: null,
+                occurredAt: occurredAt.toISOString(),
+                metadata: { operatorId, ...metadataObj },
             });
-            return created.id;
+
+            const metadataWithChain = {
+                operatorId,
+                ...metadataObj,
+                _chain: {
+                    scope,
+                    sequence,
+                    previousHash,
+                    rowHash,
+                    algorithm: 'SHA-256',
+                    occurredAt: occurredAt.toISOString(),
+                    initialStatus: 'COMMITTED',
+                },
+            };
+
+            await adminAuditClient.$executeRaw`
+                INSERT INTO "PlatformAuditEvent" (
+                    "id", "actorId", "actorEmail", "action", "entityType", "entityId",
+                    "organizationId", "projectId", "environmentId", "ipAddress", "requestId",
+                    "reason", "metadata", "status", "occurredAt"
+                ) VALUES (
+                    ${id}, ${operatorId}, ${event.actorEmail || null}, ${event.action},
+                    ${event.entityType}, ${event.entityId || null}, ${event.organizationId || null},
+                    ${event.projectId || null}, ${event.environmentId || null}, ${event.ipAddress || null},
+                    ${event.requestId || null}, ${event.reason || null},
+                    ${JSON.stringify(metadataWithChain)}::jsonb, 'COMMITTED', ${occurredAt}
+                )
+            `;
+            return id;
         },
         async createPlatformAdminAuditIntent(event: PlatformAdminAuditIntentInput): Promise<string> {
+            const id = `audit_${crypto.randomUUID()}`;
             const operatorId = event.actorId || event.actorEmail || 'system:orchestrator';
+            const orgId = event.organizationId;
+            const projId = event.projectId;
+            const envId = event.environmentId || 'platform-admin';
+            const scope = `org/${orgId}/project/${projId}/environment/${envId}`;
+
+            let previousHash = 'GENESIS';
+            let sequence = 1;
+            try {
+                if (typeof client.platformAuditEvent?.findFirst === 'function') {
+                    await client.$executeRaw`SELECT set_config('app.current_tenant_id', ${scope}, true)`;
+                    const lastEvent = await client.platformAuditEvent.findFirst({
+                        where: {
+                            organizationId: orgId,
+                            projectId: projId,
+                            environmentId: envId,
+                        },
+                        orderBy: [{ occurredAt: 'desc' }, { id: 'desc' }],
+                        select: { id: true, metadata: true },
+                    });
+                    if (lastEvent?.metadata && typeof lastEvent.metadata === 'object') {
+                        const chain = (lastEvent.metadata as any)._chain;
+                        if (chain?.rowHash) {
+                            previousHash = chain.rowHash;
+                            sequence = (typeof chain.sequence === 'number' ? chain.sequence : 1) + 1;
+                        }
+                    }
+                }
+            } catch {
+                // If runtime cannot read, fallback to genesis
+            }
+
             const metadataObj =
                 typeof event.metadata === 'object' && event.metadata !== null
                     ? (event.metadata as Record<string, unknown>)
                     : {};
-            const created = await recordPlatformAuditEvent(adminAuditClient as any, {
+            const occurredAt = new Date();
+            const rowHash = computeAuditRowHash({
+                scope,
+                sequence,
+                previousHash,
                 action: event.action,
                 entityType: event.entityType,
-                entityId: event.entityId,
+                entityId: event.entityId ?? null,
                 actorId: operatorId,
-                actorEmail: event.actorEmail,
-                organizationId: event.organizationId,
-                projectId: event.projectId,
-                environmentId: event.environmentId,
-                ipAddress: event.ipAddress,
-                requestId: event.requestId,
-                reason: event.reason,
-                metadata: { operatorId, ...metadataObj },
+                actorEmail: event.actorEmail ?? null,
+                organizationId: orgId,
+                projectId: projId,
+                environmentId: event.environmentId ?? null,
+                reason: event.reason ?? null,
+                ipAddress: event.ipAddress ?? null,
+                requestId: event.requestId ?? null,
                 status: 'PENDING',
+                failureReason: null,
+                occurredAt: occurredAt.toISOString(),
+                metadata: { operatorId, ...metadataObj },
             });
-            return created.id;
+
+            const metadataWithChain = {
+                operatorId,
+                ...metadataObj,
+                _chain: {
+                    scope,
+                    sequence,
+                    previousHash,
+                    rowHash,
+                    algorithm: 'SHA-256',
+                    occurredAt: occurredAt.toISOString(),
+                    initialStatus: 'PENDING',
+                },
+            };
+
+            await adminAuditClient.$executeRaw`
+                INSERT INTO "PlatformAuditEvent" (
+                    "id", "actorId", "actorEmail", "action", "entityType", "entityId",
+                    "organizationId", "projectId", "environmentId", "ipAddress", "requestId",
+                    "reason", "metadata", "status", "occurredAt"
+                ) VALUES (
+                    ${id}, ${operatorId}, ${event.actorEmail || null}, ${event.action},
+                    ${event.entityType}, ${event.entityId || null}, ${orgId},
+                    ${projId}, ${event.environmentId || null}, ${event.ipAddress || null},
+                    ${event.requestId || null}, ${event.reason || null},
+                    ${JSON.stringify(metadataWithChain)}::jsonb, 'PENDING', ${occurredAt}
+                )
+            `;
+            return id;
         },
     };
 }
