@@ -28,6 +28,8 @@ interface ApprovalRequest {
 export default function ConsoleApprovalsPage() {
   const [requests, setRequests] = React.useState<ApprovalRequest[]>([]);
   const [loading, setLoading] = React.useState(true);
+  const [error, setError] = React.useState<string | null>(null);
+  const [actionError, setActionError] = React.useState<string | null>(null);
   const [search, setSearch] = React.useState('');
   const [statusFilter, setStatusFilter] = React.useState('ALL');
   const [selectedReq, setSelectedReq] = React.useState<ApprovalRequest | null>(null);
@@ -41,36 +43,18 @@ export default function ConsoleApprovalsPage() {
   const loadData = React.useCallback(async () => {
     try {
       setLoading(true);
+      setError(null);
       const res = await fetch('/api/v1/platform/approvals');
       const json = await res.json();
-      if (json.success && Array.isArray(json.data?.requests)) {
+      if (res.ok && json.success && Array.isArray(json.data?.requests)) {
         setRequests(json.data.requests);
       } else {
-        setRequests([
-          {
-            id: 'appr_01HXYZ001',
-            type: 'KEY_ROTATION',
-            targetId: 'key_prod_master_ed25519',
-            targetName: 'Production Master Ed25519 Signing Key',
-            status: 'PENDING',
-            requestedBy: 'operator-lead@orbitox.io',
-            requestedAt: new Date(Date.now() - 3600000).toISOString(),
-            reason: 'Quarterly cryptographic key lifecycle rotation schedule.',
-          },
-          {
-            id: 'appr_01HXYZ002',
-            type: 'TENANT_TERMINATION',
-            targetId: 'ten_oasis_hospital',
-            targetName: 'Oasis Hospital BLR',
-            status: 'PENDING',
-            requestedBy: 'compliance@orbitox.io',
-            requestedAt: new Date(Date.now() - 7200000).toISOString(),
-            reason: 'GDPR Right to be Forgotten statutory execution request.',
-          },
-        ]);
+        setError(json.error?.message || 'Failed to load approvals from server.');
+        setRequests([]);
       }
-    } catch (err) {
-      console.error('Failed to load approvals:', err);
+    } catch (err: any) {
+      setError(err?.message || 'Network error fetching approval requests.');
+      setRequests([]);
     } finally {
       setLoading(false);
     }
@@ -84,11 +68,16 @@ export default function ConsoleApprovalsPage() {
     if (!actionDialog.req) return;
     try {
       setSubmitting(true);
+      setActionError(null);
+      const pendingStage = actionDialog.req.stages?.find((s: any) => s.status === 'PENDING') || actionDialog.req.stages?.[0];
+      const stageId = pendingStage?.stageId || 'stage_1';
+
       const res = await fetch('/api/v1/platform/approvals', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           requestId: actionDialog.req.id,
+          stageId,
           action: actionDialog.type,
           totpCode,
           comments: `Step-up authorized ${actionDialog.type} action.`,
@@ -101,6 +90,9 @@ export default function ConsoleApprovalsPage() {
       setActionDialog({ open: false, type: 'APPROVE', req: null });
       setSelectedReq(null);
       await loadData();
+    } catch (err: any) {
+      setActionError(err?.message || 'Approval execution failed.');
+      throw err;
     } finally {
       setSubmitting(false);
     }
@@ -224,6 +216,21 @@ export default function ConsoleApprovalsPage() {
           </div>
         </div>
 
+        {error && (
+          <div className="p-4 rounded-[var(--radius-row)] border border-[var(--color-danger)]/30 bg-[var(--color-danger)]/10 flex items-center justify-between gap-4">
+            <div className="flex items-center gap-3">
+              <AlertTriangle className="h-5 w-5 text-[var(--color-danger)] shrink-0" />
+              <div>
+                <div className="text-xs font-semibold text-[var(--color-danger)]">Failed to load approvals</div>
+                <div className="text-[11px] text-[var(--color-text-muted)]">{error}</div>
+              </div>
+            </div>
+            <Button variant="secondary" size="sm" onClick={loadData}>
+              Retry
+            </Button>
+          </div>
+        )}
+
         <FilterToolbar
           searchQuery={search}
           onSearchChange={setSearch}
@@ -259,6 +266,8 @@ export default function ConsoleApprovalsPage() {
           data={filtered}
           totalRows={filtered.length}
           loading={loading}
+          emptyTitle="No approval requests"
+          emptyDescription="No pending or historical approval requests matching current filters."
           onRowClick={(row) => setSelectedReq(row)}
         />
 

@@ -33,32 +33,36 @@ describe('Phase 7C Security Grounding & Invariant Enforcement', () => {
     );
   });
 
-  test('2. sanitizeAuditPayload: recursively scrubs nested secrets, credentials and PII', () => {
+  test('2. sanitizeAuditPayload: recursively scrubs nested secrets, credentials and common PII', () => {
     const rawPayload = {
       action: 'KEY_ROTATION',
       tenantId: 'loc_delhi_01',
       config: {
         auth: {
-          clientSecret: 'secret_live_98374284920492',
-          apiKey: 'pk_live_83920193801293',
+          clientSecret: 'mock-test-client-secret',
+          apiKey: 'mock-test-api-key',
           password: 'super-secure-operator-password',
         },
         database: {
-          pepper: '0123456789abcdef0123456789abcdef',
-          privateKey: '-----BEGIN PRIVATE KEY-----\nMIIEvgIBADANBg...',
+          pepper: 'mock-test-database-pepper',
+          privateKey: 'mock-test-private-key-data',
         },
       },
       pii: {
         aadhaar: '1234-5678-9012',
         ssn: '000-12-3456',
         cardCvv: '999',
+        email: 'user-sample@example.invalid',
+        phone: '+1-555-0199',
+        address: '123 Operational Lane, Suite 400',
+        dateOfBirth: '1985-04-12',
       },
       items: [
         { token: 'mfa_token_xyz', valid: true },
         { mfaTotpSealed: 'sealed_aes_blob_84920', backupCode: 'ABCD-1234' },
       ],
       safeInfo: {
-        operatorEmail: 'secops@orbitox.io',
+        clusterNode: 'node-mesh-01',
         role: 'PLATFORM_OWNER',
         environment: 'PRODUCTION',
         counts: 42,
@@ -76,6 +80,10 @@ describe('Phase 7C Security Grounding & Invariant Enforcement', () => {
     assert.strictEqual(sanitized.pii.aadhaar, '[REDACTED]');
     assert.strictEqual(sanitized.pii.ssn, '[REDACTED]');
     assert.strictEqual(sanitized.pii.cardCvv, '[REDACTED]');
+    assert.strictEqual(sanitized.pii.email, '[REDACTED]');
+    assert.strictEqual(sanitized.pii.phone, '[REDACTED]');
+    assert.strictEqual(sanitized.pii.address, '[REDACTED]');
+    assert.strictEqual(sanitized.pii.dateOfBirth, '[REDACTED]');
     assert.strictEqual(sanitized.items[0]!.token, '[REDACTED]');
     assert.strictEqual(sanitized.items[1]!.mfaTotpSealed, '[REDACTED]');
     assert.strictEqual(sanitized.items[1]!.backupCode, '[REDACTED]');
@@ -83,13 +91,13 @@ describe('Phase 7C Security Grounding & Invariant Enforcement', () => {
     // Assert safe metadata is intact
     assert.strictEqual(sanitized.action, 'KEY_ROTATION');
     assert.strictEqual(sanitized.tenantId, 'loc_delhi_01');
-    assert.strictEqual(sanitized.safeInfo.operatorEmail, 'secops@orbitox.io');
+    assert.strictEqual(sanitized.safeInfo.clusterNode, 'node-mesh-01');
     assert.strictEqual(sanitized.safeInfo.role, 'PLATFORM_OWNER');
     assert.strictEqual(sanitized.safeInfo.counts, 42);
     assert.strictEqual(sanitized.items[0]!.valid, true);
   });
 
-  test('3. recordPlatformAuditEvent helper passes metadata through sanitizeAuditPayload before DB insertion', async () => {
+  test('3. recordPlatformAuditEvent: preserves top-level audit identity while scrubbing payload metadata PII', async () => {
     let capturedData: any = null;
     const mockPrisma = {
       platformAuditEvent: {
@@ -104,19 +112,31 @@ describe('Phase 7C Security Grounding & Invariant Enforcement', () => {
       action: 'TENANT_SUSPEND',
       entityType: 'TENANT',
       entityId: 'ten_999',
+      actorId: 'op_sysadmin_42',
       actorEmail: 'owner@orbitox.io',
       reason: 'Delinquent subscription',
       metadata: {
         authorization: 'Bearer token_secret_123',
         credential: 'db_admin_password_raw',
+        customerEmail: 'customer-contact@domain.invalid',
+        contactPhone: '+1-555-4321',
         details: 'Suspended by platform owner via StepUpConfirmationDialog',
       },
     });
 
     assert.ok(capturedData);
+    // Explicit top-level audit envelope fields preserved for accountability
     assert.strictEqual(capturedData.action, 'TENANT_SUSPEND');
+    assert.strictEqual(capturedData.actorId, 'op_sysadmin_42');
+    assert.strictEqual(capturedData.actorEmail, 'owner@orbitox.io');
+    assert.strictEqual(capturedData.entityType, 'TENANT');
+    assert.strictEqual(capturedData.entityId, 'ten_999');
+
+    // Sensitive metadata and payload PII scrubbed
     assert.strictEqual(capturedData.metadata.authorization, '[REDACTED]');
     assert.strictEqual(capturedData.metadata.credential, '[REDACTED]');
+    assert.strictEqual(capturedData.metadata.customerEmail, '[REDACTED]');
+    assert.strictEqual(capturedData.metadata.contactPhone, '[REDACTED]');
     assert.strictEqual(
       capturedData.metadata.details,
       'Suspended by platform owner via StepUpConfirmationDialog',

@@ -1,4 +1,5 @@
 import * as crypto from 'crypto';
+import { prisma } from '@/server/db/prisma';
 
 export interface AuditLogOptions {
   action: string;
@@ -146,12 +147,33 @@ export interface ApprovalRequest {
   contextId: string;
   entityType: string;
   entityId: string;
+  targetName?: string;
+  reason?: string;
   policyId: string;
   status: ApprovalStatus;
   requestedBy: string;
   createdAt: string;
   updatedAt: string;
   stages: ApprovalStage[];
+}
+
+function operationRowToApprovalRequest(row: any): ApprovalRequest {
+  const reqMeta = typeof row.request === 'object' && row.request !== null ? row.request : {};
+  const steps = Array.isArray(row.steps) ? row.steps : [];
+  return {
+    id: row.id,
+    contextId: row.tenantId || row.organizationId || 'global',
+    entityType: reqMeta.entityType || row.type || 'PLATFORM_KEY',
+    entityId: reqMeta.entityId || row.id,
+    targetName: reqMeta.targetName,
+    reason: reqMeta.reason,
+    policyId: reqMeta.policyId || 'policy_key_revocation',
+    status: (row.status as ApprovalStatus) || 'PENDING',
+    requestedBy: row.operatorId || reqMeta.requestedBy || 'operator@orbitox.io',
+    createdAt: row.createdAt instanceof Date ? row.createdAt.toISOString() : String(row.createdAt || new Date().toISOString()),
+    updatedAt: row.updatedAt instanceof Date ? row.updatedAt.toISOString() : String(row.updatedAt || new Date().toISOString()),
+    stages: steps,
+  };
 }
 
 export class ApprovalEngine {
@@ -162,12 +184,52 @@ export class ApprovalEngine {
     this.policies[policy.id] = policy;
   }
 
+  async listRequests(): Promise<ApprovalRequest[]> {
+    try {
+      if ((prisma as any)?.platformOperation?.findMany) {
+        const rows = await (prisma as any).platformOperation.findMany({
+          where: { type: 'APPROVAL_REQUEST' },
+          orderBy: { createdAt: 'desc' },
+        });
+        if (Array.isArray(rows)) {
+          for (const row of rows) {
+            const req = operationRowToApprovalRequest(row);
+            this.requests[req.id] = req;
+          }
+        }
+      }
+    } catch {
+      // In offline / mock / isolated unit test mode, memory cache is maintained
+    }
+    return Object.values(this.requests);
+  }
+
+  async getRequest(id: string): Promise<ApprovalRequest | null> {
+    if (this.requests[id]) return this.requests[id]!;
+    try {
+      if ((prisma as any)?.platformOperation?.findUnique) {
+        const row = await (prisma as any).platformOperation.findUnique({
+          where: { id },
+        });
+        if (row && row.type === 'APPROVAL_REQUEST') {
+          const req = operationRowToApprovalRequest(row);
+          this.requests[req.id] = req;
+          return req;
+        }
+      }
+    } catch {
+      // fallback
+    }
+    return this.requests[id] || null;
+  }
+
   requestApproval(
     contextId: string,
     entityType: string,
     entityId: string,
     policyId: string,
-    requestedBy: string
+    requestedBy: string,
+    metadata?: { targetName?: string; reason?: string }
   ): ApprovalRequest {
     const policy = this.policies[policyId];
     if (!policy) {
@@ -180,27 +242,79 @@ export class ApprovalEngine {
       requiredRoles: [...s.requiredRoles],
     }));
 
+    const id = `app_req_${crypto.randomUUID()}`;
+    const now = new Date().toISOString();
+
     const request: ApprovalRequest = {
-      id: `app_req_${crypto.randomUUID()}`,
+      id,
       contextId,
       entityType,
       entityId,
+      targetName: metadata?.targetName,
+      reason: metadata?.reason,
       policyId,
       status: 'PENDING',
       requestedBy,
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
+      createdAt: now,
+      updatedAt: now,
       stages,
     };
 
     this.requests[request.id] = request;
+
+    try {
+      if ((prisma as any)?.platformOperation?.create) {
+        (prisma as any).platformOperation.create({
+          data: {
+            id,
+            type: 'APPROVAL_REQUEST',
+            tenantId: contextId,
+            organizationId: contextId,
+            status: 'PENDING',
+            operatorId: requestedBy,
+            request: {
+              entityType,
+              entityId,
+              policyId,
+              requestedBy,
+              targetName: metadata?.targetName,
+              reason: metadata?.reason,
+            },
+            steps: stages as any,
+            result: null,
+          },
+        }).catch(() => {});
+      }
+    } catch {
+      // Non-blocking for offline tests
+    }
+
     return request;
   }
 
-  approveStage(requestId: string, stageId: string, approvedBy: string, userRoles: string[], comments?: string): ApprovalRequest {
+  approveStage(
+    requestId: string,
+    stageId: string,
+    approvedBy: string,
+    userRoles: string[],
+    comments?: string
+  ): ApprovalRequest {
     const request = this.requests[requestId];
     if (!request) {
       throw new Error(`ApprovalRequest ${requestId} not found.`);
+    }
+
+    if (request.status !== 'PENDING') {
+      throw new Error(`ApprovalRequest ${requestId} is already ${request.status}.`);
+    }
+
+    // Four-eyes self-approval prevention
+    if (
+      request.requestedBy &&
+      approvedBy &&
+      request.requestedBy.trim().toLowerCase() === approvedBy.trim().toLowerCase()
+    ) {
+      throw new Error(`SELF_APPROVAL_FORBIDDEN: Requester (${request.requestedBy}) cannot approve their own stage.`);
     }
 
     const stageIndex = request.stages.findIndex((s) => s.stageId === stageId);
@@ -209,6 +323,24 @@ export class ApprovalEngine {
     }
 
     const stage = request.stages[stageIndex]!;
+    if (stage.status !== 'PENDING') {
+      throw new Error(`Stage ${stageId} is already ${stage.status}.`);
+    }
+
+    // Ensure sequential approval: prior stages must be approved
+    for (let i = 0; i < stageIndex; i++) {
+      const prev = request.stages[i];
+      if (prev && prev.status !== 'APPROVED') {
+        throw new Error(`Cannot approve stage ${stageId}. Prior stage ${prev.stageId} is still pending.`);
+      }
+    }
+
+    // Enforce role authorization
+    const hasRole = stage.requiredRoles.some((r) => userRoles.includes(r));
+    if (!hasRole) {
+      throw new Error(`INSUFFICIENT_ROLES: Operator roles [${userRoles.join(', ')}] cannot approve stage ${stageId}. Required roles: [${stage.requiredRoles.join(', ')}].`);
+    }
+
     stage.status = 'APPROVED';
     stage.approvedBy = approvedBy;
     stage.comments = comments;
@@ -220,6 +352,29 @@ export class ApprovalEngine {
     }
 
     request.updatedAt = new Date().toISOString();
+
+    try {
+      if ((prisma as any)?.platformOperation?.update) {
+        (prisma as any).platformOperation.update({
+          where: { id: requestId },
+          data: {
+            status: request.status,
+            steps: request.stages as any,
+            result: {
+              lastAction: 'APPROVE',
+              approvedBy,
+              stageId,
+              comments,
+              updatedAt: request.updatedAt,
+            },
+            completedAt: request.status === 'APPROVED' ? new Date() : null,
+          },
+        }).catch(() => {});
+      }
+    } catch {
+      // Non-blocking
+    }
+
     return request;
   }
 
@@ -227,6 +382,10 @@ export class ApprovalEngine {
     const request = this.requests[requestId];
     if (!request) {
       throw new Error(`ApprovalRequest ${requestId} not found.`);
+    }
+
+    if (request.status !== 'PENDING') {
+      throw new Error(`ApprovalRequest ${requestId} is already ${request.status}.`);
     }
 
     request.status = 'REJECTED';
@@ -239,6 +398,27 @@ export class ApprovalEngine {
         stage.comments = comments;
         stage.processedAt = new Date().toISOString();
       }
+    }
+
+    try {
+      if ((prisma as any)?.platformOperation?.update) {
+        (prisma as any).platformOperation.update({
+          where: { id: requestId },
+          data: {
+            status: 'REJECTED',
+            steps: request.stages as any,
+            result: {
+              lastAction: 'REJECT',
+              rejectedBy,
+              comments,
+              updatedAt: request.updatedAt,
+            },
+            completedAt: new Date(),
+          },
+        }).catch(() => {});
+      }
+    } catch {
+      // Non-blocking
     }
 
     return request;
@@ -288,20 +468,7 @@ export function initializePlatformGovernance() {
   approvalEngine.registerPolicy(credPurgePolicy);
   approvalEngine.registerPolicy(envFreezePolicy);
 
-  // 2. Pre-seed pending four-eyes approval request for demonstration & governance testing
-  try {
-    approvalEngine.requestApproval(
-      'context_global',
-      'PLATFORM_KEY',
-      'key_omni_live_01',
-      'policy_key_revocation',
-      'operator@omnideliver.global'
-    );
-  } catch {
-    // Ignore
-  }
-
-  // 3. Seed initial cryptographic hash-chained audit log events
+  // 2. Seed initial cryptographic hash-chained audit log events
   seedInitialAuditLogs();
 }
 

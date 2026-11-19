@@ -132,8 +132,8 @@ function formatActionLabel(action: string): string {
     .join(' ');
 }
 
-const SENSITIVE_KEY_PATTERN =
-  /(?:password|passwordHash|token|secret|mfaTotpSealed|mfaToken|backupCode|credential|apiKey|pepper|privateKey|authorization|cookie|bearer|cvv|aadhaar|ssn|pan)/i;
+export const SENSITIVE_KEY_PATTERN =
+  /(?:password|passwordHash|token|secret|mfaTotpSealed|mfaToken|backupCode|credential|apiKey|pepper|privateKey|authorization|cookie|bearer|cvv|cardCvv|cardNumber|aadhaar|ssn|pan|passport|taxId|nationalId|email|phone|phoneNumber|telephone|mobile|address|streetAddress|dateOfBirth|dob|birthDate)/i;
 
 /**
  * Recursively redacts sensitive credentials, tokens, secrets, PII, and security keys

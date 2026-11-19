@@ -25,57 +25,38 @@ interface PlatformPackage {
 export default function ConsolePackagesPage() {
   const [packages, setPackages] = React.useState<PlatformPackage[]>([]);
   const [loading, setLoading] = React.useState(true);
+  const [error, setError] = React.useState<string | null>(null);
   const [search, setSearch] = React.useState('');
   const [selectedPkg, setSelectedPkg] = React.useState<PlatformPackage | null>(null);
 
-  React.useEffect(() => {
-    async function loadData() {
-      try {
-        setLoading(true);
-        const res = await fetch('/api/v1/platform/packages');
-        const json = await res.json();
-        if (json.success && Array.isArray(json.data?.packages)) {
-          setPackages(json.data.packages);
-        } else {
-          // Fallback packages catalogue
-          setPackages([
-            {
-              packageId: '@orbitox-io/plugin-engine',
-              name: 'OrbitoX Plugin Engine',
-              version: 'v1.4.0',
-              tier: 'Core Runtime',
-              signatureVerified: true,
-              status: 'ACTIVE',
-              description: 'Cryptographically signed plugin micro-kernel and sandboxed sandbox loader.',
-            },
-            {
-              packageId: '@orbitox-io/hospital-os',
-              name: 'HospitalOS Clinical Platform',
-              version: 'v1.0.0',
-              tier: 'O2B Vertical',
-              signatureVerified: true,
-              status: 'ACTIVE',
-              description: 'Multi-tenant hospital OS, wards, beds, PHI isolation, and clinical telemetry.',
-            },
-            {
-              packageId: '@orbitox-io/restaurant-os',
-              name: 'RestaurantOS Hospitality Suite',
-              version: 'v1.0.0',
-              tier: 'O2O Vertical',
-              signatureVerified: true,
-              status: 'ACTIVE',
-              description: 'Restaurant spatial seating, dining sessions, KDS, and pos integration.',
-            },
-          ]);
-        }
-      } catch (err) {
-        console.error('Failed to load packages:', err);
-      } finally {
-        setLoading(false);
+  const loadData = React.useCallback(async () => {
+    try {
+      setLoading(true);
+      setError(null);
+      const res = await fetch('/api/v1/platform/packages');
+      const json = await res.json();
+      const items = Array.isArray(json.data)
+        ? json.data
+        : Array.isArray(json.data?.packages)
+        ? json.data.packages
+        : [];
+      if (res.ok && json.success) {
+        setPackages(items);
+      } else {
+        setError(json.error?.message || 'Failed to load platform packages from server.');
+        setPackages([]);
       }
+    } catch (err: any) {
+      setError(err?.message || 'Network error fetching platform packages.');
+      setPackages([]);
+    } finally {
+      setLoading(false);
     }
-    loadData();
   }, []);
+
+  React.useEffect(() => {
+    loadData();
+  }, [loadData]);
 
   const filtered = React.useMemo(() => {
     if (!search) return packages;
@@ -123,12 +104,31 @@ export default function ConsolePackagesPage() {
     {
       accessorKey: 'signatureVerified',
       header: 'Cryptographic Signature',
-      cell: ({ row }) => (
-        <div className="flex items-center gap-1.5 text-xs text-[var(--color-success)]">
-          <ShieldCheck className="h-4 w-4" />
-          <span>Ed25519 Verified</span>
-        </div>
-      ),
+      cell: ({ row }) => {
+        const verified = Boolean(
+          row.original.signatureVerified === true ||
+          (row.original as any).hasEd25519Signature === true
+        );
+        return (
+          <div
+            className={`flex items-center gap-1.5 text-xs ${
+              verified ? 'text-[var(--color-success)]' : 'text-[var(--color-warning)]'
+            }`}
+          >
+            {verified ? (
+              <>
+                <ShieldCheck className="h-4 w-4" />
+                <span>Ed25519 Verified</span>
+              </>
+            ) : (
+              <>
+                <Package className="h-4 w-4" />
+                <span>Unverified / Unsigned</span>
+              </>
+            )}
+          </div>
+        );
+      },
     },
     {
       accessorKey: 'status',
@@ -153,6 +153,21 @@ export default function ConsolePackagesPage() {
           </div>
         </div>
 
+        {error && (
+          <div className="p-4 rounded-[var(--radius-row)] border border-[var(--color-danger)]/30 bg-[var(--color-danger)]/10 flex items-center justify-between gap-4">
+            <div className="flex items-center gap-3">
+              <Package className="h-5 w-5 text-[var(--color-danger)] shrink-0" />
+              <div>
+                <div className="text-xs font-semibold text-[var(--color-danger)]">Failed to load packages</div>
+                <div className="text-[11px] text-[var(--color-text-muted)]">{error}</div>
+              </div>
+            </div>
+            <Button variant="secondary" size="sm" onClick={loadData}>
+              Retry
+            </Button>
+          </div>
+        )}
+
         <FilterToolbar
           searchQuery={search}
           onSearchChange={setSearch}
@@ -165,6 +180,8 @@ export default function ConsolePackagesPage() {
           data={filtered}
           totalRows={filtered.length}
           loading={loading}
+          emptyTitle="No packages catalogued"
+          emptyDescription="There are currently no platform packages registered in the system."
           onRowClick={(row) => setSelectedPkg(row)}
         />
 

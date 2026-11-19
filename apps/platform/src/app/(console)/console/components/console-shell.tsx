@@ -34,12 +34,43 @@ export interface ConsoleShellProps {
 export function ConsoleShell({
   children,
   activeId = 'overview',
-  operatorEmail = 'operator@orbitox.io',
-  operatorRole = 'PLATFORM_OWNER',
+  operatorEmail: propOperatorEmail,
+  operatorRole: propOperatorRole,
   breadcrumbs,
 }: ConsoleShellProps) {
   const router = useRouter();
   const [loggingOut, setLoggingOut] = React.useState(false);
+  const [sessionOperator, setSessionOperator] = React.useState<{ email?: string; role?: string } | null>(null);
+  const [sessionLoading, setSessionLoading] = React.useState(!propOperatorEmail);
+
+  React.useEffect(() => {
+    if (propOperatorEmail && propOperatorRole) return;
+    let isMounted = true;
+    fetch('/api/v1/platform/auth/me')
+      .then((res) => (res.ok ? res.json() : null))
+      .then((json) => {
+        if (isMounted && json?.success && json.operator) {
+          setSessionOperator(json.operator);
+        }
+      })
+      .catch(() => {})
+      .finally(() => {
+        if (isMounted) setSessionLoading(false);
+      });
+    return () => {
+      isMounted = false;
+    };
+  }, [propOperatorEmail, propOperatorRole]);
+
+  const activeEmail =
+    propOperatorEmail ||
+    sessionOperator?.email ||
+    (sessionLoading ? 'Loading session...' : 'Unauthenticated');
+
+  const activeRole =
+    propOperatorRole ||
+    sessionOperator?.role ||
+    (sessionLoading ? '...' : 'GUEST');
 
   const handleLogout = async () => {
     try {
@@ -199,11 +230,11 @@ export function ConsoleShell({
 
       <div className="flex items-center justify-between gap-2 mt-1">
         <div className="min-w-0 flex-1">
-          <div className="text-xs font-semibold text-[var(--color-text)] truncate" title={operatorEmail}>
-            {operatorEmail}
+          <div className="text-xs font-semibold text-[var(--color-text)] truncate" title={activeEmail}>
+            {activeEmail}
           </div>
           <div className="text-[10px] text-[var(--color-text-muted)] uppercase tracking-wider font-mono">
-            {operatorRole}
+            {activeRole}
           </div>
         </div>
 
