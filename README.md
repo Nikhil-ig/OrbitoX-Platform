@@ -1,174 +1,145 @@
-# OrbitoX
+# 🪐 OrbitoX Platform
 
-**A control plane for all your software projects.** Connect any app to OrbitoX with a few lines
-of code, then see every project in one place: is it online, which revision is it running, what
-was last done to it, what needs attention.
+[![CI Pipeline](https://github.com/Nikhil-ig/OrbitoX-Platform/actions/workflows/ci.yml/badge.svg)](https://github.com/Nikhil-ig/OrbitoX-Platform/actions/workflows/ci.yml)
+[![Node.js](https://img.shields.io/badge/node-%3E%3D20.0.0-brightgreen.svg)](https://nodejs.org/)
+[![pnpm](https://img.shields.io/badge/pnpm-9.15.0-orange.svg)](https://pnpm.io/)
+[![TypeScript](https://img.shields.io/badge/TypeScript-5.9.3-blue.svg)](https://www.typescriptlang.org/)
+[![Turborepo](https://img.shields.io/badge/monorepo-Turborepo-EF4444.svg)](https://turbo.build/repo)
 
-OrbitoX also ships the shared building blocks most SaaS products re-build every time
-(multi-tenancy, roles and permissions, audit trail, events, feature flags, billing, AI gateway)
-as plugins, so a new product starts with them instead of from zero.
+**OrbitoX** is an enterprise multi-tenant SaaS control plane and vertical application operating system. It provides unified tenancy, cryptographically signed plugin entitlements, fine-grained access control (RBAC/ABAC), and an inter-service communication bridge for vertical SaaS products (hospitality, healthcare, commerce).
 
----
-
-## Quick start
-
-### Run it with Docker (recommended)
-
-```bash
-cd orbitox
-node scripts/init-env.mjs          # creates .env with fresh random secrets, prints your admin password
-docker compose up -d --build
-```
-
-Open **http://localhost:3005/platform/fleet**. Your browser asks for a login: use any username
-and the `ORBITOX_ADMIN_TOKEN` from `.env` as the password.
-
-Data lives in the `orbitox_data` Docker volume. Postgres and Redis are optional:
-`docker compose --profile db --profile cache up -d`.
-
-### Run it for development
-
-```bash
-cd orbitox
-pnpm bootstrap    # install + build the workspace packages (first time only)
-pnpm dev:web      # http://localhost:3005 (no login needed in development)
-```
-
-Requires Node 22+ and pnpm 9.
+> For detailed workspace topology, inter-service bridge protocols, Ed25519 grant tokens, transactional outbox, PostgreSQL Row-Level Security (RLS), and CI guardrails, read [`docs/architecture.md`](docs/architecture.md) and [`docs/README.md`](docs/README.md).
 
 ---
 
-## Connect a project
+## 🏛️ Monorepo Topology & Services
 
-Any Node app can join the fleet in seconds. You can either scaffold the configuration files automatically with our generator script or set them up manually:
+The monorepo operates as a single pnpm + Turborepo workspace (`pnpm-workspace.yaml`) with a single root lockfile (`pnpm-lock.yaml`).
 
-### Option A: 1-Line Scaffold (Recommended)
+### Deployable Applications & Services
 
-Run the generator in your application's repository:
+| Deployable | Directory | Role / Ports | Boundaries |
+|---|---|---|---|
+| **Platform Control Plane & HospitalOS** | [`apps/platform`](apps/platform) | Next.js 15 / `:3000` (`:3005`) | Multi-tenant SaaS control plane, operator console (`(console)`), customer portal (`(dashboard)`), HospitalOS clinical suite (`(hospital)`), and public APIs (`/api/v1/*`). Owns platform PostgreSQL database (`apps/platform/prisma/schema.prisma`). |
+| **RestaurantOS API** | [`services/restaurant-api`](services/restaurant-api) | Node HTTP / `:4010` | Independently deployed restaurant engine (menu, orders, KDS, tables, billing, data rights). Owns dedicated PostgreSQL database and isolated Prisma client in `services/restaurant-api/generated/prisma`. |
 
-```bash
-node orbitox/scripts/scaffold-project.mjs --name "My SaaS App" --slug "my-saas-app"
-```
+### Shared Packages & Plugins (`@orbitox-io/*`)
 
-This immediately creates `orbitox.manifest.json` and `orbitox-client.ts` wired with registration, feature flags, and live entitlement usage tracking.
-
-### Option B: Manual Setup
-
-Add the SDK, then register on startup:
-
-```ts
-import { ControlClient } from '@orbitox/external-runtime-sdk';
-import manifest from './orbitox.manifest.json';
-
-const orbitox = new ControlClient({
-  manifest,                                          // name, slug, projectId, ...
-  controlPlaneUrl: process.env.ORBITOX_CONTROL_PLANE_URL || process.env.ORBITOX_BACKEND_URL,  // e.g. https://control.example.com
-  apiKey: process.env.ORBITOX_RUNTIME_TOKEN,         // from the control plane's .env
-});
-
-await orbitox.registerRuntime();  // registers the project and starts heartbeats
-```
-
-The project appears in **Fleet** (`/platform/fleet`) within seconds, and keeps reporting health, revision,
-and live usage. You can send it commands (health check, cache refresh, restart, ...) with
-`POST /api/v1/projects/{id}/commands` (admin token); the app receives, runs and acknowledges
-them automatically. Plan details, quote computation, and live quotas are available under the **Billing** tab.
-
-## Track your projects
-
-**Fleet** (`/platform/fleet`) shows every project with:
-
-| | |
-|---|---|
-| Connection | Online (heartbeat within 30 s), Stale (within 5 min), Offline, Never connected |
-| Revision | Applied vs. desired configuration revision, with drift highlighted |
-| Activity | Last command and last audit event |
-| Attention | Anything needing action: offline, out of sync, failed command |
-
-The same data is available as JSON for scripts and dashboards:
-
-```bash
-curl -H "Authorization: Bearer $ORBITOX_ADMIN_TOKEN" \
-  "https://control.example.com/api/v1/fleet?attention=1"
-```
-
-Everything shown is real: connection comes from heartbeat age, drift from revisions, activity
-from the command queue and audit trail. Nothing is estimated.
-
----
-
-## Security model
-
-Two separate credentials, so a leaked app credential can never open the admin side:
-
-| Token | For | Can do |
+| Component | Directory | Responsibility |
 |---|---|---|
-| `ORBITOX_ADMIN_TOKEN` | You and your tools | Admin UI, management APIs, issue commands |
-| `ORBITOX_RUNTIME_TOKEN` | Connected apps (SDK `apiKey`) | Register, heartbeat, report command results, read their own config |
-
-In production the server **refuses to start** if these (or `ORBITOX_CONTROL_SECRET` /
-`ORBITOX_GUEST_SECRET`) are missing or shorter than 32 characters. Read
-[`docs/SECURITY_CLEANUP.md`](docs/SECURITY_CLEANUP.md): secrets that were committed in the past
-must be rotated and purged from git history.
-
-## Configuration
-
-Copy `orbitox/.env.example` (or run `node scripts/init-env.mjs`). Required in production:
-
-| Variable | Purpose |
-|---|---|
-| `ORBITOX_ADMIN_TOKEN` | Admin login password / API bearer token |
-| `ORBITOX_RUNTIME_TOKEN` | Shared secret for connected apps |
-| `ORBITOX_CONTROL_SECRET` | Signs configuration and commands sent to apps |
-| `ORBITOX_GUEST_SECRET` | Signs guest / QR access tokens |
-| `ORBITOX_DATA_DIR` | Where state is stored (point at a persistent volume) |
-
-## Verify it works
-
-```bash
-# against a running control plane
-ORBITOX_URL=http://localhost:3005 \
-ORBITOX_ADMIN_TOKEN=... ORBITOX_RUNTIME_TOKEN=... \
-pnpm smoke
-```
-
-The smoke test checks access control (including privilege-escalation attempts), real SDK
-registration, fleet visibility, and the full issue → execute → complete command loop.
-Unit tests: `pnpm --filter @orbitox/external-project-engine test`. CI runs all of it on every push.
+| **Kernel Core** | [`packages/core`](packages/core) | RBAC, ABAC JSON-logic evaluation, PII field encryption, hash-chained audit service, and S3 object storage client. |
+| **Plugin Engine** | [`packages/plugin-engine`](packages/plugin-engine) | Ed25519 grant signing/verification, credential vault, platform repository, and sandboxed plugin execution. |
+| **Bridge Protocol** | [`packages/bridge`](packages/bridge) | Zero-trust HMAC-SHA256 request signing, timestamp skew validation (`60s`), and single-use nonce replay protection. |
+| **Runtime Kernel** | [`packages/runtime`](packages/runtime) | Fluent application builders and unified facade runtime. |
+| **Design System** | [`packages/ui`](packages/ui) | Pure React UI library with zero backend, data-fetching, or Prisma dependencies. |
+| **SDKs & Types** | [`packages/sdk`](packages/sdk), [`packages/external-runtime-sdk`](packages/external-runtime-sdk), [`packages/types`](packages/types), [`packages/utils`](packages/utils) | Public application facades, external bridge clients, shared type contracts, and utility functions. |
+| **Shared Configs** | [`packages/eslint-config`](packages/eslint-config), [`packages/jest-config`](packages/jest-config), [`packages/tsconfig`](packages/tsconfig) | Reusable monorepo configs (`@orbitox-io/eslint-config`, `@orbitox-io/jest-config`, `@orbitox-io/tsconfig`). |
+| **Platform Plugins** | [`plugins/pos`](plugins/pos), [`plugins/external-project-engine`](plugins/external-project-engine) | Point-of-Sale workflows, order state machines, and external project orchestration engine. |
+| **Developer CLI** | [`tools/cli`](tools/cli) | Scaffolding, Ed25519 key generation (`keygen`), and plugin packaging/verification. |
 
 ---
 
-## Repository layout
+## 🚀 Getting Started
 
+### Prerequisites
+
+- **Node.js**: `22.x` (see [`.nvmrc`](.nvmrc))
+- **pnpm**: `9.15.0+`
+- **PostgreSQL**: `16+` (for control-plane and restaurant databases)
+
+### Setup & Build
+
+```bash
+# 1. Install dependencies across the single workspace
+pnpm install
+
+# 2. Generate Prisma clients (isolated generation per service)
+pnpm --filter @orbitox-io/platform run prisma:generate
+pnpm --filter @orbitox-io/restaurant-api run prisma:generate
+
+# 3. Build workspace packages
+pnpm run build
 ```
-orbitox/                 The monorepo (pnpm + Turborepo)
-  apps/web/              Control plane: admin UI + APIs (Next.js, port 3005)
-  apps/celebrations/     Celebrations Studio, a separate visual-editor product
-  packages/              Kernel and SDKs (core, runtime, plugin-engine, external-runtime-sdk, ui, ...)
-  plugins/               Business modules (commerce, pos, crm, finance, inventory, hms, hrms, school, ...)
-  scripts/               init-env, smoke test, cluster switch tools
-projects/external-os/restaurant-os/   RestaurantOS, an independent app that connects to the control plane
-hospital-os/, external-restaurant-os/, test-consumer-app/   Example and reference apps
-docs/                    Architecture and guides (start at docs/README.md)
-developer_guide/, B2B2C_Template_Docs/   Deeper design documents
+
+### Local Development
+
+```bash
+# Platform Control Plane & HospitalOS (http://localhost:3000)
+pnpm run dev:web
+
+# RestaurantOS API (http://localhost:4010)
+pnpm --filter @orbitox-io/restaurant-api run dev
 ```
 
-## Status
+Background workers can be run independently:
+- **Email Outbox Worker**: `pnpm --filter @orbitox-io/platform run email:worker`
+- **Billing Grace Sweep**: `pnpm --filter @orbitox-io/platform run billing:grace-sweep`
+- **Data Rights Worker**: `pnpm --filter @orbitox-io/platform exec tsx src/workers/data-rights.ts`
 
-Working and tested: deployment (Docker, health checks, fail-fast config), access control,
-runtime registration, heartbeats, command loop, Fleet view, CI.
+---
 
-In progress or known limitations (details in [`docs/SECURITY_CLEANUP.md`](docs/SECURITY_CLEANUP.md)):
+## 🔒 Automated Verification & CI Guardrails
 
-- The older `/admin` screens still run on sample data (they say so in a banner). They are being
-  replaced by live screens under `/platform`, starting with Fleet.
-- State is stored in a JSON file. A Postgres-backed store (the Prisma schema exists) is planned.
-- The runtime token is shared across projects; per-project keys are planned.
+Every pull request and push to CI runs strict static and architectural checks:
 
-## Documentation
+```bash
+# TypeScript type checks across all workspaces
+pnpm run type-check
 
-Start with [`docs/README.md`](docs/README.md). Highlights: architecture
-([`docs/02_ARCHITECTURE.md`](docs/02_ARCHITECTURE.md)), deployment
-([`docs/12_PRODUCTION_DEPLOYMENT.md`](docs/12_PRODUCTION_DEPLOYMENT.md)), client projects
-([`docs/CLIENT_PROJECTS_AND_ECOSYSTEM_GUIDE.md`](docs/CLIENT_PROJECTS_AND_ECOSYSTEM_GUIDE.md)).
-Historical design and acceptance reports are kept in [`docs/archive/`](docs/archive/).
+# Circular dependency detection (madge --circular = 0)
+pnpm run check:circular
+
+# Architectural boundaries & style rules (ESLint 9 flat config)
+pnpm run lint
+
+# Dead code and unused dependency detection (Knip)
+pnpm run check:knip
+
+# Migration immutability check
+bash scripts/ci/verify-migration-immutability.sh
+```
+
+### Test Suites
+
+```bash
+# Shared package unit tests (Core, Plugin Engine, POS, External Project Engine)
+pnpm run test
+
+# Platform Control Plane & HospitalOS unit tests (346 tests)
+pnpm --filter @orbitox-io/platform test
+
+# RestaurantOS event bus isolation & core milestone tests
+pnpm --filter @orbitox-io/restaurant-api run test:isolation
+pnpm --filter @orbitox-io/restaurant-api run test:core
+```
+
+---
+
+## 📦 Containerization & Deployment
+
+Production container images build cleanly from the repository root:
+
+- **Platform Control Plane**:
+  ```bash
+  docker build -f apps/platform/Dockerfile -t orbitox/platform .
+  ```
+- **RestaurantOS API**:
+  ```bash
+  docker build -f services/restaurant-api/Dockerfile -t orbitox/restaurant-api .
+  ```
+- **Local Compose Stack**:
+  ```bash
+  docker compose -f infra/docker/docker-compose.yml up -d
+  ```
+
+---
+
+## 📜 Architectural Decisions & Runbooks
+
+- [Architecture Decision Records (ADRs)](docs/adr/README.md)
+  - [ADR 0001: Single-VPS Staging Environment](docs/adr/0001-vps-staging.md)
+  - [ADR 0002: Package Scope Namespace (@orbitox-io)](docs/adr/0002-package-scope.md)
+  - [ADR 0003: Single pnpm Workspace and Lockfile Architecture](docs/adr/0003-single-monorepo-workspace.md)
+  - [ADR 0004: Database Isolation per Deployable Service](docs/adr/0004-independent-service-database.md)
+- [Operational Runbooks](docs/runbooks/)
+- [Security Guidelines & Threat Models](docs/security/)

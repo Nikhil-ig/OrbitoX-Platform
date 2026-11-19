@@ -1,0 +1,279 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "OrbitoX Platform Control Plane API",
+    "version": "1.0.0",
+    "description": "Public tenant provisioning, operations, and lifecycle governance API for OrbitoX Platform."
+  },
+  "servers": [
+    {
+      "url": "http://127.0.0.1:3005",
+      "description": "Local control plane gateway"
+    },
+    {
+      "url": "https://api.orbitox.io",
+      "description": "Production control plane edge"
+    }
+  ],
+  "components": {
+    "securitySchemes": {
+      "ApiKeyAuth": {
+        "type": "apiKey",
+        "in": "header",
+        "name": "x-api-key",
+        "description": "Platform customer or admin API key (e.g. orb_live_...)"
+      },
+      "BearerAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "description": "Bearer token authorization"
+      }
+    },
+    "schemas": {
+      "TenantProvisionRequest": {
+        "type": "object",
+        "required": ["name", "plugins"],
+        "properties": {
+          "name": { "type": "string" },
+          "slug": { "type": "string" },
+          "organisation": { "type": "string" },
+          "organizationId": { "type": "string" },
+          "environment": { "type": "string", "default": "production" },
+          "region": { "type": "string" },
+          "plugins": {
+            "type": "array",
+            "items": {
+              "oneOf": [
+                { "type": "string" },
+                {
+                  "type": "object",
+                  "required": ["id"],
+                  "properties": {
+                    "id": { "type": "string" },
+                    "plan": { "type": "string" }
+                  }
+                }
+              ]
+            }
+          }
+        }
+      },
+      "TenantProvisionResponse": {
+        "type": "object",
+        "properties": {
+          "operationId": { "type": "string" },
+          "tenantId": { "type": "string" },
+          "status": { "type": "string" },
+          "apiKey": {
+            "type": "object",
+            "properties": {
+              "id": { "type": "string" },
+              "prefix": { "type": "string" },
+              "secret": { "type": "string" }
+            }
+          }
+        }
+      },
+      "PlatformOperation": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string" },
+          "operationId": { "type": "string" },
+          "tenantId": { "type": "string" },
+          "organizationId": { "type": "string" },
+          "status": { "type": "string" },
+          "steps": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": { "type": "string" },
+                "name": { "type": "string" },
+                "status": { "type": "string" }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "security": [{ "ApiKeyAuth": [] }, { "BearerAuth": [] }],
+  "paths": {
+    "/api/v1/tenants": {
+      "get": {
+        "summary": "List available installable plugins catalogue for tenant composition",
+        "tags": ["Tenants"],
+        "responses": {
+          "200": { "description": "Catalogue of installable plugins returned" },
+          "500": { "description": "Internal server error" }
+        }
+      },
+      "post": {
+        "summary": "Provision a new tenant asynchronously",
+        "tags": ["Tenants"],
+        "parameters": [
+          {
+            "name": "idempotency-key",
+            "in": "header",
+            "required": false,
+            "schema": { "type": "string" }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/TenantProvisionRequest" }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Tenant provisioning accepted",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/TenantProvisionResponse" }
+              }
+            }
+          },
+          "400": { "description": "Invalid input" },
+          "401": { "description": "Unauthorized" },
+          "409": { "description": "Slug conflict or concurrent operation" }
+        }
+      }
+    },
+    "/api/v1/tenants/{id}": {
+      "get": {
+        "summary": "Retrieve tenant status and metadata",
+        "tags": ["Tenants"],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          }
+        ],
+        "responses": {
+          "200": { "description": "Tenant metadata returned" },
+          "401": { "description": "Unauthorized" },
+          "403": { "description": "Forbidden" },
+          "404": { "description": "Tenant not found" }
+        }
+      }
+    },
+    "/api/v1/tenants/{id}/suspend": {
+      "post": {
+        "summary": "Suspend tenant and revoke active runtime sessions",
+        "tags": ["Tenants"],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          }
+        ],
+        "responses": {
+          "200": { "description": "Tenant suspended successfully" },
+          "401": { "description": "Unauthorized" },
+          "403": { "description": "Forbidden" },
+          "404": { "description": "Tenant not found" }
+        }
+      }
+    },
+    "/api/v1/tenants/{id}/resume": {
+      "post": {
+        "summary": "Resume tenant and restore runtime access",
+        "tags": ["Tenants"],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          }
+        ],
+        "responses": {
+          "200": { "description": "Tenant resumed successfully" },
+          "401": { "description": "Unauthorized" },
+          "403": { "description": "Forbidden" },
+          "404": { "description": "Tenant not found" }
+        }
+      }
+    },
+    "/api/v1/operations/{id}": {
+      "get": {
+        "summary": "Fetch provisioning operation progress and step statuses",
+        "tags": ["Operations"],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Operation details returned",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/PlatformOperation" }
+              }
+            }
+          },
+          "401": { "description": "Unauthorized" },
+          "403": { "description": "Forbidden" },
+          "404": { "description": "Operation not found" }
+        }
+      },
+      "post": {
+        "summary": "Resume or retry an operation",
+        "tags": ["Operations"],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "action",
+            "in": "query",
+            "required": false,
+            "schema": { "type": "string", "enum": ["retry", "resume", "admin-force-lease"] }
+          }
+        ],
+        "responses": {
+          "200": { "description": "Operation updated" },
+          "401": { "description": "Unauthorized" },
+          "403": { "description": "Forbidden" },
+          "404": { "description": "Operation not found" },
+          "409": { "description": "Operation locked by active server lease" }
+        }
+      }
+    },
+    "/api/v1/operations/{id}/credentials": {
+      "get": {
+        "summary": "Retrieve ephemeral one-time customer API key secret",
+        "tags": ["Operations"],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          }
+        ],
+        "responses": {
+          "200": { "description": "Single-use API key credentials returned" },
+          "401": { "description": "Unauthorized" },
+          "403": { "description": "Forbidden - Cross-tenant or non-platform admin access" },
+          "404": { "description": "Operation not found" },
+          "410": { "description": "Credentials expired or already consumed" }
+        }
+      }
+    }
+  }
+}

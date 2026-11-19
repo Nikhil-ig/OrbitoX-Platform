@@ -1,0 +1,419 @@
+:root {
+  /* ─── Surface Hierarchies (Luxury Cosmic Velvet & Borderless Depth) ─── */
+  --ui-bg-root: #0A0D18;
+  --ui-bg-canvas: #0A0D18;
+  --ui-bg-dock: rgba(10, 13, 24, 0.96);
+  --ui-bg-sidebar: rgba(11, 14, 26, 0.95);
+  --ui-bg-card: #13172B;
+  --ui-bg-card-hover: #181E38;
+  --ui-bg-squircle: #13172B;
+  --ui-bg-squircle-hover: #181E38;
+  --ui-bg-subcard: #1B213D;
+  --ui-bg-glass: rgba(19, 23, 43, 0.88);
+  --ui-bg-elevated: #1B213D;
+  --ui-bg-input: #0C0F1E;
+
+  /* ─── Border Tokens (Ultra-Subtle & Borderless Feel) ─── */
+  --ui-border-subtle: rgba(255, 255, 255, 0.035);
+  --ui-border-default: rgba(255, 255, 255, 0.06);
+  --ui-border-bright: rgba(255, 255, 255, 0.12);
+  --ui-border-glow: rgba(88, 101, 242, 0.4);
+  --ui-border-active: #5865F2;
+
+  /* ─── Typography & Text Hierarchy (Luminous Contrast Inspired by Ref 1) ─── */
+  --ui-text-primary: #FFFFFF;
+  --ui-text-secondary: #A3AED0;
+  --ui-text-muted: #7B87A8;
+  --ui-text-dim: #546182;
+  --ui-text-accent: #818CF8;
+
+  /* ─── Vibrant Dual-Accent Palette (Ref 1: Neon Orange & Electric Indigo) ─── */
+  --ui-accent-neon-orange: #FF7A1A;
+  --ui-accent-neon-orange-hover: #FB923C;
+  --ui-accent-neon-orange-glow: rgba(255, 122, 26, 0.45);
+  --ui-accent-neon-indigo: #5865F2;
+  --ui-accent-neon-blue: #5865F2;
+  --ui-accent-neon-purple: #8B5CF6;
+  --ui-accent-neon-indigo-glow: rgba(88, 101, 242, 0.45);
+  --ui-accent-neon-cyan: #38BDF8;
+  --ui-accent-neon-emerald: #10B981;
+
+  --ui-accent-primary: #5865F2;
+  --ui-accent-primary-hover: #4752C4;
+  --ui-accent-secondary: #FF7A1A;
+  --ui-accent-glow: rgba(88, 101, 242, 0.45);
+  --ui-accent-gradient: linear-gradient(135deg, #5865F2 0%, #7C3AED 100%);
+  --ui-accent-orange-gradient: linear-gradient(135deg, #FF7A1A 0%, #FF9533 100%);
+  --ui-accent-gold: #F59E0B;
+  --ui-accent-gold-glow: rgba(245, 158, 11, 0.45);
+
+  /* ─── Functional Semantic Colors ─── */
+  --ui-success: #10B981;
+  --ui-success-bg: rgba(16, 185, 129, 0.15);
+  --ui-warning: #F59E0B;
+  --ui-warning-bg: rgba(245, 158, 11, 0.15);
+  --ui-danger: #EF4444;
+  --ui-danger-bg: rgba(239, 68, 68, 0.15);
+  --ui-info: #38BDF8;
+  --ui-info-bg: rgba(56, 189, 248, 0.15);
+
+  /* ─── Border Radii (Smooth Squircles & Pills) ─── */
+  --ui-radius-xs: 8px;
+  --ui-radius-sm: 12px;
+  --ui-radius-md: 16px;
+  --ui-radius-lg: 22px;
+  --ui-radius-xl: 28px;
+  --ui-radius-squircle: 28px;
+  --ui-radius-squircle-lg: 34px;
+  --ui-radius-full: 9999px;
+
+  /* ─── Elevation & Shadows ─── */
+  --ui-shadow-sm: 0 4px 12px rgba(0, 0, 0, 0.35);
+  --ui-shadow-md: 0 10px 28px rgba(0, 0, 0, 0.5);
+  --ui-shadow-lg: 0 20px 48px rgba(0, 0, 0, 0.7);
+  --ui-shadow-glow: 0 0 25px var(--ui-accent-glow);
+  --ui-shadow-glow-indigo: 0 0 30px rgba(88, 101, 242, 0.3);
+  --ui-shadow-glow-orange: 0 0 30px rgba(255, 122, 26, 0.35);
+  --ui-shadow-squircle: 0 20px 45px -10px rgba(0, 0, 0, 0.65), 0 2px 6px rgba(0, 0, 0, 0.4);
+
+  /* ─── Animation Timing ─── */
+  --ui-transition-fast: all 0.15s cubic-bezier(0.4, 0, 0.2, 1);
+  --ui-transition-smooth: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+:root[data-theme="light"],
+[data-theme="light"] {
+  /* ─── Surface Hierarchies (Calm, Dense Light Palette) ─── */
+  --ui-bg-root: #F8FAFC;
+  --ui-bg-canvas: #F8FAFC;
+  --ui-bg-dock: rgba(255, 255, 255, 0.96);
+  --ui-bg-sidebar: #FFFFFF;
+  --ui-bg-card: #FFFFFF;
+  --ui-bg-card-hover: #F1F5F9;
+  --ui-bg-squircle: #FFFFFF;
+  --ui-bg-squircle-hover: #F1F5F9;
+  --ui-bg-subcard: #F8FAFC;
+  --ui-bg-glass: rgba(255, 255, 255, 0.92);
+  --ui-bg-elevated: #F1F5F9;
+  --ui-bg-input: #FFFFFF;
+
+  /* ─── Border Tokens ─── */
+  --ui-border-subtle: rgba(15, 23, 42, 0.05);
+  --ui-border-default: rgba(15, 23, 42, 0.1);
+  --ui-border-bright: rgba(15, 23, 42, 0.18);
+  --ui-border-glow: rgba(79, 70, 229, 0.25);
+  --ui-border-active: #4F46E5;
+
+  /* ─── Typography & Text Hierarchy (4.5:1+ contrast) ─── */
+  --ui-text-primary: #0F172A;
+  --ui-text-secondary: #334155;
+  --ui-text-muted: #64748B;
+  --ui-text-dim: #94A3B8;
+  --ui-text-accent: #4F46E5;
+
+  /* ─── Accents ─── */
+  --ui-accent-neon-orange: #EA580C;
+  --ui-accent-neon-orange-hover: #C2410C;
+  --ui-accent-neon-orange-glow: rgba(234, 88, 12, 0.25);
+  --ui-accent-neon-indigo: #4F46E5;
+  --ui-accent-neon-blue: #4F46E5;
+  --ui-accent-neon-purple: #7C3AED;
+  --ui-accent-neon-indigo-glow: rgba(79, 70, 229, 0.25);
+  --ui-accent-neon-cyan: #0284C7;
+  --ui-accent-neon-emerald: #059669;
+
+  --ui-accent-primary: #4F46E5;
+  --ui-accent-primary-hover: #4338CA;
+  --ui-accent-secondary: #EA580C;
+  --ui-accent-glow: rgba(79, 70, 229, 0.25);
+  --ui-accent-gradient: linear-gradient(135deg, #4F46E5 0%, #6366F1 100%);
+  --ui-accent-orange-gradient: linear-gradient(135deg, #EA580C 0%, #F97316 100%);
+  --ui-accent-gold: #D97706;
+  --ui-accent-gold-glow: rgba(217, 119, 6, 0.25);
+
+  /* ─── Functional Semantic Colors ─── */
+  --ui-success: #059669;
+  --ui-success-bg: rgba(5, 150, 105, 0.12);
+  --ui-warning: #D97706;
+  --ui-warning-bg: rgba(217, 119, 6, 0.12);
+  --ui-danger: #DC2626;
+  --ui-danger-bg: rgba(220, 38, 38, 0.12);
+  --ui-info: #0284C7;
+  --ui-info-bg: rgba(2, 132, 199, 0.12);
+
+  /* ─── Elevation & Shadows ─── */
+  --ui-shadow-sm: 0 1px 3px rgba(15, 23, 42, 0.08);
+  --ui-shadow-md: 0 4px 14px rgba(15, 23, 42, 0.08);
+  --ui-shadow-lg: 0 10px 28px rgba(15, 23, 42, 0.12);
+  --ui-shadow-glow: 0 0 20px rgba(79, 70, 229, 0.15);
+  --ui-shadow-glow-indigo: 0 0 20px rgba(79, 70, 229, 0.15);
+  --ui-shadow-glow-orange: 0 0 20px rgba(234, 88, 12, 0.15);
+  --ui-shadow-squircle: 0 4px 16px rgba(15, 23, 42, 0.06), 0 1px 3px rgba(15, 23, 42, 0.04);
+}
+
+[data-theme="light"] body {
+  background-color: var(--ui-bg-root);
+  background-image: 
+    radial-gradient(circle at 15% 0%, rgba(79, 70, 229, 0.04) 0%, transparent 45%),
+    radial-gradient(circle at 85% 15%, rgba(234, 88, 12, 0.03) 0%, transparent 40%),
+    radial-gradient(circle at 50% 100%, rgba(124, 58, 237, 0.03) 0%, transparent 50%);
+  color: var(--ui-text-primary);
+}
+
+[data-theme="light"] ::-webkit-scrollbar-track {
+  background: rgba(241, 245, 249, 0.8);
+}
+
+[data-theme="light"] ::-webkit-scrollbar-thumb {
+  background: rgba(15, 23, 42, 0.18);
+}
+
+[data-theme="light"] ::-webkit-scrollbar-thumb:hover {
+  background: rgba(15, 23, 42, 0.32);
+}
+
+body {
+  background-color: var(--ui-bg-root);
+  background-image: 
+    radial-gradient(circle at 15% 0%, rgba(88, 101, 242, 0.12) 0%, transparent 45%),
+    radial-gradient(circle at 85% 15%, rgba(255, 122, 26, 0.08) 0%, transparent 40%),
+    radial-gradient(circle at 50% 100%, rgba(139, 92, 246, 0.07) 0%, transparent 50%);
+  background-attachment: fixed;
+  color: var(--ui-text-primary);
+  font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Plus Jakarta Sans', 'Inter', sans-serif;
+  margin: 0;
+  padding: 0;
+  -webkit-font-smoothing: antialiased;
+  overflow-x: hidden;
+}
+
+/* Custom Scrollbars */
+html, body {
+  scroll-behavior: smooth;
+}
+
+::-webkit-scrollbar {
+  width: 7px;
+  height: 7px;
+}
+::-webkit-scrollbar-track {
+  background: rgba(10, 12, 20, 0.4);
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.2);
+  border-radius: 999px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.4);
+}
+
+/* Glassmorphism & UI Utilities */
+.glass-dock {
+  background: var(--ui-bg-dock) !important;
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
+  border-right: 1px solid var(--ui-border-default) !important;
+}
+
+.glass-sidebar {
+  background: var(--ui-bg-sidebar) !important;
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border-right: 1px solid var(--ui-border-default) !important;
+}
+
+.glass-card-elevated {
+  background: var(--ui-bg-card);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid var(--ui-border-default);
+  border-radius: var(--ui-radius-lg);
+  box-shadow: var(--ui-shadow-md);
+  transition: var(--ui-transition-smooth);
+}
+
+.glass-card-elevated:hover {
+  background: var(--ui-bg-card-hover);
+  border-color: var(--ui-border-bright);
+  box-shadow: var(--ui-shadow-lg);
+  transform: translateY(-2px);
+}
+
+.glass-panel-luxury {
+  background: linear-gradient(135deg, var(--ui-bg-card) 0%, var(--ui-bg-sidebar) 100%);
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
+  border: 1px solid var(--ui-border-default);
+  border-radius: var(--ui-radius-lg);
+  box-shadow: var(--ui-shadow-lg);
+}
+
+.glass-modal-backdrop {
+  background: rgba(4, 5, 8, 0.88);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+}
+
+/* Micro-Animations */
+@keyframes pulseGlow {
+  0%, 100% { opacity: 0.8; transform: scale(1); }
+  50% { opacity: 1; transform: scale(1.05); }
+}
+
+@keyframes radarPing {
+  0% { transform: scale(0.9); opacity: 1; }
+  75%, 100% { transform: scale(2.2); opacity: 0; }
+}
+
+@keyframes shimmerEffect {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+
+.animate-pulse-glow {
+  animation: pulseGlow 3s ease-in-out infinite;
+}
+
+.animate-radar {
+  animation: radarPing 2s cubic-bezier(0, 0, 0.2, 1) infinite;
+}
+
+/* ─── Midnight Slate Squircle Cards (Ref: Borderless Depth) ─── */
+.squircle-card {
+  background: var(--ui-bg-squircle);
+  backdrop-filter: blur(28px);
+  -webkit-backdrop-filter: blur(28px);
+  border: 1px solid rgba(255, 255, 255, 0.04);
+  border-radius: var(--ui-radius-squircle);
+  box-shadow: var(--ui-shadow-squircle);
+  transition: var(--ui-transition-smooth);
+  position: relative;
+  overflow: hidden;
+}
+
+.squircle-card:hover {
+  background: var(--ui-bg-squircle-hover);
+  border-color: rgba(255, 255, 255, 0.08);
+  transform: translateY(-2px);
+  box-shadow: 0 24px 50px -10px rgba(0, 0, 0, 0.75), 0 0 20px rgba(88, 101, 242, 0.1);
+}
+
+.squircle-card-orange:hover {
+  border-color: rgba(255, 122, 26, 0.25);
+  box-shadow: 0 24px 50px -10px rgba(0, 0, 0, 0.75), 0 0 24px rgba(255, 122, 26, 0.15);
+}
+
+.squircle-card-indigo:hover {
+  border-color: rgba(88, 101, 242, 0.25);
+  box-shadow: 0 24px 50px -10px rgba(0, 0, 0, 0.75), 0 0 24px rgba(88, 101, 242, 0.18);
+}
+
+/* ─── Pill Badges & Buttons ─── */
+.pill-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 12px;
+  border-radius: var(--ui-radius-full);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.3px;
+  transition: var(--ui-transition-fast);
+}
+
+.pill-interactive {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 8px 18px;
+  border-radius: var(--ui-radius-full);
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  border: 1px solid var(--ui-border-default);
+  background: rgba(255, 255, 255, 0.05);
+  color: #FFFFFF;
+  transition: var(--ui-transition-smooth);
+}
+
+.pill-interactive:hover {
+  background: rgba(255, 255, 255, 0.1);
+  border-color: var(--ui-border-bright);
+  transform: translateY(-1px);
+}
+
+.pill-interactive-primary {
+  background: var(--ui-accent-gradient);
+  border: none;
+  box-shadow: 0 4px 16px rgba(99, 102, 241, 0.35);
+}
+
+.pill-interactive-primary:hover {
+  box-shadow: 0 6px 22px rgba(99, 102, 241, 0.5);
+  transform: translateY(-1px);
+}
+
+.pill-interactive-orange {
+  background: var(--ui-accent-orange-gradient);
+  border: none;
+  color: #FFFFFF;
+  box-shadow: 0 4px 16px rgba(255, 122, 26, 0.35);
+}
+
+.pill-interactive-orange:hover {
+  box-shadow: 0 6px 22px rgba(255, 122, 26, 0.5);
+  transform: translateY(-1px);
+}
+
+/* ─── Ambient Cosmic Background ─── */
+.cosmic-canvas-glow {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 600px;
+  background: radial-gradient(ellipse 70% 50% at 50% -10%, rgba(99, 102, 241, 0.15), transparent 70%),
+              radial-gradient(circle at 90% 20%, rgba(255, 122, 26, 0.07), transparent 40%),
+              radial-gradient(circle at 10% 40%, rgba(139, 92, 246, 0.06), transparent 50%);
+  pointer-events: none;
+  z-index: 0;
+}
+
+/* ─── Semantic Token Bridges (Phase 7B.2 Unified Design Tokens) ─── */
+:root,
+[data-theme] {
+  --ui-bg-root: var(--color-bg);
+  --ui-bg-canvas: var(--color-bg);
+  --ui-bg-card: var(--color-surface);
+  --ui-bg-elevated: var(--color-surface-raised);
+  --ui-border-default: var(--color-border);
+  --ui-border-subtle: var(--color-border-subtle);
+  --ui-text-primary: var(--color-text);
+  --ui-text-secondary: var(--color-text-muted);
+  --ui-text-muted: var(--color-text-subtle);
+  --ui-accent-primary: var(--color-accent);
+  --ui-accent-primary-hover: var(--color-accent-hover);
+  --ui-success: var(--status-ready-fg, #10B981);
+  --ui-success-bg: var(--status-ready-bg, rgba(16, 185, 129, 0.15));
+  --ui-danger: var(--status-problem-fg, #EF4444);
+  --ui-danger-bg: var(--status-problem-bg, rgba(239, 68, 68, 0.15));
+}
+
+/* ─── Landscape Phone (< 500px height) Adaptation (UI-7B2-BP1 / Matrix 4.3) ─── */
+@media (max-height: 500px) {
+  [data-testid="responsive-shell"] header {
+    height: 2.5rem !important; /* 40px compressed TopBar */
+  }
+  [data-testid="tablet-portrait-pill-band"] {
+    bottom: 0.5rem !important; /* 8px compact dock */
+  }
+  [data-testid="responsive-shell"] .shell-content-frame {
+    padding-top: 0.5rem !important;
+    padding-bottom: 3.5rem !important;
+  }
+}
+
+

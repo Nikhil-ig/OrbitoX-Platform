@@ -1,0 +1,20 @@
+-- AlterTable PlatformOperator
+ALTER TABLE "PlatformOperator"
+ADD COLUMN IF NOT EXISTS "appearanceTheme" TEXT NOT NULL DEFAULT 'dark',
+ADD COLUMN IF NOT EXISTS "appearanceAccent" TEXT NOT NULL DEFAULT 'ocean',
+ADD COLUMN IF NOT EXISTS "appearanceDensity" TEXT NOT NULL DEFAULT 'standard',
+ADD COLUMN IF NOT EXISTS "appearanceRadius" INTEGER NOT NULL DEFAULT 28,
+ADD COLUMN IF NOT EXISTS "appearanceSmoothAnimations" BOOLEAN NOT NULL DEFAULT true,
+ADD COLUMN IF NOT EXISTS "appearanceBoldFocusRings" BOOLEAN NOT NULL DEFAULT false,
+ADD COLUMN IF NOT EXISTS "appearanceCompactSidebar" BOOLEAN NOT NULL DEFAULT false;
+
+-- AlterTable CustomerUser
+ALTER TABLE "CustomerUser"
+ADD COLUMN IF NOT EXISTS "appearanceTheme" TEXT NOT NULL DEFAULT 'light',
+ADD COLUMN IF NOT EXISTS "appearanceAccent" TEXT NOT NULL DEFAULT 'ocean',
+ADD COLUMN IF NOT EXISTS "appearanceDensity" TEXT NOT NULL DEFAULT 'standard',
+ADD COLUMN IF NOT EXISTS "appearanceRadius" INTEGER NOT NULL DEFAULT 28,
+ADD COLUMN IF NOT EXISTS "appearanceSmoothAnimations" BOOLEAN NOT NULL DEFAULT true,
+ADD COLUMN IF NOT EXISTS "appearanceBoldFocusRings" BOOLEAN NOT NULL DEFAULT false,
+ADD COLUMN IF NOT EXISTS "appearanceCompactSidebar" BOOLEAN NOT NULL DEFAULT false;
+

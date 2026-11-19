@@ -1,0 +1,86 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "RestaurantOS Plugin REST API",
+    "version": "2.1.0",
+    "description": "Hospitality runtime plane API for OrbitoX Platform: dynamic menus, live floor fleets, kitchen display systems (KDS), and guest ordering."
+  },
+  "servers": [
+    {
+      "url": "http://127.0.0.1:3940",
+      "description": "Local RestaurantOS server"
+    },
+    {
+      "url": "https://restaurant.orbitox.internal",
+      "description": "Production RestaurantOS cluster"
+    }
+  ],
+  "components": {
+    "securitySchemes": {
+      "TenantHost": {
+        "type": "apiKey",
+        "in": "header",
+        "name": "Host",
+        "description": "Subdomain indicating tenant scope (e.g. {slug}.localhost)"
+      },
+      "BearerAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "description": "Staff or diner session token"
+      }
+    }
+  },
+  "security": [{ "TenantHost": [] }],
+  "paths": {
+    "/api/restaurant/menu": {
+      "get": { "summary": "Retrieve active menu items categorized", "tags": ["Menu"], "responses": { "200": { "description": "OK" } } },
+      "post": { "summary": "Create or update menu item", "tags": ["Menu"], "responses": { "201": { "description": "Created" } } }
+    },
+    "/api/restaurant/orders": {
+      "get": { "summary": "List active orders for tenant", "tags": ["Orders"], "responses": { "200": { "description": "OK" } } },
+      "post": {
+        "summary": "Place a guest or server dining order",
+        "tags": ["Orders"],
+        "parameters": [{ "name": "idempotency-key", "in": "header", "schema": { "type": "string" } }],
+        "responses": { "201": { "description": "Created" }, "403": { "description": "Suspended or forbidden" } }
+      }
+    },
+    "/api/restaurant/orders/{id}": {
+      "get": { "summary": "Fetch single order details", "tags": ["Orders"], "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }], "responses": { "200": { "description": "OK" }, "404": { "description": "Not found" } } }
+    },
+    "/api/restaurant/orders/{id}/status": {
+      "patch": { "summary": "Update order status through state machine", "tags": ["Orders"], "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }], "responses": { "200": { "description": "OK" } } }
+    },
+    "/api/restaurant/orders/{id}/cancel": {
+      "post": { "summary": "Cancel order with staff authorization", "tags": ["Orders"], "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }], "responses": { "200": { "description": "OK" } } }
+    },
+    "/api/restaurant/sessions/join": {
+      "post": { "summary": "Join a dining table session and issue guest credential", "tags": ["Sessions"], "responses": { "200": { "description": "OK" } } }
+    },
+    "/api/restaurant/tables": {
+      "get": { "summary": "List dining tables and live occupancy state", "tags": ["Floor"], "responses": { "200": { "description": "OK" } } },
+      "post": { "summary": "Register table on floor plan", "tags": ["Floor"], "responses": { "201": { "description": "Created" } } }
+    },
+    "/api/restaurant/branches": {
+      "get": { "summary": "List restaurant physical branches", "tags": ["Locations"], "responses": { "200": { "description": "OK" } } },
+      "post": { "summary": "Create branch location", "tags": ["Locations"], "responses": { "201": { "description": "Created" } } }
+    },
+    "/api/restaurant/floors": {
+      "get": { "summary": "List restaurant floor layouts", "tags": ["Floor"], "responses": { "200": { "description": "OK" } } },
+      "post": { "summary": "Save floor layout", "tags": ["Floor"], "responses": { "201": { "description": "Created" } } }
+    },
+    "/api/restaurant/kds/tasks": {
+      "get": { "summary": "List active KDS kitchen preparation tickets", "tags": ["KDS"], "responses": { "200": { "description": "OK" } } },
+      "post": { "summary": "Enqueue ticket on KDS", "tags": ["KDS"], "responses": { "201": { "description": "Created" } } }
+    },
+    "/api/restaurant/kds/item-fulfill": {
+      "post": { "summary": "Mark item fulfilled on KDS line", "tags": ["KDS"], "responses": { "200": { "description": "OK" } } }
+    },
+    "/api/restaurant/kds/bump": {
+      "post": { "summary": "Bump finished order ticket from KDS screen", "tags": ["KDS"], "responses": { "200": { "description": "OK" } } }
+    },
+    "/api/restaurant/events": {
+      "get": { "summary": "Server-Sent Events (SSE) stream for live dining, floor, and kitchen updates", "tags": ["Realtime"], "responses": { "200": { "description": "SSE EventStream" } } }
+    }
+  }
+}

@@ -14,7 +14,7 @@ Creating parallel audit and approval engines introduces:
 3. Inconsistent authorization workflows.
 
 **The authoritative architectural mandate**:
-> The Universal Platform Control Center **must not** create a second audit database or approval engine. It operates as a high-performance **API & UI façade** over the existing, battle-tested `@orbitox/core` [`AuditService`](file:///Users/apple/Documents/Office/company/Orbito/OrbitoX%20Platform/orbitox/packages/core/src/audit/audit.service.ts) and [`ApprovalEngine`](file:///Users/apple/Documents/Office/company/Orbito/OrbitoX%20Platform/orbitox/packages/core/src/approval/approval-engine.ts).
+> The Universal Platform Control Center **must not** create a second audit database or approval engine. It operates as a high-performance **API & UI façade** over the existing, battle-tested `@orbitox/core` [`AuditService`](../../orbitox/packages/core/src/audit/audit.service.ts) and [`ApprovalEngine`](../../orbitox/packages/core/src/approval/approval-engine.ts).
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────────┐
@@ -47,7 +47,7 @@ Creating parallel audit and approval engines introduces:
 
 ## 2. Immutable Hash-Chained Audit Ledger (`AuditService`)
 
-The core [`AuditService`](file:///Users/apple/Documents/Office/company/Orbito/OrbitoX%20Platform/orbitox/packages/core/src/audit/audit.service.ts) provides cryptographically linked record entries. Every row hashes its own content combined with the hash of the preceding row:
+The core [`AuditService`](../../orbitox/packages/core/src/audit/audit.service.ts) provides cryptographically linked record entries. Every row hashes its own content combined with the hash of the preceding row:
 
 $$\text{rowHash}_n = \text{SHA-256}\left(\text{content}_n + \text{rowHash}_{n-1}\right)$$
 
@@ -93,7 +93,7 @@ The Control Center surfaces two primary audit features:
 
 ## 3. Four-Eyes Quorum Governance (`ApprovalEngine`)
 
-High-impact platform actions require two-person authorization (four-eyes principle) before execution. The Control Center leverages `@orbitox/core` [`ApprovalEngine`](file:///Users/apple/Documents/Office/company/Orbito/OrbitoX%20Platform/orbitox/packages/core/src/approval/approval-engine.ts).
+High-impact platform actions require two-person authorization (four-eyes principle) before execution. The Control Center leverages `@orbitox/core` [`ApprovalEngine`](../../orbitox/packages/core/src/approval/approval-engine.ts).
 
 ### 3.1. Standard Platform Approval Policies:
 ```ts

@@ -1,0 +1,86 @@
+/**
+ * Layer 3: Component-Specific Tokens
+ * Structural measurements, heights, and component-specific dimensions.
+ */
+
+:root {
+  --sidebar-width: 16.25rem;          /* 260px */
+  --sidebar-collapsed-width: 4rem;     /* 64px */
+  --header-height: 3.5rem;             /* 56px */
+  --banner-height: 2.25rem;            /* 36px */
+
+  --input-height-sm: 2rem;             /* 32px */
+  --input-height-md: 2.5rem;           /* 40px */
+  --input-height-lg: 3rem;             /* 48px */
+
+  --btn-height-sm: 2rem;               /* 32px */
+  --btn-height-md: 2.5rem;             /* 40px */
+  --btn-height-lg: 3rem;               /* 48px */
+
+  --table-row-height: 3rem;            /* 48px */
+  --table-header-height: 2.5rem;       /* 40px */
+}
+
+/**
+ * BottomSheet Smooth Stylesheet-Driven Drag Transforms (2px step resolution)
+ * Enables buttery-smooth mobile touch dragging without violating the zero-inline-style invariant.
+ */
+[data-drag-state="dragging"][data-drag-offset="2"] { transform: translateY(2px); }
+[data-drag-state="dragging"][data-drag-offset="4"] { transform: translateY(4px); }
+[data-drag-state="dragging"][data-drag-offset="6"] { transform: translateY(6px); }
+[data-drag-state="dragging"][data-drag-offset="8"] { transform: translateY(8px); }
+[data-drag-state="dragging"][data-drag-offset="10"] { transform: translateY(10px); }
+[data-drag-state="dragging"][data-drag-offset="12"] { transform: translateY(12px); }
+[data-drag-state="dragging"][data-drag-offset="14"] { transform: translateY(14px); }
+[data-drag-state="dragging"][data-drag-offset="16"] { transform: translateY(16px); }
+[data-drag-state="dragging"][data-drag-offset="18"] { transform: translateY(18px); }
+[data-drag-state="dragging"][data-drag-offset="20"] { transform: translateY(20px); }
+[data-drag-state="dragging"][data-drag-offset="22"] { transform: translateY(22px); }
+[data-drag-state="dragging"][data-drag-offset="24"] { transform: translateY(24px); }
+[data-drag-state="dragging"][data-drag-offset="26"] { transform: translateY(26px); }
+[data-drag-state="dragging"][data-drag-offset="28"] { transform: translateY(28px); }
+[data-drag-state="dragging"][data-drag-offset="30"] { transform: translateY(30px); }
+[data-drag-state="dragging"][data-drag-offset="32"] { transform: translateY(32px); }
+[data-drag-state="dragging"][data-drag-offset="34"] { transform: translateY(34px); }
+[data-drag-state="dragging"][data-drag-offset="36"] { transform: translateY(36px); }
+[data-drag-state="dragging"][data-drag-offset="38"] { transform: translateY(38px); }
+[data-drag-state="dragging"][data-drag-offset="40"] { transform: translateY(40px); }
+[data-drag-state="dragging"][data-drag-offset="42"] { transform: translateY(42px); }
+[data-drag-state="dragging"][data-drag-offset="44"] { transform: translateY(44px); }
+[data-drag-state="dragging"][data-drag-offset="46"] { transform: translateY(46px); }
+[data-drag-state="dragging"][data-drag-offset="48"] { transform: translateY(48px); }
+[data-drag-state="dragging"][data-drag-offset="50"] { transform: translateY(50px); }
+[data-drag-state="dragging"][data-drag-offset="52"] { transform: translateY(52px); }
+[data-drag-state="dragging"][data-drag-offset="54"] { transform: translateY(54px); }
+[data-drag-state="dragging"][data-drag-offset="56"] { transform: translateY(56px); }
+[data-drag-state="dragging"][data-drag-offset="58"] { transform: translateY(58px); }
+[data-drag-state="dragging"][data-drag-offset="60"] { transform: translateY(60px); }
+[data-drag-state="dragging"][data-drag-offset="62"] { transform: translateY(62px); }
+[data-drag-state="dragging"][data-drag-offset="64"] { transform: translateY(64px); }
+[data-drag-state="dragging"][data-drag-offset="66"] { transform: translateY(66px); }
+[data-drag-state="dragging"][data-drag-offset="68"] { transform: translateY(68px); }
+[data-drag-state="dragging"][data-drag-offset="70"] { transform: translateY(70px); }
+[data-drag-state="dragging"][data-drag-offset="72"] { transform: translateY(72px); }
+[data-drag-state="dragging"][data-drag-offset="74"] { transform: translateY(74px); }
+[data-drag-state="dragging"][data-drag-offset="76"] { transform: translateY(76px); }
+[data-drag-state="dragging"][data-drag-offset="78"] { transform: translateY(78px); }
+[data-drag-state="dragging"][data-drag-offset="80"] { transform: translateY(80px); }
+
+/* Snapping and dismissal transitions */
+[data-drag-state="snapping"] {
+  transition: transform 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+[data-drag-state="dismissing"] {
+  transition: transform 0.2s cubic-bezier(0.32, 0.72, 0, 1);
+  transform: translateY(100%);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-drag-state="snapping"],
+  [data-drag-state="dismissing"] {
+    transition: none !important;
+  }
+}
+
+

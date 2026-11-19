@@ -1,0 +1,68 @@
+@import "./primitives.css";
+@import "./semantic.css";
+@import "./components.css";
+@import "./motion.css";
+
+@source "../components";
+@source "../charts";
+@source "../legacy";
+
+@custom-variant dark (&:where([data-theme="dark"], [data-theme="dark"] *));
+
+/**
+ * Tailwind CSS v4 Theme Bridge
+ * Maps utility classes to OrbitoX CSS Custom Properties.
+ */
+@theme {
+  --color-bg: var(--color-bg);
+  --color-surface: var(--color-surface);
+  --color-surface-raised: var(--color-surface-raised);
+
+  --color-border: var(--color-border);
+  --color-border-subtle: var(--color-border-subtle);
+
+  --color-text: var(--color-text);
+  --color-text-muted: var(--color-text-muted);
+  --color-text-subtle: var(--color-text-subtle);
+
+  --color-primary: var(--color-primary);
+  --color-primary-fg: var(--color-primary-fg);
+  --color-primary-hover: var(--color-primary-hover);
+
+  --color-accent: var(--color-accent);
+  --color-accent-fg: var(--color-accent-fg);
+
+  --color-success: var(--success-600);
+  --color-success-fg: var(--color-success-fg);
+
+  --color-warning: var(--warning-600);
+  --color-warning-fg: var(--color-warning-fg);
+
+  --color-danger: var(--danger-600);
+  --color-danger-fg: var(--color-danger-fg);
+
+  --color-info: var(--info-600);
+  --color-info-fg: var(--color-info-fg);
+
+  --color-focus-ring: var(--color-focus-ring);
+
+  --font-sans: var(--font-sans);
+  --font-mono: var(--font-mono);
+
+  --radius-none: var(--radius-none);
+  --radius-sm: var(--radius-sm);
+  --radius-md: var(--radius-md);
+  --radius-lg: var(--radius-lg);
+  --radius-xl: var(--radius-xl);
+  --radius-row: var(--radius-row);
+  --radius-card: var(--radius-card);
+  --radius-hero: var(--radius-hero);
+  --radius-full: var(--radius-full);
+
+  --shadow-sm: var(--shadow-sm);
+  --shadow-md: var(--shadow-md);
+  --shadow-lg: var(--shadow-lg);
+  --shadow-xl: var(--shadow-xl);
+  --shadow-accent-glow: var(--shadow-accent-glow);
+}
+

@@ -1,0 +1,27 @@
+{
+  "name": "@orbitox-io/cli",
+  "version": "1.0.0",
+  "main": "./dist/bin.js",
+  "bin": {
+    "orbitox": "./dist/bin.js"
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://npm.pkg.github.com"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json"
+  },
+  "dependencies": {
+    "@orbitox-io/sdk": "workspace:*"
+  },
+  "devDependencies": {
+    "@orbitox-io/tsconfig": "workspace:*",
+    "@types/node": "^20.0.0",
+    "typescript": "^5.0.0"
+  }
+}

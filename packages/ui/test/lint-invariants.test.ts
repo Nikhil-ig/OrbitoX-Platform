@@ -1,0 +1,494 @@
+import { describe, it } from 'node:test';
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import path from 'node:path';
+import ts from 'typescript';
+
+export interface StyleMutationViolation {
+  file: string;
+  line: number;
+  column: number;
+  snippet: string;
+  kind: string;
+}
+
+export function detectStyleMutationsInSource(filePath: string, sourceText: string): StyleMutationViolation[] {
+  const sf = ts.createSourceFile(filePath, sourceText, ts.ScriptTarget.Latest, true);
+  const violations: StyleMutationViolation[] = [];
+  const styleAliases = new Set<string>();
+
+  // Pass 1: Statically trace style aliases, destructuring, and transitive alias chains (fixpoint)
+  let foundNewAlias = true;
+  while (foundNewAlias) {
+    foundNewAlias = false;
+    function findAliases(node: ts.Node) {
+      // 1. Variable Declarations (const s = el.style, const alias = s, const { style } = el)
+      if (ts.isVariableDeclaration(node) && node.initializer) {
+        if (ts.isObjectBindingPattern(node.name)) {
+          for (const element of node.name.elements) {
+            const propName = element.propertyName
+              ? element.propertyName.getText(sf)
+              : element.name.getText(sf);
+            if (propName === 'style' || styleAliases.has(propName)) {
+              const aliasName = element.name.getText(sf);
+              if (!styleAliases.has(aliasName)) {
+                styleAliases.add(aliasName);
+                foundNewAlias = true;
+              }
+            }
+          }
+        }
+        if (ts.isIdentifier(node.name)) {
+          const varName = node.name.text;
+          if (!styleAliases.has(varName)) {
+            // Direct style property access: element.style
+            if (
+              ts.isPropertyAccessExpression(node.initializer) &&
+              (node.initializer.name.text === 'style' || styleAliases.has(node.initializer.name.text))
+            ) {
+              styleAliases.add(varName);
+              foundNewAlias = true;
+            }
+            // Direct element access: element['style']
+            else if (
+              ts.isElementAccessExpression(node.initializer) &&
+              node.initializer.argumentExpression &&
+              ts.isStringLiteral(node.initializer.argumentExpression) &&
+              (node.initializer.argumentExpression.text === 'style' ||
+                styleAliases.has(node.initializer.argumentExpression.text))
+            ) {
+              styleAliases.add(varName);
+              foundNewAlias = true;
+            }
+            // Transitive alias identifier: const alias = s (where s is in styleAliases)
+            else if (ts.isIdentifier(node.initializer) && styleAliases.has(node.initializer.text)) {
+              styleAliases.add(varName);
+              foundNewAlias = true;
+            }
+          }
+        }
+      }
+
+      // 2. Binary Assignment expressions (e.g. alias = s; or target = el.style;)
+      if (
+        ts.isBinaryExpression(node) &&
+        node.operatorToken.kind === ts.SyntaxKind.EqualsToken &&
+        ts.isIdentifier(node.left)
+      ) {
+        const varName = node.left.text;
+        if (!styleAliases.has(varName)) {
+          if (
+            ts.isPropertyAccessExpression(node.right) &&
+            (node.right.name.text === 'style' || styleAliases.has(node.right.name.text))
+          ) {
+            styleAliases.add(varName);
+            foundNewAlias = true;
+          } else if (
+            ts.isElementAccessExpression(node.right) &&
+            node.right.argumentExpression &&
+            ts.isStringLiteral(node.right.argumentExpression) &&
+            (node.right.argumentExpression.text === 'style' ||
+              styleAliases.has(node.right.argumentExpression.text))
+          ) {
+            styleAliases.add(varName);
+            foundNewAlias = true;
+          } else if (ts.isIdentifier(node.right) && styleAliases.has(node.right.text)) {
+            styleAliases.add(varName);
+            foundNewAlias = true;
+          }
+        }
+      }
+
+      ts.forEachChild(node, findAliases);
+    }
+    findAliases(sf);
+  }
+
+  function isStyleAccess(expr: ts.Expression): boolean {
+    if (ts.isPropertyAccessExpression(expr)) {
+      if (expr.name.text === 'style') return true;
+      return isStyleAccess(expr.expression);
+    }
+    if (ts.isElementAccessExpression(expr)) {
+      if (
+        expr.argumentExpression &&
+        ts.isStringLiteral(expr.argumentExpression) &&
+        expr.argumentExpression.text === 'style'
+      ) {
+        return true;
+      }
+      return isStyleAccess(expr.expression);
+    }
+    if (ts.isIdentifier(expr) && styleAliases.has(expr.text)) {
+      return true;
+    }
+    return false;
+  }
+
+  // Pass 2: Detect mutating expressions and calls
+  function findMutations(node: ts.Node) {
+    // 1. Assignment expressions
+    if (
+      ts.isBinaryExpression(node) &&
+      [
+        ts.SyntaxKind.EqualsToken,
+        ts.SyntaxKind.PlusEqualsToken,
+        ts.SyntaxKind.MinusEqualsToken,
+        ts.SyntaxKind.AsteriskEqualsToken,
+        ts.SyntaxKind.SlashEqualsToken,
+      ].includes(node.operatorToken.kind)
+    ) {
+      if (isStyleAccess(node.left)) {
+        const { line, character } = sf.getLineAndCharacterOfPosition(node.getStart(sf));
+        violations.push({
+          file: path.basename(filePath),
+          line: line + 1,
+          column: character + 1,
+          snippet: node.getText(sf).slice(0, 100),
+          kind: 'Assignment to style or style property',
+        });
+      }
+    }
+
+    // 2. Unary mutating expressions
+    if (
+      (ts.isPrefixUnaryExpression(node) || ts.isPostfixUnaryExpression(node)) &&
+      [ts.SyntaxKind.PlusPlusToken, ts.SyntaxKind.MinusMinusToken].includes(node.operator)
+    ) {
+      if (isStyleAccess(node.operand)) {
+        const { line, character } = sf.getLineAndCharacterOfPosition(node.getStart(sf));
+        violations.push({
+          file: path.basename(filePath),
+          line: line + 1,
+          column: character + 1,
+          snippet: node.getText(sf).slice(0, 100),
+          kind: 'Unary mutation of style property',
+        });
+      }
+    }
+
+    // 3. Mutating method calls (static property access and computed element access)
+    if (ts.isCallExpression(node)) {
+      let methodName: string | null = null;
+      let targetExpr: ts.Expression | null = null;
+
+      if (ts.isPropertyAccessExpression(node.expression)) {
+        methodName = node.expression.name.text;
+        targetExpr = node.expression.expression;
+      } else if (ts.isElementAccessExpression(node.expression)) {
+        targetExpr = node.expression.expression;
+        if (node.expression.argumentExpression) {
+          if (ts.isStringLiteral(node.expression.argumentExpression)) {
+            methodName = node.expression.argumentExpression.text;
+          } else {
+            // Dynamic computed expression: e.g. el.style[fnName](...)
+            methodName = '<computed>';
+          }
+        }
+      }
+
+      if (methodName && targetExpr && isStyleAccess(targetExpr)) {
+        if (['setProperty', 'removeProperty', '<computed>'].includes(methodName)) {
+          const { line, character } = sf.getLineAndCharacterOfPosition(node.getStart(sf));
+          violations.push({
+            file: path.basename(filePath),
+            line: line + 1,
+            column: character + 1,
+            snippet: node.getText(sf).slice(0, 100),
+            kind: `Mutating style method call (${methodName})`,
+          });
+        }
+      }
+    }
+
+    ts.forEachChild(node, findMutations);
+  }
+
+  findMutations(sf);
+  return violations;
+}
+
+function getSourceFilesRecursively(dir: string): string[] {
+  if (!fs.existsSync(dir)) return [];
+  const entries = fs.readdirSync(dir, { withFileTypes: true });
+  let files: string[] = [];
+  for (const entry of entries) {
+    const fullPath = path.resolve(dir, entry.name);
+    if (entry.isDirectory()) {
+      files = files.concat(getSourceFilesRecursively(fullPath));
+    } else if (fullPath.endsWith('.ts') || fullPath.endsWith('.tsx')) {
+      files.push(fullPath);
+    }
+  }
+  return files;
+}
+
+describe('Design System Token & Style Invariants Guard (B2 / B3)', () => {
+  const compDir = path.resolve(__dirname, '../src/components');
+  const chartDir = path.resolve(__dirname, '../src/charts');
+  const shellDir = path.resolve(__dirname, '../src/shells');
+
+  const filesToCheck = [
+    ...getSourceFilesRecursively(compDir),
+    ...getSourceFilesRecursively(chartDir),
+    ...getSourceFilesRecursively(shellDir),
+  ];
+
+  it('scans all modern component, chart, and persona shell files (zero unchecked)', () => {
+    assert.equal(
+      filesToCheck.length,
+      89,
+      `Expected exact inventory of 89 component/chart/shell files (69 components, 9 charts, 11 shells), found ${filesToCheck.length}`
+    );
+  });
+
+  it('enforces 0 hardcoded hex colors in components and charts', () => {
+    // Permitted only in tokens definitions; forbidden in components and charts
+    const hexRegex = /#[0-9a-fA-F]{3,8}\b/g;
+    const violations: { file: string; matches: string[] }[] = [];
+
+    for (const filePath of filesToCheck) {
+      const content = fs.readFileSync(filePath, 'utf8');
+      const matches = content.match(hexRegex);
+      if (matches) {
+        violations.push({ file: path.basename(filePath), matches });
+      }
+    }
+
+    assert.equal(
+      violations.length,
+      0,
+      `Found hardcoded hex colors in components:\n${JSON.stringify(violations, null, 2)}`
+    );
+  });
+
+  it('enforces 0 raw rgb/rgba() colors in components and charts', () => {
+    const rgbRegex = /rgba?\(/g;
+    const violations: { file: string; matches: string[] }[] = [];
+
+    for (const filePath of filesToCheck) {
+      const content = fs.readFileSync(filePath, 'utf8');
+      const matches = content.match(rgbRegex);
+      if (matches) {
+        violations.push({ file: path.basename(filePath), matches });
+      }
+    }
+
+    assert.equal(
+      violations.length,
+      0,
+      `Found raw rgb/rgba calls in components:\n${JSON.stringify(violations, null, 2)}`
+    );
+  });
+
+  it('enforces 0 inline style={{...}} blocks in components and charts', () => {
+    const styleRegex = /style=\{\{/g;
+    const violations: { file: string; matches: string[] }[] = [];
+
+    for (const filePath of filesToCheck) {
+      const content = fs.readFileSync(filePath, 'utf8');
+      const matches = content.match(styleRegex);
+      if (matches) {
+        violations.push({ file: path.basename(filePath), matches });
+      }
+    }
+
+    assert.equal(
+      violations.length,
+      0,
+      `Found inline style={{...}} blocks in components:\n${JSON.stringify(violations, null, 2)}`
+    );
+  });
+
+  it('enforces 0 direct DOM style mutations in components and charts (AST-based static guard)', () => {
+    // AST Static Analysis checking:
+    // 1. Direct assignment (el.style = ...)
+    // 2. Member mutation (el.style.transform = ..., el.style['transform'] = ...)
+    // 3. Mutating methods (el.style.setProperty(...), el.style.removeProperty(...))
+    // 4. Aliased and destructured style references (const { style } = el; style.color = ...; const s = el.style; s.color = ...)
+    const violations: { file: string; line: number; column: number; snippet: string; kind: string }[] = [];
+
+    for (const filePath of filesToCheck) {
+      const content = fs.readFileSync(filePath, 'utf8');
+      const fileViolations = detectStyleMutationsInSource(filePath, content);
+      violations.push(...fileViolations);
+    }
+
+    assert.equal(
+      violations.length,
+      0,
+      `Found direct DOM style mutations in components:\n${JSON.stringify(violations, null, 2)}`
+    );
+  });
+
+  it('verifies AST style invariant guard correctly catches prohibited mutations in adversarial snippets', () => {
+    // Synthetic negative test samples verifying guard efficacy
+    const badSample1 = 'const el = document.getElementById("x"); el.style = "color: red";';
+    assert.ok(detectStyleMutationsInSource('test1.ts', badSample1).length >= 1);
+
+    const badSample2 = 'const el = document.getElementById("x"); el.style.transform = "translateY(10px)";';
+    assert.ok(detectStyleMutationsInSource('test2.ts', badSample2).length >= 1);
+
+    const badSample3 = 'const el = document.getElementById("x"); el.style["opacity"] = "0.5";';
+    assert.ok(detectStyleMutationsInSource('test3.ts', badSample3).length >= 1);
+
+    const badSample4 = 'const el = document.getElementById("x"); el.style.setProperty("--my-var", "10px");';
+    assert.ok(detectStyleMutationsInSource('test4.ts', badSample4).length >= 1);
+
+    const badSample5 = 'const { style } = el; style.color = "blue";';
+    assert.ok(detectStyleMutationsInSource('test5.ts', badSample5).length >= 1);
+
+    const badSample6 = 'const s = el.style; s.backgroundColor = "white";';
+    assert.ok(detectStyleMutationsInSource('test6.ts', badSample6).length >= 1);
+
+    // Adversarial sample 7: Transitive alias assignment (const s = el.style; const alias = s; alias.opacity = "0.5")
+    const badSample7 = 'const s = element.style; const alias = s; alias.opacity = "0.5";';
+    assert.ok(
+      detectStyleMutationsInSource('test7.ts', badSample7).length >= 1,
+      'Must detect transitive style alias mutations'
+    );
+
+    // Adversarial sample 8: Multi-hop transitive alias assignment (s -> a -> b)
+    const badSample8 = 'const s = el.style; const a = s; const b = a; b.setProperty("display", "none");';
+    assert.ok(
+      detectStyleMutationsInSource('test8.ts', badSample8).length >= 1,
+      'Must detect multi-hop transitive style alias mutations'
+    );
+
+    // P2-03 Adversarial sample 9: Element access mutating method call (el.style['setProperty'](...))
+    const badSample9 = 'const el = document.getElementById("x"); el.style["setProperty"]("--custom-token", "10px");';
+    assert.ok(
+      detectStyleMutationsInSource('test9.ts', badSample9).length >= 1,
+      'Must detect element access style["setProperty"] mutations'
+    );
+
+    // P2-03 Adversarial sample 10: Computed dynamic method call (el.style[fnName](...))
+    const badSample10 = 'const el = document.getElementById("x"); const fn = "setProperty"; el.style[fn]("--color", "red");';
+    assert.ok(
+      detectStyleMutationsInSource('test10.ts', badSample10).length >= 1,
+      'Must detect dynamic computed method style[fn](...) mutations'
+    );
+
+    // P2-03 Adversarial sample 11: Computed dynamic property assignment (el.style[dynamicProp] = ...)
+    const badSample11 = 'const el = document.getElementById("x"); const prop = "opacity"; el.style[prop] = "0.8";';
+    assert.ok(
+      detectStyleMutationsInSource('test11.ts', badSample11).length >= 1,
+      'Must detect dynamic computed property assignment style[prop] = ...'
+    );
+
+    // Benign sample: variable named style with no DOM mutation
+    const benignSample = 'const buttonStyle = "p-4"; const isStyleActive = true;';
+    assert.equal(detectStyleMutationsInSource('benign.ts', benignSample).length, 0);
+  });
+
+  it('enforces 0 dangerouslySetInnerHTML usages in components and charts', () => {
+    const dangerRegex = /dangerouslySetInnerHTML/g;
+    const violations: { file: string; matches: string[] }[] = [];
+
+    for (const filePath of filesToCheck) {
+      const content = fs.readFileSync(filePath, 'utf8');
+      const matches = content.match(dangerRegex);
+      if (matches) {
+        violations.push({ file: path.basename(filePath), matches });
+      }
+    }
+
+    assert.equal(
+      violations.length,
+      0,
+      `Found dangerouslySetInnerHTML in components:\n${JSON.stringify(violations, null, 2)}`
+    );
+  });
+
+  it('enforces all user-facing JSX text and aria-label/title/placeholder literals go through props or t() (F-5.1)', () => {
+    const ALLOWED_SYMBOLS = new Set(['•', '/', '⌘K', '⌘', 'K', 'Esc', '*', '...', '-', ':', '—', '+', '×', '%', '(', ')', '100%']);
+    const CHECKED_ATTRS = new Set(['aria-label', 'title', 'placeholder']);
+    const violations: { file: string; detail: string }[] = [];
+
+    for (const filePath of filesToCheck.filter((f) => f.endsWith('.tsx'))) {
+      const content = fs.readFileSync(filePath, 'utf8');
+      const sf = ts.createSourceFile(filePath, content, ts.ScriptTarget.Latest, true);
+
+      function visit(node: ts.Node) {
+        if (ts.isJsxText(node)) {
+          const text = node.getText(sf).trim();
+          if (text && !ALLOWED_SYMBOLS.has(text) && /[a-zA-Z]{2,}/.test(text)) {
+            violations.push({ file: path.basename(filePath), detail: `JSXText ${JSON.stringify(text)}` });
+          }
+        }
+        if (ts.isJsxAttribute(node) && CHECKED_ATTRS.has(node.name.getText(sf))) {
+          if (node.initializer && ts.isStringLiteral(node.initializer)) {
+            const val = node.initializer.text.trim();
+            if (val && !ALLOWED_SYMBOLS.has(val)) {
+              violations.push({
+                file: path.basename(filePath),
+                detail: `${node.name.getText(sf)}=${JSON.stringify(val)}`,
+              });
+            }
+          }
+        }
+        ts.forEachChild(node, visit);
+      }
+
+      visit(sf);
+    }
+
+    assert.equal(
+      violations.length,
+      0,
+      `Found hardcoded user-facing strings (must use props or t()):\n${JSON.stringify(violations, null, 2)}`
+    );
+  });
+
+  it('ensures every component, chart, and shell module has Storybook story coverage (F-3)', () => {
+    const storyDir = path.resolve(__dirname, '../src/stories');
+    const storyFiles = fs.readdirSync(storyDir).filter((f) => f.endsWith('.stories.tsx'));
+    const storySources = storyFiles.map((f) => fs.readFileSync(path.join(storyDir, f), 'utf8'));
+    const combinedStorySource = storySources.join('\n');
+
+    // Parse all imported identifiers from stories deterministically
+    const importedIdentifiers = new Set<string>();
+    const importRegex = /import\s+(?:\{([^}]+)\}|(\w+))\s+from/g;
+    let match: RegExpExecArray | null;
+    while ((match = importRegex.exec(combinedStorySource)) !== null) {
+      if (match[1]) {
+        for (const item of match[1].split(',')) {
+          const id = item.trim().split(/\s+as\s+/)[0]?.trim();
+          if (id) importedIdentifiers.add(id);
+        }
+      }
+      if (match[2]) {
+        importedIdentifiers.add(match[2].trim());
+      }
+    }
+
+    const uncovered: string[] = [];
+    for (const filePath of filesToCheck) {
+      const base = path.basename(filePath, path.extname(filePath));
+      if (base === 'index' || base === 'types') continue;
+
+      // Convert kebab-case file basename to PascalCase component name
+      const pascalName = base
+        .split('-')
+        .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+        .join('');
+
+      const isImported =
+        importedIdentifiers.has(pascalName) ||
+        importedIdentifiers.has(base) ||
+        combinedStorySource.includes(`/${base}'`) ||
+        combinedStorySource.includes(`/${base}"`);
+
+      if (!isImported) {
+        uncovered.push(`${base} (${pascalName})`);
+      }
+    }
+
+    assert.equal(
+      uncovered.length,
+      0,
+      `Components/charts/shells missing Storybook story coverage:\n${uncovered.join('\n')}`
+    );
+  });
+});
+

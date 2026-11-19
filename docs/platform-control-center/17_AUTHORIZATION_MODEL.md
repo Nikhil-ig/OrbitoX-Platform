@@ -6,7 +6,7 @@
 
 ## 1. Remediation of the Critical Tenant-Spoofing Vulnerability
 
-During the initial repository audit, a critical flaw was identified in [`api-guard.ts#L553-L562`](file:///Users/apple/Documents/Office/company/Orbito/OrbitoX%20Platform/orbitox/apps/web/app/api/v1/_lib/api-guard.ts#L553-L562):
+During the initial repository audit, a critical flaw was identified in [`api-guard.ts#L553-L562`](../../orbitox/apps/web/app/api/v1/_lib/api-guard.ts#L553-L562):
 
 ```ts
 // 🚨 VULNERABLE CODE IN CURRENT API-GUARD:
@@ -77,7 +77,7 @@ Every incoming request against the Platform Control Center or platform APIs unde
 └─────────────────────┴───────────────────────────────────────────────────────┘
 ```
 
-The evaluation is executed via `@orbitox/core` [`PolicyEngine`](file:///Users/apple/Documents/Office/company/Orbito/OrbitoX%20Platform/orbitox/packages/core/src/rbac/policy.engine.ts) and [`AbacEvaluator`](file:///Users/apple/Documents/Office/company/Orbito/OrbitoX%20Platform/orbitox/packages/core/src/rbac/abac-evaluator.ts).
+The evaluation is executed via `@orbitox/core` [`PolicyEngine`](../../orbitox/packages/core/src/rbac/policy.engine.ts) and [`AbacEvaluator`](../../orbitox/packages/core/src/rbac/abac-evaluator.ts).
 
 ---
 

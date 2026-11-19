@@ -642,7 +642,7 @@ Allows external businesses, partners, and developers to build on top of OrbitoX 
      import commerce from '@orbitox-io/commerce';
 
      const app = await createOrbitoX({
-       license: 'orb_live_omni_7f9c2d1b4e8a',
+       license: '<YOUR_ORBITOX_LICENSE_KEY>',
        domain: 'api.clientpartner.com',
        plugins: [restaurant, pos, commerce],
      });
@@ -650,7 +650,7 @@ Allows external businesses, partners, and developers to build on top of OrbitoX 
    - **Pattern 2: Live Edge Gateway cURL**:
      ```bash
      curl -X GET "http://localhost:3005/api/v1/restaurant/orders" \
-       -H "x-api-key: orb_live_..." \
+       -H "x-api-key: <YOUR_PROJECT_API_KEY>" \
        -H "x-tenant-id: omnideliver"
      ```
    - **Pattern 3: Node.js Multi-Tenant Express Middleware**:

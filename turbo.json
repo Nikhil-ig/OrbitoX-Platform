@@ -1,0 +1,101 @@
+{
+  "$schema": "https://turbo.build/schema.json",
+  "globalEnv": [
+    "NODE_ENV",
+    "DATABASE_URL",
+    "REDIS_URL"
+  ],
+  "tasks": {
+    "build": {
+      "dependsOn": [
+        "^build"
+      ],
+      "outputs": [
+        "dist/**",
+        ".next/**",
+        ".next/static/**"
+      ]
+    },
+    "test": {
+      "dependsOn": [
+        "^build"
+      ],
+      "outputs": [
+        "coverage/**"
+      ],
+      "env": [
+        "TEST_DATABASE_URL"
+      ]
+    },
+    "test:integration": {
+      "dependsOn": [
+        "^build"
+      ],
+      "outputs": []
+    },
+    "test:database-outage": {
+      "outputs": []
+    },
+    "@orbitox-io/platform#test": {
+      "dependsOn": [
+        "^build",
+        "@orbitox-io/platform#prisma:generate",
+        "@orbitox-io/restaurant-api#test"
+      ]
+    },
+    "@orbitox-io/platform#test:integration": {
+      "dependsOn": [
+        "^build",
+        "@orbitox-io/platform#prisma:generate"
+      ]
+    },
+    "@orbitox-io/platform#test:repository": {
+      "dependsOn": [
+        "^build",
+        "@orbitox-io/platform#prisma:generate"
+      ]
+    },
+    "@orbitox-io/platform#test:database-outage": {
+      "dependsOn": [
+        "@orbitox-io/platform#prisma:generate"
+      ]
+    },
+    "prisma:generate": {
+      "cache": false,
+      "outputs": []
+    },
+    "lint": {
+      "outputs": []
+    },
+    "type-check": {
+      "dependsOn": [
+        "^build"
+      ],
+      "outputs": []
+    },
+    "dev": {
+      "cache": false,
+      "persistent": true
+    },
+    "migrate": {
+      "dependsOn": [
+        "^build"
+      ],
+      "outputs": [],
+      "cache": false
+    },
+    "seed": {
+      "dependsOn": [
+        "migrate"
+      ],
+      "outputs": [],
+      "cache": false
+    },
+    "clean": {
+      "cache": false
+    },
+    "doctor": {
+      "cache": false
+    }
+  }
+}

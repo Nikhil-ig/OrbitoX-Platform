@@ -1,0 +1,143 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "HospitalOS Plugin REST API",
+    "version": "1.0.1",
+    "description": "Zero-trust, PHI-encrypted Healthcare & Clinical Care Management API for OrbitoX Platform."
+  },
+  "servers": [
+    {
+      "url": "http://127.0.0.1:3005",
+      "description": "Local HospitalOS Gateway"
+    },
+    {
+      "url": "https://api.orbitox.io",
+      "description": "Production HospitalOS Edge"
+    }
+  ],
+  "components": {
+    "securitySchemes": {
+      "ApiKeyAuth": {
+        "type": "apiKey",
+        "in": "header",
+        "name": "x-api-key",
+        "description": "Tenant API key scoped to hospital-os"
+      },
+      "TenantContext": {
+        "type": "apiKey",
+        "in": "header",
+        "name": "x-tenant-id",
+        "description": "Canonical tenant ID"
+      }
+    }
+  },
+  "security": [{ "ApiKeyAuth": [] }],
+  "paths": {
+    "/api/hospital/admissions": {
+      "get": { "summary": "List inpatient admissions", "tags": ["Admissions"], "responses": { "200": { "description": "OK" } } },
+      "post": { "summary": "Create patient admission", "tags": ["Admissions"], "responses": { "201": { "description": "Created" } } }
+    },
+    "/api/hospital/appointments": {
+      "get": { "summary": "List scheduled appointments", "tags": ["Appointments"], "responses": { "200": { "description": "OK" } } },
+      "post": { "summary": "Book a new clinical appointment", "tags": ["Appointments"], "responses": { "201": { "description": "Created" } } }
+    },
+    "/api/hospital/appointments/{id}": {
+      "patch": { "summary": "Update appointment status", "tags": ["Appointments"], "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }], "responses": { "200": { "description": "OK" } } },
+      "delete": { "summary": "Cancel appointment", "tags": ["Appointments"], "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }], "responses": { "200": { "description": "OK" } } }
+    },
+    "/api/hospital/audit": {
+      "get": { "summary": "Retrieve immutable tamper-evident hospital audit logs", "tags": ["Audit"], "responses": { "200": { "description": "OK" } } }
+    },
+    "/api/hospital/beds": {
+      "get": { "summary": "List bed fleet and occupancy", "tags": ["Beds"], "responses": { "200": { "description": "OK" } } },
+      "post": { "summary": "Register new bed unit", "tags": ["Beds"], "responses": { "201": { "description": "Created" } } }
+    },
+    "/api/hospital/beds/{id}": {
+      "post": { "summary": "Allocate or assign bed", "tags": ["Beds"], "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }], "responses": { "200": { "description": "OK" } } },
+      "patch": { "summary": "Update bed status", "tags": ["Beds"], "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }], "responses": { "200": { "description": "OK" } } }
+    },
+    "/api/hospital/billing": {
+      "get": { "summary": "List clinical invoices and billing records", "tags": ["Billing"], "responses": { "200": { "description": "OK" } } },
+      "post": { "summary": "Generate hospital invoice", "tags": ["Billing"], "responses": { "201": { "description": "Created" } } }
+    },
+    "/api/hospital/billing/pay/{id}": {
+      "post": { "summary": "Record invoice payment", "tags": ["Billing"], "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }], "responses": { "200": { "description": "OK" } } }
+    },
+    "/api/hospital/departments": {
+      "get": { "summary": "List clinical departments and specialities", "tags": ["Departments"], "responses": { "200": { "description": "OK" } } }
+    },
+    "/api/hospital/hierarchy": {
+      "get": { "summary": "Retrieve hospital organizational hierarchy", "tags": ["Hierarchy"], "responses": { "200": { "description": "OK" } } },
+      "post": { "summary": "Configure department hierarchy", "tags": ["Hierarchy"], "responses": { "200": { "description": "OK" } } }
+    },
+    "/api/hospital/labs": {
+      "get": { "summary": "List lab orders and test requests", "tags": ["Labs"], "responses": { "200": { "description": "OK" } } },
+      "post": { "summary": "Order laboratory test", "tags": ["Labs"], "responses": { "201": { "description": "Created" } } }
+    },
+    "/api/hospital/labs/{id}/results": {
+      "post": { "summary": "Upload lab test results", "tags": ["Labs"], "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }], "responses": { "200": { "description": "OK" } } }
+    },
+    "/api/hospital/lifecycle/{action}": {
+      "post": { "summary": "Execute tenant lifecycle action", "tags": ["Lifecycle"], "parameters": [{ "name": "action", "in": "path", "required": true, "schema": { "type": "string" } }], "responses": { "200": { "description": "OK" } } }
+    },
+    "/api/hospital/patients": {
+      "get": { "summary": "Search and list patients", "tags": ["Patients"], "responses": { "200": { "description": "OK" } } },
+      "post": {
+        "summary": "Create patient record with AES-256-GCM PHI encryption and blind indexing",
+        "tags": ["Patients"],
+        "parameters": [{ "name": "idempotency-key", "in": "header", "schema": { "type": "string" } }],
+        "responses": { "201": { "description": "Created" } }
+      }
+    },
+    "/api/hospital/patients/{id}": {
+      "get": { "summary": "Retrieve decrypted patient record", "tags": ["Patients"], "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }], "responses": { "200": { "description": "OK" } } },
+      "post": { "summary": "Create patient encounter note", "tags": ["Patients"], "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }], "responses": { "200": { "description": "OK" } } },
+      "patch": { "summary": "Update patient profile", "tags": ["Patients"], "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }], "responses": { "200": { "description": "OK" } } }
+    },
+    "/api/hospital/reset-seed": {
+      "post": { "summary": "Reset and reseed demo hospital fixtures", "tags": ["Admin"], "responses": { "200": { "description": "OK" } } }
+    },
+    "/api/hospital/security/break-glass": {
+      "post": { "summary": "Emergency access override with cryptographic audit trail", "tags": ["Security"], "responses": { "200": { "description": "OK" } } }
+    },
+    "/api/hospital/security/login": {
+      "post": { "summary": "Staff authentication and session issuance", "tags": ["Security"], "responses": { "200": { "description": "OK" } } }
+    },
+    "/api/hospital/security/permissions": {
+      "get": { "summary": "List available clinical RBAC permissions", "tags": ["Security"], "responses": { "200": { "description": "OK" } } }
+    },
+    "/api/hospital/security/roles": {
+      "get": { "summary": "List hospital security roles", "tags": ["Security"], "responses": { "200": { "description": "OK" } } },
+      "post": { "summary": "Create or modify security role", "tags": ["Security"], "responses": { "200": { "description": "OK" } } }
+    },
+    "/api/hospital/security/session": {
+      "get": { "summary": "Get active staff session", "tags": ["Security"], "responses": { "200": { "description": "OK" } } },
+      "delete": { "summary": "Terminate active session", "tags": ["Security"], "responses": { "200": { "description": "OK" } } }
+    },
+    "/api/hospital/security/staff": {
+      "get": { "summary": "List hospital medical staff", "tags": ["Security"], "responses": { "200": { "description": "OK" } } },
+      "post": { "summary": "Enroll hospital medical staff member", "tags": ["Security"], "responses": { "201": { "description": "Created" } } }
+    },
+    "/api/hospital/security/staff/{id}": {
+      "get": { "summary": "Get staff member profile", "tags": ["Security"], "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }], "responses": { "200": { "description": "OK" } } },
+      "patch": { "summary": "Update staff member profile", "tags": ["Security"], "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }], "responses": { "200": { "description": "OK" } } }
+    },
+    "/api/hospital/security/staff/{id}/toggle-duty": {
+      "post": { "summary": "Toggle on-duty shift status", "tags": ["Security"], "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }], "responses": { "200": { "description": "OK" } } }
+    },
+    "/api/hospital/security/staff/{id}/unlock": {
+      "post": { "summary": "Unlock locked staff credential", "tags": ["Security"], "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }], "responses": { "200": { "description": "OK" } } }
+    },
+    "/api/hospital/stats": {
+      "get": { "summary": "Operational metrics, triage stats, and occupancy ratios", "tags": ["Stats"], "responses": { "200": { "description": "OK" } } }
+    },
+    "/api/hospital/telemetry": {
+      "post": { "summary": "Push medical telemetry and vitals readings", "tags": ["Telemetry"], "responses": { "200": { "description": "OK" } } }
+    },
+    "/api/hospital/treatments": {
+      "get": { "summary": "List active medical treatment courses", "tags": ["Treatments"], "responses": { "200": { "description": "OK" } } },
+      "post": { "summary": "Initiate medical treatment", "tags": ["Treatments"], "responses": { "201": { "description": "Created" } } },
+      "patch": { "summary": "Update treatment progress", "tags": ["Treatments"], "responses": { "200": { "description": "OK" } } }
+    }
+  }
+}

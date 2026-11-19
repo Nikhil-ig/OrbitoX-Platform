@@ -1,0 +1,29 @@
+/**
+ * Motion Accessibility & Reduced-Motion Tokens
+ * Automatically zeroes out durations when prefers-reduced-motion is active.
+ */
+
+@media (prefers-reduced-motion: reduce) {
+  :root,
+  [data-theme],
+  [data-tenant-theme] {
+    --duration-fast: 0ms !important;
+    --duration-normal: 0ms !important;
+    --duration-slow: 0ms !important;
+
+    --ease-default: linear !important;
+    --ease-in: linear !important;
+    --ease-out: linear !important;
+    --ease-in-out: linear !important;
+  }
+
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
