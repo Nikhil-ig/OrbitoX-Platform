@@ -105,14 +105,19 @@ export default function ConsolePackagesPage() {
       accessorKey: 'signatureVerified',
       header: 'Cryptographic Signature',
       cell: ({ row }) => {
-        const verified = Boolean(
-          row.original.signatureVerified === true ||
-          (row.original as any).hasEd25519Signature === true
+        const verified = row.original.signatureVerified === true;
+        const hasKey = Boolean(
+          (row.original as any).hasEd25519Signature ||
+          (row.original as any).signingPublicKeyPem
         );
         return (
           <div
             className={`flex items-center gap-1.5 text-xs ${
-              verified ? 'text-[var(--color-success)]' : 'text-[var(--color-warning)]'
+              verified
+                ? 'text-[var(--color-success)]'
+                : hasKey
+                ? 'text-[var(--color-warning)]'
+                : 'text-[var(--color-text-muted)]'
             }`}
           >
             {verified ? (
@@ -120,10 +125,15 @@ export default function ConsolePackagesPage() {
                 <ShieldCheck className="h-4 w-4" />
                 <span>Ed25519 Verified</span>
               </>
+            ) : hasKey ? (
+              <>
+                <Package className="h-4 w-4" />
+                <span>Unverified Signature</span>
+              </>
             ) : (
               <>
                 <Package className="h-4 w-4" />
-                <span>Unverified / Unsigned</span>
+                <span>Unsigned</span>
               </>
             )}
           </div>

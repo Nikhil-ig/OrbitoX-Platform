@@ -47,7 +47,18 @@ export default function ConsoleApprovalsPage() {
       const res = await fetch('/api/v1/platform/approvals');
       const json = await res.json();
       if (res.ok && json.success && Array.isArray(json.data?.requests)) {
-        setRequests(json.data.requests);
+        const normalized: ApprovalRequest[] = json.data.requests.map((r: any) => ({
+          id: String(r.id || ''),
+          type: String(r.type || r.entityType || 'UNKNOWN'),
+          targetId: String(r.targetId || r.entityId || ''),
+          targetName: r.targetName ? String(r.targetName) : undefined,
+          status: (r.status as 'PENDING' | 'APPROVED' | 'REJECTED') || 'PENDING',
+          requestedBy: String(r.requestedBy || ''),
+          requestedAt: String(r.requestedAt || r.createdAt || new Date().toISOString()),
+          reason: String(r.reason || ''),
+          stages: Array.isArray(r.stages) ? r.stages : [],
+        }));
+        setRequests(normalized);
       } else {
         setError(json.error?.message || 'Failed to load approvals from server.');
         setRequests([]);
@@ -103,11 +114,15 @@ export default function ConsoleApprovalsPage() {
       if (statusFilter !== 'ALL' && r.status !== statusFilter) return false;
       if (search) {
         const q = search.toLowerCase();
+        const typeStr = String(r.type || '').toLowerCase();
+        const targetIdStr = String(r.targetId || '').toLowerCase();
+        const targetNameStr = String(r.targetName || '').toLowerCase();
+        const requestedByStr = String(r.requestedBy || '').toLowerCase();
         if (
-          !r.type.toLowerCase().includes(q) &&
-          !r.targetId.toLowerCase().includes(q) &&
-          !(r.targetName || '').toLowerCase().includes(q) &&
-          !r.requestedBy.toLowerCase().includes(q)
+          !typeStr.includes(q) &&
+          !targetIdStr.includes(q) &&
+          !targetNameStr.includes(q) &&
+          !requestedByStr.includes(q)
         ) {
           return false;
         }

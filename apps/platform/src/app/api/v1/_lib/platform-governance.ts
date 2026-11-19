@@ -144,14 +144,17 @@ export interface ApprovalPolicy {
 
 export interface ApprovalRequest {
   id: string;
-  contextId: string;
+  type: string;
   entityType: string;
+  targetId: string;
   entityId: string;
+  contextId?: string;
   targetName?: string;
   reason?: string;
   policyId: string;
   status: ApprovalStatus;
   requestedBy: string;
+  requestedAt: string;
   createdAt: string;
   updatedAt: string;
   stages: ApprovalStage[];
@@ -160,20 +163,39 @@ export interface ApprovalRequest {
 function operationRowToApprovalRequest(row: any): ApprovalRequest {
   const reqMeta = typeof row.request === 'object' && row.request !== null ? row.request : {};
   const steps = Array.isArray(row.steps) ? row.steps : [];
+  const entityType = reqMeta.entityType || row.type || 'PLATFORM_KEY';
+  const entityId = reqMeta.entityId || row.id;
+  const createdAt = row.createdAt instanceof Date ? row.createdAt.toISOString() : String(row.createdAt || new Date().toISOString());
+  const updatedAt = row.updatedAt instanceof Date ? row.updatedAt.toISOString() : String(row.updatedAt || new Date().toISOString());
+
   return {
     id: row.id,
-    contextId: row.tenantId || row.organizationId || 'global',
-    entityType: reqMeta.entityType || row.type || 'PLATFORM_KEY',
-    entityId: reqMeta.entityId || row.id,
-    targetName: reqMeta.targetName,
-    reason: reqMeta.reason,
+    type: entityType,
+    entityType,
+    targetId: entityId,
+    entityId,
+    contextId: row.tenantId || row.organizationId || reqMeta.contextId,
+    targetName: reqMeta.targetName || entityId,
+    reason: reqMeta.reason || 'Operational approval request',
     policyId: reqMeta.policyId || 'policy_key_revocation',
     status: (row.status as ApprovalStatus) || 'PENDING',
     requestedBy: row.operatorId || reqMeta.requestedBy || 'operator@orbitox.io',
-    createdAt: row.createdAt instanceof Date ? row.createdAt.toISOString() : String(row.createdAt || new Date().toISOString()),
-    updatedAt: row.updatedAt instanceof Date ? row.updatedAt.toISOString() : String(row.updatedAt || new Date().toISOString()),
+    requestedAt: createdAt,
+    createdAt,
+    updatedAt,
     stages: steps,
   };
+}
+
+export function isDatabasePersistenceEnabled(): boolean {
+  if (process.env.ORBITOX_PLATFORM_REPOSITORY === 'json' && !process.env.FORCE_DB_PERSISTENCE) {
+    return false;
+  }
+  return Boolean(
+    (process.env.DATABASE_URL || process.env.APP_DATABASE_URL) &&
+    (prisma as any)?.$transaction &&
+    (prisma as any)?.platformOperation
+  );
 }
 
 export class ApprovalEngine {
@@ -185,52 +207,43 @@ export class ApprovalEngine {
   }
 
   async listRequests(): Promise<ApprovalRequest[]> {
-    try {
-      if ((prisma as any)?.platformOperation?.findMany) {
-        const rows = await (prisma as any).platformOperation.findMany({
-          where: { type: 'APPROVAL_REQUEST' },
-          orderBy: { createdAt: 'desc' },
-        });
-        if (Array.isArray(rows)) {
-          for (const row of rows) {
-            const req = operationRowToApprovalRequest(row);
-            this.requests[req.id] = req;
-          }
+    if (isDatabasePersistenceEnabled()) {
+      const rows = await (prisma as any).platformOperation.findMany({
+        where: { type: 'APPROVAL_REQUEST' },
+        orderBy: { createdAt: 'desc' },
+      });
+      if (Array.isArray(rows)) {
+        for (const row of rows) {
+          const req = operationRowToApprovalRequest(row);
+          this.requests[req.id] = req;
         }
       }
-    } catch {
-      // In offline / mock / isolated unit test mode, memory cache is maintained
     }
     return Object.values(this.requests);
   }
 
   async getRequest(id: string): Promise<ApprovalRequest | null> {
-    if (this.requests[id]) return this.requests[id]!;
-    try {
-      if ((prisma as any)?.platformOperation?.findUnique) {
-        const row = await (prisma as any).platformOperation.findUnique({
-          where: { id },
-        });
-        if (row && row.type === 'APPROVAL_REQUEST') {
-          const req = operationRowToApprovalRequest(row);
-          this.requests[req.id] = req;
-          return req;
-        }
+    if (isDatabasePersistenceEnabled()) {
+      const row = await (prisma as any).platformOperation.findUnique({
+        where: { id },
+      });
+      if (row && row.type === 'APPROVAL_REQUEST') {
+        const req = operationRowToApprovalRequest(row);
+        this.requests[req.id] = req;
+        return req;
       }
-    } catch {
-      // fallback
     }
     return this.requests[id] || null;
   }
 
-  requestApproval(
+  async requestApproval(
     contextId: string,
     entityType: string,
     entityId: string,
     policyId: string,
     requestedBy: string,
     metadata?: { targetName?: string; reason?: string }
-  ): ApprovalRequest {
+  ): Promise<ApprovalRequest> {
     const policy = this.policies[policyId];
     if (!policy) {
       throw new Error(`Policy ${policyId} not found.`);
@@ -247,87 +260,155 @@ export class ApprovalEngine {
 
     const request: ApprovalRequest = {
       id,
-      contextId,
+      type: entityType,
       entityType,
+      targetId: entityId,
       entityId,
-      targetName: metadata?.targetName,
-      reason: metadata?.reason,
+      contextId,
+      targetName: metadata?.targetName || entityId,
+      reason: metadata?.reason || 'Operational approval request',
       policyId,
       status: 'PENDING',
       requestedBy,
+      requestedAt: now,
       createdAt: now,
       updatedAt: now,
       stages,
     };
 
-    this.requests[request.id] = request;
-
-    try {
-      if ((prisma as any)?.platformOperation?.create) {
-        (prisma as any).platformOperation.create({
-          data: {
-            id,
-            type: 'APPROVAL_REQUEST',
-            tenantId: contextId,
-            organizationId: contextId,
-            status: 'PENDING',
-            operatorId: requestedBy,
-            request: {
-              entityType,
-              entityId,
-              policyId,
-              requestedBy,
-              targetName: metadata?.targetName,
-              reason: metadata?.reason,
-            },
-            steps: stages as any,
-            result: null,
+    if (isDatabasePersistenceEnabled()) {
+      await (prisma as any).platformOperation.create({
+        data: {
+          id,
+          type: 'APPROVAL_REQUEST',
+          tenantId: contextId,
+          organizationId: contextId,
+          status: 'PENDING',
+          operatorId: requestedBy,
+          request: {
+            entityType,
+            entityId,
+            policyId,
+            requestedBy,
+            targetName: metadata?.targetName,
+            reason: metadata?.reason,
           },
-        }).catch(() => {});
-      }
-    } catch {
-      // Non-blocking for offline tests
+          steps: stages as any,
+          result: null,
+        },
+      });
     }
 
+    this.requests[request.id] = request;
     return request;
   }
 
-  approveStage(
+  async approveStage(
     requestId: string,
     stageId: string,
     approvedBy: string,
     userRoles: string[],
     comments?: string
-  ): ApprovalRequest {
+  ): Promise<ApprovalRequest> {
+    if (isDatabasePersistenceEnabled()) {
+      return await (prisma as any).$transaction(async (tx: any) => {
+        const row = await tx.platformOperation.findUnique({
+          where: { id: requestId },
+        });
+        if (!row || row.type !== 'APPROVAL_REQUEST') {
+          throw new Error(`ApprovalRequest ${requestId} not found.`);
+        }
+        if (row.status !== 'PENDING') {
+          throw new Error(`ApprovalRequest ${requestId} is already ${row.status}.`);
+        }
+
+        const request = operationRowToApprovalRequest(row);
+
+        if (
+          request.requestedBy &&
+          approvedBy &&
+          request.requestedBy.trim().toLowerCase() === approvedBy.trim().toLowerCase()
+        ) {
+          throw new Error(`SELF_APPROVAL_FORBIDDEN: Requester (${request.requestedBy}) cannot approve their own stage.`);
+        }
+
+        const stageIndex = request.stages.findIndex((s) => s.stageId === stageId);
+        if (stageIndex === -1) {
+          throw new Error(`Stage ${stageId} not found in ApprovalRequest ${requestId}.`);
+        }
+
+        const stage = request.stages[stageIndex]!;
+        if (stage.status !== 'PENDING') {
+          throw new Error(`Stage ${stageId} is already ${stage.status}.`);
+        }
+
+        for (let i = 0; i < stageIndex; i++) {
+          const prev = request.stages[i];
+          if (prev && prev.status !== 'APPROVED') {
+            throw new Error(`Cannot approve stage ${stageId}. Prior stage ${prev.stageId} is still pending.`);
+          }
+        }
+
+        const hasRole = stage.requiredRoles.some((r) => userRoles.includes(r));
+        if (!hasRole) {
+          throw new Error(
+            `INSUFFICIENT_ROLES: Operator roles [${userRoles.join(', ')}] cannot approve stage ${stageId}. Required roles: [${stage.requiredRoles.join(', ')}].`
+          );
+        }
+
+        const now = new Date();
+        stage.status = 'APPROVED';
+        stage.approvedBy = approvedBy;
+        stage.comments = comments;
+        stage.processedAt = now.toISOString();
+
+        const allApproved = request.stages.every((s) => s.status === 'APPROVED');
+        const nextStatus: ApprovalStatus = allApproved ? 'APPROVED' : 'PENDING';
+
+        const updateResult = await tx.platformOperation.updateMany({
+          where: {
+            id: requestId,
+            status: 'PENDING',
+          },
+          data: {
+            status: nextStatus,
+            steps: request.stages as any,
+            result: {
+              lastAction: 'APPROVE',
+              approvedBy,
+              stageId,
+              comments,
+              updatedAt: now.toISOString(),
+            },
+            completedAt: allApproved ? now : null,
+          },
+        });
+
+        if (updateResult.count !== 1) {
+          throw new Error(`CONCURRENCY_CONFLICT: ApprovalRequest ${requestId} was modified concurrently.`);
+        }
+
+        request.status = nextStatus;
+        request.updatedAt = now.toISOString();
+        this.requests[requestId] = request;
+        return request;
+      });
+    }
+
     const request = this.requests[requestId];
-    if (!request) {
-      throw new Error(`ApprovalRequest ${requestId} not found.`);
-    }
+    if (!request) throw new Error(`ApprovalRequest ${requestId} not found.`);
+    if (request.status !== 'PENDING') throw new Error(`ApprovalRequest ${requestId} is already ${request.status}.`);
 
-    if (request.status !== 'PENDING') {
-      throw new Error(`ApprovalRequest ${requestId} is already ${request.status}.`);
-    }
-
-    // Four-eyes self-approval prevention
-    if (
-      request.requestedBy &&
-      approvedBy &&
-      request.requestedBy.trim().toLowerCase() === approvedBy.trim().toLowerCase()
-    ) {
+    if (request.requestedBy && approvedBy && request.requestedBy.trim().toLowerCase() === approvedBy.trim().toLowerCase()) {
       throw new Error(`SELF_APPROVAL_FORBIDDEN: Requester (${request.requestedBy}) cannot approve their own stage.`);
     }
 
     const stageIndex = request.stages.findIndex((s) => s.stageId === stageId);
-    if (stageIndex === -1) {
-      throw new Error(`Stage ${stageId} not found in ApprovalRequest ${requestId}.`);
-    }
+    if (stageIndex === -1) throw new Error(`Stage ${stageId} not found in ApprovalRequest ${requestId}.`);
 
     const stage = request.stages[stageIndex]!;
-    if (stage.status !== 'PENDING') {
-      throw new Error(`Stage ${stageId} is already ${stage.status}.`);
-    }
+    if (stage.status !== 'PENDING') throw new Error(`Stage ${stageId} is already ${stage.status}.`);
 
-    // Ensure sequential approval: prior stages must be approved
     for (let i = 0; i < stageIndex; i++) {
       const prev = request.stages[i];
       if (prev && prev.status !== 'APPROVED') {
@@ -335,7 +416,6 @@ export class ApprovalEngine {
       }
     }
 
-    // Enforce role authorization
     const hasRole = stage.requiredRoles.some((r) => userRoles.includes(r));
     if (!hasRole) {
       throw new Error(`INSUFFICIENT_ROLES: Operator roles [${userRoles.join(', ')}] cannot approve stage ${stageId}. Required roles: [${stage.requiredRoles.join(', ')}].`);
@@ -347,50 +427,106 @@ export class ApprovalEngine {
     stage.processedAt = new Date().toISOString();
 
     const allApproved = request.stages.every((s) => s.status === 'APPROVED');
-    if (allApproved) {
-      request.status = 'APPROVED';
-    }
-
+    request.status = allApproved ? 'APPROVED' : 'PENDING';
     request.updatedAt = new Date().toISOString();
-
-    try {
-      if ((prisma as any)?.platformOperation?.update) {
-        (prisma as any).platformOperation.update({
-          where: { id: requestId },
-          data: {
-            status: request.status,
-            steps: request.stages as any,
-            result: {
-              lastAction: 'APPROVE',
-              approvedBy,
-              stageId,
-              comments,
-              updatedAt: request.updatedAt,
-            },
-            completedAt: request.status === 'APPROVED' ? new Date() : null,
-          },
-        }).catch(() => {});
-      }
-    } catch {
-      // Non-blocking
-    }
-
     return request;
   }
 
-  rejectRequest(requestId: string, rejectedBy: string, comments?: string): ApprovalRequest {
-    const request = this.requests[requestId];
-    if (!request) {
-      throw new Error(`ApprovalRequest ${requestId} not found.`);
+  async rejectRequest(
+    requestId: string,
+    stageId: string | undefined,
+    rejectedBy: string,
+    userRoles: string[],
+    comments?: string
+  ): Promise<ApprovalRequest> {
+    if (isDatabasePersistenceEnabled()) {
+      return await (prisma as any).$transaction(async (tx: any) => {
+        const row = await tx.platformOperation.findUnique({
+          where: { id: requestId },
+        });
+        if (!row || row.type !== 'APPROVAL_REQUEST') {
+          throw new Error(`ApprovalRequest ${requestId} not found.`);
+        }
+        if (row.status !== 'PENDING') {
+          throw new Error(`ApprovalRequest ${requestId} is already ${row.status}.`);
+        }
+
+        const request = operationRowToApprovalRequest(row);
+
+        const targetStage = stageId
+          ? request.stages.find((s) => s.stageId === stageId)
+          : request.stages.find((s) => s.status === 'PENDING') || request.stages[0];
+
+        if (!targetStage) {
+          throw new Error(`No active stage found in ApprovalRequest ${requestId}.`);
+        }
+
+        const hasRole = targetStage.requiredRoles.some((r) => userRoles.includes(r));
+        if (!hasRole) {
+          throw new Error(
+            `INSUFFICIENT_ROLES: Operator roles [${userRoles.join(', ')}] cannot reject stage ${targetStage.stageId}. Required roles: [${targetStage.requiredRoles.join(', ')}].`
+          );
+        }
+
+        const now = new Date();
+        for (const stage of request.stages) {
+          if (stage.status === 'PENDING') {
+            stage.status = 'REJECTED';
+            stage.approvedBy = rejectedBy;
+            stage.comments = comments;
+            stage.processedAt = now.toISOString();
+          }
+        }
+
+        const updateResult = await tx.platformOperation.updateMany({
+          where: {
+            id: requestId,
+            status: 'PENDING',
+          },
+          data: {
+            status: 'REJECTED',
+            steps: request.stages as any,
+            result: {
+              lastAction: 'REJECT',
+              rejectedBy,
+              stageId: targetStage.stageId,
+              comments,
+              updatedAt: now.toISOString(),
+            },
+            completedAt: now,
+          },
+        });
+
+        if (updateResult.count !== 1) {
+          throw new Error(`CONCURRENCY_CONFLICT: ApprovalRequest ${requestId} was modified concurrently.`);
+        }
+
+        request.status = 'REJECTED';
+        request.updatedAt = now.toISOString();
+        this.requests[requestId] = request;
+        return request;
+      });
     }
 
-    if (request.status !== 'PENDING') {
-      throw new Error(`ApprovalRequest ${requestId} is already ${request.status}.`);
+    const request = this.requests[requestId];
+    if (!request) throw new Error(`ApprovalRequest ${requestId} not found.`);
+    if (request.status !== 'PENDING') throw new Error(`ApprovalRequest ${requestId} is already ${request.status}.`);
+
+    const targetStage = stageId
+      ? request.stages.find((s) => s.stageId === stageId)
+      : request.stages.find((s) => s.status === 'PENDING') || request.stages[0];
+
+    if (!targetStage) throw new Error(`No active stage found in ApprovalRequest ${requestId}.`);
+
+    const hasRole = targetStage.requiredRoles.some((r) => userRoles.includes(r));
+    if (!hasRole) {
+      throw new Error(
+        `INSUFFICIENT_ROLES: Operator roles [${userRoles.join(', ')}] cannot reject stage ${targetStage.stageId}. Required roles: [${targetStage.requiredRoles.join(', ')}].`
+      );
     }
 
     request.status = 'REJECTED';
     request.updatedAt = new Date().toISOString();
-
     for (const stage of request.stages) {
       if (stage.status === 'PENDING') {
         stage.status = 'REJECTED';
@@ -399,28 +535,6 @@ export class ApprovalEngine {
         stage.processedAt = new Date().toISOString();
       }
     }
-
-    try {
-      if ((prisma as any)?.platformOperation?.update) {
-        (prisma as any).platformOperation.update({
-          where: { id: requestId },
-          data: {
-            status: 'REJECTED',
-            steps: request.stages as any,
-            result: {
-              lastAction: 'REJECT',
-              rejectedBy,
-              comments,
-              updatedAt: request.updatedAt,
-            },
-            completedAt: new Date(),
-          },
-        }).catch(() => {});
-      }
-    } catch {
-      // Non-blocking
-    }
-
     return request;
   }
 }

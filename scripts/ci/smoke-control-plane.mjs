@@ -115,7 +115,7 @@ async function checkSignedInOperatorPages() {
   }
   for (const [legacyPath, target] of [
     ['/platform', '/console/overview'],
-    ['/platform/fleet', '/console/overview'],
+    ['/platform/fleet', '/console/provisioning'],
     [`/platform/projects/${projectId}`, `/console/tenants/${projectId}`],
   ]) {
     await expectPermanentRedirect(`signed-in operator on ${legacyPath} permanently redirects to ${target}`, legacyPath, target, { headers });
@@ -142,7 +142,7 @@ for (const path of [
 for (const [legacyPath, target] of [
   ['/platform', '/console/overview'],
   ['/platform/restaurants', '/console/tenants'],
-  ['/platform/fleet', '/console/overview'],
+  ['/platform/fleet', '/console/provisioning'],
   ['/platform/plans', '/console/billing'],
   ['/platform/connect', '/console/security'],
   ['/platform/settings', '/console/settings/appearance'],
@@ -186,7 +186,7 @@ for (const path of [
 for (const [legacyPath, target] of [
   ['/platform', '/console/overview'],
   ['/platform/restaurants', '/console/tenants'],
-  ['/platform/fleet', '/console/overview'],
+  ['/platform/fleet', '/console/provisioning'],
   ['/platform/plans', '/console/billing'],
   ['/platform/connect', '/console/security'],
   ['/platform/settings', '/console/settings/appearance'],
@@ -202,9 +202,9 @@ for (const [legacyPath, target] of [
 console.log('\nRuntime token cannot escalate to admin');
 await expectStatus('runtime token on /api/v1/fleet -> 401', 401, '/api/v1/fleet', { headers: bearer(RUNTIME) });
 await expectPermanentRedirect(
-  'runtime token on /platform/fleet permanently redirects to /console/overview',
+  'runtime token on /platform/fleet permanently redirects to /console/provisioning',
   '/platform/fleet',
-  '/console/overview',
+  '/console/provisioning',
   { headers: bearer(RUNTIME) },
 );
 await expectLoginRedirect(

@@ -3,17 +3,17 @@ import { prisma } from '@/server/db/prisma';
 import { ApiResponse } from '@/app/api/v1/_lib/api-types';
 import { approvalEngine, auditService } from '@/app/api/v1/_lib/platform-governance';
 import { getOperatorSession, OPERATOR_SESSION_COOKIE } from '@/server/accounts/account-service';
-import { unsealTotpSecret, verifyTotp } from '@/server/auth/account-security';
+import { unsealTotpSecret, getTotpStep } from '@/server/auth/account-security';
 import { recordPlatformAuditEvent } from '@/server/audit/audit-console-service';
 
-function expandOperatorRoles(role: string): string[] {
+function getCanonicalOperatorRoles(role: string): string[] {
   switch (role) {
     case 'PLATFORM_OWNER':
-      return ['PLATFORM_OWNER', 'PLATFORM_SUPERADMIN', 'SECURITY_ADMIN', 'INFRA_LEAD', 'OPERATOR', 'ADMIN'];
+      return ['PLATFORM_OWNER', 'PLATFORM_SUPERADMIN', 'SECURITY_ADMIN', 'INFRA_LEAD', 'OPERATOR'];
     case 'OPERATOR':
-      return ['OPERATOR', 'INFRA_LEAD', 'ADMIN'];
+      return ['OPERATOR'];
     case 'BILLING':
-      return ['BILLING', 'FINANCE_ADMIN'];
+      return ['BILLING'];
     case 'SUPPORT_READONLY':
       return ['SUPPORT_READONLY'];
     default:
@@ -21,52 +21,43 @@ function expandOperatorRoles(role: string): string[] {
   }
 }
 
-async function resolveCallerIdentity(req: NextRequest): Promise<{
-  authenticated: boolean;
-  operatorId?: string;
+async function resolveOperatorCaller(req: NextRequest): Promise<{
+  operatorId: string;
   email: string;
+  role: string;
   roles: string[];
   reauthenticatedAt?: Date | null;
-  session?: any;
 } | null> {
-  const sessionToken = req.cookies.get(OPERATOR_SESSION_COOKIE)?.value;
-  if (sessionToken) {
-    const session = await getOperatorSession(sessionToken);
-    if (session) {
-      return {
-        authenticated: true,
-        operatorId: session.operatorId,
-        email: session.email,
-        roles: expandOperatorRoles(session.role),
-        reauthenticatedAt: session.reauthenticatedAt,
-        session,
-      };
-    }
+  const authHeader = req.headers.get('authorization')?.trim() || '';
+  const bearerCandidate = authHeader.startsWith('Bearer ') ? authHeader.substring(7).trim() : null;
+  const cookieCandidate = req.cookies.get(OPERATOR_SESSION_COOKIE)?.value;
+
+  const sessionToken = cookieCandidate || bearerCandidate;
+  if (!sessionToken) {
+    return null;
   }
 
-  // Fallback to API Key / Bearer auth for programmatic/service invocation
-  const apiKey = req.headers.get('x-api-key') || req.headers.get('authorization')?.replace(/^Bearer\s+/i, '');
-  if (apiKey) {
-    if (apiKey.startsWith('orb_live_') || apiKey.startsWith('orb_test_') || apiKey.includes('admin') || apiKey.includes('secret')) {
-      return {
-        authenticated: true,
-        email: 'machine_api@orbitox.io',
-        roles: ['PLATFORM_SUPERADMIN', 'SECURITY_ADMIN', 'INFRA_LEAD', 'ADMIN'],
-        reauthenticatedAt: new Date(),
-      };
-    }
+  const session = await getOperatorSession(sessionToken);
+  if (!session || !session.operatorId) {
+    return null;
   }
 
-  return null;
+  return {
+    operatorId: session.operatorId,
+    email: session.email,
+    role: session.role,
+    roles: getCanonicalOperatorRoles(session.role),
+    reauthenticatedAt: session.reauthenticatedAt,
+  };
 }
 
 export async function GET(req: NextRequest) {
-  const caller = await resolveCallerIdentity(req);
-  if (!caller || !caller.authenticated) {
+  const caller = await resolveOperatorCaller(req);
+  if (!caller) {
     return NextResponse.json<ApiResponse>(
       {
         success: false,
-        error: { code: 'UNAUTHORIZED', message: 'Authenticated operator session or API credential required.' },
+        error: { code: 'UNAUTHORIZED', message: 'Authenticated operator session required.' },
       },
       { status: 401 }
     );
@@ -92,8 +83,8 @@ export async function GET(req: NextRequest) {
 
 export async function POST(req: NextRequest) {
   try {
-    const caller = await resolveCallerIdentity(req);
-    if (!caller || !caller.authenticated) {
+    const caller = await resolveOperatorCaller(req);
+    if (!caller) {
       return NextResponse.json<ApiResponse>(
         {
           success: false,
@@ -130,65 +121,91 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // Resolve target stage: explicit stageId or active pending stage
     const targetStageId =
       stageId ||
       approvalRequest.stages.find((s) => s.status === 'PENDING')?.stageId ||
       approvalRequest.stages[0]?.stageId ||
       'stage_1';
 
-    // Step-up verification for APPROVE
     if (action === 'APPROVE') {
-      if (caller.operatorId) {
-        let mfaVerified = false;
-        try {
-          const operator = await prisma.platformOperator.findUnique({
-            where: { id: caller.operatorId },
-            select: { mfaTotpSealed: true },
-          });
+      // Step-up verification for high-risk approval
+      const hasRecentReauth =
+        caller.reauthenticatedAt &&
+        Date.now() - new Date(caller.reauthenticatedAt).getTime() <= 5 * 60 * 1000;
 
-          if (operator?.mfaTotpSealed && totpCode) {
-            const secret = unsealTotpSecret(operator.mfaTotpSealed);
-            mfaVerified = verifyTotp(secret, String(totpCode).trim());
-          }
-        } catch {
-          // If sealed TOTP decipher fails or non-database test mode
+      if (!hasRecentReauth) {
+        if (!totpCode || typeof totpCode !== 'string' || !/^\d{6}$/.test(totpCode.trim())) {
+          return NextResponse.json<ApiResponse>(
+            {
+              success: false,
+              error: { code: 'INVALID_TOTP', message: 'Valid 6-digit TOTP code is required.' },
+            },
+            { status: 403 }
+          );
         }
 
-        const hasRecentReauth =
-          caller.reauthenticatedAt &&
-          Date.now() - new Date(caller.reauthenticatedAt).getTime() <= 5 * 60 * 1000;
+        const operator = await prisma.platformOperator.findUnique({
+          where: { id: caller.operatorId },
+          select: { mfaTotpSealed: true, lastTotpStep: true },
+        });
 
-        // If operator has sealed TOTP, an invalid TOTP code rejects immediately
-        if (totpCode && !mfaVerified && !hasRecentReauth) {
-          if (!/^\d{6}$/.test(String(totpCode).trim())) {
-            return NextResponse.json<ApiResponse>(
-              {
-                success: false,
-                error: { code: 'INVALID_TOTP', message: 'Invalid 6-digit TOTP code provided.' },
+        if (!operator || !operator.mfaTotpSealed) {
+          return NextResponse.json<ApiResponse>(
+            {
+              success: false,
+              error: { code: 'MFA_REQUIRED', message: 'Operator MFA is not configured.' },
+            },
+            { status: 403 }
+          );
+        }
+
+        const secret = unsealTotpSecret(operator.mfaTotpSealed);
+        const step = getTotpStep(secret, totpCode.trim());
+
+        if (step === null) {
+          // TOTP code is invalid
+          return NextResponse.json<ApiResponse>(
+            {
+              success: false,
+              error: { code: 'INVALID_TOTP', message: 'Invalid 6-digit TOTP code.' },
+            },
+            { status: 403 }
+          );
+        }
+
+        // Atomic TOTP step consumption to prevent replay attack
+        const now = new Date();
+        const updateRes = await prisma.platformOperator.updateMany({
+          where: {
+            id: caller.operatorId,
+            OR: [
+              { lastTotpStep: null },
+              { lastTotpStep: { lt: step } },
+            ],
+          },
+          data: {
+            lastTotpStep: step,
+            updatedAt: now,
+          },
+        });
+
+        if (updateRes.count !== 1) {
+          return NextResponse.json<ApiResponse>(
+            {
+              success: false,
+              error: {
+                code: 'TOTP_REPLAY_DETECTED',
+                message: 'TOTP code has already been consumed. Replay is rejected.',
               },
-              { status: 403 }
-            );
-          }
-        } else if (!mfaVerified && !hasRecentReauth) {
-          if (!totpCode || !/^\d{6}$/.test(String(totpCode).trim())) {
-            return NextResponse.json<ApiResponse>(
-              {
-                success: false,
-                error: {
-                  code: 'STEP_UP_REQUIRED',
-                  message: 'A valid 6-digit TOTP code or recent re-authentication is required to approve.',
-                },
-              },
-              { status: 403 }
-            );
-          }
+            },
+            { status: 403 }
+          );
         }
       }
 
-      // Execute approval
+      // Execute approval with atomic transactional persistence
       try {
-        const updated = approvalEngine.approveStage(
+        const updated = await approvalEngine.approveStage(
           requestId,
           targetStageId,
           caller.email,
@@ -196,12 +213,11 @@ export async function POST(req: NextRequest) {
           comments
         );
 
-        // Record audit trails
         await auditService.log({
           action: 'FOUR_EYES_APPROVAL_GRANTED',
           entityType: approvalRequest.entityType || 'APPROVAL_REQUEST',
           entityId: requestId,
-          userId: caller.operatorId || caller.email,
+          userId: caller.operatorId,
           userEmail: caller.email,
           contextId: approvalRequest.contextId || 'global',
           reason: comments || 'Operator approved four-eyes authorization stage',
@@ -232,11 +248,14 @@ export async function POST(req: NextRequest) {
         const message = err?.message || 'Approval execution failed.';
         const isSelfApproval = message.includes('SELF_APPROVAL_FORBIDDEN');
         const isInsufficientRole = message.includes('INSUFFICIENT_ROLES');
-        const status = isSelfApproval || isInsufficientRole ? 403 : 400;
+        const isConflict = message.includes('CONCURRENCY_CONFLICT');
+        const status = isSelfApproval || isInsufficientRole ? 403 : isConflict ? 409 : 400;
         const code = isSelfApproval
           ? 'SELF_APPROVAL_FORBIDDEN'
           : isInsufficientRole
           ? 'INSUFFICIENT_ROLES'
+          : isConflict
+          ? 'CONCURRENCY_CONFLICT'
           : 'APPROVAL_FAILED';
 
         return NextResponse.json<ApiResponse>(
@@ -248,15 +267,21 @@ export async function POST(req: NextRequest) {
         );
       }
     } else {
-      // Execute rejection
+      // Execute rejection with atomic transactional persistence and role check
       try {
-        const updated = approvalEngine.rejectRequest(requestId, caller.email, comments);
+        const updated = await approvalEngine.rejectRequest(
+          requestId,
+          targetStageId,
+          caller.email,
+          caller.roles,
+          comments
+        );
 
         await auditService.log({
           action: 'FOUR_EYES_APPROVAL_REJECTED',
           entityType: approvalRequest.entityType || 'APPROVAL_REQUEST',
           entityId: requestId,
-          userId: caller.operatorId || caller.email,
+          userId: caller.operatorId,
           userEmail: caller.email,
           contextId: approvalRequest.contextId || 'global',
           reason: comments || 'Operator rejected four-eyes authorization stage',
@@ -284,12 +309,22 @@ export async function POST(req: NextRequest) {
           meta: { latencyMs: 1, timestamp: new Date().toISOString(), requestId: crypto.randomUUID() },
         });
       } catch (err: any) {
+        const message = err?.message || 'Rejection failed.';
+        const isInsufficientRole = message.includes('INSUFFICIENT_ROLES');
+        const isConflict = message.includes('CONCURRENCY_CONFLICT');
+        const status = isInsufficientRole ? 403 : isConflict ? 409 : 400;
+        const code = isInsufficientRole
+          ? 'INSUFFICIENT_ROLES'
+          : isConflict
+          ? 'CONCURRENCY_CONFLICT'
+          : 'REJECTION_FAILED';
+
         return NextResponse.json<ApiResponse>(
           {
             success: false,
-            error: { code: 'REJECTION_FAILED', message: err?.message || 'Rejection failed.' },
+            error: { code, message },
           },
-          { status: 400 }
+          { status }
         );
       }
     }

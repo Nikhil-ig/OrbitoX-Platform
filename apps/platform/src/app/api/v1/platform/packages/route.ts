@@ -3,7 +3,7 @@ import { withApiGuard } from '@/app/api/v1/_lib/api-guard';
 import { ApiResponse, ApiRequestContext } from '@/app/api/v1/_lib/api-types';
 import { auditService } from '@/app/api/v1/_lib/platform-governance';
 import { platformRepository } from '@/server/db/platform-repository';
-import { canonicalizePluginId } from '@orbitox-io/plugin-engine';
+import { canonicalizePluginId, IntegrityVerifier } from '@orbitox-io/plugin-engine';
 
 const INSTALLABLE_CATALOGUE_PACKAGES = new Set(['@orbitox/hms', '@orbitox/restaurant']);
 
@@ -33,12 +33,42 @@ export const GET = withApiGuard(
 
       const isSupported = INSTALLABLE_CATALOGUE_PACKAGES.has(canonicalizePluginId(pkg.packageId));
 
+      const hasEd25519Signature = Boolean(pkg.signingPublicKeyPem);
+      let signatureVerified = false;
+
+      if (pkg.signingPublicKeyPem && Array.isArray(versions) && versions.length > 0) {
+        for (const ver of versions) {
+          if (ver.signature && ver.manifestHash) {
+            try {
+              const isValid = IntegrityVerifier.verifyPayloadSignature(
+                ver.manifestHash,
+                ver.signature,
+                pkg.signingPublicKeyPem
+              );
+              if (isValid) {
+                signatureVerified = true;
+                break;
+              }
+            } catch {
+              // Cryptographic signature verification failed
+            }
+          }
+        }
+      }
+
+      const integrityStatus = signatureVerified
+        ? 'VERIFIED'
+        : hasEd25519Signature
+        ? 'UNVERIFIED_SIGNATURE'
+        : 'UNSIGNED';
+
       return {
         ...pkg,
         versions,
         installationsCount: packageInstallations.length,
-        hasEd25519Signature: Boolean(pkg.signingPublicKeyPem),
-        integrityStatus: 'VERIFIED',
+        hasEd25519Signature,
+        signatureVerified,
+        integrityStatus,
         installable: isSupported,
         isInstallable: isSupported,
         installabilityStatus: isSupported ? 'AVAILABLE' : 'NOT_INSTALLABLE',
