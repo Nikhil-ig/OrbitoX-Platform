@@ -177,10 +177,27 @@ export interface CreatePlatformAuditEventInput {
 }
 
 export async function recordPlatformAuditEvent(
-  client: { platformAuditEvent: { create: (args: any) => Promise<any> } },
+  client: { platformAuditEvent: { create: (args: any) => Promise<any> }; $executeRawUnsafe?: (query: string) => Promise<any> },
   input: CreatePlatformAuditEventInput,
 ) {
   const sanitizedMetadata = sanitizeAuditPayload(input.metadata || {});
+  const tenantScope = (input.organizationId && input.projectId && input.environmentId)
+    ? `org/${input.organizationId}/project/${input.projectId}/environment/${input.environmentId}`
+    : `org/${input.organizationId || 'platform'}/project/${input.projectId || 'operations'}/environment/${input.environmentId || 'production'}`;
+
+  const parts = tenantScope.split('/');
+  const orgId = parts[1];
+  const projId = parts[3];
+  const envId = parts[5];
+
+  if (typeof client.$executeRawUnsafe === 'function') {
+    try {
+      await client.$executeRawUnsafe(`SET LOCAL app.current_tenant_id = '${tenantScope}'`);
+    } catch {
+      // Ignore if database does not support app.current_tenant_id or mock client
+    }
+  }
+
   return client.platformAuditEvent.create({
     data: {
       action: input.action,
@@ -188,9 +205,9 @@ export async function recordPlatformAuditEvent(
       entityId: input.entityId ?? null,
       actorId: input.actorId ?? null,
       actorEmail: input.actorEmail ?? null,
-      organizationId: input.organizationId ?? null,
-      projectId: input.projectId ?? null,
-      environmentId: input.environmentId ?? null,
+      organizationId: orgId,
+      projectId: projId,
+      environmentId: envId,
       ipAddress: input.ipAddress ?? null,
       requestId: input.requestId ?? null,
       reason: input.reason ?? null,

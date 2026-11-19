@@ -239,23 +239,6 @@ export async function POST(req: NextRequest) {
           newValue: { status: updated.status, stageId: targetStageId, approvedBy: caller.email },
         });
 
-        if (isDatabasePersistenceEnabled() && (prisma as any)?.platformAuditEvent?.create) {
-          await recordPlatformAuditEvent(prisma as any, {
-            action: 'FOUR_EYES_APPROVAL_GRANTED',
-            entityType: 'APPROVAL_REQUEST',
-            entityId: requestId,
-            actorId: caller.operatorId,
-            actorEmail: caller.email,
-            reason: comments || 'Operator approved four-eyes authorization stage',
-            metadata: {
-              stageId: targetStageId,
-              status: updated.status,
-              entityType: approvalRequest.entityType,
-              entityId: approvalRequest.entityId,
-            },
-          });
-        }
-
         return NextResponse.json<ApiResponse>({
           success: true,
           data: updated,
@@ -304,23 +287,6 @@ export async function POST(req: NextRequest) {
           reason: comments || 'Operator rejected four-eyes authorization stage',
           newValue: { status: 'REJECTED', stageId: targetStageId, rejectedBy: caller.email },
         });
-
-        if (isDatabasePersistenceEnabled() && (prisma as any)?.platformAuditEvent?.create) {
-          await recordPlatformAuditEvent(prisma as any, {
-            action: 'FOUR_EYES_APPROVAL_REJECTED',
-            entityType: 'APPROVAL_REQUEST',
-            entityId: requestId,
-            actorId: caller.operatorId,
-            actorEmail: caller.email,
-            reason: comments || 'Operator rejected four-eyes authorization stage',
-            metadata: {
-              stageId: targetStageId,
-              status: 'REJECTED',
-              entityType: approvalRequest.entityType,
-              entityId: approvalRequest.entityId,
-            },
-          });
-        }
 
         return NextResponse.json<ApiResponse>({
           success: true,
