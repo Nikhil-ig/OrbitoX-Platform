@@ -79,10 +79,16 @@ export class PackageSignatureService {
               );
 
               if (isValid) {
+                const verifiedAlgorithm =
+                  detectedAlgorithm !== 'UNKNOWN'
+                    ? detectedAlgorithm
+                    : sigObj.algorithm && sigObj.algorithm !== 'UNKNOWN'
+                      ? sigObj.algorithm
+                      : undefined;
                 return {
                   status: 'VERIFIED',
                   verified: true,
-                  verifiedAlgorithm: detectedAlgorithm !== 'UNKNOWN' ? detectedAlgorithm : (sigObj.algorithm || 'Ed25519'),
+                  verifiedAlgorithm,
                 };
               }
             }

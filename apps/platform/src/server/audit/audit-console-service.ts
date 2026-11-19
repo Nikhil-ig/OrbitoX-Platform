@@ -8,9 +8,7 @@ let privilegedAuditClient: any = null;
 export function getAuditReaderClient(): { client: any; isPrivileged: boolean } {
   const privilegedUrl =
     process.env.PLATFORM_ADMIN_AUDIT_DATABASE_URL ||
-    process.env.PLATFORM_AUDIT_DATABASE_URL ||
-    process.env.MAINTENANCE_DATABASE_URL ||
-    (process.env.NODE_ENV !== 'production' ? process.env.TEST_DATABASE_URL || process.env.DATABASE_URL : undefined);
+    process.env.PLATFORM_AUDIT_DATABASE_URL;
 
   if (privilegedUrl) {
     if (!privilegedAuditClient) {
@@ -247,6 +245,7 @@ export async function recordPlatformAuditEvent(
       create: (args: any) => Promise<any>;
       findFirst?: (args: any) => Promise<any>;
     };
+    $transaction?: (fn: (tx: any) => Promise<any>) => Promise<any>;
     $executeRaw?: (strings: TemplateStringsArray, ...values: any[]) => Promise<any>;
     $executeRawUnsafe?: (query: string) => Promise<any>;
   },
@@ -262,120 +261,90 @@ export async function recordPlatformAuditEvent(
   const projId = parts[3];
   const envId = parts[5];
 
-  // 1. Parameterized RLS tenant configuration
-  if (typeof (client as any).$executeRaw === 'function') {
-    try {
-      await (client as any).$executeRaw`SELECT set_config('app.current_tenant_id', ${tenantScope}, true)`;
-    } catch (err) {
-      if (process.env.NODE_ENV === 'production') {
-        throw new Error(
-          `Failed to set RLS tenant scope [${tenantScope}]: ${err instanceof Error ? err.message : String(err)}`
-        );
+  const executeAtomicWrite = async (tx: any) => {
+    // 1. Parameterized RLS tenant configuration
+    if (typeof tx.$executeRaw === 'function') {
+      try {
+        await tx.$executeRaw`SELECT set_config('app.current_tenant_id', ${tenantScope}, true)`;
+      } catch (err) {
+        if (process.env.NODE_ENV === 'production') {
+          throw new Error(
+            `Failed to set RLS tenant scope [${tenantScope}]: ${err instanceof Error ? err.message : String(err)}`
+          );
+        }
       }
-    }
-  } else if (typeof client.$executeRawUnsafe === 'function') {
-    try {
-      await client.$executeRawUnsafe(`SET LOCAL app.current_tenant_id = '${tenantScope.replace(/'/g, "''")}'`);
-    } catch (err) {
-      if (process.env.NODE_ENV === 'production') {
-        throw new Error(
-          `Failed to set RLS tenant scope [${tenantScope}]: ${err instanceof Error ? err.message : String(err)}`
-        );
-      }
-    }
-  }
-
-  // 2. Transaction-level advisory lock per tenantScope to eliminate concurrent write forks
-  if (typeof (client as any).$executeRaw === 'function') {
-    try {
-      await (client as any).$executeRaw`SELECT pg_advisory_xact_lock(hashtext('orbitox_audit_chain:' || ${tenantScope}))`;
-    } catch (err) {
-      if (process.env.NODE_ENV === 'production') {
-        throw new Error(
-          `Failed to acquire advisory lock for audit chain [${tenantScope}]: ${err instanceof Error ? err.message : String(err)}`
-        );
-      }
-    }
-  } else if (typeof client.$executeRawUnsafe === 'function') {
-    try {
-      await client.$executeRawUnsafe(`SELECT pg_advisory_xact_lock(hashtext('orbitox_audit_chain:' || '${tenantScope.replace(/'/g, "''")}'))`);
-    } catch (err) {
-      if (process.env.NODE_ENV === 'production') {
-        throw new Error(
-          `Failed to acquire advisory lock for audit chain [${tenantScope}]: ${err instanceof Error ? err.message : String(err)}`
-        );
-      }
-    }
-  }
-
-  // 3. Derive cryptographic hash chain link within this specific tenantScope
-  let previousHash = 'GENESIS';
-  let sequence = 1;
-  try {
-    if (typeof client.platformAuditEvent.findFirst === 'function') {
-      const lastEvent = await client.platformAuditEvent.findFirst({
-        where: {
-          organizationId: orgId,
-          projectId: projId,
-          environmentId: envId,
-        },
-        orderBy: [{ occurredAt: 'desc' }, { id: 'desc' }],
-        select: { id: true, metadata: true },
-      });
-      if (lastEvent && typeof lastEvent.metadata === 'object' && lastEvent.metadata !== null) {
-        const chain = (lastEvent.metadata as any)._chain;
-        if (chain && typeof chain.rowHash === 'string') {
-          previousHash = chain.rowHash;
-          sequence = (typeof chain.sequence === 'number' ? chain.sequence : 1) + 1;
-        } else if (lastEvent.id) {
-          previousHash = crypto.createHash('sha256').update(lastEvent.id).digest('hex');
+    } else if (typeof tx.$executeRawUnsafe === 'function') {
+      try {
+        await tx.$executeRawUnsafe(`SET LOCAL app.current_tenant_id = '${tenantScope.replace(/'/g, "''")}'`);
+      } catch (err) {
+        if (process.env.NODE_ENV === 'production') {
+          throw new Error(
+            `Failed to set RLS tenant scope [${tenantScope}]: ${err instanceof Error ? err.message : String(err)}`
+          );
         }
       }
     }
-  } catch (err) {
-    if (process.env.NODE_ENV === 'production') {
-      throw new Error(
-        `Failed to read previous audit chain head for scope [${tenantScope}]: ${err instanceof Error ? err.message : String(err)}`
-      );
+
+    // 2. Transaction-level advisory lock per tenantScope to eliminate concurrent write forks
+    if (typeof tx.$executeRaw === 'function') {
+      try {
+        await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext('orbitox_audit_chain:' || ${tenantScope}))`;
+      } catch (err) {
+        if (process.env.NODE_ENV === 'production') {
+          throw new Error(
+            `Failed to acquire advisory lock for audit chain [${tenantScope}]: ${err instanceof Error ? err.message : String(err)}`
+          );
+        }
+      }
+    } else if (typeof tx.$executeRawUnsafe === 'function') {
+      try {
+        await tx.$executeRawUnsafe(`SELECT pg_advisory_xact_lock(hashtext('orbitox_audit_chain:' || '${tenantScope.replace(/'/g, "''")}'))`);
+      } catch (err) {
+        if (process.env.NODE_ENV === 'production') {
+          throw new Error(
+            `Failed to acquire advisory lock for audit chain [${tenantScope}]: ${err instanceof Error ? err.message : String(err)}`
+          );
+        }
+      }
     }
-  }
 
-  const occurredAt = new Date();
-  const rowHash = computeAuditRowHash({
-    scope: tenantScope,
-    sequence,
-    previousHash,
-    action: input.action,
-    entityType: input.entityType,
-    entityId: input.entityId ?? null,
-    actorId: input.actorId ?? null,
-    actorEmail: input.actorEmail ?? null,
-    organizationId: orgId,
-    projectId: projId,
-    environmentId: envId,
-    reason: input.reason ?? null,
-    ipAddress: input.ipAddress ?? null,
-    requestId: input.requestId ?? null,
-    status: input.status ?? 'COMMITTED',
-    failureReason: input.failureReason ?? null,
-    occurredAt: occurredAt.toISOString(),
-    metadata: sanitizedMetadata,
-  });
+    // 3. Derive cryptographic hash chain link within this specific tenantScope
+    let previousHash = 'GENESIS';
+    let sequence = 1;
+    try {
+      if (typeof tx.platformAuditEvent?.findFirst === 'function') {
+        const lastEvent = await tx.platformAuditEvent.findFirst({
+          where: {
+            organizationId: orgId,
+            projectId: projId,
+            environmentId: envId,
+          },
+          orderBy: [{ occurredAt: 'desc' }, { id: 'desc' }],
+          select: { id: true, metadata: true },
+        });
+        if (lastEvent && typeof lastEvent.metadata === 'object' && lastEvent.metadata !== null) {
+          const chain = (lastEvent.metadata as any)._chain;
+          if (chain && typeof chain.rowHash === 'string') {
+            previousHash = chain.rowHash;
+            sequence = (typeof chain.sequence === 'number' ? chain.sequence : 1) + 1;
+          } else if (lastEvent.id) {
+            previousHash = crypto.createHash('sha256').update(lastEvent.id).digest('hex');
+          }
+        }
+      }
+    } catch (err) {
+      if (process.env.NODE_ENV === 'production') {
+        throw new Error(
+          `Failed to read previous audit chain head for scope [${tenantScope}]: ${err instanceof Error ? err.message : String(err)}`
+        );
+      }
+    }
 
-  const metadataWithChain = {
-    ...sanitizedMetadata,
-    _chain: {
+    const occurredAt = new Date();
+    const rowHash = computeAuditRowHash({
       scope: tenantScope,
       sequence,
       previousHash,
-      rowHash,
-      algorithm: 'SHA-256',
-      occurredAt: occurredAt.toISOString(),
-    },
-  };
-
-  return client.platformAuditEvent.create({
-    data: {
       action: input.action,
       entityType: input.entityType,
       entityId: input.entityId ?? null,
@@ -384,15 +353,53 @@ export async function recordPlatformAuditEvent(
       organizationId: orgId,
       projectId: projId,
       environmentId: envId,
+      reason: input.reason ?? null,
       ipAddress: input.ipAddress ?? null,
       requestId: input.requestId ?? null,
-      reason: input.reason ?? null,
-      metadata: metadataWithChain,
       status: input.status ?? 'COMMITTED',
       failureReason: input.failureReason ?? null,
-      occurredAt,
-    },
-  });
+      occurredAt: occurredAt.toISOString(),
+      metadata: sanitizedMetadata,
+    });
+
+    const metadataWithChain = {
+      ...sanitizedMetadata,
+      _chain: {
+        scope: tenantScope,
+        sequence,
+        previousHash,
+        rowHash,
+        algorithm: 'SHA-256',
+        occurredAt: occurredAt.toISOString(),
+        initialStatus: input.status ?? 'COMMITTED',
+      },
+    };
+
+    return tx.platformAuditEvent.create({
+      data: {
+        action: input.action,
+        entityType: input.entityType,
+        entityId: input.entityId ?? null,
+        actorId: input.actorId ?? null,
+        actorEmail: input.actorEmail ?? null,
+        organizationId: orgId,
+        projectId: projId,
+        environmentId: envId,
+        ipAddress: input.ipAddress ?? null,
+        requestId: input.requestId ?? null,
+        reason: input.reason ?? null,
+        metadata: metadataWithChain,
+        status: input.status ?? 'COMMITTED',
+        failureReason: input.failureReason ?? null,
+        occurredAt,
+      },
+    });
+  };
+
+  if (typeof (client as any).$transaction === 'function') {
+    return (client as any).$transaction(executeAtomicWrite);
+  }
+  return executeAtomicWrite(client);
 }
 
 class AuditConsoleService {
@@ -821,15 +828,48 @@ class AuditConsoleService {
           });
 
           if (chain.rowHash !== recomputed) {
-            return {
-              valid: false,
-              totalEntries: events.length,
-              verifiedChainEntries: totalVerified,
-              brokenAtIndex: globalIndex,
-              algorithm: 'SHA-256 (Merkle Hash Chain: previousHash -> rowHash)',
-              status: 'FAILED',
-              details: `Row hash discrepancy at sequence ${chain.sequence} in scope ${scope}. Expected ${recomputed}, found ${chain.rowHash}`,
-            };
+            let matches = false;
+            if (chain.initialStatus) {
+              const intentMeta = { ...metaWithoutChain };
+              if ('previousValue' in intentMeta && chain.initialStatus === 'PENDING') {
+                delete intentMeta.previousValue;
+              }
+              const intentRecomputed = computeAuditRowHash({
+                scope: chain.scope || scope,
+                sequence: chain.sequence,
+                previousHash: chain.previousHash,
+                action: event.action,
+                entityType: event.entityType,
+                entityId: event.entityId ?? null,
+                actorId: event.actorId ?? null,
+                actorEmail: event.actorEmail ?? null,
+                organizationId: event.organizationId,
+                projectId: event.projectId,
+                environmentId: event.environmentId,
+                reason: event.reason ?? null,
+                ipAddress: event.ipAddress ?? null,
+                requestId: event.requestId ?? null,
+                status: chain.initialStatus,
+                failureReason: null,
+                occurredAt: chain.occurredAt || new Date(event.occurredAt).toISOString(),
+                metadata: intentMeta,
+              });
+              if (chain.rowHash === intentRecomputed) {
+                matches = true;
+              }
+            }
+
+            if (!matches) {
+              return {
+                valid: false,
+                totalEntries: events.length,
+                verifiedChainEntries: totalVerified,
+                brokenAtIndex: globalIndex,
+                algorithm: 'SHA-256 (Merkle Hash Chain: previousHash -> rowHash)',
+                status: 'FAILED',
+                details: `Row hash discrepancy at sequence ${chain.sequence} in scope ${scope}. Expected ${recomputed}, found ${chain.rowHash}`,
+              };
+            }
           }
 
           expectedPreviousHash = chain.rowHash;

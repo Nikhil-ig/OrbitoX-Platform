@@ -40,6 +40,7 @@ import {
 } from '@orbitox-io/plugin-engine';
 import { TENANT_RE } from '@orbitox-io/bridge';
 import { loadPepperRing, activeVerifier, candidateVerifiers } from '@/server/auth/pepper';
+import { recordPlatformAuditEvent } from '@/server/audit/audit-console-service';
 
 export type { PlatformProject };
 
@@ -2497,54 +2498,65 @@ export function createPrismaPlatformRepository(
             });
         },
         async recordAuditEvent(event: Record<string, any>): Promise<Record<string, any>> {
-            await this.recordPlatformAdminAudit({
+            const id = await this.recordPlatformAdminAudit({
                 action: event.action || 'platform.audit',
                 entityType: event.entityType || 'PLATFORM',
                 entityId: event.entityId,
-                actorId: event.actor,
+                actorId: event.actor || event.actorId,
+                actorEmail: event.actorEmail,
+                organizationId: event.organizationId,
                 projectId: event.projectId,
                 environmentId: event.environmentId,
                 reason: event.reason,
                 metadata: event as Prisma.InputJsonValue,
             });
-            return { id: `audit_${crypto.randomUUID()}`, createdAt: new Date().toISOString(), ...event };
+            return { id, createdAt: new Date().toISOString(), ...event };
         },
         async recordPlatformAdminAudit(event: PlatformAdminAuditInput): Promise<string> {
-            const id = `audit_${crypto.randomUUID()}`;
             const operatorId = event.actorId || event.actorEmail || 'system:orchestrator';
-            const auditClient = adminAuditClient;
-            await auditClient.$executeRaw`
-        INSERT INTO "PlatformAuditEvent" (
-          "id", "actorId", "actorEmail", "action", "entityType", "entityId",
-          "organizationId", "projectId", "environmentId", "ipAddress", "requestId",
-          "reason", "metadata", "occurredAt"
-        ) VALUES (
-          ${id}, ${operatorId}, ${event.actorEmail || null}, ${event.action},
-          ${event.entityType}, ${event.entityId || null}, ${event.organizationId || null},
-          ${event.projectId || null}, ${event.environmentId || null}, ${event.ipAddress || null},
-          ${event.requestId || null}, ${event.reason || null},
-          ${JSON.stringify({ operatorId, ...(typeof event.metadata === 'object' && event.metadata !== null ? (event.metadata as any) : {}) })}::jsonb, NOW()
-        )
-      `;
-            return id;
+            const metadataObj =
+                typeof event.metadata === 'object' && event.metadata !== null
+                    ? (event.metadata as Record<string, unknown>)
+                    : {};
+            const created = await recordPlatformAuditEvent(adminAuditClient as any, {
+                action: event.action,
+                entityType: event.entityType,
+                entityId: event.entityId,
+                actorId: operatorId,
+                actorEmail: event.actorEmail,
+                organizationId: event.organizationId,
+                projectId: event.projectId,
+                environmentId: event.environmentId,
+                ipAddress: event.ipAddress,
+                requestId: event.requestId,
+                reason: event.reason,
+                metadata: { operatorId, ...metadataObj },
+                status: 'COMMITTED',
+            });
+            return created.id;
         },
         async createPlatformAdminAuditIntent(event: PlatformAdminAuditIntentInput): Promise<string> {
-            const id = `audit_${crypto.randomUUID()}`;
             const operatorId = event.actorId || event.actorEmail || 'system:orchestrator';
-            await adminAuditClient.$executeRaw`
-                INSERT INTO "PlatformAuditEvent" (
-                    "id", "actorId", "actorEmail", "action", "entityType", "entityId",
-                    "organizationId", "projectId", "environmentId", "ipAddress", "requestId",
-                    "reason", "metadata", "status", "occurredAt"
-                ) VALUES (
-                    ${id}, ${operatorId}, ${event.actorEmail || null}, ${event.action},
-                    ${event.entityType}, ${event.entityId || null}, ${event.organizationId},
-                    ${event.projectId}, ${event.environmentId || null}, ${event.ipAddress || null},
-                    ${event.requestId || null}, ${event.reason || null},
-                    ${JSON.stringify({ operatorId, ...(typeof event.metadata === 'object' && event.metadata !== null ? (event.metadata as any) : {}) })}::jsonb, 'PENDING', NOW()
-                )
-            `;
-            return id;
+            const metadataObj =
+                typeof event.metadata === 'object' && event.metadata !== null
+                    ? (event.metadata as Record<string, unknown>)
+                    : {};
+            const created = await recordPlatformAuditEvent(adminAuditClient as any, {
+                action: event.action,
+                entityType: event.entityType,
+                entityId: event.entityId,
+                actorId: operatorId,
+                actorEmail: event.actorEmail,
+                organizationId: event.organizationId,
+                projectId: event.projectId,
+                environmentId: event.environmentId,
+                ipAddress: event.ipAddress,
+                requestId: event.requestId,
+                reason: event.reason,
+                metadata: { operatorId, ...metadataObj },
+                status: 'PENDING',
+            });
+            return created.id;
         },
     };
 }

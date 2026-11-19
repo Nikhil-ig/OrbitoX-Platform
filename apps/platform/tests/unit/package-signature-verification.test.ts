@@ -465,6 +465,29 @@ describe('Phase 7C: Package Cryptographic Signature Verification Contract', () =
     assert.strictEqual(rsaResult.verified, true);
     assert.strictEqual(rsaResult.status, 'VERIFIED');
     assert.strictEqual(rsaResult.verifiedAlgorithm, 'RSA');
+
+    // 8C: Unverified or unknown algorithm must not default to Ed25519
+    const unkVersion: PackageVersionRecord = {
+      id: 'ver_unk',
+      packageId: '@orbitox/custom-unk',
+      version: '1.0.0',
+      tarballSha256: 'unk_tar',
+      manifestHash: 'hash_123',
+      signerId: 'custom-signer',
+      signature: JSON.stringify({
+        signerId: 'custom-signer',
+        manifestHash: 'hash_123',
+        fileTreeHash: 'hash_files',
+        signedAt: '2026-11-19T00:00:00.000Z',
+        files: [],
+        signature: 'invalid_sig',
+      }),
+      minPlatformVersion: '1.0.0',
+      releasedAt: '2026-11-19T00:00:00.000Z',
+    };
+    const unkResult = packageSignatureService.verifyVersionSignature(unkVersion, 'INVALID_PEM_KEY');
+    assert.strictEqual(unkResult.verified, false);
+    assert.notStrictEqual(unkResult.verifiedAlgorithm, 'Ed25519');
   });
 
   it('9. End-to-end persisted package release with authentic PackageSignature JSON envelope verifies via GET /api/v1/platform/packages', async () => {

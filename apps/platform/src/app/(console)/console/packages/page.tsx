@@ -124,7 +124,11 @@ export default function ConsolePackagesPage() {
             {verified ? (
               <>
                 <ShieldCheck className="h-4 w-4" />
-                <span>{`${(row.original as any).verifiedAlgorithm || 'Ed25519'} Verified`}</span>
+                <span>
+                  {(row.original as any).verifiedAlgorithm && (row.original as any).verifiedAlgorithm !== 'UNKNOWN'
+                    ? `${(row.original as any).verifiedAlgorithm} Verified`
+                    : 'Verified'}
+                </span>
               </>
             ) : integrityStatus === 'LEGACY_MANIFEST_ONLY' ? (
               <>
