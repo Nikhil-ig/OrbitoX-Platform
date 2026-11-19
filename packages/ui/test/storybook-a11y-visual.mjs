@@ -118,7 +118,7 @@ async function run() {
 
         for (const storyId of storyIds) {
           const url = `${baseUrl}/iframe.html?id=${storyId}&viewMode=story`;
-          await page.goto(url, { waitUntil: 'networkidle' });
+          await page.goto(url, { waitUntil: 'load' });
 
           // Set theme mode on documentElement & stabilize animations/fonts for deterministic pixels
           await page.evaluate(async (t) => {
@@ -276,6 +276,7 @@ async function run() {
   }
 
   console.log('ALL STORYBOOK ACCESSIBILITY & VISUAL REGRESSION CHECKS PASSED (0 VIOLATIONS).');
+  process.exit(0);
 }
 
 run().catch((err) => {
