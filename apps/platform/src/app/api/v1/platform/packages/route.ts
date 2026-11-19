@@ -1,3 +1,4 @@
+import crypto from 'node:crypto';
 import { NextRequest, NextResponse } from 'next/server';
 import { withApiGuard } from '@/app/api/v1/_lib/api-guard';
 import { ApiResponse, ApiRequestContext } from '@/app/api/v1/_lib/api-types';
@@ -40,11 +41,59 @@ export const GET = withApiGuard(
         for (const ver of versions) {
           if (ver.signature && ver.manifestHash) {
             try {
-              const isValid = IntegrityVerifier.verifyPayloadSignature(
-                ver.manifestHash,
-                ver.signature,
-                pkg.signingPublicKeyPem
-              );
+              let isValid = false;
+
+              // 1. Try serialized PackageSignature JSON
+              if (typeof ver.signature === 'string' && ver.signature.trim().startsWith('{')) {
+                try {
+                  const sigObj = JSON.parse(ver.signature);
+                  if (sigObj && sigObj.signature) {
+                    const fileTreeHash =
+                      sigObj.fileTreeHash ||
+                      (Array.isArray(sigObj.files)
+                        ? crypto.createHash('sha256').update(JSON.stringify(sigObj.files)).digest('hex')
+                        : ver.tarballSha256 || '');
+                    const payloadToVerify = {
+                      signerId: sigObj.signerId || ver.signerId || 'orbitox-release-mesh',
+                      manifestHash: sigObj.manifestHash || ver.manifestHash,
+                      fileTreeHash,
+                      signedAt: sigObj.signedAt || ver.releasedAt,
+                    };
+                    isValid = IntegrityVerifier.verifyPayloadSignature(
+                      payloadToVerify,
+                      sigObj.signature,
+                      pkg.signingPublicKeyPem
+                    );
+                  }
+                } catch {
+                  // Not valid JSON signature object
+                }
+              }
+
+              // 2. Standard CryptoSigner.signPackageDirectory composite payload verification
+              if (!isValid) {
+                const payloadToVerify = {
+                  signerId: ver.signerId || 'orbitox-release-mesh',
+                  manifestHash: ver.manifestHash,
+                  fileTreeHash: (ver as any).fileTreeHash || ver.tarballSha256 || crypto.createHash('sha256').update(ver.manifestHash).digest('hex'),
+                  signedAt: (ver as any).signedAt || ver.releasedAt,
+                };
+                isValid = IntegrityVerifier.verifyPayloadSignature(
+                  payloadToVerify,
+                  ver.signature,
+                  pkg.signingPublicKeyPem
+                );
+              }
+
+              // 3. Direct manifest hash payload fallback
+              if (!isValid) {
+                isValid = IntegrityVerifier.verifyPayloadSignature(
+                  ver.manifestHash,
+                  ver.signature,
+                  pkg.signingPublicKeyPem
+                );
+              }
+
               if (isValid) {
                 signatureVerified = true;
                 break;

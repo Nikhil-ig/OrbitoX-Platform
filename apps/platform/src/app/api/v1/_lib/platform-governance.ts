@@ -1,5 +1,6 @@
 import * as crypto from 'crypto';
 import { prisma } from '@/server/db/prisma';
+import { recordPlatformAuditEvent } from '@/server/audit/audit-console-service';
 
 export interface AuditLogOptions {
   action: string;
@@ -188,9 +189,24 @@ function operationRowToApprovalRequest(row: any): ApprovalRequest {
 }
 
 export function isDatabasePersistenceEnabled(): boolean {
-  if (process.env.ORBITOX_PLATFORM_REPOSITORY === 'json' && !process.env.FORCE_DB_PERSISTENCE) {
+  if (process.env.NODE_ENV === 'production') {
+    const isReady = Boolean(
+      (process.env.APP_DATABASE_URL || process.env.DATABASE_URL) &&
+      (prisma as any)?.$transaction &&
+      (prisma as any)?.platformOperation
+    );
+    if (!isReady) {
+      throw new Error(
+        'PRODUCTION_PERSISTENCE_REQUIRED: Durable database persistence is mandatory in production for governance approvals.'
+      );
+    }
+    return true;
+  }
+
+  if (process.env.ORBITOX_PLATFORM_REPOSITORY === 'json') {
     return false;
   }
+
   return Boolean(
     (process.env.DATABASE_URL || process.env.APP_DATABASE_URL) &&
     (prisma as any)?.$transaction &&
@@ -369,6 +385,7 @@ export class ApprovalEngine {
           where: {
             id: requestId,
             status: 'PENDING',
+            updatedAt: row.updatedAt,
           },
           data: {
             status: nextStatus,
@@ -386,6 +403,25 @@ export class ApprovalEngine {
 
         if (updateResult.count !== 1) {
           throw new Error(`CONCURRENCY_CONFLICT: ApprovalRequest ${requestId} was modified concurrently.`);
+        }
+
+        if (tx.platformAuditEvent?.create) {
+          await recordPlatformAuditEvent(tx, {
+            action: 'FOUR_EYES_APPROVAL_STAGE_APPROVED',
+            entityType: 'APPROVAL_REQUEST',
+            entityId: requestId,
+            actorId: approvedBy,
+            actorEmail: approvedBy,
+            organizationId: row.organizationId || null,
+            reason: comments || 'Operator approved four-eyes authorization stage',
+            metadata: {
+              stageId,
+              status: nextStatus,
+              requestId,
+              entityType: request.entityType,
+              entityId: request.entityId,
+            },
+          });
         }
 
         request.status = nextStatus;
@@ -482,6 +518,7 @@ export class ApprovalEngine {
           where: {
             id: requestId,
             status: 'PENDING',
+            updatedAt: row.updatedAt,
           },
           data: {
             status: 'REJECTED',
@@ -499,6 +536,25 @@ export class ApprovalEngine {
 
         if (updateResult.count !== 1) {
           throw new Error(`CONCURRENCY_CONFLICT: ApprovalRequest ${requestId} was modified concurrently.`);
+        }
+
+        if (tx.platformAuditEvent?.create) {
+          await recordPlatformAuditEvent(tx, {
+            action: 'FOUR_EYES_APPROVAL_REJECTED',
+            entityType: 'APPROVAL_REQUEST',
+            entityId: requestId,
+            actorId: rejectedBy,
+            actorEmail: rejectedBy,
+            organizationId: row.organizationId || null,
+            reason: comments || 'Operator rejected four-eyes authorization stage',
+            metadata: {
+              stageId: targetStage.stageId,
+              status: 'REJECTED',
+              requestId,
+              entityType: request.entityType,
+              entityId: request.entityId,
+            },
+          });
         }
 
         request.status = 'REJECTED';

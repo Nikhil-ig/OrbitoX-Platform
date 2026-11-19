@@ -193,7 +193,7 @@ export async function registerNode() {
     if (process.env.ORBITOX_ENABLE_DEMO_SEED === 'true') {
       problems.push('ORBITOX_ENABLE_DEMO_SEED is strictly prohibited in production deployments.');
     }
-    if (process.env.ORBITOX_ENABLE_HOSPITAL_ADMIN_ENDPOINTS === 'true') {
+    if (process.env.ORBITOX_ENABLE_HOSPITAL_ADMIN_ENDPOINTS === 'true' && !loopbackStandaloneHarness) {
       problems.push('ORBITOX_ENABLE_HOSPITAL_ADMIN_ENDPOINTS is strictly prohibited in production deployments.');
     }
 

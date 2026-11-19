@@ -4,7 +4,7 @@ import crypto from 'node:crypto';
 import { NextRequest } from 'next/server';
 import { approvalEngine, auditService } from '@/app/api/v1/_lib/platform-governance';
 import { GET, POST } from '@/app/api/v1/platform/approvals/route';
-import { OPERATOR_SESSION_COOKIE } from '@/server/accounts/account-service';
+import { OPERATOR_SESSION_COOKIE, OPERATOR_CSRF_COOKIE } from '@/server/accounts/account-service';
 import { prisma } from '@/server/db/prisma';
 import { generateTotpSecret, sealTotpSecret } from '@/server/auth/account-security';
 
@@ -13,6 +13,8 @@ describe('Phase 7C: Production Approvals Workflow & Four-Eyes Security Gate', ()
 
   const policyId = 'policy_test_four_eyes';
   const testContextId = 'ctx_test_audit_01';
+  const validCsrfToken = 'csrf_test_token_12345';
+  const validCsrfTokenHash = crypto.createHash('sha256').update(validCsrfToken).digest('hex');
 
   interface MockOperator {
     id: string;
@@ -71,7 +73,7 @@ describe('Phase 7C: Production Approvals Workflow & Four-Eyes Security Gate', ()
       id: `sess_${input.id}`,
       operatorId: operator.id,
       tokenHash,
-      csrfTokenHash: 'csrf_test',
+      csrfTokenHash: validCsrfTokenHash,
       idleExpiresAt: new Date(Date.now() + 15 * 60 * 1000),
       absoluteExpiresAt: new Date(Date.now() + 12 * 60 * 60 * 1000),
       revokedAt: null,
@@ -106,11 +108,23 @@ describe('Phase 7C: Production Approvals Workflow & Four-Eyes Security Gate', ()
   function makeAuthorizedRequest(
     url: string,
     token: string,
-    options: { method?: string; body?: any } = {}
+    options: {
+      method?: string;
+      body?: any;
+      csrfToken?: string;
+      omitCsrf?: boolean;
+      origin?: string;
+    } = {}
   ): NextRequest {
+    const origin = options.origin ?? new URL(url).origin;
+    const csrfVal = options.csrfToken ?? validCsrfToken;
     const headers: Record<string, string> = {
-      cookie: `${OPERATOR_SESSION_COOKIE}=${token}`,
+      cookie: `${OPERATOR_SESSION_COOKIE}=${token}; ${OPERATOR_CSRF_COOKIE}=${csrfVal}`,
+      origin,
     };
+    if (!options.omitCsrf) {
+      headers['x-csrf-token'] = csrfVal;
+    }
     if (options.body) {
       headers['content-type'] = 'application/json';
     }
@@ -357,6 +371,82 @@ describe('Phase 7C: Production Approvals Workflow & Four-Eyes Security Gate', ()
     });
     const bypassRes = await GET(bypassReq);
     assert.strictEqual(bypassRes.status, 401);
+  });
+
+  it('6B. Approvals API: Strict CSRF protection on cookie-authenticated POST requests', async () => {
+    const { token } = createMockOperatorSession({
+      id: 'op_csrf_tester',
+      email: 'csrf-tester@orbitox.io',
+      role: 'PLATFORM_OWNER',
+    });
+
+    const req = await approvalEngine.requestApproval(
+      testContextId,
+      'PLATFORM_KEY',
+      'key_csrf_test',
+      policyId,
+      'requester-csrf@orbitox.io'
+    );
+
+    // 1. Missing x-csrf-token header on cookie session
+    const missingCsrfReq = makeAuthorizedRequest(
+      'http://localhost:3000/api/v1/platform/approvals',
+      token,
+      {
+        method: 'POST',
+        omitCsrf: true,
+        body: {
+          requestId: req.id,
+          stageId: 'stage_1',
+          action: 'APPROVE',
+          totpCode: '123456',
+        },
+      }
+    );
+    const missingCsrfRes = await POST(missingCsrfReq);
+    assert.strictEqual(missingCsrfRes.status, 403);
+    const missingCsrfJson = await missingCsrfRes.json();
+    assert.strictEqual(missingCsrfJson.error.code, 'CSRF_INVALID');
+
+    // 2. Mismatched x-csrf-token header
+    const mismatchedCsrfReq = makeAuthorizedRequest(
+      'http://localhost:3000/api/v1/platform/approvals',
+      token,
+      {
+        method: 'POST',
+        csrfToken: 'tampered_csrf_token',
+        body: {
+          requestId: req.id,
+          stageId: 'stage_1',
+          action: 'APPROVE',
+          totpCode: '123456',
+        },
+      }
+    );
+    const mismatchedCsrfRes = await POST(mismatchedCsrfReq);
+    assert.strictEqual(mismatchedCsrfRes.status, 403);
+    const mismatchedCsrfJson = await mismatchedCsrfRes.json();
+    assert.strictEqual(mismatchedCsrfJson.error.code, 'CSRF_INVALID');
+
+    // 3. Foreign cross-origin request
+    const wrongOriginReq = makeAuthorizedRequest(
+      'http://localhost:3000/api/v1/platform/approvals',
+      token,
+      {
+        method: 'POST',
+        origin: 'http://malicious-attacker.com',
+        body: {
+          requestId: req.id,
+          stageId: 'stage_1',
+          action: 'APPROVE',
+          totpCode: '123456',
+        },
+      }
+    );
+    const wrongOriginRes = await POST(wrongOriginReq);
+    assert.strictEqual(wrongOriginRes.status, 403);
+    const wrongOriginJson = await wrongOriginRes.json();
+    assert.strictEqual(wrongOriginJson.error.code, 'CSRF_INVALID');
   });
 
   it('7. Approvals API: Step-Up TOTP validation (wrong code rejected, valid code approved, replay rejected)', async () => {

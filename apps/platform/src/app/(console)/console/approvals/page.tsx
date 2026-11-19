@@ -83,9 +83,16 @@ export default function ConsoleApprovalsPage() {
       const pendingStage = actionDialog.req.stages?.find((s: any) => s.status === 'PENDING') || actionDialog.req.stages?.[0];
       const stageId = pendingStage?.stageId || 'stage_1';
 
+      const csrfToken = typeof document !== 'undefined'
+        ? document.cookie.match(/orbitox_operator_csrf=([^;]+)/)?.[1] || ''
+        : '';
+
       const res = await fetch('/api/v1/platform/approvals', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          ...(csrfToken ? { 'x-csrf-token': csrfToken } : {}),
+        },
         body: JSON.stringify({
           requestId: actionDialog.req.id,
           stageId,

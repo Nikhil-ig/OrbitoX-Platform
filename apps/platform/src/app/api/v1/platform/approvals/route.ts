@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/server/db/prisma';
 import { ApiResponse } from '@/app/api/v1/_lib/api-types';
-import { approvalEngine, auditService } from '@/app/api/v1/_lib/platform-governance';
+import { approvalEngine, auditService, isDatabasePersistenceEnabled } from '@/app/api/v1/_lib/platform-governance';
 import { getOperatorSession, OPERATOR_SESSION_COOKIE } from '@/server/accounts/account-service';
+import { validOperatorCsrf } from '@/server/auth/operator-auth';
 import { unsealTotpSecret, getTotpStep } from '@/server/auth/account-security';
 import { recordPlatformAuditEvent } from '@/server/audit/audit-console-service';
 
@@ -27,6 +28,8 @@ async function resolveOperatorCaller(req: NextRequest): Promise<{
   role: string;
   roles: string[];
   reauthenticatedAt?: Date | null;
+  isCookieAuth: boolean;
+  csrfTokenHash?: string;
 } | null> {
   const authHeader = req.headers.get('authorization')?.trim() || '';
   const bearerCandidate = authHeader.startsWith('Bearer ') ? authHeader.substring(7).trim() : null;
@@ -48,6 +51,8 @@ async function resolveOperatorCaller(req: NextRequest): Promise<{
     role: session.role,
     roles: getCanonicalOperatorRoles(session.role),
     reauthenticatedAt: session.reauthenticatedAt,
+    isCookieAuth: Boolean(cookieCandidate),
+    csrfTokenHash: session.csrfTokenHash,
   };
 }
 
@@ -91,6 +96,16 @@ export async function POST(req: NextRequest) {
           error: { code: 'UNAUTHORIZED', message: 'Authenticated operator session required.' },
         },
         { status: 401 }
+      );
+    }
+
+    if (caller.isCookieAuth && !validOperatorCsrf(req, caller.csrfTokenHash || '')) {
+      return NextResponse.json<ApiResponse>(
+        {
+          success: false,
+          error: { code: 'CSRF_INVALID', message: 'CSRF validation failed.' },
+        },
+        { status: 403 }
       );
     }
 
@@ -224,20 +239,22 @@ export async function POST(req: NextRequest) {
           newValue: { status: updated.status, stageId: targetStageId, approvedBy: caller.email },
         });
 
-        await recordPlatformAuditEvent(prisma as any, {
-          action: 'FOUR_EYES_APPROVAL_GRANTED',
-          entityType: 'APPROVAL_REQUEST',
-          entityId: requestId,
-          actorId: caller.operatorId,
-          actorEmail: caller.email,
-          reason: comments || 'Operator approved four-eyes authorization stage',
-          metadata: {
-            stageId: targetStageId,
-            status: updated.status,
-            entityType: approvalRequest.entityType,
-            entityId: approvalRequest.entityId,
-          },
-        }).catch(() => {});
+        if (isDatabasePersistenceEnabled() && (prisma as any)?.platformAuditEvent?.create) {
+          await recordPlatformAuditEvent(prisma as any, {
+            action: 'FOUR_EYES_APPROVAL_GRANTED',
+            entityType: 'APPROVAL_REQUEST',
+            entityId: requestId,
+            actorId: caller.operatorId,
+            actorEmail: caller.email,
+            reason: comments || 'Operator approved four-eyes authorization stage',
+            metadata: {
+              stageId: targetStageId,
+              status: updated.status,
+              entityType: approvalRequest.entityType,
+              entityId: approvalRequest.entityId,
+            },
+          });
+        }
 
         return NextResponse.json<ApiResponse>({
           success: true,
@@ -288,20 +305,22 @@ export async function POST(req: NextRequest) {
           newValue: { status: 'REJECTED', stageId: targetStageId, rejectedBy: caller.email },
         });
 
-        await recordPlatformAuditEvent(prisma as any, {
-          action: 'FOUR_EYES_APPROVAL_REJECTED',
-          entityType: 'APPROVAL_REQUEST',
-          entityId: requestId,
-          actorId: caller.operatorId,
-          actorEmail: caller.email,
-          reason: comments || 'Operator rejected four-eyes authorization stage',
-          metadata: {
-            stageId: targetStageId,
-            status: 'REJECTED',
-            entityType: approvalRequest.entityType,
-            entityId: approvalRequest.entityId,
-          },
-        }).catch(() => {});
+        if (isDatabasePersistenceEnabled() && (prisma as any)?.platformAuditEvent?.create) {
+          await recordPlatformAuditEvent(prisma as any, {
+            action: 'FOUR_EYES_APPROVAL_REJECTED',
+            entityType: 'APPROVAL_REQUEST',
+            entityId: requestId,
+            actorId: caller.operatorId,
+            actorEmail: caller.email,
+            reason: comments || 'Operator rejected four-eyes authorization stage',
+            metadata: {
+              stageId: targetStageId,
+              status: 'REJECTED',
+              entityType: approvalRequest.entityType,
+              entityId: approvalRequest.entityId,
+            },
+          });
+        }
 
         return NextResponse.json<ApiResponse>({
           success: true,

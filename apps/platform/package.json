@@ -9,6 +9,7 @@
     "prisma:generate": "prisma generate --schema prisma/schema.prisma",
     "test": "NODE_ENV=test ORBITOX_PLATFORM_REPOSITORY=json pnpm run prisma:generate && NODE_ENV=test ORBITOX_PLATFORM_REPOSITORY=json NODE_OPTIONS='--conditions=react-server' pnpm exec tsx --test 'tests/unit/**/*.test.ts' && NODE_ENV=test ORBITOX_PLATFORM_REPOSITORY=json pnpm exec tsx --test 'tests/unit/**/*.test.tsx'",
     "test:postgres": "pnpm run prisma:generate && NODE_ENV=test ORBITOX_PLATFORM_REPOSITORY=prisma NODE_OPTIONS='--conditions=react-server' pnpm exec tsx --test tests/unit/**/*.test.ts",
+    "test:approvals-postgres": "pnpm run prisma:generate && NODE_OPTIONS='--conditions=react-server' pnpm exec tsx tests/integration/approvals-postgres-concurrency.test.ts",
     "test:negative-control": "pnpm run prisma:generate && NODE_OPTIONS='--conditions=react-server' pnpm exec tsx tests/integration/test-phase2b-negative-control.ts",
     "test:hms-adversarial-sql": "bash ../../scripts/ci/test-hms-adversarial-sql.sh orbitox_phase2",
     "test:hms-crash-durability": "pnpm run prisma:generate && NODE_OPTIONS='--conditions=react-server' pnpm exec tsx tests/chaos/test-hms-crash-durability.ts",
