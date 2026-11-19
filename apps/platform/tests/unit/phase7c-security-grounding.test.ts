@@ -452,7 +452,7 @@ describe('Phase 7C Security Grounding & Invariant Enforcement', () => {
     };
 
     const prevEnv = process.env.NODE_ENV;
-    process.env.NODE_ENV = 'production';
+    (process.env as any).NODE_ENV = 'production';
     try {
       await assert.rejects(
         async () => {
@@ -464,7 +464,7 @@ describe('Phase 7C Security Grounding & Invariant Enforcement', () => {
         /Failed to set RLS tenant scope/
       );
     } finally {
-      process.env.NODE_ENV = prevEnv;
+      (process.env as any).NODE_ENV = prevEnv;
     }
   });
 });

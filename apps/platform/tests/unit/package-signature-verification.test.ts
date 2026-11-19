@@ -9,7 +9,7 @@ import { CryptoSigner, IntegrityVerifier } from '@orbitox-io/plugin-engine';
 import { packageSignatureService } from '@/server/governance/package-signature-service';
 import { createInternalAuthToken } from '@/app/api/v1/_lib/auth-pipeline';
 import { GET as getPackages } from '@/app/api/v1/platform/packages/route';
-import type { PlatformPackageCatalogItem, PackageVersionRecord } from '@/server/db/platform-repository';
+import type { PlatformPackageCatalogItem, PackageVersionRecord } from '@orbitox-io/types';
 
 describe('Phase 7C: Package Cryptographic Signature Verification Contract', () => {
   it('1. Generates authentic Ed25519 keypair and signs package directory with CryptoSigner', () => {
@@ -228,8 +228,11 @@ describe('Phase 7C: Package Cryptographic Signature Verification Contract', () =
       id: 'ver_legacy_1',
       packageId: '@orbitox/legacy-pkg',
       version: '0.8.0',
+      tarballSha256: 'tarball_sha_legacy',
       manifestHash,
+      signerId: 'orbitox-legacy-signer',
       signature: legacySignature,
+      minPlatformVersion: '1.0.0',
       releasedAt: new Date().toISOString(),
     };
 
@@ -263,9 +266,11 @@ describe('Phase 7C: Package Cryptographic Signature Verification Contract', () =
       id: 'ver_v1',
       packageId: '@orbitox/hms',
       version: '1.0.0',
+      tarballSha256: 'tarball_sha_v1',
       manifestHash: v1Payload.manifestHash,
       signerId: v1Payload.signerId,
       signature: v1Signature,
+      minPlatformVersion: '1.0.0',
       releasedAt: v1Payload.signedAt,
     };
     (v1Record as any).fileTreeHash = v1Payload.fileTreeHash;
@@ -276,8 +281,11 @@ describe('Phase 7C: Package Cryptographic Signature Verification Contract', () =
       id: 'ver_v2',
       packageId: '@orbitox/hms',
       version: '2.0.0',
+      tarballSha256: 'tarball_sha_v2',
       manifestHash: crypto.createHash('sha256').update('v2_manifest').digest('hex'),
-      signature: null, // Unsigned current release!
+      signerId: 'orbitox-release-mesh',
+      signature: '', // Unsigned current release!
+      minPlatformVersion: '1.0.0',
       releasedAt: '2026-11-01T00:00:00.000Z',
     };
 

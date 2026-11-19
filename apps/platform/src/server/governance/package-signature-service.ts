@@ -1,7 +1,7 @@
 import 'server-only';
 import crypto from 'node:crypto';
 import { IntegrityVerifier } from '@orbitox-io/plugin-engine';
-import type { PlatformPackageCatalogItem, PackageVersionRecord } from '@/server/db/platform-repository';
+import type { PlatformPackageCatalogItem, PackageVersionRecord } from '@orbitox-io/types';
 
 export type PackageIntegrityStatus =
   | 'VERIFIED'
