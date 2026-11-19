@@ -12,6 +12,8 @@ import {
   sanitizeAuditPayload,
   recordPlatformAuditEvent,
   auditConsoleService,
+  computeAuditRowHash,
+  getAuditReaderClient,
 } from '@/server/audit/audit-console-service';
 import {
   withOperatorAuth,
@@ -292,50 +294,56 @@ describe('Phase 7C Security Grounding & Invariant Enforcement', () => {
   });
 
   test('8. auditConsoleService.verifyPostgresAuditChain: verifies valid hash sequence and detects tampered audit events', async () => {
-    const originalFindMany = prisma.platformAuditEvent.findMany;
+    const { client } = getAuditReaderClient();
+    const originalFindMany = client.platformAuditEvent.findMany;
 
     try {
       // 8A: Valid chain verification
       const now = new Date();
+      const scope = 'org/platform/project/operations/environment/production';
       const meta1 = { target: 'Key A' };
-      const rowHash1 = crypto
-        .createHash('sha256')
-        .update(
-          JSON.stringify({
-            action: 'KEY_CREATED',
-            entityType: 'PLATFORM_KEY',
-            entityId: 'key_a',
-            actorId: null,
-            actorEmail: 'alice@orbitox.io',
-            organizationId: 'platform',
-            projectId: 'operations',
-            environmentId: 'production',
-            occurredAt: now.toISOString(),
-            previousHash: 'GENESIS',
-            metadata: meta1,
-          })
-        )
-        .digest('hex');
+      const rowHash1 = computeAuditRowHash({
+        scope,
+        sequence: 1,
+        previousHash: 'GENESIS',
+        action: 'KEY_CREATED',
+        entityType: 'PLATFORM_KEY',
+        entityId: 'key_a',
+        actorId: null,
+        actorEmail: 'alice@orbitox.io',
+        organizationId: 'platform',
+        projectId: 'operations',
+        environmentId: 'production',
+        reason: 'Initial setup',
+        ipAddress: '10.0.0.1',
+        requestId: 'req_1',
+        status: 'COMMITTED',
+        failureReason: null,
+        occurredAt: now.toISOString(),
+        metadata: meta1,
+      });
 
       const meta2 = { target: 'Key B' };
-      const rowHash2 = crypto
-        .createHash('sha256')
-        .update(
-          JSON.stringify({
-            action: 'KEY_CREATED',
-            entityType: 'PLATFORM_KEY',
-            entityId: 'key_b',
-            actorId: null,
-            actorEmail: 'alice@orbitox.io',
-            organizationId: 'platform',
-            projectId: 'operations',
-            environmentId: 'production',
-            occurredAt: now.toISOString(),
-            previousHash: rowHash1,
-            metadata: meta2,
-          })
-        )
-        .digest('hex');
+      const rowHash2 = computeAuditRowHash({
+        scope,
+        sequence: 2,
+        previousHash: rowHash1,
+        action: 'KEY_CREATED',
+        entityType: 'PLATFORM_KEY',
+        entityId: 'key_b',
+        actorId: null,
+        actorEmail: 'alice@orbitox.io',
+        organizationId: 'platform',
+        projectId: 'operations',
+        environmentId: 'production',
+        reason: 'Secondary key rotation',
+        ipAddress: '10.0.0.2',
+        requestId: 'req_2',
+        status: 'COMMITTED',
+        failureReason: null,
+        occurredAt: now.toISOString(),
+        metadata: meta2,
+      });
 
       const validEvents = [
         {
@@ -348,10 +356,16 @@ describe('Phase 7C Security Grounding & Invariant Enforcement', () => {
           organizationId: 'platform',
           projectId: 'operations',
           environmentId: 'production',
+          reason: 'Initial setup',
+          ipAddress: '10.0.0.1',
+          requestId: 'req_1',
+          status: 'COMMITTED',
+          failureReason: null,
           occurredAt: now,
           metadata: {
             ...meta1,
             _chain: {
+              scope,
               sequence: 1,
               previousHash: 'GENESIS',
               rowHash: rowHash1,
@@ -370,10 +384,16 @@ describe('Phase 7C Security Grounding & Invariant Enforcement', () => {
           organizationId: 'platform',
           projectId: 'operations',
           environmentId: 'production',
+          reason: 'Secondary key rotation',
+          ipAddress: '10.0.0.2',
+          requestId: 'req_2',
+          status: 'COMMITTED',
+          failureReason: null,
           occurredAt: now,
           metadata: {
             ...meta2,
             _chain: {
+              scope,
               sequence: 2,
               previousHash: rowHash1,
               rowHash: rowHash2,
@@ -384,47 +404,128 @@ describe('Phase 7C Security Grounding & Invariant Enforcement', () => {
         },
       ];
 
-      (prisma.platformAuditEvent as any).findMany = async () => validEvents;
+      (client.platformAuditEvent as any).findMany = async () => validEvents;
       const validResult = await auditConsoleService.verifyPostgresAuditChain();
       assert.strictEqual(validResult.valid, true);
       assert.strictEqual(validResult.status, 'VERIFIED');
       assert.strictEqual(validResult.totalEntries, 2);
 
-      // 8B: Tampered payload detection
-      const tamperedEvents = JSON.parse(JSON.stringify(validEvents));
-      tamperedEvents[1].metadata.target = 'Tampered Key Name'; // Attacker modified metadata without updating hash
+      // 8B: Tampered metadata detection
+      const tamperedMetaEvents = JSON.parse(JSON.stringify(validEvents));
+      tamperedMetaEvents[1].metadata.target = 'Tampered Key Name';
 
-      (prisma.platformAuditEvent as any).findMany = async () => tamperedEvents;
-      const tamperedResult = await auditConsoleService.verifyPostgresAuditChain();
-      assert.strictEqual(tamperedResult.valid, false);
-      assert.strictEqual(tamperedResult.status, 'FAILED');
-      assert.ok(tamperedResult.details?.includes('discrepancy'));
+      (client.platformAuditEvent as any).findMany = async () => tamperedMetaEvents;
+      const tamperedMetaResult = await auditConsoleService.verifyPostgresAuditChain();
+      assert.strictEqual(tamperedMetaResult.valid, false);
+      assert.strictEqual(tamperedMetaResult.status, 'FAILED');
+      assert.ok(tamperedMetaResult.details?.includes('discrepancy'));
 
       // 8C: Broken previousHash link detection
       const brokenLinkEvents = JSON.parse(JSON.stringify(validEvents));
       brokenLinkEvents[1].metadata._chain.previousHash = '0'.repeat(64);
 
-      (prisma.platformAuditEvent as any).findMany = async () => brokenLinkEvents;
+      (client.platformAuditEvent as any).findMany = async () => brokenLinkEvents;
       const brokenLinkResult = await auditConsoleService.verifyPostgresAuditChain();
       assert.strictEqual(brokenLinkResult.valid, false);
       assert.strictEqual(brokenLinkResult.status, 'FAILED');
       assert.ok(brokenLinkResult.details?.includes('Broken hash link'));
+
+      // 8D: Tampered security-critical fields (reason, ipAddress, requestId, status, failureReason)
+      for (const field of ['reason', 'ipAddress', 'requestId', 'status', 'failureReason'] as const) {
+        const tamperedFieldEvents = JSON.parse(JSON.stringify(validEvents));
+        tamperedFieldEvents[0][field] = 'TAMPERED_INJECTED_VALUE';
+
+        (client.platformAuditEvent as any).findMany = async () => tamperedFieldEvents;
+        const tamperedFieldResult = await auditConsoleService.verifyPostgresAuditChain();
+        assert.strictEqual(
+          tamperedFieldResult.valid,
+          false,
+          `Tampering with security-critical field [${field}] must cause verification to fail`
+        );
+        assert.strictEqual(tamperedFieldResult.status, 'FAILED');
+        assert.ok(tamperedFieldResult.details?.includes('discrepancy'));
+      }
+
+      // 8E: Sequence discontinuity detection (e.g., sequence 1, 3 with gap)
+      const gappedEvents = JSON.parse(JSON.stringify(validEvents));
+      gappedEvents[1].metadata._chain.sequence = 3;
+
+      (client.platformAuditEvent as any).findMany = async () => gappedEvents;
+      const gappedResult = await auditConsoleService.verifyPostgresAuditChain();
+      assert.strictEqual(gappedResult.valid, false);
+      assert.strictEqual(gappedResult.status, 'FAILED');
+      assert.ok(gappedResult.details?.includes('Sequence discontinuity'));
+
+      // 8F: Unchained or legacy records rejection (never return VERIFIED if unchained records exist)
+      const legacyEvents = [
+        {
+          id: 'evt_legacy_1',
+          action: 'LEGACY_ACTION',
+          entityType: 'TENANT',
+          entityId: 'ten_old',
+          actorId: null,
+          actorEmail: null,
+          organizationId: 'platform',
+          projectId: 'operations',
+          environmentId: 'production',
+          occurredAt: now,
+          metadata: { note: 'legacy event without _chain' },
+        },
+      ];
+
+      (client.platformAuditEvent as any).findMany = async () => legacyEvents;
+      const legacyResult = await auditConsoleService.verifyPostgresAuditChain();
+      assert.strictEqual(legacyResult.valid, false);
+      assert.strictEqual(legacyResult.status, 'FAILED');
+      assert.ok(legacyResult.details?.includes('Unchained or legacy record'));
+
+      // 8G: Empty table under unprivileged connection in production returns UNKNOWN
+      const prevEnv = process.env.NODE_ENV;
+      const prevAuditUrl = process.env.PLATFORM_ADMIN_AUDIT_DATABASE_URL;
+      const prevAuditUrl2 = process.env.PLATFORM_AUDIT_DATABASE_URL;
+      const prevMaintUrl = process.env.MAINTENANCE_DATABASE_URL;
+
+      try {
+        (process.env as any).NODE_ENV = 'production';
+        delete process.env.PLATFORM_ADMIN_AUDIT_DATABASE_URL;
+        delete process.env.PLATFORM_AUDIT_DATABASE_URL;
+        delete process.env.MAINTENANCE_DATABASE_URL;
+
+        (client.platformAuditEvent as any).findMany = async () => [];
+        const unprivResult = await auditConsoleService.verifyPostgresAuditChain();
+        assert.strictEqual(unprivResult.status, 'UNKNOWN');
+        assert.strictEqual(unprivResult.valid, false);
+        assert.ok(unprivResult.details?.includes('Privileged audit connection required'));
+      } finally {
+        (process.env as any).NODE_ENV = prevEnv;
+        if (prevAuditUrl) process.env.PLATFORM_ADMIN_AUDIT_DATABASE_URL = prevAuditUrl;
+        if (prevAuditUrl2) process.env.PLATFORM_AUDIT_DATABASE_URL = prevAuditUrl2;
+        if (prevMaintUrl) process.env.MAINTENANCE_DATABASE_URL = prevMaintUrl;
+      }
     } finally {
-      (prisma.platformAuditEvent as any).findMany = originalFindMany;
+      (client.platformAuditEvent as any).findMany = originalFindMany;
     }
   });
 
-  test('9. recordPlatformAuditEvent: uses parameterized set_config for RLS tenant isolation and throws on error in production', async () => {
+  test('9. recordPlatformAuditEvent: uses parameterized set_config and acquires advisory lock', async () => {
     let capturedQuery: any = null;
     let capturedScope: any = null;
+    let acquiredLock: boolean = false;
 
     const mockPrisma = {
       $executeRaw: async (strings: TemplateStringsArray, ...values: any[]) => {
-        capturedQuery = strings.join('$');
-        capturedScope = values[0];
+        const query = strings.join('$');
+        if (query.includes('set_config')) {
+          capturedQuery = query;
+          capturedScope = values[0];
+        }
+        if (query.includes('pg_advisory_xact_lock')) {
+          acquiredLock = true;
+        }
         return 1;
       },
       platformAuditEvent: {
+        findFirst: async () => null,
         create: async ({ data }: { data: any }) => ({ id: 'evt_rls_1', ...data }),
       },
     };
@@ -438,15 +539,17 @@ describe('Phase 7C Security Grounding & Invariant Enforcement', () => {
       environmentId: 'env_prod',
     });
 
-    assert.ok(capturedQuery?.includes('SELECT set_config'));
+    assert.ok(typeof capturedQuery === 'string' && capturedQuery.includes('SELECT set_config'));
     assert.strictEqual(capturedScope, 'org/org_acme/project/proj_hms/environment/env_prod');
+    assert.strictEqual(acquiredLock, true, 'Must acquire pg_advisory_xact_lock');
 
-    // Fail-closed in production
+    // Fail-closed in production on RLS context failure
     const failingPrisma = {
       $executeRaw: async () => {
         throw new Error('RLS context violation');
       },
       platformAuditEvent: {
+        findFirst: async () => null,
         create: async () => ({}),
       },
     };
@@ -462,6 +565,37 @@ describe('Phase 7C Security Grounding & Invariant Enforcement', () => {
           });
         },
         /Failed to set RLS tenant scope/
+      );
+    } finally {
+      (process.env as any).NODE_ENV = prevEnv;
+    }
+  });
+
+  test('10. recordPlatformAuditEvent: fails closed in production when reading previous chain head fails', async () => {
+    const errorPrisma = {
+      $executeRaw: async () => 1,
+      platformAuditEvent: {
+        findFirst: async () => {
+          throw new Error('Database connection pool exhausted');
+        },
+        create: async () => ({}),
+      },
+    };
+
+    const prevEnv = process.env.NODE_ENV;
+    (process.env as any).NODE_ENV = 'production';
+    try {
+      await assert.rejects(
+        async () => {
+          await recordPlatformAuditEvent(errorPrisma as any, {
+            action: 'SECURE_ACTION',
+            entityType: 'PLATFORM_KEY',
+            organizationId: 'org_secure',
+            projectId: 'proj_ops',
+            environmentId: 'env_prod',
+          });
+        },
+        /Failed to read previous audit chain head/
       );
     } finally {
       (process.env as any).NODE_ENV = prevEnv;

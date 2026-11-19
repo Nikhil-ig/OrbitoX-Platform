@@ -1,7 +1,71 @@
 import 'server-only';
 import crypto from 'node:crypto';
 import { prisma } from '@/server/db/prisma';
-import type { Prisma } from '@prisma/client';
+import { PrismaClient, type Prisma } from '@prisma/client';
+
+let privilegedAuditClient: any = null;
+
+export function getAuditReaderClient(): { client: any; isPrivileged: boolean } {
+  const privilegedUrl =
+    process.env.PLATFORM_ADMIN_AUDIT_DATABASE_URL ||
+    process.env.PLATFORM_AUDIT_DATABASE_URL ||
+    process.env.MAINTENANCE_DATABASE_URL ||
+    (process.env.NODE_ENV !== 'production' ? process.env.TEST_DATABASE_URL || process.env.DATABASE_URL : undefined);
+
+  if (privilegedUrl) {
+    if (!privilegedAuditClient) {
+      privilegedAuditClient = new PrismaClient({
+        datasources: { db: { url: privilegedUrl } },
+      });
+    }
+    return { client: privilegedAuditClient, isPrivileged: true };
+  }
+
+  return { client: prisma, isPrivileged: false };
+}
+
+export function computeAuditRowHash(payload: {
+  scope: string;
+  sequence: number;
+  previousHash: string;
+  action: string;
+  entityType: string;
+  entityId?: string | null;
+  actorId?: string | null;
+  actorEmail?: string | null;
+  organizationId?: string | null;
+  projectId?: string | null;
+  environmentId?: string | null;
+  reason?: string | null;
+  ipAddress?: string | null;
+  requestId?: string | null;
+  status?: string | null;
+  failureReason?: string | null;
+  occurredAt: string;
+  metadata?: Record<string, any>;
+}): string {
+  const canonicalJson = JSON.stringify({
+    scope: payload.scope,
+    sequence: payload.sequence,
+    previousHash: payload.previousHash,
+    action: payload.action,
+    entityType: payload.entityType,
+    entityId: payload.entityId ?? null,
+    actorId: payload.actorId ?? null,
+    actorEmail: payload.actorEmail ?? null,
+    organizationId: payload.organizationId ?? null,
+    projectId: payload.projectId ?? null,
+    environmentId: payload.environmentId ?? null,
+    reason: payload.reason ?? null,
+    ipAddress: payload.ipAddress ?? null,
+    requestId: payload.requestId ?? null,
+    status: payload.status ?? 'COMMITTED',
+    failureReason: payload.failureReason ?? null,
+    occurredAt: payload.occurredAt,
+    metadata: payload.metadata ?? {},
+  });
+  return crypto.createHash('sha256').update(canonicalJson).digest('hex');
+}
 
 export type AuditCategory =
   | 'ALL'
@@ -198,6 +262,7 @@ export async function recordPlatformAuditEvent(
   const projId = parts[3];
   const envId = parts[5];
 
+  // 1. Parameterized RLS tenant configuration
   if (typeof (client as any).$executeRaw === 'function') {
     try {
       await (client as any).$executeRaw`SELECT set_config('app.current_tenant_id', ${tenantScope}, true)`;
@@ -220,12 +285,40 @@ export async function recordPlatformAuditEvent(
     }
   }
 
-  // Derive cryptographic hash chain link
+  // 2. Transaction-level advisory lock per tenantScope to eliminate concurrent write forks
+  if (typeof (client as any).$executeRaw === 'function') {
+    try {
+      await (client as any).$executeRaw`SELECT pg_advisory_xact_lock(hashtext('orbitox_audit_chain:' || ${tenantScope}))`;
+    } catch (err) {
+      if (process.env.NODE_ENV === 'production') {
+        throw new Error(
+          `Failed to acquire advisory lock for audit chain [${tenantScope}]: ${err instanceof Error ? err.message : String(err)}`
+        );
+      }
+    }
+  } else if (typeof client.$executeRawUnsafe === 'function') {
+    try {
+      await client.$executeRawUnsafe(`SELECT pg_advisory_xact_lock(hashtext('orbitox_audit_chain:' || '${tenantScope.replace(/'/g, "''")}'))`);
+    } catch (err) {
+      if (process.env.NODE_ENV === 'production') {
+        throw new Error(
+          `Failed to acquire advisory lock for audit chain [${tenantScope}]: ${err instanceof Error ? err.message : String(err)}`
+        );
+      }
+    }
+  }
+
+  // 3. Derive cryptographic hash chain link within this specific tenantScope
   let previousHash = 'GENESIS';
   let sequence = 1;
   try {
     if (typeof client.platformAuditEvent.findFirst === 'function') {
       const lastEvent = await client.platformAuditEvent.findFirst({
+        where: {
+          organizationId: orgId,
+          projectId: projId,
+          environmentId: envId,
+        },
         orderBy: [{ occurredAt: 'desc' }, { id: 'desc' }],
         select: { id: true, metadata: true },
       });
@@ -239,12 +332,19 @@ export async function recordPlatformAuditEvent(
         }
       }
     }
-  } catch {
-    // Non-fatal in mock or unseeded environments
+  } catch (err) {
+    if (process.env.NODE_ENV === 'production') {
+      throw new Error(
+        `Failed to read previous audit chain head for scope [${tenantScope}]: ${err instanceof Error ? err.message : String(err)}`
+      );
+    }
   }
 
   const occurredAt = new Date();
-  const canonicalPayload = JSON.stringify({
+  const rowHash = computeAuditRowHash({
+    scope: tenantScope,
+    sequence,
+    previousHash,
     action: input.action,
     entityType: input.entityType,
     entityId: input.entityId ?? null,
@@ -253,15 +353,19 @@ export async function recordPlatformAuditEvent(
     organizationId: orgId,
     projectId: projId,
     environmentId: envId,
+    reason: input.reason ?? null,
+    ipAddress: input.ipAddress ?? null,
+    requestId: input.requestId ?? null,
+    status: input.status ?? 'COMMITTED',
+    failureReason: input.failureReason ?? null,
     occurredAt: occurredAt.toISOString(),
-    previousHash,
     metadata: sanitizedMetadata,
   });
 
-  const rowHash = crypto.createHash('sha256').update(canonicalPayload).digest('hex');
   const metadataWithChain = {
     ...sanitizedMetadata,
     _chain: {
+      scope: tenantScope,
       sequence,
       previousHash,
       rowHash,
@@ -372,28 +476,30 @@ class AuditConsoleService {
       ];
     }
 
+    const { client } = getAuditReaderClient();
+
     // Execute queries in parallel
     const [total, events, totalRecorded, criticalCount, distinctActors] = await Promise.all([
-      prisma.platformAuditEvent.count({ where }),
-      prisma.platformAuditEvent.findMany({
+      client.platformAuditEvent.count({ where }),
+      client.platformAuditEvent.findMany({
         where,
         orderBy: { occurredAt: 'desc' },
         skip,
         take: pageSize,
       }),
-      prisma.platformAuditEvent.count(),
-      prisma.platformAuditEvent.count({
+      client.platformAuditEvent.count(),
+      client.platformAuditEvent.count({
         where: {
           action: { in: Array.from(CRITICAL_ACTIONS) },
         },
       }),
-      prisma.platformAuditEvent.groupBy({
+      client.platformAuditEvent.groupBy({
         by: ['actorId'],
         where: { actorId: { not: null } },
       }),
     ]);
 
-    const items: AuditLogItem[] = events.map((event) => {
+    const items: AuditLogItem[] = (events as any[]).map((event: any) => {
       const category = categorizeAction(event.action, event.entityType);
       const occurredDate = new Date(event.occurredAt);
       const actorDisplay = event.actorEmail || event.actorId || 'system:orchestrator';
@@ -450,7 +556,8 @@ class AuditConsoleService {
    * Fetch a single audit event with complete JSON payload and diagnostic traces
    */
   async getAuditEventById(id: string): Promise<AuditLogItem | null> {
-    const event = await prisma.platformAuditEvent.findUnique({
+    const { client } = getAuditReaderClient();
+    const event = await client.platformAuditEvent.findUnique({
       where: { id },
     });
     if (!event) return null;
@@ -537,10 +644,14 @@ class AuditConsoleService {
   }
 
   /**
-   * Cryptographically verifies the linear hash chain of all PostgreSQL PlatformAuditEvent records.
-   * Ensures zero record modification, deletion, reordering, or tampering.
+   * Cryptographically verifies the linear hash chain of PostgreSQL PlatformAuditEvent records.
+   * Validates continuous sequence (1..n without gaps), unbroken hash links, and deterministic payload hashing
+   * across all security-critical fields. Rejects unchained/legacy records with FAILED.
+   * Enforces privileged audit reader access across RLS boundaries in production.
    */
-  async verifyPostgresAuditChain(): Promise<{
+  async verifyPostgresAuditChain(options?: {
+    scope?: string;
+  }): Promise<{
     valid: boolean;
     totalEntries: number;
     verifiedChainEntries: number;
@@ -550,7 +661,34 @@ class AuditConsoleService {
     details?: string;
   }> {
     try {
-      const events = await prisma.platformAuditEvent.findMany({
+      const { client: readerClient, isPrivileged } = getAuditReaderClient();
+
+      let targetOrgId: string | undefined;
+      let targetProjId: string | undefined;
+      let targetEnvId: string | undefined;
+
+      if (options?.scope) {
+        const parts = options.scope.split('/');
+        targetOrgId = parts[1];
+        targetProjId = parts[3];
+        targetEnvId = parts[5];
+
+        if (typeof (readerClient as any).$executeRaw === 'function') {
+          try {
+            await (readerClient as any).$executeRaw`SELECT set_config('app.current_tenant_id', ${options.scope}, true)`;
+          } catch {
+            // Ignore if mock client
+          }
+        }
+      }
+
+      const whereClause: any = {};
+      if (targetOrgId) whereClause.organizationId = targetOrgId;
+      if (targetProjId) whereClause.projectId = targetProjId;
+      if (targetEnvId) whereClause.environmentId = targetEnvId;
+
+      const events = await readerClient.platformAuditEvent.findMany({
+        where: whereClause,
         orderBy: [{ occurredAt: 'asc' }, { id: 'asc' }],
         select: {
           id: true,
@@ -562,12 +700,27 @@ class AuditConsoleService {
           organizationId: true,
           projectId: true,
           environmentId: true,
+          reason: true,
+          ipAddress: true,
+          requestId: true,
+          status: true,
+          failureReason: true,
           occurredAt: true,
           metadata: true,
         },
       });
 
       if (events.length === 0) {
+        if (!isPrivileged && process.env.NODE_ENV === 'production' && !options?.scope) {
+          return {
+            valid: false,
+            totalEntries: 0,
+            verifiedChainEntries: 0,
+            algorithm: 'SHA-256 (PostgreSQL Ledger)',
+            status: 'UNKNOWN',
+            details: 'Privileged audit connection required to verify across RLS boundaries',
+          };
+        }
         return {
           valid: true,
           totalEntries: 0,
@@ -578,74 +731,120 @@ class AuditConsoleService {
         };
       }
 
-      let expectedPreviousHash = 'GENESIS';
-      let verifiedCount = 0;
-
-      for (let i = 0; i < events.length; i++) {
-        const event = events[i]!;
-        const rawMeta =
-          typeof event.metadata === 'object' && event.metadata !== null
-            ? (event.metadata as Record<string, any>)
-            : {};
-        const chain = rawMeta._chain;
-
-        if (!chain || typeof chain.rowHash !== 'string' || typeof chain.previousHash !== 'string') {
-          // Pre-chain legacy records: maintain deterministic reference without claiming chain integrity
-          expectedPreviousHash = crypto.createHash('sha256').update(event.id).digest('hex');
-          continue;
+      // Group events by tenantScope
+      const eventsByScope = new Map<string, typeof events>();
+      for (const ev of events) {
+        const evScope =
+          (ev.metadata as any)?._chain?.scope ||
+          `org/${ev.organizationId || 'platform'}/project/${ev.projectId || 'operations'}/environment/${ev.environmentId || 'production'}`;
+        if (!eventsByScope.has(evScope)) {
+          eventsByScope.set(evScope, []);
         }
+        eventsByScope.get(evScope)!.push(ev);
+      }
 
-        if (verifiedCount > 0 && chain.previousHash !== expectedPreviousHash) {
-          return {
-            valid: false,
-            totalEntries: events.length,
-            verifiedChainEntries: verifiedCount,
-            brokenAtIndex: i,
-            algorithm: 'SHA-256 (Merkle Hash Chain: previousHash -> rowHash)',
-            status: 'FAILED',
-            details: `Broken hash link at sequence ${chain.sequence || i}. Expected previousHash ${expectedPreviousHash}, found ${chain.previousHash}`,
-          };
+      let totalVerified = 0;
+      let globalIndex = 0;
+
+      for (const [scope, scopeEvents] of eventsByScope.entries()) {
+        let expectedPreviousHash = 'GENESIS';
+
+        for (let seqIdx = 0; seqIdx < scopeEvents.length; seqIdx++) {
+          const event = scopeEvents[seqIdx]!;
+          const expectedSequence = seqIdx + 1;
+          const rawMeta =
+            typeof event.metadata === 'object' && event.metadata !== null
+              ? (event.metadata as Record<string, any>)
+              : {};
+          const chain = rawMeta._chain;
+
+          // If record has no chain metadata or is legacy/unverified, fail immediately
+          if (!chain || typeof chain.rowHash !== 'string' || typeof chain.previousHash !== 'string') {
+            return {
+              valid: false,
+              totalEntries: events.length,
+              verifiedChainEntries: totalVerified,
+              brokenAtIndex: globalIndex,
+              algorithm: 'SHA-256 (Merkle Hash Chain: previousHash -> rowHash)',
+              status: 'FAILED',
+              details: `Unchained or legacy record detected at ID ${event.id} in scope ${scope}. Ledger contains unverified records.`,
+            };
+          }
+
+          // Validate sequence continuity (1, 2, ..., n without gaps)
+          if (chain.sequence !== expectedSequence) {
+            return {
+              valid: false,
+              totalEntries: events.length,
+              verifiedChainEntries: totalVerified,
+              brokenAtIndex: globalIndex,
+              algorithm: 'SHA-256 (Merkle Hash Chain: previousHash -> rowHash)',
+              status: 'FAILED',
+              details: `Sequence discontinuity in scope ${scope}: expected sequence ${expectedSequence}, found ${chain.sequence}`,
+            };
+          }
+
+          // Validate hash chain link
+          if (chain.previousHash !== expectedPreviousHash) {
+            return {
+              valid: false,
+              totalEntries: events.length,
+              verifiedChainEntries: totalVerified,
+              brokenAtIndex: globalIndex,
+              algorithm: 'SHA-256 (Merkle Hash Chain: previousHash -> rowHash)',
+              status: 'FAILED',
+              details: `Broken hash link at sequence ${chain.sequence} in scope ${scope}. Expected previousHash ${expectedPreviousHash}, found ${chain.previousHash}`,
+            };
+          }
+
+          // Validate canonical payload and row hash integrity across all security fields
+          const { _chain, ...metaWithoutChain } = rawMeta;
+          const recomputed = computeAuditRowHash({
+            scope: chain.scope || scope,
+            sequence: chain.sequence,
+            previousHash: chain.previousHash,
+            action: event.action,
+            entityType: event.entityType,
+            entityId: event.entityId ?? null,
+            actorId: event.actorId ?? null,
+            actorEmail: event.actorEmail ?? null,
+            organizationId: event.organizationId,
+            projectId: event.projectId,
+            environmentId: event.environmentId,
+            reason: event.reason ?? null,
+            ipAddress: event.ipAddress ?? null,
+            requestId: event.requestId ?? null,
+            status: event.status ?? 'COMMITTED',
+            failureReason: event.failureReason ?? null,
+            occurredAt: chain.occurredAt || new Date(event.occurredAt).toISOString(),
+            metadata: metaWithoutChain,
+          });
+
+          if (chain.rowHash !== recomputed) {
+            return {
+              valid: false,
+              totalEntries: events.length,
+              verifiedChainEntries: totalVerified,
+              brokenAtIndex: globalIndex,
+              algorithm: 'SHA-256 (Merkle Hash Chain: previousHash -> rowHash)',
+              status: 'FAILED',
+              details: `Row hash discrepancy at sequence ${chain.sequence} in scope ${scope}. Expected ${recomputed}, found ${chain.rowHash}`,
+            };
+          }
+
+          expectedPreviousHash = chain.rowHash;
+          totalVerified++;
+          globalIndex++;
         }
-
-        const { _chain, ...metaWithoutChain } = rawMeta;
-        const canonicalPayload = JSON.stringify({
-          action: event.action,
-          entityType: event.entityType,
-          entityId: event.entityId ?? null,
-          actorId: event.actorId ?? null,
-          actorEmail: event.actorEmail ?? null,
-          organizationId: event.organizationId,
-          projectId: event.projectId,
-          environmentId: event.environmentId,
-          occurredAt: chain.occurredAt || new Date(event.occurredAt).toISOString(),
-          previousHash: chain.previousHash,
-          metadata: metaWithoutChain,
-        });
-
-        const recomputed = crypto.createHash('sha256').update(canonicalPayload).digest('hex');
-        if (chain.rowHash !== recomputed) {
-          return {
-            valid: false,
-            totalEntries: events.length,
-            verifiedChainEntries: verifiedCount,
-            brokenAtIndex: i,
-            algorithm: 'SHA-256 (Merkle Hash Chain: previousHash -> rowHash)',
-            status: 'FAILED',
-            details: `Row hash discrepancy at sequence ${chain.sequence || i}. Expected ${recomputed}, found ${chain.rowHash}`,
-          };
-        }
-
-        expectedPreviousHash = chain.rowHash;
-        verifiedCount++;
       }
 
       return {
         valid: true,
         totalEntries: events.length,
-        verifiedChainEntries: verifiedCount,
+        verifiedChainEntries: totalVerified,
         algorithm: 'SHA-256 (Merkle Hash Chain: previousHash -> rowHash)',
         status: 'VERIFIED',
-        details: `All ${verifiedCount} chained audit records cryptographically verified.`,
+        details: `All ${totalVerified} chained audit records cryptographically verified across ${eventsByScope.size} scope(s).`,
       };
     } catch (err) {
       return {

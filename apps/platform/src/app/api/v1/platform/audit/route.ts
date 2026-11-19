@@ -31,7 +31,24 @@ export const GET = withApiGuard(
         events = overview.items;
         totalEvents = overview.total;
         chainVerification = await auditConsoleService.verifyPostgresAuditChain();
-      } catch {
+      } catch (err) {
+        if (process.env.NODE_ENV === 'production') {
+          return NextResponse.json<ApiResponse>(
+            {
+              success: false,
+              error: {
+                code: 'AUDIT_LEDGER_UNAVAILABLE',
+                message: `Failed to query audit ledger from persistent storage: ${err instanceof Error ? err.message : String(err)}`,
+              },
+              meta: {
+                latencyMs: 1,
+                timestamp: new Date().toISOString(),
+                requestId: ctx.requestId,
+              },
+            },
+            { status: 503 }
+          );
+        }
         events = auditService.query({ action, entityType, contextId }).slice().reverse();
         chainVerification = auditService.verifyChain();
         totalEvents = events.length;
@@ -73,6 +90,23 @@ export const POST = withApiGuard(
       try {
         verification = await auditConsoleService.verifyPostgresAuditChain();
       } catch (err) {
+        if (process.env.NODE_ENV === 'production') {
+          return NextResponse.json<ApiResponse>(
+            {
+              success: false,
+              error: {
+                code: 'AUDIT_VERIFICATION_FAILED',
+                message: `Database audit verification failed: ${err instanceof Error ? err.message : String(err)}`,
+              },
+              meta: {
+                latencyMs: 1,
+                timestamp: new Date().toISOString(),
+                requestId: ctx.requestId,
+              },
+            },
+            { status: 503 }
+          );
+        }
         verification = {
           valid: false,
           totalEntries: 0,

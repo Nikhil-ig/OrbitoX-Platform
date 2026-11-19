@@ -42,6 +42,7 @@ export const GET = withApiGuard(
         installationsCount: packageInstallations.length,
         hasEd25519Signature: sigResult.hasEd25519Signature,
         signatureVerified: sigResult.signatureVerified,
+        verifiedAlgorithm: sigResult.verifiedAlgorithm,
         integrityStatus: sigResult.integrityStatus,
         versionEvaluated: sigResult.versionEvaluated,
         integrityDetails: sigResult.details,

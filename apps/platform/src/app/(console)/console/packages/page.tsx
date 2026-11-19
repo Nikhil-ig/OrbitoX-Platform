@@ -124,7 +124,7 @@ export default function ConsolePackagesPage() {
             {verified ? (
               <>
                 <ShieldCheck className="h-4 w-4" />
-                <span>Ed25519 Verified</span>
+                <span>{`${(row.original as any).verifiedAlgorithm || 'Ed25519'} Verified`}</span>
               </>
             ) : integrityStatus === 'LEGACY_MANIFEST_ONLY' ? (
               <>

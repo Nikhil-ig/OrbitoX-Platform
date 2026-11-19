@@ -5,10 +5,11 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { NextRequest } from 'next/server';
-import { CryptoSigner, IntegrityVerifier } from '@orbitox-io/plugin-engine';
+import { CryptoSigner, IntegrityVerifier, PlatformRepository } from '@orbitox-io/plugin-engine';
 import { packageSignatureService } from '@/server/governance/package-signature-service';
 import { createInternalAuthToken } from '@/app/api/v1/_lib/auth-pipeline';
 import { GET as getPackages } from '@/app/api/v1/platform/packages/route';
+import { platformRepository } from '@/server/db/platform-repository';
 import type { PlatformPackageCatalogItem, PackageVersionRecord } from '@orbitox-io/types';
 
 describe('Phase 7C: Package Cryptographic Signature Verification Contract', () => {
@@ -370,6 +371,192 @@ describe('Phase 7C: Package Cryptographic Signature Verification Contract', () =
       if (pkg.signatureVerified === true) {
         assert.strictEqual(pkg.integrityStatus, 'VERIFIED');
       }
+    }
+  });
+
+  it('7. packageSignatureService: refuses to substitute tarballSha256 as fileTreeHash and returns UNVERIFIED_SIGNATURE', () => {
+    const keyPair = CryptoSigner.generateSigningKeyPair('ed25519');
+    const version: PackageVersionRecord = {
+      id: 'ver_tarball_fallback',
+      packageId: '@orbitox/hms',
+      version: '1.2.0',
+      tarballSha256: 'tarball_sha_256_mock_hash_value',
+      manifestHash: crypto.createHash('sha256').update('manifest_content').digest('hex'),
+      signerId: 'orbitox-release-mesh',
+      signature: 'some_raw_unverified_sig_string',
+      minPlatformVersion: '1.0.0',
+      releasedAt: new Date().toISOString(),
+    };
+
+    // Notice: (version as any).fileTreeHash is NOT set.
+    // If the service improperly substituted version.tarballSha256, it might attempt verification with tarballSha256.
+    // With tarball fallback removed, missing fileTreeHash strictly returns UNVERIFIED_SIGNATURE.
+    const result = packageSignatureService.verifyVersionSignature(version, keyPair.publicKey);
+
+    assert.strictEqual(result.status, 'UNVERIFIED_SIGNATURE');
+    assert.strictEqual(result.verified, false);
+    assert.ok(result.details?.includes('missing composite file tree hash') || result.details?.includes('mismatch'));
+  });
+
+  it('8. packageSignatureService: dynamically identifies key algorithms (Ed25519 vs RSA)', () => {
+    // 8A: Ed25519 keypair
+    const edKeyPair = CryptoSigner.generateSigningKeyPair('ed25519');
+    const edSigPayload = {
+      signerId: 'orbitox-mesh',
+      manifestHash: crypto.createHash('sha256').update('ed_manifest').digest('hex'),
+      fileTreeHash: crypto.createHash('sha256').update('ed_files').digest('hex'),
+      signedAt: '2026-11-19T00:00:00.000Z',
+    };
+    const edSig = CryptoSigner.signPayload(edSigPayload, edKeyPair.privateKey);
+    const edVersion: PackageVersionRecord = {
+      id: 'ver_ed',
+      packageId: '@orbitox/hms',
+      version: '1.0.0',
+      tarballSha256: 'ed_tar',
+      manifestHash: edSigPayload.manifestHash,
+      signerId: edSigPayload.signerId,
+      signature: JSON.stringify({
+        ...edSigPayload,
+        files: [],
+        signature: edSig,
+        algorithm: 'Ed25519',
+      }),
+      minPlatformVersion: '1.0.0',
+      releasedAt: edSigPayload.signedAt,
+    };
+
+    const edResult = packageSignatureService.verifyVersionSignature(edVersion, edKeyPair.publicKey);
+    assert.strictEqual(edResult.verified, true);
+    assert.strictEqual(edResult.status, 'VERIFIED');
+    assert.strictEqual(edResult.verifiedAlgorithm, 'Ed25519');
+
+    // 8B: RSA keypair
+    const rsaKeyPair = crypto.generateKeyPairSync('rsa', {
+      modulusLength: 2048,
+      publicKeyEncoding: { type: 'spki', format: 'pem' },
+      privateKeyEncoding: { type: 'pkcs8', format: 'pem' },
+    });
+    const rsaSigPayload = {
+      signerId: 'orbitox-enterprise-rsa',
+      manifestHash: crypto.createHash('sha256').update('rsa_manifest').digest('hex'),
+      fileTreeHash: crypto.createHash('sha256').update('rsa_files').digest('hex'),
+      signedAt: '2026-11-19T00:00:00.000Z',
+    };
+    const rsaSig = CryptoSigner.signPayload(rsaSigPayload, rsaKeyPair.privateKey);
+
+    const rsaVersion: PackageVersionRecord = {
+      id: 'ver_rsa',
+      packageId: '@orbitox/custom-rsa',
+      version: '1.0.0',
+      tarballSha256: 'rsa_tar',
+      manifestHash: rsaSigPayload.manifestHash,
+      signerId: rsaSigPayload.signerId,
+      signature: JSON.stringify({
+        ...rsaSigPayload,
+        files: [],
+        signature: rsaSig,
+        algorithm: 'RSA',
+      }),
+      minPlatformVersion: '1.0.0',
+      releasedAt: rsaSigPayload.signedAt,
+    };
+
+    const rsaResult = packageSignatureService.verifyVersionSignature(rsaVersion, rsaKeyPair.publicKey);
+    assert.strictEqual(rsaResult.verified, true);
+    assert.strictEqual(rsaResult.status, 'VERIFIED');
+    assert.strictEqual(rsaResult.verifiedAlgorithm, 'RSA');
+  });
+
+  it('9. End-to-end persisted package release with authentic PackageSignature JSON envelope verifies via GET /api/v1/platform/packages', async () => {
+    // Generate authentic keypair and genuine signed package directory
+    const keyPair = CryptoSigner.generateSigningKeyPair('ed25519');
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'orbitox-release-pkg-'));
+
+    try {
+      const manifest = {
+        id: '@orbitox/hms',
+        name: 'HospitalOS Production Release',
+        version: '3.0.0',
+        displayName: 'HospitalOS Platform Core',
+        category: 'HEALTHCARE',
+      };
+      fs.writeFileSync(path.join(tempDir, 'manifest.json'), JSON.stringify(manifest, null, 2));
+      fs.mkdirSync(path.join(tempDir, 'dist'));
+      fs.writeFileSync(path.join(tempDir, 'dist', 'bundle.js'), 'export const hospital = true;');
+
+      const authenticSignature = CryptoSigner.signPackageDirectory(tempDir, keyPair.privateKey, 'orbitox-release-mesh');
+      const serializedSignatureJson = JSON.stringify(authenticSignature);
+
+      // Verify that this serialized signature envelope verifies on a package record
+      const testVersion: PackageVersionRecord = {
+        id: 'ver_hms_300',
+        packageId: '@orbitox/hms',
+        version: '3.0.0',
+        tarballSha256: 'genuine_tarball_sha',
+        manifestHash: authenticSignature.manifestHash,
+        signerId: authenticSignature.signerId || 'orbitox-release-mesh',
+        signature: serializedSignatureJson,
+        minPlatformVersion: '1.0.0',
+        releasedAt: authenticSignature.signedAt,
+      };
+
+      const testPackage: PlatformPackageCatalogItem = {
+        id: 'pkg_hms_prod',
+        packageId: '@orbitox/hms',
+        name: 'HospitalOS Platform Core',
+        category: 'HEALTHCARE',
+        publisher: 'OrbitoX Core Team',
+        currentStableVersion: '3.0.0',
+        signingPublicKeyPem: keyPair.publicKey,
+        isCore: true,
+        createdAt: '2026-01-01T00:00:00.000Z',
+        updatedAt: '2026-11-19T00:00:00.000Z',
+      };
+
+      const releaseResult = packageSignatureService.verifyPackageRelease(testPackage, [testVersion]);
+      assert.strictEqual(releaseResult.signatureVerified, true);
+      assert.strictEqual(releaseResult.integrityStatus, 'VERIFIED');
+      assert.strictEqual(releaseResult.verifiedAlgorithm, 'Ed25519');
+
+      // Now verify via GET /api/v1/platform/packages with mock PlatformRepository returning this package & version
+      const origListPkg = (PlatformRepository as any).listPackages;
+      const origListPkgVer = (PlatformRepository as any).listPackageVersions;
+      const origListInst = (PlatformRepository as any).listInstallations;
+
+      try {
+        (PlatformRepository as any).listPackages = () => [testPackage];
+        (PlatformRepository as any).listPackageVersions = () => [testVersion];
+        (PlatformRepository as any).listInstallations = () => [];
+
+        const { signature, timestamp } = await createInternalAuthToken('admin');
+        const req = new NextRequest('http://localhost:3000/api/v1/platform/packages', {
+          headers: {
+            'x-orbitox-principal': 'admin',
+            'x-orbitox-internal-sig': signature,
+            'x-orbitox-internal-ts': timestamp,
+          },
+        });
+
+        const res = await getPackages(req);
+        assert.strictEqual(res.status, 200);
+
+        const body = await res.json();
+        assert.strictEqual(body.success, true);
+        assert.strictEqual(body.data.length, 1);
+
+        const item = body.data[0];
+        assert.strictEqual(item.packageId, '@orbitox/hms');
+        assert.strictEqual(item.signatureVerified, true);
+        assert.strictEqual(item.integrityStatus, 'VERIFIED');
+        assert.strictEqual(item.verifiedAlgorithm, 'Ed25519');
+        assert.strictEqual(item.versionEvaluated, '3.0.0');
+      } finally {
+        (PlatformRepository as any).listPackages = origListPkg;
+        (PlatformRepository as any).listPackageVersions = origListPkgVer;
+        (PlatformRepository as any).listInstallations = origListInst;
+      }
+    } finally {
+      fs.rmSync(tempDir, { recursive: true, force: true });
     }
   });
 });

@@ -9,10 +9,28 @@ export type PackageIntegrityStatus =
   | 'UNVERIFIED_SIGNATURE'
   | 'UNSIGNED';
 
+export type SignatureAlgorithm = 'Ed25519' | 'RSA' | 'ECDSA' | 'UNKNOWN';
+
+export function detectKeyAlgorithm(publicKeyPem: string | null | undefined): SignatureAlgorithm {
+  if (!publicKeyPem) return 'UNKNOWN';
+  try {
+    const key = crypto.createPublicKey(publicKeyPem);
+    if (key.asymmetricKeyType === 'ed25519') return 'Ed25519';
+    if (key.asymmetricKeyType === 'rsa') return 'RSA';
+    if (key.asymmetricKeyType === 'ec') return 'ECDSA';
+    return 'UNKNOWN';
+  } catch {
+    if (publicKeyPem.includes('ED25519') || publicKeyPem.includes('Ed25519')) return 'Ed25519';
+    if (publicKeyPem.includes('RSA')) return 'RSA';
+    return 'UNKNOWN';
+  }
+}
+
 export interface PackageSignatureVerificationResult {
   signatureVerified: boolean;
   integrityStatus: PackageIntegrityStatus;
   hasEd25519Signature: boolean;
+  verifiedAlgorithm?: SignatureAlgorithm;
   versionEvaluated?: string;
   details?: string;
 }
@@ -22,17 +40,20 @@ export class PackageSignatureService {
    * Evaluates the cryptographic integrity of a package version using its public key.
    * Full composite payload signatures ({ signerId, manifestHash, fileTreeHash, signedAt }) qualify for 'VERIFIED'.
    * Manifest-only signatures are classified as 'LEGACY_MANIFEST_ONLY'.
+   * If composite fileTreeHash is missing, never guess or substitute tarballSha256: status remains 'UNVERIFIED_SIGNATURE'.
    */
   verifyVersionSignature(
     version: PackageVersionRecord,
     signingPublicKeyPem: string | null | undefined
-  ): { status: PackageIntegrityStatus; verified: boolean; details?: string } {
+  ): { status: PackageIntegrityStatus; verified: boolean; verifiedAlgorithm?: SignatureAlgorithm; details?: string } {
     if (!signingPublicKeyPem || !version.signature) {
       return { status: 'UNSIGNED', verified: false, details: 'Missing public key or signature' };
     }
 
+    const detectedAlgorithm = detectKeyAlgorithm(signingPublicKeyPem);
+
     try {
-      // 1. Try serialized PackageSignature JSON
+      // 1. Try serialized PackageSignature JSON envelope
       if (typeof version.signature === 'string' && version.signature.trim().startsWith('{')) {
         try {
           const sigObj = JSON.parse(version.signature);
@@ -41,23 +62,29 @@ export class PackageSignatureService {
               sigObj.fileTreeHash ||
               (Array.isArray(sigObj.files)
                 ? crypto.createHash('sha256').update(JSON.stringify(sigObj.files)).digest('hex')
-                : (version as any).fileTreeHash || version.tarballSha256 || '');
+                : (version as any).fileTreeHash || '');
 
-            const payloadToVerify = {
-              signerId: sigObj.signerId || version.signerId || 'orbitox-release-mesh',
-              manifestHash: sigObj.manifestHash || version.manifestHash,
-              fileTreeHash,
-              signedAt: sigObj.signedAt || version.releasedAt,
-            };
+            if (fileTreeHash) {
+              const payloadToVerify = {
+                signerId: sigObj.signerId || version.signerId || 'orbitox-release-mesh',
+                manifestHash: sigObj.manifestHash || version.manifestHash,
+                fileTreeHash,
+                signedAt: sigObj.signedAt || (version as any).signedAt || version.releasedAt,
+              };
 
-            const isValid = IntegrityVerifier.verifyPayloadSignature(
-              payloadToVerify,
-              sigObj.signature,
-              signingPublicKeyPem
-            );
+              const isValid = IntegrityVerifier.verifyPayloadSignature(
+                payloadToVerify,
+                sigObj.signature,
+                signingPublicKeyPem
+              );
 
-            if (isValid) {
-              return { status: 'VERIFIED', verified: true };
+              if (isValid) {
+                return {
+                  status: 'VERIFIED',
+                  verified: true,
+                  verifiedAlgorithm: detectedAlgorithm !== 'UNKNOWN' ? detectedAlgorithm : (sigObj.algorithm || 'Ed25519'),
+                };
+              }
             }
           }
         } catch {
@@ -65,19 +92,15 @@ export class PackageSignatureService {
         }
       }
 
-      // 2. Standard CryptoSigner composite payload verification
-      const fileTreeHash =
-        (version as any).fileTreeHash ||
-        version.tarballSha256 ||
-        (version.manifestHash
-          ? crypto.createHash('sha256').update(version.manifestHash).digest('hex')
-          : '');
+      // 2. Standard CryptoSigner composite payload verification with explicit fileTreeHash
+      // Do NOT fall back to tarballSha256 or derive fileTreeHash from manifestHash
+      const explicitFileTreeHash = (version as any).fileTreeHash;
 
-      if (version.manifestHash && fileTreeHash) {
+      if (version.manifestHash && explicitFileTreeHash) {
         const payloadToVerify = {
           signerId: version.signerId || 'orbitox-release-mesh',
           manifestHash: version.manifestHash,
-          fileTreeHash,
+          fileTreeHash: explicitFileTreeHash,
           signedAt: (version as any).signedAt || version.releasedAt,
         };
 
@@ -88,7 +111,11 @@ export class PackageSignatureService {
         );
 
         if (isCompositeValid) {
-          return { status: 'VERIFIED', verified: true };
+          return {
+            status: 'VERIFIED',
+            verified: true,
+            verifiedAlgorithm: detectedAlgorithm,
+          };
         }
       }
 
@@ -104,6 +131,7 @@ export class PackageSignatureService {
           return {
             status: 'LEGACY_MANIFEST_ONLY',
             verified: false,
+            verifiedAlgorithm: detectedAlgorithm,
             details: 'Signature covers manifest only; composite file tree is unverified',
           };
         }
@@ -112,7 +140,7 @@ export class PackageSignatureService {
       return {
         status: 'UNVERIFIED_SIGNATURE',
         verified: false,
-        details: 'Cryptographic signature mismatch',
+        details: 'Cryptographic signature mismatch or missing composite file tree hash',
       };
     } catch (err) {
       return {
@@ -131,12 +159,14 @@ export class PackageSignatureService {
     versions: PackageVersionRecord[]
   ): PackageSignatureVerificationResult {
     const hasEd25519Signature = Boolean(pkg.signingPublicKeyPem);
+    const keyAlgorithm = detectKeyAlgorithm(pkg.signingPublicKeyPem);
 
     if (!versions || versions.length === 0) {
       return {
         signatureVerified: false,
         integrityStatus: hasEd25519Signature ? 'UNVERIFIED_SIGNATURE' : 'UNSIGNED',
         hasEd25519Signature,
+        verifiedAlgorithm: hasEd25519Signature ? keyAlgorithm : undefined,
       };
     }
 
@@ -152,6 +182,7 @@ export class PackageSignatureService {
       signatureVerified: result.verified,
       integrityStatus: result.status,
       hasEd25519Signature,
+      verifiedAlgorithm: result.verified ? result.verifiedAlgorithm : undefined,
       versionEvaluated: currentVersion.version,
       details: result.details,
     };
