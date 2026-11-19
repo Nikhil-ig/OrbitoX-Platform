@@ -71,23 +71,23 @@ function getToneStyles(tone: StatusTone) {
   switch (tone) {
     case 'success':
       return {
-        badge: 'bg-[var(--color-success)]/10 text-[var(--color-success)] border-[var(--color-success)]/20',
+        badge: 'bg-[var(--color-success-subtle)] text-[var(--color-success)] border-[var(--color-success)]/20',
         dot: 'bg-[var(--color-success)]',
       };
     case 'warning':
       return {
-        badge: 'bg-[var(--color-warning)]/10 text-[var(--color-warning)] border-[var(--color-warning)]/20',
+        badge: 'bg-[var(--color-warning-subtle)] text-[var(--color-warning)] border-[var(--color-warning)]/20',
         dot: 'bg-[var(--color-warning)]',
       };
     case 'destructive':
       return {
-        badge: 'bg-[var(--color-danger)]/10 text-[var(--color-danger)] border-[var(--color-danger)]/20',
+        badge: 'bg-[var(--color-danger-subtle)] text-[var(--color-danger)] border-[var(--color-danger)]/20',
         dot: 'bg-[var(--color-danger)]',
       };
     case 'info':
       return {
-        badge: 'bg-[var(--color-primary)]/10 text-[var(--color-primary)] border-[var(--color-primary)]/20',
-        dot: 'bg-[var(--color-primary)]',
+        badge: 'bg-[var(--color-info-subtle)] text-[var(--color-info)] border-[var(--color-info)]/20',
+        dot: 'bg-[var(--color-info)]',
       };
     case 'neutral':
     default:
