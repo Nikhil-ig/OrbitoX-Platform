@@ -7,6 +7,13 @@ import {
   OPERATOR_SESSION_COOKIE,
   type OperatorSessionContext,
 } from '@/server/accounts/account-service';
+
+export {
+  getOperatorSession,
+  OPERATOR_CSRF_COOKIE,
+  OPERATOR_SESSION_COOKIE,
+  type OperatorSessionContext,
+};
 import { APPEARANCE_COOKIE } from '@/server/appearance/appearance-service';
 import { operatorRoleAllows, type RequiredOperatorRole, requiresRecentReauthentication } from '@/server/organizations/operator-route-policy';
 
@@ -31,10 +38,11 @@ export function withOperatorAuth<Context = undefined>(
   return async (request: NextRequest, context?: Context): Promise<Response> => {
     const session = await getOperatorSession(request.cookies.get(OPERATOR_SESSION_COOKIE)?.value);
     if (!session) {
-      return NextResponse.json({ success: false, error: { code: 'UNAUTHORIZED', message: 'Operator session required.' } }, {
+      const response = NextResponse.json({ success: false, error: { code: 'UNAUTHORIZED', message: 'Operator session required.' } }, {
         status: 401,
         headers: noStore,
       });
+      return clearOperatorSessionCookies(response);
     }
     if (options.requiredRole && !operatorRoleAllows(session.role, options.requiredRole)) {
       return NextResponse.json({ success: false, error: { code: 'FORBIDDEN', message: 'Your operator role cannot perform this action.' } }, {

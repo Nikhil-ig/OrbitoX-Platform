@@ -132,6 +132,75 @@ function formatActionLabel(action: string): string {
     .join(' ');
 }
 
+const SENSITIVE_KEY_PATTERN =
+  /(?:password|passwordHash|token|secret|mfaTotpSealed|mfaToken|backupCode|credential|apiKey|pepper|privateKey|authorization|cookie|bearer|cvv|aadhaar|ssn|pan)/i;
+
+/**
+ * Recursively redacts sensitive credentials, tokens, secrets, PII, and security keys
+ * from audit event metadata and payloads across all nested structures.
+ */
+export function sanitizeAuditPayload<T>(input: T): T {
+  if (input === null || typeof input !== 'object') {
+    return input;
+  }
+  if (Array.isArray(input)) {
+    return input.map((item) => sanitizeAuditPayload(item)) as unknown as T;
+  }
+  const result: Record<string, any> = {};
+  for (const [key, value] of Object.entries(input as Record<string, any>)) {
+    if (SENSITIVE_KEY_PATTERN.test(key)) {
+      result[key] = '[REDACTED]';
+    } else if (typeof value === 'object' && value !== null) {
+      result[key] = sanitizeAuditPayload(value);
+    } else {
+      result[key] = value;
+    }
+  }
+  return result as T;
+}
+
+export interface CreatePlatformAuditEventInput {
+  action: string;
+  entityType: string;
+  entityId?: string | null;
+  actorId?: string | null;
+  actorEmail?: string | null;
+  organizationId?: string | null;
+  projectId?: string | null;
+  environmentId?: string | null;
+  ipAddress?: string | null;
+  requestId?: string | null;
+  reason?: string | null;
+  metadata?: Record<string, any>;
+  status?: string;
+  failureReason?: string | null;
+}
+
+export async function recordPlatformAuditEvent(
+  client: { platformAuditEvent: { create: (args: any) => Promise<any> } },
+  input: CreatePlatformAuditEventInput,
+) {
+  const sanitizedMetadata = sanitizeAuditPayload(input.metadata || {});
+  return client.platformAuditEvent.create({
+    data: {
+      action: input.action,
+      entityType: input.entityType,
+      entityId: input.entityId ?? null,
+      actorId: input.actorId ?? null,
+      actorEmail: input.actorEmail ?? null,
+      organizationId: input.organizationId ?? null,
+      projectId: input.projectId ?? null,
+      environmentId: input.environmentId ?? null,
+      ipAddress: input.ipAddress ?? null,
+      requestId: input.requestId ?? null,
+      reason: input.reason ?? null,
+      metadata: sanitizedMetadata,
+      status: input.status ?? 'COMMITTED',
+      failureReason: input.failureReason ?? null,
+    },
+  });
+}
+
 class AuditConsoleService {
   /**
    * Query paginated audit log events directly from PostgreSQL PlatformAuditEvent
@@ -245,7 +314,7 @@ class AuditConsoleService {
       const rawMetadata = event.metadata;
       const metadata =
         typeof rawMetadata === 'object' && rawMetadata !== null
-          ? (rawMetadata as Record<string, any>)
+          ? sanitizeAuditPayload(rawMetadata as Record<string, any>)
           : {};
 
       return {
@@ -306,7 +375,7 @@ class AuditConsoleService {
     const rawMetadata = event.metadata;
     const metadata =
       typeof rawMetadata === 'object' && rawMetadata !== null
-        ? (rawMetadata as Record<string, any>)
+        ? sanitizeAuditPayload(rawMetadata as Record<string, any>)
         : {};
 
     return {

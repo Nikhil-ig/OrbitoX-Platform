@@ -243,9 +243,9 @@ export const ROUTE_CENSUS_CASES: RouteTestCase[] = [
     path: '/platform/fleet',
     surface: 'platform',
     disposition: 'Merge',
-    expectedInitialStatus: 301,
-    expectedLocation: '/console/overview',
-    expectedFinalPath: '/console/overview',
+    expectedInitialStatus: 308,
+    expectedLocation: '/console/provisioning',
+    expectedFinalPath: '/console/provisioning',
   },
   {
     id: 27,
@@ -373,7 +373,7 @@ export const ROUTE_CENSUS_CASES: RouteTestCase[] = [
     expectedFinalPath: '/console/overview',
   },
 
-  // Modern Console Baseline (1 route: Live)
+  // Modern Console Baseline (12 Canonical Routes: Live)
   {
     id: 41,
     path: '/console/settings/appearance',
@@ -381,6 +381,94 @@ export const ROUTE_CENSUS_CASES: RouteTestCase[] = [
     disposition: 'Live',
     expectedInitialStatus: 200,
     expectedFinalPath: '/console/settings/appearance',
+  },
+  {
+    id: 42,
+    path: '/console/overview',
+    surface: 'console',
+    disposition: 'Live',
+    expectedInitialStatus: 200,
+    expectedFinalPath: '/console/overview',
+  },
+  {
+    id: 43,
+    path: '/console/organizations',
+    surface: 'console',
+    disposition: 'Live',
+    expectedInitialStatus: 200,
+    expectedFinalPath: '/console/organizations',
+  },
+  {
+    id: 44,
+    path: '/console/tenants',
+    surface: 'console',
+    disposition: 'Live',
+    expectedInitialStatus: 200,
+    expectedFinalPath: '/console/tenants',
+  },
+  {
+    id: 45,
+    path: '/console/projects',
+    surface: 'console',
+    disposition: 'Live',
+    expectedInitialStatus: 200,
+    expectedFinalPath: '/console/projects',
+  },
+  {
+    id: 46,
+    path: '/console/provisioning',
+    surface: 'console',
+    disposition: 'Live',
+    expectedInitialStatus: 200,
+    expectedFinalPath: '/console/provisioning',
+  },
+  {
+    id: 47,
+    path: '/console/packages',
+    surface: 'console',
+    disposition: 'Live',
+    expectedInitialStatus: 200,
+    expectedFinalPath: '/console/packages',
+  },
+  {
+    id: 48,
+    path: '/console/billing',
+    surface: 'console',
+    disposition: 'Live',
+    expectedInitialStatus: 200,
+    expectedFinalPath: '/console/billing',
+  },
+  {
+    id: 49,
+    path: '/console/approvals',
+    surface: 'console',
+    disposition: 'Live',
+    expectedInitialStatus: 200,
+    expectedFinalPath: '/console/approvals',
+  },
+  {
+    id: 50,
+    path: '/console/security',
+    surface: 'console',
+    disposition: 'Live',
+    expectedInitialStatus: 200,
+    expectedFinalPath: '/console/security',
+  },
+  {
+    id: 51,
+    path: '/console/audit',
+    surface: 'console',
+    disposition: 'Live',
+    expectedInitialStatus: 200,
+    expectedFinalPath: '/console/audit',
+  },
+  {
+    id: 52,
+    path: '/console/data-rights',
+    surface: 'console',
+    disposition: 'Live',
+    expectedInitialStatus: 200,
+    expectedFinalPath: '/console/data-rights',
   },
 ];
 
@@ -416,11 +504,11 @@ async function runLegacyRoutesRedirectVerification() {
       const initialStatus = initialRes.status;
       const location = initialRes.headers.get('location') || '';
 
-      // Validate initial status (301 or 308 for redirects, 200 for retained/held/live)
-      if (c.expectedInitialStatus === 301) {
+      // Validate initial status (308 or 301 for redirects, 200 for retained/held/live)
+      if (c.expectedInitialStatus === 301 || c.expectedInitialStatus === 308) {
         assert(
-          initialStatus === 301 || initialStatus === 308,
-          `Expected 301 or 308 redirect for ${c.path}, got HTTP ${initialStatus}`,
+          initialStatus === 308 || initialStatus === 301,
+          `Expected 308 or 301 redirect for ${c.path}, got HTTP ${initialStatus}`,
         );
         assert(
           location === c.expectedLocation,

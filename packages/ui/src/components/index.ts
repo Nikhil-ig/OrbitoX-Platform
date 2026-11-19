@@ -82,3 +82,10 @@ export * from './masked-field';
 export * from './copy-once-secret';
 export * from './file-upload';
 
+// Phase 7C Reusable Operational Components
+export * from './operational-status-badge';
+export * from './detail-drawer';
+export * from './step-up-confirmation-dialog';
+export * from './filter-toolbar';
+export * from './operational-data-table';
+

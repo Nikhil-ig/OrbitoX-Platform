@@ -29,6 +29,7 @@ export const ACCOUNT_LOCKOUT_DECAY_MS = 24 * 60 * 60 * 1000;
 export const ACCOUNT_LOCKOUT_THRESHOLD = 5;
 export const ACCOUNT_LOCKOUT_BASE_MS = 15 * 60 * 1000;
 export const ACCOUNT_SESSION_IDLE_MS = 30 * 60 * 1000;
+export const OPERATOR_SESSION_IDLE_MS = 15 * 60 * 1000;
 export const ACCOUNT_SESSION_ABSOLUTE_MS = 12 * 60 * 60 * 1000;
 
 const EMAIL_PATTERN = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;

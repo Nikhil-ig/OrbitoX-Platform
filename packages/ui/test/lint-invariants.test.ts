@@ -237,8 +237,8 @@ describe('Design System Token & Style Invariants Guard (B2 / B3)', () => {
   it('scans all modern component, chart, and persona shell files (zero unchecked)', () => {
     assert.equal(
       filesToCheck.length,
-      89,
-      `Expected exact inventory of 89 component/chart/shell files (69 components, 9 charts, 11 shells), found ${filesToCheck.length}`
+      94,
+      `Expected exact inventory of 94 component/chart/shell files (74 components, 9 charts, 11 shells), found ${filesToCheck.length}`
     );
   });
 

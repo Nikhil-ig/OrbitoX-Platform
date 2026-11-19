@@ -11,6 +11,7 @@ import { prisma } from '@/server/db/prisma';
 import {
   ACCOUNT_SESSION_ABSOLUTE_MS,
   ACCOUNT_SESSION_IDLE_MS,
+  OPERATOR_SESSION_IDLE_MS,
   assertPasswordNotBreached,
   assertValidEmail,
   assertValidPassword,
@@ -856,18 +857,25 @@ export async function getOperatorSession(
   if (
     !session ||
     session.revokedAt ||
-    session.operator.status !== 'ACTIVE' ||
-    session.idleExpiresAt <= now ||
-    session.absoluteExpiresAt <= now
+    session.operator.status !== 'ACTIVE'
   )
     return null;
+
+  if (session.idleExpiresAt <= now || session.absoluteExpiresAt <= now) {
+    await prisma.platformOperatorSession.updateMany({
+      where: { id: session.id, revokedAt: null },
+      data: { revokedAt: now },
+    });
+    return null;
+  }
+
   if (now.getTime() - session.lastSeenAt.getTime() > 60_000) {
     await prisma.platformOperatorSession.updateMany({
       where: { id: session.id, revokedAt: null },
       data: {
         lastSeenAt: now,
         idleExpiresAt: new Date(
-          Math.min(now.getTime() + ACCOUNT_SESSION_IDLE_MS, session.absoluteExpiresAt.getTime()),
+          Math.min(now.getTime() + OPERATOR_SESSION_IDLE_MS, session.absoluteExpiresAt.getTime()),
         ),
       },
     });
@@ -940,7 +948,7 @@ export async function loginOperator(input: {
         operatorId: account.id,
         tokenHash: tokens.sessionTokenHash,
         csrfTokenHash: tokens.csrfTokenHash,
-        idleExpiresAt: new Date(now.getTime() + ACCOUNT_SESSION_IDLE_MS),
+        idleExpiresAt: new Date(now.getTime() + OPERATOR_SESSION_IDLE_MS),
         absoluteExpiresAt,
         ipAddress: input.ipAddress,
         userAgent: input.userAgent,
