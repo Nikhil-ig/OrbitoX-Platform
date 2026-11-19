@@ -550,6 +550,9 @@ describe('Phase 7C: Package Cryptographic Signature Verification Contract', () =
         (PlatformRepository as any).listPackages = () => [testPackage];
         (PlatformRepository as any).listPackageVersions = () => [testVersion];
         (PlatformRepository as any).listInstallations = () => [];
+        (platformRepository as any).listPackages = async () => [testPackage];
+        (platformRepository as any).listPackageVersions = async () => [testVersion];
+        (platformRepository as any).listInstallations = async () => [];
 
         const { signature, timestamp } = await createInternalAuthToken('admin');
         const req = new NextRequest('http://localhost:3000/api/v1/platform/packages', {
@@ -577,6 +580,9 @@ describe('Phase 7C: Package Cryptographic Signature Verification Contract', () =
         (PlatformRepository as any).listPackages = origListPkg;
         (PlatformRepository as any).listPackageVersions = origListPkgVer;
         (PlatformRepository as any).listInstallations = origListInst;
+        delete (platformRepository as any).listPackages;
+        delete (platformRepository as any).listPackageVersions;
+        delete (platformRepository as any).listInstallations;
       }
     } finally {
       fs.rmSync(tempDir, { recursive: true, force: true });

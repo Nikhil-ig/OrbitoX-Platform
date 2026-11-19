@@ -3128,9 +3128,10 @@ const extraMethods = {
     },
 };
 
-export const platformRepository = new Proxy(Object.create(null), {
-    get(_target, property: string | symbol) {
+export const platformRepository = new Proxy(Object.create(null) as Record<string | symbol, unknown>, {
+    get(target, property: string | symbol) {
         if (property === 'then') return undefined;
+        if (property in target) return target[property];
         if (property in extraMethods) return extraMethods[property as keyof typeof extraMethods];
         if (prismaIsRequired()) {
             const method = getPrismaRepository()[property as keyof ReturnType<typeof createPrismaPlatformRepository>];
@@ -3142,6 +3143,14 @@ export const platformRepository = new Proxy(Object.create(null), {
             return async (...args: unknown[]) => legacyMember.apply(PlatformRepository, args);
         }
         return legacyMember;
+    },
+    set(target, property: string | symbol, value: unknown) {
+        target[property] = value;
+        return true;
+    },
+    deleteProperty(target, property: string | symbol) {
+        delete target[property];
+        return true;
     },
 }) as AsyncPlatformRepository;
 
