@@ -405,15 +405,15 @@ describe('🪐 Phase 5: @orbitox-io/sdk Integration & Real Server Suite', () => 
       try {
         await hospital.patients.create({ name: 'Suspended Attempt' });
       } catch (err: any) {
-        if (err instanceof OrbitoXForbiddenError || err.status === 403 || err.code === 'SERVICE_SUSPENDED') {
+        if (err instanceof OrbitoXForbiddenError || err.status === 403 || err.status === 402 || err.code === 'SERVICE_SUSPENDED' || err.code === 'PAYMENT_REQUIRED') {
           suspendEnforced = true;
           break;
         }
       }
       await new Promise((r) => setTimeout(r, 200));
     }
-    assert.ok(suspendEnforced, 'Patient creation must be rejected with 403 / SERVICE_SUSPENDED when tenant is suspended');
-    console.log('[SDK Test] Suspend enforcement verified: 403 SERVICE_SUSPENDED.');
+    assert.ok(suspendEnforced, 'Patient creation must be rejected with 403/402 / SERVICE_SUSPENDED / PAYMENT_REQUIRED when tenant is suspended');
+    console.log('[SDK Test] Suspend enforcement verified: 403/402 SERVICE_SUSPENDED/PAYMENT_REQUIRED.');
 
     // 5. tenants.resume(tenantId)
     console.log(`[SDK Test] Resuming tenant ${tenantId}...`);

@@ -39,7 +39,7 @@ export default function OnboardingPage() {
     step: 'F1',
   });
 
-  // Restore state from localStorage if available
+  // Restore state from localStorage and authoritative server session
   useEffect(() => {
     setMounted(true);
     try {
@@ -51,6 +51,123 @@ export default function OnboardingPage() {
         }
       }
     } catch {}
+
+    let cancelled = false;
+    async function restoreSession() {
+      try {
+        const meRes = await fetch('/api/v1/customer/auth/me');
+        if (!meRes.ok || cancelled) return;
+        const meData = await meRes.json();
+        if (!meData?.user?.id) return;
+
+        const authUser = {
+          userId: meData.user.id,
+          email: meData.user.email,
+          name: meData.user.name || 'Owner',
+        };
+
+        const orgsRes = await fetch('/api/v1/customer/organizations');
+        if (!orgsRes.ok || cancelled) {
+          updateState((prev) => ({
+            ...prev,
+            user: prev.user || authUser,
+            step: prev.step === 'F1' ? 'F2' : prev.step,
+          }));
+          return;
+        }
+
+        const orgsData = await orgsRes.json();
+        const primaryOrg = Array.isArray(orgsData.organizations) && orgsData.organizations.length > 0
+          ? orgsData.organizations[0]
+          : null;
+
+        if (!primaryOrg) {
+          updateState((prev) => ({
+            ...prev,
+            user: prev.user || authUser,
+            step: prev.step === 'F1' ? 'F2' : prev.step,
+          }));
+          return;
+        }
+
+        const orgObj = {
+          id: primaryOrg.id,
+          name: primaryOrg.name,
+          slug: primaryOrg.slug,
+          city: primaryOrg.city || 'Bengaluru',
+          gstin: primaryOrg.gstin,
+        };
+
+        const tenantsRes = await fetch(`/api/v1/customer/organizations/${encodeURIComponent(primaryOrg.id)}/tenants`);
+        let restaurantObj: OnboardingState['restaurant'] = undefined;
+        let subscriptionObj: OnboardingState['subscription'] = undefined;
+
+        if (tenantsRes.ok && !cancelled) {
+          const tenantsData = await tenantsRes.json();
+          const primaryTenant = Array.isArray(tenantsData.tenants) && tenantsData.tenants.length > 0
+            ? tenantsData.tenants[0]
+            : null;
+
+          if (primaryTenant) {
+            restaurantObj = {
+              tenantId: primaryTenant.tenantId,
+              slug: primaryTenant.project.slug,
+              restaurantName: primaryTenant.project.name,
+              tableCount: 12,
+              templateId: 'swift-bite',
+            };
+
+            const actRes = await fetch(
+              `/api/v1/customer/tenants/${encodeURIComponent(primaryTenant.tenantId)}/activation-status`,
+            ).catch(() => null);
+
+            if (actRes && actRes.ok) {
+              const actData = await actRes.json();
+              if (actData.subscription?.status && actData.subscription.status !== 'none') {
+                subscriptionObj = {
+                  planId: actData.subscription.planId || primaryTenant.project.plan || 'growth',
+                  billingCycle: 'monthly',
+                  subscriptionStatus: actData.subscription.status,
+                  awaitingWebhook: actData.subscription.awaitingWebhook,
+                };
+              }
+            }
+          }
+        }
+
+        updateState((prev) => {
+          const nextUser = prev.user || authUser;
+          const nextOrg = prev.organization || orgObj;
+          const nextRestaurant = prev.restaurant || restaurantObj;
+          const nextSubscription = prev.subscription || subscriptionObj;
+
+          let nextStep = prev.step;
+          if (nextSubscription?.subscriptionStatus === 'active' || nextSubscription?.awaitingWebhook) {
+            nextStep = 'F6';
+          } else if (nextRestaurant && (prev.step === 'F1' || prev.step === 'F2' || prev.step === 'F3')) {
+            nextStep = 'F4';
+          } else if (nextOrg && (prev.step === 'F1' || prev.step === 'F2')) {
+            nextStep = 'F3';
+          } else if (nextUser && prev.step === 'F1') {
+            nextStep = 'F2';
+          }
+
+          return {
+            ...prev,
+            user: nextUser,
+            organization: nextOrg,
+            restaurant: nextRestaurant,
+            subscription: nextSubscription,
+            step: nextStep,
+          };
+        });
+      } catch {}
+    }
+
+    restoreSession();
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   // Save state updates to localStorage

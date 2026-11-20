@@ -82,12 +82,18 @@ export class TenantsResource {
       if (typeof p === 'string') {
         const canonical = p.replace(/^@orbitox\//, '').toLowerCase();
         const id = canonical === 'hms' ? 'hospital-os' : canonical === 'restaurant' ? 'restaurant-os' : canonical;
-        return { id, pluginId: id };
+        const defaultPlan = id === 'hospital-os' ? 'hms-starter' : id === 'restaurant-os' ? 'restaurant-starter' : undefined;
+        return { id, pluginId: id, ...(defaultPlan ? { plan: defaultPlan, planId: defaultPlan } : {}) };
       }
+      const pluginId = p.pluginId || (p as any).id;
+      const canonical = (pluginId || '').replace(/^@orbitox\//, '').toLowerCase();
+      const id = canonical === 'hms' ? 'hospital-os' : canonical === 'restaurant' ? 'restaurant-os' : canonical || pluginId;
+      const defaultPlan = id === 'hospital-os' ? 'hms-starter' : id === 'restaurant-os' ? 'restaurant-starter' : undefined;
+      const plan = p.planId || (p as any).plan || defaultPlan;
       return {
-        id: p.pluginId,
-        pluginId: p.pluginId,
-        ...(p.planId ? { plan: p.planId, planId: p.planId } : {}),
+        id,
+        pluginId: id,
+        ...(plan ? { plan, planId: plan } : {}),
         config: p.config,
       };
     });

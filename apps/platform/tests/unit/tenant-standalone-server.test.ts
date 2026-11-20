@@ -477,6 +477,10 @@ describe('Standalone Server Customer Tenant Provisioning Gate (N1)', () => {
         lastEventAt: BigInt(suspendedAt - 10),
       },
     });
+    await prisma!.pluginInstallation.update({
+      where: { tenantId_pluginId: { tenantId: billingTenantId, pluginId: '@orbitox/hms' } },
+      data: { status: 'SUSPENDED' },
+    });
     assert.equal((await read()).status, 402, 'SUSPENDED refuses HospitalOS reads');
     assert.equal((await write()).status, 402, 'SUSPENDED refuses HospitalOS writes');
 

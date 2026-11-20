@@ -208,12 +208,19 @@ export async function POST(req: NextRequest) {
 
   const normalizedPlugins = body.plugins.map((p: any) => {
     if (typeof p === 'string') {
-      return { id: p };
+      const canonical = p.replace(/^@orbitox\//, '').toLowerCase();
+      const id = canonical === 'hms' ? 'hospital-os' : canonical === 'restaurant' ? 'restaurant-os' : canonical;
+      const defaultPlan = id === 'hospital-os' ? 'hms-starter' : id === 'restaurant-os' ? 'restaurant-starter' : undefined;
+      return { id, plan: defaultPlan };
     }
     if (!p || typeof p !== 'object' || Array.isArray(p)) return { id: '' };
+    const id = p.id || p.pluginId || p.packageId;
+    const canonical = (id || '').replace(/^@orbitox\//, '').toLowerCase();
+    const resolvedId = canonical === 'hms' ? 'hospital-os' : canonical === 'restaurant' ? 'restaurant-os' : canonical || id;
+    const defaultPlan = resolvedId === 'hospital-os' ? 'hms-starter' : resolvedId === 'restaurant-os' ? 'restaurant-starter' : undefined;
     return {
-      id: p.id || p.pluginId || p.packageId,
-      plan: p.plan ?? p.planId,
+      id: resolvedId,
+      plan: p.plan ?? p.planId ?? defaultPlan,
       config: p.config,
     };
   });

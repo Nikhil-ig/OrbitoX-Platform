@@ -42,5 +42,14 @@ export function createCleanStandaloneEnv(baseEnv: NodeJS.ProcessEnv = process.en
   }
   delete env.ORBITOX_ENABLE_DEMO_SEED;
   delete env.ALLOW_UNAUTHENTICATED_DEV_MODE;
+  if (!env.ORBITOX_EMAIL_WEBHOOK_SECRET) {
+    env.ORBITOX_EMAIL_WEBHOOK_SECRET = 'whsec_test_fallback_whsec_secret_12345';
+  }
+  if (!env.RAZORPAY_KEY_ID || !/^rzp_(test|live)_[A-Za-z0-9]+$/.test(env.RAZORPAY_KEY_ID)) {
+    env.RAZORPAY_KEY_ID = 'rzp_test_FallbackKey12345';
+  }
+  if (!env.RAZORPAY_KEY_SECRET || env.RAZORPAY_KEY_SECRET.length < 32) {
+    env.RAZORPAY_KEY_SECRET = '0123456789abcdef0123456789abcdef0123456789abcdef';
+  }
   return env;
 }
