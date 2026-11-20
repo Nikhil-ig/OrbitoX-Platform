@@ -80,12 +80,14 @@ export interface OrganizationDetail extends OrganizationItem {
   tenants: OrganizationTenantSummary[];
   members: OrganizationMemberItem[];
   monthlyRevenueEstimate: number;
-  nextChargeDateFormatted: string;
-  paymentMethod: string;
-  lastPaymentFormatted: string;
+  nextChargeDateFormatted?: string;
+  paymentMethod?: string;
+  lastPaymentFormatted?: string;
   gstin?: string;
   ownerName?: string;
   location?: string;
+  city?: string;
+  businessCategory?: string;
 }
 
 function computePlanTier(projects: any[], complianceTier?: string): string {
@@ -250,6 +252,7 @@ export class OrganizationService {
     let org: any = null;
     let projects: any[] = [];
     let memberships: any[] = [];
+    let billingSub: any = null;
 
     if (!isJsonMode) {
       try {
@@ -266,7 +269,7 @@ export class OrganizationService {
 
         if (!org) return null;
 
-        [projects, memberships] = await Promise.all([
+        [projects, memberships, billingSub] = await Promise.all([
           (prisma as any).platformProject.findMany({
             where: { organizationId: org.id },
             orderBy: { createdAt: 'desc' },
@@ -274,6 +277,10 @@ export class OrganizationService {
           (prisma as any).customerMembership.findMany({
             where: { organizationId: org.id },
             include: { user: true },
+          }),
+          (prisma as any).billingSubscription.findFirst({
+            where: { organizationId: org.id },
+            orderBy: { createdAt: 'desc' },
           }),
         ]);
       } catch (err: any) {
@@ -298,8 +305,8 @@ export class OrganizationService {
 
     const members: OrganizationMemberItem[] = (memberships || []).map((m) => {
       const user = m.user || {};
-      const email = user.email || 'operator@orbitox.io';
-      const name = email.split('@')[0].replace(/[._-]/g, ' ').replace(/\b\w/g, (c: string) => c.toUpperCase());
+      const email = user.email || '';
+      const name = user.name || (email ? email.split('@')[0].replace(/[._-]/g, ' ').replace(/\b\w/g, (c: string) => c.toUpperCase()) : 'Member');
       return {
         id: user.id || m.userId,
         email,
@@ -307,26 +314,24 @@ export class OrganizationService {
         role: m.role || 'MEMBER',
         mfaEnabled: Boolean(user.mfaTotpSealed),
         status: user.status || 'ACTIVE',
-        lastActiveFormatted: 'Recently active',
+        lastActiveFormatted: user.updatedAt ? new Date(user.updatedAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : 'Recently active',
       };
     });
 
-    // Provide default primary member if none exist
-    if (members.length === 0) {
-      const email = org.billingEmail || 'owner@orbitox.io';
-      const name = email.split('@')[0].replace(/[._-]/g, ' ').replace(/\b\w/g, (c: string) => c.toUpperCase());
-      members.push({
-        id: `mbr_${org.id}`,
-        email,
-        name,
-        role: 'OWNER',
-        mfaEnabled: true,
-        status: 'ACTIVE',
-        lastActiveFormatted: 'Active now',
-      });
-    }
-
-    const monthlyRevenueEstimate = computeMonthlyRevenue(planTier, tenants.length);
+    const monthlyRevenueEstimate = tenants.length > 0 ? computeMonthlyRevenue(planTier, tenants.length) : 0;
+    const ownerMember = members.find((m) => m.role === 'OWNER') || members[0];
+    const ownerName = ownerMember?.name || undefined;
+    const location = org.city || undefined;
+    const gstin = org.gstin || undefined;
+    const nextChargeDateFormatted = billingSub?.currentEnd
+      ? new Date(billingSub.currentEnd).toLocaleDateString('en-US', { day: 'numeric', month: 'short', year: 'numeric' })
+      : undefined;
+    const paymentMethod = billingSub?.razorpaySubscriptionId
+      ? `Razorpay (${billingSub.razorpaySubscriptionId})`
+      : undefined;
+    const lastPaymentFormatted = billingSub?.status
+      ? billingSub.status.charAt(0).toUpperCase() + billingSub.status.slice(1)
+      : undefined;
 
     return {
       id: org.id,
@@ -343,12 +348,14 @@ export class OrganizationService {
       tenants,
       members,
       monthlyRevenueEstimate,
-      nextChargeDateFormatted: '1 Dec 2026',
-      paymentMethod: 'UPI AutoPay · Razorpay',
-      lastPaymentFormatted: 'Paid · 1 Nov 2026',
-      gstin: '29ABCDE1234F1Z5',
-      ownerName: members[0]?.name || 'Priya Shah',
-      location: 'Bengaluru, India',
+      nextChargeDateFormatted,
+      paymentMethod,
+      lastPaymentFormatted,
+      gstin,
+      ownerName,
+      location,
+      city: org.city || undefined,
+      businessCategory: org.businessCategory || undefined,
     };
   }
 
@@ -489,6 +496,118 @@ export class OrganizationService {
     const updated = await this.getOrganization(org.id);
     if (!updated) {
       throw new Error('ARCHIVE_FAILED: Could not retrieve organization after suspension.');
+    }
+    return updated;
+  }
+
+  async resumeOrg(
+    idOrSlug: string,
+    reason: string,
+    operator: OperatorContext
+  ): Promise<OrganizationDetail> {
+    assertValidReason(reason);
+    assertFreshReauth(operator);
+
+    const org = await platformRepository.getOrganization(idOrSlug);
+    if (!org) {
+      throw new Error(`NOT_FOUND: Organization "${idOrSlug}" not found.`);
+    }
+
+    const isJsonMode = process.env.ORBITOX_PLATFORM_REPOSITORY === 'json';
+    if (!isJsonMode) {
+      await (prisma as any).platformOrganization.update({
+        where: { id: org.id },
+        data: { status: 'ACTIVE' },
+      });
+      // Resume associated projects
+      await (prisma as any).platformProject.updateMany({
+        where: { organizationId: org.id },
+        data: { status: 'ACTIVE' },
+      });
+    } else {
+      await platformRepository.updateOrganization(org.id, { status: 'ACTIVE' as any });
+    }
+
+    await platformRepository.recordPlatformAdminAudit({
+      action: 'ORGANIZATION_RESUMED',
+      entityType: 'ORGANIZATION',
+      entityId: org.id,
+      actorId: operator.email,
+      organizationId: org.id,
+      metadata: {
+        organizationId: org.id,
+        reason,
+        resumedAt: new Date().toISOString(),
+        operatorId: operator.id,
+      } as any,
+    });
+
+    const updated = await this.getOrganization(org.id);
+    if (!updated) {
+      throw new Error('RESUME_FAILED: Could not retrieve organization after resumption.');
+    }
+    return updated;
+  }
+
+  async updateOrganization(
+    idOrSlug: string,
+    input: {
+      name?: string;
+      billingEmail?: string;
+      complianceTier?: string;
+      city?: string;
+      gstin?: string;
+      businessCategory?: string;
+    },
+    operator: OperatorContext
+  ): Promise<OrganizationDetail> {
+    const org = await platformRepository.getOrganization(idOrSlug);
+    if (!org) {
+      throw new Error(`NOT_FOUND: Organization "${idOrSlug}" not found.`);
+    }
+
+    const updateData: Record<string, any> = {};
+    if (input.name !== undefined && input.name.trim()) updateData.name = input.name.trim();
+    if (input.billingEmail !== undefined && input.billingEmail.trim()) {
+      updateData.billingEmail = input.billingEmail.trim().toLowerCase();
+    }
+    if (input.complianceTier !== undefined && input.complianceTier.trim()) {
+      updateData.complianceTier = input.complianceTier.trim();
+    }
+    if (input.city !== undefined) updateData.city = input.city.trim() || null;
+    if (input.gstin !== undefined) updateData.gstin = input.gstin.trim() || null;
+    if (input.businessCategory !== undefined) updateData.businessCategory = input.businessCategory.trim() || null;
+
+    if (Object.keys(updateData).length === 0) {
+      throw new Error('INVALID_REQUEST: No valid fields provided for update.');
+    }
+
+    const isJsonMode = process.env.ORBITOX_PLATFORM_REPOSITORY === 'json';
+    if (!isJsonMode) {
+      await (prisma as any).platformOrganization.update({
+        where: { id: org.id },
+        data: updateData,
+      });
+    } else {
+      await platformRepository.updateOrganization(org.id, updateData);
+    }
+
+    await platformRepository.recordPlatformAdminAudit({
+      action: 'ORGANIZATION_UPDATED',
+      entityType: 'ORGANIZATION',
+      entityId: org.id,
+      actorId: operator.email,
+      organizationId: org.id,
+      metadata: {
+        organizationId: org.id,
+        changes: updateData,
+        operatorId: operator.id,
+      } as any,
+    });
+
+    const updated = await this.getOrganization(org.id);
+    if (!updated) {
+      throw new Error('UPDATE_FAILED: Could not retrieve organization after update.');
     }
     return updated;
   }

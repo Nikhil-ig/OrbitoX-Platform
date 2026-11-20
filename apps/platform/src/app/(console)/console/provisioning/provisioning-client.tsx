@@ -39,6 +39,7 @@ import type {
   ProvisioningSummary,
   ProvisioningOperationItem,
 } from '@/server/provisioning/provisioning-service';
+import { useStepUpAuth } from '../components/step-up-modal';
 
 export interface ProvisioningClientProps {
   initialSummary: ProvisioningSummary;
@@ -58,6 +59,21 @@ const STEP_DESCRIPTIONS: Record<string, string> = {
   push_first_grant: 'Signed Ed25519 platform grant dispatched to runtime',
   finalize_active: 'State flipped to ACTIVE and activation webhook emitted',
 };
+
+function getCsrfToken(): string | null {
+  if (typeof document === 'undefined') return null;
+  const match = document.cookie.match(
+    /(?:orbitox_operator_csrf|orbitox_customer_csrf|orbitox_csrf)=([^;]+)/,
+  );
+  return match && match[1] ? decodeURIComponent(match[1]) : null;
+}
+
+function getJsonHeaders(): Record<string, string> {
+  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+  const csrf = getCsrfToken();
+  if (csrf) headers['x-csrf-token'] = csrf;
+  return headers;
+}
 
 function formatStepTitle(stepName: string): string {
   return stepName
@@ -79,6 +95,9 @@ export function ProvisioningClient({
   const [statusFilter, setStatusFilter] = React.useState<string>(initialStatusFilter);
   const [searchQuery, setSearchQuery] = React.useState<string>(initialTenantParam);
   const [timeRange, setTimeRange] = React.useState<string>('24h');
+
+  // Step-Up Re-Authentication Hook
+  const { stepUpDialog, requestStepUpAuth } = useStepUpAuth();
 
   // Slide-in drawers
   const [selectedOperation, setSelectedOperation] = React.useState<ProvisioningOperationItem | null>(null);
@@ -150,10 +169,7 @@ export function ProvisioningClient({
     try {
       const res = await fetch(`/api/v1/platform/operations/${opId}/cancel`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'x-csrf-token': document.cookie.match(/orbitox_csrf=([^;]+)/)?.[1] || '',
-        },
+        headers: getJsonHeaders(),
         body: JSON.stringify({ reason }),
       });
 
@@ -185,10 +201,7 @@ export function ProvisioningClient({
     try {
       const res = await fetch(`/api/v1/platform/operations/${opId}/retry`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'x-csrf-token': document.cookie.match(/orbitox_csrf=([^;]+)/)?.[1] || '',
-        },
+        headers: getJsonHeaders(),
       });
 
       const json = await res.json();
@@ -236,10 +249,7 @@ export function ProvisioningClient({
 
       const res = await fetch('/api/v1/platform/operations', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'x-csrf-token': document.cookie.match(/orbitox_csrf=([^;]+)/)?.[1] || '',
-        },
+        headers: getJsonHeaders(),
         body: JSON.stringify(payload),
       });
 
@@ -583,6 +593,7 @@ export function ProvisioningClient({
                             description={`Cancelling operation ${op.id} for "${op.tenantName}". This immediately invokes plugin compensation (deprovisioning any created databases/hostnames) and permanently records the cancellation in the audit trail.`}
                             expectedConfirmationText="CANCEL_OPERATION"
                             requireReason={true}
+                            onStepUpAuth={requestStepUpAuth}
                             confirmButtonLabel="Cancel Saga"
                             onConfirm={(payload) => handleCancelOperation(op.id, payload.reason || '')}
                           />
@@ -719,6 +730,7 @@ export function ProvisioningClient({
                     description={`Cancelling operation ${selectedOperation.id} immediately invokes plugin deprovisioning compensation to roll back any allocated database resources or Cloudflare hostnames.`}
                     expectedConfirmationText="CANCEL_OPERATION"
                     requireReason={true}
+                    onStepUpAuth={requestStepUpAuth}
                     confirmButtonLabel="Cancel Saga"
                     onConfirm={(payload) => handleCancelOperation(selectedOperation.id, payload.reason || '')}
                   />
@@ -911,6 +923,9 @@ export function ProvisioningClient({
           </form>
         </SheetContent>
       </Sheet>
+
+      {/* Step-Up Re-Authentication Modal */}
+      {stepUpDialog}
     </div>
   );
 }

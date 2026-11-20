@@ -35,7 +35,9 @@ import {
   DialogTitle,
   DialogDescription,
   DialogFooter,
+  Label,
 } from '@orbitox-io/ui';
+import { useStepUpAuth } from '../components/step-up-modal';
 import type {
   OrganizationSummary,
   OrganizationItem,
@@ -76,9 +78,21 @@ export function OrganizationsClient({
   // Wizard / Modals
   const [isNewOrgOpen, setIsNewOrgOpen] = React.useState(false);
   const [isChangePlanOpen, setIsChangePlanOpen] = React.useState(false);
+  const [isEditOrgOpen, setIsEditOrgOpen] = React.useState(false);
+  const [isImpersonationInfoOpen, setIsImpersonationInfoOpen] = React.useState(false);
   const [selectedPlanTier, setSelectedPlanTier] = React.useState('Growth');
   const [isSubmitting, setIsSubmitting] = React.useState(false);
   const [actionError, setActionError] = React.useState<string | null>(null);
+
+  // Step-Up Re-Authentication Hook
+  const { stepUpDialog, requestStepUpAuth } = useStepUpAuth();
+
+  // Edit Org Form State
+  const [editName, setEditName] = React.useState('');
+  const [editEmail, setEditEmail] = React.useState('');
+  const [editCompliance, setEditCompliance] = React.useState('STANDARD');
+  const [editCity, setEditCity] = React.useState('');
+  const [editGstin, setEditGstin] = React.useState('');
 
   // New Org Form State
   const [newOrgName, setNewOrgName] = React.useState('');
@@ -230,7 +244,7 @@ export function OrganizationsClient({
     setIsSubmitting(true);
     setActionError(null);
     try {
-      const csrfToken = document.cookie.match(/orbitox_operator_csrf=([^;]+)/)?.[1] || '';
+      const csrfToken = document.cookie.match(/(?:orbitox_operator_csrf|orbitox_csrf)=([^;]+)/)?.[1] || '';
       const res = await fetch(`/api/v1/platform/organizations/${selectedOrg.id}/archive`, {
         method: 'POST',
         headers: {
@@ -245,6 +259,72 @@ export function OrganizationsClient({
         await refreshList();
       } else {
         setActionError(data.error?.message || 'Failed to suspend organization');
+      }
+    } catch (err: any) {
+      setActionError(err.message || 'Network error');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  // Action: Resume Organization
+  const handleResumeOrg = async (payload: { reason?: string }) => {
+    if (!selectedOrg) return;
+    setIsSubmitting(true);
+    setActionError(null);
+    try {
+      const csrfToken = document.cookie.match(/(?:orbitox_operator_csrf|orbitox_csrf)=([^;]+)/)?.[1] || '';
+      const res = await fetch(`/api/v1/platform/organizations/${selectedOrg.id}/resume`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-csrf-token': csrfToken,
+        },
+        body: JSON.stringify({ reason: payload.reason || 'Operator resumption' }),
+      });
+      const data = await res.json();
+      if (data.success && data.data) {
+        setSelectedOrg(data.data);
+        await refreshList();
+      } else {
+        setActionError(data.error?.message || 'Failed to resume organization');
+      }
+    } catch (err: any) {
+      setActionError(err.message || 'Network error');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  // Action: Update Organization Profile
+  const handleUpdateOrgProfile = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedOrg) return;
+    setIsSubmitting(true);
+    setActionError(null);
+    try {
+      const csrfToken = document.cookie.match(/(?:orbitox_operator_csrf|orbitox_csrf)=([^;]+)/)?.[1] || '';
+      const res = await fetch(`/api/v1/platform/organizations/${selectedOrg.id}`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-csrf-token': csrfToken,
+        },
+        body: JSON.stringify({
+          name: editName.trim(),
+          billingEmail: editEmail.trim(),
+          complianceTier: editCompliance,
+          city: editCity.trim(),
+          gstin: editGstin.trim(),
+        }),
+      });
+      const data = await res.json();
+      if (data.success && data.data) {
+        setIsEditOrgOpen(false);
+        setSelectedOrg(data.data);
+        await refreshList();
+      } else {
+        setActionError(data.error?.message || 'Failed to update organization profile');
       }
     } catch (err: any) {
       setActionError(err.message || 'Network error');
@@ -325,37 +405,73 @@ export function OrganizationsClient({
                 </span>
               </div>
               <p className="text-xs text-[var(--color-text-muted)] mt-1">
-                Owner {org.ownerName || 'Primary Owner'} · {org.location || 'India'} · customer since March 2026 · GSTIN {org.gstin || '29ABCDE1234F1Z5'}
+                Owner: {org.ownerName || 'Not assigned'} · {org.location || 'Location unspecified'} · Member since {new Date(org.createdAt).toLocaleDateString('en-US', { month: 'short', year: 'numeric' })} · GSTIN: {org.gstin || 'Not provided'}
               </p>
             </div>
           </div>
 
           <div className="flex items-center gap-2.5">
-            <DangerousAction
-              trigger={
-                <Button
-                  variant="secondary"
-                  size="sm"
-                  className="rounded-full text-[var(--color-danger)] border-[var(--color-danger)]/30 hover:bg-[var(--color-danger-subtle)]"
-                  disabled={isSuspended}
-                >
-                  {isSuspended ? 'Suspended' : 'Suspend...'}
-                </Button>
-              }
-              title={`Suspend Organization: ${org.name}`}
-              description={`Suspending ${org.name} will immediately freeze all ${org.tenants.length} tenant runtimes and revoke access for ${org.members.length} members. Enter the organization slug "${org.slug}" and a justification to confirm.`}
-              expectedConfirmationText={org.slug}
-              requireReason={true}
-              onStepUpAuth={async () => true}
-              onConfirm={handleArchiveOrg}
-              confirmButtonLabel="Confirm Suspension"
-            />
+            {isSuspended ? (
+              <DangerousAction
+                trigger={
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    className="rounded-full text-[var(--color-success)] border-[var(--color-success)]/30 hover:bg-[var(--color-success-subtle)]"
+                  >
+                    Resume...
+                  </Button>
+                }
+                title={`Resume Organization: ${org.name}`}
+                description={`Resuming ${org.name} will restore access for all ${org.tenants.length} tenant runtimes and members. Enter the organization slug "${org.slug}" and a justification to confirm.`}
+                expectedConfirmationText={org.slug}
+                requireReason={true}
+                onStepUpAuth={requestStepUpAuth}
+                onConfirm={handleResumeOrg}
+                confirmButtonLabel="Confirm Resumption"
+              />
+            ) : (
+              <DangerousAction
+                trigger={
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    className="rounded-full text-[var(--color-danger)] border-[var(--color-danger)]/30 hover:bg-[var(--color-danger-subtle)]"
+                  >
+                    Suspend...
+                  </Button>
+                }
+                title={`Suspend Organization: ${org.name}`}
+                description={`Suspending ${org.name} will immediately freeze all ${org.tenants.length} tenant runtimes and revoke access for ${org.members.length} members. Enter the organization slug "${org.slug}" and a justification to confirm.`}
+                expectedConfirmationText={org.slug}
+                requireReason={true}
+                onStepUpAuth={requestStepUpAuth}
+                onConfirm={handleArchiveOrg}
+                confirmButtonLabel="Confirm Suspension"
+              />
+            )}
 
             <Button
               variant="secondary"
               size="sm"
               className="rounded-full"
-              onClick={() => alert(`Impersonation mode (read-only) activated for ${org.name}`)}
+              onClick={() => {
+                setEditName(org.name);
+                setEditEmail(org.billingEmail);
+                setEditCompliance(org.complianceTier);
+                setEditCity(org.city || org.location || '');
+                setEditGstin(org.gstin || '');
+                setIsEditOrgOpen(true);
+              }}
+            >
+              Edit Profile
+            </Button>
+
+            <Button
+              variant="secondary"
+              size="sm"
+              className="rounded-full"
+              onClick={() => setIsImpersonationInfoOpen(true)}
             >
               Impersonate (read-only)
             </Button>
@@ -491,28 +607,34 @@ export function OrganizationsClient({
               </div>
 
               <div className="space-y-3">
-                {org.members.map((member) => (
-                  <div key={member.id} className="flex items-center justify-between text-xs">
-                    <div className="flex items-center gap-2.5">
-                      <div className="h-8 w-8 rounded-full bg-[var(--color-primary-subtle)] text-[var(--color-primary)] font-semibold flex items-center justify-center text-xs">
-                        {getInitials(member.name)}
-                      </div>
-                      <div>
-                        <div className="font-medium text-[var(--color-text)]">{member.name}</div>
-                        <div className="text-[10px] text-[var(--color-text-muted)] flex items-center gap-1">
-                          <span>{member.role}</span>
-                          <span>·</span>
-                          <span className={member.mfaEnabled ? 'text-[var(--color-success)]' : 'text-[var(--color-warning)]'}>
-                            {member.mfaEnabled ? 'MFA on' : 'MFA pending'}
-                          </span>
+                {org.members.length === 0 ? (
+                  <div className="p-4 rounded-[var(--radius-card)] bg-[var(--color-surface-raised)] border border-[var(--color-border)] text-center text-xs text-[var(--color-text-muted)]">
+                    No customer member accounts registered for this organization.
+                  </div>
+                ) : (
+                  org.members.map((member) => (
+                    <div key={member.id} className="flex items-center justify-between text-xs">
+                      <div className="flex items-center gap-2.5">
+                        <div className="h-8 w-8 rounded-full bg-[var(--color-primary-subtle)] text-[var(--color-primary)] font-semibold flex items-center justify-center text-xs">
+                          {getInitials(member.name)}
+                        </div>
+                        <div>
+                          <div className="font-medium text-[var(--color-text)]">{member.name}</div>
+                          <div className="text-[10px] text-[var(--color-text-muted)] flex items-center gap-1">
+                            <span>{member.role}</span>
+                            <span>·</span>
+                            <span className={member.mfaEnabled ? 'text-[var(--color-success)]' : 'text-[var(--color-warning)]'}>
+                              {member.mfaEnabled ? 'MFA on' : 'MFA pending'}
+                            </span>
+                          </div>
                         </div>
                       </div>
+                      <span className="text-[11px] text-[var(--color-text-muted)]">
+                        {member.lastActiveFormatted}
+                      </span>
                     </div>
-                    <span className="text-[11px] text-[var(--color-text-muted)]">
-                      {member.lastActiveFormatted}
-                    </span>
-                  </div>
-                ))}
+                  ))
+                )}
               </div>
             </div>
 
@@ -532,20 +654,22 @@ export function OrganizationsClient({
                 <div className="flex justify-between">
                   <span className="text-[var(--color-text-muted)]">Next charge</span>
                   <span className="font-medium text-[var(--color-text)]">
-                    ₹{org.monthlyRevenueEstimate.toLocaleString('en-IN')} on {org.nextChargeDateFormatted}
+                    {org.nextChargeDateFormatted
+                      ? `₹${org.monthlyRevenueEstimate.toLocaleString('en-IN')} on ${org.nextChargeDateFormatted}`
+                      : 'Cycle not scheduled'}
                   </span>
                 </div>
                 <div className="flex justify-between">
                   <span className="text-[var(--color-text-muted)]">Payment method</span>
-                  <span className="font-medium text-[var(--color-text)]">{org.paymentMethod}</span>
+                  <span className="font-medium text-[var(--color-text)]">{org.paymentMethod || 'No active payment method'}</span>
                 </div>
                 <div className="flex justify-between">
                   <span className="text-[var(--color-text-muted)]">Last payment</span>
-                  <span className="font-medium text-[var(--color-success)]">{org.lastPaymentFormatted}</span>
+                  <span className="font-medium text-[var(--color-success)]">{org.lastPaymentFormatted || 'No payment records'}</span>
                 </div>
                 <div className="flex justify-between">
                   <span className="text-[var(--color-text-muted)]">Billing contact</span>
-                  <span className="font-medium text-[var(--color-text)]">{org.billingEmail}</span>
+                  <span className="font-medium text-[var(--color-text)]">{org.billingEmail || 'Not specified'}</span>
                 </div>
               </div>
             </div>
@@ -637,6 +761,146 @@ export function OrganizationsClient({
             </DialogFooter>
           </DialogContent>
         </Dialog>
+
+        {/* Edit Organization Profile Dialog */}
+        <Dialog open={isEditOrgOpen} onOpenChange={setIsEditOrgOpen}>
+          <DialogContent className="max-w-md">
+            <DialogHeader>
+              <DialogTitle>Edit Organization Profile</DialogTitle>
+              <DialogDescription>
+                Update corporate entity details and billing compliance information.
+              </DialogDescription>
+            </DialogHeader>
+
+            <form onSubmit={handleUpdateOrgProfile} className="space-y-4 py-2">
+              <div className="space-y-1.5">
+                <Label className="text-xs font-medium text-[var(--color-text)]">Organization Name</Label>
+                <Input
+                  value={editName}
+                  onChange={(e) => setEditName(e.target.value)}
+                  placeholder="e.g. Acme Health Network"
+                  className="text-xs rounded-full border border-[var(--color-border)] bg-[var(--color-surface)] px-4"
+                  required
+                />
+              </div>
+
+              <div className="space-y-1.5">
+                <Label className="text-xs font-medium text-[var(--color-text)]">Billing Contact Email</Label>
+                <Input
+                  type="email"
+                  value={editEmail}
+                  onChange={(e) => setEditEmail(e.target.value)}
+                  placeholder="billing@organization.com"
+                  className="text-xs rounded-full border border-[var(--color-border)] bg-[var(--color-surface)] px-4"
+                  required
+                />
+              </div>
+
+              <div className="space-y-1.5">
+                <Label className="text-xs font-medium text-[var(--color-text)]">City / Location</Label>
+                <Input
+                  value={editCity}
+                  onChange={(e) => setEditCity(e.target.value)}
+                  placeholder="e.g. Mumbai, Maharashtra"
+                  className="text-xs rounded-full border border-[var(--color-border)] bg-[var(--color-surface)] px-4"
+                />
+              </div>
+
+              <div className="space-y-1.5">
+                <Label className="text-xs font-medium text-[var(--color-text)]">GSTIN Identification</Label>
+                <Input
+                  value={editGstin}
+                  onChange={(e) => setEditGstin(e.target.value)}
+                  placeholder="e.g. 27AAAAA0000A1Z5"
+                  className="text-xs font-mono uppercase rounded-full border border-[var(--color-border)] bg-[var(--color-surface)] px-4"
+                />
+              </div>
+
+              <div className="space-y-1.5">
+                <Label className="text-xs font-medium text-[var(--color-text)]">Compliance Tier</Label>
+                <select
+                  value={editCompliance}
+                  onChange={(e) => setEditCompliance(e.target.value)}
+                  aria-label="Compliance Tier"
+                  className="w-full text-xs h-9 rounded-full border border-[var(--color-border)] bg-[var(--color-surface)] px-3 text-[var(--color-text)]"
+                >
+                  <option value="STANDARD">Standard (PCI-DSS & SOC2 Type II)</option>
+                  <option value="HIPAA">HIPAA (Healthcare & PHI Compliant)</option>
+                  <option value="FEDRAMP">FedRAMP / High Assurance</option>
+                </select>
+              </div>
+
+              <DialogFooter className="gap-2 pt-2">
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => setIsEditOrgOpen(false)}
+                  disabled={isSubmitting}
+                  className="rounded-full"
+                >
+                  Cancel
+                </Button>
+                <Button
+                  type="submit"
+                  variant="primary"
+                  size="sm"
+                  loading={isSubmitting}
+                  disabled={isSubmitting || !editName.trim() || !editEmail.trim()}
+                  className="rounded-full"
+                >
+                  Save Profile Changes
+                </Button>
+              </DialogFooter>
+            </form>
+          </DialogContent>
+        </Dialog>
+
+        {/* Zero-Trust Impersonation Policy Dialog */}
+        <Dialog open={isImpersonationInfoOpen} onOpenChange={setIsImpersonationInfoOpen}>
+          <DialogContent className="max-w-md">
+            <DialogHeader>
+              <div className="flex items-center gap-3 mb-2">
+                <div className="flex h-10 w-10 items-center justify-center rounded-full bg-[var(--color-primary-subtle)] text-[var(--color-primary)] shrink-0">
+                  <Shield className="h-5 w-5" />
+                </div>
+                <DialogTitle className="text-base font-semibold text-[var(--color-text)]">
+                  Zero-Trust Impersonation Boundary
+                </DialogTitle>
+              </div>
+              <DialogDescription className="text-xs leading-relaxed text-[var(--color-text-muted)]">
+                Direct customer session assumption is disabled by default in accordance with zero-trust tenant separation policies. All administrative oversight and troubleshooting must be conducted through authoritative tenant telemetry, configuration inspection, and immutable audit logs.
+              </DialogDescription>
+            </DialogHeader>
+
+            <DialogFooter className="gap-2 pt-2">
+              <Button
+                type="button"
+                variant="secondary"
+                size="sm"
+                onClick={() => setIsImpersonationInfoOpen(false)}
+                className="rounded-full"
+              >
+                Close
+              </Button>
+              <Button
+                type="button"
+                variant="primary"
+                size="sm"
+                onClick={() => {
+                  setIsImpersonationInfoOpen(false);
+                  router.push(`/console/tenants?org=${org.id}`);
+                }}
+                className="rounded-full"
+              >
+                Inspect Associated Tenants
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        {/* Step-Up Re-Authentication Modal */}
+        {stepUpDialog}
       </div>
     );
   }

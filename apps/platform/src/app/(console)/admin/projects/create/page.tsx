@@ -102,7 +102,10 @@ export default function ProjectCreationWizardPage() {
           planReferences: [selectedPlan],
           environmentMetadata: { defaultEnvironment: environment, supportedEnvironments: ['development', 'staging', 'production'] },
           platformController: {
-            controlPlaneUrl: 'http://localhost:3005',
+            controlPlaneUrl:
+              typeof window !== 'undefined'
+                ? window.location.origin
+                : process.env.NEXT_PUBLIC_CONTROL_PLANE_URL || 'http://localhost:3005',
             syncIntervalSeconds: syncInterval,
             requireSignedConfig: true,
           },
@@ -115,7 +118,7 @@ export default function ProjectCreationWizardPage() {
       }
 
       // Immediately navigate to persistent Project Control Center
-      router.push(`/admin/projects/${data.project.id}`);
+      router.push(`/console/projects/${data.project.id}`);
     } catch (err: any) {
       setError(err.message);
       setIsGenerating(false);
@@ -127,7 +130,7 @@ export default function ProjectCreationWizardPage() {
       <div style={{ maxWidth: '900px', margin: '0 auto' }}>
         {/* Navigation Breadcrumbs */}
         <div style={{ marginBottom: '24px', display: 'flex', alignItems: 'center', gap: '10px', fontSize: '13px', color: '#64748B' }}>
-          <Link href="/admin/projects" style={{ color: '#94A3B8', textDecoration: 'none', fontWeight: 700 }}>
+          <Link href="/console/projects" style={{ color: '#94A3B8', textDecoration: 'none', fontWeight: 700 }}>
             Projects
           </Link>
           <span>/</span>
@@ -375,7 +378,11 @@ export default function ProjectCreationWizardPage() {
               </div>
               <div style={{ display: 'flex', justifyContent: 'space-between', padding: '10px', background: '#151A2E', borderRadius: '6px' }}>
                 <span style={{ color: '#94A3B8' }}>Control Plane URL:</span>
-                <code>http://localhost:3005</code>
+                <code>
+                  {typeof window !== 'undefined'
+                    ? window.location.origin
+                    : process.env.NEXT_PUBLIC_CONTROL_PLANE_URL || 'https://control.orbitox.io'}
+                </code>
               </div>
             </div>
 

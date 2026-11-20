@@ -7,27 +7,35 @@ import type { NavItem } from './types';
 
 export interface SidebarCardProps {
   brand?: React.ReactNode;
+  searchSlot?: React.ReactNode;
   tenantSwitcher?: React.ReactNode;
   items: NavItem[];
+  managementNavItems?: NavItem[];
+  managementSectionTitle?: string;
   pluginNavItems?: NavItem[];
   pluginSectionTitle?: string;
   bottomCard?: React.ReactNode;
   userProfile?: React.ReactNode;
   isCollapsed?: boolean;
   onToggleCollapse?: () => void;
+  linkComponent?: React.ComponentType<any>;
   className?: string;
 }
 
 export function SidebarCard({
   brand,
+  searchSlot,
   tenantSwitcher,
   items,
+  managementNavItems,
+  managementSectionTitle = 'Management Surfaces',
   pluginNavItems,
   pluginSectionTitle = 'Plugins & Extensions',
   bottomCard,
   userProfile,
   isCollapsed = false,
   onToggleCollapse,
+  linkComponent,
   className,
 }: SidebarCardProps) {
   return (
@@ -56,6 +64,11 @@ export function SidebarCard({
         </div>
       )}
 
+      {/* Search Slot */}
+      {searchSlot && !isCollapsed && (
+        <div className="px-3 pt-3 pb-1">{searchSlot}</div>
+      )}
+
       {/* Tenant Switcher Slot */}
       {tenantSwitcher && !isCollapsed && (
         <div className="border-b border-[var(--color-border)] p-3">{tenantSwitcher}</div>
@@ -65,21 +78,37 @@ export function SidebarCard({
       <div className="flex-1 overflow-y-auto space-y-4 p-3">
         <nav className="space-y-1">
           {items.map((item) => (
-            <NavItemRenderer key={item.id} item={item} isCollapsed={isCollapsed} />
+            <NavItemRenderer key={item.id} item={item} isCollapsed={isCollapsed} linkComponent={linkComponent} />
           ))}
         </nav>
+
+        {/* Management Navigation Section */}
+        {managementNavItems && managementNavItems.length > 0 && (
+          <div className="pt-2">
+            {!isCollapsed && managementSectionTitle && (
+              <div className="px-3 pb-2 text-[10px] font-semibold uppercase tracking-wider text-[var(--color-text-subtle)]">
+                {managementSectionTitle}
+              </div>
+            )}
+            <nav className="space-y-1">
+              {managementNavItems.map((item) => (
+                <NavItemRenderer key={item.id} item={item} isCollapsed={isCollapsed} linkComponent={linkComponent} />
+              ))}
+            </nav>
+          </div>
+        )}
 
         {/* Plugin Navigation Section */}
         {pluginNavItems && pluginNavItems.length > 0 && (
           <div className="pt-2">
             {!isCollapsed && pluginSectionTitle && (
-              <div className="px-3 pb-2 text-xs font-semibold uppercase tracking-wider text-[var(--color-text-subtle)]">
+              <div className="px-3 pb-2 text-[10px] font-semibold uppercase tracking-wider text-[var(--color-text-subtle)]">
                 {pluginSectionTitle}
               </div>
             )}
             <nav className="space-y-1">
               {pluginNavItems.map((item) => (
-                <NavItemRenderer key={item.id} item={item} isCollapsed={isCollapsed} />
+                <NavItemRenderer key={item.id} item={item} isCollapsed={isCollapsed} linkComponent={linkComponent} />
               ))}
             </nav>
           </div>

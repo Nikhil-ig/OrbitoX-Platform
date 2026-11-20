@@ -8,6 +8,7 @@ export interface NavItemRendererProps {
   touchStation?: boolean;
   className?: string;
   onItemClick?: (item: NavItem) => void;
+  linkComponent?: React.ComponentType<any>;
 }
 
 /**
@@ -26,6 +27,7 @@ export function NavItemRenderer({
   touchStation = false,
   className,
   onItemClick,
+  linkComponent,
 }: NavItemRendererProps) {
   const content = (
     <>
@@ -68,8 +70,23 @@ export function NavItemRenderer({
     }
   };
 
+  const LinkComp = item.linkComponent || linkComponent;
+
   // 1. Real Link Destination (Active Navigation)
   if (item.href && item.href !== '#' && !item.disabled) {
+    if (LinkComp) {
+      return (
+        <LinkComp
+          href={item.href}
+          className={baseClasses}
+          aria-current={item.active ? 'page' : undefined}
+          title={isCollapsed ? (item.title || item.label) : undefined}
+          onClick={handleClick}
+        >
+          {content}
+        </LinkComp>
+      );
+    }
     return (
       <a
         href={item.href}

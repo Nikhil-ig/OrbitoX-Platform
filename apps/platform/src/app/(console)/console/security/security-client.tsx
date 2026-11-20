@@ -26,6 +26,7 @@ import {
   Textarea,
   Label,
 } from '@orbitox-io/ui';
+import { useStepUpAuth } from '../components/step-up-modal';
 import type {
   SecurityOverview,
   ApiKeyItem,
@@ -38,9 +39,11 @@ interface SecurityClientProps {
 }
 
 export function SecurityClient({ initialOverview }: SecurityClientProps) {
+  const { stepUpDialog, requestStepUpAuth } = useStepUpAuth();
   const [keys, setKeys] = React.useState<ApiKeyItem[]>(initialOverview.keys);
   const [operators] = React.useState<OperatorItem[]>(initialOverview.operators);
   const [lockouts, setLockouts] = React.useState<LockoutItem[]>(initialOverview.lockouts);
+  const [actionError, setActionError] = React.useState<string | null>(null);
 
   // Ephemeral Secret Banner State
   const [bannerKey, setBannerKey] = React.useState<{
@@ -78,6 +81,11 @@ export function SecurityClient({ initialOverview }: SecurityClientProps) {
     }
   };
 
+  const getCsrfToken = () => {
+    if (typeof document === 'undefined') return '';
+    return document.cookie.match(/(?:orbitox_operator_csrf|orbitox_customer_csrf|orbitox_csrf)=([^;]+)/)?.[1] || '';
+  };
+
   // Create API Key
   const handleCreateSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -88,11 +96,15 @@ export function SecurityClient({ initialOverview }: SecurityClientProps) {
 
     setIsCreatingKey(true);
     setCreateError(null);
+    setActionError(null);
 
     try {
       const res = await fetch('/api/v1/platform/security-keys', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          'x-csrf-token': getCsrfToken(),
+        },
         body: JSON.stringify({
           name: newKeyName.trim(),
           scopes: [newKeyScope],
@@ -125,10 +137,14 @@ export function SecurityClient({ initialOverview }: SecurityClientProps) {
   // Rotate Key
   const handleRotateKey = async (key: ApiKeyItem) => {
     setRotatingKeyId(key.id);
+    setActionError(null);
     try {
       const res = await fetch(`/api/v1/platform/security-keys/${key.id}/rotate`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          'x-csrf-token': getCsrfToken(),
+        },
         body: JSON.stringify({
           graceWindowHours: 24,
           reason: 'Manual key rotation from Operator Console',
@@ -152,7 +168,7 @@ export function SecurityClient({ initialOverview }: SecurityClientProps) {
         isNew: false,
       });
     } catch (err: any) {
-      alert(err?.message || 'Failed to rotate key');
+      setActionError(err?.message || 'Failed to rotate key');
     } finally {
       setRotatingKeyId(null);
     }
@@ -160,10 +176,14 @@ export function SecurityClient({ initialOverview }: SecurityClientProps) {
 
   // Revoke Key
   const handleRevokeKey = async (key: ApiKeyItem, reason?: string) => {
+    setActionError(null);
     try {
       const res = await fetch(`/api/v1/platform/security-keys/${key.id}/revoke`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          'x-csrf-token': getCsrfToken(),
+        },
         body: JSON.stringify({ reason: reason || 'Revoked by platform operator' }),
       });
 
@@ -174,7 +194,7 @@ export function SecurityClient({ initialOverview }: SecurityClientProps) {
 
       setKeys((prev) => prev.filter((k) => k.id !== key.id));
     } catch (err: any) {
-      alert(err?.message || 'Failed to revoke key');
+      setActionError(err?.message || 'Failed to revoke key');
     }
   };
 
@@ -183,15 +203,19 @@ export function SecurityClient({ initialOverview }: SecurityClientProps) {
     e.preventDefault();
     if (!unlockTarget) return;
     if (unlockReason.trim().length < 5) {
-      alert('Justification reason must be at least 5 characters.');
+      setActionError('Justification reason must be at least 5 characters.');
       return;
     }
 
     setIsUnlocking(true);
+    setActionError(null);
     try {
       const res = await fetch('/api/v1/platform/security-keys/unlock', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          'x-csrf-token': getCsrfToken(),
+        },
         body: JSON.stringify({
           email: unlockTarget.email,
           reason: unlockReason.trim(),
@@ -207,7 +231,7 @@ export function SecurityClient({ initialOverview }: SecurityClientProps) {
       setUnlockTarget(null);
       setUnlockReason('');
     } catch (err: any) {
-      alert(err?.message || 'Failed to unlock operator');
+      setActionError(err?.message || 'Failed to unlock operator');
     } finally {
       setIsUnlocking(false);
     }
@@ -235,6 +259,19 @@ export function SecurityClient({ initialOverview }: SecurityClientProps) {
           Create API key
         </Button>
       </div>
+
+      {/* Action Error Banner */}
+      {actionError && (
+        <div className="p-3.5 rounded-[var(--radius-card)] bg-[var(--color-danger-subtle)] border border-[var(--color-danger)] text-[var(--color-danger)] text-xs flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <AlertCircle className="h-4 w-4 shrink-0" />
+            <span>{actionError}</span>
+          </div>
+          <button type="button" onClick={() => setActionError(null)} className="underline text-xs">
+            Dismiss
+          </button>
+        </div>
+      )}
 
       {/* 2. Ephemeral Secret Banner (Matching API keys · rotate.png) */}
       {bannerKey && (
@@ -366,6 +403,7 @@ export function SecurityClient({ initialOverview }: SecurityClientProps) {
                           description={`Revoking this key immediately refuses all machine credentials and webhooks authenticating with ${k.keyId}. This cannot be undone.`}
                           expectedConfirmationText={`revoke ${k.keyId}`}
                           requireReason={true}
+                          onStepUpAuth={requestStepUpAuth}
                           confirmButtonLabel="Revoke Key"
                           onConfirm={async ({ reason }) => {
                             await handleRevokeKey(k, reason);
@@ -563,6 +601,9 @@ export function SecurityClient({ initialOverview }: SecurityClientProps) {
           </form>
         </DialogContent>
       </Dialog>
+
+      {/* Step-Up Re-Authentication Modal */}
+      {stepUpDialog}
     </div>
   );
 }

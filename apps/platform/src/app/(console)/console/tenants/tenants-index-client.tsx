@@ -26,15 +26,19 @@ export function TenantsIndexClient({ initialData }: TenantsIndexClientProps) {
   const [search, setSearch] = React.useState('');
   const [statusFilter, setStatusFilter] = React.useState<'ALL' | 'ACTIVE' | 'SUSPENDED'>('ALL');
   const [pluginFilter, setPluginFilter] = React.useState<'ALL' | 'pos' | 'crm' | 'hospital'>('ALL');
+  const [page, setPage] = React.useState(initialData.page || 1);
+  const pageSize = initialData.pageSize || 20;
   const [loading, setLoading] = React.useState(false);
 
-  const fetchTenants = React.useCallback(async () => {
+  const fetchTenants = React.useCallback(async (targetPage = page) => {
     try {
       setLoading(true);
       const params = new URLSearchParams();
       if (search.trim()) params.set('search', search.trim());
       if (statusFilter !== 'ALL') params.set('status', statusFilter);
       if (pluginFilter !== 'ALL') params.set('plugin', pluginFilter);
+      params.set('page', String(targetPage));
+      params.set('pageSize', String(pageSize));
 
       const res = await fetch(`/api/v1/platform/tenants?${params.toString()}`);
       const json = await res.json();
@@ -46,15 +50,16 @@ export function TenantsIndexClient({ initialData }: TenantsIndexClientProps) {
     } finally {
       setLoading(false);
     }
-  }, [search, statusFilter, pluginFilter]);
+  }, [search, statusFilter, pluginFilter, page, pageSize]);
 
-  // Debounced search trigger
+  // Debounced search trigger (reset to page 1 on filter/search change)
   React.useEffect(() => {
     const timer = setTimeout(() => {
-      fetchTenants();
+      fetchTenants(1);
+      setPage(1);
     }, 250);
     return () => clearTimeout(timer);
-  }, [search, statusFilter, pluginFilter, fetchTenants]);
+  }, [search, statusFilter, pluginFilter]);
 
   return (
     <div className="space-y-6 max-w-6xl mx-auto py-2">
@@ -72,7 +77,7 @@ export function TenantsIndexClient({ initialData }: TenantsIndexClientProps) {
           <Button
             variant="secondary"
             size="sm"
-            onClick={fetchTenants}
+            onClick={() => fetchTenants()}
             disabled={loading}
             className="rounded-full flex items-center gap-2"
           >
@@ -273,8 +278,12 @@ export function TenantsIndexClient({ initialData }: TenantsIndexClientProps) {
             <Button
               variant="secondary"
               size="sm"
-              disabled={data.page <= 1}
-              onClick={() => {}}
+              disabled={data.page <= 1 || loading}
+              onClick={() => {
+                const prev = Math.max(1, data.page - 1);
+                setPage(prev);
+                fetchTenants(prev);
+              }}
               className="rounded-full text-xs"
             >
               Previous
@@ -285,8 +294,12 @@ export function TenantsIndexClient({ initialData }: TenantsIndexClientProps) {
             <Button
               variant="secondary"
               size="sm"
-              disabled={data.page >= data.totalPages}
-              onClick={() => {}}
+              disabled={data.page >= data.totalPages || loading}
+              onClick={() => {
+                const next = Math.min(data.totalPages, data.page + 1);
+                setPage(next);
+                fetchTenants(next);
+              }}
               className="rounded-full text-xs"
             >
               Next

@@ -426,32 +426,34 @@ export async function getTenantDetail(
 
   // Fetch domains
   const domains: TenantDomainInfo[] = [];
-  if (project.customDomain) {
-    domains.push({
-      domain: project.customDomain,
-      isApex: !project.customDomain.includes('.'),
-      status: 'VERIFIED',
-      tlsStatus: 'ACTIVE',
-      configuredAt: project.createdAt ? new Date(project.createdAt).toISOString() : new Date().toISOString(),
-    });
-  }
 
   if (project.environments) {
     for (const env of project.environments) {
       if (env.domains) {
         for (const dom of env.domains) {
           if (!domains.some((d) => d.domain === dom.domainName)) {
+            const isVerified = dom.verificationStatus === 'VERIFIED' || dom.verificationStatus === 'SUCCESS';
             domains.push({
               domain: dom.domainName,
-              isApex: dom.isApex,
-              status: (dom.verificationStatus as any) || 'VERIFIED',
-              tlsStatus: dom.verificationStatus === 'VERIFIED' ? 'ACTIVE' : 'ISSUING',
+              isApex: Boolean(dom.isApex),
+              status: dom.verificationStatus === 'VERIFIED' ? 'VERIFIED' : dom.verificationStatus === 'FAILED' ? 'FAILED' : 'PENDING_DNS',
+              tlsStatus: dom.tlsCertificateStatus === 'ACTIVE' || (isVerified && dom.tlsCertificateStatus !== 'FAILED') ? 'ACTIVE' : 'ISSUING',
               configuredAt: dom.createdAt ? new Date(dom.createdAt).toISOString() : new Date().toISOString(),
             });
           }
         }
       }
     }
+  }
+
+  if (project.customDomain && !domains.some((d) => d.domain === project.customDomain)) {
+    domains.push({
+      domain: project.customDomain,
+      isApex: !project.customDomain.includes('.'),
+      status: 'PENDING_DNS',
+      tlsStatus: 'ISSUING',
+      configuredAt: project.createdAt ? new Date(project.createdAt).toISOString() : new Date().toISOString(),
+    });
   }
 
   // Fetch recent audit events - strictly scoped by tenant projectId / entityId (B-2 fix: zero free-text leaks)

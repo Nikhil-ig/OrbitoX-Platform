@@ -14,6 +14,7 @@ export interface NavItem {
   disabled?: boolean;
   onClick?: (e?: React.MouseEvent) => void;
   title?: string;
+  linkComponent?: React.ComponentType<any>;
 }
 
 export interface NavGroup {

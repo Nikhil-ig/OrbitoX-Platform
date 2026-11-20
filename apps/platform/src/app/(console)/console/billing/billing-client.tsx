@@ -42,6 +42,7 @@ import type {
   BillingInvoiceItem,
   BillingInvoiceListResult,
 } from '@/server/billing/billing-service';
+import { useStepUpAuth } from '../components/step-up-modal';
 
 interface BillingClientProps {
   initialSummary: BillingSummary;
@@ -56,6 +57,7 @@ export function BillingClient({
   operatorEmail,
   operatorRole,
 }: BillingClientProps) {
+  const { stepUpDialog, requestStepUpAuth } = useStepUpAuth();
   const [summary, setSummary] = React.useState<BillingSummary>(initialSummary);
   const [invoices, setInvoices] = React.useState<BillingInvoiceItem[]>(initialInvoices.items);
   const [search, setSearch] = React.useState('');
@@ -119,6 +121,11 @@ export function BillingClient({
     }
   };
 
+  const getCsrfToken = () => {
+    if (typeof document === 'undefined') return '';
+    return document.cookie.match(/(?:orbitox_operator_csrf|orbitox_customer_csrf|orbitox_csrf)=([^;]+)/)?.[1] || '';
+  };
+
   // 1. Retry Payment Action
   const handleRetryPayment = async (invoice: BillingInvoiceItem) => {
     try {
@@ -126,6 +133,10 @@ export function BillingClient({
       setActionMessage(null);
       const res = await fetch(`/api/v1/platform/billing/invoices/${encodeURIComponent(invoice.id)}/retry`, {
         method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-csrf-token': getCsrfToken(),
+        },
       });
       const json = await res.json();
       if (!res.ok || !json.success) {
@@ -146,7 +157,10 @@ export function BillingClient({
       setActionMessage(null);
       const res = await fetch(`/api/v1/platform/billing/invoices/${encodeURIComponent(targetId)}/mark-paid`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          'x-csrf-token': getCsrfToken(),
+        },
         body: JSON.stringify({ reason }),
       });
       const json = await res.json();
@@ -166,7 +180,10 @@ export function BillingClient({
       setActionMessage(null);
       const res = await fetch(`/api/v1/platform/billing/subscriptions/${encodeURIComponent(targetSubId)}/cancel`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          'x-csrf-token': getCsrfToken(),
+        },
         body: JSON.stringify({ reason }),
       });
       const json = await res.json();
@@ -187,7 +204,10 @@ export function BillingClient({
       setActionMessage(null);
       const res = await fetch('/api/v1/platform/billing/grace-period', {
         method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          'x-csrf-token': getCsrfToken(),
+        },
         body: JSON.stringify(gracePolicyForm),
       });
       const json = await res.json();
@@ -209,7 +229,10 @@ export function BillingClient({
       setActionMessage(null);
       const res = await fetch('/api/v1/platform/plans', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          'x-csrf-token': getCsrfToken(),
+        },
         body: JSON.stringify(newPlan),
       });
       const json = await res.json();
@@ -235,12 +258,54 @@ export function BillingClient({
   };
 
   // 6. Send Grace Reminder Action
-  const handleSendReminder = (subId: string) => {
-    setRemindingSubId(subId);
-    setTimeout(() => {
+  const handleSendReminder = async (subId: string) => {
+    try {
+      setRemindingSubId(subId);
+      setActionMessage(null);
+      const res = await fetch(`/api/v1/platform/billing/subscriptions/${encodeURIComponent(subId)}/remind`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-csrf-token': getCsrfToken(),
+        },
+      });
+      const json = await res.json();
+      if (!res.ok || !json.success) {
+        throw new Error(json.error?.message || 'Failed to dispatch payment reminder.');
+      }
+      setActionMessage({ type: 'success', text: `Payment reminder queued for delivery to ${json.data.recipient}.` });
+    } catch (err: any) {
+      setActionMessage({ type: 'error', text: err.message });
+    } finally {
       setRemindingSubId(null);
-      setActionMessage({ type: 'success', text: `Payment reminder notification sent to ${subId}.` });
-    }, 600);
+    }
+  };
+
+  // 7. Resolve Unknown Webhook Event Action
+  const handleResolveUnknownEvent = async (eventId: string) => {
+    try {
+      setActionMessage(null);
+      const res = await fetch(`/api/v1/platform/billing/unknown-events/${encodeURIComponent(eventId)}/resolve`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-csrf-token': getCsrfToken(),
+        },
+        body: JSON.stringify({ resolution: 'Operator reviewed and marked handled' }),
+      });
+      const json = await res.json();
+      if (!res.ok || !json.success) {
+        throw new Error(json.error?.message || 'Failed to resolve unknown event.');
+      }
+      setActionMessage({ type: 'success', text: `Webhook event ${eventId} marked as handled and resolved.` });
+      const summaryRes = await fetch('/api/v1/platform/billing/summary');
+      if (summaryRes.ok) {
+        const summaryData = await summaryRes.json();
+        if (summaryData.data) setSummary(summaryData.data);
+      }
+    } catch (err: any) {
+      setActionMessage({ type: 'error', text: err.message });
+    }
   };
 
   return (
@@ -359,7 +424,7 @@ export function BillingClient({
                   variant="secondary"
                   size="sm"
                   className="rounded-full text-xs"
-                  onClick={() => setActionMessage({ type: 'success', text: 'Webhook event marked as handled.' })}
+                  onClick={() => summary.needsAction.unknownEvent && handleResolveUnknownEvent(summary.needsAction.unknownEvent.id)}
                 >
                   Mark handled
                 </Button>
@@ -407,6 +472,7 @@ export function BillingClient({
                     description={`Cancelling subscription ${sub.id} immediately revokes auto-renewal and initiates tenant suspension procedures.`}
                     expectedConfirmationText="CANCEL_SUBSCRIPTION"
                     requireReason={true}
+                    onStepUpAuth={requestStepUpAuth}
                     confirmButtonLabel="Cancel Subscription"
                     onConfirm={(payload) => handleExecuteCancelSubscription(sub.id, payload.reason || '')}
                   />
@@ -594,6 +660,7 @@ export function BillingClient({
                             description={`Manually recording payment for invoice ${inv.id} (₹${(inv.amountMinor / 100).toLocaleString('en-IN')}). This action bypasses gateway settlement and will be permanently recorded in the audit trail.`}
                             expectedConfirmationText="MARK_PAID"
                             requireReason={true}
+                            onStepUpAuth={requestStepUpAuth}
                             confirmButtonLabel="Mark as Paid"
                             onConfirm={(payload) => handleExecuteMarkPaid(inv.id, payload.reason || '')}
                           />
@@ -927,6 +994,9 @@ export function BillingClient({
           </div>
         </DialogContent>
       </Dialog>
+
+      {/* Step-Up Re-Authentication Modal */}
+      {stepUpDialog}
     </div>
   );
 }

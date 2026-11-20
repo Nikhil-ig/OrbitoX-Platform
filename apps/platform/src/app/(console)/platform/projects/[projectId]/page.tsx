@@ -302,7 +302,7 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ projec
   if (loading && !project) {
     return (
       <div className={styles.page} aria-busy="true">
-        <Link href="/platform/fleet" className={styles.backLink}>← Back to Fleet</Link>
+        <Link href="/console/projects" className={styles.backLink}>← Back to Projects</Link>
         <div className={styles.card} style={{ height: '300px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
           <div style={{ color: 'var(--ui-text-muted)', fontSize: '14px' }}>Loading project details…</div>
         </div>
@@ -313,7 +313,7 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ projec
   if (error || !project) {
     return (
       <div className={styles.page}>
-        <Link href="/platform/fleet" className={styles.backLink}>← Back to Fleet</Link>
+        <Link href="/console/projects" className={styles.backLink}>← Back to Projects</Link>
         <div className={styles.card}>
           <h2 style={{ margin: 0, color: 'var(--ui-danger)' }}>Failed to load project</h2>
           <p style={{ margin: '4px 0 0', color: 'var(--ui-text-secondary)' }}>{error ?? 'Project not found'}</p>
@@ -325,8 +325,8 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ projec
   return (
     <div className={styles.page}>
       {/* Back Link */}
-      <Link href="/platform/fleet" className={styles.backLink}>
-        ← Back to Fleet
+      <Link href="/console/projects" className={styles.backLink}>
+        ← Back to Projects
       </Link>
 
       {/* Header */}

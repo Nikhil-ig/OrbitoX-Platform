@@ -5,9 +5,11 @@ import { F1AccountStep } from './steps/f1-account';
 import { F2OrganizationStep } from './steps/f2-organization';
 import { F3RestaurantStep } from './steps/f3-restaurant';
 import { F4WorkingPreviewStep } from './steps/f4-preview';
+import { F5PlanStep } from './steps/f5-plan';
+import { F6ChecklistStep } from './steps/f6-checklist';
 import { D6MobilePreviewView } from './steps/d6-mobile-preview';
 
-type OnboardingStep = 'F1' | 'F2' | 'F3' | 'F4';
+type OnboardingStep = 'F1' | 'F2' | 'F3' | 'F4' | 'F5' | 'F6';
 
 interface OnboardingState {
   step: OnboardingStep;
@@ -19,6 +21,10 @@ interface OnboardingState {
     restaurantName: string;
     tableCount: number;
     templateId: string;
+  };
+  subscription?: {
+    planId: string;
+    billingCycle: 'monthly' | 'annual';
   };
 }
 
@@ -92,6 +98,17 @@ export default function OnboardingPage() {
     }));
   };
 
+  const handleF5Success = (subscription: {
+    planId: string;
+    billingCycle: 'monthly' | 'annual';
+  }) => {
+    updateState((prev) => ({
+      ...prev,
+      subscription,
+      step: 'F6',
+    }));
+  };
+
   if (!mounted) {
     return (
       <div className="min-h-screen bg-[#EEF1F5] flex items-center justify-center p-8">
@@ -157,6 +174,30 @@ export default function OnboardingPage() {
           templateId={state.restaurant.templateId}
           city={state.organization?.city || 'Bengaluru'}
           onSwitchToD6Mobile={() => setViewMode('d6-mobile')}
+          onGoLive={() => updateState((prev) => ({ ...prev, step: 'F5' }))}
+        />
+      )}
+
+      {state.step === 'F5' && state.organization && state.restaurant && (
+        <F5PlanStep
+          organizationId={state.organization.id}
+          organizationName={state.organization.name}
+          city={state.organization.city}
+          gstin={state.organization.gstin}
+          tenantId={state.restaurant.tenantId}
+          restaurantName={state.restaurant.restaurantName}
+          onSuccess={handleF5Success}
+          onBack={() => updateState((prev) => ({ ...prev, step: 'F4' }))}
+        />
+      )}
+
+      {state.step === 'F6' && state.restaurant && (
+        <F6ChecklistStep
+          restaurantName={state.restaurant.restaurantName}
+          slug={state.restaurant.slug}
+          tenantId={state.restaurant.tenantId}
+          tableCount={state.restaurant.tableCount}
+          planId={state.subscription?.planId || 'growth'}
         />
       )}
     </main>

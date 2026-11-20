@@ -530,7 +530,7 @@ function FleetPageContent() {
                       </td>
                       <td data-label="Project">
                         <Link
-                          href={`/platform/projects/${p.id}`}
+                          href={`/console/projects/${p.id}`}
                           className={styles.projectLink}
                           onClick={(e) => e.stopPropagation()}
                         >
@@ -597,7 +597,7 @@ function FleetPageContent() {
                               </ul>
                               <div style={{ marginTop: '10px' }}>
                                 <Link
-                                  href={`/platform/projects/${p.id}`}
+                                  href={`/console/projects/${p.id}`}
                                   className={`${styles.btn} ${styles.btnPrimary}`}
                                   onClick={(e) => e.stopPropagation()}
                                 >

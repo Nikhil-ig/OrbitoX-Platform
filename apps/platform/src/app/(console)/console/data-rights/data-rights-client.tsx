@@ -27,12 +27,28 @@ import {
   Textarea,
   Label,
 } from '@orbitox-io/ui';
+import { useStepUpAuth } from '../components/step-up-modal';
 import type {
   DataRightsSummary,
   DataRightsRequestItem,
   CertificateVerificationResult,
 } from '@/server/data-rights/data-rights-console-service';
 import type { SignedDeletionCertificate } from '@/server/data-rights/deletion-certificate';
+
+function getCsrfToken(): string | null {
+  if (typeof document === 'undefined') return null;
+  const match = document.cookie.match(
+    /(?:orbitox_operator_csrf|orbitox_customer_csrf|orbitox_csrf)=([^;]+)/,
+  );
+  return match && match[1] ? decodeURIComponent(match[1]) : null;
+}
+
+function getJsonHeaders(): Record<string, string> {
+  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+  const csrf = getCsrfToken();
+  if (csrf) headers['x-csrf-token'] = csrf;
+  return headers;
+}
 
 interface DataRightsClientProps {
   initialSummary: DataRightsSummary;
@@ -47,7 +63,9 @@ export function DataRightsClient({
   initialKindFilter = 'all',
   initialSearch = '',
 }: DataRightsClientProps) {
+  const { stepUpDialog, requestStepUpAuth } = useStepUpAuth();
   const [summary] = React.useState<DataRightsSummary>(initialSummary);
+  const [actionError, setActionError] = React.useState<string | null>(null);
   const [requests, setRequests] = React.useState<DataRightsRequestItem[]>(initialRequests);
   const [kindFilter, setKindFilter] = React.useState<string>(initialKindFilter);
   const [searchQuery, setSearchQuery] = React.useState<string>(initialSearch);
@@ -118,7 +136,7 @@ export function DataRightsClient({
     try {
       const res = await fetch('/api/v1/platform/data-rights/verify-cert', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: getJsonHeaders(),
         body: JSON.stringify({ certificate: certInputText.trim() }),
       });
       const data = await res.json();
@@ -172,7 +190,7 @@ export function DataRightsClient({
     try {
       const res = await fetch('/api/v1/platform/data-rights', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: getJsonHeaders(),
         body: JSON.stringify({
           type: newRequestType,
           organizationId: newRequestOrg.trim(),
@@ -225,15 +243,19 @@ export function DataRightsClient({
     e.preventDefault();
     if (!cancelTarget) return;
     if (cancelReason.trim().length < 5) {
-      alert('Justification reason must be at least 5 characters.');
+      setActionError('Justification reason must be at least 5 characters.');
       return;
     }
 
+    const authed = await requestStepUpAuth();
+    if (!authed) return;
+
     setIsCancelling(true);
+    setActionError(null);
     try {
       const res = await fetch(`/api/v1/platform/data-rights/${cancelTarget.id}/cancel`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: getJsonHeaders(),
         body: JSON.stringify({ reason: cancelReason.trim() }),
       });
 
@@ -252,7 +274,7 @@ export function DataRightsClient({
       setCancelTarget(null);
       setCancelReason('');
     } catch (err: any) {
-      alert(err?.message || 'Failed to cancel request');
+      setActionError(err?.message || 'Failed to cancel request');
     } finally {
       setIsCancelling(false);
     }
@@ -260,10 +282,11 @@ export function DataRightsClient({
 
   // Handle Dangerous Hard Purge
   const handleExecuteHardPurge = async (target: DataRightsRequestItem, reason?: string) => {
+    setActionError(null);
     try {
       const res = await fetch(`/api/v1/platform/data-rights/${target.id}/purge`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: getJsonHeaders(),
         body: JSON.stringify({ reason: reason || 'Operator confirmed hard purge' }),
       });
 
@@ -294,7 +317,7 @@ export function DataRightsClient({
         openCertificate(data.certificate);
       }
     } catch (err: any) {
-      alert(err?.message || 'Failed to execute hard purge');
+      setActionError(err?.message || 'Failed to execute hard purge');
     }
   };
 
@@ -304,6 +327,19 @@ export function DataRightsClient({
 
   return (
     <div className="space-y-6 max-w-6xl mx-auto py-2">
+      {actionError && (
+        <div className="p-4 rounded-[var(--radius-card)] bg-rose-50 dark:bg-rose-950/20 border border-rose-300 dark:border-rose-800 text-rose-600 dark:text-rose-400 text-xs flex items-center justify-between">
+          <span>{actionError}</span>
+          <button
+            type="button"
+            onClick={() => setActionError(null)}
+            className="underline ml-4 text-xs font-semibold hover:opacity-80"
+          >
+            Dismiss
+          </button>
+        </div>
+      )}
+
       {/* 1. Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
@@ -383,6 +419,7 @@ export function DataRightsClient({
                 expectedConfirmationText={`purge ${scheduledDel.orgSlug}`}
                 requireReason={true}
                 confirmButtonLabel="Execute Hard Purge"
+                onStepUpAuth={requestStepUpAuth}
                 onConfirm={async ({ reason }) => {
                   const target: DataRightsRequestItem = requests.find((r) => r.id === scheduledDel.id) || {
                     id: scheduledDel.id,
@@ -600,6 +637,7 @@ export function DataRightsClient({
                             expectedConfirmationText={`purge ${req.orgSlug}`}
                             requireReason={true}
                             confirmButtonLabel="Execute Hard Purge"
+                            onStepUpAuth={requestStepUpAuth}
                             onConfirm={async ({ reason }) => {
                               await handleExecuteHardPurge(req, reason);
                             }}
@@ -956,6 +994,8 @@ export function DataRightsClient({
           </form>
         </DialogContent>
       </Dialog>
+
+      {stepUpDialog}
     </div>
   );
 }

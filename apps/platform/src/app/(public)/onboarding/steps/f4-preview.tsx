@@ -31,6 +31,7 @@ interface F4Props {
   templateId: string;
   city: string;
   onSwitchToD6Mobile?: () => void;
+  onGoLive?: () => void;
 }
 
 interface TestTicket {
@@ -59,6 +60,7 @@ export function F4WorkingPreviewStep({
   templateId,
   city,
   onSwitchToD6Mobile,
+  onGoLive,
 }: F4Props) {
   const [loadingSummary, setLoadingSummary] = useState(true);
   const [previewData, setPreviewData] = useState<any>(null);
@@ -683,6 +685,17 @@ export function F4WorkingPreviewStep({
                 </p>
               </div>
             </div>
+
+            {onGoLive && (
+              <button
+                type="button"
+                onClick={onGoLive}
+                className="w-full py-3.5 px-6 rounded-full bg-[#14161A] text-white text-xs font-bold flex items-center justify-center gap-2 cursor-pointer hover:bg-black transition-all shadow-md"
+              >
+                <span>Choose a plan and go live</span>
+                <ArrowRight className="h-4 w-4" />
+              </button>
+            )}
           </div>
         </div>
       </div>

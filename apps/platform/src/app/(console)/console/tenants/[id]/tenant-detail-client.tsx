@@ -41,6 +41,7 @@ import {
   useToast,
 } from '@orbitox-io/ui';
 import type { TenantDetail } from '@/server/tenants/tenants-service';
+import { useStepUpAuth } from '../../components/step-up-modal';
 
 export interface TenantDetailClientProps {
   initialTenant: TenantDetail;
@@ -49,6 +50,7 @@ export interface TenantDetailClientProps {
 export function TenantDetailClient({ initialTenant }: TenantDetailClientProps) {
   const router = useRouter();
   const { toast } = useToast();
+  const { stepUpDialog, requestStepUpAuth } = useStepUpAuth();
   const [tenant, setTenant] = React.useState<TenantDetail>(initialTenant);
   const [activeTab, setActiveTab] = React.useState<'overview' | 'domains' | 'plugins' | 'quotas' | 'audit'>('overview');
   const [isActionLoading, setIsActionLoading] = React.useState(false);
@@ -65,9 +67,22 @@ export function TenantDetailClient({ initialTenant }: TenantDetailClientProps) {
     if (typeof document === 'undefined') return undefined;
     return (
       document.cookie.split('; ').find((row) => row.startsWith('orbitox_operator_csrf='))?.split('=')[1] ||
-      document.cookie.split('; ').find((row) => row.startsWith('orbitox_customer_csrf='))?.split('=')[1]
+      document.cookie.split('; ').find((row) => row.startsWith('orbitox_customer_csrf='))?.split('=')[1] ||
+      document.cookie.split('; ').find((row) => row.startsWith('orbitox_csrf='))?.split('=')[1]
     );
   };
+
+  const refreshTenantDetail = React.useCallback(async () => {
+    try {
+      const res = await fetch(`/api/v1/platform/tenants/${tenant.id}`);
+      const json = await res.json();
+      if (res.ok && json.success && json.data) {
+        setTenant(json.data);
+      }
+    } catch (err) {
+      console.error('Failed to refresh tenant details:', err);
+    }
+  }, [tenant.id]);
 
   const handleSuspend = async ({ reason }: { reason?: string }) => {
     try {
@@ -84,20 +99,7 @@ export function TenantDetailClient({ initialTenant }: TenantDetailClientProps) {
 
       const json = await res.json();
       if (res.ok && json.success) {
-        setTenant((prev) => ({
-          ...prev,
-          status: 'SUSPENDED',
-          recentAuditEvents: [
-            {
-              id: `aud_${Date.now()}`,
-              action: 'TENANT_SUSPENDED',
-              actorEmail: 'operator@orbitox.io',
-              occurredAt: new Date().toISOString(),
-              reason: reason || 'Operator administrative suspension',
-            },
-            ...prev.recentAuditEvents,
-          ],
-        }));
+        await refreshTenantDetail();
         toast({
           title: 'Tenant suspended',
           description: `Tenant ${tenant.name} is now suspended. External API requests will fail with 402.`,
@@ -136,20 +138,7 @@ export function TenantDetailClient({ initialTenant }: TenantDetailClientProps) {
 
       const json = await res.json();
       if (res.ok && json.success) {
-        setTenant((prev) => ({
-          ...prev,
-          status: 'ACTIVE',
-          recentAuditEvents: [
-            {
-              id: `aud_${Date.now()}`,
-              action: 'TENANT_RESUMED',
-              actorEmail: 'operator@orbitox.io',
-              occurredAt: new Date().toISOString(),
-              reason: 'Operator manual reactivation',
-            },
-            ...prev.recentAuditEvents,
-          ],
-        }));
+        await refreshTenantDetail();
         toast({
           title: 'Tenant reactivated',
           description: `Tenant ${tenant.name} services have been successfully restored.`,
@@ -194,13 +183,8 @@ export function TenantDetailClient({ initialTenant }: TenantDetailClientProps) {
 
       const json = await res.json();
       if (res.ok && json.success) {
-        setTenant((prev) => ({
-          ...prev,
-          name: editForm.name.trim(),
-          planTier: editForm.planTier.trim(),
-          customDomain: editForm.customDomain.trim() || prev.customDomain,
-        }));
         setIsEditModalOpen(false);
+        await refreshTenantDetail();
         toast({
           title: 'Tenant Updated',
           description: `Updated attributes for ${editForm.name}.`,
@@ -280,24 +264,11 @@ export function TenantDetailClient({ initialTenant }: TenantDetailClientProps) {
 
       const json = await res.json();
       if (res.ok && json.success) {
-        setTenant((prev) => ({
-          ...prev,
-          customDomain: newDomain.trim(),
-          domains: [
-            {
-              domain: newDomain.trim(),
-              isApex: false,
-              status: 'VERIFIED',
-              tlsStatus: 'ACTIVE',
-              configuredAt: new Date().toISOString(),
-            },
-            ...prev.domains,
-          ],
-        }));
         setNewDomain('');
+        await refreshTenantDetail();
         toast({
-          title: 'Domain updated',
-          description: `Custom domain configured to ${newDomain.trim()}`,
+          title: 'Domain Configured',
+          description: `Custom domain request accepted. Authoritative DNS verification and TLS issuance in progress.`,
         });
       } else {
         toast({
@@ -427,6 +398,7 @@ export function TenantDetailClient({ initialTenant }: TenantDetailClientProps) {
               description="Suspending this tenant will immediately return 402 PAYMENT_REQUIRED on all external API requests, disable POS write transactions, and revoke operator API tokens. Hospital patient telemetry will fail closed."
               expectedConfirmationText="SUSPEND"
               requireReason
+              onStepUpAuth={requestStepUpAuth}
               confirmButtonLabel="Suspend Tenant"
               onConfirm={handleSuspend}
             />
@@ -448,6 +420,7 @@ export function TenantDetailClient({ initialTenant }: TenantDetailClientProps) {
             description={`Permanently purge project cell ${tenant.id} and cascade de-register all plugin installations. This action is irreversible and requires fresh reauthentication.`}
             expectedConfirmationText="DELETE"
             requireReason
+            onStepUpAuth={requestStepUpAuth}
             confirmButtonLabel="Decommission Tenant"
             onConfirm={handleDelete}
           />
@@ -870,6 +843,9 @@ export function TenantDetailClient({ initialTenant }: TenantDetailClientProps) {
           </form>
         </DialogContent>
       </Dialog>
+
+      {/* Step-Up Re-Authentication Modal */}
+      {stepUpDialog}
     </div>
   );
 }

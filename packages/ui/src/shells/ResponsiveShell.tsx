@@ -15,12 +15,18 @@ export interface ResponsiveShellProps {
   brand?: React.ReactNode;
   brandIcon?: React.ReactNode;
   navItems: NavItem[];
+  managementNavItems?: NavItem[];
+  managementSectionTitle?: string;
   bottomNavItems?: NavItem[];
   tenantSwitcher?: React.ReactNode;
+  searchSlot?: React.ReactNode;
+  contextSlot?: React.ReactNode;
+  bottomCard?: React.ReactNode;
   userProfile?: React.ReactNode;
   topBarActions?: React.ReactNode;
   breadcrumbs?: React.ReactNode;
   touchStation?: boolean;
+  linkComponent?: React.ComponentType<any>;
   children: React.ReactNode;
   className?: string;
 }
@@ -38,12 +44,18 @@ export function ResponsiveShell({
   brand,
   brandIcon,
   navItems,
+  managementNavItems,
+  managementSectionTitle,
   bottomNavItems,
   tenantSwitcher,
+  searchSlot,
+  contextSlot,
+  bottomCard,
   userProfile,
   topBarActions,
   breadcrumbs,
   touchStation = false,
+  linkComponent,
   children,
   className,
 }: ResponsiveShellProps) {
@@ -77,12 +89,17 @@ export function ResponsiveShell({
       <div className="hidden xl:flex shrink-0 z-20" data-testid="desktop-sidebar-band">
         <SidebarCard
           brand={brandElement}
+          searchSlot={searchSlot}
           tenantSwitcher={tenantSwitcher}
           items={navItems}
+          managementNavItems={managementNavItems}
+          managementSectionTitle={managementSectionTitle}
           pluginNavItems={bottomNavItems}
+          bottomCard={bottomCard}
           userProfile={userProfile}
           isCollapsed={isSidebarCollapsed}
           onToggleCollapse={() => setIsSidebarCollapsed((prev) => !prev)}
+          linkComponent={linkComponent}
         />
       </div>
 
@@ -106,6 +123,8 @@ export function ResponsiveShell({
               {breadcrumbs}
             </div>
           }
+          searchSlot={searchSlot}
+          contextSlot={contextSlot}
           actionSlot={topBarActions}
           onMenuToggle={() => setIsMoreSheetOpen(true)}
           showMenuButton={hasOverflow}
