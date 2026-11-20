@@ -1052,4 +1052,200 @@ describe('OrbitoX Onboarding Multi-Viewport & Axe Accessibility E2E', () => {
       await page.unroute('**/api/v1/customer/tenants/*/preview-summary');
     });
   });
+
+  // ─────────────────────────────────────────────────────────────────────────────
+  // 5. F5 Plan Selection & F6 Operational Checklist Journey
+  // ─────────────────────────────────────────────────────────────────────────────
+  describe('5. F5 Plan Selection & F6 Operational Checklist Journey', () => {
+    let page: Page;
+    let context: any;
+
+    before(async () => {
+      context = await browser.newContext({
+        viewport: { width: 1440, height: 900 },
+        deviceScaleFactor: 2,
+      });
+      page = await context.newPage();
+    });
+
+    after(async () => {
+      if (page) await page.close();
+      if (context) await context.close();
+    });
+
+    it('F5 Plan Selection: renders catalogue plans, toggles billing cycles and passes Axe audit', async () => {
+      await page.goto(`${BASE_URL}/onboarding`, { waitUntil: 'domcontentloaded' });
+      await page.evaluate((key) => {
+        localStorage.setItem(
+          key,
+          JSON.stringify({
+            step: 'F5',
+            user: { userId: 'usr_f5_test', email: 'owner@f5restaurant.com', name: 'Rohan Verma' },
+            organization: { id: 'org_f5_test', name: 'Verma Hospitality', slug: 'verma-hospitality', city: 'Mumbai' },
+            restaurant: {
+              tenantId: 'org/org_f5_test/project/verma-bistro/environment/prod',
+              slug: 'verma-bistro',
+              restaurantName: 'Verma Bistro',
+              tableCount: 16,
+              templateId: 'saffron',
+            },
+          })
+        );
+      }, STORAGE_KEY);
+
+      await page.reload({ waitUntil: 'domcontentloaded' });
+      await page.waitForSelector('text=Starter', { timeout: 15000 });
+      await page.waitForSelector('text=Growth', { timeout: 15000 });
+      await page.waitForSelector('text=Pro Enterprise', { timeout: 15000 });
+
+      // Verify pricing details exist
+      assert.ok(await page.locator('text=₹1,599').or(page.locator('text=1599')).first().isVisible());
+
+      // Toggle monthly billing cycle
+      const monthlyBtn = page.locator('button:has-text("Monthly billing")').first();
+      if (await monthlyBtn.isVisible()) {
+        await monthlyBtn.click();
+        await page.waitForTimeout(300);
+      }
+
+      // Axe WCAG 2.2 AA audit on F5
+      const results = await new AxeBuilder({ page })
+        .withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa'])
+        .analyze();
+      const criticalOrSerious = results.violations.filter(
+        (v) => v.impact === 'critical' || v.impact === 'serious'
+      );
+      if (criticalOrSerious.length > 0) {
+        console.error('F5 Axe Violations:', JSON.stringify(criticalOrSerious, null, 2));
+      }
+      assert.equal(criticalOrSerious.length, 0, 'F5 Plan Selection must have 0 critical/serious a11y violations');
+    });
+
+    it('F6 Setup Checklist: renders authoritative 5-item checklist and 6 activation gates cleanly and passes Axe audit', async () => {
+      // Mock activation status with truthful gates
+      await page.route('**/api/v1/customer/tenants/*/activation-status', async (route) => {
+        await route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({
+            ok: true,
+            isLive: false,
+            isAwaitingWebhook: false,
+            gates: {
+              orgMapped: true,
+              subscriptionActive: true,
+              pluginActive: true,
+              sagaCompleted: true,
+              runtimeProvisioned: true,
+              runtimeHealthy: true,
+            },
+            subscription: { id: 'sub_test_123', status: 'active', planId: 'plan_growth_annual' },
+            provisioning: { status: 'COMPLETED' },
+            runtime: { status: 'ACTIVE', health: 'HEALTHY' },
+            installation: { status: 'ACTIVE', planId: 'growth' },
+            checklist: { completedCount: 0, totalCount: 5, allCompleted: false },
+          }),
+        });
+      });
+
+      // Mock checklist get
+      await page.route('**/api/v1/customer/tenants/*/checklist', async (route) => {
+        if (route.request().method() === 'GET') {
+          await route.fulfill({
+            status: 200,
+            contentType: 'application/json',
+            body: JSON.stringify({
+              ok: true,
+              checklist: {
+                tenantId: 'org/org_f6_test/project/verma-bistro/environment/prod',
+                version: 1,
+                items: [
+                  { id: 'qr', title: 'Print Table QR Codes', description: 'Download ready-to-print placards', actionLabel: 'Download QR Sheet', status: 'NOT_STARTED', completed: false, statusNote: 'Not yet printed' },
+                  { id: 'kds', title: 'Station Kitchen Display (KDS)', description: 'Bookmark and open the real-time order queue', actionLabel: 'Open Station KDS', status: 'NOT_STARTED', completed: false, statusNote: 'Station unverified' },
+                  { id: 'staff', title: 'Invite Captains & Service Staff', description: 'Grant role-based PIN access', actionLabel: 'Invite Team', status: 'NOT_STARTED', completed: false, statusNote: 'No invitations sent' },
+                  { id: 'payment', title: 'Test Live UPI / Card Payment', description: 'Place and settle an authentic ₹1 test transaction', actionLabel: 'Test Settlement', status: 'NOT_STARTED', completed: false, statusNote: 'Payment unverified' },
+                  { id: 'printer', title: 'Connect Thermal ESC/POS Printer', description: 'Auto-print Kitchen Order Tickets', actionLabel: 'Configure Printer', status: 'NOT_STARTED', completed: false, statusNote: 'No printer connected' },
+                ],
+                completedCount: 0,
+                totalCount: 5,
+                allCompleted: false,
+              },
+            }),
+          });
+        } else {
+          await route.continue();
+        }
+      });
+
+      await page.goto(`${BASE_URL}/onboarding`, { waitUntil: 'domcontentloaded' });
+      await page.evaluate((key) => {
+        localStorage.setItem(
+          key,
+          JSON.stringify({
+            step: 'F6',
+            user: { userId: 'usr_f6_test', email: 'owner@f6restaurant.com', name: 'Rohan Verma' },
+            organization: { id: 'org_f6_test', name: 'Verma Hospitality', slug: 'verma-hospitality', city: 'Mumbai' },
+            restaurant: {
+              tenantId: 'org/org_f6_test/project/verma-bistro/environment/prod',
+              slug: 'verma-bistro',
+              restaurantName: 'Verma Bistro',
+              tableCount: 16,
+              templateId: 'saffron',
+            },
+          })
+        );
+      }, STORAGE_KEY);
+
+      await page.reload({ waitUntil: 'domcontentloaded' });
+      await page.waitForSelector('text=Print Table QR Codes', { timeout: 15000 });
+      await page.waitForSelector('text=Station Kitchen Display (KDS)', { timeout: 15000 });
+      await page.waitForSelector('text=Invite Captains & Service Staff', { timeout: 15000 });
+      await page.waitForSelector('text=Test Live UPI / Card Payment', { timeout: 15000 });
+      await page.waitForSelector('text=Connect Thermal ESC/POS Printer', { timeout: 15000 });
+
+      // Verify the 6 authoritative activation gates are visible
+      assert.ok(await page.locator('text=Org & Role: Verified').isVisible());
+      assert.ok(await page.locator('text=Subscription: Active').isVisible());
+      assert.ok(await page.locator('text=RestaurantOS: Active').isVisible());
+
+      // Axe WCAG 2.2 AA audit on F6
+      const results = await new AxeBuilder({ page })
+        .withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa'])
+        .analyze();
+      const criticalOrSerious = results.violations.filter(
+        (v) => v.impact === 'critical' || v.impact === 'serious'
+      );
+      if (criticalOrSerious.length > 0) {
+        console.error('F6 Axe Violations:', JSON.stringify(criticalOrSerious, null, 2));
+      }
+      assert.equal(criticalOrSerious.length, 0, 'F6 Setup Checklist must have 0 critical/serious a11y violations');
+
+      await page.unroute('**/api/v1/customer/tenants/*/activation-status');
+      await page.unroute('**/api/v1/customer/tenants/*/checklist');
+    });
+
+    it('F6 Multi-Viewport verification across all canonical viewports without horizontal overflow', async () => {
+      const viewports = [
+        { name: 'Mobile', width: 390, height: 844 },
+        { name: 'Tablet Small', width: 768, height: 1024 },
+        { name: 'Tablet Portrait', width: 834, height: 1194 },
+        { name: 'Tablet Landscape', width: 1194, height: 834 },
+        { name: 'Desktop Laptop', width: 1440, height: 900 },
+        { name: 'Desktop Large FHD', width: 1920, height: 1080 },
+      ];
+
+      for (const vp of viewports) {
+        await page.setViewportSize({ width: vp.width, height: vp.height });
+        await page.goto(`${BASE_URL}/onboarding`, { waitUntil: 'domcontentloaded' });
+        await page.waitForSelector('main', { timeout: 15000 });
+
+        const overflow = await page.evaluate(() => {
+          const docWidth = document.documentElement.offsetWidth;
+          const scrollWidth = document.documentElement.scrollWidth;
+          return scrollWidth > docWidth + 2;
+        });
+        assert.equal(overflow, false, `F6 should not have horizontal overflow at ${vp.name} (${vp.width}px)`);
+      }
+    });
+  });
 });

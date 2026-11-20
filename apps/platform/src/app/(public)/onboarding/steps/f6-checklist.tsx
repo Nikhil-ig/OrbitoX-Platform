@@ -78,6 +78,15 @@ export function F6ChecklistStep({
   const [awaitingWebhook, setAwaitingWebhook] = useState<boolean>(
     Boolean(initialAwaitingWebhook || initialSubStatus === 'authenticated'),
   );
+  const [isServerLive, setIsServerLive] = useState(false);
+  const [activationGates, setActivationGates] = useState<{
+    orgMapped?: boolean;
+    subscriptionActive?: boolean;
+    pluginActive?: boolean;
+    sagaCompleted?: boolean;
+    runtimeProvisioned?: boolean;
+    runtimeHealthy?: boolean;
+  } | null>(null);
 
   // Invite Modal state
   const [inviteModalOpen, setInviteModalOpen] = useState(false);
@@ -231,18 +240,24 @@ export function F6ChecklistStep({
         const res = await fetch(`/api/v1/customer/tenants/${encodeURIComponent(tenantId)}/activation-status`);
         if (res.ok && !cancelled) {
           const data = await res.json();
-          if (data.isLive) {
-            setRuntimeActive(true);
-            setSubscriptionStatus('active');
-            setAwaitingWebhook(false);
-            return; // Live reached, stop polling
+          setIsServerLive(Boolean(data.isLive));
+          if (data.gates) {
+            setActivationGates(data.gates);
           }
-          if (data.subscription?.status === 'active') {
-            setSubscriptionStatus('active');
-            setAwaitingWebhook(false);
+          if (data.subscription?.status) {
+            setSubscriptionStatus(data.subscription.status);
+          }
+          if (data.isAwaitingWebhook !== undefined) {
+            setAwaitingWebhook(data.isAwaitingWebhook);
           }
           if (data.runtime?.status === 'ACTIVE' || data.runtime?.health === 'HEALTHY') {
             setRuntimeActive(true);
+          }
+          if (data.isLive) {
+            setSubscriptionStatus('active');
+            setAwaitingWebhook(false);
+            setRuntimeActive(true);
+            return; // Live reached, stop polling
           }
         }
       } catch {}
@@ -351,7 +366,8 @@ export function F6ChecklistStep({
         document.body.removeChild(link);
         window.URL.revokeObjectURL(blobUrl);
 
-        await loadChecklist();
+        // Explicitly record artifact downloaded with expectedVersion
+        await sendChecklistAction({ action: 'RECORD_QR_DOWNLOAD', tablesCount: tableCount });
         setActionSuccess('Ready-to-print Table QR placards downloaded. Print and place placards on tables, then confirm placement.');
       } catch (err: any) {
         setActionError(err.message || 'Failed to download QR placard sheet.');
@@ -525,16 +541,31 @@ export function F6ChecklistStep({
       }
 
       await sendChecklistAction({
-        action: 'VERIFY_STAFF',
-        memberEmail: inviteEmail.trim(),
+        action: 'INVITE_STAFF',
+        email: inviteEmail.trim(),
+        role: inviteRole,
       });
-      setActionSuccess(`Team invitation dispatched to ${inviteEmail.trim()}.`);
+      setActionSuccess(`Team invitation dispatched to ${inviteEmail.trim()}. Status: Awaiting recipient acceptance.`);
       setInviteModalOpen(false);
-      setInviteEmail('');
     } catch (err: any) {
       setInviteError(err?.message || 'Failed to dispatch team invitation.');
     } finally {
       setInviteSubmitting(false);
+    }
+  };
+
+  const handleVerifyStaffMembership = async () => {
+    setActionLoading('staff');
+    try {
+      await sendChecklistAction({
+        action: 'VERIFY_STAFF',
+        memberEmail: inviteEmail.trim() || undefined,
+      });
+      setActionSuccess('Team member verified and active in organization.');
+    } catch (err: any) {
+      setActionError(err.message || 'Team membership has not yet been accepted by the invited user.');
+    } finally {
+      setActionLoading(null);
     }
   };
 
@@ -553,6 +584,8 @@ export function F6ChecklistStep({
           action: 'DISPATCH_PRINTER_TEST',
           driver: printerDriver,
           endpoint: printerEndpoint.trim(),
+          paperWidth: printerPaper,
+          expectedVersion: checklistVersion,
         }),
       });
 
@@ -615,8 +648,9 @@ export function F6ChecklistStep({
 
   const completedCount = items.filter((i) => i.completed).length;
   const isAwaitingActivation = Boolean(awaitingWebhook || subscriptionStatus === 'authenticated');
-  const isLiveAndActive = subscriptionStatus === 'active' && runtimeActive;
-  const isProvisioning = subscriptionStatus === 'active' && !runtimeActive;
+  // Authoritative server live gate: only data.isLive from the backend controls live status
+  const isLiveAndActive = isServerLive;
+  const isProvisioning = !isLiveAndActive && subscriptionStatus === 'active' && !isAwaitingActivation;
 
   return (
     <div className="w-full max-w-3xl mx-auto space-y-8 py-4">
@@ -651,6 +685,36 @@ export function F6ChecklistStep({
             ? `Your payment was authenticated. While your subscription awaits gateway webhook confirmation, complete your operational checklist below.`
             : `Your dining runtime is provisioned at ${slug}.orbitox.io. Complete setup steps to begin taking live diner orders.`}
         </p>
+
+        {/* Authoritative Six Activation Gates Checklist */}
+        {activationGates && !isLiveAndActive && (
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 max-w-lg mx-auto text-left text-xs bg-gray-50 border border-gray-200 rounded-xl p-3">
+            <div className="flex items-center gap-1.5">
+              <span className={`h-2 w-2 rounded-full ${activationGates.orgMapped ? 'bg-emerald-500' : 'bg-amber-400'}`} />
+              <span className="text-gray-700">Org & Role: {activationGates.orgMapped ? 'Verified' : 'Pending'}</span>
+            </div>
+            <div className="flex items-center gap-1.5">
+              <span className={`h-2 w-2 rounded-full ${activationGates.subscriptionActive ? 'bg-emerald-500' : 'bg-amber-400'}`} />
+              <span className="text-gray-700">Subscription: {activationGates.subscriptionActive ? 'Active' : 'Pending'}</span>
+            </div>
+            <div className="flex items-center gap-1.5">
+              <span className={`h-2 w-2 rounded-full ${activationGates.pluginActive ? 'bg-emerald-500' : 'bg-amber-400'}`} />
+              <span className="text-gray-700">RestaurantOS: {activationGates.pluginActive ? 'Active' : 'Pending'}</span>
+            </div>
+            <div className="flex items-center gap-1.5">
+              <span className={`h-2 w-2 rounded-full ${activationGates.sagaCompleted ? 'bg-emerald-500' : 'bg-amber-400'}`} />
+              <span className="text-gray-700">Provisioning: {activationGates.sagaCompleted ? 'Complete' : 'In Progress'}</span>
+            </div>
+            <div className="flex items-center gap-1.5">
+              <span className={`h-2 w-2 rounded-full ${activationGates.runtimeProvisioned ? 'bg-emerald-500' : 'bg-amber-400'}`} />
+              <span className="text-gray-700">Runtime: {activationGates.runtimeProvisioned ? 'Online' : 'Pending'}</span>
+            </div>
+            <div className="flex items-center gap-1.5">
+              <span className={`h-2 w-2 rounded-full ${activationGates.runtimeHealthy ? 'bg-emerald-500' : 'bg-amber-400'}`} />
+              <span className="text-gray-700">Health: {activationGates.runtimeHealthy ? 'Healthy' : 'Pending'}</span>
+            </div>
+          </div>
+        )}
 
         {/* Progress Bar with Zero Inline Styles */}
         <div className="pt-2 max-w-md mx-auto space-y-1">
@@ -779,6 +843,21 @@ export function F6ChecklistStep({
                   >
                     <CreditCard className="h-3.5 w-3.5" />
                     <span>Verify Live Gateway</span>
+                  </button>
+                )}
+
+              {/* Secondary action: Verify Accepted Staff Membership */}
+              {item.id === 'staff' &&
+                item.status === 'PENDING_VERIFICATION' &&
+                !item.completed && (
+                  <button
+                    type="button"
+                    disabled={actionLoading === 'staff'}
+                    onClick={handleVerifyStaffMembership}
+                    className="px-3.5 py-1.5 rounded-full bg-emerald-50 border border-emerald-300 text-emerald-700 hover:bg-emerald-100 text-xs font-semibold cursor-pointer transition-colors flex items-center gap-1.5"
+                  >
+                    <Check className="h-3.5 w-3.5" />
+                    <span>Verify Accepted</span>
                   </button>
                 )}
 

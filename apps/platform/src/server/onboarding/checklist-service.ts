@@ -231,54 +231,58 @@ export async function persistChecklistState(
 
   if (process.env.DATABASE_URL) {
     try {
-      const existing = await prisma.billingProviderCache.findUnique({
-        where: {
-          tenantId_cacheKey: {
-            tenantId,
-            cacheKey: CHECKLIST_CACHE_KEY,
-          },
-        },
-      });
+      const persistedState = await prisma.$transaction(async (tx) => {
+        // 1. Transaction-scoped advisory lock by tenantId to serialize concurrent writes
+        await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext('orbitox_checklist_' || ${tenantId}))`;
 
-      let nextVersion = 1;
-      if (existing && existing.payload && typeof existing.payload === 'object') {
-        const payload = existing.payload as any;
-        const currentVersion = typeof payload.version === 'number' ? payload.version : 1;
-        if (expectedVersion !== undefined && expectedVersion !== currentVersion) {
-          throw new ChecklistConcurrencyError(
-            `Checklist version conflict for tenant ${tenantId}: expected ${expectedVersion}, but found ${currentVersion}`,
-          );
+        // 2. Row-level lock FOR UPDATE
+        const rows = await tx.$queryRaw<Array<{ payload: any; updatedAt: Date }>>`
+          SELECT "payload", "updatedAt"
+          FROM public."BillingProviderCache"
+          WHERE "tenantId" = ${tenantId} AND "cacheKey" = ${CHECKLIST_CACHE_KEY}
+          FOR UPDATE
+        `;
+
+        let nextVersion: number;
+        const firstRow = rows[0];
+        if (firstRow && firstRow.payload && typeof firstRow.payload === 'object') {
+          const payload = firstRow.payload as any;
+          const currentVersion = typeof payload.version === 'number' ? payload.version : 1;
+          if (expectedVersion !== undefined && expectedVersion !== currentVersion) {
+            throw new ChecklistConcurrencyError(
+              `Checklist version conflict for tenant ${tenantId}: expected ${expectedVersion}, but found ${currentVersion}`,
+            );
+          }
+          nextVersion = currentVersion + 1;
+          state.version = nextVersion;
+
+          await tx.$executeRaw`
+            UPDATE public."BillingProviderCache"
+            SET "payload" = ${JSON.stringify(state)}::jsonb,
+                "updatedAt" = NOW()
+            WHERE "tenantId" = ${tenantId} AND "cacheKey" = ${CHECKLIST_CACHE_KEY}
+          `;
+        } else {
+          // First persisted write for this tenant: initial unpersisted state is version 1
+          if (expectedVersion !== undefined && expectedVersion !== 1) {
+            throw new ChecklistConcurrencyError(
+              `Checklist version conflict for tenant ${tenantId}: expected ${expectedVersion}, but initial state is version 1`,
+            );
+          }
+          nextVersion = 2;
+          state.version = nextVersion;
+
+          await tx.$executeRaw`
+            INSERT INTO public."BillingProviderCache" ("tenantId", "cacheKey", "subscriptionId", "payload", "expiresAt", "updatedAt")
+            VALUES (${tenantId}, ${CHECKLIST_CACHE_KEY}, 'onboarding', ${JSON.stringify(state)}::jsonb, NOW() + interval '10 years', NOW())
+          `;
         }
-        nextVersion = currentVersion + 1;
-      } else if (expectedVersion !== undefined && expectedVersion > 1) {
-        throw new ChecklistConcurrencyError(
-          `Checklist version conflict for tenant ${tenantId}: expected ${expectedVersion}, but state has not yet been initialized`,
-        );
-      }
 
-      state.version = nextVersion;
-
-      await prisma.billingProviderCache.upsert({
-        where: {
-          tenantId_cacheKey: {
-            tenantId,
-            cacheKey: CHECKLIST_CACHE_KEY,
-          },
-        },
-        update: {
-          payload: state as any,
-          expiresAt: new Date(Date.now() + FAR_FUTURE_MS),
-          updatedAt: now,
-        },
-        create: {
-          tenantId,
-          cacheKey: CHECKLIST_CACHE_KEY,
-          subscriptionId: 'onboarding',
-          payload: state as any,
-          expiresAt: new Date(Date.now() + FAR_FUTURE_MS),
-          updatedAt: now,
-        },
+        return state;
       });
+
+      inMemoryChecklistStore.set(tenantId, persistedState);
+      return persistedState;
     } catch (err) {
       if (err instanceof ChecklistConcurrencyError) {
         throw err;
@@ -286,18 +290,23 @@ export async function persistChecklistState(
       if (process.env.NODE_ENV !== 'test') {
         throw new ChecklistPersistenceError('Failed to persist onboarding checklist state to database.', err);
       }
+      // If error is not a database connection issue, rethrow
+      const errMsg = (err as any)?.message || '';
+      if (!errMsg.includes('connect') && !errMsg.includes('connection') && !errMsg.includes('database')) {
+        throw err;
+      }
     }
-  } else {
-    const memory = inMemoryChecklistStore.get(tenantId);
-    const currentVersion = memory?.version || 1;
-    if (expectedVersion !== undefined && expectedVersion !== currentVersion) {
-      throw new ChecklistConcurrencyError(
-        `Checklist version conflict for tenant ${tenantId}: expected ${expectedVersion}, but found ${currentVersion}`,
-      );
-    }
-    state.version = currentVersion + 1;
   }
 
+  // In-memory fallback (when DATABASE_URL is not set or in test fallback)
+  const memory = inMemoryChecklistStore.get(tenantId);
+  const currentVersion = memory?.version || 1;
+  if (expectedVersion !== undefined && expectedVersion !== currentVersion) {
+    throw new ChecklistConcurrencyError(
+      `Checklist version conflict for tenant ${tenantId}: expected ${expectedVersion}, but found ${currentVersion}`,
+    );
+  }
+  state.version = currentVersion + 1;
   inMemoryChecklistStore.set(tenantId, state);
   return state;
 }

@@ -132,15 +132,47 @@ export const GET = withCustomerAuth<RouteContext>(
         });
 
         if (dbTables.length > 0) {
-          tables = dbTables.map((t) => ({
-            id: t.id,
-            number: t.tableNumber,
-            capacity: t.capacity,
-            section: t.serviceArea?.name || 'Main Dining',
-            locator:
-              t.qrIdentity?.locator ||
-              crypto.createHmac('sha256', project.id).update(t.id).digest('base64url').slice(0, 12),
-          }));
+          const resolvedTables: TableRecord[] = [];
+          for (const t of dbTables) {
+            let locator = t.qrIdentity?.locator;
+            if (!locator) {
+              // Provision a genuine cryptographic RestaurantQRIdentity record
+              const newLocator = crypto.randomBytes(12).toString('hex');
+              const tokenHash = crypto.createHash('sha256').update(crypto.randomBytes(32)).digest('hex');
+              try {
+                const created = await prisma.restaurantQRIdentity.create({
+                  data: {
+                    tenantId: canonicalTenantId,
+                    companyId: project.organizationId,
+                    locationId: t.locationId || 'default',
+                    tableId: t.id,
+                    locator: newLocator,
+                    tokenHash,
+                    isActive: true,
+                    securityVersion: 1,
+                  },
+                });
+                locator = created.locator;
+              } catch {
+                // If collision or concurrency, try to re-read
+                const existing = await prisma.restaurantQRIdentity.findUnique({
+                  where: { tableId: t.id },
+                });
+                locator = existing?.locator;
+              }
+            }
+
+            if (locator) {
+              resolvedTables.push({
+                id: t.id,
+                number: t.tableNumber,
+                capacity: t.capacity,
+                section: t.serviceArea?.name || 'Main Dining',
+                locator,
+              });
+            }
+          }
+          tables = resolvedTables;
         }
       } catch {}
     }
@@ -382,9 +414,6 @@ export const GET = withCustomerAuth<RouteContext>(
 </body>
 </html>`;
 
-    // Record authoritative evidence that artifact was downloaded
-    await recordQrDownloaded(canonicalTenantId, session.userId, tables.length).catch(() => {});
-
     return new Response(html, {
       status: 200,
       headers: {
@@ -395,6 +424,40 @@ export const GET = withCustomerAuth<RouteContext>(
     });
   },
   { write: false, allowMfaSetup: true },
+);
+
+export const POST = withCustomerAuth<RouteContext>(
+  async (request: NextRequest, session, context) => {
+    const { tenantId: rawParam } = await context.params;
+    const project = await resolveProject(rawParam);
+    if (!project) {
+      return NextResponse.json(
+        { ok: false, error: 'PROJECT_NOT_FOUND', message: 'Restaurant project not found.' },
+        { status: 404, headers: noStoreHeaders() },
+      );
+    }
+
+    const role = await getCustomerOrganizationRole(project.organizationId, session.userId);
+    if (!role || (role !== 'OWNER' && role !== 'ADMIN')) {
+      return NextResponse.json(
+        { ok: false, error: 'UNAUTHORIZED_FOR_ORGANIZATION', message: 'Only restaurant owners or administrators can record placard download events.' },
+        { status: 403, headers: noStoreHeaders() },
+      );
+    }
+
+    const canonicalTenantId =
+      project.environments.find((e) => e.isProduction)?.id
+        ? `org/${project.organizationId}/project/${project.id}/environment/${project.environments.find((e) => e.isProduction)!.id}`
+        : `tenant_${project.slug}`;
+
+    const body = await request.json().catch(() => ({}));
+    const expectedVersion = typeof body.expectedVersion === 'number' ? body.expectedVersion : undefined;
+    const tablesCount = typeof body.tablesCount === 'number' ? body.tablesCount : 12;
+
+    const checklist = await recordQrDownloaded(canonicalTenantId, session.userId, tablesCount, expectedVersion);
+    return NextResponse.json({ ok: true, checklist }, { headers: noStoreHeaders() });
+  },
+  { write: true, allowMfaSetup: true },
 );
 
 function escapeHtml(str: string): string {

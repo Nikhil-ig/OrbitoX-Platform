@@ -61,15 +61,11 @@ export const GET = withCustomerAuth<RouteContext>(
         ? `org/${project.organizationId}/project/${project.id}/environment/${project.environments.find((e) => e.isProduction)!.id}`
         : `tenant_${project.slug}`;
 
-    // 1. Query BillingSubscription
+    // 1. Query BillingSubscription with exact canonical tenant association
     const subscription = await prisma.billingSubscription.findFirst({
       where: {
         organizationId: project.organizationId,
-        OR: [
-          { tenantId: canonicalTenantId },
-          { tenantId: { contains: project.id } },
-          { tenantId: { contains: project.slug } },
-        ],
+        tenantId: canonicalTenantId,
       },
       orderBy: { updatedAt: 'desc' },
       select: {
@@ -83,14 +79,11 @@ export const GET = withCustomerAuth<RouteContext>(
       },
     });
 
-    // 2. Query Provisioning Saga PlatformOperation
+    // 2. Query Provisioning Saga PlatformOperation with exact canonical tenant association
     const activeOp = await (prisma as any).platformOperation.findFirst({
       where: {
         organizationId: project.organizationId,
-        OR: [
-          { tenantId: { contains: project.slug } },
-          { tenantId: { contains: project.id } },
-        ],
+        tenantId: canonicalTenantId,
       },
       orderBy: { createdAt: 'desc' },
       select: {
@@ -103,10 +96,11 @@ export const GET = withCustomerAuth<RouteContext>(
       },
     }).catch(() => null);
 
-    // 3. Query PluginInstallation
+    // 3. Query PluginInstallation with exact RestaurantOS plugin mapping
     const installation = await prisma.pluginInstallation.findFirst({
       where: {
         tenantId: canonicalTenantId,
+        pluginId: { in: ['restaurant-os', '@orbitox-io/restaurant-os'] },
       },
       select: {
         id: true,
@@ -145,7 +139,8 @@ export const GET = withCustomerAuth<RouteContext>(
         if (res.ok) {
           const json = await res.json();
           runtimeTenant = json.tenant;
-          runtimeHealth = runtimeTenant?.health || (runtimeTenant ? 'HEALTHY' : 'OFFLINE');
+          // Explicit healthy runtime result: Never default missing runtime health to HEALTHY
+          runtimeHealth = runtimeTenant?.health || (runtimeTenant ? 'UNKNOWN' : 'OFFLINE');
         } else if (res.status === 404) {
           runtimeHealth = 'NOT_PROVISIONED';
         }

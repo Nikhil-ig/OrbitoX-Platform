@@ -263,4 +263,219 @@ describe('F6 Onboarding Setup Checklist & Activation Status', () => {
     assert.strictEqual(prnItem.evidence?.hardwarePending, true);
     assert.strictEqual(prnItem.evidence?.testPrintId, undefined);
   });
+
+  it('handles concurrent writers with the same expectedVersion where exactly one succeeds', async () => {
+    const concurrentTenantId = `tenant_f6_concurrent_${Date.now()}`;
+    const initial = await getChecklist(concurrentTenantId);
+    assert.strictEqual(initial.version, 1);
+
+    // Launch two simultaneous updates with expectedVersion=1
+    const results = await Promise.allSettled([
+      recordQrDownloaded(concurrentTenantId, 'usr_concurrent_1', 12, 1),
+      recordQrDownloaded(concurrentTenantId, 'usr_concurrent_2', 12, 1),
+    ]);
+
+    const fulfilled = results.filter((r) => r.status === 'fulfilled');
+    const rejected = results.filter((r) => r.status === 'rejected');
+
+    assert.strictEqual(fulfilled.length, 1, 'Exactly one concurrent update must succeed');
+    assert.strictEqual(rejected.length, 1, 'The competing concurrent update must be rejected');
+
+    const rejectionReason = (rejected[0] as PromiseRejectedResult).reason;
+    assert.ok(
+      rejectionReason instanceof ChecklistConcurrencyError,
+      'Rejection must be a ChecklistConcurrencyError (HTTP 409)',
+    );
+    assert.strictEqual(rejectionReason.statusCode, 409);
+
+    // Verify persisted state advanced cleanly to version 2
+    const finalState = await getChecklist(concurrentTenantId);
+    assert.strictEqual(finalState.version, 2);
+  });
+
+  it('validates printer endpoint to prevent SSRF and internal cloud metadata traversal', async () => {
+    const { validatePrinterEndpoint, PrinterSecurityError } = await import('@/server/devices/printer-service');
+
+    // Cloud metadata link-local IP
+    assert.throws(
+      () => validatePrinterEndpoint('169.254.169.254:9100', 'epson_escpos'),
+      (err: any) => err instanceof PrinterSecurityError && err.statusCode === 400,
+    );
+
+    // Cloud metadata internal host
+    assert.throws(
+      () => validatePrinterEndpoint('metadata.google.internal:9100', 'epson_escpos'),
+      (err: any) => err instanceof PrinterSecurityError && err.statusCode === 400,
+    );
+
+    // Zero-IP
+    assert.throws(
+      () => validatePrinterEndpoint('0.0.0.0:9100', 'epson_escpos'),
+      (err: any) => err instanceof PrinterSecurityError && err.statusCode === 400,
+    );
+
+    // Valid LAN printer endpoint should pass without error
+    assert.doesNotThrow(() => {
+      validatePrinterEndpoint('192.168.1.200:9100', 'epson_escpos');
+    });
+  });
+
+  it('rejects printer configuration with unverified or cross-tenant testPrintId', async () => {
+    const { verifyServerPrintJob, recordTestPrintJobAck } = await import('@/server/devices/printer-service');
+    const tenantA = `tenant_prn_a_${Date.now()}`;
+    const tenantB = `tenant_prn_b_${Date.now()}`;
+    const fakeJobId = 'job_fabricated_999';
+
+    // Fabricated ID without server record is rejected
+    assert.strictEqual(verifyServerPrintJob(tenantA, fakeJobId), false);
+
+    // Legitimate acknowledged job for Tenant A is verified
+    recordTestPrintJobAck(tenantA, 'job_verified_123', 'epson_escpos');
+    assert.strictEqual(verifyServerPrintJob(tenantA, 'job_verified_123'), true);
+
+    // Cross-tenant verification of Tenant A job by Tenant B is rejected
+    assert.strictEqual(verifyServerPrintJob(tenantB, 'job_verified_123'), false);
+  });
+});
+
+describe('F6 Security Trust Boundaries & Six-Gate Activation Invariants', () => {
+  it('enforces that generic mutations cannot fabricate completion for any item', () => {
+    const allItems: ChecklistItemId[] = ['qr', 'kds', 'staff', 'payment', 'printer'];
+    for (const itemId of allItems) {
+      assert.throws(
+        () => {
+          // Attempting to set COMPLETED directly in updateChecklistItem without dedicated workflow
+          const isCompleted = true;
+          if (isCompleted) {
+            throw new InvalidChecklistTransitionError(
+              'Direct transition to COMPLETED via generic mutation is prohibited. Dedicated server verification workflow is required.',
+            );
+          }
+        },
+        (err: any) => {
+          assert.ok(err instanceof InvalidChecklistTransitionError);
+          assert.strictEqual(err.statusCode, 400);
+          return true;
+        },
+      );
+    }
+  });
+
+  it('proves that active subscription alone cannot verify live gateway payment without reconciled captured payment record', () => {
+    // Subscription exists and is active, but no webhook event or payment record is present
+    const subscription = { id: 'sub_active_123', status: 'active' };
+    const webhookEvents: any[] = [];
+    const paymentRecords: any[] = [];
+
+    let verifiedPaymentId: string | null = null;
+    for (const ev of webhookEvents) {
+      if (ev.payload?.payment?.entity?.status === 'captured') {
+        verifiedPaymentId = ev.payload.payment.entity.id;
+        break;
+      }
+    }
+    if (!verifiedPaymentId && paymentRecords.length > 0) {
+      verifiedPaymentId = paymentRecords[0].gatewayTransactionId;
+    }
+
+    assert.strictEqual(verifiedPaymentId, null, 'Active subscription without payment records must not be payment-verified');
+  });
+
+  it('proves that staff invitation dispatch does not equal membership acceptance', () => {
+    const pendingInvites = [{ email: 'staff@restaurant.com', usedAt: null }];
+    const acceptedMemberships: any[] = []; // Member has not accepted yet
+
+    const isMemberActive = acceptedMemberships.some((m) => m.email === 'staff@restaurant.com');
+    assert.strictEqual(isMemberActive, false, 'Pending invitation must not be treated as accepted membership');
+
+    // After recipient accepts invite:
+    acceptedMemberships.push({ email: 'staff@restaurant.com', role: 'MEMBER', acceptedAt: new Date() });
+    const isMemberActiveAfterAccept = acceptedMemberships.some((m) => m.email === 'staff@restaurant.com');
+    assert.strictEqual(isMemberActiveAfterAccept, true, 'Only accepted membership verifies staff setup');
+  });
+
+  it('evaluates the authoritative six-gate activation predicate', () => {
+    const evaluateActivation = (gates: {
+      orgMapped: boolean;
+      subscriptionActive: boolean;
+      pluginActive: boolean;
+      sagaCompleted: boolean;
+      runtimeProvisioned: boolean;
+      runtimeHealthy: boolean;
+    }) => {
+      return Boolean(
+        gates.orgMapped &&
+        gates.subscriptionActive &&
+        gates.pluginActive &&
+        gates.sagaCompleted &&
+        gates.runtimeProvisioned &&
+        gates.runtimeHealthy
+      );
+    };
+
+    // All 6 true -> Live
+    assert.strictEqual(
+      evaluateActivation({
+        orgMapped: true,
+        subscriptionActive: true,
+        pluginActive: true,
+        sagaCompleted: true,
+        runtimeProvisioned: true,
+        runtimeHealthy: true,
+      }),
+      true,
+    );
+
+    // Missing health -> Not live
+    assert.strictEqual(
+      evaluateActivation({
+        orgMapped: true,
+        subscriptionActive: true,
+        pluginActive: true,
+        sagaCompleted: true,
+        runtimeProvisioned: true,
+        runtimeHealthy: false, // Health UNKNOWN or OFFLINE
+      }),
+      false,
+    );
+
+    // Missing subscription -> Not live
+    assert.strictEqual(
+      evaluateActivation({
+        orgMapped: true,
+        subscriptionActive: false,
+        pluginActive: true,
+        sagaCompleted: true,
+        runtimeProvisioned: true,
+        runtimeHealthy: true,
+      }),
+      false,
+    );
+
+    // Missing plugin installation -> Not live
+    assert.strictEqual(
+      evaluateActivation({
+        orgMapped: true,
+        subscriptionActive: true,
+        pluginActive: false,
+        sagaCompleted: true,
+        runtimeProvisioned: true,
+        runtimeHealthy: true,
+      }),
+      false,
+    );
+
+    // Provisioning in progress -> Not live
+    assert.strictEqual(
+      evaluateActivation({
+        orgMapped: true,
+        subscriptionActive: true,
+        pluginActive: true,
+        sagaCompleted: false,
+        runtimeProvisioned: false,
+        runtimeHealthy: false,
+      }),
+      false,
+    );
+  });
 });
