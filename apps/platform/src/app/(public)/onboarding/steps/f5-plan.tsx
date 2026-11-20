@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Check,
   CheckCircle2,
@@ -21,7 +21,12 @@ interface F5PlanProps {
   gstin?: string;
   tenantId: string;
   restaurantName: string;
-  onSuccess: (data: { planId: string; billingCycle: 'monthly' | 'annual' }) => void;
+  onSuccess: (data: {
+    planId: string;
+    billingCycle: 'monthly' | 'annual';
+    subscriptionStatus?: string;
+    awaitingWebhook?: boolean;
+  }) => void;
   onBack: () => void;
 }
 
@@ -99,7 +104,37 @@ export function F5PlanStep({
   const [gstin, setGstin] = useState(initialGstin || '');
   const [billingEmail, setBillingEmail] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isSdkLoaded, setIsSdkLoaded] = useState(false);
+  const [sdkLoading, setSdkLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // Safe official Razorpay Checkout SDK loader
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    if ((window as any).Razorpay) {
+      setIsSdkLoaded(true);
+      return;
+    }
+    const existingScript = document.querySelector('script[src="https://checkout.razorpay.com/v1/checkout.js"]');
+    if (existingScript) {
+      const handleLoad = () => setIsSdkLoaded(true);
+      existingScript.addEventListener('load', handleLoad);
+      return () => existingScript.removeEventListener('load', handleLoad);
+    }
+    setSdkLoading(true);
+    const script = document.createElement('script');
+    script.src = 'https://checkout.razorpay.com/v1/checkout.js';
+    script.async = true;
+    script.onload = () => {
+      setIsSdkLoaded(true);
+      setSdkLoading(false);
+    };
+    script.onerror = () => {
+      setSdkLoading(false);
+      setError('Payment gateway SDK could not be loaded. Please disable ad-blockers or content filters and refresh.');
+    };
+    document.body.appendChild(script);
+  }, []);
 
   const selectedPlan = PLANS.find((p) => p.id === selectedPlanId) || PLANS[1]!;
   const pricePerMonth = billingCycle === 'annual' ? selectedPlan.annualPrice : selectedPlan.monthlyPrice;
@@ -111,6 +146,13 @@ export function F5PlanStep({
     e.preventDefault();
     setIsSubmitting(true);
     setError(null);
+
+    // Enforce authentic Razorpay SDK presence - never bypass or fabricate
+    if (typeof window === 'undefined' || !(window as any).Razorpay) {
+      setError('Razorpay Checkout SDK is not loaded. Please wait for the payment gateway to initialize or refresh the page.');
+      setIsSubmitting(false);
+      return;
+    }
 
     try {
       const csrf = getCustomerCsrfToken();
@@ -148,20 +190,26 @@ export function F5PlanStep({
         throw new Error('No subscription ID returned by payment gateway.');
       }
 
-      // 2. Complete payment confirmation before advancing
-      if (typeof window !== 'undefined' && (window as any).Razorpay) {
-        await new Promise<void>((resolve, reject) => {
+      // 2. Open authentic Razorpay checkout modal and await real signature confirmation
+      const confirmData = await new Promise<{ status?: string; awaitingWebhook?: boolean }>((resolve, reject) => {
+        try {
           const rzp = new (window as any).Razorpay({
             key: keyId,
             subscription_id: subscriptionId,
             name: organizationName || 'OrbitoX Platform',
             description: `${selectedPlan.name} Subscription (${billingCycle})`,
+            prefill: {
+              email: billingEmail.trim() || undefined,
+            },
             handler: async (resp: {
               razorpay_payment_id: string;
               razorpay_subscription_id?: string;
               razorpay_signature: string;
             }) => {
               try {
+                if (!resp.razorpay_payment_id || !resp.razorpay_signature) {
+                  throw new Error('Payment gateway did not provide authentic payment credentials.');
+                }
                 const confirmRes = await fetch(
                   `/api/v1/customer/organizations/${encodeURIComponent(organizationId)}/billing/checkout/confirm`,
                   {
@@ -179,7 +227,8 @@ export function F5PlanStep({
                   const cdata = await confirmRes.json().catch(() => ({}));
                   throw new Error(cdata.message || cdata.error || 'Failed to verify payment confirmation.');
                 }
-                resolve();
+                const cdata = await confirmRes.json();
+                resolve(cdata);
               } catch (confirmErr: any) {
                 reject(confirmErr);
               }
@@ -190,32 +239,22 @@ export function F5PlanStep({
               },
             },
           });
-          rzp.open();
-        });
-      } else {
-        // Direct confirmation call in headless / sandbox environment
-        const confirmRes = await fetch(
-          `/api/v1/customer/organizations/${encodeURIComponent(organizationId)}/billing/checkout/confirm`,
-          {
-            method: 'POST',
-            headers,
-            body: JSON.stringify({
-              subscriptionId,
-              paymentId: `pay_${Date.now()}`,
-              signature: 'test_signature_or_sandbox',
-            }),
-          },
-        );
 
-        if (!confirmRes.ok) {
-          const cdata = await confirmRes.json().catch(() => ({}));
-          throw new Error(cdata.message || cdata.error || 'Subscription confirmation failed. Please retry.');
+          rzp.on('payment.failed', (resp: any) => {
+            reject(new Error(resp?.error?.description || 'Payment authentication failed. Please try a different card or UPI ID.'));
+          });
+
+          rzp.open();
+        } catch (initErr: any) {
+          reject(initErr);
         }
-      }
+      });
 
       onSuccess({
         planId: selectedPlanId,
         billingCycle,
+        subscriptionStatus: confirmData?.status || 'authenticated',
+        awaitingWebhook: confirmData?.awaitingWebhook ?? true,
       });
     } catch (err: any) {
       setError(err?.message || 'Error processing plan checkout. Please try again.');
@@ -432,10 +471,16 @@ export function F5PlanStep({
 
             <button
               type="submit"
-              disabled={isSubmitting}
+              disabled={isSubmitting || sdkLoading}
               className="px-8 py-3.5 rounded-full bg-emerald-500 hover:bg-emerald-400 text-[#14161A] text-sm font-bold transition-all shadow-lg flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
             >
-              <span>{isSubmitting ? 'Activating Subscription...' : 'Activate & Go Live'}</span>
+              <span>
+                {isSubmitting
+                  ? 'Activating Subscription...'
+                  : sdkLoading
+                    ? 'Loading Payment Gateway...'
+                    : 'Activate & Go Live'}
+              </span>
               <ArrowRight className="h-4 w-4" />
             </button>
           </div>

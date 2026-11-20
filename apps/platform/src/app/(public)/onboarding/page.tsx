@@ -25,6 +25,8 @@ interface OnboardingState {
   subscription?: {
     planId: string;
     billingCycle: 'monthly' | 'annual';
+    subscriptionStatus?: string;
+    awaitingWebhook?: boolean;
   };
 }
 
@@ -101,6 +103,8 @@ export default function OnboardingPage() {
   const handleF5Success = (subscription: {
     planId: string;
     billingCycle: 'monthly' | 'annual';
+    subscriptionStatus?: string;
+    awaitingWebhook?: boolean;
   }) => {
     updateState((prev) => ({
       ...prev,
@@ -198,6 +202,9 @@ export default function OnboardingPage() {
           tenantId={state.restaurant.tenantId}
           tableCount={state.restaurant.tableCount}
           planId={state.subscription?.planId || 'growth'}
+          organizationId={state.organization?.id}
+          subscriptionStatus={state.subscription?.subscriptionStatus}
+          awaitingWebhook={state.subscription?.awaitingWebhook}
         />
       )}
     </main>

@@ -45,84 +45,88 @@ export default function CustomerDashboardPage() {
   const [restaurantCity, setRestaurantCity] = React.useState('Bengaluru');
   const [activeSlug, setActiveSlug] = React.useState<string | null>(null);
   const [hasLoaded, setHasLoaded] = React.useState(false);
+  const [isSettling, setIsSettling] = React.useState(false);
+  const [settlementError, setSettlementError] = React.useState<string | null>(null);
 
   // Authoritative data loading from customer session and restaurant runtime
-  React.useEffect(() => {
-    let cancelled = false;
+  const loadAuthoritativeState = React.useCallback(async () => {
+    try {
+      const meRes = await fetch('/api/v1/customer/auth/me');
+      if (!meRes.ok) {
+        setHasLoaded(true);
+        return;
+      }
+      const meData = await meRes.json();
+      const primaryOrgId = meData.memberships?.[0]?.organizationId;
+      if (!primaryOrgId) {
+        setHasLoaded(true);
+        return;
+      }
 
-    async function loadAuthoritativeState() {
-      try {
-        const meRes = await fetch('/api/v1/customer/auth/me');
-        if (!meRes.ok) {
-          if (!cancelled) setHasLoaded(true);
-          return;
-        }
-        const meData = await meRes.json();
-        const primaryOrgId = meData.memberships?.[0]?.organizationId;
-        if (!primaryOrgId) {
-          if (!cancelled) setHasLoaded(true);
-          return;
-        }
+      const tenantsRes = await fetch(`/api/v1/customer/organizations/${encodeURIComponent(primaryOrgId)}/tenants`);
+      if (!tenantsRes.ok) {
+        setHasLoaded(true);
+        return;
+      }
+      const tenantsData = await tenantsRes.json();
+      const firstProject = tenantsData.projects?.[0];
+      if (!firstProject) {
+        setHasLoaded(true);
+        return;
+      }
 
-        const tenantsRes = await fetch(`/api/v1/customer/organizations/${encodeURIComponent(primaryOrgId)}/tenants`);
-        if (!tenantsRes.ok) {
-          if (!cancelled) setHasLoaded(true);
-          return;
-        }
-        const tenantsData = await tenantsRes.json();
-        const firstProject = tenantsData.projects?.[0];
-        if (!firstProject) {
-          if (!cancelled) setHasLoaded(true);
-          return;
-        }
+      setRestaurantName(firstProject.name || 'My Restaurant');
+      setActiveSlug(firstProject.slug);
 
-        if (!cancelled) {
-          setRestaurantName(firstProject.name || 'My Restaurant');
-          setActiveSlug(firstProject.slug);
+      // 1. Fetch live table fleet from RestaurantOS runtime
+      const tablesRes = await fetch(`/api/v1/customer/tenants/${encodeURIComponent(firstProject.slug)}/tables`);
+      if (tablesRes.ok) {
+        const tablesData = await tablesRes.json();
+        if (Array.isArray(tablesData.tables) && tablesData.tables.length > 0) {
+          const liveTables: TableState[] = tablesData.tables.map((t: any) => ({
+            id: String(t.id),
+            tableNumber: t.number || `T-${String(t.id).padStart(2, '0')}`,
+            seats: t.capacity || 4,
+            floor: t.floorId || t.section || 'Main Dining',
+            status: t.status === 'OCCUPIED' || t.status === 'BILLING' ? t.status : 'AVAILABLE',
+            dinerCount: t.dinerCount || (t.status === 'OCCUPIED' || t.status === 'BILLING' ? t.capacity : undefined),
+            billAmount: t.activeBillMinor ? t.activeBillMinor / 100 : undefined,
+            durationMinutes: t.turnTimeMinutes,
+            activeItems: t.activeItems,
+          }));
+          setTables(liveTables);
+        } else {
+          setTables([]);
         }
-
+      } else {
+        // Query preview summary for baseline restaurant metadata if table endpoint unavailable
         const previewRes = await fetch(`/api/v1/customer/tenants/${encodeURIComponent(firstProject.slug)}/preview-summary`);
         if (previewRes.ok) {
           const previewData = await previewRes.json();
-          if (!cancelled && previewData?.preview) {
-            const prev = previewData.preview;
-            if (prev.restaurant?.city) setRestaurantCity(prev.restaurant.city);
-
-            const total = prev.tables?.totalCount || 0;
-            if (total > 0) {
-              const liveTables: TableState[] = Array.from({ length: total }, (_, i) => {
-                const num = i + 1;
-                const formattedNum = `T-${String(num).padStart(2, '0')}`;
-                const floor = num > 12 ? 'Terrace' : 'Main Dining';
-                const seats = num % 3 === 0 ? 6 : num % 2 === 0 ? 2 : 4;
-
-                return {
-                  id: `tbl-${num}`,
-                  tableNumber: formattedNum,
-                  seats,
-                  floor,
-                  status: 'AVAILABLE',
-                };
-              });
-
-              setTables(liveTables);
-            }
+          if (previewData?.preview?.restaurant?.city) {
+            setRestaurantCity(previewData.preview.restaurant.city);
           }
         }
-      } catch {
-        // Retain current safe empty state on connection interruption
-      } finally {
-        if (!cancelled) setHasLoaded(true);
+        setTables([]);
       }
+    } catch {
+      // Retain safe state on connection interruption
+    } finally {
+      setHasLoaded(true);
     }
-
-    loadAuthoritativeState();
-    return () => {
-      cancelled = true;
-    };
   }, []);
 
-  const floors = ['ALL', 'Main Dining', 'Terrace'];
+  React.useEffect(() => {
+    loadAuthoritativeState();
+  }, [loadAuthoritativeState]);
+
+  const floors = React.useMemo(() => {
+    const set = new Set<string>();
+    tables.forEach((t) => {
+      if (t.floor) set.add(t.floor);
+    });
+    return set.size > 0 ? ['ALL', ...Array.from(set)] : ['ALL', 'Main Dining', 'Terrace'];
+  }, [tables]);
 
   const filteredTables = React.useMemo(() => {
     if (selectedFloor === 'ALL') return tables;
@@ -136,14 +140,39 @@ export default function CustomerDashboardPage() {
   const totalActiveDiners = tables.reduce((acc, t) => acc + (t.dinerCount || 0), 0);
 
   const handleSettleTable = async (tableId: string) => {
-    setTables((prev) =>
-      prev.map((t) =>
-        t.id === tableId
-          ? { ...t, status: 'AVAILABLE', billAmount: undefined, dinerCount: undefined, activeItems: undefined, durationMinutes: undefined }
-          : t,
-      ),
-    );
-    setSelectedTable(null);
+    if (!activeSlug || isSettling) return;
+    setIsSettling(true);
+    setSettlementError(null);
+
+    try {
+      const table = tables.find((t) => t.id === tableId) || selectedTable;
+      const amountMinor = table?.billAmount ? Math.round(table.billAmount * 100) : 0;
+
+      const res = await fetch(`/api/v1/customer/tenants/${encodeURIComponent(activeSlug)}/tables/settle`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          tableId,
+          tableNumber: table?.tableNumber,
+          amountMinor,
+          paymentMethod: 'CASH',
+          idempotencyKey: `settle_${tableId}_${Date.now()}`,
+        }),
+      });
+
+      if (!res.ok) {
+        const errJson = await res.json().catch(() => ({}));
+        throw new Error(errJson.message || errJson.error || 'Table settlement failed on restaurant runtime.');
+      }
+
+      // Re-query authoritative table matrix from runtime
+      await loadAuthoritativeState();
+      setSelectedTable(null);
+    } catch (err: any) {
+      setSettlementError(err?.message || 'Settlement failed on runtime.');
+    } finally {
+      setIsSettling(false);
+    }
   };
 
   return (
@@ -392,23 +421,42 @@ export default function CustomerDashboardPage() {
                       <Button
                         variant="primary"
                         size="sm"
+                        disabled={isSettling}
                         className="rounded-full"
                         onClick={() => handleSettleTable(selectedTable.id)}
                       >
-                        <Receipt className="h-3.5 w-3.5 mr-1.5" />
-                        Settle & Clear Table
+                        {isSettling ? (
+                          <>
+                            <RefreshCw className="h-3.5 w-3.5 mr-1.5 animate-spin" />
+                            Settling...
+                          </>
+                        ) : (
+                          <>
+                            <Receipt className="h-3.5 w-3.5 mr-1.5" />
+                            Settle & Clear Table
+                          </>
+                        )}
                       </Button>
                     )}
                     <Button
                       variant="secondary"
                       size="sm"
                       className="rounded-full"
-                      onClick={() => setSelectedTable(null)}
+                      onClick={() => {
+                        setSelectedTable(null);
+                        setSettlementError(null);
+                      }}
                     >
                       Close
                     </Button>
                   </div>
                 </div>
+
+                {settlementError && (
+                  <div className="p-3 rounded-[var(--radius-card)] bg-rose-50 border border-rose-200 text-rose-700 text-xs">
+                    {settlementError}
+                  </div>
+                )}
 
                 {selectedTable.activeItems && (
                   <div className="space-y-2 text-xs">
