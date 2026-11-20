@@ -134,9 +134,7 @@ export default function ConsoleProjectCreatePage() {
     setError(null);
     try {
       const controlPlaneUrl =
-        typeof window !== 'undefined'
-          ? window.location.origin
-          : process.env.NEXT_PUBLIC_CONTROL_PLANE_URL || 'http://localhost:3005';
+        typeof window !== 'undefined' ? window.location.origin : '';
 
       const res = await fetch('/api/v1/projects/factory', {
         method: 'POST',

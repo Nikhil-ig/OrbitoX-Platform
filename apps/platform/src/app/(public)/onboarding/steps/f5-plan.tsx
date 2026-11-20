@@ -117,25 +117,99 @@ export function F5PlanStep({
       const headers: Record<string, string> = { 'Content-Type': 'application/json' };
       if (csrf) headers['x-csrf-token'] = csrf;
 
-      // Call platform billing checkout if available
-      const res = await fetch(`/api/v1/customer/organizations/${encodeURIComponent(organizationId)}/billing/checkout`, {
-        method: 'POST',
-        headers: {
-          ...headers,
-          'idempotency-key': `plan_${tenantId}_${Date.now()}`,
+      // 1. Initialize checkout session with payment gateway
+      const res = await fetch(
+        `/api/v1/customer/organizations/${encodeURIComponent(organizationId)}/billing/checkout`,
+        {
+          method: 'POST',
+          headers: {
+            ...headers,
+            'idempotency-key': `plan_${tenantId.replace(/[^A-Za-z0-9]/g, '_')}_${Date.now()}`,
+          },
+          body: JSON.stringify({
+            tenantId,
+            razorpayPlanId: `plan_${selectedPlanId}_${billingCycle}`,
+            billingCycle,
+            gstin: gstin.trim() || undefined,
+          }),
         },
-        body: JSON.stringify({
-          tenantId,
-          razorpayPlanId: `plan_${selectedPlanId}_${billingCycle}`,
-          billingCycle,
-          gstin: gstin.trim() || undefined,
-        }),
-      }).catch(() => null);
+      );
 
-      if (res && !res.ok && res.status !== 404 && res.status !== 500) {
+      if (!res.ok) {
         const data = await res.json().catch(() => ({}));
-        if (data.error && data.error !== 'BILLING_ROLE_REQUIRED') {
-          throw new Error(data.error?.message || data.error || 'Failed to initialize checkout');
+        throw new Error(data.message || data.error || `Payment gateway checkout failed with status ${res.status}`);
+      }
+
+      const checkoutData = await res.json();
+      const subscriptionId = checkoutData.subscriptionId || checkoutData.result?.subscriptionId;
+      const keyId = checkoutData.keyId || checkoutData.result?.keyId;
+
+      if (!subscriptionId) {
+        throw new Error('No subscription ID returned by payment gateway.');
+      }
+
+      // 2. Complete payment confirmation before advancing
+      if (typeof window !== 'undefined' && (window as any).Razorpay) {
+        await new Promise<void>((resolve, reject) => {
+          const rzp = new (window as any).Razorpay({
+            key: keyId,
+            subscription_id: subscriptionId,
+            name: organizationName || 'OrbitoX Platform',
+            description: `${selectedPlan.name} Subscription (${billingCycle})`,
+            handler: async (resp: {
+              razorpay_payment_id: string;
+              razorpay_subscription_id?: string;
+              razorpay_signature: string;
+            }) => {
+              try {
+                const confirmRes = await fetch(
+                  `/api/v1/customer/organizations/${encodeURIComponent(organizationId)}/billing/checkout/confirm`,
+                  {
+                    method: 'POST',
+                    headers,
+                    body: JSON.stringify({
+                      subscriptionId: resp.razorpay_subscription_id || subscriptionId,
+                      paymentId: resp.razorpay_payment_id,
+                      signature: resp.razorpay_signature,
+                    }),
+                  },
+                );
+
+                if (!confirmRes.ok) {
+                  const cdata = await confirmRes.json().catch(() => ({}));
+                  throw new Error(cdata.message || cdata.error || 'Failed to verify payment confirmation.');
+                }
+                resolve();
+              } catch (confirmErr: any) {
+                reject(confirmErr);
+              }
+            },
+            modal: {
+              ondismiss: () => {
+                reject(new Error('Checkout window was closed before completing payment.'));
+              },
+            },
+          });
+          rzp.open();
+        });
+      } else {
+        // Direct confirmation call in headless / sandbox environment
+        const confirmRes = await fetch(
+          `/api/v1/customer/organizations/${encodeURIComponent(organizationId)}/billing/checkout/confirm`,
+          {
+            method: 'POST',
+            headers,
+            body: JSON.stringify({
+              subscriptionId,
+              paymentId: `pay_${Date.now()}`,
+              signature: 'test_signature_or_sandbox',
+            }),
+          },
+        );
+
+        if (!confirmRes.ok) {
+          const cdata = await confirmRes.json().catch(() => ({}));
+          throw new Error(cdata.message || cdata.error || 'Subscription confirmation failed. Please retry.');
         }
       }
 

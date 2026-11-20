@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import {
   Check,
@@ -14,7 +14,10 @@ import {
   Flame,
   ChefHat,
   Sparkles,
+  Loader2,
 } from 'lucide-react';
+import { ProgressBar } from '@orbitox-io/ui';
+import { getCustomerCsrfToken } from './csrf';
 
 interface F6ChecklistProps {
   restaurantName: string;
@@ -41,6 +44,14 @@ export function F6ChecklistStep({
   planId,
 }: F6ChecklistProps) {
   const router = useRouter();
+  const [liveActions, setLiveActions] = useState<{
+    dinerPreviewUrl?: string | null;
+    kdsUrl?: string | null;
+    tablesUrl?: string | null;
+  }>({});
+  const [actionLoading, setActionLoading] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
+
   const [items, setItems] = useState<ChecklistItem[]>([
     {
       id: 'qr',
@@ -84,7 +95,105 @@ export function F6ChecklistStep({
     },
   ]);
 
-  const toggleItem = (id: string) => {
+  // Load authoritative preview summary to ground checklist state in real backend facts
+  useEffect(() => {
+    let cancelled = false;
+    async function loadSummary() {
+      try {
+        const res = await fetch(`/api/v1/customer/tenants/${encodeURIComponent(tenantId)}/preview-summary`);
+        if (res.ok && !cancelled) {
+          const data = await res.json();
+          if (data?.preview?.actions) {
+            setLiveActions(data.preview.actions);
+          }
+          if (data?.preview?.checklist?.restaurantProvisioned) {
+            setItems((prev) =>
+              prev.map((item) => {
+                if (item.id === 'qr') return { ...item, completed: true };
+                if (item.id === 'kds') return { ...item, completed: true };
+                return item;
+              }),
+            );
+          }
+        }
+      } catch {
+        // Retain current items if network offline
+      }
+    }
+    loadSummary();
+    return () => {
+      cancelled = true;
+    };
+  }, [tenantId]);
+
+  const handleAction = async (id: string) => {
+    setActionError(null);
+
+    if (id === 'qr') {
+      const targetUrl = liveActions.tablesUrl || liveActions.dinerPreviewUrl || `/admin/restaurant`;
+      if (typeof window !== 'undefined') {
+        window.open(targetUrl, '_blank');
+      }
+      setItems((prev) => prev.map((it) => (it.id === id ? { ...it, completed: true } : it)));
+      return;
+    }
+
+    if (id === 'kds') {
+      const targetUrl = liveActions.kdsUrl || `/admin/restaurant`;
+      if (typeof window !== 'undefined') {
+        window.open(targetUrl, '_blank');
+      }
+      setItems((prev) => prev.map((it) => (it.id === id ? { ...it, completed: true } : it)));
+      return;
+    }
+
+    if (id === 'staff') {
+      if (typeof window !== 'undefined') {
+        window.open('/console/organizations', '_blank');
+      }
+      setItems((prev) => prev.map((it) => (it.id === id ? { ...it, completed: true } : it)));
+      return;
+    }
+
+    if (id === 'payment') {
+      setActionLoading('payment');
+      try {
+        const csrf = getCustomerCsrfToken();
+        const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+        if (csrf) headers['x-csrf-token'] = csrf;
+
+        const res = await fetch(`/api/v1/customer/tenants/${encodeURIComponent(tenantId)}/test-orders`, {
+          method: 'POST',
+          headers,
+          body: JSON.stringify({
+            tableNumber: 'T-01',
+            items: [{ name: 'Test Masala Chai', qty: 1, basePriceMinor: 100 }],
+          }),
+        });
+
+        if (!res.ok) {
+          const errData = await res.json().catch(() => ({}));
+          throw new Error(errData.message || errData.error || 'Test order submission failed');
+        }
+
+        setItems((prev) => prev.map((it) => (it.id === id ? { ...it, completed: true } : it)));
+      } catch (err: any) {
+        setActionError(err?.message || 'Failed to place test order on runtime.');
+      } finally {
+        setActionLoading(null);
+      }
+      return;
+    }
+
+    if (id === 'printer') {
+      if (typeof window !== 'undefined') {
+        window.open('/console/settings/configuration', '_blank');
+      }
+      setItems((prev) => prev.map((it) => (it.id === id ? { ...it, completed: true } : it)));
+      return;
+    }
+
+    // Default toggle
     setItems((prev) =>
       prev.map((it) => (it.id === id ? { ...it, completed: !it.completed } : it)),
     );
@@ -100,27 +209,35 @@ export function F6ChecklistStep({
           <Sparkles className="h-3.5 w-3.5" />
           <span>You are live!</span>
         </div>
-        <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight text-[#14161A]">
+        <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight text-gray-900">
           {restaurantName} is live and ready
         </h1>
         <p className="text-xs sm:text-sm text-gray-600 max-w-lg mx-auto">
-          Your digital dining runtime is active at <strong className="text-[#14161A] font-mono">{slug}.orbitox.io</strong>. Complete your setup checklist to start taking diner orders.
+          Your digital dining runtime is active at <strong className="text-gray-900 font-mono">{slug}.orbitox.io</strong>. Complete your setup checklist to start taking diner orders.
         </p>
 
-        {/* Progress Bar */}
+        {/* Progress Bar with Zero Inline Styles */}
         <div className="pt-2 max-w-md mx-auto space-y-1">
           <div className="flex justify-between text-xs font-medium text-gray-500">
             <span>Setup Checklist</span>
             <span>{completedCount} of {items.length} completed</span>
           </div>
-          <div className="h-2 w-full bg-gray-200 rounded-full overflow-hidden">
-            <div
-              className="h-full bg-emerald-500 transition-all duration-300"
-              style={{ width: `${(completedCount / items.length) * 100}%` }}
-            />
-          </div>
+          <ProgressBar
+            value={completedCount}
+            max={items.length}
+            variant="success"
+            size="sm"
+            ariaLabel="Setup checklist progress"
+            className="w-full"
+          />
         </div>
       </div>
+
+      {actionError && (
+        <div className="p-4 rounded-2xl bg-rose-50 border border-rose-200 text-rose-700 text-xs text-center">
+          {actionError}
+        </div>
+      )}
 
       {/* Checklist Cards */}
       <div className="space-y-3">
@@ -136,7 +253,7 @@ export function F6ChecklistStep({
             <div className="flex items-start gap-3.5">
               <button
                 type="button"
-                onClick={() => toggleItem(item.id)}
+                onClick={() => handleAction(item.id)}
                 className={`h-6 w-6 rounded-full border flex items-center justify-center shrink-0 mt-0.5 cursor-pointer transition-colors ${
                   item.completed
                     ? 'border-emerald-600 bg-emerald-600 text-white'
@@ -149,7 +266,7 @@ export function F6ChecklistStep({
               <div className="space-y-0.5">
                 <h3
                   className={`text-sm font-bold ${
-                    item.completed ? 'text-[#14161A]' : 'text-gray-800'
+                    item.completed ? 'text-gray-900' : 'text-gray-800'
                   }`}
                 >
                   {item.title}
@@ -161,10 +278,12 @@ export function F6ChecklistStep({
             <div className="flex items-center gap-2 self-end sm:self-center shrink-0">
               <button
                 type="button"
-                onClick={() => toggleItem(item.id)}
-                className="px-3.5 py-1.5 rounded-full border border-gray-300 text-gray-700 hover:bg-gray-50 text-xs font-semibold cursor-pointer transition-colors"
+                disabled={actionLoading === item.id}
+                onClick={() => handleAction(item.id)}
+                className="px-3.5 py-1.5 rounded-full border border-gray-300 text-gray-700 hover:bg-gray-50 text-xs font-semibold cursor-pointer transition-colors flex items-center gap-1.5 disabled:opacity-50"
               >
-                {item.actionLabel}
+                {actionLoading === item.id && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+                <span>{item.actionLabel}</span>
               </button>
             </div>
           </div>
@@ -172,7 +291,7 @@ export function F6ChecklistStep({
       </div>
 
       {/* Primary Action to Open Dashboard */}
-      <div className="p-6 rounded-3xl bg-[#14161A] text-white shadow-xl flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+      <div className="p-6 rounded-3xl bg-gray-950 text-white shadow-xl flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <h4 className="font-bold text-base">Ready to manage your restaurant?</h4>
           <p className="text-xs text-gray-400 mt-0.5">
@@ -185,7 +304,7 @@ export function F6ChecklistStep({
           onClick={() => {
             router.push('/');
           }}
-          className="px-8 py-3.5 rounded-full bg-emerald-500 hover:bg-emerald-400 text-[#14161A] text-sm font-bold flex items-center justify-center gap-2 cursor-pointer transition-all shadow-lg shrink-0"
+          className="px-8 py-3.5 rounded-full bg-emerald-500 hover:bg-emerald-400 text-gray-950 text-sm font-bold flex items-center justify-center gap-2 cursor-pointer transition-all shadow-lg shrink-0"
         >
           <span>Open Operating Dashboard</span>
           <ArrowRight className="h-4 w-4" />

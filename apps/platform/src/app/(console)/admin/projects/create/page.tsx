@@ -102,10 +102,7 @@ export default function ProjectCreationWizardPage() {
           planReferences: [selectedPlan],
           environmentMetadata: { defaultEnvironment: environment, supportedEnvironments: ['development', 'staging', 'production'] },
           platformController: {
-            controlPlaneUrl:
-              typeof window !== 'undefined'
-                ? window.location.origin
-                : process.env.NEXT_PUBLIC_CONTROL_PLANE_URL || 'http://localhost:3005',
+            controlPlaneUrl: typeof window !== 'undefined' ? window.location.origin : '',
             syncIntervalSeconds: syncInterval,
             requireSignedConfig: true,
           },
@@ -381,7 +378,7 @@ export default function ProjectCreationWizardPage() {
                 <code>
                   {typeof window !== 'undefined'
                     ? window.location.origin
-                    : process.env.NEXT_PUBLIC_CONTROL_PLANE_URL || 'https://control.orbitox.io'}
+                    : 'https://control.orbitox.io'}
                 </code>
               </div>
             </div>

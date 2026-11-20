@@ -50,9 +50,16 @@ export const POST = withCustomerAuth<RouteContext>(async (request, session, cont
 
       const plan = await tx.billingPlanMap.findFirst({
         where: {
-          razorpayPlanId,
+          OR: [
+            { razorpayPlanId },
+            { internalPlanId: razorpayPlanId },
+            { internalPlanId: `restaurant-${razorpayPlanId}` },
+            { internalPlanId: `restaurant-${razorpayPlanId.replace(/^plan_/, '').replace(/_(monthly|annual)$/, '')}` },
+            { internalPlanId: razorpayPlanId.replace(/^plan_/, '').replace(/_(monthly|annual)$/, '') },
+          ],
           active: true,
         },
+        orderBy: { createdAt: 'desc' },
         select: { razorpayPlanId: true, pluginId: true, internalPlanId: true },
       });
       if (!plan) return { error: 'BILLING_PLAN_NOT_FOUND' as const };

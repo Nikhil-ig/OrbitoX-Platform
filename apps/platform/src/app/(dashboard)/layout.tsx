@@ -173,6 +173,10 @@ function TopUtilityBar() {
 function PlatformLayoutInner({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
 
+  if (pathname === '/') {
+    return <div className="min-h-screen bg-[var(--color-bg,#0B0F17)]">{children}</div>;
+  }
+
   let activeServiceId: string | undefined;
   if (pathname?.includes('/hms')) activeServiceId = 'hms';
 
