@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import {
   Check,
@@ -11,14 +11,12 @@ import {
   Smartphone,
   ExternalLink,
   ArrowRight,
-  Flame,
-  ChefHat,
   Sparkles,
   Loader2,
   AlertCircle,
   X,
-  Download,
-  Settings,
+  CreditCard,
+  ChefHat,
 } from 'lucide-react';
 import { ProgressBar } from '@orbitox-io/ui';
 import { getCustomerCsrfToken } from './csrf';
@@ -71,6 +69,7 @@ export function F6ChecklistStep({
     kdsUrl?: string | null;
     tablesUrl?: string | null;
   }>({});
+  const [checklistVersion, setChecklistVersion] = useState<number>(1);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const [actionSuccess, setActionSuccess] = useState<string | null>(null);
@@ -93,6 +92,8 @@ export function F6ChecklistStep({
   const [printerEndpoint, setPrinterEndpoint] = useState('192.168.1.200:9100');
   const [printerPaper, setPrinterPaper] = useState<'80mm' | '58mm'>('80mm');
   const [printerTestDispatched, setPrinterTestDispatched] = useState(false);
+  const [printerTestId, setPrinterTestId] = useState<string | null>(null);
+  const [printerTestError, setPrinterTestError] = useState<string | null>(null);
   const [printerSubmitting, setPrinterSubmitting] = useState(false);
 
   // Default checklist items
@@ -174,15 +175,17 @@ export function F6ChecklistStep({
   }, [tenantId]);
 
   // Load authoritative checklist state from server
-  useEffect(() => {
-    let cancelled = false;
-    async function loadChecklist() {
-      if (!tenantId) return;
-      try {
-        const res = await fetch(`/api/v1/customer/tenants/${encodeURIComponent(tenantId)}/checklist`);
-        if (res.ok && !cancelled) {
-          const data = await res.json();
-          if (data?.checklist?.items) {
+  const loadChecklist = useCallback(async () => {
+    if (!tenantId) return;
+    try {
+      const res = await fetch(`/api/v1/customer/tenants/${encodeURIComponent(tenantId)}/checklist`);
+      if (res.ok) {
+        const data = await res.json();
+        if (data?.checklist) {
+          if (typeof data.checklist.version === 'number') {
+            setChecklistVersion(data.checklist.version);
+          }
+          if (data.checklist.items) {
             setItems((prev) =>
               prev.map((it) => {
                 const match = data.checklist.items.find((c: any) => c.id === it.id);
@@ -198,54 +201,30 @@ export function F6ChecklistStep({
                 return it;
               }),
             );
-            return;
+            try {
+              localStorage.setItem(`orbitox_onboarding_f6_${tenantId}`, JSON.stringify(data.checklist.items));
+            } catch {}
           }
         }
-      } catch {}
-
-      // Fallback to localStorage if server lookup fails
-      try {
-        const saved = localStorage.getItem(`orbitox_onboarding_f6_${tenantId}`);
-        if (saved && !cancelled) {
-          const parsed = JSON.parse(saved);
-          if (Array.isArray(parsed)) {
-            setItems((prev) =>
-              prev.map((it) => {
-                const match = parsed.find((p: any) => p.id === it.id);
-                if (match) {
-                  return {
-                    ...it,
-                    status: match.status || (match.completed ? 'COMPLETED' : 'NOT_STARTED'),
-                    completed: match.status === 'COMPLETED' || Boolean(match.completed),
-                    statusNote: match.statusNote ?? it.statusNote,
-                    evidence: match.evidence,
-                  };
-                }
-                return it;
-              }),
-            );
-          }
-        }
-      } catch {}
-    }
-
-    loadChecklist();
-    return () => {
-      cancelled = true;
-    };
+      }
+    } catch {}
   }, [tenantId]);
 
-  // Bounded Polling against /activation-status: every 3s, max 20 attempts (60s total)
+  useEffect(() => {
+    loadChecklist();
+  }, [loadChecklist]);
+
+  // Bounded Polling with Backoff & Focus/Visibility Recovery
   useEffect(() => {
     if (!tenantId) return;
-    if (!awaitingWebhook && subscriptionStatus === 'active' && runtimeActive) return;
 
+    let cancelled = false;
+    let timer: NodeJS.Timeout | null = null;
     let attempts = 0;
     const maxAttempts = 20;
-    let timer: NodeJS.Timeout | null = null;
-    let cancelled = false;
+    let delayMs = 3000;
 
-    async function checkStatus() {
+    async function checkActivation() {
       if (cancelled) return;
       attempts++;
       try {
@@ -256,7 +235,7 @@ export function F6ChecklistStep({
             setRuntimeActive(true);
             setSubscriptionStatus('active');
             setAwaitingWebhook(false);
-            return; // stop polling
+            return; // Live reached, stop polling
           }
           if (data.subscription?.status === 'active') {
             setSubscriptionStatus('active');
@@ -269,65 +248,82 @@ export function F6ChecklistStep({
       } catch {}
 
       if (!cancelled && attempts < maxAttempts) {
-        timer = setTimeout(checkStatus, 3000);
+        delayMs = Math.min(Math.round(delayMs * 1.3), 10000);
+        timer = setTimeout(checkActivation, delayMs);
       }
     }
 
-    // Start checking after 2.5 seconds
-    timer = setTimeout(checkStatus, 2500);
+    const onFocus = () => {
+      checkActivation();
+      loadChecklist();
+    };
+
+    const onVisibility = () => {
+      if (document.visibilityState === 'visible') {
+        checkActivation();
+        loadChecklist();
+      }
+    };
+
+    window.addEventListener('focus', onFocus);
+    document.addEventListener('visibilitychange', onVisibility);
+
+    timer = setTimeout(checkActivation, 2500);
 
     return () => {
       cancelled = true;
       if (timer) clearTimeout(timer);
+      window.removeEventListener('focus', onFocus);
+      document.removeEventListener('visibilitychange', onVisibility);
     };
-  }, [tenantId, awaitingWebhook, subscriptionStatus, runtimeActive]);
+  }, [tenantId, loadChecklist]);
 
-  // Persist item update to server and local cache
-  const persistChecklistItem = async (
-    itemId: 'qr' | 'kds' | 'staff' | 'payment' | 'printer',
-    status: ItemStatus,
-    statusNote?: string,
-    evidence?: any,
-  ) => {
-    const isCompleted = status === 'COMPLETED';
+  // Authoritative server mutation with concurrency control
+  const sendChecklistAction = async (payload: Record<string, any>) => {
+    setActionError(null);
     const csrf = getCustomerCsrfToken();
     const headers: Record<string, string> = { 'Content-Type': 'application/json' };
     if (csrf) headers['x-csrf-token'] = csrf;
 
-    try {
-      await fetch(`/api/v1/customer/tenants/${encodeURIComponent(tenantId)}/checklist`, {
-        method: 'POST',
-        headers,
-        body: JSON.stringify({ itemId, status, statusNote, evidence }),
-      });
-    } catch {}
+    const res = await fetch(`/api/v1/customer/tenants/${encodeURIComponent(tenantId)}/checklist`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ ...payload, expectedVersion: checklistVersion }),
+    });
 
-    setItems((prev) => {
-      const next = prev.map((it) =>
-        it.id === itemId
-          ? {
-              ...it,
-              status,
-              completed: isCompleted,
-              statusNote: statusNote ?? it.statusNote,
-              evidence: evidence ? { ...(it.evidence || {}), ...evidence } : it.evidence,
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok || !data.ok) {
+      const msg = data.message || data.error || `Checklist update failed (${res.status})`;
+      setActionError(msg);
+      throw new Error(msg);
+    }
+
+    if (data.checklist) {
+      if (typeof data.checklist.version === 'number') {
+        setChecklistVersion(data.checklist.version);
+      }
+      if (data.checklist.items) {
+        setItems((prev) =>
+          prev.map((it) => {
+            const match = data.checklist.items.find((c: any) => c.id === it.id);
+            if (match) {
+              return {
+                ...it,
+                status: (match.status as ItemStatus) || (match.completed ? 'COMPLETED' : 'NOT_STARTED'),
+                completed: match.status === 'COMPLETED' || Boolean(match.completed),
+                statusNote: match.statusNote ?? it.statusNote,
+                evidence: match.evidence,
+              };
             }
-          : it,
-      );
-      if (typeof window !== 'undefined' && tenantId) {
+            return it;
+          }),
+        );
         try {
-          const payload = next.map(({ id, completed, status, statusNote, evidence }) => ({
-            id,
-            completed,
-            status,
-            statusNote,
-            evidence,
-          }));
-          localStorage.setItem(`orbitox_onboarding_f6_${tenantId}`, JSON.stringify(payload));
+          localStorage.setItem(`orbitox_onboarding_f6_${tenantId}`, JSON.stringify(data.checklist.items));
         } catch {}
       }
-      return next;
-    });
+    }
+    return data;
   };
 
   const handleAction = async (id: string) => {
@@ -339,20 +335,26 @@ export function F6ChecklistStep({
       setActionLoading('qr');
       try {
         const downloadUrl = `/api/v1/customer/tenants/${encodeURIComponent(tenantId)}/tables/qr-sheet`;
+        const res = await fetch(downloadUrl);
+        if (!res.ok) {
+          const errData = await res.json().catch(() => ({}));
+          throw new Error(errData.message || errData.error || 'Failed to download QR placard sheet.');
+        }
+
+        const blob = await res.blob();
+        const blobUrl = window.URL.createObjectURL(blob);
         const link = document.createElement('a');
-        link.href = downloadUrl;
+        link.href = blobUrl;
         link.setAttribute('download', `qr-placards-${slug}.html`);
         document.body.appendChild(link);
         link.click();
         document.body.removeChild(link);
+        window.URL.revokeObjectURL(blobUrl);
 
-        await persistChecklistItem('qr', 'ACTION_REQUIRED', 'QR Sheet downloaded · Placement required', {
-          artifactDownloaded: true,
-          downloadedAt: new Date().toISOString(),
-        });
-        setActionSuccess('Ready-to-print Table QR placard sheet downloaded. Print and place on tables.');
-      } catch {
-        setActionError('Failed to download QR placard sheet.');
+        await loadChecklist();
+        setActionSuccess('Ready-to-print Table QR placards downloaded. Print and place placards on tables, then confirm placement.');
+      } catch (err: any) {
+        setActionError(err.message || 'Failed to download QR placard sheet.');
       } finally {
         setActionLoading(null);
       }
@@ -368,20 +370,10 @@ export function F6ChecklistStep({
           window.open(targetUrl, '_blank');
         }
 
-        const kdsRes = await fetch(`/api/v1/customer/tenants/${encodeURIComponent(tenantId)}/kds`);
-        if (kdsRes.ok) {
-          await persistChecklistItem('kds', 'ACTION_REQUIRED', 'Station link verified · Hardware placement required', {
-            stationLinkVerified: true,
-            verifiedAt: new Date().toISOString(),
-          });
-          setActionSuccess('Kitchen Display Station link verified. Hardware placement required.');
-        } else {
-          await persistChecklistItem('kds', 'PENDING_VERIFICATION', 'Station page opened · Connect hardware', {
-            openedAt: new Date().toISOString(),
-          });
-        }
-      } catch {
-        setActionError('Failed to ping KDS station runtime.');
+        await sendChecklistAction({ action: 'VERIFY_KDS', stationId: 'station_main_kitchen' });
+        setActionSuccess('Kitchen Display Station link verified. Mount tablet or monitor in kitchen, then confirm.');
+      } catch (err: any) {
+        setActionError(err.message || 'Failed to verify KDS station link.');
       } finally {
         setActionLoading(null);
       }
@@ -442,20 +434,15 @@ export function F6ChecklistStep({
           throw new Error(errData.message || errData.error || 'Test order placed, but settlement verification failed on runtime.');
         }
 
-        await persistChecklistItem(
-          'payment',
-          'COMPLETED',
-          `Preview test order submitted & settled (${placedOrderId})`,
-          {
-            orderId: placedOrderId,
-            settledAmountMinor: 100,
-            paymentMethod: 'UPI',
-            verifiedAt: new Date().toISOString(),
-          },
-        );
-        setActionSuccess(`Preview test order ${placedOrderId} placed and settled successfully.`);
+        await sendChecklistAction({
+          action: 'VERIFY_PREVIEW_PAYMENT',
+          orderId: placedOrderId,
+          amountMinor: 100,
+          paymentMethod: 'UPI',
+        });
+        setActionSuccess(`Preview test order placed and settled (${placedOrderId}). Now verify live gateway reconciliation.`);
       } catch (err: any) {
-        setActionError(err?.message || 'Payment test failed on restaurant runtime.');
+        setActionError(err.message || 'Payment test order or settlement failed.');
       } finally {
         setActionLoading(null);
       }
@@ -465,6 +452,8 @@ export function F6ChecklistStep({
     // 5. Thermal ESC/POS Printer - Opens configuration modal
     if (id === 'printer') {
       setPrinterTestDispatched(false);
+      setPrinterTestId(null);
+      setPrinterTestError(null);
       setPrinterModalOpen(true);
       return;
     }
@@ -473,13 +462,10 @@ export function F6ChecklistStep({
   const handleConfirmQrPlacement = async () => {
     setActionLoading('qr');
     try {
-      await persistChecklistItem('qr', 'COMPLETED', 'QR placards placed on tables', {
-        physicalPlacementConfirmed: true,
-        verifiedAt: new Date().toISOString(),
-      });
+      await sendChecklistAction({ action: 'ATTEST_QR' });
       setActionSuccess('Table QR placard placement verified and confirmed.');
-    } catch {
-      setActionError('Failed to record QR placement confirmation.');
+    } catch (err: any) {
+      setActionError(err.message || 'Failed to record QR placement confirmation.');
     } finally {
       setActionLoading(null);
     }
@@ -488,13 +474,22 @@ export function F6ChecklistStep({
   const handleConfirmKdsMounted = async () => {
     setActionLoading('kds');
     try {
-      await persistChecklistItem('kds', 'COMPLETED', 'KDS station operational & mounted', {
-        hardwareMounted: true,
-        verifiedAt: new Date().toISOString(),
-      });
+      await sendChecklistAction({ action: 'ATTEST_KDS' });
       setActionSuccess('Kitchen Display Station hardware placement confirmed.');
-    } catch {
-      setActionError('Failed to record KDS hardware confirmation.');
+    } catch (err: any) {
+      setActionError(err.message || 'Failed to record KDS hardware confirmation.');
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
+  const handleVerifyLiveGateway = async () => {
+    setActionLoading('payment');
+    try {
+      await sendChecklistAction({ action: 'VERIFY_GATEWAY' });
+      setActionSuccess('Payment gateway verified and reconciled.');
+    } catch (err: any) {
+      setActionError(err.message || 'Live gateway verification failed.');
     } finally {
       setActionLoading(null);
     }
@@ -529,16 +524,10 @@ export function F6ChecklistStep({
         throw new Error(data.error || data.message || `Invitation failed with status ${res.status}`);
       }
 
-      await persistChecklistItem(
-        'staff',
-        'COMPLETED',
-        `Invite dispatched to ${inviteEmail.trim()} (${inviteRole})`,
-        {
-          invitedEmail: inviteEmail.trim(),
-          invitedRole: inviteRole,
-          verifiedAt: new Date().toISOString(),
-        },
-      );
+      await sendChecklistAction({
+        action: 'VERIFY_STAFF',
+        memberEmail: inviteEmail.trim(),
+      });
       setActionSuccess(`Team invitation dispatched to ${inviteEmail.trim()}.`);
       setInviteModalOpen(false);
       setInviteEmail('');
@@ -551,10 +540,38 @@ export function F6ChecklistStep({
 
   const handleDispatchPrinterTest = async () => {
     setPrinterSubmitting(true);
+    setPrinterTestError(null);
     try {
-      // Simulate/Bridge dispatch of ESC/POS test packet
-      await new Promise((resolve) => setTimeout(resolve, 600));
+      const csrf = getCustomerCsrfToken();
+      const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+      if (csrf) headers['x-csrf-token'] = csrf;
+
+      const res = await fetch(`/api/v1/customer/tenants/${encodeURIComponent(tenantId)}/checklist`, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({
+          action: 'DISPATCH_PRINTER_TEST',
+          driver: printerDriver,
+          endpoint: printerEndpoint.trim(),
+        }),
+      });
+
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || !data.ok) {
+        const msg = data.message || data.error || 'No printer hardware detected at this endpoint.';
+        setPrinterTestError(msg);
+        setPrinterTestDispatched(false);
+        setPrinterTestId(null);
+        return;
+      }
+
       setPrinterTestDispatched(true);
+      setPrinterTestId(data.testPrintId);
+      setPrinterTestError(null);
+    } catch (err: any) {
+      setPrinterTestError(err.message || 'Printer test dispatch failed.');
+      setPrinterTestDispatched(false);
+      setPrinterTestId(null);
     } finally {
       setPrinterSubmitting(false);
     }
@@ -564,41 +581,33 @@ export function F6ChecklistStep({
     setPrinterSubmitting(true);
     try {
       if (isCompleted) {
-        const driverName =
-          printerDriver === 'epson_escpos'
-            ? 'Epson ESC/POS'
-            : printerDriver === 'star_prnt'
-            ? 'StarPRNT'
-            : 'Web Print Bridge';
-        await persistChecklistItem(
-          'printer',
-          'COMPLETED',
-          `Printer connected (${driverName} @ ${printerEndpoint})`,
-          {
-            printerDriver,
-            printerEndpoint,
-            paperWidth: printerPaper,
-            testPrintId: `test_prn_${Date.now()}`,
-            verifiedAt: new Date().toISOString(),
-          },
-        );
-        setActionSuccess(`ESC/POS printer ${driverName} configured and verified.`);
+        if (!printerTestDispatched || !printerTestId) {
+          setPrinterTestError('Please dispatch and verify a test receipt first, or choose "Mark Hardware Pending".');
+          setPrinterSubmitting(false);
+          return;
+        }
+
+        await sendChecklistAction({
+          action: 'CONFIGURE_PRINTER',
+          driver: printerDriver,
+          endpoint: printerEndpoint.trim(),
+          paperWidth: printerPaper,
+          testPrintId: printerTestId,
+        });
+        setActionSuccess(`ESC/POS printer configured and verified.`);
       } else {
-        await persistChecklistItem(
-          'printer',
-          'UNAVAILABLE',
-          'Hardware pending · No LAN printer',
-          {
-            printerDriver,
-            printerEndpoint,
-            paperWidth: printerPaper,
-          },
-        );
-        setActionSuccess('Printer hardware marked pending.');
+        await sendChecklistAction({
+          action: 'CONFIGURE_PRINTER',
+          driver: printerDriver,
+          endpoint: printerEndpoint.trim(),
+          paperWidth: printerPaper,
+          hardwarePending: true,
+        });
+        setActionSuccess('Printer hardware marked pending. Digital KDS tickets active.');
       }
       setPrinterModalOpen(false);
-    } catch {
-      setActionError('Failed to save printer configuration.');
+    } catch (err: any) {
+      setActionError(err.message || 'Failed to save printer configuration.');
     } finally {
       setPrinterSubmitting(false);
     }
@@ -716,6 +725,8 @@ export function F6ChecklistStep({
                           ? 'bg-emerald-100 text-emerald-700'
                           : item.status === 'ACTION_REQUIRED'
                           ? 'bg-amber-100 text-amber-800'
+                          : item.status === 'UNAVAILABLE'
+                          ? 'bg-slate-100 text-slate-700'
                           : 'bg-gray-100 text-gray-600'
                       }`}
                     >
@@ -753,6 +764,21 @@ export function F6ChecklistStep({
                   >
                     <Check className="h-3.5 w-3.5" />
                     <span>Confirm Mounted</span>
+                  </button>
+                )}
+
+              {/* Secondary action: Verify Live Gateway Payment */}
+              {item.id === 'payment' &&
+                item.status === 'ACTION_REQUIRED' &&
+                !item.completed && (
+                  <button
+                    type="button"
+                    disabled={actionLoading === 'payment'}
+                    onClick={handleVerifyLiveGateway}
+                    className="px-3.5 py-1.5 rounded-full bg-emerald-50 border border-emerald-300 text-emerald-700 hover:bg-emerald-100 text-xs font-semibold cursor-pointer transition-colors flex items-center gap-1.5"
+                  >
+                    <CreditCard className="h-3.5 w-3.5" />
+                    <span>Verify Live Gateway</span>
                   </button>
                 )}
 
@@ -923,7 +949,7 @@ export function F6ChecklistStep({
                   type="button"
                   disabled={printerSubmitting}
                   onClick={handleDispatchPrinterTest}
-                  className="w-full py-2.5 rounded-xl border border-gray-300 text-gray-800 hover:bg-gray-50 font-bold flex items-center justify-center gap-1.5 transition-colors"
+                  className="w-full py-2.5 rounded-xl border border-gray-300 text-gray-800 hover:bg-gray-50 font-bold flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
                 >
                   {printerSubmitting && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
                   <span>Dispatch Test Print Receipt</span>
@@ -932,7 +958,14 @@ export function F6ChecklistStep({
                 {printerTestDispatched && (
                   <div className="p-2.5 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-800 flex items-center gap-2">
                     <CheckCircle2 className="h-4 w-4 shrink-0 text-emerald-600" />
-                    <span>Test receipt packet sent to {printerEndpoint}. Verify printed slip.</span>
+                    <span>Test receipt packet acknowledged by printer bridge ({printerTestId}). Verify printed slip.</span>
+                  </div>
+                )}
+
+                {printerTestError && (
+                  <div className="p-2.5 rounded-xl bg-amber-50 border border-amber-200 text-amber-800 flex items-start gap-2">
+                    <AlertCircle className="h-4 w-4 shrink-0 mt-0.5 text-amber-600" />
+                    <span>{printerTestError}</span>
                   </div>
                 )}
               </div>
@@ -941,7 +974,7 @@ export function F6ChecklistStep({
                 <button
                   type="button"
                   onClick={() => handleSavePrinterConfig(false)}
-                  className="px-3 py-2 rounded-xl text-gray-500 hover:text-gray-800 hover:bg-gray-100 font-medium transition-colors"
+                  className="px-3 py-2 rounded-xl text-gray-500 hover:text-gray-800 hover:bg-gray-100 font-medium transition-colors cursor-pointer"
                 >
                   Mark Hardware Pending
                 </button>
@@ -950,7 +983,7 @@ export function F6ChecklistStep({
                   type="button"
                   disabled={printerSubmitting}
                   onClick={() => handleSavePrinterConfig(true)}
-                  className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold transition-all shadow-sm flex items-center gap-1.5 disabled:opacity-50"
+                  className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold transition-all shadow-sm flex items-center gap-1.5 disabled:opacity-50 cursor-pointer"
                 >
                   <Check className="h-3.5 w-3.5" />
                   <span>Confirm Connected</span>

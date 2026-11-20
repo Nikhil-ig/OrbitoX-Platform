@@ -1,5 +1,29 @@
 import { prisma } from '@/server/db/prisma';
 
+export class ChecklistConcurrencyError extends Error {
+  readonly statusCode = 409;
+  constructor(message: string) {
+    super(message);
+    this.name = 'ChecklistConcurrencyError';
+  }
+}
+
+export class InvalidChecklistTransitionError extends Error {
+  readonly statusCode = 400;
+  constructor(message: string) {
+    super(message);
+    this.name = 'InvalidChecklistTransitionError';
+  }
+}
+
+export class ChecklistPersistenceError extends Error {
+  readonly statusCode = 500;
+  constructor(message: string, public override readonly cause?: unknown) {
+    super(message);
+    this.name = 'ChecklistPersistenceError';
+  }
+}
+
 export type ChecklistItemStatus =
   | 'NOT_STARTED'
   | 'IN_PROGRESS'
@@ -19,14 +43,25 @@ export interface ChecklistEvidence {
   orderId?: string;
   settledAmountMinor?: number;
   paymentMethod?: string;
+  previewOrderId?: string;
+  previewSettledAmountMinor?: number;
+  previewPaymentMethod?: string;
+  previewSettledAt?: string;
+  gatewayVerified?: boolean;
+  gatewayTransactionId?: string;
   invitedEmail?: string;
   invitedRole?: string;
+  invitedAt?: string;
+  memberVerified?: boolean;
   kdsStationId?: string;
+  stationLinkVerified?: boolean;
   tasksCount?: number;
   tablesCount?: number;
   printerDriver?: string;
   printerEndpoint?: string;
+  paperWidth?: string;
   testPrintId?: string;
+  hardwarePending?: boolean;
   physicalPlacementConfirmed?: boolean;
   hardwareMounted?: boolean;
   metadata?: Record<string, any>;
@@ -46,6 +81,7 @@ export interface ChecklistItemRecord {
 
 export interface OnboardingChecklistState {
   tenantId: string;
+  version: number;
   items: ChecklistItemRecord[];
   completedCount: number;
   totalCount: number;
@@ -149,6 +185,7 @@ export async function getChecklist(tenantId: string, tableCount = 12): Promise<O
           const completedCount = mergedItems.filter((i) => i.completed).length;
           const freshState: OnboardingChecklistState = {
             tenantId,
+            version: typeof payload.version === 'number' ? payload.version : 1,
             items: mergedItems,
             completedCount,
             totalCount: mergedItems.length,
@@ -159,8 +196,10 @@ export async function getChecklist(tenantId: string, tableCount = 12): Promise<O
           return freshState;
         }
       }
-    } catch {
-      // Prisma offline or unconfigured, fallback to memory
+    } catch (err) {
+      if (process.env.NODE_ENV !== 'test') {
+        throw new ChecklistPersistenceError('Failed to read onboarding checklist state from database.', err);
+      }
     }
   }
 
@@ -171,6 +210,7 @@ export async function getChecklist(tenantId: string, tableCount = 12): Promise<O
   const completedCount = defaults.filter((i) => i.completed).length;
   const initialState: OnboardingChecklistState = {
     tenantId,
+    version: 1,
     items: defaults,
     completedCount,
     totalCount: defaults.length,
@@ -181,6 +221,498 @@ export async function getChecklist(tenantId: string, tableCount = 12): Promise<O
   return initialState;
 }
 
+export async function persistChecklistState(
+  tenantId: string,
+  state: OnboardingChecklistState,
+  expectedVersion?: number,
+): Promise<OnboardingChecklistState> {
+  const now = new Date();
+  state.updatedAt = now.toISOString();
+
+  if (process.env.DATABASE_URL) {
+    try {
+      const existing = await prisma.billingProviderCache.findUnique({
+        where: {
+          tenantId_cacheKey: {
+            tenantId,
+            cacheKey: CHECKLIST_CACHE_KEY,
+          },
+        },
+      });
+
+      let nextVersion = 1;
+      if (existing && existing.payload && typeof existing.payload === 'object') {
+        const payload = existing.payload as any;
+        const currentVersion = typeof payload.version === 'number' ? payload.version : 1;
+        if (expectedVersion !== undefined && expectedVersion !== currentVersion) {
+          throw new ChecklistConcurrencyError(
+            `Checklist version conflict for tenant ${tenantId}: expected ${expectedVersion}, but found ${currentVersion}`,
+          );
+        }
+        nextVersion = currentVersion + 1;
+      } else if (expectedVersion !== undefined && expectedVersion > 1) {
+        throw new ChecklistConcurrencyError(
+          `Checklist version conflict for tenant ${tenantId}: expected ${expectedVersion}, but state has not yet been initialized`,
+        );
+      }
+
+      state.version = nextVersion;
+
+      await prisma.billingProviderCache.upsert({
+        where: {
+          tenantId_cacheKey: {
+            tenantId,
+            cacheKey: CHECKLIST_CACHE_KEY,
+          },
+        },
+        update: {
+          payload: state as any,
+          expiresAt: new Date(Date.now() + FAR_FUTURE_MS),
+          updatedAt: now,
+        },
+        create: {
+          tenantId,
+          cacheKey: CHECKLIST_CACHE_KEY,
+          subscriptionId: 'onboarding',
+          payload: state as any,
+          expiresAt: new Date(Date.now() + FAR_FUTURE_MS),
+          updatedAt: now,
+        },
+      });
+    } catch (err) {
+      if (err instanceof ChecklistConcurrencyError) {
+        throw err;
+      }
+      if (process.env.NODE_ENV !== 'test') {
+        throw new ChecklistPersistenceError('Failed to persist onboarding checklist state to database.', err);
+      }
+    }
+  } else {
+    const memory = inMemoryChecklistStore.get(tenantId);
+    const currentVersion = memory?.version || 1;
+    if (expectedVersion !== undefined && expectedVersion !== currentVersion) {
+      throw new ChecklistConcurrencyError(
+        `Checklist version conflict for tenant ${tenantId}: expected ${expectedVersion}, but found ${currentVersion}`,
+      );
+    }
+    state.version = currentVersion + 1;
+  }
+
+  inMemoryChecklistStore.set(tenantId, state);
+  return state;
+}
+
+export async function recordQrDownloaded(
+  tenantId: string,
+  actorId: string,
+  tablesCount: number,
+  expectedVersion?: number,
+): Promise<OnboardingChecklistState> {
+  const current = await getChecklist(tenantId);
+  const now = new Date().toISOString();
+
+  const updatedItems = current.items.map((it) => {
+    if (it.id !== 'qr') return it;
+    const evidence: ChecklistEvidence = {
+      ...(it.evidence || {}),
+      artifactDownloaded: true,
+      downloadedAt: now,
+      tablesCount,
+      verifiedBy: actorId,
+    };
+    return {
+      ...it,
+      status: 'ACTION_REQUIRED' as ChecklistItemStatus,
+      completed: false,
+      statusNote: 'QR Sheet downloaded · Placement required',
+      evidence,
+      updatedAt: now,
+    };
+  });
+
+  const completedCount = updatedItems.filter((i) => i.completed).length;
+  const nextState: OnboardingChecklistState = {
+    ...current,
+    items: updatedItems,
+    completedCount,
+    allCompleted: completedCount === updatedItems.length,
+  };
+
+  return persistChecklistState(tenantId, nextState, expectedVersion);
+}
+
+export async function recordQrPlacementAttestation(
+  tenantId: string,
+  actorId: string,
+  expectedVersion?: number,
+): Promise<OnboardingChecklistState> {
+  const current = await getChecklist(tenantId);
+  const qrItem = current.items.find((i) => i.id === 'qr');
+  if (!qrItem?.evidence?.artifactDownloaded) {
+    throw new InvalidChecklistTransitionError('Cannot attest QR placard placement before downloading the placard sheet.');
+  }
+
+  const now = new Date().toISOString();
+  const updatedItems = current.items.map((it) => {
+    if (it.id !== 'qr') return it;
+    const evidence: ChecklistEvidence = {
+      ...(it.evidence || {}),
+      physicalPlacementConfirmed: true,
+      verifiedAt: now,
+      verifiedBy: actorId,
+    };
+    return {
+      ...it,
+      status: 'COMPLETED' as ChecklistItemStatus,
+      completed: true,
+      statusNote: 'QR placards placed on tables',
+      evidence,
+      updatedAt: now,
+    };
+  });
+
+  const completedCount = updatedItems.filter((i) => i.completed).length;
+  const nextState: OnboardingChecklistState = {
+    ...current,
+    items: updatedItems,
+    completedCount,
+    allCompleted: completedCount === updatedItems.length,
+  };
+
+  return persistChecklistState(tenantId, nextState, expectedVersion);
+}
+
+export async function recordKdsVerified(
+  tenantId: string,
+  actorId: string,
+  stationId = 'station_main_kitchen',
+  tasksCount = 0,
+  expectedVersion?: number,
+): Promise<OnboardingChecklistState> {
+  const current = await getChecklist(tenantId);
+  const now = new Date().toISOString();
+
+  const updatedItems = current.items.map((it) => {
+    if (it.id !== 'kds') return it;
+    const evidence: ChecklistEvidence = {
+      ...(it.evidence || {}),
+      stationLinkVerified: true,
+      kdsStationId: stationId,
+      tasksCount,
+      verifiedAt: now,
+      verifiedBy: actorId,
+    };
+    return {
+      ...it,
+      status: 'ACTION_REQUIRED' as ChecklistItemStatus,
+      completed: false,
+      statusNote: 'Station link verified · Hardware placement required',
+      evidence,
+      updatedAt: now,
+    };
+  });
+
+  const completedCount = updatedItems.filter((i) => i.completed).length;
+  const nextState: OnboardingChecklistState = {
+    ...current,
+    items: updatedItems,
+    completedCount,
+    allCompleted: completedCount === updatedItems.length,
+  };
+
+  return persistChecklistState(tenantId, nextState, expectedVersion);
+}
+
+export async function recordKdsMountedAttestation(
+  tenantId: string,
+  actorId: string,
+  expectedVersion?: number,
+): Promise<OnboardingChecklistState> {
+  const current = await getChecklist(tenantId);
+  const now = new Date().toISOString();
+
+  const updatedItems = current.items.map((it) => {
+    if (it.id !== 'kds') return it;
+    const evidence: ChecklistEvidence = {
+      ...(it.evidence || {}),
+      hardwareMounted: true,
+      verifiedAt: now,
+      verifiedBy: actorId,
+    };
+    return {
+      ...it,
+      status: 'COMPLETED' as ChecklistItemStatus,
+      completed: true,
+      statusNote: 'KDS station operational & mounted',
+      evidence,
+      updatedAt: now,
+    };
+  });
+
+  const completedCount = updatedItems.filter((i) => i.completed).length;
+  const nextState: OnboardingChecklistState = {
+    ...current,
+    items: updatedItems,
+    completedCount,
+    allCompleted: completedCount === updatedItems.length,
+  };
+
+  return persistChecklistState(tenantId, nextState, expectedVersion);
+}
+
+export async function recordStaffInvited(
+  tenantId: string,
+  actorId: string,
+  email: string,
+  role: string,
+  expectedVersion?: number,
+): Promise<OnboardingChecklistState> {
+  const current = await getChecklist(tenantId);
+  const now = new Date().toISOString();
+
+  const updatedItems = current.items.map((it) => {
+    if (it.id !== 'staff') return it;
+    const evidence: ChecklistEvidence = {
+      ...(it.evidence || {}),
+      invitedEmail: email,
+      invitedRole: role,
+      invitedAt: now,
+      verifiedBy: actorId,
+    };
+    return {
+      ...it,
+      status: 'PENDING_VERIFICATION' as ChecklistItemStatus,
+      completed: false,
+      statusNote: `Invite dispatched to ${email} (${role}) · Awaiting acceptance`,
+      evidence,
+      updatedAt: now,
+    };
+  });
+
+  const completedCount = updatedItems.filter((i) => i.completed).length;
+  const nextState: OnboardingChecklistState = {
+    ...current,
+    items: updatedItems,
+    completedCount,
+    allCompleted: completedCount === updatedItems.length,
+  };
+
+  return persistChecklistState(tenantId, nextState, expectedVersion);
+}
+
+export async function recordStaffVerified(
+  tenantId: string,
+  actorId: string,
+  memberEmail?: string,
+  expectedVersion?: number,
+): Promise<OnboardingChecklistState> {
+  const current = await getChecklist(tenantId);
+  const now = new Date().toISOString();
+
+  const updatedItems = current.items.map((it) => {
+    if (it.id !== 'staff') return it;
+    const evidence: ChecklistEvidence = {
+      ...(it.evidence || {}),
+      memberVerified: true,
+      verifiedAt: now,
+      verifiedBy: actorId,
+    };
+    return {
+      ...it,
+      status: 'COMPLETED' as ChecklistItemStatus,
+      completed: true,
+      statusNote: memberEmail ? `Team member ${memberEmail} active` : 'Team member verified & onboarded',
+      evidence,
+      updatedAt: now,
+    };
+  });
+
+  const completedCount = updatedItems.filter((i) => i.completed).length;
+  const nextState: OnboardingChecklistState = {
+    ...current,
+    items: updatedItems,
+    completedCount,
+    allCompleted: completedCount === updatedItems.length,
+  };
+
+  return persistChecklistState(tenantId, nextState, expectedVersion);
+}
+
+export async function recordPreviewPaymentSettled(
+  tenantId: string,
+  actorId: string,
+  orderId: string,
+  amountMinor: number,
+  method = 'UPI',
+  expectedVersion?: number,
+): Promise<OnboardingChecklistState> {
+  const current = await getChecklist(tenantId);
+  const now = new Date().toISOString();
+
+  const updatedItems = current.items.map((it) => {
+    if (it.id !== 'payment') return it;
+    const evidence: ChecklistEvidence = {
+      ...(it.evidence || {}),
+      previewOrderId: orderId,
+      previewSettledAmountMinor: amountMinor,
+      previewPaymentMethod: method,
+      previewSettledAt: now,
+      verifiedBy: actorId,
+    };
+    return {
+      ...it,
+      status: 'ACTION_REQUIRED' as ChecklistItemStatus,
+      completed: false,
+      statusNote: `Preview test order settled (${orderId}) · Live gateway reconciliation pending`,
+      evidence,
+      updatedAt: now,
+    };
+  });
+
+  const completedCount = updatedItems.filter((i) => i.completed).length;
+  const nextState: OnboardingChecklistState = {
+    ...current,
+    items: updatedItems,
+    completedCount,
+    allCompleted: completedCount === updatedItems.length,
+  };
+
+  return persistChecklistState(tenantId, nextState, expectedVersion);
+}
+
+export async function recordLiveGatewayVerified(
+  tenantId: string,
+  actorId: string,
+  transactionId: string,
+  method = 'UPI',
+  expectedVersion?: number,
+): Promise<OnboardingChecklistState> {
+  const current = await getChecklist(tenantId);
+  const now = new Date().toISOString();
+
+  const updatedItems = current.items.map((it) => {
+    if (it.id !== 'payment') return it;
+    const evidence: ChecklistEvidence = {
+      ...(it.evidence || {}),
+      gatewayVerified: true,
+      gatewayTransactionId: transactionId,
+      paymentMethod: method,
+      verifiedAt: now,
+      verifiedBy: actorId,
+    };
+    return {
+      ...it,
+      status: 'COMPLETED' as ChecklistItemStatus,
+      completed: true,
+      statusNote: 'Live payment gateway verified & reconciled',
+      evidence,
+      updatedAt: now,
+    };
+  });
+
+  const completedCount = updatedItems.filter((i) => i.completed).length;
+  const nextState: OnboardingChecklistState = {
+    ...current,
+    items: updatedItems,
+    completedCount,
+    allCompleted: completedCount === updatedItems.length,
+  };
+
+  return persistChecklistState(tenantId, nextState, expectedVersion);
+}
+
+export async function recordPrinterConfigured(
+  tenantId: string,
+  actorId: string,
+  config: {
+    driver: string;
+    endpoint: string;
+    paperWidth?: string;
+    testPrintId?: string;
+  },
+  expectedVersion?: number,
+): Promise<OnboardingChecklistState> {
+  const current = await getChecklist(tenantId);
+  const now = new Date().toISOString();
+
+  const isVerified = Boolean(config.testPrintId);
+  const updatedItems = current.items.map((it) => {
+    if (it.id !== 'printer') return it;
+    const evidence: ChecklistEvidence = {
+      ...(it.evidence || {}),
+      printerDriver: config.driver,
+      printerEndpoint: config.endpoint,
+      paperWidth: config.paperWidth,
+      testPrintId: config.testPrintId,
+      verifiedAt: isVerified ? now : undefined,
+      verifiedBy: actorId,
+    };
+    return {
+      ...it,
+      status: (isVerified ? 'COMPLETED' : 'ACTION_REQUIRED') as ChecklistItemStatus,
+      completed: isVerified,
+      statusNote: isVerified
+        ? `Printer connected (${config.driver} @ ${config.endpoint})`
+        : `Printer endpoint registered (${config.driver}) · Dispatch test required`,
+      evidence,
+      updatedAt: now,
+    };
+  });
+
+  const completedCount = updatedItems.filter((i) => i.completed).length;
+  const nextState: OnboardingChecklistState = {
+    ...current,
+    items: updatedItems,
+    completedCount,
+    allCompleted: completedCount === updatedItems.length,
+  };
+
+  return persistChecklistState(tenantId, nextState, expectedVersion);
+}
+
+export async function recordPrinterPending(
+  tenantId: string,
+  actorId: string,
+  config?: {
+    driver?: string;
+    endpoint?: string;
+    paperWidth?: string;
+  },
+  expectedVersion?: number,
+): Promise<OnboardingChecklistState> {
+  const current = await getChecklist(tenantId);
+  const now = new Date().toISOString();
+
+  const updatedItems = current.items.map((it) => {
+    if (it.id !== 'printer') return it;
+    const evidence: ChecklistEvidence = {
+      ...(it.evidence || {}),
+      ...(config || {}),
+      hardwarePending: true,
+      verifiedAt: now,
+      verifiedBy: actorId,
+    };
+    return {
+      ...it,
+      status: 'UNAVAILABLE' as ChecklistItemStatus,
+      completed: false,
+      statusNote: 'Hardware pending · Digital KDS tickets active',
+      evidence,
+      updatedAt: now,
+    };
+  });
+
+  const completedCount = updatedItems.filter((i) => i.completed).length;
+  const nextState: OnboardingChecklistState = {
+    ...current,
+    items: updatedItems,
+    completedCount,
+    allCompleted: completedCount === updatedItems.length,
+  };
+
+  return persistChecklistState(tenantId, nextState, expectedVersion);
+}
+
 export async function updateChecklistItem(
   tenantId: string,
   input: {
@@ -189,6 +721,7 @@ export async function updateChecklistItem(
     statusNote?: string;
     evidence?: ChecklistEvidence;
     actorId?: string;
+    expectedVersion?: number;
   },
   tableCount = 12,
 ): Promise<OnboardingChecklistState> {
@@ -196,6 +729,17 @@ export async function updateChecklistItem(
   const now = new Date().toISOString();
 
   const isCompleted = input.status === 'COMPLETED';
+
+  // Enforce server-authoritative transitions: client cannot fabricate completion without required evidence
+  if (isCompleted) {
+    if (input.itemId === 'qr' && !input.evidence?.physicalPlacementConfirmed) {
+      throw new InvalidChecklistTransitionError('Cannot mark QR placard item completed without physical placement confirmation.');
+    }
+    if (input.itemId === 'kds' && !input.evidence?.hardwareMounted) {
+      throw new InvalidChecklistTransitionError('Cannot mark KDS item completed without hardware mounting confirmation.');
+    }
+  }
+
   const updatedItems = current.items.map((it) => {
     if (it.id !== input.itemId) return it;
 
@@ -222,43 +766,12 @@ export async function updateChecklistItem(
 
   const completedCount = updatedItems.filter((i) => i.completed).length;
   const nextState: OnboardingChecklistState = {
-    tenantId,
+    ...current,
     items: updatedItems,
     completedCount,
-    totalCount: updatedItems.length,
     allCompleted: completedCount === updatedItems.length,
     updatedAt: now,
   };
 
-  inMemoryChecklistStore.set(tenantId, nextState);
-
-  if (process.env.DATABASE_URL) {
-    try {
-      await prisma.billingProviderCache.upsert({
-        where: {
-          tenantId_cacheKey: {
-            tenantId,
-            cacheKey: CHECKLIST_CACHE_KEY,
-          },
-        },
-        update: {
-          payload: nextState as any,
-          expiresAt: new Date(Date.now() + FAR_FUTURE_MS),
-          updatedAt: new Date(),
-        },
-        create: {
-          tenantId,
-          cacheKey: CHECKLIST_CACHE_KEY,
-          subscriptionId: 'onboarding',
-          payload: nextState as any,
-          expiresAt: new Date(Date.now() + FAR_FUTURE_MS),
-          updatedAt: new Date(),
-        },
-      });
-    } catch {
-      // Prisma offline, state is still retained in memory
-    }
-  }
-
-  return nextState;
+  return persistChecklistState(tenantId, nextState, input.expectedVersion);
 }

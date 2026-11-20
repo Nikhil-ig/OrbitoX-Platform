@@ -30,7 +30,7 @@ async function allocateSafePort(preferred: number): Promise<number> {
   throw new Error('No available safe port found');
 }
 
-import { getStandaloneScript, getStandaloneCwd, createCleanStandaloneEnv } from '../standalone-helper';
+import { getStandaloneScript, getStandaloneCwd, createCleanStandaloneEnv, terminateChildProcess } from '../standalone-helper';
 
 describe('Standalone Server Customer Tenant Provisioning Gate (N1)', () => {
   const serverScript = getStandaloneScript(__dirname);
@@ -356,7 +356,7 @@ describe('Standalone Server Customer Tenant Provisioning Gate (N1)', () => {
     }
 
     if (child) {
-      child.kill('SIGKILL');
+      await terminateChildProcess(child);
       child = null;
     }
   });

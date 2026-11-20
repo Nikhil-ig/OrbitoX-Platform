@@ -1,10 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
+import crypto from 'node:crypto';
 import QRCode from 'qrcode';
 import { withCustomerAuth } from '@/server/auth/customer-auth';
 import { noStoreHeaders, getCustomerOrganizationRole } from '@/server/organizations/customer-dashboard';
 import { prisma } from '@/server/db/prisma';
 import { signBridgeRequest, getDefaultBridgeKeys } from '@orbitox-io/bridge';
-import { updateChecklistItem } from '@/server/onboarding/checklist-service';
+import { recordQrDownloaded } from '@/server/onboarding/checklist-service';
 
 type RouteContext = { params: Promise<{ tenantId: string }> };
 
@@ -81,6 +82,7 @@ export const GET = withCustomerAuth<RouteContext>(
 
     // Retrieve live tables via RestaurantOS runtime bridge
     let tables: TableRecord[] = [];
+    let bridgeError = false;
     const runtimeUrl =
       process.env.RESTAURANTOS_RUNTIME_URL ||
       process.env.RESTAURANT_STORE_URL ||
@@ -107,24 +109,62 @@ export const GET = withCustomerAuth<RouteContext>(
         if (Array.isArray(json.tables) && json.tables.length > 0) {
           tables = json.tables;
         }
+      } else {
+        bridgeError = true;
       }
     } catch {
-      // Fallback below if bridge is offline
+      bridgeError = true;
     }
 
-    // If no tables returned from runtime, synthesize standard tables based on template count
+    // Fallback: Query platform database for provisioned restaurant tables
     if (tables.length === 0) {
-      const count = 12;
-      for (let i = 1; i <= count; i++) {
-        const num = i < 10 ? `0${i}` : `${i}`;
-        tables.push({
-          id: i,
-          number: `T-${num}`,
-          capacity: 4,
-          section: 'Main Dining',
-          locator: Buffer.from(`table_${project.slug}_${i}`).toString('base64url').slice(0, 10),
+      try {
+        const dbTables = await prisma.restaurantTable.findMany({
+          where: {
+            OR: [
+              { tenantId: canonicalTenantId },
+              { tenantId: project.id },
+              { tenantId: `tenant_${project.slug}` },
+            ],
+          },
+          include: { qrIdentity: true, serviceArea: true },
+          orderBy: { tableNumber: 'asc' },
         });
+
+        if (dbTables.length > 0) {
+          tables = dbTables.map((t) => ({
+            id: t.id,
+            number: t.tableNumber,
+            capacity: t.capacity,
+            section: t.serviceArea?.name || 'Main Dining',
+            locator:
+              t.qrIdentity?.locator ||
+              crypto.createHmac('sha256', project.id).update(t.id).digest('base64url').slice(0, 12),
+          }));
+        }
+      } catch {}
+    }
+
+    // Fail honestly if no tables exist
+    if (tables.length === 0) {
+      if (bridgeError) {
+        return NextResponse.json(
+          {
+            ok: false,
+            error: 'SERVICE_UNAVAILABLE',
+            message: 'RestaurantOS runtime backend is currently unreachable and no table records exist.',
+          },
+          { status: 503, headers: noStoreHeaders() },
+        );
       }
+      return NextResponse.json(
+        {
+          ok: false,
+          error: 'NO_TABLES_FOUND',
+          message: 'No tables provisioned for this restaurant. Please create dining tables in floor management before generating QR placards.',
+        },
+        { status: 404, headers: noStoreHeaders() },
+      );
     }
 
     // Generate SVG QR codes for all tables
@@ -342,18 +382,8 @@ export const GET = withCustomerAuth<RouteContext>(
 </body>
 </html>`;
 
-    // Asynchronously record evidence that artifact was downloaded
-    await updateChecklistItem(canonicalTenantId, {
-      itemId: 'qr',
-      status: 'ACTION_REQUIRED',
-      statusNote: 'QR Sheet downloaded · Physical placement required',
-      evidence: {
-        artifactDownloaded: true,
-        downloadedAt: new Date().toISOString(),
-        tablesCount: tables.length,
-      },
-      actorId: session.userId,
-    }).catch(() => {});
+    // Record authoritative evidence that artifact was downloaded
+    await recordQrDownloaded(canonicalTenantId, session.userId, tables.length).catch(() => {});
 
     return new Response(html, {
       status: 200,

@@ -33,7 +33,7 @@ import {
   scrubSecrets,
 } from '@orbitox-io/sdk';
 
-import { getStandaloneScript, getStandaloneCwd, createCleanStandaloneEnv } from '../standalone-helper';
+import { getStandaloneScript, getStandaloneCwd, createCleanStandaloneEnv, terminateChildProcess } from '../standalone-helper';
 
 const databaseUrl = process.env.DATABASE_URL || 'postgresql://postgres:postgrespassword@127.0.0.1:5432/orbitox_phase2';
 const serverScript = getStandaloneScript(__dirname);
@@ -221,9 +221,8 @@ describe('🪐 Phase 5: @orbitox-io/sdk Integration & Real Server Suite', () => 
 
   after(async () => {
     if (child) {
-      child.kill('SIGTERM');
-      await new Promise((r) => setTimeout(r, 500));
-      child.kill('SIGKILL');
+      await terminateChildProcess(child);
+      child = null;
     }
     if (prisma) {
       await prisma.$disconnect();

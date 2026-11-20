@@ -26,6 +26,7 @@ import { rotateGrantSigningKey } from '@orbitox-io/plugin-engine';
 import { NextRequest } from 'next/server';
 import { forwardSignedBridgeCall } from '@/app/api/restaurant/_lib/restaurant-routing';
 import { platformRepository } from '@/server/db/platform-repository';
+import { terminateChildProcess } from '../standalone-helper';
 
 Reflect.set(process.env, 'NODE_ENV', 'test');
 process.env.ORBITOX_PLATFORM_REPOSITORY = 'json';
@@ -127,7 +128,7 @@ before(async () => {
   } catch (err: any) {
     console.log('[E2E Lifecycle] Skipping: Failed to initialize RestaurantOS process:', err?.message);
     if (restaurantProcess) {
-      restaurantProcess.kill('SIGTERM');
+      await terminateChildProcess(restaurantProcess);
       restaurantProcess = null;
     }
   }
@@ -135,7 +136,8 @@ before(async () => {
 
 after(async () => {
   if (restaurantProcess) {
-    restaurantProcess.kill('SIGTERM');
+    await terminateChildProcess(restaurantProcess);
+    restaurantProcess = null;
   }
   if (isRestoReady) {
     try {

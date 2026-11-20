@@ -41,9 +41,11 @@ const STORAGE_KEY = 'orbitox_customer_onboarding_v1';
 
 const VIEWPORTS = [
   { name: 'Mobile Phone', width: 390, height: 844 },
+  { name: 'Tablet Small', width: 768, height: 1024 },
   { name: 'Tablet Portrait', width: 834, height: 1194 },
   { name: 'Tablet Landscape', width: 1194, height: 834 },
-  { name: 'Desktop Large', width: 1440, height: 900 },
+  { name: 'Desktop Laptop', width: 1440, height: 900 },
+  { name: 'Desktop Large FHD', width: 1920, height: 1080 },
 ];
 
 async function getBrowser(): Promise<Browser> {

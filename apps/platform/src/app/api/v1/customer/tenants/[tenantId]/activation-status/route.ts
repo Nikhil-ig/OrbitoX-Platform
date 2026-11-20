@@ -157,11 +157,38 @@ export const GET = withCustomerAuth<RouteContext>(
     // 5. Query server-side checklist state
     const checklist = await getChecklist(canonicalTenantId);
 
-    // Compute live operational status:
-    // isLive is true when subscription is active and runtime is active
+    // 6. Authoritative Activation Gates:
+    // Gate 1: Org mapped - project belongs to valid organization and caller has OWNER/ADMIN role
+    const orgMapped = Boolean(project.organizationId && (role === 'OWNER' || role === 'ADMIN'));
+
+    // Gate 2: Subscription active - billing subscription exists and status is strictly 'active'
+    const subscriptionActive = Boolean(subscription && subscription.status === 'active');
+
+    // Gate 3: Plugin installation active - plugin installation exists and status is strictly 'ACTIVE'
+    const pluginActive = Boolean(installation && installation.status === 'ACTIVE');
+
+    // Gate 4: Provisioning saga completed - no active/failed saga, latest saga status is 'COMPLETED' or runtime tenant established
+    const sagaCompleted = Boolean(
+      (!activeOp && runtimeTenant && (runtimeTenant.status === 'ACTIVE' || runtimeTenant.status === 'active')) ||
+      (activeOp && activeOp.status === 'COMPLETED')
+    );
+
+    // Gate 5: Runtime tenant provisioned - runtimeTenant exists and is ACTIVE
+    const runtimeProvisioned = Boolean(
+      runtimeTenant && (runtimeTenant.status === 'ACTIVE' || runtimeTenant.status === 'active')
+    );
+
+    // Gate 6: Runtime health - runtimeHealth is strictly HEALTHY
+    const runtimeHealthy = runtimeHealth === 'HEALTHY';
+
+    // Authoritative Single Live Activation Predicate: All 6 gates must strictly pass
     const isLive = Boolean(
-      subscription?.status === 'active' &&
-      (runtimeTenant?.status === 'ACTIVE' || runtimeTenant?.status === 'active')
+      orgMapped &&
+      subscriptionActive &&
+      pluginActive &&
+      sagaCompleted &&
+      runtimeProvisioned &&
+      runtimeHealthy
     );
 
     const isAwaitingWebhook = Boolean(
@@ -174,6 +201,14 @@ export const GET = withCustomerAuth<RouteContext>(
         ok: true,
         isLive,
         isAwaitingWebhook,
+        gates: {
+          orgMapped,
+          subscriptionActive,
+          pluginActive,
+          sagaCompleted,
+          runtimeProvisioned,
+          runtimeHealthy,
+        },
         subscription: {
           id: subscription?.razorpaySubscriptionId || null,
           status: subscription?.status || 'none',

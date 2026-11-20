@@ -87,7 +87,7 @@ function sendRawHttpRequest(options: {
   });
 }
 
-import { getStandaloneScript, getStandaloneCwd, createCleanStandaloneEnv } from '../standalone-helper';
+import { getStandaloneScript, getStandaloneCwd, createCleanStandaloneEnv, terminateChildProcess } from '../standalone-helper';
 
 describe('Phase 4 Item 8: Comprehensive Tenant Provisioning Matrix', () => {
   const serverScript = getStandaloneScript(__dirname);
@@ -355,9 +355,7 @@ describe('Phase 4 Item 8: Comprehensive Tenant Provisioning Matrix', () => {
 
   after(async () => {
     if (child) {
-      child.kill('SIGTERM');
-      await new Promise((r) => setTimeout(r, 500));
-      if (!child.killed) child.kill('SIGKILL');
+      await terminateChildProcess(child);
     }
 
     if (prisma) {
@@ -747,9 +745,7 @@ describe('Phase 4 Item 8: Comprehensive Tenant Provisioning Matrix', () => {
       }
 
       // Clean up Server 2
-      server2.kill('SIGTERM');
-      await new Promise((r) => setTimeout(r, 300));
-      if (!server2.killed) server2.kill('SIGKILL');
+      await terminateChildProcess(server2);
 
       assert.ok(activeOp, 'Operation must have finished on Server 2');
       assert.strictEqual(activeOp.status, 'ACTIVE', `Operation must reach ACTIVE on resume, got ${activeOp.status}`);
@@ -757,12 +753,8 @@ describe('Phase 4 Item 8: Comprehensive Tenant Provisioning Matrix', () => {
         assert.strictEqual(step.status, 'COMPLETED', `Step ${step.id} must be COMPLETED`);
       }
     } finally {
-      if (server1 && !server1.killed) {
-        try { server1.kill('SIGKILL'); } catch {}
-      }
-      if (server2 && !server2.killed) {
-        try { server2.kill('SIGKILL'); } catch {}
-      }
+      await terminateChildProcess(server1);
+      await terminateChildProcess(server2);
     }
 
     // 6. Assert DB invariant: NO duplicate project, installation, or API key rows
@@ -1154,9 +1146,7 @@ describe('Phase 4 Item 8: Comprehensive Tenant Provisioning Matrix', () => {
       console.log(`  • RestaurantOS guest order: 403 SERVICE_SUSPENDED -> 200 OK`);
       console.log(`=============================================================\n`);
     } finally {
-      restoProcess.kill('SIGTERM');
-      await new Promise((r) => setTimeout(r, 200));
-      if (!restoProcess.killed) restoProcess.kill('SIGKILL');
+      await terminateChildProcess(restoProcess);
     }
   });
 

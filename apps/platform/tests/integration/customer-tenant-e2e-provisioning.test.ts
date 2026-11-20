@@ -82,6 +82,7 @@ describe('Stage 4: End-to-End Customer Restaurant Provisioning & Working Preview
             name: 'Masala Bay Bistro',
             slug,
             status: 'preview',
+            previewExpiresAt: new Date(Date.now() + 86400000).toISOString(),
             tableCount: 14,
             sampleTableLocator: {
               tableNumber: 'T-01',
