@@ -12,8 +12,8 @@ export const PATCH = withHospitalGuard(async (req: NextRequest, { params }: { pa
 
     const data = await withTenantTx(prisma, authContext.tenantId, async (tx) => {
       const existing = await tx.query<{ patientId: string }>(
-        `SELECT "patientId" FROM "HmsAppointment" WHERE "id" = $1`,
-        [id]
+        `SELECT "patientId" FROM "HmsAppointment" WHERE "id" = $1 AND "tenantId" = $2`,
+        [id, authContext.tenantId]
       );
       if (!existing.rows[0]) throw new HttpError(404, 'REFERENCE_NOT_FOUND', 'Appointment not found');
       await assertPatientActive(tx, existing.rows[0].patientId);
@@ -22,9 +22,9 @@ export const PATCH = withHospitalGuard(async (req: NextRequest, { params }: { pa
         `UPDATE "HmsAppointment"
          SET "status" = COALESCE($2, "status"),
              "reasonSealed" = COALESCE($3, "reasonSealed")
-         WHERE "id" = $1
+         WHERE "id" = $1 AND "tenantId" = $4
          RETURNING "id", "patientId", "doctorId", "status", "reasonSealed"`,
-        [id, body.status ?? null, body.reasonSealed ?? body.reason ?? null]
+        [id, body.status ?? null, body.reasonSealed ?? body.reason ?? null, authContext.tenantId]
       );
       if (!rows[0]) throw new HttpError(404, 'REFERENCE_NOT_FOUND', 'Appointment not found');
       return rows[0];
@@ -44,8 +44,8 @@ export const DELETE = withHospitalGuard(async (_req: NextRequest, { params }: { 
     // Runtime role does not DELETE clinical rows (I8); soft-cancel appointment by setting status = 'CANCELLED'
     const data = await withTenantTx(prisma, authContext.tenantId, async (tx) => {
       const existing = await tx.query<{ patientId: string }>(
-        `SELECT "patientId" FROM "HmsAppointment" WHERE "id" = $1`,
-        [id]
+        `SELECT "patientId" FROM "HmsAppointment" WHERE "id" = $1 AND "tenantId" = $2`,
+        [id, authContext.tenantId]
       );
       if (!existing.rows[0]) throw new HttpError(404, 'REFERENCE_NOT_FOUND', 'Appointment not found');
       await assertPatientActive(tx, existing.rows[0].patientId);
@@ -53,9 +53,9 @@ export const DELETE = withHospitalGuard(async (_req: NextRequest, { params }: { 
       const { rows } = await tx.query(
         `UPDATE "HmsAppointment"
          SET "status" = 'CANCELLED'
-         WHERE "id" = $1
+         WHERE "id" = $1 AND "tenantId" = $2
          RETURNING "id", "status"`,
-        [id]
+        [id, authContext.tenantId]
       );
       if (!rows[0]) throw new HttpError(404, 'REFERENCE_NOT_FOUND', 'Appointment not found');
       return rows[0];

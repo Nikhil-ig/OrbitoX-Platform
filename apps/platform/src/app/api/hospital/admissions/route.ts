@@ -14,8 +14,10 @@ export const GET = withHospitalGuard(async (_req: NextRequest, _routeContext, au
                 b."label" as "bedLabel"
          FROM "HmsAdmission" a
          LEFT JOIN "HmsBed" b ON b."tenantId" = a."tenantId" AND b."id" = a."bedId"
+         WHERE a."tenantId" = $1
          ORDER BY a."admittedAt" DESC
-         LIMIT 50`
+         LIMIT 50`,
+        [authContext.tenantId]
       );
       return rows;
     });

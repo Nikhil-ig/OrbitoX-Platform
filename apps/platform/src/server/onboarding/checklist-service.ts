@@ -156,13 +156,16 @@ export async function getChecklist(tenantId: string, tableCount = 12): Promise<O
 
   if (process.env.DATABASE_URL) {
     try {
-      const record = await prisma.billingProviderCache.findUnique({
-        where: {
-          tenantId_cacheKey: {
-            tenantId,
-            cacheKey: CHECKLIST_CACHE_KEY,
+      const record = await prisma.$transaction(async (tx) => {
+        await tx.$executeRaw`SELECT set_config('app.current_tenant_id', ${tenantId}, true)`;
+        return await tx.billingProviderCache.findUnique({
+          where: {
+            tenantId_cacheKey: {
+              tenantId,
+              cacheKey: CHECKLIST_CACHE_KEY,
+            },
           },
-        },
+        });
       });
 
       if (record && record.payload && typeof record.payload === 'object') {
@@ -232,6 +235,9 @@ export async function persistChecklistState(
   if (process.env.DATABASE_URL) {
     try {
       const persistedState = await prisma.$transaction(async (tx) => {
+        // Set tenant context for RLS enforcement
+        await tx.$executeRaw`SELECT set_config('app.current_tenant_id', ${tenantId}, true)`;
+
         // 1. Transaction-scoped advisory lock by tenantId to serialize concurrent writes
         await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext('orbitox_checklist_' || ${tenantId}))`;
 
