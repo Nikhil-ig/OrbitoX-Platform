@@ -61,6 +61,7 @@ export function F6ChecklistStep({
   const [actionLoading, setActionLoading] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const [actionSuccess, setActionSuccess] = useState<string | null>(null);
+  const [runtimeActive, setRuntimeActive] = useState(false);
 
   // Invite Modal state
   const [inviteModalOpen, setInviteModalOpen] = useState(false);
@@ -118,6 +119,41 @@ export function F6ChecklistStep({
     },
   ]);
 
+  // Load saved checklist state from localStorage
+  useEffect(() => {
+    if (typeof window === 'undefined' || !tenantId) return;
+    try {
+      const saved = localStorage.getItem(`orbitox_onboarding_f6_${tenantId}`);
+      if (saved) {
+        const parsed: Array<{ id: string; completed: boolean; statusNote?: string }> = JSON.parse(saved);
+        if (Array.isArray(parsed)) {
+          setItems((prev) =>
+            prev.map((it) => {
+              const match = parsed.find((p) => p.id === it.id);
+              if (match) {
+                return { ...it, completed: match.completed, statusNote: match.statusNote ?? it.statusNote };
+              }
+              return it;
+            }),
+          );
+        }
+      }
+    } catch {}
+  }, [tenantId]);
+
+  const updateAndPersistItems = (updateFn: (prev: ChecklistItem[]) => ChecklistItem[]) => {
+    setItems((prev) => {
+      const updated = updateFn(prev);
+      if (typeof window !== 'undefined' && tenantId) {
+        try {
+          const payload = updated.map(({ id, completed, statusNote }) => ({ id, completed, statusNote }));
+          localStorage.setItem(`orbitox_onboarding_f6_${tenantId}`, JSON.stringify(payload));
+        } catch {}
+      }
+      return updated;
+    });
+  };
+
   // Load authoritative preview summary to ground checklist state in backend facts
   useEffect(() => {
     let cancelled = false;
@@ -129,9 +165,12 @@ export function F6ChecklistStep({
           if (data?.preview?.actions) {
             setLiveActions(data.preview.actions);
           }
+          if (data?.preview?.restaurant?.status === 'ACTIVE' || data?.preview?.restaurant?.health === 'HEALTHY') {
+            setRuntimeActive(true);
+          }
           // Evidence-based completion only
           if (data?.preview?.checklist?.paymentGatewayConnected) {
-            setItems((prev) =>
+            updateAndPersistItems((prev) =>
               prev.map((it) => (it.id === 'payment' ? { ...it, completed: true, statusNote: 'Gateway verified' } : it)),
             );
           }
@@ -156,17 +195,18 @@ export function F6ChecklistStep({
       if (typeof window !== 'undefined') {
         window.open(targetUrl, '_blank');
       }
-      setItems((prev) =>
+      updateAndPersistItems((prev) =>
         prev.map((it) =>
           it.id === id
             ? {
                 ...it,
-                completed: !it.completed,
-                statusNote: !it.completed ? 'QR Sheet downloaded & printed' : 'Not yet printed',
+                completed: false,
+                statusNote: 'QR sheet opened · Print verification required',
               }
             : it,
         ),
       );
+      setActionSuccess('QR sheet opened in new window. Print sheets and place on tables.');
       return;
     }
 
@@ -181,14 +221,14 @@ export function F6ChecklistStep({
         // Authoritative verification of KDS station availability
         const kdsRes = await fetch(`/api/v1/customer/tenants/${encodeURIComponent(tenantId)}/kds`);
         if (kdsRes.ok) {
-          setItems((prev) =>
+          updateAndPersistItems((prev) =>
             prev.map((it) =>
-              it.id === id ? { ...it, completed: true, statusNote: 'Station connected & ready' } : it,
+              it.id === id ? { ...it, completed: false, statusNote: 'Station link verified · Hardware placement required' } : it,
             ),
           );
-          setActionSuccess('Kitchen Display Station verified and active.');
+          setActionSuccess('Kitchen Display Station link verified. Hardware placement required.');
         } else {
-          setItems((prev) =>
+          updateAndPersistItems((prev) =>
             prev.map((it) =>
               it.id === id ? { ...it, completed: false, statusNote: 'Station page opened · Connect hardware' } : it,
             ),
@@ -243,24 +283,23 @@ export function F6ChecklistStep({
             orderId: orderData.orderId,
             amountMinor: 100,
             paymentMethod: 'UPI',
-            idempotencyKey: `test_settle_${Date.now()}`,
+            idempotencyKey: `test_settle_${tenantId.replaceAll('/', '_')}_order_${orderData.orderId || 'init'}`,
           }),
         }).catch(() => null);
 
-        // Even if settle endpoint is unreachable in standalone dev mode, order creation succeeded
-        const settledOk = settleRes?.ok ?? true;
-        if (settledOk) {
-          setItems((prev) =>
-            prev.map((it) =>
-              it.id === id
-                ? { ...it, completed: true, statusNote: '₹1.00 verified & settled' }
-                : it,
-            ),
-          );
-          setActionSuccess('Test order placed and verified successfully.');
-        } else {
-          throw new Error('Test order was queued, but settlement verification failed.');
+        if (!settleRes || !settleRes.ok) {
+          const errData = settleRes ? await settleRes.json().catch(() => ({})) : {};
+          throw new Error(errData.message || errData.error || 'Test order placed, but settlement verification failed on runtime.');
         }
+
+        updateAndPersistItems((prev) =>
+          prev.map((it) =>
+            it.id === id
+              ? { ...it, completed: true, statusNote: 'Preview test order submitted & settled' }
+              : it,
+          ),
+        );
+        setActionSuccess('Preview test order placed and settled successfully.');
       } catch (err: any) {
         setActionError(err?.message || 'Payment test failed on restaurant runtime.');
       } finally {
@@ -308,7 +347,7 @@ export function F6ChecklistStep({
         throw new Error(data.error || data.message || `Invitation failed with status ${res.status}`);
       }
 
-      setItems((prev) =>
+      updateAndPersistItems((prev) =>
         prev.map((it) =>
           it.id === 'staff'
             ? { ...it, completed: true, statusNote: `Invite sent to ${inviteEmail.trim()}` }
@@ -327,7 +366,8 @@ export function F6ChecklistStep({
 
   const completedCount = items.filter((i) => i.completed).length;
   const isAwaitingActivation = Boolean(awaitingWebhook || subscriptionStatus === 'authenticated');
-  const isLiveAndActive = subscriptionStatus === 'active';
+  const isLiveAndActive = subscriptionStatus === 'active' && runtimeActive;
+  const isProvisioning = subscriptionStatus === 'active' && !runtimeActive;
 
   return (
     <div className="w-full max-w-3xl mx-auto space-y-8 py-4">
@@ -337,6 +377,11 @@ export function F6ChecklistStep({
           <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-amber-100 text-amber-800 text-xs font-bold">
             <span className="h-2 w-2 rounded-full bg-amber-500 animate-pulse" />
             <span>Setup in progress · Activation pending gateway webhook</span>
+          </div>
+        ) : isProvisioning ? (
+          <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-amber-100 text-amber-800 text-xs font-bold">
+            <span className="h-2 w-2 rounded-full bg-amber-500 animate-pulse" />
+            <span>Subscription active · Provisioning runtime</span>
           </div>
         ) : isLiveAndActive ? (
           <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-100 text-emerald-800 text-xs font-bold">

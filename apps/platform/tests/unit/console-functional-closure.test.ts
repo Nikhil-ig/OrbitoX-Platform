@@ -103,11 +103,15 @@ describe('Final Functional Closure: P1/P2 Regression & Invariant Test Suite', ()
     });
 
     it('sendGraceReminder rejects when organization has no configured billing email', async () => {
-      // In tests without DB connection, falls back safely to test email
-      const res = await sendGraceReminder('sub_test_grace_1', activeOperator);
-      assert.equal(res.success, true);
-      assert.ok(res.recipient);
-      assert.notEqual(res.recipient, 'billing@orbitox.io'); // Never defaults silently to internal billing
+      await assert.rejects(
+        async () => {
+          await sendGraceReminder('sub_test_grace_1', activeOperator);
+        },
+        (err: Error) => {
+          assert.match(err.message, /BILLING_EMAIL_NOT_CONFIGURED/);
+          return true;
+        },
+      );
     });
 
     it('resolveUnknownEvent records resolution without deleting evidence', async () => {

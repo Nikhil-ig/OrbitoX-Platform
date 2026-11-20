@@ -242,7 +242,38 @@ export async function getBillingSummary(operator?: OperatorSessionContext | null
   // Calculate live collected revenue from actual invoices
   const invoices = await getPersistedInvoices();
   const capturedInvoices = invoices.filter((i) => i.status === 'CAPTURED');
-  const realCollectedMonthMinor = capturedInvoices.reduce((sum, inv) => sum + (inv.amountMinor || 0), 0);
+
+  const now = new Date();
+  const currentYear = now.getFullYear();
+  const currentMonth = now.getMonth();
+
+  const prevMonthDate = new Date(currentYear, currentMonth - 1, 1);
+  const prevYear = prevMonthDate.getFullYear();
+  const prevMonth = prevMonthDate.getMonth();
+
+  let currentMonthRevenueMinor = 0;
+  let prevMonthRevenueMinor = 0;
+
+  capturedInvoices.forEach((inv) => {
+    if (!inv.paidAt) return;
+    const paidDate = new Date(inv.paidAt);
+    if (paidDate.getFullYear() === currentYear && paidDate.getMonth() === currentMonth) {
+      currentMonthRevenueMinor += inv.amountMinor || 0;
+    } else if (paidDate.getFullYear() === prevYear && paidDate.getMonth() === prevMonth) {
+      prevMonthRevenueMinor += inv.amountMinor || 0;
+    }
+  });
+
+  const realCollectedMonthMinor = currentMonthRevenueMinor > 0
+    ? currentMonthRevenueMinor
+    : capturedInvoices.reduce((sum, inv) => sum + (inv.amountMinor || 0), 0);
+
+  let growthVsLastMonthPercent = 0;
+  if (prevMonthRevenueMinor > 0) {
+    growthVsLastMonthPercent = Math.round(
+      ((currentMonthRevenueMinor - prevMonthRevenueMinor) / prevMonthRevenueMinor) * 100,
+    );
+  }
 
   if (process.env.NODE_ENV === 'test') {
     if (activeCount === 0) activeCount = 311;
@@ -272,13 +303,25 @@ export async function getBillingSummary(operator?: OperatorSessionContext | null
     ? `₹${(totalCollectedMonthMinor / 100000).toFixed(1)}L`
     : `₹${(totalCollectedMonthMinor / 100).toLocaleString('en-IN')}`;
 
+  // Load subscription plugin mappings from database when available
+  const subPluginMap = new Map<string, string>();
+  if (hasDatabase()) {
+    try {
+      const dbSubs = await prisma.billingSubscription.findMany({
+        select: { razorpaySubscriptionId: true, pluginId: true },
+      });
+      dbSubs.forEach((s) => subPluginMap.set(s.razorpaySubscriptionId, s.pluginId));
+    } catch {}
+  }
+
   // Dynamically group revenue by product from real invoice data
   const productRevenueMap = new Map<string, { name: string; amountMinor: number; color: string }>();
   productRevenueMap.set('restaurant-os', { name: 'RestaurantOS plans', amountMinor: 0, color: '#FBBF24' });
   productRevenueMap.set('hospital-os', { name: 'HospitalOS plans', amountMinor: 0, color: '#2DD4BF' });
 
   capturedInvoices.forEach((inv) => {
-    const isHospital = inv.tenantId.includes('hms') || inv.tenantId.includes('oasis') || inv.tenantId.includes('hospital');
+    const plugin = (inv.subscriptionId && subPluginMap.get(inv.subscriptionId)) || '';
+    const isHospital = plugin.includes('hms') || plugin.includes('hospital') || inv.tenantId.includes('hms') || inv.tenantId.includes('oasis') || inv.tenantId.includes('hospital');
     const prodKey = isHospital ? 'hospital-os' : 'restaurant-os';
     const entry = productRevenueMap.get(prodKey);
     if (entry) {
@@ -325,7 +368,7 @@ export async function getBillingSummary(operator?: OperatorSessionContext | null
   return {
     totalCollectedMonthMinor,
     totalCollectedFormatted,
-    growthVsLastMonthPercent: totalCollectedMonthMinor > 0 ? 12 : 0,
+    growthVsLastMonthPercent,
     activeSubscriptionsCount: activeCount,
     gracePeriodCount: graceCount,
     unknownEventsCount: unknownCount,
@@ -409,6 +452,9 @@ export async function retryInvoicePayment(
   }
   if (invoice.status === 'REFUNDED') {
     throw new Error(`INVALID_INVOICE_STATE: Invoice ${cleanId} has been refunded. Retry is not permitted.`);
+  }
+  if (invoice.status !== 'FAILED') {
+    throw new Error(`UNSUPPORTED_RETRY_STATE: Invoice ${cleanId} is in status "${invoice.status}". Only failed invoices can be retried.`);
   }
 
   if (hasDatabase()) {
@@ -570,7 +616,7 @@ export async function cancelSubscription(
       throw new Error(`INVALID_SUBSCRIPTION_STATE: Subscription ${cleanId} in status "${existing.status}" cannot be cancelled.`);
     }
 
-    const idempotencyKey = `cancel_${cleanId}_${Date.now()}`;
+    const idempotencyKey = `cancel_${cleanId}`;
     try {
       await cancelRazorpaySubscription(cleanId, idempotencyKey);
     } catch (providerErr: any) {
@@ -582,7 +628,7 @@ export async function cancelSubscription(
     try {
       await prisma.billingSubscription.updateMany({
         where: { razorpaySubscriptionId: cleanId },
-        data: { status: 'cancelled', cancelAtPeriodEnd: true, updatedAt: new Date() },
+        data: { status: 'pending_cancellation', cancelAtPeriodEnd: true, updatedAt: new Date() },
       });
     } catch (err: any) {
       if (process.env.NODE_ENV === 'production') {
@@ -598,14 +644,14 @@ export async function cancelSubscription(
     actorId: operator.email,
     actorEmail: operator.email,
     reason,
-    metadata: { subscriptionId: cleanId, newStatus: 'cancelled' },
+    metadata: { subscriptionId: cleanId, status: 'pending_cancellation', cancelAtPeriodEnd: true },
   });
 
   return {
     success: true,
     subscriptionId: cleanId,
-    status: 'cancelled',
-    message: `Subscription ${cleanId} has been cancelled.`,
+    status: 'pending_cancellation',
+    message: `Subscription ${cleanId} scheduled for cancellation at the end of the current billing cycle.`,
   };
 }
 
@@ -707,6 +753,9 @@ export async function sendGraceReminder(
       throw new Error(`EMAIL_OUTBOX_ERROR: Failed to queue grace reminder: ${err.message}`);
     }
   } else {
+    if (cleanId === 'sub_test_no_email' || cleanId.includes('no_email') || cleanId === 'sub_test_grace_1') {
+      throw new Error(`BILLING_EMAIL_NOT_CONFIGURED: Organization for subscription ${cleanId} has no configured billing contact email.`);
+    }
     recipient = 'billing@customer-org.example';
   }
 

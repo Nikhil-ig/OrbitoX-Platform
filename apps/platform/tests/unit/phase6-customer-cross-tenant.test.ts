@@ -95,6 +95,8 @@ const nonDashboardCustomerRoutes = [
   'tenants/[tenantId]/kds/route.ts',
   'tenants/[tenantId]/preview-summary/route.ts',
   'tenants/[tenantId]/preview-token/route.ts',
+  'tenants/[tenantId]/tables/route.ts',
+  'tenants/[tenantId]/tables/settle/route.ts',
   'tenants/[tenantId]/test-orders/route.ts',
   'tenants/check-slug/route.ts',
 ].sort();

@@ -83,22 +83,30 @@ export async function getOverviewSummary(operator?: OperatorSessionContext | nul
   let orgCount = 0;
   let failedOperationsCount = 0;
   let totalArrMinor = 0;
+  let recordedApiCalls: string | null = null;
   let queryFailed = false;
 
   try {
-    const [pCount, oCount, fCount, activeSubs] = await Promise.all([
+    const [pCount, oCount, fCount, activeSubs, usageSum] = await Promise.all([
       prisma.platformProject.count().catch(() => { queryFailed = true; return 0; }),
       prisma.platformOrganization.count().catch(() => { queryFailed = true; return 0; }),
-      prisma.platformOperation.count({ where: { status: 'FAILED' } }).catch(() => 0),
+      prisma.platformOperation.count({ where: { status: 'FAILED' } }).catch(() => { queryFailed = true; return 0; }),
       prisma.billingSubscription.findMany({
         where: { status: 'active' },
         include: { planMap: true },
-      }).catch(() => []),
+      }).catch(() => { queryFailed = true; return []; }),
+      prisma.platformPluginUsage.aggregate({
+        _sum: { requestCount: true },
+      }).catch(() => null),
     ]);
     projectCount = pCount;
     orgCount = oCount;
     failedOperationsCount = fCount;
     totalArrMinor = activeSubs.reduce((sum, s) => sum + (s.planMap?.amountMinor || 0) * 12, 0);
+    const sumCount = usageSum?._sum?.requestCount;
+    if (sumCount !== null && sumCount !== undefined) {
+      recordedApiCalls = Number(sumCount) > 0 ? `${Number(sumCount).toLocaleString()} calls` : '0';
+    }
   } catch {
     queryFailed = true;
   }
@@ -120,7 +128,9 @@ export async function getOverviewSummary(operator?: OperatorSessionContext | nul
     ? (totalArrMinor >= 10000000 ? `₹${(totalArrMinor / 10000000).toFixed(1)}Cr` : `₹${(totalArrMinor / 100000).toFixed(1)}L`)
     : (isTest ? '₹42.8M' : '₹0');
 
-  const apiCalls24h = isTest ? '184.2M' : (projectCount > 0 ? `${(projectCount * 120).toLocaleString()} calls` : '0');
+  const apiCalls24h = isTest
+    ? '184.2M'
+    : (recordedApiCalls || (queryFailed ? 'Unavailable' : '0'));
   const p95LatencyMs = isTest ? 14.2 : 0;
   const p99LatencyMs = isTest ? 24.8 : 0;
 

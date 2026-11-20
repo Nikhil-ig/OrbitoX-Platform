@@ -25,12 +25,14 @@ import {
   Badge,
 } from '@orbitox-io/ui';
 
+export type TableStatus = 'AVAILABLE' | 'OCCUPIED' | 'BILLING' | 'RESERVED' | 'DIRTY' | 'BLOCKED' | 'MAINTENANCE';
+
 interface TableState {
   id: string;
   tableNumber: string;
-  seats: number;
+  seats?: number;
   floor: string;
-  status: 'AVAILABLE' | 'OCCUPIED' | 'BILLING';
+  status: TableStatus;
   dinerCount?: number;
   billAmount?: number;
   durationMinutes?: number;
@@ -45,6 +47,7 @@ export default function CustomerDashboardPage() {
   const [restaurantCity, setRestaurantCity] = React.useState('Bengaluru');
   const [activeSlug, setActiveSlug] = React.useState<string | null>(null);
   const [hasLoaded, setHasLoaded] = React.useState(false);
+  const [isRuntimeLive, setIsRuntimeLive] = React.useState(false);
   const [isSettling, setIsSettling] = React.useState(false);
   const [settlementError, setSettlementError] = React.useState<string | null>(null);
 
@@ -82,15 +85,16 @@ export default function CustomerDashboardPage() {
       const tablesRes = await fetch(`/api/v1/customer/tenants/${encodeURIComponent(firstProject.slug)}/tables`);
       if (tablesRes.ok) {
         const tablesData = await tablesRes.json();
+        setIsRuntimeLive(true);
         if (Array.isArray(tablesData.tables) && tablesData.tables.length > 0) {
           const liveTables: TableState[] = tablesData.tables.map((t: any) => ({
             id: String(t.id),
             tableNumber: t.number || `T-${String(t.id).padStart(2, '0')}`,
-            seats: t.capacity || 4,
+            seats: typeof t.capacity === 'number' ? t.capacity : undefined,
             floor: t.floorId || t.section || 'Main Dining',
-            status: t.status === 'OCCUPIED' || t.status === 'BILLING' ? t.status : 'AVAILABLE',
-            dinerCount: t.dinerCount || (t.status === 'OCCUPIED' || t.status === 'BILLING' ? t.capacity : undefined),
-            billAmount: t.activeBillMinor ? t.activeBillMinor / 100 : undefined,
+            status: (t.status as TableStatus) || 'AVAILABLE',
+            dinerCount: typeof t.dinerCount === 'number' ? t.dinerCount : undefined,
+            billAmount: typeof t.activeBillMinor === 'number' ? t.activeBillMinor / 100 : undefined,
             durationMinutes: t.turnTimeMinutes,
             activeItems: t.activeItems,
           }));
@@ -99,6 +103,7 @@ export default function CustomerDashboardPage() {
           setTables([]);
         }
       } else {
+        setIsRuntimeLive(false);
         // Query preview summary for baseline restaurant metadata if table endpoint unavailable
         const previewRes = await fetch(`/api/v1/customer/tenants/${encodeURIComponent(firstProject.slug)}/preview-summary`);
         if (previewRes.ok) {
@@ -106,10 +111,14 @@ export default function CustomerDashboardPage() {
           if (previewData?.preview?.restaurant?.city) {
             setRestaurantCity(previewData.preview.restaurant.city);
           }
+          if (previewData?.preview?.restaurant?.status === 'ACTIVE') {
+            setIsRuntimeLive(true);
+          }
         }
         setTables([]);
       }
     } catch {
+      setIsRuntimeLive(false);
       // Retain safe state on connection interruption
     } finally {
       setHasLoaded(true);
@@ -156,7 +165,7 @@ export default function CustomerDashboardPage() {
           tableNumber: table?.tableNumber,
           amountMinor,
           paymentMethod: 'CASH',
-          idempotencyKey: `settle_${tableId}_${Date.now()}`,
+          idempotencyKey: `settle_${tableId}_${table?.tableNumber || 'bill'}`,
         }),
       });
 
@@ -188,10 +197,17 @@ export default function CustomerDashboardPage() {
               <h1 className="text-base font-extrabold tracking-tight text-[var(--color-text)]">
                 {restaurantName}
               </h1>
-              <span className="text-[10px] font-bold text-emerald-700 dark:text-emerald-300 bg-emerald-100 dark:bg-emerald-950/50 border border-emerald-300 dark:border-emerald-800 px-2 py-0.5 rounded-full flex items-center gap-1">
-                <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                Live Service
-              </span>
+              {isRuntimeLive ? (
+                <span className="text-[10px] font-bold text-emerald-700 dark:text-emerald-300 bg-emerald-100 dark:bg-emerald-950/50 border border-emerald-300 dark:border-emerald-800 px-2 py-0.5 rounded-full flex items-center gap-1">
+                  <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                  Live Service
+                </span>
+              ) : (
+                <span className="text-[10px] font-bold text-gray-600 dark:text-gray-400 bg-gray-100 dark:bg-gray-800 border border-gray-300 dark:border-gray-700 px-2 py-0.5 rounded-full flex items-center gap-1">
+                  <span className="h-1.5 w-1.5 rounded-full bg-gray-400" />
+                  Standby
+                </span>
+              )}
             </div>
             <p className="text-[11px] text-[var(--color-text-muted)]">
               {restaurantCity} · RestaurantOS v1.4.0
@@ -347,7 +363,7 @@ export default function CustomerDashboardPage() {
                           {tbl.tableNumber}
                         </span>
                         <span className="text-[11px] text-[var(--color-text-muted)] block">
-                          {tbl.seats} Seats · {tbl.floor}
+                          {tbl.seats !== undefined ? `${tbl.seats} Seats · ` : ''}{tbl.floor}
                         </span>
                       </div>
 
@@ -357,6 +373,10 @@ export default function CustomerDashboardPage() {
                             ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950/50 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-800'
                             : tbl.status === 'BILLING'
                             ? 'bg-amber-100 text-amber-800 dark:bg-amber-950/50 dark:text-amber-300 border border-amber-300 dark:border-amber-800'
+                            : tbl.status === 'RESERVED'
+                            ? 'bg-purple-100 text-purple-800 dark:bg-purple-950/50 dark:text-purple-300 border border-purple-300 dark:border-purple-800'
+                            : tbl.status === 'DIRTY'
+                            ? 'bg-rose-100 text-rose-800 dark:bg-rose-950/50 dark:text-rose-300 border border-rose-300 dark:border-rose-800'
                             : 'bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300 border border-gray-200 dark:border-gray-700'
                         }`}
                       >
@@ -369,14 +389,14 @@ export default function CustomerDashboardPage() {
                         <div className="flex items-baseline justify-between">
                           <span className="text-xs text-[var(--color-text-muted)]">Active Bill</span>
                           <span className="text-sm font-extrabold text-[var(--color-text)] font-mono">
-                            ₹{tbl.billAmount?.toLocaleString('en-IN')}
+                            {tbl.billAmount !== undefined ? `₹${tbl.billAmount.toLocaleString('en-IN')}` : '—'}
                           </span>
                         </div>
                         <div className="flex items-center justify-between text-[11px] text-[var(--color-text-muted)]">
-                          <span>{tbl.dinerCount} diners</span>
+                          <span>{tbl.dinerCount !== undefined ? `${tbl.dinerCount} diners` : 'Active table'}</span>
                           <span className="flex items-center gap-1 font-mono">
                             <Clock className="h-3 w-3" />
-                            {tbl.durationMinutes}m ago
+                            {tbl.durationMinutes ?? 0}m ago
                           </span>
                         </div>
                       </div>

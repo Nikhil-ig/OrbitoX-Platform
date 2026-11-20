@@ -65,9 +65,53 @@ export const POST = withCustomerAuth<RouteContext>(
       'http://127.0.0.1:4010';
 
     const body = await request.json().catch(() => ({}));
-    const rawBody = JSON.stringify(body);
+    if (!body.tableId && !body.tableNumber) {
+      return NextResponse.json(
+        { ok: false, error: 'INVALID_REQUEST', message: 'Table identifier (tableId or tableNumber) is required.' },
+        { status: 400, headers: noStoreHeaders() },
+      );
+    }
+    if (typeof body.amountMinor !== 'number' || body.amountMinor < 0) {
+      return NextResponse.json(
+        { ok: false, error: 'INVALID_AMOUNT', message: 'A non-negative settlement amount is required.' },
+        { status: 400, headers: noStoreHeaders() },
+      );
+    }
 
+    const rawBody = JSON.stringify(body);
     const bridgeKeys = getDefaultBridgeKeys();
+
+    // Verify table on runtime before settlement dispatch
+    try {
+      const verifyHeaders = signBridgeRequest(bridgeKeys, {
+        method: 'GET',
+        pathWithQuery: '/api/restaurant/tables',
+        tenantId: canonicalTenantId,
+        principal: { sub: session.userId, scopes: ['tenant:admin', 'tables:read'] },
+      });
+      const verifyRes = await fetch(new URL('/api/restaurant/tables', runtimeUrl).toString(), {
+        headers: verifyHeaders,
+        signal: AbortSignal.timeout(3000),
+      }).catch(() => null);
+
+      if (verifyRes && verifyRes.ok) {
+        const verifyData = await verifyRes.json().catch(() => ({}));
+        if (Array.isArray(verifyData.tables)) {
+          const match = verifyData.tables.find(
+            (t: any) => String(t.id) === String(body.tableId) || t.number === body.tableNumber,
+          );
+          if (match && match.status === 'AVAILABLE') {
+            return NextResponse.json(
+              { ok: false, error: 'TABLE_ALREADY_AVAILABLE', message: `Table ${body.tableNumber || body.tableId} is already available and has no open bill.` },
+              { status: 409, headers: noStoreHeaders() },
+            );
+          }
+        }
+      }
+    } catch {
+      // Continue to settlement dispatch
+    }
+
     const pathWithQuery = '/api/restaurant/tables/settle';
     const signedHeaders = signBridgeRequest(bridgeKeys, {
       method: 'POST',
