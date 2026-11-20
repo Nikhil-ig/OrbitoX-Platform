@@ -134,6 +134,21 @@ export class Router {
       return true;
     }
 
+    // Operational hardware and station verification dispatch
+    if (method === 'POST' && pathname === '/api/restaurant/printer/test') {
+      const { handlePrinterTest } = require('../modules/kitchen/routes');
+      await handlePrinterTest(req, res, context);
+      return true;
+    }
+    if (
+      (method === 'GET' && pathname === '/api/restaurant/kds/station/status') ||
+      (method === 'POST' && pathname === '/api/restaurant/kds/station/heartbeat')
+    ) {
+      const { handleGetStationStatus } = require('../modules/kitchen/routes');
+      await handleGetStationStatus(req, res, context);
+      return true;
+    }
+
     return false;
   }
 }

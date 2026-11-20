@@ -617,7 +617,7 @@ async function handleGetKitchenTasks(req: any, res: any, context: any): Promise<
   });
 }
 
-async function handleGetStationStatus(req: any, res: any, context: any): Promise<void> {
+export async function handleGetStationStatus(req: any, res: any, context: any): Promise<void> {
   const identity = context.requestIdentity;
   const tenantId = context.tenantContext?.tenantId;
   if (!tenantId) {
@@ -727,7 +727,7 @@ async function handleGetStationStatus(req: any, res: any, context: any): Promise
   sendJson(res, 401, { error: 'Station credentials or bridge authentication required.', code: 'UNAUTHORIZED' });
 }
 
-async function handlePrinterTest(req: any, res: any, context: any): Promise<void> {
+export async function handlePrinterTest(req: any, res: any, context: any): Promise<void> {
   const identity = context.requestIdentity;
   if (identity.type === 'ANONYMOUS' || identity.type === 'INVALID_CREDENTIAL' || identity.type === 'REVOKED_CAPABILITY') {
     sendJson(res, 401, {
@@ -816,21 +816,6 @@ async function handlePrinterTest(req: any, res: any, context: any): Promise<void
 }
 
 export const kitchenRoutes: RouteDefinition[] = [
-  {
-    method: 'GET',
-    path: '/api/restaurant/kds/station/status',
-    handler: handleGetStationStatus,
-  },
-  {
-    method: 'POST',
-    path: '/api/restaurant/kds/station/heartbeat',
-    handler: handleGetStationStatus,
-  },
-  {
-    method: 'POST',
-    path: '/api/restaurant/printer/test',
-    handler: handlePrinterTest,
-  },
   {
     method: 'GET',
     path: '/api/restaurant/kds',
