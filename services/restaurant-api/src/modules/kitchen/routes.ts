@@ -1,3 +1,4 @@
+import * as crypto from 'node:crypto';
 import { RouteDefinition } from '../../http/routes';
 import {
   sendJson,
@@ -7,10 +8,24 @@ import {
   postgresStore,
 } from '../../http/context';
 import {
+  REGISTERED_STATION_SECRETS,
+  DEV_TEST_STATION_TOKENS,
+} from '../../shared';
+import { MockThermalPrinterAdapter } from '../../shared/integrations';
+import {
   authorizeKdsRequest,
   resolveTaskAuthoritativeBranch,
   checkKdsIdempotency,
 } from './service';
+
+interface ActiveStationRecord {
+  stationId: string;
+  branchId: string;
+  tenantId: string;
+  lastSeenAt: number;
+  tasksCount: number;
+}
+export const activeStationRegistry = new Map<string, ActiveStationRecord>();
 
 async function validatePreviewTenant(tenantContext: any, prismaClient: any): Promise<{ valid: boolean; error?: string; code?: string }> {
   const tenantStatus = String(tenantContext?.status || '').toLowerCase();
@@ -563,6 +578,15 @@ async function handleGetKitchenTasks(req: any, res: any, context: any): Promise<
       station: identity.station,
       branchId: identity.branchId,
     });
+    if (context.tenantContext?.tenantId) {
+      activeStationRegistry.set(`${context.tenantContext.tenantId}:${identity.station}`, {
+        stationId: identity.station,
+        branchId: identity.branchId,
+        tenantId: context.tenantContext.tenantId,
+        lastSeenAt: Date.now(),
+        tasksCount: tasks.length,
+      });
+    }
     sendJson(res, 200, {
       success: true,
       data: tasks,
@@ -593,7 +617,220 @@ async function handleGetKitchenTasks(req: any, res: any, context: any): Promise<
   });
 }
 
+async function handleGetStationStatus(req: any, res: any, context: any): Promise<void> {
+  const identity = context.requestIdentity;
+  const tenantId = context.tenantContext?.tenantId;
+  if (!tenantId) {
+    sendJson(res, 401, { error: 'Tenant context required', code: 'TENANT_REQUIRED' });
+    return;
+  }
+
+  // 1. Explicit station token check (header or query param)
+  const queryToken = (context.parsedUrl.query?.stationToken || req.headers['x-station-token']) as string;
+  if (queryToken) {
+    const registered = REGISTERED_STATION_SECRETS[queryToken] || (process.env.NODE_ENV !== 'production' ? DEV_TEST_STATION_TOKENS[queryToken] : undefined);
+    if (!registered) {
+      sendJson(res, 401, {
+        error: 'Unregistered station token.',
+        code: 'INVALID_CREDENTIAL',
+        authenticated: false,
+      });
+      return;
+    }
+    const allTasks = await context.posService.listKitchenTasks({ station: registered.station, branchId: registered.branchId });
+    activeStationRegistry.set(`${tenantId}:${registered.station}`, {
+      stationId: registered.station,
+      branchId: registered.branchId,
+      tenantId,
+      lastSeenAt: Date.now(),
+      tasksCount: allTasks.length,
+    });
+    sendJson(res, 200, {
+      success: true,
+      active: true,
+      station: {
+        stationId: registered.station,
+        branchId: registered.branchId,
+        lastSeenAt: new Date().toISOString(),
+        tasksCount: allTasks.length,
+      },
+    });
+    return;
+  }
+
+  // 2. Platform Bridge caller (validating physical station hardware presence)
+  if (identity.type === 'PLATFORM_BRIDGE') {
+    const isBridgeAuthorized = identity.scopes?.some((s: string) =>
+      ['tenant:admin', 'platform:superuser', 'kds:station', 'preview:kds:read'].includes(s)
+    );
+    if (!isBridgeAuthorized) {
+      sendJson(res, 403, { error: 'Insufficient bridge scopes for station verification', code: 'INSUFFICIENT_SCOPE' });
+      return;
+    }
+
+    const now = Date.now();
+    const candidateStations: ActiveStationRecord[] = [];
+    for (const record of activeStationRegistry.values()) {
+      if (record.tenantId === tenantId && (now - record.lastSeenAt) < 300000) {
+        candidateStations.push(record);
+      }
+    }
+
+    if (candidateStations.length === 0) {
+      sendJson(res, 200, {
+        success: true,
+        active: false,
+        station: null,
+        message: 'No authenticated kitchen display station found with an active heartbeat.',
+      });
+      return;
+    }
+
+    candidateStations.sort((a, b) => b.lastSeenAt - a.lastSeenAt);
+    const active = candidateStations[0];
+    sendJson(res, 200, {
+      success: true,
+      active: true,
+      station: {
+        stationId: active.stationId,
+        branchId: active.branchId,
+        lastSeenAt: new Date(active.lastSeenAt).toISOString(),
+        tasksCount: active.tasksCount,
+      },
+    });
+    return;
+  }
+
+  // 3. Authenticated station caller directly
+  if (identity.type === 'STATION') {
+    const allTasks = await context.posService.listKitchenTasks({ station: identity.station, branchId: identity.branchId });
+    activeStationRegistry.set(`${tenantId}:${identity.station}`, {
+      stationId: identity.station,
+      branchId: identity.branchId,
+      tenantId,
+      lastSeenAt: Date.now(),
+      tasksCount: allTasks.length,
+    });
+    sendJson(res, 200, {
+      success: true,
+      active: true,
+      station: {
+        stationId: identity.station,
+        branchId: identity.branchId,
+        lastSeenAt: new Date().toISOString(),
+        tasksCount: allTasks.length,
+      },
+    });
+    return;
+  }
+
+  sendJson(res, 401, { error: 'Station credentials or bridge authentication required.', code: 'UNAUTHORIZED' });
+}
+
+async function handlePrinterTest(req: any, res: any, context: any): Promise<void> {
+  const identity = context.requestIdentity;
+  if (identity.type === 'ANONYMOUS' || identity.type === 'INVALID_CREDENTIAL' || identity.type === 'REVOKED_CAPABILITY') {
+    sendJson(res, 401, {
+      error: 'UNAUTHORIZED',
+      code: 'AUTHENTICATION_REQUIRED',
+      message: 'Valid bridge signature or privileged staff credentials required for printer test.',
+    });
+    return;
+  }
+
+  const isBridgeAdmin = identity.type === 'PLATFORM_BRIDGE' && (
+    identity.scopes?.includes('devices:printer') ||
+    identity.scopes?.includes('tenant:admin') ||
+    identity.scopes?.includes('platform:superuser')
+  );
+  const isPrivileged = identity.isPrivileged || isBridgeAdmin;
+
+  if (!isPrivileged) {
+    sendJson(res, 403, {
+      error: 'FORBIDDEN',
+      code: 'INSUFFICIENT_PERMISSIONS',
+      message: 'Printer test dispatch requires tenant admin or devices:printer privilege.',
+    });
+    return;
+  }
+
+  const body = await context.parseBody().catch(() => ({}));
+  const endpoint = typeof body.endpoint === 'string' ? body.endpoint.trim() : '';
+  const driver = typeof body.driver === 'string' ? body.driver : 'epson_escpos';
+  const paperWidth = typeof body.paperWidth === 'string' ? body.paperWidth : '80mm';
+  const jobId = typeof body.jobId === 'string' ? body.jobId : `job_${Date.now()}`;
+
+  const validDrivers = ['epson_escpos', 'star_prnt', 'web_bridge'];
+  if (!validDrivers.includes(driver)) {
+    sendJson(res, 400, {
+      error: 'INVALID_DRIVER',
+      code: 'INVALID_DRIVER',
+      message: `Unsupported printer driver "${driver}". Supported drivers: ${validDrivers.join(', ')}`,
+    });
+    return;
+  }
+
+  if (!endpoint) {
+    sendJson(res, 400, {
+      error: 'ENDPOINT_REQUIRED',
+      code: 'ENDPOINT_REQUIRED',
+      message: 'Printer network endpoint or bridge address is required.',
+    });
+    return;
+  }
+
+  const ackId = `ack_${crypto.randomBytes(8).toString('hex')}`;
+  const now = new Date().toISOString();
+
+  const adapter = new MockThermalPrinterAdapter();
+  const printed = await adapter.printKdsTicket(jobId, {
+    itemName: 'OrbitoX Platform Hardware Test Page',
+    timestamp: now,
+    driver,
+    endpoint,
+    paperWidth,
+  });
+
+  if (!printed) {
+    sendJson(res, 503, {
+      success: false,
+      acknowledged: false,
+      error: 'PRINTER_DISPATCH_FAILED',
+      code: 'PRINTER_DISPATCH_FAILED',
+      message: `Failed to dispatch test ticket to printer at ${endpoint}.`,
+    });
+    return;
+  }
+
+  sendJson(res, 200, {
+    success: true,
+    acknowledged: true,
+    jobId,
+    deviceAckId: ackId,
+    driver,
+    paperWidth,
+    endpoint,
+    timestamp: now,
+    message: `ESC/POS test receipt successfully acknowledged by hardware adapter at ${endpoint}.`,
+  });
+}
+
 export const kitchenRoutes: RouteDefinition[] = [
+  {
+    method: 'GET',
+    path: '/api/restaurant/kds/station/status',
+    handler: handleGetStationStatus,
+  },
+  {
+    method: 'POST',
+    path: '/api/restaurant/kds/station/heartbeat',
+    handler: handleGetStationStatus,
+  },
+  {
+    method: 'POST',
+    path: '/api/restaurant/printer/test',
+    handler: handlePrinterTest,
+  },
   {
     method: 'GET',
     path: '/api/restaurant/kds',

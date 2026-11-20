@@ -4,6 +4,7 @@ import { withCustomerAuth } from '@/server/auth/customer-auth';
 import { noStoreHeaders, getCustomerOrganizationRole } from '@/server/organizations/customer-dashboard';
 import { prisma } from '@/server/db/prisma';
 import { signBridgeRequest, getDefaultBridgeKeys } from '@orbitox-io/bridge';
+import { getPersistedInvoices } from '@/server/billing/billing-service';
 import {
   dispatchPrinterTestJob,
   verifyServerPrintJob,
@@ -201,44 +202,59 @@ export const POST = withCustomerAuth<RouteContext>(
           }
 
           case 'VERIFY_KDS': {
-            // Server actively queries the KDS station task feed on RestaurantOS runtime via bridge
+            // Actively verify authenticated KDS station status on RestaurantOS runtime via bridge
             const runtimeUrl =
               process.env.RESTAURANTOS_RUNTIME_URL ||
               process.env.RESTAURANT_STORE_URL ||
               'http://127.0.0.1:4010';
 
             const bridgeKeys = getDefaultBridgeKeys();
-            const pathWithQuery = '/api/restaurant/kds/tasks';
+            const stationToken = typeof body.stationToken === 'string' ? body.stationToken.trim() : undefined;
+            const pathWithQuery = stationToken
+              ? `/api/restaurant/kds/station/status?stationToken=${encodeURIComponent(stationToken)}`
+              : '/api/restaurant/kds/station/status';
+
             const signedHeaders = signBridgeRequest(bridgeKeys, {
               method: 'GET',
               pathWithQuery,
               tenantId: canonicalTenantId,
-              principal: { sub: session.userId, scopes: ['station:kds', 'preview:kds:read'] },
+              principal: { sub: session.userId, scopes: ['tenant:admin', 'kds:station'] },
             });
 
-            let stationResponsive = false;
-            let actualTasksCount = 0;
+            let stationVerified = false;
+            let realStationId = '';
+            let tasksCount = 0;
+            let failureReason = '';
+
             try {
               const res = await fetch(new URL(pathWithQuery, runtimeUrl).toString(), {
                 headers: signedHeaders,
                 cache: 'no-store',
-                signal: AbortSignal.timeout(2500),
+                signal: AbortSignal.timeout(3000),
               });
               if (res.ok) {
                 const json = await res.json().catch(() => ({}));
-                stationResponsive = true;
-                actualTasksCount = Array.isArray(json.tasks) ? json.tasks.length : (Array.isArray(json.data) ? json.data.length : 0);
+                if (json.active === true && json.station?.stationId) {
+                  stationVerified = true;
+                  realStationId = json.station.stationId;
+                  tasksCount = typeof json.station.tasksCount === 'number' ? json.station.tasksCount : 0;
+                } else {
+                  failureReason = json.message || 'No authenticated kitchen display station found with an active heartbeat.';
+                }
+              } else {
+                const errJson = await res.json().catch(() => ({}));
+                failureReason = errJson.message || `KDS station verification returned status ${res.status}.`;
               }
-            } catch {
-              stationResponsive = false;
+            } catch (err: any) {
+              failureReason = `Could not connect to restaurant runtime KDS service: ${err.message}`;
             }
 
-            if (!stationResponsive) {
+            if (!stationVerified || !realStationId) {
               return NextResponse.json(
                 {
                   ok: false,
-                  error: 'KDS_STATION_UNREACHABLE',
-                  message: 'Could not connect to authenticated KDS station task feed on restaurant runtime. Ensure KDS tablet is open and station credentials are valid.',
+                  error: 'KDS_STATION_NOT_AUTHENTICATED',
+                  message: failureReason || 'No authenticated kitchen display station found with an active heartbeat. Ensure the KDS tablet is open with valid station credentials.',
                 },
                 { status: 503, headers: noStoreHeaders() },
               );
@@ -247,11 +263,11 @@ export const POST = withCustomerAuth<RouteContext>(
             const checklist = await recordKdsVerified(
               canonicalTenantId,
               session.userId,
-              'station_main_kitchen',
-              actualTasksCount,
+              realStationId,
+              tasksCount,
               expectedVersion,
             );
-            return NextResponse.json({ ok: true, checklist, tasksCount: actualTasksCount }, { headers: noStoreHeaders() });
+            return NextResponse.json({ ok: true, checklist, stationId: realStationId, tasksCount }, { headers: noStoreHeaders() });
           }
 
           case 'ATTEST_KDS': {
@@ -283,55 +299,90 @@ export const POST = withCustomerAuth<RouteContext>(
               );
             }
 
+            // Check if user is already an active member of this organization
+            const existingUser = await prisma.customerUser.findFirst({
+              where: { email, status: { not: 'DELETED' } },
+            });
+            if (existingUser) {
+              const existingMembership = await prisma.customerMembership.findUnique({
+                where: { organizationId_userId: { organizationId: project.organizationId, userId: existingUser.id } },
+              });
+              if (existingMembership) {
+                return NextResponse.json(
+                  { ok: false, error: 'ALREADY_A_MEMBER', message: `User ${email} is already a member of this organization.` },
+                  { status: 400, headers: noStoreHeaders() },
+                );
+              }
+            }
+
+            // Create or update invitation token record
+            const tokenHash = crypto.randomBytes(32).toString('hex');
+            const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000); // 7 days
+
+            await prisma.accountToken.updateMany({
+              where: { organizationId: project.organizationId, email, purpose: 'INVITE', usedAt: null },
+              data: { usedAt: new Date() },
+            });
+
+            await prisma.accountToken.create({
+              data: {
+                tokenHash,
+                purpose: 'INVITE',
+                organizationId: project.organizationId,
+                email,
+                role: inviteRole as any,
+                expiresAt,
+              },
+            });
+
             const checklist = await recordStaffInvited(canonicalTenantId, session.userId, email, inviteRole, expectedVersion);
             return NextResponse.json({ ok: true, checklist }, { headers: noStoreHeaders() });
           }
 
           case 'VERIFY_STAFF': {
-            // Authoritative membership check: query CustomerMembership in the database
-            let memberVerified = false;
-            let verifiedEmail = typeof body.memberEmail === 'string' ? body.memberEmail.trim().toLowerCase() : undefined;
+            const current = await getChecklist(canonicalTenantId);
+            const staffItem = current.items.find((i) => i.id === 'staff');
+            const targetEmail = (typeof body.memberEmail === 'string' ? body.memberEmail.trim().toLowerCase() : null) || staffItem?.evidence?.invitedEmail;
 
-            if (verifiedEmail) {
-              const user = await prisma.customerUser.findFirst({
-                where: { email: verifiedEmail, status: { not: 'DELETED' } },
-              });
-              if (user) {
-                const membership = await prisma.customerMembership.findUnique({
-                  where: { organizationId_userId: { organizationId: project.organizationId, userId: user.id } },
-                });
-                if (membership) memberVerified = true;
-              }
-            } else {
-              const otherMemberships = await prisma.customerMembership.findMany({
-                where: {
-                  organizationId: project.organizationId,
-                  userId: { not: session.userId },
+            if (!targetEmail) {
+              return NextResponse.json(
+                {
+                  ok: false,
+                  error: 'NO_INVITATION_RECORDED',
+                  message: 'No pending staff invitation found for this onboarding checklist. Send an invitation to a team member first.',
                 },
-                include: { user: true },
-              });
-              if (otherMemberships.length > 0 && otherMemberships[0]) {
-                memberVerified = true;
-                verifiedEmail = otherMemberships[0].user?.email;
-              }
+                { status: 400, headers: noStoreHeaders() },
+              );
             }
 
-            if (!memberVerified) {
-              // Check if an invitation is pending
-              const pendingInvite = await prisma.accountToken.findFirst({
-                where: {
-                  organizationId: project.organizationId,
-                  purpose: 'INVITE',
-                  usedAt: null,
-                  expiresAt: { gt: new Date() },
+            // Authoritatively query AccountToken to verify that THIS exact invitation was accepted
+            const inviteToken = await prisma.accountToken.findFirst({
+              where: {
+                organizationId: project.organizationId,
+                email: targetEmail,
+                purpose: 'INVITE',
+              },
+              orderBy: { createdAt: 'desc' },
+            });
+
+            if (!inviteToken) {
+              return NextResponse.json(
+                {
+                  ok: false,
+                  error: 'NO_INVITATION_RECORDED',
+                  message: `No active invitation found for ${targetEmail}. Send an invitation to a team member first.`,
                 },
-              });
-              if (pendingInvite) {
+                { status: 400, headers: noStoreHeaders() },
+              );
+            }
+
+            if (inviteToken.usedAt === null) {
+              if (inviteToken.expiresAt < new Date()) {
                 return NextResponse.json(
                   {
                     ok: false,
-                    error: 'INVITATION_PENDING',
-                    message: `Invitation to ${pendingInvite.email} has been dispatched but not yet accepted. The recipient must accept their invite before staff setup is verified.`,
+                    error: 'INVITATION_EXPIRED',
+                    message: `The invitation to ${targetEmail} has expired. Please send a new invitation.`,
                   },
                   { status: 400, headers: noStoreHeaders() },
                 );
@@ -339,15 +390,58 @@ export const POST = withCustomerAuth<RouteContext>(
               return NextResponse.json(
                 {
                   ok: false,
-                  error: 'NO_ACTIVE_MEMBERSHIP',
-                  message: 'No accepted team membership found. Invite a team member and ensure they accept the invitation.',
+                  error: 'INVITATION_PENDING',
+                  message: `Invitation to ${targetEmail} has been dispatched but not yet accepted. The recipient must accept their invite before staff setup is verified.`,
                 },
                 { status: 400, headers: noStoreHeaders() },
               );
             }
 
-            const checklist = await recordStaffVerified(canonicalTenantId, session.userId, verifiedEmail, expectedVersion);
-            return NextResponse.json({ ok: true, checklist }, { headers: noStoreHeaders() });
+            // Invitation was accepted (usedAt !== null). Authoritatively verify resulting active membership.
+            const invitedUser = await prisma.customerUser.findFirst({
+              where: { email: targetEmail, status: { not: 'DELETED' } },
+            });
+
+            if (!invitedUser) {
+              return NextResponse.json(
+                {
+                  ok: false,
+                  error: 'USER_NOT_FOUND',
+                  message: `No active user account found matching invited email ${targetEmail}.`,
+                },
+                { status: 400, headers: noStoreHeaders() },
+              );
+            }
+
+            const membership = await prisma.customerMembership.findUnique({
+              where: { organizationId_userId: { organizationId: project.organizationId, userId: invitedUser.id } },
+            });
+
+            if (!membership) {
+              return NextResponse.json(
+                {
+                  ok: false,
+                  error: 'NO_ACTIVE_MEMBERSHIP',
+                  message: `User ${targetEmail} accepted an invite but is not an active member of organization ${project.organizationId}.`,
+                },
+                { status: 400, headers: noStoreHeaders() },
+              );
+            }
+
+            // Verify accepted role
+            if (inviteToken.role && membership.role !== inviteToken.role && membership.role !== 'ADMIN' && membership.role !== 'OWNER') {
+              return NextResponse.json(
+                {
+                  ok: false,
+                  error: 'ROLE_MISMATCH',
+                  message: `Accepted membership role ${membership.role} does not match invited role ${inviteToken.role}.`,
+                },
+                { status: 400, headers: noStoreHeaders() },
+              );
+            }
+
+            const checklist = await recordStaffVerified(canonicalTenantId, session.userId, targetEmail, expectedVersion);
+            return NextResponse.json({ ok: true, checklist, verifiedEmail: targetEmail }, { headers: noStoreHeaders() });
           }
 
           case 'VERIFY_PREVIEW_PAYMENT': {
@@ -369,49 +463,104 @@ export const POST = withCustomerAuth<RouteContext>(
             let verifiedPaymentId: string | null = null;
             let paymentMethod = 'UPI';
 
-            // 1. Search processed BillingWebhookEvents for active subscription charged events
-            const sub = await prisma.billingSubscription.findFirst({
-              where: { organizationId: project.organizationId, status: 'active' },
-            });
-            if (sub) {
-              const webhookEvents = await prisma.billingWebhookEvent.findMany({
-                where: {
-                  provider: 'razorpay',
-                  processedAt: { not: null },
-                },
-                orderBy: { receivedAt: 'desc' },
-                take: 20,
-              });
+            // 1. Exact subscription binding:
+            // Must match exact organizationId, exact canonicalTenantId, and restaurant plugin
+            const restaurantPlugins = [
+              '@orbitox/restaurant',
+              'restaurant',
+              '@orbitox-io/restaurant',
+              '@orbitox-io/restaurant-os',
+              'restaurant-os',
+            ];
 
-              for (const ev of webhookEvents) {
-                const payload = ev.payload as any;
-                const subId = payload?.subscription?.entity?.id || payload?.payment?.entity?.subscription_id;
-                if (subId === sub.razorpaySubscriptionId) {
-                  const payment = payload?.payment?.entity;
-                  if (payment && payment.status === 'captured') {
-                    verifiedPaymentId = payment.id;
-                    paymentMethod = payment.method || 'card';
-                    break;
+            const candidateSubs = await prisma.billingSubscription.findMany({
+              where: {
+                organizationId: project.organizationId,
+                tenantId: canonicalTenantId,
+                pluginId: { in: restaurantPlugins },
+                status: 'active',
+              },
+              include: { planMap: true },
+              orderBy: { updatedAt: 'desc' },
+            });
+
+            if (candidateSubs.length > 0) {
+              const sub = candidateSubs[0];
+              if (sub) {
+                // Trace Razorpay webhook events for this exact subscription
+                const webhookEvents = await prisma.billingWebhookEvent.findMany({
+                  where: {
+                    provider: 'razorpay',
+                    processedAt: { not: null },
+                  },
+                  orderBy: { receivedAt: 'desc' },
+                  take: 50,
+                });
+
+                for (const ev of webhookEvents) {
+                  const payload = ev.payload as any;
+                  const eventType = payload?.event || (ev as any).eventType;
+                  // Only accept charged/captured events; never failed or refund events
+                  if (eventType === 'subscription.charged' || eventType === 'payment.captured') {
+                    const subId = payload?.subscription?.entity?.id || payload?.payment?.entity?.subscription_id;
+                    if (subId === sub.razorpaySubscriptionId) {
+                      const payment = payload?.payment?.entity;
+                      if (
+                        payment &&
+                        payment.status === 'captured' &&
+                        payment.captured === true &&
+                        !payment.refund_status &&
+                        payment.amount > 0
+                      ) {
+                        verifiedPaymentId = payment.id;
+                        paymentMethod = payment.method || 'card';
+                        break;
+                      }
+                    }
+                  }
+                }
+
+                // Check persisted invoices
+                if (!verifiedPaymentId) {
+                  const invoices = await getPersistedInvoices();
+                  const matchingInvoice = invoices.find(
+                    (inv) =>
+                      (inv.tenantId === canonicalTenantId || inv.tenantId === project.id) &&
+                      inv.subscriptionId === sub.razorpaySubscriptionId &&
+                      inv.status === 'CAPTURED' &&
+                      inv.amountMinor > 0
+                  );
+                  if (matchingInvoice) {
+                    verifiedPaymentId = matchingInvoice.paymentId;
+                    paymentMethod = matchingInvoice.paymentMethod || 'UPI AutoPay';
                   }
                 }
               }
             }
 
-            // 2. Search RestaurantPaymentRecord for SETTLED live payments
+            // 2. Search RestaurantPaymentRecord with strict canonical tenant scoping
             if (!verifiedPaymentId) {
               const paymentRecord = await prisma.restaurantPaymentRecord.findFirst({
                 where: {
-                  OR: [
-                    { tenantId: canonicalTenantId },
-                    { companyId: project.organizationId },
-                  ],
+                  tenantId: canonicalTenantId,
+                  paymentGateway: 'razorpay',
                   status: 'SETTLED',
                 },
                 orderBy: { createdAt: 'desc' },
               });
               if (paymentRecord && paymentRecord.gatewayTransactionId) {
-                verifiedPaymentId = paymentRecord.gatewayTransactionId;
-                paymentMethod = paymentRecord.paymentGateway || 'UPI';
+                const meta = paymentRecord.metadata as any;
+                const isPreview = Boolean(
+                  meta?.isTest ||
+                  meta?.preview ||
+                  meta?.previewOrderId ||
+                  paymentRecord.orderId?.startsWith('preview_') ||
+                  paymentRecord.orderId?.startsWith('test_')
+                );
+                if (!isPreview && !meta?.manual_staff) {
+                  verifiedPaymentId = paymentRecord.gatewayTransactionId;
+                  paymentMethod = paymentRecord.paymentGateway || 'UPI';
+                }
               }
             }
 
@@ -420,13 +569,19 @@ export const POST = withCustomerAuth<RouteContext>(
                 {
                   ok: false,
                   error: 'PAYMENT_UNVERIFIED',
-                  message: 'No reconciled captured payment record found for this tenant or subscription. Complete subscription invoice settlement or restaurant gateway payment via verified webhook first.',
+                  message: 'No reconciled captured payment record found for this exact tenant and restaurant subscription. Complete subscription invoice settlement via verified Razorpay webhook or live gateway payment first.',
                 },
                 { status: 400, headers: noStoreHeaders() },
               );
             }
 
-            const checklist = await recordLiveGatewayVerified(canonicalTenantId, session.userId, verifiedPaymentId, paymentMethod, expectedVersion);
+            const checklist = await recordLiveGatewayVerified(
+              canonicalTenantId,
+              session.userId,
+              verifiedPaymentId,
+              paymentMethod,
+              expectedVersion,
+            );
             return NextResponse.json({ ok: true, checklist, transactionId: verifiedPaymentId }, { headers: noStoreHeaders() });
           }
 
@@ -483,7 +638,8 @@ export const POST = withCustomerAuth<RouteContext>(
 
             // Must have a verified server-side print job acknowledged by hardware
             const testPrintId = typeof body.testPrintId === 'string' ? body.testPrintId : '';
-            if (!testPrintId || !verifyServerPrintJob(canonicalTenantId, testPrintId)) {
+            const isVerified = testPrintId ? await verifyServerPrintJob(canonicalTenantId, testPrintId) : false;
+            if (!testPrintId || !isVerified) {
               return NextResponse.json(
                 {
                   ok: false,

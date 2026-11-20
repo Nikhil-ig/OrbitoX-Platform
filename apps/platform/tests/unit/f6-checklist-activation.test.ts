@@ -8,6 +8,8 @@ import {
   recordQrPlacementAttestation,
   recordKdsVerified,
   recordKdsMountedAttestation,
+  recordStaffInvited,
+  recordStaffVerified,
   recordPreviewPaymentSettled,
   recordLiveGatewayVerified,
   recordPrinterConfigured,
@@ -117,9 +119,10 @@ describe('F6 Onboarding Setup Checklist & Activation Status', () => {
   });
 
   it('records staff invitations with role and recipient evidence', async () => {
-    const state = await updateChecklistItem(testTenantId, {
+    // Stage 1: Invite dispatched -> PENDING_VERIFICATION
+    const stage1 = await updateChecklistItem(testTenantId, {
       itemId: 'staff',
-      status: 'COMPLETED',
+      status: 'PENDING_VERIFICATION',
       statusNote: 'Invite dispatched to chef@restaurant.test (ADMIN)',
       evidence: {
         invitedEmail: 'chef@restaurant.test',
@@ -128,30 +131,68 @@ describe('F6 Onboarding Setup Checklist & Activation Status', () => {
       actorId: 'usr_owner',
     });
 
-    const staffItem = state.items.find((i) => i.id === 'staff');
-    assert.ok(staffItem);
-    assert.strictEqual(staffItem.completed, true);
-    assert.strictEqual(staffItem.evidence?.invitedEmail, 'chef@restaurant.test');
-    assert.strictEqual(staffItem.evidence?.invitedRole, 'ADMIN');
+    const staffItem1 = stage1.items.find((i) => i.id === 'staff');
+    assert.ok(staffItem1);
+    assert.strictEqual(staffItem1.status, 'PENDING_VERIFICATION');
+    assert.strictEqual(staffItem1.completed, false);
+    assert.strictEqual(staffItem1.evidence?.invitedEmail, 'chef@restaurant.test');
+    assert.strictEqual(staffItem1.evidence?.invitedRole, 'ADMIN');
+
+    // Stage 2: Member accepted & verified -> COMPLETED
+    const stage2 = await updateChecklistItem(testTenantId, {
+      itemId: 'staff',
+      status: 'COMPLETED',
+      statusNote: 'Staff member accepted & active',
+      evidence: {
+        memberVerified: true,
+      },
+      actorId: 'usr_owner',
+    });
+
+    const staffItem2 = stage2.items.find((i) => i.id === 'staff');
+    assert.ok(staffItem2);
+    assert.strictEqual(staffItem2.completed, true);
+    assert.strictEqual(staffItem2.evidence?.invitedEmail, 'chef@restaurant.test');
+    assert.strictEqual(staffItem2.evidence?.memberVerified, true);
   });
 
   it('records verified payment settlement evidence', async () => {
-    const state = await updateChecklistItem(testTenantId, {
+    // Stage 1: Preview test order settled
+    const stage1 = await updateChecklistItem(testTenantId, {
+      itemId: 'payment',
+      status: 'ACTION_REQUIRED',
+      statusNote: 'Preview test order submitted & settled (ord_test_882) · Live reconciliation pending',
+      evidence: {
+        previewOrderId: 'ord_test_882',
+        previewSettledAmountMinor: 100,
+        previewPaymentMethod: 'UPI',
+      },
+    });
+
+    const payItem1 = stage1.items.find((i) => i.id === 'payment');
+    assert.ok(payItem1);
+    assert.strictEqual(payItem1.status, 'ACTION_REQUIRED');
+    assert.strictEqual(payItem1.completed, false);
+    assert.strictEqual(payItem1.evidence?.previewOrderId, 'ord_test_882');
+
+    // Stage 2: Live gateway reconciled
+    const stage2 = await updateChecklistItem(testTenantId, {
       itemId: 'payment',
       status: 'COMPLETED',
-      statusNote: 'Preview test order submitted & settled (ord_test_882)',
+      statusNote: 'Razorpay Gateway verified via webhook & live settlement',
       evidence: {
-        orderId: 'ord_test_882',
+        gatewayVerified: true,
+        orderId: 'pay_live_77192',
         settledAmountMinor: 100,
         paymentMethod: 'UPI',
       },
     });
 
-    const payItem = state.items.find((i) => i.id === 'payment');
-    assert.ok(payItem);
-    assert.strictEqual(payItem.completed, true);
-    assert.strictEqual(payItem.evidence?.orderId, 'ord_test_882');
-    assert.strictEqual(payItem.evidence?.settledAmountMinor, 100);
+    const payItem2 = stage2.items.find((i) => i.id === 'payment');
+    assert.ok(payItem2);
+    assert.strictEqual(payItem2.completed, true);
+    assert.strictEqual(payItem2.evidence?.gatewayVerified, true);
+    assert.strictEqual(payItem2.evidence?.orderId, 'pay_live_77192');
   });
 
   it('handles printer configuration with driver details and test print ID', async () => {
@@ -327,30 +368,29 @@ describe('F6 Onboarding Setup Checklist & Activation Status', () => {
     const fakeJobId = 'job_fabricated_999';
 
     // Fabricated ID without server record is rejected
-    assert.strictEqual(verifyServerPrintJob(tenantA, fakeJobId), false);
+    assert.strictEqual(await verifyServerPrintJob(tenantA, fakeJobId), false);
 
     // Legitimate acknowledged job for Tenant A is verified
-    recordTestPrintJobAck(tenantA, 'job_verified_123', 'epson_escpos');
-    assert.strictEqual(verifyServerPrintJob(tenantA, 'job_verified_123'), true);
+    await recordTestPrintJobAck(tenantA, 'job_verified_123', 'epson_escpos');
+    assert.strictEqual(await verifyServerPrintJob(tenantA, 'job_verified_123'), true);
 
     // Cross-tenant verification of Tenant A job by Tenant B is rejected
-    assert.strictEqual(verifyServerPrintJob(tenantB, 'job_verified_123'), false);
+    assert.strictEqual(await verifyServerPrintJob(tenantB, 'job_verified_123'), false);
   });
 });
 
 describe('F6 Security Trust Boundaries & Six-Gate Activation Invariants', () => {
-  it('enforces that generic mutations cannot fabricate completion for any item', () => {
+  it('enforces that generic updateChecklistItem mutations strictly reject COMPLETED status without required evidence', async () => {
     const allItems: ChecklistItemId[] = ['qr', 'kds', 'staff', 'payment', 'printer'];
+    const freshTenantId = `tenant_f6_gate_${Date.now()}`;
     for (const itemId of allItems) {
-      assert.throws(
-        () => {
-          // Attempting to set COMPLETED directly in updateChecklistItem without dedicated workflow
-          const isCompleted = true;
-          if (isCompleted) {
-            throw new InvalidChecklistTransitionError(
-              'Direct transition to COMPLETED via generic mutation is prohibited. Dedicated server verification workflow is required.',
-            );
-          }
+      await assert.rejects(
+        async () => {
+          await updateChecklistItem(freshTenantId, {
+            itemId,
+            status: 'COMPLETED',
+            expectedVersion: 1,
+          });
         },
         (err: any) => {
           assert.ok(err instanceof InvalidChecklistTransitionError);
@@ -361,40 +401,149 @@ describe('F6 Security Trust Boundaries & Six-Gate Activation Invariants', () => 
     }
   });
 
-  it('proves that active subscription alone cannot verify live gateway payment without reconciled captured payment record', () => {
-    // Subscription exists and is active, but no webhook event or payment record is present
-    const subscription = { id: 'sub_active_123', status: 'active' };
-    const webhookEvents: any[] = [];
-    const paymentRecords: any[] = [];
-
-    let verifiedPaymentId: string | null = null;
-    for (const ev of webhookEvents) {
-      if (ev.payload?.payment?.entity?.status === 'captured') {
-        verifiedPaymentId = ev.payload.payment.entity.id;
-        break;
-      }
-    }
-    if (!verifiedPaymentId && paymentRecords.length > 0) {
-      verifiedPaymentId = paymentRecords[0].gatewayTransactionId;
-    }
-
-    assert.strictEqual(verifiedPaymentId, null, 'Active subscription without payment records must not be payment-verified');
+  it('enforces mandatory auth on checklist route: unauthenticated request returns 401', async () => {
+    const { POST: checklistPost } = await import('@/app/api/v1/customer/tenants/[tenantId]/checklist/route');
+    const { NextRequest } = await import('next/server');
+    const req = new NextRequest('http://localhost:3005/api/v1/customer/tenants/tenant_test/checklist', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ expectedVersion: 1, itemId: 'payment', status: 'IN_PROGRESS' }),
+    });
+    const res = await checklistPost(req, { params: Promise.resolve({ tenantId: 'tenant_test' }) });
+    assert.strictEqual(res.status, 401);
   });
 
-  it('proves that staff invitation dispatch does not equal membership acceptance', () => {
-    const pendingInvites = [{ email: 'staff@restaurant.com', usedAt: null }];
-    const acceptedMemberships: any[] = []; // Member has not accepted yet
+  it('enforces that staff invitation dispatch remains PENDING_VERIFICATION until accepted', async () => {
+    const staffTenantId = `tenant_staff_lifecycle_${Date.now()}`;
+    const state = await recordStaffInvited(staffTenantId, 'usr_owner', 'chef@restaurant.test', 'CHEF', 1);
+    const staffItem = state.items.find((i) => i.id === 'staff');
+    assert.ok(staffItem);
+    assert.strictEqual(staffItem.status, 'PENDING_VERIFICATION');
+    assert.strictEqual(staffItem.completed, false);
+    assert.strictEqual(staffItem.evidence?.invitedEmail, 'chef@restaurant.test');
+    assert.strictEqual(staffItem.evidence?.invitedRole, 'CHEF');
 
-    const isMemberActive = acceptedMemberships.some((m) => m.email === 'staff@restaurant.com');
-    assert.strictEqual(isMemberActive, false, 'Pending invitation must not be treated as accepted membership');
+    // Attempting to complete staff without verified acceptance must fail
+    await assert.rejects(
+      async () => {
+        await updateChecklistItem(staffTenantId, {
+          itemId: 'staff',
+          status: 'COMPLETED',
+          expectedVersion: 2,
+        });
+      },
+      (err: any) => {
+        assert.ok(err instanceof InvalidChecklistTransitionError);
+        assert.strictEqual(err.statusCode, 400);
+        return true;
+      },
+    );
 
-    // After recipient accepts invite:
-    acceptedMemberships.push({ email: 'staff@restaurant.com', role: 'MEMBER', acceptedAt: new Date() });
-    const isMemberActiveAfterAccept = acceptedMemberships.some((m) => m.email === 'staff@restaurant.com');
-    assert.strictEqual(isMemberActiveAfterAccept, true, 'Only accepted membership verifies staff setup');
+    // Legitimate verified staff acceptance transitions cleanly to COMPLETED
+    const verifiedState = await recordStaffVerified(staffTenantId, 'usr_owner', 'chef@restaurant.test', 2);
+    const verifiedItem = verifiedState.items.find((i) => i.id === 'staff');
+    assert.ok(verifiedItem);
+    assert.strictEqual(verifiedItem.status, 'COMPLETED');
+    assert.strictEqual(verifiedItem.completed, true);
+    assert.strictEqual(verifiedItem.evidence?.memberVerified, true);
   });
 
-  it('evaluates the authoritative six-gate activation predicate', () => {
+  it('enforces that KDS mounting attestation requires verified station link first', async () => {
+    const kdsTenantId = `tenant_kds_guard_${Date.now()}`;
+    // Attesting hardware mounting before station link is verified must fail
+    await assert.rejects(
+      async () => {
+        await recordKdsMountedAttestation(kdsTenantId, 'usr_owner', 1);
+      },
+      (err: any) => {
+        assert.ok(err instanceof InvalidChecklistTransitionError);
+        assert.strictEqual(err.statusCode, 400);
+        return true;
+      },
+    );
+
+    // Record verified station link
+    const linkedState = await recordKdsVerified(kdsTenantId, 'usr_owner', 'TANDOOR', 3, 1);
+    const kdsItem = linkedState.items.find((i) => i.id === 'kds');
+    assert.ok(kdsItem);
+    assert.strictEqual(kdsItem.status, 'ACTION_REQUIRED');
+    assert.strictEqual(kdsItem.completed, false);
+    assert.strictEqual(kdsItem.evidence?.kdsStationId, 'TANDOOR');
+    assert.strictEqual(kdsItem.evidence?.stationLinkVerified, true);
+
+    // Mounting attestation succeeds after link is verified
+    const mountedState = await recordKdsMountedAttestation(kdsTenantId, 'usr_owner', 2);
+    const mountedItem = mountedState.items.find((i) => i.id === 'kds');
+    assert.ok(mountedItem);
+    assert.strictEqual(mountedItem.status, 'COMPLETED');
+    assert.strictEqual(mountedItem.completed, true);
+    assert.strictEqual(mountedItem.evidence?.hardwareMounted, true);
+  });
+
+  it('enforces printer job persistence across restarts with exact tenant scoping', async () => {
+    const { persistPrinterJob, verifyServerPrintJob } = await import('@/server/devices/printer-service');
+    const tenantA = `tenant_prn_persist_a_${Date.now()}`;
+    const tenantB = `tenant_prn_persist_b_${Date.now()}`;
+    const jobId = `prn_job_durable_${Date.now()}`;
+    const now = new Date().toISOString();
+
+    // Dispatched job is not yet acknowledged
+    await persistPrinterJob({
+      jobId,
+      tenantId: tenantA,
+      actorId: 'usr_op',
+      driver: 'epson_escpos',
+      endpoint: '192.168.1.100:9100',
+      paperWidth: '80mm',
+      status: 'DISPATCHED',
+      createdAt: now,
+      dispatchedAt: now,
+    });
+
+    assert.strictEqual(await verifyServerPrintJob(tenantA, jobId), false, 'Dispatched job without device ACK must not be verified');
+
+    // Update with hardware acknowledgement
+    await persistPrinterJob({
+      jobId,
+      tenantId: tenantA,
+      actorId: 'usr_op',
+      driver: 'epson_escpos',
+      endpoint: '192.168.1.100:9100',
+      paperWidth: '80mm',
+      status: 'ACKNOWLEDGED',
+      deviceAckId: 'ack_hw_9981',
+      createdAt: now,
+      dispatchedAt: now,
+      acknowledgedAt: now,
+    });
+
+    // Acknowledged job is verified for Tenant A
+    assert.strictEqual(await verifyServerPrintJob(tenantA, jobId), true);
+
+    // Cross-tenant query for the same job ID by Tenant B must return false
+    assert.strictEqual(await verifyServerPrintJob(tenantB, jobId), false);
+  });
+
+  it('rejects live gateway verification without verified captured payment evidence', async () => {
+    const payTenantId = `tenant_pay_gate_${Date.now()}`;
+    // Attempting to mark live gateway completed without captured evidence throws
+    await assert.rejects(
+      async () => {
+        await updateChecklistItem(payTenantId, {
+          itemId: 'payment',
+          status: 'COMPLETED',
+          expectedVersion: 1,
+        });
+      },
+      (err: any) => {
+        assert.ok(err instanceof InvalidChecklistTransitionError);
+        assert.strictEqual(err.statusCode, 400);
+        return true;
+      },
+    );
+  });
+
+  it('evaluates each of the six activation gates independently to enforce authoritative live status', () => {
     const evaluateActivation = (gates: {
       orgMapped: boolean;
       subscriptionActive: boolean;
@@ -426,20 +575,20 @@ describe('F6 Security Trust Boundaries & Six-Gate Activation Invariants', () => 
       true,
     );
 
-    // Missing health -> Not live
+    // Gate 1: Missing orgMapped -> Not live
     assert.strictEqual(
       evaluateActivation({
-        orgMapped: true,
+        orgMapped: false,
         subscriptionActive: true,
         pluginActive: true,
         sagaCompleted: true,
         runtimeProvisioned: true,
-        runtimeHealthy: false, // Health UNKNOWN or OFFLINE
+        runtimeHealthy: true,
       }),
       false,
     );
 
-    // Missing subscription -> Not live
+    // Gate 2: Missing subscriptionActive -> Not live
     assert.strictEqual(
       evaluateActivation({
         orgMapped: true,
@@ -452,7 +601,7 @@ describe('F6 Security Trust Boundaries & Six-Gate Activation Invariants', () => 
       false,
     );
 
-    // Missing plugin installation -> Not live
+    // Gate 3: Missing pluginActive -> Not live
     assert.strictEqual(
       evaluateActivation({
         orgMapped: true,
@@ -465,14 +614,40 @@ describe('F6 Security Trust Boundaries & Six-Gate Activation Invariants', () => 
       false,
     );
 
-    // Provisioning in progress -> Not live
+    // Gate 4: Missing sagaCompleted -> Not live
     assert.strictEqual(
       evaluateActivation({
         orgMapped: true,
         subscriptionActive: true,
         pluginActive: true,
         sagaCompleted: false,
+        runtimeProvisioned: true,
+        runtimeHealthy: true,
+      }),
+      false,
+    );
+
+    // Gate 5: Missing runtimeProvisioned -> Not live
+    assert.strictEqual(
+      evaluateActivation({
+        orgMapped: true,
+        subscriptionActive: true,
+        pluginActive: true,
+        sagaCompleted: true,
         runtimeProvisioned: false,
+        runtimeHealthy: true,
+      }),
+      false,
+    );
+
+    // Gate 6: Missing runtimeHealthy -> Not live
+    assert.strictEqual(
+      evaluateActivation({
+        orgMapped: true,
+        subscriptionActive: true,
+        pluginActive: true,
+        sagaCompleted: true,
+        runtimeProvisioned: true,
         runtimeHealthy: false,
       }),
       false,

@@ -444,6 +444,11 @@ export async function recordKdsMountedAttestation(
   expectedVersion?: number,
 ): Promise<OnboardingChecklistState> {
   const current = await getChecklist(tenantId);
+  const kdsItem = current.items.find((i) => i.id === 'kds');
+  if (!kdsItem?.evidence?.kdsStationId) {
+    throw new InvalidChecklistTransitionError('Cannot attest KDS mounting before a station link has been verified.');
+  }
+
   const now = new Date().toISOString();
 
   const updatedItems = current.items.map((it) => {
@@ -752,6 +757,15 @@ export async function updateChecklistItem(
     }
     if (input.itemId === 'kds' && !input.evidence?.hardwareMounted) {
       throw new InvalidChecklistTransitionError('Cannot mark KDS item completed without hardware mounting confirmation.');
+    }
+    if (input.itemId === 'staff' && !input.evidence?.memberVerified) {
+      throw new InvalidChecklistTransitionError('Cannot mark staff item completed without accepted membership verification.');
+    }
+    if (input.itemId === 'payment' && !input.evidence?.gatewayVerified) {
+      throw new InvalidChecklistTransitionError('Cannot mark payment item completed without live gateway reconciliation.');
+    }
+    if (input.itemId === 'printer' && (!input.evidence?.testPrintId || !input.evidence?.printerDriver)) {
+      throw new InvalidChecklistTransitionError('Cannot mark printer item completed without acknowledged test print.');
     }
   }
 

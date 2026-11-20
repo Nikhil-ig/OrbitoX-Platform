@@ -1224,6 +1224,261 @@ describe('OrbitoX Onboarding Multi-Viewport & Axe Accessibility E2E', () => {
       await page.unroute('**/api/v1/customer/tenants/*/checklist');
     });
 
+    it('F6 Setup Checklist: executes full interactive checklist lifecycle from download through verified live activation', async () => {
+      let isLive = false;
+      const checklistState: {
+        tenantId: string;
+        version: number;
+        items: Array<{
+          id: string;
+          title: string;
+          description: string;
+          actionLabel: string;
+          status: string;
+          completed: boolean;
+          statusNote: string;
+          evidence?: any;
+        }>;
+        completedCount: number;
+        totalCount: number;
+        allCompleted: boolean;
+      } = {
+        tenantId: 'org/org_f6_test/project/verma-bistro/environment/prod',
+        version: 1,
+        items: [
+          { id: 'qr', title: 'Print Table QR Codes', description: 'Download ready-to-print placards', actionLabel: 'Download QR Sheet', status: 'NOT_STARTED', completed: false, statusNote: 'Not yet printed' },
+          { id: 'kds', title: 'Station Kitchen Display (KDS)', description: 'Bookmark and open the real-time order queue', actionLabel: 'Open Station KDS', status: 'NOT_STARTED', completed: false, statusNote: 'Station unverified' },
+          { id: 'staff', title: 'Invite Captains & Service Staff', description: 'Grant role-based PIN access', actionLabel: 'Invite Team', status: 'NOT_STARTED', completed: false, statusNote: 'No invitations sent' },
+          { id: 'payment', title: 'Test Live UPI / Card Payment', description: 'Place and settle an authentic ₹1 test transaction', actionLabel: 'Test Settlement', status: 'NOT_STARTED', completed: false, statusNote: 'Payment unverified' },
+          { id: 'printer', title: 'Connect Thermal ESC/POS Printer', description: 'Auto-print Kitchen Order Tickets', actionLabel: 'Configure Printer', status: 'NOT_STARTED', completed: false, statusNote: 'No printer connected' },
+        ],
+        completedCount: 0,
+        totalCount: 5,
+        allCompleted: false,
+      };
+
+      await page.route('**/api/v1/customer/tenants/*/preview-summary', async (route) => {
+        await route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({
+            ok: true,
+            preview: {
+              actions: { dinerPreviewUrl: '/preview', kdsUrl: '/kds', tablesUrl: '/tables' },
+              restaurant: { status: 'ACTIVE', health: 'HEALTHY' },
+            },
+          }),
+        });
+      });
+
+      await page.route('**/api/v1/customer/tenants/*/tables/qr-sheet', async (route) => {
+        await route.fulfill({
+          status: 200,
+          contentType: 'text/html',
+          body: '<!DOCTYPE html><html><body><h1>Table QR Placards</h1></body></html>',
+        });
+      });
+
+      await page.route('**/api/v1/customer/tenants/*/test-orders', async (route) => {
+        await route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({ ok: true, order: { id: 'ord_test_playwright_1', orderId: 'ord_test_playwright_1' } }),
+        });
+      });
+
+      await page.route('**/api/v1/customer/tenants/*/tables/settle', async (route) => {
+        await route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({ ok: true, settled: true }),
+        });
+      });
+
+      await page.route('**/api/v1/customer/tenants/*/devices/printer/test', async (route) => {
+        await route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({ ok: true, testPrintId: 'job_test_prn_playwright_99', acknowledged: true }),
+        });
+      });
+
+      await page.route('**/api/v1/customer/tenants/*/activation-status', async (route) => {
+        await route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({
+            ok: true,
+            isLive,
+            isAwaitingWebhook: false,
+            gates: {
+              orgMapped: true,
+              subscriptionActive: true,
+              pluginActive: true,
+              sagaCompleted: true,
+              runtimeProvisioned: true,
+              runtimeHealthy: true,
+            },
+            subscription: { id: 'sub_live_playwright', status: 'active', planId: 'plan_growth_annual' },
+            provisioning: { status: 'COMPLETED' },
+            runtime: { status: 'ACTIVE', health: 'HEALTHY' },
+            installation: { status: 'ACTIVE', planId: 'growth' },
+            checklist: { completedCount: isLive ? 5 : checklistState.completedCount, totalCount: 5, allCompleted: isLive },
+          }),
+        });
+      });
+
+      await page.route('**/api/v1/customer/tenants/*/checklist', async (route) => {
+        if (route.request().method() === 'GET') {
+          await route.fulfill({
+            status: 200,
+            contentType: 'application/json',
+            body: JSON.stringify({ ok: true, checklist: checklistState }),
+          });
+          return;
+        }
+
+        if (route.request().method() === 'POST') {
+          const payload = JSON.parse(route.request().postData() || '{}');
+          checklistState.version += 1;
+
+          if (payload.action === 'RECORD_QR_DOWNLOAD') {
+            const item = checklistState.items.find((i) => i.id === 'qr')!;
+            item.status = 'ACTION_REQUIRED';
+            item.statusNote = 'QR Sheet downloaded · Placement required';
+            item.evidence = { artifactDownloaded: true };
+          } else if (payload.action === 'CONFIRM_QR_PLACEMENT') {
+            const item = checklistState.items.find((i) => i.id === 'qr')!;
+            item.status = 'COMPLETED';
+            item.completed = true;
+            item.statusNote = 'QR placards placed on tables';
+          } else if (payload.action === 'VERIFY_KDS') {
+            const item = checklistState.items.find((i) => i.id === 'kds')!;
+            item.status = 'ACTION_REQUIRED';
+            item.statusNote = 'Station link verified · Hardware placement required';
+            item.evidence = { kdsStationId: 'station_main_kitchen' };
+          } else if (payload.action === 'CONFIRM_KDS_MOUNTED') {
+            const item = checklistState.items.find((i) => i.id === 'kds')!;
+            item.status = 'COMPLETED';
+            item.completed = true;
+            item.statusNote = 'KDS station operational & mounted';
+          } else if (payload.action === 'INVITE_STAFF') {
+            const item = checklistState.items.find((i) => i.id === 'staff')!;
+            item.status = 'PENDING_VERIFICATION';
+            item.statusNote = `Invite dispatched to ${payload.email} (${payload.role}) · Awaiting acceptance`;
+            item.evidence = { invitedEmail: payload.email, invitedRole: payload.role };
+          } else if (payload.action === 'VERIFY_STAFF') {
+            const item = checklistState.items.find((i) => i.id === 'staff')!;
+            item.status = 'COMPLETED';
+            item.completed = true;
+            item.statusNote = 'Staff member accepted & active';
+          } else if (payload.action === 'RECORD_PREVIEW_PAYMENT') {
+            const item = checklistState.items.find((i) => i.id === 'payment')!;
+            item.status = 'ACTION_REQUIRED';
+            item.statusNote = 'Preview test order submitted & settled · Live reconciliation pending';
+          } else if (payload.action === 'VERIFY_GATEWAY') {
+            const item = checklistState.items.find((i) => i.id === 'payment')!;
+            item.status = 'COMPLETED';
+            item.completed = true;
+            item.statusNote = 'Razorpay Gateway verified via webhook & live settlement';
+          } else if (payload.action === 'CONFIGURE_PRINTER') {
+            const item = checklistState.items.find((i) => i.id === 'printer')!;
+            item.status = 'COMPLETED';
+            item.completed = true;
+            item.statusNote = 'Printer connected (Epson ESC/POS @ 192.168.1.200:9100)';
+          }
+
+          checklistState.completedCount = checklistState.items.filter((i) => i.completed).length;
+          checklistState.allCompleted = checklistState.completedCount === checklistState.items.length;
+          if (checklistState.allCompleted) {
+            isLive = true;
+          }
+
+          await route.fulfill({
+            status: 200,
+            contentType: 'application/json',
+            body: JSON.stringify({ ok: true, checklist: checklistState }),
+          });
+          return;
+        }
+
+        await route.continue();
+      });
+
+      await page.goto(`${BASE_URL}/onboarding`, { waitUntil: 'domcontentloaded' });
+      await page.evaluate((key) => {
+        localStorage.setItem(
+          key,
+          JSON.stringify({
+            step: 'F6',
+            user: { userId: 'usr_f6_test', email: 'owner@f6restaurant.com', name: 'Rohan Verma' },
+            organization: { id: 'org_f6_test', name: 'Verma Hospitality', slug: 'verma-hospitality', city: 'Mumbai' },
+            restaurant: {
+              tenantId: 'org/org_f6_test/project/verma-bistro/environment/prod',
+              slug: 'verma-bistro',
+              restaurantName: 'Verma Bistro',
+              tableCount: 16,
+              templateId: 'saffron',
+            },
+          })
+        );
+      }, STORAGE_KEY);
+
+      await page.reload({ waitUntil: 'domcontentloaded' });
+      await page.waitForSelector('text=Print Table QR Codes', { timeout: 15000 });
+
+      // Step 1: QR Sheet Download & Placement Attestation
+      await page.click('button:has-text("Download QR Sheet")');
+      await page.waitForSelector('button:has-text("Confirm Placement")', { timeout: 5000 });
+      await page.click('button:has-text("Confirm Placement")');
+      await page.waitForSelector('text=QR placards placed on tables', { timeout: 5000 });
+
+      // Step 2: KDS Station Link Verification & Mounting Attestation
+      await page.click('button:has-text("Open Station KDS")');
+      await page.waitForSelector('button:has-text("Confirm Mounted")', { timeout: 5000 });
+      await page.click('button:has-text("Confirm Mounted")');
+      await page.waitForSelector('text=KDS station operational & mounted', { timeout: 5000 });
+
+      // Step 3: Staff Invitation & Acceptance Verification
+      await page.click('button:has-text("Invite Team")');
+      await page.waitForSelector('text=Invite Team Member', { timeout: 5000 });
+      await page.fill('input[type="email"]', 'captain@f6restaurant.com');
+      await page.click('button:has-text("Send Invitation")');
+      await page.waitForSelector('button:has-text("Verify Accepted")', { timeout: 5000 });
+      await page.click('button:has-text("Verify Accepted")');
+      await page.waitForSelector('text=Staff member accepted & active', { timeout: 5000 });
+
+      // Step 4: Printer Configuration & Test Print
+      await page.click('button:has-text("Configure Printer")');
+      await page.waitForSelector('text=Thermal Printer Configuration', { timeout: 5000 });
+      await page.click('button:has-text("Dispatch Test Print Receipt")');
+      await page.waitForSelector('text=Test receipt packet acknowledged', { timeout: 5000 });
+      await page.click('button:has-text("Confirm Connected")');
+      await page.waitForSelector('text=Printer connected', { timeout: 5000 });
+
+      // Step 5: Test Payment Settlement & Live Gateway Verification
+      await page.click('button:has-text("Test Settlement")');
+      await page.waitForSelector('button:has-text("Verify Live Gateway")', { timeout: 5000 });
+      await page.click('button:has-text("Verify Live Gateway")');
+      await page.waitForSelector('text=Razorpay Gateway verified', { timeout: 5000 });
+
+      // Verify all 5 items completed
+      assert.strictEqual(checklistState.completedCount, 5);
+      assert.strictEqual(checklistState.allCompleted, true);
+
+      // Verify Live Status Badge transitions cleanly
+      await page.waitForSelector('text=You are live!', { timeout: 10000 });
+      assert.ok(await page.locator('text=You are live!').isVisible());
+
+      await page.unroute('**/api/v1/customer/tenants/*/preview-summary');
+      await page.unroute('**/api/v1/customer/tenants/*/tables/qr-sheet');
+      await page.unroute('**/api/v1/customer/tenants/*/test-orders');
+      await page.unroute('**/api/v1/customer/tenants/*/tables/settle');
+      await page.unroute('**/api/v1/customer/tenants/*/devices/printer/test');
+      await page.unroute('**/api/v1/customer/tenants/*/activation-status');
+      await page.unroute('**/api/v1/customer/tenants/*/checklist');
+    });
+
     it('F6 Multi-Viewport verification across all canonical viewports without horizontal overflow', async () => {
       const viewports = [
         { name: 'Mobile', width: 390, height: 844 },
