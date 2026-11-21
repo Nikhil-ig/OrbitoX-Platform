@@ -580,7 +580,18 @@ export async function getCustomerInvitation(
       if (token) {
         return await mapAccountTokenToInvitationRecord(token);
       }
-    } catch {}
+      if (process.env.NODE_ENV === 'production') {
+        return null;
+      }
+    } catch (err) {
+      if (process.env.NODE_ENV === 'production') {
+        throw err;
+      }
+    }
+  }
+
+  if (process.env.NODE_ENV === 'production') {
+    return null;
   }
 
   const memory = invitationMemoryStore.get(invitationReference);
@@ -609,7 +620,18 @@ export async function getLatestCustomerInvitationForEmail(
       if (token) {
         return await mapAccountTokenToInvitationRecord(token);
       }
-    } catch {}
+      if (process.env.NODE_ENV === 'production') {
+        return null;
+      }
+    } catch (err) {
+      if (process.env.NODE_ENV === 'production') {
+        throw err;
+      }
+    }
+  }
+
+  if (process.env.NODE_ENV === 'production') {
+    return null;
   }
 
   const memory = invitationMemoryStore.get(`${organizationId}:${normalizedEmail}`);

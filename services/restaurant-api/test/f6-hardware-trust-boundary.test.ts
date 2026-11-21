@@ -159,7 +159,7 @@ describe('RestaurantOS F6 Hardware & Station Trust Boundaries', () => {
       assert.strictEqual(data.simulated, true);
     });
 
-    it('records authenticated print agent hardware acknowledgements via /printer/ack', async () => {
+    it('rejects fabricated hardware acknowledgements with 503 PRINTER_HARDWARE_UNAVAILABLE', async () => {
       const pathWithQuery = '/api/restaurant/printer/ack';
       const body = JSON.stringify({
         jobId: 'job_real_hw_123',
@@ -180,12 +180,13 @@ describe('RestaurantOS F6 Hardware & Station Trust Boundaries', () => {
         body,
       });
 
-      assert.strictEqual(res.status, 200);
+      assert.strictEqual(res.status, 503);
       const data = await res.json();
-      assert.strictEqual(data.acknowledged, true);
-      assert.strictEqual(data.isSimulation, false);
-      assert.ok(data.deviceAckId);
-      assert.strictEqual(data.deviceIdentity, 'agent_pos_terminal_counter');
+      assert.strictEqual(data.acknowledged, false);
+      assert.strictEqual(data.code, 'PRINTER_HARDWARE_UNAVAILABLE');
+      assert.strictEqual(data.status, 'unconfigured');
+      assert.strictEqual(data.hardwareStatus, 'pending');
+      assert.strictEqual(data.deviceAckId, undefined);
     });
   });
 

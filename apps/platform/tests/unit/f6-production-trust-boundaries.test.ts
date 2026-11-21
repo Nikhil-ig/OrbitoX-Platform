@@ -255,6 +255,38 @@ describe('F6 Production Trust Boundaries & Non-Fabricated Verification', () => {
       assert.strictEqual(latest.id, newInv.id);
       assert.strictEqual(latest.status, 'PENDING_ACCEPTANCE');
     });
+
+    it('in production mode, refuses to fall back to process memory store when token database record is absent', async () => {
+      const orgId = 'org_prod_no_mem_test';
+      const email = 'nomem@orbitox.restaurant';
+      const fakeRef = 'inv_mem_only_123';
+      const now = new Date();
+
+      const memoryOnlyInv: CustomerInvitationRecord = {
+        id: fakeRef,
+        tokenHash: fakeRef,
+        organizationId: orgId,
+        email,
+        role: 'ADMIN',
+        status: 'PENDING_ACCEPTANCE',
+        dispatchedAt: now.toISOString(),
+        expiresAt: new Date(now.getTime() + 86400000).toISOString(),
+        createdAt: now.toISOString(),
+      };
+
+      await persistCustomerInvitation({} as any, memoryOnlyInv);
+
+      const originalEnv = process.env.NODE_ENV;
+      try {
+        (process.env as any).NODE_ENV = 'production';
+        const fetched = await getCustomerInvitation(orgId, fakeRef);
+        assert.strictEqual(fetched, null, 'Production MUST NOT fall back to memory store');
+        const latest = await getLatestCustomerInvitationForEmail(orgId, email);
+        assert.strictEqual(latest, null, 'Production MUST NOT fall back to memory store for email');
+      } finally {
+        (process.env as any).NODE_ENV = originalEnv;
+      }
+    });
   });
 
   describe('3. KDS Station Durability & Mounting Attestation', () => {

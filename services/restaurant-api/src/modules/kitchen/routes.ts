@@ -1160,20 +1160,20 @@ export async function handlePrinterAck(req: any, res: any, context: any): Promis
     return;
   }
 
-  const ackId = `hw_ack_${crypto.randomBytes(8).toString('hex')}`;
-  const now = new Date().toISOString();
-
-  sendJson(res, 200, {
-    success: true,
-    acknowledged: true,
-    isSimulation: false,
+  // Under deferred printer hardware verification:
+  // Reject fabricated acknowledgements without genuine physical device proof.
+  sendJson(res, 503, {
+    success: false,
+    acknowledged: false,
+    code: 'PRINTER_HARDWARE_UNAVAILABLE',
+    status: 'unconfigured',
+    hardwareStatus: 'pending',
     jobId,
-    deviceAckId: ackId,
     deviceIdentity,
     tenantId,
     branchId,
-    timestamp: now,
-    message: `ESC/POS test receipt acknowledged by authenticated hardware agent at ${deviceIdentity}.`,
+    timestamp: new Date().toISOString(),
+    message: 'Printer hardware verification is deferred. Physical device proof unavailable.',
   });
 }
 

@@ -25,6 +25,7 @@ jobs:
     timeout-minutes: 25
     outputs:
       web_image_digest: ${{ steps.push-web.outputs.digest }}
+      ros_image_digest: ${{ steps.push-ros.outputs.digest }}
     steps:
       - name: Checkout source tree
         uses: actions/checkout@v5
@@ -32,11 +33,21 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
+      - name: Validate AWS Staging Deploy Role Configuration
+        run: |
+          if [ -z "${{ secrets.AWS_STAGING_DEPLOY_ROLE_ARN }}" ]; then
+            echo "::error::AWS_STAGING_DEPLOY_ROLE_ARN secret is not configured in repository/environment secrets."
+            exit 1
+          fi
+
       - name: Configure AWS Credentials via OIDC
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          role-to-assume: ${{ secrets.AWS_STAGING_DEPLOY_ROLE_ARN || 'arn:aws:iam::123456789012:role/orbitox-staging-github-actions-deploy-role' }}
+          role-to-assume: ${{ secrets.AWS_STAGING_DEPLOY_ROLE_ARN }}
           aws-region: ap-south-1
+
+      - name: Verify AWS Identity via STS
+        run: aws sts get-caller-identity
 
       - name: Log in to Amazon ECR
         id: login-ecr
@@ -52,7 +63,7 @@ jobs:
           docker build \
             -f apps/platform/Dockerfile \
             -t "$FULL_TAG" \
-            orbitox
+            .
           echo "image_tag=$FULL_TAG" >> "$GITHUB_OUTPUT"
 
       - name: Scan Web Image for High/Critical Vulnerabilities (Trivy)
@@ -73,6 +84,37 @@ jobs:
           echo "Pushed immutable digest: $DIGEST"
           echo "digest=$DIGEST" >> "$GITHUB_OUTPUT"
 
+      - name: Build RestaurantOS Container Image
+        id: build-ros
+        run: |
+          ECR_REGISTRY="${{ steps.login-ecr.outputs.registry }}"
+          IMAGE_TAG="${{ github.sha }}"
+          FULL_TAG="$ECR_REGISTRY/orbitox/staging/restaurant-os:$IMAGE_TAG"
+          echo "Building $FULL_TAG from orbitox monorepo root..."
+          docker build \
+            -f services/restaurant-api/Dockerfile \
+            -t "$FULL_TAG" \
+            .
+          echo "image_tag=$FULL_TAG" >> "$GITHUB_OUTPUT"
+
+      - name: Scan RestaurantOS Image for High/Critical Vulnerabilities (Trivy)
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: ${{ steps.build-ros.outputs.image_tag }}
+          format: 'table'
+          exit-code: '1'
+          ignore-unfixed: true
+          severity: 'CRITICAL,HIGH'
+
+      - name: Push RestaurantOS Image to ECR by Digest
+        id: push-ros
+        run: |
+          FULL_TAG="${{ steps.build-ros.outputs.image_tag }}"
+          docker push "$FULL_TAG"
+          DIGEST=$(docker inspect --format='{{index .RepoDigests 0}}' "$FULL_TAG")
+          echo "Pushed immutable digest: $DIGEST"
+          echo "digest=$DIGEST" >> "$GITHUB_OUTPUT"
+
   migrate-and-verify:
     name: Staging Migration & Step 1 RLS/Role Inventory (Private ECS Tasks)
     needs: build-and-scan
@@ -80,11 +122,21 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:
+      - name: Validate AWS Staging Deploy Role Configuration
+        run: |
+          if [ -z "${{ secrets.AWS_STAGING_DEPLOY_ROLE_ARN }}" ]; then
+            echo "::error::AWS_STAGING_DEPLOY_ROLE_ARN secret is not configured in repository/environment secrets."
+            exit 1
+          fi
+
       - name: Configure AWS Credentials via OIDC
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          role-to-assume: ${{ secrets.AWS_STAGING_DEPLOY_ROLE_ARN || 'arn:aws:iam::123456789012:role/orbitox-staging-github-actions-deploy-role' }}
+          role-to-assume: ${{ secrets.AWS_STAGING_DEPLOY_ROLE_ARN }}
           aws-region: ap-south-1
+
+      - name: Verify AWS Identity via STS
+        run: aws sts get-caller-identity
 
       - name: Fetch Private Subnets and ECS Security Group
         id: network
@@ -184,14 +236,24 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:
+      - name: Validate AWS Staging Deploy Role Configuration
+        run: |
+          if [ -z "${{ secrets.AWS_STAGING_DEPLOY_ROLE_ARN }}" ]; then
+            echo "::error::AWS_STAGING_DEPLOY_ROLE_ARN secret is not configured in repository/environment secrets."
+            exit 1
+          fi
+
       - name: Configure AWS Credentials via OIDC
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          role-to-assume: ${{ secrets.AWS_STAGING_DEPLOY_ROLE_ARN || 'arn:aws:iam::123456789012:role/orbitox-staging-github-actions-deploy-role' }}
+          role-to-assume: ${{ secrets.AWS_STAGING_DEPLOY_ROLE_ARN }}
           aws-region: ap-south-1
 
-      - name: Update ECS Task Definition with Scanned Image Digest
-        id: update-task-def
+      - name: Verify AWS Identity via STS
+        run: aws sts get-caller-identity
+
+      - name: Update Web ECS Task Definition with Scanned Image Digest
+        id: update-web-task-def
         run: |
           CLUSTER_NAME="orbitox-staging-cluster"
           SERVICE_NAME="orbitox-staging-web-service"
@@ -199,34 +261,79 @@ jobs:
 
           echo "Fetching current task definition for $SERVICE_NAME..."
           TASK_DEF=$(aws ecs describe-services --cluster "$CLUSTER_NAME" --services "$SERVICE_NAME" --query "services[0].taskDefinition" --output text)
-          aws ecs describe-task-definition --task-definition "$TASK_DEF" --query "taskDefinition" > current-task-def.json
+          aws ecs describe-task-definition --task-definition "$TASK_DEF" --query "taskDefinition" > current-web-task-def.json
 
           echo "Updating container image to $NEW_DIGEST..."
           jq --arg IMG "$NEW_DIGEST" \
              '.containerDefinitions[0].image = $IMG | del(.taskDefinitionArn, .revision, .status, .requiresAttributes, .compatibilities, .registeredAt, .registeredBy)' \
-             current-task-def.json > new-task-def.json
+             current-web-task-def.json > new-web-task-def.json
 
-          NEW_TASK_DEF_ARN=$(aws ecs register-task-definition --cli-input-json file://new-task-def.json --query "taskDefinition.taskDefinitionArn" --output text)
+          NEW_TASK_DEF_ARN=$(aws ecs register-task-definition --cli-input-json file://new-web-task-def.json --query "taskDefinition.taskDefinitionArn" --output text)
+          echo "Registered new task definition: $NEW_TASK_DEF_ARN"
+          echo "new_task_def_arn=$NEW_TASK_DEF_ARN" >> "$GITHUB_OUTPUT"
+
+      - name: Update RestaurantOS ECS Task Definition with Scanned Image Digest
+        id: update-ros-task-def
+        run: |
+          CLUSTER_NAME="orbitox-staging-cluster"
+          SERVICE_NAME="orbitox-staging-restaurant-os-service"
+          NEW_DIGEST="${{ needs.build-and-scan.outputs.ros_image_digest }}"
+
+          echo "Fetching current task definition for $SERVICE_NAME..."
+          TASK_DEF=$(aws ecs describe-services --cluster "$CLUSTER_NAME" --services "$SERVICE_NAME" --query "services[0].taskDefinition" --output text)
+          aws ecs describe-task-definition --task-definition "$TASK_DEF" --query "taskDefinition" > current-ros-task-def.json
+
+          echo "Updating container image to $NEW_DIGEST..."
+          jq --arg IMG "$NEW_DIGEST" \
+             '.containerDefinitions[0].image = $IMG | del(.taskDefinitionArn, .revision, .status, .requiresAttributes, .compatibilities, .registeredAt, .registeredBy)' \
+             current-ros-task-def.json > new-ros-task-def.json
+
+          NEW_TASK_DEF_ARN=$(aws ecs register-task-definition --cli-input-json file://new-ros-task-def.json --query "taskDefinition.taskDefinitionArn" --output text)
           echo "Registered new task definition: $NEW_TASK_DEF_ARN"
           echo "new_task_def_arn=$NEW_TASK_DEF_ARN" >> "$GITHUB_OUTPUT"
 
       - name: Rolling Deploy to ECS with Health Check Gate
         run: |
           CLUSTER_NAME="orbitox-staging-cluster"
-          SERVICE_NAME="orbitox-staging-web-service"
-          NEW_TASK_DEF="${{ steps.update-task-def.outputs.new_task_def_arn }}"
+          WEB_SERVICE="orbitox-staging-web-service"
+          ROS_SERVICE="orbitox-staging-restaurant-os-service"
+          NEW_WEB_TASK_DEF="${{ steps.update-web-task-def.outputs.new_task_def_arn }}"
+          NEW_ROS_TASK_DEF="${{ steps.update-ros-task-def.outputs.new_task_def_arn }}"
 
-          echo "Deploying $NEW_TASK_DEF to $SERVICE_NAME..."
+          echo "Deploying $NEW_WEB_TASK_DEF to $WEB_SERVICE..."
           aws ecs update-service \
             --cluster "$CLUSTER_NAME" \
-            --service "$SERVICE_NAME" \
-            --task-definition "$NEW_TASK_DEF" \
+            --service "$WEB_SERVICE" \
+            --task-definition "$NEW_WEB_TASK_DEF" \
             --force-new-deployment
 
-          echo "Waiting for ECS service stability (automatic rollback on failure)..."
+          echo "Deploying $NEW_ROS_TASK_DEF to $ROS_SERVICE..."
+          aws ecs update-service \
+            --cluster "$CLUSTER_NAME" \
+            --service "$ROS_SERVICE" \
+            --task-definition "$NEW_ROS_TASK_DEF" \
+            --force-new-deployment
+
+          echo "Waiting for ECS services stability (automatic rollback on failure)..."
           aws ecs wait services-stable \
             --cluster "$CLUSTER_NAME" \
-            --services "$SERVICE_NAME"
+            --services "$WEB_SERVICE" "$ROS_SERVICE"
+
+      - name: Verify Live Staging Health Check
+        run: |
+          echo "Verifying live staging health endpoint..."
+          HEALTH_URL="https://staging.orbitox.io/health"
+          for i in $(seq 1 12); do
+            STATUS=$(curl -s -o /dev/null -w "%{http_code}" "$HEALTH_URL" || true)
+            echo "Attempt $i: $HEALTH_URL returned HTTP $STATUS"
+            if [ "$STATUS" = "200" ]; then
+              echo "Staging deployment is healthy!"
+              exit 0
+            fi
+            sleep 5
+          done
+          echo "Staging health verification timed out."
+          exit 1
 
       - name: Verify Live Staging Health Check
         run: |

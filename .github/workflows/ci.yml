@@ -471,6 +471,14 @@ jobs:
           DATABASE_URL: postgresql://postgres:postgrespassword@127.0.0.1:5432/restaurant_os
           APP_DATABASE_URL: postgresql://restaurantos_app:test_app_pass_123@127.0.0.1:5432/restaurant_os
 
+      - name: "Suite 6: F6 Hardware & Station Trust Boundaries"
+        working-directory: services/restaurant-api
+        run: pnpm exec tsx --test test/f6-hardware-trust-boundary.test.ts
+        env:
+          NODE_ENV: test
+          DATABASE_URL: postgresql://postgres:postgrespassword@127.0.0.1:5432/restaurant_os
+          APP_DATABASE_URL: postgresql://restaurantos_app:test_app_pass_123@127.0.0.1:5432/restaurant_os
+
   platform-phase2-step1:
     name: Control Plane PostgreSQL Step 1
     runs-on: ubuntu-24.04
