@@ -16,8 +16,9 @@ export const POST = withCustomerAuth<RouteContext>(async (request: NextRequest, 
       headers: { ...noStore, 'Retry-After': String(rate.retryAfterSeconds) },
     });
   }
+  let inviteResult;
   try {
-    await inviteCustomerMember({
+    inviteResult = await inviteCustomerMember({
       organizationId,
       actorUserId: session.userId,
       email,
@@ -38,7 +39,12 @@ export const POST = withCustomerAuth<RouteContext>(async (request: NextRequest, 
     const status = message === 'Organization not found.' ? 404 : message.startsWith('Only organization') ? 403 : message.includes('already a member') ? 409 : 422;
     return NextResponse.json({ ok: false, error: message }, { status, headers: noStore });
   }
-  return NextResponse.json({ ok: true }, { status: 202, headers: noStore });
+  return NextResponse.json({
+    ok: true,
+    invitationReference: inviteResult.invitationReference,
+    email: inviteResult.email,
+    role: inviteResult.role,
+  }, { status: 202, headers: noStore });
 }, { write: true });
 
 const noStore = { 'Cache-Control': 'no-store' };

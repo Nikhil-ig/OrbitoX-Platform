@@ -215,7 +215,48 @@ export const GET = withCustomerAuth<RouteContext>(
             { status: 502, headers: noStoreHeaders() },
           );
         }
-      } catch {
+
+        const verifyData = await verifyRes.json().catch(() => null);
+        const resolved = verifyData?.data;
+        if (!resolved) {
+          return NextResponse.json(
+            {
+              ok: false,
+              error: 'QR_LOCATOR_PAYLOAD_INVALID',
+              message: `Table "${table.number}" locator "${table.locator}" returned no data payload from runtime resolver.`,
+            },
+            { status: 502, headers: noStoreHeaders() },
+          );
+        }
+
+        // Compare expected table number, table id, locator, and active status
+        const numberMatches = String(resolved.tableNumber || '').trim().toLowerCase() === String(table.number).trim().toLowerCase();
+        const locatorMatches = String(resolved.locator || '').trim() === String(table.locator).trim();
+        const isActive = !resolved.status || ['ACTIVE', 'AVAILABLE', 'OCCUPIED'].includes(String(resolved.status).toUpperCase());
+
+        if (!numberMatches || !locatorMatches) {
+          return NextResponse.json(
+            {
+              ok: false,
+              error: 'QR_LOCATOR_MISMATCH',
+              message: `Table "${table.number}" locator "${table.locator}" resolved to mismatched table "${resolved.tableNumber}" on runtime.`,
+            },
+            { status: 422, headers: noStoreHeaders() },
+          );
+        }
+
+        if (!isActive) {
+          return NextResponse.json(
+            {
+              ok: false,
+              error: 'TABLE_INACTIVE',
+              message: `Table "${table.number}" status is currently "${resolved.status}" on runtime and cannot receive guest QR placards.`,
+            },
+            { status: 422, headers: noStoreHeaders() },
+          );
+        }
+      } catch (err: any) {
+        if (err instanceof NextResponse) throw err;
         // In isolated test runner where runtime server is offline, proceed if table has valid locator format
         if (process.env.NODE_ENV === 'production') {
           return NextResponse.json(

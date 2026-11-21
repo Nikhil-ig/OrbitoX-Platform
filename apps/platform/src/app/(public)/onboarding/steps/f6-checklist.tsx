@@ -386,7 +386,7 @@ export function F6ChecklistStep({
           window.open(targetUrl, '_blank');
         }
 
-        await sendChecklistAction({ action: 'VERIFY_KDS', stationId: 'station_main_kitchen' });
+        await sendChecklistAction({ action: 'VERIFY_KDS' });
         setActionSuccess('Kitchen Display Station link verified. Mount tablet or monitor in kitchen, then confirm.');
       } catch (err: any) {
         setActionError(err.message || 'Failed to verify KDS station link.');
@@ -540,10 +540,13 @@ export function F6ChecklistStep({
         throw new Error(data.error || data.message || `Invitation failed with status ${res.status}`);
       }
 
+      const inviteData = await res.json().catch(() => ({}));
+
       await sendChecklistAction({
         action: 'INVITE_STAFF',
         email: inviteEmail.trim(),
         role: inviteRole,
+        invitationReference: inviteData.invitationReference,
       });
       setActionSuccess(`Team invitation dispatched to ${inviteEmail.trim()}. Status: Awaiting recipient acceptance.`);
       setInviteModalOpen(false);

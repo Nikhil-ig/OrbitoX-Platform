@@ -653,4 +653,73 @@ describe('F6 Security Trust Boundaries & Six-Gate Activation Invariants', () => 
       false,
     );
   });
+
+  it('strictly rejects simulated printer acknowledgements from satisfying physical hardware verification', async () => {
+    const { persistPrinterJob, verifyServerPrintJob, recordHardwarePrintJobAck } = await import('@/server/devices/printer-service');
+    const simTenant = `tenant_sim_guard_${Date.now()}`;
+    const simJobId = `job_sim_${Date.now()}`;
+    const now = new Date().toISOString();
+
+    // A job with isSimulation: true must NEVER be verified as real hardware
+    await persistPrinterJob({
+      jobId: simJobId,
+      tenantId: simTenant,
+      actorId: 'usr_test',
+      driver: 'epson_escpos',
+      endpoint: '192.168.1.100:9100',
+      paperWidth: '80mm',
+      status: 'ACKNOWLEDGED',
+      deviceAckId: 'sim_ack_123',
+      isSimulation: true,
+      createdAt: now,
+      dispatchedAt: now,
+      acknowledgedAt: now,
+    });
+
+    assert.strictEqual(
+      await verifyServerPrintJob(simTenant, simJobId),
+      false,
+      'verifyServerPrintJob must reject simulated job even if status is ACKNOWLEDGED and deviceAckId exists',
+    );
+
+    // Conversely, a genuine hardware acknowledgement with isSimulation: false succeeds
+    const hwJobId = `job_hw_${Date.now()}`;
+    await recordHardwarePrintJobAck(simTenant, hwJobId, 'epson_escpos', 'hw_ack_verified_123');
+    assert.strictEqual(
+      await verifyServerPrintJob(simTenant, hwJobId),
+      true,
+      'verifyServerPrintJob must accept genuine hardware acknowledgement',
+    );
+  });
+
+  it('enforces that staff invitation stores invitationReference and tracks acceptance lifecycle', async () => {
+    const inviteTenant = `tenant_invite_lifecycle_${Date.now()}`;
+    const invRef = `inv_ref_hash_${Date.now()}`;
+
+    // Stage 1: Invitation dispatched with stable invitationReference
+    const state1 = await recordStaffInvited(
+      inviteTenant,
+      'usr_owner',
+      'captain@verma.test',
+      'MEMBER',
+      1,
+      invRef,
+    );
+
+    const staffItem = state1.items.find((i) => i.id === 'staff');
+    assert.ok(staffItem);
+    assert.strictEqual(staffItem.status, 'PENDING_VERIFICATION');
+    assert.strictEqual(staffItem.completed, false);
+    assert.strictEqual(staffItem.evidence?.invitedEmail, 'captain@verma.test');
+    assert.strictEqual(staffItem.evidence?.invitedRole, 'MEMBER');
+    assert.strictEqual(staffItem.evidence?.invitationReference, invRef);
+
+    // Stage 2: Verified staff completion requires memberVerified evidence
+    const state2 = await recordStaffVerified(inviteTenant, 'usr_owner', 'captain@verma.test', 2);
+    const verifiedStaff = state2.items.find((i) => i.id === 'staff');
+    assert.ok(verifiedStaff);
+    assert.strictEqual(verifiedStaff.status, 'COMPLETED');
+    assert.strictEqual(verifiedStaff.completed, true);
+    assert.strictEqual(verifiedStaff.evidence?.memberVerified, true);
+  });
 });

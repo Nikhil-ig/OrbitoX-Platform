@@ -123,7 +123,39 @@ export async function handleTableSettle(req: any, res: any, context: any): Promi
       method: body.paymentMethod || body.method || 'CASH',
     });
 
-    const isProviderConfirmed = Boolean(body.providerConfirmed && body.gatewayTransactionId);
+    // Strict Payment Trust Boundary:
+    // A client request cannot establish provider-confirmed status simply by claiming body.providerConfirmed.
+    // Provider confirmation requires either:
+    // 1) Authenticated internal PLATFORM_BRIDGE caller with payment/billing reconciliation scopes, OR
+    // 2) An authoritative server-side captured payment record matching the gatewayTransactionId.
+    let isProviderConfirmed = false;
+    let authoritativeTxId: string | undefined = undefined;
+
+    const isAuthorizedBridgeReconciler =
+      identity.type === 'PLATFORM_BRIDGE' &&
+      identity.scopes?.some((s: string) =>
+        ['tenant:admin', 'platform:superuser', 'tables:write', 'billing:reconcile'].includes(s),
+      );
+
+    if (isAuthorizedBridgeReconciler && body.providerConfirmed && body.gatewayTransactionId) {
+      isProviderConfirmed = true;
+      authoritativeTxId = String(body.gatewayTransactionId);
+    } else if (body.gatewayTransactionId && context.prisma) {
+      try {
+        const paymentSession = await context.prisma.razorpayPaymentSession.findFirst({
+          where: {
+            id: String(body.gatewayTransactionId),
+            tenantId: context.tenantContext?.tenantId,
+            status: 'captured',
+          },
+        });
+        if (paymentSession) {
+          isProviderConfirmed = true;
+          authoritativeTxId = paymentSession.id;
+        }
+      } catch {}
+    }
+
     const settlementPayload = {
       method: body.paymentMethod || body.method || 'CASH',
       status: body.paymentStatus || body.status || 'PAID',
@@ -132,7 +164,7 @@ export async function handleTableSettle(req: any, res: any, context: any): Promi
       reason: body.reason,
       verification: isProviderConfirmed ? ('PROVIDER_CONFIRMED' as const) : ('MANUAL_STAFF_RECORDED' as const),
       providerConfirmed: isProviderConfirmed,
-      gatewayTransactionId: body.gatewayTransactionId,
+      gatewayTransactionId: isProviderConfirmed ? authoritativeTxId : undefined,
       settledAt: new Date().toISOString(),
     };
 

@@ -445,13 +445,21 @@ export async function resetCustomerPassword(rawToken: string, password: string):
   });
 }
 
+export interface InviteCustomerMemberResult {
+  invitationReference: string;
+  email: string;
+  role: string;
+  organizationId: string;
+  expiresAt: Date;
+}
+
 export async function inviteCustomerMember(input: {
   organizationId: string;
   actorUserId: string;
   email: string;
   role: string;
   baseUrl: string;
-}): Promise<void> {
+}): Promise<InviteCustomerMemberResult> {
   const email = assertValidEmail(input.email);
   if (!allowedInviteRoles.includes(input.role as (typeof allowedInviteRoles)[number])) {
     throw new Error('Invites may grant ADMIN, MEMBER, or BILLING only.');
@@ -508,6 +516,14 @@ export async function inviteCustomerMember(input: {
       data: [{ recipient: email, template: 'INVITE', encryptedPayload }],
     });
   });
+
+  return {
+    invitationReference: token.tokenHash,
+    email,
+    role: input.role,
+    organizationId: organization.id,
+    expiresAt: token.expiresAt,
+  };
 }
 
 export async function acceptCustomerInvite(input: {

@@ -49,6 +49,7 @@ export interface ChecklistEvidence {
   previewSettledAt?: string;
   gatewayVerified?: boolean;
   gatewayTransactionId?: string;
+  invitationReference?: string;
   invitedEmail?: string;
   invitedRole?: string;
   invitedAt?: string;
@@ -486,6 +487,7 @@ export async function recordStaffInvited(
   email: string,
   role: string,
   expectedVersion?: number,
+  invitationReference?: string,
 ): Promise<OnboardingChecklistState> {
   const current = await getChecklist(tenantId);
   const now = new Date().toISOString();
@@ -497,6 +499,7 @@ export async function recordStaffInvited(
       invitedEmail: email,
       invitedRole: role,
       invitedAt: now,
+      invitationReference: invitationReference || it.evidence?.invitationReference,
       verifiedBy: actorId,
     };
     return {

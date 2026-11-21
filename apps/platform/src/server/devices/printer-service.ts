@@ -26,6 +26,7 @@ export interface PrinterJobRecord {
   status: PrinterJobStatus;
   deviceAckId?: string;
   errorMessage?: string;
+  isSimulation?: boolean;
   createdAt: string;
   dispatchedAt?: string;
   acknowledgedAt?: string;
@@ -219,7 +220,11 @@ export async function getPrinterJob(tenantId: string, jobId: string): Promise<Pr
       if (rows.length > 0 && rows[0]?.payload) {
         return rows[0].payload as PrinterJobRecord;
       }
-    } catch {
+      return null;
+    } catch (err: any) {
+      if (process.env.NODE_ENV === 'production') {
+        throw new Error(`Database error retrieving printer job: ${err.message}`);
+      }
       // Fall through to memory registry in test/offline fallback
     }
   }
@@ -232,13 +237,15 @@ export async function getPrinterJob(tenantId: string, jobId: string): Promise<Pr
 }
 
 /**
- * Validates whether a given print job exists and was acknowledged by hardware for this exact tenant.
+ * Validates whether a given print job exists and was acknowledged by genuine hardware for this exact tenant.
+ * Simulated or mock printer jobs are strictly rejected.
  */
 export async function verifyServerPrintJob(tenantId: string, jobId: string): Promise<boolean> {
   if (!jobId || typeof jobId !== 'string') return false;
   const record = await getPrinterJob(tenantId, jobId);
   if (!record) return false;
   if (record.tenantId !== tenantId) return false;
+  if (record.isSimulation === true) return false;
   return record.status === 'ACKNOWLEDGED' && Boolean(record.deviceAckId);
 }
 
@@ -314,7 +321,10 @@ export async function dispatchPrinterTestJob(input: {
 
     if (res.ok) {
       const json = await res.json().catch(() => ({}));
-      if (json.acknowledged === true && json.deviceAckId) {
+      if (json.isSimulation === true) {
+        bridgeResponded = false;
+        errorMessage = 'Printer runtime returned a simulated adapter acknowledgement. Physical hardware or authenticated agent is required.';
+      } else if (json.acknowledged === true && json.deviceAckId) {
         bridgeResponded = true;
         ackId = json.deviceAckId;
       } else {
@@ -333,6 +343,7 @@ export async function dispatchPrinterTestJob(input: {
 
   if (!bridgeResponded || !ackId) {
     record.status = 'FAILED';
+    record.isSimulation = true;
     record.errorMessage = errorMessage || `No ESC/POS printer hardware detected at ${input.endpoint}. Bridge acknowledgement failed.`;
     await persistPrinterJob(record);
     return {
@@ -345,6 +356,7 @@ export async function dispatchPrinterTestJob(input: {
 
   record.status = 'ACKNOWLEDGED';
   record.deviceAckId = ackId;
+  record.isSimulation = false;
   record.acknowledgedAt = new Date().toISOString();
   await persistPrinterJob(record);
 
@@ -358,13 +370,13 @@ export async function dispatchPrinterTestJob(input: {
 }
 
 /**
- * For testing purposes: allows populating an acknowledged test job in test environments with durability.
+ * For testing purposes: allows populating an acknowledged hardware test job in test environments with durability.
  */
-export async function recordTestPrintJobAck(
+export async function recordHardwarePrintJobAck(
   tenantId: string,
   jobId: string,
   driver: PrinterDriver = 'epson_escpos',
-  deviceAckId = `ack_${jobId}`,
+  deviceAckId = `hw_ack_${jobId}`,
 ): Promise<void> {
   const now = new Date().toISOString();
   const record: PrinterJobRecord = {
@@ -376,9 +388,22 @@ export async function recordTestPrintJobAck(
     paperWidth: '80mm',
     status: 'ACKNOWLEDGED',
     deviceAckId,
+    isSimulation: false,
     createdAt: now,
     dispatchedAt: now,
     acknowledgedAt: now,
   };
   await persistPrinterJob(record);
+}
+
+/**
+ * For testing purposes: allows populating an acknowledged test job in test environments with durability.
+ */
+export async function recordTestPrintJobAck(
+  tenantId: string,
+  jobId: string,
+  driver: PrinterDriver = 'epson_escpos',
+  deviceAckId = `ack_${jobId}`,
+): Promise<void> {
+  await recordHardwarePrintJobAck(tenantId, jobId, driver, deviceAckId);
 }

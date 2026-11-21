@@ -140,10 +140,12 @@ export class Router {
       await handlePrinterTest(req, res, context);
       return true;
     }
-    if (
-      (method === 'GET' && pathname === '/api/restaurant/kds/station/status') ||
-      (method === 'POST' && pathname === '/api/restaurant/kds/station/heartbeat')
-    ) {
+    if (method === 'POST' && pathname === '/api/restaurant/kds/station/heartbeat') {
+      const { handleStationHeartbeat } = require('../modules/kitchen/routes');
+      await handleStationHeartbeat(req, res, context);
+      return true;
+    }
+    if (method === 'GET' && pathname === '/api/restaurant/kds/station/status') {
       const { handleGetStationStatus } = require('../modules/kitchen/routes');
       await handleGetStationStatus(req, res, context);
       return true;

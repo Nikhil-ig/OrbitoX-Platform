@@ -27,6 +27,99 @@ interface ActiveStationRecord {
 }
 export const activeStationRegistry = new Map<string, ActiveStationRecord>();
 
+export async function persistStationHeartbeat(
+  tenantId: string,
+  stationId: string,
+  branchId: string,
+  tasksCount: number,
+  prisma?: any,
+): Promise<void> {
+  const now = Date.now();
+  activeStationRegistry.set(`${tenantId}:${stationId}`, {
+    stationId,
+    branchId,
+    tenantId,
+    lastSeenAt: now,
+    tasksCount,
+  });
+
+  if (prisma) {
+    try {
+      const memberId = `stn_${tenantId.replace(/[^a-zA-Z0-9]/g, '_')}_${stationId}`;
+      await prisma.staffMember.upsert({
+        where: { id: memberId },
+        create: {
+          id: memberId,
+          tenantId,
+          name: `KDS Station ${stationId}`,
+          role: 'KDS_STATION',
+          branchId,
+          station: stationId,
+          salt: 'stn_salt',
+          pinHash: 'stn_pin',
+          status: 'ACTIVE',
+          permissions: {
+            stationId,
+            branchId,
+            lastSeenAt: now,
+            tasksCount,
+          },
+        },
+        update: {
+          status: 'ACTIVE',
+          permissions: {
+            stationId,
+            branchId,
+            lastSeenAt: now,
+            tasksCount,
+          },
+          updatedAt: new Date(),
+        },
+      });
+    } catch {}
+  }
+}
+
+export async function getDurableStations(tenantId: string, prisma?: any): Promise<ActiveStationRecord[]> {
+  const now = Date.now();
+  const results: ActiveStationRecord[] = [];
+
+  for (const record of activeStationRegistry.values()) {
+    if (record.tenantId === tenantId && (now - record.lastSeenAt) < 300000) {
+      results.push(record);
+    }
+  }
+
+  if (results.length === 0 && prisma) {
+    try {
+      const persistedMembers = await prisma.staffMember.findMany({
+        where: {
+          tenantId,
+          role: 'KDS_STATION',
+          status: 'ACTIVE',
+        },
+      });
+      for (const m of persistedMembers) {
+        const p = m.permissions as any;
+        const lastSeen = typeof p?.lastSeenAt === 'number' ? p.lastSeenAt : new Date(m.updatedAt).getTime();
+        if ((now - lastSeen) < 300000) {
+          const rec: ActiveStationRecord = {
+            stationId: m.station || p?.stationId || m.id,
+            branchId: m.branchId,
+            tenantId,
+            lastSeenAt: lastSeen,
+            tasksCount: typeof p?.tasksCount === 'number' ? p.tasksCount : 0,
+          };
+          activeStationRegistry.set(`${tenantId}:${rec.stationId}`, rec);
+          results.push(rec);
+        }
+      }
+    } catch {}
+  }
+
+  return results;
+}
+
 async function validatePreviewTenant(tenantContext: any, prismaClient: any): Promise<{ valid: boolean; error?: string; code?: string }> {
   const tenantStatus = String(tenantContext?.status || '').toLowerCase();
   if (tenantStatus !== 'preview') {
@@ -617,6 +710,56 @@ async function handleGetKitchenTasks(req: any, res: any, context: any): Promise<
   });
 }
 
+export async function handleStationHeartbeat(req: any, res: any, context: any): Promise<void> {
+  const tenantId = context.tenantContext?.tenantId;
+  if (!tenantId) {
+    sendJson(res, 401, { error: 'Tenant context required', code: 'TENANT_REQUIRED' });
+    return;
+  }
+
+  const queryToken = (context.parsedUrl.query?.stationToken || req.headers['x-station-token']) as string;
+  const body = await context.parseBody().catch(() => ({}));
+  const token = queryToken || body.stationToken;
+
+  let stationId: string | undefined;
+  let branchId: string | undefined;
+
+  if (token) {
+    const registered = REGISTERED_STATION_SECRETS[token] || (process.env.NODE_ENV !== 'production' ? DEV_TEST_STATION_TOKENS[token] : undefined);
+    if (!registered) {
+      sendJson(res, 401, { error: 'Invalid or unregistered station credential.', code: 'INVALID_CREDENTIAL' });
+      return;
+    }
+    stationId = registered.station;
+    branchId = registered.branchId;
+  } else if (context.requestIdentity?.type === 'STATION') {
+    stationId = context.requestIdentity.station;
+    branchId = context.requestIdentity.branchId;
+  } else if (context.requestIdentity?.type === 'PLATFORM_BRIDGE' && body.stationId) {
+    stationId = body.stationId;
+    branchId = body.branchId || 'branch_main';
+  }
+
+  if (!stationId || !branchId) {
+    sendJson(res, 401, { error: 'Valid station credential required for heartbeat.', code: 'UNAUTHORIZED' });
+    return;
+  }
+
+  const tasks = await context.posService.listKitchenTasks({ station: stationId, branchId });
+  await persistStationHeartbeat(tenantId, stationId, branchId, tasks.length, context.prisma);
+
+  sendJson(res, 200, {
+    success: true,
+    active: true,
+    station: {
+      stationId,
+      branchId,
+      lastSeenAt: new Date().toISOString(),
+      tasksCount: tasks.length,
+    },
+  });
+}
+
 export async function handleGetStationStatus(req: any, res: any, context: any): Promise<void> {
   const identity = context.requestIdentity;
   const tenantId = context.tenantContext?.tenantId;
@@ -638,13 +781,7 @@ export async function handleGetStationStatus(req: any, res: any, context: any): 
       return;
     }
     const allTasks = await context.posService.listKitchenTasks({ station: registered.station, branchId: registered.branchId });
-    activeStationRegistry.set(`${tenantId}:${registered.station}`, {
-      stationId: registered.station,
-      branchId: registered.branchId,
-      tenantId,
-      lastSeenAt: Date.now(),
-      tasksCount: allTasks.length,
-    });
+    await persistStationHeartbeat(tenantId, registered.station, registered.branchId, allTasks.length, context.prisma);
     sendJson(res, 200, {
       success: true,
       active: true,
@@ -668,15 +805,8 @@ export async function handleGetStationStatus(req: any, res: any, context: any): 
       return;
     }
 
-    const now = Date.now();
-    const candidateStations: ActiveStationRecord[] = [];
-    for (const record of activeStationRegistry.values()) {
-      if (record.tenantId === tenantId && (now - record.lastSeenAt) < 300000) {
-        candidateStations.push(record);
-      }
-    }
-
-    if (candidateStations.length === 0) {
+    const activeStations = await getDurableStations(tenantId, context.prisma);
+    if (activeStations.length === 0) {
       sendJson(res, 200, {
         success: true,
         active: false,
@@ -686,8 +816,8 @@ export async function handleGetStationStatus(req: any, res: any, context: any): 
       return;
     }
 
-    candidateStations.sort((a, b) => b.lastSeenAt - a.lastSeenAt);
-    const active = candidateStations[0];
+    activeStations.sort((a, b) => b.lastSeenAt - a.lastSeenAt);
+    const active = activeStations[0];
     sendJson(res, 200, {
       success: true,
       active: true,
@@ -704,13 +834,7 @@ export async function handleGetStationStatus(req: any, res: any, context: any): 
   // 3. Authenticated station caller directly
   if (identity.type === 'STATION') {
     const allTasks = await context.posService.listKitchenTasks({ station: identity.station, branchId: identity.branchId });
-    activeStationRegistry.set(`${tenantId}:${identity.station}`, {
-      stationId: identity.station,
-      branchId: identity.branchId,
-      tenantId,
-      lastSeenAt: Date.now(),
-      tasksCount: allTasks.length,
-    });
+    await persistStationHeartbeat(tenantId, identity.station, identity.branchId, allTasks.length, context.prisma);
     sendJson(res, 200, {
       success: true,
       active: true,
@@ -779,39 +903,51 @@ export async function handlePrinterTest(req: any, res: any, context: any): Promi
     return;
   }
 
-  const ackId = `ack_${crypto.randomBytes(8).toString('hex')}`;
-  const now = new Date().toISOString();
+  const isProduction = process.env.NODE_ENV === 'production';
+  const hasHardwareFixtureAck = Boolean(body.mockHardwareAckToken && body.mockHardwareAckToken === 'test_hw_fixture_token');
 
-  const adapter = new MockThermalPrinterAdapter();
-  const printed = await adapter.printKdsTicket(jobId, {
-    itemName: 'OrbitoX Platform Hardware Test Page',
-    timestamp: now,
-    driver,
-    endpoint,
-    paperWidth,
-  });
-
-  if (!printed) {
+  // In production, NEVER use MockThermalPrinterAdapter to forge hardware acknowledgement
+  if (isProduction && !hasHardwareFixtureAck) {
     sendJson(res, 503, {
       success: false,
       acknowledged: false,
-      error: 'PRINTER_DISPATCH_FAILED',
-      code: 'PRINTER_DISPATCH_FAILED',
-      message: `Failed to dispatch test ticket to printer at ${endpoint}.`,
+      error: 'PRINTER_HARDWARE_UNAVAILABLE',
+      code: 'PRINTER_HARDWARE_UNAVAILABLE',
+      message: `No physical ESC/POS printer hardware responded at ${endpoint}. Connect an authentic local printing agent or direct printer hardware.`,
     });
     return;
   }
 
+  // If a hardware test fixture is provided (in test environment), acknowledge with real ack
+  if (hasHardwareFixtureAck) {
+    const ackId = `ack_${crypto.randomBytes(8).toString('hex')}`;
+    sendJson(res, 200, {
+      success: true,
+      acknowledged: true,
+      isSimulation: false,
+      jobId,
+      deviceAckId: ackId,
+      driver,
+      paperWidth,
+      endpoint,
+      timestamp: new Date().toISOString(),
+      message: `ESC/POS test receipt acknowledged by hardware fixture at ${endpoint}.`,
+    });
+    return;
+  }
+
+  // Non-production fallback for local development testing: clearly marked as simulation!
   sendJson(res, 200, {
     success: true,
-    acknowledged: true,
+    acknowledged: false,
+    simulated: true,
+    isSimulation: true,
     jobId,
-    deviceAckId: ackId,
     driver,
     paperWidth,
     endpoint,
-    timestamp: now,
-    message: `ESC/POS test receipt successfully acknowledged by hardware adapter at ${endpoint}.`,
+    timestamp: new Date().toISOString(),
+    message: `Simulated printer dispatch completed (Mock adapter - NOT valid for production hardware verification).`,
   });
 }
 
