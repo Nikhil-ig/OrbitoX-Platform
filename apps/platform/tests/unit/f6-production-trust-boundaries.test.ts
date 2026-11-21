@@ -98,6 +98,26 @@ describe('F6 Production Trust Boundaries & Non-Fabricated Verification', () => {
         async () => { await validatePrinterEndpoint('::ffff:169.254.169.254:9100', 'epson_escpos'); },
         (err: any) => err instanceof PrinterSecurityError,
       );
+
+      // Private RFC1918 IPs and web_bridge in production mode
+      const prevEnv = process.env.NODE_ENV;
+      (process.env as any).NODE_ENV = 'production';
+      try {
+        await assert.rejects(
+          async () => { await validatePrinterEndpoint('10.0.0.5:9100', 'epson_escpos'); },
+          (err: any) => err instanceof PrinterSecurityError,
+        );
+        await assert.rejects(
+          async () => { await validatePrinterEndpoint('192.168.1.100:9100', 'epson_escpos'); },
+          (err: any) => err instanceof PrinterSecurityError,
+        );
+        await assert.rejects(
+          async () => { await validatePrinterEndpoint('http://printer.lan/prn', 'web_bridge'); },
+          (err: any) => err instanceof PrinterSecurityError,
+        );
+      } finally {
+        (process.env as any).NODE_ENV = prevEnv;
+      }
     });
 
     it('truthfully records Hardware Pending as an incomplete status without fabrication', async () => {
@@ -333,6 +353,24 @@ describe('F6 Production Trust Boundaries & Non-Fabricated Verification', () => {
       );
       assert.strictEqual(resTenantMismatch.valid, false);
       assert.strictEqual(resTenantMismatch.error, 'QR_LOCATOR_MISMATCH');
+
+      // Missing tenantId (fails closed)
+      const resMissingTenant = validateRuntimeTableIdentity(
+        table,
+        { id: 1, tableNumber: '12', locator: 'loc_abc_123', branchId: 'branch_1', status: 'ACTIVE' },
+        'tenant_main',
+      );
+      assert.strictEqual(resMissingTenant.valid, false);
+      assert.strictEqual(resMissingTenant.error, 'QR_LOCATOR_MISMATCH');
+
+      // Missing branchId when table has branchId (fails closed)
+      const resMissingBranch = validateRuntimeTableIdentity(
+        table,
+        { id: 1, tableNumber: '12', locator: 'loc_abc_123', tenantId: 'tenant_main', status: 'ACTIVE' },
+        'tenant_main',
+      );
+      assert.strictEqual(resMissingBranch.valid, false);
+      assert.strictEqual(resMissingBranch.error, 'QR_LOCATOR_MISMATCH');
     });
 
     it('accepts authentic dining table with valid active status', async () => {

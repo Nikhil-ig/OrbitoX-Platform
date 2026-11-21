@@ -81,9 +81,24 @@ function isForbiddenIpAddress(ip: string): boolean {
     return true;
   }
 
-  // Loopback: 127.0.0.0/8 or ::1 in production
+  // Loopback and Private LAN in production:
+  // Disable cloud-to-customer-LAN printer connections in production when they cannot be made safe
   if (process.env.NODE_ENV === 'production') {
     if (cleanIp.startsWith('127.') || cleanIp === '::1') {
+      return true;
+    }
+
+    // RFC 1918 Private IPv4: 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16
+    if (
+      cleanIp.startsWith('10.') ||
+      cleanIp.startsWith('192.168.') ||
+      /^172\.(1[6-9]|2[0-9]|3[0-1])\./.test(cleanIp)
+    ) {
+      return true;
+    }
+
+    // Unique Local IPv6 (ULA): fc00::/7 (fc00... - fdff...)
+    if (/^f[cd][0-9a-f]{2}:/i.test(cleanIp)) {
       return true;
     }
   }
@@ -107,6 +122,9 @@ export function validatePrinterEndpoint(endpoint: string, driver: string): Promi
   if (trimmed.startsWith('http://') || trimmed.startsWith('https://')) {
     if (driver !== 'web_bridge') {
       throw new PrinterSecurityError(`HTTP/HTTPS protocols are only supported for the web_bridge driver, got ${driver}.`);
+    }
+    if (process.env.NODE_ENV === 'production') {
+      throw new PrinterSecurityError('Optional web_bridge driver is disabled in production.');
     }
     try {
       const url = new URL(trimmed);
@@ -316,6 +334,7 @@ export async function dispatchPrinterTestJob(input: {
         ...signedHeaders,
       },
       body: requestBody,
+      redirect: 'error',
       signal: AbortSignal.timeout(3000),
     });
 

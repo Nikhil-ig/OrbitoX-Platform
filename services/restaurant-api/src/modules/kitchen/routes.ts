@@ -843,7 +843,7 @@ export async function handleStationHeartbeat(req: any, res: any, context: any): 
     }
 
     if (!stationId) {
-      const registered = REGISTERED_STATION_SECRETS[token] || (process.env.NODE_ENV !== 'production' ? DEV_TEST_STATION_TOKENS[token] : undefined);
+      const registered = process.env.NODE_ENV !== 'production' ? (REGISTERED_STATION_SECRETS[token] || DEV_TEST_STATION_TOKENS[token]) : undefined;
       if (registered) {
         stationId = registered.station;
         branchId = registered.branchId;
@@ -955,7 +955,7 @@ export async function handleGetStationStatus(req: any, res: any, context: any): 
     }
 
     if (!registeredStationId) {
-      const fallback = REGISTERED_STATION_SECRETS[queryToken] || (process.env.NODE_ENV !== 'production' ? DEV_TEST_STATION_TOKENS[queryToken] : undefined);
+      const fallback = process.env.NODE_ENV !== 'production' ? (REGISTERED_STATION_SECRETS[queryToken] || DEV_TEST_STATION_TOKENS[queryToken]) : undefined;
       if (fallback) {
         registeredStationId = fallback.station;
         registeredBranchId = fallback.branchId;
@@ -972,9 +972,6 @@ export async function handleGetStationStatus(req: any, res: any, context: any): 
     }
 
     const allTasks = await context.posService.listKitchenTasks({ station: registeredStationId, branchId: registeredBranchId });
-    try {
-      await persistStationHeartbeat(tenantId, registeredStationId, registeredBranchId, allTasks.length, context.prisma);
-    } catch {}
 
     sendJson(res, 200, {
       success: true,
@@ -1037,9 +1034,6 @@ export async function handleGetStationStatus(req: any, res: any, context: any): 
   // 3. Authenticated station caller directly
   if (identity.type === 'STATION') {
     const allTasks = await context.posService.listKitchenTasks({ station: identity.station, branchId: identity.branchId });
-    try {
-      await persistStationHeartbeat(tenantId, identity.station, identity.branchId, allTasks.length, context.prisma);
-    } catch {}
     sendJson(res, 200, {
       success: true,
       active: true,

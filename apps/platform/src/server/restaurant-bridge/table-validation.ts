@@ -13,11 +13,12 @@ export function validateRuntimeTableIdentity(
   }
 
   // Explicitly verify expected table ID, table number, locator, branch ID, tenant relationship, and active status
-  const numberMatches = String(resolved.tableNumber || '').trim().toLowerCase() === String(table.number).trim().toLowerCase();
-  const locatorMatches = String(resolved.locator || '').trim() === String(table.locator).trim();
-  const idMatches = !table.id || !resolved.id || String(resolved.id).trim() === String(table.id).trim();
-  const branchMatches = !resolved.branchId || !table.branchId || String(resolved.branchId).trim() === String(table.branchId).trim();
-  const tenantMatches = !resolved.tenantId || resolved.tenantId === canonicalTenantId;
+  // Enforce exact tenant, branch, table ID, and locator equality. Missing or mismatched identity fields must fail closed.
+  const numberMatches = Boolean(resolved.tableNumber && String(resolved.tableNumber).trim().toLowerCase() === String(table.number).trim().toLowerCase());
+  const locatorMatches = Boolean(resolved.locator && String(resolved.locator).trim() === String(table.locator).trim());
+  const idMatches = table.id ? Boolean(resolved.id && String(resolved.id).trim() === String(table.id).trim()) : true;
+  const branchMatches = table.branchId ? Boolean(resolved.branchId && String(resolved.branchId).trim() === String(table.branchId).trim()) : true;
+  const tenantMatches = Boolean(resolved.tenantId && resolved.tenantId === canonicalTenantId);
 
   if (!numberMatches || !locatorMatches || !idMatches || !branchMatches || !tenantMatches) {
     return {

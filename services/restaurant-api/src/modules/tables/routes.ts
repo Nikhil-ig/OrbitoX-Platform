@@ -213,9 +213,11 @@ export const tablesRoutes: RouteDefinition[] = [
       sendJson(res, 200, {
         success: true,
         data: {
-          tableNumber: table.number,
+          id: table.id,
           tableId: table.id,
+          tableNumber: table.number,
           branchId: table.branchId,
+          tenantId: (table as any).tenantId || context.tenantContext?.tenantId,
           status: table.status,
           seats: table.seats,
           capacity: table.capacity,

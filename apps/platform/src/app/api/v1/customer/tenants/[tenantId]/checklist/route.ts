@@ -533,7 +533,7 @@ export const POST = withCustomerAuth<RouteContext>(
                   processedAt: { not: null },
                 },
                 orderBy: { receivedAt: 'desc' },
-                take: 50,
+                take: 100,
               });
 
               for (const ev of webhookEvents) {
@@ -557,42 +557,12 @@ export const POST = withCustomerAuth<RouteContext>(
               }
             }
 
-            // 2. Authoritative check: Search RestaurantPaymentRecord strictly bound to this canonical tenant & verified Razorpay capture
-            if (!verifiedPaymentId) {
-              const paymentRecord = await prisma.restaurantPaymentRecord.findFirst({
-                where: {
-                  tenantId: canonicalTenantId,
-                  status: 'SETTLED',
-                  paymentGateway: 'razorpay',
-                  gatewayTransactionId: { not: null },
-                },
-                orderBy: { createdAt: 'desc' },
-              });
-
-              if (paymentRecord && paymentRecord.gatewayTransactionId) {
-                const metadata = paymentRecord.metadata as any;
-                const isPreview = Boolean(
-                  metadata?.isPreview ||
-                  metadata?.preview ||
-                  paymentRecord.orderId?.startsWith('test_preview_') ||
-                  paymentRecord.orderId?.startsWith('preview_'),
-                );
-                const isPositiveAmount = paymentRecord.amountMinor && Number(paymentRecord.amountMinor) > 0;
-                const isExpectedCurrency = !paymentRecord.currency || paymentRecord.currency === 'INR';
-
-                if (!isPreview && isPositiveAmount && isExpectedCurrency) {
-                  verifiedPaymentId = paymentRecord.gatewayTransactionId;
-                  paymentMethod = paymentRecord.paymentGateway || 'UPI';
-                }
-              }
-            }
-
             if (!verifiedPaymentId) {
               return NextResponse.json(
                 {
                   ok: false,
                   error: 'PAYMENT_UNVERIFIED',
-                  message: 'No reconciled captured payment record found for this tenant or subscription. Complete subscription invoice settlement or restaurant gateway payment via verified webhook first.',
+                  message: 'No reconciled captured payment record found for this subscription. Complete subscription checkout and settle via verified Razorpay webhook first.',
                 },
                 { status: 400, headers: noStoreHeaders() },
               );
