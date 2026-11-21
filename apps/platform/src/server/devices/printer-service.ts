@@ -370,6 +370,30 @@ export async function dispatchPrinterTestJob(input: {
 }
 
 /**
+ * Records an authenticated device acknowledgement for a dispatched printer job.
+ */
+export async function recordDevicePrintJobAck(input: {
+  tenantId: string;
+  jobId: string;
+  deviceIdentity: string;
+  deviceAckId: string;
+  branchId?: string;
+}): Promise<PrinterJobRecord> {
+  const existing = await getPrinterJob(input.tenantId, input.jobId);
+  if (!existing) {
+    throw new Error(`Print job "${input.jobId}" not found for tenant "${input.tenantId}".`);
+  }
+  existing.status = 'ACKNOWLEDGED';
+  existing.deviceAckId = input.deviceAckId;
+  existing.deviceIdentity = input.deviceIdentity;
+  existing.branchId = input.branchId || existing.branchId;
+  existing.isSimulation = false;
+  existing.acknowledgedAt = new Date().toISOString();
+  await persistPrinterJob(existing);
+  return existing;
+}
+
+/**
  * For testing purposes: allows populating an acknowledged hardware test job in test environments with durability.
  */
 export async function recordHardwarePrintJobAck(
@@ -377,14 +401,17 @@ export async function recordHardwarePrintJobAck(
   jobId: string,
   driver: PrinterDriver = 'epson_escpos',
   deviceAckId = `hw_ack_${jobId}`,
+  endpoint = '192.168.1.200:9100',
+  deviceIdentity = 'device_local_escpos_agent',
 ): Promise<void> {
   const now = new Date().toISOString();
   const record: PrinterJobRecord = {
     jobId,
     tenantId,
     actorId: 'usr_test',
+    deviceIdentity,
     driver,
-    endpoint: '192.168.1.200:9100',
+    endpoint,
     paperWidth: '80mm',
     status: 'ACKNOWLEDGED',
     deviceAckId,

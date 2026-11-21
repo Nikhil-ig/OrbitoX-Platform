@@ -126,15 +126,16 @@ export async function handleTableSettle(req: any, res: any, context: any): Promi
     // Strict Payment Trust Boundary:
     // A client request cannot establish provider-confirmed status simply by claiming body.providerConfirmed.
     // Provider confirmation requires either:
-    // 1) Authenticated internal PLATFORM_BRIDGE caller with payment/billing reconciliation scopes, OR
+    // 1) Authenticated internal PLATFORM_BRIDGE caller with dedicated payment/billing reconciliation scopes, OR
     // 2) An authoritative server-side captured payment record matching the gatewayTransactionId.
+    // Generic tenant:admin, platform:superuser, or tables:write scopes CANNOT assert provider confirmation.
     let isProviderConfirmed = false;
     let authoritativeTxId: string | undefined = undefined;
 
     const isAuthorizedBridgeReconciler =
       identity.type === 'PLATFORM_BRIDGE' &&
       identity.scopes?.some((s: string) =>
-        ['tenant:admin', 'platform:superuser', 'tables:write', 'billing:reconcile'].includes(s),
+        ['billing:reconcile', 'payments:reconcile'].includes(s),
       );
 
     if (isAuthorizedBridgeReconciler && body.providerConfirmed && body.gatewayTransactionId) {

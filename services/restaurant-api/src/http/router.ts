@@ -140,6 +140,16 @@ export class Router {
       await handlePrinterTest(req, res, context);
       return true;
     }
+    if (method === 'POST' && pathname === '/api/restaurant/printer/ack') {
+      const { handlePrinterAck } = require('../modules/kitchen/routes');
+      await handlePrinterAck(req, res, context);
+      return true;
+    }
+    if (method === 'POST' && pathname === '/api/restaurant/kds/station/register') {
+      const { handleRegisterStation } = require('../modules/kitchen/routes');
+      await handleRegisterStation(req, res, context);
+      return true;
+    }
     if (method === 'POST' && pathname === '/api/restaurant/kds/station/heartbeat') {
       const { handleStationHeartbeat } = require('../modules/kitchen/routes');
       await handleStationHeartbeat(req, res, context);

@@ -92,6 +92,7 @@ export function F6ChecklistStep({
   const [inviteModalOpen, setInviteModalOpen] = useState(false);
   const [inviteEmail, setInviteEmail] = useState('');
   const [inviteRole, setInviteRole] = useState<'ADMIN' | 'MEMBER' | 'BILLING'>('MEMBER');
+  const [invitationReference, setInvitationReference] = useState<string | null>(null);
   const [inviteSubmitting, setInviteSubmitting] = useState(false);
   const [inviteError, setInviteError] = useState<string | null>(null);
 
@@ -541,6 +542,9 @@ export function F6ChecklistStep({
       }
 
       const inviteData = await res.json().catch(() => ({}));
+      if (inviteData?.invitationReference) {
+        setInvitationReference(inviteData.invitationReference);
+      }
 
       await sendChecklistAction({
         action: 'INVITE_STAFF',
@@ -563,6 +567,7 @@ export function F6ChecklistStep({
       await sendChecklistAction({
         action: 'VERIFY_STAFF',
         memberEmail: inviteEmail.trim() || undefined,
+        invitationReference: invitationReference || undefined,
       });
       setActionSuccess('Team member verified and active in organization.');
     } catch (err: any) {

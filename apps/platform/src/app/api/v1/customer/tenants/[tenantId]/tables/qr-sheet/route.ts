@@ -6,6 +6,7 @@ import { noStoreHeaders, getCustomerOrganizationRole } from '@/server/organizati
 import { prisma } from '@/server/db/prisma';
 import { signBridgeRequest, getDefaultBridgeKeys } from '@orbitox-io/bridge';
 import { recordQrDownloaded } from '@/server/onboarding/checklist-service';
+import { validateRuntimeTableIdentity } from '@/server/restaurant-bridge/table-validation';
 
 type RouteContext = { params: Promise<{ tenantId: string }> };
 
@@ -218,41 +219,15 @@ export const GET = withCustomerAuth<RouteContext>(
 
         const verifyData = await verifyRes.json().catch(() => null);
         const resolved = verifyData?.data;
-        if (!resolved) {
+        const valResult = validateRuntimeTableIdentity(table, resolved, canonicalTenantId);
+        if (!valResult.valid) {
           return NextResponse.json(
             {
               ok: false,
-              error: 'QR_LOCATOR_PAYLOAD_INVALID',
-              message: `Table "${table.number}" locator "${table.locator}" returned no data payload from runtime resolver.`,
+              error: valResult.error,
+              message: valResult.message,
             },
-            { status: 502, headers: noStoreHeaders() },
-          );
-        }
-
-        // Compare expected table number, table id, locator, and active status
-        const numberMatches = String(resolved.tableNumber || '').trim().toLowerCase() === String(table.number).trim().toLowerCase();
-        const locatorMatches = String(resolved.locator || '').trim() === String(table.locator).trim();
-        const isActive = !resolved.status || ['ACTIVE', 'AVAILABLE', 'OCCUPIED'].includes(String(resolved.status).toUpperCase());
-
-        if (!numberMatches || !locatorMatches) {
-          return NextResponse.json(
-            {
-              ok: false,
-              error: 'QR_LOCATOR_MISMATCH',
-              message: `Table "${table.number}" locator "${table.locator}" resolved to mismatched table "${resolved.tableNumber}" on runtime.`,
-            },
-            { status: 422, headers: noStoreHeaders() },
-          );
-        }
-
-        if (!isActive) {
-          return NextResponse.json(
-            {
-              ok: false,
-              error: 'TABLE_INACTIVE',
-              message: `Table "${table.number}" status is currently "${resolved.status}" on runtime and cannot receive guest QR placards.`,
-            },
-            { status: 422, headers: noStoreHeaders() },
+            { status: valResult.status || 422, headers: noStoreHeaders() },
           );
         }
       } catch (err: any) {

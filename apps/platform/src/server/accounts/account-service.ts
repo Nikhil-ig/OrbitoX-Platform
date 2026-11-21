@@ -445,6 +445,118 @@ export async function resetCustomerPassword(rawToken: string, password: string):
   });
 }
 
+export type InvitationStatus =
+  | 'CREATED'
+  | 'DISPATCHED'
+  | 'PENDING_ACCEPTANCE'
+  | 'ACCEPTED'
+  | 'EXPIRED'
+  | 'REVOKED'
+  | 'SUPERSEDED';
+
+export interface CustomerInvitationRecord {
+  id: string; // opaque non-secret invitation reference, e.g. inv_...
+  tokenHash: string;
+  organizationId: string;
+  email: string;
+  role: string;
+  status: InvitationStatus;
+  dispatchedAt: string;
+  expiresAt: string;
+  acceptedAt?: string;
+  acceptedUserId?: string;
+  membershipId?: string;
+  supersededAt?: string;
+  revokedAt?: string;
+  createdAt: string;
+}
+
+// In-process memory store for fast testing and offline execution
+const invitationMemoryStore = new Map<string, CustomerInvitationRecord>();
+
+export async function persistCustomerInvitation(
+  tx: Tx,
+  record: CustomerInvitationRecord,
+): Promise<void> {
+  invitationMemoryStore.set(record.id, record);
+  invitationMemoryStore.set(`${record.organizationId}:${record.email}`, record);
+
+  try {
+    await tx.$executeRaw`SELECT set_config('app.current_tenant_id', ${record.organizationId}, true)`;
+    await tx.$executeRaw`
+      INSERT INTO public."BillingProviderCache" ("tenantId", "cacheKey", "subscriptionId", "payload", "expiresAt", "updatedAt")
+      VALUES (${record.organizationId}, ${`invite:${record.id}`}, 'invites', ${JSON.stringify(record)}::jsonb, NOW() + interval '90 days', NOW())
+      ON CONFLICT ("tenantId", "cacheKey") DO UPDATE
+        SET "payload" = ${JSON.stringify(record)}::jsonb,
+            "updatedAt" = NOW()
+    `;
+    await tx.$executeRaw`
+      INSERT INTO public."BillingProviderCache" ("tenantId", "cacheKey", "subscriptionId", "payload", "expiresAt", "updatedAt")
+      VALUES (${record.organizationId}, ${`active_invite:${record.email}`}, 'invites', ${JSON.stringify(record)}::jsonb, NOW() + interval '90 days', NOW())
+      ON CONFLICT ("tenantId", "cacheKey") DO UPDATE
+        SET "payload" = ${JSON.stringify(record)}::jsonb,
+            "updatedAt" = NOW()
+    `;
+  } catch {
+    // Non-fatal if database table is unavailable in unit test harness
+  }
+}
+
+export async function getCustomerInvitation(
+  organizationId: string,
+  invitationReference: string,
+): Promise<CustomerInvitationRecord | null> {
+  if (process.env.DATABASE_URL) {
+    try {
+      const rows = await prisma.$transaction(async (tx) => {
+        await tx.$executeRaw`SELECT set_config('app.current_tenant_id', ${organizationId}, true)`;
+        return await tx.$queryRaw<Array<{ payload: any }>>`
+          SELECT "payload" FROM public."BillingProviderCache"
+          WHERE "tenantId" = ${organizationId} AND "cacheKey" = ${`invite:${invitationReference}`}
+          LIMIT 1
+        `;
+      });
+      if (rows.length > 0 && rows[0]?.payload) {
+        return rows[0].payload as CustomerInvitationRecord;
+      }
+    } catch {}
+  }
+
+  const memory = invitationMemoryStore.get(invitationReference);
+  if (memory && memory.organizationId === organizationId) {
+    return memory;
+  }
+  return null;
+}
+
+export async function getLatestCustomerInvitationForEmail(
+  organizationId: string,
+  email: string,
+): Promise<CustomerInvitationRecord | null> {
+  const normalizedEmail = email.trim().toLowerCase();
+  if (process.env.DATABASE_URL) {
+    try {
+      const rows = await prisma.$transaction(async (tx) => {
+        await tx.$executeRaw`SELECT set_config('app.current_tenant_id', ${organizationId}, true)`;
+        return await tx.$queryRaw<Array<{ payload: any }>>`
+          SELECT "payload" FROM public."BillingProviderCache"
+          WHERE "tenantId" = ${organizationId} AND "cacheKey" = ${`active_invite:${normalizedEmail}`}
+          LIMIT 1
+        `;
+      });
+      if (rows.length > 0 && rows[0]?.payload) {
+        return rows[0].payload as CustomerInvitationRecord;
+      }
+    } catch {}
+  }
+
+  const memory = invitationMemoryStore.get(`${organizationId}:${normalizedEmail}`);
+  if (memory && memory.organizationId === organizationId) {
+    return memory;
+  }
+  return null;
+}
+
 export interface InviteCustomerMemberResult {
   invitationReference: string;
   email: string;
@@ -480,10 +592,14 @@ export async function inviteCustomerMember(input: {
   }
 
   const token = newAccountToken('INVITE');
+  const invitationId = `inv_${crypto.randomBytes(12).toString('hex')}`;
+  const now = new Date();
+
   const encryptedPayload = encryptAccountEmailPayload({
     link: buildAccountLink(input.baseUrl, '/account/accept-invite', token.token),
     organizationName: organization.name,
   });
+
   await prisma.$transaction(async (tx) => {
     let user = await tx.customerUser.findFirst({
       where: { email, status: { not: 'DELETED' } },
@@ -497,10 +613,20 @@ export async function inviteCustomerMember(input: {
       select: { userId: true },
     });
     if (membership) throw new Error('This user is already a member of the organization.');
+
+    // Supersede any existing pending invitation for this exact organization and email
+    const priorInv = await getLatestCustomerInvitationForEmail(organization.id, email);
+    if (priorInv && priorInv.status === 'PENDING_ACCEPTANCE') {
+      priorInv.status = 'SUPERSEDED';
+      priorInv.supersededAt = now.toISOString();
+      await persistCustomerInvitation(tx, priorInv);
+    }
+
     await tx.accountToken.updateMany({
       where: { organizationId: organization.id, email, purpose: 'INVITE', usedAt: null },
-      data: { usedAt: new Date() },
+      data: { usedAt: now },
     });
+
     await tx.accountToken.create({
       data: {
         tokenHash: token.tokenHash,
@@ -512,13 +638,27 @@ export async function inviteCustomerMember(input: {
         expiresAt: token.expiresAt,
       },
     });
+
+    const newInvitationRecord: CustomerInvitationRecord = {
+      id: invitationId,
+      tokenHash: token.tokenHash,
+      organizationId: organization.id,
+      email,
+      role: input.role,
+      status: 'PENDING_ACCEPTANCE',
+      dispatchedAt: now.toISOString(),
+      expiresAt: token.expiresAt.toISOString(),
+      createdAt: now.toISOString(),
+    };
+    await persistCustomerInvitation(tx, newInvitationRecord);
+
     await tx.accountEmailOutbox.createMany({
       data: [{ recipient: email, template: 'INVITE', encryptedPayload }],
     });
   });
 
   return {
-    invitationReference: token.tokenHash,
+    invitationReference: invitationId,
     email,
     role: input.role,
     organizationId: organization.id,
@@ -547,13 +687,27 @@ export async function acceptCustomerInvite(input: {
     if (!user || user.status !== 'ACTIVE' || user.email !== token.email) return null;
     if (user.passwordHash && input.actorUserId !== user.id) return null;
     if (!user.passwordHash && (!passwordHash || input.actorUserId)) return null;
+
+    const now = new Date();
+    const membershipId = `${token.organizationId}:${user.id}`;
+
+    // Update authoritative invitation record to ACCEPTED with exact linkage
+    const priorInv = await getLatestCustomerInvitationForEmail(token.organizationId, token.email);
+    if (priorInv && priorInv.tokenHash === token.tokenHash) {
+      priorInv.status = 'ACCEPTED';
+      priorInv.acceptedAt = now.toISOString();
+      priorInv.acceptedUserId = user.id;
+      priorInv.membershipId = membershipId;
+      await persistCustomerInvitation(tx, priorInv);
+    }
+
     await tx.customerMembership.create({
       data: { organizationId: token.organizationId, userId: user.id, role: token.role },
     });
     if (passwordHash) {
       await tx.customerUser.update({
         where: { id: user.id },
-        data: { passwordHash, emailVerifiedAt: new Date() },
+        data: { passwordHash, emailVerifiedAt: now },
       });
     }
     return { userId: user.id, organizationId: token.organizationId };

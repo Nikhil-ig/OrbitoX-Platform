@@ -11,6 +11,10 @@ import {
   type PrinterDriver,
 } from '@/server/devices/printer-service';
 import {
+  getCustomerInvitation,
+  getLatestCustomerInvitationForEmail,
+} from '@/server/accounts/account-service';
+import {
   getChecklist,
   updateChecklistItem,
   recordQrDownloaded,
@@ -295,33 +299,50 @@ export const POST = withCustomerAuth<RouteContext>(
               );
             }
 
-            // Verify that an authentic invitation token exists in AccountToken for this organization and email
-            let token = invitationReference
-              ? await prisma.accountToken.findFirst({
-                  where: {
-                    tokenHash: invitationReference,
-                    organizationId: project.organizationId,
-                    email,
-                    purpose: 'INVITE',
-                  },
-                })
-              : await prisma.accountToken.findFirst({
-                  where: {
-                    organizationId: project.organizationId,
-                    email,
-                    purpose: 'INVITE',
-                    usedAt: null,
-                    expiresAt: { gt: new Date() },
-                  },
-                  orderBy: { createdAt: 'desc' },
-                });
+            // Verify that an authentic invitation record exists for this organization and email
+            const invRecord = invitationReference
+              ? await getCustomerInvitation(project.organizationId, invitationReference)
+              : await getLatestCustomerInvitationForEmail(project.organizationId, email);
 
-            if (!token) {
+            if (!invRecord || invRecord.organizationId !== project.organizationId) {
               return NextResponse.json(
                 {
                   ok: false,
                   error: 'INVITATION_NOT_DISPATCHED',
                   message: 'No active invitation record found for this email. Please dispatch an invitation via the organization invite API first.',
+                },
+                { status: 400, headers: noStoreHeaders() },
+              );
+            }
+
+            if (invRecord.status === 'SUPERSEDED') {
+              return NextResponse.json(
+                {
+                  ok: false,
+                  error: 'INVITATION_SUPERSEDED',
+                  message: 'This invitation was superseded by a newer invitation to the same recipient.',
+                },
+                { status: 400, headers: noStoreHeaders() },
+              );
+            }
+
+            if (invRecord.status === 'REVOKED') {
+              return NextResponse.json(
+                {
+                  ok: false,
+                  error: 'INVITATION_REVOKED',
+                  message: 'This invitation was administratively revoked.',
+                },
+                { status: 400, headers: noStoreHeaders() },
+              );
+            }
+
+            if (new Date(invRecord.expiresAt) < new Date()) {
+              return NextResponse.json(
+                {
+                  ok: false,
+                  error: 'INVITATION_EXPIRED',
+                  message: 'This invitation has expired. Please send a new invitation.',
                 },
                 { status: 400, headers: noStoreHeaders() },
               );
@@ -333,9 +354,9 @@ export const POST = withCustomerAuth<RouteContext>(
               email,
               inviteRole,
               expectedVersion,
-              token.tokenHash,
+              invRecord.id,
             );
-            return NextResponse.json({ ok: true, checklist, invitationReference: token.tokenHash }, { headers: noStoreHeaders() });
+            return NextResponse.json({ ok: true, checklist, invitationReference: invRecord.id }, { headers: noStoreHeaders() });
           }
 
           case 'VERIFY_STAFF': {
@@ -344,7 +365,7 @@ export const POST = withCustomerAuth<RouteContext>(
             const targetEmail = (typeof body.memberEmail === 'string' ? body.memberEmail.trim().toLowerCase() : null) || staffItem?.evidence?.invitedEmail;
             const targetRef = (typeof body.invitationReference === 'string' ? body.invitationReference.trim() : null) || staffItem?.evidence?.invitationReference;
 
-            if (!targetEmail) {
+            if (!targetEmail && !targetRef) {
               return NextResponse.json(
                 {
                   ok: false,
@@ -355,121 +376,124 @@ export const POST = withCustomerAuth<RouteContext>(
               );
             }
 
-            // Look up the exact AccountToken corresponding to the recorded invitation
-            const inviteToken = targetRef
-              ? await prisma.accountToken.findFirst({
-                  where: {
-                    tokenHash: targetRef,
-                    organizationId: project.organizationId,
-                    email: targetEmail,
-                    purpose: 'INVITE',
-                  },
-                })
-              : await prisma.accountToken.findFirst({
-                  where: {
-                    organizationId: project.organizationId,
-                    email: targetEmail,
-                    purpose: 'INVITE',
-                  },
-                  orderBy: { createdAt: 'desc' },
-                });
+            const invRecord = targetRef
+              ? await getCustomerInvitation(project.organizationId, targetRef)
+              : targetEmail
+                ? await getLatestCustomerInvitationForEmail(project.organizationId, targetEmail)
+                : null;
 
-            if (!inviteToken) {
+            if (!invRecord || invRecord.organizationId !== project.organizationId) {
               return NextResponse.json(
                 {
                   ok: false,
                   error: 'NO_INVITATION_RECORDED',
-                  message: `No invitation found for ${targetEmail}. Please send an invitation to a team member first.`,
+                  message: `No invitation found for ${targetEmail || targetRef}. Please send an invitation to a team member first.`,
                 },
                 { status: 400, headers: noStoreHeaders() },
               );
             }
 
-            // If token has not been consumed yet
-            if (inviteToken.usedAt === null) {
-              if (inviteToken.expiresAt < new Date()) {
-                return NextResponse.json(
-                  {
-                    ok: false,
-                    error: 'INVITATION_EXPIRED',
-                    message: `The invitation to ${targetEmail} has expired. Please send a new invitation.`,
-                  },
-                  { status: 400, headers: noStoreHeaders() },
-                );
-              }
+            if (invRecord.status === 'SUPERSEDED') {
+              return NextResponse.json(
+                {
+                  ok: false,
+                  error: 'INVITATION_SUPERSEDED',
+                  message: `The invitation for ${invRecord.email} was superseded by a newer invitation.`,
+                },
+                { status: 400, headers: noStoreHeaders() },
+              );
+            }
+
+            if (invRecord.status === 'REVOKED') {
+              return NextResponse.json(
+                {
+                  ok: false,
+                  error: 'INVITATION_REVOKED',
+                  message: `The invitation for ${invRecord.email} has been revoked.`,
+                },
+                { status: 400, headers: noStoreHeaders() },
+              );
+            }
+
+            if (new Date(invRecord.expiresAt) < new Date()) {
+              return NextResponse.json(
+                {
+                  ok: false,
+                  error: 'INVITATION_EXPIRED',
+                  message: `The invitation to ${invRecord.email} has expired. Please send a new invitation.`,
+                },
+                { status: 400, headers: noStoreHeaders() },
+              );
+            }
+
+            if (invRecord.status === 'PENDING_ACCEPTANCE' || invRecord.status === 'CREATED' || invRecord.status === 'DISPATCHED') {
               return NextResponse.json(
                 {
                   ok: false,
                   error: 'INVITATION_PENDING',
-                  message: `Invitation to ${targetEmail} has been dispatched but not yet accepted. The recipient must accept their invite before staff setup is verified.`,
+                  message: `Invitation to ${invRecord.email} has been dispatched but not yet accepted. The recipient must accept their invite before staff setup is verified.`,
                 },
                 { status: 400, headers: noStoreHeaders() },
               );
             }
 
-            // Token was marked used (usedAt !== null).
-            // Verify that it was ACTUALLY accepted into an active CustomerMembership, NOT invalidated/revoked!
-            const invitedUser = await prisma.customerUser.findFirst({
-              where: { email: targetEmail, status: { not: 'DELETED' } },
-            });
-
-            if (!invitedUser) {
+            if (invRecord.status !== 'ACCEPTED' || !invRecord.acceptedUserId) {
               return NextResponse.json(
                 {
                   ok: false,
                   error: 'INVITATION_NOT_ACCEPTED',
-                  message: `No active user account found for invited email ${targetEmail}. The invitation was not accepted.`,
+                  message: `The invitation was not accepted by the recipient.`,
                 },
                 { status: 400, headers: noStoreHeaders() },
               );
             }
 
+            // Verify membership exists in database for this exact accepted user and organization
             const membership = await prisma.customerMembership.findUnique({
               where: {
                 organizationId_userId: {
                   organizationId: project.organizationId,
-                  userId: invitedUser.id,
+                  userId: invRecord.acceptedUserId,
                 },
               },
             });
 
-            // Verify membership exists, matching invited role, and created at or after the invitation was issued
             if (!membership) {
               return NextResponse.json(
                 {
                   ok: false,
                   error: 'INVITATION_NOT_ACCEPTED',
-                  message: `Invitation token was invalidated or revoked without creating an active membership in ${project.organizationId}.`,
+                  message: `No active membership found for accepted user in ${project.organizationId}.`,
                 },
                 { status: 400, headers: noStoreHeaders() },
               );
             }
 
-            if (inviteToken.role && membership.role !== inviteToken.role) {
+            if (invRecord.role && membership.role !== invRecord.role) {
               return NextResponse.json(
                 {
                   ok: false,
                   error: 'ROLE_MISMATCH',
-                  message: `Membership role "${membership.role}" does not match the invited role "${inviteToken.role}".`,
+                  message: `Membership role "${membership.role}" does not match the invited role "${invRecord.role}".`,
                 },
                 { status: 400, headers: noStoreHeaders() },
               );
             }
 
-            // Reject pre-existing unrelated membership that existed BEFORE the token was created
-            if (membership.createdAt < inviteToken.createdAt) {
+            // Reject pre-existing membership created before the invitation
+            if (new Date(membership.createdAt).getTime() < new Date(invRecord.createdAt).getTime() - 1000) {
               return NextResponse.json(
                 {
                   ok: false,
                   error: 'PREEXISTING_MEMBERSHIP_REJECTED',
-                  message: `User ${targetEmail} was already a pre-existing member before this invitation was issued. A newly accepted invitation is required.`,
+                  message: `User ${invRecord.email} was already a pre-existing member before this invitation was issued. A newly accepted invitation is required.`,
                 },
                 { status: 400, headers: noStoreHeaders() },
               );
             }
 
-            const checklist = await recordStaffVerified(canonicalTenantId, session.userId, targetEmail, expectedVersion);
-            return NextResponse.json({ ok: true, checklist, memberEmail: targetEmail }, { headers: noStoreHeaders() });
+            const checklist = await recordStaffVerified(canonicalTenantId, session.userId, invRecord.email, expectedVersion);
+            return NextResponse.json({ ok: true, checklist, memberEmail: invRecord.email }, { headers: noStoreHeaders() });
           }
 
           case 'VERIFY_PREVIEW_PAYMENT': {
@@ -521,7 +545,9 @@ export const POST = withCustomerAuth<RouteContext>(
                     payment &&
                     payment.status === 'captured' &&
                     !payment.refund_status &&
-                    (payment.currency === 'INR' || !payment.currency)
+                    payment.currency === 'INR' &&
+                    typeof payment.amount === 'number' &&
+                    payment.amount > 0
                   ) {
                     verifiedPaymentId = payment.id;
                     paymentMethod = payment.method || 'card';
@@ -531,28 +557,33 @@ export const POST = withCustomerAuth<RouteContext>(
               }
             }
 
-            // 2. Search RestaurantPaymentRecord strictly bound to this canonical tenant (excluding preview orders)
+            // 2. Authoritative check: Search RestaurantPaymentRecord strictly bound to this canonical tenant & verified Razorpay capture
             if (!verifiedPaymentId) {
               const paymentRecord = await prisma.restaurantPaymentRecord.findFirst({
                 where: {
                   tenantId: canonicalTenantId,
                   status: 'SETTLED',
+                  paymentGateway: 'razorpay',
                   gatewayTransactionId: { not: null },
                 },
                 orderBy: { createdAt: 'desc' },
               });
 
-              const metadata = paymentRecord?.metadata as any;
-              const isPreview = Boolean(
-                metadata?.isPreview ||
-                metadata?.preview ||
-                paymentRecord?.orderId?.startsWith('test_preview_') ||
-                paymentRecord?.orderId?.startsWith('preview_'),
-              );
+              if (paymentRecord && paymentRecord.gatewayTransactionId) {
+                const metadata = paymentRecord.metadata as any;
+                const isPreview = Boolean(
+                  metadata?.isPreview ||
+                  metadata?.preview ||
+                  paymentRecord.orderId?.startsWith('test_preview_') ||
+                  paymentRecord.orderId?.startsWith('preview_'),
+                );
+                const isPositiveAmount = paymentRecord.amountMinor && Number(paymentRecord.amountMinor) > 0;
+                const isExpectedCurrency = !paymentRecord.currency || paymentRecord.currency === 'INR';
 
-              if (paymentRecord && paymentRecord.gatewayTransactionId && !isPreview) {
-                verifiedPaymentId = paymentRecord.gatewayTransactionId;
-                paymentMethod = paymentRecord.paymentGateway || 'UPI';
+                if (!isPreview && isPositiveAmount && isExpectedCurrency) {
+                  verifiedPaymentId = paymentRecord.gatewayTransactionId;
+                  paymentMethod = paymentRecord.paymentGateway || 'UPI';
+                }
               }
             }
 
