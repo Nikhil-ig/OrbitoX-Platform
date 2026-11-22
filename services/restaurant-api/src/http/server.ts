@@ -117,6 +117,12 @@ export async function handleRequest(req: http.IncomingMessage, res: http.ServerR
   }
 
   // Fast pre-tenant endpoints (only if not verified bridge)
+  if (pathname === '/api/restaurant/health' && method === 'GET') {
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ status: 'ok', service: 'restaurant-os' }));
+    return;
+  }
+
   if (
     !verifiedBridge &&
     (pathname === '/favicon.ico' ||
@@ -126,7 +132,6 @@ export async function handleRequest(req: http.IncomingMessage, res: http.ServerR
       pathname === '/healthz' ||
       pathname === '/healthz/live' ||
       pathname === '/live' ||
-      pathname === '/api/restaurant/health' ||
       pathname === '/metrics' ||
       pathname.startsWith('/uploads/') ||
       pathname.startsWith('/assets/'))
