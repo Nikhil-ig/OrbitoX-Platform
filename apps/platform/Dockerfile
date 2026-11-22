@@ -47,7 +47,11 @@ COPY --from=build --chown=orbitox:orbitox /repo/apps/platform/.next/standalone .
 COPY --from=build --chown=orbitox:orbitox /repo/apps/platform/.next/static ./apps/platform/.next/static
 COPY --from=build --chown=orbitox:orbitox /repo/apps/platform/prisma ./prisma
 COPY --from=build --chown=orbitox:orbitox /repo/apps/platform/scripts ./scripts
-RUN npm install --no-save --no-package-lock prisma@6.19.3 pg@8.23.1 \
+RUN mkdir -p /tmp/migration-tools && cd /tmp/migration-tools \
+    && npm init -y \
+    && npm install --no-save --no-package-lock prisma@6.19.3 pg@8.23.1 \
+    && cp -r /tmp/migration-tools/node_modules/. /app/node_modules/ \
+    && rm -rf /tmp/migration-tools \
     && chown -R orbitox:orbitox /app/node_modules
 USER orbitox
 VOLUME ["/data"]
