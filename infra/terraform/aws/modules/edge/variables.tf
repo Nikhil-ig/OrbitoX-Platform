@@ -43,6 +43,12 @@ variable "rate_limit_requests" {
   default     = 2000
 }
 
+variable "route53_zone_id" {
+  type        = string
+  description = "Optional Route 53 Hosted Zone ID for automated DNS validation and record alias creation"
+  default     = ""
+}
+
 variable "tags" {
   type        = map(string)
   description = "Common tags for all edge resources"

@@ -126,6 +126,7 @@ export async function handleRequest(req: http.IncomingMessage, res: http.ServerR
       pathname === '/healthz' ||
       pathname === '/healthz/live' ||
       pathname === '/live' ||
+      pathname === '/api/restaurant/health' ||
       pathname === '/metrics' ||
       pathname.startsWith('/uploads/') ||
       pathname.startsWith('/assets/'))

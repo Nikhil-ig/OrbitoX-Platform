@@ -61,6 +61,7 @@ module "edge" {
   public_subnet_ids    = module.network.public_subnet_ids
   domain_name          = var.domain_name
   wildcard_domain_name = var.wildcard_domain_name
+  route53_zone_id      = var.route53_zone_id
   health_check_path    = "/health"
   target_port          = 3005
   tags                 = var.tags
@@ -71,18 +72,19 @@ module "edge" {
 # ─────────────────────────────────────────────────────────────
 
 module "compute" {
-  source                     = "./modules/compute"
-  environment                = var.environment
-  vpc_id                     = module.network.vpc_id
-  private_subnet_ids         = module.network.private_subnet_ids
-  alb_security_group_id      = module.edge.alb_security_group_id
-  target_group_arn           = module.edge.target_group_arn
-  secrets_map                = module.secrets.secret_arns
-  secrets_kms_key_arn        = module.secrets.kms_key_arn
-  web_image_digest           = var.web_image_digest
-  restaurant_os_image_digest = var.restaurant_os_image_digest
-  public_base_url            = "https://${var.domain_name}"
-  tags                       = var.tags
+  source                         = "./modules/compute"
+  environment                    = var.environment
+  vpc_id                         = module.network.vpc_id
+  private_subnet_ids             = module.network.private_subnet_ids
+  alb_security_group_id          = module.edge.alb_security_group_id
+  target_group_arn               = module.edge.target_group_arn
+  restaurant_os_target_group_arn = module.edge.restaurant_os_target_group_arn
+  secrets_map                    = module.secrets.secret_arns
+  secrets_kms_key_arn            = module.secrets.kms_key_arn
+  web_image_digest               = var.web_image_digest
+  restaurant_os_image_digest     = var.restaurant_os_image_digest
+  public_base_url                = "https://${var.domain_name}"
+  tags                           = var.tags
 }
 
 # ─────────────────────────────────────────────────────────────
@@ -111,6 +113,7 @@ module "cicd_oidc" {
   environment                  = var.environment
   cluster_arn                  = module.compute.cluster_arn
   web_service_arn              = module.compute.web_service_arn
+  restaurant_os_service_arn    = module.compute.restaurant_os_service_arn
   task_and_execution_role_arns = concat(module.compute.execution_role_arns, [module.compute.task_role_arn])
   tags                         = var.tags
 }

@@ -149,6 +149,26 @@ jobs:
           echo "subnets=$SUBNETS" >> "$GITHUB_OUTPUT"
           echo "security_group=$SG" >> "$GITHUB_OUTPUT"
 
+      # Update migration task definition with scanned image digest before execution
+      - name: Update Migration Task Definition with Scanned Image Digest
+        id: update-migrate-task-def
+        run: |
+          CLUSTER_NAME="orbitox-staging-cluster"
+          TASK_DEF_FAMILY="orbitox-staging-db-migrate"
+          NEW_DIGEST="${{ needs.build-and-scan.outputs.web_image_digest }}"
+
+          echo "Fetching latest task definition for $TASK_DEF_FAMILY..."
+          aws ecs describe-task-definition --task-definition "$TASK_DEF_FAMILY" --query "taskDefinition" > current-migrate-task-def.json
+
+          echo "Updating container image to $NEW_DIGEST..."
+          jq --arg IMG "$NEW_DIGEST" \
+             '.containerDefinitions[0].image = $IMG | del(.taskDefinitionArn, .revision, .status, .requiresAttributes, .compatibilities, .registeredAt, .registeredBy)' \
+             current-migrate-task-def.json > new-migrate-task-def.json
+
+          NEW_TASK_DEF_ARN=$(aws ecs register-task-definition --cli-input-json file://new-migrate-task-def.json --query "taskDefinition.taskDefinitionArn" --output text)
+          echo "Registered new migration task definition: $NEW_TASK_DEF_ARN"
+          echo "task_def_arn=$NEW_TASK_DEF_ARN" >> "$GITHUB_OUTPUT"
+
       # B2 Fix: Run migrations as one-off private ECS task (zero database credentials on runner)
       - name: Run Staging Migration as One-Off Private ECS Task
         id: run-migration
@@ -156,12 +176,12 @@ jobs:
           CLUSTER_NAME="orbitox-staging-cluster"
           SUBNETS="${{ steps.network.outputs.subnets }}"
           SG="${{ steps.network.outputs.security_group }}"
-          TASK_DEF_FAMILY="orbitox-staging-db-migrate"
+          TASK_DEF_ARN="${{ steps.update-migrate-task-def.outputs.task_def_arn }}"
 
-          echo "Launching one-off migration task in private subnets..."
+          echo "Launching one-off migration task in private subnets with $TASK_DEF_ARN..."
           TASK_ARN=$(aws ecs run-task \
             --cluster "$CLUSTER_NAME" \
-            --task-definition "$TASK_DEF_FAMILY" \
+            --task-definition "$TASK_DEF_ARN" \
             --launch-type FARGATE \
             --network-configuration "awsvpcConfiguration={subnets=[$SUBNETS],securityGroups=[$SG],assignPublicIp=DISABLED}" \
             --query "tasks[0].taskArn" --output text)
@@ -189,6 +209,26 @@ jobs:
           fi
           echo "✓ Migration task completed successfully."
 
+      # Update inventory task definition with scanned image digest before execution
+      - name: Update Inventory Task Definition with Scanned Image Digest
+        id: update-inventory-task-def
+        run: |
+          CLUSTER_NAME="orbitox-staging-cluster"
+          TASK_DEF_FAMILY="orbitox-staging-db-inventory"
+          NEW_DIGEST="${{ needs.build-and-scan.outputs.web_image_digest }}"
+
+          echo "Fetching latest task definition for $TASK_DEF_FAMILY..."
+          aws ecs describe-task-definition --task-definition "$TASK_DEF_FAMILY" --query "taskDefinition" > current-inventory-task-def.json
+
+          echo "Updating container image to $NEW_DIGEST..."
+          jq --arg IMG "$NEW_DIGEST" \
+             '.containerDefinitions[0].image = $IMG | del(.taskDefinitionArn, .revision, .status, .requiresAttributes, .compatibilities, .registeredAt, .registeredBy)' \
+             current-inventory-task-def.json > new-inventory-task-def.json
+
+          NEW_TASK_DEF_ARN=$(aws ecs register-task-definition --cli-input-json file://new-inventory-task-def.json --query "taskDefinition.taskDefinitionArn" --output text)
+          echo "Registered new inventory task definition: $NEW_TASK_DEF_ARN"
+          echo "task_def_arn=$NEW_TASK_DEF_ARN" >> "$GITHUB_OUTPUT"
+
       # B2 Fix: Run Step 1 RLS/Role Inventory test as one-off private ECS task
       - name: Run Step 1 RLS/Role Inventory Verification as One-Off Private ECS Task
         id: run-inventory
@@ -196,12 +236,12 @@ jobs:
           CLUSTER_NAME="orbitox-staging-cluster"
           SUBNETS="${{ steps.network.outputs.subnets }}"
           SG="${{ steps.network.outputs.security_group }}"
-          TASK_DEF_FAMILY="orbitox-staging-db-inventory"
+          TASK_DEF_ARN="${{ steps.update-inventory-task-def.outputs.task_def_arn }}"
 
-          echo "Launching one-off inventory verification task in private subnets..."
+          echo "Launching one-off inventory verification task in private subnets with $TASK_DEF_ARN..."
           TASK_ARN=$(aws ecs run-task \
             --cluster "$CLUSTER_NAME" \
-            --task-definition "$TASK_DEF_FAMILY" \
+            --task-definition "$TASK_DEF_ARN" \
             --launch-type FARGATE \
             --network-configuration "awsvpcConfiguration={subnets=[$SUBNETS],securityGroups=[$SG],assignPublicIp=DISABLED}" \
             --query "tasks[0].taskArn" --output text)
@@ -319,34 +359,34 @@ jobs:
             --cluster "$CLUSTER_NAME" \
             --services "$WEB_SERVICE" "$ROS_SERVICE"
 
-      - name: Verify Live Staging Health Check
+      - name: Verify Platform Staging Health Endpoint
         run: |
-          echo "Verifying live staging health endpoint..."
+          echo "Verifying live platform staging health endpoint..."
           HEALTH_URL="https://staging.orbitox.io/health"
           for i in $(seq 1 12); do
             STATUS=$(curl -s -o /dev/null -w "%{http_code}" "$HEALTH_URL" || true)
             echo "Attempt $i: $HEALTH_URL returned HTTP $STATUS"
             if [ "$STATUS" = "200" ]; then
-              echo "Staging deployment is healthy!"
+              echo "✓ Platform staging deployment is healthy!"
               exit 0
             fi
             sleep 5
           done
-          echo "Staging health verification timed out."
+          echo "❌ Platform staging health verification timed out."
           exit 1
 
-      - name: Verify Live Staging Health Check
+      - name: Verify RestaurantOS Staging Health Endpoint
         run: |
-          echo "Verifying live staging health endpoint..."
-          HEALTH_URL="https://staging.orbitox.io/health"
+          echo "Verifying live RestaurantOS staging health endpoint..."
+          HEALTH_URL="https://staging.orbitox.io/api/restaurant/health"
           for i in $(seq 1 12); do
             STATUS=$(curl -s -o /dev/null -w "%{http_code}" "$HEALTH_URL" || true)
             echo "Attempt $i: $HEALTH_URL returned HTTP $STATUS"
             if [ "$STATUS" = "200" ]; then
-              echo "Staging deployment is healthy!"
+              echo "✓ RestaurantOS staging deployment is healthy!"
               exit 0
             fi
             sleep 5
           done
-          echo "Staging health verification timed out."
+          echo "❌ RestaurantOS staging health verification timed out."
           exit 1

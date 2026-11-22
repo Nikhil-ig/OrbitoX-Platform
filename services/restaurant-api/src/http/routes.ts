@@ -56,6 +56,13 @@ export const httpRoutes: RouteDefinition[] = [
   },
   {
     method: 'GET',
+    path: '/api/restaurant/health',
+    handler: (_req, res) => {
+      handleLiveness(res);
+    },
+  },
+  {
+    method: 'GET',
     path: '/healthz',
     handler: (_req, res) => {
       handleLiveness(res);

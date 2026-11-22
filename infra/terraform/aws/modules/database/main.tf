@@ -86,16 +86,16 @@ resource "aws_db_parameter_group" "pg16" {
 # ─────────────────────────────────────────────────────────────
 
 resource "aws_db_instance" "main" {
-  identifier                  = "orbitox-${var.environment}-pg16"
-  engine                      = "postgres"
-  engine_version              = "16.4"
-  instance_class              = var.instance_class
-  multi_az                    = true
-  allocated_storage           = var.allocated_storage
-  max_allocated_storage       = var.max_allocated_storage
-  storage_type                = "gp3"
-  storage_encrypted           = true
-  kms_key_id                  = aws_kms_key.rds.arn
+  identifier            = "orbitox-${var.environment}-pg16"
+  engine                = "postgres"
+  engine_version        = "16.4"
+  instance_class        = var.instance_class
+  multi_az              = true
+  allocated_storage     = var.allocated_storage
+  max_allocated_storage = var.max_allocated_storage
+  storage_type          = "gp3"
+  storage_encrypted     = true
+  kms_key_id            = aws_kms_key.rds.arn
 
   db_name                     = var.database_name
   username                    = var.master_username
@@ -103,23 +103,23 @@ resource "aws_db_instance" "main" {
   port                        = 5432
   publicly_accessible         = false
 
-  db_subnet_group_name        = aws_db_subnet_group.rds.name
-  vpc_security_group_ids      = [aws_security_group.rds.id]
-  parameter_group_name        = aws_db_parameter_group.pg16.name
+  db_subnet_group_name   = aws_db_subnet_group.rds.name
+  vpc_security_group_ids = [aws_security_group.rds.id]
+  parameter_group_name   = aws_db_parameter_group.pg16.name
 
-  backup_retention_period     = var.backup_retention_period
-  backup_window               = "18:00-19:00"
-  maintenance_window          = "Sun:19:30-Sun:20:30"
-  auto_minor_version_upgrade  = true
-  deletion_protection         = true
+  backup_retention_period    = var.backup_retention_period
+  backup_window              = "18:00-19:00"
+  maintenance_window         = "Sun:19:30-Sun:20:30"
+  auto_minor_version_upgrade = true
+  deletion_protection        = true
 
   performance_insights_enabled          = true
   performance_insights_retention_period = 7
   performance_insights_kms_key_id       = aws_kms_key.rds.arn
 
-  copy_tags_to_snapshot       = true
-  skip_final_snapshot         = false
-  final_snapshot_identifier   = "orbitox-${var.environment}-final-snapshot"
+  copy_tags_to_snapshot     = true
+  skip_final_snapshot       = false
+  final_snapshot_identifier = "orbitox-${var.environment}-final-snapshot"
 
   tags = merge(var.tags, {
     Name        = "orbitox-${var.environment}-pg16"
@@ -133,16 +133,16 @@ resource "aws_db_instance" "main" {
 # ─────────────────────────────────────────────────────────────
 
 resource "aws_db_instance" "restaurant_os" {
-  identifier                  = "orbitox-${var.environment}-restaurant-os-pg16"
-  engine                      = "postgres"
-  engine_version              = "16.4"
-  instance_class              = var.instance_class
-  multi_az                    = true
-  allocated_storage           = var.allocated_storage
-  max_allocated_storage       = var.max_allocated_storage
-  storage_type                = "gp3"
-  storage_encrypted           = true
-  kms_key_id                  = aws_kms_key.rds.arn
+  identifier            = "orbitox-${var.environment}-restaurant-os-pg16"
+  engine                = "postgres"
+  engine_version        = "16.4"
+  instance_class        = var.instance_class
+  multi_az              = true
+  allocated_storage     = var.allocated_storage
+  max_allocated_storage = var.max_allocated_storage
+  storage_type          = "gp3"
+  storage_encrypted     = true
+  kms_key_id            = aws_kms_key.rds.arn
 
   db_name                     = var.restaurant_os_database_name
   username                    = "restaurant_os_admin"
@@ -150,23 +150,23 @@ resource "aws_db_instance" "restaurant_os" {
   port                        = 5432
   publicly_accessible         = false
 
-  db_subnet_group_name        = aws_db_subnet_group.rds.name
-  vpc_security_group_ids      = [aws_security_group.rds.id]
-  parameter_group_name        = aws_db_parameter_group.pg16.name
+  db_subnet_group_name   = aws_db_subnet_group.rds.name
+  vpc_security_group_ids = [aws_security_group.rds.id]
+  parameter_group_name   = aws_db_parameter_group.pg16.name
 
-  backup_retention_period     = var.backup_retention_period
-  backup_window               = "19:00-20:00"
-  maintenance_window          = "Sun:20:30-Sun:21:30"
-  auto_minor_version_upgrade  = true
-  deletion_protection         = true
+  backup_retention_period    = var.backup_retention_period
+  backup_window              = "19:00-20:00"
+  maintenance_window         = "Sun:20:30-Sun:21:30"
+  auto_minor_version_upgrade = true
+  deletion_protection        = true
 
   performance_insights_enabled          = true
   performance_insights_retention_period = 7
   performance_insights_kms_key_id       = aws_kms_key.rds.arn
 
-  copy_tags_to_snapshot       = true
-  skip_final_snapshot         = false
-  final_snapshot_identifier   = "orbitox-${var.environment}-restaurant-os-final-snapshot"
+  copy_tags_to_snapshot     = true
+  skip_final_snapshot       = false
+  final_snapshot_identifier = "orbitox-${var.environment}-restaurant-os-final-snapshot"
 
   tags = merge(var.tags, {
     Name        = "orbitox-${var.environment}-restaurant-os-pg16"

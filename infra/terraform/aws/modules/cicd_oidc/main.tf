@@ -77,7 +77,10 @@ resource "aws_iam_role" "github_actions_deploy" {
         Condition = {
           StringEquals = {
             "token.actions.githubusercontent.com:aud" = "sts.amazonaws.com"
-            "token.actions.githubusercontent.com:sub" = "repo:${var.github_repository}:environment:${var.environment}"
+            "token.actions.githubusercontent.com:sub" = [
+              "repo:${var.github_repository}:environment:${var.environment}",
+              "repo:${split("/", var.github_repository)[0]}@${var.github_repository_owner_id}/${split("/", var.github_repository)[1]}@${var.github_repository_id}:environment:${var.environment}"
+            ]
           }
         }
       }
@@ -138,7 +141,8 @@ resource "aws_iam_policy" "deploy_permissions" {
           "ecs:UpdateService"
         ]
         Resource = [
-          var.web_service_arn
+          var.web_service_arn,
+          var.restaurant_os_service_arn
         ]
       },
       {

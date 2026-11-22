@@ -28,6 +28,16 @@ output "web_service_arn" {
   value       = aws_ecs_service.web.id
 }
 
+output "restaurant_os_service_name" {
+  description = "The name of the RestaurantOS ECS service"
+  value       = aws_ecs_service.restaurant_os.name
+}
+
+output "restaurant_os_service_arn" {
+  description = "The ARN of the RestaurantOS ECS service"
+  value       = aws_ecs_service.restaurant_os.id
+}
+
 output "migrate_task_definition_family" {
   description = "Family of the one-off DB migration task definition"
   value       = aws_ecs_task_definition.migrate.family

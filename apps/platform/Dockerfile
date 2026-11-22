@@ -47,6 +47,8 @@ COPY --from=build --chown=orbitox:orbitox /repo/apps/platform/.next/standalone .
 COPY --from=build --chown=orbitox:orbitox /repo/apps/platform/.next/static ./apps/platform/.next/static
 COPY --from=build --chown=orbitox:orbitox /repo/apps/platform/prisma ./prisma
 COPY --from=build --chown=orbitox:orbitox /repo/apps/platform/scripts ./scripts
+RUN npm install --no-save --no-package-lock prisma@6.19.3 pg@8.23.1 \
+    && chown -R orbitox:orbitox /app/node_modules
 USER orbitox
 VOLUME ["/data"]
 EXPOSE 3005

@@ -28,6 +28,11 @@ output "target_group_arn" {
   value       = aws_lb_target_group.web.arn
 }
 
+output "restaurant_os_target_group_arn" {
+  description = "ARN of the target group for RestaurantOS container traffic"
+  value       = aws_lb_target_group.restaurant_os.arn
+}
+
 output "acm_certificate_arn" {
   description = "ARN of the ACM certificate"
   value       = aws_acm_certificate.cert.arn

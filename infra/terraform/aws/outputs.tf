@@ -23,9 +23,29 @@ output "alb_dns_name" {
   value       = module.edge.alb_dns_name
 }
 
+output "alb_zone_id" {
+  description = "Canonical hosted zone ID of the ALB"
+  value       = module.edge.alb_zone_id
+}
+
 output "health_url" {
-  description = "Staging health verification endpoint"
+  description = "Staging health verification endpoint (Platform)"
   value       = "https://${var.domain_name}/health"
+}
+
+output "restaurant_os_health_url" {
+  description = "Staging health verification endpoint (RestaurantOS)"
+  value       = "https://${var.domain_name}/api/restaurant/health"
+}
+
+output "acm_certificate_domain_validation_options" {
+  description = "Domain validation options for ACM DNS record creation"
+  value       = module.edge.acm_certificate_domain_validation_options
+}
+
+output "restaurant_os_service_arn" {
+  description = "RestaurantOS ECS Service ARN"
+  value       = module.compute.restaurant_os_service_arn
 }
 
 output "ecr_web_repo" {

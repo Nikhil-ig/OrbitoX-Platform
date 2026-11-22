@@ -204,6 +204,32 @@ resource "aws_lb_target_group" "web" {
   })
 }
 
+resource "aws_lb_target_group" "restaurant_os" {
+  name                 = "orbitox-${var.environment}-ros-tg"
+  port                 = 4010
+  protocol             = "HTTP"
+  vpc_id               = var.vpc_id
+  target_type          = "ip"
+  deregistration_delay = 30
+
+  health_check {
+    enabled             = true
+    path                = "/health"
+    port                = "traffic-port"
+    protocol            = "HTTP"
+    matcher             = "200"
+    interval            = 15
+    timeout             = 5
+    healthy_threshold   = 2
+    unhealthy_threshold = 3
+  }
+
+  tags = merge(var.tags, {
+    Name        = "orbitox-${var.environment}-ros-tg"
+    Environment = var.environment
+  })
+}
+
 # ─────────────────────────────────────────────────────────────
 # Listeners: HTTP (Redirect 301 to HTTPS) & HTTPS (TLS 1.2+)
 # ─────────────────────────────────────────────────────────────
@@ -234,6 +260,75 @@ resource "aws_lb_listener" "https" {
   default_action {
     type             = "forward"
     target_group_arn = aws_lb_target_group.web.arn
+  }
+}
+
+resource "aws_lb_listener_rule" "restaurant_os" {
+  listener_arn = aws_lb_listener.https.arn
+  priority     = 100
+
+  action {
+    type             = "forward"
+    target_group_arn = aws_lb_target_group.restaurant_os.arn
+  }
+
+  condition {
+    path_pattern {
+      values = ["/api/restaurant/*", "/orbitox/lifecycle/*", "/orbitox/data-rights/*"]
+    }
+  }
+}
+
+# ─────────────────────────────────────────────────────────────
+# Optional Route 53 DNS Automation (Validation & Alias)
+# ─────────────────────────────────────────────────────────────
+
+resource "aws_route53_record" "cert_validation" {
+  for_each = var.route53_zone_id != "" ? {
+    for dvo in aws_acm_certificate.cert.domain_validation_options : dvo.domain_name => {
+      name   = dvo.resource_record_name
+      record = dvo.resource_record_value
+      type   = dvo.resource_record_type
+    }
+  } : {}
+
+  allow_overwrite = true
+  name            = each.value.name
+  records         = [each.value.record]
+  ttl             = 60
+  type            = each.value.type
+  zone_id         = var.route53_zone_id
+}
+
+resource "aws_acm_certificate_validation" "cert" {
+  count                   = var.route53_zone_id != "" ? 1 : 0
+  certificate_arn         = aws_acm_certificate.cert.arn
+  validation_record_fqdns = [for record in aws_route53_record.cert_validation : record.fqdn]
+}
+
+resource "aws_route53_record" "alb_alias" {
+  count   = var.route53_zone_id != "" ? 1 : 0
+  zone_id = var.route53_zone_id
+  name    = var.domain_name
+  type    = "A"
+
+  alias {
+    name                   = aws_lb.alb.dns_name
+    zone_id                = aws_lb.alb.zone_id
+    evaluate_target_health = true
+  }
+}
+
+resource "aws_route53_record" "alb_wildcard_alias" {
+  count   = var.route53_zone_id != "" ? 1 : 0
+  zone_id = var.route53_zone_id
+  name    = var.wildcard_domain_name
+  type    = "A"
+
+  alias {
+    name                   = aws_lb.alb.dns_name
+    zone_id                = aws_lb.alb.zone_id
+    evaluate_target_health = true
   }
 }
 

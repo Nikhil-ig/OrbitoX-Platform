@@ -32,6 +32,14 @@ resource "aws_security_group" "ecs" {
   }
 
   ingress {
+    description     = "Inbound from ALB on restaurant-os port 4010"
+    from_port       = 4010
+    to_port         = 4010
+    protocol        = "tcp"
+    security_groups = [var.alb_security_group_id]
+  }
+
+  ingress {
     description = "Inter-service private communication between tasks"
     from_port   = 0
     to_port     = 65535
@@ -189,8 +197,8 @@ resource "aws_iam_policy" "web_secrets_access" {
     Version = "2012-10-17"
     Statement = [
       {
-        Effect   = "Allow"
-        Action   = ["secretsmanager:GetSecretValue"]
+        Effect = "Allow"
+        Action = ["secretsmanager:GetSecretValue"]
         Resource = [
           var.secrets_map["APP_DATABASE_URL"],
           var.secrets_map["PLATFORM_ADMIN_AUDIT_DATABASE_URL"],
@@ -268,8 +276,8 @@ resource "aws_iam_policy" "email_secrets_access" {
     Version = "2012-10-17"
     Statement = [
       {
-        Effect   = "Allow"
-        Action   = ["secretsmanager:GetSecretValue"]
+        Effect = "Allow"
+        Action = ["secretsmanager:GetSecretValue"]
         Resource = [
           var.secrets_map["OUTBOX_RELAY_DATABASE_URL"],
           var.secrets_map["RESEND_API_KEY"],
@@ -325,8 +333,8 @@ resource "aws_iam_policy" "sweep_secrets_access" {
     Version = "2012-10-17"
     Statement = [
       {
-        Effect   = "Allow"
-        Action   = ["secretsmanager:GetSecretValue"]
+        Effect = "Allow"
+        Action = ["secretsmanager:GetSecretValue"]
         Resource = [
           var.secrets_map["APP_DATABASE_URL"],
           var.secrets_map["MAINTENANCE_DATABASE_URL"]
@@ -380,8 +388,8 @@ resource "aws_iam_policy" "data_rights_secrets_access" {
     Version = "2012-10-17"
     Statement = [
       {
-        Effect   = "Allow"
-        Action   = ["secretsmanager:GetSecretValue"]
+        Effect = "Allow"
+        Action = ["secretsmanager:GetSecretValue"]
         Resource = [
           var.secrets_map["APP_DATABASE_URL"],
           var.secrets_map["MAINTENANCE_DATABASE_URL"],
@@ -444,8 +452,8 @@ resource "aws_iam_policy" "migrate_secrets_access" {
     Version = "2012-10-17"
     Statement = [
       {
-        Effect   = "Allow"
-        Action   = ["secretsmanager:GetSecretValue"]
+        Effect = "Allow"
+        Action = ["secretsmanager:GetSecretValue"]
         Resource = [
           var.secrets_map["MIGRATOR_DATABASE_URL"],
           var.secrets_map["APP_DATABASE_URL"],
@@ -503,8 +511,8 @@ resource "aws_iam_policy" "inventory_secrets_access" {
     Version = "2012-10-17"
     Statement = [
       {
-        Effect   = "Allow"
-        Action   = ["secretsmanager:GetSecretValue"]
+        Effect = "Allow"
+        Action = ["secretsmanager:GetSecretValue"]
         Resource = [
           var.secrets_map["MIGRATOR_DATABASE_URL"],
           var.secrets_map["APP_DATABASE_URL"],
@@ -562,8 +570,8 @@ resource "aws_iam_policy" "restaurant_os_secrets_access" {
     Version = "2012-10-17"
     Statement = [
       {
-        Effect   = "Allow"
-        Action   = ["secretsmanager:GetSecretValue"]
+        Effect = "Allow"
+        Action = ["secretsmanager:GetSecretValue"]
         Resource = [
           var.secrets_map["RESTAURANT_OS_DATABASE_URL"],
           var.secrets_map["ORBITOX_BRIDGE_KEYS"],
@@ -1033,6 +1041,15 @@ resource "aws_ecs_service" "restaurant_os" {
   desired_count   = 1
   launch_type     = "FARGATE"
 
+  dynamic "load_balancer" {
+    for_each = var.restaurant_os_target_group_arn != "" ? [var.restaurant_os_target_group_arn] : []
+    content {
+      target_group_arn = load_balancer.value
+      container_name   = "restaurant-os"
+      container_port   = 4010
+    }
+  }
+
   network_configuration {
     subnets          = var.private_subnet_ids
     security_groups  = [aws_security_group.ecs.id]
@@ -1083,16 +1100,16 @@ resource "aws_iam_role_policy" "events_run_task" {
     Version = "2012-10-17"
     Statement = [
       {
-        Effect   = "Allow"
-        Action   = ["ecs:RunTask"]
+        Effect = "Allow"
+        Action = ["ecs:RunTask"]
         Resource = [
           aws_ecs_task_definition.worker_sweep.arn,
           aws_ecs_task_definition.worker_data_rights.arn
         ]
       },
       {
-        Effect   = "Allow"
-        Action   = ["iam:PassRole"]
+        Effect = "Allow"
+        Action = ["iam:PassRole"]
         Resource = [
           aws_iam_role.sweep_execution_role.arn,
           aws_iam_role.data_rights_execution_role.arn,

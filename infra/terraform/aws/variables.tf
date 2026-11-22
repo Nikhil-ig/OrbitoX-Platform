@@ -22,6 +22,12 @@ variable "wildcard_domain_name" {
   default     = "*.staging.orbitox.io"
 }
 
+variable "route53_zone_id" {
+  type        = string
+  description = "Optional Route 53 Hosted Zone ID for automated DNS validation and record alias creation"
+  default     = ""
+}
+
 variable "db_master_username" {
   type        = string
   description = "Master administrative username for RDS PostgreSQL 16"
@@ -44,8 +50,8 @@ variable "tags" {
   type        = map(string)
   description = "Tags applied to all infrastructure resources"
   default = {
-    Project     = "OrbitoX"
-    ManagedBy   = "Terraform"
-    Compliance  = "DPDP-India-2023"
+    Project    = "OrbitoX"
+    ManagedBy  = "Terraform"
+    Compliance = "DPDP-India-2023"
   }
 }

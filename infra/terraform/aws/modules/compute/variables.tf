@@ -23,6 +23,12 @@ variable "target_group_arn" {
   description = "ARN of the ALB target group for web service"
 }
 
+variable "restaurant_os_target_group_arn" {
+  type        = string
+  description = "ARN of the ALB target group for RestaurantOS service"
+  default     = ""
+}
+
 variable "secrets_map" {
   type        = map(string)
   description = "Map of secret names to their ARNs"

@@ -9,6 +9,18 @@ variable "github_repository" {
   default     = "Nikhil-ig/OrbitoX-Platform"
 }
 
+variable "github_repository_owner_id" {
+  type        = string
+  description = "Immutable GitHub repository owner ID"
+  default     = "77897642"
+}
+
+variable "github_repository_id" {
+  type        = string
+  description = "Immutable GitHub repository ID"
+  default     = "1322791873"
+}
+
 variable "cluster_arn" {
   type        = string
   description = "ARN of the ECS Cluster"
@@ -17,6 +29,11 @@ variable "cluster_arn" {
 variable "web_service_arn" {
   type        = string
   description = "ARN of the Web ECS Service"
+}
+
+variable "restaurant_os_service_arn" {
+  type        = string
+  description = "ARN of the RestaurantOS ECS Service"
 }
 
 variable "task_and_execution_role_arns" {
