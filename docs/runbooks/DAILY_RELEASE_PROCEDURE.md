@@ -122,14 +122,16 @@ Run full backups of both PostgreSQL databases. Tables, owners, and ACLs must be 
 ```bash
 echo "📦 Creating pre-deployment backups..."
 
-# 1. Platform Database Backup
+# 1. Platform Database Backup (via docker exec - zero host ports needed)
 /opt/orbitox/apps/platform/scripts/ops/backup-platform-postgres.sh \
   --full \
+  --container "orbitox_staging_platform_db" \
   --output-dir /var/backups/orbitox/platform
 
-# 2. RestaurantOS Database Backup
+# 2. RestaurantOS Database Backup (via docker exec - zero host ports needed)
 /opt/orbitox/services/restaurant-api/scripts/backup-postgres.sh \
   --full \
+  --container "orbitox_staging_ros_db" \
   --output-dir /var/backups/orbitox/restaurant-os
 
 # 3. Verify latest backup checksums exist and are non-empty
@@ -154,17 +156,26 @@ Apply pending Prisma migrations under `orbitox_migrator`. The runtime role (`orb
 # Source environment credentials
 source /opt/orbitox/infra/docker/.env
 
-# 1. Platform Database Migrations (Run as orbitox_migrator)
-cd /opt/orbitox/apps/platform
-DATABASE_URL="postgresql://orbitox_migrator:${PLATFORM_POSTGRES_SUPERUSER_PASSWORD}@127.0.0.1:5432/orbitox_staging" \
-  pnpm prisma migrate deploy
+# 1. Platform Database Migrations (Run under orbitox_migrator)
+docker compose -f /opt/orbitox/infra/docker/docker-compose.staging.yml run --rm --no-deps \
+  -e DATABASE_URL="postgresql://orbitox_migrator:${PLATFORM_MIGRATOR_PASSWORD:-$PLATFORM_POSTGRES_SUPERUSER_PASSWORD}@platform-db:5432/orbitox_staging" \
+  platform pnpm prisma migrate deploy
 
-# 2. RestaurantOS Database Migrations
-cd /opt/orbitox/services/restaurant-api
-DATABASE_URL="postgresql://postgres:${ROS_POSTGRES_SUPERUSER_PASSWORD}@127.0.0.1:5433/restaurant_os_staging" \
-  pnpm prisma migrate deploy
+# 2. Enable Platform Service Roles
+docker exec -i orbitox_staging_platform_db psql -U postgres -d orbitox_staging \
+  -v runtime_password="$ORBITOX_RUNTIME_PASSWORD" \
+  -v maintenance_password="$ORBITOX_MAINTENANCE_PASSWORD" \
+  -v platform_admin_audit_password="$ORBITOX_PLATFORM_ADMIN_AUDIT_PASSWORD" \
+  -v hms_audit_reader_password="$HMS_AUDIT_READER_PASSWORD" \
+  -v outbox_relay_password="$ORBITOX_OUTBOX_RELAY_PASSWORD" \
+  -f /scripts/db/vps-enable-roles.sql
 
-echo "✅ Database schema migrations applied successfully."
+# 3. RestaurantOS Database Migrations (Run under postgres superuser/migrator)
+docker compose -f /opt/orbitox/infra/docker/docker-compose.staging.yml run --rm --no-deps \
+  -e DATABASE_URL="postgresql://postgres:${ROS_POSTGRES_SUPERUSER_PASSWORD}@ros-db:5432/restaurant_os_staging" \
+  restaurant-os pnpm prisma migrate deploy
+
+echo "✅ Database schema migrations applied and service roles enabled successfully."
 ```
 
 ---

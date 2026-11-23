@@ -71,6 +71,16 @@ BEGIN
 END
 $$;
 
+-- 1b. Ensure all database objects created during migrations are owned by orbitox_migrator
+DO $$
+BEGIN
+    IF CURRENT_USER = 'postgres' THEN
+        REASSIGN OWNED BY postgres TO orbitox_migrator;
+        RAISE NOTICE 'Transferred ownership of newly migrated database objects to orbitox_migrator.';
+    END IF;
+END
+$$;
+
 -- 2. Alter the 5 operational service roles to enable LOGIN with least-privilege attributes
 ALTER ROLE orbitox_runtime WITH LOGIN NOSUPERUSER NOBYPASSRLS NOCREATEDB NOCREATEROLE NOINHERIT PASSWORD :'runtime_password';
 ALTER ROLE orbitox_maintenance WITH LOGIN NOSUPERUSER NOBYPASSRLS NOCREATEDB NOCREATEROLE NOINHERIT PASSWORD :'maintenance_password';

@@ -83,34 +83,43 @@ sudo bash -c 'cat << "EOF" > /etc/cron.d/orbitox-backups
 SHELL=/bin/bash
 PATH=/usr/local/sbin:/usr/local/bin:/sbin:/bin:/usr/sbin:/usr/bin
 
-0 2 * * * root /opt/orbitox/scripts/ops/cron-daily-backup.sh >> /var/log/orbitox/backups.log 2>&1
+0 2 * * * root /opt/orbitox/scripts/ops/backup-all-staging-databases.sh >> /var/log/orbitox/backups.log 2>&1
 EOF'
 
 sudo chmod 644 /etc/cron.d/orbitox-backups
 ```
 
-### Combined Cron Runner Script (`/opt/orbitox/scripts/ops/cron-daily-backup.sh`):
+### Combined Cron Runner Script (`/opt/orbitox/scripts/ops/backup-all-staging-databases.sh`):
 ```bash
 #!/usr/bin/env bash
 set -euo pipefail
 
-source /opt/orbitox/infra/docker/.env
+# Uses docker exec against running database containers (zero exposed host ports needed).
+BACKUP_ROOT="${BACKUP_ROOT_DIR:-/var/backups/orbitox}"
+PLATFORM_BACKUP_DIR="${BACKUP_ROOT}/platform"
+ROS_BACKUP_DIR="${BACKUP_ROOT}/restaurant-os"
+RETENTION_DAYS="${BACKUP_RETENTION_DAYS:-7}"
 
 echo "🚀 [$(date -u)] Starting dual-database scheduled backup..."
 
-# 1. Platform Backup
-APP_DATABASE_URL="postgresql://orbitox_migrator:${PLATFORM_POSTGRES_SUPERUSER_PASSWORD}@127.0.0.1:5432/orbitox_staging" \
-  /opt/orbitox/apps/platform/scripts/ops/backup-platform-postgres.sh \
-    --full \
-    --output-dir /var/backups/orbitox/platform \
-    --retention-days 7
+# 1. Platform Backup (via docker exec)
+/opt/orbitox/apps/platform/scripts/ops/backup-platform-postgres.sh \
+  --full \
+  --container "orbitox_staging_platform_db" \
+  --output-dir "$PLATFORM_BACKUP_DIR" \
+  --retention-days "$RETENTION_DAYS"
 
-# 2. RestaurantOS Backup
-DATABASE_URL="postgresql://postgres:${ROS_POSTGRES_SUPERUSER_PASSWORD}@127.0.0.1:5433/restaurant_os_staging" \
-  /opt/orbitox/services/restaurant-api/scripts/backup-postgres.sh \
-    --full \
-    --output-dir /var/backups/orbitox/restaurant-os \
-    --retention-days 7
+# 2. RestaurantOS Backup (via docker exec)
+/opt/orbitox/services/restaurant-api/scripts/backup-postgres.sh \
+  --full \
+  --container "orbitox_staging_ros_db" \
+  --output-dir "$ROS_BACKUP_DIR" \
+  --retention-days "$RETENTION_DAYS"
+
+# 3. Off-Site Backup Sync (if configured)
+if [[ -f "/opt/orbitox/scripts/ops/sync-backups-offsite.sh" ]]; then
+  /opt/orbitox/scripts/ops/sync-backups-offsite.sh || echo "⚠️ Off-site replication warning."
+fi
 
 echo "✅ [$(date -u)] Dual-database scheduled backup finished successfully."
 ```

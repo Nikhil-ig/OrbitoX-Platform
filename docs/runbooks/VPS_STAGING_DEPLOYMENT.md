@@ -72,11 +72,14 @@ PLATFORM_POSTGRES_SUPERUSER_PASSWORD=GENERATED_SUPERUSER_PASS_1
 ROS_POSTGRES_SUPERUSER_PASSWORD=GENERATED_SUPERUSER_PASS_2
 
 # Platform Application Role Passwords (matching vps-enable-roles.sql)
+PLATFORM_MIGRATOR_PASSWORD=GENERATED_MIGRATOR_PASS
 ORBITOX_RUNTIME_PASSWORD=GENERATED_RUNTIME_PASS
+ORBITOX_MAINTENANCE_PASSWORD=GENERATED_MAINTENANCE_PASS
 ORBITOX_PLATFORM_ADMIN_AUDIT_PASSWORD=GENERATED_ADMIN_AUDIT_PASS
 HMS_AUDIT_READER_PASSWORD=GENERATED_AUDIT_READER_PASS
+ORBITOX_OUTBOX_RELAY_PASSWORD=GENERATED_OUTBOX_RELAY_PASS
 
-# RestaurantOS Database Password
+# RestaurantOS Database Password (for restaurantos_app)
 ROS_DATABASE_PASSWORD=GENERATED_ROS_DB_PASS
 
 # Shared Cache & Pub/Sub Password
@@ -99,24 +102,63 @@ chmod 600 /opt/orbitox/infra/docker/.env
 
 ---
 
-## 3. Deployment Execution
+## 3. Deployment Execution (Controlled Sequence)
 
-### Step 3.1: Build and Launch Services
+Never launch applications before database provisioning and schema migrations are verified. Execute this exact sequence:
+
+### Step 3.1: Start Databases & Redis Mesh
 From the `infra/docker` directory:
 
 ```bash
 cd /opt/orbitox/infra/docker
-docker compose -f docker-compose.staging.yml up -d --build
-```
+docker compose -f docker-compose.staging.yml up -d platform-db ros-db redis
 
-### Step 3.2: Verify Container Health
-Check container state and healthcheck statuses:
-
-```bash
+# Wait until all 3 storage backends are healthy
 docker compose -f docker-compose.staging.yml ps
 ```
 
-All 6 services (`caddy`, `platform`, `restaurant-os`, `platform-db`, `ros-db`, `redis`) must transition to `healthy` status.
+### Step 3.2: Run Platform Database Migrations (as orbitox_migrator)
+Execute pending Prisma migrations under `orbitox_migrator`:
+
+```bash
+source /opt/orbitox/infra/docker/.env
+
+docker compose -f docker-compose.staging.yml run --rm --no-deps \
+  -e DATABASE_URL="postgresql://orbitox_migrator:${PLATFORM_MIGRATOR_PASSWORD:-$PLATFORM_POSTGRES_SUPERUSER_PASSWORD}@platform-db:5432/orbitox_staging" \
+  platform pnpm prisma migrate deploy
+```
+
+### Step 3.3: Enable Platform Service Roles
+Run `vps-enable-roles.sql` to activate the 5 service roles with secure passwords:
+
+```bash
+docker exec -i orbitox_staging_platform_db psql -U postgres -d orbitox_staging \
+  -v runtime_password="$ORBITOX_RUNTIME_PASSWORD" \
+  -v maintenance_password="$ORBITOX_MAINTENANCE_PASSWORD" \
+  -v platform_admin_audit_password="$ORBITOX_PLATFORM_ADMIN_AUDIT_PASSWORD" \
+  -v hms_audit_reader_password="$HMS_AUDIT_READER_PASSWORD" \
+  -v outbox_relay_password="$ORBITOX_OUTBOX_RELAY_PASSWORD" \
+  -f /scripts/db/vps-enable-roles.sql
+```
+
+### Step 3.4: Run RestaurantOS Database Migrations
+Execute RestaurantOS migrations:
+
+```bash
+docker compose -f docker-compose.staging.yml run --rm --no-deps \
+  -e DATABASE_URL="postgresql://postgres:${ROS_POSTGRES_SUPERUSER_PASSWORD}@ros-db:5432/restaurant_os_staging" \
+  restaurant-os pnpm prisma migrate deploy
+```
+
+### Step 3.5: Launch Applications & Ingress Proxy
+Start the Platform web console, RestaurantOS runtime, and Caddy edge proxy:
+
+```bash
+docker compose -f docker-compose.staging.yml up -d platform restaurant-os caddy
+
+# Verify all 6 services are healthy
+docker compose -f docker-compose.staging.yml ps
+```
 
 ### Step 3.3: Verify Ingress & Edge Proxy
 1. Platform health check via Caddy:

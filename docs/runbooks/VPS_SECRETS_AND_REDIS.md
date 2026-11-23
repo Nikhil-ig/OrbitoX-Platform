@@ -57,11 +57,14 @@ PLATFORM_POSTGRES_SUPERUSER_PASSWORD=$(openssl rand -hex 24)
 ROS_POSTGRES_SUPERUSER_PASSWORD=$(openssl rand -hex 24)
 
 # Platform Role Passwords (matching vps-enable-roles.sql)
+PLATFORM_MIGRATOR_PASSWORD=$(openssl rand -hex 24)
 ORBITOX_RUNTIME_PASSWORD=$(openssl rand -hex 24)
+ORBITOX_MAINTENANCE_PASSWORD=$(openssl rand -hex 24)
 ORBITOX_PLATFORM_ADMIN_AUDIT_PASSWORD=$(openssl rand -hex 24)
 HMS_AUDIT_READER_PASSWORD=$(openssl rand -hex 24)
+ORBITOX_OUTBOX_RELAY_PASSWORD=$(openssl rand -hex 24)
 
-# RestaurantOS Database Password
+# RestaurantOS Database Password (for restaurantos_app)
 ROS_DATABASE_PASSWORD=$(openssl rand -hex 24)
 
 # Shared Cache & Pub/Sub (Redis 7)
@@ -145,4 +148,36 @@ used_memory_human:1.24M
 maxmemory_human:384.00M
 127.0.0.1:6379> DBSIZE
 (integer) 42
+```
+
+---
+
+## 5. Secret Boundaries & Host Access Controls
+
+To ensure defense-in-depth on the Ubuntu 24.04 VPS, operators must observe these access control boundaries:
+
+### 5.1 Host File vs Container Environment vs Docker Secrets
+1. **Protected Host `.env` (`/opt/orbitox/infra/docker/.env`)**:
+   - Ownership must be `root:root` with permissions `0600` (`chmod 600`).
+   - Contains master passwords and cryptographic seeds; NEVER committed to Git.
+2. **Container Environment Variables (`environment:`)**:
+   - Injected by Docker Compose into container environments at startup.
+   - > [!WARNING]
+     > Any user with permissions to execute `docker inspect <container_id>` can view the container's environment variables (`Config.Env`).
+     > Therefore, access to the Docker daemon (`/var/run/docker.sock`) is strictly equivalent to root access on the host.
+3. **File-Backed Secrets**:
+   - For database superuser and application passwords, scripts support `/run/secrets/*` files mounted into containers.
+4. **Process Table & Log Safety**:
+   - Passwords must NEVER be passed as positional arguments to CLI utilities (e.g. `psql -W`, `redis-cli -a`).
+   - Applications and scripts must redact database URLs in logs (`safe_target` regex sanitization).
+
+### 5.2 Restricting Docker Daemon Access
+Only trusted system administrators should belong to the `docker` group on the VPS:
+```bash
+# Verify users in docker group
+getent group docker
+
+# Ensure docker socket is owned by root:docker with 0660
+ls -l /var/run/docker.sock
+# Expected: srw-rw---- 1 root docker 0 ... /var/run/docker.sock
 ```

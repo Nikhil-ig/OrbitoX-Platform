@@ -4,6 +4,7 @@
 # ==============================================================================
 # Usage:
 #   ./scripts/backup-postgres.sh --full [--output-dir <dir>]
+#   ./scripts/backup-postgres.sh --full --container orbitox_staging_ros_db
 #   ./scripts/backup-postgres.sh --tenant <tenant_id> [--output-dir <dir>]
 # ==============================================================================
 
@@ -18,6 +19,9 @@ RUNTIME_URL="${RESTAURANTOS_RUNTIME_URL:-http://127.0.0.1:4010}"
 PLATFORM_TOKEN="${RESTAURANTOS_PLATFORM_TOKEN:-}"
 RETENTION_DAYS="${RETENTION_DAYS:-7}"
 PRESERVE_OWNERSHIP=true
+CONTAINER_NAME="${DOCKER_CONTAINER:-}"
+DB_USER="${PGUSER:-postgres}"
+DB_NAME="${PGDATABASE:-restaurant_os_staging}"
 
 MODE=""
 TENANT_ID=""
@@ -31,12 +35,16 @@ Options:
   --full                 Perform a complete cluster-level PostgreSQL database dump
   --tenant <tenant_id>   Export authoritative configuration and data for a single tenant
   --portable             Omit owner and privilege statements (default preserves owners and ACLs)
+  --container <name>     Dump from a running Docker container via docker exec (no host ports needed)
   --output-dir <dir>     Directory to store backups (default: ./data/backups)
   --retention-days <N>   Days to keep old backups before rotating (default: 7)
+  --db-name <name>       Database name for container backup (default: restaurant_os_staging)
+  --db-user <user>       Database user for container backup (default: postgres)
   --help                 Show this help message
 
 Environment Variables:
-  DATABASE_URL                PostgreSQL connection string (required)
+  DATABASE_URL                PostgreSQL connection string
+  DOCKER_CONTAINER            Container name for docker exec backup (e.g. orbitox_staging_ros_db)
   RESTAURANTOS_RUNTIME_URL    Runtime base URL (default: http://127.0.0.1:4010)
   RESTAURANTOS_PLATFORM_TOKEN Platform admin token (required for tenant export)
 EOF
@@ -57,6 +65,18 @@ while [[ $# -gt 0 ]]; do
     --portable)
       PRESERVE_OWNERSHIP=false
       shift
+      ;;
+    --container)
+      CONTAINER_NAME="$2"
+      shift 2
+      ;;
+    --db-name)
+      DB_NAME="$2"
+      shift 2
+      ;;
+    --db-user)
+      DB_USER="$2"
+      shift 2
       ;;
     --output-dir)
       OUTPUT_DIR="$2"
@@ -81,6 +101,15 @@ if [[ -z "$MODE" ]]; then
   print_usage
 fi
 
+# Auto-detect running container if no DATABASE_URL and no CONTAINER_NAME
+if [[ "$MODE" == "full" && -z "$DATABASE_URL" && -z "$CONTAINER_NAME" ]]; then
+  if command -v docker >/dev/null 2>&1; then
+    if docker ps --format '{{.Names}}' 2>/dev/null | grep -q "^orbitox_staging_ros_db$"; then
+      CONTAINER_NAME="orbitox_staging_ros_db"
+    fi
+  fi
+fi
+
 mkdir -p "$OUTPUT_DIR"
 
 compute_checksum() {
@@ -95,18 +124,18 @@ compute_checksum() {
 }
 
 if [[ "$MODE" == "full" ]]; then
-  if [[ -z "$DATABASE_URL" ]]; then
-    echo "❌ Error: DATABASE_URL environment variable is required for full database backup."
+  if [[ -z "$DATABASE_URL" && -z "$CONTAINER_NAME" ]]; then
+    echo "❌ Error: Target is required via --container, DATABASE_URL, or running compose container."
     exit 1
   fi
 
   BACKUP_FILE="${OUTPUT_DIR}/restaurantos_db_full_${TIMESTAMP}.sql.gz"
   echo "🚀 [$(date '+%Y-%m-%d %H:%M:%S')] Starting FULL database backup..."
   echo "   Destination: ${BACKUP_FILE}"
-
-  if ! command -v pg_dump >/dev/null 2>&1; then
-    echo "❌ Error: pg_dump utility not found in PATH."
-    exit 1
+  if [[ -n "$CONTAINER_NAME" ]]; then
+    echo "   Method     : Docker Exec (Container: ${CONTAINER_NAME}, DB: ${DB_NAME})"
+  else
+    echo "   Method     : Host pg_dump"
   fi
 
   DUMP_ARGS=("--clean" "--if-exists")
@@ -114,8 +143,15 @@ if [[ "$MODE" == "full" ]]; then
     DUMP_ARGS+=("--no-owner" "--no-privileges")
   fi
 
-  # Run pg_dump and pipe through gzip
-  pg_dump "$DATABASE_URL" "${DUMP_ARGS[@]}" | gzip -9 > "$BACKUP_FILE"
+  if [[ -n "$CONTAINER_NAME" ]]; then
+    docker exec -i "$CONTAINER_NAME" pg_dump -U "$DB_USER" -d "$DB_NAME" "${DUMP_ARGS[@]}" | gzip -9 > "$BACKUP_FILE"
+  else
+    if ! command -v pg_dump >/dev/null 2>&1; then
+      echo "❌ Error: pg_dump utility not found in PATH."
+      exit 1
+    fi
+    pg_dump "$DATABASE_URL" "${DUMP_ARGS[@]}" | gzip -9 > "$BACKUP_FILE"
+  fi
 
   if [[ ! -s "$BACKUP_FILE" ]]; then
     echo "❌ Error: Backup failed, created file is empty."
@@ -128,9 +164,28 @@ if [[ "$MODE" == "full" ]]; then
   echo "✅ FULL database backup completed successfully (${FILE_SIZE})."
   echo "   Checksum written to: ${BACKUP_FILE}.sha256"
 
-  # Retention cleanup
+  # Retention cleanup — preserve at least 1 backup
   echo "🧹 Rotating backups older than ${RETENTION_DAYS} days in ${OUTPUT_DIR}..."
-  find "$OUTPUT_DIR" -type f \( -name "restaurantos_*.sql.gz*" -o -name "tenant_*.json.gz*" \) -mtime "+${RETENTION_DAYS}" -delete 2>/dev/null || true
+  EXISTING_BACKUPS=()
+  while IFS= read -r f; do
+    [[ -n "$f" ]] && EXISTING_BACKUPS+=("$f")
+  done < <(find "$OUTPUT_DIR" -maxdepth 1 -type f -name "restaurantos_*.sql.gz" | sort)
+
+  TOTAL_BACKUPS=${#EXISTING_BACKUPS[@]}
+  ROTATED_COUNT=0
+
+  if [[ "$TOTAL_BACKUPS" -gt 1 ]]; then
+    while IFS= read -r old_file; do
+      if [[ -n "$old_file" ]]; then
+        if [[ $((TOTAL_BACKUPS - ROTATED_COUNT)) -gt 1 ]]; then
+          rm -f "$old_file" "${old_file}.sha256"
+          ROTATED_COUNT=$((ROTATED_COUNT + 1))
+        fi
+      fi
+    done < <(find "$OUTPUT_DIR" -maxdepth 1 -type f -name "restaurantos_*.sql.gz" -mtime "+${RETENTION_DAYS}" 2>/dev/null || true)
+  fi
+
+  echo "✅ Rotation complete. Cleaned up ${ROTATED_COUNT} expired backup file(s)."
   exit 0
 fi
 

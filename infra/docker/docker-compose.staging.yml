@@ -61,6 +61,7 @@ services:
       - DATABASE_URL=postgresql://orbitox_runtime:${ORBITOX_RUNTIME_PASSWORD:?set ORBITOX_RUNTIME_PASSWORD in .env}@platform-db:5432/orbitox_staging
       - PLATFORM_AUDIT_DATABASE_URL=postgresql://orbitox_platform_admin_audit:${ORBITOX_PLATFORM_ADMIN_AUDIT_PASSWORD:?set ORBITOX_PLATFORM_ADMIN_AUDIT_PASSWORD in .env}@platform-db:5432/orbitox_staging
       - HMS_AUDIT_DATABASE_URL=postgresql://hms_audit_reader:${HMS_AUDIT_READER_PASSWORD:?set HMS_AUDIT_READER_PASSWORD in .env}@platform-db:5432/orbitox_staging
+      - OUTBOX_RELAY_DATABASE_URL=postgresql://orbitox_outbox_relay:${ORBITOX_OUTBOX_RELAY_PASSWORD:?set ORBITOX_OUTBOX_RELAY_PASSWORD in .env}@platform-db:5432/orbitox_staging
       - REDIS_URL=redis://:${REDIS_PASSWORD:?set REDIS_PASSWORD in .env}@redis:6379/0
       - ORBITOX_ADMIN_TOKEN=${ORBITOX_ADMIN_TOKEN:?set ORBITOX_ADMIN_TOKEN in .env}
       - ORBITOX_RUNTIME_TOKEN=${ORBITOX_RUNTIME_TOKEN:?set ORBITOX_RUNTIME_TOKEN in .env}
@@ -107,7 +108,7 @@ services:
       - NODE_ENV=production
       - PORT=4010
       - HOST=0.0.0.0
-      - DATABASE_URL=postgresql://restaurantos_runtime:${ROS_DATABASE_PASSWORD:?set ROS_DATABASE_PASSWORD in .env}@ros-db:5432/restaurant_os_staging
+      - DATABASE_URL=postgresql://restaurantos_app:${ROS_DATABASE_PASSWORD:?set ROS_DATABASE_PASSWORD in .env}@ros-db:5432/restaurant_os_staging
       - RESTAURANTOS_PLATFORM_TOKEN=${RESTAURANTOS_PLATFORM_TOKEN:?set RESTAURANTOS_PLATFORM_TOKEN in .env}
     volumes:
       - ros_data:/workspace/services/restaurant-api/data
@@ -140,9 +141,12 @@ services:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: ${PLATFORM_POSTGRES_SUPERUSER_PASSWORD:?set PLATFORM_POSTGRES_SUPERUSER_PASSWORD in .env}
       POSTGRES_DB: orbitox_staging
+      PLATFORM_MIGRATOR_PASSWORD: ${PLATFORM_MIGRATOR_PASSWORD:-${PLATFORM_POSTGRES_SUPERUSER_PASSWORD:?set PLATFORM_POSTGRES_SUPERUSER_PASSWORD in .env}}
     volumes:
       - platform_pgdata:/var/lib/postgresql/data
-      - ../../scripts/db/vps-bootstrap-roles.sql:/docker-entrypoint-initdb.d/01-vps-bootstrap-roles.sql:ro
+      - ../../scripts/db/init-platform-db.sh:/docker-entrypoint-initdb.d/01-init-platform-db.sh:ro
+      - ../../scripts/db/vps-bootstrap-roles.sql:/scripts/db/vps-bootstrap-roles.sql:ro
+      - ../../scripts/db/vps-enable-roles.sql:/scripts/db/vps-enable-roles.sql:ro
     networks:
       - orbitox_platform_net
     deploy:
@@ -167,8 +171,10 @@ services:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: ${ROS_POSTGRES_SUPERUSER_PASSWORD:?set ROS_POSTGRES_SUPERUSER_PASSWORD in .env}
       POSTGRES_DB: restaurant_os_staging
+      APP_DB_PASSWORD: ${ROS_DATABASE_PASSWORD:?set ROS_DATABASE_PASSWORD in .env}
     volumes:
       - ros_pgdata:/var/lib/postgresql/data
+      - ../../services/restaurant-api/docker/init-roles.sh:/docker-entrypoint-initdb.d/01-init-roles.sh:ro
     networks:
       - orbitox_ros_net
     deploy:
