@@ -17,6 +17,7 @@ DATABASE_URL="${DATABASE_URL:-}"
 RUNTIME_URL="${RESTAURANTOS_RUNTIME_URL:-http://127.0.0.1:4010}"
 PLATFORM_TOKEN="${RESTAURANTOS_PLATFORM_TOKEN:-}"
 RETENTION_DAYS="${RETENTION_DAYS:-7}"
+PRESERVE_OWNERSHIP=true
 
 MODE=""
 TENANT_ID=""
@@ -29,6 +30,7 @@ Usage: $(basename "$0") [options]
 Options:
   --full                 Perform a complete cluster-level PostgreSQL database dump
   --tenant <tenant_id>   Export authoritative configuration and data for a single tenant
+  --portable             Omit owner and privilege statements (default preserves owners and ACLs)
   --output-dir <dir>     Directory to store backups (default: ./data/backups)
   --retention-days <N>   Days to keep old backups before rotating (default: 7)
   --help                 Show this help message
@@ -51,6 +53,10 @@ while [[ $# -gt 0 ]]; do
       MODE="tenant"
       TENANT_ID="$2"
       shift 2
+      ;;
+    --portable)
+      PRESERVE_OWNERSHIP=false
+      shift
       ;;
     --output-dir)
       OUTPUT_DIR="$2"
@@ -103,13 +109,13 @@ if [[ "$MODE" == "full" ]]; then
     exit 1
   fi
 
+  DUMP_ARGS=("--clean" "--if-exists")
+  if [[ "$PRESERVE_OWNERSHIP" != "true" ]]; then
+    DUMP_ARGS+=("--no-owner" "--no-privileges")
+  fi
+
   # Run pg_dump and pipe through gzip
-  pg_dump "$DATABASE_URL" \
-    --clean \
-    --if-exists \
-    --no-owner \
-    --no-privileges \
-    | gzip -9 > "$BACKUP_FILE"
+  pg_dump "$DATABASE_URL" "${DUMP_ARGS[@]}" | gzip -9 > "$BACKUP_FILE"
 
   if [[ ! -s "$BACKUP_FILE" ]]; then
     echo "❌ Error: Backup failed, created file is empty."

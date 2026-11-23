@@ -24,6 +24,7 @@ TIMESTAMP="$(date -u +"%Y%m%d_%H%M%SZ")"
 DB_URL="${APP_DATABASE_URL:-${DATABASE_URL:-}}"
 
 MODE="full"
+PRESERVE_OWNERSHIP=true
 
 print_usage() {
   local exit_code="${1:-0}"
@@ -33,6 +34,7 @@ Usage: $(basename "$0") [options]
 Options:
   --full                 Perform complete Platform database dump (default)
   --schema-only          Dump schema, constraints, and migrations metadata only
+  --portable             Omit owner and privilege statements (default preserves owners and ACLs)
   --output-dir <dir>     Directory to store backups (default: ./data/backups)
   --retention-days <N>   Days of backups to keep before rotation (default: 7)
   --db-url <url>         Override target PostgreSQL connection URL
@@ -56,6 +58,10 @@ while [[ $# -gt 0 ]]; do
       ;;
     --schema-only)
       MODE="schema-only"
+      shift
+      ;;
+    --portable)
+      PRESERVE_OWNERSHIP=false
       shift
       ;;
     --output-dir)
@@ -119,28 +125,18 @@ echo " Retention   : ${RETENTION_DAYS} days"
 echo " Started At  : $(date -u '+%Y-%m-%d %H:%M:%SZ')"
 echo "────────────────────────────────────────────────────────────────"
 
-EXTRA_ARGS=()
+DUMP_ARGS=("--clean" "--if-exists")
+if [[ "$PRESERVE_OWNERSHIP" != "true" ]]; then
+  DUMP_ARGS+=("--no-owner" "--no-privileges")
+fi
 if [[ "$MODE" == "schema-only" ]]; then
-  EXTRA_ARGS+=("--schema-only")
+  DUMP_ARGS+=("--schema-only")
 fi
 
+echo " Preservation: $([ "$PRESERVE_OWNERSHIP" = "true" ] && echo "Table owners & ACLs preserved" || echo "Portable (no owners/privileges)")"
+
 # Execute pg_dump with clean, if-exists, and gzip compression
-if [[ ${#EXTRA_ARGS[@]} -gt 0 ]]; then
-  pg_dump "$DB_URL" \
-    --clean \
-    --if-exists \
-    --no-owner \
-    --no-privileges \
-    "${EXTRA_ARGS[@]}" \
-    | gzip -9 > "$BACKUP_FILE"
-else
-  pg_dump "$DB_URL" \
-    --clean \
-    --if-exists \
-    --no-owner \
-    --no-privileges \
-    | gzip -9 > "$BACKUP_FILE"
-fi
+pg_dump "$DB_URL" "${DUMP_ARGS[@]}" | gzip -9 > "$BACKUP_FILE"
 
 # Verify non-empty output
 if [[ ! -s "$BACKUP_FILE" ]]; then
