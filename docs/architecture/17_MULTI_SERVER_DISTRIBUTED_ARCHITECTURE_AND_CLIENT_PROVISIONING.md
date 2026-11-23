@@ -320,7 +320,7 @@ docker-compose -f docker-compose.cluster.yml up -d redis pgbouncer postgres
 # Step 2: Configure Environment on Compute Nodes
 export CLUSTER_MODE=distributed
 export ORBITOX_DEPLOYMENT_MODE=distributed
-export REDIS_URL=redis://:redispass123@redis:6379
+export REDIS_URL=redis://:${REDIS_PASSWORD}@redis:6379
 export DATABASE_URL=postgresql://orbitox_admin:password123@pgbouncer:6432/orbitox
 
 # Step 3: Launch additional compute node replicas

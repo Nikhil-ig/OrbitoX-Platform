@@ -13,9 +13,10 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 OUTPUT_DIR="${PROJECT_ROOT}/data/backups"
 TIMESTAMP="$(date -u +"%Y%m%d_%H%M%SZ")"
-DATABASE_URL="${DATABASE_URL:-postgresql://apple@localhost:5432/restaurant_os}"
+DATABASE_URL="${DATABASE_URL:-}"
 RUNTIME_URL="${RESTAURANTOS_RUNTIME_URL:-http://127.0.0.1:4010}"
-PLATFORM_TOKEN="${RESTAURANTOS_PLATFORM_TOKEN:-orbitox_platform_token_restaurant_os_master_key_2026_super_secret_v1}"
+PLATFORM_TOKEN="${RESTAURANTOS_PLATFORM_TOKEN:-}"
+RETENTION_DAYS="${RETENTION_DAYS:-7}"
 
 MODE=""
 TENANT_ID=""
@@ -29,12 +30,13 @@ Options:
   --full                 Perform a complete cluster-level PostgreSQL database dump
   --tenant <tenant_id>   Export authoritative configuration and data for a single tenant
   --output-dir <dir>     Directory to store backups (default: ./data/backups)
+  --retention-days <N>   Days to keep old backups before rotating (default: 7)
   --help                 Show this help message
 
 Environment Variables:
-  DATABASE_URL                PostgreSQL connection string
+  DATABASE_URL                PostgreSQL connection string (required)
   RESTAURANTOS_RUNTIME_URL    Runtime base URL (default: http://127.0.0.1:4010)
-  RESTAURANTOS_PLATFORM_TOKEN Platform admin token
+  RESTAURANTOS_PLATFORM_TOKEN Platform admin token (required for tenant export)
 EOF
   exit "$exit_code"
 }
@@ -52,6 +54,10 @@ while [[ $# -gt 0 ]]; do
       ;;
     --output-dir)
       OUTPUT_DIR="$2"
+      shift 2
+      ;;
+    --retention-days)
+      RETENTION_DAYS="$2"
       shift 2
       ;;
     --help)
@@ -83,6 +89,11 @@ compute_checksum() {
 }
 
 if [[ "$MODE" == "full" ]]; then
+  if [[ -z "$DATABASE_URL" ]]; then
+    echo "❌ Error: DATABASE_URL environment variable is required for full database backup."
+    exit 1
+  fi
+
   BACKUP_FILE="${OUTPUT_DIR}/restaurantos_db_full_${TIMESTAMP}.sql.gz"
   echo "🚀 [$(date '+%Y-%m-%d %H:%M:%S')] Starting FULL database backup..."
   echo "   Destination: ${BACKUP_FILE}"
@@ -110,12 +121,21 @@ if [[ "$MODE" == "full" ]]; then
   FILE_SIZE="$(du -h "$BACKUP_FILE" | cut -f1)"
   echo "✅ FULL database backup completed successfully (${FILE_SIZE})."
   echo "   Checksum written to: ${BACKUP_FILE}.sha256"
+
+  # Retention cleanup
+  echo "🧹 Rotating backups older than ${RETENTION_DAYS} days in ${OUTPUT_DIR}..."
+  find "$OUTPUT_DIR" -type f \( -name "restaurantos_*.sql.gz*" -o -name "tenant_*.json.gz*" \) -mtime "+${RETENTION_DAYS}" -delete 2>/dev/null || true
   exit 0
 fi
 
 if [[ "$MODE" == "tenant" ]]; then
   if [[ -z "$TENANT_ID" ]]; then
     echo "❌ Error: Missing tenant ID. Use --tenant <tenant_id>"
+    exit 1
+  fi
+
+  if [[ -z "$PLATFORM_TOKEN" && -z "$DATABASE_URL" ]]; then
+    echo "❌ Error: Either RESTAURANTOS_PLATFORM_TOKEN or DATABASE_URL must be provided."
     exit 1
   fi
 

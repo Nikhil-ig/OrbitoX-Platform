@@ -1,0 +1,239 @@
+# 🪐 OrbitoX Platform & RestaurantOS — VPS Staging Compose Manifest
+# Environment: Self-managed Ubuntu 24.04 LTS VPS (4 vCPU, 8 GB RAM, 100 GB NVMe)
+# Domain: staging.orbitox.io
+# Security Architecture:
+# 1. Zero host port exposure for databases or Redis (only Caddy binds 80/443).
+# 2. Strict dual-database isolation: platform-db on orbitox_platform_net, ros-db on orbitox_ros_net.
+# 3. Explicit memory budgets enforcing <= 6.4 GB total across containers, reserving 1.75 GB for OS.
+# 4. Secret injection via environment variables without hardcoded passwords.
+
+services:
+  # ─────────────────────────────────────────────────────────────────────────────
+  # Edge Ingress & TLS Termination (Caddy v2)
+  # ─────────────────────────────────────────────────────────────────────────────
+  caddy:
+    image: caddy:2.8-alpine
+    container_name: orbitox_staging_caddy
+    restart: unless-stopped
+    ports:
+      - '80:80'
+      - '443:443'
+    volumes:
+      - ../../services/restaurant-api/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    networks:
+      - orbitox_ingress_net
+    deploy:
+      resources:
+        limits:
+          cpus: '0.50'
+          memory: 256M
+    healthcheck:
+      test: ['CMD', 'wget', '--no-verbose', '--tries=1', '--spider', 'http://127.0.0.1:80/healthz']
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+  # ─────────────────────────────────────────────────────────────────────────────
+  # OrbitoX Platform Control Plane
+  # ─────────────────────────────────────────────────────────────────────────────
+  platform:
+    build:
+      context: ../..
+      dockerfile: apps/platform/Dockerfile
+    image: orbitox/platform:staging
+    container_name: orbitox_staging_platform
+    restart: unless-stopped
+    expose:
+      - '3005'
+    environment:
+      - NODE_ENV=production
+      - PORT=3005
+      - HOSTNAME=0.0.0.0
+      - APP_DATABASE_URL=postgresql://orbitox_runtime:${ORBITOX_RUNTIME_PASSWORD:?set ORBITOX_RUNTIME_PASSWORD in .env}@platform-db:5432/orbitox_staging
+      - DATABASE_URL=postgresql://orbitox_runtime:${ORBITOX_RUNTIME_PASSWORD:?set ORBITOX_RUNTIME_PASSWORD in .env}@platform-db:5432/orbitox_staging
+      - PLATFORM_AUDIT_DATABASE_URL=postgresql://orbitox_platform_admin_audit:${ORBITOX_PLATFORM_ADMIN_AUDIT_PASSWORD:?set ORBITOX_PLATFORM_ADMIN_AUDIT_PASSWORD in .env}@platform-db:5432/orbitox_staging
+      - HMS_AUDIT_DATABASE_URL=postgresql://hms_audit_reader:${HMS_AUDIT_READER_PASSWORD:?set HMS_AUDIT_READER_PASSWORD in .env}@platform-db:5432/orbitox_staging
+      - REDIS_URL=redis://:${REDIS_PASSWORD:?set REDIS_PASSWORD in .env}@redis:6379/0
+      - ORBITOX_ADMIN_TOKEN=${ORBITOX_ADMIN_TOKEN:?set ORBITOX_ADMIN_TOKEN in .env}
+      - ORBITOX_RUNTIME_TOKEN=${ORBITOX_RUNTIME_TOKEN:?set ORBITOX_RUNTIME_TOKEN in .env}
+      - ORBITOX_CONTROL_SECRET=${ORBITOX_CONTROL_SECRET:?set ORBITOX_CONTROL_SECRET in .env}
+      - ORBITOX_GUEST_SECRET=${ORBITOX_GUEST_SECRET:?set ORBITOX_GUEST_SECRET in .env}
+      - ORBITOX_SERVER_PEPPER=${ORBITOX_SERVER_PEPPER:?set ORBITOX_SERVER_PEPPER in .env}
+      - ORBITOX_PHI_KEYRING=${ORBITOX_PHI_KEYRING:?set ORBITOX_PHI_KEYRING in .env}
+      - LOG_LEVEL=${LOG_LEVEL:-info}
+    volumes:
+      - platform_data:/data
+    networks:
+      - orbitox_ingress_net
+      - orbitox_platform_net
+    depends_on:
+      platform-db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    deploy:
+      resources:
+        limits:
+          cpus: '1.50'
+          memory: 2048M
+    healthcheck:
+      test: ['CMD', 'curl', '-fsS', 'http://127.0.0.1:3005/api/health']
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+
+  # ─────────────────────────────────────────────────────────────────────────────
+  # RestaurantOS Hospitality Runtime
+  # ─────────────────────────────────────────────────────────────────────────────
+  restaurant-os:
+    build:
+      context: ../..
+      dockerfile: services/restaurant-api/Dockerfile
+    image: orbitox/restaurant-os:staging
+    container_name: orbitox_staging_restaurant_os
+    restart: unless-stopped
+    expose:
+      - '4010'
+    environment:
+      - NODE_ENV=production
+      - PORT=4010
+      - HOST=0.0.0.0
+      - DATABASE_URL=postgresql://restaurantos_runtime:${ROS_DATABASE_PASSWORD:?set ROS_DATABASE_PASSWORD in .env}@ros-db:5432/restaurant_os_staging
+      - REDIS_URL=redis://:${REDIS_PASSWORD:?set REDIS_PASSWORD in .env}@redis:6379/1
+      - RESTAURANTOS_PLATFORM_TOKEN=${RESTAURANTOS_PLATFORM_TOKEN:?set RESTAURANTOS_PLATFORM_TOKEN in .env}
+    volumes:
+      - ros_data:/workspace/services/restaurant-api/data
+    networks:
+      - orbitox_ingress_net
+      - orbitox_ros_net
+    depends_on:
+      ros-db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    deploy:
+      resources:
+        limits:
+          cpus: '1.00'
+          memory: 1024M
+    healthcheck:
+      test: ['CMD', 'curl', '-fsS', 'http://127.0.0.1:4010/healthz']
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+
+  # ─────────────────────────────────────────────────────────────────────────────
+  # Platform PostgreSQL 16 (Isolated Database)
+  # ─────────────────────────────────────────────────────────────────────────────
+  platform-db:
+    image: postgres:16-alpine
+    container_name: orbitox_staging_platform_db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${PLATFORM_POSTGRES_SUPERUSER_PASSWORD:?set PLATFORM_POSTGRES_SUPERUSER_PASSWORD in .env}
+      POSTGRES_DB: orbitox_staging
+    volumes:
+      - platform_pgdata:/var/lib/postgresql/data
+      - ../../scripts/db/vps-bootstrap-roles.sql:/docker-entrypoint-initdb.d/01-vps-bootstrap-roles.sql:ro
+    networks:
+      - orbitox_platform_net
+    deploy:
+      resources:
+        limits:
+          cpus: '1.00'
+          memory: 1536M
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U postgres -d orbitox_staging']
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  # ─────────────────────────────────────────────────────────────────────────────
+  # RestaurantOS PostgreSQL 16 (Isolated Database)
+  # ─────────────────────────────────────────────────────────────────────────────
+  ros-db:
+    image: postgres:16-alpine
+    container_name: orbitox_staging_ros_db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${ROS_POSTGRES_SUPERUSER_PASSWORD:?set ROS_POSTGRES_SUPERUSER_PASSWORD in .env}
+      POSTGRES_DB: restaurant_os_staging
+    volumes:
+      - ros_pgdata:/var/lib/postgresql/data
+    networks:
+      - orbitox_ros_net
+    deploy:
+      resources:
+        limits:
+          cpus: '0.50'
+          memory: 1024M
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U postgres -d restaurant_os_staging']
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  # ─────────────────────────────────────────────────────────────────────────────
+  # Shared Cache & Pub/Sub Mesh (Redis 7 - Authenticated & Network-Isolated)
+  # ─────────────────────────────────────────────────────────────────────────────
+  redis:
+    image: redis:7-alpine
+    container_name: orbitox_staging_redis
+    restart: unless-stopped
+    command: >
+      sh -c 'redis-server
+      --requirepass "$$REDIS_PASSWORD"
+      --appendonly yes
+      --maxmemory 384mb
+      --maxmemory-policy volatile-lru'
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD:?set REDIS_PASSWORD in .env}
+    volumes:
+      - redis_staging_data:/data
+    networks:
+      - orbitox_platform_net
+      - orbitox_ros_net
+    deploy:
+      resources:
+        limits:
+          cpus: '0.50'
+          memory: 512M
+    healthcheck:
+      test: ['CMD-SHELL', 'REDISCLI_AUTH="$$REDIS_PASSWORD" redis-cli ping | grep PONG']
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+networks:
+  # Public ingress network: only Caddy, Platform web, and RestaurantOS web are members.
+  orbitox_ingress_net:
+    name: orbitox_ingress_net
+    driver: bridge
+
+  # Platform backend network: Platform container, Platform DB, and Redis.
+  orbitox_platform_net:
+    name: orbitox_platform_net
+    driver: bridge
+    internal: true
+
+  # RestaurantOS backend network: RestaurantOS container, RestaurantOS DB, and Redis.
+  orbitox_ros_net:
+    name: orbitox_ros_net
+    driver: bridge
+    internal: true
+
+volumes:
+  caddy_data:
+  caddy_config:
+  platform_data:
+  ros_data:
+  platform_pgdata:
+  ros_pgdata:
+  redis_staging_data:

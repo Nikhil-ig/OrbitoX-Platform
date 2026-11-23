@@ -47,25 +47,42 @@ export const CONSTRAINT_ERRORS: Record<string, Omit<ApiError, 'retryable'>> = {
 
 /**
  * Extracts SQLSTATE and constraint name from raw PostgreSQL errors or Prisma-wrapped errors.
+ * Ensures generic Prisma wrapper codes (such as P2010 raw query error) do not shadow native
+ * PostgreSQL SQLSTATEs (such as 40P01 deadlock or 40001 serialization failure) in cause or meta.
  */
 export function extractSqlStateAndConstraint(e: any): { sqlstate?: string; constraint?: string } {
   if (!e) return {};
 
-  let sqlstate: string | undefined = e.code;
-  let constraint: string | undefined = e.constraint;
+  let sqlstate: string | undefined = undefined;
+  let constraint: string | undefined = undefined;
 
-  // Check nested cause (e.g. pg driver wrapped by ORM)
-  if (e.cause) {
-    if (!sqlstate && typeof e.cause.code === 'string') sqlstate = e.cause.code;
-    if (!constraint && typeof e.cause.constraint === 'string') constraint = e.cause.constraint;
+  // Direct PostgreSQL / Node error properties
+  if (typeof e.constraint === 'string') constraint = e.constraint;
+  if (typeof e.code === 'string') sqlstate = e.code;
+
+  // Check nested cause (e.g. pg driver wrapped by ORM / Prisma)
+  if (e.cause && typeof e.cause === 'object') {
+    if (typeof e.cause.constraint === 'string' && !constraint) {
+      constraint = e.cause.constraint;
+    }
+    if (typeof e.cause.code === 'string') {
+      // If current sqlstate is a generic Prisma wrapper (P2010, etc.) or undefined,
+      // the cause code takes precedence.
+      if (!sqlstate || isPrismaWrapperCode(sqlstate)) {
+        sqlstate = e.cause.code;
+      }
+    }
   }
 
   // PrismaClientKnownRequestError handling
-  // Prisma error codes: P2002 (Unique constraint), P2003 (Foreign key), P2010 (Raw query error)
+  // Prisma error codes: P2002 (Unique constraint), P2003 (Foreign key), P2010 (Raw query error), P2034 (Serialization)
   const meta = e.meta;
   if (meta && typeof meta === 'object') {
     if (typeof meta.code === 'string') {
-      sqlstate = meta.code;
+      // Underlying database SQLSTATE in meta takes precedence over generic Prisma error code
+      if (!sqlstate || isPrismaWrapperCode(sqlstate) || isPostgresSqlState(meta.code)) {
+        sqlstate = meta.code;
+      }
     }
     if (typeof meta.constraint === 'string') {
       constraint = meta.constraint;
@@ -78,22 +95,36 @@ export function extractSqlStateAndConstraint(e: any): { sqlstate?: string; const
       if (found) constraint = found;
       else if (typeof meta.target[0] === 'string') constraint = meta.target[0];
     }
+  }
 
-    // Inspect database_error or message if constraint is still missing
-    const dbErr = typeof meta.database_error === 'string' ? meta.database_error : '';
-    const msg = typeof meta.message === 'string' ? meta.message : '';
-    const fullText = `${dbErr} ${msg} ${e.message || ''}`;
-    if (!constraint) {
-      const match = /constraint "([^"]+)"/i.exec(fullText);
-      if (match) constraint = match[1];
-    }
-    if (!sqlstate) {
-      const matchCode = /SQLSTATE ([0-9A-Z]{5})/i.exec(fullText);
-      if (matchCode) sqlstate = matchCode[1];
+  // Inspect database_error, message, or e.message if constraint or SQLSTATE is still missing or shadowed
+  const dbErr = meta && typeof meta.database_error === 'string' ? meta.database_error : '';
+  const metaMsg = meta && typeof meta.message === 'string' ? meta.message : '';
+  const causeMsg = e.cause && typeof e.cause.message === 'string' ? e.cause.message : '';
+  const fullText = `${dbErr} ${metaMsg} ${causeMsg} ${e.message || ''}`;
+
+  if (!constraint) {
+    const match = /constraint "([^"]+)"/i.exec(fullText);
+    if (match) constraint = match[1];
+  }
+
+  if (!sqlstate || isPrismaWrapperCode(sqlstate)) {
+    // Look for SQLSTATE 5-char code in database error or message
+    const matchSqlState = /SQLSTATE[:\s]+([0-9A-Z]{5})/i.exec(fullText);
+    if (matchSqlState) {
+      sqlstate = matchSqlState[1];
+    } else {
+      const matchCode = /Code:\s*[`"]?([0-9A-Z]{5})[`"]?/i.exec(fullText);
+      if (matchCode) {
+        sqlstate = matchCode[1];
+      } else {
+        const matchErr = /error:\s*([0-9A-Z]{5}):/i.exec(fullText);
+        if (matchErr) sqlstate = matchErr[1];
+      }
     }
   }
 
-  // Handle Prisma generic codes when raw SQLSTATE wasn't in meta
+  // Handle Prisma generic codes when raw SQLSTATE wasn't in meta or cause
   if (sqlstate === 'P2002') {
     sqlstate = '23505'; // Unique constraint violation
   } else if (sqlstate === 'P2003') {
@@ -103,6 +134,17 @@ export function extractSqlStateAndConstraint(e: any): { sqlstate?: string; const
   }
 
   return { sqlstate, constraint };
+}
+
+function isPrismaWrapperCode(code: string): boolean {
+  return code === 'P2010' || code === 'P2002' || code === 'P2003' || code === 'P2034';
+}
+
+function isPostgresSqlState(code: string): boolean {
+  if (!/^[0-9A-Z]{5}$/.test(code)) return false;
+  // Exclude Prisma generic codes (P followed by digits >= 1000)
+  if (/^P[1-9]\d{3}$/.test(code)) return false;
+  return true;
 }
 
 export function mapDbError(e: any): ApiError {
@@ -143,6 +185,34 @@ export function mapDbError(e: any): ApiError {
     // (wrong tenant or missing scope). Alert on it; tell the client nothing.
     case '42501':
       return { status: 500, code: 'INTERNAL_TENANT_GUARD', retryable: false };
+    // Connection / network failures
+    case 'ECONNREFUSED':
+    case 'ETIMEDOUT':
+    case 'ENOTFOUND':
+    case 'EHOSTUNREACH':
+    case 'ECONNRESET':
+    case 'EPIPE':
+    case 'P1001':
+    case 'P1002':
+    case 'P1008':
+    case 'P1017':
+    case '08000':
+    case '08001':
+    case '08003':
+    case '08004':
+    case '08006':
+    case '08007':
+    case '08P01':
+      return { status: 503, code: 'SERVICE_UNAVAILABLE', retryable: true };
+  }
+
+  // Fallback checks for connection errors wrapped in generic Error
+  if (
+    e?.code === 'ECONNREFUSED' ||
+    e?.cause?.code === 'ECONNREFUSED' ||
+    /ECONNREFUSED|connection refused/i.test(e?.message || '')
+  ) {
+    return { status: 503, code: 'SERVICE_UNAVAILABLE', retryable: true };
   }
 
   if (e?.code === 'COMMIT_OUTCOME_UNKNOWN') return { status: 503, code: 'COMMIT_OUTCOME_UNKNOWN', retryable: false };
