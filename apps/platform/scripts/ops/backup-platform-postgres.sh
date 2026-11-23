@@ -125,13 +125,22 @@ if [[ "$MODE" == "schema-only" ]]; then
 fi
 
 # Execute pg_dump with clean, if-exists, and gzip compression
-pg_dump "$DB_URL" \
-  --clean \
-  --if-exists \
-  --no-owner \
-  --no-privileges \
-  "${EXTRA_ARGS[@]}" \
-  | gzip -9 > "$BACKUP_FILE"
+if [[ ${#EXTRA_ARGS[@]} -gt 0 ]]; then
+  pg_dump "$DB_URL" \
+    --clean \
+    --if-exists \
+    --no-owner \
+    --no-privileges \
+    "${EXTRA_ARGS[@]}" \
+    | gzip -9 > "$BACKUP_FILE"
+else
+  pg_dump "$DB_URL" \
+    --clean \
+    --if-exists \
+    --no-owner \
+    --no-privileges \
+    | gzip -9 > "$BACKUP_FILE"
+fi
 
 # Verify non-empty output
 if [[ ! -s "$BACKUP_FILE" ]]; then

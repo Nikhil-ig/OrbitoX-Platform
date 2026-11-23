@@ -1,11 +1,16 @@
 # 🪐 OrbitoX Platform & RestaurantOS — VPS Staging Compose Manifest
 # Environment: Self-managed Ubuntu 24.04 LTS VPS (4 vCPU, 8 GB RAM, 100 GB NVMe)
-# Domain: staging.orbitox.io
+# Domains:
+#   - Platform Control Plane: staging.orbitox.io
+#   - RestaurantOS Runtime  : ros.staging.orbitox.io
+# Resource Allocations:
+#   - Total Container vCPU: 3.75 vCPU (Host reserve: 0.25 vCPU)
+#   - Total Container RAM : 6400 MB / 6.25 GB (Host reserve: 1792 MB / 1.75 GB)
 # Security Architecture:
-# 1. Zero host port exposure for databases or Redis (only Caddy binds 80/443).
-# 2. Strict dual-database isolation: platform-db on orbitox_platform_net, ros-db on orbitox_ros_net.
-# 3. Explicit memory budgets enforcing <= 6.4 GB total across containers, reserving 1.75 GB for OS.
-# 4. Secret injection via environment variables without hardcoded passwords.
+#   1. Zero host port exposure for databases or Redis (only Caddy binds 80/443).
+#   2. Strict dual-database isolation: platform-db on orbitox_platform_net, ros-db on orbitox_ros_net.
+#   3. Redis attached strictly to orbitox_platform_net; zero network bridging between Platform and ROS.
+#   4. Secret injection via environment variables without hardcoded passwords.
 
 services:
   # ─────────────────────────────────────────────────────────────────────────────
@@ -27,7 +32,7 @@ services:
     deploy:
       resources:
         limits:
-          cpus: '0.50'
+          cpus: '0.25'
           memory: 256M
     healthcheck:
       test: ['CMD', 'wget', '--no-verbose', '--tries=1', '--spider', 'http://127.0.0.1:80/healthz']
@@ -77,7 +82,7 @@ services:
     deploy:
       resources:
         limits:
-          cpus: '1.50'
+          cpus: '1.25'
           memory: 2048M
     healthcheck:
       test: ['CMD', 'curl', '-fsS', 'http://127.0.0.1:3005/api/health']
@@ -103,7 +108,6 @@ services:
       - PORT=4010
       - HOST=0.0.0.0
       - DATABASE_URL=postgresql://restaurantos_runtime:${ROS_DATABASE_PASSWORD:?set ROS_DATABASE_PASSWORD in .env}@ros-db:5432/restaurant_os_staging
-      - REDIS_URL=redis://:${REDIS_PASSWORD:?set REDIS_PASSWORD in .env}@redis:6379/1
       - RESTAURANTOS_PLATFORM_TOKEN=${RESTAURANTOS_PLATFORM_TOKEN:?set RESTAURANTOS_PLATFORM_TOKEN in .env}
     volumes:
       - ros_data:/workspace/services/restaurant-api/data
@@ -113,12 +117,10 @@ services:
     depends_on:
       ros-db:
         condition: service_healthy
-      redis:
-        condition: service_healthy
     deploy:
       resources:
         limits:
-          cpus: '1.00'
+          cpus: '0.75'
           memory: 1024M
     healthcheck:
       test: ['CMD', 'curl', '-fsS', 'http://127.0.0.1:4010/healthz']
@@ -146,7 +148,7 @@ services:
     deploy:
       resources:
         limits:
-          cpus: '1.00'
+          cpus: '0.75'
           memory: 1536M
     healthcheck:
       test: ['CMD-SHELL', 'pg_isready -U postgres -d orbitox_staging']
@@ -181,7 +183,7 @@ services:
       retries: 10
 
   # ─────────────────────────────────────────────────────────────────────────────
-  # Shared Cache & Pub/Sub Mesh (Redis 7 - Authenticated & Network-Isolated)
+  # Platform Cache & Pub/Sub Mesh (Redis 7 - Authenticated & Network-Isolated)
   # ─────────────────────────────────────────────────────────────────────────────
   redis:
     image: redis:7-alpine
@@ -199,11 +201,10 @@ services:
       - redis_staging_data:/data
     networks:
       - orbitox_platform_net
-      - orbitox_ros_net
     deploy:
       resources:
         limits:
-          cpus: '0.50'
+          cpus: '0.25'
           memory: 512M
     healthcheck:
       test: ['CMD-SHELL', 'REDISCLI_AUTH="$$REDIS_PASSWORD" redis-cli ping | grep PONG']
@@ -223,7 +224,7 @@ networks:
     driver: bridge
     internal: true
 
-  # RestaurantOS backend network: RestaurantOS container, RestaurantOS DB, and Redis.
+  # RestaurantOS backend network: RestaurantOS container, RestaurantOS DB.
   orbitox_ros_net:
     name: orbitox_ros_net
     driver: bridge

@@ -49,12 +49,22 @@ ALTER ROLE orbitox_migrator PASSWORD :'migrator_password';
 -- 3. Configure PostgreSQL 16 CREATEROLE self-grant behavior
 -- Setting createrole_self_grant to 'set' ensures orbitox_migrator can switch into (SET ROLE)
 -- the security-definer roles it creates during migrations (e.g., orbitox_audit_resolver)
-ALTER ROLE orbitox_migrator SET createrole_self_grant = 'set';
-
--- 4. Grant orbitox_migrator to the current superuser with SET TRUE for administrative inspection
 DO $$
 BEGIN
-    EXECUTE format('GRANT orbitox_migrator TO %I WITH SET TRUE', CURRENT_USER);
+    IF current_setting('server_version_num')::int >= 160000 THEN
+        ALTER ROLE orbitox_migrator SET createrole_self_grant = 'set';
+    END IF;
+END
+$$;
+
+-- 4. Grant orbitox_migrator to the current superuser for administrative inspection
+DO $$
+BEGIN
+    IF current_setting('server_version_num')::int >= 160000 THEN
+        EXECUTE format('GRANT orbitox_migrator TO %I WITH SET TRUE', CURRENT_USER);
+    ELSE
+        EXECUTE format('GRANT orbitox_migrator TO %I WITH ADMIN OPTION', CURRENT_USER);
+    END IF;
 END
 $$;
 

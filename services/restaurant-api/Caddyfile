@@ -1,26 +1,25 @@
 # ─────────────────────────────────────────────────────────────────────────────
-# 🪐 OrbitoX Ingress & Edge Proxy Caddyfile (Caddy v2)
+# 🪐 OrbitoX Edge Ingress & TLS Configuration (Caddy v2)
 # ─────────────────────────────────────────────────────────────────────────────
-# Guarantees:
-# 1. Reverse proxy to OrbitoX Platform at staging.orbitox.io:3005 with unbuffered SSE.
-# 2. Reverse proxy to RestaurantOS at restaurant-os:4010 with on-demand TLS.
-# 3. Cryptographic gatekeeping via /internal/tls/ask on port 4010.
-# 4. Strict transport security & anti-sniffing headers.
-# 5. Flush interval -1 prevents buffer stalling on real-time event streams.
+# Environment: Self-managed Ubuntu 24.04 LTS VPS
+# Domains:
+#   - Platform Control Plane: staging.orbitox.io
+#   - RestaurantOS Runtime  : ros.staging.orbitox.io
+# Security Hardening:
+#   1. On-demand TLS disabled for MVP launch to eliminate certificate exhaustion risks.
+#   2. Static automated ACME TLS provisioning for explicit staging domains.
+#   3. Port alignment: Platform at 3005, RestaurantOS at 4010.
+#   4. Unbuffered real-time SSE streaming via flush_interval -1.
+#   5. Strict transport security (HSTS), MIME sniffing protection, frame guards.
+#   6. Clean HTTP -> HTTPS redirection with :80/healthz probe for container health checks.
 # ─────────────────────────────────────────────────────────────────────────────
 
 {
     email ops@orbitox.io
-
-    # Global on-demand TLS configuration
-    on_demand_tls {
-        # Queries RestaurantOS gatekeeper endpoint before initiating ACME challenge
-        ask http://restaurant-os:4010/internal/tls/ask
-        interval 2m
-        burst 10
-    }
+    admin off
 }
 
+# HTTP Ingress & Health Check Probes
 :80 {
     handle /healthz {
         respond "OK" 200
@@ -43,7 +42,7 @@ staging.orbitox.io {
     }
 
     # Reverse proxy to Platform Next.js standalone container
-    # flush_interval -1 ensures SSE and chunked streaming endpoints stream unbuffered
+    # flush_interval -1 guarantees unbuffered Server-Sent Events (SSE) and live streams
     reverse_proxy http://platform:3005 {
         flush_interval -1
         header_up Host {host}
@@ -53,12 +52,8 @@ staging.orbitox.io {
     }
 }
 
-# RestaurantOS Hospitality Runtime & On-Demand Customer Domains
-ros.staging.orbitox.io, *.orbitox.live {
-    tls {
-        on_demand
-    }
-
+# RestaurantOS Hospitality Runtime
+ros.staging.orbitox.io {
     encode zstd gzip
 
     header {

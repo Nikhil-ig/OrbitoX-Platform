@@ -78,14 +78,19 @@ ALTER ROLE orbitox_platform_admin_audit WITH LOGIN NOSUPERUSER NOBYPASSRLS NOCRE
 ALTER ROLE hms_audit_reader WITH LOGIN NOSUPERUSER NOBYPASSRLS NOCREATEDB NOCREATEROLE NOINHERIT PASSWORD :'hms_audit_reader_password';
 ALTER ROLE orbitox_outbox_relay WITH LOGIN NOSUPERUSER NOBYPASSRLS NOCREATEDB NOCREATEROLE NOINHERIT PASSWORD :'outbox_relay_password';
 
--- 3. Verify helper roles strictly remain NOLOGIN
+-- 3. Sanitize helper roles and strictly verify they remain NOLOGIN with NOBYPASSRLS
+ALTER ROLE orbitox_audit_resolver WITH NOLOGIN NOSUPERUSER NOBYPASSRLS NOCREATEDB NOCREATEROLE NOINHERIT;
+ALTER ROLE orbitox_audit_recovery WITH NOLOGIN NOSUPERUSER NOBYPASSRLS NOCREATEDB NOCREATEROLE NOINHERIT;
+
 DO $$
 DECLARE
     v_resolver_login BOOLEAN;
     v_recovery_login BOOLEAN;
+    v_resolver_bypass BOOLEAN;
+    v_recovery_bypass BOOLEAN;
 BEGIN
-    SELECT rolcanlogin INTO v_resolver_login FROM pg_roles WHERE rolname = 'orbitox_audit_resolver';
-    SELECT rolcanlogin INTO v_recovery_login FROM pg_roles WHERE rolname = 'orbitox_audit_recovery';
+    SELECT rolcanlogin, rolbypassrls INTO v_resolver_login, v_resolver_bypass FROM pg_roles WHERE rolname = 'orbitox_audit_resolver';
+    SELECT rolcanlogin, rolbypassrls INTO v_recovery_login, v_recovery_bypass FROM pg_roles WHERE rolname = 'orbitox_audit_recovery';
 
     IF v_resolver_login THEN
         RAISE EXCEPTION 'Security invariant violation: orbitox_audit_resolver must have rolcanlogin=false!';
@@ -95,7 +100,15 @@ BEGIN
         RAISE EXCEPTION 'Security invariant violation: orbitox_audit_recovery must have rolcanlogin=false!';
     END IF;
 
-    RAISE NOTICE '✓ Verified orbitox_audit_resolver and orbitox_audit_recovery remain NOLOGIN.';
+    IF v_resolver_bypass THEN
+        RAISE EXCEPTION 'Security invariant violation: orbitox_audit_resolver must have rolbypassrls=false!';
+    END IF;
+
+    IF v_recovery_bypass THEN
+        RAISE EXCEPTION 'Security invariant violation: orbitox_audit_recovery must have rolbypassrls=false!';
+    END IF;
+
+    RAISE NOTICE '✓ Verified orbitox_audit_resolver and orbitox_audit_recovery remain NOLOGIN with NOBYPASSRLS.';
 END
 $$;
 
