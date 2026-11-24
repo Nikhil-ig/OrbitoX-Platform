@@ -136,7 +136,7 @@ echo "data" | gzip > "${TMP_LOCAL}/platform/test.sql.gz"
 echo "hash  test.sql.gz" > "${TMP_LOCAL}/platform/test.sql.gz.sha256"
 
 # Create minimal mocks in TMP_MOCK_BIN for find, awk, rsync, bash
-for cmd in bash find awk rsync date; do
+for cmd in bash find awk rsync date mkdir chmod sort cat cp; do
   target="$(which "$cmd" 2>/dev/null || true)"
   if [[ -n "$target" ]]; then
     ln -s "$target" "${TMP_MOCK_BIN}/${cmd}"
@@ -226,7 +226,7 @@ echo "  ✅ PASS: Both new and historical backups safely exist in remote target 
 rm -rf "$TMP_LOCAL" "$TMP_REMOTE"
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Test 8: Backup file permissions (0600) and directory permissions (0700)
+# Test 8: Backup directory (0700) and file (0600) permissions, including existing directory hardening
 # ─────────────────────────────────────────────────────────────────────────────
 echo "▶ Test 8: Backup directory (0700) and file (0600) permissions..."
 TMP_SANDBOX="$(mktemp -d)"
@@ -260,18 +260,63 @@ if ! assert_file_perm_0600 "${TMP_SANDBOX}/backups/platform/backup.sql.gz.sha256
   rm -rf "$TMP_SANDBOX"
   exit 1
 fi
-echo "  ✅ PASS: Restrictive permissions (0700 dir, 0600 files) enforced and verified."
+
+# Sub-test 8b: Enforce 0700 on existing insecure directories (e.g. 0755 or 0777)
+echo "  ▶ Testing permission tightening on existing insecure directories (0777 -> 0700)..."
+TMP_INSECURE_DIR="${TMP_SANDBOX}/insecure_backup_dir"
+mkdir -p "${TMP_INSECURE_DIR}/platform" "${TMP_INSECURE_DIR}/restaurant-os"
+chmod 0777 "$TMP_INSECURE_DIR" "${TMP_INSECURE_DIR}/platform" "${TMP_INSECURE_DIR}/restaurant-os"
+
+# Execute backup runner targeting the insecure root directory (with mock docker)
+TMP_MOCK_DOCKER="${TMP_SANDBOX}/mock_bin"
+mkdir -p "$TMP_MOCK_DOCKER"
+cat << 'EOF' > "${TMP_MOCK_DOCKER}/docker"
+#!/bin/sh
+printf -- "-- Mock Dump\n"
+exit 0
+EOF
+chmod +x "${TMP_MOCK_DOCKER}/docker"
+
+(
+  PATH="${TMP_MOCK_DOCKER}:${PATH}" \
+  BACKUP_ROOT_DIR="$TMP_INSECURE_DIR" \
+  REMOTE_BACKUP_TARGET="" \
+  "$RUNNER_SCRIPT" >/dev/null 2>&1 || true
+)
+
+if ! assert_dir_perm_0700 "$TMP_INSECURE_DIR"; then
+  echo "❌ FAIL: Existing insecure directory $TMP_INSECURE_DIR was not tightened to 0700!" >&2
+  rm -rf "$TMP_SANDBOX"
+  exit 1
+fi
+if ! assert_dir_perm_0700 "${TMP_INSECURE_DIR}/platform"; then
+  echo "❌ FAIL: Existing insecure subdirectory platform was not tightened to 0700!" >&2
+  rm -rf "$TMP_SANDBOX"
+  exit 1
+fi
+if ! assert_dir_perm_0700 "${TMP_INSECURE_DIR}/restaurant-os"; then
+  echo "❌ FAIL: Existing insecure subdirectory restaurant-os was not tightened to 0700!" >&2
+  rm -rf "$TMP_SANDBOX"
+  exit 1
+fi
+
+echo "  ✅ PASS: Restrictive permissions (0700 dir, 0600 files) enforced and verified on both new and existing directories."
 rm -rf "$TMP_SANDBOX"
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Test 9: Complete Cron Execution Path under minimal non-interactive environment
+# Test 9: Complete Cron Execution Path & .env auto-discovery (isolated repository layout)
 # ─────────────────────────────────────────────────────────────────────────────
-echo "▶ Test 9: Complete Cron Execution Path (backup-all-staging-databases.sh)..."
+echo "▶ Test 9: Complete Cron Execution Path & .env auto-discovery (backup-all-staging-databases.sh)..."
 TMP_TEST_DIR="$(mktemp -d)"
+TMP_REPO_LAYOUT="${TMP_TEST_DIR}/repo"
 TMP_LOCAL_BACKUP="${TMP_TEST_DIR}/local_backups"
 TMP_REMOTE_BACKUP="${TMP_TEST_DIR}/remote_target"
 TMP_MOCK_BIN="${TMP_TEST_DIR}/mock_bin"
 
+mkdir -p "${TMP_REPO_LAYOUT}/infra/docker"
+mkdir -p "${TMP_REPO_LAYOUT}/scripts/ops"
+mkdir -p "${TMP_REPO_LAYOUT}/apps/platform/scripts/ops"
+mkdir -p "${TMP_REPO_LAYOUT}/services/restaurant-api/scripts"
 mkdir -p "$TMP_LOCAL_BACKUP" "$TMP_REMOTE_BACKUP" "$TMP_MOCK_BIN"
 
 # Create a mock docker command that outputs a small valid SQL dump stream on pg_dump calls
@@ -287,25 +332,30 @@ exit 0
 EOF
 chmod +x "${TMP_MOCK_BIN}/docker"
 
-# Create a mock .env file in the test repo structure
+# Copy operational scripts to isolated repository layout
+cp "${REPO_ROOT}/scripts/ops/backup-all-staging-databases.sh" "${TMP_REPO_LAYOUT}/scripts/ops/"
+cp "${REPO_ROOT}/scripts/ops/sync-backups-offsite.sh" "${TMP_REPO_LAYOUT}/scripts/ops/"
+cp "${REPO_ROOT}/apps/platform/scripts/ops/backup-platform-postgres.sh" "${TMP_REPO_LAYOUT}/apps/platform/scripts/ops/"
+cp "${REPO_ROOT}/services/restaurant-api/scripts/backup-postgres.sh" "${TMP_REPO_LAYOUT}/services/restaurant-api/scripts/"
+chmod +x "${TMP_REPO_LAYOUT}/scripts/ops/"*.sh "${TMP_REPO_LAYOUT}/apps/platform/scripts/ops/"*.sh "${TMP_REPO_LAYOUT}/services/restaurant-api/scripts/"*.sh
+
+# Create a mock .env file in the isolated repo layout (infra/docker/.env)
 # Notice it contains a secret token that must NEVER appear in logs
 MOCK_SECRET_VALUE="secret_super_token_987654321_xyz"
-MOCK_ENV_FILE="${TMP_TEST_DIR}/.env"
-cat << EOF > "$MOCK_ENV_FILE"
+cat << EOF > "${TMP_REPO_LAYOUT}/infra/docker/.env"
 BACKUP_ROOT_DIR="${TMP_LOCAL_BACKUP}"
 REMOTE_BACKUP_TARGET="${TMP_REMOTE_BACKUP}"
 BACKUP_RETENTION_DAYS="7"
 ORBITOX_CONTROL_SECRET="${MOCK_SECRET_VALUE}"
 EOF
+chmod 0600 "${TMP_REPO_LAYOUT}/infra/docker/.env"
 
-# Execute runner script in a stripped, non-interactive environment
-# using env -i, pointing BACKUP_ROOT_DIR and REMOTE_BACKUP_TARGET
+# Execute runner script in a stripped, non-interactive environment (env -i)
+# WITHOUT pre-exporting BACKUP_ROOT_DIR or REMOTE_BACKUP_TARGET to test REAL .env auto-discovery!
 RUNNER_OUTPUT="$(
   env -i \
     PATH="${TMP_MOCK_BIN}:/usr/local/bin:/usr/bin:/bin" \
-    BACKUP_ROOT_DIR="${TMP_LOCAL_BACKUP}" \
-    REMOTE_BACKUP_TARGET="${TMP_REMOTE_BACKUP}" \
-    "$RUNNER_SCRIPT" 2>&1
+    "${TMP_REPO_LAYOUT}/scripts/ops/backup-all-staging-databases.sh" 2>&1
 )"
 RUNNER_EXIT=$?
 
@@ -342,12 +392,12 @@ assert_file_perm_0600 "${PLATFORM_ARCHIVES[0]}.sha256"
 assert_file_perm_0600 "${ROS_ARCHIVES[0]}"
 assert_file_perm_0600 "${ROS_ARCHIVES[0]}.sha256"
 
-# Assert remote destination received the synchronized archives
+# Assert remote destination received the synchronized archives via .env auto-discovery
 REMOTE_PLATFORM_ARCHIVES=($(find "${TMP_REMOTE_BACKUP}/platform" -name "platform_db_*.sql.gz" 2>/dev/null || true))
 REMOTE_ROS_ARCHIVES=($(find "${TMP_REMOTE_BACKUP}/restaurant-os" -name "restaurantos_*.sql.gz" 2>/dev/null || true))
 
 if [[ ${#REMOTE_PLATFORM_ARCHIVES[@]} -eq 0 ]] || [[ ${#REMOTE_ROS_ARCHIVES[@]} -eq 0 ]]; then
-  echo "❌ FAIL: Off-site replication did not deliver archives to remote target!" >&2
+  echo "❌ FAIL: Off-site replication did not deliver archives to remote target configured in .env!" >&2
   rm -rf "$TMP_TEST_DIR"
   exit 1
 fi
@@ -359,7 +409,7 @@ if [[ "$RUNNER_OUTPUT" == *"$MOCK_SECRET_VALUE"* ]]; then
   exit 1
 fi
 
-echo "  ✅ PASS: Complete cron execution path ran successfully in minimal environment (env -i) with zero secret leakage."
+echo "  ✅ PASS: Complete cron execution path ran successfully in minimal environment with real .env auto-discovery and zero secret leakage."
 rm -rf "$TMP_TEST_DIR"
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -397,9 +447,9 @@ echo "  ✅ PASS: Runner correctly propagated failure and exited non-zero."
 rm -rf "$TMP_TEST_DIR"
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Test 11: Remote archive integrity & restore verification
+# Test 11: Remote archive decompression & archive integrity verification (Note: Archive integrity only, not live database recovery)
 # ─────────────────────────────────────────────────────────────────────────────
-echo "▶ Test 11: Remote archive integrity & restore verification..."
+echo "▶ Test 11: Remote archive decompression & archive integrity verification (archive test only, distinct from live database recovery)..."
 TMP_REMOTE="$(mktemp -d)"
 TMP_RESTORE="$(mktemp -d)"
 
@@ -426,7 +476,7 @@ if [[ "$expected_remote_hash" != "$actual_remote_hash" ]]; then
   exit 1
 fi
 
-# Simulate restore: decompress and assert SQL content matches
+# Simulate decompression and assert SQL content matches
 gunzip -c "${TMP_REMOTE}/platform/restore_test.sql.gz" > "${TMP_RESTORE}/restored.sql"
 if ! grep -q "CREATE TABLE test_restore" "${TMP_RESTORE}/restored.sql" || ! grep -q "restored_ok" "${TMP_RESTORE}/restored.sql"; then
   echo "❌ FAIL: Restored SQL content does not match original archive content!" >&2
@@ -434,7 +484,7 @@ if ! grep -q "CREATE TABLE test_restore" "${TMP_RESTORE}/restored.sql" || ! grep
   exit 1
 fi
 
-echo "  ✅ PASS: Remote archive hash verified and test restoration completed successfully."
+echo "  ✅ PASS: Remote archive integrity and decompression verified (archive test only, distinct from live PostgreSQL database recovery)."
 rm -rf "$TMP_REMOTE" "$TMP_RESTORE"
 
 echo "================================================================"

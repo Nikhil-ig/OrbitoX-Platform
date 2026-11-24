@@ -17,14 +17,8 @@ umask 077
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 
-# Ensure standard system and local bin directories are in PATH for cron execution
-for p in /usr/local/bin /usr/bin /bin; do
-  case ":${PATH:-}:" in
-    *:"$p":*) ;;
-    *) PATH="${PATH:+$PATH:}$p" ;;
-  esac
-done
-export PATH
+# Ensure standard system and local bin directories are in PATH for cron execution if unset
+export PATH="${PATH:-/usr/local/bin:/usr/bin:/bin}"
 
 # Load protected environment if REMOTE_BACKUP_TARGET is not already defined in shell
 if [[ -z "${REMOTE_BACKUP_TARGET:-}" ]]; then
@@ -137,7 +131,8 @@ elif [[ "$REMOTE_DEST" == *:* ]]; then
 elif [[ "$REMOTE_DEST" == /* || "$REMOTE_DEST" == file://* ]]; then
   # Local directory / NFS mount target (useful for tests and mounted network shares)
   LOCAL_TARGET="${REMOTE_DEST#file://}"
-  mkdir -p "$LOCAL_TARGET"
+  mkdir -m 0700 -p "$LOCAL_TARGET"
+  chmod 0700 "$LOCAL_TARGET" || { echo "❌ FATAL: Failed to enforce 0700 permissions on ${LOCAL_TARGET}" >&2; exit 1; }
   if command -v rsync >/dev/null 2>&1; then
     rsync -av "$BACKUP_ROOT/" "$LOCAL_TARGET/"
   else

@@ -112,7 +112,7 @@ if [[ "$MODE" == "full" && -z "$DATABASE_URL" && -z "$CONTAINER_NAME" ]]; then
 fi
 
 mkdir -m 0700 -p "$OUTPUT_DIR"
-chmod 0700 "$OUTPUT_DIR" 2>/dev/null || true
+chmod 0700 "$OUTPUT_DIR" || { echo "❌ FATAL: Failed to enforce 0700 permissions on ${OUTPUT_DIR}" >&2; exit 1; }
 
 compute_checksum() {
   local target_file="$1"
@@ -124,7 +124,7 @@ compute_checksum() {
     echo "Warning: sha256sum/shasum not found, skipping checksum generation."
     return 1
   fi
-  chmod 0600 "${target_file}.sha256" 2>/dev/null || true
+  chmod 0600 "${target_file}.sha256" || { echo "❌ FATAL: Failed to enforce 0600 permissions on ${target_file}.sha256" >&2; exit 1; }
 }
 
 if [[ "$MODE" == "full" ]]; then
@@ -163,7 +163,7 @@ if [[ "$MODE" == "full" ]]; then
     exit 1
   fi
 
-  chmod 0600 "$BACKUP_FILE" 2>/dev/null || true
+  chmod 0600 "$BACKUP_FILE" || { echo "❌ FATAL: Failed to enforce 0600 permissions on ${BACKUP_FILE}" >&2; exit 1; }
   compute_checksum "$BACKUP_FILE"
   FILE_SIZE="$(du -h "$BACKUP_FILE" | cut -f1)"
   echo "✅ FULL database backup completed successfully (${FILE_SIZE})."
@@ -244,7 +244,7 @@ if [[ "$MODE" == "tenant" ]]; then
 
   gzip -9 -c "$RAW_TMP" > "$BACKUP_FILE"
   rm -f "$RAW_TMP"
-  chmod 0600 "$BACKUP_FILE" 2>/dev/null || true
+  chmod 0600 "$BACKUP_FILE" || { echo "❌ FATAL: Failed to enforce 0600 permissions on ${BACKUP_FILE}" >&2; exit 1; }
 
   compute_checksum "$BACKUP_FILE"
   FILE_SIZE="$(du -h "$BACKUP_FILE" | cut -f1)"

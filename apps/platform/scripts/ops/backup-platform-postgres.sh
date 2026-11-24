@@ -122,7 +122,7 @@ if [[ -z "$DB_URL" && -z "$CONTAINER_NAME" ]]; then
 fi
 
 mkdir -m 0700 -p "$OUTPUT_DIR"
-chmod 0700 "$OUTPUT_DIR" 2>/dev/null || true
+chmod 0700 "$OUTPUT_DIR" || { echo "❌ FATAL: Failed to enforce 0700 permissions on ${OUTPUT_DIR}" >&2; exit 1; }
 
 # Compute checksum helper
 compute_checksum() {
@@ -135,7 +135,7 @@ compute_checksum() {
     echo "⚠️  Warning: Neither sha256sum nor shasum available; checksum skipped." >&2
     return 1
   fi
-  chmod 0600 "${target_file}.sha256" 2>/dev/null || true
+  chmod 0600 "${target_file}.sha256" || { echo "❌ FATAL: Failed to enforce 0600 permissions on ${target_file}.sha256" >&2; exit 1; }
 }
 
 DUMP_ARGS=("--clean" "--if-exists")
@@ -182,7 +182,7 @@ if [[ ! -s "$BACKUP_FILE" ]]; then
   exit 1
 fi
 
-chmod 0600 "$BACKUP_FILE" 2>/dev/null || true
+chmod 0600 "$BACKUP_FILE" || { echo "❌ FATAL: Failed to enforce 0600 permissions on ${BACKUP_FILE}" >&2; exit 1; }
 compute_checksum "$BACKUP_FILE"
 
 BACKUP_SIZE="$(du -h "$BACKUP_FILE" | cut -f1)"

@@ -15,11 +15,30 @@
 \set ON_ERROR_STOP on
 
 -- Retrieve role passwords from environment variables via psql \getenv (PostgreSQL 16)
-\getenv runtime_password ORBITOX_RUNTIME_PASSWORD
-\getenv maintenance_password ORBITOX_MAINTENANCE_PASSWORD
-\getenv platform_admin_audit_password ORBITOX_PLATFORM_ADMIN_AUDIT_PASSWORD
-\getenv hms_audit_reader_password HMS_AUDIT_READER_PASSWORD
-\getenv outbox_relay_password ORBITOX_OUTBOX_RELAY_PASSWORD
+\if :{?runtime_password}
+\else
+    \getenv runtime_password ORBITOX_RUNTIME_PASSWORD
+\endif
+
+\if :{?maintenance_password}
+\else
+    \getenv maintenance_password ORBITOX_MAINTENANCE_PASSWORD
+\endif
+
+\if :{?platform_admin_audit_password}
+\else
+    \getenv platform_admin_audit_password ORBITOX_PLATFORM_ADMIN_AUDIT_PASSWORD
+\endif
+
+\if :{?hms_audit_reader_password}
+\else
+    \getenv hms_audit_reader_password HMS_AUDIT_READER_PASSWORD
+\endif
+
+\if :{?outbox_relay_password}
+\else
+    \getenv outbox_relay_password ORBITOX_OUTBOX_RELAY_PASSWORD
+\endif
 
 -- Validate required password variables
 \if :{?runtime_password}
@@ -51,6 +70,15 @@
     \echo '❌ ERROR: ORBITOX_OUTBOX_RELAY_PASSWORD must be provided via environment variable.'
     \q 1
 \endif
+
+-- 0. Database Safety Assertion: Ensure this script is NOT run against system database 'postgres'
+DO $$
+BEGIN
+    IF current_database() = 'postgres' THEN
+        RAISE EXCEPTION 'Safety check failed: vps-enable-roles.sql must be executed against the application database (e.g., orbitox_staging), never against system database "postgres". Current database: %', current_database();
+    END IF;
+END
+$$;
 
 -- 1. Verify that all 8 system roles exist before attempting alteration
 DO $$

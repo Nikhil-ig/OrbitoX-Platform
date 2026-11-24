@@ -11,14 +11,8 @@ umask 077
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 
-# Ensure standard system and local bin directories are in PATH for cron execution
-for p in /usr/local/bin /usr/bin /bin; do
-  case ":${PATH:-}:" in
-    *:"$p":*) ;;
-    *) PATH="${PATH:+$PATH:}$p" ;;
-  esac
-done
-export PATH
+# Ensure standard system and local bin directories are in PATH for cron execution if unset
+export PATH="${PATH:-/usr/local/bin:/usr/bin:/bin}"
 
 # Auto-load protected staging environment configuration if not already provided
 ENV_FILE=""
@@ -43,7 +37,7 @@ export REMOTE_BACKUP_TARGET="${REMOTE_BACKUP_TARGET:-}"
 
 # Ensure backup directories exist with restrictive 0700 permissions
 mkdir -m 0700 -p "$BACKUP_ROOT" "$PLATFORM_BACKUP_DIR" "$ROS_BACKUP_DIR"
-chmod 0700 "$BACKUP_ROOT" "$PLATFORM_BACKUP_DIR" "$ROS_BACKUP_DIR" 2>/dev/null || true
+chmod 0700 "$BACKUP_ROOT" "$PLATFORM_BACKUP_DIR" "$ROS_BACKUP_DIR" || { echo "❌ FATAL: Failed to enforce 0700 permissions on backup directories" >&2; exit 1; }
 
 echo "🚀 [$(date -u '+%Y-%m-%d %H:%M:%SZ')] Starting scheduled dual-database backup..."
 

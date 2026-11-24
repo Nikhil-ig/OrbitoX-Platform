@@ -23,7 +23,10 @@
 \set ON_ERROR_STOP on
 
 -- Retrieve migrator password from environment variable via psql \getenv (PostgreSQL 16)
-\getenv migrator_password PLATFORM_MIGRATOR_PASSWORD
+\if :{?migrator_password}
+\else
+    \getenv migrator_password PLATFORM_MIGRATOR_PASSWORD
+\endif
 
 -- Ensure a password variable is supplied
 \if :{?migrator_password}
@@ -31,6 +34,15 @@
     \echo '❌ ERROR: PLATFORM_MIGRATOR_PASSWORD must be provided via environment variable.'
     \q 1
 \endif
+
+-- 0. Database Safety Assertion: Ensure this script is NOT run against system database 'postgres'
+DO $$
+BEGIN
+    IF current_database() = 'postgres' THEN
+        RAISE EXCEPTION 'Safety check failed: vps-bootstrap-roles.sql must be executed against the application database (e.g., orbitox_staging), never against system database "postgres". Current database: %', current_database();
+    END IF;
+END
+$$;
 
 -- 1. Create or update orbitox_migrator with strict least-privilege attributes
 DO $$
@@ -43,6 +55,35 @@ BEGIN
         ALTER ROLE orbitox_migrator WITH LOGIN CREATEDB CREATEROLE NOINHERIT NOSUPERUSER NOBYPASSRLS;
         RAISE NOTICE 'Role orbitox_migrator sanitized with strict least-privilege attributes.';
     END IF;
+END
+$$;
+
+-- 1b. Idempotently pre-create system operational and helper roles with NOLOGIN
+-- In clean disaster recovery (from pg_dump archives), restored objects and ACLs reference these roles.
+-- Creating them here with NOLOGIN guarantees that pg_dump restore succeeds without missing-role errors,
+-- while ensuring no operational role can log in until vps-enable-roles.sql activates it post-restore.
+DO $$
+DECLARE
+    r TEXT;
+    roles TEXT[] := ARRAY[
+        'orbitox_runtime',
+        'orbitox_maintenance',
+        'orbitox_platform_admin_audit',
+        'hms_audit_reader',
+        'orbitox_outbox_relay',
+        'orbitox_audit_resolver',
+        'orbitox_audit_recovery'
+    ];
+BEGIN
+    FOREACH r IN ARRAY roles LOOP
+        IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = r) THEN
+            EXECUTE format('CREATE ROLE %I WITH NOLOGIN NOSUPERUSER NOBYPASSRLS NOCREATEDB NOCREATEROLE NOINHERIT', r);
+            RAISE NOTICE 'Role % pre-provisioned with NOLOGIN and strict least-privilege attributes.', r;
+        ELSE
+            -- Ensure existing role is locked with NOLOGIN and strict least-privilege attributes
+            EXECUTE format('ALTER ROLE %I WITH NOLOGIN NOSUPERUSER NOBYPASSRLS NOCREATEDB NOCREATEROLE NOINHERIT', r);
+        END IF;
+    END LOOP;
 END
 $$;
 

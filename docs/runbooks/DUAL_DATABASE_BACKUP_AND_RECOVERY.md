@@ -129,21 +129,47 @@ Stop application containers to ensure zero incoming writes during restoration:
 docker compose -f /opt/orbitox/infra/docker/docker-compose.staging.yml stop platform restaurant-os
 ```
 
-### Step 4.3: Ensure Cluster Roles & Target Database Exist
+### Step 4.3: Ensure Target Database Exists & Pre-Provision Roles
 If restoring into a new, blank, or reconstructed PostgreSQL instance:
 
 ```bash
 set -euo pipefail
 
-# 1. Bootstrap Cluster Roles & Ownership (via docker exec, zero host ports)
+# 1. Ensure the application database exists (executed against postgres system database)
+docker exec -i orbitox_staging_platform_db psql -U postgres -d postgres -v ON_ERROR_STOP=1 -c \
+  "SELECT 1 FROM pg_database WHERE datname = 'orbitox_staging'" | grep -q 1 || \
+  docker exec -i orbitox_staging_platform_db psql -U postgres -d postgres -v ON_ERROR_STOP=1 -c \
+  "CREATE DATABASE orbitox_staging;"
+
+# 2. Bootstrap Roles & Database/Schema Ownership against orbitox_staging
+# Note: vps-bootstrap-roles.sql MUST be executed against -d orbitox_staging, NEVER -d postgres.
+# It sets database and schema ownership to orbitox_migrator and pre-provisions all 7 operational
+# and helper roles with NOLOGIN so that subsequent pg_dump object and ACL restorations succeed.
 export PLATFORM_MIGRATOR_PASSWORD="${PLATFORM_MIGRATOR_PASSWORD}"
 
 docker exec -i \
   -e PLATFORM_MIGRATOR_PASSWORD \
-  orbitox_staging_platform_db psql -U postgres -d postgres -v ON_ERROR_STOP=1 \
+  orbitox_staging_platform_db psql -U postgres -d orbitox_staging -v ON_ERROR_STOP=1 \
   -f /scripts/db/vps-bootstrap-roles.sql
+```
 
-# 2. Enable Operational Service Roles (Passwords ingested securely via psql \getenv)
+### Step 4.4: Restore Platform Database (Schema, Data, Owners & ACLs)
+Stream the compressed archive into `psql` inside the container targeting `orbitox_staging` with pipeline error detection and `ON_ERROR_STOP=1`:
+
+```bash
+set -euo pipefail
+set -o pipefail
+
+gunzip -c /var/backups/orbitox/platform/platform_db_full_YYYYMMDD_HHMMSSZ.sql.gz | \
+  docker exec -i orbitox_staging_platform_db psql -U postgres -d orbitox_staging -v ON_ERROR_STOP=1
+```
+
+### Step 4.5: Post-Restore Operational Role Enablement
+Once all database objects (including `PlatformRateLimitBucket` and relations) have been restored, enable `LOGIN` on operational service roles and enforce least-privilege table restrictions:
+
+```bash
+set -euo pipefail
+
 export ORBITOX_RUNTIME_PASSWORD="${ORBITOX_RUNTIME_PASSWORD}"
 export ORBITOX_MAINTENANCE_PASSWORD="${ORBITOX_MAINTENANCE_PASSWORD}"
 export ORBITOX_PLATFORM_ADMIN_AUDIT_PASSWORD="${ORBITOX_PLATFORM_ADMIN_AUDIT_PASSWORD}"
@@ -156,41 +182,32 @@ docker exec -i \
   -e ORBITOX_PLATFORM_ADMIN_AUDIT_PASSWORD \
   -e HMS_AUDIT_READER_PASSWORD \
   -e ORBITOX_OUTBOX_RELAY_PASSWORD \
-  orbitox_staging_platform_db psql -U postgres -d postgres -v ON_ERROR_STOP=1 \
+  orbitox_staging_platform_db psql -U postgres -d orbitox_staging -v ON_ERROR_STOP=1 \
   -f /scripts/db/vps-enable-roles.sql
-
-# 3. Ensure Database Exists and is Owned by orbitox_migrator
-docker exec -i orbitox_staging_platform_db psql -U postgres -d postgres -v ON_ERROR_STOP=1 -c \
-  "CREATE DATABASE orbitox_staging OWNER orbitox_migrator;" || true
 ```
 
-### Step 4.4: Restore Platform Database (Schema, Data, Owners & ACLs)
-Stream the compressed archive into `psql` inside the container with pipeline error detection and `ON_ERROR_STOP=1`:
-
-```bash
-set -euo pipefail
-set -o pipefail
-
-gunzip -c /var/backups/orbitox/platform/platform_db_full_YYYYMMDD_HHMMSSZ.sql.gz | \
-  docker exec -i orbitox_staging_platform_db psql -U postgres -d orbitox_staging -v ON_ERROR_STOP=1
-```
-
-### Step 4.5: Restore RestaurantOS Database
+### Step 4.6: Restore RestaurantOS Database
 For RestaurantOS:
 ```bash
 set -euo pipefail
 set -o pipefail
 
-# Ensure restaurant_os_staging database exists
-docker exec -i orbitox_staging_ros_db psql -U postgres -v ON_ERROR_STOP=1 -c \
-  "CREATE DATABASE restaurant_os_staging;" || true
+# 1. Ensure restaurant_os_staging database exists
+docker exec -i orbitox_staging_ros_db psql -U postgres -d postgres -v ON_ERROR_STOP=1 -c \
+  "SELECT 1 FROM pg_database WHERE datname = 'restaurant_os_staging'" | grep -q 1 || \
+  docker exec -i orbitox_staging_ros_db psql -U postgres -d postgres -v ON_ERROR_STOP=1 -c \
+  "CREATE DATABASE restaurant_os_staging;"
 
-# Restore dump with failure propagation
+# 2. Pre-provision restaurantos_app operational role with least-privilege attributes
+docker exec -i orbitox_staging_ros_db psql -U postgres -d restaurant_os_staging -v ON_ERROR_STOP=1 -c \
+  "DO \$\$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'restaurantos_app') THEN CREATE ROLE restaurantos_app WITH LOGIN NOSUPERUSER NOBYPASSRLS NOCREATEDB NOCREATEROLE NOINHERIT; END IF; END \$\$;"
+
+# 3. Restore dump with failure propagation
 gunzip -c /var/backups/orbitox/restaurant-os/restaurantos_db_full_YYYYMMDD_HHMMSSZ.sql.gz | \
   docker exec -i orbitox_staging_ros_db psql -U postgres -d restaurant_os_staging -v ON_ERROR_STOP=1
 ```
 
-### Step 4.6: Re-validate System & Restart Applications
+### Step 4.7: Re-validate System & Restart Applications
 1. Run the catalog safety inventory script to prove catalog, role, and RLS integrity:
    ```bash
    export APP_DATABASE_URL="postgresql://orbitox_runtime:${ORBITOX_RUNTIME_PASSWORD}@platform-db:5432/orbitox_staging"
