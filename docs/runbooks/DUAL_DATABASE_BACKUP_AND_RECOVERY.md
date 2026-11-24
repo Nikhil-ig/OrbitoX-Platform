@@ -146,11 +146,15 @@ docker exec -i orbitox_staging_platform_db psql -U postgres -d postgres -v ON_ER
 # It sets database and schema ownership to orbitox_migrator and pre-provisions all 7 operational
 # and helper roles with NOLOGIN so that subsequent pg_dump object and ACL restorations succeed.
 export PLATFORM_MIGRATOR_PASSWORD="${PLATFORM_MIGRATOR_PASSWORD}"
+export PRE_CREATE_RESTORE_ROLES=1
 
 docker exec -i \
   -e PLATFORM_MIGRATOR_PASSWORD \
-  orbitox_staging_platform_db psql -U postgres -d orbitox_staging -v ON_ERROR_STOP=1 \
+  -e PRE_CREATE_RESTORE_ROLES \
+  orbitox_staging_platform_db psql -U postgres -d orbitox_staging -v ON_ERROR_STOP=1 -v PRE_CREATE_RESTORE_ROLES=1 \
   -f /scripts/db/vps-bootstrap-roles.sql
+
+unset PRE_CREATE_RESTORE_ROLES
 ```
 
 ### Step 4.4: Restore Platform Database (Schema, Data, Owners & ACLs)
@@ -226,10 +230,15 @@ docker exec -i \
 EOSQL
 
 # 5. Verify application authentication using the same credentials supplied to Compose
+export PGPASSWORD="${ROS_DATABASE_PASSWORD:?ROS_DATABASE_PASSWORD is required}"
+
 docker exec -i \
-  -e PGPASSWORD="${ROS_DATABASE_PASSWORD}" \
-  orbitox_staging_ros_db psql -U restaurantos_app -d restaurant_os_staging -c \
-  "SELECT current_user, count(*) FROM \"Tenant\";"
+  -e PGPASSWORD \
+  orbitox_staging_ros_db \
+  psql -U restaurantos_app -d restaurant_os_staging -v ON_ERROR_STOP=1 \
+  -c 'SELECT current_user, count(*) FROM "Tenant";'
+
+unset PGPASSWORD
 ```
 
 ### Step 4.7: Re-validate System & Restart Applications

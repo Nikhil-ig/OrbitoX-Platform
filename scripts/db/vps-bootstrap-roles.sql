@@ -28,6 +28,12 @@
     \getenv migrator_password PLATFORM_MIGRATOR_PASSWORD
 \endif
 
+-- Retrieve optional recovery flag: if set, pre-create application roles for pg_dump restoration
+\if :{?PRE_CREATE_RESTORE_ROLES}
+\else
+    \getenv PRE_CREATE_RESTORE_ROLES PRE_CREATE_RESTORE_ROLES
+\endif
+
 -- Ensure a password variable is supplied
 \if :{?migrator_password}
 \else
@@ -58,10 +64,11 @@ BEGIN
 END
 $$;
 
--- 1b. Idempotently pre-create system operational and helper roles with NOLOGIN
--- In clean disaster recovery (from pg_dump archives), restored objects and ACLs reference these roles.
--- Creating them here with NOLOGIN guarantees that pg_dump restore succeeds without missing-role errors,
--- while ensuring no operational role can log in until vps-enable-roles.sql activates it post-restore.
+-- 1b. Idempotently pre-create system operational and helper roles with NOLOGIN (Recovery mode only)
+-- When restoring from pg_dump archives (disaster recovery), restored objects and ACLs reference these roles.
+-- When executing fresh schema migrations from scratch, these roles are created by the migration files themselves
+-- under orbitox_migrator (which has CREATEROLE but NOSUPERUSER).
+\if :{?PRE_CREATE_RESTORE_ROLES}
 DO $$
 DECLARE
     r TEXT;
@@ -86,6 +93,7 @@ BEGIN
     END LOOP;
 END
 $$;
+\endif
 
 -- 2. Securely set migrator password
 ALTER ROLE orbitox_migrator PASSWORD :'migrator_password';

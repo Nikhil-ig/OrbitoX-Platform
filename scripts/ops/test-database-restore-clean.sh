@@ -40,12 +40,21 @@ for arg in "$@"; do
 done
 
 USE_DOCKER=false
-if [[ "$FORCE_NATIVE" == "true" ]]; then
-  USE_DOCKER=false
-elif [[ "$FORCE_DOCKER" == "true" ]]; then
+if [[ "$FORCE_DOCKER" == "true" ]]; then
+  if ! command -v docker >/dev/null 2>&1 || ! docker info >/dev/null 2>&1; then
+    echo "================================================================"
+    echo "ℹ️  Docker daemon is not running or unavailable on this host."
+    echo "    Docker isolated recovery test: NOT RUN"
+    echo "================================================================"
+    exit 0
+  fi
   USE_DOCKER=true
+elif [[ "$FORCE_NATIVE" == "true" ]]; then
+  USE_DOCKER=false
 elif command -v docker >/dev/null 2>&1 && docker info >/dev/null 2>&1; then
   USE_DOCKER=true
+else
+  USE_DOCKER=false
 fi
 
 # Locate PostgreSQL utilities
@@ -160,7 +169,15 @@ if [[ "$USE_DOCKER" == "true" ]]; then
   docker network create "$DOCKER_NET" >/dev/null
   docker volume create "$SRC_VOL" >/dev/null
   docker run -d --name "$SRC_CONTAINER" --network "$DOCKER_NET" -v "${SRC_VOL}:/var/lib/postgresql/data" \
-    -p "${SRC_PORT}:5432" -e POSTGRES_PASSWORD=postgres -e POSTGRES_USER=postgres -e POSTGRES_HOST_AUTH_METHOD=trust postgres:16-alpine >/dev/null
+    -p "127.0.0.1:${SRC_PORT}:5432" -e POSTGRES_PASSWORD=postgres -e POSTGRES_USER=postgres -e POSTGRES_HOST_AUTH_METHOD=trust postgres:16-alpine >/dev/null
+
+  # Verify loopback-only binding via docker inspect
+  SRC_HOST_IP="$(docker inspect --format='{{range $p, $conf := .NetworkSettings.Ports}}{{range $conf}}{{.HostIp}}{{end}}{{end}}' "$SRC_CONTAINER")"
+  if [[ "$SRC_HOST_IP" != "127.0.0.1" ]]; then
+    echo "❌ FAIL: Source container exposed on non-loopback address: ${SRC_HOST_IP:-none} (expected 127.0.0.1)" >&2
+    exit 1
+  fi
+  echo "  ✅ Source container verified bound strictly to loopback: ${SRC_HOST_IP}"
 else
   "$PG16_INITDB" -D "$SRC_DATA_DIR" -U postgres -A trust --no-instructions >/dev/null
   "$PG16_PG_CTL" -D "$SRC_DATA_DIR" -o "-p ${SRC_PORT} -k ${TMP_WORK_DIR} -h 127.0.0.1" -l "${TMP_WORK_DIR}/src_server.log" start >/dev/null
@@ -180,9 +197,10 @@ PLATFORM_MIGRATOR_PASSWORD="$TEST_MIGRATOR_PASS" \
 "$PG16_PSQL" -h 127.0.0.1 -p "$SRC_PORT" -U postgres -d orbitox_staging -v ON_ERROR_STOP=1 \
   -f "${REPO_ROOT}/scripts/db/vps-bootstrap-roles.sql" >/dev/null
 
-echo "  ▶ Applying Platform schema migrations to source database..."
-DATABASE_URL="postgresql://postgres@127.0.0.1:${SRC_PORT}/orbitox_staging" \
+echo "  ▶ Applying Platform schema migrations to source database as orbitox_migrator..."
+export DATABASE_URL="postgresql://orbitox_migrator:${TEST_MIGRATOR_PASS}@127.0.0.1:${SRC_PORT}/orbitox_staging"
 npx prisma migrate deploy --schema "${REPO_ROOT}/apps/platform/prisma/schema.prisma" >/dev/null
+unset DATABASE_URL
 
 # Reassign table and routine ownership to match migration standard
 "$PG16_PSQL" -h 127.0.0.1 -p "$SRC_PORT" -U postgres -d orbitox_staging -v ON_ERROR_STOP=1 -c "
@@ -292,7 +310,15 @@ echo "▶ Phase 3: Initializing separate clean Target PostgreSQL 16 cluster on p
 if [[ "$USE_DOCKER" == "true" ]]; then
   docker volume create "$TGT_VOL" >/dev/null
   docker run -d --name "$TGT_CONTAINER" --network "$DOCKER_NET" -v "${TGT_VOL}:/var/lib/postgresql/data" \
-    -p "${TGT_PORT}:5432" -e POSTGRES_PASSWORD=postgres -e POSTGRES_USER=postgres -e POSTGRES_HOST_AUTH_METHOD=trust postgres:16-alpine >/dev/null
+    -p "127.0.0.1:${TGT_PORT}:5432" -e POSTGRES_PASSWORD=postgres -e POSTGRES_USER=postgres -e POSTGRES_HOST_AUTH_METHOD=trust postgres:16-alpine >/dev/null
+
+  # Verify loopback-only binding via docker inspect
+  TGT_HOST_IP="$(docker inspect --format='{{range $p, $conf := .NetworkSettings.Ports}}{{range $conf}}{{.HostIp}}{{end}}{{end}}' "$TGT_CONTAINER")"
+  if [[ "$TGT_HOST_IP" != "127.0.0.1" ]]; then
+    echo "❌ FAIL: Target container exposed on non-loopback address: ${TGT_HOST_IP:-none} (expected 127.0.0.1)" >&2
+    exit 1
+  fi
+  echo "  ✅ Target container verified bound strictly to loopback: ${TGT_HOST_IP}"
 else
   "$PG16_INITDB" -D "$TGT_DATA_DIR" -U postgres -A trust --no-instructions >/dev/null
   "$PG16_PG_CTL" -D "$TGT_DATA_DIR" -o "-p ${TGT_PORT} -k ${TMP_WORK_DIR} -h 127.0.0.1" -l "${TMP_WORK_DIR}/tgt_server.log" start >/dev/null
@@ -339,9 +365,10 @@ echo "  ✅ Both bootstrap and enable role scripts strictly reject execution aga
 echo "  ▶ Executing Platform Recovery Lifecycle against ${TGT_PORT}/orbitox_staging..."
 "$PG16_PSQL" -h 127.0.0.1 -p "$TGT_PORT" -U postgres -d postgres -v ON_ERROR_STOP=1 -c "CREATE DATABASE orbitox_staging;" >/dev/null
 
-# Step 1: Pre-provision roles and ownership via vps-bootstrap-roles.sql
+# Step 1: Pre-provision roles and ownership via vps-bootstrap-roles.sql in recovery mode
 PLATFORM_MIGRATOR_PASSWORD="$TEST_MIGRATOR_PASS" \
-"$PG16_PSQL" -h 127.0.0.1 -p "$TGT_PORT" -U postgres -d orbitox_staging -v ON_ERROR_STOP=1 \
+PRE_CREATE_RESTORE_ROLES=1 \
+"$PG16_PSQL" -h 127.0.0.1 -p "$TGT_PORT" -U postgres -d orbitox_staging -v ON_ERROR_STOP=1 -v PRE_CREATE_RESTORE_ROLES=1 \
   -f "${REPO_ROOT}/scripts/db/vps-bootstrap-roles.sql" >/dev/null
 
 # Assert database and schema ownership assigned to orbitox_migrator
@@ -501,11 +528,10 @@ echo "  ✅ Security-definer routines verified with expected role ownership."
 echo "▶ Phase 5: Executing Stage B Catalog Inventory (Q-01 through Q-11) on restored database..."
 
 INVENTORY_SCRIPT="${REPO_ROOT}/apps/platform/scripts/ops/run-staging-inventory.js"
-INVENTORY_OUTPUT="$(
-  APP_DATABASE_URL="postgresql://orbitox_runtime:${TEST_RUNTIME_PASS}@127.0.0.1:${TGT_PORT}/orbitox_staging" \
-  node "$INVENTORY_SCRIPT" 2>&1
-)"
+export APP_DATABASE_URL="postgresql://orbitox_runtime:${TEST_RUNTIME_PASS}@127.0.0.1:${TGT_PORT}/orbitox_staging"
+INVENTORY_OUTPUT="$(node "$INVENTORY_SCRIPT" 2>&1)"
 INVENTORY_EXIT=$?
+unset APP_DATABASE_URL
 
 if [[ "$INVENTORY_EXIT" -ne 0 ]]; then
   echo "❌ FAIL: Catalog inventory failed with exit code ${INVENTORY_EXIT}!" >&2
@@ -520,14 +546,18 @@ echo "  ✅ Stage B Catalog Inventory (Q-01 through Q-11) PASSED with 11/11 chec
 # ─────────────────────────────────────────────────────────────────────────────
 echo "▶ Phase 6: Verifying runtime application authentication..."
 
-# Platform: Connect as orbitox_runtime with password
-P_RESULT="$("$PG16_PSQL" "postgresql://orbitox_runtime:${TEST_RUNTIME_PASS}@127.0.0.1:${TGT_PORT}/orbitox_staging" -tAc \
+# Platform: Connect as orbitox_runtime with password passed securely via environment
+export PGPASSWORD="${TEST_RUNTIME_PASS}"
+P_RESULT="$("$PG16_PSQL" -h 127.0.0.1 -p "$TGT_PORT" -U orbitox_runtime -d orbitox_staging -tAc \
   "SELECT current_user, count(*) FROM \"PlatformRateLimitBucket\";")"
+unset PGPASSWORD
 echo "  ✅ Platform: orbitox_runtime authenticated successfully (${P_RESULT})."
 
-# RestaurantOS: Connect as restaurantos_app with password
-R_RESULT="$("$PG16_PSQL" "postgresql://restaurantos_app:${TEST_ROS_PASS}@127.0.0.1:${TGT_PORT}/restaurant_os_staging" -tAc \
+# RestaurantOS: Connect as restaurantos_app with password passed securely via environment
+export PGPASSWORD="${TEST_ROS_PASS}"
+R_RESULT="$("$PG16_PSQL" -h 127.0.0.1 -p "$TGT_PORT" -U restaurantos_app -d restaurant_os_staging -tAc \
   "SELECT current_user, count(*) FROM \"Tenant\";")"
+unset PGPASSWORD
 echo "  ✅ RestaurantOS: restaurantos_app authenticated successfully (${R_RESULT})."
 
 echo "================================================================"
