@@ -74,21 +74,21 @@ export function renderHostStand(
 
         <div class="host-table-nodes-grid" id="host-table-nodes">
           ${tables
-            .map((t, idx) => {
-              const isOccupied = Boolean(t.activeSessionId) || idx % 3 === 0;
-              const isBillAsked = idx === 4;
-              let statusClass = 'available';
-              let statusLabel = 'Available';
+      .map((t, idx) => {
+        const isOccupied = Boolean(t.activeSessionId) || idx % 3 === 0;
+        const isBillAsked = idx === 4;
+        let statusClass = 'available';
+        let statusLabel = 'Available';
 
-              if (isBillAsked) {
-                statusClass = 'bill-asked';
-                statusLabel = 'Bill Asked';
-              } else if (isOccupied) {
-                statusClass = 'seated';
-                statusLabel = 'Seated (42m)';
-              }
+        if (isBillAsked) {
+          statusClass = 'bill-asked';
+          statusLabel = 'Bill Asked';
+        } else if (isOccupied) {
+          statusClass = 'seated';
+          statusLabel = 'Seated (42m)';
+        }
 
-              return `
+        return `
               <div
                 class="host-table-node ${statusClass}"
                 data-status="${isOccupied ? 'SEATED' : 'AVAILABLE'}"
@@ -99,8 +99,8 @@ export function renderHostStand(
                 <div class="table-node-status-badge">${statusLabel}</div>
               </div>
             `;
-            })
-            .join('')}
+      })
+      .join('')}
         </div>
       </div>
 
@@ -113,8 +113,8 @@ export function renderHostStand(
 
         <div class="waitlist-rows-list" id="waitlist-container">
           ${waitlist
-            .map(
-              (w) => `
+      .map(
+        (w) => `
             <div class="waitlist-party-row" id="row-${w.id}">
               <div class="party-info">
                 <div class="party-name">${w.name}</div>
@@ -125,8 +125,8 @@ export function renderHostStand(
               </button>
             </div>
           `
-            )
-            .join('')}
+      )
+      .join('')}
         </div>
       </div>
     </div>

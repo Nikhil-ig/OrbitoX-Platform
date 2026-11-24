@@ -838,8 +838,7 @@ export function renderDinerPwa(
   </button>
 
   <!-- 4. Dynamic Order Telemetry Capsule -->
-  ${
-    hasActiveOrder
+  ${hasActiveOrder
       ? `
   <div class="live-activity-capsule" onclick="openStatusSheet()">
     <div style="display: flex; flex-direction: column;">
@@ -849,7 +848,7 @@ export function renderDinerPwa(
     <span style="display:inline-flex;align-items:center;">${icon('chevron-right', { size: 12, color: 'var(--theme-primary)' })}</span>
   </div>`
       : ''
-  }
+    }
 
   <!-- 5. Item Customization Sheet (Strictly binds to item.modifierGroups) -->
   <div id="item-sheet" class="sheet-overlay" onclick="if(event.target === this) closeItemSheet()">
@@ -933,12 +932,11 @@ export function renderDinerPwa(
       </div>
 
       <div style="background: ${isLight ? 'rgba(0,0,0,0.03)' : '#080A0E'}; border-radius: 10px; padding: 16px; margin-bottom: 20px;">
-        ${
-          tasks.length === 0
-            ? `<div style="text-align: center; color: var(--theme-muted); font-size: 13px; padding: 14px 0;">No kitchen orders currently in preparation for Table ${table.number}.</div>`
-            : tasks
-                .map(
-                  (t) => `
+        ${tasks.length === 0
+      ? `<div style="text-align: center; color: var(--theme-muted); font-size: 13px; padding: 14px 0;">No kitchen orders currently in preparation for Table ${table.number}.</div>`
+      : tasks
+        .map(
+          (t) => `
           <div style="display: flex; align-items: flex-start; gap: 12px; padding: 10px 0; border-bottom: 1px solid var(--theme-border);">
             <div style="width: 10px; height: 10px; border-radius: 50%; background: ${t.status === 'BUMPED' ? 'var(--color-sage)' : 'var(--theme-primary)'}; margin-top: 4px;"></div>
             <div>
@@ -948,9 +946,9 @@ export function renderDinerPwa(
               <div style="font-size: 12px; color: var(--theme-muted);">${t.station}${t.modifiers.length > 0 ? ' · ' + t.modifiers.join(', ') : ''}</div>
             </div>
           </div>`
-                )
-                .join('')
-        }
+        )
+        .join('')
+    }
       </div>
 
       <button class="btn btn-secondary" style="width: 100%; padding: 12px;" onclick="closeStatusSheet()">
@@ -1540,10 +1538,10 @@ function renderAtelierEtoileComposition(
 
       <div style="display: flex; flex-direction: column; gap: 36px;">
         ${movements
-          .map((mov, mIdx) => {
-            const items = menu.filter((i) => i.category === mov.category);
-            if (items.length === 0) return '';
-            return `
+      .map((mov, mIdx) => {
+        const items = menu.filter((i) => i.category === mov.category);
+        if (items.length === 0) return '';
+        return `
           <section class="atelier-movement-section">
             <div style="border-bottom: 1px solid rgba(197, 160, 89, 0.25); padding-bottom: 10px; margin-bottom: 18px; display: flex; justify-content: space-between; align-items: flex-end;">
               <div>
@@ -1555,8 +1553,8 @@ function renderAtelierEtoileComposition(
 
             <div style="display: flex; flex-direction: column; gap: 16px;">
               ${items
-                .map(
-                  (item) => `
+            .map(
+              (item) => `
                 <div class="atelier-course-card editorial-sommelier product-card menu-item" onclick="openItemSheet('${item.id}')" style="background: #11141B; border: 1px solid rgba(255,255,255,0.06); border-radius: 12px; padding: 18px; display: flex; gap: 18px; align-items: center; transition: all 140ms ease; cursor: pointer;">
                   <img src="${getItemThumbnail(item.id)}" alt="${item.name}" class="plate-thumb-circular" />
                   <div style="flex: 1;">
@@ -1573,12 +1571,12 @@ function renderAtelierEtoileComposition(
                     </div>
                   </div>
                 </div>`
-                )
-                .join('')}
+            )
+            .join('')}
             </div>
           </section>`;
-          })
-          .join('')}
+      })
+      .join('')}
       </div>
     </main>
   </div>`;
@@ -1774,8 +1772,8 @@ function renderRoastery1984Composition(
     <!-- 3-Column Tactile Vitrine Grid with Mounted [- 1 +] Steppers -->
     <main class="roastery-vitrine-grid">
       ${menu
-        .map(
-          (item) => `
+      .map(
+        (item) => `
         <div class="roastery-card product-card menu-item" onclick="openItemSheet('${item.id}')">
           <div>
             <div style="position: relative; border-radius: 12px; overflow: hidden; height: 170px; margin-bottom: 14px; background: #EFEBE4;">
@@ -1799,8 +1797,8 @@ function renderRoastery1984Composition(
             </div>
           </div>
         </div>`
-        )
-        .join('')}
+      )
+      .join('')}
     </main>
 
     <!-- Floating Tactile Capsule Pill -->
@@ -2193,8 +2191,8 @@ function renderModernDinerComposition(
     <!-- Category Pill Strip (Horizontal Scroll) -->
     <div class="modern-cat-strip">
       ${categories
-        .map(
-          (c, idx) => `
+      .map(
+        (c, idx) => `
         <button
           class="modern-cat-pill ${idx === 0 ? 'active' : ''}"
           onclick="filterModernCat('${c}', this)"
@@ -2202,19 +2200,19 @@ function renderModernDinerComposition(
           ${c}
         </button>
       `
-        )
-        .join('')}
+      )
+      .join('')}
     </div>
 
     <!-- Dishes Feed -->
     <div class="modern-dishes-feed" id="modern-dishes-feed">
       ${menu
-        .map((item) => {
-          const price = item.basePriceMinor ? (item.basePriceMinor / 100).toFixed(0) : '0';
-          const isVeg = (item as any).isVegetarian ?? (item.dietaryFlags ? item.dietaryFlags.includes('VEG') : true);
-          const categoryName = (item as any).categoryName || item.category || 'Mains';
-          const imgUrl = getItemThumbnail(item.id);
-          return `
+      .map((item) => {
+        const price = item.basePriceMinor ? (item.basePriceMinor / 100).toFixed(0) : '0';
+        const isVeg = (item as any).isVegetarian ?? (item.dietaryFlags ? item.dietaryFlags.includes('VEG') : true);
+        const categoryName = (item as any).categoryName || item.category || 'Mains';
+        const imgUrl = getItemThumbnail(item.id);
+        return `
           <div
             class="modern-dish-card"
             data-category="${categoryName}"
@@ -2236,8 +2234,8 @@ function renderModernDinerComposition(
             </div>
           </div>
         `;
-        })
-        .join('')}
+      })
+      .join('')}
     </div>
 
     <!-- Floating Cart Pill Dock -->

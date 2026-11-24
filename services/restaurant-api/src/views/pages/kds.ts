@@ -417,7 +417,7 @@ export function renderKdsWorkspace(
     </section>
 
     <!-- Column 2: Cooking (2 tickets) -->
-    <section class="kds-column">
+    <section class="kds-column" id="kds-col-cooking">
       <div class="kds-column-header">
         <div class="kds-column-title">
           <span style="width: 8px; height: 8px; border-radius: 999px; background: #3B82F6;"></span>
@@ -427,7 +427,7 @@ export function renderKdsWorkspace(
       </div>
 
       <!-- Ticket: Table 7 (Active Royal Blue Highlight) -->
-      <article class="kds-ticket cooking-highlight" id="ticket-table-7">
+      <article class="kds-ticket cooking-highlight" id="ticket-table-7" data-station="Tandoor">
         <div class="ticket-header">
           <div>
             <div class="ticket-table-name">Table 7</div>
@@ -454,7 +454,7 @@ export function renderKdsWorkspace(
       </article>
 
       <!-- Ticket: Takeaway 18 (Running Late) -->
-      <article class="kds-ticket late-highlight" id="ticket-takeaway-18">
+      <article class="kds-ticket late-highlight" id="ticket-takeaway-18" data-station="Curry">
         <div class="ticket-header">
           <div>
             <div class="ticket-table-name">Takeaway 18</div>
@@ -470,14 +470,14 @@ export function renderKdsWorkspace(
           </div>
         </div>
 
-        <button type="button" class="btn-ticket-action btn-ticket-start" onclick="moveTicket('ticket-takeaway-18', 'ready')">
+        <button type="button" class="btn-ticket-action btn-ticket-ready" onclick="moveTicket('ticket-takeaway-18', 'ready')">
           Ready
         </button>
       </article>
     </section>
 
     <!-- Column 3: Ready (1 ticket) -->
-    <section class="kds-column">
+    <section class="kds-column" id="kds-col-ready">
       <div class="kds-column-header">
         <div class="kds-column-title">
           <span style="width: 8px; height: 8px; border-radius: 999px; background: #10B981;"></span>
@@ -487,7 +487,7 @@ export function renderKdsWorkspace(
       </div>
 
       <!-- Ticket: Table 2 -->
-      <article class="kds-ticket" id="ticket-table-2">
+      <article class="kds-ticket" id="ticket-table-2" data-station="Bar">
         <div class="ticket-header">
           <div>
             <div class="ticket-table-name">Table 2</div>
@@ -503,7 +503,7 @@ export function renderKdsWorkspace(
           </div>
         </div>
 
-        <button type="button" class="btn-ticket-action btn-ticket-served" onclick="document.getElementById('ticket-table-2').style.display = 'none';">
+        <button type="button" class="btn-ticket-action btn-ticket-served" onclick="moveTicket('ticket-table-2', 'served')">
           Served
         </button>
       </article>
@@ -532,14 +532,64 @@ export function renderKdsWorkspace(
     function filterStation(station, btn) {
       document.querySelectorAll('.station-pill').forEach(p => p.classList.remove('active'));
       btn.classList.add('active');
+      document.querySelectorAll('.kds-ticket').forEach(t => {
+        const st = t.getAttribute('data-station');
+        if (station === 'ALL' || !st || st.toLowerCase() === station.toLowerCase()) {
+          t.style.display = 'block';
+        } else {
+          t.style.display = 'none';
+        }
+      });
     }
 
-    function moveTicket(id, targetCol) {
+    async function moveTicket(id, targetCol) {
       playChime();
       const ticket = document.getElementById(id);
       if (ticket) {
         ticket.style.opacity = '0.5';
-        setTimeout(() => { ticket.style.opacity = '1'; }, 300);
+        try {
+          await fetch('/api/restaurant/kds/bump', {
+            method: 'POST',
+            credentials: 'same-origin',
+            headers: {
+              'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ taskId: id, targetStatus: targetCol })
+          });
+        } catch (e) {}
+
+        if (targetCol === 'served') {
+          ticket.style.transform = 'scale(0.9)';
+          ticket.style.opacity = '0';
+          ticket.style.transition = 'all 0.25s ease';
+          setTimeout(() => ticket.remove(), 250);
+        } else if (targetCol === 'cooking') {
+          const cookingCol = document.getElementById('kds-col-cooking');
+          if (cookingCol) {
+            ticket.className = 'kds-ticket cooking-highlight';
+            const btn = ticket.querySelector('.btn-ticket-action');
+            if (btn) {
+              btn.className = 'btn-ticket-action btn-ticket-ready';
+              btn.textContent = 'Ready';
+              btn.setAttribute('onclick', "moveTicket('" + id + "', 'ready')");
+            }
+            cookingCol.appendChild(ticket);
+            ticket.style.opacity = '1';
+          }
+        } else if (targetCol === 'ready') {
+          const readyCol = document.getElementById('kds-col-ready');
+          if (readyCol) {
+            ticket.className = 'kds-ticket';
+            const btn = ticket.querySelector('.btn-ticket-action');
+            if (btn) {
+              btn.className = 'btn-ticket-action btn-ticket-served';
+              btn.textContent = 'Served';
+              btn.setAttribute('onclick', "moveTicket('" + id + "', 'served')");
+            }
+            readyCol.appendChild(ticket);
+            ticket.style.opacity = '1';
+          }
+        }
       }
     }
 

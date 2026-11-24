@@ -110,11 +110,9 @@ export function renderShell(contentHtml: string, options: ShellOptions): string 
     window.__STAFF_SESSION__ = {
       isAuthenticated: ${Boolean(options.staffToken)},
       role: "${options.staffRole || ''}",
-      branchId: "${currentBranch.id}"
+      branchId: "${currentBranch.id}",
+      token: "${options.staffToken || ''}"
     };
-    if (!document.cookie.includes('orb_staff_token=')) {
-      document.cookie = "orb_staff_token=orbito_manager_token; Path=/; SameSite=Lax";
-    }
     window.showToast = function(message, type = 'info') {
       let container = document.getElementById('global-toast-container');
       if (!container) {
@@ -142,6 +140,7 @@ export function renderShell(contentHtml: string, options: ShellOptions): string 
 
     window.apiFetch = async function(url, options = {}) {
       const opts = { ...options };
+      opts.credentials = opts.credentials || 'same-origin';
       opts.headers = {
         'Accept': 'application/json',
         ...(opts.headers || {})
@@ -150,8 +149,8 @@ export function renderShell(contentHtml: string, options: ShellOptions): string 
         opts.headers['Content-Type'] = 'application/json';
         opts.body = JSON.stringify(opts.body);
       }
-      if (!opts.headers['Authorization']) {
-        opts.headers['Authorization'] = 'Bearer orbito_manager_token';
+      if (!opts.headers['Authorization'] && window.__STAFF_SESSION__ && window.__STAFF_SESSION__.token) {
+        opts.headers['Authorization'] = 'Bearer ' + window.__STAFF_SESSION__.token;
       }
       const res = await fetch(url, opts);
       const data = await res.json().catch(() => null);

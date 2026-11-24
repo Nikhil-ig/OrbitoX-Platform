@@ -515,14 +515,14 @@ export function renderMarketplaceWorkspace(
 
             <div style="display: flex; flex-direction: column; gap: 8px; margin-bottom: 24px;">
               ${getTemplateHighlights(activeTemplate)
-                .map(
-                  (h) => `
+      .map(
+        (h) => `
                 <div style="display: flex; align-items: center; gap: 8px; font-size: 12px; color: #E5E7EB;">
                   <span style="color: var(--color-copper); display: inline-flex;">${icon('check', { size: 14, strokeWidth: 3 })}</span>
                   <span>${h}</span>
                 </div>`
-                )
-                .join('')}
+      )
+      .join('')}
             </div>
 
             <div style="display: flex; gap: 12px; align-items: center; flex-wrap: wrap;">
@@ -547,22 +547,20 @@ export function renderMarketplaceWorkspace(
         <!-- Concept Filter Pills -->
         <div style="display: flex; gap: 8px; overflow-x: auto; padding-bottom: 4px;" id="category-pills">
           ${categories
-            .map(
-              (cat, idx) => `
+      .map(
+        (cat, idx) => `
             <button
               onclick="filterCategory('${cat}')"
               class="category-btn ${idx === 0 ? 'active' : ''}"
               data-cat="${cat}"
-              style="padding: 7px 16px; border-radius: 999px; font-size: 12px; font-weight: 700; cursor: pointer; border: 1px solid ${
-                idx === 0 ? 'var(--color-copper)' : 'var(--border-default)'
-              }; background: ${idx === 0 ? 'var(--color-copper)' : 'var(--color-charcoal)'}; color: ${
-                idx === 0 ? '#FFFFFF' : 'var(--color-stone)'
-              }; transition: all 140ms ease; white-space: nowrap;"
+              style="padding: 7px 16px; border-radius: 999px; font-size: 12px; font-weight: 700; cursor: pointer; border: 1px solid ${idx === 0 ? 'var(--color-copper)' : 'var(--border-default)'
+          }; background: ${idx === 0 ? 'var(--color-copper)' : 'var(--color-charcoal)'}; color: ${idx === 0 ? '#FFFFFF' : 'var(--color-stone)'
+          }; transition: all 140ms ease; white-space: nowrap;"
             >
               ${cat}
             </button>`
-            )
-            .join('')}
+      )
+      .join('')}
         </div>
 
         <!-- Real-Time Search Box -->
@@ -583,10 +581,10 @@ export function renderMarketplaceWorkspace(
       <!-- Template Cards Gallery -->
       <div class="mkt-gallery-grid" id="templates-grid">
         ${templates
-          .map((tmpl) => {
-            const isActive = tmpl.id === activeTemplateId;
-            const highlights = getTemplateHighlights(tmpl);
-            return `
+      .map((tmpl) => {
+        const isActive = tmpl.id === activeTemplateId;
+        const highlights = getTemplateHighlights(tmpl);
+        return `
           <div
             class="template-card"
             data-id="${tmpl.id}"
@@ -594,31 +592,28 @@ export function renderMarketplaceWorkspace(
             data-experience="${tmpl.experienceType || 'restaurant_storefront'}"
             data-name="${tmpl.name.toLowerCase()}"
             data-desc="${tmpl.description.toLowerCase()}"
-            style="background: var(--color-charcoal); border: 1px solid ${
-              isActive ? 'var(--color-copper)' : 'var(--border-default)'
-            }; border-radius: 16px; overflow: hidden; display: flex; flex-direction: column; transition: transform 180ms ease, border-color 180ms ease; position: relative; box-shadow: 0 4px 20px rgba(0,0,0,0.3);"
+            style="background: var(--color-charcoal); border: 1px solid ${isActive ? 'var(--color-copper)' : 'var(--border-default)'
+          }; border-radius: 16px; overflow: hidden; display: flex; flex-direction: column; transition: transform 180ms ease, border-color 180ms ease; position: relative; box-shadow: 0 4px 20px rgba(0,0,0,0.3);"
           >
-            ${
-              isActive
-                ? `<div style="position: absolute; top: 14px; left: 14px; z-index: 10; background: var(--color-copper); color: #FFF; font-size: 10px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.06em; padding: 4px 10px; border-radius: 999px; box-shadow: 0 2px 10px rgba(0,0,0,0.6); display:inline-flex; align-items:center; gap:5px;">${icon(
-                    'check',
-                    { size: 12, strokeWidth: 3 }
-                  )} Active Storefront</div>`
-                : ''
-            }
+            ${isActive
+            ? `<div style="position: absolute; top: 14px; left: 14px; z-index: 10; background: var(--color-copper); color: #FFF; font-size: 10px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.06em; padding: 4px 10px; border-radius: 999px; box-shadow: 0 2px 10px rgba(0,0,0,0.6); display:inline-flex; align-items:center; gap:5px;">${icon(
+              'check',
+              { size: 12, strokeWidth: 3 }
+            )} Active Storefront</div>`
+            : ''
+          }
 
             <!-- Large Visual Storefront Preview -->
             <div style="position: relative; height: 260px; overflow: hidden; background: #06080A; padding: 12px; border-bottom: 1px solid var(--border-subtle); display: flex; flex-direction: column; justify-content: space-between;">
               ${renderTemplateMiniPreview(tmpl)}
 
               <div style="position: absolute; top: 14px; right: 14px; display: flex; gap: 6px; z-index: 5;">
-                <span class="badge ${
-                  tmpl.tierRequired === 'enterprise'
-                    ? 'badge-amber'
-                    : tmpl.tierRequired === 'pro'
-                    ? 'badge-copper'
-                    : 'badge-sage'
-                }" style="font-size: 10px; font-weight: 700;">
+                <span class="badge ${tmpl.tierRequired === 'enterprise'
+            ? 'badge-amber'
+            : tmpl.tierRequired === 'pro'
+              ? 'badge-copper'
+              : 'badge-sage'
+          }" style="font-size: 10px; font-weight: 700;">
                   ${tmpl.priceLabel}
                 </span>
               </div>
@@ -655,25 +650,24 @@ export function renderMarketplaceWorkspace(
                     Architecture & Flow Highlights:
                   </div>
                   ${highlights
-                    .map(
-                      (h) => `
+            .map(
+              (h) => `
                     <div style="font-size: 11px; color: #E5E7EB; display: flex; align-items: center; gap: 6px;">
                       <span style="color: ${tmpl.accentColor}; display: inline-flex;">•</span>
                       <span>${h}</span>
                     </div>`
-                    )
-                    .join('')}
+            )
+            .join('')}
                 </div>
 
-                ${
-                  tmpl.id === 'tmpl_pantry_rush'
-                    ? '<div style="font-size: 11px; color: #34D399; margin-bottom: 12px; font-weight: 600;">• Prerequisite: Dark Store SKU Catalog & Hyper-Local Dispatch Station</div>'
-                    : tmpl.id === 'tmpl_crave_atlas'
-                    ? '<div style="font-size: 11px; color: #F87171; margin-bottom: 12px; font-weight: 600;">• Prerequisite: Multi-Merchant Partner Catalog & Delivery Fleet</div>'
-                    : tmpl.id === 'tmpl_swift_bite'
-                    ? '<div style="font-size: 11px; color: #FBBF24; margin-bottom: 12px; font-weight: 600;">• Prerequisite: Fast-Casual Menu & Express Station Dispatch</div>'
-                    : ''
-                }
+                ${tmpl.id === 'tmpl_pantry_rush'
+            ? '<div style="font-size: 11px; color: #34D399; margin-bottom: 12px; font-weight: 600;">• Prerequisite: Dark Store SKU Catalog & Hyper-Local Dispatch Station</div>'
+            : tmpl.id === 'tmpl_crave_atlas'
+              ? '<div style="font-size: 11px; color: #F87171; margin-bottom: 12px; font-weight: 600;">• Prerequisite: Multi-Merchant Partner Catalog & Delivery Fleet</div>'
+              : tmpl.id === 'tmpl_swift_bite'
+                ? '<div style="font-size: 11px; color: #FBBF24; margin-bottom: 12px; font-weight: 600;">• Prerequisite: Fast-Casual Menu & Express Station Dispatch</div>'
+                : ''
+          }
               </div>
 
               <!-- Card Action Buttons -->
@@ -687,24 +681,23 @@ export function renderMarketplaceWorkspace(
                     ${icon('eye', { size: 14 })} <span>Preview</span>
                   </button>
 
-                  ${
-                    tmpl.id === 'tmpl_crave_atlas'
-                      ? `<a href="/apps/crave-atlas" class="btn btn-primary btn-sm" style="flex: 1; display: inline-flex; align-items: center; justify-content: center; gap: 6px; background: #E23744; border-color: #E23744;">
+                  ${tmpl.id === 'tmpl_crave_atlas'
+            ? `<a href="/apps/crave-atlas" class="btn btn-primary btn-sm" style="flex: 1; display: inline-flex; align-items: center; justify-content: center; gap: 6px; background: #E23744; border-color: #E23744;">
                           ${icon('external-link', { size: 14 })} <span>Launch App ↗</span>
                         </a>`
-                      : tmpl.id === 'tmpl_swift_bite'
-                      ? `<a href="/apps/swift-bite" class="btn btn-primary btn-sm" style="flex: 1; display: inline-flex; align-items: center; justify-content: center; gap: 6px; background: #FC8019; border-color: #FC8019;">
+            : tmpl.id === 'tmpl_swift_bite'
+              ? `<a href="/apps/swift-bite" class="btn btn-primary btn-sm" style="flex: 1; display: inline-flex; align-items: center; justify-content: center; gap: 6px; background: #FC8019; border-color: #FC8019;">
                           ${icon('external-link', { size: 14 })} <span>Launch App ↗</span>
                         </a>`
-                      : tmpl.id === 'tmpl_pantry_rush'
-                      ? `<a href="/apps/pantry-rush" class="btn btn-primary btn-sm" style="flex: 1; display: inline-flex; align-items: center; justify-content: center; gap: 6px; background: #22C55E; border-color: #22C55E; color: #FFF;">
+              : tmpl.id === 'tmpl_pantry_rush'
+                ? `<a href="/apps/pantry-rush" class="btn btn-primary btn-sm" style="flex: 1; display: inline-flex; align-items: center; justify-content: center; gap: 6px; background: #22C55E; border-color: #22C55E; color: #FFF;">
                           ${icon('external-link', { size: 14 })} <span>Launch App ↗</span>
                         </a>`
-                      : isActive
-                      ? `<a href="/studio" class="btn btn-primary btn-sm" style="flex: 1; display: inline-flex; align-items: center; justify-content: center; gap: 6px;">
+                : isActive
+                  ? `<a href="/studio" class="btn btn-primary btn-sm" style="flex: 1; display: inline-flex; align-items: center; justify-content: center; gap: 6px;">
                           ${icon('edit', { size: 14 })} <span>Edit in Studio</span>
                         </a>`
-                      : `<button
+                  : `<button
                           onclick="installTemplate('${tmpl.id}')"
                           id="btn-install-${tmpl.id}"
                           class="btn btn-primary btn-sm"
@@ -712,13 +705,13 @@ export function renderMarketplaceWorkspace(
                         >
                           ${icon('check', { size: 14 })} <span>Install Template</span>
                         </button>`
-                  }
+          }
                 </div>
               </div>
             </div>
           </div>`;
-          })
-          .join('')}
+      })
+      .join('')}
       </div>
     </main>
   </div>

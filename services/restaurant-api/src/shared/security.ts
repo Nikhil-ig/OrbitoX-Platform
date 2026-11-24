@@ -1171,7 +1171,6 @@ export const DEV_TEST_STAFF_TOKENS: Record<
   'staff:floor': { role: 'OPERATIONS', isPrivileged: false, branchId: 'branch_ldh' },
   'staff:manager': { role: 'MANAGER', isPrivileged: true, branchId: '*' },
   'staff:pos': { role: 'POS', isPrivileged: true, branchId: '*' },
-  'orbito_manager_token': { role: 'MANAGER', isPrivileged: true, branchId: '*' },
   'staff:chef_tandoor': { role: 'CHEF', isPrivileged: false, station: 'TANDOOR', branchId: 'branch_ldh' },
   'staff:chef_curry_line': { role: 'CHEF', isPrivileged: false, station: 'CURRY_LINE', branchId: 'branch_ldh' },
 };

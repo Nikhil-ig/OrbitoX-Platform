@@ -393,22 +393,25 @@ export function renderStaffWorkspace(
     async function addPersonDialog() {
       const name = prompt('Enter staff member full name:');
       if (!name || !name.trim()) return;
-      const role = prompt('Enter role (Server, Chef, Host, Manager):', 'Server');
+      const role = prompt('Enter role (SERVER, CHEF, HOST, MANAGER, POS):', 'SERVER');
       if (!role) return;
+      const pin = prompt('Enter 4-8 digit access PIN:', '1234');
+      if (!pin) return;
 
       try {
-        await window.apiFetch('/api/restaurant/auth/staff', {
+        await window.apiFetch('/api/restaurant/staff', {
           method: 'POST',
           body: {
             name: name.trim(),
             role: role.trim().toUpperCase(),
-            branchId: 'branch_maxora-resto_main'
+            pin: pin.trim(),
+            branchId: window.__STAFF_SESSION__?.branchId || 'branch_maxora-resto_main'
           }
         });
-        window.showToast('Added ' + name.trim() + ' as ' + role.trim(), 'success');
+        window.showToast('Successfully added ' + name.trim() + ' (' + role.trim().toUpperCase() + ')', 'success');
         setTimeout(() => window.location.reload(), 600);
       } catch (e) {
-        window.showToast('Invited ' + name.trim() + ' (' + role.trim() + ')', 'success');
+        window.showToast('Failed to add staff: ' + (e.message || 'Validation error'), 'error');
       }
     }
 

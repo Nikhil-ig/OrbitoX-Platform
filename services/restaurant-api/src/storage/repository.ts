@@ -1227,8 +1227,14 @@ export class PostgresRestaurantRepository implements RestaurantRepository {
 
   async settleTableSession(tableId: string | number, settlement: any, options?: any): Promise<any> {
     return withTenantRlsTransaction(this.prisma, this.tenantId, async (tx: any) => {
+      const idStr = String(tableId);
+      const numVal = typeof tableId === 'number' ? tableId : parseInt(tableId, 10);
+      const orConditions: any[] = [{ id: idStr, tenantId: this.tenantId }, { number: idStr, tenantId: this.tenantId }];
+      if (!isNaN(numVal)) {
+        orConditions.push({ numericId: numVal, tenantId: this.tenantId });
+      }
       const tbl = await tx.tableFloor.findFirst({
-        where: { id: String(tableId), tenantId: this.tenantId },
+        where: { OR: orConditions },
       });
       if (!tbl) return { success: false, error: 'Table not found' };
 

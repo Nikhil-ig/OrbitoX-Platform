@@ -69,8 +69,8 @@ export function renderPosTerminal(
       <!-- Category Filter Pills -->
       <div class="pos-cat-bar">
         ${categories
-          .map(
-            (c, i) => `
+      .map(
+        (c, i) => `
           <button
             class="pos-cat-pill ${i === 0 ? 'active' : ''}"
             onclick="filterCategory('${c}', this)"
@@ -78,18 +78,18 @@ export function renderPosTerminal(
             ${c}
           </button>
         `
-          )
-          .join('')}
+      )
+      .join('')}
       </div>
 
       <!-- Menu Grid -->
       <div class="pos-grid" id="pos-grid">
         ${menuItems
-          .map((item) => {
-            const price = item.basePriceMinor ? (item.basePriceMinor / 100).toFixed(0) : '0';
-            const isVeg = (item as any).isVegetarian ?? (item.dietaryFlags ? item.dietaryFlags.includes('VEG') : true);
-            const categoryName = (item as any).categoryName || item.category || 'Mains';
-            return `
+      .map((item) => {
+        const price = item.basePriceMinor ? (item.basePriceMinor / 100).toFixed(0) : '0';
+        const isVeg = (item as any).isVegetarian ?? (item.dietaryFlags ? item.dietaryFlags.includes('VEG') : true);
+        const categoryName = (item as any).categoryName || item.category || 'Mains';
+        return `
             <div
               class="pos-dish-card"
               onclick="addItem('${item.id}')"
@@ -107,8 +107,8 @@ export function renderPosTerminal(
               </div>
             </div>
           `;
-          })
-          .join('')}
+      })
+      .join('')}
       </div>
     </div>
 

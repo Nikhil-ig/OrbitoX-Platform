@@ -351,7 +351,34 @@ export const ownersRoutes: RouteDefinition[] = [
         return;
       }
       const body = await context.parseBody();
-      const templateId = body.templateId || 'haute-gastronomy';
+      const templateId = context.params?.id || body.templateId || 'haute-gastronomy';
+      try {
+        const result = await context.repo.installTemplate(templateId);
+        sendJson(res, 200, { success: true, ...result });
+      } catch (err: any) {
+        sendJson(res, 400, { success: false, error: err.message });
+      }
+    },
+  },
+  {
+    method: 'POST',
+    path: '/api/restaurant/templates/:id/install',
+    handler: async (req, res, context) => {
+      const identity = context.requestIdentity;
+      if (identity.type === 'INVALID_CREDENTIAL' || identity.type === 'REVOKED_CAPABILITY') {
+        sendJson(res, 401, { error: identity.type, code: identity.type, message: 'Invalid or revoked credential.' });
+        return;
+      }
+      if (identity.type === 'ANONYMOUS') {
+        sendJson(res, 401, { error: 'AUTHENTICATION_REQUIRED', code: 'AUTHENTICATION_REQUIRED', message: 'Template installation requires manager credentials.' });
+        return;
+      }
+      if (!identity.isPrivileged) {
+        sendJson(res, 403, { error: 'FORBIDDEN', code: 'FORBIDDEN', message: 'Installing templates requires Manager or Admin privileges.' });
+        return;
+      }
+      const body = await context.parseBody();
+      const templateId = context.params?.id || body.templateId || 'haute-gastronomy';
       try {
         const result = await context.repo.installTemplate(templateId);
         sendJson(res, 200, { success: true, ...result });

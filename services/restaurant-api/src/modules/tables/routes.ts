@@ -172,9 +172,10 @@ export const tablesRoutes: RouteDefinition[] = [
     handler: async (_req, res, context) => {
       const identity = context.requestIdentity;
       if (!identity.isPrivileged) {
-        sendJson(res, (identity.type === 'ANONYMOUS' || identity.type === 'INVALID_CREDENTIAL' || identity.type === 'REVOKED_CAPABILITY') ? 401 : 403, {
-          error: 'FORBIDDEN',
-          code: 'FORBIDDEN',
+        const isAuthReq = identity.type === 'ANONYMOUS' || identity.type === 'INVALID_CREDENTIAL' || identity.type === 'REVOKED_CAPABILITY';
+        sendJson(res, isAuthReq ? 401 : 403, {
+          error: isAuthReq ? 'AUTHENTICATION_REQUIRED' : 'FORBIDDEN',
+          code: isAuthReq ? 'AUTHENTICATION_REQUIRED' : 'FORBIDDEN',
           message: 'Deleting tables requires manager privileges.',
         });
         return;

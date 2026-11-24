@@ -45,13 +45,13 @@ export function renderFloorStudio(
             All · ${tables.length}
           </button>
           ${branchFloors
-            .map(
-              (f) => `
+      .map(
+        (f) => `
             <button type="button" class="floor-pill" onclick="switchFloor('${escapeHtml(f.id)}', this)">
               ${escapeHtml(f.name)}
             </button>`
-            )
-            .join('')}
+      )
+      .join('')}
           <button type="button" class="floor-pill-ghost" onclick="addNewFloor()">
             + Floor
           </button>
@@ -103,32 +103,32 @@ export function renderFloorStudio(
         <!-- Spatial Table Nodes Grid -->
         <div id="floor-canvas-grid" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(90px, 1fr)); gap: 24px 28px; padding: 50px 70px 20px 20px; max-height: calc(100vh - 280px); overflow-y: auto;">
           ${tables
-            .map((table, idx) => {
-              const isSelected = selectedTable && selectedTable.id === table.id;
-              const isRound = table.shape === 'circle';
-              const isOccupied = table.status === 'OCCUPIED';
-              const isBill = table.status === 'BILL_REQUESTED';
+      .map((table, idx) => {
+        const isSelected = selectedTable && selectedTable.id === table.id;
+        const isRound = table.shape === 'circle';
+        const isOccupied = table.status === 'OCCUPIED';
+        const isBill = table.status === 'BILL_REQUESTED';
 
-              let bg = '#EFF6FF';
-              let border = '1.5px solid #93C5FD';
-              let textColor = '#0F172A';
+        let bg = '#EFF6FF';
+        let border = '1.5px solid #93C5FD';
+        let textColor = '#0F172A';
 
-              if (isSelected) {
-                bg = '#111827';
-                border = '2px solid #2563EB';
-                textColor = '#FFFFFF';
-              } else if (isOccupied) {
-                bg = '#FEF3C7';
-                border = '1.5px solid #FCD34D';
-              } else if (isBill) {
-                bg = '#EDE9FE';
-                border = '1.5px solid #C4B5FD';
-              }
+        if (isSelected) {
+          bg = '#111827';
+          border = '2px solid #2563EB';
+          textColor = '#FFFFFF';
+        } else if (isOccupied) {
+          bg = '#FEF3C7';
+          border = '1.5px solid #FCD34D';
+        } else if (isBill) {
+          bg = '#EDE9FE';
+          border = '1.5px solid #C4B5FD';
+        }
 
-              const borderRadius = isRound ? '999px' : '18px';
-              const widthStyle = table.capacity > 4 ? '110px' : '82px';
+        const borderRadius = isRound ? '999px' : '18px';
+        const widthStyle = table.capacity > 4 ? '110px' : '82px';
 
-              return `
+        return `
               <div 
                 class="table-node ${isSelected ? 'selected' : ''}" 
                 id="node-table-${table.id}"
@@ -141,15 +141,14 @@ export function renderFloorStudio(
                 data-table-locator="${escapeHtml(table.locator || '')}"
                 data-table-floor="${escapeHtml(table.floorId || '')}"
                 onclick="selectTableNode(this)" 
-                style="width: ${widthStyle}; height: 82px; border-radius: ${borderRadius}; background: ${bg}; border: ${border}; color: ${textColor}; display: flex; flex-direction: column; align-items: center; justify-content: center; cursor: pointer; transition: all 120ms ease; box-shadow: ${
-                  isSelected ? '0 0 24px rgba(37, 99, 235, 0.45)' : 'none'
-                };"
+                style="width: ${widthStyle}; height: 82px; border-radius: ${borderRadius}; background: ${bg}; border: ${border}; color: ${textColor}; display: flex; flex-direction: column; align-items: center; justify-content: center; cursor: pointer; transition: all 120ms ease; box-shadow: ${isSelected ? '0 0 24px rgba(37, 99, 235, 0.45)' : 'none'
+          };"
               >
                 <span style="font-size: 16px; font-weight: 800; color: ${isSelected ? '#FFFFFF' : '#0F172A'};">${escapeHtml(table.number)}</span>
                 <span style="font-size: 10px; color: ${isSelected ? '#94A3B8' : '#64748B'}; font-weight: 500;">${table.capacity} seats</span>
               </div>`;
-            })
-            .join('')}
+      })
+      .join('')}
         </div>
 
       </div>
