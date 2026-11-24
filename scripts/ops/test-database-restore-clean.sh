@@ -202,29 +202,72 @@ export DATABASE_URL="postgresql://orbitox_migrator:${TEST_MIGRATOR_PASS}@127.0.0
 npx prisma migrate deploy --schema "${REPO_ROOT}/apps/platform/prisma/schema.prisma" >/dev/null
 unset DATABASE_URL
 
-# Reassign table and routine ownership to match migration standard
-"$PG16_PSQL" -h 127.0.0.1 -p "$SRC_PORT" -U postgres -d orbitox_staging -v ON_ERROR_STOP=1 -c "
-DO \$\$
-DECLARE
-    r RECORD;
-BEGIN
-    FOR r IN (SELECT tablename FROM pg_tables WHERE schemaname = 'public') LOOP
-        EXECUTE format('ALTER TABLE public.%I OWNER TO orbitox_migrator', r.tablename);
-    END LOOP;
-    FOR r IN (SELECT sequence_name FROM information_schema.sequences WHERE sequence_schema = 'public') LOOP
-        EXECUTE format('ALTER SEQUENCE public.%I OWNER TO orbitox_migrator', r.sequence_name);
-    END LOOP;
-    FOR r IN (
-        SELECT p.proname, pg_get_function_identity_arguments(p.oid) AS args
-        FROM pg_proc p
-        JOIN pg_namespace n ON n.oid = p.pronamespace
-        WHERE n.nspname = 'public'
-          AND p.proname NOT IN ('resolve_platform_audit_intent', 'recover_stale_platform_audit_intents')
-    ) LOOP
-        EXECUTE format('ALTER FUNCTION public.%I(%s) OWNER TO orbitox_migrator', r.proname, r.args);
-    END LOOP;
-END
-\$\$;" >/dev/null
+echo "  ▶ Verifying genuine migration ownership under orbitox_migrator (zero superuser normalization)..."
+
+# 1. Assert migration connection identity is orbitox_migrator
+export PGPASSWORD="${TEST_MIGRATOR_PASS}"
+MIG_IDENTITY="$("$PG16_PSQL" -h 127.0.0.1 -p "$SRC_PORT" -U orbitox_migrator -d orbitox_staging -tAc "SELECT current_user;")"
+unset PGPASSWORD
+if [[ "$MIG_IDENTITY" != "orbitox_migrator" ]]; then
+  echo "❌ FAIL: Expected migration identity orbitox_migrator, found: ${MIG_IDENTITY}" >&2
+  exit 1
+fi
+echo "  ✅ Migration connection identity verified as orbitox_migrator."
+
+# 2. Assert 100% of public tables created by migrations are naturally owned by orbitox_migrator
+NON_MIGRATOR_SRC_TABLES="$("$PG16_PSQL" -h 127.0.0.1 -p "$SRC_PORT" -U postgres -d orbitox_staging -tAc "
+  SELECT tablename, tableowner FROM pg_tables WHERE schemaname = 'public' AND tableowner != 'orbitox_migrator';
+")"
+if [[ -n "$NON_MIGRATOR_SRC_TABLES" ]]; then
+  echo "❌ FAIL: Migrations produced tables not owned by orbitox_migrator: ${NON_MIGRATOR_SRC_TABLES}" >&2
+  exit 1
+fi
+echo "  ✅ All source public tables confirmed naturally owned by orbitox_migrator."
+
+# 3. Assert 100% of public sequences created by migrations are naturally owned by orbitox_migrator
+NON_MIGRATOR_SRC_SEQS="$("$PG16_PSQL" -h 127.0.0.1 -p "$SRC_PORT" -U postgres -d orbitox_staging -tAc "
+  SELECT s.relname, pg_catalog.pg_get_userbyid(s.relowner)
+  FROM pg_class s
+  JOIN pg_namespace n ON n.oid = s.relnamespace
+  WHERE s.relkind = 'S' AND n.nspname = 'public' AND pg_catalog.pg_get_userbyid(s.relowner) != 'orbitox_migrator';
+")"
+if [[ -n "$NON_MIGRATOR_SRC_SEQS" ]]; then
+  echo "❌ FAIL: Migrations produced sequences not owned by orbitox_migrator: ${NON_MIGRATOR_SRC_SEQS}" >&2
+  exit 1
+fi
+echo "  ✅ All source public sequences confirmed naturally owned by orbitox_migrator."
+
+# 4. Assert security-definer routines have dedicated owners and others belong to orbitox_migrator
+SRC_ROUTINE_OWNERS="$("$PG16_PSQL" -h 127.0.0.1 -p "$SRC_PORT" -U postgres -d orbitox_staging -tAc "
+  SELECT p.proname, pg_catalog.pg_get_userbyid(p.proowner), p.prosecdef
+  FROM pg_proc p
+  JOIN pg_namespace n ON n.oid = p.pronamespace
+  WHERE n.nspname = 'public' AND p.proname IN (
+    'resolve_platform_audit_intent',
+    'recover_stale_platform_audit_intents',
+    'ensure_platform_rate_limit_partitions',
+    'maintain_platform_rate_limit_partitions',
+    'close_customer_organization',
+    'keep_customer_organization_owner'
+  )
+  ORDER BY p.proname;
+")"
+
+if ! echo "$SRC_ROUTINE_OWNERS" | grep -q "resolve_platform_audit_intent|orbitox_audit_resolver|t"; then
+  echo "❌ FAIL: Source resolve_platform_audit_intent must be owned by orbitox_audit_resolver with secdef=t!" >&2
+  exit 1
+fi
+if ! echo "$SRC_ROUTINE_OWNERS" | grep -q "recover_stale_platform_audit_intents|orbitox_audit_recovery|t"; then
+  echo "❌ FAIL: Source recover_stale_platform_audit_intents must be owned by orbitox_audit_recovery with secdef=t!" >&2
+  exit 1
+fi
+for fn in ensure_platform_rate_limit_partitions maintain_platform_rate_limit_partitions close_customer_organization keep_customer_organization_owner; do
+  if ! echo "$SRC_ROUTINE_OWNERS" | grep -q "${fn}|orbitox_migrator|"; then
+    echo "❌ FAIL: Source routine $fn must be owned by orbitox_migrator!" >&2
+    exit 1
+  fi
+done
+echo "  ✅ Security-definer and application routines verified with correct migration ownership."
 
 ORBITOX_RUNTIME_PASSWORD="$TEST_RUNTIME_PASS" \
 ORBITOX_MAINTENANCE_PASSWORD="$TEST_MAINT_PASS" \

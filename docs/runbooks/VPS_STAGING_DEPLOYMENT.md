@@ -4,7 +4,7 @@
 > **Deployment Architecture:** Docker Compose v2 with Ingress Network Isolation  
 > **Primary Staging Domain:** `staging.orbitox.io` (Platform)  
 > **Hospitality Staging Domain:** `ros.staging.orbitox.io` (RestaurantOS)  
-> **Release Baseline SHA:** `d3001e89f7e8f19bdd4295cf2e50b6f9fc81d9e7`  
+> **Release Tag / Approved Baseline SHA:** `v1.4.5` (`461381ef2369993055ecb737063a65087b02f9ac`)  
 
 ---
 
@@ -66,16 +66,17 @@
 git clone https://github.com/Nikhil-ig/OrbitoX-Platform.git /opt/orbitox
 cd /opt/orbitox
 
-# Explicitly pin and check out the verified release baseline commit
-git checkout d3001e89f7e8f19bdd4295cf2e50b6f9fc81d9e7
+# Fetch tags and check out the verified release tag v1.4.5 in detached mode
+git fetch --tags
+git checkout v1.4.5
 
-# Assert exact commit integrity before proceeding
+# Assert exact commit integrity before proceeding (must resolve to 461381ef2369993055ecb737063a65087b02f9ac)
 CURRENT_COMMIT="$(git rev-parse HEAD)"
-if [[ "$CURRENT_COMMIT" != "d3001e89f7e8f19bdd4295cf2e50b6f9fc81d9e7" ]]; then
-  echo "❌ Fatal: Commit mismatch! Expected d3001e89f7e8f19bdd4295cf2e50b6f9fc81d9e7, got ${CURRENT_COMMIT}" >&2
+if [[ "$CURRENT_COMMIT" != "461381ef2369993055ecb737063a65087b02f9ac" ]]; then
+  echo "❌ Fatal: Commit mismatch! Expected 461381ef2369993055ecb737063a65087b02f9ac for tag v1.4.5, got ${CURRENT_COMMIT}" >&2
   exit 1
 fi
-echo "✅ Verified baseline commit: ${CURRENT_COMMIT}"
+echo "✅ Verified release v1.4.5 commit: ${CURRENT_COMMIT}"
 ```
 
 ### Step 2.2: Prepare Environment File (`.env`)
