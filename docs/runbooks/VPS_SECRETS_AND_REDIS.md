@@ -108,11 +108,10 @@ In `infra/docker/docker-compose.staging.yml`, Redis is defined with full hardeni
       - redis_staging_data:/data
     networks:
       - orbitox_platform_net
-      - orbitox_ros_net
     deploy:
       resources:
         limits:
-          cpus: '0.50'
+          cpus: '0.25'
           memory: 512M
     healthcheck:
       test: ['CMD-SHELL', 'REDISCLI_AUTH="$$REDIS_PASSWORD" redis-cli ping | grep PONG']
@@ -124,7 +123,7 @@ In `infra/docker/docker-compose.staging.yml`, Redis is defined with full hardeni
 ### Key Security Features:
 1. **Double Dollar Sign `$$REDIS_PASSWORD`**: Escaped for Docker Compose so that the variable evaluates inside the container shell rather than interpolating into host-level process args.
 2. **`REDISCLI_AUTH` in Healthcheck**: Completely avoids passing `-a <password>` on the command line, preventing password exposure in `docker top` and `/proc/<pid>/cmdline`.
-3. **No Published Ports (`ports:`)**: Redis is completely inaccessible from the host's public IP address (`0.0.0.0`) or localhost loopback (`127.0.0.1`). Only containers inside `orbitox_platform_net` and `orbitox_ros_net` can reach it.
+3. **No Published Ports (`ports:`)**: Redis is completely inaccessible from the host's public IP address (`0.0.0.0`) or localhost loopback (`127.0.0.1`). Only containers inside `orbitox_platform_net` can reach it.
 4. **Memory Guard (`--maxmemory 384mb`)**: Leaves ample room within the 512M container limit for Redis buffer overhead.
 
 ---

@@ -10,10 +10,29 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 
+# Ensure PATH includes standard system and local bin directories for cron execution
+export PATH="/usr/local/bin:/usr/bin:/bin:${PATH:-}"
+
+# Auto-load protected staging environment configuration if not already provided
+ENV_FILE=""
+if [[ -f "${REPO_ROOT}/infra/docker/.env" ]]; then
+  ENV_FILE="${REPO_ROOT}/infra/docker/.env"
+elif [[ -f "/opt/orbitox/infra/docker/.env" ]]; then
+  ENV_FILE="/opt/orbitox/infra/docker/.env"
+fi
+
+if [[ -n "$ENV_FILE" ]]; then
+  set -a
+  # shellcheck disable=SC1090
+  source "$ENV_FILE"
+  set +a
+fi
+
 BACKUP_ROOT="${BACKUP_ROOT_DIR:-/var/backups/orbitox}"
 PLATFORM_BACKUP_DIR="${BACKUP_ROOT}/platform"
 ROS_BACKUP_DIR="${BACKUP_ROOT}/restaurant-os"
 RETENTION_DAYS="${BACKUP_RETENTION_DAYS:-7}"
+export REMOTE_BACKUP_TARGET="${REMOTE_BACKUP_TARGET:-}"
 
 echo "🚀 [$(date -u '+%Y-%m-%d %H:%M:%SZ')] Starting scheduled dual-database backup..."
 

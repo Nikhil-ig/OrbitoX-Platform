@@ -13,11 +13,34 @@
 # ==============================================================================
 set -euo pipefail
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
+
+# Ensure PATH includes standard system and local bin directories for cron execution
+export PATH="/usr/local/bin:/usr/bin:/bin:${PATH:-}"
+
+# Load protected environment if REMOTE_BACKUP_TARGET is not already defined in shell
+if [[ -z "${REMOTE_BACKUP_TARGET:-}" ]]; then
+  ENV_FILE=""
+  if [[ -f "${REPO_ROOT}/infra/docker/.env" ]]; then
+    ENV_FILE="${REPO_ROOT}/infra/docker/.env"
+  elif [[ -f "/opt/orbitox/infra/docker/.env" ]]; then
+    ENV_FILE="/opt/orbitox/infra/docker/.env"
+  fi
+
+  if [[ -n "$ENV_FILE" ]]; then
+    set -a
+    # shellcheck disable=SC1090
+    source "$ENV_FILE"
+    set +a
+  fi
+fi
+
 BACKUP_ROOT="${BACKUP_ROOT_DIR:-/var/backups/orbitox}"
 REMOTE_DEST="${REMOTE_BACKUP_TARGET:-}"
 
 if [[ -z "$REMOTE_DEST" ]]; then
-  echo "ℹ️ [sync-backups-offsite] OFFSITE_NOT_CONFIGURED: REMOTE_BACKUP_TARGET is unset. Skipping remote synchronization."
+  echo "ℹ️ [sync-backups-offsite] OFFSITE_NOT_CONFIGURED: REMOTE_BACKUP_TARGET is unset. Operating in local-backup-only mode."
   exit 0
 fi
 

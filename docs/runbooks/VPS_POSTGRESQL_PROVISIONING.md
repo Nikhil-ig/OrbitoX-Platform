@@ -21,7 +21,7 @@ OrbitoX Platform enforces a zero-trust, role-separated database model with stric
 
 2. **Phase 2: Role Enablement & Secret Injection (`scripts/db/vps-enable-roles.sql`)**  
    - Executed by `orbitox_migrator` (or `postgres` superuser) to activate operational roles with strong, randomly generated SCRAM passwords.
-   - Enforces that passwords are provided as external psql variables via `-v` flags (never written into tracked SQL scripts).
+   - Enforces that passwords are provided via environment variables read through psql `\getenv` (never passed on the command line or written into tracked SQL scripts).
    - Validates that the 5 operational service roles receive `LOGIN` authority while the 2 helper roles (`orbitox_audit_resolver`, `orbitox_audit_recovery`) remain strictly `NOLOGIN`.
 
 ---

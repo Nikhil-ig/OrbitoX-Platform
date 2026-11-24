@@ -201,9 +201,11 @@ gunzip -c /var/backups/orbitox/restaurant-os/restaurantos_db_full_YYYYMMDD_HHMMS
 ### Step 4.6: Re-validate System & Restart Applications
 1. Run the catalog safety inventory script to prove catalog, role, and RLS integrity:
    ```bash
+   export APP_DATABASE_URL="postgresql://orbitox_runtime:${ORBITOX_RUNTIME_PASSWORD}@platform-db:5432/orbitox_staging"
    docker compose -f /opt/orbitox/infra/docker/docker-compose.staging.yml run --rm --no-deps \
-     -e APP_DATABASE_URL="postgresql://orbitox_runtime:${ORBITOX_RUNTIME_PASSWORD}@platform-db:5432/orbitox_staging" \
+     -e APP_DATABASE_URL \
      platform node scripts/ops/run-staging-inventory.js
+   unset APP_DATABASE_URL
    ```
 2. Restart application containers:
    ```bash
@@ -221,30 +223,33 @@ gunzip -c /var/backups/orbitox/restaurant-os/restaurantos_db_full_YYYYMMDD_HHMMS
 
 Local backups protect against transactional software errors; off-server copies protect against VPS disk failure, provider outages, and host compromise.
 
+> [!IMPORTANT]
+> **Disaster Recovery Status: PENDING**  
+> Off-site disaster recovery remains classified as **PENDING** until actual remote replication, checksum verification, and test restorations are executed against an active external destination.  
+> When `REMOTE_BACKUP_TARGET` is unset or empty, the replication runner explicitly emits `OFFSITE_NOT_CONFIGURED` and the system operates strictly in **local-backup-only** mode.
+
+### Destination-Side Encryption Requirements
+Target backup destinations MUST enforce encryption at rest:
+- **AWS S3 / Cloudflare R2 / Object Storage**: Bucket policies must require AWS KMS customer-managed keys (`aws:kms`) or AES-256 server-side encryption (`AES256`).
+- **SSH / Remote Rsync Host**: Target filesystems must be encrypted (e.g. dm-crypt/LUKS) with restricted directory permissions (`0700` owned by the dedicated backup user).
+- **Network Transport**: All transit occurs over TLS 1.3 (S3 API) or SSH with strict host key verification.
+
 ### 5.1 Provider-Neutral Remote Sync Script (`/opt/orbitox/scripts/ops/sync-backups-offsite.sh`)
 ```bash
 #!/usr/bin/env bash
 # /opt/orbitox/scripts/ops/sync-backups-offsite.sh
-# Syncs local verified backup archives to encrypted remote object storage or secondary server.
+# Strictly additive synchronization of verified local backup archives.
 set -euo pipefail
 
-BACKUP_ROOT="/var/backups/orbitox"
-REMOTE_DEST="${REMOTE_BACKUP_TARGET:-}" # e.g. s3://my-orbitox-backups-bucket or user@remote-backup.internal:/backups
+BACKUP_ROOT="${BACKUP_ROOT_DIR:-/var/backups/orbitox}"
+REMOTE_DEST="${REMOTE_BACKUP_TARGET:-}"
 
 if [[ -z "$REMOTE_DEST" ]]; then
-  echo "⚠️  REMOTE_BACKUP_TARGET not set. Skipping off-site replication."
+  echo "ℹ️ [sync-backups-offsite] OFFSITE_NOT_CONFIGURED: REMOTE_BACKUP_TARGET is unset. Operating in local-backup-only mode."
   exit 0
 fi
 
-echo "🚀 [$(date -u)] Syncing backups to off-site target: ${REMOTE_DEST}..."
-
-if [[ "$REMOTE_DEST" == s3://* ]]; then
-  # AWS S3 / Cloudflare R2 / MinIO via aws cli
-  aws s3 sync "$BACKUP_ROOT" "$REMOTE_DEST" --delete
-elif [[ "$REMOTE_DEST" == *:* ]]; then
-  # SSH / rsync remote target
-  rsync -avz --delete -e "ssh -o StrictHostKeyChecking=accept-new" "$BACKUP_ROOT/" "$REMOTE_DEST/"
-fi
-
-echo "✅ [$(date -u)] Off-site backup sync complete."
+# Step 1: Pre-flight verify local SHA-256 checksums before copying
+# Step 2: Additively sync to remote target (s3://, ssh user@host:/path, or /local/path)
+# Invariant: Remote deletion flags (--delete) are strictly prohibited.
 ```

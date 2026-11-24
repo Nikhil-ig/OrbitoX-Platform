@@ -154,27 +154,41 @@ Apply pending Prisma migrations under `orbitox_migrator`. The runtime role (`orb
 
 ```bash
 # Source environment credentials
+set -a
 source /opt/orbitox/infra/docker/.env
+set +a
 
 # 1. Platform Database Migrations (Run under orbitox_migrator)
+# Export DATABASE_URL into shell environment to avoid exposing credentials on host process CLI
+export DATABASE_URL="postgresql://orbitox_migrator:${PLATFORM_MIGRATOR_PASSWORD}@platform-db:5432/orbitox_staging"
 docker compose -f /opt/orbitox/infra/docker/docker-compose.staging.yml run --rm --no-deps \
-  -e DATABASE_URL="postgresql://orbitox_migrator:${PLATFORM_MIGRATOR_PASSWORD}@platform-db:5432/orbitox_staging" \
+  -e DATABASE_URL \
   platform pnpm prisma migrate deploy
+unset DATABASE_URL
 
 # 2. Enable Platform Service Roles (Passwords ingested securely via psql \getenv)
+# Pass only variable names to docker exec (Docker forwards values from shell environment)
+export ORBITOX_RUNTIME_PASSWORD
+export ORBITOX_MAINTENANCE_PASSWORD
+export ORBITOX_PLATFORM_ADMIN_AUDIT_PASSWORD
+export HMS_AUDIT_READER_PASSWORD
+export ORBITOX_OUTBOX_RELAY_PASSWORD
+
 docker exec -i \
-  -e ORBITOX_RUNTIME_PASSWORD="$ORBITOX_RUNTIME_PASSWORD" \
-  -e ORBITOX_MAINTENANCE_PASSWORD="$ORBITOX_MAINTENANCE_PASSWORD" \
-  -e ORBITOX_PLATFORM_ADMIN_AUDIT_PASSWORD="$ORBITOX_PLATFORM_ADMIN_AUDIT_PASSWORD" \
-  -e HMS_AUDIT_READER_PASSWORD="$HMS_AUDIT_READER_PASSWORD" \
-  -e ORBITOX_OUTBOX_RELAY_PASSWORD="$ORBITOX_OUTBOX_RELAY_PASSWORD" \
+  -e ORBITOX_RUNTIME_PASSWORD \
+  -e ORBITOX_MAINTENANCE_PASSWORD \
+  -e ORBITOX_PLATFORM_ADMIN_AUDIT_PASSWORD \
+  -e HMS_AUDIT_READER_PASSWORD \
+  -e ORBITOX_OUTBOX_RELAY_PASSWORD \
   orbitox_staging_platform_db psql -U postgres -d orbitox_staging \
   -f /scripts/db/vps-enable-roles.sql
 
 # 3. RestaurantOS Database Migrations (Run under postgres superuser/migrator)
+export DATABASE_URL="postgresql://postgres:${ROS_POSTGRES_SUPERUSER_PASSWORD}@ros-db:5432/restaurant_os_staging"
 docker compose -f /opt/orbitox/infra/docker/docker-compose.staging.yml run --rm --no-deps \
-  -e DATABASE_URL="postgresql://postgres:${ROS_POSTGRES_SUPERUSER_PASSWORD}@ros-db:5432/restaurant_os_staging" \
+  -e DATABASE_URL \
   restaurant-os pnpm prisma migrate deploy
+unset DATABASE_URL
 
 echo "✅ Database schema migrations applied and service roles enabled successfully."
 ```

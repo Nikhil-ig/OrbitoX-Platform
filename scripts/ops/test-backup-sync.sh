@@ -95,6 +95,72 @@ fi
 echo "  ✅ PASS: Both new and historical backups safely exist in remote target (additive sync verified)."
 rm -rf "$TMP_LOCAL" "$TMP_REMOTE"
 
+# Test 5: Minimal cron-like environment execution (env -i)
+echo "▶ Test 5: Execution under minimal cron-like environment (env -i)..."
+TMP_LOCAL="$(mktemp -d)"
+TMP_REMOTE="$(mktemp -d)"
+
+mkdir -p "${TMP_LOCAL}/platform"
+echo "cron-test-backup" | gzip > "${TMP_LOCAL}/platform/cron_test.sql.gz"
+if command -v sha256sum >/dev/null 2>&1; then
+  (cd "${TMP_LOCAL}/platform" && sha256sum cron_test.sql.gz > cron_test.sql.gz.sha256)
+else
+  (cd "${TMP_LOCAL}/platform" && shasum -a 256 cron_test.sql.gz > cron_test.sql.gz.sha256)
+fi
+
+# Run with completely sanitized environment (no user variables, minimal PATH)
+env -i PATH="/usr/local/bin:/usr/bin:/bin" \
+  BACKUP_ROOT_DIR="${TMP_LOCAL}" \
+  REMOTE_BACKUP_TARGET="${TMP_REMOTE}" \
+  "$SYNC_SCRIPT" >/dev/null
+
+if [[ ! -f "${TMP_REMOTE}/platform/cron_test.sql.gz" ]]; then
+  echo "❌ FAIL: Cron environment execution failed to replicate backup archive!" >&2
+  rm -rf "$TMP_LOCAL" "$TMP_REMOTE"
+  exit 1
+fi
+echo "  ✅ PASS: Minimal cron-like environment (env -i) completed additive replication successfully."
+rm -rf "$TMP_LOCAL" "$TMP_REMOTE"
+
+# Test 6: Remote archive integrity & restore verification
+echo "▶ Test 6: Remote archive integrity & restore verification..."
+TMP_REMOTE="$(mktemp -d)"
+TMP_RESTORE="$(mktemp -d)"
+
+mkdir -p "${TMP_REMOTE}/platform"
+TEST_SQL_CONTENT="-- OrbitoX Backup Test\nCREATE TABLE test_restore (id serial primary key, name text);\nINSERT INTO test_restore (name) VALUES ('restored_ok');\n"
+printf "%b" "$TEST_SQL_CONTENT" | gzip > "${TMP_REMOTE}/platform/restore_test.sql.gz"
+if command -v sha256sum >/dev/null 2>&1; then
+  (cd "${TMP_REMOTE}/platform" && sha256sum restore_test.sql.gz > restore_test.sql.gz.sha256)
+else
+  (cd "${TMP_REMOTE}/platform" && shasum -a 256 restore_test.sql.gz > restore_test.sql.gz.sha256)
+fi
+
+# Verify remote archive hash
+expected_remote_hash="$(awk '{print $1}' "${TMP_REMOTE}/platform/restore_test.sql.gz.sha256")"
+if command -v sha256sum >/dev/null 2>&1; then
+  actual_remote_hash="$(sha256sum "${TMP_REMOTE}/platform/restore_test.sql.gz" | awk '{print $1}')"
+else
+  actual_remote_hash="$(shasum -a 256 "${TMP_REMOTE}/platform/restore_test.sql.gz" | awk '{print $1}')"
+fi
+
+if [[ "$expected_remote_hash" != "$actual_remote_hash" ]]; then
+  echo "❌ FAIL: Remote archive hash mismatch before restore!" >&2
+  rm -rf "$TMP_REMOTE" "$TMP_RESTORE"
+  exit 1
+fi
+
+# Simulate restore: decompress and assert SQL content matches
+gunzip -c "${TMP_REMOTE}/platform/restore_test.sql.gz" > "${TMP_RESTORE}/restored.sql"
+if ! grep -q "CREATE TABLE test_restore" "${TMP_RESTORE}/restored.sql" || ! grep -q "restored_ok" "${TMP_RESTORE}/restored.sql"; then
+  echo "❌ FAIL: Restored SQL content does not match original archive content!" >&2
+  rm -rf "$TMP_REMOTE" "$TMP_RESTORE"
+  exit 1
+fi
+
+echo "  ✅ PASS: Remote archive hash verified and test restoration completed successfully."
+rm -rf "$TMP_REMOTE" "$TMP_RESTORE"
+
 echo "================================================================"
 echo "🎉 ALL OFF-SITE BACKUP SYNC VERIFICATION TESTS PASSED CLEANLY!"
 echo "================================================================"

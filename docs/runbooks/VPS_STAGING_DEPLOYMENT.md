@@ -4,7 +4,7 @@
 > **Deployment Architecture:** Docker Compose v2 with Ingress Network Isolation  
 > **Primary Staging Domain:** `staging.orbitox.io` (Platform)  
 > **Hospitality Staging Domain:** `ros.staging.orbitox.io` (RestaurantOS)  
-> **Release Baseline SHA:** `5f2e97b4dd308aed6ff8008235582512d398cd97`  
+> **Release Baseline SHA:** `107ba645bce522e0e01ccba27e903dc4ee494f17`  
 
 ---
 
@@ -16,35 +16,46 @@
         ▼
 ┌───────────────────────────────────────────────────────────┐
 │               Caddy v2 Edge Proxy Container               │
-│               (orbitox_staging_caddy: 256M)               │
+│               (orbitox_staging_caddy: 256M, 0.25 vCPU)    │
 └──────────────┬─────────────────────────────┬──────────────┘
                │ (orbitox_ingress_net)       │ (orbitox_ingress_net)
                ▼                             ▼
 ┌─────────────────────────────┐ ┌─────────────────────────────┐
 │  OrbitoX Platform Next.js   │ │   RestaurantOS Runtime      │
-│  (orbitox_staging_platform) │ │ (orbitox_staging_restaurant)│
+│  (orbitox_staging_platform) │ │(orbitox_staging_restaurant_os)
 │  Port: 3005 (Internal)      │ │ Port: 4010 (Internal)       │
-│  Memory Limit: 2048M        │ │ Memory Limit: 1024M         │
-└──────┬───────────────┬──────┘ └──────┬───────────────┬──────┘
-       │               │               │               │
-       │ (platform_net)│ (platform_net)│ (ros_net)     │ (ros_net)
-       ▼               ▼               ▼               ▼
-┌──────────────┐ ┌──────────────┐ ┌──────────────┐ ┌──────────────┐
-│ Platform DB  │ │   Redis 7    │ │    ROS DB    │ │   Redis 7    │
-│ (PostgreSQL) │ │ (DB 0: Plat) │ │ (PostgreSQL) │ │ (DB 1: ROS)  │
-│ Limit: 1536M │ │ Limit: 512M  │ │ Limit: 1024M │ │ (Shared Mesh)│
-└──────────────┘ └──────────────┘ └──────────────┘ └──────────────┘
+│  Memory: 2048M | CPU: 1.25  │ │ Memory: 1024M | CPU: 0.75   │
+└──────┬───────────────┬──────┘ └──────────────┬──────────────┘
+       │               │                       │
+       │(platform_net) │(platform_net)         │(ros_net)
+       ▼               ▼                       ▼
+┌──────────────┐ ┌──────────────┐       ┌──────────────┐
+│ Platform DB  │ │   Redis 7    │       │    ROS DB    │
+│ (PostgreSQL) │ │ (Auth Cache) │       │ (PostgreSQL) │
+│ 1536M / 0.75 │ │ 512M / 0.25  │       │ 1024M / 0.50 │
+└──────────────┘ └──────────────┘       └──────────────┘
 ```
 
+### Network Topology & Isolation Boundaries
+- **`orbitox_ingress_net` (Shared Bridge)**:
+  - Connects `caddy`, `platform`, and `restaurant-os`.
+  - Exposes edge HTTP/HTTPS ports 80 and 443 on host. Backends communicate only through internal service aliases (`caddy`, `platform:3005`, `restaurant-os:4010`).
+- **`orbitox_platform_net` (Internal Bridge - No Host Gateway)**:
+  - Connects `platform`, `platform-db`, and `redis`.
+  - Zero access from `restaurant-os` or external networks. Zero host ports published.
+- **`orbitox_ros_net` (Internal Bridge - No Host Gateway)**:
+  - Connects `restaurant-os` and `ros-db`.
+  - Zero access from `platform`, `redis`, or external networks. Zero host ports published.
+
 ### Resource Budget & Safety Allocations
-- **Platform Web**: 2048 MB RAM, 1.50 vCPU
-- **Platform DB**: 1536 MB RAM, 1.00 vCPU
-- **RestaurantOS Web**: 1024 MB RAM, 1.00 vCPU
+- **Platform Web**: 2048 MB RAM, 1.25 vCPU
+- **Platform DB**: 1536 MB RAM, 0.75 vCPU
+- **RestaurantOS Web**: 1024 MB RAM, 0.75 vCPU
 - **RestaurantOS DB**: 1024 MB RAM, 0.50 vCPU
-- **Redis Mesh**: 512 MB RAM, 0.50 vCPU
-- **Caddy Ingress**: 256 MB RAM, 0.50 vCPU
-- **Total Containers Limit**: 6400 MB RAM (~6.25 GB)
-- **Host Reserve (OS, SSH, Docker)**: 1792 MB RAM (~1.75 GB)
+- **Redis Mesh**: 512 MB RAM, 0.25 vCPU
+- **Caddy Ingress**: 256 MB RAM, 0.25 vCPU
+- **Total Containers Limit**: 6400 MB RAM (~6.25 GB), 3.75 vCPU
+- **Host Reserve (OS, SSH, Docker Engine)**: 1792 MB RAM (~1.75 GB), 0.25 vCPU
 
 ---
 
@@ -121,23 +132,37 @@ docker compose -f docker-compose.staging.yml ps
 Execute pending Prisma migrations under `orbitox_migrator`:
 
 ```bash
+set -a
 source /opt/orbitox/infra/docker/.env
+set +a
 
+# Export DATABASE_URL into shell environment to avoid exposing credentials on host process CLI
+export DATABASE_URL="postgresql://orbitox_migrator:${PLATFORM_MIGRATOR_PASSWORD}@platform-db:5432/orbitox_staging"
+
+# Pass only the variable name (-e DATABASE_URL) to Docker Compose
 docker compose -f docker-compose.staging.yml run --rm --no-deps \
-  -e DATABASE_URL="postgresql://orbitox_migrator:${PLATFORM_MIGRATOR_PASSWORD}@platform-db:5432/orbitox_staging" \
+  -e DATABASE_URL \
   platform pnpm prisma migrate deploy
+
+unset DATABASE_URL
 ```
 
 ### Step 3.3: Enable Platform Service Roles
-Run `vps-enable-roles.sql` to activate the 5 service roles with secure passwords (read directly via psql `\getenv` from the environment):
+Run `vps-enable-roles.sql` to activate the 5 service roles with secure passwords (read directly via psql `\getenv` from the environment). Export credentials to the shell and pass only variable names to `docker exec`:
 
 ```bash
+export ORBITOX_RUNTIME_PASSWORD
+export ORBITOX_MAINTENANCE_PASSWORD
+export ORBITOX_PLATFORM_ADMIN_AUDIT_PASSWORD
+export HMS_AUDIT_READER_PASSWORD
+export ORBITOX_OUTBOX_RELAY_PASSWORD
+
 docker exec -i \
-  -e ORBITOX_RUNTIME_PASSWORD="$ORBITOX_RUNTIME_PASSWORD" \
-  -e ORBITOX_MAINTENANCE_PASSWORD="$ORBITOX_MAINTENANCE_PASSWORD" \
-  -e ORBITOX_PLATFORM_ADMIN_AUDIT_PASSWORD="$ORBITOX_PLATFORM_ADMIN_AUDIT_PASSWORD" \
-  -e HMS_AUDIT_READER_PASSWORD="$HMS_AUDIT_READER_PASSWORD" \
-  -e ORBITOX_OUTBOX_RELAY_PASSWORD="$ORBITOX_OUTBOX_RELAY_PASSWORD" \
+  -e ORBITOX_RUNTIME_PASSWORD \
+  -e ORBITOX_MAINTENANCE_PASSWORD \
+  -e ORBITOX_PLATFORM_ADMIN_AUDIT_PASSWORD \
+  -e HMS_AUDIT_READER_PASSWORD \
+  -e ORBITOX_OUTBOX_RELAY_PASSWORD \
   orbitox_staging_platform_db psql -U postgres -d orbitox_staging \
   -f /scripts/db/vps-enable-roles.sql
 ```
@@ -146,9 +171,14 @@ docker exec -i \
 Execute RestaurantOS migrations:
 
 ```bash
+export DATABASE_URL="postgresql://postgres:${ROS_POSTGRES_SUPERUSER_PASSWORD}@ros-db:5432/restaurant_os_staging"
+
+# Pass only the variable name (-e DATABASE_URL) to Docker Compose
 docker compose -f docker-compose.staging.yml run --rm --no-deps \
-  -e DATABASE_URL="postgresql://postgres:${ROS_POSTGRES_SUPERUSER_PASSWORD}@ros-db:5432/restaurant_os_staging" \
+  -e DATABASE_URL \
   restaurant-os pnpm prisma migrate deploy
+
+unset DATABASE_URL
 ```
 
 ### Step 3.5: Launch Applications & Ingress Proxy
@@ -161,7 +191,7 @@ docker compose -f docker-compose.staging.yml up -d platform restaurant-os caddy
 docker compose -f docker-compose.staging.yml ps
 ```
 
-### Step 3.3: Verify Ingress & Edge Proxy
+### Step 3.6: Verify Ingress & Edge Proxy
 1. Platform health check via Caddy:
    ```bash
    curl -I https://staging.orbitox.io/api/health
@@ -200,9 +230,13 @@ docker compose -f docker-compose.staging.yml exec -T platform \
 
 Alternatively, from the host via a one-off run container:
 ```bash
+export APP_DATABASE_URL="postgresql://orbitox_runtime:${ORBITOX_RUNTIME_PASSWORD}@platform-db:5432/orbitox_staging"
+
 docker compose -f docker-compose.staging.yml run --rm --no-deps \
-  -e APP_DATABASE_URL="postgresql://orbitox_runtime:${ORBITOX_RUNTIME_PASSWORD}@platform-db:5432/orbitox_staging" \
+  -e APP_DATABASE_URL \
   platform node scripts/ops/run-staging-inventory.js
+
+unset APP_DATABASE_URL
 ```
 
 ### Expected Output Criteria:
