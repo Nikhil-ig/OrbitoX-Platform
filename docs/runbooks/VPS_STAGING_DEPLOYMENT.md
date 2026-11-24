@@ -4,7 +4,7 @@
 > **Deployment Architecture:** Docker Compose v2 with Ingress Network Isolation  
 > **Primary Staging Domain:** `staging.orbitox.io` (Platform)  
 > **Hospitality Staging Domain:** `ros.staging.orbitox.io` (RestaurantOS)  
-> **Release Baseline SHA:** `107ba645bce522e0e01ccba27e903dc4ee494f17`  
+> **Release Baseline SHA:** `278b4c289763a87e4527688958dfae7421048b82`  
 
 ---
 
@@ -65,9 +65,17 @@
 ```bash
 git clone https://github.com/Nikhil-ig/OrbitoX-Platform.git /opt/orbitox
 cd /opt/orbitox
-git checkout feat/console-ui-unification
-# Verify commit integrity
-git rev-parse HEAD
+
+# Explicitly pin and check out the verified release baseline commit
+git checkout 278b4c289763a87e4527688958dfae7421048b82
+
+# Assert exact commit integrity before proceeding
+CURRENT_COMMIT="$(git rev-parse HEAD)"
+if [[ "$CURRENT_COMMIT" != "278b4c289763a87e4527688958dfae7421048b82" ]]; then
+  echo "❌ Fatal: Commit mismatch! Expected 278b4c289763a87e4527688958dfae7421048b82, got ${CURRENT_COMMIT}" >&2
+  exit 1
+fi
+echo "✅ Verified baseline commit: ${CURRENT_COMMIT}"
 ```
 
 ### Step 2.2: Prepare Environment File (`.env`)

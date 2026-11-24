@@ -31,40 +31,39 @@ OrbitoX utilizes two physically isolated PostgreSQL databases to enforce strict 
 
 ### 2.1 OrbitoX Platform Database Backup
 
-The Platform backup utility performs a full cluster dump with schema, data, and partition metadata, compressed using gzip level 9, and produces an authoritative SHA-256 checksum file.
+The Platform backup utility performs a full cluster dump with schema, data, and partition metadata, compressed using gzip level 9, and produces an authoritative SHA-256 checksum file. It connects directly to the container via `docker exec`, requiring zero host-port exposure:
 
 ```bash
 # Execute from apps/platform directory
 cd /opt/orbitox/apps/platform
 
-APP_DATABASE_URL="postgresql://orbitox_migrator:${MIGRATOR_PASS}@127.0.0.1:5432/orbitox_staging" \
-  ./scripts/ops/backup-platform-postgres.sh \
-    --full \
-    --output-dir /var/backups/orbitox/platform \
-    --retention-days 7
+./scripts/ops/backup-platform-postgres.sh \
+  --full \
+  --container "orbitox_staging_platform_db" \
+  --output-dir /var/backups/orbitox/platform \
+  --retention-days 7
 ```
 
 **Artifacts Generated:**
-- Compressed Dump: `/var/backups/orbitox/platform/platform_db_full_YYYYMMDD_HHMMSSZ.sql.gz`
-- Checksum File: `/var/backups/orbitox/platform/platform_db_full_YYYYMMDD_HHMMSSZ.sql.gz.sha256`
+- Compressed Dump: `/var/backups/orbitox/platform/platform_db_full_YYYYMMDD_HHMMSSZ.sql.gz` (mode 0600)
+- Checksum File: `/var/backups/orbitox/platform/platform_db_full_YYYYMMDD_HHMMSSZ.sql.gz.sha256` (mode 0600)
 
 ### 2.2 RestaurantOS Database Backup
 
-The RestaurantOS backup utility supports both full database dumps and single-tenant JSON exports:
+The RestaurantOS backup utility supports both full database dumps and single-tenant JSON exports without requiring exposed host ports:
 
 ```bash
 # Execute from services/restaurant-api directory
 cd /opt/orbitox/services/restaurant-api
 
-# Full Database Dump
-DATABASE_URL="postgresql://postgres:${ROS_SUPERUSER_PASS}@127.0.0.1:5433/restaurant_os_staging" \
-  ./scripts/backup-postgres.sh \
-    --full \
-    --output-dir /var/backups/orbitox/restaurant-os \
-    --retention-days 7
+# Full Database Dump (via docker exec against container)
+./scripts/backup-postgres.sh \
+  --full \
+  --container "orbitox_staging_ros_db" \
+  --output-dir /var/backups/orbitox/restaurant-os \
+  --retention-days 7
 
 # Isolated Single-Tenant Export (e.g. for GDPR or tenant offboarding)
-DATABASE_URL="postgresql://postgres:${ROS_SUPERUSER_PASS}@127.0.0.1:5433/restaurant_os_staging" \
 RESTAURANTOS_PLATFORM_TOKEN="${RESTAURANTOS_PLATFORM_TOKEN}" \
   ./scripts/backup-postgres.sh \
     --tenant "tenant-dining-101" \
@@ -89,39 +88,18 @@ EOF'
 sudo chmod 644 /etc/cron.d/orbitox-backups
 ```
 
-### Combined Cron Runner Script (`/opt/orbitox/scripts/ops/backup-all-staging-databases.sh`):
+### Maintained Production Runner (`/opt/orbitox/scripts/ops/backup-all-staging-databases.sh`)
+The cron job delegates entirely to the canonical maintained script `/opt/orbitox/scripts/ops/backup-all-staging-databases.sh`. This runner:
+- Sets a restrictive `umask 077` and enforces `0700` directory permissions on `/var/backups/orbitox`.
+- Automatically loads credentials and settings from `/opt/orbitox/infra/docker/.env` in minimal cron environments.
+- Executes `backup-platform-postgres.sh` against `orbitox_staging_platform_db` (zero exposed host ports).
+- Executes `backup-postgres.sh` against `orbitox_staging_ros_db` (zero exposed host ports).
+- Triggers `/opt/orbitox/scripts/ops/sync-backups-offsite.sh` with `REMOTE_BACKUP_TARGET`.
+- **Fail-Closed Contract**: Never suppresses backup or off-site synchronization failures. If replication fails, the runner exits immediately with non-zero exit code (`1`) to trigger cron alerting.
+
+To execute or test the full backup process manually:
 ```bash
-#!/usr/bin/env bash
-set -euo pipefail
-
-# Uses docker exec against running database containers (zero exposed host ports needed).
-BACKUP_ROOT="${BACKUP_ROOT_DIR:-/var/backups/orbitox}"
-PLATFORM_BACKUP_DIR="${BACKUP_ROOT}/platform"
-ROS_BACKUP_DIR="${BACKUP_ROOT}/restaurant-os"
-RETENTION_DAYS="${BACKUP_RETENTION_DAYS:-7}"
-
-echo "🚀 [$(date -u)] Starting dual-database scheduled backup..."
-
-# 1. Platform Backup (via docker exec)
-/opt/orbitox/apps/platform/scripts/ops/backup-platform-postgres.sh \
-  --full \
-  --container "orbitox_staging_platform_db" \
-  --output-dir "$PLATFORM_BACKUP_DIR" \
-  --retention-days "$RETENTION_DAYS"
-
-# 2. RestaurantOS Backup (via docker exec)
-/opt/orbitox/services/restaurant-api/scripts/backup-postgres.sh \
-  --full \
-  --container "orbitox_staging_ros_db" \
-  --output-dir "$ROS_BACKUP_DIR" \
-  --retention-days "$RETENTION_DAYS"
-
-# 3. Off-Site Backup Sync (if configured)
-if [[ -f "/opt/orbitox/scripts/ops/sync-backups-offsite.sh" ]]; then
-  /opt/orbitox/scripts/ops/sync-backups-offsite.sh || echo "⚠️ Off-site replication warning."
-fi
-
-echo "✅ [$(date -u)] Dual-database scheduled backup finished successfully."
+/opt/orbitox/scripts/ops/backup-all-staging-databases.sh
 ```
 
 ---
@@ -154,48 +132,62 @@ docker compose -f /opt/orbitox/infra/docker/docker-compose.staging.yml stop plat
 ### Step 4.3: Ensure Cluster Roles & Target Database Exist
 If restoring into a new, blank, or reconstructed PostgreSQL instance:
 
-1. **Bootstrap Cluster Roles & Ownership:**
-   ```bash
-   export PLATFORM_MIGRATOR_PASSWORD="${PLATFORM_MIGRATOR_PASSWORD}"
-   psql -h 127.0.0.1 -p 5432 -U postgres -d postgres \
-     -f /opt/orbitox/scripts/db/vps-bootstrap-roles.sql
-   ```
+```bash
+set -euo pipefail
 
-2. **Enable Operational Service Roles (Passwords ingested securely via psql \getenv):**
-   ```bash
-   export ORBITOX_RUNTIME_PASSWORD="${ORBITOX_RUNTIME_PASSWORD}"
-   export ORBITOX_MAINTENANCE_PASSWORD="${ORBITOX_MAINTENANCE_PASSWORD}"
-   export ORBITOX_PLATFORM_ADMIN_AUDIT_PASSWORD="${ORBITOX_PLATFORM_ADMIN_AUDIT_PASSWORD}"
-   export HMS_AUDIT_READER_PASSWORD="${HMS_AUDIT_READER_PASSWORD}"
-   export ORBITOX_OUTBOX_RELAY_PASSWORD="${ORBITOX_OUTBOX_RELAY_PASSWORD}"
-   psql -h 127.0.0.1 -p 5432 -U postgres -d postgres \
-     -f /opt/orbitox/scripts/db/vps-enable-roles.sql
-   ```
+# 1. Bootstrap Cluster Roles & Ownership (via docker exec, zero host ports)
+export PLATFORM_MIGRATOR_PASSWORD="${PLATFORM_MIGRATOR_PASSWORD}"
 
-3. **Ensure Database Exists and is Owned by `orbitox_migrator`:**
-   ```bash
-   psql -h 127.0.0.1 -p 5432 -U postgres -d postgres -c \
-     "CREATE DATABASE orbitox_staging OWNER orbitox_migrator;" || true
-   ```
+docker exec -i \
+  -e PLATFORM_MIGRATOR_PASSWORD \
+  orbitox_staging_platform_db psql -U postgres -d postgres -v ON_ERROR_STOP=1 \
+  -f /scripts/db/vps-bootstrap-roles.sql
+
+# 2. Enable Operational Service Roles (Passwords ingested securely via psql \getenv)
+export ORBITOX_RUNTIME_PASSWORD="${ORBITOX_RUNTIME_PASSWORD}"
+export ORBITOX_MAINTENANCE_PASSWORD="${ORBITOX_MAINTENANCE_PASSWORD}"
+export ORBITOX_PLATFORM_ADMIN_AUDIT_PASSWORD="${ORBITOX_PLATFORM_ADMIN_AUDIT_PASSWORD}"
+export HMS_AUDIT_READER_PASSWORD="${HMS_AUDIT_READER_PASSWORD}"
+export ORBITOX_OUTBOX_RELAY_PASSWORD="${ORBITOX_OUTBOX_RELAY_PASSWORD}"
+
+docker exec -i \
+  -e ORBITOX_RUNTIME_PASSWORD \
+  -e ORBITOX_MAINTENANCE_PASSWORD \
+  -e ORBITOX_PLATFORM_ADMIN_AUDIT_PASSWORD \
+  -e HMS_AUDIT_READER_PASSWORD \
+  -e ORBITOX_OUTBOX_RELAY_PASSWORD \
+  orbitox_staging_platform_db psql -U postgres -d postgres -v ON_ERROR_STOP=1 \
+  -f /scripts/db/vps-enable-roles.sql
+
+# 3. Ensure Database Exists and is Owned by orbitox_migrator
+docker exec -i orbitox_staging_platform_db psql -U postgres -d postgres -v ON_ERROR_STOP=1 -c \
+  "CREATE DATABASE orbitox_staging OWNER orbitox_migrator;" || true
+```
 
 ### Step 4.4: Restore Platform Database (Schema, Data, Owners & ACLs)
-Stream the compressed archive into `psql` as `postgres` or `orbitox_migrator`:
+Stream the compressed archive into `psql` inside the container with pipeline error detection and `ON_ERROR_STOP=1`:
 
 ```bash
+set -euo pipefail
+set -o pipefail
+
 gunzip -c /var/backups/orbitox/platform/platform_db_full_YYYYMMDD_HHMMSSZ.sql.gz | \
-  docker exec -i orbitox_staging_platform_db psql -U postgres -d orbitox_staging
+  docker exec -i orbitox_staging_platform_db psql -U postgres -d orbitox_staging -v ON_ERROR_STOP=1
 ```
 
 ### Step 4.5: Restore RestaurantOS Database
 For RestaurantOS:
 ```bash
+set -euo pipefail
+set -o pipefail
+
 # Ensure restaurant_os_staging database exists
-docker exec -i orbitox_staging_ros_db psql -U postgres -c \
+docker exec -i orbitox_staging_ros_db psql -U postgres -v ON_ERROR_STOP=1 -c \
   "CREATE DATABASE restaurant_os_staging;" || true
 
-# Restore dump
+# Restore dump with failure propagation
 gunzip -c /var/backups/orbitox/restaurant-os/restaurantos_db_full_YYYYMMDD_HHMMSSZ.sql.gz | \
-  docker exec -i orbitox_staging_ros_db psql -U postgres -d restaurant_os_staging
+  docker exec -i orbitox_staging_ros_db psql -U postgres -d restaurant_os_staging -v ON_ERROR_STOP=1
 ```
 
 ### Step 4.6: Re-validate System & Restart Applications
@@ -234,12 +226,33 @@ Target backup destinations MUST enforce encryption at rest:
 - **SSH / Remote Rsync Host**: Target filesystems must be encrypted (e.g. dm-crypt/LUKS) with restricted directory permissions (`0700` owned by the dedicated backup user).
 - **Network Transport**: All transit occurs over TLS 1.3 (S3 API) or SSH with strict host key verification.
 
+### SSH Remote Host Verification & Pinned Known-Hosts Setup
+To protect against Man-In-The-Middle (MITM) attacks and ensure fail-closed security, the replication runner enforces `StrictHostKeyChecking=yes`. Trust-on-first-use (`accept-new`) is strictly prohibited.
+
+Before configuring an SSH/rsync remote destination (`user@dr-backup.internal:/var/backups/orbitox`), the host administrator MUST independently verify and pin the remote host key:
+
+```bash
+# 1. Query the remote host public key:
+ssh-keyscan -t ed25519,rsa dr-backup.internal > /tmp/backup_host.key
+
+# 2. Independently verify the host key fingerprint out-of-band:
+ssh-keygen -lf /tmp/backup_host.key
+# Compare output against the verified fingerprint provided by the backup infrastructure team
+
+# 3. Append to ~/.ssh/known_hosts (mode 0644):
+cat /tmp/backup_host.key >> ~/.ssh/known_hosts
+chmod 644 ~/.ssh/known_hosts
+rm -f /tmp/backup_host.key
+```
+If the remote host key is absent from `known_hosts` or changes, `sync-backups-offsite.sh` fails closed immediately with exit code 255.
+
 ### 5.1 Provider-Neutral Remote Sync Script (`/opt/orbitox/scripts/ops/sync-backups-offsite.sh`)
 ```bash
 #!/usr/bin/env bash
 # /opt/orbitox/scripts/ops/sync-backups-offsite.sh
 # Strictly additive synchronization of verified local backup archives.
 set -euo pipefail
+umask 077
 
 BACKUP_ROOT="${BACKUP_ROOT_DIR:-/var/backups/orbitox}"
 REMOTE_DEST="${REMOTE_BACKUP_TARGET:-}"
@@ -250,6 +263,6 @@ if [[ -z "$REMOTE_DEST" ]]; then
 fi
 
 # Step 1: Pre-flight verify local SHA-256 checksums before copying
-# Step 2: Additively sync to remote target (s3://, ssh user@host:/path, or /local/path)
+# Step 2: Additively sync to remote target (s3://, ssh user@host:/path with StrictHostKeyChecking=yes, or /local/path)
 # Invariant: Remote deletion flags (--delete) are strictly prohibited.
 ```

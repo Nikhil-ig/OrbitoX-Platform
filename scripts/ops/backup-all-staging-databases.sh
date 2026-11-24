@@ -6,12 +6,19 @@
 # Uses docker exec against running database containers (no exposed host ports needed).
 # ==============================================================================
 set -euo pipefail
+umask 077
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 
-# Ensure PATH includes standard system and local bin directories for cron execution
-export PATH="/usr/local/bin:/usr/bin:/bin:${PATH:-}"
+# Ensure standard system and local bin directories are in PATH for cron execution
+for p in /usr/local/bin /usr/bin /bin; do
+  case ":${PATH:-}:" in
+    *:"$p":*) ;;
+    *) PATH="${PATH:+$PATH:}$p" ;;
+  esac
+done
+export PATH
 
 # Auto-load protected staging environment configuration if not already provided
 ENV_FILE=""
@@ -33,6 +40,10 @@ PLATFORM_BACKUP_DIR="${BACKUP_ROOT}/platform"
 ROS_BACKUP_DIR="${BACKUP_ROOT}/restaurant-os"
 RETENTION_DAYS="${BACKUP_RETENTION_DAYS:-7}"
 export REMOTE_BACKUP_TARGET="${REMOTE_BACKUP_TARGET:-}"
+
+# Ensure backup directories exist with restrictive 0700 permissions
+mkdir -m 0700 -p "$BACKUP_ROOT" "$PLATFORM_BACKUP_DIR" "$ROS_BACKUP_DIR"
+chmod 0700 "$BACKUP_ROOT" "$PLATFORM_BACKUP_DIR" "$ROS_BACKUP_DIR" 2>/dev/null || true
 
 echo "🚀 [$(date -u '+%Y-%m-%d %H:%M:%SZ')] Starting scheduled dual-database backup..."
 

@@ -15,6 +15,7 @@
 # ==============================================================================
 
 set -euo pipefail
+umask 077
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PLATFORM_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
@@ -120,7 +121,8 @@ if [[ -z "$DB_URL" && -z "$CONTAINER_NAME" ]]; then
   exit 1
 fi
 
-mkdir -p "$OUTPUT_DIR"
+mkdir -m 0700 -p "$OUTPUT_DIR"
+chmod 0700 "$OUTPUT_DIR" 2>/dev/null || true
 
 # Compute checksum helper
 compute_checksum() {
@@ -131,7 +133,9 @@ compute_checksum() {
     shasum -a 256 "$target_file" > "${target_file}.sha256"
   else
     echo "⚠️  Warning: Neither sha256sum nor shasum available; checksum skipped." >&2
+    return 1
   fi
+  chmod 0600 "${target_file}.sha256" 2>/dev/null || true
 }
 
 DUMP_ARGS=("--clean" "--if-exists")
@@ -178,6 +182,7 @@ if [[ ! -s "$BACKUP_FILE" ]]; then
   exit 1
 fi
 
+chmod 0600 "$BACKUP_FILE" 2>/dev/null || true
 compute_checksum "$BACKUP_FILE"
 
 BACKUP_SIZE="$(du -h "$BACKUP_FILE" | cut -f1)"
