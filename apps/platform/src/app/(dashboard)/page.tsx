@@ -81,23 +81,44 @@ export default function CustomerDashboardPage() {
 
         if (Array.isArray(meData?.memberships) && meData.memberships.length > 0) {
           const allProjects: ProjectRecord[] = [];
+          let discoveredOrgName = '';
           for (const m of meData.memberships) {
             if (!m?.organizationId) continue;
             try {
               const tenantsRes = await fetch(`/api/v1/customer/organizations/${encodeURIComponent(m.organizationId)}/tenants`);
               if (tenantsRes.ok) {
                 const tenantsData = await tenantsRes.json();
+                const fetchedProjects: ProjectRecord[] = [];
                 if (Array.isArray(tenantsData.projects)) {
-                  allProjects.push(...tenantsData.projects);
+                  fetchedProjects.push(...tenantsData.projects);
+                } else if (Array.isArray(tenantsData.tenants)) {
+                  for (const t of tenantsData.tenants) {
+                    if (t.project) {
+                      fetchedProjects.push({
+                        id: t.project.id,
+                        name: t.project.name,
+                        slug: t.project.slug,
+                        vertical: 'RestaurantOS',
+                        createdAt: t.project.createdAt,
+                      });
+                    }
+                  }
+                }
+                if (fetchedProjects.length > 0) {
+                  allProjects.push(...fetchedProjects);
+                  if (m?.organization?.name) {
+                    discoveredOrgName = m.organization.name;
+                  }
                 }
                 if (tenantsData?.organization?.name) {
-                  setOrgName(tenantsData.organization.name);
+                  discoveredOrgName = tenantsData.organization.name;
                 }
               }
             } catch { }
           }
           if (isMounted) {
             setProjects(allProjects);
+            if (discoveredOrgName) setOrgName(discoveredOrgName);
           }
         }
       } catch (err) {

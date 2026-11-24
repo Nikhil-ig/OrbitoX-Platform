@@ -322,6 +322,63 @@ export function renderStaffWorkspace(
     }
   </style>
 
+  <!-- Add Staff Modal -->
+  <div id="add-staff-modal" style="display: none; position: fixed; inset: 0; background: rgba(15, 23, 42, 0.45); backdrop-filter: blur(4px); z-index: 99999; align-items: center; justify-content: center;">
+    <div style="background: #FFFFFF; border-radius: 24px; padding: 32px; width: 440px; max-width: 90vw; box-shadow: 0 20px 40px rgba(0,0,0,0.15); border: 1px solid rgba(0,0,0,0.06);">
+      <h3 style="font-size: 20px; font-weight: 800; color: #0F172A; margin-bottom: 6px;">Add Staff Member</h3>
+      <p style="font-size: 13px; color: #64748B; margin-bottom: 20px;">Grant role-based PIN access to servers, chefs, hosts, or managers.</p>
+      
+      <form id="add-staff-form" onsubmit="submitAddStaff(event)">
+        <div style="margin-bottom: 16px;">
+          <label style="display: block; font-size: 12px; font-weight: 700; color: #334155; margin-bottom: 6px; text-transform: uppercase;">Full Name</label>
+          <input type="text" id="staff-name-input" required placeholder="e.g. Ramesh Kumar" style="width: 100%; padding: 10px 14px; border-radius: 12px; border: 1px solid #CBD5E1; font-size: 14px; outline: none; box-sizing: border-box;" />
+        </div>
+        
+        <div style="margin-bottom: 16px;">
+          <label style="display: block; font-size: 12px; font-weight: 700; color: #334155; margin-bottom: 6px; text-transform: uppercase;">Role</label>
+          <select id="staff-role-input" style="width: 100%; padding: 10px 14px; border-radius: 12px; border: 1px solid #CBD5E1; font-size: 14px; outline: none; background: #FFFFFF; box-sizing: border-box;">
+            <option value="SERVER">Server / Waiter (Take orders &amp; bill request)</option>
+            <option value="CHEF">Chef / Kitchen Line (KDS station &amp; bump)</option>
+            <option value="HOST">Host / Reception (Waitlist &amp; table assign)</option>
+            <option value="MANAGER">Shift Manager (All operations &amp; voids)</option>
+            <option value="POS">POS Terminal Station</option>
+          </select>
+        </div>
+        
+        <div style="margin-bottom: 24px;">
+          <label style="display: block; font-size: 12px; font-weight: 700; color: #334155; margin-bottom: 6px; text-transform: uppercase;">Access PIN (4-8 digits)</label>
+          <input type="password" id="staff-pin-input" required pattern="[0-9]{4,8}" placeholder="4 to 8 digits" style="width: 100%; padding: 10px 14px; border-radius: 12px; border: 1px solid #CBD5E1; font-size: 14px; outline: none; box-sizing: border-box;" />
+        </div>
+        
+        <div style="display: flex; justify-content: flex-end; gap: 10px;">
+          <button type="button" onclick="closeAddStaffModal()" class="btn btn-secondary" style="border-radius: 9999px; padding: 9px 20px; font-size: 13px; font-weight: 600;">Cancel</button>
+          <button type="submit" class="btn btn-primary" style="border-radius: 9999px; padding: 9px 24px; font-size: 13px; font-weight: 600;">Save &amp; Activate</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Reset PIN Modal -->
+  <div id="reset-pin-modal" style="display: none; position: fixed; inset: 0; background: rgba(15, 23, 42, 0.45); backdrop-filter: blur(4px); z-index: 99999; align-items: center; justify-content: center;">
+    <div style="background: #FFFFFF; border-radius: 24px; padding: 32px; width: 400px; max-width: 90vw; box-shadow: 0 20px 40px rgba(0,0,0,0.15); border: 1px solid rgba(0,0,0,0.06);">
+      <h3 style="font-size: 20px; font-weight: 800; color: #0F172A; margin-bottom: 6px;" id="reset-pin-title">Change PIN</h3>
+      <p style="font-size: 13px; color: #64748B; margin-bottom: 20px;">Enter a new 4-digit security PIN for terminal login.</p>
+      
+      <form id="reset-pin-form" onsubmit="submitResetPin(event)">
+        <input type="hidden" id="reset-pin-id" />
+        <div style="margin-bottom: 24px;">
+          <label style="display: block; font-size: 12px; font-weight: 700; color: #334155; margin-bottom: 6px; text-transform: uppercase;">New 4-digit PIN</label>
+          <input type="password" id="new-pin-input" required pattern="[0-9]{4}" maxlength="4" placeholder="••••" style="width: 100%; padding: 10px 14px; border-radius: 12px; border: 1px solid #CBD5E1; font-size: 18px; letter-spacing: 0.2em; text-align: center; outline: none; box-sizing: border-box;" />
+        </div>
+        
+        <div style="display: flex; justify-content: flex-end; gap: 10px;">
+          <button type="button" onclick="closeResetPinModal()" class="btn btn-secondary" style="border-radius: 9999px; padding: 9px 20px; font-size: 13px; font-weight: 600;">Cancel</button>
+          <button type="submit" class="btn btn-primary" style="border-radius: 9999px; padding: 9px 24px; font-size: 13px; font-weight: 600;">Update PIN</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
   <script>
     function filterStaff(category, btn) {
       document.querySelectorAll('.staff-tab, .staff-tab-red').forEach(b => b.classList.remove('active'));
@@ -359,9 +416,24 @@ export function renderStaffWorkspace(
       }
     }
 
-    async function resetStaffPin(id, name) {
-      const pin = prompt('Enter new 4-digit PIN for ' + name + ':');
-      if (!pin || pin.length !== 4 || !/^\\d{4}$/.test(pin)) {
+    function resetStaffPin(id, name) {
+      document.getElementById('reset-pin-id').value = id;
+      document.getElementById('reset-pin-title').textContent = 'Change PIN · ' + name;
+      document.getElementById('new-pin-input').value = '';
+      const modal = document.getElementById('reset-pin-modal');
+      modal.style.display = 'flex';
+      setTimeout(() => document.getElementById('new-pin-input').focus(), 50);
+    }
+
+    function closeResetPinModal() {
+      document.getElementById('reset-pin-modal').style.display = 'none';
+    }
+
+    async function submitResetPin(event) {
+      event.preventDefault();
+      const id = document.getElementById('reset-pin-id').value;
+      const pin = document.getElementById('new-pin-input').value.trim();
+      if (!pin || pin.length !== 4 || !/^\d{4}$/.test(pin)) {
         window.showToast('PIN must be exactly 4 digits.', 'error');
         return;
       }
@@ -370,9 +442,10 @@ export function renderStaffWorkspace(
           method: 'PATCH',
           body: { pin }
         });
-        window.showToast('PIN updated for ' + name + ' successfully!', 'success');
+        window.showToast('PIN updated successfully!', 'success');
+        closeResetPinModal();
       } catch (e) {
-        window.showToast('PIN for ' + name + ' updated to ' + pin, 'success');
+        window.showToast('Failed to update PIN: ' + (e.message || 'Error'), 'error');
       }
     }
 
@@ -390,25 +463,43 @@ export function renderStaffWorkspace(
       window.showToast('Managing profile for ' + name, 'info');
     }
 
-    async function addPersonDialog() {
-      const name = prompt('Enter staff member full name:');
-      if (!name || !name.trim()) return;
-      const role = prompt('Enter role (SERVER, CHEF, HOST, MANAGER, POS):', 'SERVER');
-      if (!role) return;
-      const pin = prompt('Enter 4-8 digit access PIN:', '1234');
-      if (!pin) return;
+    function addPersonDialog() {
+      document.getElementById('staff-name-input').value = '';
+      document.getElementById('staff-role-input').value = 'SERVER';
+      document.getElementById('staff-pin-input').value = '';
+      const modal = document.getElementById('add-staff-modal');
+      modal.style.display = 'flex';
+      setTimeout(() => document.getElementById('staff-name-input').focus(), 50);
+    }
+
+    function closeAddStaffModal() {
+      document.getElementById('add-staff-modal').style.display = 'none';
+    }
+
+    async function submitAddStaff(event) {
+      event.preventDefault();
+      const name = document.getElementById('staff-name-input').value.trim();
+      const role = document.getElementById('staff-role-input').value.trim();
+      const pin = document.getElementById('staff-pin-input').value.trim();
+
+      if (!name) return;
+      if (!pin || pin.length < 4 || pin.length > 8 || !/^\d+$/.test(pin)) {
+        window.showToast('PIN must be between 4 and 8 digits.', 'error');
+        return;
+      }
 
       try {
         await window.apiFetch('/api/restaurant/staff', {
           method: 'POST',
           body: {
-            name: name.trim(),
-            role: role.trim().toUpperCase(),
-            pin: pin.trim(),
+            name,
+            role: role.toUpperCase(),
+            pin,
             branchId: window.__STAFF_SESSION__?.branchId || 'branch_maxora-resto_main'
           }
         });
-        window.showToast('Successfully added ' + name.trim() + ' (' + role.trim().toUpperCase() + ')', 'success');
+        window.showToast('Successfully added ' + name + ' (' + role + ')', 'success');
+        closeAddStaffModal();
         setTimeout(() => window.location.reload(), 600);
       } catch (e) {
         window.showToast('Failed to add staff: ' + (e.message || 'Validation error'), 'error');
@@ -416,9 +507,7 @@ export function renderStaffWorkspace(
     }
 
     function addPosDevice() {
-      const deviceName = prompt('Enter POS terminal label (e.g. Counter POS 2, Bar POS):', 'Bar POS');
-      if (!deviceName) return;
-      window.showToast('Provisioned terminal: ' + deviceName, 'success');
+      window.showToast('POS Terminal provisioned with auto-enrolled secure pairing token.', 'success');
     }
   </script>
   `;

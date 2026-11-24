@@ -210,12 +210,12 @@ export function renderWhiteLabelWorkspace(
       </div>
 
       <div style="display: flex; gap: 10px; align-items: center;">
-        <button type="button" onclick="alert('Exporting signed Merkle archive of all tenant data...')" style="background: #FFFFFF; border: 1px solid #CBD5E1; color: #0F172A; border-radius: 9999px; padding: 9px 18px; font-size: 13px; font-weight: 600; cursor: pointer;">
+        <a href="http://localhost:3005/console/data-rights" target="_blank" rel="noopener noreferrer" style="background: #FFFFFF; border: 1px solid #CBD5E1; color: #0F172A; border-radius: 9999px; padding: 9px 18px; font-size: 13px; font-weight: 600; text-decoration: none; cursor: pointer;">
           Export all data
-        </button>
-        <button type="button" onclick="if(prompt('Type masala-house to confirm deletion:') === 'masala-house') alert('Tenant deletion scheduled in 30 days.');" style="background: #DC2626; border: none; color: #FFFFFF; border-radius: 9999px; padding: 9px 20px; font-size: 13px; font-weight: 600; cursor: pointer;">
-          Delete restaurant...
-        </button>
+        </a>
+        <a href="http://localhost:3005/console/data-rights" target="_blank" rel="noopener noreferrer" style="background: #DC2626; border: none; color: #FFFFFF; border-radius: 9999px; padding: 9px 20px; font-size: 13px; font-weight: 600; text-decoration: none; cursor: pointer;">
+          Data deletion options
+        </a>
       </div>
     </div>
 

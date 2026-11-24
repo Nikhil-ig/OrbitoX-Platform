@@ -117,6 +117,12 @@ export function F5PlanStep({
       window.location.port === '3005' ||
       process.env.NODE_ENV === 'development');
 
+  // Authoritatively extract owning organization ID from canonical tenantId (org/{orgId}/...)
+  const resolvedOrgId = React.useMemo(() => {
+    const m = /^org\/([^/]+)\//.exec(tenantId);
+    return m && m[1] ? m[1] : organizationId;
+  }, [tenantId, organizationId]);
+
   // Safe official Razorpay Checkout SDK loader
   useEffect(() => {
     if (typeof window === 'undefined') return;
@@ -173,7 +179,7 @@ export function F5PlanStep({
 
       // 1. Initialize or query checkout
       const res = await fetch(
-        `/api/v1/customer/organizations/${encodeURIComponent(organizationId)}/billing/checkout`,
+        `/api/v1/customer/organizations/${encodeURIComponent(resolvedOrgId)}/billing/checkout`,
         {
           method: 'POST',
           headers: {
@@ -195,7 +201,7 @@ export function F5PlanStep({
 
       // 2. Direct development confirmation
       const confirmRes = await fetch(
-        `/api/v1/customer/organizations/${encodeURIComponent(organizationId)}/billing/checkout/confirm`,
+        `/api/v1/customer/organizations/${encodeURIComponent(resolvedOrgId)}/billing/checkout/confirm`,
         {
           method: 'POST',
           headers,
@@ -233,7 +239,7 @@ export function F5PlanStep({
 
       // 1. Initialize checkout session with payment gateway
       const res = await fetch(
-        `/api/v1/customer/organizations/${encodeURIComponent(organizationId)}/billing/checkout`,
+        `/api/v1/customer/organizations/${encodeURIComponent(resolvedOrgId)}/billing/checkout`,
         {
           method: 'POST',
           headers: {
@@ -265,7 +271,7 @@ export function F5PlanStep({
       // Safe local development simulation when running without live Razorpay banking keys
       if (keyId === 'rzp_test_devmock123' || subscriptionId.startsWith('sub_dev_') || isDevEnvironment) {
         const confirmRes = await fetch(
-          `/api/v1/customer/organizations/${encodeURIComponent(organizationId)}/billing/checkout/confirm`,
+          `/api/v1/customer/organizations/${encodeURIComponent(resolvedOrgId)}/billing/checkout/confirm`,
           {
             method: 'POST',
             headers,
@@ -330,7 +336,7 @@ export function F5PlanStep({
                   throw new Error('Payment gateway did not provide authentic payment credentials.');
                 }
                 const confirmRes = await fetch(
-                  `/api/v1/customer/organizations/${encodeURIComponent(organizationId)}/billing/checkout/confirm`,
+                  `/api/v1/customer/organizations/${encodeURIComponent(resolvedOrgId)}/billing/checkout/confirm`,
                   {
                     method: 'POST',
                     headers,

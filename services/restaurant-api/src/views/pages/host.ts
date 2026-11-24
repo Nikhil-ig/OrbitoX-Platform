@@ -386,6 +386,31 @@ export function renderHostStand(
     }
   </style>
 
+  <!-- Walk-in Party Modal -->
+  <div id="walkin-modal" style="display: none; position: fixed; inset: 0; background: rgba(15, 23, 42, 0.45); backdrop-filter: blur(4px); z-index: 99999; align-items: center; justify-content: center;">
+    <div style="background: #FFFFFF; border-radius: 24px; padding: 32px; width: 400px; max-width: 90vw; box-shadow: 0 20px 40px rgba(0,0,0,0.15); border: 1px solid rgba(0,0,0,0.06);">
+      <h3 style="font-size: 20px; font-weight: 800; color: #0F172A; margin-bottom: 6px;">Register Walk-In Party</h3>
+      <p style="font-size: 13px; color: #64748B; margin-bottom: 20px;">Add guests to waitlist or seat immediately.</p>
+      
+      <form id="walkin-form" onsubmit="submitWalkin(event)">
+        <div style="margin-bottom: 16px;">
+          <label style="display: block; font-size: 12px; font-weight: 700; color: #334155; margin-bottom: 6px; text-transform: uppercase;">Party Name</label>
+          <input type="text" id="walkin-name" required placeholder="e.g. Verma Family" style="width: 100%; padding: 10px 14px; border-radius: 12px; border: 1px solid #CBD5E1; font-size: 14px; outline: none; box-sizing: border-box;" />
+        </div>
+        
+        <div style="margin-bottom: 24px;">
+          <label style="display: block; font-size: 12px; font-weight: 700; color: #334155; margin-bottom: 6px; text-transform: uppercase;">Covers (Guests)</label>
+          <input type="number" id="walkin-covers" required min="1" max="24" value="4" style="width: 100%; padding: 10px 14px; border-radius: 12px; border: 1px solid #CBD5E1; font-size: 14px; outline: none; box-sizing: border-box;" />
+        </div>
+        
+        <div style="display: flex; justify-content: flex-end; gap: 10px;">
+          <button type="button" onclick="closeWalkinModal()" class="btn btn-secondary" style="border-radius: 9999px; padding: 9px 20px; font-size: 13px; font-weight: 600;">Cancel</button>
+          <button type="submit" class="btn btn-primary" style="border-radius: 9999px; padding: 9px 24px; font-size: 13px; font-weight: 600;">Add to Waitlist</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
   <script>
     function filterHostTables(status, el) {
       document.querySelectorAll('.pill-mini').forEach((p) => p.classList.remove('active'));
@@ -402,35 +427,49 @@ export function renderHostStand(
     }
 
     function selectTable(num, status) {
-      alert('Table T-' + num + ' is currently ' + status + '. Tap to manage covers or view order docket.');
+      window.showToast('Table T-' + num + ' is ' + status + '. Tap to manage covers or view docket.', 'info');
     }
 
     function seatParty(id, name, covers) {
-      const targetTable = prompt('Select table number to seat ' + name + ' (' + covers + ' covers):', 'T-01');
-      if (targetTable) {
-        document.getElementById('row-' + id).style.opacity = '0.3';
-        alert(name + ' successfully seated at ' + targetTable + '! Kitchen and staff alerted.');
-      }
+      const row = document.getElementById('row-' + id);
+      if (row) row.style.opacity = '0.3';
+      window.showToast(name + ' (' + covers + ' covers) seated successfully! Table allocated.', 'success');
     }
 
     function openWalkinModal() {
-      const name = prompt('Walk-in Party Name:', 'Shah Party');
-      const covers = prompt('Number of covers:', '4');
-      if (name && covers) {
-        const c = document.getElementById('waitlist-container');
+      document.getElementById('walkin-name').value = '';
+      document.getElementById('walkin-covers').value = '4';
+      const modal = document.getElementById('walkin-modal');
+      modal.style.display = 'flex';
+      setTimeout(() => document.getElementById('walkin-name').focus(), 50);
+    }
+
+    function closeWalkinModal() {
+      document.getElementById('walkin-modal').style.display = 'none';
+    }
+
+    function submitWalkin(e) {
+      e.preventDefault();
+      const name = document.getElementById('walkin-name').value.trim();
+      const covers = document.getElementById('walkin-covers').value.trim();
+      if (!name || !covers) return;
+
+      const c = document.getElementById('waitlist-container');
+      if (c) {
         const newRow = document.createElement('div');
         newRow.className = 'waitlist-party-row';
-        newRow.innerHTML = \`
-          <div class="party-info">
-            <div class="party-name">\${name}</div>
-            <div class="party-meta">\${covers} covers · Waiting just now</div>
-          </div>
-          <button class="btn-seat-now" onclick="seatParty('new', '\${name}', \${covers})">
-            Seat Now
-          </button>
-        \`;
+        newRow.innerHTML =
+          '<div class="party-info">' +
+            '<div class="party-name">' + name + '</div>' +
+            '<div class="party-meta">' + covers + ' covers · Waiting just now</div>' +
+          '</div>' +
+          '<button class="btn-seat-now" onclick="seatParty(\'new_' + Date.now() + '\', \'' + name + '\', ' + covers + ')">' +
+            'Seat Now' +
+          '</button>';
         c.prepend(newRow);
       }
+      closeWalkinModal();
+      window.showToast('Added ' + name + ' to waitlist.', 'success');
     }
   </script>
   `;

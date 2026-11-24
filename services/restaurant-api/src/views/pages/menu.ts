@@ -392,6 +392,26 @@ export function renderMenuWorkspace(
     }
   </style>
 
+  <!-- Add Category Modal -->
+  <div id="add-category-modal" style="display: none; position: fixed; inset: 0; background: rgba(15, 23, 42, 0.45); backdrop-filter: blur(4px); z-index: 99999; align-items: center; justify-content: center;">
+    <div style="background: #FFFFFF; border-radius: 24px; padding: 32px; width: 400px; max-width: 90vw; box-shadow: 0 20px 40px rgba(0,0,0,0.15); border: 1px solid rgba(0,0,0,0.06);">
+      <h3 style="font-size: 20px; font-weight: 800; color: #0F172A; margin-bottom: 6px;">New Category</h3>
+      <p style="font-size: 13px; color: #64748B; margin-bottom: 20px;">Add a section to group related items on diner and POS menus.</p>
+      
+      <form id="add-category-form" onsubmit="submitAddCategory(event)">
+        <div style="margin-bottom: 24px;">
+          <label style="display: block; font-size: 12px; font-weight: 700; color: #334155; margin-bottom: 6px; text-transform: uppercase;">Category Name</label>
+          <input type="text" id="new-category-name" required placeholder="e.g. Tandoor Breads, Desserts" style="width: 100%; padding: 10px 14px; border-radius: 12px; border: 1px solid #CBD5E1; font-size: 14px; outline: none; box-sizing: border-box;" />
+        </div>
+        
+        <div style="display: flex; justify-content: flex-end; gap: 10px;">
+          <button type="button" onclick="closeAddCategoryModal()" class="btn btn-secondary" style="border-radius: 9999px; padding: 9px 20px; font-size: 13px; font-weight: 600;">Cancel</button>
+          <button type="submit" class="btn btn-primary" style="border-radius: 9999px; padding: 9px 24px; font-size: 13px; font-weight: 600;">Create Category</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
   <script>
     function filterCategory(cat, btn) {
       document.querySelectorAll('.category-pill').forEach(p => p.classList.remove('active'));
@@ -578,17 +598,32 @@ export function renderMenuWorkspace(
       setTimeout(() => window.location.reload(), 600);
     }
 
-    async function addNewCategory() {
-      const catName = prompt('Enter new menu category name (e.g. Desserts, Specials):');
-      if (!catName || !catName.trim()) return;
+    function addNewCategory() {
+      document.getElementById('new-category-name').value = '';
+      const modal = document.getElementById('add-category-modal');
+      modal.style.display = 'flex';
+      setTimeout(() => document.getElementById('new-category-name').focus(), 50);
+    }
+
+    function closeAddCategoryModal() {
+      document.getElementById('add-category-modal').style.display = 'none';
+    }
+
+    async function submitAddCategory(e) {
+      e.preventDefault();
+      const catName = document.getElementById('new-category-name').value.trim();
+      if (!catName) return;
       try {
         await window.apiFetch('/api/restaurant/menu/categories', {
           method: 'POST',
-          body: { name: catName.trim() }
+          body: { name: catName }
         });
-        window.showToast('Category "' + catName.trim() + '" created!', 'success');
+        window.showToast('Category "' + catName + '" created!', 'success');
+        closeAddCategoryModal();
         setTimeout(() => window.location.reload(), 600);
-      } catch (e) {}
+      } catch (err) {
+        window.showToast('Failed to create category: ' + (err.message || 'Error'), 'error');
+      }
     }
 
     function exportMenuCsv() {

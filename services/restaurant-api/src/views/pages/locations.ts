@@ -286,10 +286,15 @@ export function renderLocationsWorkspace(
     }
 
     function openNewBranchDrawer() {
-      const name = prompt('Enter new branch name (e.g. Whitefield, Bandra West):');
-      if (!name || !name.trim()) return;
-      window.showToast('Branch "' + name.trim() + '" created successfully!', 'success');
-      setTimeout(() => window.location.reload(), 600);
+      document.getElementById('edit-branch-id').value = '';
+      document.getElementById('edit-branch-title').textContent = 'New Branch';
+      document.getElementById('branch-name-input').value = '';
+      document.getElementById('branch-code-input').value = '';
+      document.getElementById('branch-address-input').value = '';
+      document.getElementById('branch-phone-input').value = '';
+      const input = document.getElementById('branch-name-input');
+      if (input) input.focus();
+      window.showToast('Enter new branch details in the editor panel.', 'info');
     }
 
     function closeBranchDrawer() {

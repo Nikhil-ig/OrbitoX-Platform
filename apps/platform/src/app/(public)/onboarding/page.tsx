@@ -77,11 +77,9 @@ export default function OnboardingPage() {
         }
 
         const orgsData = await orgsRes.json();
-        const primaryOrg = Array.isArray(orgsData.organizations) && orgsData.organizations.length > 0
-          ? orgsData.organizations[0]
-          : null;
+        const orgList = Array.isArray(orgsData.organizations) ? orgsData.organizations : [];
 
-        if (!primaryOrg) {
+        if (orgList.length === 0) {
           updateState((prev) => ({
             ...prev,
             user: prev.user || authUser,
@@ -90,49 +88,104 @@ export default function OnboardingPage() {
           return;
         }
 
-        const orgObj = {
-          id: primaryOrg.id,
-          name: primaryOrg.name,
-          slug: primaryOrg.slug,
-          city: primaryOrg.city || 'Bengaluru',
-          gstin: primaryOrg.gstin,
-        };
-
-        const tenantsRes = await fetch(`/api/v1/customer/organizations/${encodeURIComponent(primaryOrg.id)}/tenants`);
+        // 1. Identify which organization is active:
+        // Priority A: If state already had a restaurant with canonical tenantId, find the matching org
+        // Priority B: If state had an organization id, match that
+        // Priority C: Check which organization actually has provisioned tenants/projects
+        // Priority D: Fallback to the first organization
+        let activeOrg: any = null;
         let restaurantObj: OnboardingState['restaurant'] = undefined;
         let subscriptionObj: OnboardingState['subscription'] = undefined;
 
-        if (tenantsRes.ok && !cancelled) {
-          const tenantsData = await tenantsRes.json();
-          const primaryTenant = Array.isArray(tenantsData.tenants) && tenantsData.tenants.length > 0
-            ? tenantsData.tenants[0]
-            : null;
+        // Check if saved state has a tenantId with org/<orgId>
+        let preferredOrgId: string | undefined = state.organization?.id;
+        if (state.restaurant?.tenantId) {
+          const m = /^org\/([^/]+)\//.exec(state.restaurant.tenantId);
+          if (m && m[1]) preferredOrgId = m[1];
+        }
 
-          if (primaryTenant) {
-            restaurantObj = {
-              tenantId: primaryTenant.tenantId,
-              slug: primaryTenant.project.slug,
-              restaurantName: primaryTenant.project.name,
-              tableCount: 12,
-              templateId: 'swift-bite',
-            };
+        if (preferredOrgId) {
+          activeOrg = orgList.find((o: any) => o.id === preferredOrgId);
+        }
 
+        // If not found yet, query orgs to find which one has provisioned tenants
+        if (!activeOrg) {
+          for (const candidate of orgList) {
+            try {
+              const candRes = await fetch(`/api/v1/customer/organizations/${encodeURIComponent(candidate.id)}/tenants`);
+              if (candRes.ok) {
+                const candData = await candRes.json();
+                if (Array.isArray(candData.tenants) && candData.tenants.length > 0) {
+                  activeOrg = candidate;
+                  const firstTenant = candData.tenants[0];
+                  restaurantObj = {
+                    tenantId: firstTenant.tenantId,
+                    slug: firstTenant.project.slug,
+                    restaurantName: firstTenant.project.name,
+                    tableCount: 12,
+                    templateId: 'saffron',
+                  };
+                  break;
+                }
+              }
+            } catch {}
+          }
+        }
+
+        if (!activeOrg) {
+          activeOrg = orgList[0];
+        }
+
+        const orgObj = {
+          id: activeOrg.id,
+          name: activeOrg.name,
+          slug: activeOrg.slug,
+          city: activeOrg.city || 'Bengaluru',
+          gstin: activeOrg.gstin,
+        };
+
+        // Query tenants for the activeOrg if not already discovered
+        if (!restaurantObj && !cancelled) {
+          try {
+            const tenantsRes = await fetch(`/api/v1/customer/organizations/${encodeURIComponent(activeOrg.id)}/tenants`);
+            if (tenantsRes.ok) {
+              const tenantsData = await tenantsRes.json();
+              const primaryTenant = Array.isArray(tenantsData.tenants) && tenantsData.tenants.length > 0
+                ? tenantsData.tenants[0]
+                : null;
+
+              if (primaryTenant) {
+                restaurantObj = {
+                  tenantId: primaryTenant.tenantId,
+                  slug: primaryTenant.project.slug,
+                  restaurantName: primaryTenant.project.name,
+                  tableCount: 12,
+                  templateId: 'saffron',
+                };
+              }
+            }
+          } catch {}
+        }
+
+        // Query activation & subscription status if we have a restaurantObj
+        if (restaurantObj?.tenantId && !cancelled) {
+          try {
             const actRes = await fetch(
-              `/api/v1/customer/tenants/${encodeURIComponent(primaryTenant.tenantId)}/activation-status`,
+              `/api/v1/customer/tenants/${encodeURIComponent(restaurantObj.tenantId)}/activation-status`,
             ).catch(() => null);
 
             if (actRes && actRes.ok) {
               const actData = await actRes.json();
               if (actData.subscription?.status && actData.subscription.status !== 'none') {
                 subscriptionObj = {
-                  planId: actData.subscription.planId || primaryTenant.project.plan || 'growth',
+                  planId: actData.subscription.planId || 'growth',
                   billingCycle: 'monthly',
                   subscriptionStatus: actData.subscription.status,
                   awaitingWebhook: actData.subscription.awaitingWebhook,
                 };
               }
             }
-          }
+          } catch {}
         }
 
         updateState((prev) => {
