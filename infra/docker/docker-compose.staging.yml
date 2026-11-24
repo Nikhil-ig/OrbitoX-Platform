@@ -141,7 +141,7 @@ services:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: ${PLATFORM_POSTGRES_SUPERUSER_PASSWORD:?set PLATFORM_POSTGRES_SUPERUSER_PASSWORD in .env}
       POSTGRES_DB: orbitox_staging
-      PLATFORM_MIGRATOR_PASSWORD: ${PLATFORM_MIGRATOR_PASSWORD:-${PLATFORM_POSTGRES_SUPERUSER_PASSWORD:?set PLATFORM_POSTGRES_SUPERUSER_PASSWORD in .env}}
+      PLATFORM_MIGRATOR_PASSWORD: ${PLATFORM_MIGRATOR_PASSWORD:?set PLATFORM_MIGRATOR_PASSWORD in .env}
     volumes:
       - platform_pgdata:/var/lib/postgresql/data
       - ../../scripts/db/init-platform-db.sh:/docker-entrypoint-initdb.d/01-init-platform-db.sh:ro

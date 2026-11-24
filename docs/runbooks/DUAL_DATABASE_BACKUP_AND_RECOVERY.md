@@ -156,19 +156,19 @@ If restoring into a new, blank, or reconstructed PostgreSQL instance:
 
 1. **Bootstrap Cluster Roles & Ownership:**
    ```bash
+   export PLATFORM_MIGRATOR_PASSWORD="${PLATFORM_MIGRATOR_PASSWORD}"
    psql -h 127.0.0.1 -p 5432 -U postgres -d postgres \
-     -v migrator_password="'${PLATFORM_POSTGRES_SUPERUSER_PASSWORD}'" \
      -f /opt/orbitox/scripts/db/vps-bootstrap-roles.sql
    ```
 
-2. **Enable Operational Service Roles:**
+2. **Enable Operational Service Roles (Passwords ingested securely via psql \getenv):**
    ```bash
+   export ORBITOX_RUNTIME_PASSWORD="${ORBITOX_RUNTIME_PASSWORD}"
+   export ORBITOX_MAINTENANCE_PASSWORD="${ORBITOX_MAINTENANCE_PASSWORD}"
+   export ORBITOX_PLATFORM_ADMIN_AUDIT_PASSWORD="${ORBITOX_PLATFORM_ADMIN_AUDIT_PASSWORD}"
+   export HMS_AUDIT_READER_PASSWORD="${HMS_AUDIT_READER_PASSWORD}"
+   export ORBITOX_OUTBOX_RELAY_PASSWORD="${ORBITOX_OUTBOX_RELAY_PASSWORD}"
    psql -h 127.0.0.1 -p 5432 -U postgres -d postgres \
-     -v runtime_password="'${ORBITOX_RUNTIME_PASSWORD}'" \
-     -v maintenance_password="'${MAINTENANCE_PASSWORD}'" \
-     -v platform_admin_audit_password="'${ORBITOX_PLATFORM_ADMIN_AUDIT_PASSWORD}'" \
-     -v hms_audit_reader_password="'${HMS_AUDIT_READER_PASSWORD}'" \
-     -v outbox_relay_password="'${OUTBOX_RELAY_PASSWORD}'" \
      -f /opt/orbitox/scripts/db/vps-enable-roles.sql
    ```
 

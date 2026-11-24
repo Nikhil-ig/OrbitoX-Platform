@@ -22,10 +22,13 @@
 
 \set ON_ERROR_STOP on
 
+-- Retrieve migrator password from environment variable via psql \getenv (PostgreSQL 16)
+\getenv migrator_password PLATFORM_MIGRATOR_PASSWORD
+
 -- Ensure a password variable is supplied
 \if :{?migrator_password}
 \else
-    \echo '❌ ERROR: Variable migrator_password must be supplied via -v migrator_password="<secret>"'
+    \echo '❌ ERROR: PLATFORM_MIGRATOR_PASSWORD must be provided via environment variable.'
     \q 1
 \endif
 

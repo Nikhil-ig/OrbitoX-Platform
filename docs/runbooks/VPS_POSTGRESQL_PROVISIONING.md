@@ -57,11 +57,11 @@ export OUTBOX_RELAY_PASS="$(openssl rand -hex 24)"
 ```
 
 ### Step 3.2: Execute Bootstrap Script
-Execute `vps-bootstrap-roles.sql` as the `postgres` superuser against the `orbitox_staging` database:
+Execute `vps-bootstrap-roles.sql` as the `postgres` superuser against the `orbitox_staging` database (ingesting `PLATFORM_MIGRATOR_PASSWORD` via psql `\getenv`):
 
 ```bash
+export PLATFORM_MIGRATOR_PASSWORD="${MIGRATOR_PASS}"
 psql -h 127.0.0.1 -p 5432 -U postgres -d orbitox_staging \
-  -v migrator_password="'${MIGRATOR_PASS}'" \
   -f scripts/db/vps-bootstrap-roles.sql
 ```
 
@@ -69,15 +69,15 @@ psql -h 127.0.0.1 -p 5432 -U postgres -d orbitox_staging \
 > The bootstrap script transfers ownership of the `public` schema to `orbitox_migrator`. In PostgreSQL 16 on standard Ubuntu, this command must be executed by `postgres`, which is handled automatically by the script without switching roles.
 
 ### Step 3.3: Execute Enablement Script
-Activate the operational service roles by injecting their generated passwords:
+Activate the operational service roles by injecting their generated passwords via environment variables (ingested securely via psql `\getenv`):
 
 ```bash
+export ORBITOX_RUNTIME_PASSWORD="${RUNTIME_PASS}"
+export ORBITOX_MAINTENANCE_PASSWORD="${MAINTENANCE_PASS}"
+export ORBITOX_PLATFORM_ADMIN_AUDIT_PASSWORD="${ADMIN_AUDIT_PASS}"
+export HMS_AUDIT_READER_PASSWORD="${AUDIT_READER_PASS}"
+export ORBITOX_OUTBOX_RELAY_PASSWORD="${OUTBOX_RELAY_PASS}"
 psql -h 127.0.0.1 -p 5432 -U orbitox_migrator -d orbitox_staging \
-  -v runtime_password="'${RUNTIME_PASS}'" \
-  -v maintenance_password="'${MAINTENANCE_PASS}'" \
-  -v admin_audit_password="'${ADMIN_AUDIT_PASS}'" \
-  -v audit_reader_password="'${AUDIT_READER_PASS}'" \
-  -v outbox_relay_password="'${OUTBOX_RELAY_PASS}'" \
   -f scripts/db/vps-enable-roles.sql
 ```
 

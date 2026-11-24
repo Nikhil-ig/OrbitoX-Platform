@@ -6,7 +6,7 @@
 --
 -- Objective:
 -- 1. Enables LOGIN on the 5 operational service roles.
--- 2. Strictly sets passwords for each role from supplied psql variables.
+-- 2. Strictly sets passwords for each role from environment variables using psql \getenv.
 -- 3. Enforces least-privilege attributes: NOSUPERUSER, NOBYPASSRLS, NOCREATEDB, NOCREATEROLE, NOINHERIT.
 -- 4. Strictly verifies that helper roles (orbitox_audit_resolver, orbitox_audit_recovery)
 --    remain NOLOGIN and never receive login passwords.
@@ -14,34 +14,41 @@
 
 \set ON_ERROR_STOP on
 
+-- Retrieve role passwords from environment variables via psql \getenv (PostgreSQL 16)
+\getenv runtime_password ORBITOX_RUNTIME_PASSWORD
+\getenv maintenance_password ORBITOX_MAINTENANCE_PASSWORD
+\getenv platform_admin_audit_password ORBITOX_PLATFORM_ADMIN_AUDIT_PASSWORD
+\getenv hms_audit_reader_password HMS_AUDIT_READER_PASSWORD
+\getenv outbox_relay_password ORBITOX_OUTBOX_RELAY_PASSWORD
+
 -- Validate required password variables
 \if :{?runtime_password}
 \else
-    \echo '❌ ERROR: Variable runtime_password must be supplied via -v runtime_password="<secret>"'
+    \echo '❌ ERROR: ORBITOX_RUNTIME_PASSWORD must be provided via environment variable.'
     \q 1
 \endif
 
 \if :{?maintenance_password}
 \else
-    \echo '❌ ERROR: Variable maintenance_password must be supplied via -v maintenance_password="<secret>"'
+    \echo '❌ ERROR: ORBITOX_MAINTENANCE_PASSWORD must be provided via environment variable.'
     \q 1
 \endif
 
 \if :{?platform_admin_audit_password}
 \else
-    \echo '❌ ERROR: Variable platform_admin_audit_password must be supplied via -v platform_admin_audit_password="<secret>"'
+    \echo '❌ ERROR: ORBITOX_PLATFORM_ADMIN_AUDIT_PASSWORD must be provided via environment variable.'
     \q 1
 \endif
 
 \if :{?hms_audit_reader_password}
 \else
-    \echo '❌ ERROR: Variable hms_audit_reader_password must be supplied via -v hms_audit_reader_password="<secret>"'
+    \echo '❌ ERROR: HMS_AUDIT_READER_PASSWORD must be provided via environment variable.'
     \q 1
 \endif
 
 \if :{?outbox_relay_password}
 \else
-    \echo '❌ ERROR: Variable outbox_relay_password must be supplied via -v outbox_relay_password="<secret>"'
+    \echo '❌ ERROR: ORBITOX_OUTBOX_RELAY_PASSWORD must be provided via environment variable.'
     \q 1
 \endif
 
@@ -71,22 +78,16 @@ BEGIN
 END
 $$;
 
--- 1b. Ensure all database objects created during migrations are owned by orbitox_migrator
-DO $$
-BEGIN
-    IF CURRENT_USER = 'postgres' THEN
-        REASSIGN OWNED BY postgres TO orbitox_migrator;
-        RAISE NOTICE 'Transferred ownership of newly migrated database objects to orbitox_migrator.';
-    END IF;
-END
-$$;
-
 -- 2. Alter the 5 operational service roles to enable LOGIN with least-privilege attributes
 ALTER ROLE orbitox_runtime WITH LOGIN NOSUPERUSER NOBYPASSRLS NOCREATEDB NOCREATEROLE NOINHERIT PASSWORD :'runtime_password';
 ALTER ROLE orbitox_maintenance WITH LOGIN NOSUPERUSER NOBYPASSRLS NOCREATEDB NOCREATEROLE NOINHERIT PASSWORD :'maintenance_password';
 ALTER ROLE orbitox_platform_admin_audit WITH LOGIN NOSUPERUSER NOBYPASSRLS NOCREATEDB NOCREATEROLE NOINHERIT PASSWORD :'platform_admin_audit_password';
 ALTER ROLE hms_audit_reader WITH LOGIN NOSUPERUSER NOBYPASSRLS NOCREATEDB NOCREATEROLE NOINHERIT PASSWORD :'hms_audit_reader_password';
 ALTER ROLE orbitox_outbox_relay WITH LOGIN NOSUPERUSER NOBYPASSRLS NOCREATEDB NOCREATEROLE NOINHERIT PASSWORD :'outbox_relay_password';
+
+-- 2b. Least-privilege table privilege enforcement (Q-09)
+-- Runtime role only reads and records rate limit buckets; drop/truncate is handled by partition maintenance
+REVOKE DELETE, TRUNCATE ON TABLE public."PlatformRateLimitBucket" FROM orbitox_runtime;
 
 -- 3. Sanitize helper roles and strictly verify they remain NOLOGIN with NOBYPASSRLS
 ALTER ROLE orbitox_audit_resolver WITH NOLOGIN NOSUPERUSER NOBYPASSRLS NOCREATEDB NOCREATEROLE NOINHERIT;

@@ -124,20 +124,21 @@ Execute pending Prisma migrations under `orbitox_migrator`:
 source /opt/orbitox/infra/docker/.env
 
 docker compose -f docker-compose.staging.yml run --rm --no-deps \
-  -e DATABASE_URL="postgresql://orbitox_migrator:${PLATFORM_MIGRATOR_PASSWORD:-$PLATFORM_POSTGRES_SUPERUSER_PASSWORD}@platform-db:5432/orbitox_staging" \
+  -e DATABASE_URL="postgresql://orbitox_migrator:${PLATFORM_MIGRATOR_PASSWORD}@platform-db:5432/orbitox_staging" \
   platform pnpm prisma migrate deploy
 ```
 
 ### Step 3.3: Enable Platform Service Roles
-Run `vps-enable-roles.sql` to activate the 5 service roles with secure passwords:
+Run `vps-enable-roles.sql` to activate the 5 service roles with secure passwords (read directly via psql `\getenv` from the environment):
 
 ```bash
-docker exec -i orbitox_staging_platform_db psql -U postgres -d orbitox_staging \
-  -v runtime_password="$ORBITOX_RUNTIME_PASSWORD" \
-  -v maintenance_password="$ORBITOX_MAINTENANCE_PASSWORD" \
-  -v platform_admin_audit_password="$ORBITOX_PLATFORM_ADMIN_AUDIT_PASSWORD" \
-  -v hms_audit_reader_password="$HMS_AUDIT_READER_PASSWORD" \
-  -v outbox_relay_password="$ORBITOX_OUTBOX_RELAY_PASSWORD" \
+docker exec -i \
+  -e ORBITOX_RUNTIME_PASSWORD="$ORBITOX_RUNTIME_PASSWORD" \
+  -e ORBITOX_MAINTENANCE_PASSWORD="$ORBITOX_MAINTENANCE_PASSWORD" \
+  -e ORBITOX_PLATFORM_ADMIN_AUDIT_PASSWORD="$ORBITOX_PLATFORM_ADMIN_AUDIT_PASSWORD" \
+  -e HMS_AUDIT_READER_PASSWORD="$HMS_AUDIT_READER_PASSWORD" \
+  -e ORBITOX_OUTBOX_RELAY_PASSWORD="$ORBITOX_OUTBOX_RELAY_PASSWORD" \
+  orbitox_staging_platform_db psql -U postgres -d orbitox_staging \
   -f /scripts/db/vps-enable-roles.sql
 ```
 

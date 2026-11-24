@@ -35,7 +35,11 @@ echo "📦 Backing up RestaurantOS Database..."
 
 # 3. Trigger off-site replication if configured
 if [[ -f "${SCRIPT_DIR}/sync-backups-offsite.sh" ]]; then
-  "${SCRIPT_DIR}/sync-backups-offsite.sh" || echo "⚠️ Off-site replication warning: sync script returned non-zero."
+  echo "🚀 Triggering off-site backup replication..."
+  if ! "${SCRIPT_DIR}/sync-backups-offsite.sh"; then
+    echo "❌ FATAL: Off-site backup replication failed. Local backups succeeded, but remote replication encountered errors." >&2
+    exit 1
+  fi
 fi
 
 echo "✅ [$(date -u '+%Y-%m-%d %H:%M:%SZ')] Dual-database scheduled backup completed successfully."

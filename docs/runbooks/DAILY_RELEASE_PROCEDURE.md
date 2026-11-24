@@ -158,16 +158,17 @@ source /opt/orbitox/infra/docker/.env
 
 # 1. Platform Database Migrations (Run under orbitox_migrator)
 docker compose -f /opt/orbitox/infra/docker/docker-compose.staging.yml run --rm --no-deps \
-  -e DATABASE_URL="postgresql://orbitox_migrator:${PLATFORM_MIGRATOR_PASSWORD:-$PLATFORM_POSTGRES_SUPERUSER_PASSWORD}@platform-db:5432/orbitox_staging" \
+  -e DATABASE_URL="postgresql://orbitox_migrator:${PLATFORM_MIGRATOR_PASSWORD}@platform-db:5432/orbitox_staging" \
   platform pnpm prisma migrate deploy
 
-# 2. Enable Platform Service Roles
-docker exec -i orbitox_staging_platform_db psql -U postgres -d orbitox_staging \
-  -v runtime_password="$ORBITOX_RUNTIME_PASSWORD" \
-  -v maintenance_password="$ORBITOX_MAINTENANCE_PASSWORD" \
-  -v platform_admin_audit_password="$ORBITOX_PLATFORM_ADMIN_AUDIT_PASSWORD" \
-  -v hms_audit_reader_password="$HMS_AUDIT_READER_PASSWORD" \
-  -v outbox_relay_password="$ORBITOX_OUTBOX_RELAY_PASSWORD" \
+# 2. Enable Platform Service Roles (Passwords ingested securely via psql \getenv)
+docker exec -i \
+  -e ORBITOX_RUNTIME_PASSWORD="$ORBITOX_RUNTIME_PASSWORD" \
+  -e ORBITOX_MAINTENANCE_PASSWORD="$ORBITOX_MAINTENANCE_PASSWORD" \
+  -e ORBITOX_PLATFORM_ADMIN_AUDIT_PASSWORD="$ORBITOX_PLATFORM_ADMIN_AUDIT_PASSWORD" \
+  -e HMS_AUDIT_READER_PASSWORD="$HMS_AUDIT_READER_PASSWORD" \
+  -e ORBITOX_OUTBOX_RELAY_PASSWORD="$ORBITOX_OUTBOX_RELAY_PASSWORD" \
+  orbitox_staging_platform_db psql -U postgres -d orbitox_staging \
   -f /scripts/db/vps-enable-roles.sql
 
 # 3. RestaurantOS Database Migrations (Run under postgres superuser/migrator)
