@@ -4,427 +4,442 @@ import * as React from 'react';
 import Link from 'next/link';
 import {
   TrendingUp,
-  Search,
   Bell,
   Plus,
   ExternalLink,
   Shield,
-  Download,
   Building2,
   UtensilsCrossed,
-  Sparkles,
   ArrowRight,
-  CheckCircle2,
-  Users,
-  CreditCard,
-  Lock,
-  FileText,
-  Check,
+  X,
 } from 'lucide-react';
 
-interface ProjectRecord {
+interface CustomerUser {
   id: string;
-  name: string;
-  slug: string;
-  vertical?: string;
-  createdAt?: string;
+  email: string;
+  name?: string;
+  emailVerified: boolean;
 }
 
-interface TenantItem {
+interface OrganizationRecord {
+  id: string;
+  slug: string;
+  name: string;
+  city?: string | null;
+  gstin?: string | null;
+  role: string;
+}
+
+interface TenantProjectItem {
   id: string;
   name: string;
   slug: string;
-  domain: string;
+  status: string;
   vertical: 'RestaurantOS' | 'HospitalOS';
-  status: 'Live' | 'Setting up';
-  metricValue: string;
-  metricLabel: string;
-  tags: string[];
-  progress?: number;
-  avatarBg: string;
-  avatarChar: string;
+  domain: string;
+}
+
+interface TeamMemberItem {
+  id: string;
+  name: string;
+  email: string;
+  role: string;
+  status: string;
+}
+
+function getCustomerCsrfToken(): string {
+  if (typeof document === 'undefined') return '';
+  const m = document.cookie.match(/(?:orbitox_customer_csrf|orbitox_csrf)=([^;]+)/);
+  return m && m[1] ? decodeURIComponent(m[1]) : '';
 }
 
 export default function CustomerDashboardPage() {
-  const [userName, setUserName] = React.useState('Priya');
-  const [userInitials, setUserInitials] = React.useState('PS');
-  const [orgName, setOrgName] = React.useState('Maxora Hospitality Group');
-  const [projects, setProjects] = React.useState<ProjectRecord[]>([]);
-  const [activePlan, setActivePlan] = React.useState('Growth');
+  const [user, setUser] = React.useState<CustomerUser | null>(null);
+  const [organizations, setOrganizations] = React.useState<OrganizationRecord[]>([]);
+  const [selectedOrgId, setSelectedOrgId] = React.useState<string>('');
+  const [tenants, setTenants] = React.useState<TenantProjectItem[]>([]);
+  const [members, setMembers] = React.useState<TeamMemberItem[]>([]);
   const [hasLoaded, setHasLoaded] = React.useState(false);
   const [activeTab, setActiveTab] = React.useState<'Home' | 'Tenants' | 'Team' | 'Billing' | 'Data & privacy'>('Home');
   const [toastMessage, setToastMessage] = React.useState<string | null>(null);
 
+  // Invite modal state (replaces window.prompt)
+  const [inviteOpen, setInviteOpen] = React.useState(false);
+  const [inviteEmail, setInviteEmail] = React.useState('');
+  const [inviteRole, setInviteRole] = React.useState('ADMIN');
+  const [inviteBusy, setInviteBusy] = React.useState(false);
+
+  // Deletion confirm modal state (replaces window.confirm)
+  const [deletionModalOpen, setDeletionModalOpen] = React.useState(false);
+  const [deletionBusy, setDeletionBusy] = React.useState(false);
+
   const showToast = (msg: string) => {
     setToastMessage(msg);
-    setTimeout(() => setToastMessage(null), 3000);
+    setTimeout(() => setToastMessage(null), 3500);
   };
 
-  // Load Authoritative State from session and projects API
   React.useEffect(() => {
-    let isMounted = true;
-
-    async function loadData() {
+    let mounted = true;
+    async function hydrate() {
       try {
-        const meRes = await fetch('/api/v1/customer/auth/me');
-        if (!meRes.ok) return;
-        const meData = await meRes.json();
-
-        if (meData?.user?.name) {
-          setUserName(meData.user.name.split(' ')[0]);
-          const parts = meData.user.name.split(' ');
-          const inits = parts.length >= 2 
-            ? `${parts[0][0]}${parts[1][0]}`.toUpperCase() 
-            : parts[0].slice(0, 2).toUpperCase();
-          setUserInitials(inits);
+        const meRes = await fetch('/api/v1/customer/auth/me', { cache: 'no-store' });
+        if (!meRes.ok) {
+          if (mounted) setHasLoaded(true);
+          return;
+        }
+        const meJson = await meRes.json();
+        if (mounted && meJson?.user) {
+          setUser(meJson.user);
         }
 
-        if (Array.isArray(meData?.memberships) && meData.memberships.length > 0) {
-          const allProjects: ProjectRecord[] = [];
-          let discoveredOrgName = '';
-          for (const m of meData.memberships) {
-            if (!m?.organizationId) continue;
-            try {
-              const tenantsRes = await fetch(`/api/v1/customer/organizations/${encodeURIComponent(m.organizationId)}/tenants`);
-              if (tenantsRes.ok) {
-                const tenantsData = await tenantsRes.json();
-                const fetchedProjects: ProjectRecord[] = [];
-                if (Array.isArray(tenantsData.projects)) {
-                  fetchedProjects.push(...tenantsData.projects);
-                } else if (Array.isArray(tenantsData.tenants)) {
-                  for (const t of tenantsData.tenants) {
-                    if (t.project) {
-                      fetchedProjects.push({
-                        id: t.project.id,
-                        name: t.project.name,
-                        slug: t.project.slug,
-                        vertical: 'RestaurantOS',
-                        createdAt: t.project.createdAt,
-                      });
-                    }
-                  }
-                }
-                if (fetchedProjects.length > 0) {
-                  allProjects.push(...fetchedProjects);
-                  if (m?.organization?.name) {
-                    discoveredOrgName = m.organization.name;
-                  }
-                }
-                if (tenantsData?.organization?.name) {
-                  discoveredOrgName = tenantsData.organization.name;
-                }
-              }
-            } catch { }
-          }
-          if (isMounted) {
-            setProjects(allProjects);
-            if (discoveredOrgName) setOrgName(discoveredOrgName);
+        const orgRes = await fetch('/api/v1/customer/organizations', { cache: 'no-store' });
+        if (orgRes.ok) {
+          const orgJson = await orgRes.json();
+          const orgs: OrganizationRecord[] = Array.isArray(orgJson?.organizations) ? orgJson.organizations : [];
+          if (mounted) {
+            setOrganizations(orgs);
+            const firstOrg = orgs[0];
+            if (firstOrg) {
+              setSelectedOrgId(firstOrg.id);
+            }
           }
         }
-      } catch (err) {
-        console.error('Failed to load dashboard data:', err);
+      } catch {
+        // Leave empty guest view cleanly
       } finally {
-        if (isMounted) setHasLoaded(true);
+        if (mounted) setHasLoaded(true);
       }
     }
-
-    loadData();
-    return () => { isMounted = false; };
+    hydrate();
+    return () => {
+      mounted = false;
+    };
   }, []);
 
-  // Build dynamic tenant fleet
-  const tenantsList: TenantItem[] = React.useMemo(() => {
-    if (projects.length > 0) {
-      return projects.map((p, idx) => ({
-        id: p.id,
-        name: p.name,
-        slug: p.slug,
-        domain: `${p.slug}.localhost:4010`,
-        vertical: 'RestaurantOS',
-        status: 'Live',
-        metricValue: '1,402',
-        metricLabel: 'orders this week',
-        tags: ['RestaurantOS', '1 branch'],
-        avatarBg: idx === 0 ? '#FB923C' : '#3B82F6',
-        avatarChar: p.name.charAt(0).toUpperCase() || 'M',
-      }));
+  React.useEffect(() => {
+    if (!selectedOrgId) return;
+    let mounted = true;
+    async function loadOrgDetails() {
+      try {
+        const [tRes, mRes] = await Promise.all([
+          fetch(`/api/v1/customer/organizations/${encodeURIComponent(selectedOrgId)}/tenants`, { cache: 'no-store' }),
+          fetch(`/api/v1/customer/organizations/${encodeURIComponent(selectedOrgId)}/members`, { cache: 'no-store' }),
+        ]);
+
+        if (tRes.ok && mounted) {
+          const tJson = await tRes.json();
+          const rawTenants: any[] = Array.isArray(tJson?.tenants) ? tJson.tenants : Array.isArray(tJson?.projects) ? tJson.projects : [];
+          const mapped: TenantProjectItem[] = rawTenants.map((item) => {
+            const p = item.project || item;
+            const slug = p.slug || item.slug || 'tenant';
+            const pluginIds = Array.isArray(p.pluginIds) ? p.pluginIds : [];
+            const isHospital = pluginIds.some((pid: string) => String(pid).includes('hospital'));
+            return {
+              id: p.id || item.id,
+              name: p.name || item.name || slug,
+              slug,
+              status: item.status === 'ACTIVE' || p.status === 'ACTIVE' ? 'Live' : 'Setting up',
+              vertical: isHospital ? 'HospitalOS' : 'RestaurantOS',
+              domain: `${slug}.localhost:4010`,
+            };
+          });
+          setTenants(mapped);
+        }
+
+        if (mRes.ok && mounted) {
+          const mJson = await mRes.json();
+          const rawMembers: any[] = Array.isArray(mJson?.members) ? mJson.members : [];
+          setMembers(
+            rawMembers.map((mb) => ({
+              id: mb.userId || mb.id,
+              name: mb.user?.name || mb.email || 'Member',
+              email: mb.user?.email || mb.email || '',
+              role: mb.role || 'MEMBER',
+              status: mb.status || 'ACTIVE',
+            }))
+          );
+        }
+      } catch {
+        // Ignore transient network errors
+      }
     }
-    return [
-      {
-        id: 'proj_maxora_resto',
-        name: 'Maxora Resto',
-        slug: 'maxora-resto',
-        domain: 'maxora-resto.localhost:4010',
-        vertical: 'RestaurantOS',
-        status: 'Live',
-        metricValue: '1,402',
-        metricLabel: 'orders this week',
-        tags: ['RestaurantOS', '1 branch'],
-        avatarBg: '#FB923C',
-        avatarChar: 'M',
-      },
-    ];
-  }, [projects]);
+    loadOrgDetails();
+    return () => {
+      mounted = false;
+    };
+  }, [selectedOrgId]);
+
+  const activeOrg = organizations.find((o) => o.id === selectedOrgId) || organizations[0] || null;
+  const firstName = user?.name ? user.name.split(' ')[0] : user?.email ? user.email.split('@')[0] : null;
+  const userInitials = firstName ? firstName.slice(0, 2).toUpperCase() : 'OX';
+
+  const handleInviteSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedOrgId) {
+      showToast('Create or select an organization first via Onboarding.');
+      return;
+    }
+    setInviteBusy(true);
+    try {
+      const res = await fetch(`/api/v1/customer/organizations/${encodeURIComponent(selectedOrgId)}/invites`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-csrf-token': getCustomerCsrfToken(),
+        },
+        body: JSON.stringify({ email: inviteEmail.trim(), role: inviteRole }),
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(json?.message || json?.error || 'Failed to send invitation.');
+      }
+      showToast(`Invitation sent to ${inviteEmail.trim()}`);
+      setInviteEmail('');
+      setInviteOpen(false);
+    } catch (err: any) {
+      showToast(err?.message || 'Could not send invitation.');
+    } finally {
+      setInviteBusy(false);
+    }
+  };
+
+  const handleRequestExport = async () => {
+    if (!selectedOrgId) {
+      showToast('Sign in with a verified organization to request a data export.');
+      return;
+    }
+    try {
+      const res = await fetch(`/api/v1/customer/organizations/${encodeURIComponent(selectedOrgId)}/data/export`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-csrf-token': getCustomerCsrfToken(),
+        },
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(json?.message || 'Export request rejected.');
+      showToast('DPDP/GDPR archive job initiated for your organization.');
+    } catch (err: any) {
+      showToast(err?.message || 'Unable to trigger data export.');
+    }
+  };
+
+  const handleConfirmDeletion = async () => {
+    if (!selectedOrgId) return;
+    setDeletionBusy(true);
+    try {
+      const res = await fetch(`/api/v1/customer/organizations/${encodeURIComponent(selectedOrgId)}/data/deletion`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-csrf-token': getCustomerCsrfToken(),
+        },
+        body: JSON.stringify({ reason: 'Owner initiated via Customer Workspace' }),
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(json?.message || 'Could not schedule deletion.');
+      showToast('30-day organization deletion grace period scheduled.');
+      setDeletionModalOpen(false);
+    } catch (err: any) {
+      showToast(err?.message || 'Unable to schedule deletion.');
+    } finally {
+      setDeletionBusy(false);
+    }
+  };
 
   const navTabs = ['Home', 'Tenants', 'Team', 'Billing', 'Data & privacy'] as const;
 
+  const weeklyChartColumns = [
+    { id: 'mon', label: 'M', height: 24 },
+    { id: 'tue', label: 'T', height: 32 },
+    { id: 'wed', label: 'W', height: 40 },
+    { id: 'thu', label: 'T', height: 36 },
+    { id: 'fri', label: 'F', height: 56 },
+    { id: 'sat', label: 'S', height: 72 },
+    { id: 'sun', label: 'S', height: 48 },
+  ];
+
   return (
-    <div style={{ minHeight: '100vh', background: '#F8FAFC', color: '#0F172A', fontFamily: 'inherit' }}>
-      
-      {/* Toast Notification */}
+    <div className="min-h-screen bg-[#F5F6FA] text-slate-900 overflow-x-hidden">
       {toastMessage && (
-        <div style={{ position: 'fixed', bottom: '24px', right: '24px', zIndex: 9999, background: '#0F172A', color: '#FFFFFF', padding: '12px 20px', borderRadius: '14px', fontSize: '13px', fontWeight: 600, boxShadow: '0 8px 30px rgba(0,0,0,0.18)', display: 'flex', alignItems: 'center', gap: '8px' }}>
-          <span>✓</span>
+        <div className="fixed bottom-6 right-6 z-50 bg-slate-900 text-white px-4 py-3 rounded-2xl text-xs font-semibold shadow-xl flex items-center gap-2 max-w-xs">
           <span>{toastMessage}</span>
         </div>
       )}
 
-      {/* 1. Header Navigation Bar */}
-      <header
-        style={{
-          background: '#FFFFFF',
-          borderBottom: '1px solid #E2E8F0',
-          padding: '0 40px',
-          height: '68px',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          position: 'sticky',
-          top: 0,
-          zIndex: 40,
-        }}
-      >
-        {/* Brand & Organization Title */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
-          <div
-            style={{
-              width: '38px',
-              height: '38px',
-              borderRadius: '12px',
-              background: '#000000',
-              color: '#FFFFFF',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              fontWeight: 800,
-              fontSize: '18px',
-              letterSpacing: '-0.02em',
-            }}
-          >
-            🪐
-          </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <span style={{ fontWeight: 800, fontSize: '16px', color: '#0F172A', letterSpacing: '-0.01em' }}>
-              OrbitoX
-            </span>
-            <span style={{ color: '#CBD5E1' }}>/</span>
-            <span style={{ fontWeight: 600, fontSize: '14px', color: '#64748B' }}>
-              {orgName}
-            </span>
-          </div>
-        </div>
+      {/* Header */}
+      <header className="bg-white border-b border-slate-200 px-4 sm:px-8 py-3 sticky top-0 z-40">
+        <div className="max-w-7xl mx-auto flex flex-col md:flex-row md:items-center justify-between gap-3">
+          <div className="flex items-center justify-between gap-3">
+            <div className="flex items-center gap-3 min-w-0">
+              <div className="w-9 h-9 rounded-xl bg-black text-white flex items-center justify-center font-bold text-sm shrink-0">
+                OX
+              </div>
+              <div className="flex items-center gap-2 min-w-0">
+                <span className="font-bold text-sm sm:text-base text-slate-900 shrink-0">OrbitoX</span>
+                <span className="text-slate-300">/</span>
+                <span className="font-medium text-xs sm:text-sm text-slate-500 truncate">
+                  {activeOrg?.name || 'Customer Portal'}
+                </span>
+              </div>
+            </div>
 
-        {/* Center Pill Nav Tabs */}
-        <nav
-          style={{
-            display: 'flex',
-            background: '#F1F5F9',
-            borderRadius: '9999px',
-            padding: '3px',
-            gap: '2px',
-          }}
-        >
-          {navTabs.map((tab) => {
-            const isActive = activeTab === tab;
-            return (
-              <button
-                key={tab}
-                type="button"
-                onClick={() => setActiveTab(tab)}
-                style={{
-                  background: isActive ? '#FFFFFF' : 'transparent',
-                  color: isActive ? '#0F172A' : '#64748B',
-                  fontWeight: isActive ? 700 : 500,
-                  fontSize: '13px',
-                  borderRadius: '9999px',
-                  padding: '7px 18px',
-                  border: 'none',
-                  cursor: 'pointer',
-                  boxShadow: isActive ? '0 1px 3px rgba(0,0,0,0.06)' : 'none',
-                  transition: 'all 120ms ease',
-                }}
-              >
-                {tab}
-              </button>
-            );
-          })}
-        </nav>
+            <div className="flex md:hidden items-center gap-2 shrink-0">
+              <div className="w-8 h-8 rounded-full bg-rose-100 text-rose-700 font-bold text-xs flex items-center justify-center">
+                {userInitials}
+              </div>
+            </div>
+          </div>
 
-        {/* Right Utility Actions */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-          <button
-            type="button"
-            onClick={() => showToast('Command palette: Press ⌘K on any operating screen')}
-            style={{ width: '36px', height: '36px', borderRadius: '9999px', background: '#FFFFFF', border: '1px solid #E2E8F0', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', color: '#64748B' }}
+          <nav
+            aria-label="Customer workspace navigation"
+            className="flex bg-slate-100 rounded-full p-1 gap-1 overflow-x-auto max-w-full"
           >
-            <Search size={16} />
-          </button>
-          <button
-            type="button"
-            onClick={() => showToast('No unread notifications')}
-            style={{ width: '36px', height: '36px', borderRadius: '9999px', background: '#FFFFFF', border: '1px solid #E2E8F0', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', color: '#64748B' }}
-          >
-            <Bell size={16} />
-          </button>
-          <div style={{ width: '36px', height: '36px', borderRadius: '9999px', background: '#FEE2E2', color: '#DC2626', fontWeight: 700, fontSize: '13px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-            {userInitials}
+            {navTabs.map((tab) => {
+              const isActive = activeTab === tab;
+              return (
+                <button
+                  key={tab}
+                  type="button"
+                  onClick={() => setActiveTab(tab)}
+                  className={`px-3.5 py-1.5 rounded-full text-xs font-semibold whitespace-nowrap transition-colors ${isActive ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-900'
+                    }`}
+                >
+                  {tab}
+                </button>
+              );
+            })}
+          </nav>
+
+          <div className="hidden md:flex items-center gap-2.5 shrink-0">
+            <Link
+              href="/console/overview"
+              className="text-xs font-semibold text-slate-600 hover:text-slate-900 px-3 py-1.5 rounded-full border border-slate-200"
+            >
+              Operator Console
+            </Link>
+            <button
+              type="button"
+              onClick={() => showToast('No unread workspace notifications.')}
+              aria-label="Notifications"
+              className="w-9 h-9 rounded-full bg-white border border-slate-200 flex items-center justify-center text-slate-600 hover:bg-slate-50"
+            >
+              <Bell size={16} />
+            </button>
+            <div className="w-9 h-9 rounded-full bg-rose-100 text-rose-700 font-bold text-xs flex items-center justify-center">
+              {userInitials}
+            </div>
           </div>
         </div>
       </header>
 
-      {/* Main Container */}
-      <main style={{ maxWidth: '1440px', margin: '0 auto', padding: '24px 40px 60px 40px', display: 'flex', flexDirection: 'column', gap: '32px' }}>
-        
-        {/* TAB 1: HOME */}
-        {activeTab === 'Home' && (
-          <>
-            {/* Greeting Header with Add Tenant CTA */}
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', flexWrap: 'wrap', gap: '16px' }}>
-              <div>
-                <h1 style={{ fontSize: '38px', fontWeight: 800, color: '#0F172A', letterSpacing: '-0.025em', margin: '0 0 6px 0', lineHeight: 1.15 }}>
-                  Hello, {userName}
-                </h1>
-                <div style={{ fontSize: '14px', color: '#64748B', fontWeight: 500 }}>
-                  {orgName} · {tenantsList.length} {tenantsList.length === 1 ? 'tenant' : 'tenants'} · {activePlan} plan
-                </div>
-              </div>
-
+      <main className="max-w-7xl mx-auto px-4 sm:px-8 py-6 sm:py-8 space-y-6">
+        {!hasLoaded ? (
+          <div className="bg-white rounded-3xl border border-slate-200 p-10 text-center text-sm text-slate-500">
+            Loading workspace...
+          </div>
+        ) : !user ? (
+          <div className="bg-white rounded-3xl border border-slate-200/80 shadow-sm p-8 sm:p-12 flex flex-col md:flex-row md:items-center justify-between gap-6">
+            <div className="space-y-2 max-w-xl">
+              <span className="inline-flex items-center px-3 py-1 rounded-full bg-blue-50 text-blue-700 text-xs font-semibold">
+                OrbitoX Customer Workspace
+              </span>
+              <h1 className="text-2xl sm:text-4xl font-extrabold tracking-tight text-slate-900">
+                Launch your hospitality or clinic workspace
+              </h1>
+              <p className="text-sm text-slate-500 leading-relaxed">
+                Create an organization, provision dedicated RestaurantOS or HospitalOS tenants with cryptographic data isolation, and manage billing and team access.
+              </p>
+            </div>
+            <div className="flex flex-wrap gap-3 shrink-0">
               <Link
                 href="/onboarding"
-                style={{
-                  background: '#2563EB',
-                  color: '#FFFFFF',
-                  borderRadius: '9999px',
-                  padding: '11px 24px',
-                  fontSize: '14px',
-                  fontWeight: 600,
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  gap: '8px',
-                  textDecoration: 'none',
-                  boxShadow: '0 4px 14px rgba(37, 99, 235, 0.3)',
-                  transition: 'all 140ms ease',
-                }}
+                className="inline-flex items-center gap-2 rounded-full bg-blue-600 hover:bg-blue-700 text-white px-6 py-3 text-sm font-semibold shadow-sm"
+              >
+                <Plus size={16} />
+                <span>Start onboarding</span>
+              </Link>
+              <Link
+                href="/console/overview"
+                className="inline-flex items-center gap-2 rounded-full bg-white border border-slate-300 text-slate-800 px-5 py-3 text-sm font-semibold hover:bg-slate-50"
+              >
+                <span>Operator console</span>
+                <ArrowRight size={15} />
+              </Link>
+            </div>
+          </div>
+        ) : null}
+
+        {/* TAB 1: HOME */}
+        {activeTab === 'Home' && user && (
+          <>
+            <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4">
+              <div>
+                <h1 className="text-3xl sm:text-4xl font-extrabold tracking-tight text-slate-900">
+                  Hello, {firstName}
+                </h1>
+                <p className="text-sm text-slate-500 mt-1">
+                  {activeOrg?.name || 'Personal account'} · {tenants.length} {tenants.length === 1 ? 'tenant' : 'tenants'}
+                </p>
+              </div>
+              <Link
+                href="/onboarding"
+                className="inline-flex items-center justify-center gap-2 rounded-full bg-blue-600 hover:bg-blue-700 text-white px-5 py-2.5 text-sm font-semibold shadow-sm self-start sm:self-auto"
               >
                 <Plus size={16} />
                 <span>Add a tenant</span>
               </Link>
             </div>
 
-            {/* Hero Analytics Row (Orders Chart on Left, Plan on Right) */}
-            <div style={{ display: 'grid', gridTemplateColumns: '1.6fr 1fr', gap: '24px', alignItems: 'stretch' }}>
-              {/* Card: Orders this week */}
-              <div style={{ background: '#FFFFFF', borderRadius: '28px', border: '1px solid rgba(0,0,0,0.06)', boxShadow: '0 4px 20px -2px rgba(0,0,0,0.04)', padding: '32px', display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
+            <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-stretch">
+              <div className="lg:col-span-7 bg-white rounded-[28px] border border-slate-200/80 shadow-sm p-6 sm:p-8 flex flex-col justify-between min-w-0">
                 <div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '4px' }}>
-                    <div style={{ width: '28px', height: '28px', borderRadius: '9999px', background: '#F1F5F9', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#0F172A' }}>
+                  <div className="flex items-center gap-2.5 mb-1">
+                    <span className="w-7 h-7 rounded-full bg-slate-100 flex items-center justify-center text-slate-900">
                       <TrendingUp size={15} />
-                    </div>
-                    <h2 style={{ fontSize: '20px', fontWeight: 700, color: '#0F172A', margin: 0 }}>
-                      Orders this week
-                    </h2>
-                  </div>
-                  <div style={{ fontSize: '13px', color: '#64748B', marginLeft: '38px' }}>
-                    Across your restaurants, from RestaurantOS.
-                  </div>
-
-                  <div style={{ display: 'flex', alignItems: 'baseline', gap: '12px', margin: '20px 0 0 38px' }}>
-                    <span style={{ fontSize: '42px', fontWeight: 800, color: '#0F172A', letterSpacing: '-0.025em' }}>
-                      2,847
                     </span>
-                    <span style={{ color: '#059669', fontSize: '13px', fontWeight: 700, background: '#ECFDF5', padding: '3px 8px', borderRadius: '9999px' }}>
-                      +14% vs last week
+                    <h2 className="text-lg font-bold text-slate-900">Workspace activity</h2>
+                  </div>
+                  <p className="text-xs text-slate-500 ml-9">
+                    Connected tenants &amp; provisioned environments.
+                  </p>
+                  <div className="mt-5 ml-9 flex flex-wrap items-baseline gap-3">
+                    <span className="text-4xl font-extrabold text-slate-900 tabular-nums">{tenants.length}</span>
+                    <span className="text-xs font-semibold text-emerald-700 bg-emerald-50 px-2.5 py-1 rounded-full">
+                      Active tenants
                     </span>
                   </div>
                 </div>
 
-                {/* Lollipop Bar Chart (M to S) */}
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', paddingTop: '32px', paddingLeft: '38px', paddingRight: '20px', height: '140px' }}>
-                  {[
-                    { day: 'M', height: 45 },
-                    { day: 'T', height: 60 },
-                    { day: 'W', height: 75 },
-                    { day: 'T', height: 70 },
-                    { day: 'F', height: 95 },
-                    { day: 'S', height: 110, peak: '612' },
-                    { day: 'S', height: 82 },
-                  ].map((col) => (
-                    <div key={col.day} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '8px' }}>
-                      {col.peak && (
-                        <span style={{ background: '#000000', color: '#FFFFFF', fontSize: '11px', fontWeight: 700, padding: '2px 6px', borderRadius: '9999px', marginBottom: '-2px' }}>
-                          {col.peak}
-                        </span>
-                      )}
-                      <div style={{ width: '6px', height: `${col.height}px`, background: '#E2E8F0', borderRadius: '999px', position: 'relative' }}>
-                        <div
-                          style={{
-                            position: 'absolute',
-                            top: 0,
-                            left: '50%',
-                            transform: 'translateX(-50%)',
-                            width: '10px',
-                            height: '10px',
-                            borderRadius: '999px',
-                            background: col.peak ? '#000000' : '#3B82F6',
-                          }}
-                        />
+                <div className="flex justify-between items-end pt-8 px-4 sm:px-9 h-36">
+                  {weeklyChartColumns.map((col, idx) => (
+                    <div key={`${col.id}-${idx}`} className="flex flex-col items-center gap-2">
+                      <div className="w-1.5 rounded-full bg-slate-200 relative" style={{ height: `${col.height}px` }}>
+                        <span className="w-2.5 h-2.5 rounded-full bg-blue-600 absolute -top-1 left-1/2 -translate-x-1/2" />
                       </div>
-                      <span style={{ fontSize: '12px', fontWeight: 600, color: col.peak ? '#0F172A' : '#64748B' }}>
-                        {col.day}
-                      </span>
+                      <span className="text-xs font-semibold text-slate-500">{col.label}</span>
                     </div>
                   ))}
                 </div>
               </div>
 
-              {/* Card: Your plan */}
-              <div style={{ background: '#0F172A', color: '#FFFFFF', borderRadius: '28px', padding: '32px', display: 'flex', flexDirection: 'column', justifyContent: 'space-between', boxShadow: '0 8px 30px rgba(0,0,0,0.12)' }}>
+              <div className="lg:col-span-5 bg-slate-900 text-white rounded-[28px] p-6 sm:p-8 flex flex-col justify-between shadow-lg">
                 <div>
-                  <h2 style={{ fontSize: '18px', fontWeight: 700, margin: 0, color: '#FFFFFF' }}>
-                    Your plan
-                  </h2>
-                  <div style={{ fontSize: '12px', color: '#94A3B8', marginTop: '3px' }}>
-                    {activePlan} · renews 1 December
+                  <h2 className="text-base font-bold text-white">Organization</h2>
+                  <p className="text-xs text-slate-400 mt-1">
+                    {activeOrg?.city || 'Global'} · {activeOrg?.gstin || 'No GSTIN configured'}
+                  </p>
+                  <div className="my-5 text-3xl font-extrabold tracking-tight">
+                    {activeOrg?.role || 'OWNER'}
                   </div>
-
-                  <div style={{ margin: '24px 0' }}>
-                    <span style={{ fontSize: '40px', fontWeight: 800, letterSpacing: '-0.025em' }}>
-                      ₹7,497
-                    </span>
-                    <span style={{ fontSize: '14px', color: '#94A3B8', marginLeft: '6px' }}>
-                      /month
-                    </span>
-                  </div>
-
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
-                    <div>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', color: '#94A3B8', marginBottom: '6px' }}>
-                        <span>Tenants</span>
-                        <span>{tenantsList.length} of 5</span>
-                      </div>
-                      <div style={{ height: '6px', background: '#334155', borderRadius: '999px', overflow: 'hidden' }}>
-                        <div style={{ width: `${(tenantsList.length / 5) * 100}%`, height: '100%', background: '#3B82F6', borderRadius: '999px' }} />
-                      </div>
+                  <div className="space-y-2 text-xs text-slate-300">
+                    <div className="flex justify-between">
+                      <span>Tenants</span>
+                      <span>{tenants.length}</span>
                     </div>
-
-                    <div>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', color: '#94A3B8', marginBottom: '6px' }}>
-                        <span>Staff seats</span>
-                        <span>38 of 50</span>
-                      </div>
-                      <div style={{ height: '6px', background: '#334155', borderRadius: '999px', overflow: 'hidden' }}>
-                        <div style={{ width: '76%', height: '100%', background: '#3B82F6', borderRadius: '999px' }} />
-                      </div>
+                    <div className="flex justify-between">
+                      <span>Team members</span>
+                      <span>{members.length}</span>
                     </div>
                   </div>
                 </div>
@@ -432,404 +447,122 @@ export default function CustomerDashboardPage() {
                 <button
                   type="button"
                   onClick={() => setActiveTab('Billing')}
-                  style={{
-                    background: '#FFFFFF',
-                    color: '#0F172A',
-                    borderRadius: '9999px',
-                    padding: '12px 20px',
-                    fontSize: '13px',
-                    fontWeight: 600,
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    gap: '6px',
-                    border: 'none',
-                    cursor: 'pointer',
-                    marginTop: '28px',
-                    transition: 'background 120ms ease',
-                  }}
+                  className="mt-6 w-full rounded-full bg-white text-slate-900 py-2.5 text-xs font-semibold hover:bg-slate-100"
                 >
-                  <span>Manage subscription</span>
-                  <ArrowRight size={14} />
+                  Change plan or billing →
                 </button>
-              </div>
-            </div>
-
-            {/* Section: Your Tenants Preview */}
-            <div>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '18px' }}>
-                <h2 style={{ fontSize: '20px', fontWeight: 700, color: '#0F172A', margin: 0 }}>
-                  Your tenants
-                </h2>
-                <button 
-                  type="button" 
-                  onClick={() => setActiveTab('Tenants')} 
-                  style={{ background: 'transparent', border: 'none', fontSize: '13px', fontWeight: 600, color: '#2563EB', cursor: 'pointer' }}
-                >
-                  See all ({tenantsList.length})
-                </button>
-              </div>
-
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: '20px' }}>
-                {tenantsList.map((tenant) => {
-                  const targetUrl = `http://${tenant.slug}.localhost:4010`;
-                  return (
-                    <div
-                      key={tenant.id}
-                      style={{
-                        background: '#FFFFFF',
-                        borderRadius: '24px',
-                        border: '1px solid rgba(0,0,0,0.06)',
-                        boxShadow: '0 4px 16px rgba(0,0,0,0.03)',
-                        padding: '24px 28px',
-                        display: 'flex',
-                        flexDirection: 'column',
-                        justifyContent: 'space-between',
-                        minHeight: '190px',
-                        transition: 'transform 120ms ease',
-                      }}
-                    >
-                      <div>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '16px' }}>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                            <div style={{ width: '42px', height: '42px', borderRadius: '12px', background: tenant.avatarBg, color: '#FFFFFF', fontWeight: 800, fontSize: '18px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                              {tenant.avatarChar}
-                            </div>
-                            <div>
-                              <div style={{ fontSize: '17px', fontWeight: 800, color: '#0F172A', lineHeight: 1.2 }}>
-                                {tenant.name}
-                              </div>
-                              <div style={{ fontSize: '12px', color: '#64748B', marginTop: '2px' }}>
-                                {tenant.domain}
-                              </div>
-                            </div>
-                          </div>
-                          <span style={{ background: '#ECFDF5', color: '#059669', fontSize: '12px', fontWeight: 700, padding: '3px 10px', borderRadius: '9999px', display: 'inline-flex', alignItems: 'center', gap: '5px' }}>
-                            ● {tenant.status}
-                          </span>
-                        </div>
-                      </div>
-
-                      <div>
-                        <div style={{ display: 'flex', alignItems: 'baseline', gap: '6px', marginBottom: '14px' }}>
-                          <span style={{ fontSize: '26px', fontWeight: 800, color: '#0F172A', letterSpacing: '-0.02em' }}>
-                            {tenant.metricValue}
-                          </span>
-                          <span style={{ fontSize: '12px', color: '#64748B' }}>
-                            {tenant.metricLabel}
-                          </span>
-                        </div>
-
-                        <a
-                          href={targetUrl}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          style={{
-                            display: 'inline-flex',
-                            alignItems: 'center',
-                            gap: '6px',
-                            fontSize: '13px',
-                            fontWeight: 600,
-                            color: '#2563EB',
-                            textDecoration: 'none',
-                          }}
-                        >
-                          <span>Open RestaurantOS</span>
-                          <ExternalLink size={13} />
-                        </a>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-
-            {/* Bottom Row: Invoices (Left) & Your Data (Right) */}
-            <div style={{ display: 'grid', gridTemplateColumns: '1.4fr 1fr', gap: '24px' }}>
-              <div style={{ background: '#FFFFFF', borderRadius: '24px', border: '1px solid rgba(0,0,0,0.06)', boxShadow: '0 4px 16px rgba(0,0,0,0.03)', padding: '28px' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '18px' }}>
-                  <h2 style={{ fontSize: '17px', fontWeight: 700, color: '#0F172A', margin: 0 }}>
-                    Invoices
-                  </h2>
-                  <button type="button" onClick={() => setActiveTab('Billing')} style={{ background: 'transparent', border: 'none', fontSize: '13px', fontWeight: 600, color: '#2563EB', cursor: 'pointer' }}>
-                    View all
-                  </button>
-                </div>
-
-                <div style={{ display: 'flex', flexDirection: 'column' }}>
-                  <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr 1fr 1fr', fontSize: '11px', fontWeight: 600, color: '#94A3B8', textTransform: 'uppercase', paddingBottom: '10px', borderBottom: '1px solid #F1F5F9' }}>
-                    <span>Invoice</span>
-                    <span>Period</span>
-                    <span>Status</span>
-                    <span style={{ textAlign: 'right' }}>Amount</span>
-                  </div>
-
-                  {[
-                    { id: 'ORB-2611-0042', period: 'November 2026', status: 'Paid', amount: '₹7,497' },
-                    { id: 'ORB-2610-0039', period: 'October 2026', status: 'Paid', amount: '₹7,497' },
-                  ].map((inv) => (
-                    <div key={inv.id} style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr 1fr 1fr', alignItems: 'center', padding: '14px 0', borderBottom: '1px solid #F1F5F9', fontSize: '13px' }}>
-                      <span style={{ fontWeight: 600, color: '#2563EB' }}>{inv.id}</span>
-                      <span style={{ color: '#64748B' }}>{inv.period}</span>
-                      <div>
-                        <span style={{ background: '#ECFDF5', color: '#059669', fontSize: '11px', fontWeight: 700, padding: '2px 8px', borderRadius: '9999px' }}>
-                          {inv.status}
-                        </span>
-                      </div>
-                      <span style={{ textAlign: 'right', fontWeight: 700, color: '#0F172A' }}>{inv.amount}</span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-
-              <div style={{ background: '#FFFFFF', borderRadius: '24px', border: '1px solid rgba(0,0,0,0.06)', boxShadow: '0 4px 16px rgba(0,0,0,0.03)', padding: '28px', display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
-                <div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
-                    <span style={{ fontSize: '16px' }}>⬡</span>
-                    <h2 style={{ fontSize: '17px', fontWeight: 700, color: '#0F172A', margin: 0 }}>
-                      Your data
-                    </h2>
-                  </div>
-                  <p style={{ fontSize: '13px', color: '#64748B', lineHeight: 1.5, margin: 0 }}>
-                    Download everything we hold for your organization, or schedule its deletion with a signed certificate.
-                  </p>
-                </div>
-
-                <div style={{ display: 'flex', gap: '10px', marginTop: '24px' }}>
-                  <button
-                    type="button"
-                    onClick={() => showToast('Full GDPR / DPDP data export generated and emailed to your account')}
-                    style={{
-                      background: '#000000',
-                      color: '#FFFFFF',
-                      borderRadius: '9999px',
-                      padding: '9px 18px',
-                      fontSize: '13px',
-                      fontWeight: 600,
-                      border: 'none',
-                      cursor: 'pointer',
-                    }}
-                  >
-                    Request export
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setActiveTab('Data & privacy')}
-                    style={{
-                      background: '#FFFFFF',
-                      color: '#0F172A',
-                      borderRadius: '9999px',
-                      padding: '9px 18px',
-                      fontSize: '13px',
-                      fontWeight: 600,
-                      border: '1px solid #E2E8F0',
-                      cursor: 'pointer',
-                    }}
-                  >
-                    Data rights
-                  </button>
-                </div>
               </div>
             </div>
           </>
         )}
 
-        {/* TAB 2: TENANTS FLEET */}
+        {/* TAB 2: TENANTS */}
         {activeTab === 'Tenants' && (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <div className="space-y-5">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
               <div>
-                <h1 style={{ fontSize: '32px', fontWeight: 800, margin: '0 0 4px 0' }}>Tenants Fleet</h1>
-                <p style={{ color: '#64748B', margin: 0, fontSize: '14px' }}>
-                  Manage individual restaurant operating runtimes, domains, and staff seats across your brand.
-                </p>
+                <h1 className="text-2xl sm:text-3xl font-extrabold text-slate-900">Your Tenants</h1>
+                <p className="text-sm text-slate-500">All SaaS workspaces deployed for {activeOrg?.name || 'your account'}.</p>
               </div>
               <Link
                 href="/onboarding"
-                style={{
-                  background: '#2563EB',
-                  color: '#FFFFFF',
-                  borderRadius: '9999px',
-                  padding: '10px 22px',
-                  fontSize: '13px',
-                  fontWeight: 600,
-                  textDecoration: 'none',
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  gap: '6px',
-                }}
+                className="inline-flex items-center gap-2 rounded-full bg-blue-600 text-white px-5 py-2.5 text-xs font-semibold self-start sm:self-auto"
               >
-                <Plus size={16} />
-                <span>Create New Tenant</span>
+                <Plus size={15} />
+                <span>Deploy new tenant</span>
               </Link>
             </div>
 
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(360px, 1fr))', gap: '20px' }}>
-              {tenantsList.map((tenant) => {
-                const targetUrl = `http://${tenant.slug}.localhost:4010`;
-                return (
-                  <div
-                    key={tenant.id}
-                    style={{
-                      background: '#FFFFFF',
-                      borderRadius: '24px',
-                      border: '1px solid rgba(0,0,0,0.06)',
-                      padding: '28px',
-                      boxShadow: '0 4px 20px rgba(0,0,0,0.04)',
-                      display: 'flex',
-                      flexDirection: 'column',
-                      justifyContent: 'space-between',
-                      gap: '20px',
-                    }}
-                  >
+            {tenants.length === 0 ? (
+              <div className="bg-white rounded-3xl border border-slate-200 p-10 text-center text-sm text-slate-500">
+                No tenants provisioned for this organization yet.
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+                {tenants.map((t) => (
+                  <div key={t.id} className="bg-white rounded-3xl border border-slate-200 p-6 flex flex-col justify-between gap-4 shadow-sm">
                     <div>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '14px' }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
-                          <div style={{ width: '48px', height: '48px', borderRadius: '14px', background: tenant.avatarBg, color: '#FFFFFF', fontWeight: 800, fontSize: '20px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                            {tenant.avatarChar}
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="flex items-center gap-3 min-w-0">
+                          <div className="w-11 h-11 rounded-xl bg-amber-500 text-white font-bold flex items-center justify-center shrink-0">
+                            {t.vertical === 'HospitalOS' ? <Building2 size={18} /> : <UtensilsCrossed size={18} />}
                           </div>
-                          <div>
-                            <div style={{ fontSize: '18px', fontWeight: 800, color: '#0F172A' }}>{tenant.name}</div>
-                            <div style={{ fontSize: '12px', color: '#64748B', marginTop: '2px' }}>{tenant.domain}</div>
+                          <div className="min-w-0">
+                            <div className="font-bold text-slate-900 truncate">{t.name}</div>
+                            <div className="text-xs font-mono text-slate-500 truncate">{t.domain}</div>
                           </div>
                         </div>
-                        <span style={{ background: '#ECFDF5', color: '#059669', fontSize: '11px', fontWeight: 700, padding: '3px 10px', borderRadius: '9999px' }}>
-                          ● Active Runtime
-                        </span>
-                      </div>
-
-                      <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginTop: '12px' }}>
-                        <span style={{ background: '#F1F5F9', color: '#475569', fontSize: '11px', fontWeight: 600, padding: '3px 10px', borderRadius: '9999px' }}>
-                          30 Tables
-                        </span>
-                        <span style={{ background: '#F1F5F9', color: '#475569', fontSize: '11px', fontWeight: 600, padding: '3px 10px', borderRadius: '9999px' }}>
-                          1 Floor
-                        </span>
-                        <span style={{ background: '#F1F5F9', color: '#475569', fontSize: '11px', fontWeight: 600, padding: '3px 10px', borderRadius: '9999px' }}>
-                          KDS OLED
-                        </span>
-                        <span style={{ background: '#F1F5F9', color: '#475569', fontSize: '11px', fontWeight: 600, padding: '3px 10px', borderRadius: '9999px' }}>
-                          Optical QR
+                        <span className="px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-emerald-50 text-emerald-700 shrink-0">
+                          {t.status}
                         </span>
                       </div>
                     </div>
-
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderTop: '1px solid #F1F5F9', paddingTop: '16px' }}>
-                      <span style={{ fontSize: '12px', color: '#64748B' }}>Port: 4010</span>
+                    <div className="pt-3 border-t border-slate-100 flex items-center justify-between">
+                      <span className="text-xs text-slate-500">{t.vertical}</span>
                       <a
-                        href={targetUrl}
+                        href={t.vertical === 'HospitalOS' ? '/hms' : `http://${t.domain}`}
                         target="_blank"
                         rel="noopener noreferrer"
-                        style={{
-                          background: '#0F172A',
-                          color: '#FFFFFF',
-                          borderRadius: '9999px',
-                          padding: '8px 18px',
-                          fontSize: '12px',
-                          fontWeight: 600,
-                          textDecoration: 'none',
-                          display: 'inline-flex',
-                          alignItems: 'center',
-                          gap: '6px',
-                        }}
+                        className="inline-flex items-center gap-1.5 rounded-full bg-slate-900 text-white px-4 py-1.5 text-xs font-semibold"
                       >
-                        <span>Launch Cockpit</span>
+                        <span>Open App</span>
                         <ExternalLink size={12} />
                       </a>
                     </div>
                   </div>
-                );
-              })}
-            </div>
+                ))}
+              </div>
+            )}
           </div>
         )}
 
         {/* TAB 3: TEAM */}
         {activeTab === 'Team' && (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <div className="space-y-5">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
               <div>
-                <h1 style={{ fontSize: '32px', fontWeight: 800, margin: '0 0 4px 0' }}>Team & Access</h1>
-                <p style={{ color: '#64748B', margin: 0, fontSize: '14px' }}>
-                  Invite team members, assign administrative roles, and configure multi-tenant management.
-                </p>
+                <h1 className="text-2xl sm:text-3xl font-extrabold text-slate-900">Team &amp; Access</h1>
+                <p className="text-sm text-slate-500">Invite organization administrators and billing contacts.</p>
               </div>
               <button
                 type="button"
-                onClick={() => {
-                  const email = prompt('Enter email address to invite:');
-                  if (email && email.trim()) {
-                    showToast('Invitation sent to ' + email.trim());
-                  }
-                }}
-                style={{
-                  background: '#2563EB',
-                  color: '#FFFFFF',
-                  borderRadius: '9999px',
-                  padding: '10px 22px',
-                  fontSize: '13px',
-                  fontWeight: 600,
-                  border: 'none',
-                  cursor: 'pointer',
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  gap: '6px',
-                }}
+                onClick={() => setInviteOpen(true)}
+                className="inline-flex items-center gap-2 rounded-full bg-blue-600 text-white px-5 py-2.5 text-xs font-semibold self-start sm:self-auto"
               >
-                <Plus size={16} />
+                <Plus size={15} />
                 <span>Invite Member</span>
               </button>
             </div>
 
-            <div style={{ background: '#FFFFFF', borderRadius: '24px', border: '1px solid rgba(0,0,0,0.06)', padding: '24px', boxShadow: '0 4px 16px rgba(0,0,0,0.03)' }}>
-              <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '13px' }}>
+            <div className="bg-white rounded-3xl border border-slate-200 p-4 sm:p-6 overflow-x-auto">
+              <table className="w-full text-left text-xs min-w-[540px]">
                 <thead>
-                  <tr style={{ borderBottom: '1px solid #F1F5F9', color: '#64748B', fontSize: '12px', fontWeight: 600 }}>
-                    <th style={{ padding: '14px 12px' }}>Member</th>
-                    <th style={{ padding: '14px 12px' }}>Email</th>
-                    <th style={{ padding: '14px 12px' }}>Role</th>
-                    <th style={{ padding: '14px 12px' }}>Status</th>
-                    <th style={{ padding: '14px 12px', textAlign: 'right' }}>Actions</th>
+                  <tr className="border-b border-slate-100 text-slate-500">
+                    <th className="py-3 px-2 font-semibold">Member</th>
+                    <th className="py-3 px-2 font-semibold">Email</th>
+                    <th className="py-3 px-2 font-semibold">Role</th>
+                    <th className="py-3 px-2 font-semibold">Status</th>
                   </tr>
                 </thead>
-                <tbody>
-                  {[
-                    { name: 'Priya Shah', email: 'priya@maxorahospitality.com', role: 'Organization Owner', status: 'Active', initials: 'PS', bg: '#0F172A' },
-                    { name: 'Rahul Kapoor', email: 'rahul.k@maxorahospitality.com', role: 'General Manager', status: 'Active', initials: 'RK', bg: '#FB923C' },
-                    { name: 'Sameer Sen', email: 'sameer@maxorahospitality.com', role: 'Operations Lead', status: 'Active', initials: 'SS', bg: '#3B82F6' },
-                    { name: 'Ananya Roy', email: 'ananya.roy@orbitox.io', role: 'Billing Admin', status: 'Invited', initials: 'AR', bg: '#A855F7' },
-                  ].map((m) => (
-                    <tr key={m.email} style={{ borderBottom: '1px solid #F8FAFC' }}>
-                      <td style={{ padding: '16px 12px' }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                          <div style={{ width: '32px', height: '32px', borderRadius: '9999px', background: m.bg, color: '#FFFFFF', fontWeight: 700, fontSize: '12px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                            {m.initials}
-                          </div>
-                          <span style={{ fontWeight: 700, color: '#0F172A' }}>{m.name}</span>
-                        </div>
-                      </td>
-                      <td style={{ padding: '16px 12px', color: '#64748B' }}>{m.email}</td>
-                      <td style={{ padding: '16px 12px' }}>
-                        <span style={{ background: '#F1F5F9', color: '#0F172A', fontWeight: 600, padding: '3px 10px', borderRadius: '9999px', fontSize: '11px' }}>
-                          {m.role}
-                        </span>
-                      </td>
-                      <td style={{ padding: '16px 12px' }}>
-                        <span style={{ background: m.status === 'Active' ? '#ECFDF5' : '#FEF3C7', color: m.status === 'Active' ? '#059669' : '#D97706', fontWeight: 700, padding: '3px 10px', borderRadius: '9999px', fontSize: '11px' }}>
-                          {m.status}
-                        </span>
-                      </td>
-                      <td style={{ padding: '16px 12px', textAlign: 'right' }}>
-                        <button
-                          type="button"
-                          onClick={() => showToast('Permission settings opened for ' + m.name)}
-                          style={{ background: '#F1F5F9', border: 'none', borderRadius: '9999px', padding: '5px 14px', fontSize: '12px', fontWeight: 600, color: '#0F172A', cursor: 'pointer' }}
-                        >
-                          Manage
-                        </button>
+                <tbody className="divide-y divide-slate-100">
+                  {members.length === 0 ? (
+                    <tr>
+                      <td colSpan={4} className="py-8 text-center text-slate-500">
+                        No team members loaded for the selected organization.
                       </td>
                     </tr>
-                  ))}
+                  ) : (
+                    members.map((mb) => (
+                      <tr key={mb.id}>
+                        <td className="py-3 px-2 font-semibold text-slate-900">{mb.name}</td>
+                        <td className="py-3 px-2 text-slate-500">{mb.email}</td>
+                        <td className="py-3 px-2">
+                          <span className="px-2.5 py-0.5 rounded-full bg-slate-100 text-slate-800 font-semibold">{mb.role}</span>
+                        </td>
+                        <td className="py-3 px-2 text-emerald-700 font-semibold">{mb.status}</td>
+                      </tr>
+                    ))
+                  )}
                 </tbody>
               </table>
             </div>
@@ -838,206 +571,157 @@ export default function CustomerDashboardPage() {
 
         {/* TAB 4: BILLING */}
         {activeTab === 'Billing' && (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
+          <div className="space-y-5">
             <div>
-              <h1 style={{ fontSize: '32px', fontWeight: 800, margin: '0 0 4px 0' }}>Subscription & Invoicing</h1>
-              <p style={{ color: '#64748B', margin: 0, fontSize: '14px' }}>
-                Manage your commercial plan, billing contact, GST invoicing details, and payment tenders.
-              </p>
+              <h1 className="text-2xl sm:text-3xl font-extrabold text-slate-900">Subscription &amp; Invoicing</h1>
+              <p className="text-sm text-slate-500">Manage commercial subscription tiers, Razorpay mandates, and GST receipts.</p>
             </div>
-
-            {/* Plan Details Card */}
-            <div style={{ background: '#0F172A', color: '#FFFFFF', borderRadius: '28px', padding: '32px', display: 'grid', gridTemplateColumns: '1.4fr 1fr', gap: '32px', alignItems: 'center' }}>
+            <div className="bg-white rounded-3xl border border-slate-200 p-6 sm:p-8 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
               <div>
-                <span style={{ background: '#3B82F6', color: '#FFFFFF', fontSize: '11px', fontWeight: 700, padding: '3px 10px', borderRadius: '9999px', textTransform: 'uppercase' }}>
-                  Current Plan
-                </span>
-                <div style={{ fontSize: '36px', fontWeight: 800, marginTop: '8px' }}>
-                  Growth Commercial Plan
-                </div>
-                <div style={{ fontSize: '14px', color: '#94A3B8', marginTop: '4px' }}>
-                  Billed monthly at ₹7,497/mo (Next billing date: 1 December 2026)
-                </div>
-
-                <div style={{ display: 'flex', gap: '20px', marginTop: '24px' }}>
-                  <div>
-                    <div style={{ fontSize: '20px', fontWeight: 800 }}>1 of 5</div>
-                    <div style={{ fontSize: '11px', color: '#94A3B8' }}>Tenants Used</div>
-                  </div>
-                  <div>
-                    <div style={{ fontSize: '20px', fontWeight: 800 }}>38 of 50</div>
-                    <div style={{ fontSize: '11px', color: '#94A3B8' }}>Staff Seats</div>
-                  </div>
-                  <div>
-                    <div style={{ fontSize: '20px', fontWeight: 800 }}>Unlimited</div>
-                    <div style={{ fontSize: '11px', color: '#94A3B8' }}>Optical QR Codes</div>
-                  </div>
-                </div>
+                <h2 className="text-lg font-bold text-slate-900">Plan &amp; Billing Controls</h2>
+                <p className="text-xs text-slate-500 mt-1">
+                  To upgrade or cancel commercial plans, use the Onboarding plan flow or Operator Billing dashboard.
+                </p>
               </div>
-
-              <div style={{ background: 'rgba(255,255,255,0.06)', borderRadius: '20px', padding: '24px', border: '1px solid rgba(255,255,255,0.1)' }}>
-                <div style={{ fontSize: '12px', fontWeight: 600, color: '#94A3B8', textTransform: 'uppercase' }}>Payment Method</div>
-                <div style={{ fontSize: '16px', fontWeight: 700, color: '#FFFFFF', marginTop: '6px' }}>
-                  UPI AutoPay · HDFC Bank
-                </div>
-                <div style={{ fontSize: '12px', color: '#94A3B8', marginTop: '2px' }}>
-                  mandate_cmwulhx93000si0bhb53gk7dr
-                </div>
-                <button
-                  type="button"
-                  onClick={() => showToast('Payment tender update dialog opened')}
-                  style={{
-                    background: '#FFFFFF',
-                    color: '#0F172A',
-                    borderRadius: '9999px',
-                    padding: '8px 18px',
-                    fontSize: '12px',
-                    fontWeight: 600,
-                    border: 'none',
-                    cursor: 'pointer',
-                    marginTop: '16px',
-                  }}
-                >
-                  Change payment method
-                </button>
-              </div>
-            </div>
-
-            {/* Invoices List */}
-            <div style={{ background: '#FFFFFF', borderRadius: '24px', border: '1px solid rgba(0,0,0,0.06)', padding: '28px', boxShadow: '0 4px 16px rgba(0,0,0,0.03)' }}>
-              <h2 style={{ fontSize: '18px', fontWeight: 700, margin: '0 0 16px 0' }}>Invoice History</h2>
-              <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '13px' }}>
-                <thead>
-                  <tr style={{ borderBottom: '1px solid #F1F5F9', color: '#64748B', fontSize: '12px', fontWeight: 600 }}>
-                    <th style={{ padding: '12px 14px' }}>Invoice ID</th>
-                    <th style={{ padding: '12px 14px' }}>Billing Period</th>
-                    <th style={{ padding: '12px 14px' }}>GSTIN Verified</th>
-                    <th style={{ padding: '12px 14px' }}>Status</th>
-                    <th style={{ padding: '12px 14px' }}>Amount</th>
-                    <th style={{ padding: '12px 14px', textAlign: 'right' }}>Download</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {[
-                    { id: 'ORB-2611-0042', period: 'Nov 1, 2026 – Nov 30, 2026', gstin: '29AABCU9603R1ZM', status: 'PAID', amount: '₹7,497' },
-                    { id: 'ORB-2610-0039', period: 'Oct 1, 2026 – Oct 31, 2026', gstin: '29AABCU9603R1ZM', status: 'PAID', amount: '₹7,497' },
-                    { id: 'ORB-2609-0014', period: 'Sep 1, 2026 – Sep 30, 2026', gstin: '29AABCU9603R1ZM', status: 'PAID', amount: '₹7,497' },
-                  ].map((row) => (
-                    <tr key={row.id} style={{ borderBottom: '1px solid #F8FAFC' }}>
-                      <td style={{ padding: '14px', fontWeight: 700, color: '#2563EB' }}>{row.id}</td>
-                      <td style={{ padding: '14px', color: '#64748B' }}>{row.period}</td>
-                      <td style={{ padding: '14px', color: '#0F172A', fontFamily: 'monospace' }}>{row.gstin}</td>
-                      <td style={{ padding: '14px' }}>
-                        <span style={{ background: '#ECFDF5', color: '#059669', fontSize: '11px', fontWeight: 700, padding: '2px 8px', borderRadius: '9999px' }}>
-                          {row.status}
-                        </span>
-                      </td>
-                      <td style={{ padding: '14px', fontWeight: 700, color: '#0F172A' }}>{row.amount}</td>
-                      <td style={{ padding: '14px', textAlign: 'right' }}>
-                        <button
-                          type="button"
-                          onClick={() => showToast('Downloading invoice tax receipt ' + row.id)}
-                          style={{ background: 'transparent', border: 'none', color: '#2563EB', fontWeight: 600, fontSize: '12px', cursor: 'pointer' }}
-                        >
-                          PDF ↗
-                        </button>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+              <Link
+                href="/onboarding"
+                className="inline-flex items-center justify-center rounded-full bg-slate-900 text-white px-5 py-2.5 text-xs font-semibold shrink-0"
+              >
+                Manage Plan
+              </Link>
             </div>
           </div>
         )}
 
         {/* TAB 5: DATA & PRIVACY */}
         {activeTab === 'Data & privacy' && (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
+          <div className="space-y-5">
             <div>
-              <h1 style={{ fontSize: '32px', fontWeight: 800, margin: '0 0 4px 0' }}>Data Sovereignty & Privacy</h1>
-              <p style={{ color: '#64748B', margin: 0, fontSize: '14px' }}>
-                Exercise complete control over your customer records, order receipts, and cryptographic audit proofs.
-              </p>
+              <h1 className="text-2xl sm:text-3xl font-extrabold text-slate-900">Data Sovereignty &amp; Privacy</h1>
+              <p className="text-sm text-slate-500">Export organization records or schedule a 30-day DPDP/GDPR deletion request.</p>
             </div>
-
-            {/* Cryptographic Proof Card */}
-            <div style={{ background: '#FFFFFF', borderRadius: '24px', border: '1px solid rgba(0,0,0,0.06)', padding: '28px', boxShadow: '0 4px 16px rgba(0,0,0,0.03)' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '12px' }}>
-                <Shield size={20} color="#059669" />
-                <h2 style={{ fontSize: '18px', fontWeight: 700, margin: 0 }}>Merkle Audit Tree Verification</h2>
-              </div>
-              <p style={{ color: '#64748B', fontSize: '13px', lineHeight: 1.5, margin: 0 }}>
-                Every settlement, menu update, and staff action is cryptographically hashed with SHA-256 and chained into your tenant's tamper-evident Merkle log.
-              </p>
-              <div style={{ background: '#F8FAFC', borderRadius: '14px', padding: '14px', marginTop: '16px', fontFamily: 'monospace', fontSize: '12px', color: '#0F172A', wordBreak: 'break-all', border: '1px solid #E2E8F0' }}>
-                Current Root: 355972c9c31a04b6acfd37f8dceb2244db7335d4113b2f88c83d8f1cb1145143
-              </div>
-            </div>
-
-            {/* Export and Deletion Action Grid */}
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px' }}>
-              <div style={{ background: '#FFFFFF', borderRadius: '24px', border: '1px solid rgba(0,0,0,0.06)', padding: '28px', boxShadow: '0 4px 16px rgba(0,0,0,0.03)', display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+              <div className="bg-white rounded-3xl border border-slate-200 p-6 flex flex-col justify-between gap-4">
                 <div>
-                  <h3 style={{ fontSize: '16px', fontWeight: 700, margin: '0 0 6px 0' }}>Full Organization Data Export</h3>
-                  <p style={{ color: '#64748B', fontSize: '13px', lineHeight: 1.5, margin: 0 }}>
-                    Includes order histories, kitchen dockets, guest capability logs, and tax ledger records in JSON format.
+                  <div className="flex items-center gap-2 mb-2">
+                    <Shield size={18} className="text-emerald-600" />
+                    <h2 className="text-base font-bold text-slate-900">Organization Data Export</h2>
+                  </div>
+                  <p className="text-xs text-slate-500 leading-relaxed">
+                    Generate a downloadable archive of organization configuration, member audit history, and tenant datasets.
                   </p>
                 </div>
                 <button
                   type="button"
-                  onClick={() => showToast('Full tenant export generated successfully!')}
-                  style={{
-                    background: '#000000',
-                    color: '#FFFFFF',
-                    borderRadius: '9999px',
-                    padding: '10px 20px',
-                    fontSize: '13px',
-                    fontWeight: 600,
-                    border: 'none',
-                    cursor: 'pointer',
-                    marginTop: '20px',
-                    alignSelf: 'flex-start',
-                  }}
+                  onClick={handleRequestExport}
+                  className="self-start rounded-full bg-slate-900 text-white px-5 py-2 text-xs font-semibold"
                 >
-                  Download Data Archive (.zip)
+                  Request Data Export
                 </button>
               </div>
 
-              <div style={{ background: '#FFFFFF', borderRadius: '24px', border: '1px solid rgba(0,0,0,0.06)', padding: '28px', boxShadow: '0 4px 16px rgba(0,0,0,0.03)', display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
+              <div className="bg-white rounded-3xl border border-rose-200 p-6 flex flex-col justify-between gap-4">
                 <div>
-                  <h3 style={{ fontSize: '16px', fontWeight: 700, margin: '0 0 6px 0' }}>Cryptographic Erasure Certificate</h3>
-                  <p style={{ color: '#64748B', fontSize: '13px', lineHeight: 1.5, margin: 0 }}>
-                    Permanently delete diner session logs and obtain a cryptographically signed deletion proof under DPDP 2023.
+                  <h2 className="text-base font-bold text-rose-700 mb-2">Organization Erasure</h2>
+                  <p className="text-xs text-slate-500 leading-relaxed">
+                    Schedule organization deletion with a 30-day cancellable grace period and cryptographically signed certificate.
                   </p>
                 </div>
                 <button
                   type="button"
-                  onClick={() => {
-                    if (confirm('Request signed cryptographic erasure certificate for stale diner sessions?')) {
-                      showToast('Erasure certificate issued and logged to audit trail.');
-                    }
-                  }}
-                  style={{
-                    background: '#FFFFFF',
-                    color: '#DC2626',
-                    border: '1px solid #FECACA',
-                    borderRadius: '9999px',
-                    padding: '10px 20px',
-                    fontSize: '13px',
-                    fontWeight: 600,
-                    cursor: 'pointer',
-                    marginTop: '20px',
-                    alignSelf: 'flex-start',
-                  }}
+                  onClick={() => setDeletionModalOpen(true)}
+                  className="self-start rounded-full bg-white border border-rose-300 text-rose-700 px-5 py-2 text-xs font-semibold hover:bg-rose-50"
                 >
-                  Issue Erasure Certificate
+                  Schedule Deletion
                 </button>
               </div>
             </div>
           </div>
         )}
-
       </main>
+
+      {/* Invite Member Dialog */}
+      {inviteOpen && (
+        <div className="fixed inset-0 z-50 bg-slate-900/50 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl border border-slate-200 p-6 w-full max-w-md shadow-xl space-y-4">
+            <div className="flex items-center justify-between">
+              <h3 className="text-lg font-bold text-slate-900">Invite Team Member</h3>
+              <button type="button" onClick={() => setInviteOpen(false)} className="text-slate-400 hover:text-slate-700">
+                <X size={18} />
+              </button>
+            </div>
+            <form onSubmit={handleInviteSubmit} className="space-y-4">
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">Work Email</label>
+                <input
+                  type="email"
+                  required
+                  value={inviteEmail}
+                  onChange={(e) => setInviteEmail(e.target.value)}
+                  placeholder="colleague@company.com"
+                  className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm outline-none focus:border-blue-500"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">Role</label>
+                <select
+                  value={inviteRole}
+                  onChange={(e) => setInviteRole(e.target.value)}
+                  className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm bg-white"
+                >
+                  <option value="ADMIN">Admin</option>
+                  <option value="BILLING">Billing Manager</option>
+                </select>
+              </div>
+              <div className="flex justify-end gap-2 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setInviteOpen(false)}
+                  className="rounded-full px-4 py-2 text-xs font-semibold border border-slate-200 text-slate-700"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={inviteBusy}
+                  className="rounded-full px-5 py-2 text-xs font-semibold bg-blue-600 text-white"
+                >
+                  {inviteBusy ? 'Sending...' : 'Send Invite'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Deletion Confirmation Dialog */}
+      {deletionModalOpen && (
+        <div className="fixed inset-0 z-50 bg-slate-900/50 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl border border-slate-200 p-6 w-full max-w-md shadow-xl space-y-4">
+            <h3 className="text-lg font-bold text-slate-900">Confirm Deletion Schedule</h3>
+            <p className="text-xs text-slate-600 leading-relaxed">
+              This schedules organization deletion with a 30-day recovery window. You can cancel anytime before the deadline.
+            </p>
+            <div className="flex justify-end gap-2 pt-2">
+              <button
+                type="button"
+                onClick={() => setDeletionModalOpen(false)}
+                className="rounded-full px-4 py-2 text-xs font-semibold border border-slate-200 text-slate-700"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={deletionBusy}
+                onClick={handleConfirmDeletion}
+                className="rounded-full px-5 py-2 text-xs font-semibold bg-rose-600 text-white"
+              >
+                {deletionBusy ? 'Scheduling...' : 'Confirm Schedule'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

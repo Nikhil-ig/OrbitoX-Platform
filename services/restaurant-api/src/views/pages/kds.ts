@@ -29,6 +29,83 @@ export function renderKdsWorkspace(
   const now = new Date();
   const timeString = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false });
 
+  const normalizeStatus = (st?: string) => String(st || 'QUEUED').toUpperCase();
+  const normalizeStation = (st?: string) => {
+    const u = String(st || 'KITCHEN').toUpperCase();
+    if (u.includes('TANDOOR')) return 'Tandoor';
+    if (u.includes('CURRY') || u.includes('KITCHEN') || u.includes('GRILL')) return 'Curry';
+    if (u.includes('BAR') || u.includes('BEV')) return 'Bar';
+    return 'All';
+  };
+
+  const activeTasks = (Array.isArray(tasks) ? tasks : []).filter(
+    (t) => !['BUMPED', 'DISPATCHED', 'COMPLETED', 'CANCELLED'].includes(normalizeStatus(t.status))
+  );
+
+  const newTasks = activeTasks.filter((t) => ['QUEUED', 'PENDING', 'NEW', 'PLACED'].includes(normalizeStatus(t.status)));
+  const cookingTasks = activeTasks.filter((t) => ['IN_PROGRESS', 'PREPARING', 'COOKING'].includes(normalizeStatus(t.status)));
+  const readyTasks = activeTasks.filter((t) => normalizeStatus(t.status) === 'READY');
+
+  const openCount = activeTasks.length;
+  const avgElapsed = openCount > 0
+    ? Math.round(activeTasks.reduce((s, t) => s + (Number(t.elapsedMinutes) || 1), 0) / openCount)
+    : 0;
+  const lateCount = activeTasks.filter((t) => (Number(t.elapsedMinutes) || 0) >= (Number(t.slaMinutes) || 20)).length;
+
+  const esc = (v: unknown) =>
+    String(v || '')
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;');
+
+  const renderTaskCard = (t: KitchenTask, mode: 'new' | 'cooking' | 'ready') => {
+    const mins = Number(t.elapsedMinutes) || 1;
+    const sla = Number(t.slaMinutes) || 20;
+    const isLate = mins >= sla;
+    const stationLabel = normalizeStation(t.station);
+    const mods = Array.isArray(t.modifiers) ? t.modifiers : [];
+    const nextTarget = mode === 'new' ? 'IN_PROGRESS' : mode === 'cooking' ? 'READY' : 'BUMPED';
+    const nextLabel = mode === 'new' ? 'Start' : mode === 'cooking' ? 'Ready' : 'Served';
+    const btnCls = mode === 'new' ? 'btn-ticket-start' : mode === 'cooking' ? 'btn-ticket-ready' : 'btn-ticket-served';
+    const cardCls =
+      mode === 'cooking' && !isLate
+        ? 'kds-ticket cooking-highlight'
+        : isLate
+          ? 'kds-ticket late-highlight'
+          : 'kds-ticket';
+    const dialCls = mode === 'ready' ? 'dial-timer ready' : isLate ? 'dial-timer late' : 'dial-timer';
+    const tableDisplay = String(t.tableNumber || '').toLowerCase().startsWith('takeaway')
+      ? t.tableNumber
+      : `Table ${String(t.tableNumber || '').replace(/^Table\s+/i, '')}`;
+
+    return `
+      <article class="${cardCls}" id="${esc(t.id)}" data-station="${esc(stationLabel)}">
+        <div class="ticket-header">
+          <div>
+            <div class="ticket-table-name">${esc(tableDisplay)}</div>
+            <div class="ticket-server-meta">${esc(t.guestName || t.station || 'Kitchen')} · ${esc(t.seatNumber ? `Seat ${t.seatNumber}` : 'Dine-in')}</div>
+          </div>
+          <div class="${dialCls}">${mins}'</div>
+        </div>
+        <div class="ticket-items">
+          <div class="ticket-item-row">
+            <span class="item-qty">${Number(t.quantity) || 1}x</span>
+            <span>${esc(t.itemName)}</span>
+            ${mods.map((m) => {
+      const lowerM = String(m).toLowerCase();
+      return `<span class="${lowerM.includes('allerg') ? 'allergy-pill' : 'mod-pill'}">${esc(m)}</span>`;
+    }).join('')}
+          </div>
+        </div>
+        <button type="button" class="btn-ticket-action ${btnCls}" onclick="moveTicket('${esc(t.id)}', '${nextTarget}')">
+          ${nextLabel}
+        </button>
+      </article>
+    `;
+  };
+
   return `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -150,6 +227,28 @@ export function renderKdsWorkspace(
       gap: 20px;
       padding: 20px 28px;
       overflow-y: auto;
+    }
+    @media (max-width: 900px) {
+      body {
+        height: auto;
+        min-height: 100vh;
+        overflow-y: auto;
+        overflow-x: hidden;
+      }
+      .kds-top-bar {
+        height: auto;
+        padding: 14px 16px;
+        flex-wrap: wrap;
+        gap: 12px;
+      }
+      .kds-stations {
+        flex-wrap: wrap;
+      }
+      .kds-columns-grid {
+        grid-template-columns: 1fr;
+        padding: 16px;
+        overflow-y: visible;
+      }
     }
 
     .kds-column {
@@ -325,16 +424,16 @@ export function renderKdsWorkspace(
     <!-- Live Telemetry -->
     <div class="kds-metrics">
       <div class="kds-metric-item">
-        <span class="kds-metric-num">5</span>
+        <span class="kds-metric-num">${openCount}</span>
         <span class="kds-metric-label">open tickets</span>
       </div>
       <div class="kds-metric-item">
-        <span class="kds-metric-num">11'</span>
+        <span class="kds-metric-num">${avgElapsed}'</span>
         <span class="kds-metric-label">avg time</span>
       </div>
       <div class="kds-metric-item">
-        <span class="kds-metric-num" style="color: #EF4444;">1</span>
-        <span class="kds-metric-label" style="color: #EF4444;">running late</span>
+        <span class="kds-metric-num" style="color: ${lateCount > 0 ? '#EF4444' : '#94A3B8'};">${lateCount}</span>
+        <span class="kds-metric-label" style="color: ${lateCount > 0 ? '#EF4444' : '#94A3B8'};">running late</span>
       </div>
     </div>
 
@@ -351,162 +450,46 @@ export function renderKdsWorkspace(
   <!-- 3 Kanban Columns (New, Cooking, Ready) -->
   <main class="kds-columns-grid">
     
-    <!-- Column 1: New (2 tickets) -->
-    <section class="kds-column">
+    <!-- Column 1: New -->
+    <section class="kds-column" id="kds-col-new">
       <div class="kds-column-header">
         <div class="kds-column-title">
           <span style="width: 8px; height: 8px; border-radius: 999px; background: #60A5FA;"></span>
           <span>New</span>
         </div>
-        <span class="kds-column-count">2 tickets</span>
+        <span class="kds-column-count">${newTasks.length} ticket${newTasks.length === 1 ? '' : 's'}</span>
       </div>
-
-      <!-- Ticket: Table 4 -->
-      <article class="kds-ticket" id="ticket-table-4">
-        <div class="ticket-header">
-          <div>
-            <div class="ticket-table-name">Table 4</div>
-            <div class="ticket-server-meta">Arjun · 2 guests</div>
-          </div>
-          <div class="dial-timer">3'</div>
-        </div>
-
-        <div class="ticket-items">
-          <div class="ticket-item-row">
-            <span class="item-qty">2x</span>
-            <span>Butter chicken</span>
-            <span class="mod-pill">Extra butter</span>
-          </div>
-          <div class="ticket-item-row">
-            <span class="item-qty">3x</span>
-            <span>Garlic naan</span>
-          </div>
-        </div>
-
-        <button type="button" class="btn-ticket-action btn-ticket-start" onclick="moveTicket('ticket-table-4', 'cooking')">
-          Start
-        </button>
-      </article>
-
-      <!-- Ticket: Table 11 -->
-      <article class="kds-ticket" id="ticket-table-11">
-        <div class="ticket-header">
-          <div>
-            <div class="ticket-table-name">Table 11</div>
-            <div class="ticket-server-meta">QR order</div>
-          </div>
-          <div class="dial-timer">7'</div>
-        </div>
-
-        <div class="ticket-items">
-          <div class="ticket-item-row">
-            <span class="item-qty">1x</span>
-            <span>Dal makhani</span>
-            <span class="mod-pill">Less spicy</span>
-          </div>
-          <div class="ticket-item-row">
-            <span class="item-qty">1x</span>
-            <span>Jeera rice</span>
-          </div>
-        </div>
-
-        <button type="button" class="btn-ticket-action btn-ticket-start" onclick="moveTicket('ticket-table-11', 'cooking')">
-          Start
-        </button>
-      </article>
+      ${newTasks.length > 0
+      ? newTasks.map((t) => renderTaskCard(t, 'new')).join('')
+      : `<div style="padding: 28px 16px; border-radius: 16px; border: 1px dashed rgba(255,255,255,0.12); color: #64748B; text-align: center; font-size: 13px;">No queued kitchen tickets</div>`}
     </section>
 
-    <!-- Column 2: Cooking (2 tickets) -->
+    <!-- Column 2: Cooking -->
     <section class="kds-column" id="kds-col-cooking">
       <div class="kds-column-header">
         <div class="kds-column-title">
           <span style="width: 8px; height: 8px; border-radius: 999px; background: #3B82F6;"></span>
           <span>Cooking</span>
         </div>
-        <span class="kds-column-count">2 tickets</span>
+        <span class="kds-column-count">${cookingTasks.length} ticket${cookingTasks.length === 1 ? '' : 's'}</span>
       </div>
-
-      <!-- Ticket: Table 7 (Active Royal Blue Highlight) -->
-      <article class="kds-ticket cooking-highlight" id="ticket-table-7" data-station="Tandoor">
-        <div class="ticket-header">
-          <div>
-            <div class="ticket-table-name">Table 7</div>
-            <div class="ticket-server-meta">Arjun · 4 guests</div>
-          </div>
-          <div class="dial-timer" style="border-color: #FFFFFF; color: #FFFFFF;">12'</div>
-        </div>
-
-        <div class="ticket-items">
-          <div class="ticket-item-row">
-            <span class="item-qty">1x</span>
-            <span>Paneer tikka</span>
-            <span class="allergy-pill">Nut allergy</span>
-          </div>
-          <div class="ticket-item-row">
-            <span class="item-qty">2x</span>
-            <span>Tandoori roti</span>
-          </div>
-        </div>
-
-        <button type="button" class="btn-ticket-action btn-ticket-ready" onclick="moveTicket('ticket-table-7', 'ready')">
-          Ready
-        </button>
-      </article>
-
-      <!-- Ticket: Takeaway 18 (Running Late) -->
-      <article class="kds-ticket late-highlight" id="ticket-takeaway-18" data-station="Curry">
-        <div class="ticket-header">
-          <div>
-            <div class="ticket-table-name">Takeaway 18</div>
-            <div class="ticket-server-meta">Counter</div>
-          </div>
-          <div class="dial-timer late">22'</div>
-        </div>
-
-        <div class="ticket-items">
-          <div class="ticket-item-row">
-            <span class="item-qty">2x</span>
-            <span>Chicken biryani</span>
-          </div>
-        </div>
-
-        <button type="button" class="btn-ticket-action btn-ticket-ready" onclick="moveTicket('ticket-takeaway-18', 'ready')">
-          Ready
-        </button>
-      </article>
+      ${cookingTasks.length > 0
+      ? cookingTasks.map((t) => renderTaskCard(t, 'cooking')).join('')
+      : `<div style="padding: 28px 16px; border-radius: 16px; border: 1px dashed rgba(255,255,255,0.12); color: #64748B; text-align: center; font-size: 13px;">No dishes currently cooking</div>`}
     </section>
 
-    <!-- Column 3: Ready (1 ticket) -->
+    <!-- Column 3: Ready -->
     <section class="kds-column" id="kds-col-ready">
       <div class="kds-column-header">
         <div class="kds-column-title">
           <span style="width: 8px; height: 8px; border-radius: 999px; background: #10B981;"></span>
           <span>Ready</span>
         </div>
-        <span class="kds-column-count">1 ticket</span>
+        <span class="kds-column-count">${readyTasks.length} ticket${readyTasks.length === 1 ? '' : 's'}</span>
       </div>
-
-      <!-- Ticket: Table 2 -->
-      <article class="kds-ticket" id="ticket-table-2" data-station="Bar">
-        <div class="ticket-header">
-          <div>
-            <div class="ticket-table-name">Table 2</div>
-            <div class="ticket-server-meta">Deepa</div>
-          </div>
-          <div class="dial-timer ready">8'</div>
-        </div>
-
-        <div class="ticket-items">
-          <div class="ticket-item-row">
-            <span class="item-qty">2x</span>
-            <span>Masala chai</span>
-          </div>
-        </div>
-
-        <button type="button" class="btn-ticket-action btn-ticket-served" onclick="moveTicket('ticket-table-2', 'served')">
-          Served
-        </button>
-      </article>
+      ${readyTasks.length > 0
+      ? readyTasks.map((t) => renderTaskCard(t, 'ready')).join('')
+      : `<div style="padding: 28px 16px; border-radius: 16px; border: 1px dashed rgba(255,255,255,0.12); color: #64748B; text-align: center; font-size: 13px;">No completed plates waiting at pass</div>`}
     </section>
 
   </main>
@@ -548,7 +531,7 @@ export function renderKdsWorkspace(
       if (ticket) {
         ticket.style.opacity = '0.5';
         try {
-          await fetch('/api/restaurant/kds/bump', {
+          const res = await fetch('/api/restaurant/kds/bump', {
             method: 'POST',
             credentials: 'same-origin',
             headers: {
@@ -556,14 +539,21 @@ export function renderKdsWorkspace(
             },
             body: JSON.stringify({ taskId: id, targetStatus: targetCol })
           });
-        } catch (e) {}
+          if (!res.ok) {
+            ticket.style.opacity = '1';
+            return;
+          }
+        } catch (e) {
+          ticket.style.opacity = '1';
+          return;
+        }
 
-        if (targetCol === 'served') {
+        if (targetCol === 'BUMPED') {
           ticket.style.transform = 'scale(0.9)';
           ticket.style.opacity = '0';
           ticket.style.transition = 'all 0.25s ease';
           setTimeout(() => ticket.remove(), 250);
-        } else if (targetCol === 'cooking') {
+        } else if (targetCol === 'IN_PROGRESS') {
           const cookingCol = document.getElementById('kds-col-cooking');
           if (cookingCol) {
             ticket.className = 'kds-ticket cooking-highlight';
@@ -571,12 +561,12 @@ export function renderKdsWorkspace(
             if (btn) {
               btn.className = 'btn-ticket-action btn-ticket-ready';
               btn.textContent = 'Ready';
-              btn.setAttribute('onclick', "moveTicket('" + id + "', 'ready')");
+              btn.setAttribute('onclick', "moveTicket('" + id + "', 'READY')");
             }
             cookingCol.appendChild(ticket);
             ticket.style.opacity = '1';
           }
-        } else if (targetCol === 'ready') {
+        } else if (targetCol === 'READY') {
           const readyCol = document.getElementById('kds-col-ready');
           if (readyCol) {
             ticket.className = 'kds-ticket';
@@ -584,7 +574,7 @@ export function renderKdsWorkspace(
             if (btn) {
               btn.className = 'btn-ticket-action btn-ticket-served';
               btn.textContent = 'Served';
-              btn.setAttribute('onclick', "moveTicket('" + id + "', 'served')");
+              btn.setAttribute('onclick', "moveTicket('" + id + "', 'BUMPED')");
             }
             readyCol.appendChild(ticket);
             ticket.style.opacity = '1';

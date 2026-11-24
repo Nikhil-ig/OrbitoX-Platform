@@ -181,6 +181,16 @@ export function renderPosTerminal(
       height: calc(100vh - 120px);
       min-height: 600px;
     }
+    @media (max-width: 960px) {
+      .pos-workspace {
+        grid-template-columns: 1fr;
+        height: auto;
+        min-height: 0;
+      }
+      .pos-search-header {
+        flex-wrap: wrap;
+      }
+    }
 
     /* Left Panel */
     .pos-catalog-panel {
@@ -611,8 +621,16 @@ export function renderPosTerminal(
   <script>
     const MENU_ITEMS = ${menuItemsJson};
     const TABLES = ${tablesJson};
+    const CURRENT_BRANCH_ID = '${currentBranchId}';
     let currentCart = {};
     let activeTender = 'UPI';
+    let posActionBusy = false;
+
+    function notifyPos(msg, kind) {
+      if (window.showToast) {
+        window.showToast(msg, kind || 'info');
+      }
+    }
 
     function handleSearch(q) {
       q = q.toLowerCase().trim();
@@ -721,26 +739,68 @@ export function renderPosTerminal(
       document.getElementById('math-total').innerText = '₹' + Math.round(total).toFixed(2);
     }
 
-    function sendKot() {
+    async function submitPosOrder(tableNumber) {
       const itemIds = Object.keys(currentCart);
-      if (itemIds.length === 0) {
-        alert('Please add at least one dish before sending KOT.');
-        return;
-      }
-      const table = document.getElementById('selected-table').value;
-      alert('Kitchen Order Ticket (KOT) dispatched for ' + table + '! Order sent to grill and kitchen display.');
+      const selectedTbl = TABLES.find((t) => String(t.number) === String(tableNumber)) || TABLES[0];
+      const payload = {
+        tableNumber: String(tableNumber),
+        locator: selectedTbl ? selectedTbl.locator : undefined,
+        branchId: CURRENT_BRANCH_ID,
+        guestName: 'POS Guest',
+        diningType: 'DINE_IN',
+        items: itemIds.map((id) => ({ id, quantity: currentCart[id] }))
+      };
+      return await window.apiFetch('/api/restaurant/orders', {
+        method: 'POST',
+        body: payload
+      });
     }
 
-    function processCheckout() {
+    async function sendKot() {
+      if (posActionBusy) return;
       const itemIds = Object.keys(currentCart);
       if (itemIds.length === 0) {
-        alert('Docket is empty.');
+        notifyPos('Please add at least one dish before sending KOT.', 'error');
         return;
       }
-      const total = document.getElementById('math-total').innerText;
       const table = document.getElementById('selected-table').value;
-      alert('Payment of ' + total + ' via ' + activeTender + ' settled successfully for ' + table + '! Receipt printed.');
-      clearCart();
+      posActionBusy = true;
+      try {
+        await submitPosOrder(table);
+        clearCart();
+        notifyPos('KOT dispatched for Table ' + table + ' & routed to Kitchen KDS.', 'success');
+      } catch (err) {
+        notifyPos((err && err.message) || 'Failed to dispatch KOT.', 'error');
+      } finally {
+        posActionBusy = false;
+      }
+    }
+
+    async function processCheckout() {
+      if (posActionBusy) return;
+      const itemIds = Object.keys(currentCart);
+      const table = document.getElementById('selected-table').value;
+      posActionBusy = true;
+      try {
+        if (itemIds.length > 0) {
+          await submitPosOrder(table);
+        }
+        await window.apiFetch('/api/restaurant/tables/settle', {
+          method: 'POST',
+          body: {
+            tableNumber: String(table),
+            paymentMethod: activeTender,
+            paymentStatus: 'PAID'
+          }
+        });
+        const total = document.getElementById('math-total').innerText;
+        notifyPos('Settled ' + total + ' via ' + activeTender + ' for Table ' + table + '.', 'success');
+        clearCart();
+      } catch (err) {
+        notifyPos((err && err.message) || 'Checkout settlement failed.', 'error');
+      } finally {
+        posActionBusy = false;
+      }
     }
   </script>
   `;

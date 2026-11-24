@@ -67,7 +67,7 @@ export function TenantsIndexClient({ initialData }: TenantsIndexClientProps) {
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold tracking-tight text-[var(--color-text)]">
-            🪐 Tenant Fleet Registry
+            Tenants
           </h1>
           <p className="text-sm text-[var(--color-text-muted)] mt-1">
             Multi-tenant environments, custom domains, and cryptographic cell isolation.
@@ -112,17 +112,16 @@ export function TenantsIndexClient({ initialData }: TenantsIndexClientProps) {
           </div>
 
           {/* Status Filter Tabs */}
-          <div className="flex items-center gap-1.5 p-1 rounded-full bg-[var(--color-surface-raised)] border border-[var(--color-border)] shrink-0">
+          <div className="flex items-center gap-1.5 p-1 rounded-full bg-[var(--color-surface-raised)] border border-[var(--color-border)] shrink-0 overflow-x-auto max-w-full">
             {(['ALL', 'ACTIVE', 'SUSPENDED'] as const).map((s) => (
               <button
                 key={s}
                 type="button"
                 onClick={() => setStatusFilter(s)}
-                className={`px-3 py-1.5 rounded-full text-xs font-medium transition-colors ${
-                  statusFilter === s
+                className={`px-3 py-1.5 rounded-full text-xs font-medium transition-colors ${statusFilter === s
                     ? 'bg-[var(--color-primary)] text-[var(--color-primary-contrast)] shadow-sm'
                     : 'text-[var(--color-text-muted)] hover:text-[var(--color-text)]'
-                }`}
+                  }`}
               >
                 {s === 'ALL' ? 'All Status' : s.charAt(0) + s.slice(1).toLowerCase()}
               </button>
@@ -141,11 +140,10 @@ export function TenantsIndexClient({ initialData }: TenantsIndexClientProps) {
                 key={p.id}
                 type="button"
                 onClick={() => setPluginFilter(p.id as any)}
-                className={`px-3 py-1.5 rounded-full text-xs font-medium transition-colors ${
-                  pluginFilter === p.id
+                className={`px-3 py-1.5 rounded-full text-xs font-medium transition-colors ${pluginFilter === p.id
                     ? 'bg-[var(--color-primary)] text-[var(--color-primary-contrast)] shadow-sm'
                     : 'text-[var(--color-text-muted)] hover:text-[var(--color-text)]'
-                }`}
+                  }`}
               >
                 {p.label}
               </button>
@@ -198,8 +196,8 @@ export function TenantsIndexClient({ initialData }: TenantsIndexClientProps) {
                         tenant.status === 'ACTIVE'
                           ? 'default'
                           : tenant.status === 'SUSPENDED'
-                          ? 'destructive'
-                          : 'outline'
+                            ? 'destructive'
+                            : 'outline'
                       }
                       className="rounded-full text-[11px] uppercase tracking-wider"
                     >

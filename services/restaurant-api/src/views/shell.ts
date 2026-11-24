@@ -49,6 +49,7 @@ export interface ShellOptions {
   staffToken?: string;
   staffRole?: string;
   tablesCount?: number;
+  ordersCount?: number;
 }
 
 export function renderShell(contentHtml: string, options: ShellOptions): string {
@@ -75,10 +76,12 @@ export function renderShell(contentHtml: string, options: ShellOptions): string 
     currentFloor.id
   )}&service=${encodeURIComponent(serviceShift)}`;
 
+  const activeOrdersCount = typeof options.ordersCount === 'number' ? options.ordersCount : 0;
+
   // 12 Primary Unified Navigation Items matching 'Shared RestaurantOS sidebar.png'
   const navItems = [
     { key: 'overview', href: `/${contextQuery}`, label: 'Today', icon: icon('home', { size: 16 }) },
-    { key: 'orders', href: `/operations/orders${contextQuery}`, label: 'Orders', icon: icon('orders', { size: 16 }), badge: '12' },
+    { key: 'orders', href: `/operations/orders${contextQuery}`, label: 'Orders', icon: icon('orders', { size: 16 }), badge: activeOrdersCount > 0 ? String(activeOrdersCount) : undefined },
     { key: 'kitchen', href: `/kds${contextQuery}`, label: 'Kitchen screen', icon: icon('monitor', { size: 16 }) },
     { key: 'menu', href: `/menu${contextQuery}`, label: 'Menu', icon: icon('menu', { size: 16 }) },
     { key: 'floor', href: `/operations/floor${contextQuery}`, label: 'Floors & tables', icon: icon('layout-grid', { size: 16 }) },
@@ -521,6 +524,55 @@ export function renderShell(contentHtml: string, options: ShellOptions): string 
         padding: 12px 16px 0 16px;
       }
     }
+
+    /* Floating Mobile Bottom Dock (Owner phone · Today/Orders concept) */
+    .mobile-bottom-dock {
+      display: none;
+    }
+    @media (max-width: 768px) {
+      .mobile-bottom-dock {
+        display: flex;
+        align-items: center;
+        justify-content: space-around;
+        position: fixed;
+        bottom: 14px;
+        left: 16px;
+        right: 16px;
+        height: 60px;
+        background: #0F172A;
+        border-radius: 9999px;
+        padding: 0 10px;
+        z-index: 45;
+        box-shadow: 0 12px 32px rgba(15, 23, 42, 0.28);
+      }
+      .dock-link {
+        color: #94A3B8;
+        text-decoration: none;
+        width: 42px;
+        height: 42px;
+        border-radius: 9999px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        transition: all 140ms ease;
+      }
+      .dock-link.active {
+        background: #FFFFFF;
+        color: #0F172A;
+      }
+      .dock-fab {
+        background: #2563EB;
+        color: #FFFFFF;
+        width: 44px;
+        height: 44px;
+        border-radius: 9999px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        text-decoration: none;
+        box-shadow: 0 4px 14px rgba(37, 99, 235, 0.45);
+      }
+    }
   </style>
 </head>
 <body>
@@ -559,11 +611,11 @@ export function renderShell(contentHtml: string, options: ShellOptions): string 
               Select Branch (${branches.length})
             </div>
             ${branches
-              .map((b) => {
-                const bFloors = allFloors.filter((f) => f.branchId === b.id);
-                const defaultFId = bFloors[0] ? bFloors[0].id : '';
-                const targetUrl = windowTargetQuery({ branch: b.id, floor: defaultFId, service: serviceShift });
-                return `
+      .map((b) => {
+        const bFloors = allFloors.filter((f) => f.branchId === b.id);
+        const defaultFId = bFloors[0] ? bFloors[0].id : '';
+        const targetUrl = windowTargetQuery({ branch: b.id, floor: defaultFId, service: serviceShift });
+        return `
                 <a href="${targetUrl}" class="dropdown-item ${b.id === currentBranch.id ? 'active' : ''}">
                   <div>
                     <strong>${b.name}</strong>
@@ -573,8 +625,8 @@ export function renderShell(contentHtml: string, options: ShellOptions): string 
                     ${b.status === 'OPERATIONAL' ? '● Open' : '○ Setup'}
                   </span>
                 </a>`;
-              })
-              .join('')}
+      })
+      .join('')}
             <div class="dropdown-divider"></div>
             <a href="/operations/locations?action=new${contextQuery}" class="dropdown-item" style="color: #2563EB; font-weight: 600;">
               <span>+ Add branch</span>
@@ -585,8 +637,8 @@ export function renderShell(contentHtml: string, options: ShellOptions): string 
         <!-- 12 Unified Navigation Links -->
         <nav class="nav-list">
           ${navItems
-            .map(
-              (item) => `
+      .map(
+        (item) => `
             <a href="${item.href}" class="nav-item ${isNavActive(item.key) ? 'active' : ''}">
               <div class="nav-item-left">
                 ${item.icon}
@@ -594,8 +646,8 @@ export function renderShell(contentHtml: string, options: ShellOptions): string 
               </div>
               ${item.badge ? `<span class="nav-item-badge">${item.badge}</span>` : ''}
             </a>`
-            )
-            .join('')}
+      )
+      .join('')}
         </nav>
       </div>
 
@@ -654,6 +706,25 @@ export function renderShell(contentHtml: string, options: ShellOptions): string 
       </main>
     </div>
   </div>
+
+  <!-- Mobile Bottom Navigation Dock -->
+  <nav class="mobile-bottom-dock" aria-label="Mobile quick navigation">
+    <a href="/${contextQuery}" class="dock-link ${isNavActive('overview') ? 'active' : ''}" title="Today">
+      ${icon('home', { size: 18 })}
+    </a>
+    <a href="/operations/orders${contextQuery}" class="dock-link ${isNavActive('orders') ? 'active' : ''}" title="Orders">
+      ${icon('orders', { size: 18 })}
+    </a>
+    <a href="/pos${contextQuery}" class="dock-fab" title="New Order (POS)">
+      ${icon('plus', { size: 20 })}
+    </a>
+    <a href="/operations/floor${contextQuery}" class="dock-link ${isNavActive('floor') ? 'active' : ''}" title="Floor">
+      ${icon('layout-grid', { size: 18 })}
+    </a>
+    <button type="button" class="dock-link" style="background: transparent; border: none; cursor: pointer;" onclick="toggleMobileSidebar()" title="More">
+      ${icon('menu', { size: 18 })}
+    </button>
+  </nav>
 
   <!-- Command Palette (⌘K) Modal -->
   <div class="cmdk-backdrop" id="cmdk-modal" onclick="if(event.target === this) closeCommandPalette()">

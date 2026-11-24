@@ -40,7 +40,7 @@ export function renderFloorStudio(
         </h1>
 
         <!-- Floor Switcher Tabs -->
-        <div style="display: flex; gap: 8px; align-items: center;">
+        <div style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap;">
           <button type="button" class="floor-pill active" onclick="switchFloor('ALL', this)">
             All · ${tables.length}
           </button>
@@ -83,7 +83,7 @@ export function renderFloorStudio(
     </div>
 
     <!-- 2. Two-Column Workspace: Interactive Dotted Canvas (Left) + Table Inspector (Right) -->
-    <div style="display: grid; grid-template-columns: 1fr 340px; gap: 28px; align-items: start;">
+    <div class="floor-split-grid" style="display: grid; grid-template-columns: 1fr 340px; gap: 28px; align-items: start;">
       
       <!-- Interactive Dotted Floor Canvas -->
       <div class="ui-card" style="padding: 36px; min-height: 580px; position: relative; background: #FFFFFF; background-image: radial-gradient(#CBD5E1 1.2px, transparent 1.2px); background-size: 24px 24px; overflow: hidden;">
@@ -280,6 +280,18 @@ export function renderFloorStudio(
   </div>
 
   <style>
+    @media (max-width: 960px) {
+      .floors-container {
+        padding: 16px 16px 88px 16px !important;
+      }
+      .floor-split-grid {
+        grid-template-columns: 1fr !important;
+      }
+      #floor-canvas-grid {
+        padding: 50px 56px 20px 10px !important;
+        max-height: none !important;
+      }
+    }
     .floor-pill {
       background: #FFFFFF;
       border: 1px solid #E2E8F0;
@@ -337,7 +349,7 @@ export function renderFloorStudio(
 
   <script>
     let currentSeats = ${selectedTable?.capacity || 4};
-    let currentShape = '${selectedTable?.shape === 'circle' ? 'Round' : 'Square'}';
+    let currentShape = '${selectedTable?.shape === 'circle' || String(selectedTable?.shape || '').toLowerCase() === 'round' ? 'Round' : 'Square'}';
 
     function switchFloor(fId, btn) {
       document.querySelectorAll('.floor-pill').forEach(p => p.classList.remove('active'));

@@ -50,7 +50,20 @@ export function renderSupportWorkspace(
   };
 
   return `
-  <div style="display: flex; height: calc(100vh - 52px); overflow: hidden; background: var(--color-ink); font-family: var(--font-sans);">
+  <style>
+    @media (max-width: 900px) {
+      .support-deck {
+        flex-direction: column !important;
+        height: auto !important;
+        overflow: visible !important;
+      }
+      .support-deck > aside {
+        width: 100% !important;
+        min-width: 0 !important;
+      }
+    }
+  </style>
+  <div class="support-deck" style="display: flex; min-height: calc(100vh - 52px); overflow-x: hidden; background: var(--color-card); border-radius: 24px; border: 1px solid rgba(15,23,42,0.06); margin: 16px; font-family: var(--font-sans);">
     <!-- ========================================================================= -->
     <!-- PANE 1: TICKET QUEUES & CASE INBOX (320px) -->
     <!-- ========================================================================= -->
@@ -93,11 +106,11 @@ export function renderSupportWorkspace(
       <!-- Ticket Queue List -->
       <div style="flex: 1; overflow-y: auto; display: flex; flex-direction: column;" id="ticket-queue-list">
         ${tickets
-          .map((t, idx) => {
-            const isCritical = t.severity === 'CRITICAL';
-            const isHigh = t.severity === 'HIGH';
-            const severityColor = isCritical ? 'var(--color-crimson)' : isHigh ? 'var(--color-copper)' : 'var(--color-stone)';
-            return `
+      .map((t, idx) => {
+        const isCritical = t.severity === 'CRITICAL';
+        const isHigh = t.severity === 'HIGH';
+        const severityColor = isCritical ? 'var(--color-crimson)' : isHigh ? 'var(--color-copper)' : 'var(--color-stone)';
+        return `
           <div
             class="ticket-row"
             data-id="${t.id}"
@@ -119,8 +132,8 @@ export function renderSupportWorkspace(
               </span>
             </div>
           </div>`;
-          })
-          .join('')}
+      })
+      .join('')}
       </div>
     </aside>
 
@@ -176,10 +189,10 @@ export function renderSupportWorkspace(
         <!-- Rendered Messages List -->
         <div id="thread-bubbles-list" style="display: flex; flex-direction: column; gap: 14px;">
           ${(initialTicket.messages || [])
-            .map((m) => {
-              const isSupport = m.sender === 'ORBITOX_SUPPORT';
-              const isEscalation = m.sender === 'SYSTEM_ESCALATION';
-              return `
+      .map((m) => {
+        const isSupport = m.sender === 'ORBITOX_SUPPORT';
+        const isEscalation = m.sender === 'SYSTEM_ESCALATION';
+        return `
             <div style="background: ${isSupport ? 'rgba(59,130,246,0.08)' : isEscalation ? 'rgba(239,68,68,0.08)' : 'var(--color-charcoal)'}; border: 1px solid ${isSupport ? 'rgba(59,130,246,0.3)' : isEscalation ? 'rgba(239,68,68,0.3)' : 'var(--border-default)'}; border-radius: 10px; padding: 14px 16px;">
               <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
                 <div style="display: flex; align-items: center; gap: 8px;">
@@ -192,8 +205,8 @@ export function renderSupportWorkspace(
                 ${m.text}
               </div>
             </div>`;
-            })
-            .join('')}
+      })
+      .join('')}
         </div>
       </div>
 

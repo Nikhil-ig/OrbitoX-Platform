@@ -97,10 +97,10 @@ export function OverviewClient({
 
       {/* Cluster Health Banner if Degraded */}
       {summary.clusterStatus !== 'healthy' && (
-        <div className="p-4 rounded-[var(--radius-row)] border border-[var(--status-warning-border)] bg-[var(--status-warning-bg)] text-[var(--status-warning-fg)] flex items-center justify-between gap-3">
-          <div className="flex items-center gap-3">
-            <AlertTriangle className="h-5 w-5 shrink-0" />
-            <div className="text-sm font-medium">
+        <div className="p-4 rounded-[var(--radius-row)] border border-[var(--status-warning-border)] bg-[var(--status-warning-bg)] text-[var(--status-warning-fg)] flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div className="flex items-start sm:items-center gap-3 min-w-0">
+            <AlertTriangle className="h-5 w-5 shrink-0 mt-0.5 sm:mt-0" />
+            <div className="text-sm font-medium break-words">
               Cluster attention: {summary.failedJobsCount} asynchronous provisioning operation(s) require operator review.
             </div>
           </div>
@@ -124,25 +124,25 @@ export function OverviewClient({
             deltaType="positive"
           />
         </div>
-        <div className="lg:col-span-2 flex flex-col justify-center">
+        <div className="lg:col-span-2 flex flex-col justify-center min-w-0">
           <StatStrip
             stats={[
               {
                 label: 'Active Tenants',
                 value: summary.activeTenants.toLocaleString(),
-                delta: '+24 new',
-                deltaType: 'positive',
+                delta: 'Provisioned',
+                deltaType: 'neutral',
               },
               {
                 label: 'API Calls (24h)',
                 value: summary.apiCalls24h,
-                delta: '99.98% ok',
-                deltaType: 'positive',
+                delta: 'Last 24h',
+                deltaType: 'neutral',
               },
               {
                 label: 'P95 Latency',
                 value: `${summary.p95LatencyMs}ms`,
-                delta: '-2.1ms',
+                delta: 'Edge API',
                 deltaType: 'positive',
               },
               {

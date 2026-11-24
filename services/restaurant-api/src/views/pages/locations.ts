@@ -40,7 +40,7 @@ export function renderLocationsWorkspace(
   const firstBranch = branchList[0];
 
   return `
-  <div class="branches-container" style="padding: 24px 32px 48px 32px; max-width: 1400px; margin: 0 auto; width: 100%; box-sizing: border-box; display: flex; flex-direction: column; gap: 24px;">
+  <div class="branches-container" style="padding: 24px 32px 72px 32px; max-width: 1400px; margin: 0 auto; width: 100%; box-sizing: border-box; display: flex; flex-direction: column; gap: 24px;">
     
     <!-- 1. Header: Meta, Title & Add Action -->
     <div style="display: flex; justify-content: space-between; align-items: flex-end; flex-wrap: wrap; gap: 16px;">
@@ -59,15 +59,15 @@ export function renderLocationsWorkspace(
     </div>
 
     <!-- 2. Two-Column Workspace: Branch Cards (Left) + Slide-out Drawer (Right) -->
-    <div style="display: grid; grid-template-columns: 1.25fr 1fr; gap: 28px; align-items: start;">
+    <div class="branches-split-grid" style="display: grid; grid-template-columns: 1.25fr 1fr; gap: 28px; align-items: start;">
       
       <!-- Branch Cards List -->
       <div id="branch-cards-list" style="display: flex; flex-direction: column; gap: 16px;">
         ${branchList
-          .map((b, idx) => {
-            const isFirst = idx === 0;
-            const isOperational = b.status === 'OPERATIONAL' || !b.status;
-            return `
+      .map((b, idx) => {
+        const isFirst = idx === 0;
+        const isOperational = b.status === 'OPERATIONAL' || !b.status;
+        return `
             <div 
               class="ui-card branch-card-item ${isFirst ? 'active-branch-card' : ''}" 
               id="card-${escapeHtml(b.id)}"
@@ -78,11 +78,10 @@ export function renderLocationsWorkspace(
               data-branch-phone="${escapeHtml(b.phone || '+91 80 4123 4567')}"
               data-branch-status="${escapeHtml(b.status || 'OPERATIONAL')}"
               onclick="selectBranchCard(this)" 
-              style="padding: 24px 28px; cursor: pointer; transition: all 120ms ease; ${
-                isFirst
-                  ? 'border: 2px solid #000000; box-shadow: 0 4px 20px rgba(0,0,0,0.06);'
-                  : 'border: 1px solid rgba(0,0,0,0.06);'
-              }"
+              style="padding: 24px 28px; cursor: pointer; transition: all 120ms ease; ${isFirst
+            ? 'border: 2px solid #000000; box-shadow: 0 4px 20px rgba(0,0,0,0.06);'
+            : 'border: 1px solid rgba(0,0,0,0.06);'
+          }"
             >
               <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 18px;">
                 <div style="display: flex; align-items: center; gap: 14px;">
@@ -117,8 +116,8 @@ export function renderLocationsWorkspace(
                 </span>
               </div>
             </div>`;
-          })
-          .join('')}
+      })
+      .join('')}
 
         <!-- Add Branch Placeholder Card -->
         <div onclick="openNewBranchDrawer()" style="border: 2px dashed #CBD5E1; border-radius: 24px; padding: 32px; display: flex; flex-direction: column; align-items: center; justify-content: center; cursor: pointer; background: transparent; transition: all 120ms ease;">
@@ -262,6 +261,17 @@ export function renderLocationsWorkspace(
 
   </div>
 
+  <style>
+    @media (max-width: 900px) {
+      .branches-container {
+        padding: 16px 16px 88px 16px !important;
+      }
+      .branches-split-grid {
+        grid-template-columns: 1fr !important;
+      }
+    }
+  </style>
+
   <script>
     function selectBranchCard(el) {
       document.querySelectorAll('.branch-card-item').forEach(c => {
@@ -294,32 +304,59 @@ export function renderLocationsWorkspace(
       document.getElementById('branch-phone-input').value = '';
       const input = document.getElementById('branch-name-input');
       if (input) input.focus();
-      window.showToast('Enter new branch details in the editor panel.', 'info');
+      window.showToast('Enter branch details in the editor panel.', 'info');
     }
 
     function closeBranchDrawer() {
-      // Visual dismiss
+      const firstCard = document.querySelector('.branch-card-item');
+      if (firstCard) selectBranchCard(firstCard);
     }
 
-    function handleToggleOrders(isOpen) {
-      window.showToast(isOpen ? 'QR ordering resumed for branch.' : 'QR ordering paused for branch.', isOpen ? 'success' : 'info');
+    async function handleToggleOrders(isOpen) {
+      const branchId = document.getElementById('edit-branch-id').value;
+      if (!branchId) return;
+      try {
+        await window.apiFetch('/api/restaurant/branding/branch-overrides', {
+          method: 'POST',
+          body: { branchId, customFields: { acceptingOrders: Boolean(isOpen) } }
+        });
+        window.showToast(isOpen ? 'QR ordering resumed for branch.' : 'QR ordering paused for branch.', isOpen ? 'success' : 'info');
+      } catch (err) {
+        window.showToast((err && err.message) || 'Failed to update ordering status.', 'error');
+      }
     }
 
-    function saveBranchDetails() {
+    async function saveBranchDetails() {
+      const branchId = document.getElementById('edit-branch-id').value;
       const name = document.getElementById('branch-name-input').value.trim();
-      const code = document.getElementById('branch-code-input').value.trim();
       if (!name) {
         window.showToast('Branch name is required', 'error');
         return;
       }
-      window.showToast('Branch settings saved for ' + name + ' (' + code + ')', 'success');
+      if (!branchId) {
+        window.showToast('Creating additional branches requires upgrading or contacting Platform Admin.', 'info');
+        return;
+      }
+      const btn = document.getElementById('save-branch-btn');
+      if (btn) { btn.disabled = true; btn.textContent = 'Saving...'; }
+      try {
+        await window.apiFetch('/api/restaurant/branding/branch-overrides', {
+          method: 'POST',
+          body: { branchId, displayName: name }
+        });
+        window.showToast('Saved branch override for ' + name, 'success');
+      } catch (err) {
+        window.showToast((err && err.message) || 'Failed to save branch settings.', 'error');
+      } finally {
+        if (btn) { btn.disabled = false; btn.textContent = 'Save changes'; }
+      }
     }
 
-    function closeBranchAction() {
-      const name = document.getElementById('branch-name-input').value;
-      if (confirm('Are you sure you want to pause / close ' + name + '?')) {
-        window.showToast('Branch marked as closed.', 'info');
-      }
+    async function closeBranchAction() {
+      const branchId = document.getElementById('edit-branch-id').value;
+      const toggle = document.getElementById('branch-accepting-orders-toggle');
+      if (toggle) toggle.checked = false;
+      await handleToggleOrders(false);
     }
   </script>
   `;

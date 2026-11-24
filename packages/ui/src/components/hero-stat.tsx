@@ -7,6 +7,7 @@ export interface HeroStatProps extends React.HTMLAttributes<HTMLDivElement> {
   delta?: string | { value: string; trend?: 'up' | 'down' | 'neutral' };
   deltaType?: 'positive' | 'negative' | 'neutral';
   note?: string;
+  compact?: boolean;
 }
 
 export function HeroStat({
@@ -15,6 +16,7 @@ export function HeroStat({
   delta,
   deltaType = 'positive',
   note,
+  compact = false,
   className,
   ...props
 }: HeroStatProps) {
@@ -30,8 +32,15 @@ export function HeroStat({
     : deltaType;
 
   return (
-    <div className={cn('flex flex-col', className)} {...props}>
-      <div className="text-4xl md:text-5xl lg:text-6xl font-light tracking-[-0.04em] text-[var(--color-text)] leading-none select-all">
+    <div className={cn('flex flex-col min-w-0', className)} {...props}>
+      <div
+        className={cn(
+          'font-light tracking-[-0.03em] text-[var(--color-text)] leading-none select-all tabular-nums',
+          compact
+            ? 'text-2xl sm:text-3xl font-semibold whitespace-nowrap overflow-hidden text-ellipsis'
+            : 'text-4xl md:text-5xl'
+        )}
+      >
         {value}
       </div>
       <div className="text-sm font-medium text-[var(--color-text-muted)] mt-2">
@@ -64,14 +73,14 @@ export function StatStrip({ stats, className, ...props }: StatStripProps) {
   return (
     <div
       className={cn(
-        'rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-6 md:p-8 grid grid-cols-2 lg:grid-cols-4 gap-6 divide-y lg:divide-y-0 lg:divide-x divide-[var(--color-border)] shadow-sm',
+        'rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-5 md:p-7 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5 divide-y sm:divide-y-0 lg:divide-x divide-[var(--color-border)] shadow-sm',
         className
       )}
       {...props}
     >
       {stats.map((stat, idx) => (
-        <div key={idx} className={cn(idx > 0 ? 'lg:pl-6' : '', idx > 1 ? 'pt-4 lg:pt-0' : '')}>
-          <HeroStat {...stat} />
+        <div key={idx} className={cn('min-w-0', idx > 0 ? 'pt-4 sm:pt-0 lg:pl-5' : '')}>
+          <HeroStat compact {...stat} />
         </div>
       ))}
     </div>

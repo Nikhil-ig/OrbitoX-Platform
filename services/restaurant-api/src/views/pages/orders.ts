@@ -16,74 +16,7 @@ export function renderOrdersWorkspace(
   branches: BranchRecord[] = DEFAULT_BRANCHES,
   currentBranchId?: string
 ): string {
-  // If no live orders exist in repository, provide rich initial dockets for demonstration
-  const ordersList: any[] = initialOrders.length > 0 ? initialOrders : [
-    {
-      id: 'ord_sample_7',
-      orderNumber: '7',
-      tableNumber: 'Table 7',
-      serverName: 'Arjun',
-      status: 'PREPARING',
-      itemCount: 4,
-      totalAmountMinor: 167000,
-      formattedTotal: '₹1,670',
-      elapsedMinutes: 12,
-      diningType: 'DINE_IN',
-      isLate: false,
-    },
-    {
-      id: 'ord_sample_11',
-      orderNumber: '11',
-      tableNumber: 'Table 11',
-      serverName: 'QR self-order',
-      status: 'PLACED',
-      itemCount: 2,
-      totalAmountMinor: 64000,
-      formattedTotal: '₹640',
-      elapsedMinutes: 1,
-      diningType: 'DINE_IN',
-      isLate: false,
-    },
-    {
-      id: 'ord_sample_18',
-      orderNumber: '18',
-      tableNumber: 'Takeaway 18',
-      serverName: 'Counter',
-      status: 'PREPARING',
-      itemCount: 2,
-      totalAmountMinor: 48000,
-      formattedTotal: '₹480',
-      elapsedMinutes: 24,
-      diningType: 'TAKEAWAY',
-      isLate: true,
-    },
-    {
-      id: 'ord_sample_4',
-      orderNumber: '4',
-      tableNumber: 'Table 4',
-      serverName: 'Deepa',
-      status: 'READY',
-      itemCount: 3,
-      totalAmountMinor: 92000,
-      formattedTotal: '₹920',
-      elapsedMinutes: 8,
-      diningType: 'DINE_IN',
-      isLate: false,
-    },
-    {
-      id: 'ord_sample_2',
-      orderNumber: '2',
-      tableNumber: 'Table 2',
-      serverName: 'Rahul',
-      status: 'COMPLETED',
-      itemCount: 5,
-      totalAmountMinor: 215000,
-      formattedTotal: '₹2,150',
-      elapsedMinutes: 45,
-      diningType: 'DINE_IN',
-      isLate: false,
-    },
-  ];
+  const ordersList: any[] = Array.isArray(initialOrders) ? initialOrders : [];
 
   // Pipeline telemetry math
   const inProgressOrders = ordersList.filter((o) => ['PLACED', 'PREPARING', 'IN_PREP', 'READY'].includes(o.status));
@@ -159,64 +92,71 @@ export function renderOrdersWorkspace(
     </div>
 
     <!-- 3. Order Docket Cards Grid (Matching Orders desktop mockup) -->
-    <div id="orders-grid-container" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 20px;">
+    <div id="orders-grid-container" class="orders-grid" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 20px;">
+      ${ordersList.length === 0 ? `
+        <div class="ui-card" style="grid-column: 1 / -1; padding: 48px 24px; text-align: center;">
+          <div style="font-size: 16px; font-weight: 700; color: #0F172A; margin-bottom: 6px;">No orders in this branch yet</div>
+          <div style="font-size: 13px; color: #64748B; margin-bottom: 18px;">Orders placed from POS or table QR codes will appear here live.</div>
+          <a href="/pos" class="btn btn-primary" style="border-radius: 9999px; padding: 10px 20px; font-size: 13px; font-weight: 600; text-decoration: none; display: inline-block;">Open POS Terminal</a>
+        </div>
+      ` : ''}
       ${ordersList
-        .map((order) => {
-          const isCooking = ['PREPARING', 'IN_PREP', 'COOKING'].includes(order.status);
-          const isNew = ['PLACED', 'PENDING'].includes(order.status);
-          const isReady = order.status === 'READY';
-          const isCompleted = ['COMPLETED', 'SERVED', 'PAID'].includes(order.status);
-          const isCancelled = order.status === 'CANCELLED';
-          const isLate = order.isLate || order.elapsedMinutes > 20;
+      .map((order) => {
+        const isCooking = ['PREPARING', 'IN_PREP', 'COOKING'].includes(order.status);
+        const isNew = ['PLACED', 'PENDING'].includes(order.status);
+        const isReady = order.status === 'READY';
+        const isCompleted = ['COMPLETED', 'SERVED', 'PAID'].includes(order.status);
+        const isCancelled = order.status === 'CANCELLED';
+        const isLate = order.isLate || order.elapsedMinutes > 20;
 
-          // Card Background & Styling
-          let cardBg = '#FFFFFF';
-          let textColor = '#0F172A';
-          let subTextColor = '#64748B';
-          let cardBorder = '1px solid rgba(0,0,0,0.06)';
-          let badgeBg = '#F1F5F9';
-          let badgeColor = '#475569';
-          let badgeLabel = 'New';
+        // Card Background & Styling
+        let cardBg = '#FFFFFF';
+        let textColor = '#0F172A';
+        let subTextColor = '#64748B';
+        let cardBorder = '1px solid rgba(0,0,0,0.06)';
+        let badgeBg = '#F1F5F9';
+        let badgeColor = '#475569';
+        let badgeLabel = 'New';
 
-          if (isCooking) {
-            cardBg = '#111827';
-            textColor = '#FFFFFF';
-            subTextColor = '#94A3B8';
-            badgeBg = '#FFFFFF';
-            badgeColor = '#111827';
-            badgeLabel = 'Cooking';
-          } else if (isReady) {
-            badgeBg = '#D1FAE5';
-            badgeColor = '#065F46';
-            badgeLabel = 'Ready';
-          } else if (isLate) {
-            cardBorder = '1.5px solid #FCA5A5';
-            badgeBg = '#FEE2E2';
-            badgeColor = '#DC2626';
-            badgeLabel = 'Late';
-          } else if (isCompleted) {
-            badgeBg = '#F1F5F9';
-            badgeColor = '#475569';
-            badgeLabel = 'Completed';
-          }
+        if (isCooking) {
+          cardBg = '#111827';
+          textColor = '#FFFFFF';
+          subTextColor = '#94A3B8';
+          badgeBg = '#FFFFFF';
+          badgeColor = '#111827';
+          badgeLabel = 'Cooking';
+        } else if (isReady) {
+          badgeBg = '#D1FAE5';
+          badgeColor = '#065F46';
+          badgeLabel = 'Ready';
+        } else if (isLate) {
+          cardBorder = '1.5px solid #FCA5A5';
+          badgeBg = '#FEE2E2';
+          badgeColor = '#DC2626';
+          badgeLabel = 'Late';
+        } else if (isCompleted) {
+          badgeBg = '#F1F5F9';
+          badgeColor = '#475569';
+          badgeLabel = 'Completed';
+        }
 
-          const label = order.tableNumber || `Table ${order.tableId || order.orderNumber || ''}`;
-          const price = order.formattedTotal || `₹${Math.round((order.totalAmountMinor || 0) / 100)}`;
-          const itemsText = `${order.itemCount || (order.items || []).length || 2} items · ${order.diningType === 'TAKEAWAY' ? 'takeaway' : 'dine-in'}`;
+        const label = order.tableNumber || `Table ${order.tableId || order.orderNumber || ''}`;
+        const price = order.formattedTotal || `₹${Math.round((order.totalAmountMinor || 0) / 100)}`;
+        const itemsText = `${order.itemCount || (order.items || []).length || 2} items · ${order.diningType === 'TAKEAWAY' ? 'takeaway' : 'dine-in'}`;
 
-          // Next Action Button
-          let actionBtn = '';
-          if (isNew) {
-            actionBtn = `<button type="button" class="btn btn-primary btn-sm" onclick="advanceOrderStatus('${order.id}', 'PREPARING')" style="border-radius: 9999px; font-size: 11px; padding: 6px 14px;">Start Cooking</button>`;
-          } else if (isCooking) {
-            actionBtn = `<button type="button" class="btn btn-secondary btn-sm" onclick="advanceOrderStatus('${order.id}', 'READY')" style="border-radius: 9999px; font-size: 11px; padding: 6px 14px; background: #FFFFFF; color: #111827;">Mark Ready</button>`;
-          } else if (isReady) {
-            actionBtn = `<button type="button" class="btn btn-primary btn-sm" onclick="advanceOrderStatus('${order.id}', 'COMPLETED')" style="border-radius: 9999px; font-size: 11px; padding: 6px 14px;">Settle / Done</button>`;
-          }
+        // Next Action Button
+        let actionBtn = '';
+        if (isNew) {
+          actionBtn = `<button type="button" class="btn btn-primary btn-sm" onclick="advanceOrderStatus('${order.id}', 'PREPARING')" style="border-radius: 9999px; font-size: 11px; padding: 6px 14px;">Start Cooking</button>`;
+        } else if (isCooking) {
+          actionBtn = `<button type="button" class="btn btn-secondary btn-sm" onclick="advanceOrderStatus('${order.id}', 'READY')" style="border-radius: 9999px; font-size: 11px; padding: 6px 14px; background: #FFFFFF; color: #111827;">Mark Ready</button>`;
+        } else if (isReady) {
+          actionBtn = `<button type="button" class="btn btn-primary btn-sm" onclick="advanceOrderStatus('${order.id}', 'COMPLETED')" style="border-radius: 9999px; font-size: 11px; padding: 6px 14px;">Settle / Done</button>`;
+        }
 
-          const categoryTab = isCompleted ? 'completed' : isCancelled ? 'cancelled' : 'live';
+        const categoryTab = isCompleted ? 'completed' : isCancelled ? 'cancelled' : 'live';
 
-          return `
+        return `
           <div 
             class="order-card-docket" 
             data-tab-category="${categoryTab}"
@@ -251,8 +191,8 @@ export function renderOrdersWorkspace(
               </div>
             </div>
           </div>`;
-        })
-        .join('')}
+      })
+      .join('')}
     </div>
 
   </div>
@@ -306,8 +246,7 @@ export function renderOrdersWorkspace(
         window.showToast('Order status updated to ' + nextStatus, 'success');
         setTimeout(() => window.location.reload(), 600);
       } catch (err) {
-        window.showToast('Order status updated to ' + nextStatus, 'success');
-        setTimeout(() => window.location.reload(), 600);
+        window.showToast((err && err.message) ? err.message : 'Failed to update order status', 'error');
       }
     }
   </script>

@@ -5,6 +5,7 @@ import {
   ownerSelfService,
   runtimeController,
   renderTenantNotFoundPage,
+  postgresStore,
 } from '../http/context';
 import {
   renderShell,
@@ -33,6 +34,7 @@ import {
   renderPantryRushPage,
   renderPosTerminal,
   renderHostStand,
+  renderInvoicesWorkspace,
 } from './index';
 import { resolveTenantDisplayName } from '../shared';
 
@@ -132,6 +134,16 @@ export const viewsRoutes: RouteDefinition[] = [
     method: 'GET',
     path: '/operations/orders',
     handler: (req, res, context) => renderOrders(req, res, context),
+  },
+  {
+    method: 'GET',
+    path: '/operations/invoices',
+    handler: (req, res, context) => renderInvoices(req, res, context),
+  },
+  {
+    method: 'GET',
+    path: '/invoices',
+    handler: (req, res, context) => renderInvoices(req, res, context),
   },
   {
     method: 'GET',
@@ -242,8 +254,19 @@ export const viewsRoutes: RouteDefinition[] = [
       const orders = await context.repo.getOrders(undefined, undefined, context.currentBranch?.id);
       const tasks = await context.repo.getKitchenTasks(undefined, context.currentBranch?.id);
       const tables = await context.repo.getTables(context.currentBranch?.id);
+      const branches = await context.repo.getBranches();
+      const tenantBrand = await context.repo.getTenantBrand();
       const opts = await getShellOptions(context, 'Operational Reports', 'reports');
-      const html = renderShell(renderReportsWorkspace(orders, tasks, tables), opts);
+      const html = renderShell(
+        renderReportsWorkspace(
+          orders,
+          tasks,
+          tables,
+          branches,
+          resolveTenantDisplayName(tenantBrand, context.tenantContext?.tenantName)
+        ),
+        opts
+      );
       sendHtml(res, html);
     },
   },
@@ -294,12 +317,8 @@ export const viewsRoutes: RouteDefinition[] = [
     method: 'GET',
     path: '/marketplace',
     handler: async (_req, res, context) => {
-      const templates = await context.repo.getTemplates();
-      const tenantBrand = await context.repo.getTenantBrand();
-      const menuItems = await context.repo.getMenuItems();
-      const branches = await context.repo.getBranches();
-      const html = renderMarketplaceWorkspace(templates, tenantBrand, menuItems, context.currentBranch?.id || 'branch_ldh', branches);
-      sendHtml(res, html);
+      res.writeHead(302, { Location: '/studio' });
+      res.end();
     },
   },
   {
@@ -326,7 +345,13 @@ export const viewsRoutes: RouteDefinition[] = [
       const activeTemplate = (activeBrand?.activeTemplateId ? await context.repo.getTemplateById(activeBrand.activeTemplateId) : undefined) || (await context.repo.getTemplates())[0];
       const draft = await context.repo.getTemplateDraft();
       const menuItems = await context.repo.getMenuItems();
-      const html = renderVisualStudio(activeTemplate, draft, activeBrand, menuItems, context.currentBranch?.id || 'branch_ldh');
+      const tables = await context.repo.getTables(context.currentBranch?.id);
+      const previewLocator = tables[0]?.locator || '';
+      const opts = await getShellOptions(context, 'Diner App & Template Studio', 'studio');
+      const html = renderShell(
+        renderVisualStudio(activeTemplate, draft, activeBrand, menuItems, context.currentBranch?.id || 'branch_ldh', previewLocator),
+        opts
+      );
       sendHtml(res, html);
     },
   },
@@ -453,6 +478,11 @@ async function getShellOptions(context: any, title: string, activeNav: any): Pro
   const tenantBrand = await context.repo.getTenantBrand();
   const branches = await context.repo.getBranches();
   const floors = await context.repo.getFloors();
+  const orders = await context.repo.getOrders(undefined, undefined, context.currentBranch?.id).catch(() => []);
+  const tables = await context.repo.getTables(context.currentBranch?.id).catch(() => []);
+  const activeOrdersCount = Array.isArray(orders)
+    ? orders.filter((o: any) => !['COMPLETED', 'SERVED', 'PAID', 'CANCELLED'].includes(String(o.status || '').toUpperCase())).length
+    : 0;
   return {
     title,
     activeNav,
@@ -463,6 +493,8 @@ async function getShellOptions(context: any, title: string, activeNav: any): Pro
     branches,
     floors,
     staffRole: context.activeStaffRole,
+    ordersCount: activeOrdersCount,
+    tablesCount: Array.isArray(tables) ? tables.length : 30,
   } as ShellOptions;
 }
 
@@ -482,7 +514,8 @@ async function renderHome(req: any, res: any, context: any, activeNav: string): 
       context.currentBranch?.name || 'Main',
       context.serviceShift,
       branchOrders,
-      branchEvents
+      branchEvents,
+      context.currentBranch?.id || 'branch_ldh'
     ),
     opts
   );
@@ -508,6 +541,36 @@ async function renderOrders(req: any, res: any, context: any): Promise<void> {
   const branches = await context.repo.getBranches();
   const opts = await getShellOptions(context, 'Service Orders', 'orders');
   const html = renderShell(renderOrdersWorkspace(orders, branches, context.currentBranch?.id || 'branch_ldh'), opts);
+  sendHtml(res, html);
+}
+
+async function renderInvoices(req: any, res: any, context: any): Promise<void> {
+  const orders = await context.repo.getOrders(undefined, undefined, context.currentBranch?.id);
+  const branches = await context.repo.getBranches();
+  const tenantBrand = await context.repo.getTenantBrand();
+  const tid = context.tenantContext?.tenantId;
+  let invoices: any[] = [];
+  if (postgresStore?.prisma && tid) {
+    invoices = await postgresStore.prisma.invoice
+      .findMany({
+        where: { tenantId: tid },
+        orderBy: { sequenceNumber: 'desc' },
+        take: 100,
+      })
+      .catch(() => []);
+  }
+  const opts = await getShellOptions(context, 'Invoices & GST', 'invoices');
+  const html = renderShell(
+    renderInvoicesWorkspace(
+      invoices,
+      orders,
+      tenantBrand,
+      branches,
+      context.currentBranch?.id || 'branch_ldh',
+      resolveTenantDisplayName(tenantBrand, context.tenantContext?.tenantName)
+    ),
+    opts
+  );
   sendHtml(res, html);
 }
 

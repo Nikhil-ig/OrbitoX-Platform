@@ -16,15 +16,27 @@ export function renderVisualStudio(
   draftData: TemplateDraftAndPublication,
   brandConfig: TenantBrandConfig,
   menuItems: MenuItem[],
-  branchId = 'branch_ldh'
+  branchId = 'branch_ldh',
+  previewLocator = ''
 ): string {
+  const brandName = (brandConfig as any)?.displayName || brandConfig?.restaurantName || 'RestaurantOS';
+  const activeTplId = String(brandConfig?.activeTemplateId || template?.id || 'noir').toLowerCase();
+  const previewHref = previewLocator ? `/dine/${encodeURIComponent(previewLocator)}` : '/operations/floor';
+  const safeEsc = (v: string) =>
+    String(v || '')
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;');
+
   return `
   <div class="studio-container" style="padding: 24px 32px 48px 32px; max-width: 1400px; margin: 0 auto; width: 100%; box-sizing: border-box; display: flex; flex-direction: column; gap: 24px;">
     
     <!-- 1. Breadcrumbs & Header -->
     <div>
       <div style="font-size: 13px; font-weight: 500; color: #64748B; margin-bottom: 4px;">
-        Maxora Resto / Diner app
+        ${safeEsc(brandName)} / Diner app
       </div>
       <h1 style="font-size: 34px; font-weight: 800; color: #0F172A; letter-spacing: -0.025em; margin: 0 0 6px 0;">
         Choose how diners see you
@@ -37,7 +49,7 @@ export function renderVisualStudio(
     <!-- 2. Filter Pills -->
     <div style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap;">
       <button type="button" class="filter-tab active" onclick="filterTemplates('all', this)">
-        All 9
+        All themes
       </button>
       <button type="button" class="filter-tab" onclick="filterTemplates('free', this)">
         Free
@@ -57,13 +69,13 @@ export function renderVisualStudio(
     </div>
 
     <!-- 3. Two-Column Workspace: 6 Templates Grid (Left) + Customizer Drawer (Right) -->
-    <div style="display: grid; grid-template-columns: 1fr 340px; gap: 28px; align-items: start;">
+    <div class="studio-split-grid" style="display: grid; grid-template-columns: 1fr 340px; gap: 28px; align-items: start;">
       
       <!-- 6 Templates Grid -->
-      <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 20px;">
+      <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 20px;">
         
         <!-- 1. Saffron (Free) -->
-        <div class="ui-card" style="padding: 24px; display: flex; flex-direction: column; justify-content: space-between;">
+        <div class="ui-card tpl-card" data-tags="all free qsr cafes" style="padding: 24px; display: flex; flex-direction: column; justify-content: space-between;">
           <div>
             <div style="height: 180px; background: #FFF7ED; border-radius: 18px; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 14px; margin-bottom: 18px; border: 1px solid #FFEDD5;">
               <div style="width: 100px; height: 60px; background: #FB923C; border-radius: 10px; margin-bottom: 8px;"></div>
@@ -80,13 +92,13 @@ export function renderVisualStudio(
             </p>
           </div>
 
-          <button type="button" class="btn btn-secondary" onclick="useTemplate('Saffron')" style="width: 100%; border-radius: 9999px; padding: 9px; font-size: 13px;">
-            Use template
+          <button type="button" class="btn ${activeTplId.includes('saffron') ? 'btn-primary' : 'btn-secondary'}" onclick="useTemplate('tmpl_saffron', 'Saffron')" style="width: 100%; border-radius: 9999px; padding: 9px; font-size: 13px;">
+            ${activeTplId.includes('saffron') ? 'In use · customize' : 'Use template'}
           </button>
         </div>
 
-        <!-- 2. Noir (₹499/mo) - In Use -->
-        <div class="ui-card" style="padding: 24px; display: flex; flex-direction: column; justify-content: space-between; border: 2px solid #000000; box-shadow: 0 6px 24px rgba(0,0,0,0.08);">
+        <!-- 2. Noir (₹499/mo) -->
+        <div class="ui-card tpl-card" data-tags="all paid finedining" style="padding: 24px; display: flex; flex-direction: column; justify-content: space-between; ${activeTplId.includes('noir') || activeTplId.includes('haute') ? 'border: 2px solid #000000; box-shadow: 0 6px 24px rgba(0,0,0,0.08);' : ''}">
           <div>
             <div style="height: 180px; background: #0F172A; border-radius: 18px; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 14px; margin-bottom: 18px;">
               <div style="width: 100px; height: 60px; background: #F59E0B; border-radius: 10px; margin-bottom: 8px;"></div>
@@ -103,13 +115,13 @@ export function renderVisualStudio(
             </p>
           </div>
 
-          <button type="button" class="btn btn-primary" onclick="alert('Noir template is already in use!')" style="width: 100%; border-radius: 9999px; padding: 9px; font-size: 13px;">
+          <button type="button" class="btn btn-primary" onclick="useTemplate('tmpl_haute_gastronomy', 'Noir')" style="width: 100%; border-radius: 9999px; padding: 9px; font-size: 13px;">
             In use · customize
           </button>
         </div>
 
         <!-- 3. Fresh (Free) -->
-        <div class="ui-card" style="padding: 24px; display: flex; flex-direction: column; justify-content: space-between;">
+        <div class="ui-card tpl-card" data-tags="all free cafes qsr" style="padding: 24px; display: flex; flex-direction: column; justify-content: space-between;">
           <div>
             <div style="height: 180px; background: #ECFDF5; border-radius: 18px; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 14px; margin-bottom: 18px; border: 1px solid #D1FAE5;">
               <div style="width: 100px; height: 60px; background: #10B981; border-radius: 10px; margin-bottom: 8px;"></div>
@@ -126,13 +138,13 @@ export function renderVisualStudio(
             </p>
           </div>
 
-          <button type="button" class="btn btn-secondary" onclick="useTemplate('Fresh')" style="width: 100%; border-radius: 9999px; padding: 9px; font-size: 13px;">
+          <button type="button" class="btn btn-secondary" onclick="useTemplate('tmpl_botanical_fresh', 'Fresh')" style="width: 100%; border-radius: 9999px; padding: 9px; font-size: 13px;">
             Use template
           </button>
         </div>
 
         <!-- 4. Coastal (₹299/mo) -->
-        <div class="ui-card" style="padding: 24px; display: flex; flex-direction: column; justify-content: space-between;">
+        <div class="ui-card tpl-card" data-tags="all paid cafes finedining" style="padding: 24px; display: flex; flex-direction: column; justify-content: space-between;">
           <div>
             <div style="height: 180px; background: #EFF6FF; border-radius: 18px; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 14px; margin-bottom: 18px; border: 1px solid #DBEAFE;">
               <div style="width: 100px; height: 60px; background: #3B82F6; border-radius: 10px; margin-bottom: 8px;"></div>
@@ -149,13 +161,13 @@ export function renderVisualStudio(
             </p>
           </div>
 
-          <button type="button" onclick="alert('Unlock Coastal template for ₹299/mo')" style="width: 100%; background: #2563EB; color: #FFFFFF; border: none; border-radius: 9999px; padding: 10px; font-size: 13px; font-weight: 600; cursor: pointer;">
-            Unlock template
+          <button type="button" onclick="useTemplate('tmpl_coastal_breeze', 'Coastal')" style="width: 100%; background: #2563EB; color: #FFFFFF; border: none; border-radius: 9999px; padding: 10px; font-size: 13px; font-weight: 600; cursor: pointer;">
+            Use template
           </button>
         </div>
 
         <!-- 5. Thali (₹299/mo) -->
-        <div class="ui-card" style="padding: 24px; display: flex; flex-direction: column; justify-content: space-between;">
+        <div class="ui-card tpl-card" data-tags="all paid finedining" style="padding: 24px; display: flex; flex-direction: column; justify-content: space-between;">
           <div>
             <div style="height: 180px; background: #FFF1F2; border-radius: 18px; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 14px; margin-bottom: 18px; border: 1px solid #FFE4E6;">
               <div style="width: 100px; height: 60px; background: #E11D48; border-radius: 10px; margin-bottom: 8px;"></div>
@@ -172,13 +184,13 @@ export function renderVisualStudio(
             </p>
           </div>
 
-          <button type="button" onclick="alert('Unlock Thali template for ₹299/mo')" style="width: 100%; background: #2563EB; color: #FFFFFF; border: none; border-radius: 9999px; padding: 10px; font-size: 13px; font-weight: 600; cursor: pointer;">
-            Unlock template
+          <button type="button" onclick="useTemplate('tmpl_royal_thali', 'Thali')" style="width: 100%; background: #2563EB; color: #FFFFFF; border: none; border-radius: 9999px; padding: 10px; font-size: 13px; font-weight: 600; cursor: pointer;">
+            Use template
           </button>
         </div>
 
         <!-- 6. Mono (Free) -->
-        <div class="ui-card" style="padding: 24px; display: flex; flex-direction: column; justify-content: space-between;">
+        <div class="ui-card tpl-card" data-tags="all free qsr" style="padding: 24px; display: flex; flex-direction: column; justify-content: space-between;">
           <div>
             <div style="height: 180px; background: #F8FAFC; border-radius: 18px; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 14px; margin-bottom: 18px; border: 1px solid #E2E8F0;">
               <div style="width: 100px; height: 60px; background: #64748B; border-radius: 10px; margin-bottom: 8px;"></div>
@@ -195,20 +207,20 @@ export function renderVisualStudio(
             </p>
           </div>
 
-          <button type="button" class="btn btn-secondary" onclick="useTemplate('Mono')" style="width: 100%; border-radius: 9999px; padding: 9px; font-size: 13px;">
+          <button type="button" class="btn btn-secondary" onclick="useTemplate('tmpl_mono_express', 'Mono')" style="width: 100%; border-radius: 9999px; padding: 9px; font-size: 13px;">
             Use template
           </button>
         </div>
 
       </div>
 
-      <!-- Right: Customizer Drawer for Active Template (Noir) -->
+      <!-- Right: Customizer Drawer for Active Template -->
       <div class="ui-card" style="padding: 28px 24px; display: flex; flex-direction: column; gap: 20px;">
         
         <!-- Header -->
         <div style="display: flex; justify-content: space-between; align-items: center;">
-          <h2 style="font-size: 20px; font-weight: 800; color: #0F172A; margin: 0;">
-            Noir
+          <h2 id="studio-active-title" style="font-size: 20px; font-weight: 800; color: #0F172A; margin: 0;">
+            ${safeEsc(template?.name || 'Noir')}
           </h2>
           <span style="background: #000000; color: #FFFFFF; font-size: 11px; font-weight: 700; padding: 3px 10px; border-radius: 9999px;">
             In use
@@ -221,10 +233,10 @@ export function renderVisualStudio(
             Brand colour
           </label>
           <div style="display: flex; gap: 10px; margin-bottom: 8px;">
-            <button type="button" style="width: 32px; height: 32px; border-radius: 999px; background: #F59E0B; border: 2px solid #000000; cursor: pointer;"></button>
-            <button type="button" style="width: 32px; height: 32px; border-radius: 999px; background: #EF4444; border: none; cursor: pointer;"></button>
-            <button type="button" style="width: 32px; height: 32px; border-radius: 999px; background: #10B981; border: none; cursor: pointer;"></button>
-            <button type="button" style="width: 32px; height: 32px; border-radius: 999px; background: #A855F7; border: none; cursor: pointer;"></button>
+            <button type="button" class="swatch-btn" data-color="#F59E0B" onclick="selectBrandColor('#F59E0B', this)" style="width: 32px; height: 32px; border-radius: 999px; background: #F59E0B; border: 2px solid #000000; cursor: pointer;"></button>
+            <button type="button" class="swatch-btn" data-color="#EF4444" onclick="selectBrandColor('#EF4444', this)" style="width: 32px; height: 32px; border-radius: 999px; background: #EF4444; border: none; cursor: pointer;"></button>
+            <button type="button" class="swatch-btn" data-color="#10B981" onclick="selectBrandColor('#10B981', this)" style="width: 32px; height: 32px; border-radius: 999px; background: #10B981; border: none; cursor: pointer;"></button>
+            <button type="button" class="swatch-btn" data-color="#A855F7" onclick="selectBrandColor('#A855F7', this)" style="width: 32px; height: 32px; border-radius: 999px; background: #A855F7; border: none; cursor: pointer;"></button>
           </div>
           <div style="font-size: 11px; color: #64748B; line-height: 1.4;">
             We check contrast for you; unreadable colours are blocked.
@@ -266,10 +278,10 @@ export function renderVisualStudio(
 
         <!-- Actions -->
         <div style="display: flex; flex-direction: column; gap: 8px; margin-top: 12px;">
-          <a href="/dine/table-1" target="_blank" class="btn btn-secondary" style="width: 100%; border-radius: 9999px; text-decoration: none; text-align: center; justify-content: center; padding: 10px;">
+          <a href="${previewHref}" target="_blank" rel="noopener" class="btn btn-secondary" style="width: 100%; border-radius: 9999px; text-decoration: none; text-align: center; justify-content: center; padding: 10px;">
             Preview on phone
           </a>
-          <button type="button" class="btn btn-primary" onclick="alert('Diner theme published live!')" style="width: 100%; border-radius: 9999px; padding: 10px;">
+          <button type="button" id="publish-studio-btn" class="btn btn-primary" onclick="publishStudioChanges()" style="width: 100%; border-radius: 9999px; padding: 10px;">
             Publish to diners
           </button>
         </div>
@@ -281,6 +293,14 @@ export function renderVisualStudio(
   </div>
 
   <style>
+    @media (max-width: 960px) {
+      .studio-container {
+        padding: 16px 16px 88px 16px !important;
+      }
+      .studio-split-grid {
+        grid-template-columns: 1fr !important;
+      }
+    }
     .filter-tab {
       background: #FFFFFF;
       border: 1px solid #E2E8F0;
@@ -319,16 +339,62 @@ export function renderVisualStudio(
   </style>
 
   <script>
+    let selectedColorHex = '${safeEsc((brandConfig as any)?.primaryColor || '#F59E0B')}';
+
     function filterTemplates(filter, btn) {
       document.querySelectorAll('.filter-tab').forEach(b => b.classList.remove('active'));
-      btn.classList.add('active');
+      if (btn) btn.classList.add('active');
+      document.querySelectorAll('.tpl-card').forEach((card) => {
+        const tags = card.getAttribute('data-tags') || '';
+        card.style.display = (filter === 'all' || tags.includes(filter)) ? 'flex' : 'none';
+      });
     }
+
     function setLayout(mode, btn) {
       document.querySelectorAll('.layout-btn').forEach(b => b.classList.remove('active'));
-      btn.classList.add('active');
+      if (btn) btn.classList.add('active');
+      if (window.showToast) window.showToast('Layout set to ' + mode + '.', 'info');
     }
-    function useTemplate(name) {
-      alert('Applied ' + name + ' template to your diner storefront!');
+
+    function selectBrandColor(hex, btn) {
+      selectedColorHex = hex;
+      document.querySelectorAll('.swatch-btn').forEach((b) => { b.style.border = 'none'; });
+      if (btn) btn.style.border = '2px solid #000000';
+      if (window.showToast) window.showToast('Accent swatch updated to ' + hex, 'info');
+    }
+
+    async function useTemplate(templateId, displayName) {
+      try {
+        await window.apiFetch('/api/restaurant/templates/' + encodeURIComponent(templateId) + '/install', {
+          method: 'POST',
+          body: { templateId }
+        });
+        const t = document.getElementById('studio-active-title');
+        if (t) t.textContent = displayName;
+        if (window.showToast) window.showToast('Activated ' + displayName + ' storefront template.', 'success');
+      } catch (err) {
+        if (window.showToast) window.showToast((err && err.message) || 'Failed to switch template.', 'error');
+      }
+    }
+
+    async function publishStudioChanges() {
+      const btn = document.getElementById('publish-studio-btn');
+      if (btn) { btn.disabled = true; btn.textContent = 'Publishing...'; }
+      try {
+        await window.apiFetch('/api/restaurant/settings/whitelabel', {
+          method: 'POST',
+          body: { primaryColor: selectedColorHex }
+        });
+        await window.apiFetch('/api/restaurant/studio/publish', {
+          method: 'POST',
+          body: { changeNotes: 'Published storefront theme via Studio' }
+        });
+        if (window.showToast) window.showToast('Diner storefront changes published live!', 'success');
+      } catch (err) {
+        if (window.showToast) window.showToast((err && err.message) || 'Failed to publish storefront.', 'error');
+      } finally {
+        if (btn) { btn.disabled = false; btn.textContent = 'Publish to diners'; }
+      }
     }
   </script>
   `;

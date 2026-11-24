@@ -27,80 +27,9 @@ export function renderStaffWorkspace(
   selectedBranchId = 'branch_ldh',
   staffMembers: StaffDirectoryMember[] = []
 ): string {
-  const staffList: StaffDirectoryMember[] = staffMembers.length > 0 ? staffMembers : [
-    {
-      id: 'staff-1',
-      name: 'Priya Shah',
-      role: 'Owner',
-      branch: 'All branches',
-      station: '—',
-      status: 'Active',
-      initials: 'PS',
-      avatarBg: '#0F172A',
-    },
-    {
-      id: 'staff-2',
-      name: 'Rahul Kapoor',
-      role: 'Manager',
-      branch: 'Indiranagar',
-      station: '—',
-      status: 'Active',
-      initials: 'RK',
-      avatarBg: '#FB923C',
-    },
-    {
-      id: 'staff-3',
-      name: 'Arjun Nair',
-      role: 'Server',
-      branch: 'Indiranagar',
-      station: 'Floor',
-      status: 'Active',
-      initials: 'AN',
-      avatarBg: '#3B82F6',
-    },
-    {
-      id: 'staff-4',
-      name: 'Sana Iqbal',
-      role: 'Host',
-      branch: 'Indiranagar',
-      station: 'Front door',
-      status: 'Invited',
-      initials: 'SI',
-      avatarBg: '#A855F7',
-    },
-    {
-      id: 'staff-5',
-      name: 'Ravi Kumar',
-      role: 'Chef',
-      branch: 'Indiranagar',
-      station: 'Tandoor',
-      status: 'Locked out',
-      initials: 'RK',
-      avatarBg: '#10B981',
-    },
-    {
-      id: 'staff-6',
-      name: 'Counter POS 1',
-      role: 'Device',
-      branch: 'Indiranagar',
-      station: 'Counter',
-      status: 'Active',
-      initials: 'CP',
-      avatarBg: '#94A3B8',
-    },
-    {
-      id: 'staff-7',
-      name: 'Deepa M.',
-      role: 'Server',
-      branch: 'Koramangala',
-      station: 'Floor',
-      status: 'Active',
-      initials: 'DM',
-      avatarBg: '#3B82F6',
-    },
-  ];
+  const staffList: StaffDirectoryMember[] = Array.isArray(staffMembers) ? staffMembers : [];
 
-  const lockedCount = staffList.filter((s) => s.status === 'Locked out').length;
+  const lockedCount = staffList.filter((s) => String(s.status || '').toLowerCase().includes('lock')).length;
 
   return `
   <div class="staff-container" style="padding: 24px 32px 48px 32px; max-width: 1400px; margin: 0 auto; width: 100%; box-sizing: border-box; display: flex; flex-direction: column; gap: 24px;">
@@ -140,14 +69,13 @@ export function renderStaffWorkspace(
       <button type="button" class="staff-tab" onclick="filterStaff('managers', this)">
         Managers
       </button>
-      ${
-        lockedCount > 0
-          ? `
+      ${lockedCount > 0
+      ? `
       <button type="button" class="staff-tab-red" onclick="filterStaff('locked', this)">
         Locked out · ${lockedCount}
       </button>`
-          : ''
-      }
+      : ''
+    }
     </div>
 
     <!-- 3. Staff Roster Table (Clean White Card) -->
@@ -164,49 +92,58 @@ export function renderStaffWorkspace(
           </tr>
         </thead>
         <tbody id="staff-table-body">
-          ${staffList
-            .map((s) => {
-              // Role pill styling
-              let roleBg = '#F1F5F9';
-              let roleColor = '#475569';
-              if (s.role === 'Owner') { roleBg = '#000000'; roleColor = '#FFFFFF'; }
-              else if (s.role === 'Manager') { roleBg = '#FFEDD5'; roleColor = '#C2410C'; }
-              else if (s.role === 'Server') { roleBg = '#DBEAFE'; roleColor = '#1D4ED8'; }
-              else if (s.role === 'Host') { roleBg = '#F3E8FF'; roleColor = '#7E22CE'; }
-              else if (s.role === 'Chef') { roleBg = '#D1FAE5'; roleColor = '#047857'; }
+          ${staffList.length === 0 ? `
+            <tr>
+              <td colspan="6" style="padding: 36px 12px; text-align: center; color: #64748B;">
+                No team members added yet. Click <strong>Add person</strong> or <strong>Add POS device</strong> above.
+              </td>
+            </tr>
+          ` : staffList
+      .map((s) => {
+        const roleUpper = String(s.role || 'STAFF').toUpperCase();
+        const statusLower = String(s.status || 'active').toLowerCase();
 
-              // Status pill styling
-              let statusBg = '#ECFDF5';
-              let statusColor = '#059669';
-              if (s.status === 'Invited') { statusBg = '#FEF3C7'; statusColor = '#D97706'; }
-              else if (s.status === 'Locked out') { statusBg = '#FEE2E2'; statusColor = '#DC2626'; }
+        // Role pill styling (handles both seeded uppercase enums and title-case display strings)
+        let roleBg = '#F1F5F9';
+        let roleColor = '#475569';
+        if (roleUpper === 'OWNER' || roleUpper === 'ADMIN') { roleBg = '#000000'; roleColor = '#FFFFFF'; }
+        else if (roleUpper === 'MANAGER') { roleBg = '#FFEDD5'; roleColor = '#C2410C'; }
+        else if (roleUpper === 'SERVER' || roleUpper === 'POS') { roleBg = '#DBEAFE'; roleColor = '#1D4ED8'; }
+        else if (roleUpper === 'HOST') { roleBg = '#F3E8FF'; roleColor = '#7E22CE'; }
+        else if (roleUpper === 'CHEF' || roleUpper === 'EXPO' || roleUpper === 'KDS_STATION') { roleBg = '#D1FAE5'; roleColor = '#047857'; }
 
-              // Action button click handler
-              let btnText = 'Manage';
-              let btnClass = 'btn-secondary';
-              let onClick = `manageStaffMember('${escapeHtml(s.id)}', '${escapeHtml(s.name)}')`;
+        // Status pill styling
+        let statusBg = '#ECFDF5';
+        let statusColor = '#059669';
+        if (statusLower.includes('invit')) { statusBg = '#FEF3C7'; statusColor = '#D97706'; }
+        else if (statusLower.includes('lock') || statusLower.includes('revok')) { statusBg = '#FEE2E2'; statusColor = '#DC2626'; }
 
-              if (s.status === 'Locked out') {
-                btnText = 'Unlock';
-                btnClass = 'btn-primary';
-                onClick = `unlockStaffMember('${escapeHtml(s.id)}', '${escapeHtml(s.name)}')`;
-              } else if (s.status === 'Invited') {
-                btnText = 'Resend invite';
-                onClick = `resendInvite('${escapeHtml(s.name)}')`;
-              } else if (s.role === 'Server' || s.role === 'Chef') {
-                btnText = 'Reset PIN';
-                onClick = `resetStaffPin('${escapeHtml(s.id)}', '${escapeHtml(s.name)}')`;
-              } else if (s.role === 'Device') {
-                btnText = 'Revoke';
-                btnClass = 'btn-secondary';
-                onClick = `revokeDevice('${escapeHtml(s.id)}')`;
-              }
+        // Action button click handler
+        let btnText = 'Manage';
+        let btnClass = 'btn-secondary';
+        let onClick = `manageStaffMember('${escapeHtml(s.id)}', '${escapeHtml(s.name)}')`;
 
-              return `
+        if (statusLower.includes('lock')) {
+          btnText = 'Unlock';
+          btnClass = 'btn-primary';
+          onClick = `unlockStaffMember('${escapeHtml(s.id)}', '${escapeHtml(s.name)}')`;
+        } else if (statusLower.includes('invit')) {
+          btnText = 'Resend invite';
+          onClick = `resendInvite('${escapeHtml(s.name)}')`;
+        } else if (roleUpper === 'SERVER' || roleUpper === 'CHEF' || roleUpper === 'HOST' || roleUpper === 'EXPO') {
+          btnText = 'Reset PIN';
+          onClick = `resetStaffPin('${escapeHtml(s.id)}', '${escapeHtml(s.name)}')`;
+        } else if (roleUpper === 'DEVICE' || roleUpper === 'POS' || roleUpper === 'KDS_STATION') {
+          btnText = 'Revoke';
+          btnClass = 'btn-secondary';
+          onClick = `revokeDevice('${escapeHtml(s.id)}')`;
+        }
+
+        return `
               <tr 
                 class="staff-row" 
-                data-role="${escapeHtml(s.role.toLowerCase())}" 
-                data-status="${escapeHtml(s.status.toLowerCase())}"
+                data-role="${escapeHtml(roleUpper.toLowerCase())}" 
+                data-status="${escapeHtml(statusLower)}"
                 style="border-bottom: 1px solid #F8FAFC; transition: background 100ms ease;"
               >
                 <td style="padding: 14px 12px;">
@@ -235,8 +172,8 @@ export function renderStaffWorkspace(
                   </button>
                 </td>
               </tr>`;
-            })
-            .join('')}
+      })
+      .join('')}
         </tbody>
       </table>
     </div>
@@ -261,13 +198,13 @@ export function renderStaffWorkspace(
           </thead>
           <tbody>
             ${[
-              { perm: 'Take orders, settle tables', o: '✓', a: '✓', m: '✓', s: '✓', c: '—' },
-              { perm: 'Kitchen screen (KDS)', o: '✓', a: '✓', m: '✓', s: '—', c: '✓' },
-              { perm: 'Edit menu, tables, staff', o: '✓', a: '✓', m: 'Own branch', s: '—', c: '—' },
-              { perm: 'Billing, plan, GST, payments', o: '✓', a: '✓', m: '—', s: '—', c: '—' },
-              { perm: 'Delete restaurant, export data', o: '✓', a: '—', m: '—', s: '—', c: '—' },
-            ]
-              .map((row) => `
+      { perm: 'Take orders, settle tables', o: '✓', a: '✓', m: '✓', s: '✓', c: '—' },
+      { perm: 'Kitchen screen (KDS)', o: '✓', a: '✓', m: '✓', s: '—', c: '✓' },
+      { perm: 'Edit menu, tables, staff', o: '✓', a: '✓', m: 'Own branch', s: '—', c: '—' },
+      { perm: 'Billing, plan, GST, payments', o: '✓', a: '✓', m: '—', s: '—', c: '—' },
+      { perm: 'Delete restaurant, export data', o: '✓', a: '—', m: '—', s: '—', c: '—' },
+    ]
+      .map((row) => `
               <tr style="border-bottom: 1px solid #F1F5F9;">
                 <td style="padding: 14px; font-weight: 600; color: #0F172A;">${row.perm}</td>
                 <td style="padding: 14px; color: ${row.o === '✓' ? '#0F172A' : '#94A3B8'}; font-weight: ${row.o === '✓' ? '800' : '400'};">${row.o}</td>
@@ -276,7 +213,7 @@ export function renderStaffWorkspace(
                 <td style="padding: 14px; color: ${row.s === '✓' ? '#0F172A' : '#94A3B8'}; font-weight: ${row.s === '✓' ? '800' : '400'};">${row.s}</td>
                 <td style="padding: 14px; color: ${row.c === '✓' ? '#0F172A' : '#94A3B8'}; font-weight: ${row.c === '✓' ? '800' : '400'};">${row.c}</td>
               </tr>`)
-              .join('')}
+      .join('')}
           </tbody>
         </table>
       </div>
@@ -319,6 +256,11 @@ export function renderStaffWorkspace(
       background: #DC2626;
       color: #FFFFFF;
       border-color: #DC2626;
+    }
+    @media (max-width: 768px) {
+      .staff-container {
+        padding: 16px 16px 88px 16px !important;
+      }
     }
   </style>
 
@@ -412,7 +354,7 @@ export function renderStaffWorkspace(
         window.showToast('Unlocked account for ' + name + '. PIN attempts reset to 0.', 'success');
         setTimeout(() => window.location.reload(), 600);
       } catch (e) {
-        window.showToast('Unlocked ' + name + ' locally.', 'success');
+        window.showToast((e && e.message) ? e.message : 'Failed to unlock ' + name + '.', 'error');
       }
     }
 

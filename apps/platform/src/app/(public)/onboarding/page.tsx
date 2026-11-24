@@ -50,7 +50,7 @@ export default function OnboardingPage() {
           setState(parsed);
         }
       }
-    } catch {}
+    } catch { }
 
     let cancelled = false;
     async function restoreSession() {
@@ -128,7 +128,7 @@ export default function OnboardingPage() {
                   break;
                 }
               }
-            } catch {}
+            } catch { }
           }
         }
 
@@ -164,7 +164,7 @@ export default function OnboardingPage() {
                 };
               }
             }
-          } catch {}
+          } catch { }
         }
 
         // Query activation & subscription status if we have a restaurantObj
@@ -185,7 +185,7 @@ export default function OnboardingPage() {
                 };
               }
             }
-          } catch {}
+          } catch { }
         }
 
         updateState((prev) => {
@@ -214,7 +214,7 @@ export default function OnboardingPage() {
             step: nextStep,
           };
         });
-      } catch {}
+      } catch { }
     }
 
     restoreSession();
@@ -229,7 +229,7 @@ export default function OnboardingPage() {
       const next = updater(prev);
       try {
         localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
-      } catch {}
+      } catch { }
       return next;
     });
   };
@@ -285,7 +285,7 @@ export default function OnboardingPage() {
 
   if (!mounted) {
     return (
-      <main className="min-h-screen bg-[#EEF1F5] flex flex-col items-center justify-center p-6 md:p-12">
+      <main className="min-h-screen bg-[#EEF1F5] flex flex-col items-center justify-center p-3 sm:p-6 md:p-12 overflow-x-hidden">
         <F1AccountStep onSuccess={handleF1Success} />
       </main>
     );
@@ -310,7 +310,7 @@ export default function OnboardingPage() {
   }
 
   return (
-    <main className="min-h-screen bg-[#EEF1F5] flex flex-col items-center justify-center p-6 md:p-12">
+    <main className="min-h-screen bg-[#EEF1F5] flex flex-col items-center justify-center p-3 sm:p-6 md:p-12 overflow-x-hidden">
       {state.step === 'F1' && (
         <F1AccountStep
           onSuccess={handleF1Success}

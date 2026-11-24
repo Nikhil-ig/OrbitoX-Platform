@@ -71,7 +71,7 @@ export function ConsoleShell({
           setSessionOperator(json.operator);
         }
       })
-      .catch(() => {})
+      .catch(() => { })
       .finally(() => {
         if (isMounted) setSessionLoading(false);
       });
@@ -93,7 +93,7 @@ export function ConsoleShell({
           });
         }
       })
-      .catch(() => {});
+      .catch(() => { });
     return () => {
       isMounted = false;
     };
@@ -416,19 +416,8 @@ export function ConsoleShell({
     },
   ];
 
-  // Plug-in / Installed Products
+  // Installed Products
   const bottomNavItems: NavItem[] = [
-    {
-      id: 'restaurant-os',
-      label: 'RestaurantOS',
-      href: '/admin/restaurant',
-      icon: <Layers className="h-4 w-4" />,
-      badge: (
-        <span className="ml-auto text-[10px] font-medium px-2 py-0.5 rounded-full bg-[var(--color-warning)]/15 text-[var(--color-warning)]">
-          Hold
-        </span>
-      ),
-    },
     {
       id: 'hms',
       label: 'Hospitality HMS',
@@ -447,11 +436,10 @@ export function ConsoleShell({
     <div className="rounded-[16px] p-3 bg-[var(--color-surface-raised)] border border-[var(--color-border)]">
       <div className="flex items-center gap-2">
         <span
-          className={`text-[10px] font-bold tracking-wider px-2 py-0.5 rounded-full ${
-            isProduction
+          className={`text-[10px] font-bold tracking-wider px-2 py-0.5 rounded-full ${isProduction
               ? 'bg-emerald-400 text-emerald-950'
               : 'bg-amber-400 text-amber-950'
-          }`}
+            }`}
         >
           {envLabel}
         </span>
@@ -469,11 +457,10 @@ export function ConsoleShell({
     <div className="flex flex-col gap-2 p-3 rounded-[var(--radius-row)] border border-[var(--color-border)] bg-[var(--color-surface)]">
       <div className="flex items-center justify-between">
         <span
-          className={`text-[10px] font-semibold tracking-wider px-1.5 py-0.5 rounded-full ${
-            isProduction
+          className={`text-[10px] font-semibold tracking-wider px-1.5 py-0.5 rounded-full ${isProduction
               ? 'bg-[var(--color-warning)]/15 text-[var(--color-warning)]'
               : 'bg-[var(--color-info)]/15 text-[var(--color-info)]'
-          }`}
+            }`}
         >
           {envLabel}
         </span>
@@ -527,11 +514,10 @@ export function ConsoleShell({
   const topBarActions = (
     <div className="flex items-center gap-2">
       <span
-        className={`hidden sm:inline-flex text-[10px] font-semibold tracking-wider px-2 py-0.5 rounded-full ${
-          isProduction
+        className={`hidden sm:inline-flex text-[10px] font-semibold tracking-wider px-2 py-0.5 rounded-full ${isProduction
             ? 'bg-[var(--color-warning)]/15 text-[var(--color-warning)]'
             : 'bg-[var(--color-info)]/15 text-[var(--color-info)]'
-        }`}
+          }`}
       >
         {envLabel}
       </span>

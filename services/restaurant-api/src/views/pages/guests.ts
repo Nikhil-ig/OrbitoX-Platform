@@ -1,12 +1,21 @@
 /**
- * 🍷 RestaurantOS 2.0 Active Guests Workspace
+ * 🪐 RestaurantOS Modern — Active Guests & Seated Parties (SCR-OPS-GUESTS)
  * ─────────────────────────────────────────────────────────────────────────────
- * Zero-trust guest privacy, session parties, join times, dietary profiles,
- * and check allocation by guest. Driven by real domain records.
+ * Unified light-canvas design matching Shared RestaurantOS sidebar & design tokens.
+ * Fully responsive (zero overflow at 390x844 and 1440x900).
  */
 
 import { TableFloorRecord, GuestRecord } from '../../shared';
 import { icon } from '../icons';
+
+function esc(val: unknown): string {
+  return String(val ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
 
 export function renderGuestsWorkspace(
   tables: TableFloorRecord[],
@@ -14,9 +23,8 @@ export function renderGuestsWorkspace(
   registeredGuests: GuestRecord[] = []
 ): string {
   const branchTables = tables.filter((t) => t.branchId === currentBranchId || !t.branchId);
-  const activeTables = branchTables.filter((t) => t.status === 'OCCUPIED' || t.status === 'BILL_REQUESTED');
+  const activeTables = branchTables.filter((t) => Boolean(t.activeSessionId) || t.status === 'OCCUPIED' || t.status === 'BILL_REQUESTED');
 
-  // Extract individual seated guests from registeredGuests or seats
   const guestList: Array<{
     id: string;
     name: string;
@@ -26,7 +34,6 @@ export function renderGuestsWorkspace(
     preferences: string;
     visitCount: number;
     tabMinor: number;
-    notes?: string;
   }> = [];
 
   if (registeredGuests.length > 0) {
@@ -41,8 +48,7 @@ export function renderGuestsWorkspace(
           seatLabel: g.seatLabel || 'S1',
           preferences: `${g.preferences?.diet || 'Standard'} · Spice: ${g.preferences?.spice || 'Medium'}`,
           visitCount: g.totalSpendMinor > 50000 ? 12 : 2,
-          tabMinor: g.totalSpendMinor || Math.round((tbl.activeBillMinor || 35000) / (tbl.capacity || 2)),
-          notes: g.preferences?.notes,
+          tabMinor: g.totalSpendMinor || Math.round((tbl.activeBillMinor || 0) / (tbl.capacity || 2)),
         });
       }
     });
@@ -59,97 +65,107 @@ export function renderGuestsWorkspace(
             role: isHost ? 'Primary Host' : 'Companion',
             tableNumber: t.number,
             seatLabel: s.label,
-            preferences: 'Vegetarian · Medium Spice',
-            visitCount: isHost ? 12 : 2,
-            tabMinor: Math.round((t.activeBillMinor || 40000) / (t.capacity || 2)),
+            preferences: 'Standard menu',
+            visitCount: isHost ? 4 : 1,
+            tabMinor: Math.round((t.activeBillMinor || 0) / (t.capacity || 2)),
           });
         });
     });
   }
 
   return `
-  <div style="padding: 24px; max-width: 1200px; margin: 0 auto; width: 100%;">
+  <div class="guests-container" style="padding: 24px 32px 72px 32px; max-width: 1320px; margin: 0 auto; width: 100%; box-sizing: border-box; display: flex; flex-direction: column; gap: 24px;">
     <!-- Header -->
-    <div style="display: flex; justify-content: space-between; align-items: flex-end; margin-bottom: 24px;">
+    <div style="display: flex; justify-content: space-between; align-items: flex-end; flex-wrap: wrap; gap: 16px;">
       <div>
-        <div style="font-size: 11px; font-weight: 700; color: var(--color-stone); text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 4px;">Hospitality Intelligence</div>
-        <h1 style="font-size: 24px; font-weight: 800; color: var(--color-linen); letter-spacing: -0.02em;">Active Guests & Seated Parties</h1>
+        <div style="font-size: 13px; font-weight: 500; color: #64748B; margin-bottom: 4px;">
+          Hospitality Intelligence · ${guestList.length} seated tonight
+        </div>
+        <h1 style="font-size: 34px; font-weight: 800; color: #0F172A; letter-spacing: -0.025em; margin: 0;">
+          Guests
+        </h1>
       </div>
-      <div style="display: flex; gap: 8px;">
-        <span class="badge badge-copper" style="font-size: 12px; padding: 6px 12px;">${guestList.length} Guests Seated Tonight</span>
-      </div>
+      <span style="background: #EFF6FF; color: #2563EB; font-size: 12px; font-weight: 700; padding: 6px 14px; border-radius: 9999px;">
+        ${activeTables.length} active table${activeTables.length === 1 ? '' : 's'}
+      </span>
     </div>
 
-    <!-- Active Parties Table -->
-    <div style="background: var(--color-charcoal); border: 1px solid var(--border-default); border-radius: 10px; overflow: hidden; margin-bottom: 28px;">
-      <div style="padding: 12px 16px; background: rgba(255,255,255,0.02); border-bottom: 1px solid var(--border-subtle); display: grid; grid-template-columns: 180px 100px 100px 180px 100px 120px 1fr; font-size: 11px; font-weight: 700; text-transform: uppercase; color: var(--color-stone);">
-        <div>Guest Name</div>
-        <div>Role</div>
-        <div>Table / Seat</div>
-        <div>Dietary & Notes</div>
-        <div>Visits</div>
-        <div>Share Tab</div>
-        <div style="text-align: right;">Action</div>
-      </div>
-
-      <div style="display: flex; flex-direction: column;">
-        ${
-          guestList.length === 0
-            ? `<div style="padding: 40px; text-align: center; color: var(--color-stone);">No active guests currently seated in this branch.</div>`
-            : guestList
-                .map(
-                  (g) => `
-          <div class="data-row" style="display: grid; grid-template-columns: 180px 100px 100px 180px 100px 120px 1fr; align-items: center; padding: 14px 16px;">
-            <div>
-              <div style="font-weight: 800; font-size: 14px; color: var(--color-linen);">${g.name}</div>
-            </div>
-            <div>
-              <span class="badge ${g.role === 'Primary Host' ? 'badge-copper' : 'badge-neutral'}" style="font-size: 10px;">${g.role}</span>
-            </div>
-            <div style="color: var(--color-linen); font-weight: 700; font-size: 13px;">
-              ${g.tableNumber} <span style="color: var(--color-stone); font-size: 11px;">(${g.seatLabel})</span>
-            </div>
-            <div style="color: var(--color-stone); font-size: 12px;">
-              ${g.preferences}
-            </div>
-            <div style="font-family: var(--font-mono); font-weight: 700; color: ${g.visitCount > 5 ? 'var(--color-copper)' : 'var(--color-linen)'};">
-              ${g.visitCount} visits
-            </div>
-            <div style="font-family: var(--font-mono); font-weight: 700; color: var(--color-linen);">
-              ₹${(g.tabMinor / 100).toFixed(2)}
-            </div>
-            <div style="display: flex; justify-content: flex-end; gap: 6px;">
-              <button class="btn btn-secondary btn-sm" style="font-size: 11px;" onclick="openGuestProfile('${g.name}', '${g.role}', '${g.tableNumber}', '${g.seatLabel}', '${g.preferences}')">Profile ↗</button>
-            </div>
-          </div>`
-                )
-                .join('')
-        }
-      </div>
+    <!-- Responsive Active Parties Card -->
+    <div class="ui-card" style="padding: 12px 24px; overflow-x: auto;">
+      <table style="width: 100%; border-collapse: collapse; text-align: left; font-size: 13px; min-width: 680px;">
+        <thead>
+          <tr style="border-bottom: 1px solid #F1F5F9; color: #64748B; font-weight: 600; font-size: 12px;">
+            <th style="padding: 14px 10px;">Guest Name</th>
+            <th style="padding: 14px 10px;">Role</th>
+            <th style="padding: 14px 10px;">Table / Seat</th>
+            <th style="padding: 14px 10px;">Dietary &amp; Notes</th>
+            <th style="padding: 14px 10px;">Visits</th>
+            <th style="padding: 14px 10px;">Share Tab</th>
+            <th style="padding: 14px 10px; text-align: right;">Action</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${guestList.length === 0 ? `
+            <tr>
+              <td colspan="7" style="padding: 40px 12px; text-align: center; color: #64748B;">
+                No active guests currently seated in this branch. Seat walk-in guests via <a href="/host" style="color: #2563EB; font-weight: 600;">Host Stand</a> or Diner QR scans.
+              </td>
+            </tr>
+          ` : guestList.map((g) => `
+            <tr style="border-bottom: 1px solid #F8FAFC;">
+              <td style="padding: 14px 10px; font-weight: 700; color: #0F172A;">${esc(g.name)}</td>
+              <td style="padding: 14px 10px;">
+                <span style="background: ${g.role === 'Primary Host' ? '#0F172A' : '#F1F5F9'}; color: ${g.role === 'Primary Host' ? '#FFFFFF' : '#475569'}; padding: 3px 10px; border-radius: 9999px; font-size: 11px; font-weight: 600;">
+                  ${esc(g.role)}
+                </span>
+              </td>
+              <td style="padding: 14px 10px; font-weight: 600; color: #0F172A;">
+                ${esc(g.tableNumber)} <span style="color: #64748B; font-weight: 400;">(${esc(g.seatLabel)})</span>
+              </td>
+              <td style="padding: 14px 10px; color: #64748B;">${esc(g.preferences)}</td>
+              <td style="padding: 14px 10px; font-weight: 600; color: #0F172A;">${g.visitCount}</td>
+              <td style="padding: 14px 10px; font-weight: 700; color: #0F172A;">₹${(g.tabMinor / 100).toFixed(0)}</td>
+              <td style="padding: 14px 10px; text-align: right;">
+                <button type="button" class="btn btn-secondary btn-sm" style="border-radius: 9999px; font-size: 12px;" onclick="openGuestProfile('${esc(g.name)}', '${esc(g.role)}', '${esc(g.tableNumber)}', '${esc(g.seatLabel)}', '${esc(g.preferences)}')">
+                  Profile ↗
+                </button>
+              </td>
+            </tr>
+          `).join('')}
+        </tbody>
+      </table>
     </div>
 
     <!-- Guest Profile Modal Sheet -->
-    <div id="guest-profile-modal" style="display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.7); z-index: 1000; align-items: center; justify-content: center;">
-      <div style="background: var(--color-charcoal); border: 1px solid var(--border-strong); border-radius: 12px; max-width: 440px; width: 90%; padding: 24px; box-shadow: 0 20px 50px rgba(0,0,0,0.8);">
+    <div id="guest-profile-modal" style="display: none; position: fixed; inset: 0; background: rgba(15, 23, 42, 0.45); backdrop-filter: blur(4px); z-index: 1000; align-items: center; justify-content: center;">
+      <div style="background: #FFFFFF; border: 1px solid #E2E8F0; border-radius: 24px; max-width: 440px; width: 92vw; padding: 24px; box-shadow: 0 20px 50px rgba(0,0,0,0.18);">
         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
-          <h3 id="modal-guest-name" style="font-size: 18px; font-weight: 800; color: var(--color-linen);">Guest Profile</h3>
-          <button class="btn btn-ghost btn-sm" onclick="closeGuestProfile()" aria-label="Close">${icon('x', { size: 16 })}</button>
+          <h3 id="modal-guest-name" style="font-size: 18px; font-weight: 800; color: #0F172A; margin: 0;">Guest Profile</h3>
+          <button type="button" class="btn btn-secondary btn-sm" onclick="closeGuestProfile()" aria-label="Close" style="border-radius: 9999px;">${icon('x', { size: 16 })}</button>
         </div>
-        <div style="display: flex; flex-direction: column; gap: 10px; font-size: 13px; line-height: 1.6;">
-          <div><span style="color: var(--color-stone);">Role:</span> <span id="modal-guest-role" style="font-weight: 700; color: var(--color-copper);"></span></div>
-          <div><span style="color: var(--color-stone);">Table & Seat:</span> <span id="modal-guest-seat" style="font-weight: 700; color: var(--color-linen);"></span></div>
-          <div><span style="color: var(--color-stone);">Dietary & Preferences:</span> <span id="modal-guest-diet" style="color: var(--color-linen);"></span></div>
-          <div style="border-top: 1px solid var(--border-subtle); padding-top: 10px; margin-top: 6px;">
-            <div style="font-size: 11px; font-weight: 700; color: var(--color-stone); text-transform: uppercase;">Privacy & Capability</div>
-            <div style="font-size: 11px; color: var(--color-muted); margin-top: 2px;">Zero-Trust ephemeral capability active. Diner session secured cryptographically.</div>
+        <div style="display: flex; flex-direction: column; gap: 10px; font-size: 13px; line-height: 1.6; color: #334155;">
+          <div><span style="color: #64748B;">Role:</span> <strong id="modal-guest-role" style="color: #0F172A;"></strong></div>
+          <div><span style="color: #64748B;">Table &amp; Seat:</span> <strong id="modal-guest-seat" style="color: #0F172A;"></strong></div>
+          <div><span style="color: #64748B;">Dietary &amp; Preferences:</span> <span id="modal-guest-diet"></span></div>
+          <div style="border-top: 1px solid #F1F5F9; padding-top: 10px; margin-top: 6px;">
+            <div style="font-size: 11px; font-weight: 700; color: #64748B; text-transform: uppercase;">Privacy &amp; Capability</div>
+            <div style="font-size: 12px; color: #64748B; margin-top: 2px;">Ephemeral session capability active. Zero-trust table-scoped diner access.</div>
           </div>
         </div>
         <div style="margin-top: 20px; display: flex; justify-content: flex-end;">
-          <button class="btn btn-secondary btn-sm" onclick="closeGuestProfile()">Close</button>
+          <button type="button" class="btn btn-primary btn-sm" onclick="closeGuestProfile()" style="border-radius: 9999px; padding: 8px 18px;">Close</button>
         </div>
       </div>
     </div>
   </div>
+
+  <style>
+    @media (max-width: 768px) {
+      .guests-container {
+        padding: 16px 16px 88px 16px !important;
+      }
+    }
+  </style>
 
   <script>
     function openGuestProfile(name, role, table, seat, diet) {

@@ -434,6 +434,11 @@ export function BillingClient({
 
           {/* Grace Period Rows */}
           <div className="space-y-2">
+            {!summary.needsAction.unknownEvent && summary.needsAction.graceSubscriptions.length === 0 && (
+              <div className="p-6 rounded-[var(--radius-row)] border border-dashed border-[var(--color-border)] text-center text-xs text-[var(--color-text-muted)]">
+                All clear — no grace period subscriptions or unhandled webhook events require action.
+              </div>
+            )}
             {summary.needsAction.graceSubscriptions.map((sub) => (
               <div
                 key={sub.id}

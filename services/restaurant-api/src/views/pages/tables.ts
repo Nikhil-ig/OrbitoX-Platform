@@ -136,9 +136,9 @@ export function renderTablesList(
     </div>
 
     <!-- Tables Ledger Card -->
-    <div style="background: var(--color-charcoal); border: 1px solid var(--border-default); border-radius: 10px; overflow: hidden;">
+    <div style="background: var(--color-card); border: 1px solid rgba(15, 23, 42, 0.08); border-radius: 24px; overflow-x: auto;">
       <!-- Table Header (Desktop) -->
-      <div class="fleet-table-header" style="padding: 12px 16px; background: rgba(255,255,255,0.02); border-bottom: 1px solid var(--border-subtle); display: grid; grid-template-columns: 40px 90px 110px 140px 120px 150px 120px 1fr 140px; font-size: 11px; font-weight: 700; text-transform: uppercase; color: var(--color-stone); letter-spacing: 0.04em; align-items: center;">
+      <div class="fleet-table-header" style="padding: 14px 18px; background: #F8FAFC; border-bottom: 1px solid #E2E8F0; display: grid; grid-template-columns: 36px 80px 110px 130px 90px 120px 100px minmax(140px, 1fr) 130px; min-width: 960px; font-size: 11px; font-weight: 700; text-transform: uppercase; color: #64748B; letter-spacing: 0.04em; align-items: center;">
         <div>
           <input type="checkbox" id="check-all-tables" onchange="window.tablesFleet.toggleSelectAll(this.checked)" style="cursor: pointer;" />
         </div>
@@ -242,14 +242,20 @@ export function renderTablesList(
     }
     .fleet-row {
       display: grid;
-      grid-template-columns: 40px 90px 110px 140px 120px 150px 120px 1fr 140px;
+      grid-template-columns: 36px 80px 110px 130px 90px 120px 100px minmax(140px, 1fr) 130px;
+      min-width: 960px;
       align-items: center;
-      padding: 12px 16px;
-      border-bottom: 1px solid var(--border-subtle);
+      padding: 12px 18px;
+      border-bottom: 1px solid #F1F5F9;
       transition: background 0.15s ease;
     }
+    .fleet-row > div {
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
     .fleet-row:hover {
-      background: rgba(255, 255, 255, 0.02);
+      background: #F8FAFC;
     }
     .fleet-row.selected {
       background: rgba(200, 107, 60, 0.08);
@@ -262,6 +268,9 @@ export function renderTablesList(
 
     /* Responsive Presentation for Mobile & Small Tablets */
     @media (max-width: 960px) {
+      .tables-workspace-container {
+        padding: 16px 16px 88px 16px !important;
+      }
       .fleet-table-header {
         display: none !important;
       }
@@ -269,6 +278,7 @@ export function renderTablesList(
         display: flex;
         flex-direction: column;
         align-items: stretch;
+        min-width: 0 !important;
         gap: 12px;
         padding: 16px;
         position: relative;

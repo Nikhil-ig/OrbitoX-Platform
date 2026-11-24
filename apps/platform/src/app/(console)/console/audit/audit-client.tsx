@@ -359,8 +359,8 @@ export function AuditClient({
       </div>
 
       {/* 4. Audit Events Table */}
-      <Card className="overflow-hidden border border-[var(--color-border)] bg-[var(--color-surface)]">
-        <div className="overflow-x-auto">
+      <Card className="min-w-0 overflow-hidden border border-[var(--color-border)] bg-[var(--color-surface)]">
+        <div className="w-full overflow-x-auto">
           <table className="w-full text-left text-xs">
             <thead>
               <tr className="border-b border-[var(--color-border)] bg-[var(--color-surface-raised)] text-[var(--color-text-muted)]">
@@ -414,13 +414,12 @@ export function AuditClient({
                       </td>
                       <td className="px-4 py-3.5 whitespace-nowrap">
                         <span
-                          className={`inline-flex items-center rounded-md px-2 py-0.5 text-xs font-medium border ${
-                            isDangerous
+                          className={`inline-flex items-center rounded-md px-2 py-0.5 text-xs font-medium border ${isDangerous
                               ? 'bg-rose-500/10 text-rose-500 border-rose-500/20'
                               : isSuccess
                                 ? 'bg-emerald-500/10 text-emerald-500 border-emerald-500/20'
                                 : 'bg-blue-500/10 text-blue-500 border-blue-500/20'
-                          }`}
+                            }`}
                         >
                           {event.actionLabel}
                         </span>
@@ -443,11 +442,10 @@ export function AuditClient({
                       </td>
                       <td className="px-4 py-3.5 whitespace-nowrap">
                         <span
-                          className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-semibold border ${
-                            event.status === 'COMMITTED'
+                          className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-semibold border ${event.status === 'COMMITTED'
                               ? 'bg-emerald-500/10 text-emerald-500 border-emerald-500/20'
                               : 'bg-rose-500/10 text-rose-500 border-rose-500/20'
-                          }`}
+                            }`}
                         >
                           {event.status}
                         </span>

@@ -827,7 +827,7 @@ export function renderDinerPwa(
   </header>
 
   <!-- 2. Dynamic Template-Specific Customer Storefront -->
-  <div id="storefront-app-root">
+  <div id="storefront-app-root" style="max-width: 100%; overflow-x: hidden;">
     ${storefrontHtml}
   </div>
 

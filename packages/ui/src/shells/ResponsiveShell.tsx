@@ -115,15 +115,15 @@ export function ResponsiveShell({
 
       {/* ─── Main Application Viewport ─── */}
       <div className="flex-1 flex flex-col min-w-0 pb-20 sm:pb-24 lg:pb-0">
-        {/* Responsive TopBar (visible across all viewports) */}
+        {/* Responsive TopBar (Brand + Search hidden on >=1280px where SidebarCard renders them) */}
         <TopBar
           breadcrumbs={
-            <div className="flex items-center gap-3">
-              {brandElement}
-              {breadcrumbs}
+            <div className="flex items-center gap-3 min-w-0">
+              <div className="xl:hidden shrink-0">{brandElement}</div>
+              <div className="min-w-0 truncate">{breadcrumbs}</div>
             </div>
           }
-          searchSlot={searchSlot}
+          searchSlot={searchSlot ? <div className="xl:hidden">{searchSlot}</div> : undefined}
           contextSlot={contextSlot}
           actionSlot={topBarActions}
           onMenuToggle={() => setIsMoreSheetOpen(true)}
@@ -132,7 +132,7 @@ export function ResponsiveShell({
         />
 
         {/* Content Frame */}
-        <ShellContentFrame className="flex-1 overflow-y-auto">
+        <ShellContentFrame className="flex-1 min-w-0 overflow-y-auto">
           {children}
         </ShellContentFrame>
       </div>

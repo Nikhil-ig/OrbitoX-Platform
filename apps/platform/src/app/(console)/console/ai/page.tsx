@@ -210,24 +210,22 @@ export default function ConsoleAskOrbitoXPage() {
         </div>
 
         {/* Two-Column Grid: Left Chat (7 cols), Right MCP Registry (5 cols) */}
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 min-h-[580px]">
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 min-h-[580px] min-w-0">
           {/* Left Column: Chat Conversation */}
-          <Card className="lg:col-span-7 flex flex-col justify-between p-5 border border-[var(--color-border)] bg-[var(--color-surface)]">
+          <Card className="lg:col-span-7 min-w-0 overflow-hidden flex flex-col justify-between p-5 border border-[var(--color-border)] bg-[var(--color-surface)]">
             {/* Messages Scroll Area */}
             <div className="space-y-4 overflow-y-auto max-h-[460px] pr-2">
               {messages.map((m) => (
                 <div
                   key={m.id}
-                  className={`flex items-start gap-3 text-xs ${
-                    m.sender === 'user' ? 'flex-row-reverse' : ''
-                  }`}
+                  className={`flex items-start gap-3 text-xs ${m.sender === 'user' ? 'flex-row-reverse' : ''
+                    }`}
                 >
                   <div
-                    className={`h-7 w-7 rounded-full flex items-center justify-center shrink-0 ${
-                      m.sender === 'user'
+                    className={`h-7 w-7 rounded-full flex items-center justify-center shrink-0 ${m.sender === 'user'
                         ? 'bg-[var(--color-primary)] text-white'
                         : 'bg-purple-100 dark:bg-purple-950/50 text-purple-600 dark:text-purple-400'
-                    }`}
+                      }`}
                   >
                     {m.sender === 'user' ? (
                       <User className="h-3.5 w-3.5" />
@@ -238,11 +236,10 @@ export default function ConsoleAskOrbitoXPage() {
 
                   <div className="space-y-1.5 max-w-[85%]">
                     <div
-                      className={`p-3.5 rounded-[var(--radius-card)] leading-relaxed ${
-                        m.sender === 'user'
+                      className={`p-3.5 rounded-[var(--radius-card)] leading-relaxed ${m.sender === 'user'
                           ? 'bg-[var(--color-primary)] text-white'
                           : 'bg-[var(--color-surface-raised)] border border-[var(--color-border)] text-[var(--color-text)]'
-                      }`}
+                        }`}
                     >
                       <p>{m.text}</p>
 
@@ -317,7 +314,7 @@ export default function ConsoleAskOrbitoXPage() {
           </Card>
 
           {/* Right Column: MCP Tool Registry & Guardrails (5 cols) */}
-          <div className="lg:col-span-5 space-y-4">
+          <div className="lg:col-span-5 min-w-0 space-y-4">
             {/* Guardrails Active Status */}
             <Card className="p-4 space-y-3">
               <div className="flex items-center justify-between">

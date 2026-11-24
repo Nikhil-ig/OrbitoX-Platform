@@ -88,42 +88,42 @@ export function renderMenuWorkspace(
         All · ${totalCount}
       </button>
       ${uniqueCategories
-        .map(
-          (cat) => `
+      .map(
+        (cat) => `
         <button type="button" class="category-pill" onclick="filterCategory('${escapeHtml(cat)}', this)">
           ${escapeHtml(cat)} · ${categoryCounts[cat] || 0}
         </button>`
-        )
-        .join('')}
+      )
+      .join('')}
       <button type="button" class="category-pill-ghost" onclick="addNewCategory()">
         + Category
       </button>
     </div>
 
     <!-- 4. Two-Column Workspace: Dishes List (Left) + Slide-Out Editor Drawer (Right) -->
-    <div style="display: grid; grid-template-columns: 1.4fr 1fr; gap: 28px; align-items: start;">
+    <div class="menu-split-grid" style="display: grid; grid-template-columns: 1.4fr 1fr; gap: 28px; align-items: start;">
       
       <!-- Dish List (Clean White Card) -->
       <div id="dish-list-container" class="ui-card" style="padding: 16px 20px; display: flex; flex-direction: column; gap: 4px; max-height: calc(100vh - 280px); overflow-y: auto;">
         ${displayItems
-          .map((dish, idx) => {
-            const isVeg = (dish.dietaryFlags || []).includes('VEG') || (dish.dietaryFlags || []).includes('VEGAN');
-            const price = dish.formattedPrice || `₹${((dish.basePriceMinor || 0) / 100).toFixed(0)}`;
-            const isFirst = idx === 0;
+      .map((dish, idx) => {
+        const isVeg = (dish.dietaryFlags || []).includes('VEG') || (dish.dietaryFlags || []).includes('VEGAN');
+        const price = dish.formattedPrice || `₹${((dish.basePriceMinor || 0) / 100).toFixed(0)}`;
+        const isFirst = idx === 0;
 
-            const bgGradients = [
-              'linear-gradient(135deg, #F97316, #EA580C)',
-              'linear-gradient(135deg, #FBBF24, #D97706)',
-              'linear-gradient(135deg, #92400E, #78350F)',
-              'linear-gradient(135deg, #F59E0B, #B45309)',
-              'linear-gradient(135deg, #10B981, #059669)',
-              'linear-gradient(135deg, #EF4444, #B91C1C)',
-              'linear-gradient(135deg, #3B82F6, #1D4ED8)',
-              'linear-gradient(135deg, #8B5CF6, #6D28D9)',
-            ];
-            const thumbBg = bgGradients[idx % bgGradients.length];
+        const bgGradients = [
+          'linear-gradient(135deg, #F97316, #EA580C)',
+          'linear-gradient(135deg, #FBBF24, #D97706)',
+          'linear-gradient(135deg, #92400E, #78350F)',
+          'linear-gradient(135deg, #F59E0B, #B45309)',
+          'linear-gradient(135deg, #10B981, #059669)',
+          'linear-gradient(135deg, #EF4444, #B91C1C)',
+          'linear-gradient(135deg, #3B82F6, #1D4ED8)',
+          'linear-gradient(135deg, #8B5CF6, #6D28D9)',
+        ];
+        const thumbBg = bgGradients[idx % bgGradients.length];
 
-            return `
+        return `
             <div 
               class="dish-row ${isFirst ? 'active-dish' : ''}" 
               data-dish-id="${dish.id}" 
@@ -136,11 +136,10 @@ export function renderMenuWorkspace(
               data-dish-desc="${escapeHtml(dish.description || '')}"
               data-dish-hsn="${escapeHtml(dish.hsnCode || '996331')}"
               onclick="selectDishRow(this)" 
-              style="display: flex; align-items: center; justify-content: space-between; padding: 16px; border-radius: 18px; cursor: pointer; transition: all 120ms ease; ${
-                isFirst
-                  ? 'background: #EFF6FF; border: 1.5px solid #BFDBFE;'
-                  : 'background: #FFFFFF; border: 1px solid transparent;'
-              }"
+              style="display: flex; align-items: center; justify-content: space-between; padding: 16px; border-radius: 18px; cursor: pointer; transition: all 120ms ease; ${isFirst
+            ? 'background: #EFF6FF; border: 1.5px solid #BFDBFE;'
+            : 'background: #FFFFFF; border: 1px solid transparent;'
+          }"
             >
               <div style="display: flex; align-items: center; gap: 16px;">
                 <div style="width: 48px; height: 48px; border-radius: 14px; background: ${thumbBg}; flex-shrink: 0; box-shadow: inset 0 2px 4px rgba(255,255,255,0.3); display: flex; align-items: center; justify-content: center; color: #FFFFFF; font-weight: 800; font-size: 16px;">
@@ -160,25 +159,22 @@ export function renderMenuWorkspace(
                 <span style="font-size: 15px; font-weight: 700; color: #0F172A;">
                   ${price}
                 </span>
-                ${
-                  dish.isPopular
-                    ? `<span class="badge badge-sky" style="border-radius: 9999px; padding: 3px 10px; font-size: 11px;">Popular</span>`
-                    : ''
-                }
-                ${
-                  dish.isSignature
-                    ? `<span class="badge badge-sky" style="border-radius: 9999px; padding: 3px 10px; font-size: 11px;">Signature</span>`
-                    : ''
-                }
-                ${
-                  dish.isArchived
-                    ? `<span class="badge badge-crimson" style="border-radius: 9999px; padding: 3px 10px; font-size: 11px;">Hidden</span>`
-                    : ''
-                }
+                ${dish.isPopular
+            ? `<span class="badge badge-sky" style="border-radius: 9999px; padding: 3px 10px; font-size: 11px;">Popular</span>`
+            : ''
+          }
+                ${dish.isSignature
+            ? `<span class="badge badge-sky" style="border-radius: 9999px; padding: 3px 10px; font-size: 11px;">Signature</span>`
+            : ''
+          }
+                ${dish.isArchived
+            ? `<span class="badge badge-crimson" style="border-radius: 9999px; padding: 3px 10px; font-size: 11px;">Hidden</span>`
+            : ''
+          }
               </div>
             </div>`;
-          })
-          .join('')}
+      })
+      .join('')}
       </div>
 
       <!-- Right: Slide-out Dish Editor Drawer (Matching R4 mockup) -->
@@ -257,15 +253,15 @@ export function renderMenuWorkspace(
         </div>
 
         <!-- Kitchen Station, Prep Time, Food Type -->
-        <div style="display: grid; grid-template-columns: 1.2fr 1fr 1fr; gap: 12px;">
+        <div class="grid-3-equal" style="display: grid; grid-template-columns: 1.2fr 1fr 1fr; gap: 12px;">
           <div>
             <label style="display: block; font-size: 12px; font-weight: 600; color: #64748B; margin-bottom: 6px;">Kitchen station</label>
             <select id="edit-dish-station" style="width: 100%; border: 1px solid #E2E8F0; border-radius: 12px; padding: 9px 12px; font-size: 12px; font-weight: 600; color: #0F172A; background: #FFFFFF; outline: none; box-sizing: border-box;">
-              <option value="KITCHEN" selected>Kitchen</option>
-              <option value="GRILL">Grill / Tandoor</option>
-              <option value="TANDOOR">Tandoor Clay</option>
-              <option value="DESSERT">Dessert</option>
-              <option value="BEVERAGE">Beverage & Bar</option>
+              <option value="KITCHEN"${!displayItems[0]?.station || String(displayItems[0]?.station) === 'KITCHEN' ? ' selected' : ''}>Kitchen</option>
+              <option value="GRILL"${String(displayItems[0]?.station) === 'GRILL' ? ' selected' : ''}>Grill / Tandoor</option>
+              <option value="TANDOOR"${displayItems[0]?.station === 'TANDOOR' ? ' selected' : ''}>Tandoor Clay</option>
+              <option value="DESSERT"${displayItems[0]?.station === 'DESSERT' ? ' selected' : ''}>Dessert</option>
+              <option value="BEVERAGE"${String(displayItems[0]?.station) === 'BEVERAGE' || displayItems[0]?.station === 'BAR' ? ' selected' : ''}>Beverage &amp; Bar</option>
             </select>
           </div>
           <div>
@@ -280,9 +276,9 @@ export function renderMenuWorkspace(
           <div>
             <label style="display: block; font-size: 12px; font-weight: 600; color: #64748B; margin-bottom: 6px;">Food type</label>
             <select id="edit-dish-diet" style="width: 100%; border: 1px solid #E2E8F0; border-radius: 12px; padding: 9px 12px; font-size: 12px; font-weight: 600; color: #0F172A; background: #FFFFFF; outline: none; box-sizing: border-box;">
-              <option value="NON_VEG" selected>Non-veg</option>
-              <option value="VEG">Veg</option>
-              <option value="EGG">Egg</option>
+              <option value="NON_VEG"${(displayItems[0] as any)?.dietaryType === 'NON_VEG' || (!((displayItems[0]?.dietaryFlags || []).includes('VEG') || (displayItems[0]?.dietaryFlags || []).includes('VEGAN')) && (displayItems[0]?.dietaryFlags || []).includes('NON_VEG')) ? ' selected' : ''}>Non-veg</option>
+              <option value="VEG"${((displayItems[0]?.dietaryFlags || []).includes('VEG') || (displayItems[0]?.dietaryFlags || []).includes('VEGAN') || !(displayItems[0] as any)?.dietaryType) && !((displayItems[0]?.dietaryFlags || []).includes('NON_VEG')) ? ' selected' : ''}>Veg</option>
+              <option value="EGG"${(displayItems[0] as any)?.dietaryType === 'EGG' || (displayItems[0]?.dietaryFlags as string[] || []).includes('EGG') ? ' selected' : ''}>Egg</option>
             </select>
           </div>
         </div>
@@ -291,7 +287,7 @@ export function renderMenuWorkspace(
         <div>
           <label style="display: block; font-size: 12px; font-weight: 600; color: #64748B; margin-bottom: 6px;">Category</label>
           <select id="edit-dish-category" style="width: 100%; border: 1px solid #E2E8F0; border-radius: 12px; padding: 9px 12px; font-size: 12px; font-weight: 600; color: #0F172A; background: #FFFFFF; outline: none; box-sizing: border-box;">
-            ${uniqueCategories.map((c) => `<option value="${escapeHtml(c)}">${escapeHtml(c)}</option>`).join('')}
+            ${uniqueCategories.map((c) => `<option value="${escapeHtml(c)}"${displayItems[0]?.category === c ? ' selected' : ''}>${escapeHtml(c)}</option>`).join('')}
           </select>
         </div>
 
@@ -311,8 +307,8 @@ export function renderMenuWorkspace(
           <label style="display: block; font-size: 12px; font-weight: 600; color: #64748B; margin-bottom: 8px;">Branches Availability</label>
           <div style="display: flex; flex-direction: column; gap: 8px;">
             ${branchList
-              .map(
-                (b) => `
+      .map(
+        (b) => `
               <div style="display: flex; justify-content: space-between; align-items: center;">
                 <div style="display: flex; align-items: center; gap: 10px;">
                   <input type="checkbox" checked style="accent-color: #10B981; width: 16px; height: 16px;">
@@ -320,8 +316,8 @@ export function renderMenuWorkspace(
                 </div>
                 <span style="font-size: 13px; font-weight: 700; color: #64748B;">Standard price</span>
               </div>`
-              )
-              .join('')}
+      )
+      .join('')}
           </div>
         </div>
 
@@ -389,6 +385,17 @@ export function renderMenuWorkspace(
     }
     .dish-row:hover {
       background: #F8FAFC !important;
+    }
+    @media (max-width: 960px) {
+      .menu-container {
+        padding: 16px 16px 88px 16px !important;
+      }
+      .menu-split-grid {
+        grid-template-columns: 1fr !important;
+      }
+      #dish-list-container {
+        max-height: none !important;
+      }
     }
   </style>
 

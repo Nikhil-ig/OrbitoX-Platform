@@ -20,15 +20,11 @@ export function renderHostStand(
   const branchName = currentBranch ? currentBranch.name : 'Main Dining';
 
   const totalTables = tables.length;
-  const occupiedTables = tables.filter((t) => t.activeSessionId).length;
+  const occupiedTables = tables.filter((t) => Boolean(t.activeSessionId) || t.status === 'OCCUPIED' || t.status === 'BILL_REQUESTED').length;
   const availableTables = totalTables - occupiedTables;
 
-  // Mock initial waitlist
-  const waitlist = [
-    { id: 'w1', name: 'Mehta Party', covers: 4, waitMin: 14, phone: '+91 98450 11223' },
-    { id: 'w2', name: 'Dr. Kapoor', covers: 2, waitMin: 8, phone: '+91 98110 44556' },
-    { id: 'w3', name: 'Verma Family', covers: 6, waitMin: 5, phone: '+91 97220 99887' },
-  ];
+  // Active session waitlist state (can be appended live via Walk-in Party modal)
+  const waitlist: Array<{ id: string; name: string; covers: number; waitMin: number; phone?: string }> = [];
 
   return `
   <div class="host-workspace">
@@ -36,7 +32,7 @@ export function renderHostStand(
     <div class="host-header-card">
       <div class="host-header-info">
         <div class="host-brand-title">Host Stand · ${branchName}</div>
-        <div class="host-time-stat">Dinner Shift · Live Floor Synchronized</div>
+        <div class="host-time-stat">${tenantName} · Live Floor Synchronized</div>
       </div>
 
       <div class="host-metrics-strip">
@@ -49,12 +45,12 @@ export function renderHostStand(
           <span class="metric-lbl">Seated</span>
         </div>
         <div class="host-metric-pill">
-          <span class="metric-val waitlist">${waitlist.length}</span>
+          <span class="metric-val waitlist" id="waitlist-count">${waitlist.length}</span>
           <span class="metric-lbl">Waitlist</span>
         </div>
       </div>
 
-      <button class="btn-walkin" onclick="openWalkinModal()">
+      <button type="button" class="btn-walkin" onclick="openWalkinModal()">
         + Walk-in Party
       </button>
     </div>
@@ -74,27 +70,33 @@ export function renderHostStand(
 
         <div class="host-table-nodes-grid" id="host-table-nodes">
           ${tables
-      .map((t, idx) => {
-        const isOccupied = Boolean(t.activeSessionId) || idx % 3 === 0;
-        const isBillAsked = idx === 4;
+      .map((t) => {
+        const isOccupied = Boolean(t.activeSessionId) || t.status === 'OCCUPIED';
+        const isBillAsked = t.status === 'BILL_REQUESTED';
         let statusClass = 'available';
         let statusLabel = 'Available';
+        let filterStatus = 'AVAILABLE';
 
         if (isBillAsked) {
           statusClass = 'bill-asked';
           statusLabel = 'Bill Asked';
+          filterStatus = 'SEATED';
         } else if (isOccupied) {
           statusClass = 'seated';
-          statusLabel = 'Seated (42m)';
+          statusLabel = 'Seated';
+          filterStatus = 'SEATED';
         }
+
+        const displayNum = String(t.number || '').startsWith('T-') ? t.number : `T-${t.number}`;
 
         return `
               <div
                 class="host-table-node ${statusClass}"
-                data-status="${isOccupied ? 'SEATED' : 'AVAILABLE'}"
-                onclick="selectTable('${t.number}', '${statusLabel}')"
+                data-table-number="${t.number}"
+                data-status="${filterStatus}"
+                onclick="selectTable('${t.number}', '${statusLabel}', this)"
               >
-                <div class="table-node-num">T-${t.number}</div>
+                <div class="table-node-num">${displayNum}</div>
                 <div class="table-node-cap">${t.capacity} covers</div>
                 <div class="table-node-status-badge">${statusLabel}</div>
               </div>
@@ -107,26 +109,14 @@ export function renderHostStand(
       <!-- Active Waitlist Panel -->
       <div class="host-waitlist-card">
         <div class="deck-title-bar">
-          <span class="deck-heading">Active Waitlist (${waitlist.length})</span>
-          <span class="waitlist-avg-time">Avg. wait: 11m</span>
+          <span class="deck-heading">Walk-in Queue</span>
+          <span class="waitlist-avg-time" id="selected-table-indicator">Select an available table</span>
         </div>
 
         <div class="waitlist-rows-list" id="waitlist-container">
-          ${waitlist
-      .map(
-        (w) => `
-            <div class="waitlist-party-row" id="row-${w.id}">
-              <div class="party-info">
-                <div class="party-name">${w.name}</div>
-                <div class="party-meta">${w.covers} covers · Waiting ${w.waitMin} min</div>
-              </div>
-              <button class="btn-seat-now" onclick="seatParty('${w.id}', '${w.name}', ${w.covers})">
-                Seat Now
-              </button>
-            </div>
-          `
-      )
-      .join('')}
+          <div id="waitlist-empty" style="text-align: center; padding: 28px 14px; color: var(--color-secondary); font-size: 13px; line-height: 1.5;">
+            No parties waiting. Tap <strong>+ Walk-in Party</strong> to register guests or tap an available table to seat immediately.
+          </div>
         </div>
       </div>
     </div>
@@ -139,39 +129,58 @@ export function renderHostStand(
       gap: 20px;
       max-width: 1200px;
       margin: 0 auto;
+      background: #0D1017;
+      border-radius: 28px;
+      padding: 24px;
+      color: #F8FAFC;
+      border: 1px solid rgba(255, 255, 255, 0.08);
     }
 
     .host-header-card {
-      background: var(--color-card);
-      border: 1px solid rgba(0, 0, 0, 0.06);
+      background: #141923;
+      border: 1px solid rgba(255, 255, 255, 0.08);
       border-radius: 24px;
       padding: 18px 24px;
       display: flex;
       align-items: center;
       justify-content: space-between;
-      box-shadow: 0 4px 16px rgba(0, 0, 0, 0.02);
+      flex-wrap: wrap;
+      gap: 12px;
+    }
+
+    .host-metrics-strip {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+
+    .host-grid-deck {
+      display: grid;
+      grid-template-columns: 1fr 380px;
+      gap: 20px;
+    }
+
+    @media (max-width: 900px) {
+      .host-grid-deck {
+        grid-template-columns: 1fr;
+      }
     }
 
     .host-brand-title {
       font-size: 18px;
       font-weight: 800;
-      color: var(--color-heading);
+      color: #F8FAFC;
     }
 
     .host-time-stat {
       font-size: 12px;
-      color: var(--color-secondary);
+      color: #94A3B8;
       margin-top: 2px;
     }
 
-    .host-metrics-strip {
-      display: flex;
-      gap: 12px;
-    }
-
     .host-metric-pill {
-      background: var(--color-canvas);
-      border: 1px solid rgba(0, 0, 0, 0.06);
+      background: #0D1017;
+      border: 1px solid rgba(255, 255, 255, 0.08);
       border-radius: 999px;
       padding: 6px 16px;
       display: flex;
@@ -184,27 +193,19 @@ export function renderHostStand(
       font-weight: 800;
     }
 
-    .metric-val.available {
-      color: #10B981;
-    }
-
-    .metric-val.occupied {
-      color: #3B82F6;
-    }
-
-    .metric-val.waitlist {
-      color: #F59E0B;
-    }
+    .metric-val.available { color: #34D399; }
+    .metric-val.occupied { color: #60A5FA; }
+    .metric-val.waitlist { color: #FBBF24; }
 
     .metric-lbl {
       font-size: 11px;
       font-weight: 700;
-      color: var(--color-secondary);
+      color: #94A3B8;
       text-transform: uppercase;
     }
 
     .btn-walkin {
-      background: #000;
+      background: #2563EB;
       color: #FFF;
       border: none;
       border-radius: 999px;
@@ -212,21 +213,14 @@ export function renderHostStand(
       font-size: 12px;
       font-weight: 800;
       cursor: pointer;
-      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.12);
-    }
-
-    .host-grid-deck {
-      display: grid;
-      grid-template-columns: 1fr 380px;
-      gap: 20px;
+      box-shadow: 0 4px 16px rgba(37, 99, 235, 0.35);
     }
 
     .host-tables-card, .host-waitlist-card {
-      background: var(--color-card);
-      border: 1px solid rgba(0, 0, 0, 0.06);
+      background: #141923;
+      border: 1px solid rgba(255, 255, 255, 0.08);
       border-radius: 24px;
       padding: 20px;
-      box-shadow: 0 4px 16px rgba(0, 0, 0, 0.02);
     }
 
     .deck-title-bar {
@@ -235,13 +229,15 @@ export function renderHostStand(
       align-items: center;
       margin-bottom: 16px;
       padding-bottom: 12px;
-      border-bottom: 1px solid rgba(0, 0, 0, 0.06);
+      border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+      flex-wrap: wrap;
+      gap: 8px;
     }
 
     .deck-heading {
       font-size: 14px;
       font-weight: 800;
-      color: var(--color-heading);
+      color: #F8FAFC;
     }
 
     .filter-pills {
@@ -250,65 +246,67 @@ export function renderHostStand(
     }
 
     .pill-mini {
-      background: var(--color-canvas);
-      border: 1px solid rgba(0, 0, 0, 0.06);
+      background: #0D1017;
+      border: 1px solid rgba(255, 255, 255, 0.1);
       border-radius: 999px;
       padding: 4px 10px;
       font-size: 11px;
       font-weight: 700;
-      color: var(--color-secondary);
+      color: #94A3B8;
       cursor: pointer;
     }
 
     .pill-mini.active {
-      background: #000;
-      color: #FFF;
+      background: #FFFFFF;
+      color: #0F172A;
     }
 
     .host-table-nodes-grid {
       display: grid;
-      grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
+      grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
       gap: 12px;
       max-height: 560px;
       overflow-y: auto;
     }
 
     .host-table-node {
-      border-radius: 16px;
+      border-radius: 18px;
       padding: 14px 12px;
       display: flex;
       flex-direction: column;
       align-items: center;
       gap: 4px;
       cursor: pointer;
-      border: 1px solid;
+      border: 1.5px dashed rgba(52, 211, 153, 0.4);
+      background: #0D1017;
       transition: all 140ms ease;
     }
 
     .host-table-node.available {
-      background: #F0FDF4;
-      border-color: #DCFCE7;
+      background: rgba(16, 185, 129, 0.06);
+      border: 1.5px dashed rgba(52, 211, 153, 0.45);
     }
 
     .host-table-node.seated {
-      background: #EFF6FF;
-      border-color: #DBEAFE;
+      background: #1D4ED8;
+      border: 1.5px solid #3B82F6;
+      box-shadow: 0 6px 20px rgba(37, 99, 235, 0.35);
     }
 
     .host-table-node.bill-asked {
-      background: #FFFBEB;
-      border-color: #FEF3C7;
+      background: rgba(245, 158, 11, 0.16);
+      border: 1.5px solid #F59E0B;
     }
 
     .table-node-num {
       font-size: 15px;
       font-weight: 800;
-      color: var(--color-heading);
+      color: #F8FAFC;
     }
 
     .table-node-cap {
       font-size: 11px;
-      color: var(--color-secondary);
+      color: #CBD5E1;
     }
 
     .table-node-status-badge {
@@ -321,24 +319,24 @@ export function renderHostStand(
     }
 
     .host-table-node.available .table-node-status-badge {
-      background: #DCFCE7;
-      color: #166534;
+      background: rgba(16, 185, 129, 0.18);
+      color: #34D399;
     }
 
     .host-table-node.seated .table-node-status-badge {
-      background: #DBEAFE;
-      color: #1E40AF;
+      background: rgba(255, 255, 255, 0.18);
+      color: #FFFFFF;
     }
 
     .host-table-node.bill-asked .table-node-status-badge {
-      background: #FEF3C7;
-      color: #92400E;
+      background: rgba(245, 158, 11, 0.25);
+      color: #FCD34D;
     }
 
     .waitlist-avg-time {
       font-size: 11px;
       font-weight: 700;
-      color: var(--color-secondary);
+      color: #94A3B8;
     }
 
     .waitlist-rows-list {
@@ -348,8 +346,8 @@ export function renderHostStand(
     }
 
     .waitlist-party-row {
-      background: var(--color-canvas);
-      border: 1px solid rgba(0, 0, 0, 0.05);
+      background: #0D1017;
+      border: 1px solid rgba(255, 255, 255, 0.08);
       border-radius: 16px;
       padding: 14px;
       display: flex;
@@ -360,17 +358,17 @@ export function renderHostStand(
     .party-name {
       font-size: 13px;
       font-weight: 800;
-      color: var(--color-heading);
+      color: #F8FAFC;
     }
 
     .party-meta {
       font-size: 11px;
-      color: var(--color-secondary);
+      color: #94A3B8;
       margin-top: 2px;
     }
 
     .btn-seat-now {
-      background: #000;
+      background: #2563EB;
       color: #FFF;
       border: none;
       border-radius: 999px;
@@ -378,11 +376,6 @@ export function renderHostStand(
       font-size: 11px;
       font-weight: 800;
       cursor: pointer;
-      transition: all 120ms ease;
-    }
-
-    .btn-seat-now:hover {
-      background: #3B82F6;
     }
   </style>
 
@@ -412,9 +405,11 @@ export function renderHostStand(
   </div>
 
   <script>
+    let selectedHostTable = '';
+
     function filterHostTables(status, el) {
       document.querySelectorAll('.pill-mini').forEach((p) => p.classList.remove('active'));
-      el.classList.add('active');
+      if (el) el.classList.add('active');
 
       const nodes = document.querySelectorAll('.host-table-node');
       nodes.forEach((n) => {
@@ -426,50 +421,116 @@ export function renderHostStand(
       });
     }
 
-    function selectTable(num, status) {
-      window.showToast('Table T-' + num + ' is ' + status + '. Tap to manage covers or view docket.', 'info');
+    function selectTable(num, status, el) {
+      selectedHostTable = num;
+      document.querySelectorAll('.host-table-node').forEach((n) => {
+        n.style.outline = 'none';
+      });
+      if (el) {
+        el.style.outline = '2px solid #0F172A';
+      }
+      const ind = document.getElementById('selected-table-indicator');
+      if (ind) {
+        ind.textContent = 'Selected: ' + num + ' (' + status + ')';
+      }
+      if (window.showToast) {
+        window.showToast(num + ' is ' + status + '. Select a walk-in party or Seat Now.', 'info');
+      }
     }
 
-    function seatParty(id, name, covers) {
-      const row = document.getElementById('row-' + id);
-      if (row) row.style.opacity = '0.3';
-      window.showToast(name + ' (' + covers + ' covers) seated successfully! Table allocated.', 'success');
+    async function seatParty(id, name, covers) {
+      const targetTable =
+        selectedHostTable ||
+        document.querySelector('.host-table-node[data-status="AVAILABLE"]')?.getAttribute('data-table-number');
+      if (!targetTable) {
+        if (window.showToast) window.showToast('No available table found to seat party.', 'error');
+        return;
+      }
+      try {
+        await window.apiFetch('/api/restaurant/sessions/join', {
+          method: 'POST',
+          body: { tableNumber: targetTable, guestName: name }
+        });
+        const row = document.getElementById('row-' + id);
+        if (row) row.remove();
+        const cntEl = document.getElementById('waitlist-count');
+        if (cntEl) cntEl.textContent = String(document.querySelectorAll('.waitlist-party-row').length);
+        if (window.showToast) {
+          window.showToast(name + ' (' + covers + ' covers) seated at ' + targetTable, 'success');
+        }
+        setTimeout(() => window.location.reload(), 600);
+      } catch (err) {
+        if (window.showToast) {
+          window.showToast((err && err.message) || 'Unable to seat party right now.', 'error');
+        }
+      }
     }
 
     function openWalkinModal() {
-      document.getElementById('walkin-name').value = '';
-      document.getElementById('walkin-covers').value = '4';
+      const nameInput = document.getElementById('walkin-name');
+      const coversInput = document.getElementById('walkin-covers');
+      if (nameInput) nameInput.value = '';
+      if (coversInput) coversInput.value = '4';
       const modal = document.getElementById('walkin-modal');
-      modal.style.display = 'flex';
-      setTimeout(() => document.getElementById('walkin-name').focus(), 50);
+      if (modal) modal.style.display = 'flex';
+      setTimeout(() => nameInput && nameInput.focus(), 50);
     }
 
     function closeWalkinModal() {
-      document.getElementById('walkin-modal').style.display = 'none';
+      const modal = document.getElementById('walkin-modal');
+      if (modal) modal.style.display = 'none';
     }
 
     function submitWalkin(e) {
       e.preventDefault();
-      const name = document.getElementById('walkin-name').value.trim();
-      const covers = document.getElementById('walkin-covers').value.trim();
+      const nameEl = document.getElementById('walkin-name');
+      const coversEl = document.getElementById('walkin-covers');
+      const name = nameEl ? nameEl.value.trim() : '';
+      const covers = coversEl ? coversEl.value.trim() : '';
       if (!name || !covers) return;
 
       const c = document.getElementById('waitlist-container');
+      const emptyEl = document.getElementById('waitlist-empty');
+      if (emptyEl) emptyEl.style.display = 'none';
+
       if (c) {
+        const partyId = 'w_' + Date.now();
         const newRow = document.createElement('div');
         newRow.className = 'waitlist-party-row';
-        newRow.innerHTML =
-          '<div class="party-info">' +
-            '<div class="party-name">' + name + '</div>' +
-            '<div class="party-meta">' + covers + ' covers · Waiting just now</div>' +
-          '</div>' +
-          '<button class="btn-seat-now" onclick="seatParty(\'new_' + Date.now() + '\', \'' + name + '\', ' + covers + ')">' +
-            'Seat Now' +
-          '</button>';
+        newRow.id = 'row-' + partyId;
+
+        const info = document.createElement('div');
+        info.className = 'party-info';
+
+        const pName = document.createElement('div');
+        pName.className = 'party-name';
+        pName.textContent = name;
+
+        const pMeta = document.createElement('div');
+        pMeta.className = 'party-meta';
+        pMeta.textContent = covers + ' covers · Waiting just now';
+
+        info.appendChild(pName);
+        info.appendChild(pMeta);
+
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'btn-seat-now';
+        btn.textContent = 'Seat Now';
+        btn.addEventListener('click', () => seatParty(partyId, name, Number(covers)));
+
+        newRow.appendChild(info);
+        newRow.appendChild(btn);
         c.prepend(newRow);
       }
+
+      const cntEl = document.getElementById('waitlist-count');
+      if (cntEl) cntEl.textContent = String(document.querySelectorAll('.waitlist-party-row').length);
+
       closeWalkinModal();
-      window.showToast('Added ' + name + ' to waitlist.', 'success');
+      if (window.showToast) {
+        window.showToast('Added ' + name + ' to walk-in queue.', 'success');
+      }
     }
   </script>
   `;
