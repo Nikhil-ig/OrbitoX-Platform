@@ -201,9 +201,9 @@ gunzip -c /var/backups/orbitox/restaurant-os/restaurantos_db_full_YYYYMMDD_HHMMS
 ### Step 4.6: Re-validate System & Restart Applications
 1. Run the catalog safety inventory script to prove catalog, role, and RLS integrity:
    ```bash
-   cd /opt/orbitox/apps/platform
-   APP_DATABASE_URL="postgresql://orbitox_runtime:${ORBITOX_RUNTIME_PASSWORD}@127.0.0.1:5432/orbitox_staging" \
-     node scripts/ops/run-staging-inventory.js
+   docker compose -f /opt/orbitox/infra/docker/docker-compose.staging.yml run --rm --no-deps \
+     -e APP_DATABASE_URL="postgresql://orbitox_runtime:${ORBITOX_RUNTIME_PASSWORD}@platform-db:5432/orbitox_staging" \
+     platform node scripts/ops/run-staging-inventory.js
    ```
 2. Restart application containers:
    ```bash

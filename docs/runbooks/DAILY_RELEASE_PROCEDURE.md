@@ -240,9 +240,10 @@ echo "✅ All service health endpoints responded HTTP 200 OK."
 Run the strictly read-only catalog safety inventory under `orbitox_runtime`. This proves that role security, RLS enforcement, table ownership, audit log write-only ACLs, and partition boundaries are intact:
 
 ```bash
-cd /opt/orbitox/apps/platform
+cd /opt/orbitox/infra/docker
 
-APP_DATABASE_URL="postgresql://orbitox_runtime:${ORBITOX_RUNTIME_PASSWORD}@127.0.0.1:5432/orbitox_staging" \
+# Run inventory engine inside the platform container:
+docker compose -f docker-compose.staging.yml exec -T platform \
   node scripts/ops/run-staging-inventory.js
 ```
 
@@ -349,8 +350,7 @@ docker exec orbitox_staging_caddy caddy reload --config /etc/caddy/Caddyfile
 curl -fsS https://staging.orbitox.io/api/health
 curl -fsS https://ros.staging.orbitox.io/healthz
 
-cd /opt/orbitox/apps/platform
-APP_DATABASE_URL="postgresql://orbitox_runtime:${ORBITOX_RUNTIME_PASSWORD}@127.0.0.1:5432/orbitox_staging" \
+docker compose -f /opt/orbitox/infra/docker/docker-compose.staging.yml exec -T platform \
   node scripts/ops/run-staging-inventory.js
 
 echo "✅ Emergency rollback completed successfully. Incident report required."

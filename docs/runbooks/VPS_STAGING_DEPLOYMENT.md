@@ -191,11 +191,18 @@ Once the Platform database has been migrated and services are healthy, execute t
 
 ### Execution Procedure:
 ```bash
-cd /opt/orbitox/apps/platform
+cd /opt/orbitox/infra/docker
 
-# Supply the runtime connection URL to the inventory script
-APP_DATABASE_URL="postgresql://orbitox_runtime:${ORBITOX_RUNTIME_PASSWORD}@127.0.0.1:5432/orbitox_staging" \
+# Execute within the platform container (which reaches platform-db over orbitox_platform_net)
+docker compose -f docker-compose.staging.yml exec -T platform \
   node scripts/ops/run-staging-inventory.js
+```
+
+Alternatively, from the host via a one-off run container:
+```bash
+docker compose -f docker-compose.staging.yml run --rm --no-deps \
+  -e APP_DATABASE_URL="postgresql://orbitox_runtime:${ORBITOX_RUNTIME_PASSWORD}@platform-db:5432/orbitox_staging" \
+  platform node scripts/ops/run-staging-inventory.js
 ```
 
 ### Expected Output Criteria:
