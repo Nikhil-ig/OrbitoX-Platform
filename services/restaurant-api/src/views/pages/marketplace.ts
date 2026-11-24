@@ -274,8 +274,16 @@ export function renderMarketplaceWorkspace(
   branchId = 'branch_ldh',
   branches?: BranchRecord[]
 ): string {
-  const activeTemplateId = activeBrand.activeTemplateId || templates[0]?.id;
-  const activeTemplate = templates.find((t) => t.id === activeTemplateId) || templates[0];
+  const activeTemplateId = activeBrand?.activeTemplateId || (templates && templates[0]?.id);
+  const activeTemplate: MarketplaceTemplate = (templates && templates.find((t) => t.id === activeTemplateId)) || (templates && templates[0]) || ({
+    id: 'saffron',
+    slug: 'saffron',
+    name: 'Saffron Heritage',
+    description: 'Warm terracotta & copper palette with fine-dining elegance and regional storytelling.',
+    category: 'Haute Gastronomy',
+    previewUrl: '/dine/table-1',
+    tags: ['Indian', 'Fine Casual', 'Regional'],
+  } as unknown as MarketplaceTemplate);
 
   const categories = [
     'All Concepts',

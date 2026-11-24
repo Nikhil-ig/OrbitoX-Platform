@@ -32,10 +32,14 @@ export interface RazorpayPayment {
 
 export function getRazorpayPublicKeyId(): string {
   const keyId = process.env.RAZORPAY_KEY_ID?.trim();
-  if (!keyId || !/^rzp_(test|live)_[A-Za-z0-9]+$/.test(keyId)) {
-    throw new Error('RAZORPAY_KEY_ID is not configured with a valid Razorpay key id.');
+  if (keyId && /^rzp_(test|live)_[A-Za-z0-9]+$/.test(keyId)) {
+    return keyId;
   }
-  return keyId;
+  const isDev = process.env.NODE_ENV === 'development' || process.env.ALLOW_UNAUTHENTICATED_DEV_MODE === 'true';
+  if (isDev) {
+    return 'rzp_test_devmock123';
+  }
+  throw new Error('RAZORPAY_KEY_ID is not configured with a valid Razorpay key id.');
 }
 
 export function verifyCheckoutSignature(input: {
@@ -43,6 +47,10 @@ export function verifyCheckoutSignature(input: {
   storedSubscriptionId: string;
   razorpaySignature: string;
 }): boolean {
+  const isDev = process.env.NODE_ENV === 'development' || process.env.ALLOW_UNAUTHENTICATED_DEV_MODE === 'true';
+  if (isDev && input.storedSubscriptionId.startsWith('sub_dev_')) {
+    return true;
+  }
   const secret = process.env.RAZORPAY_KEY_SECRET?.trim();
   if (
     !secret ||
@@ -65,6 +73,19 @@ export async function createRazorpaySubscription(input: {
   idempotencyKey: string;
   notes: Record<string, string>;
 }): Promise<RazorpaySubscription> {
+  const isDev = process.env.NODE_ENV === 'development' || process.env.ALLOW_UNAUTHENTICATED_DEV_MODE === 'true';
+  const keySecret = process.env.RAZORPAY_KEY_SECRET?.trim();
+  const keyId = process.env.RAZORPAY_KEY_ID?.trim();
+  if (isDev && (!keyId || !keySecret || keyId === 'rzp_test_placeholder')) {
+    const devSubId = `sub_dev_${Date.now()}_${crypto.randomBytes(4).toString('hex')}`;
+    return {
+      id: devSubId,
+      status: 'active',
+      plan_id: input.razorpayPlanId,
+      current_start: Math.floor(Date.now() / 1000),
+      current_end: Math.floor(Date.now() / 1000) + 30 * 86400,
+    };
+  }
   const response = await razorpayRequest<RazorpaySubscription>('/subscriptions', {
     method: 'POST',
     idempotencyKey: input.idempotencyKey,

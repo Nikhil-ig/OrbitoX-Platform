@@ -59,6 +59,7 @@ export async function POST(request: NextRequest) {
     {
       ok: true,
       user: result.user,
+      csrfToken: result.csrfToken,
     },
     { headers: noStore },
   );

@@ -80,7 +80,8 @@ export function F4WorkingPreviewStep({
   // Genuine optical QR code data URL
   const [qrCodeDataUrl, setQrCodeDataUrl] = useState<string>('');
 
-  const baseDomain = 'orbitox.io';
+  const isLocalDev = typeof window !== 'undefined' && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1');
+  const baseDomain = isLocalDev ? 'localhost:4010' : 'orbitox.io';
   const subdomainUrl = previewData?.restaurant?.subdomainUrl || `http://${slug}.${baseDomain}`;
   const sampleTable = previewData?.tables?.sampleTable || null;
   const dinerUrl = sampleTable?.dinerUrl || null;

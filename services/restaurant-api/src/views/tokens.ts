@@ -1,54 +1,92 @@
 /**
- * 🍷 RestaurantOS 2.0 Design Tokens
+ * 🪐 OrbitoX RestaurantOS Modern Design Tokens
  * ─────────────────────────────────────────────────────────────────────────────
- * Theme Direction: WARM NOIR / MODERN HOSPITALITY
- * Reference: Apple-level restraint + Linear-level information architecture +
- *            Editorial hospitality aesthetic + Serious operational ergonomics.
+ * Theme Direction: CLEAN MODERN HOSPITALITY / LIGHT FIRST (Apple/Linear Level)
+ * Based on high-fidelity designs from 'OrbitoX — new look concept-png':
+ * - R1 Today, Shared RestaurantOS sidebar, R2 Branches, R3 Floors, R4 Menu, etc.
  */
 
 export const RestaurantTokens = {
   colors: {
-    // Canvas & Layer Hierarchy
-    ink: '#0D0F10',          // Deepest canvas base
-    charcoal: '#151719',     // Shell sidebar, headers, secondary surfaces
-    elevated: '#1C1F21',     // Modals, inspectors, active toolbars, hover rows
-    surfaceHover: '#24282B', // Interactive hover state
-    surfaceBorder: 'rgba(255, 255, 255, 0.08)',
-    borderSubtle: 'rgba(255, 255, 255, 0.05)',
-    borderDefault: 'rgba(255, 255, 255, 0.10)',
-    borderStrong: 'rgba(255, 255, 255, 0.18)',
+    // Light Canvas & Surface Hierarchy
+    canvas: '#F4F5F7',         // Main background canvas (cool light grey)
+    canvasAlt: '#ECEEF2',      // Subtle canvas gradient
+    card: '#FFFFFF',           // Floating card surfaces
+    cardHover: '#FAFAFA',      // Card hover state
+    cardBorder: 'rgba(0, 0, 0, 0.06)',
+    cardBorderHover: 'rgba(0, 0, 0, 0.12)',
 
-    // Warm Hospitality Neutrals
-    linen: '#F3EEE5',        // Primary text, guest surfaces, warm white
-    stone: '#A8A196',        // Muted secondary text, micro-labels
-    muted: '#706B63',        // Timestamps, subtle borders, inactive tabs
+    // Primary Text & Content Hierarchy
+    heading: '#0F172A',        // Deepest slate / primary titles
+    body: '#1E293B',           // High-contrast readable body text
+    secondary: '#64748B',      // Metadata, labels, secondary info
+    tertiary: '#94A3B8',       // Subdued timestamps & helper text
+    border: '#E2E8F0',         // Default UI borders
+    borderSubtle: '#F1F5F9',   // Very light separators
 
-    // Restrained Functional Accents (Never oversaturated or sprayed everywhere)
-    copper: '#C86B3C',       // Primary action, warmth, focal attention (Ember)
-    copperHover: '#D87B4C',  // Hover state
-    copperSubtle: 'rgba(200, 107, 60, 0.12)',
-    copperBorder: 'rgba(200, 107, 60, 0.35)',
-    focusRing: 'rgba(200, 107, 60, 0.55)',
+    // Action Tokens
+    primaryPill: '#000000',    // Solid black primary CTA pill
+    primaryPillText: '#FFFFFF',
+    primaryPillHover: '#1E293B',
+    secondaryPill: '#FFFFFF',
+    secondaryPillText: '#0F172A',
+    secondaryPillBorder: '#E2E8F0',
+    secondaryPillHover: '#F8FAFC',
 
-    // Operational Semantic States
-    sage: '#5D9A7A',         // Success, Seated, Ready, Cooking on track
-    sageSubtle: 'rgba(93, 154, 122, 0.12)',
-    amber: '#D99A45',        // Attention required, Delayed, Bill requested
-    amberSubtle: 'rgba(217, 154, 69, 0.14)',
-    crimson: '#C95757',      // SLA breach, Voided, Danger, Urgent alert
-    crimsonSubtle: 'rgba(201, 87, 87, 0.15)',
-    sky: '#4A8BB2',          // Info, Drink / Bar station
-    skySubtle: 'rgba(74, 139, 178, 0.12)',
+    // Accents & Semantic Signals
+    orange: '#FB923C',         // Saffron / Brand accent (Masala House orange)
+    orangeDark: '#EA580C',
+    orangeSubtle: '#FFF7ED',
+    
+    blue: '#2563EB',           // Seated tables / Active / In-progress blue
+    blueLight: '#DBEAFE',
+    blueSubtle: '#EFF6FF',
+    
+    green: '#10B981',          // Success / Open now / Paid green
+    greenLight: '#D1FAE5',
+    greenSubtle: '#ECFDF5',
 
-    // Inactive & Disabled states
-    disabled: '#5A554E',
-    disabledBg: 'rgba(255, 255, 255, 0.03)',
+    amber: '#F59E0B',          // Bill asked / Needs attention amber
+    amberLight: '#FEF3C7',
+    amberSubtle: '#FFFBEB',
+
+    red: '#EF4444',            // Urgent / Calling / Locked out / Overdue red
+    redLight: '#FEE2E2',
+    redSubtle: '#FEF2F2',
+
+    // Compatibility Mappings for Existing Views
+    ink: '#F4F5F7',            // Light canvas
+    charcoal: '#FFFFFF',       // Card surface
+    elevated: '#FFFFFF',       // Floating panels
+    surfaceHover: '#F1F5F9',   // Hover state
+    surfaceBorder: 'rgba(0, 0, 0, 0.06)',
+    borderDefault: '#E2E8F0',
+    borderStrong: '#CBD5E1',
+
+    linen: '#0F172A',          // Primary text
+    stone: '#64748B',          // Secondary text
+    muted: '#94A3B8',          // Muted text
+    disabled: '#94A3B8',
+    disabledBg: '#F1F5F9',
+
+    copper: '#000000',         // Primary action
+    copperHover: '#1E293B',
+    copperSubtle: 'rgba(0, 0, 0, 0.04)',
+    copperBorder: 'rgba(0, 0, 0, 0.12)',
+    focusRing: 'rgba(37, 99, 235, 0.35)',
+
+    sage: '#10B981',
+    sageSubtle: '#ECFDF5',
+    crimson: '#EF4444',
+    crimsonSubtle: '#FEF2F2',
+    sky: '#2563EB',
+    skySubtle: '#EFF6FF',
   },
 
   typography: {
-    staffFont: 'system-ui, -apple-system, BlinkMacSystemFont, "Geist", "Inter", "Segoe UI", sans-serif',
-    guestHeadFont: '"Playfair Display", "Cormorant Garamond", Georgia, "Times New Roman", serif',
-    guestBodyFont: 'system-ui, -apple-system, BlinkMacSystemFont, "Inter", sans-serif',
+    staffFont: 'system-ui, -apple-system, BlinkMacSystemFont, "Plus Jakarta Sans", "Inter", "Segoe UI", sans-serif',
+    guestHeadFont: '"Plus Jakarta Sans", "Inter", system-ui, sans-serif',
+    guestBodyFont: 'system-ui, -apple-system, BlinkMacSystemFont, "Plus Jakarta Sans", "Inter", sans-serif',
     monoFont: 'ui-monospace, "SF Mono", Menlo, Monaco, Consolas, monospace',
     sizes: {
       micro: '11px',
@@ -83,20 +121,22 @@ export const RestaurantTokens = {
 
   radii: {
     xs: '4px',
-    sm: '6px',
-    md: '8px',
-    lg: '12px',
-    xl: '16px',
+    sm: '8px',
+    md: '12px',
+    lg: '16px',
+    xl: '20px',
+    '2xl': '24px',
+    '3xl': '28px',
     pill: '9999px',
   },
 
   shadows: {
     none: 'none',
-    subtle: '0 1px 3px rgba(0, 0, 0, 0.4)',
-    panel: '0 4px 16px rgba(0, 0, 0, 0.55)',
-    inspector: '-4px 0 24px rgba(0, 0, 0, 0.65)',
-    modal: '0 24px 48px -12px rgba(0, 0, 0, 0.85)',
-    glowCopper: '0 0 16px rgba(200, 107, 60, 0.35)',
+    subtle: '0 1px 3px rgba(0, 0, 0, 0.05)',
+    panel: '0 4px 20px -2px rgba(0, 0, 0, 0.05), 0 2px 6px -1px rgba(0, 0, 0, 0.02)',
+    inspector: '-4px 0 24px rgba(0, 0, 0, 0.08)',
+    modal: '0 20px 48px -12px rgba(0, 0, 0, 0.15)',
+    glowBlue: '0 0 16px rgba(37, 99, 235, 0.25)',
   },
 
   touch: {

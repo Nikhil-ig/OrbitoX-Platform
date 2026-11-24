@@ -34,8 +34,8 @@ export const POST = withCustomerAuth<RouteContext>(async (request, session, cont
   }
   const tenantId = body.tenantId;
   const razorpayPlanId = body.razorpayPlanId;
-  const scope = parseBillingTenantScope(tenantId);
-  if (!scope || scope.organizationId !== organizationId) {
+  const scope = parseBillingTenantScope(tenantId, organizationId);
+  if (!scope || (scope.organizationId && scope.organizationId !== organizationId)) {
     return errorResponse(404, 'TENANT_NOT_FOUND');
   }
 
@@ -44,11 +44,13 @@ export const POST = withCustomerAuth<RouteContext>(async (request, session, cont
     .digest('hex');
   try {
     const checkout = await prisma.$transaction(async (tx) => {
-      await tx.$queryRaw`SELECT set_config('app.current_tenant_id', ${tenantId}, true)`;
       const verifiedScope = await tenantBelongsToOrganization(tx, tenantId, organizationId);
       if (!verifiedScope) return { error: 'TENANT_NOT_FOUND' as const };
 
-      const plan = await tx.billingPlanMap.findFirst({
+      const canonicalTenantId = verifiedScope.canonicalTenantId || tenantId;
+      await tx.$queryRaw`SELECT set_config('app.current_tenant_id', ${canonicalTenantId}, true)`;
+
+      let plan = await tx.billingPlanMap.findFirst({
         where: {
           OR: [
             { razorpayPlanId },
@@ -62,9 +64,25 @@ export const POST = withCustomerAuth<RouteContext>(async (request, session, cont
         orderBy: { createdAt: 'desc' },
         select: { razorpayPlanId: true, pluginId: true, internalPlanId: true },
       });
+      if (!plan) {
+        // Fallback to latest active restaurant plan
+        plan = await tx.billingPlanMap.findFirst({
+          where: { pluginId: '@orbitox/restaurant', active: true },
+          orderBy: { createdAt: 'desc' },
+          select: { razorpayPlanId: true, pluginId: true, internalPlanId: true },
+        });
+      }
       if (!plan) return { error: 'BILLING_PLAN_NOT_FOUND' as const };
       const installation = await tx.pluginInstallation.findFirst({
-        where: { tenantId, pluginId: plan.pluginId },
+        where: {
+          pluginId: plan.pluginId,
+          OR: [
+            { tenantId: canonicalTenantId },
+            { tenantId },
+            { runtimeTenantId: canonicalTenantId },
+            { runtimeTenantId: tenantId },
+          ],
+        },
         select: { id: true },
       });
       if (!installation) return { error: 'PLUGIN_NOT_INSTALLED_FOR_TENANT' as const };
@@ -72,7 +90,7 @@ export const POST = withCustomerAuth<RouteContext>(async (request, session, cont
       const created = await tx.$queryRaw<Array<{ key: string }>>`
         INSERT INTO public."TenantIdempotencyKey"
           ("tenantId", "scope", "key", "requestHash", "createdAt")
-        VALUES (${tenantId}, 'customer.billing.checkout', ${idempotencyKey}, ${requestHash}, NOW())
+        VALUES (${canonicalTenantId}, 'customer.billing.checkout', ${idempotencyKey}, ${requestHash}, NOW())
         ON CONFLICT ("tenantId", "scope", "key") DO NOTHING
         RETURNING "key"
       `;
@@ -80,7 +98,7 @@ export const POST = withCustomerAuth<RouteContext>(async (request, session, cont
         const previous = await tx.tenantIdempotencyKey.findUnique({
           where: {
             tenantId_scope_key: {
-              tenantId,
+              tenantId: canonicalTenantId,
               scope: 'customer.billing.checkout',
               key: idempotencyKey,
             },
@@ -102,8 +120,8 @@ export const POST = withCustomerAuth<RouteContext>(async (request, session, cont
 
       const razorpaySubscription = await createRazorpaySubscription({
         razorpayPlanId: plan.razorpayPlanId,
-        idempotencyKey: `checkout_${crypto.createHash('sha256').update(`${tenantId}:${idempotencyKey}`).digest('hex')}`,
-        notes: { tenantId, pluginId: plan.pluginId, planId: plan.internalPlanId },
+        idempotencyKey: `checkout_${crypto.createHash('sha256').update(`${canonicalTenantId}:${idempotencyKey}`).digest('hex')}`,
+        notes: { tenantId: canonicalTenantId, pluginId: plan.pluginId, planId: plan.internalPlanId },
       });
       const response: CheckoutResponse = {
         subscriptionId: razorpaySubscription.id,
@@ -113,7 +131,7 @@ export const POST = withCustomerAuth<RouteContext>(async (request, session, cont
         data: {
           razorpaySubscriptionId: razorpaySubscription.id,
           organizationId,
-          tenantId,
+          tenantId: canonicalTenantId,
           pluginId: plan.pluginId,
           razorpayPlanId: plan.razorpayPlanId,
           status: 'created',
@@ -125,7 +143,7 @@ export const POST = withCustomerAuth<RouteContext>(async (request, session, cont
       await tx.tenantIdempotencyKey.update({
         where: {
           tenantId_scope_key: {
-            tenantId,
+            tenantId: canonicalTenantId,
             scope: 'customer.billing.checkout',
             key: idempotencyKey,
           },
@@ -158,7 +176,7 @@ export const POST = withCustomerAuth<RouteContext>(async (request, session, cont
     console.error('Unable to create the Razorpay subscription checkout.', error);
     return errorResponse(502, 'BILLING_CHECKOUT_FAILED');
   }
-}, { write: true });
+}, { write: true, allowMfaSetup: true });
 
 interface CheckoutResponse {
   subscriptionId: string;

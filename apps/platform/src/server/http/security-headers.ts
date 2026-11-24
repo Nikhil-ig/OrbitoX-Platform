@@ -21,15 +21,15 @@ export const SECURITY_HEADERS: Readonly<Record<string, string>> = Object.freeze(
   'Permissions-Policy': 'camera=(), microphone=(), geolocation=(), browsing-topics=()',
   'Content-Security-Policy': [
     "default-src 'self'",
-    "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://checkout.razorpay.com",
+    "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://checkout.razorpay.com https://*.razorpay.com",
     "style-src 'self' 'unsafe-inline'",
-    "img-src 'self' data: https: blob:",
-    "font-src 'self' data:",
-    "frame-src 'self' https://api.razorpay.com https://checkout.razorpay.com",
-    "connect-src 'self' https://api.razorpay.com https://lumberjack.razorpay.com",
+    "img-src 'self' data: https: blob: https://*.razorpay.com",
+    "font-src 'self' data: https://*.razorpay.com",
+    "frame-src 'self' https://api.razorpay.com https://checkout.razorpay.com https://*.razorpay.com",
+    "connect-src 'self' https://api.razorpay.com https://lumberjack.razorpay.com https://*.razorpay.com",
     "object-src 'none'",
     "base-uri 'self'",
-    "form-action 'self'",
+    "form-action 'self' https://*.razorpay.com",
   ].join('; '),
 });
 

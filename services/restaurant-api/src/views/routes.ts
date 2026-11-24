@@ -31,6 +31,8 @@ import {
   renderCraveAtlasPage,
   renderSwiftBitePage,
   renderPantryRushPage,
+  renderPosTerminal,
+  renderHostStand,
 } from './index';
 import { resolveTenantDisplayName } from '../shared';
 
@@ -76,6 +78,54 @@ export const viewsRoutes: RouteDefinition[] = [
         staffRole: context.activeStaffRole,
       });
       sendHtml(res, html);
+    },
+  },
+  {
+    method: 'GET',
+    path: '/pos',
+    handler: async (_req, res, context) => {
+      const tables = await context.repo.getTables(context.currentBranch?.id);
+      const menuItems = await context.repo.getMenuItems(true);
+      const branches = await context.repo.getBranches();
+      const orders = await context.repo.getOrders();
+      const tenantBrand = await context.repo.getTenantBrand();
+      const opts = await getShellOptions(context, 'POS Checkout Terminal', 'pos');
+      const html = renderShell(
+        renderPosTerminal(tables, menuItems, branches, context.currentBranch?.id || 'branch_ldh', orders, tenantBrand?.restaurantName),
+        opts
+      );
+      sendHtml(res, html);
+    },
+  },
+  {
+    method: 'GET',
+    path: '/operations/pos',
+    handler: (_req, res) => {
+      res.writeHead(302, { Location: '/pos' });
+      res.end();
+    },
+  },
+  {
+    method: 'GET',
+    path: '/host',
+    handler: async (_req, res, context) => {
+      const tables = await context.repo.getTables(context.currentBranch?.id);
+      const branches = await context.repo.getBranches();
+      const tenantBrand = await context.repo.getTenantBrand();
+      const opts = await getShellOptions(context, 'Host Stand & Waitlist', 'host');
+      const html = renderShell(
+        renderHostStand(tables, branches, context.currentBranch?.id || 'branch_ldh', tenantBrand?.restaurantName),
+        opts
+      );
+      sendHtml(res, html);
+    },
+  },
+  {
+    method: 'GET',
+    path: '/operations/host',
+    handler: (_req, res) => {
+      res.writeHead(302, { Location: '/host' });
+      res.end();
     },
   },
   {

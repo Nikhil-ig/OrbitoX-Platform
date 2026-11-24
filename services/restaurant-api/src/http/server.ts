@@ -49,6 +49,7 @@ import { getTenantRepository } from '../storage';
 import { PosService } from '@orbitox-io/pos';
 
 import { renderSuspendedTenantPage } from '../views/pages/invite';
+import { isLocalhostOrLoopback, isPlatformForwardPath, proxyRequestToPlatform } from './platform-proxy';
 
 export {
   postgresStore,
@@ -248,6 +249,15 @@ export async function handleRequest(req: http.IncomingMessage, res: http.ServerR
         });
         return;
       }
+
+      // Seamless local loopback onboarding route:
+      // When accessed on localhost/127.0.0.1 without a tenant context, forward to OrbitoX Platform onboarding (F1-F6).
+      if (isLocalhostOrLoopback(rawHost) && isPlatformForwardPath(pathname)) {
+        const forwardPath = req.url || pathname;
+        proxyRequestToPlatform(req, res, forwardPath);
+        return;
+      }
+
       const acceptHeader = (req.headers.accept || '').toLowerCase();
       if (acceptHeader.includes('text/html')) {
         sendHtml(res, renderTenantNotFoundPage(rawHost || 'unknown'), 404);

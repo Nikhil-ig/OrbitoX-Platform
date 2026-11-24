@@ -78,7 +78,7 @@ export const GET = withCustomerAuth<RouteContext>(
     if (configuredUrl) {
       try {
         baseDomain = new URL(configuredUrl).hostname;
-      } catch {}
+      } catch { }
     }
 
     // Retrieve live tables via RestaurantOS runtime bridge
@@ -160,10 +160,10 @@ export const GET = withCustomerAuth<RouteContext>(
                   tables.push(createdJson.table);
                 }
               }
-            } catch {}
+            } catch { }
           }
         }
-      } catch {}
+      } catch { }
     }
 
     // Fail honestly if no tables exist or runtime is unavailable
@@ -202,7 +202,16 @@ export const GET = withCustomerAuth<RouteContext>(
       }
 
       try {
-        const verifyRes = await fetch(new URL(`/api/restaurant/qr/${encodeURIComponent(table.locator)}`, runtimeUrl).toString(), {
+        const verifyPath = `/api/restaurant/qr/${encodeURIComponent(table.locator)}`;
+        const signedVerifyHeaders = signBridgeRequest(bridgeKeys, {
+          method: 'GET',
+          pathWithQuery: verifyPath,
+          tenantId: canonicalTenantId,
+          principal: { sub: session.userId, scopes: ['tenant:admin', 'tables:read'] },
+        });
+
+        const verifyRes = await fetch(new URL(verifyPath, runtimeUrl).toString(), {
+          headers: signedVerifyHeaders,
           cache: 'no-store',
           signal: AbortSignal.timeout(2500),
         });

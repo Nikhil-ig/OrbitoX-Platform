@@ -45,6 +45,6 @@ export const POST = withCustomerAuth<RouteContext>(async (request: NextRequest, 
     email: inviteResult.email,
     role: inviteResult.role,
   }, { status: 202, headers: noStore });
-}, { write: true });
+}, { write: true, allowMfaSetup: true });
 
 const noStore = { 'Cache-Control': 'no-store' };

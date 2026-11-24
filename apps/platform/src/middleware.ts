@@ -271,6 +271,11 @@ function sameOrigin(req: NextRequest): boolean {
 }
 
 export async function middleware(req: NextRequest): Promise<NextResponse> {
-  const res = await handleMiddleware(req);
-  return applySecurityHeaders(res);
+  try {
+    const res = await handleMiddleware(req);
+    return applySecurityHeaders(res);
+  } catch (err: any) {
+    console.error('MIDDLEWARE ERROR:', err);
+    return new NextResponse(`Middleware error: ${err.message}\n${err.stack}`, { status: 500 });
+  }
 }

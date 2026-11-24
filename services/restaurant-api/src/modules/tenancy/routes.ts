@@ -110,7 +110,9 @@ export const tenancyRoutes: RouteDefinition[] = [
           where: { tenantId: tenant.id },
         });
         const firstTable = tenant.tables[0];
-        const baseDomain = process.env.RESTAURANTOS_BASE_DOMAIN || 'orbitox.live';
+        const reqHost = req.headers.host || '';
+        const isLocalHost = reqHost.includes('localhost') || reqHost.includes('127.0.0.1') || process.env.NODE_ENV !== 'production';
+        const baseDomain = process.env.RESTAURANTOS_BASE_DOMAIN || (isLocalHost ? 'localhost:4010' : 'orbitox.live');
         sendJson(res, 200, {
           ok: true,
           tenant: {

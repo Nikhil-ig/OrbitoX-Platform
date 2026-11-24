@@ -14,7 +14,7 @@ export const GET = withCustomerAuth(async (_request, session) => {
   const response = NextResponse.json({ success: true, appearance }, { headers: noStore });
   setAppearanceCookie(response, appearance);
   return response;
-});
+}, { write: false, allowMfaSetup: true });
 
 export const PUT = withCustomerAuth(async (request: NextRequest, session) => {
   let body: unknown;
@@ -47,5 +47,5 @@ export const PUT = withCustomerAuth(async (request: NextRequest, session) => {
   );
   setAppearanceCookie(response, result.appearance);
   return response;
-});
+}, { write: true, allowMfaSetup: true });
 

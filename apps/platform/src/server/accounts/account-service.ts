@@ -224,6 +224,11 @@ export async function registerCustomerAccount(
     if (!isUniqueConstraintError(error)) throw error;
   }
 
+  const isDev = process.env.NODE_ENV === 'development' || process.env.ALLOW_UNAUTHENTICATED_DEV_MODE === 'true';
+  if (isDev) {
+    console.info(`🔑 [Email Verification Dev Code] Recipient: ${email} | Code: ${codeRecord.code}`);
+  }
+
   return {
     status: 202,
     body: {
@@ -232,6 +237,7 @@ export async function registerCustomerAccount(
       email: maskEmail(email),
       expiresInSeconds: VERIFICATION_CODE_TTL_SECONDS,
       resendCooldownSeconds: VERIFICATION_RESEND_COOLDOWN_SECONDS,
+      ...(isDev ? { devCode: codeRecord.code } : {}),
     },
   };
 }
@@ -366,10 +372,16 @@ export async function resendCustomerVerificationCode(input: {
     });
   });
 
+  const isDev = process.env.NODE_ENV === 'development' || process.env.ALLOW_UNAUTHENTICATED_DEV_MODE === 'true';
+  if (isDev) {
+    console.info(`🔑 [Email Verification Dev Code (Resend)] Recipient: ${email} | Code: ${codeRecord.code}`);
+  }
+
   return {
     ok: true,
     message: 'A fresh 6-digit verification code has been dispatched.',
     resendCooldownSeconds: VERIFICATION_RESEND_COOLDOWN_SECONDS,
+    ...(isDev ? { devCode: codeRecord.code } : {}),
   };
 }
 

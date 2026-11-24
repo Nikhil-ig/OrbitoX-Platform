@@ -7,6 +7,7 @@ import {
   OPERATOR_SESSION_COOKIE,
   type OperatorSessionContext,
 } from '@/server/accounts/account-service';
+import { isAllowedOrigin } from './origin-check';
 
 export {
   getOperatorSession,
@@ -70,13 +71,10 @@ export function withOperatorAuth<Context = undefined>(
 export function validOperatorCsrf(request: NextRequest, expectedHash: string): boolean {
   const csrfCookie = request.cookies.get(OPERATOR_CSRF_COOKIE)?.value;
   const csrfHeader = request.headers.get('x-csrf-token');
-  const origin = request.headers.get('origin');
-  if (!csrfCookie || !csrfHeader || !origin || csrfCookie !== csrfHeader) return false;
-  try {
-    if (new URL(origin).origin !== request.nextUrl.origin) return false;
-  } catch {
-    return false;
-  }
+  const rawOrigin = request.headers.get('origin') || request.headers.get('referer');
+  if (!csrfHeader) return false;
+  if (csrfCookie && csrfCookie !== csrfHeader) return false;
+  if (rawOrigin && !isAllowedOrigin(rawOrigin, request)) return false;
   const actual = crypto.createHash('sha256').update(csrfHeader).digest();
   const expected = Buffer.from(expectedHash, 'hex');
   return actual.length === expected.length && crypto.timingSafeEqual(actual, expected);

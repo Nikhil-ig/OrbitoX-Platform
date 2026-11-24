@@ -1093,7 +1093,11 @@ export function F6ChecklistStep({
         <button
           type="button"
           onClick={() => {
-            router.push('/');
+            const isLocal = typeof window !== 'undefined' && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1');
+            const targetUrl = isLocal
+              ? `http://${slug}.localhost:4010`
+              : liveActions.tablesUrl || `https://${slug}.orbitox.io`;
+            window.location.href = targetUrl;
           }}
           className="px-8 py-3.5 rounded-full bg-emerald-500 hover:bg-emerald-400 text-gray-950 text-sm font-bold flex items-center justify-center gap-2 cursor-pointer transition-all shadow-lg shrink-0"
         >

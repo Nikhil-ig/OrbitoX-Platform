@@ -232,9 +232,9 @@ export default function OnboardingPage() {
 
   if (!mounted) {
     return (
-      <div className="min-h-screen bg-[#EEF1F5] flex items-center justify-center p-8">
-        <div className="text-xs text-gray-500 font-medium">Loading OrbitoX onboarding...</div>
-      </div>
+      <main className="min-h-screen bg-[#EEF1F5] flex flex-col items-center justify-center p-6 md:p-12">
+        <F1AccountStep onSuccess={handleF1Success} />
+      </main>
     );
   }
 

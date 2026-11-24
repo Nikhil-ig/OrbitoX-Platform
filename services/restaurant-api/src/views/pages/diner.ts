@@ -91,8 +91,10 @@ export function renderDinerPwa(
     storefrontHtml = renderOsteriaRusticaComposition(menu, brandName, brandTagline, branchName, table);
   } else if (activeTemplateId === 'tmpl_tokyo_izakaya') {
     storefrontHtml = renderShokuninRamenComposition(menu, brandName, brandTagline, branchName, table);
-  } else {
+  } else if (activeTemplateId === 'tmpl_haute_gastronomy') {
     storefrontHtml = renderAtelierEtoileComposition(menu, brandName, brandTagline, branchName, table);
+  } else {
+    storefrontHtml = renderModernDinerComposition(menu, brandName, brandTagline, branchName, table, orders, tasks);
   }
 
   return `<!DOCTYPE html>
@@ -2143,6 +2145,510 @@ function renderShokuninSlatCard(item: MenuItem): string {
   </div>`;
 }
 
+function renderModernDinerComposition(
+  menu: MenuItem[],
+  brandName: string,
+  brandTagline: string,
+  branchName: string,
+  table: TableFloorRecord,
+  orders: RestaurantOrder[] = [],
+  tasks: KitchenTask[] = []
+): string {
+  const categories = ['All', ...Array.from(new Set(menu.map((m) => (m as any).categoryName || m.category || 'Mains')))];
+
+  const activeTask = tasks.find((t) => t.status === 'IN_PROGRESS' || t.status === 'QUEUED');
+  const activeOrder = orders[0];
+  const hasLiveOrder = Boolean(activeOrder || activeTask);
+
+  const dishesJson = JSON.stringify(
+    menu.map((m) => ({
+      id: m.id,
+      name: m.name,
+      categoryName: (m as any).categoryName || m.category || 'Mains',
+      price: m.basePriceMinor ? m.basePriceMinor / 100 : 0,
+      isVegetarian: (m as any).isVegetarian ?? (m.dietaryFlags ? m.dietaryFlags.includes('VEG') : true),
+      description: m.description || '',
+      imageUrl: getItemThumbnail(m.id),
+    }))
+  );
+
+  return `
+  <div class="modern-diner-container">
+    <!-- Live Kitchen Status Bar (Matching '4 · RestaurantOS diner — phone.png') -->
+    <div class="live-status-bar" id="live-status-bar" aria-live="polite">
+      <div class="live-status-left">
+        <span class="live-pulse-dot"></span>
+        <div class="live-status-text">
+          <div class="live-title">${hasLiveOrder ? 'Ready in 5 min' : 'Kitchen Active'}</div>
+          <div class="live-sub">
+            ${hasLiveOrder ? `Order #${activeOrder?.orderId || '42'} · ${activeOrder?.items?.length || 2} items · Table ${table.number}` : `Table ${table.number} · Live Order Dispatch`}
+          </div>
+        </div>
+      </div>
+      <button class="btn-live-action" onclick="openOrderTracker()">
+        ${hasLiveOrder ? 'View order' : 'Status'}
+      </button>
+    </div>
+
+    <!-- Category Pill Strip (Horizontal Scroll) -->
+    <div class="modern-cat-strip">
+      ${categories
+        .map(
+          (c, idx) => `
+        <button
+          class="modern-cat-pill ${idx === 0 ? 'active' : ''}"
+          onclick="filterModernCat('${c}', this)"
+        >
+          ${c}
+        </button>
+      `
+        )
+        .join('')}
+    </div>
+
+    <!-- Dishes Feed -->
+    <div class="modern-dishes-feed" id="modern-dishes-feed">
+      ${menu
+        .map((item) => {
+          const price = item.basePriceMinor ? (item.basePriceMinor / 100).toFixed(0) : '0';
+          const isVeg = (item as any).isVegetarian ?? (item.dietaryFlags ? item.dietaryFlags.includes('VEG') : true);
+          const categoryName = (item as any).categoryName || item.category || 'Mains';
+          const imgUrl = getItemThumbnail(item.id);
+          return `
+          <div
+            class="modern-dish-card"
+            data-category="${categoryName}"
+            data-id="${item.id}"
+          >
+            <div class="dish-card-media">
+              <img src="${imgUrl}" alt="${item.name}" loading="lazy" />
+              <span class="veg-badge ${isVeg ? 'veg' : 'non-veg'}"></span>
+            </div>
+            <div class="dish-card-content">
+              <div class="dish-card-title">${item.name}</div>
+              <div class="dish-card-desc">${item.description || 'Specially prepared by chef'}</div>
+              <div class="dish-card-bottom">
+                <div class="dish-card-price">₹${price} <span class="tax-tag">incl. GST</span></div>
+                <div class="dish-stepper-wrap" id="stepper-${item.id}">
+                  <button class="btn-modern-add" onclick="dinerQuickAdd('${item.id}')">+ Add</button>
+                </div>
+              </div>
+            </div>
+          </div>
+        `;
+        })
+        .join('')}
+    </div>
+
+    <!-- Floating Cart Pill Dock -->
+    <div class="modern-floating-dock" id="modern-dock" onclick="openCartSheet()">
+      <div class="dock-summary">
+        <span class="dock-badge" id="dock-count">0 items</span>
+        <span class="dock-total" id="dock-total">₹0</span>
+      </div>
+      <div class="dock-cta">
+        <span>View Order</span>
+        <span class="dock-arrow">→</span>
+      </div>
+    </div>
+  </div>
+
+  <style>
+    .modern-diner-container {
+      max-width: 480px;
+      margin: 0 auto;
+      padding: 16px 16px 120px 16px;
+      background: #F4F5F7;
+      min-height: 100vh;
+      color: #0F172A;
+    }
+
+    /* Live Status Bar */
+    .live-status-bar {
+      background: #000000;
+      color: #FFFFFF;
+      border-radius: 999px;
+      padding: 10px 16px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      margin-bottom: 16px;
+      box-shadow: 0 4px 16px rgba(0, 0, 0, 0.15);
+    }
+
+    .live-status-left {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .live-pulse-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: #10B981;
+      box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.7);
+      animation: pulse-live 1.8s infinite;
+    }
+
+    @keyframes pulse-live {
+      0% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.7); }
+      70% { transform: scale(1); box-shadow: 0 0 0 6px rgba(16, 185, 129, 0); }
+      100% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(16, 185, 129, 0); }
+    }
+
+    .live-title {
+      font-size: 13px;
+      font-weight: 800;
+      color: #FFFFFF;
+      line-height: 1.2;
+    }
+
+    .live-sub {
+      font-size: 11px;
+      color: #94A3B8;
+      line-height: 1.2;
+    }
+
+    .btn-live-action {
+      background: rgba(255, 255, 255, 0.15);
+      border: none;
+      border-radius: 999px;
+      color: #FFFFFF;
+      font-size: 11px;
+      font-weight: 700;
+      padding: 6px 14px;
+      cursor: pointer;
+      white-space: nowrap;
+    }
+
+    /* Category Pill Strip */
+    .modern-cat-strip {
+      display: flex;
+      gap: 8px;
+      overflow-x: auto;
+      scrollbar-width: none;
+      padding-bottom: 12px;
+      margin-bottom: 8px;
+    }
+
+    .modern-cat-strip::-webkit-scrollbar {
+      display: none;
+    }
+
+    .modern-cat-pill {
+      background: #FFFFFF;
+      border: 1px solid rgba(0, 0, 0, 0.06);
+      border-radius: 999px;
+      padding: 8px 16px;
+      font-size: 12px;
+      font-weight: 700;
+      color: #64748B;
+      cursor: pointer;
+      white-space: nowrap;
+      transition: all 120ms ease;
+    }
+
+    .modern-cat-pill.active {
+      background: #000000;
+      color: #FFFFFF;
+      border-color: #000000;
+    }
+
+    /* Dishes Feed */
+    .modern-dishes-feed {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    .modern-dish-card {
+      background: #FFFFFF;
+      border: 1px solid rgba(0, 0, 0, 0.05);
+      border-radius: 20px;
+      padding: 14px;
+      display: flex;
+      gap: 14px;
+      align-items: center;
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.02);
+      transition: transform 140ms ease;
+    }
+
+    .dish-card-media {
+      position: relative;
+      width: 84px;
+      height: 84px;
+      flex-shrink: 0;
+      border-radius: 14px;
+      overflow: hidden;
+      background: #F1F5F9;
+    }
+
+    .dish-card-media img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+    }
+
+    .veg-badge {
+      position: absolute;
+      top: 6px;
+      left: 6px;
+      width: 14px;
+      height: 14px;
+      border-radius: 3px;
+      border: 2px solid;
+      background: #FFF;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .veg-badge.veg {
+      border-color: #10B981;
+    }
+
+    .veg-badge.veg::after {
+      content: '';
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: #10B981;
+    }
+
+    .veg-badge.non-veg {
+      border-color: #EF4444;
+    }
+
+    .veg-badge.non-veg::after {
+      content: '';
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: #EF4444;
+    }
+
+    .dish-card-content {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+
+    .dish-card-title {
+      font-size: 14px;
+      font-weight: 800;
+      color: #0F172A;
+      line-height: 1.25;
+    }
+
+    .dish-card-desc {
+      font-size: 11px;
+      color: #64748B;
+      line-height: 1.35;
+      overflow: hidden;
+      display: -webkit-box;
+      -webkit-line-clamp: 2;
+      -webkit-box-orient: vertical;
+    }
+
+    .dish-card-bottom {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-top: 6px;
+    }
+
+    .dish-card-price {
+      font-size: 14px;
+      font-weight: 800;
+      color: #0F172A;
+    }
+
+    .tax-tag {
+      font-size: 10px;
+      font-weight: 600;
+      color: #94A3B8;
+      margin-left: 2px;
+    }
+
+    .btn-modern-add {
+      background: #000000;
+      color: #FFFFFF;
+      border: none;
+      border-radius: 999px;
+      padding: 6px 16px;
+      font-size: 11px;
+      font-weight: 800;
+      cursor: pointer;
+      transition: all 120ms ease;
+    }
+
+    .modern-split-stepper {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      background: #000000;
+      border-radius: 999px;
+      padding: 3px 8px;
+      color: #FFFFFF;
+    }
+
+    .modern-split-stepper button {
+      background: transparent;
+      border: none;
+      color: #FFFFFF;
+      font-size: 13px;
+      font-weight: 800;
+      cursor: pointer;
+      width: 18px;
+      height: 18px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .modern-split-stepper span {
+      font-size: 12px;
+      font-weight: 800;
+      min-width: 14px;
+      text-align: center;
+    }
+
+    /* Floating Dock */
+    .modern-floating-dock {
+      position: fixed;
+      bottom: 24px;
+      left: 50%;
+      transform: translateX(-50%);
+      width: calc(100% - 32px);
+      max-width: 440px;
+      background: #000000;
+      color: #FFFFFF;
+      border-radius: 999px;
+      padding: 14px 24px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      box-shadow: 0 10px 25px rgba(0, 0, 0, 0.25);
+      cursor: pointer;
+      z-index: 100;
+      user-select: none;
+      transition: transform 140ms ease;
+    }
+
+    .modern-floating-dock:active {
+      transform: translateX(-50%) scale(0.98);
+    }
+
+    .dock-summary {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .dock-badge {
+      background: rgba(255, 255, 255, 0.2);
+      border-radius: 999px;
+      padding: 3px 10px;
+      font-size: 11px;
+      font-weight: 700;
+    }
+
+    .dock-total {
+      font-size: 15px;
+      font-weight: 800;
+    }
+
+    .dock-cta {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 13px;
+      font-weight: 800;
+    }
+  </style>
+
+  <script>
+    const MODERN_DISHES = ${dishesJson};
+    let modernCart = {};
+
+    function filterModernCat(cat, el) {
+      document.querySelectorAll('.modern-cat-pill').forEach((p) => p.classList.remove('active'));
+      el.classList.add('active');
+
+      const cards = document.querySelectorAll('.modern-dish-card');
+      cards.forEach((c) => {
+        if (cat === 'All' || c.getAttribute('data-category') === cat) {
+          c.style.display = 'flex';
+        } else {
+          c.style.display = 'none';
+        }
+      });
+    }
+
+    function dinerQuickAdd(id) {
+      if (!modernCart[id]) modernCart[id] = 1;
+      else modernCart[id]++;
+      updateModernStepper(id);
+      syncModernDock();
+    }
+
+    function dinerStep(id, delta) {
+      if (!modernCart[id]) return;
+      modernCart[id] += delta;
+      if (modernCart[id] <= 0) {
+        delete modernCart[id];
+      }
+      updateModernStepper(id);
+      syncModernDock();
+    }
+
+    function updateModernStepper(id) {
+      const wrap = document.getElementById('stepper-' + id);
+      if (!wrap) return;
+      const qty = modernCart[id] || 0;
+      if (qty === 0) {
+        wrap.innerHTML = '<button class="btn-modern-add" onclick="dinerQuickAdd(\\'' + id + '\\')">+ Add</button>';
+      } else {
+        wrap.innerHTML = \`
+          <div class="modern-split-stepper">
+            <button onclick="dinerStep('\${id}', -1)">-</button>
+            <span>\${qty}</span>
+            <button onclick="dinerStep('\${id}', 1)">+</button>
+          </div>
+        \`;
+      }
+    }
+
+    function syncModernDock() {
+      const ids = Object.keys(modernCart);
+      let count = 0;
+      let total = 0;
+
+      ids.forEach((id) => {
+        const item = MODERN_DISHES.find((d) => d.id === id);
+        if (item) {
+          const qty = modernCart[id];
+          count += qty;
+          total += item.price * qty;
+        }
+      });
+
+      const dockCount = document.getElementById('dock-count');
+      const dockTotal = document.getElementById('dock-total');
+      if (dockCount) dockCount.innerText = count + (count === 1 ? ' item' : ' items');
+      if (dockTotal) dockTotal.innerText = '₹' + Math.round(total);
+    }
+
+    function openOrderTracker() {
+      alert('Order status: Food is being freshly prepared in the kitchen. Table ' + ${table.number} + '. Estimated ready: 5 mins.');
+    }
+  </script>
+  `;
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // HELPERS
 // ─────────────────────────────────────────────────────────────────────────────
@@ -2184,7 +2690,7 @@ function normalizeTemplateId(id: string): string {
     'tokyo-izakaya': 'tmpl_tokyo_izakaya',
     'shokunin-ramen': 'tmpl_tokyo_izakaya',
   };
-  return map[id] || 'tmpl_haute_gastronomy';
+  return map[id] || 'tmpl_modern_diner';
 }
 
 function getItemThumbnail(itemId: string): string {

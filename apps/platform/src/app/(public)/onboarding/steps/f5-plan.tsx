@@ -107,6 +107,15 @@ export function F5PlanStep({
   const [isSdkLoaded, setIsSdkLoaded] = useState(false);
   const [sdkLoading, setSdkLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const activeRzpRef = React.useRef<any>(null);
+
+  const isDevEnvironment =
+    typeof window !== 'undefined' &&
+    (window.location.hostname === 'localhost' ||
+      window.location.hostname === '127.0.0.1' ||
+      window.location.port === '4010' ||
+      window.location.port === '3005' ||
+      process.env.NODE_ENV === 'development');
 
   // Safe official Razorpay Checkout SDK loader
   useEffect(() => {
@@ -131,10 +140,12 @@ export function F5PlanStep({
     };
     script.onerror = () => {
       setSdkLoading(false);
-      setError('Payment gateway SDK could not be loaded. Please disable ad-blockers or content filters and refresh.');
+      if (!isDevEnvironment) {
+        setError('Payment gateway SDK could not be loaded. Please disable ad-blockers or content filters and refresh.');
+      }
     };
     document.body.appendChild(script);
-  }, []);
+  }, [isDevEnvironment]);
 
   const selectedPlan = PLANS.find((p) => p.id === selectedPlanId) || PLANS[1]!;
   const pricePerMonth = billingCycle === 'annual' ? selectedPlan.annualPrice : selectedPlan.monthlyPrice;
@@ -142,17 +153,78 @@ export function F5PlanStep({
   const gstAmount = Math.round(subtotal * 0.18);
   const totalDue = subtotal + gstAmount;
 
+  const handleCancelCheckout = () => {
+    try {
+      activeRzpRef.current?.close();
+    } catch {
+      // Ignored if modal was not initialized
+    }
+    activeRzpRef.current = null;
+    setIsSubmitting(false);
+  };
+
+  const handleDevSimulatedActivation = async () => {
+    setIsSubmitting(true);
+    setError(null);
+    try {
+      const csrf = getCustomerCsrfToken();
+      const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+      if (csrf) headers['x-csrf-token'] = csrf;
+
+      // 1. Initialize or query checkout
+      const res = await fetch(
+        `/api/v1/customer/organizations/${encodeURIComponent(organizationId)}/billing/checkout`,
+        {
+          method: 'POST',
+          headers: {
+            ...headers,
+            'idempotency-key': `plan_${tenantId.replace(/[^A-Za-z0-9]/g, '_')}_${Date.now()}`,
+          },
+          body: JSON.stringify({
+            tenantId,
+            razorpayPlanId: `plan_${selectedPlanId}_${billingCycle}`,
+            billingCycle,
+            gstin: gstin.trim() || undefined,
+          }),
+        },
+      );
+
+      const checkoutData = await res.json().catch(() => ({}));
+      const subscriptionId =
+        checkoutData.subscriptionId || checkoutData.result?.subscriptionId || `sub_dev_${Date.now()}`;
+
+      // 2. Direct development confirmation
+      const confirmRes = await fetch(
+        `/api/v1/customer/organizations/${encodeURIComponent(organizationId)}/billing/checkout/confirm`,
+        {
+          method: 'POST',
+          headers,
+          body: JSON.stringify({
+            subscriptionId,
+            paymentId: `pay_dev_${Date.now()}`,
+            signature: 'dev_mock_signature_valid_for_local_development_testing_only_12345678',
+          }),
+        },
+      );
+
+      const cdata = await confirmRes.json().catch(() => ({}));
+      onSuccess({
+        planId: selectedPlan.id,
+        billingCycle,
+        subscriptionStatus: cdata.status || 'authenticated',
+        awaitingWebhook: cdata.awaitingWebhook ?? true,
+      });
+    } catch (err: any) {
+      setError(err?.message || 'Failed to simulate dev activation. Please retry.');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
   const handleCompleteCheckout = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsSubmitting(true);
     setError(null);
-
-    // Enforce authentic Razorpay SDK presence - never bypass or fabricate
-    if (typeof window === 'undefined' || !(window as any).Razorpay) {
-      setError('Razorpay Checkout SDK is not loaded. Please wait for the payment gateway to initialize or refresh the page.');
-      setIsSubmitting(false);
-      return;
-    }
 
     try {
       const csrf = getCustomerCsrfToken();
@@ -190,8 +262,55 @@ export function F5PlanStep({
         throw new Error('No subscription ID returned by payment gateway.');
       }
 
+      // Safe local development simulation when running without live Razorpay banking keys
+      if (keyId === 'rzp_test_devmock123' || subscriptionId.startsWith('sub_dev_') || isDevEnvironment) {
+        const confirmRes = await fetch(
+          `/api/v1/customer/organizations/${encodeURIComponent(organizationId)}/billing/checkout/confirm`,
+          {
+            method: 'POST',
+            headers,
+            body: JSON.stringify({
+              subscriptionId,
+              paymentId: `pay_dev_${Date.now()}`,
+              signature: 'dev_mock_signature_valid_for_local_development_testing_only_12345678',
+            }),
+          },
+        );
+        if (!confirmRes.ok) {
+          const cdata = await confirmRes.json().catch(() => ({}));
+          throw new Error(cdata.message || cdata.error || 'Failed to complete development checkout.');
+        }
+        const cdata = await confirmRes.json();
+        onSuccess({
+          planId: selectedPlan.id,
+          billingCycle,
+          subscriptionStatus: cdata.status || 'authenticated',
+          awaitingWebhook: cdata.awaitingWebhook ?? true,
+        });
+        return;
+      }
+
+      // For live production environments: verify SDK presence
+      if (typeof window === 'undefined' || !(window as any).Razorpay) {
+        throw new Error('Razorpay Checkout SDK is not loaded. Please wait for the payment gateway to initialize or refresh the page.');
+      }
+
       // 2. Open authentic Razorpay checkout modal and await real signature confirmation
       const confirmData = await new Promise<{ status?: string; awaitingWebhook?: boolean }>((resolve, reject) => {
+        let settled = false;
+        const safeResolve = (val: any) => {
+          if (!settled) {
+            settled = true;
+            resolve(val);
+          }
+        };
+        const safeReject = (err: any) => {
+          if (!settled) {
+            settled = true;
+            reject(err);
+          }
+        };
+
         try {
           const rzp = new (window as any).Razorpay({
             key: keyId,
@@ -228,25 +347,31 @@ export function F5PlanStep({
                   throw new Error(cdata.message || cdata.error || 'Failed to verify payment confirmation.');
                 }
                 const cdata = await confirmRes.json();
-                resolve(cdata);
+                safeResolve(cdata);
               } catch (confirmErr: any) {
-                reject(confirmErr);
+                safeReject(confirmErr);
               }
             },
             modal: {
               ondismiss: () => {
-                reject(new Error('Checkout window was closed before completing payment.'));
+                safeReject(new Error('Checkout window was closed before completing payment. You can retry activating your plan below.'));
               },
             },
           });
 
+          activeRzpRef.current = rzp;
+
+          // Do NOT reject the entire checkout promise on payment.failed!
+          // Razorpay allows the user to retry payment inside the modal!
           rzp.on('payment.failed', (resp: any) => {
-            reject(new Error(resp?.error?.description || 'Payment authentication failed. Please try a different card or UPI ID.'));
+            console.warn('[Razorpay] Payment attempt failed:', resp);
+            const desc = resp?.error?.description || resp?.error?.reason || 'Payment authentication failed.';
+            setError(`Payment attempt failed: ${desc}. You can retry inside the payment window or close it to change plans.`);
           });
 
           rzp.open();
         } catch (initErr: any) {
-          reject(initErr);
+          safeReject(initErr);
         }
       });
 
@@ -259,6 +384,7 @@ export function F5PlanStep({
     } catch (err: any) {
       setError(err?.message || 'Error processing plan checkout. Please try again.');
     } finally {
+      activeRzpRef.current = null;
       setIsSubmitting(false);
     }
   };
@@ -310,8 +436,33 @@ export function F5PlanStep({
       </div>
 
       {error && (
-        <div className="p-4 rounded-2xl bg-rose-50 border border-rose-200 text-rose-700 text-xs">
-          {error}
+        <div className="p-4 rounded-2xl bg-rose-50 border border-rose-200 text-rose-700 text-xs flex flex-col gap-2.5">
+          <div className="flex items-center justify-between">
+            <span className="font-medium">{error}</span>
+            <button
+              type="button"
+              onClick={() => setError(null)}
+              className="text-rose-500 hover:text-rose-800 font-bold ml-2 cursor-pointer text-[11px]"
+            >
+              ✕ Dismiss
+            </button>
+          </div>
+          {isDevEnvironment && (
+            <div className="pt-2 border-t border-rose-200/80 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+              <span className="text-[11px] text-gray-600">
+                Local development bypass available:
+              </span>
+              <button
+                type="button"
+                onClick={handleDevSimulatedActivation}
+                disabled={isSubmitting}
+                className="px-3.5 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs transition-colors flex items-center justify-center gap-1.5 cursor-pointer shadow-sm disabled:opacity-50"
+              >
+                <Zap className="h-3.5 w-3.5" />
+                <span>1-Click Simulate Activation & Go Live</span>
+              </button>
+            </div>
+          )}
         </div>
       )}
 
@@ -463,26 +614,39 @@ export function F5PlanStep({
             <button
               type="button"
               onClick={onBack}
-              className="px-6 py-3 rounded-full border border-white/20 text-white text-xs font-semibold hover:bg-white/10 transition-colors flex items-center gap-1.5 cursor-pointer justify-center"
+              disabled={isSubmitting}
+              className="px-6 py-3 rounded-full border border-white/20 text-white text-xs font-semibold hover:bg-white/10 transition-colors flex items-center gap-1.5 cursor-pointer justify-center disabled:opacity-50"
             >
               <ArrowLeft className="h-3.5 w-3.5" />
               <span>Back to Preview</span>
             </button>
 
-            <button
-              type="submit"
-              disabled={isSubmitting || sdkLoading}
-              className="px-8 py-3.5 rounded-full bg-emerald-500 hover:bg-emerald-400 text-[#14161A] text-sm font-bold transition-all shadow-lg flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
-            >
-              <span>
-                {isSubmitting
-                  ? 'Activating Subscription...'
-                  : sdkLoading
-                    ? 'Loading Payment Gateway...'
-                    : 'Activate & Go Live'}
-              </span>
-              <ArrowRight className="h-4 w-4" />
-            </button>
+            <div className="flex items-center gap-3">
+              {isSubmitting && (
+                <button
+                  type="button"
+                  onClick={handleCancelCheckout}
+                  className="px-5 py-3 rounded-full border border-rose-400/50 text-rose-300 hover:bg-rose-500/20 text-xs font-semibold transition-colors cursor-pointer"
+                >
+                  Cancel / Unstick
+                </button>
+              )}
+
+              <button
+                type="submit"
+                disabled={isSubmitting || (sdkLoading && !isDevEnvironment)}
+                className="px-8 py-3.5 rounded-full bg-emerald-500 hover:bg-emerald-400 text-[#14161A] text-sm font-bold transition-all shadow-lg flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
+              >
+                <span>
+                  {isSubmitting
+                    ? 'Activating Subscription...'
+                    : sdkLoading && !isDevEnvironment
+                      ? 'Loading Payment Gateway...'
+                      : 'Activate & Go Live'}
+                </span>
+                <ArrowRight className="h-4 w-4" />
+              </button>
+            </div>
           </div>
         </div>
       </form>

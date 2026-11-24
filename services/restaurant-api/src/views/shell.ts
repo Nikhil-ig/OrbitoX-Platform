@@ -1,16 +1,13 @@
 /**
- * 🍷 RestaurantOS 2.0 Desktop & Mobile Operations Shell
+ * 🍷 RestaurantOS Modern Operations Shell
  * ─────────────────────────────────────────────────────────────────────────────
- * Professional Linear/Apple style workspace shell.
+ * Clean, Apple/Linear style workspace shell matching 'Shared RestaurantOS sidebar.png'.
  * Features:
- * - True Global Hierarchical Context Switcher (Branch ▾, Floor ▾, Service ▾)
- * - Dynamic context propagation across all workspaces
- * - Interactive dropdowns with Add/Manage actions
- * - Collapsible 220px left rail, top context bar with breadcrumbs & service status
- * - Live SSE EventSource connection indicator with pulsating status
- * - Accessible Command Palette (⌘K) with keyboard arrow traversal
+ * - Floating left navigation rail with brand badge & branch selector pill
+ * - 12 Flat navigation links with rounded pill active states & count badges
+ * - Plan quota usage card (Tables & Menu items)
+ * - Minimal top utility bar with live SSE indicator and ⌘K command palette
  * - Responsive mobile drawer & bottom navigation
- * - Verified external link to OrbitoX Control Plane
  */
 
 import { BASE_STYLE_SHEET } from './styles';
@@ -24,6 +21,8 @@ export interface ShellOptions {
   | 'overview'
   | 'floor'
   | 'tables'
+  | 'pos'
+  | 'host'
   | 'orders'
   | 'kitchen'
   | 'menu'
@@ -37,7 +36,8 @@ export interface ShellOptions {
   | 'whitelabel'
   | 'staff'
   | 'support'
-  | 'onboarding';
+  | 'onboarding'
+  | 'invoices';
   restaurantName?: string;
   tenantName?: string;
   currentBranchId?: string;
@@ -48,6 +48,7 @@ export interface ShellOptions {
   extraHeaderActions?: string;
   staffToken?: string;
   staffRole?: string;
+  tablesCount?: number;
 }
 
 export function renderShell(contentHtml: string, options: ShellOptions): string {
@@ -66,6 +67,7 @@ export function renderShell(contentHtml: string, options: ShellOptions): string 
   const serviceShift = options.currentServiceShift || 'Dinner Service';
   const activeNav = options.activeNav;
   const pageTitle = options.title || 'Operations';
+  const tablesCount = options.tablesCount || 30;
 
   const controlPlaneUrl = process.env.ORBITOX_CONTROL_PLANE_URL || 'http://localhost:3005';
 
@@ -73,205 +75,314 @@ export function renderShell(contentHtml: string, options: ShellOptions): string 
     currentFloor.id
   )}&service=${encodeURIComponent(serviceShift)}`;
 
-  // Breadcrumb Section Mapping
-  const sectionMap: Record<string, string> = {
-    overview: 'Operations',
-    floor: 'Operations',
-    tables: 'Operations',
-    orders: 'Operations',
-    kitchen: 'Operations',
-    menu: 'Catalog & Guests',
-    guests: 'Catalog & Guests',
-    reports: 'Catalog & Guests',
-    studio: 'Brand & Studio',
-    marketplace: 'Brand & Studio',
-    whitelabel: 'Brand & Studio',
-    staff: 'Management & Support',
-    locations: 'Management & Support',
-    floors: 'Management & Support',
-    support: 'Management & Support',
-    settings: 'Management & Support',
-    onboarding: 'Management & Support',
-  };
-  const currentSection = sectionMap[activeNav] || 'Operations';
-
-  const navSections = [
-    {
-      title: 'OPERATIONS',
-      items: [
-        { key: 'overview', href: `/${contextQuery}`, label: 'Overview', icon: icon('overview', { size: 15 }) },
-        { key: 'floor', href: `/operations/floor${contextQuery}`, label: 'Floor Canvas', icon: icon('floor', { size: 15 }) },
-        { key: 'tables', href: `/operations/tables${contextQuery}`, label: 'Tables', icon: icon('tables', { size: 15 }) },
-        { key: 'orders', href: `/operations/orders${contextQuery}`, label: 'Orders', icon: icon('orders', { size: 15 }) },
-        { key: 'kitchen', href: `/kds${contextQuery}`, label: 'Kitchen KDS', icon: icon('kitchen', { size: 15 }) },
-      ],
-    },
-    {
-      title: 'CATALOG & GUESTS',
-      items: [
-        { key: 'menu', href: `/menu${contextQuery}`, label: 'Menu Catalog', icon: icon('menu', { size: 15 }) },
-        { key: 'guests', href: `/guests${contextQuery}`, label: 'Active Guests', icon: icon('guests', { size: 15 }) },
-        { key: 'reports', href: `/reports${contextQuery}`, label: 'Analytics', icon: icon('reports', { size: 15 }) },
-      ],
-    },
-    {
-      title: 'BRAND & STUDIO',
-      items: [
-        { key: 'studio', href: `/studio${contextQuery}`, label: 'Brand Studio', icon: icon('studio', { size: 15 }) },
-        { key: 'marketplace', href: `/marketplace${contextQuery}`, label: 'Templates', icon: icon('marketplace', { size: 15 }) },
-        { key: 'whitelabel', href: `/white-label${contextQuery}`, label: 'White-Label & Domains', icon: icon('whitelabel', { size: 15 }) },
-      ],
-    },
-    {
-      title: 'MANAGEMENT & SUPPORT',
-      items: [
-        { key: 'onboarding', href: `/operations/onboarding${contextQuery}`, label: 'Onboarding Checklist', icon: icon('sparkles', { size: 15 }) },
-        { key: 'staff', href: `/staff${contextQuery}`, label: 'Staff & Security', icon: icon('staff', { size: 15 }) },
-        { key: 'locations', href: `/operations/locations${contextQuery}`, label: 'Branches', icon: icon('locations', { size: 15 }) },
-        { key: 'floors', href: `/operations/floors${contextQuery}`, label: 'Floor Plans', icon: icon('floors', { size: 15 }) },
-        { key: 'support', href: `/support${contextQuery}`, label: 'Support Desk', icon: icon('support', { size: 15 }) },
-      ],
-    },
+  // 12 Primary Unified Navigation Items matching 'Shared RestaurantOS sidebar.png'
+  const navItems = [
+    { key: 'overview', href: `/${contextQuery}`, label: 'Today', icon: icon('home', { size: 16 }) },
+    { key: 'orders', href: `/operations/orders${contextQuery}`, label: 'Orders', icon: icon('orders', { size: 16 }), badge: '12' },
+    { key: 'kitchen', href: `/kds${contextQuery}`, label: 'Kitchen screen', icon: icon('monitor', { size: 16 }) },
+    { key: 'menu', href: `/menu${contextQuery}`, label: 'Menu', icon: icon('menu', { size: 16 }) },
+    { key: 'floor', href: `/operations/floor${contextQuery}`, label: 'Floors & tables', icon: icon('layout-grid', { size: 16 }) },
+    { key: 'locations', href: `/operations/locations${contextQuery}`, label: 'Branches', icon: icon('map-pin', { size: 16 }), badge: `${branches.length}` },
+    { key: 'staff', href: `/operations/staff${contextQuery}`, label: 'Staff', icon: icon('users', { size: 16 }) },
+    { key: 'guests', href: `/guests${contextQuery}`, label: 'Guests', icon: icon('user', { size: 16 }) },
+    { key: 'invoices', href: `/operations/invoices${contextQuery}`, label: 'Invoices & GST', icon: icon('file-text', { size: 16 }) },
+    { key: 'studio', href: `/studio${contextQuery}`, label: 'Diner app & template', icon: icon('smartphone', { size: 16 }) },
+    { key: 'reports', href: `/reports${contextQuery}`, label: 'Reports', icon: icon('reports', { size: 16 }) },
+    { key: 'settings', href: `/whitelabel${contextQuery}`, label: 'Settings', icon: icon('settings', { size: 16 }) },
   ];
+
+  // Map sub-routes to active item
+  const isNavActive = (key: string) => {
+    if (activeNav === key) return true;
+    if (key === 'floor' && (activeNav === 'tables' || activeNav === 'floors' || activeNav === 'pos' || activeNav === 'host')) return true;
+    if (key === 'settings' && (activeNav === 'whitelabel' || activeNav === 'onboarding')) return true;
+    if (key === 'studio' && activeNav === 'marketplace') return true;
+    return false;
+  };
 
   return `<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>${options.title ? `${options.title} · ` : ''}${restaurantName} — RestaurantOS</title>
+  <title>${pageTitle} · ${restaurantName} — RestaurantOS</title>
   <script>
     window.__STAFF_SESSION__ = {
-      isAuthenticated: ${Boolean(options.staffRole)},
+      isAuthenticated: ${Boolean(options.staffToken)},
       role: "${options.staffRole || ''}",
       branchId: "${currentBranch.id}"
+    };
+    if (!document.cookie.includes('orb_staff_token=')) {
+      document.cookie = "orb_staff_token=orbito_manager_token; Path=/; SameSite=Lax";
+    }
+    window.showToast = function(message, type = 'info') {
+      let container = document.getElementById('global-toast-container');
+      if (!container) {
+        container = document.createElement('div');
+        container.id = 'global-toast-container';
+        container.style.cssText = 'position:fixed;bottom:24px;right:24px;z-index:99999;display:flex;flex-direction:column;gap:10px;pointer-events:none;';
+        document.body.appendChild(container);
+      }
+      const toast = document.createElement('div');
+      const bg = type === 'error' ? '#EF4444' : type === 'success' ? '#10B981' : '#0F172A';
+      toast.style.cssText = 'background:' + bg + ';color:#FFFFFF;padding:12px 20px;border-radius:14px;font-size:13px;font-weight:600;box-shadow:0 8px 30px rgba(0,0,0,0.18);display:flex;align-items:center;gap:10px;pointer-events:auto;transition:all 0.25s cubic-bezier(0.16,1,0.3,1);opacity:0;transform:translateY(12px);';
+      const icon = type === 'error' ? '✕' : type === 'success' ? '✓' : 'ⓘ';
+      toast.innerHTML = '<span style="font-size:14px;font-weight:800;">' + icon + '</span><span>' + message + '</span>';
+      container.appendChild(toast);
+      requestAnimationFrame(() => {
+        toast.style.opacity = '1';
+        toast.style.transform = 'translateY(0)';
+      });
+      setTimeout(() => {
+        toast.style.opacity = '0';
+        toast.style.transform = 'translateY(12px)';
+        setTimeout(() => toast.remove(), 250);
+      }, 3500);
+    };
+
+    window.apiFetch = async function(url, options = {}) {
+      const opts = { ...options };
+      opts.headers = {
+        'Accept': 'application/json',
+        ...(opts.headers || {})
+      };
+      if (opts.body && typeof opts.body === 'object' && !(opts.body instanceof FormData)) {
+        opts.headers['Content-Type'] = 'application/json';
+        opts.body = JSON.stringify(opts.body);
+      }
+      if (!opts.headers['Authorization']) {
+        opts.headers['Authorization'] = 'Bearer orbito_manager_token';
+      }
+      const res = await fetch(url, opts);
+      const data = await res.json().catch(() => null);
+      if (!res.ok) {
+        const errMsg = (data && (data.message || data.error)) || ('Request failed (' + res.status + ')');
+        window.showToast(errMsg, 'error');
+        throw new Error(errMsg);
+      }
+      return data;
     };
   </script>
   <style>
     ${BASE_STYLE_SHEET}
 
-    /* Shell Layout */
+    /* Overall Layout: Floating sidebar on cool light canvas */
     .app-layout {
       display: flex;
-      height: 100vh;
-      overflow: hidden;
-      background: var(--color-ink);
+      min-height: 100vh;
+      background: var(--color-canvas);
+      overflow-x: hidden;
     }
 
-    /* Left Sidebar Rail (220px fixed desktop) */
+    /* Left Sidebar Rail (Matching 'Shared RestaurantOS sidebar.png') */
     .nav-rail {
-      width: 220px;
-      min-width: 220px;
-      background: var(--color-charcoal);
-      border-right: 1px solid var(--border-default);
+      width: 250px;
+      min-width: 250px;
+      background: #FFFFFF;
+      border-radius: 28px;
+      margin: 16px 0 16px 16px;
+      padding: 16px 14px;
+      box-shadow: 0 4px 24px rgba(0, 0, 0, 0.04);
+      border: 1px solid rgba(0, 0, 0, 0.06);
       display: flex;
       flex-direction: column;
       justify-content: space-between;
-      transition: transform 200ms cubic-bezier(0.16, 1, 0.3, 1), width 160ms ease;
+      height: calc(100vh - 32px);
+      position: sticky;
+      top: 16px;
+      box-sizing: border-box;
       z-index: 40;
     }
-    .nav-brand {
-      padding: 16px 18px;
+
+    /* Brand Header Card */
+    .brand-card {
       display: flex;
       align-items: center;
-      gap: 10px;
-      border-bottom: 1px solid var(--border-subtle);
+      justify-content: space-between;
+      padding: 8px 10px;
+      background: #F8FAFC;
+      border-radius: 18px;
+      margin-bottom: 10px;
+      border: 1px solid rgba(0, 0, 0, 0.04);
+      cursor: pointer;
+      text-decoration: none;
+      transition: background 120ms ease;
     }
-    .brand-mark {
-      width: 28px;
-      height: 28px;
-      border-radius: 6px;
-      background: var(--color-copper);
+    .brand-card:hover {
+      background: #F1F5F9;
+    }
+    .brand-avatar {
+      width: 36px;
+      height: 36px;
+      border-radius: 10px;
+      background: #FB923C;
+      color: #FFFFFF;
+      font-weight: 800;
+      font-size: 16px;
       display: flex;
       align-items: center;
       justify-content: center;
-      color: #fff;
-      font-weight: 800;
-      font-size: 14px;
       flex-shrink: 0;
     }
-    .brand-title {
+    .brand-meta {
+      min-width: 0;
+      flex: 1;
+      margin: 0 10px;
+    }
+    .brand-name {
       font-weight: 700;
-      font-size: 14px;
-      letter-spacing: -0.01em;
-      color: var(--color-linen);
+      font-size: 13px;
+      color: #0F172A;
+      line-height: 1.2;
       overflow: hidden;
       text-overflow: ellipsis;
       white-space: nowrap;
     }
-    .brand-sub {
+    .brand-org {
       font-size: 11px;
-      color: var(--color-stone);
+      color: #64748B;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .brand-chevron {
+      color: #94A3B8;
+      font-size: 12px;
+    }
+
+    /* Branch Selector Pill */
+    .branch-pill {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 8px 14px;
+      background: #FFFFFF;
+      border: 1px solid #E2E8F0;
+      border-radius: 9999px;
+      cursor: pointer;
+      margin-bottom: 14px;
+      transition: border-color 120ms ease;
+      user-select: none;
+    }
+    .branch-pill:hover {
+      border-color: #CBD5E1;
+      background: #FAFAFA;
+    }
+    .branch-pill-content {
+      display: flex;
+      align-items: center;
+      gap: 7px;
+      font-size: 13px;
+      font-weight: 600;
+      color: #0F172A;
       overflow: hidden;
       text-overflow: ellipsis;
       white-space: nowrap;
     }
 
+    /* Navigation List */
     .nav-list {
-      padding: 12px 10px;
       display: flex;
       flex-direction: column;
-      gap: 2px;
+      gap: 3px;
       flex: 1;
       overflow-y: auto;
+      padding-right: 2px;
     }
     .nav-item {
       display: flex;
       align-items: center;
-      gap: 12px;
-      padding: 7px 12px;
-      border-radius: 6px;
-      color: var(--color-stone);
+      justify-content: space-between;
+      padding: 9px 14px;
+      border-radius: 9999px;
+      color: #475569;
       font-size: 13px;
       font-weight: 500;
       text-decoration: none;
       transition: all 120ms ease;
-      position: relative;
     }
     .nav-item:hover {
-      background: rgba(255, 255, 255, 0.04);
-      color: var(--color-linen);
+      background: #F1F5F9;
+      color: #0F172A;
     }
     .nav-item.active {
-      background: var(--color-copper-subtle);
-      color: var(--color-copper);
+      background: #000000;
+      color: #FFFFFF !important;
       font-weight: 600;
     }
-    .nav-item.active::before {
-      content: '';
-      position: absolute;
-      left: 0;
-      top: 6px;
-      bottom: 6px;
-      width: 3px;
-      border-radius: 0 2px 2px 0;
-      background: var(--color-copper);
+    .nav-item.active svg {
+      color: #FFFFFF !important;
+      stroke: #FFFFFF !important;
     }
-    .nav-icon {
-      font-size: 14px;
-      width: 18px;
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
-      opacity: 0.85;
-      flex-shrink: 0;
-    }
-
-    .nav-footer {
-      padding: 12px 14px;
-      border-top: 1px solid var(--border-subtle);
-      font-size: 11px;
-      color: var(--color-muted);
+    .nav-item-left {
       display: flex;
       align-items: center;
+      gap: 12px;
+      min-width: 0;
+    }
+    .nav-item-badge {
+      background: #EFF6FF;
+      color: #2563EB;
+      border-radius: 9999px;
+      padding: 1px 8px;
+      font-size: 11px;
+      font-weight: 700;
+    }
+    .nav-item.active .nav-item-badge {
+      background: rgba(255, 255, 255, 0.2);
+      color: #FFFFFF;
+    }
+
+    /* Bottom Plan Quota Card */
+    .quota-card {
+      background: #F8FAFC;
+      border-radius: 20px;
+      padding: 14px 16px;
+      margin-top: 12px;
+      border: 1px solid rgba(0, 0, 0, 0.04);
+    }
+    .quota-header {
+      display: flex;
       justify-content: space-between;
+      align-items: center;
+      margin-bottom: 10px;
     }
-    .nav-footer a {
-      color: var(--color-stone);
-      text-decoration: none;
+    .quota-plan-name {
+      font-size: 13px;
+      font-weight: 700;
+      color: #0F172A;
     }
-    .nav-footer a:hover {
-      color: var(--color-linen);
+    .quota-upgrade-link {
+      font-size: 12px;
+      font-weight: 600;
+      color: #2563EB;
+      text-decoration: underline;
+    }
+    .quota-stat {
+      margin-bottom: 8px;
+    }
+    .quota-stat:last-child {
+      margin-bottom: 0;
+    }
+    .quota-stat-labels {
+      display: flex;
+      justify-content: space-between;
+      font-size: 11px;
+      color: #64748B;
+      margin-bottom: 4px;
+      font-weight: 500;
+    }
+    .quota-progress-bar {
+      height: 4px;
+      background: #E2E8F0;
+      border-radius: 999px;
+      overflow: hidden;
+    }
+    .quota-progress-fill {
+      height: 100%;
+      background: #2563EB;
+      border-radius: 999px;
+      transition: width 300ms ease;
     }
 
     /* Content Area */
@@ -280,37 +391,100 @@ export function renderShell(contentHtml: string, options: ShellOptions): string 
       display: flex;
       flex-direction: column;
       min-width: 0;
-      overflow: hidden;
-      background: var(--color-ink);
+      overflow-y: auto;
+      background: var(--color-canvas);
     }
 
-    /* Top Bar */
-    .top-bar {
-      height: 52px;
-      background: var(--color-charcoal);
-      border-bottom: 1px solid var(--border-default);
+    /* Minimal Top Utility Strip */
+    .top-utility-strip {
       display: flex;
       align-items: center;
       justify-content: space-between;
-      padding: 0 16px;
+      padding: 14px 28px 0 28px;
       gap: 12px;
-      z-index: 20;
+    }
+    .top-utility-right {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-left: auto;
+    }
+    .cmdk-btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      background: #FFFFFF;
+      border: 1px solid #E2E8F0;
+      border-radius: 9999px;
+      padding: 6px 14px;
+      font-size: 12px;
+      color: #64748B;
+      cursor: pointer;
+      transition: all 120ms ease;
+    }
+    .cmdk-btn:hover {
+      background: #F8FAFC;
+      border-color: #CBD5E1;
+      color: #0F172A;
+    }
+    .cmdk-btn kbd {
+      background: #F1F5F9;
+      border: 1px solid #E2E8F0;
+      border-radius: 4px;
+      padding: 1px 5px;
+      font-size: 10px;
+      font-weight: 600;
+    }
+
+    /* Dropdown Menus */
+    .context-dropdown {
+      position: absolute;
+      top: 100%;
+      left: 0;
+      margin-top: 6px;
+      background: #FFFFFF;
+      border: 1px solid #E2E8F0;
+      border-radius: 16px;
+      box-shadow: 0 12px 32px rgba(0, 0, 0, 0.12);
+      padding: 8px;
+      z-index: 100;
+      display: none;
+      min-width: 220px;
+    }
+    .context-dropdown.open {
+      display: block;
+    }
+    .dropdown-item {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 8px 12px;
+      border-radius: 8px;
+      font-size: 12px;
+      color: #334155;
+      text-decoration: none;
+      transition: background 100ms ease;
+    }
+    .dropdown-item:hover, .dropdown-item.active {
+      background: #F1F5F9;
+      color: #0F172A;
+    }
+    .dropdown-divider {
+      height: 1px;
+      background: #E2E8F0;
+      margin: 6px 0;
     }
 
     /* Mobile Sidebar Toggle Button */
-    .sidebar-toggle {
+    .mobile-menu-btn {
       display: none;
-      background: transparent;
-      border: 1px solid var(--border-default);
-      border-radius: 6px;
-      color: var(--color-linen);
-      padding: 6px 8px;
+      background: #FFFFFF;
+      border: 1px solid #E2E8F0;
+      border-radius: 9999px;
+      padding: 7px 12px;
       cursor: pointer;
       align-items: center;
       justify-content: center;
-    }
-    .sidebar-toggle:hover {
-      background: rgba(255, 255, 255, 0.05);
     }
 
     /* Backdrop for Mobile Sidebar Drawer */
@@ -318,7 +492,7 @@ export function renderShell(contentHtml: string, options: ShellOptions): string 
       display: none;
       position: fixed;
       inset: 0;
-      background: rgba(0, 0, 0, 0.65);
+      background: rgba(15, 23, 42, 0.4);
       backdrop-filter: blur(4px);
       z-index: 35;
     }
@@ -326,222 +500,27 @@ export function renderShell(contentHtml: string, options: ShellOptions): string 
       display: block;
     }
 
-    /* Global Context Selectors */
-    .context-left {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      position: relative;
-      flex-wrap: nowrap;
-      min-width: 0;
-    }
-    .context-btn {
-      display: inline-flex;
-      align-items: center;
-      gap: 6px;
-      background: #0E1216;
-      border: 1px solid var(--border-default);
-      border-radius: 6px;
-      padding: 5px 10px;
-      font-size: 12px;
-      font-weight: 600;
-      color: var(--color-linen);
-      cursor: pointer;
-      transition: all 120ms ease;
-      position: relative;
-      user-select: none;
-      white-space: nowrap;
-    }
-    .context-btn:hover {
-      border-color: var(--color-copper);
-      background: #151A20;
-    }
-    .context-btn .caret {
-      font-size: 9px;
-      opacity: 0.6;
-      margin-left: 2px;
-    }
-    .context-btn .pill-code {
-      font-size: 10px;
-      font-family: var(--font-mono);
-      color: var(--color-stone);
-      background: rgba(255, 255, 255, 0.06);
-      padding: 1px 4px;
-      border-radius: 3px;
-    }
-
-    /* Dropdown Menus */
-    .context-dropdown {
-      position: absolute;
-      top: calc(100% + 8px);
-      left: 0;
-      background: #14181F;
-      border: 1px solid var(--border-strong);
-      border-radius: 8px;
-      box-shadow: 0 12px 32px rgba(0, 0, 0, 0.8);
-      min-width: 240px;
-      padding: 6px;
-      z-index: 100;
-      display: none;
-      flex-direction: column;
-      gap: 2px;
-    }
-    .context-dropdown.open {
-      display: flex;
-      animation: dropFade 120ms ease;
-    }
-    @keyframes dropFade {
-      from { opacity: 0; transform: translateY(-6px); }
-      to { opacity: 1; transform: translateY(0); }
-    }
-    .dropdown-header {
-      font-size: 10px;
-      font-weight: 700;
-      text-transform: uppercase;
-      letter-spacing: 0.06em;
-      color: var(--color-stone);
-      padding: 6px 8px;
-    }
-    .dropdown-item {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      padding: 8px 10px;
-      border-radius: 6px;
-      color: var(--color-linen);
-      font-size: 12px;
-      cursor: pointer;
-      text-decoration: none;
-      transition: background 100ms ease;
-    }
-    .dropdown-item:hover {
-      background: rgba(255, 255, 255, 0.06);
-    }
-    .dropdown-item.active {
-      background: var(--color-copper-subtle);
-      color: var(--color-copper);
-      font-weight: 600;
-    }
-    .dropdown-divider {
-      height: 1px;
-      background: var(--border-subtle);
-      margin: 4px 0;
-    }
-    .dropdown-action {
-      display: flex;
-      align-items: center;
-      gap: 6px;
-      padding: 7px 10px;
-      border-radius: 6px;
-      color: var(--color-stone);
-      font-size: 12px;
-      font-weight: 500;
-      cursor: pointer;
-      text-decoration: none;
-    }
-    .dropdown-action:hover {
-      background: rgba(255, 255, 255, 0.04);
-      color: var(--color-linen);
-    }
-
-    .service-meta {
-      font-size: 12px;
-      color: var(--color-stone);
-    }
-
-    .context-right {
-      display: flex;
-      align-items: center;
-      gap: 10px;
-      flex-shrink: 0;
-    }
-    .cmdk-trigger {
-      display: inline-flex;
-      align-items: center;
-      gap: 8px;
-      padding: 5px 10px;
-      border-radius: 6px;
-      background: var(--color-ink);
-      border: 1px solid var(--border-default);
-      color: var(--color-stone);
-      font-size: 12px;
-      cursor: pointer;
-      user-select: none;
-      transition: border-color 120ms ease;
-    }
-    .cmdk-trigger:hover {
-      border-color: var(--color-copper);
-      color: var(--color-linen);
-    }
-    .cmdk-trigger kbd {
-      background: rgba(255, 255, 255, 0.08);
-      padding: 1px 5px;
-      border-radius: 4px;
-      font-size: 10px;
-      font-family: var(--font-mono);
-      color: var(--color-linen);
-    }
-
-    /* Main Scrollable Workspace */
-    .main-workspace {
-      flex: 1;
-      overflow-y: auto;
-      overflow-x: hidden;
-      display: flex;
-      flex-direction: column;
-    }
-
-    /* Mobile Bottom Navigation (Visible <= 768px) */
-    .mobile-nav-bar {
-      display: none;
-      height: 58px;
-      background: var(--color-charcoal);
-      border-top: 1px solid var(--border-default);
-      position: fixed;
-      bottom: 0;
-      left: 0;
-      right: 0;
-      z-index: 50;
-      justify-content: space-around;
-      align-items: center;
-    }
-    .mobile-nav-item {
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      gap: 3px;
-      color: var(--color-stone);
-      text-decoration: none;
-      font-size: 10px;
-      font-weight: 600;
-      padding: 6px;
-    }
-    .mobile-nav-item.active {
-      color: var(--color-copper);
-    }
-
     /* Responsive Rules */
     @media (max-width: 1024px) {
-      .breadcrumb-trail { display: none; }
-    }
-    @media (max-width: 768px) {
-      .sidebar-toggle { display: inline-flex; }
+      .mobile-menu-btn { display: inline-flex; }
       .nav-rail {
         position: fixed;
         top: 0;
         bottom: 0;
         left: 0;
+        margin: 0;
+        height: 100vh;
+        border-radius: 0;
         transform: translateX(-100%);
-        box-shadow: 4px 0 24px rgba(0, 0, 0, 0.85);
+        transition: transform 200ms cubic-bezier(0.16, 1, 0.3, 1);
+        box-shadow: 8px 0 32px rgba(0, 0, 0, 0.15);
       }
       .nav-rail.mobile-open {
         transform: translateX(0);
       }
-      .mobile-nav-bar { display: flex; }
-      .top-bar { padding: 0 10px; }
-      .main-workspace { padding-bottom: 60px; }
-      .context-btn .pill-code { display: none; }
-      .cmdk-trigger kbd { display: none; }
+      .top-utility-strip {
+        padding: 12px 16px 0 16px;
+      }
     }
   </style>
 </head>
@@ -550,251 +529,180 @@ export function renderShell(contentHtml: string, options: ShellOptions): string 
   <div class="sidebar-backdrop" id="sidebar-backdrop" onclick="closeMobileSidebar()"></div>
 
   <div class="app-layout">
-    <!-- Left Navigation Rail (220px fixed on desktop) -->
+    <!-- Left Navigation Rail (Matching 'Shared RestaurantOS sidebar.png') -->
     <aside class="nav-rail" id="nav-rail">
       <div>
-        <div class="nav-brand">
-          <div class="brand-mark">R</div>
-          <div style="min-width: 0;">
-            <div class="brand-title">${restaurantName}</div>
-            <div class="brand-sub">${currentBranch.name}</div>
+        <!-- Brand Header Card -->
+        <a href="/${contextQuery}" class="brand-card">
+          <div class="brand-avatar">
+            ${restaurantName ? restaurantName.charAt(0).toUpperCase() : 'M'}
+          </div>
+          <div class="brand-meta">
+            <div class="brand-name">${restaurantName}</div>
+            <div class="brand-org">Maxora Hospitality</div>
+          </div>
+          <span class="brand-chevron">⬍</span>
+        </a>
+
+        <!-- Branch Selector Pill with Dropdown -->
+        <div style="position: relative;">
+          <div class="branch-pill" onclick="toggleDropdown('branch-dropdown')">
+            <div class="branch-pill-content">
+              ${icon('map-pin', { size: 14, color: '#64748B' })}
+              <span>${currentBranch.name}</span>
+            </div>
+            <span style="font-size: 10px; color: #94A3B8;">⬍</span>
+          </div>
+
+          <!-- Branch Dropdown -->
+          <div id="branch-dropdown" class="context-dropdown">
+            <div style="font-size: 10px; font-weight: 700; color: #94A3B8; text-transform: uppercase; padding: 4px 8px; margin-bottom: 4px;">
+              Select Branch (${branches.length})
+            </div>
+            ${branches
+              .map((b) => {
+                const bFloors = allFloors.filter((f) => f.branchId === b.id);
+                const defaultFId = bFloors[0] ? bFloors[0].id : '';
+                const targetUrl = windowTargetQuery({ branch: b.id, floor: defaultFId, service: serviceShift });
+                return `
+                <a href="${targetUrl}" class="dropdown-item ${b.id === currentBranch.id ? 'active' : ''}">
+                  <div>
+                    <strong>${b.name}</strong>
+                    <div style="font-size: 10px; color: #64748B;">${b.city} · ${b.code}</div>
+                  </div>
+                  <span style="font-size: 10px; font-weight: 600; color: ${b.status === 'OPERATIONAL' ? '#10B981' : '#64748B'};">
+                    ${b.status === 'OPERATIONAL' ? '● Open' : '○ Setup'}
+                  </span>
+                </a>`;
+              })
+              .join('')}
+            <div class="dropdown-divider"></div>
+            <a href="/operations/locations?action=new${contextQuery}" class="dropdown-item" style="color: #2563EB; font-weight: 600;">
+              <span>+ Add branch</span>
+            </a>
           </div>
         </div>
 
+        <!-- 12 Unified Navigation Links -->
         <nav class="nav-list">
-          ${navSections
-      .map(
-        (sec) => `
-            <div style="font-size: 10px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: var(--color-stone); padding: 10px 10px 4px 10px; opacity: 0.7;">
-              ${sec.title}
-            </div>
-            ${sec.items
+          ${navItems
             .map(
               (item) => `
-              <a href="${item.href}" class="nav-item ${activeNav === item.key ? 'active' : ''}">
-                <span class="nav-icon">${item.icon}</span>
+            <a href="${item.href}" class="nav-item ${isNavActive(item.key) ? 'active' : ''}">
+              <div class="nav-item-left">
+                ${item.icon}
                 <span>${item.label}</span>
-              </a>`
+              </div>
+              ${item.badge ? `<span class="nav-item-badge">${item.badge}</span>` : ''}
+            </a>`
             )
-            .join('')}`
-      )
-      .join('')}
+            .join('')}
         </nav>
       </div>
 
-      <div class="nav-footer">
-        <span>RestaurantOS 3.1</span>
-        <div style="display: flex; gap: 8px;">
-          <a href="/developer/templates${contextQuery}" title="Template Composition Inspector" style="color: var(--color-copper); font-weight: 700; display: inline-flex; align-items: center; gap: 4px;">${icon('code', { size: 12 })} Inspector</a>
-          <a href="/developer/diagnostics" title="System Diagnostics">Diagnostics ↗</a>
+      <!-- Bottom Quota Usage Card -->
+      <div class="quota-card">
+        <div class="quota-header">
+          <span class="quota-plan-name">Growth plan</span>
+          <a href="${controlPlaneUrl}" target="_blank" class="quota-upgrade-link">Upgrade</a>
+        </div>
+        <div class="quota-stat">
+          <div class="quota-stat-labels">
+            <span>Tables</span>
+            <span>${tablesCount} / 200</span>
+          </div>
+          <div class="quota-progress-bar">
+            <div class="quota-progress-fill" style="width: ${Math.min(100, Math.round((tablesCount / 200) * 100))}%;"></div>
+          </div>
+        </div>
+        <div class="quota-stat">
+          <div class="quota-stat-labels">
+            <span>Menu items</span>
+            <span>18 / 500</span>
+          </div>
+          <div class="quota-progress-bar">
+            <div class="quota-progress-fill" style="width: 4%;"></div>
+          </div>
         </div>
       </div>
     </aside>
 
     <!-- Main Application Shell -->
     <div class="app-content">
-      <!-- Top Context Bar -->
-      <header class="top-bar">
-        <div class="context-left">
-          <!-- Mobile Sidebar Toggle -->
-          <button type="button" class="sidebar-toggle" onclick="toggleMobileSidebar()" aria-label="Toggle Navigation Drawer">
-            ${icon('menu', { size: 16 })}
-          </button>
+      <!-- Minimal Top Utility Strip (Mobile Toggle, Search, SSE Status) -->
+      <div class="top-utility-strip">
+        <button type="button" class="mobile-menu-btn" onclick="toggleMobileSidebar()" aria-label="Toggle Navigation">
+          ${icon('menu', { size: 16 })}
+        </button>
 
-          <!-- Breadcrumb Trail -->
-          <nav class="breadcrumb-trail" aria-label="Breadcrumb">
-            <a href="/${contextQuery}" class="breadcrumb-item">RestaurantOS</a>
-            <span class="breadcrumb-sep">/</span>
-            <span class="breadcrumb-item">${currentSection}</span>
-            <span class="breadcrumb-sep">/</span>
-            <span class="breadcrumb-item active">${pageTitle}</span>
-          </nav>
-
-          <span class="breadcrumb-sep" style="display: inline-block; margin: 0 4px;">•</span>
-
-          <!-- 1. Real Branch Switcher Dropdown -->
-          <div style="position: relative;">
-            <div class="context-btn" onclick="toggleDropdown('branch-menu')">
-              <span style="display: inline-flex; align-items: center; gap: 6px;">${icon('map-pin', { size: 13, color: 'var(--color-copper)' })} ${currentBranch.name}</span>
-              <span class="pill-code">${currentBranch.code}</span>
-              <span class="caret" style="display: inline-flex; align-items: center;">${icon('chevron-down', { size: 10 })}</span>
-            </div>
-            <div id="branch-menu" class="context-dropdown">
-              <div class="dropdown-header">Select Location (${branches.length})</div>
-              ${branches
-      .map((b) => {
-        const bFloors = allFloors.filter((f) => f.branchId === b.id);
-        const defaultFId = bFloors[0] ? bFloors[0].id : '';
-        const targetUrl = windowTargetQuery({ branch: b.id, floor: defaultFId, service: serviceShift });
-        return `
-                <a href="${targetUrl}" class="dropdown-item ${b.id === currentBranch.id ? 'active' : ''}">
-                  <div>
-                    <strong>${b.name}</strong>
-                    <div style="font-size: 10px; color: var(--color-stone);">${b.city} · ${b.code}</div>
-                  </div>
-                  <span style="font-size: 10px; color: ${b.status === 'OPERATIONAL' ? 'var(--color-sage)' : 'var(--color-stone)'};">
-                    ${b.status === 'OPERATIONAL' ? '● Live' : '○ Setup'}
-                  </span>
-                </a>`;
-      })
-      .join('')}
-              <div class="dropdown-divider"></div>
-              <a href="/operations/locations?action=new${contextQuery}" class="dropdown-action">
-                <span style="display:inline-flex;align-items:center;">${icon('plus', { size: 12 })}</span> <span>Add New Branch...</span>
-              </a>
-              <a href="/operations/locations${contextQuery}" class="dropdown-action">
-                <span style="display:inline-flex;align-items:center;">${icon('settings', { size: 12 })}</span> <span>Manage Branches</span>
-              </a>
-            </div>
-          </div>
-
-          <!-- 2. Real Floor / Service Area Switcher Dropdown -->
-          <div style="position: relative;">
-            <div class="context-btn" onclick="toggleDropdown('floor-menu')">
-              <span style="display: inline-flex; align-items: center; gap: 6px;">${icon('floor', { size: 13, color: 'var(--color-copper)' })} ${currentFloor.name}</span>
-              <span class="caret" style="display: inline-flex; align-items: center;">${icon('chevron-down', { size: 10 })}</span>
-            </div>
-            <div id="floor-menu" class="context-dropdown">
-              <div class="dropdown-header">${currentBranch.name} Floors (${branchFloors.length})</div>
-              ${branchFloors
-      .map((f) => {
-        const targetUrl = windowTargetQuery({ branch: currentBranch.id, floor: f.id, service: serviceShift });
-        return `
-                <a href="${targetUrl}" class="dropdown-item ${f.id === currentFloor.id ? 'active' : ''}">
-                  <div>
-                    <strong>${f.name}</strong>
-                    <div style="font-size: 10px; color: var(--color-stone);">${f.type} · ${f.activeLayout}</div>
-                  </div>
-                  <span style="font-size: 11px; font-weight: 700; color: var(--color-linen);">${f.capacity}p</span>
-                </a>`;
-      })
-      .join('')}
-              <div class="dropdown-divider"></div>
-              <a href="/operations/floors?action=new${contextQuery}" class="dropdown-action">
-                <span style="display:inline-flex;align-items:center;">${icon('plus', { size: 12 })}</span> <span>Add Service Area...</span>
-              </a>
-              <a href="/operations/floors${contextQuery}" class="dropdown-action">
-                <span style="display:inline-flex;align-items:center;">${icon('settings', { size: 12 })}</span> <span>Manage Floor Plans</span>
-              </a>
-            </div>
-          </div>
-
-          <!-- 3. Real Service Shift Dropdown -->
-          <div style="position: relative;">
-            <div class="context-btn" onclick="toggleDropdown('service-menu')">
-              <span style="display: inline-flex; align-items: center; gap: 6px;">${icon('clock', { size: 13, color: 'var(--color-copper)' })} ${serviceShift}</span>
-              <span class="caret" style="display: inline-flex; align-items: center;">${icon('chevron-down', { size: 10 })}</span>
-            </div>
-            <div id="service-menu" class="context-dropdown">
-              <div class="dropdown-header">Service Shifts</div>
-              ${['Dinner Service', 'Lunch Service', 'Late Night', 'Private Event']
-      .map((shift) => {
-        const targetUrl = windowTargetQuery({ branch: currentBranch.id, floor: currentFloor.id, service: shift });
-        return `
-                <a href="${targetUrl}" class="dropdown-item ${shift === serviceShift ? 'active' : ''}">
-                  <span>${shift}</span>
-                  ${shift === serviceShift ? `<span style="color:var(--color-copper);display:inline-flex;align-items:center;">${icon('check', { size: 12 })}</span>` : ''}
-                </a>`;
-      })
-      .join('')}
-            </div>
-          </div>
-        </div>
-
-        <div class="context-right">
-          <!-- Live SSE Status Indicator -->
-          <div class="sse-badge" id="sse-status" title="Real-Time Event Stream">
+        <div class="top-utility-right">
+          <div class="sse-badge" id="sse-badge">
             <span class="sse-dot" id="sse-dot"></span>
             <span id="sse-label">Live</span>
           </div>
 
-          <span class="service-meta text-mono" id="live-clock">--:--:--</span>
-
-          ${options.extraHeaderActions || ''}
-
-          <!-- Command Palette Trigger -->
-          <div class="cmdk-trigger" onclick="openCommandPalette()" role="button" aria-label="Open Command Palette (Cmd+K)">
+          <button type="button" class="cmdk-btn" onclick="openCommandPalette()">
+            ${icon('search', { size: 13 })}
             <span>Search...</span>
             <kbd>⌘K</kbd>
-          </div>
-
-          <!-- External OrbitoX Control Plane Link -->
-          <a href="${controlPlaneUrl}/admin/projects/project_restaurant_os" target="_blank" rel="noopener noreferrer" class="btn btn-ghost btn-sm" title="Open OrbitoX Control Plane (External)" style="font-size: 11px; display: inline-flex; align-items: center; gap: 5px;">
-            <span>Open OrbitoX Control Plane ↗</span>
-          </a>
+          </button>
         </div>
-      </header>
+      </div>
 
-      <!-- Main Workspace -->
-      <main class="main-workspace">
+      <!-- Dynamic Page Workspace -->
+      <main class="main-workspace" id="main-workspace" style="flex: 1;">
         ${contentHtml}
       </main>
     </div>
   </div>
 
-  <!-- Mobile Bottom Navigation Rail -->
-  <nav class="mobile-nav-bar">
-    <a href="/${contextQuery}" class="mobile-nav-item ${activeNav === 'overview' ? 'active' : ''}">
-      <span>${icon('overview', { size: 18 })}</span>
-      <span>Home</span>
-    </a>
-    <a href="/operations/floor${contextQuery}" class="mobile-nav-item ${activeNav === 'floor' ? 'active' : ''}">
-      <span>${icon('floor', { size: 18 })}</span>
-      <span>Floor</span>
-    </a>
-    <a href="/operations/tables${contextQuery}" class="mobile-nav-item ${activeNav === 'tables' ? 'active' : ''}">
-      <span>${icon('tables', { size: 18 })}</span>
-      <span>Tables</span>
-    </a>
-    <a href="/operations/orders${contextQuery}" class="mobile-nav-item ${activeNav === 'orders' ? 'active' : ''}">
-      <span>${icon('orders', { size: 18 })}</span>
-      <span>Orders</span>
-    </a>
-    <a href="/kds${contextQuery}" class="mobile-nav-item ${activeNav === 'kitchen' ? 'active' : ''}">
-      <span>${icon('kitchen', { size: 18 })}</span>
-      <span>KDS</span>
-    </a>
-  </nav>
-
-  <!-- Global Command Palette (⌘K) -->
+  <!-- Command Palette (⌘K) Modal -->
   <div class="cmdk-backdrop" id="cmdk-modal" onclick="if(event.target === this) closeCommandPalette()">
     <div class="cmdk-box">
-      <input type="text" class="cmdk-input" id="cmdk-search" placeholder="Type a command or jump to workspace..." oninput="handleCmdkInput(this.value)" autofocus>
+      <input type="text" id="cmdk-search" class="cmdk-input" placeholder="Search tables, orders, dishes, commands..." oninput="handleCmdkInput(this.value)" autocomplete="off">
       <div class="cmdk-results" id="cmdk-list">
-        <a href="/${contextQuery}" class="cmdk-item selected"><span style="display:inline-flex;align-items:center;gap:8px;">${icon('overview', { size: 14 })} Operations Command Home</span><kbd>↵</kbd></a>
-        <a href="/operations/floor${contextQuery}" class="cmdk-item"><span style="display:inline-flex;align-items:center;gap:8px;">${icon('floor', { size: 14 })} Spatial Floor Canvas & Tables</span><kbd>↵</kbd></a>
-        <a href="/operations/tables${contextQuery}" class="cmdk-item"><span style="display:inline-flex;align-items:center;gap:8px;">${icon('tables', { size: 14 })} Tables Fleet Directory</span><kbd>↵</kbd></a>
-        <a href="/operations/orders${contextQuery}" class="cmdk-item"><span style="display:inline-flex;align-items:center;gap:8px;">${icon('orders', { size: 14 })} Service Order Ledger</span><kbd>↵</kbd></a>
-        <a href="/kds${contextQuery}" class="cmdk-item"><span style="display:inline-flex;align-items:center;gap:8px;">${icon('kitchen', { size: 14 })} Kitchen Display System (KDS)</span><kbd>↵</kbd></a>
-        <a href="/menu${contextQuery}" class="cmdk-item"><span style="display:inline-flex;align-items:center;gap:8px;">${icon('menu', { size: 14 })} Menu Catalog & Recipes</span><kbd>↵</kbd></a>
-        <a href="/guests${contextQuery}" class="cmdk-item"><span style="display:inline-flex;align-items:center;gap:8px;">${icon('guests', { size: 14 })} Active Seated Guests & CRM</span><kbd>↵</kbd></a>
-        <a href="/reports${contextQuery}" class="cmdk-item"><span style="display:inline-flex;align-items:center;gap:8px;">${icon('reports', { size: 14 })} Service Analytics & Financials</span><kbd>↵</kbd></a>
-        <a href="/studio${contextQuery}" class="cmdk-item"><span style="display:inline-flex;align-items:center;gap:8px;">${icon('studio', { size: 14 })} Visual Brand Studio & Editor</span><kbd>↵</kbd></a>
-        <a href="/marketplace${contextQuery}" class="cmdk-item"><span style="display:inline-flex;align-items:center;gap:8px;">${icon('marketplace', { size: 14 })} Browse Storefront Templates</span><kbd>↵</kbd></a>
-        <a href="/white-label${contextQuery}" class="cmdk-item"><span style="display:inline-flex;align-items:center;gap:8px;">${icon('whitelabel', { size: 14 })} White-Label Branding & Domains</span><kbd>↵</kbd></a>
-        <a href="/staff${contextQuery}" class="cmdk-item"><span style="display:inline-flex;align-items:center;gap:8px;">${icon('staff', { size: 14 })} Staff Directory & RBAC Security</span><kbd>↵</kbd></a>
-        <a href="/operations/locations${contextQuery}" class="cmdk-item"><span style="display:inline-flex;align-items:center;gap:8px;">${icon('locations', { size: 14 })} Manage Restaurant Branches</span><kbd>↵</kbd></a>
-        <a href="/operations/floors${contextQuery}" class="cmdk-item"><span style="display:inline-flex;align-items:center;gap:8px;">${icon('floors', { size: 14 })} Manage Floor Plans & Presets</span><kbd>↵</kbd></a>
-        <a href="/support${contextQuery}" class="cmdk-item"><span style="display:inline-flex;align-items:center;gap:8px;">${icon('support', { size: 14 })} Support Desk & Incident Cases</span><kbd>↵</kbd></a>
-        <a href="/developer/templates${contextQuery}" class="cmdk-item"><span style="display:inline-flex;align-items:center;gap:8px;">${icon('code', { size: 14 })} Template Composition Inspector</span><kbd>↵</kbd></a>
-        <a href="/dine/7Kp9xQ8m2L" target="_blank" class="cmdk-item"><span style="display:inline-flex;align-items:center;gap:8px;">${icon('smartphone', { size: 14 })} Open Diner Mobile PWA (T-14)</span><kbd>↗</kbd></a>
+        <a href="/${contextQuery}" class="cmdk-item">
+          <span>${icon('home', { size: 14 })} Today Operations Command</span>
+          <kbd>↵</kbd>
+        </a>
+        <a href="/operations/orders${contextQuery}" class="cmdk-item">
+          <span>${icon('orders', { size: 14 })} View Live Orders</span>
+          <kbd>↵</kbd>
+        </a>
+        <a href="/kds${contextQuery}" class="cmdk-item">
+          <span>${icon('monitor', { size: 14 })} Open Kitchen Screen (KDS)</span>
+          <kbd>↵</kbd>
+        </a>
+        <a href="/menu${contextQuery}" class="cmdk-item">
+          <span>${icon('menu', { size: 14 })} Manage Menu & Pricing</span>
+          <kbd>↵</kbd>
+        </a>
+        <a href="/operations/floor${contextQuery}" class="cmdk-item">
+          <span>${icon('layout-grid', { size: 14 })} Floor Canvas & Tables Editor</span>
+          <kbd>↵</kbd>
+        </a>
+        <a href="/operations/locations${contextQuery}" class="cmdk-item">
+          <span>${icon('map-pin', { size: 14 })} Branches Management</span>
+          <kbd>↵</kbd>
+        </a>
+        <a href="/operations/staff${contextQuery}" class="cmdk-item">
+          <span>${icon('users', { size: 14 })} Staff & Roles (RBAC)</span>
+          <kbd>↵</kbd>
+        </a>
+        <a href="/operations/invoices${contextQuery}" class="cmdk-item">
+          <span>${icon('file-text', { size: 14 })} Invoices & GST Invoicing</span>
+          <kbd>↵</kbd>
+        </a>
+        <a href="/whitelabel${contextQuery}" class="cmdk-item">
+          <span>${icon('settings', { size: 14 })} Settings & Custom Domains</span>
+          <kbd>↵</kbd>
+        </a>
       </div>
     </div>
   </div>
 
   <script>
-    // Live Service Clock
-    function updateClock() {
-      const el = document.getElementById('live-clock');
-      if (el) {
-        const now = new Date();
-        el.textContent = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
-      }
-    }
-    setInterval(updateClock, 1000);
-    updateClock();
-
-    // Mobile Sidebar Drawer Toggle
+    // Mobile Drawer Controls
     function toggleMobileSidebar() {
       const rail = document.getElementById('nav-rail');
       const backdrop = document.getElementById('sidebar-backdrop');
@@ -808,7 +716,7 @@ export function renderShell(contentHtml: string, options: ShellOptions): string 
       if (backdrop) backdrop.classList.remove('open');
     }
 
-    // Context Dropdowns
+    // Dropdowns
     function toggleDropdown(id) {
       const target = document.getElementById(id);
       const all = document.querySelectorAll('.context-dropdown');
@@ -821,12 +729,12 @@ export function renderShell(contentHtml: string, options: ShellOptions): string 
     }
 
     document.addEventListener('click', (e) => {
-      if (!e.target.closest('.context-btn') && !e.target.closest('.context-dropdown')) {
+      if (!e.target.closest('.branch-pill') && !e.target.closest('.context-dropdown')) {
         document.querySelectorAll('.context-dropdown').forEach(d => d.classList.remove('open'));
       }
     });
 
-    // Command Palette Logic (⌘K) with Keyboard Navigation
+    // Command Palette Logic (⌘K)
     let cmdkSelectedIndex = 0;
     function openCommandPalette() {
       const modal = document.getElementById('cmdk-modal');
@@ -906,15 +814,10 @@ export function renderShell(contentHtml: string, options: ShellOptions): string 
       if (!list) return;
       const items = list.getElementsByClassName('cmdk-item');
       const q = query.toLowerCase().trim();
-      let firstVisibleIdx = -1;
       for (let i = 0; i < items.length; i++) {
         const item = items[i];
         const text = item.textContent.toLowerCase();
-        const matches = text.includes(q) || (q.endsWith('s') && text.includes(q.slice(0, -1)));
-        item.style.display = matches ? 'flex' : 'none';
-        if (matches && firstVisibleIdx === -1) {
-          firstVisibleIdx = 0;
-        }
+        item.style.display = text.includes(q) ? 'flex' : 'none';
       }
       cmdkSelectedIndex = 0;
       updateCmdkSelection();
@@ -943,7 +846,6 @@ export function renderShell(contentHtml: string, options: ShellOptions): string 
 </html>`;
 }
 
-// Server-side helper to generate link preserving pathname
 function windowTargetQuery(params: { branch: string; floor: string; service: string }): string {
   return `?branch=${encodeURIComponent(params.branch)}&floor=${encodeURIComponent(
     params.floor

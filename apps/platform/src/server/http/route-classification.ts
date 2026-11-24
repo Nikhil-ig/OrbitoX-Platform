@@ -69,6 +69,7 @@ export function isStaticAsset(pathname: string): boolean {
 
 export function isExplicitPublicRoute(pathname: string): boolean {
     if (pathname === '/platform/login' || pathname === '/api/v1/platform/auth/login') return true;
+    if (pathname === '/onboarding' || pathname.startsWith('/onboarding/')) return true;
     // Exact public control plane diagnostics & public keys
     if (pathname === '/health' || pathname === '/api/health' || pathname === '/api/v1/openapi.json' || pathname === '/api/v1/platform/grant-keys') return true;
 

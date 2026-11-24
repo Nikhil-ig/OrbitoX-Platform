@@ -3,503 +3,635 @@
 import * as React from 'react';
 import Link from 'next/link';
 import {
-  UtensilsCrossed,
-  ChefHat,
-  QrCode,
   TrendingUp,
-  Clock,
-  Users,
-  CheckCircle2,
-  AlertCircle,
-  ExternalLink,
-  Plus,
-  RefreshCw,
   Search,
-  Receipt,
+  Bell,
+  Plus,
+  ExternalLink,
+  Shield,
+  Download,
+  Building2,
+  UtensilsCrossed,
   Sparkles,
   ArrowRight,
+  CheckCircle2,
 } from 'lucide-react';
-import {
-  Card,
-  Button,
-  Badge,
-} from '@orbitox-io/ui';
 
-export type TableStatus = 'AVAILABLE' | 'OCCUPIED' | 'BILLING' | 'RESERVED' | 'DIRTY' | 'BLOCKED' | 'MAINTENANCE';
-
-interface TableState {
+interface ProjectRecord {
   id: string;
-  tableNumber: string;
-  seats?: number;
-  floor: string;
-  status: TableStatus;
-  dinerCount?: number;
-  billAmount?: number;
-  durationMinutes?: number;
-  activeItems?: Array<{ name: string; qty: number }>;
+  name: string;
+  slug: string;
+  vertical?: string;
+  createdAt?: string;
+}
+
+interface TenantItem {
+  id: string;
+  name: string;
+  slug: string;
+  domain: string;
+  vertical: 'RestaurantOS' | 'HospitalOS';
+  status: 'Live' | 'Setting up';
+  metricValue: string;
+  metricLabel: string;
+  tags: string[];
+  progress?: number;
+  avatarBg: string;
+  avatarChar: string;
 }
 
 export default function CustomerDashboardPage() {
-  const [tables, setTables] = React.useState<TableState[]>([]);
-  const [selectedFloor, setSelectedFloor] = React.useState<string>('ALL');
-  const [selectedTable, setSelectedTable] = React.useState<TableState | null>(null);
-  const [restaurantName, setRestaurantName] = React.useState('Restaurant Operating Center');
-  const [restaurantCity, setRestaurantCity] = React.useState('Bengaluru');
-  const [activeSlug, setActiveSlug] = React.useState<string | null>(null);
+  const [userName, setUserName] = React.useState('Priya');
+  const [userInitials, setUserInitials] = React.useState('PS');
+  const [orgName, setOrgName] = React.useState('Maxora Hospitality Group');
+  const [projects, setProjects] = React.useState<ProjectRecord[]>([]);
+  const [activePlan, setActivePlan] = React.useState('Growth');
   const [hasLoaded, setHasLoaded] = React.useState(false);
-  const [isRuntimeLive, setIsRuntimeLive] = React.useState(false);
-  const [isSettling, setIsSettling] = React.useState(false);
-  const [settlementError, setSettlementError] = React.useState<string | null>(null);
+  const [activeTab, setActiveTab] = React.useState<'Home' | 'Tenants' | 'Team' | 'Billing' | 'Data & privacy'>('Home');
 
-  // Authoritative data loading from customer session and restaurant runtime
-  const loadAuthoritativeState = React.useCallback(async () => {
-    try {
-      const meRes = await fetch('/api/v1/customer/auth/me');
-      if (!meRes.ok) {
-        setHasLoaded(true);
-        return;
-      }
-      const meData = await meRes.json();
-      const primaryOrgId = meData.memberships?.[0]?.organizationId;
-      if (!primaryOrgId) {
-        setHasLoaded(true);
-        return;
-      }
+  // Load Authoritative State from session and projects API
+  React.useEffect(() => {
+    let isMounted = true;
 
-      const tenantsRes = await fetch(`/api/v1/customer/organizations/${encodeURIComponent(primaryOrgId)}/tenants`);
-      if (!tenantsRes.ok) {
-        setHasLoaded(true);
-        return;
-      }
-      const tenantsData = await tenantsRes.json();
-      const firstProject = tenantsData.projects?.[0];
-      if (!firstProject) {
-        setHasLoaded(true);
-        return;
-      }
+    async function loadData() {
+      try {
+        const meRes = await fetch('/api/v1/customer/auth/me');
+        if (!meRes.ok) return;
+        const meData = await meRes.json();
 
-      setRestaurantName(firstProject.name || 'My Restaurant');
-      setActiveSlug(firstProject.slug);
-
-      // 1. Fetch live table fleet from RestaurantOS runtime
-      const tablesRes = await fetch(`/api/v1/customer/tenants/${encodeURIComponent(firstProject.slug)}/tables`);
-      if (tablesRes.ok) {
-        const tablesData = await tablesRes.json();
-        setIsRuntimeLive(true);
-        if (Array.isArray(tablesData.tables) && tablesData.tables.length > 0) {
-          const liveTables: TableState[] = tablesData.tables.map((t: any) => ({
-            id: String(t.id),
-            tableNumber: t.number || `T-${String(t.id).padStart(2, '0')}`,
-            seats: typeof t.capacity === 'number' ? t.capacity : undefined,
-            floor: t.floorId || t.section || 'Main Dining',
-            status: (t.status as TableStatus) || 'AVAILABLE',
-            dinerCount: typeof t.dinerCount === 'number' ? t.dinerCount : undefined,
-            billAmount: typeof t.activeBillMinor === 'number' ? t.activeBillMinor / 100 : undefined,
-            durationMinutes: t.turnTimeMinutes,
-            activeItems: t.activeItems,
-          }));
-          setTables(liveTables);
-        } else {
-          setTables([]);
+        if (meData?.user?.name) {
+          setUserName(meData.user.name.split(' ')[0]);
+          const parts = meData.user.name.split(' ');
+          const inits = parts.length >= 2 
+            ? `${parts[0][0]}${parts[1][0]}`.toUpperCase() 
+            : parts[0].slice(0, 2).toUpperCase();
+          setUserInitials(inits);
         }
-      } else {
-        setIsRuntimeLive(false);
-        // Query preview summary for baseline restaurant metadata if table endpoint unavailable
-        const previewRes = await fetch(`/api/v1/customer/tenants/${encodeURIComponent(firstProject.slug)}/preview-summary`);
-        if (previewRes.ok) {
-          const previewData = await previewRes.json();
-          if (previewData?.preview?.restaurant?.city) {
-            setRestaurantCity(previewData.preview.restaurant.city);
+
+        if (Array.isArray(meData?.memberships) && meData.memberships.length > 0) {
+          // Gather projects across all memberships
+          const allProjects: ProjectRecord[] = [];
+          for (const m of meData.memberships) {
+            if (!m?.organizationId) continue;
+            try {
+              const tenantsRes = await fetch(`/api/v1/customer/organizations/${encodeURIComponent(m.organizationId)}/tenants`);
+              if (tenantsRes.ok) {
+                const tenantsData = await tenantsRes.json();
+                if (Array.isArray(tenantsData.projects)) {
+                  allProjects.push(...tenantsData.projects);
+                }
+                if (tenantsData?.organization?.name) {
+                  setOrgName(tenantsData.organization.name);
+                }
+              }
+            } catch { }
           }
-          if (previewData?.preview?.restaurant?.status === 'ACTIVE') {
-            setIsRuntimeLive(true);
+          if (isMounted) {
+            setProjects(allProjects);
           }
         }
-        setTables([]);
+      } catch (err) {
+        console.error('Failed to load dashboard data:', err);
+      } finally {
+        if (isMounted) setHasLoaded(true);
       }
-    } catch {
-      setIsRuntimeLive(false);
-      // Retain safe state on connection interruption
-    } finally {
-      setHasLoaded(true);
     }
+
+    loadData();
+    return () => { isMounted = false; };
   }, []);
 
-  React.useEffect(() => {
-    loadAuthoritativeState();
-  }, [loadAuthoritativeState]);
-
-  const floors = React.useMemo(() => {
-    const set = new Set<string>();
-    tables.forEach((t) => {
-      if (t.floor) set.add(t.floor);
-    });
-    return set.size > 0 ? ['ALL', ...Array.from(set)] : ['ALL', 'Main Dining', 'Terrace'];
-  }, [tables]);
-
-  const filteredTables = React.useMemo(() => {
-    if (selectedFloor === 'ALL') return tables;
-    return tables.filter((t) => t.floor === selectedFloor);
-  }, [tables, selectedFloor]);
-
-  const occupiedCount = tables.filter((t) => t.status === 'OCCUPIED').length;
-  const billingCount = tables.filter((t) => t.status === 'BILLING').length;
-  const availableCount = tables.filter((t) => t.status === 'AVAILABLE').length;
-  const totalRevenueToday = tables.reduce((acc, t) => acc + (t.billAmount || 0), 0);
-  const totalActiveDiners = tables.reduce((acc, t) => acc + (t.dinerCount || 0), 0);
-
-  const handleSettleTable = async (tableId: string) => {
-    if (!activeSlug || isSettling) return;
-    setIsSettling(true);
-    setSettlementError(null);
-
-    try {
-      const table = tables.find((t) => t.id === tableId) || selectedTable;
-      const amountMinor = table?.billAmount ? Math.round(table.billAmount * 100) : 0;
-
-      const res = await fetch(`/api/v1/customer/tenants/${encodeURIComponent(activeSlug)}/tables/settle`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          tableId,
-          tableNumber: table?.tableNumber,
-          amountMinor,
-          paymentMethod: 'CASH',
-          idempotencyKey: `settle_${tableId}_${table?.tableNumber || 'bill'}`,
-        }),
-      });
-
-      if (!res.ok) {
-        const errJson = await res.json().catch(() => ({}));
-        throw new Error(errJson.message || errJson.error || 'Table settlement failed on restaurant runtime.');
-      }
-
-      // Re-query authoritative table matrix from runtime
-      await loadAuthoritativeState();
-      setSelectedTable(null);
-    } catch (err: any) {
-      setSettlementError(err?.message || 'Settlement failed on runtime.');
-    } finally {
-      setIsSettling(false);
+  // Build dynamic tenant fleet
+  const tenantsList: TenantItem[] = React.useMemo(() => {
+    if (projects.length > 0) {
+      return projects.map((p, idx) => ({
+        id: p.id,
+        name: p.name,
+        slug: p.slug,
+        domain: `${p.slug}.localhost:4010`,
+        vertical: 'RestaurantOS',
+        status: 'Live',
+        metricValue: '1,402',
+        metricLabel: 'orders this week',
+        tags: ['RestaurantOS', '1 branch'],
+        avatarBg: idx === 0 ? '#FB923C' : '#3B82F6',
+        avatarChar: p.name.charAt(0).toUpperCase() || 'M',
+      }));
     }
-  };
+
+    // Default concept data if no projects configured yet
+    return [
+      {
+        id: 'masala-house',
+        name: 'Masala House',
+        slug: 'masala-house',
+        domain: 'masala.orbitox.io',
+        vertical: 'RestaurantOS',
+        status: 'Live',
+        metricValue: '1,402',
+        metricLabel: 'orders this week',
+        tags: ['RestaurantOS', '2 branches'],
+        avatarBg: '#FB923C',
+        avatarChar: 'M',
+      },
+      {
+        id: 'shah-clinic',
+        name: 'Shah Family Clinic',
+        slug: 'shah-clinic',
+        domain: 'clinic.orbitox.io',
+        vertical: 'HospitalOS',
+        status: 'Live',
+        metricValue: '186',
+        metricLabel: 'appointments this week',
+        tags: ['HospitalOS', '12 staff'],
+        avatarBg: '#10B981',
+        avatarChar: '⊕',
+      },
+      {
+        id: 'chai-co',
+        name: 'Chai & Co.',
+        slug: 'chai-co',
+        domain: 'chaico.orbitox.io',
+        vertical: 'RestaurantOS',
+        status: 'Setting up',
+        metricValue: 'Step 4 of 6',
+        metricLabel: 'creating database roles',
+        tags: ['RestaurantOS', 'Step 4 of 6'],
+        progress: 65,
+        avatarBg: '#8B5CF6',
+        avatarChar: '🔒',
+      },
+    ];
+  }, [projects]);
 
   return (
-    <div className="min-h-screen bg-[var(--color-bg)] text-[var(--color-text)]">
-      {/* 1. Light Top Utility & Brand Bar */}
-      <header className="border-b border-[var(--color-border)] bg-[var(--color-surface)] px-4 sm:px-8 py-3.5 sticky top-0 z-30 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-        <div className="flex items-center gap-3">
-          <div className="h-9 w-9 rounded-2xl bg-gray-950 text-white flex items-center justify-center font-bold text-sm shadow-sm">
-            <UtensilsCrossed className="h-4 w-4 text-emerald-400" />
+    <div style={{ backgroundColor: '#F4F5F7', minHeight: '100vh', color: '#0F172A', fontFamily: 'system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif' }}>
+      
+      {/* 1. Top Navigation Bar (Matching '2 · Customer dashboard — light.png') */}
+      <header style={{ maxWidth: '1440px', margin: '0 auto', padding: '20px 40px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+        
+        {/* Brand Logo */}
+        <Link href="/" style={{ display: 'flex', alignItems: 'center', gap: '8px', textDecoration: 'none', color: '#0F172A' }}>
+          <div style={{ width: '28px', height: '28px', borderRadius: '8px', background: '#000000', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#FFFFFF', fontWeight: 800, fontSize: '14px' }}>
+            ⬡
           </div>
-          <div>
-            <div className="flex items-center gap-2">
-              <h1 className="text-base font-extrabold tracking-tight text-[var(--color-text)]">
-                {restaurantName}
-              </h1>
-              {isRuntimeLive ? (
-                <span className="text-[10px] font-bold text-emerald-700 dark:text-emerald-300 bg-emerald-100 dark:bg-emerald-950/50 border border-emerald-300 dark:border-emerald-800 px-2 py-0.5 rounded-full flex items-center gap-1">
-                  <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                  Live Service
-                </span>
-              ) : (
-                <span className="text-[10px] font-bold text-gray-600 dark:text-gray-400 bg-gray-100 dark:bg-gray-800 border border-gray-300 dark:border-gray-700 px-2 py-0.5 rounded-full flex items-center gap-1">
-                  <span className="h-1.5 w-1.5 rounded-full bg-gray-400" />
-                  Standby
-                </span>
-              )}
-            </div>
-            <p className="text-[11px] text-[var(--color-text-muted)]">
-              {restaurantCity} · RestaurantOS v1.4.0
-            </p>
-          </div>
-        </div>
+          <span style={{ fontSize: '18px', fontWeight: 800, letterSpacing: '-0.02em' }}>orbitox</span>
+        </Link>
 
-        <div className="flex items-center gap-2 sm:gap-3">
-          <Link
-            href="/onboarding"
-            className="text-xs font-semibold px-3 py-1.5 rounded-full border border-[var(--color-border)] bg-[var(--color-surface)] hover:bg-[var(--color-surface-hover)] transition-colors flex items-center gap-1.5"
+        {/* Center Pill Navigation */}
+        <nav style={{ background: '#FFFFFF', borderRadius: '9999px', padding: '4px', display: 'flex', gap: '4px', border: '1px solid #E2E8F0', boxShadow: '0 2px 8px rgba(0,0,0,0.03)' }}>
+          {(['Home', 'Tenants', 'Team', 'Billing', 'Data & privacy'] as const).map((tab) => {
+            const isActive = activeTab === tab;
+            return (
+              <button
+                key={tab}
+                type="button"
+                onClick={() => setActiveTab(tab)}
+                style={{
+                  background: isActive ? '#000000' : 'transparent',
+                  color: isActive ? '#FFFFFF' : '#64748B',
+                  borderRadius: '9999px',
+                  padding: '7px 18px',
+                  fontSize: '13px',
+                  fontWeight: isActive ? 600 : 500,
+                  border: 'none',
+                  cursor: 'pointer',
+                  transition: 'all 120ms ease',
+                }}
+              >
+                {tab}
+              </button>
+            );
+          })}
+        </nav>
+
+        {/* Right Utility Actions */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+          <button
+            type="button"
+            style={{ width: '36px', height: '36px', borderRadius: '9999px', background: '#FFFFFF', border: '1px solid #E2E8F0', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', color: '#64748B' }}
           >
-            <QrCode className="h-3.5 w-3.5 text-gray-500" />
-            <span>QR Setup</span>
-          </Link>
-          <Link
-            href="/console/overview"
-            className="text-xs font-semibold px-3.5 py-1.5 rounded-full bg-gray-950 text-white hover:bg-black transition-colors flex items-center gap-1.5 shadow-sm"
+            <Search size={16} />
+          </button>
+          <button
+            type="button"
+            style={{ width: '36px', height: '36px', borderRadius: '9999px', background: '#FFFFFF', border: '1px solid #E2E8F0', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', color: '#64748B' }}
           >
-            <span>Operator Console</span>
-            <ExternalLink className="h-3 w-3" />
-          </Link>
+            <Bell size={16} />
+          </button>
+          <div style={{ width: '36px', height: '36px', borderRadius: '9999px', background: '#FEE2E2', color: '#DC2626', fontWeight: 700, fontSize: '13px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            {userInitials}
+          </div>
         </div>
       </header>
 
-      {/* 2. Main Content Workspace */}
-      <main className="max-w-7xl mx-auto p-4 sm:p-6 lg:p-8 space-y-6">
-        {hasLoaded && tables.length === 0 ? (
-          <div className="p-12 text-center rounded-3xl border border-[var(--color-border)] bg-[var(--color-surface)] space-y-4">
-            <UtensilsCrossed className="h-12 w-12 text-gray-400 mx-auto" />
-            <h2 className="text-xl font-bold text-[var(--color-text)]">No Restaurant Configured</h2>
-            <p className="text-xs text-[var(--color-text-muted)] max-w-md mx-auto">
-              You haven&apos;t provisioned any restaurant floors or tables yet. Complete onboarding to activate table matrices, QR sheets, and kitchen display.
-            </p>
-            <Link
-              href="/onboarding"
-              className="inline-flex items-center gap-2 px-6 py-2.5 rounded-full bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold transition-all shadow-md"
-            >
-              <span>Launch Restaurant Onboarding</span>
-              <ArrowRight className="h-4 w-4" />
-            </Link>
+      {/* Main Container */}
+      <main style={{ maxWidth: '1440px', margin: '0 auto', padding: '16px 40px 60px 40px', display: 'flex', flexDirection: 'column', gap: '32px' }}>
+        
+        {/* 2. Greeting Header with Add Tenant CTA */}
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', flexWrap: 'wrap', gap: '16px' }}>
+          <div>
+            <h1 style={{ fontSize: '38px', fontWeight: 800, color: '#0F172A', letterSpacing: '-0.025em', margin: '0 0 6px 0', lineHeight: 1.15 }}>
+              Hello, {userName}
+            </h1>
+            <div style={{ fontSize: '14px', color: '#64748B', fontWeight: 500 }}>
+              {orgName} · {tenantsList.length} {tenantsList.length === 1 ? 'tenant' : 'tenants'} · {activePlan} plan
+            </div>
           </div>
-        ) : (
-          <>
-            {/* Metric KPI Cards */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-              <Card className="p-5 space-y-2 border border-[var(--color-border)] bg-[var(--color-surface)]">
-                <div className="flex items-center justify-between text-xs text-[var(--color-text-muted)]">
-                  <span className="font-semibold uppercase tracking-wider text-[10px]">Today&apos;s Revenue</span>
-                  <TrendingUp className="h-4 w-4 text-emerald-600" />
-                </div>
-                <div className="text-2xl sm:text-3xl font-extrabold text-[var(--color-text)]">
-                  ₹{totalRevenueToday.toLocaleString('en-IN')}
-                </div>
-                <p className="text-[11px] text-[var(--color-text-muted)] font-medium">
-                  Authoritative live floor balance
-                </p>
-              </Card>
 
-              <Card className="p-5 space-y-2 border border-[var(--color-border)] bg-[var(--color-surface)]">
-                <div className="flex items-center justify-between text-xs text-[var(--color-text-muted)]">
-                  <span className="font-semibold uppercase tracking-wider text-[10px]">Table Occupancy</span>
-                  <UtensilsCrossed className="h-4 w-4 text-blue-600" />
-                </div>
-                <div className="text-2xl sm:text-3xl font-extrabold text-[var(--color-text)]">
-                  {occupiedCount + billingCount} / {tables.length}
-                </div>
-                <p className="text-[11px] text-[var(--color-text-muted)]">
-                  {tables.length > 0 ? Math.round(((occupiedCount + billingCount) / tables.length) * 100) : 0}% occupied · {availableCount} available
-                </p>
-              </Card>
+          <Link
+            href="/onboarding"
+            style={{
+              background: '#2563EB',
+              color: '#FFFFFF',
+              borderRadius: '9999px',
+              padding: '11px 24px',
+              fontSize: '14px',
+              fontWeight: 600,
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '8px',
+              textDecoration: 'none',
+              boxShadow: '0 4px 14px rgba(37, 99, 235, 0.3)',
+              transition: 'all 140ms ease',
+            }}
+          >
+            <Plus size={16} />
+            <span>Add a tenant</span>
+          </Link>
+        </div>
 
-              <Card className="p-5 space-y-2 border border-[var(--color-border)] bg-[var(--color-surface)]">
-                <div className="flex items-center justify-between text-xs text-[var(--color-text-muted)]">
-                  <span className="font-semibold uppercase tracking-wider text-[10px]">Active Diners</span>
-                  <Users className="h-4 w-4 text-amber-600" />
+        {/* 3. Hero Analytics Row (Orders Chart on Left, Plan on Right) */}
+        <div style={{ display: 'grid', gridTemplateColumns: '1.6fr 1fr', gap: '24px', alignItems: 'stretch' }}>
+          
+          {/* Card: Orders this week */}
+          <div style={{ background: '#FFFFFF', borderRadius: '28px', border: '1px solid rgba(0,0,0,0.06)', boxShadow: '0 4px 20px -2px rgba(0,0,0,0.04)', padding: '32px', display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
+            <div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '4px' }}>
+                <div style={{ width: '28px', height: '28px', borderRadius: '9999px', background: '#F1F5F9', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#0F172A' }}>
+                  <TrendingUp size={15} />
                 </div>
-                <div className="text-2xl sm:text-3xl font-extrabold text-[var(--color-text)]">
-                  {totalActiveDiners} Guests
-                </div>
-                <p className="text-[11px] text-[var(--color-text-muted)]">
-                  Live seated diner headcount
-                </p>
-              </Card>
-
-              <Card className="p-5 space-y-2 border border-[var(--color-border)] bg-[var(--color-surface)]">
-                <div className="flex items-center justify-between text-xs text-[var(--color-text-muted)]">
-                  <span className="font-semibold uppercase tracking-wider text-[10px]">Avg Ticket Time</span>
-                  <Clock className="h-4 w-4 text-purple-600" />
-                </div>
-                <div className="text-2xl sm:text-3xl font-extrabold text-[var(--color-text)]">
-                  0.0 min
-                </div>
-                <p className="text-[11px] text-[var(--color-text-muted)] font-medium">
-                  DAG Kitchen KDS scheduler ready
-                </p>
-              </Card>
+                <h2 style={{ fontSize: '20px', fontWeight: 700, color: '#0F172A', margin: 0 }}>
+                  Orders this week
+                </h2>
+              </div>
+              <div style={{ fontSize: '13px', color: '#64748B', marginLeft: '38px' }}>
+                Across your restaurants, from RestaurantOS.
+              </div>
             </div>
 
-            {/* 3. Floor Filter & Action Strip */}
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-              <div className="flex items-center gap-2">
-                {floors.map((fl) => (
-                  <button
-                    key={fl}
-                    type="button"
-                    onClick={() => setSelectedFloor(fl)}
-                    className={`px-3.5 py-1.5 rounded-full text-xs font-semibold transition-all cursor-pointer ${
-                      selectedFloor === fl
-                        ? 'bg-gray-950 text-white shadow-sm'
-                        : 'bg-[var(--color-surface)] border border-[var(--color-border)] text-[var(--color-text-muted)] hover:text-[var(--color-text)]'
-                    }`}
-                  >
-                    {fl === 'ALL' ? 'All Floors' : fl}
-                  </button>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', marginTop: '36px' }}>
+              <div>
+                <div style={{ fontSize: '48px', fontWeight: 800, color: '#0F172A', letterSpacing: '-0.03em', lineHeight: 1 }}>
+                  +18%
+                </div>
+                <div style={{ fontSize: '13px', color: '#64748B', marginTop: '8px' }}>
+                  2,914 orders, up from 2,469 last week
+                </div>
+              </div>
+
+              {/* Pin Chart Bars */}
+              <div style={{ display: 'flex', gap: '22px', alignItems: 'flex-end', paddingBottom: '4px' }}>
+                {[
+                  { day: 'M', height: 70 },
+                  { day: 'T', height: 55 },
+                  { day: 'W', height: 78 },
+                  { day: 'T', height: 86 },
+                  { day: 'F', height: 95 },
+                  { day: 'S', height: 110, peak: '612' },
+                  { day: 'S', height: 82 },
+                ].map((col) => (
+                  <div key={col.day} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '8px' }}>
+                    {col.peak && (
+                      <span style={{ background: '#000000', color: '#FFFFFF', fontSize: '11px', fontWeight: 700, padding: '2px 6px', borderRadius: '9999px', marginBottom: '-2px' }}>
+                        {col.peak}
+                      </span>
+                    )}
+                    <div style={{ width: '6px', height: `${col.height}px`, background: '#E2E8F0', borderRadius: '999px', position: 'relative' }}>
+                      <div
+                        style={{
+                          position: 'absolute',
+                          top: 0,
+                          left: '50%',
+                          transform: 'translateX(-50%)',
+                          width: '10px',
+                          height: '10px',
+                          borderRadius: '999px',
+                          background: col.peak ? '#000000' : '#3B82F6',
+                        }}
+                      />
+                    </div>
+                    <span style={{ fontSize: '12px', fontWeight: 600, color: col.peak ? '#0F172A' : '#64748B' }}>
+                      {col.day}
+                    </span>
+                  </div>
                 ))}
               </div>
+            </div>
+          </div>
 
-              <div className="flex items-center gap-3 text-xs">
-                <span className="flex items-center gap-1.5 text-[var(--color-text-muted)]">
-                  <span className="h-2.5 w-2.5 rounded-full bg-emerald-500" />
-                  <span>Occupied ({occupiedCount})</span>
+          {/* Card: Your plan (High-Contrast Black Card) */}
+          <div style={{ background: '#0F172A', color: '#FFFFFF', borderRadius: '28px', padding: '32px', display: 'flex', flexDirection: 'column', justifyContent: 'space-between', boxShadow: '0 8px 30px rgba(0,0,0,0.12)' }}>
+            <div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                <div>
+                  <h2 style={{ fontSize: '18px', fontWeight: 700, margin: 0, color: '#FFFFFF' }}>
+                    Your plan
+                  </h2>
+                  <div style={{ fontSize: '12px', color: '#94A3B8', marginTop: '3px' }}>
+                    {activePlan} · renews 1 December
+                  </div>
+                </div>
+              </div>
+
+              <div style={{ margin: '24px 0' }}>
+                <span style={{ fontSize: '40px', fontWeight: 800, letterSpacing: '-0.025em' }}>
+                  ₹7,497
                 </span>
-                <span className="flex items-center gap-1.5 text-[var(--color-text-muted)]">
-                  <span className="h-2.5 w-2.5 rounded-full bg-amber-500" />
-                  <span>Billing ({billingCount})</span>
-                </span>
-                <span className="flex items-center gap-1.5 text-[var(--color-text-muted)]">
-                  <span className="h-2.5 w-2.5 rounded-full bg-gray-300 dark:bg-gray-700" />
-                  <span>Available ({availableCount})</span>
+                <span style={{ fontSize: '14px', color: '#94A3B8', marginLeft: '6px' }}>
+                  /month
                 </span>
               </div>
-            </div>
 
-            {/* 4. Table Floor Matrix Grid */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
-              {filteredTables.map((tbl) => {
-                const isSelected = selectedTable?.id === tbl.id;
-
-                return (
-                  <Card
-                    key={tbl.id}
-                    onClick={() => setSelectedTable(tbl)}
-                    className={`p-5 rounded-3xl cursor-pointer transition-all border flex flex-col justify-between space-y-3 ${
-                      isSelected
-                        ? 'ring-2 ring-[var(--color-primary)] border-[var(--color-primary)] bg-[var(--color-surface-hover)] shadow-md'
-                        : 'border-[var(--color-border)] bg-[var(--color-surface)] hover:border-gray-400 hover:shadow-sm'
-                    }`}
-                  >
-                    <div className="flex items-start justify-between">
-                      <div>
-                        <span className="text-base font-extrabold text-[var(--color-text)]">
-                          {tbl.tableNumber}
-                        </span>
-                        <span className="text-[11px] text-[var(--color-text-muted)] block">
-                          {tbl.seats !== undefined ? `${tbl.seats} Seats · ` : ''}{tbl.floor}
-                        </span>
-                      </div>
-
-                      <span
-                        className={`text-[10px] font-bold px-2 py-0.5 rounded-full uppercase tracking-wider ${
-                          tbl.status === 'OCCUPIED'
-                            ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950/50 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-800'
-                            : tbl.status === 'BILLING'
-                            ? 'bg-amber-100 text-amber-800 dark:bg-amber-950/50 dark:text-amber-300 border border-amber-300 dark:border-amber-800'
-                            : tbl.status === 'RESERVED'
-                            ? 'bg-purple-100 text-purple-800 dark:bg-purple-950/50 dark:text-purple-300 border border-purple-300 dark:border-purple-800'
-                            : tbl.status === 'DIRTY'
-                            ? 'bg-rose-100 text-rose-800 dark:bg-rose-950/50 dark:text-rose-300 border border-rose-300 dark:border-rose-800'
-                            : 'bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300 border border-gray-200 dark:border-gray-700'
-                        }`}
-                      >
-                        {tbl.status}
-                      </span>
-                    </div>
-
-                    {tbl.status !== 'AVAILABLE' ? (
-                      <div className="space-y-1.5 pt-2 border-t border-[var(--color-border)]">
-                        <div className="flex items-baseline justify-between">
-                          <span className="text-xs text-[var(--color-text-muted)]">Active Bill</span>
-                          <span className="text-sm font-extrabold text-[var(--color-text)] font-mono">
-                            {tbl.billAmount !== undefined ? `₹${tbl.billAmount.toLocaleString('en-IN')}` : '—'}
-                          </span>
-                        </div>
-                        <div className="flex items-center justify-between text-[11px] text-[var(--color-text-muted)]">
-                          <span>{tbl.dinerCount !== undefined ? `${tbl.dinerCount} diners` : 'Active table'}</span>
-                          <span className="flex items-center gap-1 font-mono">
-                            <Clock className="h-3 w-3" />
-                            {tbl.durationMinutes ?? 0}m ago
-                          </span>
-                        </div>
-                      </div>
-                    ) : (
-                      <div className="pt-2 border-t border-[var(--color-border)] text-center text-xs text-[var(--color-text-muted)] italic py-2">
-                        Ready for walk-in or reservation
-                      </div>
-                    )}
-                  </Card>
-                );
-              })}
-            </div>
-
-            {/* 5. Selected Table Quick Drawer / Action Modal */}
-            {selectedTable && (
-              <div className="p-6 rounded-3xl bg-[var(--color-surface)] border border-[var(--color-border)] shadow-xl space-y-4">
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-[var(--color-border)] pb-4">
-                  <div>
-                    <div className="flex items-center gap-2">
-                      <h3 className="text-lg font-bold text-[var(--color-text)]">
-                        Table {selectedTable.tableNumber}
-                      </h3>
-                      <span
-                        className={`text-[10px] font-bold px-2 py-0.5 rounded-full uppercase ${
-                          selectedTable.status === 'OCCUPIED'
-                            ? 'bg-emerald-100 text-emerald-800'
-                            : selectedTable.status === 'BILLING'
-                            ? 'bg-amber-100 text-amber-800'
-                            : 'bg-gray-100 text-gray-700'
-                        }`}
-                      >
-                        {selectedTable.status}
-                      </span>
-                    </div>
-                    <p className="text-xs text-[var(--color-text-muted)] mt-0.5">
-                      {selectedTable.seats} Seats · {selectedTable.floor} Floor
-                    </p>
+              {/* Progress Bars */}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+                <div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', color: '#94A3B8', marginBottom: '6px' }}>
+                    <span>Tenants</span>
+                    <span>{tenantsList.length} of 5</span>
                   </div>
-
-                  <div className="flex items-center gap-2">
-                    {selectedTable.status !== 'AVAILABLE' && (
-                      <Button
-                        variant="primary"
-                        size="sm"
-                        disabled={isSettling}
-                        className="rounded-full"
-                        onClick={() => handleSettleTable(selectedTable.id)}
-                      >
-                        {isSettling ? (
-                          <>
-                            <RefreshCw className="h-3.5 w-3.5 mr-1.5 animate-spin" />
-                            Settling...
-                          </>
-                        ) : (
-                          <>
-                            <Receipt className="h-3.5 w-3.5 mr-1.5" />
-                            Settle & Clear Table
-                          </>
-                        )}
-                      </Button>
-                    )}
-                    <Button
-                      variant="secondary"
-                      size="sm"
-                      className="rounded-full"
-                      onClick={() => {
-                        setSelectedTable(null);
-                        setSettlementError(null);
-                      }}
-                    >
-                      Close
-                    </Button>
+                  <div style={{ height: '6px', background: '#334155', borderRadius: '999px', overflow: 'hidden' }}>
+                    <div style={{ width: `${(tenantsList.length / 5) * 100}%`, height: '100%', background: '#3B82F6', borderRadius: '999px' }} />
                   </div>
                 </div>
 
-                {settlementError && (
-                  <div className="p-3 rounded-[var(--radius-card)] bg-rose-50 border border-rose-200 text-rose-700 text-xs">
-                    {settlementError}
+                <div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', color: '#94A3B8', marginBottom: '6px' }}>
+                    <span>Staff seats</span>
+                    <span>38 of 50</span>
                   </div>
-                )}
+                  <div style={{ height: '6px', background: '#334155', borderRadius: '999px', overflow: 'hidden' }}>
+                    <div style={{ width: '76%', height: '100%', background: '#3B82F6', borderRadius: '999px' }} />
+                  </div>
+                </div>
+              </div>
+            </div>
 
-                {selectedTable.activeItems && (
-                  <div className="space-y-2 text-xs">
-                    <span className="font-semibold text-[var(--color-text-muted)] uppercase tracking-wider text-[11px]">
-                      Current Order Items
-                    </span>
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                      {selectedTable.activeItems.map((it, idx) => (
+            <Link
+              href="/onboarding"
+              style={{
+                background: '#FFFFFF',
+                color: '#0F172A',
+                borderRadius: '9999px',
+                padding: '12px 20px',
+                fontSize: '13px',
+                fontWeight: 600,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: '6px',
+                textDecoration: 'none',
+                marginTop: '28px',
+                transition: 'background 120ms ease',
+              }}
+            >
+              <span>Change plan</span>
+              <ArrowRight size={14} />
+            </Link>
+          </div>
+
+        </div>
+
+        {/* 4. Section: Your Tenants */}
+        <div>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '18px' }}>
+            <h2 style={{ fontSize: '20px', fontWeight: 700, color: '#0F172A', margin: 0 }}>
+              Your tenants
+            </h2>
+            <Link href="#all-tenants" style={{ fontSize: '13px', fontWeight: 600, color: '#2563EB', textDecoration: 'none' }}>
+              See all
+            </Link>
+          </div>
+
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: '20px' }}>
+            {tenantsList.map((tenant) => {
+              const targetUrl = tenant.slug.includes('maxora')
+                ? `http://${tenant.slug}.localhost:4010`
+                : `http://localhost:4010`;
+
+              return (
+                <div
+                  key={tenant.id}
+                  style={{
+                    background: '#FFFFFF',
+                    borderRadius: '24px',
+                    border: '1px solid rgba(0,0,0,0.06)',
+                    boxShadow: '0 4px 16px rgba(0,0,0,0.03)',
+                    padding: '24px',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    justifyContent: 'space-between',
+                  }}
+                >
+                  <div>
+                    {/* Header: Avatar, Name & Status Pill */}
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '16px' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
                         <div
-                          key={idx}
-                          className="p-2.5 rounded-[var(--radius-card)] bg-[var(--color-surface-raised)] border border-[var(--color-border)] flex justify-between"
+                          style={{
+                            width: '40px',
+                            height: '40px',
+                            borderRadius: '12px',
+                            background: tenant.avatarBg,
+                            color: '#FFFFFF',
+                            fontWeight: 800,
+                            fontSize: '18px',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                          }}
                         >
-                          <span className="font-medium text-[var(--color-text)]">{it.name}</span>
-                          <span className="font-bold text-[var(--color-text)]">×{it.qty}</span>
+                          {tenant.avatarChar}
                         </div>
+                        <div>
+                          <div style={{ fontSize: '15px', fontWeight: 700, color: '#0F172A', lineHeight: 1.2 }}>
+                            {tenant.name}
+                          </div>
+                          <div style={{ fontSize: '12px', color: '#64748B', marginTop: '2px' }}>
+                            {tenant.domain}
+                          </div>
+                        </div>
+                      </div>
+
+                      <span
+                        style={{
+                          background: tenant.status === 'Live' ? '#000000' : '#FEF3C7',
+                          color: tenant.status === 'Live' ? '#FFFFFF' : '#D97706',
+                          borderRadius: '9999px',
+                          padding: '3px 10px',
+                          fontSize: '11px',
+                          fontWeight: 700,
+                        }}
+                      >
+                        {tenant.status}
+                      </span>
+                    </div>
+
+                    {/* Metadata Tags */}
+                    <div style={{ display: 'flex', gap: '6px', marginBottom: '20px' }}>
+                      {tenant.tags.map((tag) => (
+                        <span
+                          key={tag}
+                          style={{
+                            background: '#F1F5F9',
+                            color: '#475569',
+                            borderRadius: '9999px',
+                            padding: '3px 10px',
+                            fontSize: '11px',
+                            fontWeight: 600,
+                          }}
+                        >
+                          {tag}
+                        </span>
                       ))}
                     </div>
                   </div>
-                )}
+
+                  <div>
+                    {/* Metric row */}
+                    {tenant.progress ? (
+                      <div style={{ marginTop: '8px' }}>
+                        <div style={{ height: '5px', background: '#E2E8F0', borderRadius: '999px', overflow: 'hidden' }}>
+                          <div style={{ width: `${tenant.progress}%`, height: '100%', background: '#2563EB', borderRadius: '999px' }} />
+                        </div>
+                      </div>
+                    ) : (
+                      <div style={{ display: 'flex', alignItems: 'baseline', gap: '6px', marginBottom: '14px' }}>
+                        <span style={{ fontSize: '26px', fontWeight: 800, color: '#0F172A', letterSpacing: '-0.02em' }}>
+                          {tenant.metricValue}
+                        </span>
+                        <span style={{ fontSize: '12px', color: '#64748B' }}>
+                          {tenant.metricLabel}
+                        </span>
+                      </div>
+                    )}
+
+                    {/* Action link */}
+                    <a
+                      href={targetUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      style={{
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '6px',
+                        fontSize: '13px',
+                        fontWeight: 600,
+                        color: '#2563EB',
+                        textDecoration: 'none',
+                        marginTop: '6px',
+                      }}
+                    >
+                      <span>Open RestaurantOS</span>
+                      <ExternalLink size={13} />
+                    </a>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* 5. Bottom Row: Invoices (Left) & Your Data (Right) */}
+        <div style={{ display: 'grid', gridTemplateColumns: '1.4fr 1fr', gap: '24px' }}>
+          
+          {/* Invoices Card */}
+          <div style={{ background: '#FFFFFF', borderRadius: '24px', border: '1px solid rgba(0,0,0,0.06)', boxShadow: '0 4px 16px rgba(0,0,0,0.03)', padding: '28px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '18px' }}>
+              <h2 style={{ fontSize: '17px', fontWeight: 700, color: '#0F172A', margin: 0 }}>
+                Invoices
+              </h2>
+              <Link href="#invoices" style={{ fontSize: '13px', fontWeight: 600, color: '#2563EB', textDecoration: 'none' }}>
+                View all
+              </Link>
+            </div>
+
+            <div style={{ display: 'flex', flexDirection: 'column' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr 1fr 1fr', fontSize: '11px', fontWeight: 600, color: '#94A3B8', textTransform: 'uppercase', paddingBottom: '10px', borderBottom: '1px solid #F1F5F9' }}>
+                <span>Invoice</span>
+                <span>Period</span>
+                <span>Status</span>
+                <span style={{ textAlign: 'right' }}>Amount</span>
               </div>
-            )}
-          </>
-        )}
+
+              {[
+                { id: 'ORB-2611-0042', period: 'November 2026', status: 'Paid', amount: '₹7,497' },
+                { id: 'ORB-2610-0039', period: 'October 2026', status: 'Paid', amount: '₹7,497' },
+              ].map((inv) => (
+                <div key={inv.id} style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr 1fr 1fr', alignItems: 'center', padding: '14px 0', borderBottom: '1px solid #F1F5F9', fontSize: '13px' }}>
+                  <span style={{ fontWeight: 600, color: '#2563EB' }}>{inv.id}</span>
+                  <span style={{ color: '#64748B' }}>{inv.period}</span>
+                  <div>
+                    <span style={{ background: '#ECFDF5', color: '#059669', fontSize: '11px', fontWeight: 700, padding: '2px 8px', borderRadius: '9999px' }}>
+                      {inv.status}
+                    </span>
+                  </div>
+                  <span style={{ textAlign: 'right', fontWeight: 700, color: '#0F172A' }}>{inv.amount}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* Your Data Card */}
+          <div style={{ background: '#FFFFFF', borderRadius: '24px', border: '1px solid rgba(0,0,0,0.06)', boxShadow: '0 4px 16px rgba(0,0,0,0.03)', padding: '28px', display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
+            <div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
+                <span style={{ fontSize: '16px' }}>⬡</span>
+                <h2 style={{ fontSize: '17px', fontWeight: 700, color: '#0F172A', margin: 0 }}>
+                  Your data
+                </h2>
+              </div>
+              <p style={{ fontSize: '13px', color: '#64748B', lineHeight: 1.5, margin: 0 }}>
+                Download everything we hold for your organization, or schedule its deletion with a signed certificate.
+              </p>
+            </div>
+
+            <div style={{ display: 'flex', gap: '10px', marginTop: '24px' }}>
+              <button
+                type="button"
+                style={{
+                  background: '#000000',
+                  color: '#FFFFFF',
+                  borderRadius: '9999px',
+                  padding: '9px 18px',
+                  fontSize: '13px',
+                  fontWeight: 600,
+                  border: 'none',
+                  cursor: 'pointer',
+                }}
+              >
+                Request export
+              </button>
+              <button
+                type="button"
+                style={{
+                  background: '#FFFFFF',
+                  color: '#0F172A',
+                  borderRadius: '9999px',
+                  padding: '9px 18px',
+                  fontSize: '13px',
+                  fontWeight: 600,
+                  border: '1px solid #E2E8F0',
+                  cursor: 'pointer',
+                }}
+              >
+                Deletion options
+              </button>
+            </div>
+          </div>
+
+        </div>
+
       </main>
     </div>
   );

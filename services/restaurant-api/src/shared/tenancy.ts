@@ -356,6 +356,28 @@ export async function resolveTenantFromRequest(
     }
   }
 
+  // Pattern D: QR Locator-based tenant resolution (for diner scanning & runtime QR verification)
+  const qrMatch = /^\/(?:api\/restaurant\/qr|dine)\/([a-zA-Z0-9_-]+)/.exec(reqUrl);
+  if (qrMatch && qrMatch[1]) {
+    const locator = decodeURIComponent(qrMatch[1]).trim();
+    try {
+      const table = await prisma.tableFloor.findFirst({
+        where: { locator },
+        include: { tenant: true },
+      });
+      if (table && table.tenant) {
+        return {
+          tenantId: table.tenant.id,
+          tenantSlug: table.tenant.slug,
+          tenantName: table.tenant.name,
+          orbitoxProjectId: table.tenant.orbitoxProjectId || `restaurant-os-${table.tenant.slug}`,
+          status: table.tenant.status,
+          previewExpiresAt: (table.tenant as any).previewExpiresAt || null,
+        };
+      }
+    } catch (e) {}
+  }
+
   // Zero fallback to pilot bistro: Return null
   return null;
 }

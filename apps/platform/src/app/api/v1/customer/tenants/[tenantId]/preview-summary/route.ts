@@ -122,15 +122,23 @@ export const GET = withCustomerAuth<RouteContext>(
       );
     }
 
+    const reqHost = _request.headers.get('host') || '';
+    const isDevHost = reqHost.includes('localhost') || reqHost.includes('127.0.0.1') || process.env.NODE_ENV !== 'production';
     const configuredUrl = process.env.ORBITOX_PUBLIC_BASE_URL;
-    let baseDomain = 'orbitox.io';
-    if (configuredUrl) {
+    let baseDomain = isDevHost ? 'localhost:4010' : 'orbitox.io';
+    if (configuredUrl && !isDevHost) {
       try {
         baseDomain = new URL(configuredUrl).hostname;
       } catch { }
     }
-    const subdomainUrl = `http://${project.slug}.${baseDomain}`;
-    const sampleTable = runtimeTenant?.sampleTableLocator || null;
+    const subdomainUrl = isDevHost ? `http://${project.slug}.localhost:4010` : `https://${project.slug}.${baseDomain}`;
+    let sampleTable = runtimeTenant?.sampleTableLocator || null;
+    if (sampleTable && isDevHost && sampleTable.locator) {
+      sampleTable = {
+        ...sampleTable,
+        dinerUrl: `http://${project.slug}.localhost:4010/dine/${sampleTable.locator}`,
+      };
+    }
 
     const rawStatus = String(runtimeTenant?.status || '').toUpperCase();
     const previewExpiresAt = runtimeTenant?.previewExpiresAt || null;

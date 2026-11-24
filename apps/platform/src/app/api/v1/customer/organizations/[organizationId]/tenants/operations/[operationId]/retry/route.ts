@@ -47,4 +47,4 @@ export const POST = withCustomerAuth<RouteContext>(async (_request, session, con
       steps: retried.steps,
     },
   }, { status: 202, headers: noStoreHeaders() });
-}, { write: true });
+}, { write: true, allowMfaSetup: true });

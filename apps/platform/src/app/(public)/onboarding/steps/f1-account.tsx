@@ -1,7 +1,8 @@
 'use client';
 
 import React, { useState, useEffect, useRef } from 'react';
-import { Zap, Lock, Mail, Phone, User, CheckCircle2, AlertCircle, ArrowRight, RefreshCw } from 'lucide-react';
+import { Zap, Lock, Mail, Phone, User, CheckCircle2, AlertCircle, ArrowRight, ArrowLeft, RefreshCw, Pencil, Check, X } from 'lucide-react';
+import { setCustomerCsrfToken } from './csrf';
 
 interface F1Props {
   onSuccess: (userData: { userId: string; email: string; name: string }) => void;
@@ -25,6 +26,13 @@ export function F1AccountStep({ onSuccess, initialEmail = '', initialName = '' }
   const [verifyError, setVerifyError] = useState<string | null>(null);
   const [cooldown, setCooldown] = useState(60);
   const [canResend, setCanResend] = useState(false);
+  const [devCode, setDevCode] = useState<string | null>(null);
+
+  // Email edit in modal state
+  const [isEditingEmail, setIsEditingEmail] = useState(false);
+  const [newEmailInput, setNewEmailInput] = useState('');
+  const [emailUpdateLoading, setEmailUpdateLoading] = useState(false);
+  const [emailUpdateError, setEmailUpdateError] = useState<string | null>(null);
 
   const inputRefs = useRef<(HTMLInputElement | null)[]>([]);
 
@@ -95,15 +103,62 @@ export function F1AccountStep({ onSuccess, initialEmail = '', initialName = '' }
         throw new Error(data.message || data.error || 'Failed to create account.');
       }
 
-      setMaskedEmail(data.maskedEmail || email);
+      setMaskedEmail(data.email || data.maskedEmail || email);
+      if (data.devCode) {
+        setDevCode(data.devCode);
+      }
       setShowVerifyModal(true);
       setCooldown(60);
       setCanResend(false);
+      setIsEditingEmail(false);
       setTimeout(() => inputRefs.current[0]?.focus(), 100);
     } catch (err: any) {
       setError(err.message);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleUpdateEmail = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    const trimmed = newEmailInput.trim().toLowerCase();
+    if (!trimmed || !trimmed.includes('@')) {
+      setEmailUpdateError('Please enter a valid email address.');
+      return;
+    }
+    setEmailUpdateLoading(true);
+    setEmailUpdateError(null);
+    try {
+      const res = await fetch('/api/v1/customer/auth/signup', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: name.trim() || 'Owner',
+          email: trimmed,
+          phone: phone.trim(),
+          password: password || 'TempPass123!@#',
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.message || data.error || 'Failed to update email address.');
+      }
+
+      setEmail(trimmed);
+      setMaskedEmail(data.email || data.maskedEmail || trimmed);
+      if (data.devCode) {
+        setDevCode(data.devCode);
+      }
+      setCodeDigits(['', '', '', '', '', '']);
+      setCooldown(60);
+      setCanResend(false);
+      setIsEditingEmail(false);
+      setVerifyError(null);
+      setTimeout(() => inputRefs.current[0]?.focus(), 100);
+    } catch (err: any) {
+      setEmailUpdateError(err.message);
+    } finally {
+      setEmailUpdateLoading(false);
     }
   };
 
@@ -163,6 +218,9 @@ export function F1AccountStep({ onSuccess, initialEmail = '', initialName = '' }
         throw new Error(data.message || data.error || 'Verification failed. Please check the code.');
       }
 
+      if (data.csrfToken) {
+        setCustomerCsrfToken(data.csrfToken);
+      }
       setShowVerifyModal(false);
       onSuccess({
         userId: data.user.id,
@@ -190,6 +248,9 @@ export function F1AccountStep({ onSuccess, initialEmail = '', initialName = '' }
       const data = await res.json();
       if (!res.ok) {
         throw new Error(data.message || data.error || 'Failed to resend code.');
+      }
+      if (data.devCode) {
+        setDevCode(data.devCode);
       }
     } catch (err: any) {
       setVerifyError(err.message);
@@ -343,17 +404,110 @@ export function F1AccountStep({ onSuccess, initialEmail = '', initialName = '' }
       {/* 6-Digit Email Verification Modal */}
       {showVerifyModal && (
         <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="w-full max-w-md bg-white rounded-[28px] p-8 shadow-2xl border border-gray-100 space-y-6 animate-in fade-in zoom-in-95 duration-200">
+          <div className="w-full max-w-md bg-white rounded-[28px] p-8 shadow-2xl border border-gray-100 space-y-5 animate-in fade-in zoom-in-95 duration-200">
             <div className="text-center space-y-2">
               <div className="h-12 w-12 rounded-full bg-blue-50 text-blue-600 mx-auto flex items-center justify-center">
                 <Mail className="h-6 w-6" />
               </div>
               <h3 className="text-xl font-bold text-[#14161A]">Verify your email</h3>
-              <p className="text-xs text-[#5A6170] leading-relaxed">
-                We sent a 6-digit confirmation code to{' '}
-                <span className="font-semibold text-[#14161A]">{maskedEmail}</span>. Enter the code below.
-              </p>
+
+              {!isEditingEmail ? (
+                <div className="text-xs text-[#5A6170] leading-relaxed flex items-center justify-center flex-wrap gap-1">
+                  <span>We sent a 6-digit confirmation code to</span>
+                  <span className="font-semibold text-[#14161A] bg-gray-100 px-2 py-0.5 rounded">
+                    {maskedEmail || email}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setNewEmailInput(email);
+                      setIsEditingEmail(true);
+                      setEmailUpdateError(null);
+                    }}
+                    className="inline-flex items-center gap-1 text-blue-600 hover:text-blue-800 font-semibold underline underline-offset-2 ml-1 cursor-pointer transition"
+                    title="Change or edit email address"
+                  >
+                    <Pencil className="h-3 w-3" />
+                    <span>Edit</span>
+                  </button>
+                </div>
+              ) : (
+                <form
+                  onSubmit={handleUpdateEmail}
+                  className="mt-3 p-3.5 bg-gray-50 border border-gray-200 rounded-2xl text-left space-y-2"
+                >
+                  <div className="flex items-center justify-between">
+                    <label htmlFor="verify-email-edit" className="text-[11px] font-semibold text-[#14161A]">
+                      Edit your email address:
+                    </label>
+                    <button
+                      type="button"
+                      onClick={() => setIsEditingEmail(false)}
+                      className="text-gray-400 hover:text-gray-600 text-[11px] flex items-center gap-0.5 cursor-pointer"
+                    >
+                      <X className="h-3 w-3" />
+                      <span>Cancel</span>
+                    </button>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <input
+                      id="verify-email-edit"
+                      type="email"
+                      required
+                      value={newEmailInput}
+                      onChange={(e) => setNewEmailInput(e.target.value)}
+                      placeholder="e.g. orbitox.io@gmail.com"
+                      className="flex-1 px-3 py-1.5 rounded-xl border border-gray-300 bg-white text-xs text-[#14161A] focus:outline-none focus:border-[#14161A]"
+                      autoFocus
+                    />
+                    <button
+                      type="submit"
+                      disabled={emailUpdateLoading || !newEmailInput.trim() || !newEmailInput.includes('@')}
+                      className="px-3.5 py-1.5 rounded-xl bg-[#14161A] text-white hover:bg-[#14161A]/90 text-xs font-semibold flex items-center gap-1.5 cursor-pointer disabled:opacity-50 transition"
+                    >
+                      {emailUpdateLoading ? (
+                        <>
+                          <RefreshCw className="h-3 w-3 animate-spin" />
+                          <span>Sending...</span>
+                        </>
+                      ) : (
+                        <>
+                          <Check className="h-3 w-3" />
+                          <span>Update</span>
+                        </>
+                      )}
+                    </button>
+                  </div>
+                  {emailUpdateError && (
+                    <p className="text-[11px] text-red-600 font-medium">{emailUpdateError}</p>
+                  )}
+                </form>
+              )}
             </div>
+
+            {/* Dev Code Banner */}
+            {devCode && (
+              <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-2xl flex items-center justify-between text-xs text-emerald-900">
+                <div className="flex items-center gap-2">
+                  <span className="font-semibold text-emerald-800">Dev code:</span>
+                  <span className="font-mono font-bold tracking-widest bg-emerald-100 text-emerald-950 px-2.5 py-0.5 rounded border border-emerald-300">
+                    {devCode}
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const digits = devCode.split('').slice(0, 6);
+                    setCodeDigits(digits);
+                    submitVerificationCode(devCode);
+                  }}
+                  className="text-xs font-semibold text-emerald-800 hover:text-emerald-950 bg-white px-3 py-1 rounded-full border border-emerald-300 shadow-sm transition hover:shadow cursor-pointer flex items-center gap-1"
+                >
+                  <span>Auto-fill</span>
+                  <ArrowRight className="h-3 w-3" />
+                </button>
+              </div>
+            )}
 
             {verifyError && (
               <div className="p-3 rounded-2xl bg-red-50 border border-red-200 text-xs text-red-700 flex items-center gap-2">
@@ -395,19 +549,30 @@ export function F1AccountStep({ onSuccess, initialEmail = '', initialName = '' }
               )}
             </button>
 
-            <div className="text-center text-xs text-[#5A6170] pt-2 border-t border-gray-100 flex items-center justify-between">
-              <span>Didn&apos;t get the code?</span>
-              {canResend ? (
-                <button
-                  type="button"
-                  onClick={handleResend}
-                  className="text-blue-600 font-semibold hover:underline cursor-pointer"
-                >
-                  Resend code
-                </button>
-              ) : (
-                <span className="text-gray-400">Resend in {cooldown}s</span>
-              )}
+            <div className="pt-2 border-t border-gray-100 flex flex-col gap-2.5 text-xs text-[#5A6170]">
+              <div className="flex items-center justify-between">
+                <span>Didn&apos;t get the code?</span>
+                {canResend ? (
+                  <button
+                    type="button"
+                    onClick={handleResend}
+                    className="text-blue-600 font-semibold hover:underline cursor-pointer"
+                  >
+                    Resend code
+                  </button>
+                ) : (
+                  <span className="text-gray-400">Resend in {cooldown}s</span>
+                )}
+              </div>
+
+              <button
+                type="button"
+                onClick={() => setShowVerifyModal(false)}
+                className="text-[11px] text-[#5A6170] hover:text-[#14161A] flex items-center justify-center gap-1.5 pt-1 transition cursor-pointer"
+              >
+                <ArrowLeft className="h-3 w-3" />
+                <span>Back to edit account information</span>
+              </button>
             </div>
           </div>
         </div>
