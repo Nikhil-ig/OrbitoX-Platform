@@ -105,9 +105,9 @@ export function renderFloorStudio(
           ${tables
             .map((table, idx) => {
               const isSelected = selectedTable && selectedTable.id === table.id;
-              const isRound = table.shape === 'round' || table.shape === 'circle';
+              const isRound = table.shape === 'circle';
               const isOccupied = table.status === 'OCCUPIED';
-              const isBill = table.status === 'BILL_PRINTED';
+              const isBill = table.status === 'BILL_REQUESTED';
 
               let bg = '#EFF6FF';
               let border = '1.5px solid #93C5FD';
@@ -164,7 +164,7 @@ export function renderFloorStudio(
           <h2 id="inspector-table-name" style="font-size: 22px; font-weight: 800; color: #0F172A; margin: 0;">
             Table ${escapeHtml(selectedTable?.number || 'T-01')}
           </h2>
-          <span id="inspector-status-badge" class="badge ${selectedTable?.status === 'OCCUPIED' ? 'badge-amber' : selectedTable?.status === 'BILL_PRINTED' ? 'badge-violet' : 'badge-sage'}" style="border-radius: 9999px; padding: 3px 10px; font-size: 11px;">
+          <span id="inspector-status-badge" class="badge ${selectedTable?.status === 'OCCUPIED' ? 'badge-amber' : selectedTable?.status === 'BILL_REQUESTED' ? 'badge-violet' : 'badge-sage'}" style="border-radius: 9999px; padding: 3px 10px; font-size: 11px;">
             ${selectedTable?.status || 'AVAILABLE'}
           </span>
         </div>
@@ -204,7 +204,7 @@ export function renderFloorStudio(
               type="button" 
               id="shape-round-btn" 
               onclick="setShape('Round')" 
-              style="flex: 1; border: none; background: ${selectedTable?.shape === 'round' ? '#000000' : 'transparent'}; color: ${selectedTable?.shape === 'round' ? '#FFFFFF' : '#64748B'}; padding: 7px; border-radius: 9999px; font-size: 12px; font-weight: 600; cursor: pointer;"
+              style="flex: 1; border: none; background: ${selectedTable?.shape === 'circle' ? '#000000' : 'transparent'}; color: ${selectedTable?.shape === 'circle' ? '#FFFFFF' : '#64748B'}; padding: 7px; border-radius: 9999px; font-size: 12px; font-weight: 600; cursor: pointer;"
             >
               Round
             </button>
@@ -212,7 +212,7 @@ export function renderFloorStudio(
               type="button" 
               id="shape-square-btn" 
               onclick="setShape('Square')" 
-              style="flex: 1; border: none; background: ${selectedTable?.shape !== 'round' ? '#000000' : 'transparent'}; color: ${selectedTable?.shape !== 'round' ? '#FFFFFF' : '#64748B'}; padding: 7px; border-radius: 9999px; font-size: 12px; font-weight: 600; cursor: pointer;"
+              style="flex: 1; border: none; background: ${selectedTable?.shape !== 'circle' ? '#000000' : 'transparent'}; color: ${selectedTable?.shape !== 'circle' ? '#FFFFFF' : '#64748B'}; padding: 7px; border-radius: 9999px; font-size: 12px; font-weight: 600; cursor: pointer;"
             >
               Square
             </button>
@@ -318,7 +318,7 @@ export function renderFloorStudio(
 
   <script>
     let currentSeats = ${selectedTable?.capacity || 4};
-    let currentShape = '${selectedTable?.shape === 'round' ? 'Round' : 'Square'}';
+    let currentShape = '${selectedTable?.shape === 'circle' ? 'Round' : 'Square'}';
 
     function switchFloor(fId, btn) {
       document.querySelectorAll('.floor-pill').forEach(p => p.classList.remove('active'));
