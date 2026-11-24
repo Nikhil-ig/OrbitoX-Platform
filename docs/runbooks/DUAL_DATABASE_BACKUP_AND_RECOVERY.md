@@ -186,7 +186,7 @@ docker exec -i \
   -f /scripts/db/vps-enable-roles.sql
 ```
 
-### Step 4.6: Restore RestaurantOS Database
+### Step 4.6: Restore RestaurantOS Database & Credential Recovery
 For RestaurantOS:
 ```bash
 set -euo pipefail
@@ -198,13 +198,38 @@ docker exec -i orbitox_staging_ros_db psql -U postgres -d postgres -v ON_ERROR_S
   docker exec -i orbitox_staging_ros_db psql -U postgres -d postgres -v ON_ERROR_STOP=1 -c \
   "CREATE DATABASE restaurant_os_staging;"
 
-# 2. Pre-provision restaurantos_app operational role with least-privilege attributes
+# 2. Pre-provision restaurantos_app operational role with least-privilege attributes (NOLOGIN prior to restore)
 docker exec -i orbitox_staging_ros_db psql -U postgres -d restaurant_os_staging -v ON_ERROR_STOP=1 -c \
-  "DO \$\$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'restaurantos_app') THEN CREATE ROLE restaurantos_app WITH LOGIN NOSUPERUSER NOBYPASSRLS NOCREATEDB NOCREATEROLE NOINHERIT; END IF; END \$\$;"
+  "DO \$\$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'restaurantos_app') THEN CREATE ROLE restaurantos_app WITH NOLOGIN NOSUPERUSER NOBYPASSRLS NOCREATEDB NOCREATEROLE NOINHERIT; END IF; END \$\$;"
 
-# 3. Restore dump with failure propagation
+# 3. Restore dump archive with pipeline error detection and ON_ERROR_STOP=1
 gunzip -c /var/backups/orbitox/restaurant-os/restaurantos_db_full_YYYYMMDD_HHMMSSZ.sql.gz | \
   docker exec -i orbitox_staging_ros_db psql -U postgres -d restaurant_os_staging -v ON_ERROR_STOP=1
+
+# 4. Enable LOGIN and assign runtime password securely via psql \getenv from environment (zero secrets in CLI args)
+export ROS_DATABASE_PASSWORD="${ROS_DATABASE_PASSWORD}"
+
+docker exec -i \
+  -e ROS_DATABASE_PASSWORD \
+  orbitox_staging_ros_db psql -U postgres -d restaurant_os_staging -v ON_ERROR_STOP=1 <<-EOSQL
+    \getenv app_pwd ROS_DATABASE_PASSWORD
+    \if :{?app_pwd}
+    \else
+      \echo '❌ ERROR: ROS_DATABASE_PASSWORD must be provided via environment variable.'
+      \q 1
+    \endif
+
+    ALTER ROLE restaurantos_app WITH LOGIN NOSUPERUSER NOBYPASSRLS NOCREATEDB NOCREATEROLE NOINHERIT PASSWORD :'app_pwd';
+    GRANT USAGE ON SCHEMA public TO restaurantos_app;
+    GRANT ALL ON ALL TABLES IN SCHEMA public TO restaurantos_app;
+    GRANT ALL ON ALL SEQUENCES IN SCHEMA public TO restaurantos_app;
+EOSQL
+
+# 5. Verify application authentication using the same credentials supplied to Compose
+docker exec -i \
+  -e PGPASSWORD="${ROS_DATABASE_PASSWORD}" \
+  orbitox_staging_ros_db psql -U restaurantos_app -d restaurant_os_staging -c \
+  "SELECT current_user, count(*) FROM \"Tenant\";"
 ```
 
 ### Step 4.7: Re-validate System & Restart Applications

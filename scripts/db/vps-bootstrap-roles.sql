@@ -112,12 +112,24 @@ BEGIN
 END
 $$;
 
--- 5. Assign Database Ownership & Permissions to orbitox_migrator
+-- 5. Assign Database Ownership & Permissions to orbitox_migrator (Top-level \gexec execution)
+-- Note: Executed via top-level psql \gexec outside any PL/pgSQL transaction block to ensure standard PostgreSQL compatibility.
+SELECT format('ALTER DATABASE %I OWNER TO orbitox_migrator;', current_database()) \gexec
+SELECT format('GRANT ALL ON DATABASE %I TO orbitox_migrator;', current_database()) \gexec
+
+-- 5b. Verify Database Ownership
 DO $$
+DECLARE
+    v_owner TEXT;
 BEGIN
-    EXECUTE format('ALTER DATABASE %I OWNER TO orbitox_migrator', current_database());
-    EXECUTE format('GRANT ALL ON DATABASE %I TO orbitox_migrator', current_database());
-    RAISE NOTICE 'Database % ownership transferred to orbitox_migrator.', current_database();
+    SELECT pg_catalog.pg_get_userbyid(datdba) INTO v_owner
+    FROM pg_database
+    WHERE datname = current_database();
+
+    IF v_owner != 'orbitox_migrator' THEN
+        RAISE EXCEPTION 'Database ownership assertion failed: expected orbitox_migrator, found % for database %', v_owner, current_database();
+    END IF;
+    RAISE NOTICE 'Database % ownership successfully verified as orbitox_migrator.', current_database();
 END
 $$;
 

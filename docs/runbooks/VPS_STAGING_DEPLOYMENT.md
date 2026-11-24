@@ -4,7 +4,7 @@
 > **Deployment Architecture:** Docker Compose v2 with Ingress Network Isolation  
 > **Primary Staging Domain:** `staging.orbitox.io` (Platform)  
 > **Hospitality Staging Domain:** `ros.staging.orbitox.io` (RestaurantOS)  
-> **Release Baseline SHA:** `b0c1128cc6faf38132e913d2e04e354117d73022`  
+> **Release Baseline SHA:** `5af8fa9c8f748d152946454f6ba33fd3ef566c4f`  
 
 ---
 
@@ -67,12 +67,12 @@ git clone https://github.com/Nikhil-ig/OrbitoX-Platform.git /opt/orbitox
 cd /opt/orbitox
 
 # Explicitly pin and check out the verified release baseline commit
-git checkout b0c1128cc6faf38132e913d2e04e354117d73022
+git checkout 5af8fa9c8f748d152946454f6ba33fd3ef566c4f
 
 # Assert exact commit integrity before proceeding
 CURRENT_COMMIT="$(git rev-parse HEAD)"
-if [[ "$CURRENT_COMMIT" != "b0c1128cc6faf38132e913d2e04e354117d73022" ]]; then
-  echo "❌ Fatal: Commit mismatch! Expected b0c1128cc6faf38132e913d2e04e354117d73022, got ${CURRENT_COMMIT}" >&2
+if [[ "$CURRENT_COMMIT" != "5af8fa9c8f748d152946454f6ba33fd3ef566c4f" ]]; then
+  echo "❌ Fatal: Commit mismatch! Expected 5af8fa9c8f748d152946454f6ba33fd3ef566c4f, got ${CURRENT_COMMIT}" >&2
   exit 1
 fi
 echo "✅ Verified baseline commit: ${CURRENT_COMMIT}"
