@@ -61,6 +61,7 @@ export default function PathologyLabsPage() {
   const [tubeType, setTubeType] = useState('Lavender Top (EDTA)');
   const [phlebotomistName, setPhlebotomistName] = useState('Phleb. Wanda Maximoff');
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [labNotice, setLabNotice] = useState<{ tone: 'success' | 'error'; text: string } | null>(null);
 
   // New Order Form State
   const [orderPatientId, setOrderPatientId] = useState('');
@@ -162,10 +163,10 @@ export default function PathologyLabsPage() {
         setOrderClinicalNotes('');
         await fetchLabData();
       } else {
-        alert(data.error || 'Failed to order lab test');
+        setLabNotice({ tone: 'error', text: data.error || 'Failed to order lab test' });
       }
     } catch (err: any) {
-      alert(err.message);
+      setLabNotice({ tone: 'error', text: err?.message || 'Failed to order lab test' });
     } finally {
       setIsSubmitting(false);
     }
@@ -195,10 +196,10 @@ export default function PathologyLabsPage() {
         setReportIsCritical(false);
         await fetchLabData();
       } else {
-        alert(data.error || 'Failed to report results');
+        setLabNotice({ tone: 'error', text: data.error || 'Failed to report results' });
       }
     } catch (err: any) {
-      alert(err.message);
+      setLabNotice({ tone: 'error', text: err?.message || 'Failed to report results' });
     } finally {
       setIsSubmitting(false);
     }
@@ -234,6 +235,27 @@ export default function PathologyLabsPage() {
         </div>
       }
     >
+      {labNotice && (
+        <div
+          role="status"
+          style={{
+            marginBottom: '14px',
+            padding: '12px 16px',
+            borderRadius: '14px',
+            border: labNotice.tone === 'error' ? '1px solid #fecdd3' : '1px solid #a7f3d0',
+            background: labNotice.tone === 'error' ? '#fff1f2' : '#ecfdf5',
+            color: labNotice.tone === 'error' ? '#be123c' : '#065f46',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            fontSize: '13px',
+            fontWeight: 600,
+          }}
+        >
+          <span>{labNotice.text}</span>
+          <button type="button" onClick={() => setLabNotice(null)} style={{ background: 'none', border: 'none', color: 'inherit', cursor: 'pointer', fontSize: '14px' }}>✕</button>
+        </div>
+      )}
       {/* 1. Top KPI Summary Strip */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '16px' }}>
         <div style={{ background: '#ffffff', padding: '20px', borderRadius: '20px', border: '1px solid #e2e8f0', boxShadow: '0 4px 12px rgba(0,0,0,0.03)' }}>
@@ -850,7 +872,10 @@ export default function PathologyLabsPage() {
               <button
                 type="button"
                 onClick={() => {
-                  alert(`Specimen barcode label printed for ${phlebotomyModalOrder.patientName} (${tubeType}). Status: Specimen Received in Core Lab.`);
+                  setLabNotice({
+                    tone: 'success',
+                    text: `Specimen barcode label printed for ${phlebotomyModalOrder.patientName} (${tubeType}). Status: Specimen Received in Core Lab.`,
+                  });
                   setPhlebotomyModalOrder(null);
                 }}
                 style={{ padding: '10px 22px', borderRadius: '12px', border: 'none', background: 'linear-gradient(135deg, #1e60ff 0%, #2563eb 100%)', color: '#fff', fontWeight: 700, fontSize: '13px', cursor: 'pointer', boxShadow: '0 4px 14px rgba(30, 96, 255, 0.3)' }}
@@ -924,7 +949,10 @@ export default function PathologyLabsPage() {
               <button
                 type="button"
                 onClick={() => {
-                  alert(`🚨 STAT Escalation Dispatched: Pager alert sent to ${criticalAlertModalOrder.doctorName}. Read-receipt token logged.`);
+                  setLabNotice({
+                    tone: 'success',
+                    text: `STAT Escalation Dispatched: Pager alert sent to ${criticalAlertModalOrder.doctorName}. Read-receipt token logged.`,
+                  });
                   setCriticalAlertModalOrder(null);
                 }}
                 style={{ padding: '10px 24px', borderRadius: '12px', border: 'none', background: 'linear-gradient(135deg, #dc2626 0%, #b91c1c 100%)', color: '#fff', fontWeight: 700, fontSize: '13px', cursor: 'pointer', boxShadow: '0 4px 14px rgba(220, 38, 38, 0.35)' }}

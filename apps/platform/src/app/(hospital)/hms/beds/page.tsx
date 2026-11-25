@@ -497,9 +497,11 @@ export default function BedMatrixPage() {
       if (data.success) {
         setShowPairModal(null);
         await fetchBeds();
+      } else {
+        showToast('error', 'Equipment Update Failed', data.error || 'Unable to update bed equipment.');
       }
     } catch (err: any) {
-      alert(err.message);
+      showToast('error', 'Equipment Update Failed', err?.message || 'Unable to update bed equipment.');
     }
   };
 

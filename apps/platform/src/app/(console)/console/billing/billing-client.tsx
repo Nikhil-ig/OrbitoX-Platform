@@ -929,7 +929,7 @@ export function BillingClient({
 
             <div className="space-y-1.5">
               <label className="text-xs font-medium text-[var(--color-text)]">
-                Reason for Policy Change (Mandatory, $\ge 5$ chars)
+                Reason for Policy Change (Mandatory, ≥ 5 chars)
               </label>
               <textarea
                 required

@@ -166,6 +166,7 @@ export default function TelemetryGridPage() {
   const [loading, setLoading] = useState(true);
   const [pulse, setPulse] = useState(false);
   const [selectedEcgStation, setSelectedEcgStation] = useState<TelemetryStation | null>(null);
+  const [telemetryNotice, setTelemetryNotice] = useState<{ tone: 'success' | 'error'; text: string } | null>(null);
 
   // Fetch real stations from live beds in OrbitoX Database
   const fetchLiveStations = async () => {
@@ -298,6 +299,27 @@ export default function TelemetryGridPage() {
         </div>
       }
     >
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+      {telemetryNotice && (
+        <div
+          role="status"
+          style={{
+            padding: '12px 16px',
+            borderRadius: '14px',
+            border: telemetryNotice.tone === 'error' ? '1px solid #fecdd3' : '1px solid #a7f3d0',
+            background: telemetryNotice.tone === 'error' ? '#fff1f2' : '#ecfdf5',
+            color: telemetryNotice.tone === 'error' ? '#be123c' : '#065f46',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            fontSize: '13px',
+            fontWeight: 600,
+          }}
+        >
+          <span>{telemetryNotice.text}</span>
+          <button type="button" onClick={() => setTelemetryNotice(null)} style={{ background: 'none', border: 'none', color: 'inherit', cursor: 'pointer', fontSize: '14px' }}>✕</button>
+        </div>
+      )}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(440px, 1fr))', gap: '20px' }}>
         {loading ? (
           <div style={{ textAlign: 'center', padding: '40px', color: '#94a3b8', gridColumn: '1/-1' }}>
@@ -535,6 +557,7 @@ export default function TelemetryGridPage() {
           </div>
         ))}
       </div>
+      </div>
 
       {/* ─── MODAL: 12-LEAD DIAGNOSTIC ECG STRIP INSPECTION ─── */}
       {selectedEcgStation && (
@@ -643,7 +666,11 @@ export default function TelemetryGridPage() {
               <button
                 type="button"
                 onClick={() => {
-                  alert(`12-Lead ECG Strip exported as PDF for ${selectedEcgStation.patient}. Verification token saved to patient EHR.`);
+                  setTelemetryNotice({
+                    tone: 'success',
+                    text: `12-Lead ECG Strip exported for ${selectedEcgStation.patient}. Verification token logged to patient EHR.`,
+                  });
+                  setSelectedEcgStation(null);
                 }}
                 style={{ padding: '10px 22px', borderRadius: '12px', border: 'none', background: 'linear-gradient(135deg, #1e60ff 0%, #2563eb 100%)', color: '#ffffff', fontSize: '13px', fontWeight: 700, cursor: 'pointer', boxShadow: '0 4px 14px rgba(30, 96, 255, 0.35)' }}
               >

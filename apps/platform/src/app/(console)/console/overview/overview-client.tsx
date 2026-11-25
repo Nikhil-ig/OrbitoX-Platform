@@ -95,6 +95,93 @@ export function OverviewClient({
         </div>
       </div>
 
+      {/* Mobile Operator Phone Summary Band (Concept: Operator console · phone.png) */}
+      <section className="sm:hidden space-y-4" aria-label="Mobile operator summary">
+        <div className="space-y-1">
+          <h2 className="text-3xl font-semibold tracking-tight leading-tight text-[var(--color-text)]">
+            {summary.clusterStatus === 'healthy' ? 'Everything is' : 'Cluster needs'}
+            <br />
+            <span className="text-[var(--color-text-muted)]">
+              {summary.clusterStatus === 'healthy' ? 'running fine.' : 'your decision.'}
+            </span>
+          </h2>
+        </div>
+
+        <div className="grid grid-cols-2 gap-3">
+          <Link
+            href="/console/tenants"
+            className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] p-4 block hover:border-[var(--color-primary)]/40 transition-colors"
+          >
+            <div className="text-2xl font-light tracking-tight text-[var(--color-text)]">
+              {summary.activeTenants.toLocaleString('en-IN')}
+            </div>
+            <div className="text-xs text-[var(--color-text-muted)] mt-1">active tenants</div>
+          </Link>
+          <Link
+            href="/console/billing"
+            className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] p-4 block hover:border-[var(--color-primary)]/40 transition-colors"
+          >
+            <div className="text-2xl font-light tracking-tight text-[var(--color-text)]">
+              {summary.monthlyArr}
+            </div>
+            <div className="text-xs text-[var(--color-text-muted)] mt-1">monthly ARR</div>
+          </Link>
+        </div>
+
+        <div className="space-y-2.5">
+          <div className="flex items-center gap-2">
+            <h3 className="text-sm font-semibold text-[var(--color-text)]">Needs a decision</h3>
+            <span className="inline-flex items-center justify-center min-w-[20px] h-5 px-1.5 rounded-full text-[11px] font-semibold bg-[var(--color-danger)]/20 text-[var(--color-danger)]">
+              {Math.max(1, summary.failedJobsCount + alerts.tenantsRequiringAttention.filter((t) => t.status !== 'good').length)}
+            </span>
+          </div>
+
+          <div className="rounded-2xl p-4 bg-gradient-to-br from-[#3A6BF5] to-[#274ED1] text-white shadow-sm space-y-3">
+            <div className="flex items-center justify-between text-[11px]">
+              <span className="px-2 py-0.5 rounded-full bg-white/15 font-medium">AI drafted</span>
+              <span className="text-white/75">Ask OrbitoX</span>
+            </div>
+            <div className="text-sm font-semibold leading-snug">
+              Review grace-period reminders & cluster diagnostics
+            </div>
+            <div className="grid grid-cols-2 gap-2">
+              <Link
+                href="/console/ai"
+                className="inline-flex items-center justify-center rounded-full bg-white text-slate-900 font-semibold text-xs py-2 px-3"
+              >
+                Open AI
+              </Link>
+              <Link
+                href="/console/billing"
+                className="inline-flex items-center justify-center rounded-full bg-white/15 text-white border border-white/25 font-medium text-xs py-2 px-3"
+              >
+                Review Billing
+              </Link>
+            </div>
+          </div>
+
+          {summary.failedJobsCount > 0 && (
+            <Link
+              href="/console/provisioning?status=FAILED"
+              className="flex items-center justify-between p-3.5 rounded-2xl border border-[var(--color-danger)]/35 bg-[var(--color-surface)]"
+            >
+              <div className="flex items-center gap-2.5 min-w-0">
+                <span className="h-2 w-2 rounded-full bg-[var(--color-danger)] shrink-0" />
+                <div className="min-w-0">
+                  <div className="text-xs font-semibold text-[var(--color-text)] truncate">
+                    {summary.failedJobsCount} failed provisioning job(s)
+                  </div>
+                  <div className="text-[11px] text-[var(--color-danger)] truncate">
+                    Tap to inspect & retry safely
+                  </div>
+                </div>
+              </div>
+              <span className="text-xs text-[var(--color-text-muted)] shrink-0">›</span>
+            </Link>
+          )}
+        </div>
+      </section>
+
       {/* Cluster Health Banner if Degraded */}
       {summary.clusterStatus !== 'healthy' && (
         <div className="p-4 rounded-[var(--radius-row)] border border-[var(--status-warning-border)] bg-[var(--status-warning-bg)] text-[var(--status-warning-fg)] flex flex-col sm:flex-row sm:items-center justify-between gap-3">

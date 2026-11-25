@@ -49,6 +49,7 @@ export default function FinancialBillingPage() {
   const [generatePatientId, setGeneratePatientId] = useState('');
   const [payMethod, setPayMethod] = useState('credit_card');
   const [isProcessing, setIsProcessing] = useState(false);
+  const [billingNotice, setBillingNotice] = useState<{ tone: 'success' | 'error'; text: string } | null>(null);
 
   const fetchBillingData = async () => {
     try {
@@ -119,12 +120,13 @@ export default function FinancialBillingPage() {
       const data = await res.json();
       if (data.success) {
         setShowGenerateModal(false);
+        setBillingNotice({ tone: 'success', text: 'Itemized bill generated successfully.' });
         await fetchBillingData();
       } else {
-        alert(data.error || 'Failed to generate bill');
+        setBillingNotice({ tone: 'error', text: data.error || 'Failed to generate bill' });
       }
     } catch (err: any) {
-      alert(err.message);
+      setBillingNotice({ tone: 'error', text: err?.message || 'Failed to generate bill' });
     } finally {
       setIsProcessing(false);
     }
@@ -147,15 +149,16 @@ export default function FinancialBillingPage() {
       const data = await res.json();
       if (data.success) {
         setShowPayModal(null);
+        setBillingNotice({ tone: 'success', text: 'Payment settled and invoice updated.' });
         if (selectedInvoice && selectedInvoice.id === showPayModal.id) {
           setSelectedInvoice(data.invoice);
         }
         await fetchBillingData();
       } else {
-        alert(data.error || 'Failed to process payment');
+        setBillingNotice({ tone: 'error', text: data.error || 'Failed to process payment' });
       }
     } catch (err: any) {
-      alert(err.message);
+      setBillingNotice({ tone: 'error', text: err?.message || 'Failed to process payment' });
     } finally {
       setIsProcessing(false);
     }
@@ -191,6 +194,27 @@ export default function FinancialBillingPage() {
         </div>
       }
     >
+      {billingNotice && (
+        <div
+          role="status"
+          style={{
+            marginBottom: '14px',
+            padding: '12px 16px',
+            borderRadius: '14px',
+            border: billingNotice.tone === 'error' ? '1px solid #fecdd3' : '1px solid #a7f3d0',
+            background: billingNotice.tone === 'error' ? '#fff1f2' : '#ecfdf5',
+            color: billingNotice.tone === 'error' ? '#be123c' : '#065f46',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            fontSize: '13px',
+            fontWeight: 600,
+          }}
+        >
+          <span>{billingNotice.text}</span>
+          <button type="button" onClick={() => setBillingNotice(null)} style={{ background: 'none', border: 'none', color: 'inherit', cursor: 'pointer', fontSize: '14px' }}>✕</button>
+        </div>
+      )}
       {/* 1. Top Financial KPIs */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '16px' }}>
         <div style={{ background: '#ffffff', padding: '20px', borderRadius: '20px', border: '1px solid #e2e8f0', boxShadow: '0 4px 12px rgba(0,0,0,0.03)' }}>
