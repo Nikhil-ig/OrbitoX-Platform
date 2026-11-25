@@ -44,23 +44,20 @@ export default function RestaurantAdminRedirectPage() {
           </div>
 
           <div className="flex flex-wrap items-center gap-3 pt-4 border-t border-[var(--color-border)]">
-            <Button asChild variant="primary" size="sm" className="rounded-full">
-              <Link href="/console/tenants" className="flex items-center gap-1.5">
-                <span>Open Tenant Fleet Registry</span>
-                <ArrowRight className="h-3.5 w-3.5" />
-              </Link>
-            </Button>
-            <Button asChild variant="secondary" size="sm" className="rounded-full">
-              <a
-                href="http://localhost:4010"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="flex items-center gap-1.5"
-              >
-                <span>Launch RestaurantOS (Port 4010)</span>
-                <ExternalLink className="h-3.5 w-3.5" />
-              </a>
-            </Button>
+            <Link
+              href="/console/tenants"
+              className="inline-flex items-center gap-1.5 rounded-full bg-[var(--color-primary)] text-[var(--color-primary-foreground)] px-4 py-2 text-xs font-semibold hover:opacity-90 transition-opacity"
+            >
+              <span>Open Tenant Fleet Registry</span>
+              <ArrowRight className="h-3.5 w-3.5" />
+            </Link>
+            <Link
+              href="/console/provisioning"
+              className="inline-flex items-center gap-1.5 rounded-full border border-[var(--color-border)] bg-[var(--color-surface-raised)] text-[var(--color-text)] px-4 py-2 text-xs font-semibold hover:bg-[var(--color-surface)] transition-colors"
+            >
+              <span>Inspect Provisioning Jobs</span>
+              <ShieldCheck className="h-3.5 w-3.5" />
+            </Link>
           </div>
         </Card>
       </div>

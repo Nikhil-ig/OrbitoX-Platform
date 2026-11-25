@@ -177,25 +177,26 @@ export function renderMenuWorkspace(
       .join('')}
       </div>
 
-      <!-- Right: Slide-out Dish Editor Drawer (Matching R4 mockup) -->
-      <div id="dish-editor-panel" class="ui-card" style="padding: 28px 26px; display: flex; flex-direction: column; gap: 20px; position: sticky; top: 20px;">
-        
-        <input type="hidden" id="edit-dish-id" value="${displayItems[0]?.id || ''}">
-        
-        <!-- Header -->
-        <div style="display: flex; justify-content: space-between; align-items: center;">
-          <div style="display: flex; align-items: center; gap: 8px;">
-            <h2 id="edit-dish-title" style="font-size: 20px; font-weight: 800; color: #0F172A; margin: 0;">
-              ${escapeHtml(displayItems[0]?.name || 'Butter chicken')}
-            </h2>
-            <span id="edit-dish-tag" style="background: #FEF3C7; color: #D97706; font-size: 10px; font-weight: 700; padding: 2px 8px; border-radius: 9999px;">
-              CATALOG
-            </span>
+      <!-- Right: Slide-out Dish Editor Drawer (Desktop) / Bottom Sheet (<960px, matching 'Owner phone · Edit dish (bottom sheet).png') -->
+      <div id="dish-editor-backdrop" class="dish-sheet-backdrop" onclick="if(event.target === this) closeDishDrawer()">
+        <div id="dish-editor-panel" class="ui-card dish-editor-card" style="padding: 28px 26px; display: flex; flex-direction: column; gap: 18px; position: sticky; top: 20px;">
+          <div class="dish-sheet-handle"></div>
+          <input type="hidden" id="edit-dish-id" value="${displayItems[0]?.id || ''}">
+
+          <!-- Header -->
+          <div style="display: flex; justify-content: space-between; align-items: center;">
+            <div style="display: flex; align-items: center; gap: 8px; min-width: 0;">
+              <h2 id="edit-dish-title" style="font-size: 20px; font-weight: 800; color: #0F172A; margin: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
+                ${escapeHtml(displayItems[0]?.name || 'Butter chicken')}
+              </h2>
+              <span id="edit-dish-tag" style="background: #FEF3C7; color: #D97706; font-size: 10px; font-weight: 700; padding: 2px 8px; border-radius: 9999px; flex-shrink: 0;">
+                CATALOG
+              </span>
+            </div>
+            <button type="button" onclick="closeDishDrawer()" aria-label="Close dish editor" style="background: #F1F5F9; border: none; border-radius: 9999px; width: 32px; height: 32px; font-size: 18px; color: #475569; cursor: pointer; flex-shrink: 0;">
+              ×
+            </button>
           </div>
-          <button type="button" onclick="closeDishDrawer()" style="background: transparent; border: none; font-size: 20px; color: #94A3B8; cursor: pointer;">
-            ×
-          </button>
-        </div>
 
         <!-- Name Input -->
         <div>
@@ -322,15 +323,19 @@ export function renderMenuWorkspace(
         </div>
 
         <!-- Footer Actions -->
-        <div style="display: flex; justify-content: space-between; align-items: center; padding-top: 10px; border-top: 1px solid #F1F5F9;">
+        <div style="display: flex; justify-content: space-between; align-items: center; padding-top: 10px; border-top: 1px solid #F1F5F9; gap: 10px;">
           <button type="button" id="delete-dish-btn" class="btn btn-secondary" onclick="deleteCurrentDish()" style="border-radius: 9999px; padding: 9px 18px; font-size: 13px; color: #DC2626;">
             Hide from menu
           </button>
-          <button type="button" id="save-dish-btn" class="btn btn-primary" onclick="saveCurrentDish()" style="border-radius: 9999px; padding: 9px 24px; font-size: 13px;">
-            Save item
-          </button>
+          <div style="display: flex; gap: 8px; align-items: center;">
+            <button type="button" class="btn btn-secondary mobile-only-cancel" onclick="closeDishDrawer()" style="display: none; border-radius: 9999px; padding: 9px 16px; font-size: 13px;">Close</button>
+            <button type="button" id="save-dish-btn" class="btn btn-primary" onclick="saveCurrentDish()" style="border-radius: 9999px; padding: 9px 24px; font-size: 13px;">
+              Save item
+            </button>
+          </div>
         </div>
 
+        </div>
       </div>
 
     </div>
@@ -386,15 +391,52 @@ export function renderMenuWorkspace(
     .dish-row:hover {
       background: #F8FAFC !important;
     }
+    .dish-sheet-handle {
+      display: none;
+      width: 40px;
+      height: 4px;
+      border-radius: 999px;
+      background: #CBD5E1;
+      margin: 0 auto 6px auto;
+    }
     @media (max-width: 960px) {
       .menu-container {
-        padding: 16px 16px 88px 16px !important;
+        padding: 16px 16px 96px 16px !important;
       }
       .menu-split-grid {
         grid-template-columns: 1fr !important;
       }
       #dish-list-container {
         max-height: none !important;
+      }
+      .dish-sheet-backdrop {
+        display: none;
+        position: fixed;
+        inset: 0;
+        background: rgba(15, 23, 42, 0.48);
+        backdrop-filter: blur(4px);
+        z-index: 65;
+        align-items: flex-end;
+        justify-content: center;
+      }
+      .dish-sheet-backdrop.sheet-open {
+        display: flex !important;
+      }
+      .dish-editor-card {
+        width: 100%;
+        max-width: 560px;
+        max-height: 86vh;
+        overflow-y: auto;
+        border-radius: 28px 28px 0 0 !important;
+        padding: 14px 20px 26px 20px !important;
+        position: static !important;
+        box-shadow: 0 -16px 40px rgba(15, 23, 42, 0.22) !important;
+      }
+      .dish-sheet-handle {
+        display: block;
+      }
+      .mobile-only-cancel {
+        display: inline-flex !important;
       }
     }
   </style>
@@ -483,6 +525,7 @@ export function renderMenuWorkspace(
       document.getElementById('edit-dish-diet').value = diet;
       document.getElementById('edit-dish-category').value = category;
       document.getElementById('delete-dish-btn').style.display = 'inline-block';
+      openDishSheetIfMobile();
     }
 
     function openNewDishDrawer() {
@@ -502,12 +545,28 @@ export function renderMenuWorkspace(
       document.getElementById('edit-dish-prep').value = '15';
       document.getElementById('edit-dish-diet').value = 'VEG';
       document.getElementById('delete-dish-btn').style.display = 'none';
-      document.getElementById('edit-dish-name').focus();
+      openDishSheetIfMobile();
+      setTimeout(() => document.getElementById('edit-dish-name').focus(), 40);
+    }
+
+    function openDishSheetIfMobile() {
+      const bd = document.getElementById('dish-editor-backdrop');
+      if (bd && window.innerWidth <= 960) {
+        bd.classList.add('sheet-open');
+        document.body.style.overflow = 'hidden';
+      }
     }
 
     function closeDishDrawer() {
-      // Keep visible in 2-column layout or clear selection
+      const bd = document.getElementById('dish-editor-backdrop');
+      if (bd) {
+        bd.classList.remove('sheet-open');
+      }
+      document.body.style.overflow = '';
     }
+    window.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') closeDishDrawer();
+    });
 
     async function saveCurrentDish() {
       const id = document.getElementById('edit-dish-id').value;

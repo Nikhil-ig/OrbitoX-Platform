@@ -195,7 +195,7 @@ export function ProvisioningClient({
     }
   };
 
-  // Retry Operation
+  // Retry Operation (handles eligible states & 409 concurrency refresh)
   const handleRetryOperation = async (opId: string) => {
     setRetryingOpId(opId);
     try {
@@ -206,7 +206,19 @@ export function ProvisioningClient({
 
       const json = await res.json();
       if (!res.ok) {
-        throw new Error(json.error?.message || 'Retry rejected by server.');
+        await refreshOperations();
+        const opRes = await fetch(`/api/v1/platform/operations/${opId}`).catch(() => null);
+        if (opRes && opRes.ok) {
+          const opJson = await opRes.json().catch(() => null);
+          if (opJson?.data && selectedOperation?.id === opId) {
+            setSelectedOperation(opJson.data);
+          }
+        }
+        const conflictHint =
+          res.status === 409
+            ? `Retry conflict (409): another worker or state transition updated this job. Refreshed latest state. (${json.error?.message || 'Lease active'})`
+            : (json.error?.message || 'Retry rejected by server.');
+        throw new Error(conflictHint);
       }
 
       setActionMessage({
@@ -438,11 +450,10 @@ export function ProvisioningClient({
                 <button
                   key={st}
                   onClick={() => setStatusFilter(st)}
-                  className={`px-2.5 py-1 rounded-full text-[11px] font-medium transition-colors ${
-                    statusFilter === st
+                  className={`px-2.5 py-1 rounded-full text-[11px] font-medium transition-colors ${statusFilter === st
                       ? 'bg-[var(--color-surface)] text-[var(--color-text)] shadow-sm'
                       : 'text-[var(--color-text-muted)] hover:text-[var(--color-text)]'
-                  }`}
+                    }`}
                 >
                   {st === 'ALL' ? 'All' : st.charAt(0) + st.slice(1).toLowerCase()}
                 </button>
@@ -546,8 +557,8 @@ export function ProvisioningClient({
                             op.status === 'FAILED'
                               ? 'danger'
                               : op.status === 'ACTIVE'
-                              ? 'success'
-                              : 'primary'
+                                ? 'success'
+                                : 'primary'
                           }
                           ariaLabel={`Step progress for ${op.id}`}
                         />
@@ -566,7 +577,7 @@ export function ProvisioningClient({
                     </td>
                     <td className="py-3 px-3 text-right" onClick={(e) => e.stopPropagation()}>
                       <div className="flex items-center justify-end gap-1.5">
-                        {op.status === 'FAILED' && (
+                        {['FAILED', 'PARTIAL', 'CANCELLED'].includes(op.status) && (
                           <Button
                             variant="secondary"
                             size="sm"
@@ -736,7 +747,7 @@ export function ProvisioningClient({
                   />
                 )}
 
-                {selectedOperation.status === 'FAILED' && (
+                {['FAILED', 'PARTIAL', 'CANCELLED'].includes(selectedOperation.status) && (
                   <Button
                     variant="primary"
                     size="sm"
@@ -852,11 +863,10 @@ export function ProvisioningClient({
               <label className="font-medium text-[var(--color-text)]">Product Suite & Plan Tier</label>
               <div className="grid grid-cols-2 gap-3">
                 <div
-                  className={`p-3 rounded-[var(--radius-row)] border cursor-pointer transition-all ${
-                    wizardForm.pluginId === 'hospital-os'
+                  className={`p-3 rounded-[var(--radius-row)] border cursor-pointer transition-all ${wizardForm.pluginId === 'hospital-os'
                       ? 'border-[var(--color-primary)] bg-[var(--color-primary)]/10'
                       : 'border-[var(--color-border)] bg-[var(--color-surface-raised)]'
-                  }`}
+                    }`}
                   onClick={() => setWizardForm({ ...wizardForm, pluginId: 'hospital-os', planTier: 'hms-starter' })}
                 >
                   <div className="font-semibold text-xs text-[var(--color-text)]">HospitalOS</div>
@@ -864,11 +874,10 @@ export function ProvisioningClient({
                 </div>
 
                 <div
-                  className={`p-3 rounded-[var(--radius-row)] border cursor-pointer transition-all ${
-                    wizardForm.pluginId === 'restaurant-os'
+                  className={`p-3 rounded-[var(--radius-row)] border cursor-pointer transition-all ${wizardForm.pluginId === 'restaurant-os'
                       ? 'border-[var(--color-primary)] bg-[var(--color-primary)]/10'
                       : 'border-[var(--color-border)] bg-[var(--color-surface-raised)]'
-                  }`}
+                    }`}
                   onClick={() => setWizardForm({ ...wizardForm, pluginId: 'restaurant-os', planTier: 'standard' })}
                 >
                   <div className="font-semibold text-xs text-[var(--color-text)]">RestaurantOS</div>

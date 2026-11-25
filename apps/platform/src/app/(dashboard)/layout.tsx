@@ -173,8 +173,8 @@ function TopUtilityBar() {
 function PlatformLayoutInner({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
 
-  if (pathname === '/') {
-    return <div className="min-h-screen bg-[var(--color-bg,#0B0F17)]">{children}</div>;
+  if (pathname === '/' || pathname?.startsWith('/billing')) {
+    return <div className="min-h-screen bg-[#F5F6FA]">{children}</div>;
   }
 
   let activeServiceId: string | undefined;

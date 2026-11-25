@@ -73,6 +73,28 @@ export function renderReportsWorkspace(
   }
   const maxDaySum = Math.max(1, ...daySums);
 
+  // Build time-range summaries (Day / Week / Month) from live orders
+  const nowMs = Date.now();
+  const summarizeRange = (days: number) => {
+    const cutoff = nowMs - days * 86400000;
+    const subset = safeOrders.filter((o) => {
+      const ts = new Date((o as any).createdAt || nowMs).getTime();
+      return Number.isNaN(ts) || ts >= cutoff;
+    });
+    const minor = subset.reduce((s, o) => s + (Number((o as any).totalMinor || (o as any).quote?.totalMinor) || 0), 0);
+    const inr = Math.round(minor / 100);
+    return {
+      totalInr: inr,
+      count: subset.length,
+      avgBill: subset.length > 0 ? Math.round(inr / subset.length) : 0,
+    };
+  };
+  const rangeSummaries = {
+    day: summarizeRange(1),
+    week: summarizeRange(7),
+    month: summarizeRange(30),
+  };
+
   return `
   <div class="reports-container" style="padding: 24px 32px 72px 32px; max-width: 1400px; margin: 0 auto; width: 100%; box-sizing: border-box; display: flex; flex-direction: column; gap: 24px;">
     
@@ -110,10 +132,10 @@ export function renderReportsWorkspace(
         </div>
 
         <div style="margin-top: 32px;">
-          <div style="font-size: 48px; font-weight: 800; color: #0F172A; letter-spacing: -0.03em; line-height: 1; font-variant-numeric: tabular-nums;">
+          <div id="reports-hero-total" style="font-size: 48px; font-weight: 800; color: #0F172A; letter-spacing: -0.03em; line-height: 1; font-variant-numeric: tabular-nums;">
             ₹${totalInr.toLocaleString('en-IN')}
           </div>
-          <div style="font-size: 13px; font-weight: 600; color: #64748B; margin-top: 6px;">
+          <div id="reports-hero-count" style="font-size: 13px; font-weight: 600; color: #64748B; margin-top: 6px;">
             ${safeOrders.length} total order${safeOrders.length === 1 ? '' : 's'}
           </div>
         </div>
@@ -125,6 +147,28 @@ export function renderReportsWorkspace(
     const val = daySums[idx];
     const barH = Math.max(18, Math.round((val / maxDaySum) * 90));
     const isPeak = val > 0 && val === Math.max(...daySums);
+    // Build time-range summaries (Day / Week / Month) from live orders
+    const nowMs = Date.now();
+    const summarizeRange = (days: number) => {
+      const cutoff = nowMs - days * 86400000;
+      const subset = safeOrders.filter((o) => {
+        const ts = new Date((o as any).createdAt || nowMs).getTime();
+        return Number.isNaN(ts) || ts >= cutoff;
+      });
+      const minor = subset.reduce((s, o) => s + (Number((o as any).totalMinor || (o as any).quote?.totalMinor) || 0), 0);
+      const inr = Math.round(minor / 100);
+      return {
+        totalInr: inr,
+        count: subset.length,
+        avgBill: subset.length > 0 ? Math.round(inr / subset.length) : 0,
+      };
+    };
+    const rangeSummaries = {
+      day: summarizeRange(1),
+      week: summarizeRange(7),
+      month: summarizeRange(30),
+    };
+
     return `
             <div style="display: flex; flex-direction: column; align-items: center; gap: 10px;">
               ${isPeak ? `<span style="background: #000000; color: #FFFFFF; font-size: 11px; font-weight: 700; padding: 3px 10px; border-radius: 9999px;">₹${val.toLocaleString('en-IN')}</span>` : ''}
@@ -173,6 +217,28 @@ export function renderReportsWorkspace(
     }).length;
     const barH = Math.max(16, Math.min(105, hrCount * 22 + 16));
     const isPeak = hr >= 18 && hr <= 21;
+    // Build time-range summaries (Day / Week / Month) from live orders
+    const nowMs = Date.now();
+    const summarizeRange = (days: number) => {
+      const cutoff = nowMs - days * 86400000;
+      const subset = safeOrders.filter((o) => {
+        const ts = new Date((o as any).createdAt || nowMs).getTime();
+        return Number.isNaN(ts) || ts >= cutoff;
+      });
+      const minor = subset.reduce((s, o) => s + (Number((o as any).totalMinor || (o as any).quote?.totalMinor) || 0), 0);
+      const inr = Math.round(minor / 100);
+      return {
+        totalInr: inr,
+        count: subset.length,
+        avgBill: subset.length > 0 ? Math.round(inr / subset.length) : 0,
+      };
+    };
+    const rangeSummaries = {
+      day: summarizeRange(1),
+      week: summarizeRange(7),
+      month: summarizeRange(30),
+    };
+
     return `
                 <div style="flex: 1; display: flex; flex-direction: column; align-items: center; gap: 8px;">
                   <div style="width: 100%; height: ${barH}px; background: ${isPeak ? '#2563EB' : '#E2E8F0'}; border-radius: 8px;"></div>
@@ -210,7 +276,7 @@ export function renderReportsWorkspace(
 
         <div style="display: flex; gap: 16px; margin-top: 24px; padding-top: 16px; border-top: 1px solid #F1F5F9;">
           <div style="background: #F8FAFC; border-radius: 16px; padding: 12px 18px; flex: 1;">
-            <div style="font-size: 22px; font-weight: 800; color: #0F172A;">₹${avgBill.toLocaleString('en-IN')}</div>
+            <div id="reports-avg-bill" style="font-size: 22px; font-weight: 800; color: #0F172A;">₹${avgBill.toLocaleString('en-IN')}</div>
             <div style="font-size: 11px; color: #64748B; margin-top: 2px;">avg. bill</div>
           </div>
           <div style="background: #F8FAFC; border-radius: 16px; padding: 12px 18px; flex: 1;">
@@ -254,9 +320,17 @@ export function renderReportsWorkspace(
   </style>
 
   <script>
+    const REPORT_RANGES = ${JSON.stringify(rangeSummaries)};
     function switchReportTab(tab, btn) {
       document.querySelectorAll('.report-tab').forEach(b => b.classList.remove('active'));
       if (btn) btn.classList.add('active');
+      const data = REPORT_RANGES[tab] || REPORT_RANGES.week;
+      const totalEl = document.getElementById('reports-hero-total');
+      const countEl = document.getElementById('reports-hero-count');
+      const avgEl = document.getElementById('reports-avg-bill');
+      if (totalEl) totalEl.textContent = '₹' + Number(data.totalInr || 0).toLocaleString('en-IN');
+      if (countEl) countEl.textContent = data.count + ' order' + (data.count === 1 ? '' : 's') + ' (' + tab + ')';
+      if (avgEl) avgEl.textContent = '₹' + Number(data.avgBill || 0).toLocaleString('en-IN');
     }
   </script>
   `;

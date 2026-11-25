@@ -33,4 +33,5 @@ export * from './pages/invite';
 export * from './pages/onboarding';
 export * from './pages/pos';
 export * from './pages/host';
+export * from './pages/waiter';
 export * from './pages/invoices';

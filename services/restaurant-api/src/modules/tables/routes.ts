@@ -486,6 +486,67 @@ export const tablesRoutes: RouteDefinition[] = [
       sendJson(res, 200, { success: true, data: resolved });
     },
   },
+  {
+    method: 'POST',
+    path: '/api/restaurant/tables/:id/request-bill',
+    handler: async (_req, res, context) => {
+      const identity = context.requestIdentity;
+      if (identity.type === 'INVALID_CREDENTIAL' || identity.type === 'REVOKED_CAPABILITY') {
+        sendJson(res, 401, { error: identity.type, code: identity.type, message: 'Invalid or revoked credential.' });
+        return;
+      }
+      if (identity.type === 'ANONYMOUS' && process.env.NODE_ENV === 'production') {
+        sendJson(res, 401, { error: 'UNAUTHENTICATED', code: 'UNAUTHENTICATED', message: 'Staff authentication required.' });
+        return;
+      }
+      const allowedRoles = ['OWNER', 'MANAGER', 'ADMIN', 'SERVER', 'WAITER', 'RUNNER', 'HOST', 'POS'];
+      const staffRole = identity.role || (identity.type === 'ADMIN' ? 'ADMIN' : '');
+      if (identity.type !== 'ANONYMOUS' && !allowedRoles.includes(staffRole)) {
+        sendJson(res, 403, { error: 'FORBIDDEN', code: 'FORBIDDEN', message: 'Insufficient role to request table bill.' });
+        return;
+      }
+      const idParam = context.params.id;
+      const targetTable = /^\d+$/.test(idParam)
+        ? await context.repo.getTable(parseInt(idParam, 10))
+        : await context.repo.getTableByNumber(idParam);
+      if (!targetTable) {
+        sendJson(res, 404, { error: 'TABLE_NOT_FOUND', code: 'TABLE_NOT_FOUND', message: `Table ${idParam} not found.` });
+        return;
+      }
+      if (identity.branchId && identity.branchId !== '*' && targetTable.branchId !== identity.branchId) {
+        sendJson(res, 403, {
+          error: 'BRANCH_MISMATCH',
+          code: 'BRANCH_MISMATCH',
+          message: `Staff credential for branch ${identity.branchId} cannot update table in branch ${targetTable.branchId}.`,
+        });
+        return;
+      }
+      const updated = await context.repo.updateTableStatus(targetTable.id, 'BILL_REQUESTED');
+      if (updated) targetTable.status = updated.status;
+      await context.repo.addServiceRequest({
+        id: `sreq_bill_${Date.now()}`,
+        tableNumber: targetTable.number,
+        branchId: targetTable.branchId || context.currentBranch?.id || 'branch_ldh',
+        floorId: targetTable.floorId || context.currentFloor?.id || 'floor_ground',
+        type: 'BILL',
+        status: 'PENDING',
+        requestedAt: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+        note: `Bill requested by ${identity.id}`,
+      });
+      eventBus.broadcast({
+        id: `evt_${Date.now()}`,
+        sequence: (await context.repo.getEvents()).length,
+        type: 'table.updated',
+        timestamp: new Date().toISOString(),
+        producer: 'api:waiter-bill',
+        branchId: targetTable.branchId || context.currentBranch?.id,
+        tableNumber: targetTable.number,
+        tenantId: context.tenantContext?.tenantId,
+        payload: targetTable,
+      });
+      sendJson(res, 200, { success: true, table: targetTable });
+    },
+  },
 ];
 
 export { handleTableBill, handleRotateLocator } from './service';

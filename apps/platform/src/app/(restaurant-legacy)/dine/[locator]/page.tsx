@@ -188,7 +188,12 @@ export default function GuestDinePage({ params }: { params: Promise<{ locator: s
         setCart([]); // Clear cart
       }
     } catch (err: any) {
-      alert(`Order submission error: ${err.message}`);
+      setOrderProjection({
+        stage: 'ERROR',
+        friendlyTitle: 'Order Submission Failed',
+        friendlyMessage: err?.message || 'Unable to submit order.',
+        progressPercent: 0,
+      });
     } finally {
       setOrderSubmitting(false);
     }

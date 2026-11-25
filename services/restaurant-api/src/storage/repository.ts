@@ -60,6 +60,7 @@ export interface RestaurantRepository extends PosRepository {
     options?: { expectedRevision?: number }
   ): Promise<{ success: boolean; error?: string; code?: string; tables?: TableFloorRecord[] }>;
   updateTableCapacity(tableId: string | number, newCapacity: number): Promise<TableFloorRecord | undefined>;
+  updateTableStatus(tableId: string | number, status: TableFloorRecord['status']): Promise<TableFloorRecord | undefined>;
   rotateTableLocator(
     tableId: string | number,
     authorizedBy?: string,
@@ -577,6 +578,24 @@ export class PostgresRestaurantRepository implements RestaurantRepository {
       const r = await tx.tableFloor.update({
         where: { id: idStr },
         data: { capacity: newCapacity },
+      });
+      return this.mapTableRecord(r);
+    });
+  }
+
+  async updateTableStatus(tableId: string | number, status: TableFloorRecord['status']): Promise<TableFloorRecord | undefined> {
+    return withTenantRlsTransaction(this.prisma, this.tenantId, async (tx: any) => {
+      const idStr = String(tableId);
+      const numVal = typeof tableId === 'number' ? tableId : parseInt(idStr, 10);
+      const orConditions: any[] = [{ id: idStr, tenantId: this.tenantId }];
+      if (!isNaN(numVal)) {
+        orConditions.push({ numericId: numVal, tenantId: this.tenantId });
+      }
+      const existing = await tx.tableFloor.findFirst({ where: { OR: orConditions } });
+      if (!existing) return undefined;
+      const r = await tx.tableFloor.update({
+        where: { id: existing.id },
+        data: { status },
       });
       return this.mapTableRecord(r);
     });
@@ -2503,27 +2522,37 @@ export class PostgresRestaurantRepository implements RestaurantRepository {
 
       targetSeat.guestName = guestName;
       targetSeat.isOccupied = Boolean(guestName);
-      const guestId = targetSeat.guestId || `guest_${targetSeat.id}`;
+      const scopedDefaultGuestId = `guest_${this.tenantId}_${targetSeat.id}`;
+      let guestId = targetSeat.guestId && String(targetSeat.guestId).includes(this.tenantId)
+        ? targetSeat.guestId
+        : scopedDefaultGuestId;
       targetSeat.guestId = guestId;
 
-      const guest = await tx.guest.upsert({
-        where: { id: guestId },
-        update: {
-          name: guestName,
-          tableNumber: targetTable.number,
-          seatId,
-          preferences: preferences || undefined,
-        },
-        create: {
-          id: guestId,
-          tenantId: this.tenantId,
-          name: guestName,
-          tableNumber: targetTable.number,
-          seatId,
-          role: 'WALK_IN',
-          preferences: preferences || {},
-        },
+      const existingGuest = await tx.guest.findFirst({
+        where: { id: guestId, tenantId: this.tenantId },
       });
+
+      const guest = existingGuest
+        ? await tx.guest.update({
+            where: { id: existingGuest.id },
+            data: {
+              name: guestName,
+              tableNumber: targetTable.number,
+              seatId,
+              preferences: preferences || undefined,
+            },
+          })
+        : await tx.guest.create({
+            data: {
+              id: guestId,
+              tenantId: this.tenantId,
+              name: guestName,
+              tableNumber: targetTable.number,
+              seatId,
+              role: 'WALK_IN',
+              preferences: preferences || {},
+            },
+          });
 
       await tx.tableFloor.update({
         where: { id: targetTable.id },
@@ -2875,6 +2904,12 @@ export class JsonRestaurantRepository implements RestaurantRepository {
     return this.store.saveFloorTables(tables, branchId, floorId, options);
   }
   async updateTableCapacity(tableId: string | number, newCapacity: number) { return this.store.updateTableCapacity(Number(tableId), newCapacity); }
+  async updateTableStatus(tableId: string | number, status: TableFloorRecord['status']) {
+    const t = this.store.getTables().find((x) => String(x.id) === String(tableId));
+    if (!t) return undefined;
+    t.status = status;
+    return t;
+  }
   async rotateTableLocator(tableId: string | number, authorizedBy?: string, reason?: string) {
     return this.store.rotateTableLocator(Number(tableId), authorizedBy || 'system', reason);
   }

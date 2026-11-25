@@ -23,6 +23,7 @@ export interface ShellOptions {
   | 'tables'
   | 'pos'
   | 'host'
+  | 'waiter'
   | 'orders'
   | 'kitchen'
   | 'menu'
@@ -37,11 +38,9 @@ export interface ShellOptions {
   | 'staff'
   | 'support'
   | 'onboarding'
-  | 'pos'
-  | 'host'
-  | 'marketplace'
   | 'invoices';
   restaurantName?: string;
+  organizationName?: string;
   tenantName?: string;
   currentBranchId?: string;
   currentFloorId?: string;
@@ -61,6 +60,13 @@ export interface ShellOptions {
 
 export function renderShell(contentHtml: string, options: ShellOptions): string {
   const restaurantName = resolveTenantDisplayName(options.restaurantName, options.tenantName);
+  const rawOrgName = (options.organizationName || '').trim();
+  const organizationSubtitle =
+    rawOrgName && rawOrgName !== restaurantName
+      ? rawOrgName
+      : (options.tenantName && options.tenantName.trim() && options.tenantName.trim() !== restaurantName)
+        ? options.tenantName.trim()
+        : 'Hospitality Workspace';
   const branches = options.branches || DEFAULT_BRANCHES;
   const currentBranchId = options.currentBranchId || branches[0].id;
   const currentBranch = branches.find((b) => b.id === currentBranchId) || branches[0];
@@ -89,7 +95,7 @@ export function renderShell(contentHtml: string, options: ShellOptions): string 
 
   const activeOrdersCount = typeof options.ordersCount === 'number' ? options.ordersCount : 0;
 
-  // 12 Primary Unified Navigation Items matching 'Shared RestaurantOS sidebar.png'
+  // Primary Unified Navigation Items matching 'Shared RestaurantOS sidebar.png' with independent Marketplace & Studio routes
   const navItems = [
     { key: 'overview', href: `/${contextQuery}`, label: 'Today', icon: icon('home', { size: 16 }) },
     { key: 'orders', href: `/operations/orders${contextQuery}`, label: 'Orders', icon: icon('orders', { size: 16 }), badge: activeOrdersCount > 0 ? String(activeOrdersCount) : undefined },
@@ -100,7 +106,8 @@ export function renderShell(contentHtml: string, options: ShellOptions): string 
     { key: 'staff', href: `/operations/staff${contextQuery}`, label: 'Staff', icon: icon('users', { size: 16 }) },
     { key: 'guests', href: `/guests${contextQuery}`, label: 'Guests', icon: icon('user', { size: 16 }) },
     { key: 'invoices', href: `/operations/invoices${contextQuery}`, label: 'Invoices & GST', icon: icon('file-text', { size: 16 }) },
-    { key: 'studio', href: `/studio${contextQuery}`, label: 'Diner app & template', icon: icon('smartphone', { size: 16 }) },
+    { key: 'marketplace', href: `/marketplace${contextQuery}`, label: 'Marketplace', icon: icon('marketplace', { size: 16 }) },
+    { key: 'studio', href: `/studio${contextQuery}`, label: 'Diner studio', icon: icon('smartphone', { size: 16 }) },
     { key: 'reports', href: `/reports${contextQuery}`, label: 'Reports', icon: icon('reports', { size: 16 }) },
     { key: 'settings', href: `/whitelabel${contextQuery}`, label: 'Settings', icon: icon('settings', { size: 16 }) },
   ];
@@ -108,9 +115,8 @@ export function renderShell(contentHtml: string, options: ShellOptions): string 
   // Map sub-routes to active item
   const isNavActive = (key: string) => {
     if (activeNav === key) return true;
-    if (key === 'floor' && (activeNav === 'tables' || activeNav === 'floors' || activeNav === 'pos' || activeNav === 'host')) return true;
+    if (key === 'floor' && (activeNav === 'tables' || activeNav === 'floors' || activeNav === 'pos' || activeNav === 'host' || activeNav === 'waiter')) return true;
     if (key === 'settings' && (activeNav === 'whitelabel' || activeNav === 'onboarding')) return true;
-    if (key === 'studio' && activeNav === 'marketplace') return true;
     return false;
   };
 
@@ -585,43 +591,96 @@ export function renderShell(contentHtml: string, options: ShellOptions): string 
     }
     @media (max-width: 768px) {
       .mobile-bottom-dock {
-        display: flex;
+        display: grid;
+        grid-template-columns: repeat(5, 1fr);
         align-items: center;
-        justify-content: space-around;
         position: fixed;
-        bottom: 14px;
-        left: 16px;
-        right: 16px;
-        height: 60px;
+        bottom: 12px;
+        left: 12px;
+        right: 12px;
+        height: 62px;
         background: #0F172A;
         border-radius: 9999px;
-        padding: 0 10px;
+        padding: 4px 8px;
         z-index: 45;
         box-shadow: 0 12px 32px rgba(15, 23, 42, 0.28);
       }
       .dock-link {
         color: #94A3B8;
         text-decoration: none;
-        width: 42px;
-        height: 42px;
+        height: 48px;
         border-radius: 9999px;
-        display: inline-flex;
+        display: flex;
+        flex-direction: column;
         align-items: center;
         justify-content: center;
+        gap: 2px;
+        font-size: 10px;
+        font-weight: 600;
         transition: all 140ms ease;
+        background: transparent;
+        border: none;
+        cursor: pointer;
       }
       .dock-link.active {
         background: #FFFFFF;
         color: #0F172A;
+        font-weight: 700;
       }
       .dock-fab {
         background: #2563EB;
         color: #FFFFFF;
-        width: 44px;
-        height: 44px;
+        width: 46px;
+        height: 46px;
+        margin: 0 auto;
         border-radius: 9999px;
-        display: inline-flex;
+        display: flex;
         align-items: center;
+        justify-content: center;
+        box-shadow: 0 4px 14px rgba(37, 99, 235, 0.45);
+      }
+    }
+    .more-sheet-backdrop {
+      position: fixed;
+      inset: 0;
+      background: rgba(15, 23, 42, 0.45);
+      backdrop-filter: blur(4px);
+      z-index: 60;
+      display: none;
+      align-items: flex-end;
+      justify-content: center;
+    }
+    .more-sheet-backdrop.open {
+      display: flex;
+    }
+    .more-sheet-card {
+      width: min(560px, 100vw);
+      max-height: 82vh;
+      overflow-y: auto;
+      background: #FFFFFF;
+      border-radius: 28px 28px 0 0;
+      padding: 14px 20px 28px 20px;
+      box-shadow: 0 -16px 40px rgba(15, 23, 42, 0.18);
+    }
+    .more-sheet-grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 8px;
+      margin-top: 8px;
+    }
+    .more-sheet-link {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 11px 12px;
+      border-radius: 16px;
+      background: #F8FAFC;
+      border: 1px solid #E2E8F0;
+      color: #0F172A;
+      text-decoration: none;
+      font-size: 13px;
+      font-weight: 600;
+    }
         justify-content: center;
         text-decoration: none;
         box-shadow: 0 4px 14px rgba(37, 99, 235, 0.45);
@@ -644,7 +703,7 @@ export function renderShell(contentHtml: string, options: ShellOptions): string 
           </div>
           <div class="brand-meta">
             <div class="brand-name">${restaurantName}</div>
-            <div class="brand-org">Maxora Hospitality</div>
+            <div class="brand-org">${organizationSubtitle.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')}</div>
           </div>
           <span class="brand-chevron">⬍</span>
         </a>
@@ -761,24 +820,72 @@ export function renderShell(contentHtml: string, options: ShellOptions): string 
     </div>
   </div>
 
-  <!-- Mobile Bottom Navigation Dock -->
+  <!-- Mobile Bottom Navigation Dock (5-item concept layout: Today, Orders, +, Menu, More) -->
   <nav class="mobile-bottom-dock" aria-label="Mobile quick navigation">
     <a href="/${contextQuery}" class="dock-link ${isNavActive('overview') ? 'active' : ''}" title="Today">
-      ${icon('home', { size: 18 })}
+      ${icon('home', { size: 17 })}
+      <span>Today</span>
     </a>
     <a href="/operations/orders${contextQuery}" class="dock-link ${isNavActive('orders') ? 'active' : ''}" title="Orders">
-      ${icon('orders', { size: 18 })}
+      ${icon('orders', { size: 17 })}
+      <span>Orders</span>
     </a>
-    <a href="/pos${contextQuery}" class="dock-fab" title="New Order (POS)">
+    <a href="/pos${contextQuery}" class="dock-fab" aria-label="New Order (POS)" title="New Order">
       ${icon('plus', { size: 20 })}
     </a>
-    <a href="/operations/floor${contextQuery}" class="dock-link ${isNavActive('floor') ? 'active' : ''}" title="Floor">
-      ${icon('layout-grid', { size: 18 })}
+    <a href="/menu${contextQuery}" class="dock-link ${isNavActive('menu') ? 'active' : ''}" title="Menu">
+      ${icon('menu', { size: 17 })}
+      <span>Menu</span>
     </a>
-    <button type="button" class="dock-link" style="background: transparent; border: none; cursor: pointer;" onclick="openCommandPalette()" title="Search & Quick Jump">
-      ${icon('search', { size: 18 })}
+    <button type="button" class="dock-link" onclick="openMoreNavSheet()" aria-label="More sections" title="More">
+      ${icon('layout-grid', { size: 17 })}
+      <span>More</span>
     </button>
   </nav>
+
+  <!-- Mobile More Menu Bottom Sheet (Matching 'Owner phone · More menu.png') -->
+  <div id="more-nav-sheet" class="more-sheet-backdrop" role="dialog" aria-modal="true" aria-label="More workspaces" onclick="if(event.target === this) closeMoreNavSheet()">
+    <div class="more-sheet-card">
+      <div style="width: 40px; height: 4px; border-radius: 999px; background: #CBD5E1; margin: 0 auto 14px auto;"></div>
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+        <div>
+          <div style="font-size: 16px; font-weight: 800; color: #0F172A;">All Workspaces</div>
+          <div style="font-size: 12px; color: #64748B;">${restaurantName.replace(/</g, '&lt;')} · ${currentBranch.name.replace(/</g, '&lt;')}</div>
+        </div>
+        <div style="display: flex; gap: 6px;">
+          <button type="button" onclick="closeMoreNavSheet(); openCommandPalette();" style="border: 1px solid #E2E8F0; background: #F8FAFC; border-radius: 9999px; padding: 6px 12px; font-size: 12px; font-weight: 600; color: #0F172A; cursor: pointer;">Search</button>
+          <button type="button" onclick="closeMoreNavSheet()" aria-label="Close more workspaces" style="border: 1px solid #E2E8F0; background: #FFFFFF; border-radius: 9999px; width: 32px; height: 32px; font-size: 16px; cursor: pointer; color: #64748B;">×</button>
+        </div>
+      </div>
+
+      <div style="font-size: 11px; font-weight: 700; color: #64748B; text-transform: uppercase; letter-spacing: 0.05em; margin-top: 8px;">Floor &amp; Kitchen</div>
+      <div class="more-sheet-grid">
+        <a href="/operations/floor${contextQuery}" class="more-sheet-link">${icon('layout-grid', { size: 15 })}<span>Floor Studio</span></a>
+        <a href="/kds${contextQuery}" class="more-sheet-link">${icon('monitor', { size: 15 })}<span>KDS</span></a>
+        <a href="/host${contextQuery}" class="more-sheet-link">${icon('users', { size: 15 })}<span>Host Stand</span></a>
+        <a href="/waiter${contextQuery}" class="more-sheet-link">${icon('smartphone', { size: 15 })}<span>Waiter App</span></a>
+        <a href="/operations/tables${contextQuery}" class="more-sheet-link">${icon('layout-grid', { size: 15 })}<span>Tables Fleet</span></a>
+        <a href="/operations/pos${contextQuery}" class="more-sheet-link">${icon('credit-card', { size: 15 })}<span>POS Checkout</span></a>
+      </div>
+
+      <div style="font-size: 11px; font-weight: 700; color: #64748B; text-transform: uppercase; letter-spacing: 0.05em; margin-top: 14px;">Management &amp; Insights</div>
+      <div class="more-sheet-grid">
+        <a href="/operations/locations${contextQuery}" class="more-sheet-link">${icon('map-pin', { size: 15 })}<span>Branches</span></a>
+        <a href="/operations/staff${contextQuery}" class="more-sheet-link">${icon('users', { size: 15 })}<span>Staff &amp; PINs</span></a>
+        <a href="/guests${contextQuery}" class="more-sheet-link">${icon('users', { size: 15 })}<span>Guests</span></a>
+        <a href="/operations/invoices${contextQuery}" class="more-sheet-link">${icon('file-text', { size: 15 })}<span>Invoices &amp; GST</span></a>
+        <a href="/reports${contextQuery}" class="more-sheet-link">${icon('reports', { size: 15 })}<span>Reports</span></a>
+        <a href="/whitelabel${contextQuery}" class="more-sheet-link">${icon('settings', { size: 15 })}<span>Settings</span></a>
+      </div>
+
+      <div style="font-size: 11px; font-weight: 700; color: #64748B; text-transform: uppercase; letter-spacing: 0.05em; margin-top: 14px;">Storefront &amp; Support</div>
+      <div class="more-sheet-grid">
+        <a href="/marketplace${contextQuery}" class="more-sheet-link">${icon('marketplace', { size: 15 })}<span>Marketplace</span></a>
+        <a href="/studio${contextQuery}" class="more-sheet-link">${icon('smartphone', { size: 15 })}<span>Diner Studio</span></a>
+        <a href="/support${contextQuery}" class="more-sheet-link">${icon('support', { size: 15 })}<span>Support</span></a>
+      </div>
+    </div>
+  </div>
 
   <!-- Command Palette (⌘K / Ctrl+K) Modal -->
   <div class="cmdk-backdrop" id="cmdk-modal" role="dialog" aria-modal="true" aria-label="Command palette" onclick="if(event.target === this) closeCommandPalette()">
@@ -854,6 +961,20 @@ export function renderShell(contentHtml: string, options: ShellOptions): string 
       const backdrop = document.getElementById('sidebar-backdrop');
       if (rail) rail.classList.remove('mobile-open');
       if (backdrop) backdrop.classList.remove('open');
+    }
+    function openMoreNavSheet() {
+      const sheet = document.getElementById('more-nav-sheet');
+      if (sheet) {
+        sheet.classList.add('open');
+        document.body.style.overflow = 'hidden';
+      }
+    }
+    function closeMoreNavSheet() {
+      const sheet = document.getElementById('more-nav-sheet');
+      if (sheet) {
+        sheet.classList.remove('open');
+        document.body.style.overflow = '';
+      }
     }
 
     // Dropdowns
@@ -955,6 +1076,7 @@ export function renderShell(contentHtml: string, options: ShellOptions): string 
         }
       } else if (e.key === 'Escape') {
         closeMobileSidebar();
+        closeMoreNavSheet();
         document.querySelectorAll('.context-dropdown').forEach(d => d.classList.remove('open'));
       }
     });

@@ -918,29 +918,31 @@ export class ProvisioningSaga {
     const op = await operationStore.getOperation(operationId);
     if (!op) return null;
     if (op.status === 'ACTIVE') return op;
-    if (op.status === 'CANCELLED' || op.status === 'CANCELLING') {
-      console.log(`[ProvisioningSaga] Operation ${operationId} cannot be retried because it is in status ${op.status}.`);
+    if (op.status === 'CANCELLING') {
+      console.log(`[ProvisioningSaga] Operation ${operationId} cannot be retried because compensation is actively running (${op.status}).`);
       return null;
     }
 
     // Retry must never use force: conditional claim only. If another live server holds the lease, reject retry.
     const attemptId = randomUUID().slice(0, 8);
     const attemptLeaseOwner = `${this.workerInstanceId}:${attemptId}`;
-    const claimed = await operationStore.claimOperationLease(operationId, attemptLeaseOwner);
+    const claimed = await operationStore.claimOperationLease(operationId, attemptLeaseOwner, undefined, { allowCancelled: true });
     if (!claimed) {
       console.log(`[ProvisioningSaga] Operation ${operationId} lease could not be claimed by ${attemptLeaseOwner}; active lease held by another live server.`);
       return null;
     }
 
     const resetSteps = op.steps.map((s) =>
-      s.status === 'FAILED' ? { ...s, status: 'PENDING' as const, error: undefined } : s
+      s.status === 'FAILED' || (op.status === 'CANCELLED' && s.status !== 'COMPLETED')
+        ? { ...s, status: 'PENDING' as const, error: undefined }
+        : s
     );
 
     await operationStore.updateOperation(operationId, {
       status: 'PROVISIONING',
       steps: resetSteps,
       error: null,
-    }, { expectedLeaseOwner: attemptLeaseOwner });
+    }, { expectedLeaseOwner: attemptLeaseOwner, allowCancelledRetry: true });
 
     const req = op.request as any;
     const orgId = op.organizationId;

@@ -404,11 +404,11 @@ export function renderOnboardingWorkspace(
         const data = await res.json();
         if (data.success) {
           window.location.reload();
-        } else {
-          alert('Failed to update step: ' + (data.message || data.error));
+        } else if (window.showToast) {
+          window.showToast('Failed to update step: ' + (data.message || data.error), 'error');
         }
       } catch (err) {
-        alert('Network error updating onboarding step');
+        if (window.showToast) window.showToast('Network error updating onboarding step', 'error');
       }
     }
 

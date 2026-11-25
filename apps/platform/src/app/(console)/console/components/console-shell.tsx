@@ -245,8 +245,8 @@ export function ConsoleShell({
       items: [
         {
           id: 'nav-restaurant',
-          label: 'RestaurantOS',
-          description: 'Open RestaurantOS operational control center',
+          label: 'RestaurantOS Architecture Boundary',
+          description: 'Manage RestaurantOS tenants from the Fleet Registry (decoupled runtime)',
           icon: <Layers className="h-4 w-4" />,
           onSelect: () => router.push('/admin/restaurant'),
         },

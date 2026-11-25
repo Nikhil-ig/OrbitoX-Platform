@@ -34,6 +34,7 @@ import {
   renderPantryRushPage,
   renderPosTerminal,
   renderHostStand,
+  renderWaiterWorkspace,
   renderInvoicesWorkspace,
 } from './index';
 import { resolveTenantDisplayName } from '../shared';
@@ -65,20 +66,8 @@ export const viewsRoutes: RouteDefinition[] = [
     handler: async (req, res, context) => {
       const section = (context.parsedUrl.query.section as string) || 'ALL';
       const tables = await context.repo.getTables(context.currentBranch?.id);
-      const tenantBrand = await context.repo.getTenantBrand();
-      const branches = await context.repo.getBranches();
-      const floors = await context.repo.getFloors();
-      const html = renderShell(renderTablesList(tables, context.currentBranch?.id || 'branch_ldh', section), {
-        title: 'Tables Fleet Management',
-        activeNav: 'tables',
-        restaurantName: resolveTenantDisplayName(tenantBrand, context.tenantContext?.tenantName),
-        currentBranchId: context.currentBranch?.id || 'branch_ldh',
-        currentFloorId: context.currentFloor?.id || 'floor_ground',
-        currentServiceShift: context.serviceShift,
-        branches,
-        floors,
-        staffRole: context.activeStaffRole,
-      });
+      const opts = await getShellOptions(context, 'Tables Fleet Management', 'tables');
+      const html = renderShell(renderTablesList(tables, context.currentBranch?.id || 'branch_ldh', section), opts);
       sendHtml(res, html);
     },
   },
@@ -127,6 +116,64 @@ export const viewsRoutes: RouteDefinition[] = [
     path: '/operations/host',
     handler: (_req, res) => {
       res.writeHead(302, { Location: '/host' });
+      res.end();
+    },
+  },
+  {
+    method: 'GET',
+    path: '/waiter',
+    handler: async (_req, res, context) => {
+      const identity = context.requestIdentity;
+      if (identity.type === 'DINER' || identity.type === 'REVOKED_CAPABILITY') {
+        res.writeHead(403, { 'Content-Type': 'text/plain' });
+        res.end('Forbidden: Diner capabilities cannot access the staff Waiter workspace.');
+        return;
+      }
+      const isProduction = process.env.NODE_ENV === 'production';
+      const isAuthenticatedStaff =
+        identity.type === 'STAFF' ||
+        identity.type === 'ADMIN' ||
+        identity.type === 'PLATFORM_BRIDGE';
+      const requiresLogin = isProduction && !isAuthenticatedStaff;
+      const [tables, menuItems, branches, orders, kitchenTasks, serviceRequests, tenantBrand] = requiresLogin
+        ? [[], [], await context.repo.getBranches(), [], [], [], await context.repo.getTenantBrand()]
+        : await Promise.all([
+            context.repo.getTables(context.currentBranch?.id),
+            context.repo.getMenuItems(true),
+            context.repo.getBranches(),
+            context.repo.getOrders(undefined, undefined, context.currentBranch?.id),
+            context.repo.getKitchenTasks(undefined, context.currentBranch?.id),
+            context.repo.getServiceRequests(context.currentBranch?.id),
+            context.repo.getTenantBrand(),
+          ]);
+
+      const html = renderWaiterWorkspace({
+        tables,
+        menuItems,
+        branches,
+        orders,
+        kitchenTasks,
+        serviceRequests,
+        currentBranchId: context.currentBranch?.id || 'branch_ldh',
+        tenantName: resolveTenantDisplayName(tenantBrand, context.tenantContext?.tenantName),
+        staffIdentity: isAuthenticatedStaff
+          ? {
+              id: identity.id,
+              name: identity.name || identity.id,
+              role: identity.role || (identity.type === 'ADMIN' ? 'ADMIN' : 'SERVER'),
+              type: identity.type,
+            }
+          : undefined,
+        requiresLogin,
+      });
+      sendHtml(res, html);
+    },
+  },
+  {
+    method: 'GET',
+    path: '/operations/waiter',
+    handler: (_req, res) => {
+      res.writeHead(302, { Location: '/waiter' });
       res.end();
     },
   },
@@ -190,20 +237,9 @@ export const viewsRoutes: RouteDefinition[] = [
       const branchOverrides = await context.repo.getBranchMenuOverrides();
       const categories = await context.repo.getCategories(true);
       const menuItems = await context.repo.getMenuItems(true);
-      const tenantBrand = await context.repo.getTenantBrand();
       const branches = await context.repo.getBranches();
-      const floors = await context.repo.getFloors();
-      const html = renderShell(renderMenuWorkspace(menuItems, branches, context.currentBranch?.id || 'branch_ldh', branchOverrides, categories), {
-        title: 'Menu Catalog',
-        activeNav: 'menu',
-        restaurantName: resolveTenantDisplayName(tenantBrand, context.tenantContext?.tenantName),
-        currentBranchId: context.currentBranch?.id || 'branch_ldh',
-        currentFloorId: context.currentFloor?.id || 'floor_ground',
-        currentServiceShift: context.serviceShift,
-        branches,
-        floors,
-        staffRole: context.activeStaffRole,
-      });
+      const opts = await getShellOptions(context, 'Menu Catalog', 'menu');
+      const html = renderShell(renderMenuWorkspace(menuItems, branches, context.currentBranch?.id || 'branch_ldh', branchOverrides, categories), opts);
       sendHtml(res, html);
     },
   },
@@ -213,20 +249,8 @@ export const viewsRoutes: RouteDefinition[] = [
     handler: async (_req, res, context) => {
       const branchTables = await context.repo.getTables(context.currentBranch?.id);
       const guests = await context.repo.getGuests();
-      const tenantBrand = await context.repo.getTenantBrand();
-      const branches = await context.repo.getBranches();
-      const floors = await context.repo.getFloors();
-      const html = renderShell(renderGuestsWorkspace(branchTables, context.currentBranch?.id || 'branch_ldh', guests), {
-        title: 'Active Guests',
-        activeNav: 'guests',
-        restaurantName: resolveTenantDisplayName(tenantBrand, context.tenantContext?.tenantName),
-        currentBranchId: context.currentBranch?.id || 'branch_ldh',
-        currentFloorId: context.currentFloor?.id || 'floor_ground',
-        currentServiceShift: context.serviceShift,
-        branches,
-        floors,
-        staffRole: context.activeStaffRole,
-      });
+      const opts = await getShellOptions(context, 'Active Guests', 'guests');
+      const html = renderShell(renderGuestsWorkspace(branchTables, context.currentBranch?.id || 'branch_ldh', guests), opts);
       sendHtml(res, html);
     },
   },
@@ -398,20 +422,9 @@ export const viewsRoutes: RouteDefinition[] = [
     path: '/support',
     handler: async (_req, res, context) => {
       const tickets = await context.repo.getSupportTickets();
-      const tenantBrand = await context.repo.getTenantBrand();
       const branches = await context.repo.getBranches();
-      const floors = await context.repo.getFloors();
-      const html = renderShell(renderSupportWorkspace(tickets, branches, context.currentBranch?.id || 'branch_ldh'), {
-        title: 'Customer Support Desk',
-        activeNav: 'support',
-        restaurantName: resolveTenantDisplayName(tenantBrand, context.tenantContext?.tenantName),
-        currentBranchId: context.currentBranch?.id || 'branch_ldh',
-        currentFloorId: context.currentFloor?.id || 'floor_ground',
-        currentServiceShift: context.serviceShift,
-        branches,
-        floors,
-        staffRole: context.activeStaffRole,
-      });
+      const opts = await getShellOptions(context, 'Customer Support Desk', 'support');
+      const html = renderShell(renderSupportWorkspace(tickets, branches, context.currentBranch?.id || 'branch_ldh'), opts);
       sendHtml(res, html);
     },
   },
@@ -438,33 +451,15 @@ export const viewsRoutes: RouteDefinition[] = [
       if (sub === 'templates' || sub === '/templates') {
         const templates = await context.repo.getTemplates();
         const menuItems = await context.repo.getMenuItems();
-        const html = renderShell(renderTemplateCompositionInspector(templates, 'tmpl_haute_gastronomy', 'tmpl_artisan_coffee', menuItems), {
-          title: 'Template Inspector',
-          activeNav: 'marketplace',
-          restaurantName: tenantDisplayName,
-          currentBranchId: context.currentBranch?.id || 'branch_ldh',
-          currentFloorId: context.currentFloor?.id || 'floor_ground',
-          currentServiceShift: context.serviceShift,
-          branches,
-          floors,
-          staffRole: context.activeStaffRole,
-        });
+        const opts = await getShellOptions(context, 'Template Inspector', 'marketplace');
+        const html = renderShell(renderTemplateCompositionInspector(templates, 'tmpl_haute_gastronomy', 'tmpl_artisan_coffee', menuItems), opts);
         sendHtml(res, html);
         return;
       }
 
       const rawData = await context.repo.getRawData();
-      const html = renderShell(renderDeveloperInspector(context as any, rawData, tenantDisplayName), {
-        title: 'Runtime Inspector',
-        activeNav: 'overview',
-        restaurantName: tenantDisplayName,
-        currentBranchId: context.currentBranch?.id || 'branch_ldh',
-        currentFloorId: context.currentFloor?.id || 'floor_ground',
-        currentServiceShift: context.serviceShift,
-        branches,
-        floors,
-        staffRole: context.activeStaffRole,
-      });
+      const opts = await getShellOptions(context, 'Runtime Inspector', 'overview');
+      const html = renderShell(renderDeveloperInspector(context as any, rawData, tenantDisplayName), opts);
       sendHtml(res, html);
     },
   },
@@ -521,6 +516,8 @@ async function getShellOptions(context: any, title: string, activeNav: any): Pro
     title,
     activeNav,
     restaurantName: resolveTenantDisplayName(tenantBrand, context.tenantContext?.tenantName),
+    organizationName: String((tenantBrand as any)?.legalEntityName || (tenantBrand as any)?.organizationName || ''),
+    tenantName: context.tenantContext?.tenantName,
     currentBranchId: context.currentBranch?.id || 'branch_ldh',
     currentFloorId: context.currentFloor?.id || 'floor_ground',
     currentServiceShift: context.serviceShift,

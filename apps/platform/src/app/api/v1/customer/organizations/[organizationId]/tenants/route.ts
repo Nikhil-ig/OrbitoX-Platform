@@ -40,7 +40,8 @@ export const GET = withCustomerAuth<RouteContext>(async (_request, session, cont
   const tenantIds = projects.flatMap((project) => project.environments.map((environment) =>
     `org/${organizationId}/project/${project.id}/environment/${environment.id}`,
   ));
-  const [installations, subscriptions] = tenantIds.length
+  const envIds = projects.flatMap((project) => project.environments.map((e) => e.id));
+  const [installations, subscriptions, verifiedDomains] = tenantIds.length
     ? await Promise.all([
       prisma.pluginInstallation.findMany({
         where: { tenantId: { in: tenantIds } },
@@ -58,12 +59,98 @@ export const GET = withCustomerAuth<RouteContext>(async (_request, session, cont
           planMap: { select: { internalPlanId: true } },
         },
       }),
+      prisma.projectDomain.findMany({
+        where: { environmentId: { in: envIds }, verificationStatus: 'VERIFIED' },
+        orderBy: { createdAt: 'desc' },
+        select: { environmentId: true, domainName: true },
+      }),
     ])
-    : [[], []];
+    : [[], [], []];
+
+  const isProd = process.env.NODE_ENV === 'production';
+  const configuredPublicOrigin =
+    process.env.RESTAURANTOS_PUBLIC_URL?.trim() ||
+    (!isProd ? (process.env.RESTAURANTOS_RUNTIME_URL?.trim() || process.env.RESTAURANT_STORE_URL?.trim() || 'http://localhost:4010') : '');
+
+  function resolveLaunchTarget(
+    project: { id: string; slug: string; status: string },
+    env: { id: string; slug: string; name: string },
+    tenantPlugins: Array<{ pluginId: string; status: string; statusReason: string | null }>,
+    tenantId: string,
+  ): { launchUrl: string | null; displayDomain: string; launchBlockedReason: string | null } {
+    const isHospital = tenantPlugins.some((pl) => String(pl.pluginId || '').toLowerCase().includes('hms') || String(pl.pluginId || '').toLowerCase().includes('hospital'));
+    const blockedPlugin = tenantPlugins.find((pl) => ['SUSPENDED', 'REVOKED', 'DEPROVISIONED', 'DISABLED'].includes(String(pl.status || '').toUpperCase()));
+    if (project.status === 'SUSPENDED' || project.status === 'DEPROVISIONED' || blockedPlugin) {
+      return {
+        launchUrl: null,
+        displayDomain: `${project.slug}.orbitox.io`,
+        launchBlockedReason: blockedPlugin?.statusReason || `Workspace environment "${env.name}" is ${blockedPlugin?.status?.toLowerCase() || project.status.toLowerCase()}.`,
+      };
+    }
+
+    const customDomain = verifiedDomains.find((d) => d.environmentId === env.id)?.domainName;
+    if (customDomain) {
+      const safeCustom = customDomain.replace(/^https?:\/\//, '');
+      const proto = isProd ? 'https://' : (safeCustom.includes('localhost') || safeCustom.startsWith('127.0.0.1') ? 'http://' : 'https://');
+      return {
+        launchUrl: isHospital ? `${proto}${safeCustom}/hms?tenant=${encodeURIComponent(tenantId)}` : `${proto}${safeCustom}/`,
+        displayDomain: safeCustom,
+        launchBlockedReason: null,
+      };
+    }
+
+    if (isHospital) {
+      const hmsPath = `/hms?tenant=${encodeURIComponent(tenantId)}`;
+      return {
+        launchUrl: hmsPath,
+        displayDomain: `${project.slug}.orbitox.io`,
+        launchBlockedReason: null,
+      };
+    }
+
+    if (!configuredPublicOrigin) {
+      return {
+        launchUrl: null,
+        displayDomain: `${project.slug}.orbitox.io`,
+        launchBlockedReason: 'Production storefront origin is not yet verified or configured.',
+      };
+    }
+
+    try {
+      const parsed = new URL(configuredPublicOrigin);
+      const protocol = isProd ? 'https:' : parsed.protocol;
+      if (isProd && (parsed.hostname === 'localhost' || parsed.hostname === '127.0.0.1')) {
+        return {
+          launchUrl: null,
+          displayDomain: `${project.slug}.orbitox.io`,
+          launchBlockedReason: 'Custom domain or public HTTPS host required for production launch.',
+        };
+      }
+      const hostBase = parsed.hostname === '127.0.0.1' ? 'localhost' : parsed.hostname;
+      const portSuffix = parsed.port ? `:${parsed.port}` : '';
+      const tenantHost = hostBase === 'localhost'
+        ? `${project.slug}.localhost${portSuffix}`
+        : `${project.slug}.${hostBase}${portSuffix}`;
+      return {
+        launchUrl: `${protocol}//${tenantHost}/`,
+        displayDomain: tenantHost,
+        launchBlockedReason: null,
+      };
+    } catch {
+      return {
+        launchUrl: null,
+        displayDomain: `${project.slug}.orbitox.io`,
+        launchBlockedReason: 'Configured runtime origin is invalid.',
+      };
+    }
+  }
+
   return NextResponse.json({
     ok: true,
     tenants: projects.flatMap((project) => project.environments.map((environment) => {
       const tenantId = `org/${organizationId}/project/${project.id}/environment/${environment.id}`;
+      const tenantPlugins = installations.filter((item) => item.tenantId === tenantId);
+      const target = resolveLaunchTarget(project, environment, tenantPlugins, tenantId);
       return {
         tenantId,
         project: {
@@ -77,7 +164,10 @@ export const GET = withCustomerAuth<RouteContext>(async (_request, session, cont
           apiCallQuota: project.apiCallQuota?.toString() ?? null,
         },
         environment,
-        plugins: installations.filter((item) => item.tenantId === tenantId).map((item) => {
+        launchUrl: target.launchUrl,
+        displayDomain: target.displayDomain,
+        launchBlockedReason: target.launchBlockedReason,
+        plugins: tenantPlugins.map((item) => {
           const subscription = subscriptions.find((row) =>
             row.tenantId === tenantId && row.pluginId === item.pluginId,
           );

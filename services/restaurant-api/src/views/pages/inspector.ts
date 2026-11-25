@@ -365,10 +365,18 @@ export function renderDeveloperInspector(
       }
     }
 
-    async function reseedStorage() {
-      if (confirm('Reseed runtime storage from canonical archetypes?')) {
-        await fetch('/api/restaurant/reseed', { method: 'POST' });
-        location.reload();
+    function reseedStorage() {
+      if (window.confirmAction) {
+        window.confirmAction({
+          title: 'Reseed Runtime Storage',
+          message: 'Reseed runtime storage from canonical archetypes?',
+          confirmLabel: 'Reseed',
+          danger: true,
+          onConfirm: async () => {
+            await fetch('/api/restaurant/reseed', { method: 'POST' });
+            location.reload();
+          }
+        });
       }
     }
   </script>

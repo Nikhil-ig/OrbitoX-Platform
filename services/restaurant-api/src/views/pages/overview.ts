@@ -109,6 +109,23 @@ export function renderOperationsHome(
       </div>
     </div>
 
+    <!-- Mobile Dark Hero Sales Summary Card (Matching 'Owner phone · Today.png') -->
+    <div class="today-mobile-hero">
+      <div style="display:flex; justify-content:space-between; align-items:flex-start;">
+        <div>
+          <div style="font-size:12px; color:#94A3B8; font-weight:600;">Tonight · ${esc(branchName)}</div>
+          <div style="font-size:34px; font-weight:800; color:#FFFFFF; letter-spacing:-0.03em; margin-top:4px; font-variant-numeric:tabular-nums;">${displayRevenue}</div>
+          <div style="font-size:12px; color:#94A3B8; margin-top:2px;">${settledOrders.length} settled · ${ordersCount} total orders</div>
+        </div>
+        <a href="/pos?branch=${encodedBranch}" style="background:#2563EB; color:#FFFFFF; padding:8px 14px; border-radius:9999px; font-size:12px; font-weight:700; text-decoration:none;">+ Order</a>
+      </div>
+      <div style="display:grid; grid-template-columns:repeat(3, 1fr); gap:8px; margin-top:16px; padding-top:14px; border-top:1px solid rgba(148,163,184,0.18);">
+        <div><div style="font-size:16px; font-weight:800; color:#fff;">${seatedRatio}</div><div style="font-size:11px; color:#94A3B8;">Tables</div></div>
+        <div><div style="font-size:16px; font-weight:800; color:#fff;">${avgKitchenMins}</div><div style="font-size:11px; color:#94A3B8;">Avg kitchen</div></div>
+        <div><div style="font-size:16px; font-weight:800; color:${alertsCount > 0 ? '#60A5FA' : '#fff'};">${alertsCount}</div><div style="font-size:11px; color:#94A3B8;">Needs you</div></div>
+      </div>
+    </div>
+
     <!-- 2. 4 Key Metric Cards -->
     <div class="today-metrics-grid">
       <div class="today-metric-cell">
@@ -355,17 +372,27 @@ export function renderOperationsHome(
         grid-template-columns: 1fr;
       }
     }
+    .today-mobile-hero {
+      display: none;
+    }
     @media (max-width: 640px) {
       .today-container {
-        padding: 16px 16px 88px 16px !important;
+        padding: 16px 16px 96px 16px !important;
+        gap: 18px !important;
+      }
+      .today-mobile-hero {
+        display: block;
+        background: #0F172A;
+        color: #FFFFFF;
+        border-radius: 26px;
+        padding: 20px;
+        box-shadow: 0 14px 30px rgba(15, 23, 42, 0.16);
       }
       .today-metrics-grid {
-        grid-template-columns: 1fr 1fr;
-        gap: 16px;
-        padding: 18px;
+        display: none;
       }
-      .today-metric-val {
-        font-size: 28px;
+      .today-triage-grid {
+        gap: 16px !important;
       }
       .today-hall-grid {
         grid-template-columns: repeat(4, 1fr);

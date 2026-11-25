@@ -793,15 +793,15 @@ export function renderSwiftBitePage(
             Switch Branch
           </div>
           ${branches
-            .map((b) => {
-              const isActive = b.id === activeBranch.id;
-              return `
+      .map((b) => {
+        const isActive = b.id === activeBranch.id;
+        return `
             <div class="sb-branch-item ${isActive ? 'active' : ''}" onclick="selectBranch('${b.id}')">
               <span>${b.name} (${b.city})</span>
               ${isActive ? icon('check', { size: 14 }) : ''}
             </div>`;
-            })
-            .join('')}
+      })
+      .join('')}
         </div>
       </div>
 
@@ -834,13 +834,13 @@ export function renderSwiftBitePage(
       <!-- 1-Tap Category Rail -->
       <div class="sb-cat-rail">
         ${categories
-          .map(
-            (cat) => `
+      .map(
+        (cat) => `
           <button class="sb-cat-btn ${cat === 'ALL' ? 'active' : ''}" onclick="filterCategory('${cat}')">
             ${cat === 'ALL' ? 'All Cravings' : cat}
           </button>`
-          )
-          .join('')}
+      )
+      .join('')}
       </div>
 
       <!-- "Order Again in 1-Tap" Carousel -->
@@ -870,14 +870,14 @@ export function renderSwiftBitePage(
       <!-- Menu Items List -->
       <div class="sb-menu-list" id="sb-menu-list">
         ${resolvedMenu
-          .map((item) => {
-            const isVeg = item.dietaryFlags?.includes('VEG') || false;
-            const isSoldOut = !item.isAvailableAtBranch;
-            const hasRequiredModifiers = Boolean(
-              item.modifierGroups && item.modifierGroups.some((g) => g.minSelections > 0)
-            );
+      .map((item) => {
+        const isVeg = item.dietaryFlags?.includes('VEG') || false;
+        const isSoldOut = !item.isAvailableAtBranch;
+        const hasRequiredModifiers = Boolean(
+          item.modifierGroups && item.modifierGroups.some((g) => g.minSelections > 0)
+        );
 
-            return `
+        return `
           <div
             class="sb-dish-card ${isSoldOut ? 'is-sold-out' : ''}"
             id="dish-card-${item.id}"
@@ -915,8 +915,8 @@ export function renderSwiftBitePage(
               </div>
             </div>
           </div>`;
-          })
-          .join('')}
+      })
+      .join('')}
       </div>
 
     </main>
@@ -1274,16 +1274,32 @@ export function renderSwiftBitePage(
       document.getElementById('sb-branch-dropdown').classList.toggle('open');
     }
 
+    function showSbNotice(msg) {
+      let el = document.getElementById('sb-toast-notice');
+      if (!el) {
+        el = document.createElement('div');
+        el.id = 'sb-toast-notice';
+        el.style.cssText = 'position:fixed;bottom:84px;left:50%;transform:translateX(-50%);background:#0F172A;color:#fff;padding:10px 18px;border-radius:9999px;font-size:13px;font-weight:600;z-index:99999;box-shadow:0 12px 28px rgba(0,0,0,0.28);';
+        document.body.appendChild(el);
+      }
+      el.textContent = msg;
+      el.style.display = 'block';
+      clearTimeout(window.__sbToastTimer);
+      window.__sbToastTimer = setTimeout(() => { el.style.display = 'none'; }, 3500);
+    }
+
+    let pendingSbBranchSwitch = null;
     function selectBranch(id) {
       if (id === activeBranchId) {
         toggleBranchDropdown();
         return;
       }
-      if (cart.length > 0) {
-        if (!confirm('Switching branch will update menu pricing and verify availability for this location. Proceed?')) {
-          return;
-        }
+      if (cart.length > 0 && pendingSbBranchSwitch !== id) {
+        pendingSbBranchSwitch = id;
+        showSbNotice('Switching branch clears/reprices cart — tap location again to confirm.');
+        return;
       }
+      pendingSbBranchSwitch = null;
       window.location.href = '/apps/swift-bite?branch=' + encodeURIComponent(id);
     }
 

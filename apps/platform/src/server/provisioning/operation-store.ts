@@ -204,8 +204,9 @@ export class OperationStore {
   async updateOperation(
     id: string,
     updates: Partial<PlatformOperationRecord>,
-    options: { expectedLeaseOwner?: string } = {}
+    options: { expectedLeaseOwner?: string; allowCancelledRetry?: boolean } = {}
   ): Promise<PlatformOperationRecord | null> {
+    const blockedCancelledStatuses = options.allowCancelledRetry ? ['CANCELLING'] : ['CANCELLED', 'CANCELLING'];
     if (process.env.ORBITOX_PLATFORM_REPOSITORY === 'json') {
       const existing = memoryOperations.get(id);
       if (!existing) return null;
@@ -220,7 +221,7 @@ export class OperationStore {
       }
 
       if (
-        ['CANCELLED', 'CANCELLING'].includes(existing.status) &&
+        blockedCancelledStatuses.includes(existing.status) &&
         updates.status !== undefined &&
         !['CANCELLED', 'CANCELLING'].includes(updates.status as string)
       ) {
@@ -268,7 +269,7 @@ export class OperationStore {
     }
 
     if (
-      ['CANCELLED', 'CANCELLING'].includes(existing.status) &&
+      blockedCancelledStatuses.includes(existing.status) &&
       updates.status !== undefined &&
       !['CANCELLED', 'CANCELLING'].includes(updates.status as string)
     ) {
@@ -298,7 +299,7 @@ export class OperationStore {
       if (updates.status === 'CANCELLING') {
         whereClause.status = { notIn: ['ACTIVE', 'CANCELLED', 'FAILED'] };
       } else if (updates.status !== undefined && !['CANCELLED', 'CANCELLING'].includes(updates.status as string)) {
-        whereClause.status = { notIn: ['CANCELLED', 'CANCELLING'] };
+        whereClause.status = { notIn: blockedCancelledStatuses };
       }
       if (options.expectedLeaseOwner) {
         whereClause.leaseOwner = options.expectedLeaseOwner;
@@ -478,7 +479,7 @@ export class OperationStore {
       memoryOperations.set(input.operationId, recheck);
 
       if (input.projectId) {
-        await platformRepository.updateProject(input.projectId, { status: 'ACTIVE' }).catch(() => {});
+        await platformRepository.updateProject(input.projectId, { status: 'ACTIVE' }).catch(() => { });
       }
 
       const jsonDedupKey = `tenant.ready:${input.tenantId}`;
@@ -616,9 +617,10 @@ export class OperationStore {
     id: string,
     leaseOwner: string,
     ttlSeconds?: number,
-    options: { force?: boolean } = {}
+    options: { force?: boolean; allowCancelled?: boolean } = {}
   ): Promise<boolean> {
     const isForce = Boolean(options.force);
+    const allowCancelled = Boolean(options.allowCancelled);
     const effectiveTtl = ttlSeconds ?? (
       process.env.OPERATION_LEASE_TTL_SECONDS
         ? Number(process.env.OPERATION_LEASE_TTL_SECONDS)
@@ -628,7 +630,8 @@ export class OperationStore {
     if (process.env.ORBITOX_PLATFORM_REPOSITORY === 'json') {
       const mem = memoryOperations.get(id);
       if (mem) {
-        if (['CANCELLED', 'CANCELLING', 'COMPLETED'].includes(mem.status)) {
+        const blockedStatuses = allowCancelled ? ['CANCELLING', 'COMPLETED'] : ['CANCELLED', 'CANCELLING', 'COMPLETED'];
+        if (blockedStatuses.includes(mem.status)) {
           return false;
         }
         const now = Date.now();
@@ -644,16 +647,27 @@ export class OperationStore {
     }
 
     try {
-      const rows = await (prisma as any).$queryRaw<Array<{ id: string }>>`
-        UPDATE "PlatformOperation"
-        SET "leaseOwner" = ${leaseOwner},
-            "leaseExpiresAt" = NOW() + (${effectiveTtl} * INTERVAL '1 second'),
-            "updatedAt" = NOW()
-        WHERE "id" = ${id}
-          AND (${isForce} = true OR "leaseExpiresAt" IS NULL OR "leaseExpiresAt" < NOW())
-          AND "status" NOT IN ('CANCELLED', 'CANCELLING', 'COMPLETED')
-        RETURNING id
-      `;
+      const rows = allowCancelled
+        ? await (prisma as any).$queryRaw<Array<{ id: string }>>`
+            UPDATE "PlatformOperation"
+            SET "leaseOwner" = ${leaseOwner},
+                "leaseExpiresAt" = NOW() + (${effectiveTtl} * INTERVAL '1 second'),
+                "updatedAt" = NOW()
+            WHERE "id" = ${id}
+              AND (${isForce} = true OR "leaseExpiresAt" IS NULL OR "leaseExpiresAt" < NOW())
+              AND "status" NOT IN ('CANCELLING', 'COMPLETED')
+            RETURNING id
+          `
+        : await (prisma as any).$queryRaw<Array<{ id: string }>>`
+            UPDATE "PlatformOperation"
+            SET "leaseOwner" = ${leaseOwner},
+                "leaseExpiresAt" = NOW() + (${effectiveTtl} * INTERVAL '1 second'),
+                "updatedAt" = NOW()
+            WHERE "id" = ${id}
+              AND (${isForce} = true OR "leaseExpiresAt" IS NULL OR "leaseExpiresAt" < NOW())
+              AND "status" NOT IN ('CANCELLED', 'CANCELLING', 'COMPLETED')
+            RETURNING id
+          `;
       return Array.isArray(rows) && rows.length > 0;
     } catch (err: any) {
       console.error('[OperationStore] claimOperationLease DB update failed (fail-closed):', err?.message || err);

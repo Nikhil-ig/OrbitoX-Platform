@@ -520,6 +520,7 @@ export function sendHtml(res: http.ServerResponse, html: string, statusCode: num
 export interface RequestIdentity {
   type: 'ANONYMOUS' | 'DINER' | 'STAFF' | 'STATION' | 'ADMIN' | 'REVOKED_CAPABILITY' | 'INVALID_CREDENTIAL' | 'ORDER_TRACKER' | 'PLATFORM_BRIDGE' | 'PREVIEW_CAPABILITY';
   id: string;
+  name?: string;
   role?: string;
   station?: string;
   branchId?: string;
@@ -785,6 +786,7 @@ export async function resolveRequestIdentity(
           return {
             type: 'STATION',
             id: claims.sub,
+            name: claims.name,
             role: 'CHEF',
             station: claims.station || 'ALL',
             branchId: claims.branchId,
@@ -795,6 +797,7 @@ export async function resolveRequestIdentity(
         return {
           type: claims.role === 'OWNER' || claims.role === 'MANAGER' || claims.role === 'ADMIN' ? 'ADMIN' : 'STAFF',
           id: claims.sub,
+          name: claims.name,
           role: claims.role,
           branchId: claims.branchId,
           isPrivileged: isPriv,

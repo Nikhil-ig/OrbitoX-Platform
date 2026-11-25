@@ -321,18 +321,28 @@ export async function getBillingSummary(operator?: OperatorSessionContext | null
         select: { razorpaySubscriptionId: true, pluginId: true },
       });
       dbSubs.forEach((s) => subPluginMap.set(s.razorpaySubscriptionId, s.pluginId));
-    } catch {}
+    } catch { }
   }
 
-  // Dynamically group revenue by product from real invoice data
+  // Dynamically group revenue by product across all 4 OrbitoX commercial streams
   const productRevenueMap = new Map<string, { name: string; amountMinor: number; color: string }>();
   productRevenueMap.set('restaurant-os', { name: 'RestaurantOS plans', amountMinor: 0, color: '#FBBF24' });
   productRevenueMap.set('hospital-os', { name: 'HospitalOS plans', amountMinor: 0, color: '#2DD4BF' });
+  productRevenueMap.set('diner-templates', { name: 'Paid diner templates', amountMinor: 0, color: '#A78BFA' });
+  productRevenueMap.set('ai-assistant', { name: 'AI assistant add-on', amountMinor: 0, color: '#818CF8' });
 
   capturedInvoices.forEach((inv) => {
     const plugin = (inv.subscriptionId && subPluginMap.get(inv.subscriptionId)) || '';
-    const isHospital = plugin.includes('hms') || plugin.includes('hospital') || inv.tenantId.includes('hms') || inv.tenantId.includes('oasis') || inv.tenantId.includes('hospital');
-    const prodKey = isHospital ? 'hospital-os' : 'restaurant-os';
+    const lowerTenant = inv.tenantId.toLowerCase();
+    const lowerSub = (inv.subscriptionId || '').toLowerCase();
+    let prodKey = 'restaurant-os';
+    if (plugin.includes('template') || lowerSub.includes('template') || lowerTenant.includes('template')) {
+      prodKey = 'diner-templates';
+    } else if (plugin.includes('ai') || plugin.includes('addon') || lowerSub.includes('addon')) {
+      prodKey = 'ai-assistant';
+    } else if (plugin.includes('hms') || plugin.includes('hospital') || lowerTenant.includes('hms') || lowerTenant.includes('oasis') || lowerTenant.includes('hospital')) {
+      prodKey = 'hospital-os';
+    }
     const entry = productRevenueMap.get(prodKey);
     if (entry) {
       entry.amountMinor += inv.amountMinor || 0;
@@ -361,7 +371,7 @@ export async function getBillingSummary(operator?: OperatorSessionContext | null
         productName: 'RestaurantOS plans',
         amountMinor: 29000000,
         amountFormatted: '₹2.9L',
-        percentage: 65,
+        percentage: 61,
         barColor: '#FBBF24',
       },
       {
@@ -369,8 +379,24 @@ export async function getBillingSummary(operator?: OperatorSessionContext | null
         productName: 'HospitalOS plans',
         amountMinor: 16000000,
         amountFormatted: '₹1.6L',
-        percentage: 35,
+        percentage: 33,
         barColor: '#2DD4BF',
+      },
+      {
+        productId: 'diner-templates',
+        productName: 'Paid diner templates',
+        amountMinor: 2145000,
+        amountFormatted: '₹21,450',
+        percentage: 4,
+        barColor: '#A78BFA',
+      },
+      {
+        productId: 'ai-assistant',
+        productName: 'AI assistant add-on',
+        amountMinor: 820000,
+        amountFormatted: '₹8,200',
+        percentage: 2,
+        barColor: '#818CF8',
       },
     ];
   }

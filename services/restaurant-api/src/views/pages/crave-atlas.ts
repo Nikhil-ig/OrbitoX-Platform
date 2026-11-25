@@ -1174,10 +1174,10 @@ export function renderCraveAtlasPage(
             Select Outlet Location
           </div>
           ${branches
-            .map((b) => {
-              const isActive = b.id === activeBranch.id;
-              const hours = b.openingHours?.openTime ? `${b.openingHours.openTime} - ${b.openingHours.closeTime}` : '12:00 PM - 11:30 PM';
-              return `
+      .map((b) => {
+        const isActive = b.id === activeBranch.id;
+        const hours = b.openingHours?.openTime ? `${b.openingHours.openTime} - ${b.openingHours.closeTime}` : '12:00 PM - 11:30 PM';
+        return `
             <div class="ca-branch-option ${isActive ? 'active' : ''}" onclick="selectBranch('${b.id}')">
               <div>
                 <div style="font-size: 13px; font-weight: 800; color: var(--ca-dark);">${b.name}</div>
@@ -1186,8 +1186,8 @@ export function renderCraveAtlasPage(
               </div>
               ${isActive ? `<span style="color: var(--ca-primary);">${icon('check', { size: 16 })}</span>` : ''}
             </div>`;
-            })
-            .join('')}
+      })
+      .join('')}
         </div>
       </div>
 
@@ -1403,8 +1403,8 @@ export function renderCraveAtlasPage(
 
     <div class="ca-cuisine-rail" id="ca-cuisine-rail">
       ${categories
-        .map(
-          (cat) => `
+      .map(
+        (cat) => `
         <button
           class="ca-cuisine-chip ${cat === 'ALL' ? 'active' : ''}"
           data-cat="${cat}"
@@ -1412,20 +1412,20 @@ export function renderCraveAtlasPage(
         >
           ${cat === 'ALL' ? 'Full Menu' : cat}
         </button>`
-        )
-        .join('')}
+      )
+      .join('')}
     </div>
 
     <!-- Menu Items Grid -->
     <div class="ca-menu-grid" id="ca-menu-grid">
       ${resolvedMenu
-        .map((item) => {
-          const isVeg = item.dietaryFlags?.includes('VEG') || false;
-          const isSoldOut = !item.isAvailableAtBranch;
-          const priceDisplay = item.effectiveFormattedPrice;
-          const hasMods = Boolean(item.modifierGroups && item.modifierGroups.length > 0);
+      .map((item) => {
+        const isVeg = item.dietaryFlags?.includes('VEG') || false;
+        const isSoldOut = !item.isAvailableAtBranch;
+        const priceDisplay = item.effectiveFormattedPrice;
+        const hasMods = Boolean(item.modifierGroups && item.modifierGroups.length > 0);
 
-          return `
+        return `
         <div
           class="ca-dish-card ${isSoldOut ? 'is-sold-out' : ''}"
           data-dish-id="${item.id}"
@@ -1449,18 +1449,17 @@ export function renderCraveAtlasPage(
           <div class="ca-dish-media">
             <img src="${item.imageUrl || 'https://images.unsplash.com/photo-1546069901-ba9599a7e63c?w=400'}" alt="${item.name}" />
             
-            ${
-              isSoldOut
-                ? `<button class="ca-dish-add-btn" disabled>86'd</button>`
-                : hasMods
-                ? `<button
+            ${isSoldOut
+            ? `<button class="ca-dish-add-btn" disabled>86'd</button>`
+            : hasMods
+              ? `<button
                     class="ca-dish-add-btn"
                     id="btn-add-${item.id}"
                     onclick="openCustomizer('${item.id}')"
                    >
                      + CUSTOMISE
                    </button>`
-                : `<button
+              : `<button
                     class="ca-dish-add-btn"
                     id="btn-add-${item.id}"
                     onclick="handleAddDish('${item.id}')"
@@ -1472,11 +1471,11 @@ export function renderCraveAtlasPage(
                      <span id="card-qty-${item.id}">0</span>
                      <button onclick="handleCardStepper('${item.id}', 1)" aria-label="Increase quantity">+</button>
                    </div>`
-            }
+          }
           </div>
         </div>`;
-        })
-        .join('')}
+      })
+      .join('')}
 
       <!-- Empty Filter State -->
       <div class="ca-catalog-empty" id="ca-catalog-empty">
@@ -1882,15 +1881,33 @@ export function renderCraveAtlasPage(
       drop.classList.toggle('open');
     }
 
+    function showCaNotice(msg) {
+      let el = document.getElementById('ca-toast-notice');
+      if (!el) {
+        el = document.createElement('div');
+        el.id = 'ca-toast-notice';
+        el.style.cssText = 'position:fixed;bottom:28px;left:50%;transform:translateX(-50%);background:#0F172A;color:#fff;padding:10px 18px;border-radius:9999px;font-size:13px;font-weight:600;z-index:99999;box-shadow:0 12px 28px rgba(0,0,0,0.28);max-width:90vw;text-align:center;';
+        document.body.appendChild(el);
+      }
+      el.textContent = msg;
+      el.style.display = 'block';
+      clearTimeout(window.__caToastTimer);
+      window.__caToastTimer = setTimeout(() => { el.style.display = 'none'; }, 3500);
+    }
+
+    let pendingCaBranchSwitch = null;
     function selectBranch(branchId) {
       if (branchId === activeBranchId) {
         toggleBranchDropdown();
         return;
       }
+      if (cart.length > 0 && pendingCaBranchSwitch !== branchId) {
+        pendingCaBranchSwitch = branchId;
+        showCaNotice('Switching branch reprices items in cart — tap branch again to confirm.');
+        return;
+      }
+      pendingCaBranchSwitch = null;
       if (cart.length > 0) {
-        if (!confirm('Switching branch will update menu prices and check item availability for the new location. Proceed?')) {
-          return;
-        }
         try {
           sessionStorage.setItem('ca_branch_switch_cart', JSON.stringify(cart));
         } catch (e) {}
@@ -2057,7 +2074,7 @@ export function renderCraveAtlasPage(
           if (selectedOptionsMap[groupId].length < grp.maxSelections) {
             selectedOptionsMap[groupId].push(opt);
           } else {
-            alert(\`You can select at most \${grp.maxSelections} options for \${grp.name}.\`);
+            showCaNotice(\`You can select at most \${grp.maxSelections} options for \${grp.name}.\`);
             const cb = document.querySelector(\`input[name="opt_\${groupId}"][value="\${optionId}"]\`);
             if (cb) cb.checked = false;
           }
@@ -2086,7 +2103,7 @@ export function renderCraveAtlasPage(
         for (const grp of customizingDish.modifierGroups) {
           const selected = selectedOptionsMap[grp.id] || [];
           if (grp.minSelections > 0 && selected.length < grp.minSelections) {
-            alert(\`Please select at least \${grp.minSelections} option for \${grp.name}.\`);
+            showCaNotice(\`Please select at least \${grp.minSelections} option for \${grp.name}.\`);
             return;
           }
         }

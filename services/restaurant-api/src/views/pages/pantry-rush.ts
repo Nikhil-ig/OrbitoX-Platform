@@ -509,14 +509,14 @@ export function renderPantryRushPage(
     <aside class="pr-category-rail">
       <div class="pr-cat-rail-title">Pantry Aisles</div>
       ${categories
-        .map(
-          (c, idx) => `
+      .map(
+        (c, idx) => `
         <div class="pr-cat-link ${idx === 0 ? 'active' : ''}" onclick="filterGroceryCategory('${c}')" data-cat="${c}">
           <span>${c}</span>
           ${icon('chevron-right', { size: 13, color: '#94A3B8' })}
         </div>`
-        )
-        .join('')}
+      )
+      .join('')}
     </aside>
 
     <!-- Center Shelf Grid -->
@@ -531,29 +531,27 @@ export function renderPantryRushPage(
 
       <div class="pr-sku-grid" id="pr-sku-grid">
         ${skus
-          .map((sku) => {
-            const isOutOfStock = sku.stockQuantity === 0;
-            const isLowStock = sku.stockQuantity > 0 && sku.stockQuantity <= 3;
-            return `
+      .map((sku) => {
+        const isOutOfStock = sku.stockQuantity === 0;
+        const isLowStock = sku.stockQuantity > 0 && sku.stockQuantity <= 3;
+        return `
           <div class="pr-sku-card" data-sku-id="${sku.id}" data-category="${sku.category}" data-name="${sku.name.toLowerCase()}" data-brand="${sku.brand.toLowerCase()}" data-pack-size="${sku.packSize}" data-price-minor="${sku.sellingPriceMinor}" data-max-stock="${sku.stockQuantity}">
             <div>
               <div class="pr-sku-media">
                 <img src="${sku.imageUrl}" alt="${sku.name}" />
                 ${sku.isOrganic ? `<span class="pr-badge-organic">100% Organic</span>` : ''}
-                <span class="pr-badge-stock ${
-                  isOutOfStock
-                    ? 'pr-badge-out-stock'
-                    : isLowStock
-                    ? 'pr-badge-low-stock'
-                    : 'pr-badge-in-stock'
-                }">
-                  ${
-                    isOutOfStock
-                      ? 'Out of Stock'
-                      : isLowStock
-                      ? `Only ${sku.stockQuantity} left!`
-                      : `${sku.stockQuantity} in stock`
-                  }
+                <span class="pr-badge-stock ${isOutOfStock
+            ? 'pr-badge-out-stock'
+            : isLowStock
+              ? 'pr-badge-low-stock'
+              : 'pr-badge-in-stock'
+          }">
+                  ${isOutOfStock
+            ? 'Out of Stock'
+            : isLowStock
+              ? `Only ${sku.stockQuantity} left!`
+              : `${sku.stockQuantity} in stock`
+          }
                 </span>
               </div>
               <div class="pr-sku-brand">${sku.brand}</div>
@@ -565,32 +563,30 @@ export function renderPantryRushPage(
               <div>
                 <div style="display: flex; align-items: baseline;">
                   <span class="pr-price-val">₹${(sku.sellingPriceMinor / 100).toFixed(0)}</span>
-                  ${
-                    sku.mrpMinor > sku.sellingPriceMinor
-                      ? `<span class="pr-price-mrp">₹${(sku.mrpMinor / 100).toFixed(0)}</span>`
-                      : ''
-                  }
+                  ${sku.mrpMinor > sku.sellingPriceMinor
+            ? `<span class="pr-price-mrp">₹${(sku.mrpMinor / 100).toFixed(0)}</span>`
+            : ''
+          }
                 </div>
                 <div class="pr-unit-desc">${sku.unitPriceDescription}</div>
               </div>
 
               <div id="sku-stepper-wrap-${sku.id}">
-                ${
-                  isOutOfStock
-                    ? `<button class="pr-stepper-btn pr-btn-disabled" disabled>UNAVAILABLE</button>`
-                    : `<button
+                ${isOutOfStock
+            ? `<button class="pr-stepper-btn pr-btn-disabled" disabled>UNAVAILABLE</button>`
+            : `<button
                         class="pr-stepper-btn"
                         id="btn-add-${sku.id}"
                         onclick="addGrocerySku('${sku.id}', '${sku.name.replace(/'/g, "\\'")}', '${sku.packSize}', ${sku.sellingPriceMinor}, ${sku.stockQuantity})"
                       >
                         + ADD
                       </button>`
-                }
+          }
               </div>
             </div>
           </div>`;
-          })
-          .join('')}
+      })
+      .join('')}
       </div>
     </main>
 
@@ -656,11 +652,27 @@ export function renderPantryRushPage(
   <script>
     let groceryBasket = [];
 
+    function showPrToast(msg, isErr) {
+      let el = document.getElementById('pr-toast-notice');
+      if (!el) {
+        el = document.createElement('div');
+        el.id = 'pr-toast-notice';
+        el.style.cssText = 'position:fixed;bottom:24px;left:50%;transform:translateX(-50%);padding:10px 18px;border-radius:9999px;font-size:13px;font-weight:700;z-index:99999;box-shadow:0 12px 28px rgba(0,0,0,0.28);max-width:90vw;text-align:center;';
+        document.body.appendChild(el);
+      }
+      el.style.background = isErr ? '#DC2626' : '#0F172A';
+      el.style.color = '#FFFFFF';
+      el.textContent = msg;
+      el.style.display = 'block';
+      clearTimeout(window.__prToastTimer);
+      window.__prToastTimer = setTimeout(() => { el.style.display = 'none'; }, 4000);
+    }
+
     function addGrocerySku(skuId, name, packSize, priceMinor, maxStock) {
       const existing = groceryBasket.find(i => i.id === skuId);
       if (existing) {
         if (existing.quantity >= maxStock) {
-          alert('Cannot add more! Only ' + maxStock + ' units available in stock.');
+          showPrToast('Cannot add more! Only ' + maxStock + ' units available in stock.', true);
           return;
         }
         existing.quantity += 1;
@@ -694,7 +706,7 @@ export function renderPantryRushPage(
       const item = groceryBasket.find(i => i.id === skuId);
       if (item) {
         if (delta > 0 && item.quantity >= maxStock) {
-          alert('Maximum available inventory reached (' + maxStock + ' units).');
+          showPrToast('Maximum available inventory reached (' + maxStock + ' units).', true);
           return;
         }
         item.quantity += delta;
@@ -777,15 +789,15 @@ export function renderPantryRushPage(
         if (res.ok && data.success) {
           const darkStoreName = data.dispatchStation && data.dispatchStation.darkStoreId ? data.dispatchStation.darkStoreId : 'Central Dark Store';
           const orderTotal = data.quote && data.quote.formattedTotal ? data.quote.formattedTotal : '';
-          alert('🛍️ Grocery Order Placed!\\nOrder ID: ' + data.orderId + '\\nEstimated SLA: 15 Mins (' + darkStoreName + ')\\nTotal: ' + orderTotal + '\\nSubstitution: ' + pref);
+          showPrToast('Grocery order ' + data.orderId + ' placed (' + darkStoreName + ') · ' + orderTotal, false);
           groceryBasket = [];
           renderGroceryBasketUI();
-          window.location.reload();
+          setTimeout(() => window.location.reload(), 900);
         } else {
-          alert('Order Failed: ' + (data.message || 'Cannot place grocery order.'));
+          showPrToast('Order Failed: ' + (data.message || 'Cannot place grocery order.'), true);
         }
       } catch (err) {
-        alert('Network error placing grocery order.');
+        showPrToast('Network error placing grocery order.', true);
       } finally {
         checkoutBtn.disabled = false;
         checkoutBtn.innerText = 'PLACE GROCERY ORDER →';

@@ -4,7 +4,6 @@ import * as React from 'react';
 import Link from 'next/link';
 import {
   TrendingUp,
-  Bell,
   Plus,
   ExternalLink,
   Shield,
@@ -21,6 +20,10 @@ import {
   CheckCircle2,
   CreditCard,
   Mail,
+  KeyRound,
+  Copy,
+  Home,
+  Users,
 } from 'lucide-react';
 
 interface CustomerUser {
@@ -63,7 +66,23 @@ interface TenantProjectItem {
   apiCallQuota: string | null;
   vertical: 'RestaurantOS' | 'HospitalOS';
   domain: string;
+  launchUrl?: string | null;
+  launchBlockedReason?: string | null;
   plugins: TenantPluginItem[];
+}
+
+interface ApiKeyRecord {
+  id: string;
+  keyId: string;
+  name: string;
+  maskedDisplay: string;
+  status: 'ACTIVE' | 'GRACE' | 'REVOKED' | 'EXPIRED' | string;
+  capabilities: string[];
+  environmentId: string;
+  projectId?: string | null;
+  expiresAt?: string | null;
+  lastUsedAt?: string | null;
+  createdAt?: string | null;
 }
 
 interface TeamMemberItem {
@@ -136,7 +155,8 @@ type PendingReauthAction =
   | { type: 'export' }
   | { type: 'scheduleDeletion'; reason: string }
   | { type: 'cancelDeletion' }
-  | { type: 'cancelSubscription'; subscriptionId: string };
+  | { type: 'cancelSubscription'; subscriptionId: string }
+  | { type: 'revokeApiKey'; keyId: string };
 
 function getCustomerCsrfToken(): string {
   if (typeof document === 'undefined') return '';
@@ -165,8 +185,22 @@ export default function CustomerDashboardPage() {
   const [orgLoading, setOrgLoading] = React.useState(false);
   const [billingLoading, setBillingLoading] = React.useState(false);
   const [hasLoaded, setHasLoaded] = React.useState(false);
-  const [activeTab, setActiveTab] = React.useState<'Home' | 'Tenants' | 'Team' | 'Billing' | 'Data & privacy'>('Home');
+  const [activeTab, setActiveTab] = React.useState<'Home' | 'Tenants' | 'Team' | 'Billing' | 'API Access' | 'Data & privacy'>('Home');
   const [toastMessage, setToastMessage] = React.useState<{ text: string; tone?: 'info' | 'error' } | null>(null);
+  const [apiKeys, setApiKeys] = React.useState<ApiKeyRecord[]>([]);
+  const [apiKeysLoading, setApiKeysLoading] = React.useState(false);
+  const [createKeyOpen, setCreateKeyOpen] = React.useState(false);
+  const [newKeyName, setNewKeyName] = React.useState('');
+  const [newKeyEnvId, setNewKeyEnvId] = React.useState('');
+  const [newKeyCaps, setNewKeyCaps] = React.useState<string[]>(['tenants:read', 'orders:read', 'menu:read']);
+  const [createKeyBusy, setCreateKeyBusy] = React.useState(false);
+  const [createKeyError, setCreateKeyError] = React.useState<string | null>(null);
+  const [revealedSecret, setRevealedSecret] = React.useState<{ name: string; maskedDisplay: string; secret: string } | null>(null);
+  const [rotateKeyTarget, setRotateKeyTarget] = React.useState<ApiKeyRecord | null>(null);
+  const [rotateGraceDays, setRotateGraceDays] = React.useState<number>(7);
+  const [rotateBusy, setRotateBusy] = React.useState(false);
+  const [revokeKeyTarget, setRevokeKeyTarget] = React.useState<ApiKeyRecord | null>(null);
+  const [revokeBusy, setRevokeBusy] = React.useState(false);
 
   // Customer Sign-In modal state
   const [loginOpen, setLoginOpen] = React.useState(false);
@@ -264,11 +298,13 @@ export default function CustomerDashboardPage() {
       setBillingDetails([]);
     }
 
+    setApiKeysLoading(true);
     try {
-      const [tRes, mRes, iRes] = await Promise.all([
+      const [tRes, mRes, iRes, kRes] = await Promise.all([
         fetch(`/api/v1/customer/organizations/${encodeURIComponent(orgId)}/tenants`, { cache: 'no-store' }),
         fetch(`/api/v1/customer/organizations/${encodeURIComponent(orgId)}/members`, { cache: 'no-store' }),
         fetch(`/api/v1/customer/organizations/${encodeURIComponent(orgId)}/invites`, { cache: 'no-store' }),
+        fetch(`/api/v1/customer/organizations/${encodeURIComponent(orgId)}/api-keys`, { cache: 'no-store' }),
       ]);
 
       let mappedTenants: TenantProjectItem[] = [];
@@ -294,12 +330,21 @@ export default function CustomerDashboardPage() {
             monthlyApiCalls: String(p.monthlyApiCalls ?? '0'),
             apiCallQuota: p.apiCallQuota ? String(p.apiCallQuota) : null,
             vertical: isHospital ? 'HospitalOS' : 'RestaurantOS',
-            domain: `${slug}.localhost:4010`,
+            domain: item.displayDomain || `${slug}.orbitox.io`,
+            launchUrl: item.launchUrl ?? null,
+            launchBlockedReason: item.launchBlockedReason ?? null,
             plugins,
           };
         });
         setTenants(mappedTenants);
       }
+      if (kRes.ok) {
+        const kJson = await kRes.json();
+        setApiKeys(Array.isArray(kJson?.keys) ? kJson.keys : []);
+      } else {
+        setApiKeys([]);
+      }
+      setApiKeysLoading(false);
 
       if (mRes.ok) {
         const mJson = await mRes.json();
@@ -363,6 +408,7 @@ export default function CustomerDashboardPage() {
     } catch {
       // Transient fetch failures remain non-fatal
     } finally {
+      setApiKeysLoading(false);
       setOrgLoading(false);
     }
   }, []);
@@ -604,6 +650,7 @@ export default function CustomerDashboardPage() {
       else if (nextAction?.type === 'scheduleDeletion') await executeScheduleDeletion(nextAction.reason);
       else if (nextAction?.type === 'cancelDeletion') await executeCancelDeletion();
       else if (nextAction?.type === 'cancelSubscription') await executeCancelSubscription(nextAction.subscriptionId);
+      else if (nextAction?.type === 'revokeApiKey') await executeRevokeApiKey(nextAction.keyId);
     } catch (err: any) {
       setReauthError(err?.message || 'Unable to complete re-authentication.');
     } finally {
@@ -693,7 +740,128 @@ export default function CustomerDashboardPage() {
     }
   };
 
-  const navTabs = ['Home', 'Tenants', 'Team', 'Billing', 'Data & privacy'] as const;
+  const executeRevokeApiKey = React.useCallback(async (keyId: string) => {
+    if (!selectedOrgId) return;
+    setRevokeBusy(true);
+    try {
+      const res = await fetch(
+        `/api/v1/customer/organizations/${encodeURIComponent(selectedOrgId)}/api-keys/${encodeURIComponent(keyId)}`,
+        {
+          method: 'DELETE',
+          headers: { 'x-csrf-token': getCustomerCsrfToken() },
+        }
+      );
+      const json = await res.json().catch(() => ({}));
+      if (isReauthError(res.status, json)) {
+        setRevokeKeyTarget(null);
+        setPendingReauthAction({ type: 'revokeApiKey', keyId });
+        setReauthOpen(true);
+        return;
+      }
+      if (!res.ok) {
+        throw new Error(json?.message || json?.error || 'Could not revoke API key.');
+      }
+      setRevokeKeyTarget(null);
+      showToast('API key revoked.');
+      await loadOrganizationWorkspace(selectedOrgId, activeOrg?.role);
+    } catch (err: any) {
+      showToast(err?.message || 'Unable to revoke API key.', 'error');
+    } finally {
+      setRevokeBusy(false);
+    }
+  }, [selectedOrgId, activeOrg?.role, loadOrganizationWorkspace, showToast]);
+
+  const handleCreateApiKey = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setCreateKeyError(null);
+    if (!selectedOrgId) {
+      setCreateKeyError('Select an organization first.');
+      return;
+    }
+    const targetEnvId = newKeyEnvId || tenants[0]?.environmentId || '';
+    if (!targetEnvId) {
+      setCreateKeyError('Deploy a workspace environment before creating API keys.');
+      return;
+    }
+    if (!newKeyName.trim()) {
+      setCreateKeyError('Enter a descriptive key label.');
+      return;
+    }
+    setCreateKeyBusy(true);
+    try {
+      const res = await fetch(`/api/v1/customer/organizations/${encodeURIComponent(selectedOrgId)}/api-keys`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-csrf-token': getCustomerCsrfToken(),
+        },
+        body: JSON.stringify({
+          environmentId: targetEnvId,
+          name: newKeyName.trim(),
+          capabilities: newKeyCaps.length > 0 ? newKeyCaps : ['tenants:read'],
+        }),
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok || !json?.ok) {
+        setCreateKeyError(json?.message || json?.error || 'Failed to create API key.');
+        return;
+      }
+      setCreateKeyOpen(false);
+      setNewKeyName('');
+      if (json.secret) {
+        setRevealedSecret({
+          name: json.key?.name || newKeyName.trim(),
+          maskedDisplay: json.key?.maskedDisplay || '',
+          secret: json.secret,
+        });
+      }
+      showToast('API key issued. Store the secret shown now.');
+      await loadOrganizationWorkspace(selectedOrgId, activeOrg?.role);
+    } catch (err: any) {
+      setCreateKeyError(err?.message || 'Unable to create API key.');
+    } finally {
+      setCreateKeyBusy(false);
+    }
+  };
+
+  const handleRotateApiKey = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedOrgId || !rotateKeyTarget) return;
+    setRotateBusy(true);
+    try {
+      const res = await fetch(
+        `/api/v1/customer/organizations/${encodeURIComponent(selectedOrgId)}/api-keys/${encodeURIComponent(rotateKeyTarget.id)}/rotate`,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'x-csrf-token': getCustomerCsrfToken(),
+          },
+          body: JSON.stringify({ graceWindowDays: rotateGraceDays }),
+        }
+      );
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok || !json?.ok) {
+        throw new Error(json?.message || json?.error || 'Key rotation failed.');
+      }
+      setRotateKeyTarget(null);
+      if (json.secret) {
+        setRevealedSecret({
+          name: json.key?.name || rotateKeyTarget.name,
+          maskedDisplay: json.key?.maskedDisplay || '',
+          secret: json.secret,
+        });
+      }
+      showToast(`Key rotated with ${rotateGraceDays}-day grace window.`);
+      await loadOrganizationWorkspace(selectedOrgId, activeOrg?.role);
+    } catch (err: any) {
+      showToast(err?.message || 'Unable to rotate key.', 'error');
+    } finally {
+      setRotateBusy(false);
+    }
+  };
+
+  const navTabs = ['Home', 'Tenants', 'Team', 'Billing', 'API Access', 'Data & privacy'] as const;
 
   const weeklyChartColumns = [
     { id: 'mon', label: 'M', height: 24 },
@@ -714,7 +882,7 @@ export default function CustomerDashboardPage() {
       {toastMessage && (
         <div
           role="status"
-          className={`fixed bottom-6 right-6 z-50 px-4 py-3 rounded-2xl text-xs font-semibold shadow-xl flex items-center gap-2 max-w-xs ${
+          className={`fixed bottom-24 md:bottom-6 right-4 md:right-6 z-50 px-4 py-3 rounded-2xl text-xs font-semibold shadow-xl flex items-center gap-2 max-w-xs ${
             toastMessage.tone === 'error' ? 'bg-rose-600 text-white' : 'bg-slate-900 text-white'
           }`}
         >
@@ -782,7 +950,7 @@ export default function CustomerDashboardPage() {
 
           <nav
             aria-label="Customer workspace navigation"
-            className="flex bg-slate-100 rounded-full p-1 gap-1 overflow-x-auto max-w-full"
+            className="hidden md:flex bg-slate-100 rounded-full p-1 gap-1 overflow-x-auto max-w-full"
           >
             {navTabs.map((tab) => {
               const isActive = activeTab === tab;
@@ -810,14 +978,6 @@ export default function CustomerDashboardPage() {
             </Link>
             {user ? (
               <>
-                <button
-                  type="button"
-                  onClick={() => showToast(`Signed in as ${user.email}`)}
-                  aria-label="Notifications"
-                  className="w-9 h-9 rounded-full bg-white border border-slate-200 flex items-center justify-center text-slate-600 hover:bg-slate-50"
-                >
-                  <Bell size={16} />
-                </button>
                 <div
                   title={user.email}
                   className="w-9 h-9 rounded-full bg-rose-100 text-rose-700 font-bold text-xs flex items-center justify-center"
@@ -850,7 +1010,7 @@ export default function CustomerDashboardPage() {
         </div>
       </header>
 
-      <main className="max-w-7xl mx-auto px-4 sm:px-8 py-6 sm:py-8 space-y-6">
+      <main className="max-w-7xl mx-auto px-4 sm:px-8 pt-6 sm:pt-8 pb-24 md:pb-8 space-y-6">
         {!hasLoaded ? (
           <div className="bg-white rounded-3xl border border-slate-200 p-10 text-center text-sm text-slate-500">
             Loading workspace...
@@ -1087,17 +1247,26 @@ export default function CustomerDashboardPage() {
                         <span>Plan: <strong>{t.plan}</strong></span>
                       </div>
                     </div>
-                    <div className="pt-3 border-t border-slate-100 flex items-center justify-between">
+                    <div className="pt-3 border-t border-slate-100 flex items-center justify-between gap-2">
                       <span className="text-xs text-slate-500">{t.vertical}</span>
-                      <a
-                        href={t.vertical === 'HospitalOS' ? '/hms' : `http://${t.domain}`}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="inline-flex items-center gap-1.5 rounded-full bg-slate-900 text-white px-4 py-1.5 text-xs font-semibold"
-                      >
-                        <span>Open App</span>
-                        <ExternalLink size={12} />
-                      </a>
+                      {t.launchUrl ? (
+                        <a
+                          href={t.launchUrl}
+                          target={t.launchUrl.startsWith('http') ? '_blank' : undefined}
+                          rel={t.launchUrl.startsWith('http') ? 'noopener noreferrer' : undefined}
+                          className="inline-flex items-center gap-1.5 rounded-full bg-slate-900 hover:bg-slate-800 text-white px-4 py-1.5 text-xs font-semibold"
+                        >
+                          <span>Open App</span>
+                          <ExternalLink size={12} />
+                        </a>
+                      ) : (
+                        <span
+                          title={t.launchBlockedReason || 'Environment URL unavailable until active custom domain or runtime is configured'}
+                          className="inline-flex items-center gap-1.5 rounded-full bg-slate-100 text-slate-500 border border-slate-200 px-3.5 py-1.5 text-xs font-semibold cursor-not-allowed"
+                        >
+                          {t.launchBlockedReason ? 'Unavailable' : 'Domain needed'}
+                        </span>
+                      )}
                     </div>
                   </div>
                 ))}
@@ -1292,10 +1461,10 @@ export default function CustomerDashboardPage() {
                             </button>
                           )}
                           <Link
-                            href={`/onboarding?org=${encodeURIComponent(selectedOrgId)}`}
+                            href={`/billing/change-plan?org=${encodeURIComponent(selectedOrgId)}${subId ? `&subscription=${encodeURIComponent(subId)}` : ''}&tenant=${encodeURIComponent(t.tenantId)}`}
                             className="rounded-full border border-slate-200 text-slate-700 hover:bg-slate-50 px-4 py-1.5 text-xs font-semibold"
                           >
-                            Configure Plan
+                            Change Plan
                           </Link>
                         </div>
                       </div>
@@ -1358,7 +1527,155 @@ export default function CustomerDashboardPage() {
           </div>
         )}
 
-        {/* TAB 5: DATA & PRIVACY */}
+        {/* TAB 5: API ACCESS */}
+        {user && activeTab === 'API Access' && (
+          <div className="space-y-5">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+              <div>
+                <h1 className="text-2xl sm:text-3xl font-extrabold text-slate-900">API Access &amp; Secret Rotation</h1>
+                <p className="text-sm text-slate-500">
+                  Manage environment-scoped programmatic credentials for <strong>{activeOrg?.name}</strong>.
+                </p>
+              </div>
+              {canInviteMembers && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setCreateKeyError(null);
+                    setNewKeyEnvId(tenants[0]?.environmentId || '');
+                    setCreateKeyOpen(true);
+                  }}
+                  className="inline-flex items-center gap-2 rounded-full bg-slate-900 hover:bg-slate-800 text-white px-5 py-2.5 text-xs font-semibold self-start sm:self-auto"
+                >
+                  <KeyRound size={14} />
+                  <span>Create API Key</span>
+                </button>
+              )}
+            </div>
+
+            {revealedSecret && (
+              <div className="bg-emerald-50 border border-emerald-200 rounded-3xl p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                <div className="space-y-1 min-w-0">
+                  <div className="text-xs font-bold uppercase tracking-wide text-emerald-800">
+                    Copy Secret Now — Shown Once ({revealedSecret.name})
+                  </div>
+                  <div className="font-mono text-xs sm:text-sm text-emerald-950 break-all bg-white/80 rounded-xl px-3 py-2 border border-emerald-200">
+                    {revealedSecret.secret}
+                  </div>
+                </div>
+                <div className="flex items-center gap-2 shrink-0">
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      await navigator.clipboard.writeText(revealedSecret.secret);
+                      showToast('API key secret copied.');
+                    }}
+                    className="inline-flex items-center gap-1.5 rounded-full bg-emerald-700 text-white px-4 py-2 text-xs font-semibold"
+                  >
+                    <Copy size={13} />
+                    <span>Copy Secret</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setRevealedSecret(null)}
+                    className="rounded-full border border-emerald-300 text-emerald-800 px-3 py-2 text-xs font-semibold"
+                  >
+                    Dismiss
+                  </button>
+                </div>
+              </div>
+            )}
+
+            <div className="bg-white rounded-3xl border border-slate-200 p-6 overflow-x-auto">
+              <div className="flex items-center justify-between mb-4">
+                <h2 className="text-base font-bold text-slate-900">Issued Credentials ({apiKeys.length})</h2>
+                {apiKeysLoading && <span className="text-xs text-slate-500">Refreshing keys...</span>}
+              </div>
+              <table className="w-full text-left text-xs min-w-[620px]">
+                <thead>
+                  <tr className="border-b border-slate-100 text-slate-500">
+                    <th className="py-3 px-2 font-semibold">Label &amp; Key ID</th>
+                    <th className="py-3 px-2 font-semibold">Masked Secret</th>
+                    <th className="py-3 px-2 font-semibold">Capabilities</th>
+                    <th className="py-3 px-2 font-semibold">Status</th>
+                    <th className="py-3 px-2 font-semibold text-right">Actions</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {apiKeys.length === 0 ? (
+                    <tr>
+                      <td colSpan={5} className="py-8 text-center text-slate-500">
+                        No API keys created for this organization yet.
+                      </td>
+                    </tr>
+                  ) : (
+                    apiKeys.map((k) => {
+                      const canMutate = k.status !== 'REVOKED' && k.status !== 'EXPIRED';
+                      return (
+                        <tr key={k.id}>
+                          <td className="py-3 px-2">
+                            <div className="font-semibold text-slate-900">{k.name}</div>
+                            <div className="font-mono text-[11px] text-slate-400">{k.keyId}</div>
+                          </td>
+                          <td className="py-3 px-2 font-mono text-slate-700">{k.maskedDisplay}</td>
+                          <td className="py-3 px-2">
+                            <div className="flex flex-wrap gap-1">
+                              {(k.capabilities || []).slice(0, 4).map((cap) => (
+                                <span key={cap} className="px-2 py-0.5 rounded-full bg-slate-100 text-slate-700 font-medium">
+                                  {cap}
+                                </span>
+                              ))}
+                            </div>
+                          </td>
+                          <td className="py-3 px-2">
+                            <span
+                              className={`px-2.5 py-0.5 rounded-full font-semibold ${
+                                k.status === 'ACTIVE'
+                                  ? 'bg-emerald-50 text-emerald-700'
+                                  : k.status === 'GRACE'
+                                    ? 'bg-amber-50 text-amber-700'
+                                    : 'bg-slate-100 text-slate-600'
+                              }`}
+                            >
+                              {k.status}
+                            </span>
+                          </td>
+                          <td className="py-3 px-2 text-right">
+                            <div className="inline-flex items-center gap-2">
+                              {canInviteMembers && canMutate && (
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setRotateGraceDays(7);
+                                    setRotateKeyTarget(k);
+                                  }}
+                                  className="rounded-full border border-slate-200 hover:bg-slate-50 text-slate-700 px-3 py-1 font-semibold"
+                                >
+                                  Rotate
+                                </button>
+                              )}
+                              {isOwner && canMutate && (
+                                <button
+                                  type="button"
+                                  onClick={() => setRevokeKeyTarget(k)}
+                                  className="rounded-full border border-rose-200 hover:bg-rose-50 text-rose-700 px-3 py-1 font-semibold"
+                                >
+                                  Revoke
+                                </button>
+                              )}
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+
+        {/* TAB 6: DATA & PRIVACY */}
         {user && activeTab === 'Data & privacy' && (
           <div className="space-y-5">
             <div>
@@ -1754,6 +2071,196 @@ export default function CustomerDashboardPage() {
             </div>
           </div>
         </div>
+      )}
+
+      {/* Create API Key Dialog */}
+      {createKeyOpen && (
+        <div className="fixed inset-0 z-50 bg-slate-900/50 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl border border-slate-200 p-6 w-full max-w-md shadow-xl space-y-4">
+            <div className="flex items-center justify-between">
+              <h3 className="text-lg font-bold text-slate-900">Create API Key</h3>
+              <button type="button" onClick={() => setCreateKeyOpen(false)} aria-label="Close API key modal" className="text-slate-400 hover:text-slate-700">
+                <X size={18} />
+              </button>
+            </div>
+            {createKeyError && (
+              <div className="rounded-xl bg-rose-50 border border-rose-200 px-3 py-2 text-xs text-rose-700 font-medium">
+                {createKeyError}
+              </div>
+            )}
+            <form onSubmit={handleCreateApiKey} className="space-y-4">
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">Key Label</label>
+                <input
+                  type="text"
+                  required
+                  value={newKeyName}
+                  onChange={(e) => setNewKeyName(e.target.value)}
+                  placeholder="POS Terminal Webhook Sync"
+                  className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm outline-none focus:border-blue-500"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">Target Workspace Environment</label>
+                <select
+                  value={newKeyEnvId || tenants[0]?.environmentId || ''}
+                  onChange={(e) => setNewKeyEnvId(e.target.value)}
+                  className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm bg-white"
+                >
+                  {tenants.map((t) => (
+                    <option key={t.environmentId} value={t.environmentId}>
+                      {t.name} · {t.environmentName}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <div className="block text-xs font-semibold text-slate-700 mb-2">Scopes</div>
+                <div className="grid grid-cols-2 gap-2 text-xs">
+                  {['tenants:read', 'orders:read', 'orders:write', 'menu:read'].map((cap) => {
+                    const checked = newKeyCaps.includes(cap);
+                    return (
+                      <label key={cap} className="flex items-center gap-2 rounded-xl border border-slate-200 px-3 py-2 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={checked}
+                          onChange={() =>
+                            setNewKeyCaps((prev) =>
+                              prev.includes(cap) ? prev.filter((item) => item !== cap) : [...prev, cap]
+                            )
+                          }
+                        />
+                        <span className="font-mono text-[11px]">{cap}</span>
+                      </label>
+                    );
+                  })}
+                </div>
+              </div>
+              <div className="flex justify-end gap-2 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setCreateKeyOpen(false)}
+                  className="rounded-full px-4 py-2 text-xs font-semibold border border-slate-200 text-slate-700"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={createKeyBusy}
+                  className="rounded-full px-5 py-2 text-xs font-semibold bg-slate-900 text-white"
+                >
+                  {createKeyBusy ? 'Issuing...' : 'Issue Key'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Rotate API Key Dialog */}
+      {rotateKeyTarget && (
+        <div className="fixed inset-0 z-50 bg-slate-900/50 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl border border-slate-200 p-6 w-full max-w-md shadow-xl space-y-4">
+            <h3 className="text-lg font-bold text-slate-900">Rotate API Key</h3>
+            <p className="text-xs text-slate-600 leading-relaxed">
+              Issues a fresh replacement secret for <strong>{rotateKeyTarget.name}</strong> while keeping the existing credential valid during the grace window.
+            </p>
+            <form onSubmit={handleRotateApiKey} className="space-y-4">
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">Grace Window (Days)</label>
+                <select
+                  value={rotateGraceDays}
+                  onChange={(e) => setRotateGraceDays(Number(e.target.value))}
+                  className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm bg-white"
+                >
+                  <option value={1}>1 day</option>
+                  <option value={3}>3 days</option>
+                  <option value={7}>7 days (recommended)</option>
+                  <option value={14}>14 days</option>
+                  <option value={30}>30 days</option>
+                </select>
+              </div>
+              <div className="flex justify-end gap-2 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setRotateKeyTarget(null)}
+                  className="rounded-full px-4 py-2 text-xs font-semibold border border-slate-200 text-slate-700"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={rotateBusy}
+                  className="rounded-full px-5 py-2 text-xs font-semibold bg-slate-900 text-white"
+                >
+                  {rotateBusy ? 'Rotating...' : 'Confirm Rotation'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Revoke API Key Confirmation Dialog */}
+      {revokeKeyTarget && (
+        <div className="fixed inset-0 z-50 bg-slate-900/50 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl border border-slate-200 p-6 w-full max-w-md shadow-xl space-y-4">
+            <h3 className="text-lg font-bold text-slate-900">Revoke API Key</h3>
+            <p className="text-xs text-slate-600 leading-relaxed">
+              Immediately revoke <strong>{revokeKeyTarget.name}</strong> ({revokeKeyTarget.maskedDisplay})? Clients using this credential will fail authentication right away. Step-up password verification applies.
+            </p>
+            <div className="flex justify-end gap-2 pt-2">
+              <button
+                type="button"
+                onClick={() => setRevokeKeyTarget(null)}
+                className="rounded-full px-4 py-2 text-xs font-semibold border border-slate-200 text-slate-700"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={revokeBusy}
+                onClick={() => executeRevokeApiKey(revokeKeyTarget.id)}
+                className="rounded-full px-5 py-2 text-xs font-semibold bg-rose-600 text-white"
+              >
+                {revokeBusy ? 'Revoking...' : 'Confirm Revoke'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Mobile Floating Bottom Dock */}
+      {user && (
+        <nav
+          aria-label="Mobile workspace navigation"
+          className="md:hidden fixed bottom-3 left-3 right-3 z-40 bg-slate-950/95 backdrop-blur-md text-white rounded-[26px] px-2 py-1.5 shadow-2xl border border-slate-800/80 grid grid-cols-5 items-center"
+        >
+          {(
+            [
+              { tab: 'Home', label: 'Home', Icon: Home },
+              { tab: 'Tenants', label: 'Tenants', Icon: Building2 },
+              { tab: 'Team', label: 'Team', Icon: Users },
+              { tab: 'Billing', label: 'Billing', Icon: CreditCard },
+              { tab: 'API Access', label: 'Keys', Icon: KeyRound },
+            ] as const
+          ).map(({ tab, label, Icon }) => {
+            const active = activeTab === tab;
+            return (
+              <button
+                key={tab}
+                type="button"
+                onClick={() => setActiveTab(tab)}
+                className={`flex flex-col items-center justify-center gap-0.5 py-1.5 rounded-2xl transition-colors ${
+                  active ? 'bg-white text-slate-950 font-bold' : 'text-slate-300 hover:text-white'
+                }`}
+              >
+                <Icon size={16} />
+                <span className="text-[10px] leading-tight">{label}</span>
+              </button>
+            );
+          })}
+        </nav>
       )}
     </div>
   );

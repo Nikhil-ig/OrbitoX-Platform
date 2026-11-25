@@ -152,6 +152,11 @@ export default function DesignSystemClient() {
   const [statusFilter, setStatusFilter] = React.useState<string>('all');
   const [selectedBranchIds, setSelectedBranchIds] = React.useState<string[]>([]);
   const [showcaseScreen, setShowcaseScreen] = React.useState<string>('A1');
+  const [demoNotice, setDemoNotice] = React.useState<string | null>(null);
+  const notifyDemo = (msg: string) => {
+    setDemoNotice(msg);
+    setTimeout(() => setDemoNotice((prev) => (prev === msg ? null : prev)), 3500);
+  };
 
   // Form State with simulated server rejection mapping
   const [serverErrors, setServerErrors] = React.useState<ServerErrorPayload | null>(null);
@@ -279,6 +284,11 @@ export default function DesignSystemClient() {
       <Banner variant="warning">
         INTERNAL OPERATOR CONSOLE — DESIGN SYSTEM STAGE 7B VERIFICATION (STAGING ENVIRONMENT ONLY)
       </Banner>
+      {demoNotice && (
+        <div role="status" className="fixed bottom-5 right-5 z-50 rounded-full bg-[var(--near-black)] text-white px-4 py-2 text-xs font-semibold shadow-xl border border-white/10">
+          {demoNotice}
+        </div>
+      )}
 
       {/* 2. Unified AppShell */}
       <AppShell
@@ -350,7 +360,7 @@ export default function DesignSystemClient() {
                   return true;
                 }}
                 onConfirm={({ reason }) => {
-                  alert(`Ledger purged successfully with logged audit reason: "${reason}"`);
+                  notifyDemo(`Ledger purged successfully with logged audit reason: "${reason}"`);
                 }}
               />
             }
@@ -434,7 +444,7 @@ export default function DesignSystemClient() {
                           size="sm"
                           className="h-7 text-xs"
                           onClick={() => {
-                            alert(`Bulk suspended ${selectedRows.length} branch(es)`);
+                            notifyDemo(`Bulk suspended ${selectedRows.length} branch(es)`);
                           }}
                         >
                           Suspend ({selectedRows.length})
@@ -905,7 +915,7 @@ export default function DesignSystemClient() {
                           expectedConfirmationText="SUSPEND"
                           requireReason
                           confirmButtonLabel="Suspend tenant"
-                          onConfirm={async () => alert('Tenant suspended')}
+                          onConfirm={async () => notifyDemo('Tenant suspended')}
                           trigger={
                             <Button variant="destructive" size="sm">
                               Suspend tenant
@@ -972,7 +982,7 @@ export default function DesignSystemClient() {
                         title="New Production Signing Secret Generated"
                         description="This key is displayed exactly once. Store it in a secure secret manager immediately. It will be wiped permanently on confirmation."
                         confirmLabel="I've stored it"
-                        onAcknowledged={() => alert('Secret wiped from memory!')}
+                        onAcknowledged={() => notifyDemo('Secret wiped from memory!')}
                       />
                     </div>
                   )}
@@ -1025,7 +1035,7 @@ export default function DesignSystemClient() {
                             <ErrorState
                               title="Telemetry Pipeline Disconnected"
                               description="Unable to reach Prometheus cluster in ap-south-1. Reconnecting with exponential backoff..."
-                              onRetry={() => alert('Retrying connection...')}
+                              onRetry={() => notifyDemo('Retrying connection...')}
                             />
                           </CardContent>
                         </Card>
@@ -1189,14 +1199,14 @@ export default function DesignSystemClient() {
                               id: 'done',
                               label: 'Settle',
                               icon: <CheckCircle2 className="h-4 w-4" />,
-                              onTrigger: () => alert('Order settled'),
+                              onTrigger: () => notifyDemo('Order settled'),
                               variant: 'success',
                             }}
                             rightAction={{
                               id: 'void',
                               label: 'Void',
                               icon: <Trash2 className="h-4 w-4" />,
-                              onTrigger: () => alert('Order voided'),
+                              onTrigger: () => notifyDemo('Order voided'),
                               variant: 'destructive',
                             }}
                           >

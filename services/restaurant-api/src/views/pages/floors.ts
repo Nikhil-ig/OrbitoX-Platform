@@ -33,12 +33,12 @@ export function renderFloorsWorkspace(floors: FloorRecord[], currentBranch: Bran
     <!-- Floors Grid -->
     <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(360px, 1fr)); gap: 18px;">
       ${branchFloors
-        .map((floor) => {
-          const layouts = floor.serviceLayouts || [
-            { id: 'lay_default', name: floor.activeLayout || 'Standard Layout', description: 'Default service configuration', tableCount: (floor.tableIds || []).length },
-          ];
+      .map((floor) => {
+        const layouts = floor.serviceLayouts || [
+          { id: 'lay_default', name: floor.activeLayout || 'Standard Layout', description: 'Default service configuration', tableCount: (floor.tableIds || []).length },
+        ];
 
-          return `
+        return `
         <div class="card" style="display: flex; flex-direction: column; justify-content: space-between;">
           <div>
             <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 12px;">
@@ -65,18 +65,17 @@ export function renderFloorsWorkspace(floors: FloorRecord[], currentBranch: Bran
               <div style="font-size: 11px; color: var(--color-stone); margin-top: 8px; border-top: 1px solid var(--border-subtle); pt: 8px; display: flex; flex-direction: column; gap: 4px;">
                 <div style="font-weight: 600; color: var(--color-muted); margin-top: 4px;">Available Shifts / Layouts:</div>
                 ${layouts
-                  .map(
-                    (lay) => `
+            .map(
+              (lay) => `
                   <div style="display: flex; justify-content: space-between; align-items: center; padding: 4px 0;">
                     <span>• ${lay.name} (${lay.tableCount} tables)</span>
-                    ${
-                      lay.name === floor.activeLayout
-                        ? `<span style="font-size: 10px; color: var(--color-copper); font-weight: 700;">ACTIVE</span>`
-                        : `<button class="btn btn-ghost btn-sm" style="font-size: 10px; padding: 2px 6px;" onclick="switchLayout('${floor.id}', '${lay.name}')">Activate</button>`
-                    }
+                    ${lay.name === floor.activeLayout
+                  ? `<span style="font-size: 10px; color: var(--color-copper); font-weight: 700;">ACTIVE</span>`
+                  : `<button class="btn btn-ghost btn-sm" style="font-size: 10px; padding: 2px 6px;" onclick="switchLayout('${floor.id}', '${lay.name}')">Activate</button>`
+                }
                   </div>`
-                  )
-                  .join('')}
+            )
+            .join('')}
               </div>
             </div>
           </div>
@@ -88,8 +87,8 @@ export function renderFloorsWorkspace(floors: FloorRecord[], currentBranch: Bran
             </a>
           </div>
         </div>`;
-        })
-        .join('')}
+      })
+      .join('')}
     </div>
   </div>
 
@@ -142,6 +141,22 @@ export function renderFloorsWorkspace(floors: FloorRecord[], currentBranch: Bran
       document.getElementById('floor-name').value = '';
       document.getElementById('floor-modal').classList.add('open');
     }
+  <!-- Rename Floor Modal (replaces native prompt) -->
+  <div id="rename-floor-modal" onclick="if(event.target === this) closeRenameFloorModal()" style="display: none; position: fixed; inset: 0; background: rgba(15, 23, 42, 0.45); backdrop-filter: blur(4px); z-index: 99999; align-items: center; justify-content: center;">
+    <div style="background: #FFFFFF; border-radius: 24px; padding: 28px; width: 380px; max-width: 90vw; box-shadow: 0 20px 40px rgba(0,0,0,0.15);">
+      <h3 style="font-size: 18px; font-weight: 800; color: #0F172A; margin: 0 0 8px 0;">Rename Service Area</h3>
+      <form onsubmit="submitRenameFloor(event)">
+        <input type="hidden" id="rename-floor-id" />
+        <input type="text" id="rename-floor-input" required placeholder="Service area name" style="width: 100%; padding: 10px 14px; border-radius: 12px; border: 1px solid #CBD5E1; font-size: 14px; margin-bottom: 18px; box-sizing: border-box;" />
+        <div style="display: flex; justify-content: flex-end; gap: 10px;">
+          <button type="button" onclick="closeRenameFloorModal()" class="btn btn-secondary" style="border-radius: 9999px; padding: 8px 18px; font-size: 13px;">Cancel</button>
+          <button type="submit" class="btn btn-primary" style="border-radius: 9999px; padding: 8px 20px; font-size: 13px;">Save Name</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <script>
     function closeFloorModal() {
       document.getElementById('floor-modal').classList.remove('open');
     }
@@ -158,23 +173,38 @@ export function renderFloorsWorkspace(floors: FloorRecord[], currentBranch: Bran
           }),
         });
         if (res.ok) window.location.reload();
+        else if (window.showToast) window.showToast('Failed to switch layout', 'error');
       } catch (err) {
-        alert('Failed to switch layout');
+        if (window.showToast) window.showToast('Failed to switch layout', 'error');
       }
     }
 
     function renameFloor(floorId, currentName) {
-      const newName = prompt('Enter new name for service area:', currentName);
-      if (newName && newName.trim() && newName !== currentName) {
-        fetch('/api/restaurant/floors', {
+      document.getElementById('rename-floor-id').value = floorId;
+      document.getElementById('rename-floor-input').value = currentName || '';
+      document.getElementById('rename-floor-modal').style.display = 'flex';
+      setTimeout(() => document.getElementById('rename-floor-input').focus(), 40);
+    }
+
+    function closeRenameFloorModal() {
+      document.getElementById('rename-floor-modal').style.display = 'none';
+    }
+
+    async function submitRenameFloor(e) {
+      e.preventDefault();
+      const floorId = document.getElementById('rename-floor-id').value;
+      const newName = document.getElementById('rename-floor-input').value.trim();
+      if (!newName) return;
+      try {
+        const res = await fetch('/api/restaurant/floors', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            action: 'RENAME',
-            floorId,
-            name: newName.trim(),
-          }),
-        }).then(() => window.location.reload());
+          body: JSON.stringify({ action: 'RENAME', floorId, name: newName }),
+        });
+        if (res.ok) window.location.reload();
+        else if (window.showToast) window.showToast('Failed to rename service area', 'error');
+      } catch {
+        if (window.showToast) window.showToast('Network error renaming service area', 'error');
       }
     }
 
@@ -207,10 +237,10 @@ export function renderFloorsWorkspace(floors: FloorRecord[], currentBranch: Bran
         if (res.ok) {
           window.location.reload();
         } else {
-          alert('Failed to save floor');
+          if (window.showToast) window.showToast('Failed to save floor', 'error');
         }
       } catch (err) {
-        alert('Network error saving floor');
+        if (window.showToast) window.showToast('Network error saving floor', 'error');
       } finally {
         saveBtn.disabled = false;
         saveBtn.textContent = 'Create Service Area';
