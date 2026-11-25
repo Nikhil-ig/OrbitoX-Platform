@@ -19,8 +19,8 @@ export function renderOrdersWorkspace(
   const ordersList: any[] = Array.isArray(initialOrders) ? initialOrders : [];
 
   // Pipeline telemetry math
-  const inProgressOrders = ordersList.filter((o) => ['PLACED', 'PREPARING', 'IN_PREP', 'READY'].includes(o.status));
-  const newOrdersCount = ordersList.filter((o) => ['PLACED', 'PENDING'].includes(o.status)).length;
+  const inProgressOrders = ordersList.filter((o) => ['PLACED', 'PENDING', 'CONFIRMED', 'NEW', 'QUEUED', 'PREPARING', 'IN_PREP', 'IN_PROGRESS', 'COOKING', 'READY'].includes(o.status));
+  const newOrdersCount = ordersList.filter((o) => ['PLACED', 'PENDING', 'CONFIRMED', 'NEW', 'QUEUED'].includes(o.status)).length;
   const cookingCount = ordersList.filter((o) => ['PREPARING', 'IN_PREP', 'COOKING'].includes(o.status)).length;
   const readyCount = ordersList.filter((o) => ['READY'].includes(o.status)).length;
   const lateCount = ordersList.filter((o) => o.isLate || o.elapsedMinutes > 20).length;
@@ -111,8 +111,8 @@ export function renderOrdersWorkspace(
       ` : ''}
       ${ordersList
       .map((order) => {
-        const isCooking = ['PREPARING', 'IN_PREP', 'COOKING'].includes(order.status);
-        const isNew = ['PLACED', 'PENDING'].includes(order.status);
+        const isCooking = ['PREPARING', 'IN_PREP', 'IN_PROGRESS', 'COOKING'].includes(order.status);
+        const isNew = ['PLACED', 'PENDING', 'CONFIRMED', 'NEW', 'QUEUED'].includes(order.status);
         const isReady = order.status === 'READY';
         const isCompleted = ['COMPLETED', 'SERVED', 'PAID'].includes(order.status);
         const isCancelled = order.status === 'CANCELLED';

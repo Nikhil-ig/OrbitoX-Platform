@@ -446,7 +446,7 @@ export const tablesRoutes: RouteDefinition[] = [
         });
         return;
       }
-      const allowedRoles = ['WAITER', 'SERVER', 'RUNNER', 'HOST', 'CHEF', 'MANAGER', 'ADMIN'];
+      const allowedRoles = ['OWNER', 'WAITER', 'SERVER', 'RUNNER', 'HOST', 'CHEF', 'MANAGER', 'ADMIN'];
       const staffRole = identity.role || (identity.type === 'ADMIN' ? 'ADMIN' : '');
       if (!allowedRoles.includes(staffRole)) {
         sendJson(res, 403, {

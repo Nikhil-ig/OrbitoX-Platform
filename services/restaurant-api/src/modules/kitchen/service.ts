@@ -167,8 +167,8 @@ export function authorizeKdsRequest(
 
   const allowedRoles =
     operation === 'read'
-      ? ['CHEF', 'EXPO', 'OPERATIONS', 'MANAGER', 'ADMIN', 'SERVER', 'WAITER', 'BARTENDER']
-      : ['CHEF', 'EXPO', 'OPERATIONS', 'MANAGER', 'ADMIN'];
+      ? ['OWNER', 'CHEF', 'EXPO', 'OPERATIONS', 'MANAGER', 'ADMIN', 'SERVER', 'WAITER', 'BARTENDER']
+      : ['OWNER', 'CHEF', 'EXPO', 'OPERATIONS', 'MANAGER', 'ADMIN'];
   const effectiveRole = identity.role || (identity.type === 'ADMIN' ? 'ADMIN' : undefined);
   const isAuthorizedRole = effectiveRole && allowedRoles.includes(effectiveRole);
 

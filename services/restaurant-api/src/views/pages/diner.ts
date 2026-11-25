@@ -75,7 +75,15 @@ export function renderDinerPwa(
   const fontHeading = template?.fontHeading || tmplTokens?.fontFamilyHeading || 'system-ui, sans-serif';
   const fontBody = template?.fontBody || tmplTokens?.fontFamilyBody || 'system-ui, sans-serif';
   const customCss = brand?.customCss || '';
-  const isLight = bgColor === '#F7F5F0' || bgColor === '#FDFBF7' || bgColor === '#FBF8F2' || bgColor === '#FAF7F2';
+  const isLightHex = (hex: string): boolean => {
+    const clean = hex.replace('#', '').trim();
+    if (!/^[0-9a-fA-F]{6}$/.test(clean)) return false;
+    const r = parseInt(clean.slice(0, 2), 16);
+    const g = parseInt(clean.slice(2, 4), 16);
+    const b = parseInt(clean.slice(4, 6), 16);
+    return (0.299 * r + 0.587 * g + 0.114 * b) / 255 > 0.65;
+  };
+  const isLight = isLightHex(bgColor) || bgColor.toUpperCase() === '#FFF';
 
   const rawTemplateId = template?.id || brand?.activeTemplateId || 'tmpl_haute_gastronomy';
   const activeTemplateId = normalizeTemplateId(rawTemplateId);
@@ -251,16 +259,16 @@ export function renderDinerPwa(
     /* Service FAB */
     .service-request-fab {
       position: fixed;
-      bottom: 84px;
+      bottom: 92px;
       right: 20px;
-      background: ${isLight ? 'rgba(255, 255, 255, 0.95)' : 'rgba(22, 27, 36, 0.95)'};
+      background: ${isLight ? 'rgba(255, 255, 255, 0.96)' : 'rgba(22, 27, 36, 0.95)'};
       border: 1px solid var(--theme-border);
       border-radius: 999px;
       padding: 9px 16px;
       color: var(--theme-text);
       font-size: 12px;
       font-weight: 700;
-      box-shadow: 0 4px 18px rgba(0, 0, 0, 0.25);
+      box-shadow: 0 4px 18px rgba(0, 0, 0, 0.18);
       backdrop-filter: blur(8px);
       display: flex;
       align-items: center;
@@ -271,7 +279,7 @@ export function renderDinerPwa(
     }
     @media (max-width: 640px) {
       .service-request-fab {
-        bottom: 84px;
+        bottom: 96px;
         right: 14px;
         padding: 7px 12px;
         font-size: 11px;

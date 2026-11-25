@@ -38,7 +38,7 @@ export function renderStaffWorkspace(
     <div style="display: flex; justify-content: space-between; align-items: flex-end; flex-wrap: wrap; gap: 16px;">
       <div>
         <div style="font-size: 13px; font-weight: 500; color: #64748B; margin-bottom: 4px;">
-          ${staffList.length} team members · 38 of 50 seats used
+          ${staffList.length} team member${staffList.length === 1 ? '' : 's'} · Role-scoped PIN &amp; RBAC access
         </div>
         <h1 style="font-size: 34px; font-weight: 800; color: #0F172A; letter-spacing: -0.025em; margin: 0;">
           Staff
@@ -375,7 +375,7 @@ export function renderStaffWorkspace(
       event.preventDefault();
       const id = document.getElementById('reset-pin-id').value;
       const pin = document.getElementById('new-pin-input').value.trim();
-      if (!pin || pin.length !== 4 || !/^\d{4}$/.test(pin)) {
+      if (!pin || pin.length !== 4 || !/^[0-9]{4}$/.test(pin)) {
         window.showToast('PIN must be exactly 4 digits.', 'error');
         return;
       }
@@ -436,7 +436,7 @@ export function renderStaffWorkspace(
       const pin = document.getElementById('staff-pin-input').value.trim();
 
       if (!name) return;
-      if (!pin || pin.length < 4 || pin.length > 8 || !/^\d+$/.test(pin)) {
+      if (!pin || pin.length < 4 || pin.length > 8 || !/^[0-9]+$/.test(pin)) {
         window.showToast('PIN must be between 4 and 8 digits.', 'error');
         return;
       }
@@ -448,7 +448,7 @@ export function renderStaffWorkspace(
             name,
             role: role.toUpperCase(),
             pin,
-            branchId: window.__STAFF_SESSION__?.branchId || 'branch_maxora-resto_main'
+            branchId: window.__STAFF_SESSION__?.branchId || '${escapeHtml(selectedBranchId)}'
           }
         });
         window.showToast('Successfully added ' + name + ' (' + role + ')', 'success');

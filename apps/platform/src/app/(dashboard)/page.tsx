@@ -107,17 +107,24 @@ interface TenantBillingDetail {
   tenantId: string;
   projectName: string;
   subscription: {
-    razorpaySubscriptionId: string;
+    id?: string;
+    razorpaySubscriptionId?: string;
     pluginId: string;
     status: string;
     currentStart?: string | null;
     currentEnd?: string | null;
     cancelAtPeriodEnd: boolean;
+    plan?: {
+      internalPlanId?: string;
+      amountMinor?: number;
+      currency?: string;
+      period?: string;
+    } | null;
     planMap?: {
-      internalPlanId: string;
-      amountMinor: number;
-      currency: string;
-      period: string;
+      internalPlanId?: string;
+      amountMinor?: number;
+      currency?: string;
+      period?: string;
       interval: number;
     } | null;
   } | null;
@@ -242,15 +249,20 @@ export default function CustomerDashboardPage() {
     hydrateSession();
   }, [hydrateSession]);
 
+  const loadedOrgRef = React.useRef<string>('');
   const loadOrganizationWorkspace = React.useCallback(async (orgId: string, orgRole?: string) => {
     if (!orgId) return;
-    setOrgLoading(true);
-    setTenants([]);
-    setMembers([]);
-    setInvites([]);
-    setExportJobs([]);
-    setDeletionRequest(null);
-    setBillingDetails([]);
+    const isOrgSwitch = loadedOrgRef.current !== orgId;
+    loadedOrgRef.current = orgId;
+    if (isOrgSwitch) {
+      setOrgLoading(true);
+      setTenants([]);
+      setMembers([]);
+      setInvites([]);
+      setExportJobs([]);
+      setDeletionRequest(null);
+      setBillingDetails([]);
+    }
 
     try {
       const [tRes, mRes, iRes] = await Promise.all([
@@ -418,6 +430,8 @@ export default function CustomerDashboardPage() {
         headers: { 'x-csrf-token': getCustomerCsrfToken() },
       });
     } finally {
+      loadedOrgRef.current = '';
+      setActiveTab('Home');
       setUser(null);
       setOrganizations([]);
       setSelectedOrgId('');
@@ -777,7 +791,7 @@ export default function CustomerDashboardPage() {
                   key={tab}
                   type="button"
                   onClick={() => setActiveTab(tab)}
-                  className={`px-3.5 py-1.5 rounded-full text-xs font-semibold whitespace-nowrap transition-colors ${
+                  className={`px-2.5 sm:px-3.5 py-1.5 rounded-full text-[11px] sm:text-xs font-semibold whitespace-nowrap transition-colors ${
                     isActive ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-900'
                   }`}
                 >
@@ -1241,6 +1255,8 @@ export default function CustomerDashboardPage() {
                 {tenants.map((t) => {
                   const detail = billingDetails.find((b) => b.tenantId === t.tenantId);
                   const sub = detail?.subscription;
+                  const subId = sub?.razorpaySubscriptionId || sub?.id || '';
+                  const planLabel = sub?.planMap?.internalPlanId || sub?.plan?.internalPlanId || t.plan;
                   const used = Number(t.monthlyApiCalls) || 0;
                   const quota = t.apiCallQuota ? Number(t.apiCallQuota) : null;
                   const pct = quota && quota > 0 ? Math.min(100, Math.round((used / quota) * 100)) : 0;
@@ -1257,7 +1273,7 @@ export default function CustomerDashboardPage() {
                               {t.name} · <span className="text-slate-500 font-medium">{t.environmentName}</span>
                             </h2>
                             <div className="text-xs text-slate-500">
-                              Plan: <strong>{sub?.planMap?.internalPlanId || t.plan}</strong> · Subscription:{' '}
+                              Plan: <strong>{planLabel}</strong> · Subscription:{' '}
                               <strong>{sub ? sub.status : 'No Razorpay mandate linked'}</strong>
                               {sub?.cancelAtPeriodEnd ? ' (Cancels at period end)' : ''}
                             </div>
@@ -1265,14 +1281,14 @@ export default function CustomerDashboardPage() {
                         </div>
 
                         <div className="flex flex-wrap gap-2">
-                          {sub && isOwner && !sub.cancelAtPeriodEnd && ['active', 'authenticated', 'pending', 'halted', 'paused'].includes(sub.status) && (
+                          {sub && subId && isOwner && !sub.cancelAtPeriodEnd && ['active', 'authenticated', 'pending', 'halted', 'paused'].includes(sub.status) && (
                             <button
                               type="button"
-                              disabled={cancellingSubId === sub.razorpaySubscriptionId}
-                              onClick={() => executeCancelSubscription(sub.razorpaySubscriptionId)}
+                              disabled={cancellingSubId === subId}
+                              onClick={() => executeCancelSubscription(subId)}
                               className="rounded-full border border-rose-300 text-rose-700 hover:bg-rose-50 px-4 py-1.5 text-xs font-semibold"
                             >
-                              {cancellingSubId === sub.razorpaySubscriptionId ? 'Scheduling...' : 'Cancel at Period End'}
+                              {cancellingSubId === subId ? 'Scheduling...' : 'Cancel at Period End'}
                             </button>
                           )}
                           <Link
@@ -1302,8 +1318,8 @@ export default function CustomerDashboardPage() {
                             {sub?.currentEnd ? `Renews ${new Date(sub.currentEnd).toLocaleDateString('en-IN')}` : 'Dev / Pre-checkout'}
                           </div>
                           <div className="text-[11px] text-slate-500 mt-1">
-                            {sub
-                              ? `Subscription ID: ${sub.razorpaySubscriptionId}`
+                            {subId
+                              ? `Subscription ID: ${subId}`
                               : 'Plan tier upgrades apply after verified Razorpay checkout webhook.'}
                           </div>
                         </div>

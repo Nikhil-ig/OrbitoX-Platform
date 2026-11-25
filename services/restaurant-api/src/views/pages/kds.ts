@@ -540,10 +540,13 @@ export function renderKdsWorkspace(
             body: JSON.stringify({ taskId: id, targetStatus: targetCol })
           });
           if (!res.ok) {
+            const errJson = await res.json().catch(() => ({}));
+            if (window.showToast) window.showToast(errJson.message || errJson.error || 'Failed to update kitchen ticket.', 'error');
             ticket.style.opacity = '1';
             return;
           }
         } catch (e) {
+          if (window.showToast) window.showToast('Network error updating kitchen ticket.', 'error');
           ticket.style.opacity = '1';
           return;
         }

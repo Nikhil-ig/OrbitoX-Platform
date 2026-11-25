@@ -858,7 +858,13 @@ export class PostgresRestaurantRepository implements RestaurantRepository {
       if (tableNumber) where.tableNumber = tableNumber;
       if (sessionId) where.sessionId = sessionId;
       if (branchId) where.branchId = branchId;
-      if (status) where.status = status;
+      if (status && status !== 'ALL') {
+        if (status === 'ACTIVE') {
+          where.status = { notIn: ['PAID', 'VOIDED', 'CANCELLED', 'COMPED'] };
+        } else {
+          where.status = status;
+        }
+      }
       const records = await tx.restaurantOrder.findMany({
         where,
         orderBy: { createdAt: 'desc' },
