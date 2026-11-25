@@ -317,8 +317,25 @@ export const viewsRoutes: RouteDefinition[] = [
     method: 'GET',
     path: '/marketplace',
     handler: async (_req, res, context) => {
-      res.writeHead(302, { Location: '/studio' });
-      res.end();
+      const templates = await context.repo.getTemplates();
+      const activeBrand = await context.repo.getTenantBrand();
+      const menuItems = await context.repo.getMenuItems();
+      const branches = await context.repo.getBranches();
+      const tables = await context.repo.getTables(context.currentBranch?.id);
+      const previewLocator = tables[0]?.locator || '';
+      const opts = await getShellOptions(context, 'Template Marketplace', 'marketplace');
+      const html = renderShell(
+        renderMarketplaceWorkspace(
+          templates,
+          activeBrand,
+          menuItems,
+          context.currentBranch?.id || 'branch_ldh',
+          branches,
+          previewLocator
+        ),
+        opts
+      );
+      sendHtml(res, html);
     },
   },
   {
@@ -342,14 +359,25 @@ export const viewsRoutes: RouteDefinition[] = [
     path: '/studio',
     handler: async (_req, res, context) => {
       const activeBrand = await context.repo.getTenantBrand();
-      const activeTemplate = (activeBrand?.activeTemplateId ? await context.repo.getTemplateById(activeBrand.activeTemplateId) : undefined) || (await context.repo.getTemplates())[0];
+      const allTemplates = await context.repo.getTemplates();
+      const activeTemplate =
+        (activeBrand?.activeTemplateId ? await context.repo.getTemplateById(activeBrand.activeTemplateId) : undefined) ||
+        allTemplates[0];
       const draft = await context.repo.getTemplateDraft();
       const menuItems = await context.repo.getMenuItems();
       const tables = await context.repo.getTables(context.currentBranch?.id);
       const previewLocator = tables[0]?.locator || '';
       const opts = await getShellOptions(context, 'Diner App & Template Studio', 'studio');
       const html = renderShell(
-        renderVisualStudio(activeTemplate, draft, activeBrand, menuItems, context.currentBranch?.id || 'branch_ldh', previewLocator),
+        renderVisualStudio(
+          activeTemplate,
+          draft,
+          activeBrand,
+          menuItems,
+          context.currentBranch?.id || 'branch_ldh',
+          previewLocator,
+          allTemplates
+        ),
         opts
       );
       sendHtml(res, html);
@@ -478,11 +506,17 @@ async function getShellOptions(context: any, title: string, activeNav: any): Pro
   const tenantBrand = await context.repo.getTenantBrand();
   const branches = await context.repo.getBranches();
   const floors = await context.repo.getFloors();
-  const orders = await context.repo.getOrders(undefined, undefined, context.currentBranch?.id).catch(() => []);
-  const tables = await context.repo.getTables(context.currentBranch?.id).catch(() => []);
+  const [orders, tables, menuItems] = await Promise.all([
+    context.repo.getOrders(undefined, undefined, context.currentBranch?.id).catch(() => []),
+    context.repo.getTables(context.currentBranch?.id).catch(() => []),
+    context.repo.getMenuItems(true).catch(() => []),
+  ]);
   const activeOrdersCount = Array.isArray(orders)
     ? orders.filter((o: any) => !['COMPLETED', 'SERVED', 'PAID', 'CANCELLED'].includes(String(o.status || '').toUpperCase())).length
     : 0;
+  const rawPlan = String((context.tenantContext as any)?.planTier || (tenantBrand as any)?.planTier || 'GROWTH').toUpperCase();
+  const isStarter = rawPlan === 'STARTER';
+  const isPro = rawPlan === 'PRO' || rawPlan === 'ENTERPRISE';
   return {
     title,
     activeNav,
@@ -494,7 +528,11 @@ async function getShellOptions(context: any, title: string, activeNav: any): Pro
     floors,
     staffRole: context.activeStaffRole,
     ordersCount: activeOrdersCount,
-    tablesCount: Array.isArray(tables) ? tables.length : 30,
+    tablesCount: Array.isArray(tables) ? tables.length : 0,
+    menuItemsCount: Array.isArray(menuItems) ? menuItems.length : 0,
+    planName: isPro ? 'Pro Enterprise' : isStarter ? 'Starter plan' : 'Growth plan',
+    tablesLimit: isPro ? 999 : isStarter ? 15 : 200,
+    menuItemsLimit: isPro ? 2000 : isStarter ? 100 : 500,
   } as ShellOptions;
 }
 

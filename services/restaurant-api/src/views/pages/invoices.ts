@@ -21,7 +21,10 @@ export function renderInvoicesWorkspace(
 ): string {
   const currentBranch = branches.find((b) => b.id === currentBranchId) || branches[0];
   const branchName = currentBranch?.name || 'Main Dining';
-  const gstin = tenantBrand?.gstin || (currentBranch as any)?.gstin || 'Unregistered / Configure GSTIN in Settings';
+  const configuredGstin = String(tenantBrand?.gstin || (currentBranch as any)?.gstin || '').trim();
+  const unregisteredMode = String(tenantBrand?.unregisteredInvoiceMode || 'refuse');
+  const gstinDisplay = configuredGstin || 'Unregistered / Configure GSTIN in Settings';
+  const hasRegisteredGstin = configuredGstin.length === 15;
 
   const invoicedOrderIds = new Set(invoices.map((inv) => inv.orderId));
   const pendingOrders = orders.filter(
@@ -44,15 +47,32 @@ export function renderInvoicesWorkspace(
     <!-- Top Header -->
     <div class="inv-header">
       <div>
-        <div class="inv-eyebrow">GSTIN ${escapeHtml(String(gstin))} · ${escapeHtml(branchName)}</div>
+        <div class="inv-eyebrow">GSTIN ${escapeHtml(gstinDisplay)} · ${escapeHtml(branchName)}</div>
         <h1 class="inv-title">Invoices &amp; GST</h1>
       </div>
-      <div class="inv-header-actions">
+      <div class="inv-header-actions" style="display: flex; gap: 10px; align-items: center; flex-wrap: wrap;">
+        ${!hasRegisteredGstin ? `
+          <a href="/whitelabel?branch=${encodeURIComponent(currentBranchId)}" class="btn btn-secondary" style="border-radius: 9999px; padding: 9px 18px; font-size: 13px; font-weight: 600; text-decoration: none;">
+            Configure GSTIN
+          </a>
+        ` : ''}
         <button type="button" class="btn btn-secondary" onclick="exportInvoicesCsv()" style="border-radius: 9999px; padding: 9px 18px; font-size: 13px; font-weight: 600;">
           Export GST CSV
         </button>
       </div>
     </div>
+
+    ${!hasRegisteredGstin ? `
+      <div style="background: #FFFBEB; border: 1px solid #FDE68A; border-radius: 18px; padding: 14px 18px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px;">
+        <div style="font-size: 13px; color: #92400E; line-height: 1.45;">
+          <strong>Unregistered GSTIN mode (${escapeHtml(unregisteredMode.replace(/_/g, ' '))}):</strong>
+          Indian statutory Tax Invoices (with 5% CGST/SGST) require a valid 15-character GSTIN and legal address. Without GSTIN, you can issue a tax-exempt <strong>Bill of Supply</strong> or <strong>Receipt</strong>, or configure your GSTIN first.
+        </div>
+        <a href="/whitelabel?branch=${encodeURIComponent(currentBranchId)}" style="font-size: 12px; font-weight: 700; color: #92400E; text-decoration: underline; white-space: nowrap;">
+          Open GST &amp; Invoice Settings →
+        </a>
+      </div>
+    ` : ''}
 
     <!-- Top Bento Summary -->
     <div class="inv-bento-row">
@@ -435,17 +455,49 @@ export function renderInvoicesWorkspace(
       });
     }
 
-    async function generateInvoiceForOrder(orderId) {
+    async function generateInvoiceForOrder(orderId, overrideMode) {
       try {
         const res = await window.apiFetch('/api/restaurant/invoices/generate', {
           method: 'POST',
-          body: { orderId }
+          body: overrideMode ? { orderId, unregisteredInvoiceMode: overrideMode } : { orderId }
         });
         window.showToast('Invoice ' + (res.data?.invoiceNumber || '') + ' generated successfully.', 'success');
         setTimeout(() => window.location.reload(), 600);
       } catch (err) {
-        window.showToast((err && err.message) || 'Could not generate GST invoice.', 'error');
+        const msg = (err && err.message) || 'Could not generate GST invoice.';
+        if (msg.toLowerCase().includes('gstin') && !overrideMode) {
+          openUnregisteredInvoiceModal(orderId, msg);
+        } else {
+          window.showToast(msg, 'error');
+        }
       }
+    }
+
+    function openUnregisteredInvoiceModal(orderId, reasonMsg) {
+      const existing = document.getElementById('unreg-invoice-modal');
+      if (existing) existing.remove();
+      const wrap = document.createElement('div');
+      wrap.id = 'unreg-invoice-modal';
+      wrap.style.cssText = 'position:fixed;inset:0;background:rgba(15,23,42,0.5);backdrop-filter:blur(4px);z-index:99999;display:flex;align-items:center;justify-content:center;padding:16px;';
+      wrap.innerHTML =
+        '<div style="background:#FFFFFF;border-radius:24px;padding:28px;max-width:460px;width:100%;box-shadow:0 20px 45px rgba(0,0,0,0.2);">' +
+          '<h3 style="margin:0 0 8px 0;font-size:19px;font-weight:800;color:#0F172A;">GSTIN Required for Tax Invoice</h3>' +
+          '<p style="margin:0 0 18px 0;font-size:13px;color:#475569;line-height:1.5;">' + escapeClient(reasonMsg) + '</p>' +
+          '<div style="display:flex;flex-direction:column;gap:10px;">' +
+            '<a href="/whitelabel?branch=' + encodeURIComponent('${escapeHtml(currentBranchId)}') + '" class="btn btn-primary" style="text-align:center;text-decoration:none;border-radius:9999px;padding:10px;font-size:13px;font-weight:600;">Configure 15-digit GSTIN in Settings</a>' +
+            '<button type="button" id="btn-issue-bos" class="btn btn-secondary" style="border-radius:9999px;padding:10px;font-size:13px;font-weight:600;">Issue Unregistered Bill of Supply (0% GST)</button>' +
+            '<button type="button" id="btn-issue-rcpt" class="btn btn-secondary" style="border-radius:9999px;padding:10px;font-size:13px;font-weight:600;">Issue Plain Order Receipt</button>' +
+            '<button type="button" id="btn-cancel-unreg" style="background:none;border:none;color:#64748B;font-size:12px;font-weight:600;padding:6px;cursor:pointer;">Cancel</button>' +
+          '</div>' +
+        '</div>';
+      document.body.appendChild(wrap);
+      document.getElementById('btn-cancel-unreg').onclick = () => wrap.remove();
+      document.getElementById('btn-issue-bos').onclick = () => { wrap.remove(); generateInvoiceForOrder(orderId, 'bill_of_supply'); };
+      document.getElementById('btn-issue-rcpt').onclick = () => { wrap.remove(); generateInvoiceForOrder(orderId, 'receipt'); };
+    }
+
+    function escapeClient(s) {
+      return String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
     }
 
     function exportInvoicesCsv() {

@@ -35,9 +35,9 @@ export function HeroStat({
     <div className={cn('flex flex-col min-w-0', className)} {...props}>
       <div
         className={cn(
-          'font-light tracking-[-0.03em] text-[var(--color-text)] leading-none select-all tabular-nums',
+          'font-light tracking-[-0.03em] text-[var(--color-text)] leading-tight select-all tabular-nums',
           compact
-            ? 'text-2xl sm:text-3xl font-semibold whitespace-nowrap overflow-hidden text-ellipsis'
+            ? 'text-xl sm:text-2xl font-semibold break-words'
             : 'text-4xl md:text-5xl'
         )}
       >
@@ -73,13 +73,13 @@ export function StatStrip({ stats, className, ...props }: StatStripProps) {
   return (
     <div
       className={cn(
-        'rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-5 md:p-7 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5 divide-y sm:divide-y-0 lg:divide-x divide-[var(--color-border)] shadow-sm',
+        'rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-5 md:p-6 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 lg:gap-5 divide-y sm:divide-y-0 lg:divide-x divide-[var(--color-border)] shadow-sm',
         className
       )}
       {...props}
     >
       {stats.map((stat, idx) => (
-        <div key={idx} className={cn('min-w-0', idx > 0 ? 'pt-4 sm:pt-0 lg:pl-5' : '')}>
+        <div key={idx} className={cn('min-w-0', idx > 0 ? 'pt-4 sm:pt-0 lg:pl-4 xl:pl-5' : '')}>
           <HeroStat compact {...stat} />
         </div>
       ))}

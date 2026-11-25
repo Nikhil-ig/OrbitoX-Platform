@@ -396,9 +396,20 @@ export function renderStaffWorkspace(
     }
 
     function revokeDevice(id) {
-      if (confirm('Revoke credentials for this device terminal?')) {
-        window.showToast('Device terminal revoked.', 'info');
-      }
+      window.confirmAction({
+        title: 'Revoke Device Terminal',
+        message: 'Revoke active credentials for terminal "' + id + '"? Staff on that device will need to sign in again.',
+        confirmLabel: 'Revoke device',
+        danger: true,
+        onConfirm: async () => {
+          try {
+            await window.apiFetch('/api/restaurant/staff/' + encodeURIComponent(id) + '/revoke', { method: 'POST', body: {} });
+            window.showToast('Device terminal credentials revoked.', 'success');
+          } catch (err) {
+            window.showToast((err && err.message) || 'Could not revoke terminal.', 'error');
+          }
+        }
+      });
     }
 
     function manageStaffMember(id, name) {

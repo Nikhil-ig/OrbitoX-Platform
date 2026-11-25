@@ -114,8 +114,8 @@ export function OverviewClient({
       )}
 
       {/* Top Hero Stat & StatStrip */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        <div className="lg:col-span-1">
+      <div className="grid grid-cols-1 xl:grid-cols-12 gap-6 items-center">
+        <div className="xl:col-span-3">
           <HeroStat
             label="Monthly Platform ARR"
             value={summary.monthlyArr}
@@ -124,7 +124,7 @@ export function OverviewClient({
             deltaType="positive"
           />
         </div>
-        <div className="lg:col-span-2 flex flex-col justify-center min-w-0">
+        <div className="xl:col-span-9 flex flex-col justify-center min-w-0">
           <StatStrip
             stats={[
               {

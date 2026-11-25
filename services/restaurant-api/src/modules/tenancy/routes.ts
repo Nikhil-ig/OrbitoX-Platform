@@ -180,8 +180,104 @@ export const tenancyRoutes: RouteDefinition[] = [
     method: 'GET',
     path: '/api/restaurant/floors',
     handler: async (_req, res, context) => {
-      const floors = await context.repo.getFloors();
+      const branchId = (context.parsedUrl.query.branchId as string) || undefined;
+      const floors = await context.repo.getFloors(branchId);
       sendJson(res, 200, { success: true, data: floors });
+    },
+  },
+  {
+    method: 'POST',
+    path: '/api/restaurant/floors',
+    handler: async (_req, res, context) => {
+      const identity = context.requestIdentity;
+      if (identity.type === 'INVALID_CREDENTIAL' || identity.type === 'REVOKED_CAPABILITY') {
+        sendJson(res, 401, { error: identity.type, code: identity.type, message: 'Invalid or revoked credential.' });
+        return;
+      }
+      if (identity.type === 'DINER') {
+        sendJson(res, 403, { error: 'FORBIDDEN', code: 'FORBIDDEN', message: 'Diner credentials cannot create floors.' });
+        return;
+      }
+      if (identity.type === 'ANONYMOUS') {
+        sendJson(res, 401, { error: 'AUTHENTICATION_REQUIRED', code: 'AUTHENTICATION_REQUIRED', message: 'Floor creation requires authenticated manager credentials.' });
+        return;
+      }
+      if (!identity.isPrivileged) {
+        sendJson(res, 403, { error: 'FORBIDDEN', code: 'FORBIDDEN', message: 'Creating floor areas requires Manager or Admin privileges.' });
+        return;
+      }
+
+      const body = await context.parseBody();
+      const targetBranchId = String(body.branchId || context.currentBranch?.id || '').trim();
+      if (!targetBranchId) {
+        sendJson(res, 400, { success: false, error: 'BRANCH_REQUIRED', message: 'Target branchId is required.' });
+        return;
+      }
+      if (identity.branchId && identity.branchId !== '*' && identity.branchId !== targetBranchId) {
+        sendJson(res, 403, {
+          success: false,
+          error: 'BRANCH_MISMATCH',
+          code: 'BRANCH_MISMATCH',
+          message: `Staff credential for branch ${identity.branchId} cannot create floors for branch ${targetBranchId}.`,
+        });
+        return;
+      }
+
+      const branches = await context.repo.getBranches();
+      if (!branches.some((b) => b.id === targetBranchId)) {
+        sendJson(res, 404, { success: false, error: 'BRANCH_NOT_FOUND', message: `Branch ${targetBranchId} does not belong to this tenant.` });
+        return;
+      }
+
+      const name = String(body.name || '').trim();
+      if (name.length < 2 || name.length > 60) {
+        sendJson(res, 400, { success: false, error: 'INVALID_FLOOR_NAME', message: 'Floor area name must be between 2 and 60 characters.' });
+        return;
+      }
+
+      const allowedTypes = ['Dining', 'Bar', 'Outdoor', 'Private', 'Custom'] as const;
+      const requestedType = String(body.type || 'Dining').trim();
+      const type = (allowedTypes as readonly string[]).includes(requestedType)
+        ? (requestedType as (typeof allowedTypes)[number])
+        : 'Dining';
+
+      const parsedCap = Number(body.capacity ?? 24);
+      if (!Number.isFinite(parsedCap) || parsedCap < 1 || parsedCap > 500) {
+        sendJson(res, 400, { success: false, error: 'INVALID_CAPACITY', message: 'Floor capacity must be between 1 and 500 covers.' });
+        return;
+      }
+
+      const existingFloors = await context.repo.getFloors(targetBranchId);
+      if (existingFloors.some((f) => f.name.trim().toLowerCase() === name.toLowerCase())) {
+        sendJson(res, 409, { success: false, error: 'FLOOR_EXISTS', message: `Floor area "${name}" already exists on this branch.` });
+        return;
+      }
+
+      const slugPart = name.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '').slice(0, 24) || 'area';
+      const newFloor = await context.repo.saveFloor({
+        id: `floor_${slugPart}_${Date.now().toString(36)}`,
+        branchId: targetBranchId,
+        name,
+        type,
+        capacity: Math.round(parsedCap),
+        activeLayout: 'default',
+        status: 'ACTIVE',
+        tableIds: [],
+        serviceLayouts: [],
+      });
+
+      eventBus.broadcast({
+        id: `evt_${Date.now()}`,
+        sequence: (await context.repo.getEvents()).length,
+        type: 'floor.created',
+        timestamp: new Date().toISOString(),
+        producer: 'api:floors-create',
+        branchId: targetBranchId,
+        tenantId: context.tenantContext.tenantId,
+        payload: { floorId: newFloor.id, name: newFloor.name },
+      });
+
+      sendJson(res, 201, { success: true, data: newFloor, floor: newFloor });
     },
   },
   {

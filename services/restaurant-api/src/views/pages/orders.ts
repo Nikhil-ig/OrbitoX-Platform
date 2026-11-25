@@ -39,17 +39,26 @@ export function renderOrdersWorkspace(
         </h1>
       </div>
 
-      <!-- Live / Completed / Cancelled Tabs -->
-      <div style="display: flex; background: #FFFFFF; border: 1px solid #E2E8F0; border-radius: 9999px; padding: 4px; box-shadow: 0 2px 6px rgba(0,0,0,0.02);">
-        <button type="button" class="order-tab active" onclick="switchOrderTab('live', this)">
-          Live · ${inProgressOrders.length}
-        </button>
-        <button type="button" class="order-tab" onclick="switchOrderTab('completed', this)">
-          Completed
-        </button>
-        <button type="button" class="order-tab" onclick="switchOrderTab('cancelled', this)">
-          Cancelled
-        </button>
+      <!-- Live / Completed / Cancelled Tabs + Search -->
+      <div style="display: flex; align-items: center; gap: 10px; flex-wrap: wrap;">
+        <input
+          type="text"
+          id="orders-search-input"
+          placeholder="Search table, server or ID..."
+          oninput="filterOrdersSearch(this.value)"
+          style="background: #FFFFFF; border: 1px solid #CBD5E1; border-radius: 9999px; padding: 8px 16px; font-size: 13px; color: #0F172A; width: 210px; max-width: 100%; outline: none;"
+        />
+        <div id="status-filter-pills" style="display: flex; background: #FFFFFF; border: 1px solid #E2E8F0; border-radius: 9999px; padding: 4px; box-shadow: 0 2px 6px rgba(0,0,0,0.02);">
+          <button type="button" class="order-tab active" onclick="switchOrderTab('live', this)">
+            Live · ${inProgressOrders.length}
+          </button>
+          <button type="button" class="order-tab" onclick="switchOrderTab('completed', this)">
+            Completed
+          </button>
+          <button type="button" class="order-tab" onclick="switchOrderTab('cancelled', this)">
+            Cancelled
+          </button>
+        </div>
       </div>
     </div>
 
@@ -140,18 +149,20 @@ export function renderOrdersWorkspace(
           badgeLabel = 'Completed';
         }
 
-        const label = order.tableNumber || `Table ${order.tableId || order.orderNumber || ''}`;
-        const price = order.formattedTotal || `₹${Math.round((order.totalAmountMinor || 0) / 100)}`;
-        const itemsText = `${order.itemCount || (order.items || []).length || 2} items · ${order.diningType === 'TAKEAWAY' ? 'takeaway' : 'dine-in'}`;
+        const oid = String(order.orderId || order.id || '');
+        const label = order.tableNumber || `Table ${order.tableId || order.orderNumber || oid.slice(0, 8)}`;
+        const minor = Number(order.totalMinor ?? order.quote?.totalMinor ?? order.totalAmountMinor ?? 0);
+        const price = order.formattedTotal || `₹${Math.round(minor / 100).toLocaleString('en-IN')}`;
+        const itemsText = `${order.itemCount || (order.items || []).length || 1} item${((order.items || []).length || 1) === 1 ? '' : 's'} · ${order.diningType === 'TAKEAWAY' ? 'takeaway' : 'dine-in'}`;
 
         // Next Action Button
         let actionBtn = '';
         if (isNew) {
-          actionBtn = `<button type="button" class="btn btn-primary btn-sm" onclick="advanceOrderStatus('${order.id}', 'PREPARING')" style="border-radius: 9999px; font-size: 11px; padding: 6px 14px;">Start Cooking</button>`;
+          actionBtn = `<button type="button" class="btn btn-primary btn-sm" onclick="advanceOrderStatus('${escapeHtml(oid)}', 'PREPARING')" style="border-radius: 9999px; font-size: 11px; padding: 6px 14px;">Start Cooking</button>`;
         } else if (isCooking) {
-          actionBtn = `<button type="button" class="btn btn-secondary btn-sm" onclick="advanceOrderStatus('${order.id}', 'READY')" style="border-radius: 9999px; font-size: 11px; padding: 6px 14px; background: #FFFFFF; color: #111827;">Mark Ready</button>`;
+          actionBtn = `<button type="button" class="btn btn-secondary btn-sm" onclick="advanceOrderStatus('${escapeHtml(oid)}', 'READY')" style="border-radius: 9999px; font-size: 11px; padding: 6px 14px; background: #FFFFFF; color: #111827;">Mark Ready</button>`;
         } else if (isReady) {
-          actionBtn = `<button type="button" class="btn btn-primary btn-sm" onclick="advanceOrderStatus('${order.id}', 'COMPLETED')" style="border-radius: 9999px; font-size: 11px; padding: 6px 14px;">Settle / Done</button>`;
+          actionBtn = `<button type="button" class="btn btn-primary btn-sm" onclick="advanceOrderStatus('${escapeHtml(oid)}', 'COMPLETED')" style="border-radius: 9999px; font-size: 11px; padding: 6px 14px;">Settle / Done</button>`;
         }
 
         const categoryTab = isCompleted ? 'completed' : isCancelled ? 'cancelled' : 'live';
@@ -160,7 +171,8 @@ export function renderOrdersWorkspace(
           <div 
             class="order-card-docket" 
             data-tab-category="${categoryTab}"
-            style="background: ${cardBg}; color: ${textColor}; border-radius: 24px; padding: 24px; display: flex; flex-direction: column; justify-content: space-between; min-height: 200px; border: ${cardBorder}; box-shadow: 0 4px 20px rgba(0,0,0,0.04); transition: transform 120ms ease;"
+            data-search="${escapeHtml(`${oid} ${label} ${order.serverName || ''}`.toLowerCase())}"
+            style="background: ${cardBg}; color: ${textColor}; border-radius: 24px; padding: 24px; display: ${categoryTab === 'live' ? 'flex' : 'none'}; flex-direction: column; justify-content: space-between; min-height: 200px; border: ${cardBorder}; box-shadow: 0 4px 20px rgba(0,0,0,0.04); transition: transform 120ms ease;"
           >
             <div>
               <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
@@ -181,12 +193,13 @@ export function renderOrdersWorkspace(
               </div>
             </div>
 
-            <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 10px;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 10px; gap: 8px; flex-wrap: wrap;">
               <div>
                 <span style="font-size: 24px; font-weight: 800; color: ${textColor};">${price}</span>
                 <span style="font-size: 12px; color: ${subTextColor}; margin-left: 6px;">${order.elapsedMinutes || 5} min</span>
               </div>
               <div style="display: flex; gap: 6px; align-items: center;">
+                ${categoryTab === 'live' ? `<button type="button" class="btn btn-secondary btn-sm" onclick="openOrderDrawer('${escapeHtml(oid)}', '${escapeHtml(label)}', '${escapeHtml(price)}')" style="border-radius: 9999px; font-size: 11px; padding: 6px 12px;">Manage</button>` : ''}
                 ${actionBtn}
               </div>
             </div>
@@ -195,6 +208,25 @@ export function renderOrdersWorkspace(
       .join('')}
     </div>
 
+  </div>
+
+  <!-- Order Detail & Cancellation Drawer -->
+  <div id="order-detail-drawer" style="display: none; position: fixed; inset: 0; background: rgba(15, 23, 42, 0.45); backdrop-filter: blur(4px); z-index: 99999; align-items: center; justify-content: flex-end;">
+    <div style="background: #FFFFFF; width: 400px; max-width: 100vw; height: 100%; padding: 28px; box-sizing: border-box; display: flex; flex-direction: column; justify-content: space-between; box-shadow: -12px 0 40px rgba(0,0,0,0.15);">
+      <div>
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 18px;">
+          <h3 id="drawer-order-title" style="font-size: 20px; font-weight: 800; color: #0F172A; margin: 0;">Order Details</h3>
+          <button type="button" onclick="closeOrderDrawer()" style="background: #F1F5F9; border: none; border-radius: 999px; width: 32px; height: 32px; cursor: pointer; font-weight: 700;">✕</button>
+        </div>
+        <div style="font-size: 13px; color: #64748B; margin-bottom: 16px;" id="drawer-order-meta">Order ID</div>
+        <div id="drawer-cancel-box" style="background: #FEF2F2; border: 1px solid #FECACA; border-radius: 18px; padding: 16px; display: flex; flex-direction: column; gap: 10px;">
+          <label style="font-size: 12px; font-weight: 700; color: #991B1B;">Void / Cancellation Reason</label>
+          <input type="text" id="drawer-cancel-reason" placeholder="Reason required (min 3 chars)" style="width: 100%; padding: 9px 12px; border-radius: 10px; border: 1px solid #FCA5A5; font-size: 13px; box-sizing: border-box;" />
+          <button type="button" onclick="submitCancelOrder()" style="border: none; background: #DC2626; color: #FFFFFF; border-radius: 9999px; padding: 9px 16px; font-size: 13px; font-weight: 600; cursor: pointer;">Confirm Cancel Order</button>
+        </div>
+      </div>
+      <button type="button" onclick="closeOrderDrawer()" class="btn btn-secondary" style="border-radius: 9999px; width: 100%;">Close</button>
+    </div>
   </div>
 
   <style>
@@ -222,19 +254,59 @@ export function renderOrdersWorkspace(
   </style>
 
   <script>
-    function switchOrderTab(tabName, btn) {
-      document.querySelectorAll('.order-tab').forEach(b => b.classList.remove('active'));
-      btn.classList.add('active');
+    let currentOrderTab = 'live';
+    let drawerActiveOrderId = '';
 
+    function switchOrderTab(tabName, btn) {
+      currentOrderTab = tabName;
+      document.querySelectorAll('.order-tab').forEach(b => b.classList.remove('active'));
+      if (btn) btn.classList.add('active');
+      applyOrderFilters();
+    }
+
+    function filterOrdersSearch(q) {
+      applyOrderFilters(q);
+    }
+
+    function applyOrderFilters(queryOverride) {
+      const q = String(queryOverride !== undefined ? queryOverride : (document.getElementById('orders-search-input')?.value || '')).toLowerCase().trim();
       const dockets = document.querySelectorAll('.order-card-docket');
       dockets.forEach(d => {
         const cat = d.getAttribute('data-tab-category');
-        if (cat === tabName) {
-          d.style.display = 'flex';
-        } else {
-          d.style.display = 'none';
-        }
+        const hay = d.getAttribute('data-search') || '';
+        const matchTab = cat === currentOrderTab;
+        const matchSearch = !q || hay.includes(q);
+        d.style.display = (matchTab && matchSearch) ? 'flex' : 'none';
       });
+    }
+
+    function openOrderDrawer(orderId, label, price) {
+      drawerActiveOrderId = orderId;
+      document.getElementById('drawer-order-title').textContent = label + ' · ' + price;
+      document.getElementById('drawer-order-meta').textContent = 'Order ID: ' + orderId;
+      document.getElementById('drawer-cancel-reason').value = '';
+      document.getElementById('order-detail-drawer').style.display = 'flex';
+    }
+
+    function closeOrderDrawer() {
+      document.getElementById('order-detail-drawer').style.display = 'none';
+    }
+
+    async function submitCancelOrder() {
+      const reason = String(document.getElementById('drawer-cancel-reason')?.value || '').trim();
+      if (reason.length < 3) {
+        window.showToast('Please enter a cancellation reason (min 3 characters).', 'error');
+        return;
+      }
+      try {
+        await window.apiFetch('/api/restaurant/orders/' + encodeURIComponent(drawerActiveOrderId) + '/cancel', {
+          method: 'POST',
+          body: { reason }
+        });
+        closeOrderDrawer();
+        window.showToast('Order cancelled and audited.', 'success');
+        setTimeout(() => window.location.reload(), 500);
+      } catch (err) {}
     }
 
     async function advanceOrderStatus(orderId, nextStatus) {

@@ -414,7 +414,29 @@ export const ownersRoutes: RouteDefinition[] = [
       }
       const body = await context.parseBody();
       try {
-        const pub = await context.repo.publishTemplateDraft(body.changeNotes);
+        const currentBrand = await context.repo.getTenantBrand();
+        const targetTemplateId =
+          typeof body.templateId === 'string' && body.templateId.trim()
+            ? body.templateId.trim()
+            : currentBrand?.activeTemplateId;
+
+        if (targetTemplateId || body.primaryColor || body.studioConfig) {
+          await context.repo.updateTenantBrand({
+            ...(targetTemplateId ? { activeTemplateId: targetTemplateId } : {}),
+            ...(typeof body.primaryColor === 'string' && body.primaryColor.trim() ? { primaryColor: body.primaryColor.trim() } : {}),
+            ...(body.studioConfig && typeof body.studioConfig === 'object' ? { studioConfig: body.studioConfig } : {}),
+          } as any);
+        }
+        if (body.studioConfig) {
+          await context.repo.saveTemplateDraft({
+            templateId: targetTemplateId || 'tmpl_haute_gastronomy',
+            draftTokens: {
+              ...(body.primaryColor ? { primaryColor: body.primaryColor } : {}),
+              ...body.studioConfig,
+            },
+          }, targetTemplateId);
+        }
+        const pub = await context.repo.publishTemplateDraft(targetTemplateId);
         sendJson(res, 200, { success: true, data: pub });
       } catch (err: any) {
         sendJson(res, 400, { success: false, error: err.message });

@@ -60,8 +60,13 @@ export function renderDinerPwa(
 ): string {
   const brandName = brand?.restaurantName || 'Restaurant';
   const brandTagline = brand?.tagline || 'Farm-to-fork gastronomy, crafted over live charcoal embers.';
+  const studioCfg = (brand as any)?.studioConfig || {};
+  const layoutMode = studioCfg.layoutMode || 'cards';
+  const showTopDishes = studioCfg.showTopDishes !== false;
+  const showOrderStatusBar = studioCfg.showOrderStatusBar !== false;
+  const showVegFilter = Boolean(studioCfg.showVegFilter);
   const tmplTokens = template?.defaultTokens;
-  const primaryColor = tmplTokens?.primaryColor || brand?.primaryColor || '#C86B3C';
+  const primaryColor = brand?.primaryColor || tmplTokens?.primaryColor || '#C86B3C';
   const secondaryColor = tmplTokens?.secondaryColor || brand?.secondaryColor || '#D99A45';
   const bgColor = tmplTokens?.backgroundColor || '#080A0D';
   const surfaceColor = tmplTokens?.surfaceColor || '#12161E';
@@ -800,7 +805,7 @@ export function renderDinerPwa(
     }
   </style>
 </head>
-<body class="brand-custom-theme">
+<body class="brand-custom-theme" data-studio-layout="${layoutMode}" data-show-top-dishes="${showTopDishes}">
   <!-- 1. Welcoming Non-Blocking Seating Header (Owner Decision 1 Option A) -->
   <header id="seating-gate" class="seating-gate">
     <div style="display: flex; align-items: center; gap: 12px;">
@@ -817,7 +822,8 @@ export function renderDinerPwa(
       </div>
     </div>
 
-    <div style="display: flex; align-items: center; gap: 8px;">
+    <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
+      ${showVegFilter ? `<button type="button" id="veg-only-toggle-btn" class="btn btn-secondary btn-sm" style="padding: 5px 11px; font-size: 11px; font-weight: 700; border-radius: 999px;" onclick="window.__toggleVegFilter(this)">Veg only</button>` : ''}
       <span style="font-size: 11px; color: var(--theme-muted); text-transform: uppercase; letter-spacing: 0.06em; font-weight: 700;">Host:</span>
       <input type="text" id="guest-name-input" class="gate-input" placeholder="Your Name" value="Guest" onchange="currentGuestName = this.value.trim() || 'Guest'" />
       <button class="btn btn-secondary btn-sm" style="padding: 5px 12px; font-size: 11px; font-weight: 700;" onclick="confirmSeating()">
@@ -838,7 +844,7 @@ export function renderDinerPwa(
   </button>
 
   <!-- 4. Dynamic Order Telemetry Capsule -->
-  ${hasActiveOrder
+  ${hasActiveOrder && showOrderStatusBar
       ? `
   <div class="live-activity-capsule" onclick="openStatusSheet()">
     <div style="display: flex; flex-direction: column;">
@@ -849,6 +855,28 @@ export function renderDinerPwa(
   </div>`
       : ''
     }
+  <div id="diner-toast-bar" style="display:none;position:fixed;top:68px;left:50%;transform:translateX(-50%);z-index:9999;background:#0F172A;color:#FFFFFF;padding:10px 18px;border-radius:999px;font-size:12px;font-weight:700;box-shadow:0 8px 24px rgba(0,0,0,0.3);"></div>
+  <script>
+    window.__showDinerToast = function(msg) {
+      var el = document.getElementById('diner-toast-bar');
+      if (!el) return;
+      el.textContent = msg;
+      el.style.display = 'block';
+      clearTimeout(window.__dinerToastT);
+      window.__dinerToastT = setTimeout(function() { el.style.display = 'none'; }, 3500);
+    };
+    window.__vegOnlyActive = false;
+    window.__toggleVegFilter = function(btn) {
+      window.__vegOnlyActive = !window.__vegOnlyActive;
+      btn.style.background = window.__vegOnlyActive ? '#15803D' : '';
+      btn.style.color = window.__vegOnlyActive ? '#FFFFFF' : '';
+      document.querySelectorAll('[data-dietary]').forEach(function(card) {
+        var dt = String(card.getAttribute('data-dietary') || '').toUpperCase();
+        card.style.display = (window.__vegOnlyActive && dt === 'NON_VEG') ? 'none' : '';
+      });
+      if (window.__showDinerToast) window.__showDinerToast(window.__vegOnlyActive ? 'Showing Pure Veg dishes only' : 'Showing all dishes');
+    };
+  </script>
 
   <!-- 5. Item Customization Sheet (Strictly binds to item.modifierGroups) -->
   <div id="item-sheet" class="sheet-overlay" onclick="if(event.target === this) closeItemSheet()">
@@ -1430,10 +1458,10 @@ export function renderDinerPwa(
           closeCartSheet();
           openStatusSheet();
         } else {
-          alert('Could not submit order: ' + (json.error || 'Please re-authenticate seating'));
+          if (window.__showDinerToast) window.__showDinerToast('Could not submit order: ' + (json.error || 'Please re-authenticate seating'));
         }
       } catch (err) {
-        alert('Communication error submitting kitchen order.');
+        if (window.__showDinerToast) window.__showDinerToast('Communication error submitting kitchen order.');
       }
     }
     window.submitKitchenOrder = submitKitchenOrder;
@@ -2641,7 +2669,9 @@ function renderModernDinerComposition(
     }
 
     function openOrderTracker() {
-      alert('Order status: Food is being freshly prepared in the kitchen. Table ' + ${table.number} + '. Estimated ready: 5 mins.');
+      if (window.__showDinerToast) {
+        window.__showDinerToast('Kitchen is preparing your order for Table ' + ${table.number} + ' (Est. ~5 mins).');
+      }
     }
   </script>
   `;

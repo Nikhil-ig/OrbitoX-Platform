@@ -565,44 +565,55 @@ export function renderMenuWorkspace(
       }
     }
 
-    async function deleteCurrentDish() {
+    function deleteCurrentDish() {
       const id = document.getElementById('edit-dish-id').value;
       if (!id) return;
-      if (!confirm('Are you sure you want to remove this dish from the menu?')) return;
-
-      const delBtn = document.getElementById('delete-dish-btn');
-      delBtn.disabled = true;
-      delBtn.textContent = 'Removing...';
-
-      try {
-        await window.apiFetch('/api/restaurant/menu/items/' + encodeURIComponent(id), {
-          method: 'DELETE'
-        });
-        window.showToast('Dish removed from menu.', 'success');
-        setTimeout(() => window.location.reload(), 600);
-      } catch (err) {
-        delBtn.disabled = false;
-        delBtn.textContent = 'Hide from menu';
-      }
-    }
-
-    async function removeAllSampleDishes() {
-      if (!confirm('Remove all sample dishes from your menu?')) return;
-      const rows = document.querySelectorAll('.dish-row');
-      let removed = 0;
-      for (const row of rows) {
-        const id = row.getAttribute('data-dish-id');
-        if (id) {
+      const title = document.getElementById('edit-dish-name')?.value || 'this dish';
+      window.confirmAction({
+        title: 'Remove Dish from Menu',
+        message: 'Remove "' + title + '" from your live diner catalog?',
+        confirmLabel: 'Remove dish',
+        danger: true,
+        onConfirm: async () => {
+          const delBtn = document.getElementById('delete-dish-btn');
+          if (delBtn) { delBtn.disabled = true; delBtn.textContent = 'Removing...'; }
           try {
             await window.apiFetch('/api/restaurant/menu/items/' + encodeURIComponent(id), {
               method: 'DELETE'
             });
-            removed++;
-          } catch {}
+            window.showToast('Dish removed from menu.', 'success');
+            setTimeout(() => window.location.reload(), 500);
+          } catch (err) {
+            if (delBtn) { delBtn.disabled = false; delBtn.textContent = 'Hide from menu'; }
+          }
         }
-      }
-      window.showToast('Cleared sample menu items (' + removed + ' items removed)', 'success');
-      setTimeout(() => window.location.reload(), 600);
+      });
+    }
+
+    function removeAllSampleDishes() {
+      window.confirmAction({
+        title: 'Remove All Sample Dishes',
+        message: 'This will remove every dish currently listed in the sample catalog.',
+        confirmLabel: 'Remove all',
+        danger: true,
+        onConfirm: async () => {
+          const rows = document.querySelectorAll('.dish-row');
+          let removed = 0;
+          for (const row of rows) {
+            const id = row.getAttribute('data-dish-id');
+            if (id) {
+              try {
+                await window.apiFetch('/api/restaurant/menu/items/' + encodeURIComponent(id), {
+                  method: 'DELETE'
+                });
+                removed++;
+              } catch {}
+            }
+          }
+          window.showToast('Cleared sample menu items (' + removed + ' items removed)', 'success');
+          setTimeout(() => window.location.reload(), 500);
+        }
+      });
     }
 
     function addNewCategory() {

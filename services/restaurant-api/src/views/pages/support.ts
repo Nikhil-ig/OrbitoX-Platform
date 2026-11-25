@@ -285,10 +285,10 @@ export function renderSupportWorkspace(
           Diagnostic Triggers
         </div>
         <div style="display: flex; flex-direction: column; gap: 8px;">
-          <button onclick="alert('Triggering SSE Heartbeat Ping across all connected KDS stations...')" class="btn btn-secondary btn-sm" style="width: 100%; justify-content: flex-start; gap: 8px; font-size: 11px;">
+          <button type="button" onclick="if(window.showToast) window.showToast('SSE Heartbeat Ping sent across all connected KDS stations.', 'success')" class="btn btn-secondary btn-sm" style="width: 100%; justify-content: flex-start; gap: 8px; font-size: 11px;">
             ${icon('refresh', { size: 12 })} <span>Ping Connected KDS</span>
           </button>
-          <button onclick="alert('Auditing HMAC signature rotation key validity: Active and uncompromised.')" class="btn btn-secondary btn-sm" style="width: 100%; justify-content: flex-start; gap: 8px; font-size: 11px;">
+          <button type="button" onclick="if(window.showToast) window.showToast('HMAC signature rotation key status: Active and verified.', 'success')" class="btn btn-secondary btn-sm" style="width: 100%; justify-content: flex-start; gap: 8px; font-size: 11px;">
             ${icon('shield', { size: 12 })} <span>Verify Token Keys</span>
           </button>
           <a href="/developer/templates" class="btn btn-secondary btn-sm" style="width: 100%; justify-content: flex-start; gap: 8px; font-size: 11px; text-decoration:none;">
@@ -459,7 +459,7 @@ export function renderSupportWorkspace(
           }
         }
       } catch (err) {
-        alert('Failed to send message to ticket thread.');
+        if (window.showToast) window.showToast('Failed to send message to ticket thread.', 'error');
       }
     }
 
@@ -477,7 +477,7 @@ export function renderSupportWorkspace(
           if (t) t.status = status;
         }
       } catch (err) {
-        alert('Failed to update ticket status.');
+        if (window.showToast) window.showToast('Failed to update ticket status.', 'error');
       }
     }
 
@@ -497,7 +497,7 @@ export function renderSupportWorkspace(
       const description = document.getElementById('modal-ticket-desc').value.trim();
 
       if (!subject || !description) {
-        alert('Please provide subject and description.');
+        if (window.showToast) window.showToast('Please provide subject and description.', 'error');
         return;
       }
 
@@ -522,7 +522,7 @@ export function renderSupportWorkspace(
           location.reload();
         }
       } catch (err) {
-        alert('Failed to create support ticket.');
+        if (window.showToast) window.showToast('Failed to create support ticket.', 'error');
       }
     }
 

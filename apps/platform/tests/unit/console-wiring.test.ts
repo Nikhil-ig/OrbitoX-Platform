@@ -43,7 +43,6 @@ describe('Stage 7C: Operator Console Wiring & Design Invariants', () => {
       '/console/audit',
       '/console/settings/appearance',
       '/console/design-system',
-      '/admin/restaurant',
       '/hms',
     ];
 

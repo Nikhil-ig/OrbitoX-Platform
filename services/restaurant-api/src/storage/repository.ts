@@ -25,6 +25,7 @@ import {
   ActiveTenantContext,
   withTenantRlsTransaction,
   ResolvedMenuItem,
+  DEFAULT_TEMPLATES,
 } from '../shared';
 import {
   DiningSessionRecord,
@@ -2691,7 +2692,8 @@ export class PostgresRestaurantRepository implements RestaurantRepository {
 
   async getTemplates(): Promise<any[]> {
     const brand = await this.getTenantBrand();
-    return brand?.templates || [];
+    const list = brand?.templates;
+    return Array.isArray(list) && list.length > 0 ? list : DEFAULT_TEMPLATES;
   }
 
   async getTemplateById(id: string): Promise<any | undefined> {
@@ -2714,8 +2716,10 @@ export class PostgresRestaurantRepository implements RestaurantRepository {
 
   async publishTemplateDraft(id?: string): Promise<any> {
     const draft = await this.getTemplateDraft(id);
-    if (!draft) return undefined;
-    return this.updateTenantBrand({ activeTemplateId: id || draft.templateId || 'default' });
+    const brand = await this.getTenantBrand();
+    const targetId = id || draft?.templateId || brand?.activeTemplateId;
+    if (!targetId) return undefined;
+    return this.updateTenantBrand({ activeTemplateId: targetId });
   }
 
   async installTemplate(templateId: string, branchId?: string): Promise<any> {

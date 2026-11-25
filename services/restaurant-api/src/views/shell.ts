@@ -37,6 +37,9 @@ export interface ShellOptions {
   | 'staff'
   | 'support'
   | 'onboarding'
+  | 'pos'
+  | 'host'
+  | 'marketplace'
   | 'invoices';
   restaurantName?: string;
   tenantName?: string;
@@ -50,6 +53,10 @@ export interface ShellOptions {
   staffRole?: string;
   tablesCount?: number;
   ordersCount?: number;
+  menuItemsCount?: number;
+  planName?: string;
+  tablesLimit?: number;
+  menuItemsLimit?: number;
 }
 
 export function renderShell(contentHtml: string, options: ShellOptions): string {
@@ -68,7 +75,11 @@ export function renderShell(contentHtml: string, options: ShellOptions): string 
   const serviceShift = options.currentServiceShift || 'Dinner Service';
   const activeNav = options.activeNav;
   const pageTitle = options.title || 'Operations';
-  const tablesCount = options.tablesCount || 30;
+  const tablesCount = typeof options.tablesCount === 'number' ? options.tablesCount : 0;
+  const menuItemsCount = typeof options.menuItemsCount === 'number' ? options.menuItemsCount : 0;
+  const tablesLimit = typeof options.tablesLimit === 'number' && options.tablesLimit > 0 ? options.tablesLimit : 200;
+  const menuItemsLimit = typeof options.menuItemsLimit === 'number' && options.menuItemsLimit > 0 ? options.menuItemsLimit : 500;
+  const planName = options.planName || 'Growth plan';
 
   const controlPlaneUrl = process.env.ORBITOX_CONTROL_PLANE_URL || 'http://localhost:3005';
 
@@ -163,6 +174,49 @@ export function renderShell(contentHtml: string, options: ShellOptions): string 
         throw new Error(errMsg);
       }
       return data;
+    };
+
+    window.confirmAction = function({ title = 'Confirm Action', message = 'Are you sure?', confirmLabel = 'Confirm', danger = false, onConfirm }) {
+      const existing = document.getElementById('global-confirm-modal');
+      if (existing) existing.remove();
+      const backdrop = document.createElement('div');
+      backdrop.id = 'global-confirm-modal';
+      backdrop.style.cssText = 'position:fixed;inset:0;background:rgba(15,23,42,0.5);backdrop-filter:blur(4px);z-index:99999;display:flex;align-items:center;justify-content:center;padding:16px;';
+      const card = document.createElement('div');
+      card.style.cssText = 'background:#FFFFFF;border-radius:24px;padding:28px;max-width:410px;width:100%;box-shadow:0 20px 45px rgba(0,0,0,0.2);border:1px solid rgba(0,0,0,0.06);';
+      const h = document.createElement('h3');
+      h.style.cssText = 'margin:0 0 8px 0;font-size:19px;font-weight:800;color:#0F172A;';
+      h.textContent = title;
+      const p = document.createElement('p');
+      p.style.cssText = 'margin:0 0 22px 0;font-size:13px;color:#475569;line-height:1.5;';
+      p.textContent = message;
+      const actions = document.createElement('div');
+      actions.style.cssText = 'display:flex;justify-content:flex-end;gap:10px;';
+      const cancelBtn = document.createElement('button');
+      cancelBtn.type = 'button';
+      cancelBtn.className = 'btn btn-secondary';
+      cancelBtn.style.cssText = 'border-radius:9999px;padding:9px 20px;font-size:13px;font-weight:600;';
+      cancelBtn.textContent = 'Cancel';
+      cancelBtn.onclick = () => backdrop.remove();
+      const confirmBtn = document.createElement('button');
+      confirmBtn.type = 'button';
+      confirmBtn.style.cssText = 'border:none;border-radius:9999px;padding:9px 22px;font-size:13px;font-weight:600;color:#FFFFFF;cursor:pointer;background:' + (danger ? '#DC2626' : '#0F172A') + ';';
+      confirmBtn.textContent = confirmLabel;
+      confirmBtn.onclick = async () => {
+        confirmBtn.disabled = true;
+        try {
+          if (typeof onConfirm === 'function') await onConfirm();
+        } finally {
+          backdrop.remove();
+        }
+      };
+      actions.appendChild(cancelBtn);
+      actions.appendChild(confirmBtn);
+      card.appendChild(h);
+      card.appendChild(p);
+      card.appendChild(actions);
+      backdrop.appendChild(card);
+      document.body.appendChild(backdrop);
     };
   </script>
   <style>
@@ -654,25 +708,25 @@ export function renderShell(contentHtml: string, options: ShellOptions): string 
       <!-- Bottom Quota Usage Card -->
       <div class="quota-card">
         <div class="quota-header">
-          <span class="quota-plan-name">Growth plan</span>
-          <a href="${controlPlaneUrl}" target="_blank" class="quota-upgrade-link">Upgrade</a>
+          <span class="quota-plan-name">${planName}</span>
+          <a href="${controlPlaneUrl}" target="_blank" rel="noopener" class="quota-upgrade-link">Upgrade</a>
         </div>
         <div class="quota-stat">
           <div class="quota-stat-labels">
             <span>Tables</span>
-            <span>${tablesCount} / 200</span>
+            <span>${tablesCount} / ${tablesLimit}</span>
           </div>
           <div class="quota-progress-bar">
-            <div class="quota-progress-fill" style="width: ${Math.min(100, Math.round((tablesCount / 200) * 100))}%;"></div>
+            <div class="quota-progress-fill" style="width: ${Math.min(100, Math.round((tablesCount / tablesLimit) * 100))}%;"></div>
           </div>
         </div>
         <div class="quota-stat">
           <div class="quota-stat-labels">
             <span>Menu items</span>
-            <span>18 / 500</span>
+            <span>${menuItemsCount} / ${menuItemsLimit}</span>
           </div>
           <div class="quota-progress-bar">
-            <div class="quota-progress-fill" style="width: 4%;"></div>
+            <div class="quota-progress-fill" style="width: ${Math.min(100, Math.round((menuItemsCount / menuItemsLimit) * 100))}%;"></div>
           </div>
         </div>
       </div>
@@ -692,10 +746,10 @@ export function renderShell(contentHtml: string, options: ShellOptions): string 
             <span id="sse-label">Live</span>
           </div>
 
-          <button type="button" class="cmdk-btn" onclick="openCommandPalette()">
+          <button type="button" id="cmdk-trigger-btn" class="cmdk-btn" onclick="openCommandPalette()" aria-label="Open command palette">
             ${icon('search', { size: 13 })}
             <span>Search...</span>
-            <kbd>⌘K</kbd>
+            <kbd id="cmdk-shortcut-kbd">⌘K</kbd>
           </button>
         </div>
       </div>
@@ -721,50 +775,66 @@ export function renderShell(contentHtml: string, options: ShellOptions): string 
     <a href="/operations/floor${contextQuery}" class="dock-link ${isNavActive('floor') ? 'active' : ''}" title="Floor">
       ${icon('layout-grid', { size: 18 })}
     </a>
-    <button type="button" class="dock-link" style="background: transparent; border: none; cursor: pointer;" onclick="toggleMobileSidebar()" title="More">
-      ${icon('menu', { size: 18 })}
+    <button type="button" class="dock-link" style="background: transparent; border: none; cursor: pointer;" onclick="openCommandPalette()" title="Search & Quick Jump">
+      ${icon('search', { size: 18 })}
     </button>
   </nav>
 
-  <!-- Command Palette (⌘K) Modal -->
-  <div class="cmdk-backdrop" id="cmdk-modal" onclick="if(event.target === this) closeCommandPalette()">
+  <!-- Command Palette (⌘K / Ctrl+K) Modal -->
+  <div class="cmdk-backdrop" id="cmdk-modal" role="dialog" aria-modal="true" aria-label="Command palette" onclick="if(event.target === this) closeCommandPalette()">
     <div class="cmdk-box">
-      <input type="text" id="cmdk-search" class="cmdk-input" placeholder="Search tables, orders, dishes, commands..." oninput="handleCmdkInput(this.value)" autocomplete="off">
+      <input type="text" id="cmdk-search" class="cmdk-input" placeholder="Search routes, terminals, dishes, commands..." oninput="handleCmdkInput(this.value)" autocomplete="off">
       <div class="cmdk-results" id="cmdk-list">
         <a href="/${contextQuery}" class="cmdk-item">
-          <span>${icon('home', { size: 14 })} Today Operations Command</span>
+          <span>${icon('home', { size: 14 })} Today · Operations Overview</span>
+          <kbd>↵</kbd>
+        </a>
+        <a href="/pos${contextQuery}" class="cmdk-item">
+          <span>${icon('credit-card', { size: 14 })} POS Terminal (Billing &amp; KOT)</span>
+          <kbd>↵</kbd>
+        </a>
+        <a href="/host${contextQuery}" class="cmdk-item">
+          <span>${icon('users', { size: 14 })} Host Stand &amp; Walk-in Queue</span>
           <kbd>↵</kbd>
         </a>
         <a href="/operations/orders${contextQuery}" class="cmdk-item">
-          <span>${icon('orders', { size: 14 })} View Live Orders</span>
+          <span>${icon('orders', { size: 14 })} Orders Ledger</span>
           <kbd>↵</kbd>
         </a>
         <a href="/kds${contextQuery}" class="cmdk-item">
-          <span>${icon('monitor', { size: 14 })} Open Kitchen Screen (KDS)</span>
+          <span>${icon('monitor', { size: 14 })} Kitchen Display (KDS)</span>
           <kbd>↵</kbd>
         </a>
         <a href="/menu${contextQuery}" class="cmdk-item">
-          <span>${icon('menu', { size: 14 })} Manage Menu & Pricing</span>
+          <span>${icon('menu', { size: 14 })} Menu &amp; Pricing Catalog</span>
           <kbd>↵</kbd>
         </a>
         <a href="/operations/floor${contextQuery}" class="cmdk-item">
-          <span>${icon('layout-grid', { size: 14 })} Floor Canvas & Tables Editor</span>
+          <span>${icon('layout-grid', { size: 14 })} Floor Studio &amp; Spatial Map</span>
           <kbd>↵</kbd>
         </a>
-        <a href="/operations/locations${contextQuery}" class="cmdk-item">
-          <span>${icon('map-pin', { size: 14 })} Branches Management</span>
+        <a href="/marketplace${contextQuery}" class="cmdk-item">
+          <span>${icon('marketplace', { size: 14 })} Template Marketplace (Discovery)</span>
           <kbd>↵</kbd>
         </a>
-        <a href="/operations/staff${contextQuery}" class="cmdk-item">
-          <span>${icon('users', { size: 14 })} Staff & Roles (RBAC)</span>
+        <a href="/studio${contextQuery}" class="cmdk-item">
+          <span>${icon('smartphone', { size: 14 })} Template Studio (Customize &amp; Publish)</span>
           <kbd>↵</kbd>
         </a>
         <a href="/operations/invoices${contextQuery}" class="cmdk-item">
-          <span>${icon('file-text', { size: 14 })} Invoices & GST Invoicing</span>
+          <span>${icon('file-text', { size: 14 })} Invoices &amp; GST Export</span>
+          <kbd>↵</kbd>
+        </a>
+        <a href="/operations/locations${contextQuery}" class="cmdk-item">
+          <span>${icon('map-pin', { size: 14 })} Branches &amp; Locations</span>
+          <kbd>↵</kbd>
+        </a>
+        <a href="/operations/staff${contextQuery}" class="cmdk-item">
+          <span>${icon('users', { size: 14 })} Staff &amp; PIN Access</span>
           <kbd>↵</kbd>
         </a>
         <a href="/whitelabel${contextQuery}" class="cmdk-item">
-          <span>${icon('settings', { size: 14 })} Settings & Custom Domains</span>
+          <span>${icon('settings', { size: 14 })} Settings, GSTIN &amp; Custom Domains</span>
           <kbd>↵</kbd>
         </a>
       </div>
@@ -804,22 +874,32 @@ export function renderShell(contentHtml: string, options: ShellOptions): string 
       }
     });
 
-    // Command Palette Logic (⌘K)
+    // Command Palette Logic (Cmd+K / Ctrl+K)
     let cmdkSelectedIndex = 0;
+    let lastFocusedBeforeCmdk = null;
+    (function initShortcutLabel() {
+      const kbd = document.getElementById('cmdk-shortcut-kbd');
+      if (kbd && typeof navigator !== 'undefined' && !/Mac|iPhone|iPad/i.test(navigator.platform || '')) {
+        kbd.textContent = 'Ctrl+K';
+      }
+    })();
     function openCommandPalette() {
       const modal = document.getElementById('cmdk-modal');
       const input = document.getElementById('cmdk-search');
       if (modal) {
+        lastFocusedBeforeCmdk = document.activeElement;
         modal.classList.add('open');
         input.value = '';
-        input.focus();
-        cmdkSelectedIndex = 0;
-        updateCmdkSelection();
+        handleCmdkInput('');
+        setTimeout(() => input.focus(), 20);
       }
     }
     function closeCommandPalette() {
       const modal = document.getElementById('cmdk-modal');
       if (modal) modal.classList.remove('open');
+      if (lastFocusedBeforeCmdk && typeof lastFocusedBeforeCmdk.focus === 'function') {
+        lastFocusedBeforeCmdk.focus();
+      }
     }
     function getVisibleCmdkItems() {
       const list = document.getElementById('cmdk-list');

@@ -142,8 +142,8 @@ async function runMilestone2CoreTests() {
       assert.strictEqual(res.status, 200, 'Floor studio must return 200 OK');
       pass('Floor Studio route returns 200 OK');
 
-      // Check SVG canvas container and touch-action: none
-      assert.ok(res.raw.includes('id="floor-svg"'), 'Floor SVG element present');
+      // Check spatial canvas container and touch-action: none
+      assert.ok(res.raw.includes('id="floor-canvas-grid"'), 'Floor spatial canvas container present');
       assert.ok(res.raw.includes('touch-action: none'), 'Canvas must have touch-action: none for 2D dragging');
       pass('Canvas configured with touch-action: none for uninterrupted pointer dragging');
 
