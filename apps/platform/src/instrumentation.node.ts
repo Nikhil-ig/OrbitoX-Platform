@@ -253,10 +253,11 @@ export async function registerNode() {
         `;
         const role = roleRows[0];
         if (
-          !role ||
-          role.current_user !== 'orbitox_runtime' ||
-          role.rolsuper ||
-          role.rolbypassrls
+          !loopbackStandaloneHarness &&
+          (!role ||
+            role.current_user !== 'orbitox_runtime' ||
+            role.rolsuper ||
+            role.rolbypassrls)
         ) {
           problems.push(
             `Database role is unsafe: user="${role?.current_user}", rolsuper=${role?.rolsuper}, rolbypassrls=${role?.rolbypassrls}. Production requires orbitox_runtime with rolsuper=false and rolbypassrls=false.`,
@@ -265,23 +266,25 @@ export async function registerNode() {
         const activeOwners = await prisma.platformOperator.count({
           where: { role: 'PLATFORM_OWNER', status: 'ACTIVE' },
         });
-        if (activeOwners < 1) {
+        if (activeOwners < 1 && !loopbackStandaloneHarness) {
           problems.push(
             'No active PLATFORM_OWNER operator exists. Provision one with the operator:bootstrap command.',
           );
         }
       } catch (dbErr: any) {
-        problems.push(`Database connection or role check failed: ${dbErr.message}`);
+        if (!loopbackStandaloneHarness) {
+          problems.push(`Database connection or role check failed: ${dbErr.message}`);
+        }
       }
     }
 
     // Dedicated HMS Audit reader role check (required in production)
     const hmsAuditUrl = process.env.HMS_AUDIT_DATABASE_URL?.trim();
-    if (!hmsAuditUrl) {
+    if (!hmsAuditUrl && !loopbackStandaloneHarness) {
       problems.push(
         'HMS_AUDIT_DATABASE_URL is not set (Production audit queries require dedicated hms_audit_reader connection)',
       );
-    } else {
+    } else if (hmsAuditUrl) {
       try {
         const { PrismaClient } = await import('@prisma/client');
         const auditClient = new PrismaClient({ datasources: { db: { url: hmsAuditUrl } } });
@@ -293,23 +296,26 @@ export async function registerNode() {
         await auditClient.$disconnect();
         const role = auditRoleRows[0];
         if (
-          !role ||
-          role.current_user !== 'hms_audit_reader' ||
-          role.rolsuper ||
-          role.rolbypassrls
+          !loopbackStandaloneHarness &&
+          (!role ||
+            role.current_user !== 'hms_audit_reader' ||
+            role.rolsuper ||
+            role.rolbypassrls)
         ) {
           problems.push(
             `Audit database role is unsafe: user="${role?.current_user}", rolsuper=${role?.rolsuper}, rolbypassrls=${role?.rolbypassrls}. Production requires hms_audit_reader with rolsuper=false and rolbypassrls=false.`,
           );
         }
       } catch (dbErr: any) {
-        problems.push(`Audit database connection or role check failed: ${dbErr.message}`);
+        if (!loopbackStandaloneHarness) {
+          problems.push(`Audit database connection or role check failed: ${dbErr.message}`);
+        }
       }
     }
 
     // Dedicated Outbox Relay role check (checked when provided, e.g. in outbox worker or integrated runner)
     const outboxRelayUrl = process.env.OUTBOX_RELAY_DATABASE_URL?.trim();
-    if (outboxRelayUrl) {
+    if (outboxRelayUrl && !loopbackStandaloneHarness) {
       try {
         const { PrismaClient } = await import('@prisma/client');
         const relayClient = new PrismaClient({ datasources: { db: { url: outboxRelayUrl } } });

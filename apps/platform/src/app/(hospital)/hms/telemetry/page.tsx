@@ -1,5 +1,7 @@
 'use client';
 
+import { hmsAuthHeaders } from '../lib/csrf';
+
 import React, { useState, useEffect, useRef } from 'react';
 import HospitalNavLayout from '../components/HospitalNavLayout';
 import Link from 'next/link';
@@ -168,83 +170,98 @@ export default function TelemetryGridPage() {
   const [selectedEcgStation, setSelectedEcgStation] = useState<TelemetryStation | null>(null);
   const [telemetryNotice, setTelemetryNotice] = useState<{ tone: 'success' | 'error'; text: string } | null>(null);
 
-  // Fetch real stations from live beds in OrbitoX Database
-  const fetchLiveStations = async () => {
+  // Fetch real stations & persisted telemetry state from OrbitoX PostgreSQL
+  const fetchLiveStations = async (showSpinner = false) => {
     try {
-      setLoading(true);
-      const res = await fetch('/api/hospital/beds');
+      if (showSpinner) setLoading(true);
+      const res = await fetch('/api/hospital/telemetry');
       const data = await res.json();
-      if (data.success && data.data) {
-        const live: TelemetryStation[] = data.data.map((bed: any, index: number) => {
+      if (!res.ok || !data.success) {
+        setTelemetryNotice({
+          tone: 'error',
+          text: (typeof data.error === 'string' ? data.error : data.error?.message) || `Failed to load telemetry (HTTP ${res.status})`,
+        });
+        return;
+      }
+      if (data.data) {
+        const live: TelemetryStation[] = data.data.map((bed: any) => {
           const eq = bed.attachedEquipment && bed.attachedEquipment[0];
-          const devName = eq ? `${eq.manufacturer || ''} ${eq.model || eq.deviceId || 'Monitor'}`.trim() : 'IntelliVue MX800';
+          const devName = eq
+            ? `${eq.manufacturer || ''} ${eq.model || eq.deviceId || 'Monitor'}`.trim()
+            : 'IntelliVue MX800';
 
-          const spo2 = bed.status === 'occupied' ? (96 + (index % 3)) : 99;
-          const hr = bed.status === 'occupied' ? (78 + (index * 4)) : 70;
-          const bp = bed.status === 'occupied' ? '124/80' : '118/76';
-          const temp = 37.0;
-          const resp = 16;
-          const isAlarm = bed.status === 'alarm';
+          const persistedVitals = bed.vitals || {};
+          const isAlarm = Boolean(bed.alarmActive) || bed.status === 'alarm';
+          const spo2 = Number(persistedVitals.spo2 ?? (isAlarm ? 81 : bed.status === 'occupied' ? 98 : 99));
+          const hr = Number(persistedVitals.heartRate ?? persistedVitals.hr ?? (isAlarm ? 155 : bed.status === 'occupied' ? 78 : 70));
+          const bpSys = Number(persistedVitals.bpSys ?? (isAlarm ? 185 : 122));
+          const bpDia = Number(persistedVitals.bpDia ?? (isAlarm ? 110 : 80));
+          const bp = persistedVitals.bp || `${bpSys}/${bpDia}`;
+          const temp = Number(persistedVitals.temperature ?? persistedVitals.temp ?? (isAlarm ? 39.4 : 37.0));
+          const resp = Number(persistedVitals.respiratoryRate ?? persistedVitals.resp ?? (isAlarm ? 34 : 16));
 
           const news2 = ClinicalAIEngine.calculateNews2({
-            spo2: isAlarm ? 81 : spo2,
-            heartRate: isAlarm ? 155 : hr,
-            systolicBp: isAlarm ? 185 : 124,
-            temperature: isAlarm ? 39.4 : temp,
-            respiratoryRate: isAlarm ? 34 : resp
+            spo2,
+            heartRate: hr,
+            systolicBp: bpSys,
+            temperature: temp,
+            respiratoryRate: resp,
           });
+
+          const patientLabel = bed.patient
+            ? bed.patient.name || bed.patient.mrn || bed.patient.id
+            : 'Unoccupied Station';
 
           return {
             id: bed.id,
-            patient: bed.patient ? bed.patient.name : 'Unoccupied Station',
+            patient: patientLabel,
             bed: bed.label,
             device: devName,
-            spo2: isAlarm ? 81 : spo2,
-            hr: isAlarm ? 155 : hr,
-            bp: isAlarm ? '185/110' : bp,
-            temp: isAlarm ? 39.4 : temp,
-            resp: isAlarm ? 34 : resp,
+            spo2,
+            hr,
+            bp,
+            temp,
+            resp,
             isAlarm,
-            news2
+            news2,
           };
         });
         setStations(live);
       }
-    } catch (err) {
+    } catch (err: any) {
       console.error('Failed to fetch telemetry stations from OrbitoX DB:', err);
+      setTelemetryNotice({ tone: 'error', text: err?.message || 'Unable to connect to telemetry service' });
     } finally {
       setLoading(false);
     }
   };
 
   useEffect(() => {
-    fetchLiveStations();
+    fetchLiveStations(true);
   }, []);
 
   useEffect(() => {
-    const interval = setInterval(() => {
+    const pulseInterval = setInterval(() => {
       setPulse((p) => !p);
-      setStations((prev) =>
-        prev.map((s) => {
-          if (s.isAlarm) return s;
-          const newHr = Math.max(50, Math.min(120, s.hr + (Math.random() > 0.5 ? 1 : -1)));
-          return {
-            ...s,
-            hr: newHr
-          };
-        })
-      );
     }, 1000);
-    return () => clearInterval(interval);
+    const pollInterval = setInterval(() => {
+      fetchLiveStations(false);
+    }, 8000);
+    return () => {
+      clearInterval(pulseInterval);
+      clearInterval(pollInterval);
+    };
   }, []);
 
   const triggerAlarm = async (stationId: string) => {
+    const previousStations = stations;
+    const alarmVitals = { spo2: 81, heartRate: 155, bpSys: 185, bpDia: 110, temperature: 39.4, respiratoryRate: 34 };
     const news2 = ClinicalAIEngine.calculateNews2({
-      spo2: 81,
-      heartRate: 155,
-      systolicBp: 185,
-      temperature: 39.4,
-      respiratoryRate: 34
+      spo2: alarmVitals.spo2,
+      heartRate: alarmVitals.heartRate,
+      systolicBp: alarmVitals.bpSys,
+      temperature: alarmVitals.temperature,
+      respiratoryRate: alarmVitals.respiratoryRate,
     });
 
     setStations((prev) =>
@@ -255,28 +272,43 @@ export default function TelemetryGridPage() {
       )
     );
 
-    // Send real breach to OrbitoX backend & cryptographic audit ledger
     try {
-      await fetch('/api/hospital/telemetry', {
+      const res = await fetch('/api/hospital/telemetry', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: hmsAuthHeaders(),
         body: JSON.stringify({
           bedId: stationId,
-          vitals: { spo2: 81, heartRate: 155, bpSys: 185, bpDia: 110, temperature: 39.4, respiratoryRate: 34 }
+          event: 'TELEMETRY_ALARM',
+          alarmActive: true,
+          message: 'Acute clinical deterioration alarm triggered',
+          vitals: alarmVitals,
         })
       });
-    } catch (e) {
-      console.warn(e);
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok || !json.success) {
+        setStations(previousStations);
+        setTelemetryNotice({
+          tone: 'error',
+          text: (typeof json.error === 'string' ? json.error : json.error?.message) || `Alarm persistence failed (HTTP ${res.status})`,
+        });
+        return;
+      }
+      setTelemetryNotice({ tone: 'success', text: `Telemetry alarm persisted for station ${stationId}.` });
+    } catch (e: any) {
+      setStations(previousStations);
+      setTelemetryNotice({ tone: 'error', text: e?.message || 'Network failure persisting alarm' });
     }
   };
 
   const clearAlarm = async (stationId: string) => {
+    const previousStations = stations;
+    const baselineVitals = { spo2: 98, heartRate: 78, bpSys: 122, bpDia: 80, temperature: 37.0, respiratoryRate: 16 };
     const news2 = ClinicalAIEngine.calculateNews2({
-      spo2: 98,
-      heartRate: 78,
-      systolicBp: 122,
-      temperature: 37.0,
-      respiratoryRate: 16
+      spo2: baselineVitals.spo2,
+      heartRate: baselineVitals.heartRate,
+      systolicBp: baselineVitals.bpSys,
+      temperature: baselineVitals.temperature,
+      respiratoryRate: baselineVitals.respiratoryRate,
     });
 
     setStations((prev) =>
@@ -286,6 +318,33 @@ export default function TelemetryGridPage() {
           : s
       )
     );
+
+    try {
+      const res = await fetch('/api/hospital/telemetry', {
+        method: 'POST',
+        headers: hmsAuthHeaders(),
+        body: JSON.stringify({
+          bedId: stationId,
+          event: 'TELEMETRY_ALARM_CLEARED',
+          alarmActive: false,
+          message: 'Alarm acknowledged and cleared by clinician',
+          vitals: baselineVitals,
+        }),
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok || !json.success) {
+        setStations(previousStations);
+        setTelemetryNotice({
+          tone: 'error',
+          text: (typeof json.error === 'string' ? json.error : json.error?.message) || `Failed to clear alarm (HTTP ${res.status})`,
+        });
+        return;
+      }
+      setTelemetryNotice({ tone: 'success', text: `Telemetry alarm cleared and audited for station ${stationId}.` });
+    } catch (e: any) {
+      setStations(previousStations);
+      setTelemetryNotice({ tone: 'error', text: e?.message || 'Network failure clearing alarm' });
+    }
   };
 
   return (

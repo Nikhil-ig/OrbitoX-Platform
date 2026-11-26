@@ -202,7 +202,8 @@ export async function checkPassword(
       FROM "HmsStaff" s
       JOIN "HmsStaffCredential" c
         ON c."tenantId" = s."tenantId" AND c."staffId" = s.id
-     WHERE ($1::text IS NULL OR s.id = $1)
+     WHERE s."tenantId" = $3
+       AND ($1::text IS NULL OR s.id = $1)
        AND ($2::text IS NULL OR s."emailBlind" = $2)
      LIMIT 1
   `;
@@ -213,7 +214,7 @@ export async function checkPassword(
     passwordHash: string;
     salt: string;
     lockedUntil: Date | string | null;
-  }>(query, [who.staffId ?? null, who.emailBlind ?? null]);
+  }>(query, [who.staffId ?? null, who.emailBlind ?? null, tx.tenantId]);
 
   const row = rows[0];
 
@@ -265,9 +266,9 @@ export async function recordFailure(
               ELSE NULL
             END,
             "updatedAt" = COALESCE($2::timestamptz, now())
-      WHERE "staffId" = $1
+      WHERE "staffId" = $1 AND "tenantId" = $3
       RETURNING "failedAttempts", "lockedUntil"`,
-    [staffId, atTimeIso],
+    [staffId, atTimeIso, tx.tenantId],
   );
   if (!rows[0]) {
     return { failedAttempts: 0, lockedUntil: null };
@@ -287,9 +288,9 @@ export async function unlockStaffCredential(
         SET "failedAttempts" = 0,
             "lockedUntil" = NULL,
             "updatedAt" = now()
-      WHERE "staffId" = $1
+      WHERE "staffId" = $1 AND "tenantId" = $2
       RETURNING "staffId"`,
-    [staffId],
+    [staffId, tx.tenantId],
   );
   if (!rows[0]) {
     throw new HttpError(404, 'STAFF_NOT_FOUND', 'Staff member credential not found');
@@ -312,15 +313,15 @@ export async function createSession(
             "lockedUntil" = NULL,
             "lastLoginAt" = now(),
             "updatedAt" = now()
-      WHERE "staffId" = $1`,
-    [outcome.staffId],
+      WHERE "staffId" = $1 AND "tenantId" = $2`,
+    [outcome.staffId, tx.tenantId],
   );
 
   // 2) Verify or create role if missing
   let roleId = outcome.roleId;
   const { rows: existingRoles } = await tx.query<{ id: string }>(
-    `SELECT id FROM "HmsRole" WHERE id = $1 OR name = $2 LIMIT 1`,
-    [outcome.roleId, outcome.roleName],
+    `SELECT id FROM "HmsRole" WHERE (id = $1 OR name = $2) AND "tenantId" = $3 LIMIT 1`,
+    [outcome.roleId, outcome.roleName, tx.tenantId],
   );
   if (existingRoles.length > 0) {
     roleId = existingRoles[0]!.id;
@@ -346,15 +347,15 @@ export async function createSession(
 
   // 4) Fetch permissions
   const { rows: permRows } = await tx.query<{ permission: string }>(
-    `SELECT permission FROM "HmsRolePermission" WHERE "roleId" = $1`,
-    [roleId],
+    `SELECT permission FROM "HmsRolePermission" WHERE "roleId" = $1 AND "tenantId" = $2`,
+    [roleId, tx.tenantId],
   );
   const permissions = permRows.map((r) => r.permission);
 
   // 5) Fetch staff details
   const { rows: staffRows } = await tx.query<{ id: string; role: string; departmentId: string | null; onDuty: boolean }>(
-    `SELECT id, role, "departmentId", "onDuty" FROM "HmsStaff" WHERE id = $1`,
-    [outcome.staffId],
+    `SELECT id, role, "departmentId", "onDuty" FROM "HmsStaff" WHERE id = $1 AND "tenantId" = $2`,
+    [outcome.staffId, tx.tenantId],
   );
 
   return {

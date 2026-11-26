@@ -8,20 +8,25 @@ export const GET = withHospitalGuard(async (_req: NextRequest, _routeContext, au
   try {
     const data = await withTenantTx(prisma, authContext.tenantId, async (tx) => {
       const { rows: patientCount } = await tx.query<{ count: string }>(
-        `SELECT COUNT(*)::text as "count" FROM "HmsPatient" WHERE "processingStatus" = 'ACTIVE'`
+        `SELECT COUNT(*)::text as "count" FROM "HmsPatient" WHERE "tenantId" = $1 AND "processingStatus" = 'ACTIVE'`,
+        [authContext.tenantId]
       );
       const { rows: admissionCount } = await tx.query<{ count: string }>(
-        `SELECT COUNT(*)::text as "count" FROM "HmsAdmission" WHERE "dischargedAt" IS NULL`
+        `SELECT COUNT(*)::text as "count" FROM "HmsAdmission" WHERE "tenantId" = $1 AND "dischargedAt" IS NULL`,
+        [authContext.tenantId]
       );
       const { rows: bedStats } = await tx.query<{ total: string; occupied: string; maintenance: string }>(
         `SELECT COUNT(*)::text as "total",
                 COUNT(a."id")::text as "occupied",
                 COUNT(CASE WHEN b."serviceState" = 'MAINTENANCE' THEN 1 END)::text as "maintenance"
          FROM "HmsBed" b
-         LEFT JOIN "HmsAdmission" a ON a."tenantId" = b."tenantId" AND a."bedId" = b."id" AND a."dischargedAt" IS NULL`
+         LEFT JOIN "HmsAdmission" a ON a."tenantId" = b."tenantId" AND a."bedId" = b."id" AND a."dischargedAt" IS NULL
+         WHERE b."tenantId" = $1`,
+        [authContext.tenantId]
       );
       const { rows: pendingLabs } = await tx.query<{ count: string }>(
-        `SELECT COUNT(*)::text as "count" FROM "HmsLabOrder" WHERE "status" IN ('ORDERED', 'IN_PROGRESS')`
+        `SELECT COUNT(*)::text as "count" FROM "HmsLabOrder" WHERE "tenantId" = $1 AND "status" IN ('ORDERED', 'IN_PROGRESS')`,
+        [authContext.tenantId]
       );
 
       const totalBeds = parseInt(bedStats[0]?.total || '0', 10);

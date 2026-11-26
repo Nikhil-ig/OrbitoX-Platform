@@ -9,6 +9,10 @@
  * 4. Smart Bed Station & Equipment AI Allocation Recommender
  */
 
+import { calculateNews2Score, type News2ScoreResult, type News2VitalsInput } from '@/lib/clinical-news2';
+
+export type { News2ScoreResult, News2VitalsInput };
+
 export interface DrugInteraction {
   severity: 'CRITICAL' | 'WARNING' | 'MODERATE' | 'INFO';
   title: string;
@@ -21,19 +25,6 @@ export interface DrugAllergyConflict {
   drug: string;
   severity: 'HIGH_RISK_ANAPHYLAXIS' | 'CROSS_SENSITIVITY';
   description: string;
-}
-
-export interface News2ScoreResult {
-  score: number;
-  riskLevel: 'LOW' | 'MEDIUM' | 'HIGH' | 'EMERGENCY_CODE_BLUE';
-  clinicalAction: string;
-  breakdown: {
-    spo2Points: number;
-    hrPoints: number;
-    bpPoints: number;
-    tempPoints: number;
-    respPoints: number;
-  };
 }
 
 export interface BedRecommendation {
@@ -218,100 +209,8 @@ export class ClinicalAIEngine {
   /**
    * Compute National Early Warning Score (NEWS2) from bedside vital signs
    */
-  static calculateNews2(vitals: {
-    spo2?: number;
-    heartRate?: number;
-    systolicBp?: number;
-    temperature?: number;
-    respiratoryRate?: number;
-    onOxygen?: boolean;
-  }): News2ScoreResult {
-    let score = 0;
-    let spo2Points = 0;
-    let hrPoints = 0;
-    let bpPoints = 0;
-    let tempPoints = 0;
-    let respPoints = 0;
-    const o2Points = vitals.onOxygen ? 2 : 0;
-
-    // 1. SpO2 Score
-    const spo2 = vitals.spo2 ?? 98;
-    if (spo2 <= 91) {
-      spo2Points = 3;
-    } else if (spo2 >= 92 && spo2 <= 93) {
-      spo2Points = 2;
-    } else if (spo2 >= 94 && spo2 <= 95) {
-      spo2Points = 1;
-    }
-
-    // 2. Heart Rate Score
-    const hr = vitals.heartRate ?? 75;
-    if (hr <= 40 || hr >= 131) {
-      hrPoints = 3;
-    } else if (hr >= 111 && hr <= 130) {
-      hrPoints = 2;
-    } else if ((hr >= 41 && hr <= 50) || (hr >= 91 && hr <= 110)) {
-      hrPoints = 1;
-    }
-
-    // 3. Systolic Blood Pressure Score
-    const bp = vitals.systolicBp ?? 120;
-    if (bp <= 90 || bp >= 220) {
-      bpPoints = 3;
-    } else if (bp >= 91 && bp <= 100) {
-      bpPoints = 2;
-    } else if (bp >= 101 && bp <= 110) {
-      bpPoints = 1;
-    }
-
-    // 4. Temperature Score
-    const temp = vitals.temperature ?? 37.0;
-    if (temp <= 35.0) {
-      tempPoints = 3;
-    } else if (temp >= 39.1) {
-      tempPoints = 2;
-    } else if ((temp >= 35.1 && temp <= 36.0) || (temp >= 38.1 && temp <= 39.0)) {
-      tempPoints = 1;
-    }
-
-    // 5. Respiratory Rate Score
-    const resp = vitals.respiratoryRate ?? 16;
-    if (resp <= 8 || resp >= 25) {
-      respPoints = 3;
-    } else if (resp >= 21 && resp <= 24) {
-      respPoints = 2;
-    } else if (resp >= 9 && resp <= 11) {
-      respPoints = 1;
-    }
-
-    score = spo2Points + hrPoints + bpPoints + tempPoints + respPoints + o2Points;
-
-    let riskLevel: News2ScoreResult['riskLevel'] = 'LOW';
-    let clinicalAction = 'Standard ward monitoring (every 12 hours).';
-
-    if (score >= 7 || spo2Points === 3 || hrPoints === 3) {
-      riskLevel = 'EMERGENCY_CODE_BLUE';
-      clinicalAction = '🚨 Emergency Response / Medical Emergency Team (MET) call. Immediate continuous cardiac telemetry & physician bedside evaluation.';
-    } else if (score >= 5) {
-      riskLevel = 'HIGH';
-      clinicalAction = '⚠️ Urgent clinical review by attending physician. Increase monitoring frequency to hourly. Prepare ICU step-up.';
-    } else if (score >= 1) {
-      riskLevel = 'MEDIUM';
-      clinicalAction = 'Prompt review by ward nurse. Reassess vitals every 4-6 hours.';
-    }
-
-    return {
-      score,
-      riskLevel,
-      clinicalAction,
-      breakdown: {
-        spo2Points,
-        hrPoints,
-        bpPoints,
-        tempPoints,
-        respPoints
-      }
-    };
+  static calculateNews2(vitals: News2VitalsInput): News2ScoreResult {
+    return calculateNews2Score(vitals);
   }
 
   /**

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { withHospitalGuard } from '@/app/api/_lib/route-auth';
+import { withHospitalGuard, HMS_STAFF_SESSION_COOKIE } from '@/app/api/_lib/route-auth';
 import { withTenantTx } from '@/server/db/tenant-db';
 import { prisma } from '@/server/db/prisma';
 import { checkPassword, recordFailure, createSession } from '@/server/auth/hms-auth';
@@ -11,7 +11,25 @@ import { platformRepository } from '@/server/db/platform-repository';
 export const POST = withHospitalGuard(async (req: NextRequest, _routeContext, authContext) => {
   try {
     const body = await req.json().catch(() => ({}));
-    const { email, staffId, password } = body;
+    const rawIdentifier = typeof body.identifier === 'string' ? body.identifier.trim() : '';
+    const email =
+      typeof body.email === 'string' && body.email.trim()
+        ? body.email.trim()
+        : rawIdentifier.includes('@')
+          ? rawIdentifier
+          : undefined;
+    const staffId =
+      typeof body.staffId === 'string' && body.staffId.trim()
+        ? body.staffId.trim()
+        : rawIdentifier && !rawIdentifier.includes('@')
+          ? rawIdentifier
+          : undefined;
+    const password =
+      typeof body.password === 'string' && body.password.length > 0
+        ? body.password
+        : typeof body.pinOrPassword === 'string' && body.pinOrPassword.length > 0
+          ? body.pinOrPassword
+          : '';
 
     if ((!email && !staffId) || !password) {
       throw new HttpError(422, 'INVALID_INPUT', 'email or staffId and password are required');
@@ -103,7 +121,7 @@ export const POST = withHospitalGuard(async (req: NextRequest, _routeContext, au
       createSession(tx, outcome, { clientIp, userAgent }),
     );
 
-    return NextResponse.json({
+    const response = NextResponse.json({
       success: true,
       data: {
         token: sessionResult.rawToken,
@@ -112,6 +130,14 @@ export const POST = withHospitalGuard(async (req: NextRequest, _routeContext, au
         permissions: sessionResult.permissions,
       },
     });
+    response.cookies.set(HMS_STAFF_SESSION_COOKIE, sessionResult.rawToken, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'lax',
+      path: '/',
+      maxAge: 12 * 60 * 60,
+    });
+    return response;
   } catch (err: any) {
     const apiErr = mapDbError(err);
     return NextResponse.json(errorBody(apiErr, authContext.requestId), { status: apiErr.status });

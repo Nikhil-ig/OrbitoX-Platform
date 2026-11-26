@@ -968,6 +968,13 @@ export function withApiGuard<T = any>(
           tenantId = 'default';
         }
       }
+    } else if (hasAdminSession && clientHeaderTenant) {
+      tenantId = clientHeaderTenant;
+      if (!project) {
+        const tenantMatch = /^org\/([^/]+)\/project\/([^/]+)\/environment\/([^/]+)$/.exec(clientHeaderTenant);
+        const projectLookup = tenantMatch?.[2] || clientHeaderTenant;
+        project = await platformRepository.getProject(projectLookup);
+      }
     } else if (isExplicitlyPublic) {
       const host = req.nextUrl.hostname.toLowerCase();
       const matchingDomain = await platformRepository.findVerifiedDomain(host);
@@ -1047,7 +1054,21 @@ export function withApiGuard<T = any>(
       }
 
       // 8.4 Enforce billing state from installation status (loaded server-side in authorization query)
-      const installationStatus = (lookup?.installationStatus || '').toUpperCase();
+      let installationStatus = (lookup?.installationStatus || '').toUpperCase();
+      if (!installationStatus) {
+        const canonicalPlugin =
+          serviceId === 'hms'
+            ? '@orbitox/hms'
+            : serviceId === 'restaurant'
+              ? '@orbitox/restaurant'
+              : `@orbitox/${serviceId}`;
+        const inst = await platformRepository.getPluginInstallation(tenantId, canonicalPlugin);
+        if (inst) {
+          installationStatus = (inst.status || '').toUpperCase();
+        } else if (hasAdminSession) {
+          installationStatus = 'ACTIVE';
+        }
+      }
       const isWrite = !['GET', 'HEAD', 'OPTIONS'].includes(req.method.toUpperCase());
 
       // Rules:

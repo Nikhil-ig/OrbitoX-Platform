@@ -3,6 +3,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import HospitalNavLayout from '../components/HospitalNavLayout';
 import { useStaffAuth } from '../context/StaffAuthContext';
+import { hmsAuthHeaders } from '../lib/csrf';
 import Link from 'next/link';
 
 interface LabOrder {
@@ -89,7 +90,18 @@ export default function PathologyLabsPage() {
       const staffData = await staffRes.json();
 
       if (labsData.success && labsData.data) {
-        setLabOrders(labsData.data);
+        const normalized = labsData.data.map((o: any) => ({
+          ...o,
+          patientName: o.patientName || o.patientMrn || o.patientId || 'Unknown Patient',
+          doctorName: o.doctorName || o.orderedById || 'Attending Physician',
+          orderedByDoctorId: o.orderedByDoctorId || o.orderedById || '',
+          category: o.category || 'biochemistry',
+          priority: o.priority || 'routine',
+          isCriticalValue: Boolean(o.isCriticalValue || o.status === 'critical_result'),
+          resultSummary: o.resultSummary ?? o.result ?? undefined,
+          orderedAt: o.orderedAt || o.updatedAt || new Date().toISOString(),
+        }));
+        setLabOrders(normalized);
       }
       if (patientsData.success && patientsData.data) {
         setPatients(patientsData.data);
@@ -120,13 +132,14 @@ export default function PathologyLabsPage() {
   // Filtered Lab Orders
   const filteredOrders = useMemo(() => {
     return labOrders.filter(order => {
+      const q = searchQuery.toLowerCase();
       const matchesSearch =
-        order.patientName.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        order.testType.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        order.id.toLowerCase().includes(searchQuery.toLowerCase());
+        (order.patientName || '').toLowerCase().includes(q) ||
+        (order.testType || '').toLowerCase().includes(q) ||
+        (order.id || '').toLowerCase().includes(q);
 
-      const matchesPriority = selectedPriority === 'all' || order.priority === selectedPriority;
-      const matchesCategory = selectedCategory === 'all' || order.category === selectedCategory;
+      const matchesPriority = selectedPriority === 'all' || (order.priority || 'routine') === selectedPriority;
+      const matchesCategory = selectedCategory === 'all' || (order.category || 'general') === selectedCategory;
 
       return matchesSearch && matchesPriority && matchesCategory;
     });
@@ -135,9 +148,13 @@ export default function PathologyLabsPage() {
   // Statistics
   const stats = useMemo(() => {
     const total = labOrders.length;
-    const statOrders = labOrders.filter(o => o.priority === 'stat' && o.status === 'ordered').length;
-    const pending = labOrders.filter(o => o.status === 'ordered').length;
-    const critical = labOrders.filter(o => o.status === 'critical_result' || o.isCriticalValue).length;
+    const statOrders = labOrders.filter(
+      o => (o.priority || 'routine') === 'stat' && String(o.status || '').toLowerCase() === 'ordered'
+    ).length;
+    const pending = labOrders.filter(o => String(o.status || '').toLowerCase() === 'ordered').length;
+    const critical = labOrders.filter(
+      o => String(o.status || '').toLowerCase() === 'critical_result' || o.isCriticalValue
+    ).length;
     return { total, statOrders, pending, critical };
   }, [labOrders]);
 
@@ -148,22 +165,26 @@ export default function PathologyLabsPage() {
     try {
       const res = await fetch('/api/hospital/labs', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: hmsAuthHeaders(),
         body: JSON.stringify({
           patientId: orderPatientId,
-          doctorId: orderDoctorId || currentStaff?.id || 'dr_ashlynn_01',
+          orderedById: orderDoctorId || currentStaff?.id || undefined,
           testType: orderTestType,
           priority: orderPriority,
           clinicalNotes: orderClinicalNotes
         })
       });
       const data = await res.json();
-      if (data.success) {
+      if (res.ok && data.success) {
         setShowOrderModal(false);
         setOrderClinicalNotes('');
+        setLabNotice({ tone: 'success', text: `Lab order created for ${orderTestType}.` });
         await fetchLabData();
       } else {
-        setLabNotice({ tone: 'error', text: data.error || 'Failed to order lab test' });
+        setLabNotice({
+          tone: 'error',
+          text: (typeof data.error === 'string' ? data.error : data.error?.message) || 'Failed to order lab test'
+        });
       }
     } catch (err: any) {
       setLabNotice({ tone: 'error', text: err?.message || 'Failed to order lab test' });
@@ -178,28 +199,65 @@ export default function PathologyLabsPage() {
     if (!showReportModal) return;
     setIsSubmitting(true);
     try {
+      const resultText =
+        reportSummary.trim() ||
+        (reportNumericValue ? `${reportNumericValue}` : '');
       const res = await fetch(`/api/hospital/labs/${showReportModal.id}/results`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: hmsAuthHeaders(),
         body: JSON.stringify({
+          result: resultText,
           numericValue: reportNumericValue ? parseFloat(reportNumericValue) : undefined,
           resultSummary: reportSummary || `Value reported: ${reportNumericValue}`,
           isCriticalValue: reportIsCritical,
-          technicianId: currentStaff?.id || 'lab_tech_01'
+          resultEnteredById: currentStaff?.id || undefined
         })
       });
       const data = await res.json();
-      if (data.success) {
+      if (res.ok && data.success) {
         setShowReportModal(null);
         setReportNumericValue('');
         setReportSummary('');
         setReportIsCritical(false);
+        setLabNotice({ tone: 'success', text: 'Lab result recorded and PHI-sealed.' });
         await fetchLabData();
       } else {
-        setLabNotice({ tone: 'error', text: data.error || 'Failed to report results' });
+        setLabNotice({
+          tone: 'error',
+          text: (typeof data.error === 'string' ? data.error : data.error?.message) || 'Failed to report results'
+        });
       }
     } catch (err: any) {
       setLabNotice({ tone: 'error', text: err?.message || 'Failed to report results' });
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  // Handle Verify Lab Result
+  const handleVerifyOrder = async (orderId: string) => {
+    setIsSubmitting(true);
+    try {
+      const res = await fetch(`/api/hospital/labs/${orderId}/results`, {
+        method: 'POST',
+        headers: hmsAuthHeaders(),
+        body: JSON.stringify({
+          action: 'verify',
+          verifierId: currentStaff?.id || undefined,
+        }),
+      });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        setLabNotice({ tone: 'success', text: 'Lab result verified and signed off.' });
+        await fetchLabData();
+      } else {
+        setLabNotice({
+          tone: 'error',
+          text: (typeof data.error === 'string' ? data.error : data.error?.message) || 'Failed to verify lab result',
+        });
+      }
+    } catch (err: any) {
+      setLabNotice({ tone: 'error', text: err?.message || 'Failed to verify lab result' });
     } finally {
       setIsSubmitting(false);
     }
@@ -371,9 +429,15 @@ export default function PathologyLabsPage() {
               </thead>
               <tbody>
                 {filteredOrders.map(order => {
+                  const upperStatus = String(order.status || '').toUpperCase();
                   const isStat = order.priority === 'stat';
                   const isUrgent = order.priority === 'urgent';
-                  const isCompleted = order.status === 'completed' || order.status === 'critical_result';
+                  const isVerified = upperStatus === 'VERIFIED' || order.status === 'completed';
+                  const isCompleted =
+                    upperStatus === 'RESULTED' ||
+                    upperStatus === 'VERIFIED' ||
+                    order.status === 'completed' ||
+                    order.status === 'critical_result';
                   const isCritical = order.isCriticalValue || order.status === 'critical_result';
 
                   return (
@@ -432,13 +496,13 @@ export default function PathologyLabsPage() {
                                 borderRadius: '8px',
                                 fontSize: '11px',
                                 fontWeight: 800,
-                                background: isCritical ? '#ef4444' : '#10b981',
+                                background: isCritical ? '#ef4444' : isVerified ? '#10b981' : '#f59e0b',
                                 color: '#ffffff',
                                 display: 'inline-block',
                                 marginBottom: '4px'
                               }}
                             >
-                              {isCritical ? '🚨 CRITICAL RESULT' : '✓ VERIFIED NORMAL'}
+                              {isCritical ? '🚨 CRITICAL RESULT' : isVerified ? '✓ VERIFIED' : 'RESULTED — AWAITING VERIFY'}
                             </span>
                             <div style={{ fontSize: '12px', fontWeight: 600, color: '#0f172a' }}>
                               {order.resultSummary || (order.numericValue !== undefined ? `${order.numericValue} ${AVAILABLE_TESTS.find(t => t.name === order.testType)?.unit || ''}` : 'Completed')}
@@ -505,6 +569,25 @@ export default function PathologyLabsPage() {
                               }}
                             >
                               🚨 Alert MD
+                            </button>
+                          )}
+
+                          {upperStatus === 'RESULTED' && (
+                            <button
+                              onClick={() => handleVerifyOrder(order.id)}
+                              disabled={isSubmitting}
+                              style={{
+                                padding: '5px 10px',
+                                borderRadius: '10px',
+                                border: '1px solid #10b981',
+                                background: '#ecfdf5',
+                                color: '#047857',
+                                fontSize: '11px',
+                                fontWeight: 700,
+                                cursor: 'pointer',
+                              }}
+                            >
+                              ✓ Verify
                             </button>
                           )}
 

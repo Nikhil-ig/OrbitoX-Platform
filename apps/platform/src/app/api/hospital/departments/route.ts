@@ -10,7 +10,9 @@ export const GET = withHospitalGuard(async (_req: NextRequest, _routeContext, au
       const { rows } = await tx.query(
         `SELECT "id", "name", "createdAt"
          FROM "HmsDepartment"
-         ORDER BY "name" ASC`
+         WHERE "tenantId" = $1
+         ORDER BY "name" ASC`,
+        [authContext.tenantId]
       );
       return rows;
     });

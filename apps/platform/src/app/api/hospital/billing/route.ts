@@ -11,21 +11,26 @@ export const GET = withHospitalGuard(async (req: NextRequest, _routeContext, aut
     const patientId = searchParams.get('patientId');
 
     const data = await withTenantTx(prisma, authContext.tenantId, async (tx) => {
-      let query = `SELECT "id", "patientId", "currency", "totalMinor"::text as "totalMinor", "paidMinor"::text as "paidMinor", "status", "createdAt"
-                   FROM "HmsInvoice"`;
-      const params: any[] = [];
+      let query = `SELECT i."id", i."patientId", p."mrn" as "patientMrn", p."processingStatus" as "patientProcessingStatus",
+                          i."currency", i."totalMinor"::text as "totalMinor", i."paidMinor"::text as "paidMinor", i."status", i."createdAt"
+                   FROM "HmsInvoice" i
+                   LEFT JOIN "HmsPatient" p ON p."tenantId" = i."tenantId" AND p."id" = i."patientId"
+                   WHERE i."tenantId" = $1`;
+      const params: any[] = [tx.tenantId];
       if (patientId) {
         params.push(patientId);
-        query += ` WHERE "patientId" = $1`;
+        query += ` AND i."patientId" = $2`;
       }
-      query += ` ORDER BY "createdAt" DESC LIMIT 50`;
+      query += ` ORDER BY i."createdAt" DESC LIMIT 50`;
 
       const { rows: invoices } = await tx.query(query, params);
 
       const { rows: statsRows } = await tx.query<{ totalInvoiced: string; totalPaid: string }>(
         `SELECT COALESCE(SUM("totalMinor"), 0)::text as "totalInvoiced",
                 COALESCE(SUM("paidMinor"), 0)::text as "totalPaid"
-         FROM "HmsInvoice"`
+         FROM "HmsInvoice"
+         WHERE "tenantId" = $1`,
+        [tx.tenantId]
       );
 
       return {
@@ -53,6 +58,9 @@ export const POST = withHospitalGuard(async (req: NextRequest, _routeContext, au
       await assertPatientActive(tx, body.patientId);
       const id = body.id || `inv_${Date.now().toString(36)}`;
       const totalMinor = BigInt(body.totalMinor);
+      if (totalMinor <= 0n) {
+        throw new HttpError(422, 'INVALID_AMOUNT', 'totalMinor must be greater than zero');
+      }
 
       const { rows } = await tx.query(
         `INSERT INTO "HmsInvoice" ("id", "patientId", "totalMinor")

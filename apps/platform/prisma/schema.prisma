@@ -1792,3 +1792,60 @@ model PlatformOperation {
   @@index([leaseExpiresAt])
   @@unique([organizationId, idempotencyKey])
 }
+
+model McpToolApproval {
+  id               String    @id @default(cuid())
+  toolName         String
+  serverId         String
+  approvalPolicy   String
+  status           String    @default("PROPOSED")
+  paramsHash       String
+  sanitizedParams  Json
+  previewSummary   String
+  editedMessage    String?
+  reason           String?
+  tenantScope      String
+  requestedById    String
+  requestedByEmail String
+  approvedById     String?
+  approvedByEmail  String?
+  invocationId     String?
+  expiresAt        DateTime  @db.Timestamptz
+  consumedAt       DateTime? @db.Timestamptz
+  rejectedAt       DateTime? @db.Timestamptz
+  createdAt        DateTime  @default(now()) @db.Timestamptz
+  updatedAt        DateTime  @default(now()) @updatedAt @db.Timestamptz
+
+  @@index([status, expiresAt])
+  @@index([requestedById, createdAt])
+  @@index([toolName, createdAt])
+}
+
+model McpToolInvocation {
+  id                String   @id @default(cuid())
+  approvalId        String?
+  toolName          String
+  serverId          String
+  approvalPolicy    String
+  status            String
+  actorId           String
+  actorEmail        String
+  authType          String
+  callerAgent       String
+  tenantScope       String
+  sanitizedParams   Json
+  redactedOutput    Json?
+  errorCode         String?
+  errorMessage      String?
+  latencyMs         Int
+  redactionsApplied Int      @default(0)
+  injectionBlocked  Boolean  @default(false)
+  secretsFiltered   Int      @default(0)
+  auditEventId      String?
+  createdAt         DateTime @default(now()) @db.Timestamptz
+
+  @@index([toolName, createdAt])
+  @@index([status, createdAt])
+  @@index([actorId, createdAt])
+  @@index([approvalId])
+}

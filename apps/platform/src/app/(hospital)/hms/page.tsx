@@ -148,14 +148,29 @@ export default function BeautifulHospitalDashboard() {
         setLabSummary({ total, stat, critical });
       }
 
-      if (billingRes.data) {
+      const billRows = Array.isArray(billingRes.data)
+        ? billingRes.data
+        : Array.isArray(billingRes.data?.invoices)
+          ? billingRes.data.invoices
+          : [];
+      if (billRows.length > 0 || billingRes.data?.stats) {
         let collected = 0;
         let due = 0;
-        billingRes.data.forEach((inv: any) => {
-          if (inv.status === 'paid') collected += (inv.subtotal || 0);
-          else due += (inv.patientDue || 0);
+        billRows.forEach((inv: any) => {
+          const total = Number(inv.totalMinor ?? inv.subtotal ?? 0);
+          const paid = Number(inv.paidMinor ?? 0);
+          if (String(inv.status || '').toUpperCase() === 'PAID') {
+            collected += paid || total;
+          } else {
+            collected += paid;
+            due += Number(inv.patientDue ?? Math.max(0, total - paid));
+          }
         });
-        setBillingSummary({ total: billingRes.data.length, collected, due });
+        setBillingSummary({
+          total: billingRes.data?.stats?.totalCount ?? billRows.length,
+          collected,
+          due,
+        });
       }
 
       if (rxRes.data) {

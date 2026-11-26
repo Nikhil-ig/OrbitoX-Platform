@@ -11,8 +11,10 @@ export const GET = withHospitalGuard(async (_req: NextRequest, _routeContext, au
       const { rows } = await tx.query(
         `SELECT "id", "patientId", "orderedById", "testType" as "code", "status", "updatedAt"
          FROM "HmsLabOrder"
+         WHERE "tenantId" = $1
          ORDER BY "updatedAt" DESC
-         LIMIT 50`
+         LIMIT 50`,
+        [authContext.tenantId]
       );
       return rows;
     });
@@ -62,8 +64,8 @@ export const PATCH = withHospitalGuard(async (req: NextRequest, _routeContext, a
 
     const data = await withTenantTx(prisma, authContext.tenantId, async (tx) => {
       const existing = await tx.query<{ patientId: string }>(
-        `SELECT "patientId" FROM "HmsLabOrder" WHERE "id" = $1`,
-        [treatmentId]
+        `SELECT "patientId" FROM "HmsLabOrder" WHERE "id" = $1 AND "tenantId" = $2`,
+        [treatmentId, authContext.tenantId]
       );
       if (!existing.rows[0]) throw new HttpError(404, 'REFERENCE_NOT_FOUND', 'Treatment not found');
       await assertPatientActive(tx, existing.rows[0].patientId);
@@ -72,9 +74,9 @@ export const PATCH = withHospitalGuard(async (req: NextRequest, _routeContext, a
       const { rows } = await tx.query(
         `UPDATE "HmsLabOrder"
          SET "status" = $2
-         WHERE "id" = $1
+         WHERE "id" = $1 AND "tenantId" = $3
          RETURNING "id", "status"`,
-        [treatmentId, newStatus]
+        [treatmentId, newStatus, authContext.tenantId]
       );
       if (!rows[0]) throw new HttpError(404, 'REFERENCE_NOT_FOUND', 'Treatment not found');
       return rows[0];

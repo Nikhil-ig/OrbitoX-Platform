@@ -7,10 +7,11 @@ import { mapDbError, errorBody, HttpError } from '@/server/db/db-errors';
 export const GET = withHospitalGuard(async (_req: NextRequest, _routeContext, authContext) => {
   try {
     const data = await withTenantTx(prisma, authContext.tenantId, async (tx) => {
-      const { rows } = await tx.query(
+      const { rows } = await tx.query<any>(
         `SELECT b."id", b."wardId", b."label", b."dailyRateMinor", b."serviceState",
                 w."name" as "wardName",
-                a."id" as "admissionId", a."patientId",
+                a."id" as "admissionId", a."patientId", a."admittedAt",
+                p."mrn" as "patientMrn", p."triageLevel" as "patientTriageLevel", p."ageBand" as "patientAgeBand",
                 CASE
                   WHEN a."id" IS NOT NULL THEN 'occupied'
                   WHEN b."serviceState" = 'MAINTENANCE' THEN 'maintenance'
@@ -19,9 +20,25 @@ export const GET = withHospitalGuard(async (_req: NextRequest, _routeContext, au
          FROM "HmsBed" b
          LEFT JOIN "HmsWard" w ON w."tenantId" = b."tenantId" AND w."id" = b."wardId"
          LEFT JOIN "HmsAdmission" a ON a."tenantId" = b."tenantId" AND a."bedId" = b."id" AND a."dischargedAt" IS NULL
-         ORDER BY b."label"`
+         LEFT JOIN "HmsPatient" p ON p."tenantId" = a."tenantId" AND p."id" = a."patientId"
+         WHERE b."tenantId" = $1
+         ORDER BY b."label"`,
+        [tx.tenantId]
       );
-      return rows;
+      return rows.map((r) => ({
+        ...r,
+        dailyRate: r.dailyRateMinor != null ? Math.round(Number(r.dailyRateMinor) / 100) : 0,
+        patient: r.patientId
+          ? {
+              id: r.patientId,
+              mrn: r.patientMrn,
+              name: r.patientMrn || r.patientId,
+              triageLevel: r.patientTriageLevel,
+              ageBand: r.patientAgeBand,
+              admittedAt: r.admittedAt,
+            }
+          : null,
+      }));
     });
 
     return NextResponse.json({ success: true, data });

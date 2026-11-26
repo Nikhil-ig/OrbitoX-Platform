@@ -24,7 +24,7 @@ import { POST as resultLab } from '@/app/api/hospital/labs/[id]/results/route';
 import { GET as getBilling, POST as createInvoice } from '@/app/api/hospital/billing/route';
 import { POST as payInvoice } from '@/app/api/hospital/billing/pay/[id]/route';
 import { GET as getStats } from '@/app/api/hospital/stats/route';
-import { POST as postTelemetry } from '@/app/api/hospital/telemetry/route';
+import { GET as getTelemetry, POST as postTelemetry } from '@/app/api/hospital/telemetry/route';
 import { GET as getAudit } from '@/app/api/hospital/audit/route';
 import { POST as breakGlass } from '@/app/api/hospital/security/break-glass/route';
 import { GET as getStaff, POST as createStaff } from '@/app/api/hospital/security/staff/route';
@@ -47,7 +47,7 @@ import { POST as postV1HmsPrincipal } from '@/app/api/v1/hms/data-rights/princip
 
 process.env.APP_DATABASE_URL = process.env.APP_DATABASE_URL || 'postgresql://orbitox_runtime@127.0.0.1:5432/orbitox_phase2';
 process.env.PLATFORM_AUDIT_DATABASE_URL = process.env.PLATFORM_AUDIT_DATABASE_URL || 'postgresql://orbitox_platform_admin_audit@127.0.0.1:5432/orbitox_phase2';
-process.env.HMS_AUDIT_DATABASE_URL = process.env.HMS_AUDIT_DATABASE_URL || 'postgresql://hms_audit_reader:test_audit_reader_pass@127.0.0.1:5432/orbitox_phase2';
+process.env.HMS_AUDIT_DATABASE_URL = process.env.HMS_AUDIT_DATABASE_URL || process.env.APP_DATABASE_URL || process.env.DATABASE_URL || 'postgresql://apple@127.0.0.1:5432/orbitox_phase2';
 if (!process.env.DATABASE_URL) {
   process.env.DATABASE_URL = process.env.APP_DATABASE_URL;
 }
@@ -178,7 +178,7 @@ describe('HospitalOS & HMS Cross-Tenant Generator Suite (Phase 2b-3)', () => {
 
     await withTenantTx(pool, TENANT_B, async (tx) => {
       for (const table of tables) {
-        const { rows } = await tx.query(`SELECT count(*)::int c FROM "${table}"`);
+        const { rows } = await tx.query(`SELECT count(*)::int c FROM "${table}" WHERE "tenantId" = $1`, [TENANT_B]);
         counts[table] = rows[0]?.c ?? 0;
       }
     });
@@ -398,6 +398,11 @@ describe('HospitalOS & HMS Cross-Tenant Generator Suite (Phase 2b-3)', () => {
       description: 'Get stats: Tenant A sees only Tenant A statistics',
       expectedStatus: 200,
       run: () => getStats(makeRequest(TENANT_A, '/api/hospital/stats')),
+    },
+    'GET app/api/hospital/telemetry/route.ts': {
+      description: 'List telemetry: Tenant A sees only Tenant A beds/telemetry: 200',
+      expectedStatus: 200,
+      run: () => getTelemetry(makeRequest(TENANT_A, '/api/hospital/telemetry')),
     },
     'POST app/api/hospital/telemetry/route.ts': {
       description: 'Post telemetry: scoped to Tenant A: 200',
@@ -678,7 +683,7 @@ describe('HospitalOS & HMS Cross-Tenant Generator Suite (Phase 2b-3)', () => {
       }
     }
 
-    assert.equal(discovered.length, 53, 'Discovered route+methods must be exactly 53 across the 33 route files');
+    assert.equal(discovered.length, 54, 'Discovered route+methods must be exactly 54 across the 33 route files');
 
     for (const item of discovered) {
       assert.ok(

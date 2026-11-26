@@ -16,9 +16,9 @@ export const POST = withHospitalGuard(async (
       const { rows } = await tx.query(
         `UPDATE "HmsStaff"
          SET "onDuty" = NOT "onDuty"
-         WHERE "id" = $1
+         WHERE "id" = $1 AND "tenantId" = $2
          RETURNING "id", "role", "onDuty"`,
-        [id]
+        [id, authContext.tenantId]
       );
       if (!rows[0]) throw new HttpError(404, 'REFERENCE_NOT_FOUND', 'Staff member not found');
       return rows[0];

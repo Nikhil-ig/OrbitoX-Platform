@@ -23,11 +23,14 @@ export const POST = withOperatorAuth<{ params: Promise<{ id: string }> }>(
       const result = await cancelSubscription(id, { reason }, session);
       return NextResponse.json({ success: true, data: result }, { headers: noStore });
     } catch (err: any) {
-      const isReauth = err.message?.includes('STEP_UP_REAUTH_REQUIRED');
-      const isMinLen = err.message?.includes('INVALID_REASON');
-      const status = isReauth ? 403 : isMinLen ? 400 : 500;
+      const msg = err?.message || 'Failed to cancel subscription';
+      const isReauth = msg.includes('STEP_UP_REAUTH_REQUIRED');
+      const isMinLen = msg.includes('INVALID_REASON');
+      const isNotFound = msg.includes('SUBSCRIPTION_NOT_FOUND');
+      const isConflict = msg.includes('INVALID_SUBSCRIPTION_STATE');
+      const status = isReauth ? 403 : isMinLen ? 400 : isNotFound ? 404 : isConflict ? 409 : 500;
       return NextResponse.json(
-        { success: false, error: { message: err.message || 'Failed to cancel subscription' } },
+        { success: false, error: { message: msg } },
         { status, headers: noStore }
       );
     }

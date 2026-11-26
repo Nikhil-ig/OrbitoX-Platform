@@ -11,6 +11,7 @@ export interface OverviewSummary {
   p95LatencyMs: number;
   p99LatencyMs: number;
   failedJobsCount: number;
+  pendingAiApprovalsCount: number;
   clusterStatus: 'healthy' | 'degraded' | 'warning';
   clusterRegion: string;
   clusterVersion: string;
@@ -82,15 +83,19 @@ export async function getOverviewSummary(operator?: OperatorSessionContext | nul
   let projectCount = 0;
   let orgCount = 0;
   let failedOperationsCount = 0;
+  let pendingAiApprovalsCount = 0;
   let totalArrMinor = 0;
   let recordedApiCalls: string | null = null;
   let queryFailed = false;
 
   try {
-    const [pCount, oCount, fCount, activeSubs, usageSum] = await Promise.all([
+    const [pCount, oCount, fCount, aiPendingCount, activeSubs, usageSum] = await Promise.all([
       prisma.platformProject.count().catch(() => { queryFailed = true; return 0; }),
       prisma.platformOrganization.count().catch(() => { queryFailed = true; return 0; }),
       prisma.platformOperation.count({ where: { status: 'FAILED' } }).catch(() => { queryFailed = true; return 0; }),
+      prisma.mcpToolApproval.count({
+        where: { status: 'PROPOSED', expiresAt: { gt: new Date() } },
+      }).catch(() => 0),
       prisma.billingSubscription.findMany({
         where: { status: 'active' },
         include: { planMap: true },
@@ -102,6 +107,7 @@ export async function getOverviewSummary(operator?: OperatorSessionContext | nul
     projectCount = pCount;
     orgCount = oCount;
     failedOperationsCount = fCount;
+    pendingAiApprovalsCount = aiPendingCount;
     totalArrMinor = activeSubs.reduce((sum, s) => sum + (s.planMap?.amountMinor || 0) * 12, 0);
     const sumCount = usageSum?._sum?.requestCount;
     if (sumCount !== null && sumCount !== undefined) {
@@ -143,6 +149,7 @@ export async function getOverviewSummary(operator?: OperatorSessionContext | nul
     p95LatencyMs,
     p99LatencyMs,
     failedJobsCount: failedOperationsCount,
+    pendingAiApprovalsCount,
     clusterStatus,
     clusterRegion: 'ap-south-1 (Mumbai)',
     clusterVersion: 'v1.4.0',

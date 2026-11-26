@@ -129,36 +129,78 @@ export function OverviewClient({
         </div>
 
         <div className="space-y-2.5">
-          <div className="flex items-center gap-2">
-            <h3 className="text-sm font-semibold text-[var(--color-text)]">Needs a decision</h3>
-            <span className="inline-flex items-center justify-center min-w-[20px] h-5 px-1.5 rounded-full text-[11px] font-semibold bg-[var(--color-danger)]/20 text-[var(--color-danger)]">
-              {Math.max(1, summary.failedJobsCount + alerts.tenantsRequiringAttention.filter((t) => t.status !== 'good').length)}
-            </span>
-          </div>
+          {(() => {
+            const attentionCount = alerts.tenantsRequiringAttention.filter((t) => t.status !== 'good').length;
+            const decisionCount = summary.failedJobsCount + (summary.pendingAiApprovalsCount || 0) + attentionCount;
+            return (
+              <>
+                <div className="flex items-center gap-2">
+                  <h3 className="text-sm font-semibold text-[var(--color-text)]">Needs a decision</h3>
+                  <span className={`inline-flex items-center justify-center min-w-[20px] h-5 px-1.5 rounded-full text-[11px] font-semibold ${
+                    decisionCount > 0
+                      ? 'bg-[var(--color-danger)]/20 text-[var(--color-danger)]'
+                      : 'bg-emerald-500/15 text-emerald-500'
+                  }`}>
+                    {decisionCount}
+                  </span>
+                </div>
 
-          <div className="rounded-2xl p-4 bg-gradient-to-br from-[#3A6BF5] to-[#274ED1] text-white shadow-sm space-y-3">
-            <div className="flex items-center justify-between text-[11px]">
-              <span className="px-2 py-0.5 rounded-full bg-white/15 font-medium">AI drafted</span>
-              <span className="text-white/75">Ask OrbitoX</span>
-            </div>
-            <div className="text-sm font-semibold leading-snug">
-              Review grace-period reminders & cluster diagnostics
-            </div>
-            <div className="grid grid-cols-2 gap-2">
-              <Link
-                href="/console/ai"
-                className="inline-flex items-center justify-center rounded-full bg-white text-slate-900 font-semibold text-xs py-2 px-3"
-              >
-                Open AI
-              </Link>
-              <Link
-                href="/console/billing"
-                className="inline-flex items-center justify-center rounded-full bg-white/15 text-white border border-white/25 font-medium text-xs py-2 px-3"
-              >
-                Review Billing
-              </Link>
-            </div>
-          </div>
+                {summary.pendingAiApprovalsCount > 0 ? (
+                  <div className="rounded-2xl p-4 bg-gradient-to-br from-[#3A6BF5] to-[#274ED1] text-white shadow-sm space-y-3">
+                    <div className="flex items-center justify-between text-[11px]">
+                      <span className="px-2 py-0.5 rounded-full bg-white/15 font-medium">
+                        {summary.pendingAiApprovalsCount} pending approval(s)
+                      </span>
+                      <span className="text-white/75">Ask OrbitoX</span>
+                    </div>
+                    <div className="text-sm font-semibold leading-snug">
+                      Review queued MCP actions waiting for operator approval
+                    </div>
+                    <div className="grid grid-cols-2 gap-2">
+                      <Link
+                        href="/console/ai"
+                        className="inline-flex items-center justify-center rounded-full bg-white text-slate-900 font-semibold text-xs py-2 px-3"
+                      >
+                        Review AI Queue
+                      </Link>
+                      <Link
+                        href="/console/billing"
+                        className="inline-flex items-center justify-center rounded-full bg-white/15 text-white border border-white/25 font-medium text-xs py-2 px-3"
+                      >
+                        Review Billing
+                      </Link>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="rounded-2xl p-4 border border-[var(--color-border)] bg-[var(--color-surface)] space-y-3">
+                    <div className="flex items-center justify-between text-[11px]">
+                      <span className="px-2 py-0.5 rounded-full bg-[var(--color-primary)]/15 text-[var(--color-primary)] font-medium">
+                        MCP Ready
+                      </span>
+                      <span className="text-[var(--color-text-muted)]">Ask OrbitoX</span>
+                    </div>
+                    <div className="text-sm font-semibold leading-snug text-[var(--color-text)]">
+                      No pending AI approvals. Query grace billing or verify package integrity.
+                    </div>
+                    <div className="grid grid-cols-2 gap-2">
+                      <Link
+                        href="/console/ai"
+                        className="inline-flex items-center justify-center rounded-full bg-[var(--color-primary)] text-white font-semibold text-xs py-2 px-3"
+                      >
+                        Open AI
+                      </Link>
+                      <Link
+                        href="/console/billing"
+                        className="inline-flex items-center justify-center rounded-full bg-[var(--color-surface-raised)] text-[var(--color-text)] border border-[var(--color-border)] font-medium text-xs py-2 px-3"
+                      >
+                        Billing
+                      </Link>
+                    </div>
+                  </div>
+                )}
+              </>
+            );
+          })()}
 
           {summary.failedJobsCount > 0 && (
             <Link

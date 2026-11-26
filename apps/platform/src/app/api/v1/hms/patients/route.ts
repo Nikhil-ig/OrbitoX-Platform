@@ -17,9 +17,10 @@ export const GET = withApiGuard(
         const { rows } = await tx.query(
           `SELECT "id", "mrn", "ageBand", "gender", "bloodGroup", "triageLevel", "createdAt"
            FROM "HmsPatient"
-           WHERE "processingStatus" = 'ACTIVE'
+           WHERE "tenantId" = $1 AND "processingStatus" = 'ACTIVE'
            ORDER BY "createdAt" DESC
-           LIMIT 50`
+           LIMIT 50`,
+          [ctx.tenantId]
         );
         return rows;
       });

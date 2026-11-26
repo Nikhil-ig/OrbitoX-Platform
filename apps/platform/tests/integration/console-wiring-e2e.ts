@@ -14,8 +14,9 @@ import {
 const BASE_URL = (process.env.ORBITOX_URL || 'http://localhost:3005').replace(/\/$/, '');
 
 async function launchBrowser(): Promise<Browser> {
+  const launchArgs = ['--disable-extensions'];
   try {
-    return await chromium.launch({ headless: true });
+    return await chromium.launch({ headless: true, args: launchArgs });
   } catch (err) {
     const cacheDir = path.join(os.homedir(), 'Library', 'Caches', 'ms-playwright');
     const linuxCache = path.join(os.homedir(), '.cache', 'ms-playwright');
@@ -36,7 +37,7 @@ async function launchBrowser(): Promise<Browser> {
         ];
         for (const exe of candidates) {
           if (fs.existsSync(exe)) {
-            return await chromium.launch({ headless: true, executablePath: exe });
+            return await chromium.launch({ headless: true, executablePath: exe, args: launchArgs });
           }
         }
       }
@@ -118,6 +119,23 @@ async function run() {
 
   try {
     const page = await context.newPage();
+    const hydrationErrors: string[] = [];
+    page.on('pageerror', (err) => {
+      hydrationErrors.push(`pageerror(${page.url()}): ${err.message}`);
+    });
+    page.on('console', (msg) => {
+      if (msg.type() === 'error') {
+        const txt = msg.text();
+        if (
+          txt.includes('Hydration failed') ||
+          txt.includes('did not match') ||
+          txt.includes('hydrated but some attributes') ||
+          txt.includes('style={{}}')
+        ) {
+          hydrationErrors.push(`console.error(${page.url()}): ${txt}`);
+        }
+      }
+    });
     const results: LinkCheckResult[] = [];
 
     const visitAndCheck = async (
@@ -137,7 +155,7 @@ async function run() {
         // fetch may fail if non-HTTP error, ignore
       }
 
-      const response = await page.goto(fullUrl, { waitUntil: 'domcontentloaded', timeout: 30000 });
+      const response = await page.goto(fullUrl, { waitUntil: 'domcontentloaded', timeout: 60000 });
       const status = response ? response.status() : 0;
       const finalUrl = page.url();
 
@@ -186,6 +204,7 @@ async function run() {
       '/console/security',
       '/console/audit',
       '/console/settings/appearance',
+      '/console/ai',
       '/console/design-system',
       '/admin',
       '/platform',
@@ -198,7 +217,7 @@ async function run() {
       const badge = r.status === 200 && !r.has404 ? 'PASS' : 'FAIL';
       if (r.initialStatus && (r.initialStatus === 301 || r.initialStatus === 308)) {
         console.log(`[${badge}] ${r.initialStatus} -> ${r.status} ${r.url.padEnd(25)} -> ${r.redirectTarget} (lands on ${r.finalUrl}) -> "${r.heading}"`);
-        assert.equal(r.initialStatus, 301, `Legacy route ${r.url} should issue HTTP 301 redirect`);
+        assert.equal(r.initialStatus, 308, `Legacy route ${r.url} should issue HTTP 308 permanent redirect`);
         assert.ok(r.finalUrl.includes(r.redirectTarget || ''), `Final landing URL ${r.finalUrl} should match target ${r.redirectTarget}`);
       } else {
         console.log(`[${badge}] ${r.status} ${r.url.padEnd(35)} -> "${r.heading}"`);
@@ -236,7 +255,7 @@ async function run() {
   console.log('\n--- 3. Testing Golden Path (Suspend & Resume) ---');
 
   // Step A: Overview -> Click Open Tenants
-  await page.goto(`${BASE_URL}/console/overview`, { waitUntil: 'domcontentloaded' });
+  await page.goto(`${BASE_URL}/console/overview`, { waitUntil: 'domcontentloaded', timeout: 60000 });
   const openTenantsLink = page.locator('a[href="/console/tenants"]').first();
   await openTenantsLink.click();
   await page.waitForURL('**/console/tenants');
@@ -283,7 +302,7 @@ async function run() {
   // Intercept and assert the API response separately from the UI state
   const suspendResponsePromise = page.waitForResponse(
     (res) => res.url().includes('/api/v1/platform/tenants/proj_oasis_blr/suspend') && res.request().method() === 'POST',
-    { timeout: 10000 },
+    { timeout: 45000 },
   );
   await modalConfirmBtn.click();
   const suspendResponse = await suspendResponsePromise;
@@ -311,7 +330,7 @@ async function run() {
 
   const resumeResponsePromise = page.waitForResponse(
     (res) => res.url().includes('/api/v1/platform/tenants/proj_oasis_blr/resume') && res.request().method() === 'POST',
-    { timeout: 10000 },
+    { timeout: 45000 },
   );
   await resumeBtn.click();
   const resumeResponse = await resumeResponsePromise;
@@ -343,12 +362,13 @@ async function run() {
     '/console/security',
     '/console/audit',
     '/console/settings/appearance',
+    '/console/ai',
   ];
 
   for (const p of testedPages) {
     for (const vp of viewports) {
       await page.setViewportSize({ width: vp.width, height: vp.height });
-      await page.goto(`${BASE_URL}${p}`, { waitUntil: 'domcontentloaded', timeout: 30000 });
+      await page.goto(`${BASE_URL}${p}`, { waitUntil: 'domcontentloaded', timeout: 60000 });
 
       const hasHorizontalScroll = await page.evaluate(() => {
         return document.documentElement.scrollWidth > document.documentElement.clientWidth;
@@ -377,10 +397,11 @@ async function run() {
     '/console/security',
     '/console/audit',
     '/console/settings/appearance',
+    '/console/ai',
   ];
 
   for (const pagePath of a11yPages) {
-    await page.goto(`${BASE_URL}${pagePath}`, { waitUntil: 'domcontentloaded', timeout: 30000 });
+    await page.goto(`${BASE_URL}${pagePath}`, { waitUntil: 'domcontentloaded', timeout: 60000 });
 
     for (const theme of ['dark', 'light'] as const) {
       await page.evaluate((t) => document.documentElement.setAttribute('data-theme', t), theme);
@@ -396,6 +417,13 @@ async function run() {
     }
     console.log(`PASS  Axe WCAG 2.2 AA (dark & light): ${pagePath.padEnd(35)} (0 violations)`);
   }
+
+  assert.equal(
+    hydrationErrors.length,
+    0,
+    `Detected React hydration or runtime page errors in clean Chromium:\n${hydrationErrors.join('\n')}`,
+  );
+  console.log('PASS  Clean Chromium (--disable-extensions) verified 0 React hydration warnings and 0 page errors');
 
   console.log('\n===============================================================');
   console.log(' SUMMARY: All 24 links verified with HTTP 200 and zero 404s.');

@@ -4,6 +4,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import HospitalNavLayout from '../components/HospitalNavLayout';
 import Link from 'next/link';
 import { useStaffAuth } from '../context/StaffAuthContext';
+import { hmsAuthHeaders } from '../lib/csrf';
 import { ClinicalAIEngine, BedRecommendation } from '../services/ClinicalAIEngine';
 
 interface Equipment {
@@ -216,9 +217,9 @@ export default function BedMatrixPage() {
             roomId: b.roomId,
             room: b.roomId ? (b.roomId.includes('101') ? 'Room 101' : b.roomId.includes('102') ? 'Room 102' : 'Bay 01') : 'Bay 01',
             type: b.type === 'icu' ? 'ICU Critical Care' : b.type === 'emergency_trauma_bay' ? 'Emergency Bay' : b.type === 'temporary_surge' ? 'Temporary Surge' : b.type || 'Standard Ward',
-            status: b.status || 'available',
+            status: b.status || (b.patient ? 'occupied' : b.serviceState === 'MAINTENANCE' ? 'sanitizing' : 'available'),
             isTemporary: b.isTemporary || b.type === 'temporary_surge',
-            dailyRate: b.dailyRate || 1200,
+            dailyRate: b.dailyRate ?? (b.dailyRateMinor != null ? Math.round(Number(b.dailyRateMinor) / 100) : 1200),
             equipment: b.attachedEquipment && b.attachedEquipment.length > 0 ? b.attachedEquipment.map((eq: any) => ({
               name: eq.model || eq.deviceId || 'Monitor',
               brand: eq.manufacturer || 'Medical Tech',
@@ -227,6 +228,11 @@ export default function BedMatrixPage() {
               { name: 'IntelliVue MX800', brand: 'Philips', status: 'online' }
             ],
             patient: b.patient
+              ? {
+                  ...b.patient,
+                  name: b.patient.name || b.patient.mrn || b.patient.id,
+                }
+              : null
           };
         });
         setBeds(mapped);
@@ -306,13 +312,14 @@ export default function BedMatrixPage() {
       const selectedWard = wards.find(w => w.id === selectedWardId);
       const res = await fetch('/api/hospital/beds', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: hmsAuthHeaders(),
         body: JSON.stringify({
           label: newBedLabel,
           wardId: selectedWardId || selectedDeptId || 'apollo-ny-cardio-icu',
           roomId: newBedRoom,
           type: newBedType,
           dailyRate: Number(newBedRate),
+          dailyRateMinor: Math.round(Number(newBedRate) * 100),
           isTemporary: newBedIsSurge || (selectedWard?.name.toLowerCase().includes('surge') ?? false),
           attachedEquipment: [
             {
@@ -326,13 +333,13 @@ export default function BedMatrixPage() {
       });
 
       const data = await res.json();
-      if (data.success) {
+      if (res.ok && data.success) {
         showToast('success', 'Bed Provisioned', `Added ${newBedLabel} to ${selectedWardId || 'ward'}.`);
         setShowAddBedModal(false);
         setNewBedLabel('');
         await fetchBeds();
       } else {
-        showToast('error', 'Creation Failed', data.error || 'Failed to add bed');
+        showToast('error', 'Creation Failed', (typeof data.error === 'string' ? data.error : data.error?.message) || 'Failed to add bed');
       }
     } catch (err: any) {
       showToast('error', 'Error', err.message || 'Failed to add bed');
@@ -353,15 +360,16 @@ export default function BedMatrixPage() {
       confirmVariant: 'danger',
       action: async () => {
         const res = await fetch(`/api/hospital/beds/${bedId}?action=discharge`, {
-          method: 'POST'
+          method: 'POST',
+          headers: hmsAuthHeaders(),
         });
         const data = await res.json();
-        if (data.success) {
+        if (res.ok && data.success) {
           showToast('success', 'Patient Discharged', `${targetBed?.label || 'Bed'} marked for sanitization turnover.`);
           await fetchBeds();
           await fetchPatients();
         } else {
-          showToast('error', 'Discharge Failed', data.error || 'Discharge failed');
+          showToast('error', 'Discharge Failed', (typeof data.error === 'string' ? data.error : data.error?.message) || 'Discharge failed');
         }
       }
     });
@@ -371,12 +379,15 @@ export default function BedMatrixPage() {
   const handleCompleteTurnover = async (bedId: string) => {
     try {
       const res = await fetch(`/api/hospital/beds/${bedId}?action=turnover`, {
-        method: 'POST'
+        method: 'POST',
+        headers: hmsAuthHeaders(),
       });
       const data = await res.json();
-      if (data.success) {
+      if (res.ok && data.success) {
         showToast('success', 'Turnover Complete', 'Bed sanitization verified. Status set to Available.');
         await fetchBeds();
+      } else {
+        showToast('error', 'Turnover Failed', (typeof data.error === 'string' ? data.error : data.error?.message) || `Failed to complete turnover (HTTP ${res.status})`);
       }
     } catch (err: any) {
       showToast('error', 'Turnover Error', err.message);
@@ -385,16 +396,19 @@ export default function BedMatrixPage() {
 
   // 4. ACTION: Change Bed Status (e.g. Maintenance, Sanitizing)
   const handleChangeBedStatus = async (bedId: string, newStatus: string) => {
+    const serviceState = ['available', 'in_service'].includes(newStatus.toLowerCase()) ? 'IN_SERVICE' : 'MAINTENANCE';
     try {
       const res = await fetch(`/api/hospital/beds/${bedId}`, {
         method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ status: newStatus })
+        headers: hmsAuthHeaders(),
+        body: JSON.stringify({ serviceState })
       });
       const data = await res.json();
-      if (data.success) {
-        showToast('info', 'Status Updated', `Bed status updated to ${newStatus.toUpperCase()}`);
+      if (res.ok && data.success) {
+        showToast('info', 'Status Updated', `Bed status updated to ${serviceState}`);
         await fetchBeds();
+      } else {
+        showToast('error', 'Status Update Failed', (typeof data.error === 'string' ? data.error : data.error?.message) || `Failed to update bed status (HTTP ${res.status})`);
       }
     } catch (err: any) {
       showToast('error', 'Status Error', err.message);
@@ -449,12 +463,12 @@ export default function BedMatrixPage() {
 
       const res = await fetch('/api/hospital/admissions', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: hmsAuthHeaders(),
         body: JSON.stringify(payload)
       });
 
       const data = await res.json();
-      if (data.success) {
+      if (res.ok && data.success) {
         showToast('success', 'Admission Complete', `Patient assigned to ${selectedBedForAdmit.label}.`);
         setShowAdmitModal(false);
         setAdmitName('');
@@ -896,7 +910,7 @@ export default function BedMatrixPage() {
 
                       {can('bed.turnover') && (
                         <button
-                          onClick={() => handleChangeBedStatus(bed.id, 'sanitizing')}
+                          onClick={() => handleChangeBedStatus(bed.id, 'MAINTENANCE')}
                           style={{
                             padding: '9px 12px',
                             borderRadius: '12px',
@@ -913,7 +927,7 @@ export default function BedMatrixPage() {
                       )}
 
                       <button
-                        onClick={() => handleChangeBedStatus(bed.id, 'maintenance')}
+                        onClick={() => handleChangeBedStatus(bed.id, 'MAINTENANCE')}
                         style={{
                           padding: '9px 12px',
                           borderRadius: '12px',

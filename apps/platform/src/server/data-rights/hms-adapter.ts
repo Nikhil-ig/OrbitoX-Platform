@@ -113,8 +113,8 @@ export class HospitalOsDataRightsAdapter implements PluginDataRightsAdapter {
 
     if (principal.id) {
       const { rows } = await tx.query<{ id: string; mrn: string; processingStatus: string }>(
-        `SELECT "id", "mrn", "processingStatus" FROM "HmsPatient" WHERE "id" = $1`,
-        [principal.id],
+        `SELECT "id", "mrn", "processingStatus" FROM "HmsPatient" WHERE "id" = $1 AND "tenantId" = $2`,
+        [principal.id, tx.tenantId],
       );
       if (!rows[0]) throw new HttpError(404, 'PATIENT_NOT_FOUND');
       return rows[0];
@@ -122,8 +122,8 @@ export class HospitalOsDataRightsAdapter implements PluginDataRightsAdapter {
 
     if (principal.mrn) {
       const { rows } = await tx.query<{ id: string; mrn: string; processingStatus: string }>(
-        `SELECT "id", "mrn", "processingStatus" FROM "HmsPatient" WHERE "mrn" = $1`,
-        [principal.mrn],
+        `SELECT "id", "mrn", "processingStatus" FROM "HmsPatient" WHERE "mrn" = $1 AND "tenantId" = $2`,
+        [principal.mrn, tx.tenantId],
       );
       if (!rows[0]) throw new HttpError(404, 'PATIENT_NOT_FOUND');
       return rows[0];
@@ -132,8 +132,8 @@ export class HospitalOsDataRightsAdapter implements PluginDataRightsAdapter {
     if (principal.phone) {
       const blind = blindIndex(ring, principal.phone, 'phone', tx.tenantId, 'phone');
       const { rows } = await tx.query<{ id: string; mrn: string; processingStatus: string }>(
-        `SELECT "id", "mrn", "processingStatus" FROM "HmsPatient" WHERE "phoneBlind" = $1 ORDER BY "createdAt" ASC LIMIT 2`,
-        [blind],
+        `SELECT "id", "mrn", "processingStatus" FROM "HmsPatient" WHERE "phoneBlind" = $1 AND "tenantId" = $2 ORDER BY "createdAt" ASC LIMIT 2`,
+        [blind, tx.tenantId],
       );
       if (rows.length === 0) throw new HttpError(404, 'PATIENT_NOT_FOUND');
       if (rows.length > 1) {

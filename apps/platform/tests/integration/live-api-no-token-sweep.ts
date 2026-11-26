@@ -307,7 +307,7 @@ async function run() {
   // Await server readiness
   const start = Date.now();
   let ready = false;
-  while (Date.now() - start < 60000) {
+  while (Date.now() - start < 120000) {
     if (child.exitCode !== null) {
       throw new Error(
         `Standalone server exited prematurely with code ${child.exitCode}.\nServer output:\n${serverLogs}`,

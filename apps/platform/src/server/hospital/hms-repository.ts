@@ -98,16 +98,16 @@ export async function createPatient(
 /** Exact phone search without plaintext: returns active patient ids + MRN only. */
 export async function findPatientIdsByPhone(tx: TenantTx, ring: PhiKeyRing, phone: string) {
   const { rows } = await tx.query<{ id: string; mrn: string }>(
-    `SELECT "id","mrn" FROM "HmsPatient" WHERE "phoneBlind" = $1 AND "processingStatus" = 'ACTIVE' ORDER BY "createdAt" LIMIT 20`,
-    [blindIndex(ring, phone, 'phone', tx.tenantId, 'phone')],
+    `SELECT "id","mrn" FROM "HmsPatient" WHERE "phoneBlind" = $1 AND "tenantId" = $2 AND "processingStatus" = 'ACTIVE' ORDER BY "createdAt" LIMIT 20`,
+    [blindIndex(ring, phone, 'phone', tx.tenantId, 'phone'), tx.tenantId],
   );
   return rows;
 }
 
 export async function assertPatientActive(tx: TenantTx, patientId: string): Promise<void> {
   const { rows } = await tx.query<{ processingStatus: string }>(
-    `SELECT "processingStatus" FROM "HmsPatient" WHERE "id" = $1`,
-    [patientId],
+    `SELECT "processingStatus" FROM "HmsPatient" WHERE "id" = $1 AND "tenantId" = $2`,
+    [patientId, tx.tenantId],
   );
   if (!rows[0]) throw new HttpError(404, 'PATIENT_NOT_FOUND');
   if (rows[0].processingStatus !== 'ACTIVE') {
@@ -150,15 +150,15 @@ export async function readPatientForPurpose(
 
   if (q.purpose === 'BREAK_GLASS') {
     const g = await tx.query(
-      `SELECT 1 FROM "HmsBreakGlassGrant" WHERE "staffId"=$1 AND "patientId"=$2 AND now() < "expiresAt" LIMIT 1`,
-      [q.actorId, q.patientId],
+      `SELECT 1 FROM "HmsBreakGlassGrant" WHERE "staffId"=$1 AND "patientId"=$2 AND "tenantId"=$3 AND now() < "expiresAt" LIMIT 1`,
+      [q.actorId, q.patientId, tx.tenantId],
     );
     if (g.rowCount === 0) throw new HttpError(403, 'BREAK_GLASS_GRANT_REQUIRED');
   }
   const cols = q.fields.map((f) => `"${PHI_COLUMNS[f]}"`).join(','); // whitelist-derived, not user input
   const { rows } = await tx.query(
-    `SELECT "id","mrn","processingStatus",${cols} FROM "HmsPatient" WHERE "id"=$1`,
-    [q.patientId],
+    `SELECT "id","mrn","processingStatus",${cols} FROM "HmsPatient" WHERE "id"=$1 AND "tenantId"=$2`,
+    [q.patientId, tx.tenantId],
   );
   if (!rows[0] || rows[0].processingStatus !== 'ACTIVE') {
     throw new HttpError(404, 'PATIENT_NOT_FOUND'); // Restricted or other-tenant ids stay hidden from normal reads
@@ -194,8 +194,8 @@ export async function admitPatient(
 
 export async function dischargePatient(tx: TenantTx, admissionId: string) {
   const r = await tx.query(
-    `UPDATE "HmsAdmission" SET "dischargedAt"=now() WHERE "id"=$1 AND "dischargedAt" IS NULL RETURNING "bedId"`,
-    [admissionId],
+    `UPDATE "HmsAdmission" SET "dischargedAt"=now() WHERE "id"=$1 AND "tenantId"=$2 AND "dischargedAt" IS NULL RETURNING "bedId"`,
+    [admissionId, tx.tenantId],
   );
   if (r.rowCount === 0) throw new HttpError(404, 'OPEN_ADMISSION_NOT_FOUND');
   await outbox(tx, 'hms.admission.discharged', { id: admissionId, bedId: r.rows[0].bedId });
@@ -240,8 +240,8 @@ export async function recordPayment(
   let replayed = false;
   if (!paymentId) {
     const prev = await tx.query<{ id: string; invoiceId: string; amountMinor: string; method: string }>(
-      `SELECT "id","invoiceId","amountMinor","method" FROM "HmsPayment" WHERE "idempotencyKey"=$1`,
-      [p.idempotencyKey],
+      `SELECT "id","invoiceId","amountMinor","method" FROM "HmsPayment" WHERE "idempotencyKey"=$1 AND "tenantId"=$2`,
+      [p.idempotencyKey, tx.tenantId],
     );
     const row = prev.rows[0];
     if (!row) throw new HttpError(409, 'PAYMENT_IN_PROGRESS', 'retry', true);
@@ -254,8 +254,8 @@ export async function recordPayment(
     await outbox(tx, 'hms.payment.recorded', { id: paymentId, invoiceId: p.invoiceId });
   }
   const inv = await tx.query<{ paidMinor: string; status: string }>(
-    `SELECT "paidMinor"::text AS "paidMinor","status" FROM "HmsInvoice" WHERE "id"=$1`,
-    [p.invoiceId],
+    `SELECT "paidMinor"::text AS "paidMinor","status" FROM "HmsInvoice" WHERE "id"=$1 AND "tenantId"=$2`,
+    [p.invoiceId, tx.tenantId],
   );
   const invoiceRow = inv.rows[0];
   if (!invoiceRow) throw new HttpError(404, 'INVOICE_NOT_FOUND');

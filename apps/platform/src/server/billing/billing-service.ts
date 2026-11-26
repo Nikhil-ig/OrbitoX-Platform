@@ -473,10 +473,12 @@ export async function listBillingInvoices(
 export async function retryInvoicePayment(
   invoiceId: string,
   operator: OperatorSessionContext,
-): Promise<{ success: boolean; invoiceId: string; message: string }> {
+  idempotencyKey?: string,
+): Promise<{ success: boolean; invoiceId: string; replayed?: boolean; retryCount?: number; message: string }> {
   requireOperatorAuthorization(operator);
 
   const cleanId = invoiceId.trim();
+  const cleanIdem = idempotencyKey?.trim() || undefined;
   const invoices = await getPersistedInvoices();
   const invoice = invoices.find((i) => i.id === cleanId || i.paymentId === cleanId);
   if (!invoice) {
@@ -493,6 +495,20 @@ export async function retryInvoicePayment(
     throw new Error(`UNSUPPORTED_RETRY_STATE: Invoice ${cleanId} is in status "${invoice.status}". Only failed invoices can be retried.`);
   }
 
+  const prevRetryCount = Number((invoice as any).retryCount || 0);
+  if (cleanIdem && (invoice as any).lastRetryIdempotencyKey === cleanIdem) {
+    return {
+      success: true,
+      invoiceId: cleanId,
+      replayed: true,
+      retryCount: prevRetryCount,
+      message: `Payment retry already queued for invoice ${cleanId} (idempotent replay).`,
+    };
+  }
+
+  const nextRetryCount = prevRetryCount + 1;
+  const retryAt = new Date().toISOString();
+
   if (hasDatabase()) {
     try {
       await prisma.billingProviderCache.upsert({
@@ -500,14 +516,21 @@ export async function retryInvoicePayment(
         update: {
           payload: {
             ...(invoice as any),
-            lastRetryAt: new Date().toISOString(),
+            lastRetryAt: retryAt,
+            retryCount: nextRetryCount,
+            ...(cleanIdem ? { lastRetryIdempotencyKey: cleanIdem } : {}),
           },
         },
         create: {
           tenantId: invoice.tenantId,
           cacheKey: invoice.id,
           subscriptionId: invoice.subscriptionId || '',
-          payload: { ...(invoice as any), lastRetryAt: new Date().toISOString() },
+          payload: {
+            ...(invoice as any),
+            lastRetryAt: retryAt,
+            retryCount: nextRetryCount,
+            ...(cleanIdem ? { lastRetryIdempotencyKey: cleanIdem } : {}),
+          },
           expiresAt: new Date(Date.now() + 365 * 86400000),
         },
       });
@@ -528,12 +551,14 @@ export async function retryInvoicePayment(
     projectId: invoice.tenantId,
     organizationId: invoice.organizationId,
     reason: `Operator ${operator.email} requested immediate payment retry.`,
-    metadata: { invoiceId: cleanId, previousStatus: invoice.status },
+    metadata: { invoiceId: cleanId, previousStatus: invoice.status, retryCount: nextRetryCount },
   });
 
   return {
     success: true,
     invoiceId: cleanId,
+    replayed: false,
+    retryCount: nextRetryCount,
     message: `Payment retry initiated for invoice ${cleanId}. Gateway notification queued.`,
   };
 }
@@ -627,7 +652,7 @@ export async function cancelSubscription(
   subscriptionId: string,
   input: { reason: string },
   operator: OperatorSessionContext,
-): Promise<{ success: boolean; subscriptionId: string; status: string; message: string }> {
+): Promise<{ success: boolean; subscriptionId: string; status: string; cancelAtPeriodEnd: boolean; dbStatus: string; message: string }> {
   requireOperatorAuthorization(operator);
 
   if (!operator.reauthenticatedAt || Date.now() - operator.reauthenticatedAt.getTime() > 5 * 60 * 1000) {
@@ -640,6 +665,7 @@ export async function cancelSubscription(
   }
 
   const cleanId = subscriptionId.trim();
+  let dbStatus = 'active';
 
   if (hasDatabase()) {
     const existing = await prisma.billingSubscription.findFirst({
@@ -651,6 +677,10 @@ export async function cancelSubscription(
     if (!['active', 'authenticated', 'pending', 'halted', 'paused'].includes(existing.status)) {
       throw new Error(`INVALID_SUBSCRIPTION_STATE: Subscription ${cleanId} in status "${existing.status}" cannot be cancelled.`);
     }
+    if (existing.cancelAtPeriodEnd) {
+      throw new Error(`INVALID_SUBSCRIPTION_STATE: Subscription ${cleanId} is already scheduled for cancellation at period end.`);
+    }
+    dbStatus = existing.status;
 
     const idempotencyKey = `cancel_${cleanId}`;
     try {
@@ -661,15 +691,12 @@ export async function cancelSubscription(
       }
     }
 
-    try {
-      await prisma.billingSubscription.updateMany({
-        where: { razorpaySubscriptionId: cleanId },
-        data: { status: 'pending_cancellation', cancelAtPeriodEnd: true, updatedAt: new Date() },
-      });
-    } catch (err: any) {
-      if (process.env.NODE_ENV === 'production') {
-        throw new Error(`DATABASE_ERROR: Failed to update subscription status in database: ${err.message}`);
-      }
+    const updated = await prisma.billingSubscription.updateMany({
+      where: { razorpaySubscriptionId: cleanId, cancelAtPeriodEnd: false },
+      data: { cancelAtPeriodEnd: true, updatedAt: new Date() },
+    });
+    if (updated.count === 0) {
+      throw new Error(`INVALID_SUBSCRIPTION_STATE: Subscription ${cleanId} could not be updated for period-end cancellation.`);
     }
   }
 
@@ -680,13 +707,15 @@ export async function cancelSubscription(
     actorId: operator.email,
     actorEmail: operator.email,
     reason,
-    metadata: { subscriptionId: cleanId, status: 'pending_cancellation', cancelAtPeriodEnd: true },
+    metadata: { subscriptionId: cleanId, status: 'pending_cancellation', cancelAtPeriodEnd: true, dbStatus },
   });
 
   return {
     success: true,
     subscriptionId: cleanId,
     status: 'pending_cancellation',
+    cancelAtPeriodEnd: true,
+    dbStatus,
     message: `Subscription ${cleanId} scheduled for cancellation at the end of the current billing cycle.`,
   };
 }
@@ -750,10 +779,12 @@ export async function updateGracePeriod(
 export async function sendGraceReminder(
   subscriptionId: string,
   operator: OperatorSessionContext,
+  options?: { customMessage?: string; source?: string },
 ): Promise<{ success: boolean; subscriptionId: string; recipient: string; message: string }> {
   requireOperatorAuthorization(operator);
 
   const cleanId = subscriptionId.trim();
+  const customMessage = options?.customMessage?.trim()?.slice(0, 1000);
   let recipient = '';
 
   if (hasDatabase()) {
@@ -780,6 +811,8 @@ export async function sendGraceReminder(
           encryptedPayload: JSON.stringify({
             subscriptionId: cleanId,
             operatorEmail: operator.email,
+            ...(customMessage ? { customMessage } : {}),
+            ...(options?.source ? { source: options.source } : {}),
             dispatchedAt: new Date().toISOString(),
           }),
           status: 'PENDING',
@@ -802,7 +835,12 @@ export async function sendGraceReminder(
     actorId: operator.email,
     actorEmail: operator.email,
     reason: `Operator ${operator.email} dispatched grace period payment reminder to ${recipient}.`,
-    metadata: { subscriptionId: cleanId, recipient },
+    metadata: {
+      subscriptionId: cleanId,
+      recipient,
+      ...(options?.source ? { source: options.source } : {}),
+      hasCustomMessage: Boolean(customMessage),
+    },
   });
 
   return {

@@ -8,17 +8,21 @@ export const GET = withHospitalGuard(async (_req: NextRequest, _routeContext, au
   try {
     const data = await withTenantTx(prisma, authContext.tenantId, async (tx) => {
       const { rows: departments } = await tx.query(
-        `SELECT "id", "name", "createdAt" FROM "HmsDepartment" ORDER BY "name" ASC`
+        `SELECT "id", "name", "createdAt" FROM "HmsDepartment" WHERE "tenantId" = $1 ORDER BY "name" ASC`,
+        [authContext.tenantId]
       );
       const { rows: wards } = await tx.query(
-        `SELECT "id", "departmentId", "name" FROM "HmsWard" ORDER BY "name" ASC`
+        `SELECT "id", "departmentId", "name" FROM "HmsWard" WHERE "tenantId" = $1 ORDER BY "name" ASC`,
+        [authContext.tenantId]
       );
       const { rows: beds } = await tx.query(
         `SELECT b."id", b."wardId", b."label", b."dailyRateMinor", b."serviceState",
                 a."id" as "admissionId", a."patientId"
          FROM "HmsBed" b
          LEFT JOIN "HmsAdmission" a ON a."tenantId" = b."tenantId" AND a."bedId" = b."id" AND a."dischargedAt" IS NULL
-         ORDER BY b."label" ASC`
+         WHERE b."tenantId" = $1
+         ORDER BY b."label" ASC`,
+        [authContext.tenantId]
       );
 
       return {

@@ -3,6 +3,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import HospitalNavLayout from '../components/HospitalNavLayout';
 import { useStaffAuth } from '../context/StaffAuthContext';
+import { hmsAuthHeaders } from '../lib/csrf';
 
 interface InvoiceLineItem {
   description: string;
@@ -47,7 +48,8 @@ export default function FinancialBillingPage() {
   const [showGenerateModal, setShowGenerateModal] = useState(false);
   const [showPayModal, setShowPayModal] = useState<InvoiceRecord | null>(null);
   const [generatePatientId, setGeneratePatientId] = useState('');
-  const [payMethod, setPayMethod] = useState('credit_card');
+  const [generateAmountMinor, setGenerateAmountMinor] = useState('250000');
+  const [payMethod, setPayMethod] = useState('CARD');
   const [isProcessing, setIsProcessing] = useState(false);
   const [billingNotice, setBillingNotice] = useState<{ tone: 'success' | 'error'; text: string } | null>(null);
 
@@ -63,7 +65,27 @@ export default function FinancialBillingPage() {
       const patientsData = await patientsRes.json();
 
       if (billingData.success && billingData.data) {
-        setInvoices(billingData.data);
+        const rawList = Array.isArray(billingData.data) ? billingData.data : (billingData.data?.invoices || []);
+        const normalized: InvoiceRecord[] = rawList.map((inv: any) => {
+          const totalMinor = Number(inv.totalMinor ?? inv.subtotal ?? 0);
+          const paidMinor = Number(inv.paidMinor ?? inv.amountPaid ?? 0);
+          const rawStatus = String(inv.status || 'OPEN').toUpperCase();
+          const mappedStatus: 'draft' | 'finalized' | 'paid' =
+            rawStatus === 'PAID' ? 'paid' : rawStatus === 'DRAFT' ? 'draft' : 'finalized';
+          return {
+            ...inv,
+            patientName: inv.patientName || inv.patientMrn || inv.patientId || 'Patient',
+            lineItems: Array.isArray(inv.lineItems) ? inv.lineItems : [],
+            subtotal: Number(inv.subtotal ?? totalMinor),
+            taxAmount: Number(inv.taxAmount ?? 0),
+            insuranceCoverage: Number(inv.insuranceCoverage ?? 0),
+            amountPaid: paidMinor,
+            patientDue: Number(inv.patientDue ?? Math.max(0, totalMinor - paidMinor)),
+            status: mappedStatus,
+            issuedAt: inv.issuedAt || inv.createdAt || new Date().toISOString(),
+          };
+        });
+        setInvoices(normalized);
       }
       if (patientsData.success && patientsData.data) {
         setPatients(patientsData.data);
@@ -87,10 +109,11 @@ export default function FinancialBillingPage() {
   // Filtered Invoices
   const filteredInvoices = useMemo(() => {
     return invoices.filter(inv => {
+      const q = searchQuery.toLowerCase();
       const matchesSearch =
-        inv.patientName.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        inv.id.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        (inv.insuranceProvider && inv.insuranceProvider.toLowerCase().includes(searchQuery.toLowerCase()));
+        (inv.patientName || '').toLowerCase().includes(q) ||
+        (inv.id || '').toLowerCase().includes(q) ||
+        (inv.insuranceProvider && inv.insuranceProvider.toLowerCase().includes(q));
 
       const matchesStatus = statusFilter === 'all' || inv.status === statusFilter;
       return matchesSearch && matchesStatus;
@@ -112,18 +135,22 @@ export default function FinancialBillingPage() {
     e.preventDefault();
     setIsProcessing(true);
     try {
+      const totalMinor = Math.max(100, Math.round(Number(generateAmountMinor) || 250000));
       const res = await fetch('/api/hospital/billing', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ patientId: generatePatientId })
+        headers: hmsAuthHeaders(),
+        body: JSON.stringify({ patientId: generatePatientId, totalMinor })
       });
       const data = await res.json();
-      if (data.success) {
+      if (res.ok && data.success) {
         setShowGenerateModal(false);
         setBillingNotice({ tone: 'success', text: 'Itemized bill generated successfully.' });
         await fetchBillingData();
       } else {
-        setBillingNotice({ tone: 'error', text: data.error || 'Failed to generate bill' });
+        setBillingNotice({
+          tone: 'error',
+          text: (typeof data.error === 'string' ? data.error : data.error?.message) || 'Failed to generate bill'
+        });
       }
     } catch (err: any) {
       setBillingNotice({ tone: 'error', text: err?.message || 'Failed to generate bill' });
@@ -138,24 +165,31 @@ export default function FinancialBillingPage() {
     if (!showPayModal) return;
     setIsProcessing(true);
     try {
+      const idempotencyKey = `hms_pay_${showPayModal.id}_${Date.now()}`;
+      const amountMinor = Math.max(1, Math.round(Number(showPayModal.patientDue || showPayModal.subtotal || 100)));
       const res = await fetch(`/api/hospital/billing/pay/${showPayModal.id}`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: hmsAuthHeaders({ 'Idempotency-Key': idempotencyKey }),
         body: JSON.stringify({
-          paymentMethod: payMethod,
-          amount: showPayModal.patientDue
+          method: payMethod,
+          amountMinor,
+          idempotencyKey,
+          receivedById: currentStaff?.id || undefined,
         })
       });
       const data = await res.json();
-      if (data.success) {
+      if (res.ok && data.success) {
         setShowPayModal(null);
         setBillingNotice({ tone: 'success', text: 'Payment settled and invoice updated.' });
-        if (selectedInvoice && selectedInvoice.id === showPayModal.id) {
+        if (selectedInvoice && selectedInvoice.id === showPayModal.id && data.invoice) {
           setSelectedInvoice(data.invoice);
         }
         await fetchBillingData();
       } else {
-        setBillingNotice({ tone: 'error', text: data.error || 'Failed to process payment' });
+        setBillingNotice({
+          tone: 'error',
+          text: (typeof data.error === 'string' ? data.error : data.error?.message) || 'Failed to process payment'
+        });
       }
     } catch (err: any) {
       setBillingNotice({ tone: 'error', text: err?.message || 'Failed to process payment' });
@@ -611,10 +645,11 @@ export default function FinancialBillingPage() {
                   onChange={e => setPayMethod(e.target.value)}
                   style={{ width: '100%', padding: '10px 14px', borderRadius: '12px', border: '1px solid #cbd5e1', background: '#fff', fontSize: '13px' }}
                 >
-                  <option value="credit_card">💳 Credit / Debit Card (Online Terminal)</option>
-                  <option value="insurance_direct">🛡️ Insurance Direct EFT / Co-Pay Card</option>
-                  <option value="cash">💵 Cash / Hospital Treasury</option>
-                  <option value="wire_transfer">🏦 Bank Wire Transfer</option>
+                  <option value="CARD">💳 Credit / Debit Card (Online Terminal)</option>
+                  <option value="INSURANCE">🛡️ Insurance Direct EFT / Co-Pay</option>
+                  <option value="CASH">💵 Cash / Hospital Treasury</option>
+                  <option value="BANK_TRANSFER">🏦 Bank Wire Transfer</option>
+                  <option value="UPI">📱 UPI Instant Settlement</option>
                 </select>
               </div>
 

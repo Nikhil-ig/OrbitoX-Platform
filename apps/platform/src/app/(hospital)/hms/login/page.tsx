@@ -3,6 +3,7 @@
 import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
+import { hmsAuthHeaders } from '../lib/csrf';
 
 interface StaffMember {
   id: string;
@@ -57,19 +58,31 @@ export default function ClinicalLoginPage() {
     setErrorMessage('');
 
     try {
+      const trimmedId = identifier.trim();
       const res = await fetch('/api/hospital/security/login', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ identifier, pinOrPassword })
+        headers: hmsAuthHeaders(),
+        body: JSON.stringify({
+          identifier: trimmedId,
+          email: trimmedId.includes('@') ? trimmedId : undefined,
+          staffId: !trimmedId.includes('@') ? trimmedId : undefined,
+          password: pinOrPassword,
+          pinOrPassword,
+        })
       });
 
       const data = await res.json();
-      if (data.success && data.staff) {
-        // Save to localStorage
-        localStorage.setItem('orbitox_active_clinical_staff', JSON.stringify(data.staff));
+      const loggedStaff = data.data?.staff || data.staff;
+      if (data.success && loggedStaff) {
+        // Save safe UI profile context; HttpOnly session cookie carries credential
+        localStorage.setItem('orbitox_active_clinical_staff', JSON.stringify(loggedStaff));
+        window.dispatchEvent(new Event('orbitox_staff_session_changed'));
         router.push('/hms');
       } else {
-        setErrorMessage(data.error || 'Authentication failed. Please check your credentials.');
+        setErrorMessage(
+          (typeof data.error === 'string' ? data.error : data.error?.message) ||
+            'Authentication failed. Please check your credentials.',
+        );
       }
     } catch (err: any) {
       setErrorMessage(err.message || 'Network error during login.');
@@ -80,19 +93,31 @@ export default function ClinicalLoginPage() {
 
   const handleQuickLogin = async (staff: StaffMember) => {
     setIsSubmitting(true);
+    setErrorMessage('');
     try {
       const res = await fetch('/api/hospital/security/login', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ identifier: staff.id, pinOrPassword: staff.accessPin || '123456' })
+        headers: hmsAuthHeaders(),
+        body: JSON.stringify({
+          identifier: staff.id,
+          staffId: staff.id,
+          email: staff.email || undefined,
+          password: staff.accessPin || '123456',
+          pinOrPassword: staff.accessPin || '123456',
+        })
       });
 
       const data = await res.json();
-      if (data.success && data.staff) {
-        localStorage.setItem('orbitox_active_clinical_staff', JSON.stringify(data.staff));
+      const loggedStaff = data.data?.staff || data.staff;
+      if (data.success && loggedStaff) {
+        localStorage.setItem('orbitox_active_clinical_staff', JSON.stringify(loggedStaff));
+        window.dispatchEvent(new Event('orbitox_staff_session_changed'));
         router.push('/hms');
       } else {
-        setErrorMessage(data.error || 'Quick login failed.');
+        setErrorMessage(
+          (typeof data.error === 'string' ? data.error : data.error?.message) ||
+            'Quick login failed.',
+        );
       }
     } catch (err: any) {
       setErrorMessage(err.message);
@@ -107,7 +132,7 @@ export default function ClinicalLoginPage() {
     try {
       const res = await fetch('/api/hospital/security/break-glass', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: hmsAuthHeaders(),
         body: JSON.stringify({ doctorId: breakGlassDoctor, reason: breakGlassReason, patientId: 'EMERGENCY_GLOBAL_OVERRIDE' })
       });
       const data = await res.json();

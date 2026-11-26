@@ -1,4 +1,6 @@
 import assert from 'node:assert/strict';
+import { PrismaClient } from '@prisma/client';
+import { createTestOperatorSession, deleteTestOperatorSession } from './test-operator-session';
 
 interface RouteTestCase {
   id: number;
@@ -472,6 +474,18 @@ export const ROUTE_CENSUS_CASES: RouteTestCase[] = [
   },
 ];
 
+async function fetchWithRetry(url: string, init: RequestInit, retries = 3): Promise<Response> {
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    try {
+      return await fetch(url, init);
+    } catch (err: any) {
+      if (attempt === retries) throw err;
+      await new Promise((r) => setTimeout(r, 1500 * (attempt + 1)));
+    }
+  }
+  throw new Error('fetchWithRetry exhausted');
+}
+
 async function runLegacyRoutesRedirectVerification() {
   console.log(`\n================================================================================`);
   console.log(`🪐 OrbitoX Stage 7D Step A: Legacy Route Map & 301 Redirect Verification`);
@@ -483,79 +497,103 @@ async function runLegacyRoutesRedirectVerification() {
   let failedCount = 0;
   const failureDetails: string[] = [];
 
-  console.log(
-    `| # | Route | Disposition | Status | Location Header | Final Path | Result |`,
-  );
-  console.log(
-    `|---|---|---|---|---|---|---|`,
-  );
+  const prisma = new PrismaClient({
+    datasources: {
+      db: {
+        url: process.env.DATABASE_URL || 'postgresql://apple@127.0.0.1:5432/orbitox_phase2',
+      },
+    },
+  });
+  let operatorSessionIdToDelete: string | null = null;
+  let authHeaders: Record<string, string> = {};
+  try {
+    const testSession = await createTestOperatorSession(prisma);
+    operatorSessionIdToDelete = testSession.operatorId;
+    authHeaders = { cookie: testSession.cookie };
+  } catch (err: any) {
+    console.warn(`WARN  Proceeding without DB operator session cookie: ${err?.message || err}`);
+  }
 
-  for (const c of ROUTE_CENSUS_CASES) {
-    const targetUrl = `${BASE_URL}${c.path}`;
+  try {
+    console.log(
+      `| # | Route | Disposition | Status | Location Header | Final Path | Result |`,
+    );
+    console.log(
+      `|---|---|---|---|---|---|---|`,
+    );
 
-    try {
-      // 1. Initial Request (manual redirect inspection)
-      const initialRes = await fetch(targetUrl, {
-        method: 'GET',
-        redirect: 'manual',
-        headers: { Accept: 'text/html,application/xhtml+xml' },
-      });
+    for (const c of ROUTE_CENSUS_CASES) {
+      const targetUrl = `${BASE_URL}${c.path}`;
 
-      const initialStatus = initialRes.status;
-      const location = initialRes.headers.get('location') || '';
+      try {
+        // 1. Initial Request (manual redirect inspection)
+        const initialRes = await fetchWithRetry(targetUrl, {
+          method: 'GET',
+          redirect: 'manual',
+          headers: { Accept: 'text/html,application/xhtml+xml', ...authHeaders },
+        });
 
-      // Validate initial status (308 or 301 for redirects, 200 for retained/held/live)
-      if (c.expectedInitialStatus === 301 || c.expectedInitialStatus === 308) {
-        assert(
-          initialStatus === 308 || initialStatus === 301,
-          `Expected 308 or 301 redirect for ${c.path}, got HTTP ${initialStatus}`,
+        const initialStatus = initialRes.status;
+        const location = initialRes.headers.get('location') || '';
+
+        // Validate initial status (308 or 301 for redirects, 200 for retained/held/live)
+        if (c.expectedInitialStatus === 301 || c.expectedInitialStatus === 308) {
+          assert(
+            initialStatus === 308 || initialStatus === 301,
+            `Expected 308 or 301 redirect for ${c.path}, got HTTP ${initialStatus}`,
+          );
+          assert(
+            location === c.expectedLocation,
+            `Expected redirect location "${c.expectedLocation}" for ${c.path}, got "${location}"`,
+          );
+        } else {
+          assert(
+            initialStatus === 200,
+            `Expected HTTP 200 for retained/held route ${c.path}, got HTTP ${initialStatus}`,
+          );
+        }
+
+        // 2. Follow-through Request (end-to-end resolution asserting 200 and zero 404s)
+        const followRes = await fetchWithRetry(targetUrl, {
+          method: 'GET',
+          redirect: 'follow',
+          headers: { Accept: 'text/html,application/xhtml+xml', ...authHeaders },
+        });
+
+        const finalStatus = followRes.status;
+        const finalUrl = new URL(followRes.url);
+        const finalPath = finalUrl.pathname;
+
+        assert.strictEqual(
+          finalStatus,
+          200,
+          `Expected final resolved status 200 for ${c.path}, got HTTP ${finalStatus}`,
         );
-        assert(
-          location === c.expectedLocation,
-          `Expected redirect location "${c.expectedLocation}" for ${c.path}, got "${location}"`,
+        assert.strictEqual(
+          finalPath,
+          c.expectedFinalPath,
+          `Expected final resolved path "${c.expectedFinalPath}" for ${c.path}, got "${finalPath}"`,
         );
-      } else {
-        assert(
-          initialStatus === 200,
-          `Expected HTTP 200 for retained/held route ${c.path}, got HTTP ${initialStatus}`,
+
+        passedCount++;
+        const locDisplay = location || '—';
+        console.log(
+          `| ${String(c.id).padStart(2, ' ')} | \`${c.path}\` | ${c.disposition} | ${initialStatus} | \`${locDisplay}\` | \`${finalPath}\` | PASS |`,
+        );
+      } catch (err: any) {
+        failedCount++;
+        const errorMsg = `Route #${c.id} (${c.path}): ${err.message}`;
+        failureDetails.push(errorMsg);
+        console.log(
+          `| ${String(c.id).padStart(2, ' ')} | \`${c.path}\` | ${c.disposition} | FAIL | — | — | FAIL: ${err.message} |`,
         );
       }
-
-      // 2. Follow-through Request (end-to-end resolution asserting 200 and zero 404s)
-      const followRes = await fetch(targetUrl, {
-        method: 'GET',
-        redirect: 'follow',
-        headers: { Accept: 'text/html,application/xhtml+xml' },
-      });
-
-      const finalStatus = followRes.status;
-      const finalUrl = new URL(followRes.url);
-      const finalPath = finalUrl.pathname;
-
-      assert.strictEqual(
-        finalStatus,
-        200,
-        `Expected final resolved status 200 for ${c.path}, got HTTP ${finalStatus}`,
-      );
-      assert.strictEqual(
-        finalPath,
-        c.expectedFinalPath,
-        `Expected final resolved path "${c.expectedFinalPath}" for ${c.path}, got "${finalPath}"`,
-      );
-
-      passedCount++;
-      const locDisplay = location || '—';
-      console.log(
-        `| ${String(c.id).padStart(2, ' ')} | \`${c.path}\` | ${c.disposition} | ${initialStatus} | \`${locDisplay}\` | \`${finalPath}\` | PASS |`,
-      );
-    } catch (err: any) {
-      failedCount++;
-      const errorMsg = `Route #${c.id} (${c.path}): ${err.message}`;
-      failureDetails.push(errorMsg);
-      console.log(
-        `| ${String(c.id).padStart(2, ' ')} | \`${c.path}\` | ${c.disposition} | FAIL | — | — | FAIL: ${err.message} |`,
-      );
     }
+  } finally {
+    if (operatorSessionIdToDelete) {
+      await deleteTestOperatorSession(prisma, operatorSessionIdToDelete).catch(() => { });
+    }
+    await prisma.$disconnect().catch(() => { });
   }
 
   console.log(`\n--------------------------------------------------------------------------------`);

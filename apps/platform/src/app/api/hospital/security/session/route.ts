@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { withHospitalGuard } from '@/app/api/_lib/route-auth';
+import { withHospitalGuard, HMS_STAFF_SESSION_COOKIE } from '@/app/api/_lib/route-auth';
 import { withTenantTx } from '@/server/db/tenant-db';
 import { prisma } from '@/server/db/prisma';
 import { verifyStaffSession, revokeStaffSession } from '@/server/auth/hms-auth';
@@ -16,6 +16,9 @@ function extractSessionToken(req: NextRequest): string {
 
   const queryToken = req.nextUrl.searchParams.get('token');
   if (queryToken) return queryToken.trim();
+
+  const cookieToken = req.cookies.get(HMS_STAFF_SESSION_COOKIE)?.value;
+  if (cookieToken) return cookieToken.trim();
 
   return '';
 }
@@ -63,7 +66,15 @@ export const GET = withHospitalGuard(async (req: NextRequest, _routeContext, aut
       }
     });
 
-    return NextResponse.json({ success: true, data });
+    const response = NextResponse.json({ success: true, data });
+    response.cookies.set(HMS_STAFF_SESSION_COOKIE, '', {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'lax',
+      path: '/',
+      maxAge: 0,
+    });
+    return response;
   } catch (err: any) {
     const apiErr = mapDbError(err);
     return NextResponse.json(errorBody(apiErr, authContext.requestId), { status: apiErr.status });
@@ -97,7 +108,15 @@ export const DELETE = withHospitalGuard(async (req: NextRequest, _routeContext, 
       return { revoked: true };
     });
 
-    return NextResponse.json({ success: true, data });
+    const response = NextResponse.json({ success: true, data });
+    response.cookies.set(HMS_STAFF_SESSION_COOKIE, '', {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'lax',
+      path: '/',
+      maxAge: 0,
+    });
+    return response;
   } catch (err: any) {
     const apiErr = mapDbError(err);
     return NextResponse.json(errorBody(apiErr, authContext.requestId), { status: apiErr.status });

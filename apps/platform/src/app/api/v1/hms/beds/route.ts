@@ -24,11 +24,12 @@ export const GET = withApiGuard(
                               ELSE 'available'
                             END as "status"
                      FROM "HmsBed" b
-                     LEFT JOIN "HmsAdmission" a ON a."tenantId" = b."tenantId" AND a."bedId" = b."id" AND a."dischargedAt" IS NULL`;
-        const params: any[] = [];
+                     LEFT JOIN "HmsAdmission" a ON a."tenantId" = b."tenantId" AND a."bedId" = b."id" AND a."dischargedAt" IS NULL
+                     WHERE b."tenantId" = $1`;
+        const params: any[] = [ctx.tenantId];
         if (wardId) {
           params.push(wardId);
-          query += ` WHERE b."wardId" = $1`;
+          query += ` AND b."wardId" = $${params.length}`;
         }
         query += ` ORDER BY b."label" ASC`;
 
@@ -74,8 +75,8 @@ export const POST = withApiGuard(
       const result = await withTenantTx(prisma, ctx.tenantId, async (tx) => {
         if (action === 'discharge' || !patientId) {
           const { rows } = await tx.query<{ id: string }>(
-            `SELECT "id" FROM "HmsAdmission" WHERE "bedId" = $1 AND "dischargedAt" IS NULL LIMIT 1`,
-            [bedId]
+            `SELECT "id" FROM "HmsAdmission" WHERE "bedId" = $1 AND "tenantId" = $2 AND "dischargedAt" IS NULL LIMIT 1`,
+            [bedId, ctx.tenantId]
           );
           if (rows[0]) {
             await dischargePatient(tx, rows[0].id);

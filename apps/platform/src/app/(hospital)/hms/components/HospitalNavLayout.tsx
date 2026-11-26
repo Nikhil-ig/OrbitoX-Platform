@@ -122,9 +122,12 @@ export default function HospitalNavLayout({
 
       if (billsRes && billsRes.ok) {
         const bl = await billsRes.json();
-        if (bl.data) {
-          pendingInvoices = bl.data.filter((x: any) => x.status !== 'paid').length;
-        }
+        const billRows = Array.isArray(bl.data)
+          ? bl.data
+          : Array.isArray(bl.data?.invoices)
+            ? bl.data.invoices
+            : [];
+        pendingInvoices = billRows.filter((x: any) => String(x.status || '').toUpperCase() !== 'PAID').length;
       }
 
       setGlobalStats({ alarmBeds, orderedMeds, triagePatients, sanitizingBeds, criticalLabs, pendingInvoices });

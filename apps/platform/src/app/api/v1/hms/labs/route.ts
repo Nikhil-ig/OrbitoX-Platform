@@ -18,11 +18,11 @@ export const GET = withApiGuard(
 
       const data = await withTenantTx(prisma, ctx.tenantId, async (tx) => {
         let query = `SELECT "id", "patientId", "orderedById", "testType", "status", "resultSealed", "resultedById", "verifiedById", "verifiedAt", "updatedAt"
-                     FROM "HmsLabOrder"`;
-        const params: any[] = [];
+                     FROM "HmsLabOrder" WHERE "tenantId" = $1`;
+        const params: any[] = [ctx.tenantId];
         if (patientId) {
           params.push(patientId);
-          query += ` WHERE "patientId" = $1`;
+          query += ` AND "patientId" = $${params.length}`;
         }
         query += ` ORDER BY "updatedAt" DESC LIMIT 50`;
 
@@ -67,8 +67,8 @@ export const POST = withApiGuard(
           }
         } else if (ctx.sub?.trim()) {
           const { rows: staffRows } = await tx.query<{ id: string }>(
-            `SELECT "id" FROM "HmsStaff" WHERE "id" = $1 LIMIT 1`,
-            [ctx.sub.trim()]
+            `SELECT "id" FROM "HmsStaff" WHERE "id" = $1 AND "tenantId" = $2 LIMIT 1`,
+            [ctx.sub.trim(), ctx.tenantId]
           );
           if (!staffRows[0]) {
             throw new HttpError(401, 'STAFF_IDENTITY_REQUIRED', 'Authenticated staff identity does not match an active staff member.');

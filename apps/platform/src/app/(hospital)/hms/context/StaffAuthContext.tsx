@@ -1,5 +1,7 @@
 'use client';
 
+import { hmsAuthHeaders } from '../lib/csrf';
+
 import React, { createContext, useContext, useState, useEffect, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 
@@ -149,21 +151,32 @@ export const StaffAuthProvider: React.FC<{ children: React.ReactNode }> = ({ chi
 
   const login = async (identifier: string, pinOrPassword: string): Promise<{ success: boolean; error?: string }> => {
     try {
+      const trimmedId = identifier.trim();
       const res = await fetch('/api/hospital/security/login', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ identifier, pinOrPassword })
+        headers: hmsAuthHeaders(),
+        body: JSON.stringify({
+          identifier: trimmedId,
+          email: trimmedId.includes('@') ? trimmedId : undefined,
+          staffId: !trimmedId.includes('@') ? trimmedId : undefined,
+          password: pinOrPassword,
+          pinOrPassword,
+        })
       });
 
       const data = await res.json();
-      if (data.success && data.staff) {
-        setCurrentStaff(data.staff);
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(data.staff));
+      const loggedStaff = data.data?.staff || data.staff;
+      if (res.ok && data.success && loggedStaff) {
+        setCurrentStaff(loggedStaff);
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(loggedStaff));
         window.dispatchEvent(new Event('orbitox_staff_session_changed'));
         await fetchAllStaff();
         return { success: true };
       } else {
-        return { success: false, error: data.error || 'Authentication failed' };
+        return {
+          success: false,
+          error: (typeof data.error === 'string' ? data.error : data.error?.message) || 'Authentication failed',
+        };
       }
     } catch (err: any) {
       return { success: false, error: err.message || 'Network error during login' };
@@ -177,6 +190,10 @@ export const StaffAuthProvider: React.FC<{ children: React.ReactNode }> = ({ chi
   };
 
   const logout = () => {
+    fetch('/api/hospital/security/session', {
+      method: 'DELETE',
+      headers: hmsAuthHeaders(),
+    }).catch(() => {});
     localStorage.removeItem(STORAGE_KEY);
     localStorage.removeItem(BREAK_GLASS_KEY);
     setBreakGlass({ isActive: false });
@@ -219,7 +236,7 @@ export const StaffAuthProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     try {
       await fetch('/api/hospital/security/break-glass', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: hmsAuthHeaders(),
         body: JSON.stringify({
           staffId: currentStaff.id,
           staffName: currentStaff.name,

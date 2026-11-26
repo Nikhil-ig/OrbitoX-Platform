@@ -62,8 +62,8 @@ export const POST = withHospitalGuard(async (req: NextRequest, context: { params
         if (!body.admissionId) {
           // Find the active open admission for this patient
           const { rows } = await tx.query<{ id: string }>(
-            `SELECT "id" FROM "HmsAdmission" WHERE "patientId" = $1 AND "dischargedAt" IS NULL LIMIT 1`,
-            [id]
+            `SELECT "id" FROM "HmsAdmission" WHERE "patientId" = $1 AND "tenantId" = $2 AND "dischargedAt" IS NULL LIMIT 1`,
+            [id, authContext.tenantId]
           );
           if (!rows[0]) throw new HttpError(404, 'OPEN_ADMISSION_NOT_FOUND');
           await dischargePatient(tx, rows[0].id);
