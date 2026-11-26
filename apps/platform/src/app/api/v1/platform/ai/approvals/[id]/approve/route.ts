@@ -30,6 +30,7 @@ export const POST = withOperatorAuth<{ params: Promise<{ id: string }> }>(
           approvalId: id,
           editedMessage: body.editedMessage,
           reason: body.reason,
+          emergencySelfApproval: body.emergencySelfApproval,
         },
         actor,
       );

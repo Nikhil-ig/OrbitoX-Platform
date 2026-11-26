@@ -29,18 +29,18 @@ export const HMS_STAFF_SESSION_COOKIE = 'orbitox_hms_staff_session';
 
 type RouteContext = any;
 type GuardedRouteHandler = (
-    request: NextRequest,
-    routeContext: RouteContext,
-    authContext: ApiRequestContext & { grant?: any }
+  request: NextRequest,
+  routeContext: RouteContext,
+  authContext: ApiRequestContext & { grant?: any }
 ) => Promise<Response> | Response;
 
 type GuestRouteHandler = (request: NextRequest, routeContext: RouteContext, guest: any) => Promise<Response> | Response;
 
 interface LegacyGuardOptions {
-    serviceId: string;
-    adminOnly?: boolean;
-    sensitive?: boolean;
-    feature?: string;
+  serviceId: string;
+  adminOnly?: boolean;
+  sensitive?: boolean;
+  feature?: string;
 }
 
 export const hmsRevisionStore =
@@ -175,7 +175,7 @@ async function resolveBrowserTenantForService(
 
   const verifyTenantOwnership = async (candidateTenant: string): Promise<string | null> => {
     const installation = await platformRepository.getPluginInstallation(candidateTenant, canonicalPlugin);
-    if (!installation || ['ARCHIVED', 'DEPROVISIONING'].includes(installation.status)) {
+    if (!installation || ['SUSPENDED', 'ARCHIVED', 'DEPROVISIONING'].includes(installation.status)) {
       return null;
     }
 
@@ -190,6 +190,9 @@ async function resolveBrowserTenantForService(
       : null;
     const projectLookupKey = projectIdMatch?.[2] || candidateTenant;
     const project = await platformRepository.getProject(projectLookupKey);
+    if (project && (project.status || '').toUpperCase() === 'SUSPENDED') {
+      return null;
+    }
 
     if (allowedOrganizationIds) {
       if (project) {
@@ -290,264 +293,277 @@ async function resolveBrowserTenantForService(
 }
 
 function withLegacyGuard(options: LegacyGuardOptions, handler: GuardedRouteHandler) {
-    return async (request: NextRequest, routeContext?: RouteContext): Promise<Response> => {
-        if (
-            options.sensitive &&
-            (process.env.NODE_ENV === 'production' || !process.env.NODE_ENV) &&
-            process.env.ORBITOX_ENABLE_HOSPITAL_ADMIN_ENDPOINTS !== 'true'
-        ) {
-            return NextResponse.json({ success: false, error: { code: 'NOT_FOUND', message: 'Endpoint is disabled.' } }, { status: 404 });
+  return async (request: NextRequest, routeContext?: RouteContext): Promise<Response> => {
+    if (
+      options.sensitive &&
+      (process.env.NODE_ENV === 'production' || !process.env.NODE_ENV) &&
+      process.env.ORBITOX_ENABLE_HOSPITAL_ADMIN_ENDPOINTS !== 'true'
+    ) {
+      return NextResponse.json({ success: false, error: { code: 'NOT_FOUND', message: 'Endpoint is disabled.' } }, { status: 404 });
+    }
+
+    const hasExplicitMachineCredential = Boolean(
+      request.headers.get('x-api-key')?.trim() ||
+      request.headers.get('x-admin-token')?.trim() ||
+      request.headers.get('authorization')?.trim() ||
+      request.headers.get('x-orbitox-internal-sig')?.trim()
+    );
+
+    let effectiveRequest = request;
+    let isOperatorBrowserSession = false;
+    let isCustomerBrowserSession = false;
+
+    if (!hasExplicitMachineCredential) {
+      const method = request.method.toUpperCase();
+      const isMutation = !['GET', 'HEAD', 'OPTIONS'].includes(method);
+      const tenantCookieKey = options.serviceId === 'hms' ? 'orbitox_hms_tenant' : 'orbitox_restaurant_tenant';
+      const requestedTenant =
+        request.headers.get('x-tenant-id')?.trim() ||
+        request.cookies.get(tenantCookieKey)?.value?.trim();
+      const staffCookieToken =
+        options.serviceId === 'hms'
+          ? request.cookies.get(HMS_STAFF_SESSION_COOKIE)?.value?.trim()
+          : undefined;
+
+      const operatorCookie = request.cookies.get(OPERATOR_SESSION_COOKIE)?.value;
+      const operatorSession = operatorCookie ? await getOperatorSession(operatorCookie) : null;
+
+      if (operatorSession) {
+        if (isMutation && !validOperatorCsrf(request, operatorSession.csrfTokenHash)) {
+          return NextResponse.json(
+            { success: false, error: { code: 'CSRF_INVALID', message: 'CSRF validation failed.' } },
+            { status: 403 },
+          );
+        }
+        const requiredRole = options.adminOnly || isMutation ? 'OPERATOR' : 'SUPPORT_READONLY';
+        if (!operatorRoleAllows(operatorSession.role, requiredRole)) {
+          return NextResponse.json(
+            { success: false, error: { code: 'FORBIDDEN', message: 'Your operator role cannot perform this action.' } },
+            { status: 403 },
+          );
         }
 
-        const hasExplicitMachineCredential = Boolean(
-            request.headers.get('x-api-key')?.trim() ||
-            request.headers.get('x-admin-token')?.trim() ||
-            request.headers.get('authorization')?.trim() ||
-            request.headers.get('x-orbitox-internal-sig')?.trim()
-        );
-
-        let effectiveRequest = request;
-        let isOperatorBrowserSession = false;
-        let isCustomerBrowserSession = false;
-
-        if (!hasExplicitMachineCredential) {
-            const method = request.method.toUpperCase();
-            const isMutation = !['GET', 'HEAD', 'OPTIONS'].includes(method);
-            const tenantCookieKey = options.serviceId === 'hms' ? 'orbitox_hms_tenant' : 'orbitox_restaurant_tenant';
-            const requestedTenant =
-                request.headers.get('x-tenant-id')?.trim() ||
-                request.cookies.get(tenantCookieKey)?.value?.trim();
-            const staffCookieToken =
-                options.serviceId === 'hms'
-                    ? request.cookies.get(HMS_STAFF_SESSION_COOKIE)?.value?.trim()
-                    : undefined;
-
-            const operatorCookie = request.cookies.get(OPERATOR_SESSION_COOKIE)?.value;
-            const operatorSession = operatorCookie ? await getOperatorSession(operatorCookie) : null;
-
-            if (operatorSession) {
-                if (isMutation && !validOperatorCsrf(request, operatorSession.csrfTokenHash)) {
-                    return NextResponse.json(
-                        { success: false, error: { code: 'CSRF_INVALID', message: 'CSRF validation failed.' } },
-                        { status: 403 },
-                    );
-                }
-                const requiredRole = options.adminOnly || isMutation ? 'OPERATOR' : 'SUPPORT_READONLY';
-                if (!operatorRoleAllows(operatorSession.role, requiredRole)) {
-                    return NextResponse.json(
-                        { success: false, error: { code: 'FORBIDDEN', message: 'Your operator role cannot perform this action.' } },
-                        { status: 403 },
-                    );
-                }
-
-                const resolvedTenantId = await resolveBrowserTenantForService(options.serviceId, requestedTenant);
-                if (!resolvedTenantId) {
-                    return NextResponse.json(
-                        {
-                            success: false,
-                            error: {
-                                code: 'TENANT_ACCESS_DENIED',
-                                message: `No active ${options.serviceId.toUpperCase()} tenant environment was resolved for this browser session.`,
-                            },
-                        },
-                        { status: 403 },
-                    );
-                }
-
-                const { signature, timestamp } = await createInternalAuthToken('admin', operatorSession.operatorId);
-                const forwardedHeaders = new Headers(request.headers);
-                forwardedHeaders.set('x-orbitox-principal', 'admin');
-                forwardedHeaders.set('x-orbitox-internal-sig', signature);
-                forwardedHeaders.set('x-orbitox-internal-ts', timestamp);
-                forwardedHeaders.set('x-orbitox-operator-id', operatorSession.operatorId);
-                forwardedHeaders.set('x-tenant-id', resolvedTenantId);
-                if (
-                    staffCookieToken &&
-                    !forwardedHeaders.get('x-staff-session') &&
-                    !forwardedHeaders.get('x-staff-token')
-                ) {
-                    forwardedHeaders.set('x-staff-session', staffCookieToken);
-                }
-                effectiveRequest = new NextRequest(request.url, {
-                    method: request.method,
-                    headers: forwardedHeaders,
-                    body: isMutation ? await request.clone().arrayBuffer().catch(() => undefined) : undefined,
-                });
-                isOperatorBrowserSession = true;
-            } else {
-                const customerCookie = request.cookies.get(CUSTOMER_SESSION_COOKIE)?.value;
-                const customerSession = customerCookie ? await getCustomerSession(customerCookie) : null;
-                if (customerSession) {
-                    if (isMutation && !validCustomerCsrf(request, customerSession.csrfTokenHash)) {
-                        return NextResponse.json(
-                            { success: false, error: { code: 'CSRF_INVALID', message: 'CSRF validation failed.' } },
-                            { status: 403 },
-                        );
-                    }
-                    if (options.adminOnly) {
-                        const isOrgAdmin = customerSession.memberships.some((m) =>
-                            ['OWNER', 'ADMIN'].includes(m.role),
-                        );
-                        const pathname = request.nextUrl?.pathname || new URL(request.url).pathname;
-                        const isStaffAuthEndpoint =
-                            pathname === '/api/hospital/security/login' ||
-                            pathname === '/api/hospital/security/session';
-                        if (!isOrgAdmin || !isStaffAuthEndpoint) {
-                            return NextResponse.json(
-                                { success: false, error: { code: 'FORBIDDEN', message: 'Operator privileges required for this administrative endpoint.' } },
-                                { status: 403 },
-                            );
-                        }
-                    }
-
-                    const allowedOrgIds = customerSession.memberships.map((m) => m.organizationId);
-                    const resolvedTenantId = await resolveBrowserTenantForService(
-                        options.serviceId,
-                        requestedTenant,
-                        allowedOrgIds,
-                    );
-                    if (!resolvedTenantId) {
-                        return NextResponse.json(
-                            {
-                                success: false,
-                                error: {
-                                    code: 'TENANT_ACCESS_DENIED',
-                                    message: `No authorized ${options.serviceId.toUpperCase()} tenant was found for your organization.`,
-                                },
-                            },
-                            { status: 403 },
-                        );
-                    }
-
-                    const { signature, timestamp } = await createInternalAuthToken('admin', customerSession.userId);
-                    const forwardedHeaders = new Headers(request.headers);
-                    forwardedHeaders.set('x-orbitox-principal', 'admin');
-                    forwardedHeaders.set('x-orbitox-internal-sig', signature);
-                    forwardedHeaders.set('x-orbitox-internal-ts', timestamp);
-                    forwardedHeaders.set('x-orbitox-operator-id', customerSession.userId);
-                    forwardedHeaders.set('x-tenant-id', resolvedTenantId);
-                    if (
-                        staffCookieToken &&
-                        !forwardedHeaders.get('x-staff-session') &&
-                        !forwardedHeaders.get('x-staff-token')
-                    ) {
-                        forwardedHeaders.set('x-staff-session', staffCookieToken);
-                    }
-                    effectiveRequest = new NextRequest(request.url, {
-                        method: request.method,
-                        headers: forwardedHeaders,
-                        body: isMutation ? await request.clone().arrayBuffer().catch(() => undefined) : undefined,
-                    });
-                    isCustomerBrowserSession = true;
-                }
-            }
-        }
-
-        const guarded = withApiGuard(
+        const resolvedTenantId = await resolveBrowserTenantForService(options.serviceId, requestedTenant);
+        if (!resolvedTenantId) {
+          return NextResponse.json(
             {
-                serviceId: options.serviceId,
-                serviceName: options.serviceId === 'hms' ? 'Hospital API' : 'Restaurant API',
-                routeClass: options.adminOnly ? 'platform-admin' : 'customer',
-                requiredScopes: options.adminOnly
-                    ? ['admin']
-                    : [options.serviceId === 'hms' ? `hms:${request.method === 'GET' ? 'read' : 'write'}` : 'restaurant:read'],
+              success: false,
+              error: {
+                code: 'TENANT_ACCESS_DENIED',
+                message: `No active ${options.serviceId.toUpperCase()} tenant environment was resolved for this browser session.`,
+              },
             },
-            async (guardedRequest, authContext) => {
-                // Grant enforcement for customer requests (platform admin operations bypass customer grants)
-                const isPlatformAdmin =
-                  !isCustomerBrowserSession &&
-                  (isOperatorBrowserSession ||
-                    guardedRequest.headers.get('x-orbitox-principal') === 'admin' ||
-                    authContext.scopes?.includes('admin') ||
-                    authContext.capabilities?.includes('admin'));
+            { status: 403 },
+          );
+        }
 
-                if (!options.adminOnly && authContext.tenantId) {
-                  const enforcer = options.serviceId === 'hms' ? hmsGrantEnforcer : restaurantGrantEnforcer;
-                  enforcer.setTrustedKeys(getPublicGrantKeys());
-
-                  const pathname = guardedRequest.nextUrl?.pathname || new URL(guardedRequest.url).pathname;
-                  const feature = resolveFeature(pathname, options.serviceId, options.feature);
-                  const isWrite =
-                    guardedRequest.method !== 'GET' &&
-                    guardedRequest.method !== 'HEAD' &&
-                    guardedRequest.method !== 'OPTIONS';
-                  const grantToken =
-                    guardedRequest.headers.get('x-orbitox-grant') ||
-                    guardedRequest.headers.get('x-grant-token') ||
-                    undefined;
-
-                  const decision = await enforcer.enforce({
-                    tenantId: authContext.tenantId,
-                    feature,
-                    write: isWrite,
-                    token: grantToken,
-                  });
-
-                  if (!decision.allowed && !isPlatformAdmin) {
-                    return NextResponse.json(
-                      {
-                        success: false,
-                        error: {
-                          code: decision.code || 'UNAUTHORIZED',
-                          message: decision.message || 'Access denied by entitlement grant.',
-                        },
-                      },
-                      { status: decision.status || 403 }
-                    );
-                  }
-
-                  (authContext as any).grant = decision.claims || (isPlatformAdmin ? {
-                    tenantId: authContext.tenantId,
-                    pluginId: options.serviceId === 'hms' ? '@orbitox/hms' : '@orbitox/restaurant',
-                    planId: 'admin-override',
-                    status: 'ACTIVE',
-                    features: ['*'],
-                    quotas: {},
-                  } : undefined);
-                }
-
-                return handler(guardedRequest, routeContext, authContext);
+        const { signature, timestamp } = await createInternalAuthToken('admin', operatorSession.operatorId);
+        const forwardedHeaders = new Headers(request.headers);
+        forwardedHeaders.set('x-orbitox-principal', 'admin');
+        forwardedHeaders.set('x-orbitox-internal-sig', signature);
+        forwardedHeaders.set('x-orbitox-internal-ts', timestamp);
+        forwardedHeaders.set('x-orbitox-operator-id', operatorSession.operatorId);
+        forwardedHeaders.set('x-tenant-id', resolvedTenantId);
+        if (
+          staffCookieToken &&
+          !forwardedHeaders.get('x-staff-session') &&
+          !forwardedHeaders.get('x-staff-token')
+        ) {
+          forwardedHeaders.set('x-staff-session', staffCookieToken);
+        }
+        effectiveRequest = new NextRequest(request.url, {
+          method: request.method,
+          headers: forwardedHeaders,
+          body: isMutation ? await request.clone().arrayBuffer().catch(() => undefined) : undefined,
+        });
+        isOperatorBrowserSession = true;
+      } else {
+        const customerCookie = request.cookies.get(CUSTOMER_SESSION_COOKIE)?.value;
+        const customerSession = customerCookie ? await getCustomerSession(customerCookie) : null;
+        if (customerSession) {
+          if (isMutation && !validCustomerCsrf(request, customerSession.csrfTokenHash)) {
+            return NextResponse.json(
+              { success: false, error: { code: 'CSRF_INVALID', message: 'CSRF validation failed.' } },
+              { status: 403 },
+            );
+          }
+          if (options.adminOnly) {
+            const isOrgAdmin = customerSession.memberships.some((m) =>
+              ['OWNER', 'ADMIN'].includes(m.role),
+            );
+            const pathname = request.nextUrl?.pathname || new URL(request.url).pathname;
+            const isStaffAuthEndpoint =
+              pathname === '/api/hospital/security/login' ||
+              pathname === '/api/hospital/security/session';
+            if (!isOrgAdmin || !isStaffAuthEndpoint) {
+              return NextResponse.json(
+                { success: false, error: { code: 'FORBIDDEN', message: 'Operator privileges required for this administrative endpoint.' } },
+                { status: 403 },
+              );
             }
-        );
+          }
 
-        return guarded(effectiveRequest);
-    };
+          const allowedOrgIds = customerSession.memberships.map((m) => m.organizationId);
+          const resolvedTenantId = await resolveBrowserTenantForService(
+            options.serviceId,
+            requestedTenant,
+            allowedOrgIds,
+          );
+          if (!resolvedTenantId) {
+            return NextResponse.json(
+              {
+                success: false,
+                error: {
+                  code: 'TENANT_ACCESS_DENIED',
+                  message: `No authorized ${options.serviceId.toUpperCase()} tenant was found for your organization.`,
+                },
+              },
+              { status: 403 },
+            );
+          }
+
+          const { signature, timestamp } = await createInternalAuthToken('admin', customerSession.userId);
+          const forwardedHeaders = new Headers(request.headers);
+          forwardedHeaders.set('x-orbitox-principal', 'admin');
+          forwardedHeaders.set('x-orbitox-internal-sig', signature);
+          forwardedHeaders.set('x-orbitox-internal-ts', timestamp);
+          forwardedHeaders.set('x-orbitox-operator-id', customerSession.userId);
+          forwardedHeaders.set('x-tenant-id', resolvedTenantId);
+          if (
+            staffCookieToken &&
+            !forwardedHeaders.get('x-staff-session') &&
+            !forwardedHeaders.get('x-staff-token')
+          ) {
+            forwardedHeaders.set('x-staff-session', staffCookieToken);
+          }
+          effectiveRequest = new NextRequest(request.url, {
+            method: request.method,
+            headers: forwardedHeaders,
+            body: isMutation ? await request.clone().arrayBuffer().catch(() => undefined) : undefined,
+          });
+          isCustomerBrowserSession = true;
+        }
+      }
+    }
+
+    if (options.adminOnly && isCustomerBrowserSession) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: {
+            code: 'FORBIDDEN',
+            message: 'Customer browser sessions are not permitted on platform-admin endpoints.',
+          },
+        },
+        { status: 403 },
+      );
+    }
+
+    const guarded = withApiGuard(
+      {
+        serviceId: options.serviceId,
+        serviceName: options.serviceId === 'hms' ? 'Hospital API' : 'Restaurant API',
+        routeClass: options.adminOnly ? 'platform-admin' : 'customer',
+        requiredScopes: options.adminOnly
+          ? ['admin']
+          : [options.serviceId === 'hms' ? `hms:${request.method === 'GET' ? 'read' : 'write'}` : 'restaurant:read'],
+      },
+      async (guardedRequest, authContext) => {
+        // Grant enforcement for customer requests (platform admin operations bypass customer grants)
+        const isPlatformAdmin =
+          !isCustomerBrowserSession &&
+          (isOperatorBrowserSession ||
+            guardedRequest.headers.get('x-orbitox-principal') === 'admin' ||
+            authContext.scopes?.includes('admin') ||
+            authContext.capabilities?.includes('admin'));
+
+        if (!options.adminOnly && authContext.tenantId) {
+          const enforcer = options.serviceId === 'hms' ? hmsGrantEnforcer : restaurantGrantEnforcer;
+          enforcer.setTrustedKeys(getPublicGrantKeys());
+
+          const pathname = guardedRequest.nextUrl?.pathname || new URL(guardedRequest.url).pathname;
+          const feature = resolveFeature(pathname, options.serviceId, options.feature);
+          const isWrite =
+            guardedRequest.method !== 'GET' &&
+            guardedRequest.method !== 'HEAD' &&
+            guardedRequest.method !== 'OPTIONS';
+          const grantToken =
+            guardedRequest.headers.get('x-orbitox-grant') ||
+            guardedRequest.headers.get('x-grant-token') ||
+            undefined;
+
+          const decision = await enforcer.enforce({
+            tenantId: authContext.tenantId,
+            feature,
+            write: isWrite,
+            token: grantToken,
+          });
+
+          if (!decision.allowed && !isPlatformAdmin) {
+            return NextResponse.json(
+              {
+                success: false,
+                error: {
+                  code: decision.code || 'UNAUTHORIZED',
+                  message: decision.message || 'Access denied by entitlement grant.',
+                },
+              },
+              { status: decision.status || 403 }
+            );
+          }
+
+          (authContext as any).grant = decision.claims || (isPlatformAdmin ? {
+            tenantId: authContext.tenantId,
+            pluginId: options.serviceId === 'hms' ? '@orbitox/hms' : '@orbitox/restaurant',
+            planId: 'admin-override',
+            status: 'ACTIVE',
+            features: ['*'],
+            quotas: {},
+          } : undefined);
+        }
+
+        return handler(guardedRequest, routeContext, authContext);
+      }
+    );
+
+    return guarded(effectiveRequest);
+  };
 }
 
 export function withHospitalGuard(handler: GuardedRouteHandler, options: Omit<LegacyGuardOptions, 'serviceId'> = {}) {
-    return withLegacyGuard({ serviceId: 'hms', ...options }, handler);
+  return withLegacyGuard({ serviceId: 'hms', ...options }, handler);
 }
 
 export function withRestaurantGuard(handler: GuardedRouteHandler, options: Omit<LegacyGuardOptions, 'serviceId'> = {}) {
-    return withLegacyGuard({ serviceId: 'restaurant', ...options }, handler);
+  return withLegacyGuard({ serviceId: 'restaurant', ...options }, handler);
 }
 
 export function verifyGuestCapabilityToken(token: string): any {
-    const [encodedPayload] = token.split('.');
-    if (!encodedPayload) throw new Error('Invalid guest capability token.');
-    const payload = JSON.parse(Buffer.from(encodedPayload, 'base64url').toString('utf8'));
-    return payload;
+  const [encodedPayload] = token.split('.');
+  if (!encodedPayload) throw new Error('Invalid guest capability token.');
+  const payload = JSON.parse(Buffer.from(encodedPayload, 'base64url').toString('utf8'));
+  return payload;
 }
 
 export function withGuestToken(handler: GuestRouteHandler) {
-    return async (request: NextRequest, routeContext?: RouteContext): Promise<Response> => {
-        const token = request.headers.get('x-guest-token')?.trim();
-        if (!token) {
-            return NextResponse.json({ success: false, error: { code: 'UNAUTHORIZED', message: 'A guest capability token is required.' } }, { status: 401 });
-        }
-        try {
-            return await handler(request, routeContext, verifyGuestCapabilityToken(token));
-        } catch {
-            return NextResponse.json({ success: false, error: { code: 'INVALID_GUEST_TOKEN', message: 'The guest capability is invalid, expired, or revoked.' } }, { status: 401 });
-        }
-    };
+  return async (request: NextRequest, routeContext?: RouteContext): Promise<Response> => {
+    const token = request.headers.get('x-guest-token')?.trim();
+    if (!token) {
+      return NextResponse.json({ success: false, error: { code: 'UNAUTHORIZED', message: 'A guest capability token is required.' } }, { status: 401 });
+    }
+    try {
+      return await handler(request, routeContext, verifyGuestCapabilityToken(token));
+    } catch {
+      return NextResponse.json({ success: false, error: { code: 'INVALID_GUEST_TOKEN', message: 'The guest capability is invalid, expired, or revoked.' } }, { status: 401 });
+    }
+  };
 }
 
 export function withPublicGuestBootstrap(handler: GuestRouteHandler) {
-    return async (request: NextRequest, routeContext?: RouteContext): Promise<Response> => {
-        if ((process.env.NODE_ENV === 'production' || !process.env.NODE_ENV) && !process.env.ORBITOX_GUEST_SECRET?.trim()) {
-            return NextResponse.json({ success: false, error: { code: 'AUTH_NOT_CONFIGURED', message: 'Guest session authentication is not configured.' } }, { status: 503 });
-        }
-        return handler(request, routeContext, undefined);
-    };
+  return async (request: NextRequest, routeContext?: RouteContext): Promise<Response> => {
+    if ((process.env.NODE_ENV === 'production' || !process.env.NODE_ENV) && !process.env.ORBITOX_GUEST_SECRET?.trim()) {
+      return NextResponse.json({ success: false, error: { code: 'AUTH_NOT_CONFIGURED', message: 'Guest session authentication is not configured.' } }, { status: 503 });
+    }
+    return handler(request, routeContext, undefined);
+  };
 }

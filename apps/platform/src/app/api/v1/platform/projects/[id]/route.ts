@@ -96,7 +96,7 @@ export const PATCH = withApiGuard(
         action: 'PROJECT_UPDATED',
         entityType: 'PLATFORM_PROJECT',
         entityId: existing.id,
-        userId: ctx.apiKey || 'platform_admin',
+        userId: ctx.actorLabel || ctx.keyId || ctx.operatorId || 'platform_admin',
         contextId: ctx.tenantId || 'global',
         reason: body.reason || `Updated project properties for [${existing.name}]`,
         oldValue: { status: existing.status, planTier: existing.planTier },
@@ -108,7 +108,7 @@ export const PATCH = withApiGuard(
         entityId: existing.id,
         organizationId: existing.organizationId,
         projectId: existing.id,
-        actorId: ctx.apiKey || 'platform_admin',
+        actorId: ctx.actorLabel || ctx.keyId || ctx.operatorId || 'platform_admin',
         reason: body.reason || `Updated project properties for [${existing.name}]`,
         metadata: { oldStatus: existing.status, newStatus: updated?.status, updates: body },
       });

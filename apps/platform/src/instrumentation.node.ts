@@ -237,6 +237,14 @@ export async function registerNode() {
       }
     }
 
+    // MCP governance encryption & HMAC key ring validation (required in production; zero fallback to SESSION_SECRET)
+    try {
+      const { McpKeyRing } = await import('@/server/ai/mcp-guardrails');
+      McpKeyRing.fromEnv(process.env);
+    } catch (mcpErr: any) {
+      problems.push(mcpErr?.message || 'ORBITOX_MCP_ENCRYPTION_KEYS / ORBITOX_MCP_HMAC_KEYS configuration is invalid');
+    }
+
     // Database runtime role check (required in production)
     const appDbUrl = process.env.APP_DATABASE_URL?.trim();
     if (!appDbUrl) {

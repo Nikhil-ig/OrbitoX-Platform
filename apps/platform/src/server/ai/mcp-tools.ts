@@ -16,22 +16,23 @@ export type TenantScopeMode = 'PLATFORM_GLOBAL' | 'EXPLICIT_TENANT';
 
 export type McpActorContext =
   | {
-      kind: 'operator';
-      actorId: string;
-      actorEmail: string;
-      role: PlatformOperatorRole;
-      reauthenticatedAt: Date | null;
-      allowedTenants: '*';
-      session: OperatorSessionContext;
-    }
+    kind: 'operator';
+    actorId: string;
+    actorEmail: string;
+    role: PlatformOperatorRole;
+    reauthenticatedAt: Date | null;
+    allowedTenants: '*';
+    session: OperatorSessionContext;
+  }
   | {
-      kind: 'api_key';
-      actorId: string;
-      actorEmail: string;
-      capabilities: string[];
-      allowedTenants: string[];
-      projectTenantId?: string;
-    };
+    kind: 'api_key';
+    actorId: string;
+    actorEmail: string | null;
+    maskedKeyDisplay?: string;
+    capabilities: string[];
+    allowedTenants: string[];
+    projectTenantId?: string;
+  };
 
 export class McpToolError extends Error {
   constructor(
@@ -503,14 +504,18 @@ export const MCP_TOOLS: McpToolDefinition[] = [
         tenantScope: op.tenantId,
       };
     },
-    execute: async (params, actor) => {
+    execute: async (params, actor, context) => {
       const operator = asSyntheticOperator(actor);
       try {
-        const updated = await provisioningService.retryOperation(params.operationId, {
-          id: operator.id,
-          email: operator.email,
-          role: operator.role,
-        });
+        const updated = await provisioningService.retryOperation(
+          params.operationId,
+          {
+            id: operator.id,
+            email: operator.email,
+            role: operator.role,
+          },
+          { mcpExecutionId: context.executionId },
+        );
         return {
           tenantScope: updated.tenantId,
           data: {
@@ -518,6 +523,7 @@ export const MCP_TOOLS: McpToolDefinition[] = [
             status: updated.status,
             tenantId: updated.tenantId,
             tenantName: updated.tenantName,
+            mcpExecutionId: context.executionId,
           },
         };
       } catch (err: any) {
@@ -571,7 +577,12 @@ export const MCP_TOOLS: McpToolDefinition[] = [
       try {
         const res = await suspendTenant(
           params.idOrSlug,
-          { reason: effectiveReason, operatorEmail: operator.email, requestId: context.executionId },
+          {
+            reason: effectiveReason,
+            operatorEmail: operator.email,
+            requestId: context.executionId,
+            idempotencyKey: context.idempotencyKey,
+          },
           operator,
         );
         return {
@@ -631,15 +642,15 @@ export const MCP_TOOLS: McpToolDefinition[] = [
       const [projects, orgs] = await Promise.all([
         projectIds.length > 0
           ? prisma.platformProject.findMany({
-              where: { OR: [{ id: { in: projectIds } }, { slug: { in: projectIds } }] },
-              select: { id: true, name: true, slug: true },
-            })
+            where: { OR: [{ id: { in: projectIds } }, { slug: { in: projectIds } }] },
+            select: { id: true, name: true, slug: true },
+          })
           : [],
         orgIds.length > 0
           ? prisma.platformOrganization.findMany({
-              where: { id: { in: orgIds } },
-              select: { id: true, name: true },
-            })
+            where: { id: { in: orgIds } },
+            select: { id: true, name: true },
+          })
           : [],
       ]);
 

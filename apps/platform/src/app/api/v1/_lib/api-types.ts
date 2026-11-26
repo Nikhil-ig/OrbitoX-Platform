@@ -42,8 +42,10 @@ export interface ApiRequestContext {
   categorySlug?: string;
   serviceId: string;
   sub?: string;
-  apiKey?: string;
-  credential?: string;
+  keyId?: string;
+  maskedKeyDisplay?: string;
+  actorLabel?: string;
+  authMethod?: 'api_key' | 'admin_token' | 'operator_session' | 'public';
   operatorId?: string;
   keyPrefix?: string;
   environment?: 'production' | 'staging' | 'sandbox' | string;

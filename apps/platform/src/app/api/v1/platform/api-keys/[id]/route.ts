@@ -82,7 +82,7 @@ export const PATCH = withApiGuard(
           action: 'API_KEY_STATUS_CHANGED',
           entityType: 'PLATFORM_KEY',
           entityId: existing.id,
-          userId: ctx.apiKey || 'platform_admin',
+          userId: ctx.actorLabel || ctx.keyId || ctx.operatorId || 'platform_admin',
           contextId: ctx.tenantId || 'global',
           reason: body.reason || `Status changed from ${existing.status} to ${body.status}`,
           oldValue: { status: existing.status },
@@ -94,7 +94,7 @@ export const PATCH = withApiGuard(
           entityId: existing.id,
           projectId: existing.projectId,
           environmentId: existing.environmentId,
-          actorId: ctx.apiKey || 'platform_admin',
+          actorId: ctx.actorLabel || ctx.keyId || ctx.operatorId || 'platform_admin',
           reason: body.reason || `Status changed from ${existing.status} to ${body.status}`,
           metadata: { oldStatus: existing.status, newStatus: body.status },
         });

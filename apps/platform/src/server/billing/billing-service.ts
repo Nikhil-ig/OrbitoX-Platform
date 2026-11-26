@@ -2,6 +2,7 @@ import 'server-only';
 import crypto from 'node:crypto';
 import { prisma } from '@/server/db/prisma';
 import type { OperatorSessionContext } from '@/server/accounts/account-service';
+import { encryptAccountEmailPayload } from '@/server/accounts/account-email-payload';
 import { platformRepository } from '@/server/db/platform-repository';
 import { cancelRazorpaySubscription } from '@/server/billing/razorpay-client';
 
@@ -802,21 +803,22 @@ export async function sendGraceReminder(
       throw new Error(`BILLING_EMAIL_NOT_CONFIGURED: Organization for subscription ${cleanId} has no configured billing contact email.`);
     }
 
-    // Persist real email outbox job - fail closed if database fails (idempotent on idempotencyKey)
+    // Persist encrypted email outbox job - fail closed if database fails (idempotent on idempotencyKey)
     try {
+      const sealedPayload = encryptAccountEmailPayload({
+        subscriptionId: cleanId,
+        operatorEmail: operator.email,
+        ...(customMessage ? { customMessage } : {}),
+        ...(options?.source ? { source: options.source } : {}),
+        ...(options?.idempotencyKey ? { idempotencyKey: options.idempotencyKey } : {}),
+        queuedAt: new Date().toISOString(),
+      });
       await prisma.accountEmailOutbox.create({
         data: {
           recipient,
           template: 'BILLING_GRACE_REMINDER',
           idempotencyKey: options?.idempotencyKey || null,
-          encryptedPayload: JSON.stringify({
-            subscriptionId: cleanId,
-            operatorEmail: operator.email,
-            ...(customMessage ? { customMessage } : {}),
-            ...(options?.source ? { source: options.source } : {}),
-            ...(options?.idempotencyKey ? { idempotencyKey: options.idempotencyKey } : {}),
-            dispatchedAt: new Date().toISOString(),
-          }),
+          encryptedPayload: sealedPayload,
           status: 'PENDING',
         },
       });

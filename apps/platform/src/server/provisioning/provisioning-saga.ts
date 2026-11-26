@@ -621,7 +621,7 @@ export class ProvisioningSaga {
             },
           },
           { expectedLeaseOwner: attemptLeaseOwner }
-        ).catch(() => {});
+        ).catch(() => { });
 
         // F2: Honour TEST_STEP5_DELAY_MS only in test environments; strictly impossible in production
         const runtimeNodeEnv = process.env['NODE_' + 'ENV'] || process.env.NODE_ENV;
@@ -676,7 +676,7 @@ export class ProvisioningSaga {
                   },
                 },
                 { expectedLeaseOwner: attemptLeaseOwner }
-              ).catch(() => {});
+              ).catch(() => { });
               return { pluginId: canonical, ok: true };
             } else {
               try {
@@ -785,11 +785,11 @@ export class ProvisioningSaga {
         const updatedSteps = currentSteps.map((s) =>
           s.id === '7'
             ? {
-                ...s,
-                status: 'COMPLETED' as const,
-                completedAt: new Date().toISOString(),
-                durationMs: Math.round(performance.now() - t7),
-              }
+              ...s,
+              status: 'COMPLETED' as const,
+              completedAt: new Date().toISOString(),
+              durationMs: Math.round(performance.now() - t7),
+            }
             : s
         );
 
@@ -809,11 +809,11 @@ export class ProvisioningSaga {
           steps: updatedSteps,
           apiKey: existingApiKey
             ? {
-                id: existingApiKey.id,
-                prefix: existingApiKey.prefix,
-                masked: existingApiKey.masked,
-                environmentId: existingApiKey.environmentId,
-              }
+              id: existingApiKey.id,
+              prefix: existingApiKey.prefix,
+              masked: existingApiKey.masked,
+              environmentId: existingApiKey.environmentId,
+            }
             : undefined,
           onAfterValidation: internalHook,
         });
@@ -914,7 +914,10 @@ export class ProvisioningSaga {
   /**
    * Retries an operation from a partial failure or failed step.
    */
-  async retryOperation(operationId: string): Promise<PlatformOperationRecord | null> {
+  async retryOperation(
+    operationId: string,
+    options: { mcpExecutionId?: string } = {}
+  ): Promise<PlatformOperationRecord | null> {
     const op = await operationStore.getOperation(operationId);
     if (!op) return null;
     if (op.status === 'ACTIVE') return op;
@@ -925,8 +928,13 @@ export class ProvisioningSaga {
 
     // Retry must never use force: conditional claim only. If another live server holds the lease, reject retry.
     const attemptId = randomUUID().slice(0, 8);
-    const attemptLeaseOwner = `${this.workerInstanceId}:${attemptId}`;
-    const claimed = await operationStore.claimOperationLease(operationId, attemptLeaseOwner, undefined, { allowCancelled: true });
+    const attemptLeaseOwner = options.mcpExecutionId
+      ? `mcp:${options.mcpExecutionId}`
+      : `${this.workerInstanceId}:${attemptId}`;
+    const claimed = await operationStore.claimOperationLease(operationId, attemptLeaseOwner, undefined, {
+      allowCancelled: true,
+      mcpExecutionId: options.mcpExecutionId,
+    });
     if (!claimed) {
       console.log(`[ProvisioningSaga] Operation ${operationId} lease could not be claimed by ${attemptLeaseOwner}; active lease held by another live server.`);
       return null;
@@ -1128,7 +1136,7 @@ export class ProvisioningSaga {
           compensationFailures.push({ pluginId, error: res.error || 'Deprovision returned failure status' });
           continue;
         }
-        await platformRepository.uninstallPluginInstallation(tenantId, pluginId).catch(() => {});
+        await platformRepository.uninstallPluginInstallation(tenantId, pluginId).catch(() => { });
         alreadyCompensated.add(pluginId);
       } catch (err: any) {
         compensationFailures.push({ pluginId, error: err?.message || String(err) });
@@ -1155,7 +1163,7 @@ export class ProvisioningSaga {
       try {
         const proj = await platformRepository.getProject(slug).catch(() => null);
         if (proj && proj.status === 'ACTIVE') {
-          await platformRepository.updateProject(proj.id, { status: 'PROVISIONING' }).catch(() => {});
+          await platformRepository.updateProject(proj.id, { status: 'PROVISIONING' }).catch(() => { });
         }
       } catch { }
     }

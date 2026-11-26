@@ -62,6 +62,7 @@ export interface PlatformAuthorizationLookup {
 }
 
 export interface PlatformAdminAuditInput {
+    deterministicId?: string;
     action: string;
     entityType: string;
     entityId?: string;
@@ -901,7 +902,7 @@ export function createPrismaPlatformRepository(
                 await client.pluginInstallation.updateMany({
                     where: { OR: [{ tenantId: existing.slug }, { tenantId: existing.id }] },
                     data: { status: updates.status as any },
-                }).catch(() => {});
+                }).catch(() => { });
             }
 
             return toProject(row);
@@ -1114,7 +1115,7 @@ export function createPrismaPlatformRepository(
                 WHERE "scopeType" = ${scopeType}::"PlatformRateLimitScope"
                   AND "scopeId" = ${scopeId}
                   AND "windowStart" = ${windowStart}
-            `.catch(() => {});
+            `.catch(() => { });
         },
         async checkRateLimits(
             scopes: Array<{ scopeType: 'project' | 'key' | 'ip'; scopeId: string; limit: number }>,
@@ -1734,7 +1735,7 @@ export function createPrismaPlatformRepository(
                         where: { tenantId_pluginId: { tenantId: tId, pluginId: canonical } },
                         create: { tenantId: tId, pluginId: canonical, highestRevision: row.entitlementRevision },
                         update: { highestRevision: row.entitlementRevision },
-                    }).catch(() => {});
+                    }).catch(() => { });
                 }
 
                 await tx.$queryRaw`SELECT set_config('app.current_tenant_id', ${tenantId}, true)`;
@@ -2513,7 +2514,7 @@ export function createPrismaPlatformRepository(
             return { id, createdAt: new Date().toISOString(), ...event };
         },
         async recordPlatformAdminAudit(event: PlatformAdminAuditInput): Promise<string> {
-            const id = `audit_${crypto.randomUUID()}`;
+            const id = event.deterministicId?.trim() || `audit_${crypto.randomUUID()}`;
             const operatorId = event.actorId || event.actorEmail || 'system:orchestrator';
             const orgId = event.organizationId || 'platform';
             const projId = event.projectId || 'operations';
@@ -2598,6 +2599,7 @@ export function createPrismaPlatformRepository(
                     ${event.requestId || null}, ${event.reason || null},
                     ${JSON.stringify(metadataWithChain)}::jsonb, 'COMMITTED', ${occurredAt}
                 )
+                ON CONFLICT ("id") DO NOTHING
             `;
             return id;
         },
@@ -2783,7 +2785,7 @@ const extraMethods = {
                 const allInst = PlatformRepository.listPluginInstallations();
                 const matchedInst = allInst.filter(
                     (p) => canonicalizePluginId(p.pluginId) === canonical &&
-                           (p.tenantId === reqTenantId ||
+                        (p.tenantId === reqTenantId ||
                             p.runtimeTenantId === reqTenantId ||
                             (reqSlugTenantId && (p.tenantId === reqSlugTenantId || p.runtimeTenantId === reqSlugTenantId)))
                 );

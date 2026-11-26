@@ -542,13 +542,23 @@ export async function getTenantDetail(
  */
 export async function suspendTenant(
   idOrSlug: string,
-  input: { reason: string; operatorEmail?: string; requestId?: string },
+  input: { reason: string; operatorEmail?: string; requestId?: string; idempotencyKey?: string },
   operator?: OperatorSessionContext | null,
   deps?: {
     repository?: any;
     lifecycleClient?: any;
   }
-): Promise<{ success: boolean; tenantId: string; status: string; message: string; pluginState?: string }> {
+): Promise<{
+  success: boolean;
+  tenantId: string;
+  status: string;
+  message: string;
+  pluginState?: string;
+  platformAccessState?: 'PLATFORM_ACCESS_BLOCKED';
+  externalSuspensionState?: 'EXTERNAL_SUSPENSION_ACKNOWLEDGED' | 'PARTIALLY_DEGRADED' | 'EXTERNAL_SUSPENSION_PENDING';
+  suspensionState?: 'SUSPENSION_COMPLETED' | 'PARTIALLY_DEGRADED' | 'PLATFORM_ACCESS_BLOCKED';
+  runtimeSync?: Record<string, { target: string; acked: boolean; status: string; revision?: number; error?: string }>;
+}> {
   // Step-up verification enforcement on the server (B-3 blocker)
   if (operator) {
     requireOperatorAuthorization(operator);
@@ -565,6 +575,7 @@ export async function suspendTenant(
   const cleanId = idOrSlug.trim();
   const actorEmail = input.operatorEmail || operator?.email || 'operator@orbitox.io';
   const requestId = input.requestId || `req_suspend_${Date.now()}`;
+  const effectiveIdempotencyKey = input.idempotencyKey || requestId;
 
   if (hasDatabase()) {
     const { platformRepository: repo } = deps?.repository
@@ -584,14 +595,18 @@ export async function suspendTenant(
     const updatedPlugins: Array<{ targetTenantId: string; pluginId: string; previousStatus: string }> = [];
 
     try {
-      // 1. Update project status in DB
+      // 1. Synchronous platform cutoff: project + installations + platform sessions
       await repo.updateProject(project.id, { status: 'SUSPENDED' });
 
-      // 2. Update plugin installations in DB
       const pluginResults: Record<string, any> = {};
+      const runtimeSync: Record<
+        string,
+        { target: string; acked: boolean; status: string; revision?: number; error?: string }
+      > = {};
+
       for (const inst of installations) {
         const targetTenantId = inst.tenantId || project.id;
-        await repo.updatePluginInstallationStatus(targetTenantId, inst.pluginId, 'SUSPENDED');
+        const updatedInst = await repo.updatePluginInstallationStatus(targetTenantId, inst.pluginId, 'SUSPENDED');
         updatedPlugins.push({ targetTenantId, pluginId: inst.pluginId, previousStatus: inst.status || 'ACTIVE' });
 
         try {
@@ -599,17 +614,60 @@ export async function suspendTenant(
             inst.pluginId,
             'suspend',
             targetTenantId,
-            { reason }
+            {
+              reason,
+              revision: updatedInst?.entitlementRevision,
+              entitlementRevision: updatedInst?.entitlementRevision,
+            },
+            { idempotencyKey: `${effectiveIdempotencyKey}:${inst.pluginId}` },
           );
+          const acked = Boolean(res && res.ok !== false && !res.error && res.status !== 'HOOK_FAILED');
           pluginResults[inst.pluginId] = res;
-        } catch {
-          pluginResults[inst.pluginId] = { status: 'HOOK_FAILED', invoked: false, error: 'Lifecycle hook execution failed' };
+          runtimeSync[inst.pluginId] = {
+            target: targetTenantId,
+            acked,
+            status: acked ? 'EXTERNAL_SUSPENSION_ACKNOWLEDGED' : 'PARTIALLY_DEGRADED',
+            revision: typeof res?.revision === 'number' ? res.revision : updatedInst?.entitlementRevision,
+            ...(acked ? {} : { error: res?.error || 'Runtime did not confirm suspension' }),
+          };
+        } catch (hookErr: any) {
+          pluginResults[inst.pluginId] = {
+            status: 'HOOK_FAILED',
+            invoked: false,
+            error: hookErr?.message || 'Lifecycle hook execution failed',
+          };
+          runtimeSync[inst.pluginId] = {
+            target: targetTenantId,
+            acked: false,
+            status: 'PARTIALLY_DEGRADED',
+            revision: updatedInst?.entitlementRevision,
+            error: hookErr?.message || 'Lifecycle hook execution failed',
+          };
         }
       }
 
-      const hasPluginFailures = Object.values(pluginResults).some(
-        (r: any) => r?.status === 'HOOK_FAILED' || r?.invoked === false
-      );
+      // Revoke active platform-held HMS staff sessions scoped to this tenant
+      if (process.env.ORBITOX_PLATFORM_REPOSITORY !== 'json') {
+        const { prisma } = await import('@/server/db/prisma');
+        await prisma.hmsStaffSession
+          .deleteMany({ where: { tenantId: project.id } })
+          .catch(() => { });
+      }
+
+      const syncEntries = Object.values(runtimeSync);
+      const hasPluginFailures = syncEntries.some((entry) => !entry.acked);
+      const externalSuspensionState =
+        syncEntries.length === 0
+          ? 'EXTERNAL_SUSPENSION_PENDING'
+          : hasPluginFailures
+            ? 'PARTIALLY_DEGRADED'
+            : 'EXTERNAL_SUSPENSION_ACKNOWLEDGED';
+      const suspensionState =
+        syncEntries.length > 0 && !hasPluginFailures
+          ? 'SUSPENSION_COMPLETED'
+          : hasPluginFailures
+            ? 'PARTIALLY_DEGRADED'
+            : 'PLATFORM_ACCESS_BLOCKED';
 
       // 3. Record platform admin audit in DB - failure MUST fail the action
       await repo.recordPlatformAdminAudit({
@@ -625,6 +683,10 @@ export async function suspendTenant(
           slug: project.slug,
           reason,
           pluginResults,
+          runtimeSync,
+          platformAccessState: 'PLATFORM_ACCESS_BLOCKED',
+          externalSuspensionState,
+          suspensionState,
           pluginState: hasPluginFailures ? 'PARTIALLY_DEGRADED' : 'SUSPENDED',
         },
       });
@@ -634,9 +696,15 @@ export async function suspendTenant(
         tenantId: project.id,
         status: 'SUSPENDED',
         pluginState: hasPluginFailures ? 'PARTIALLY_DEGRADED' : 'SUSPENDED',
+        platformAccessState: 'PLATFORM_ACCESS_BLOCKED',
+        externalSuspensionState,
+        suspensionState,
+        runtimeSync,
         message: hasPluginFailures
-          ? `Tenant ${project.name} has been suspended, but one or more plugins failed their suspension hook.`
-          : `Tenant ${project.name} has been suspended. Reason: ${reason}`,
+          ? `Platform access for ${project.name} is immediately blocked, but one or more external runtimes failed suspension confirmation (outbox relay retry remains active).`
+          : syncEntries.length === 0
+            ? `Platform access for ${project.name} is immediately blocked; no active external plugin runtimes required synchronous suspension.`
+            : `Platform access for ${project.name} is blocked and all external runtimes acknowledged suspension. Reason: ${reason}`,
       };
     } catch (err: any) {
       // Rollback database modifications on failure
@@ -758,7 +826,7 @@ export async function resumeTenant(
         for (const p of updatedPlugins) {
           await repo.updatePluginInstallationStatus(p.targetTenantId, p.pluginId, p.previousStatus as any);
         }
-      } catch {}
+      } catch { }
       throw err;
     }
   }

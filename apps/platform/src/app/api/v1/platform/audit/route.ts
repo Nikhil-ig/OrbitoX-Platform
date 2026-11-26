@@ -139,13 +139,13 @@ export const POST = withApiGuard(
         data: {
           verification,
           timestamp: new Date().toISOString(),
-          verifiedBy: ctx.apiKey || 'platform_admin',
+          verifiedBy: ctx.actorLabel || ctx.keyId || ctx.operatorId || 'platform_admin',
           algorithm: verification.algorithm || 'SHA-256 (Merkle Hash Chain: previousHash -> rowHash)',
           verdict: isSuccess
             ? 'PASSED_CRYPTOGRAPHIC_CONSISTENCY'
             : verification.status === 'UNKNOWN'
-            ? 'VERIFICATION_UNAVAILABLE'
-            : 'INTEGRITY_BREACH',
+              ? 'VERIFICATION_UNAVAILABLE'
+              : 'INTEGRITY_BREACH',
         },
         meta: {
           latencyMs: 1,

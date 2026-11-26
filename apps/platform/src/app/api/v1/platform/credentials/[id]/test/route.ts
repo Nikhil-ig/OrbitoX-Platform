@@ -39,7 +39,7 @@ export const POST = withApiGuard(
         action: 'CREDENTIAL_PING_TESTED',
         entityType: 'PLATFORM_CREDENTIAL',
         entityId: cred.id,
-        userId: ctx.apiKey || 'platform_admin',
+        userId: ctx.actorLabel || ctx.keyId || ctx.operatorId || 'platform_admin',
         contextId: ctx.tenantId || 'global',
         reason: `Performed outbound connectivity probe for [${cred.provider}] vault credential`,
         newValue: {
@@ -55,7 +55,7 @@ export const POST = withApiGuard(
         entityId: cred.id,
         projectId: cred.projectId,
         environmentId: cred.environmentId,
-        actorId: ctx.apiKey || 'platform_admin',
+        actorId: ctx.actorLabel || ctx.keyId || ctx.operatorId || 'platform_admin',
         metadata: { provider: cred.provider, latencyMs, verdict: 'HEALTHY' },
       });
 

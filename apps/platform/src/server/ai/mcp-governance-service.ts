@@ -1,6 +1,7 @@
 import 'server-only';
 import crypto from 'node:crypto';
 import { prisma } from '@/server/db/prisma';
+import { TENANT_RE } from '@/server/db/tenant-db';
 import { platformRepository } from '@/server/db/platform-repository';
 import { operatorRoleAllows } from '@/server/organizations/operator-route-policy';
 import {
@@ -25,16 +26,46 @@ import {
 const APPROVAL_TTL_MS = 15 * 60 * 1000;
 const STEP_UP_MAX_AGE_MS = 5 * 60 * 1000;
 const EXECUTION_LEASE_MS = 2 * 60 * 1000;
+const DEFAULT_KEY_RETENTION_DAYS = 90;
+export const PLATFORM_CANONICAL_SCOPE = 'org/platform/project/operations/environment/platform-admin';
 
 export interface McpGovernanceFaultDeps {
   recordAudit?: typeof platformRepository.recordPlatformAdminAudit;
 }
 
+export function mcpAuditEventId(scopeId: string, stage: 'proposed' | 'intent' | 'final' | 'recovery'): string {
+  const digest = crypto.createHash('sha256').update(`${scopeId}:${stage}`).digest('hex').slice(0, 28);
+  return `audit_mcp_${digest}`;
+}
+
+export async function resolveCanonicalOutboxTenantScope(scope: string): Promise<string> {
+  const trimmed = (scope || '').trim();
+  if (TENANT_RE.test(trimmed)) return trimmed;
+  if (!trimmed || trimmed === 'platform') return PLATFORM_CANONICAL_SCOPE;
+
+  try {
+    const project = await platformRepository.getProject(trimmed);
+    if (project) {
+      const envs = await platformRepository.listEnvironments(project.id);
+      const env = envs.find((e) => e.slug === 'production') || envs[0];
+      if (env) {
+        return `org/${project.organizationId}/project/${project.id}/environment/${env.id}`;
+      }
+    }
+  } catch {
+    // Fall back to canonical platform operations scope when DB lookup fails or target is global
+  }
+  return PLATFORM_CANONICAL_SCOPE;
+}
+
 function mapCryptoError(err: unknown): never {
   if (err instanceof McpToolError) throw err;
   if (err instanceof McpCryptoError) {
-    if (err.code === 'MCP_CONFIG_INVALID') {
+    if (err.code === 'MCP_CONFIG_INVALID' || err.code === 'MCP_KEY_UNAVAILABLE') {
       throw new McpToolError(500, err.code, err.message);
+    }
+    if (err.code === 'MCP_INPUT_INVALID') {
+      throw new McpToolError(400, err.code, err.message);
     }
     throw new McpToolError(409, 'PARAM_HASH_MISMATCH', err.message);
   }
@@ -51,55 +82,42 @@ async function authorizeApprovalDecision(
   actor: Extract<McpActorContext, { kind: 'operator' }>,
   mode: 'APPROVE' | 'REJECT' = 'APPROVE',
 ): Promise<{
-  delegationId: string | null;
-  delegatedById: string | null;
-  soleOwnerSelfApproval: boolean;
+  delegationId: null;
+  delegatedById: null;
+  soleOwnerSelfApproval: false;
 }> {
   const isSelf = existing.requestedById === actor.actorId;
 
-  if (mode === 'APPROVE' && existing.approvalPolicy === 'STEP_UP_MFA' && isSelf) {
-    const activeOwners = await prisma.platformOperator
-      .count({ where: { role: 'PLATFORM_OWNER', status: 'ACTIVE' } })
-      .catch(() => 0);
-    if (activeOwners > 1) {
+  // Decision D-2: No silent sole-owner self-approval for STEP_UP_MFA actions
+  if (mode === 'APPROVE' && existing.approvalPolicy === 'STEP_UP_MFA') {
+    if (isSelf) {
       throw new McpToolError(
         403,
         'SELF_APPROVAL_PROHIBITED',
-        'Separation of duties prohibits self-approving STEP_UP_MFA operations when another active PLATFORM_OWNER exists.',
+        'Separation of duties prohibits self-approving STEP_UP_MFA operations.',
       );
     }
-    return { delegationId: null, delegatedById: null, soleOwnerSelfApproval: true };
+    const activeOwners = await prisma.platformOperator
+      .count({ where: { role: 'PLATFORM_OWNER', status: 'ACTIVE' } })
+      .catch(() => 0);
+    if (activeOwners < 2) {
+      throw new McpToolError(
+        409,
+        'SEPARATION_OF_DUTIES_UNSATISFIED',
+        'At least two active PLATFORM_OWNER operators are required to approve STEP_UP_MFA operations.',
+      );
+    }
   }
 
   if (isSelf) {
     return { delegationId: null, delegatedById: null, soleOwnerSelfApproval: false };
   }
 
-  // Independent approver: check server-authorized McpApprovalDelegation first
-  const now = new Date();
-  const delegation = await prisma.mcpApprovalDelegation.findFirst({
-    where: {
-      delegateId: actor.actorId,
-      revokedAt: null,
-      expiresAt: { gt: now },
-      allowedRiskTier: { in: [existing.approvalPolicy, 'ALL'] },
-      tenantScope: { in: ['*', existing.tenantScope] },
-    },
-    orderBy: { createdAt: 'desc' },
-  });
-
-  if (delegation) {
-    return {
-      delegationId: delegation.id,
-      delegatedById: delegation.delegatorId,
-      soleOwnerSelfApproval: false,
-    };
-  }
-
+  // Decision D-1 (Approach B): Delegated approvals are temporarily disabled; only independent PLATFORM_OWNER may approve/reject
   if (actor.role === 'PLATFORM_OWNER') {
     return {
       delegationId: null,
-      delegatedById: actor.actorId,
+      delegatedById: null,
       soleOwnerSelfApproval: false,
     };
   }
@@ -107,7 +125,7 @@ async function authorizeApprovalDecision(
   throw new McpToolError(
     403,
     'APPROVAL_OWNERSHIP_REQUIRED',
-    `Operator ${actor.actorEmail} is neither the requester nor an authorized delegate for approval ${existing.id}.`,
+    `Delegated approval execution is disabled. Operator ${actor.actorEmail} is neither the requester nor a PLATFORM_OWNER for approval ${existing.id}.`,
   );
 }
 
@@ -175,7 +193,7 @@ async function recordInvocationAndAudit(input: {
       entityType: 'MCP_TOOL',
       entityId: input.toolName,
       actorId: input.actor.actorId,
-      actorEmail: input.actor.actorEmail,
+      actorEmail: input.actor.actorEmail ?? undefined,
       reason: input.auditReason,
       metadata: {
         approvalId: input.approvalId || null,
@@ -567,9 +585,9 @@ export async function invokeMcpTool(
     const proposalMeta = tool.validateProposal
       ? await tool.validateProposal(parsed.data, actor)
       : {
-          previewSummary: `Execute ${tool.toolName} after operator approval.`,
-          tenantScope: initialTenantScope,
-        };
+        previewSummary: `Execute ${tool.toolName} after operator approval.`,
+        tenantScope: initialTenantScope,
+      };
 
     const approvalId = `mcp_appr_${crypto.randomUUID()}`;
     const bindingContext = {
@@ -599,8 +617,11 @@ export async function invokeMcpTool(
 
     const sanitizedProposalParams = redactSensitiveData(parsed.data, { maskEmails: true });
     const sanitizedReason = sanitizeApprovalReason((parsed.data as any).reason);
+    const outboxTenantId = await resolveCanonicalOutboxTenantScope(proposalMeta.tenantScope);
+    const deterministicProposedAuditId = mcpAuditEventId(approvalId, 'proposed');
 
     const approval = await prisma.$transaction(async (tx) => {
+      await tx.$queryRaw`SELECT set_config('app.current_tenant_id', ${outboxTenantId}, true)`;
       const created = await tx.mcpToolApproval.create({
         data: {
           id: approvalId,
@@ -628,16 +649,18 @@ export async function invokeMcpTool(
 
       await tx.platformOutboxMessage.create({
         data: {
-          tenantId: proposalMeta.tenantScope,
+          tenantId: outboxTenantId,
           eventType: 'mcp.audit.approval_proposed',
           aggregateType: 'MCP_APPROVAL',
           aggregateId: approvalId,
           deduplicationKey: `mcp_proposed:${approvalId}`,
           payload: {
+            deterministicAuditId: deterministicProposedAuditId,
             approvalId,
             toolName: tool.toolName,
             approvalPolicy: tool.approvalPolicy,
             tenantScope: proposalMeta.tenantScope,
+            canonicalTenantId: outboxTenantId,
             requestedById: actor.actorId,
             paramsHash,
           } as any,
@@ -649,11 +672,12 @@ export async function invokeMcpTool(
 
     try {
       await platformRepository.recordPlatformAdminAudit({
+        deterministicId: deterministicProposedAuditId,
         action: 'MCP_APPROVAL_PROPOSED',
         entityType: 'MCP_APPROVAL',
         entityId: approval.id,
         actorId: actor.actorId,
-        actorEmail: actor.actorEmail,
+        actorEmail: actor.actorEmail ?? undefined,
         reason: proposalMeta.previewSummary,
         metadata: {
           approvalId: approval.id,
@@ -667,7 +691,7 @@ export async function invokeMcpTool(
     } catch (auditErr: any) {
       await prisma.mcpToolApproval
         .updateMany({ where: { id: approval.id, status: 'PROPOSED' }, data: { status: 'FAILED' } })
-        .catch(() => {});
+        .catch(() => { });
       console.error(
         JSON.stringify({
           event: 'mcp.approval_proposed_audit_failure',
@@ -771,12 +795,21 @@ export async function approveAndExecuteMcpProposal(
     approvalId: string;
     editedMessage?: unknown;
     reason?: unknown;
+    emergencySelfApproval?: unknown;
   },
   actor: McpActorContext,
   deps?: McpGovernanceFaultDeps,
 ) {
   const startedAt = performance.now();
   const recordAudit = deps?.recordAudit ?? platformRepository.recordPlatformAdminAudit;
+
+  if (Boolean(input.emergencySelfApproval)) {
+    throw new McpToolError(
+      403,
+      'EMERGENCY_SELF_APPROVAL_DISABLED',
+      'emergencySelfApproval bypass is prohibited in normal MCP approval flows.',
+    );
+  }
 
   if (process.env.ORBITOX_MCP_EXECUTION_ENABLED === 'false') {
     throw new McpToolError(503, 'MCP_EXECUTION_DISABLED', 'MCP tool execution is disabled.');
@@ -905,7 +938,7 @@ export async function approveAndExecuteMcpProposal(
     }
     hmacKid = hashCheck.hmacKid;
   } catch (err) {
-    if (err instanceof McpCryptoError && err.code !== 'MCP_CONFIG_INVALID') {
+    if (err instanceof McpCryptoError && err.code !== 'MCP_CONFIG_INVALID' && err.code !== 'MCP_KEY_UNAVAILABLE') {
       await prisma.mcpToolApproval.updateMany({
         where: { id: cleanId, status: 'PROPOSED' },
         data: { status: 'FAILED' },
@@ -926,11 +959,15 @@ export async function approveAndExecuteMcpProposal(
   const leaseOwner = `platform:${process.pid}`;
   const now = new Date();
   const leaseExpiresAt = new Date(now.getTime() + EXECUTION_LEASE_MS);
+  const outboxTenantId = await resolveCanonicalOutboxTenantScope(existing.tenantScope);
+  const deterministicIntentAuditId = mcpAuditEventId(executionId, 'intent');
+  const deterministicFinalAuditId = mcpAuditEventId(executionId, 'final');
 
-  // Correction A: Atomic Claim + Execution Intent + Append-only Invocation Intent + Outbox Intent
+  // Correction A & B: Atomic Claim + Execution Intent + Append-only Invocation Intent + RLS-Scoped Internal Outbox Intent
   let claimedTxResult: { approval: typeof existing; intentInvocationId: string };
   try {
     claimedTxResult = await prisma.$transaction(async (tx) => {
+      await tx.$queryRaw`SELECT set_config('app.current_tenant_id', ${outboxTenantId}, true)`;
       const claimRes = await tx.mcpToolApproval.updateMany({
         where: {
           id: cleanId,
@@ -943,8 +980,8 @@ export async function approveAndExecuteMcpProposal(
           consumedAt: now,
           approvedById: actor.actorId,
           approvedByEmail: actor.actorEmail,
-          delegationId: ownership.delegationId,
-          delegatedById: ownership.delegatedById,
+          delegationId: null,
+          delegatedById: null,
           editedMessage: editedMessage || existing.editedMessage,
           reason: suppliedReason || existing.reason,
         },
@@ -995,12 +1032,13 @@ export async function approveAndExecuteMcpProposal(
 
       await tx.platformOutboxMessage.create({
         data: {
-          tenantId: existing.tenantScope,
+          tenantId: outboxTenantId,
           eventType: 'mcp.audit.execution_intent',
           aggregateType: 'MCP_EXECUTION',
           aggregateId: executionId,
           deduplicationKey: `mcp_intent:${executionId}`,
           payload: {
+            deterministicAuditId: deterministicIntentAuditId,
             executionId,
             approvalId: cleanId,
             invocationId: intentInvocation.id,
@@ -1009,11 +1047,12 @@ export async function approveAndExecuteMcpProposal(
             serverId: tool.serverId,
             approvalPolicy: tool.approvalPolicy,
             tenantScope: existing.tenantScope,
+            canonicalTenantId: outboxTenantId,
             requestedById: existing.requestedById,
             approvedById: actor.actorId,
-            delegationId: ownership.delegationId,
-            delegatedById: ownership.delegatedById,
-            soleOwnerSelfApproval: ownership.soleOwnerSelfApproval,
+            delegationId: null,
+            delegatedById: null,
+            soleOwnerSelfApproval: false,
             paramsHash: existing.paramsHash,
           } as any,
         },
@@ -1036,15 +1075,17 @@ export async function approveAndExecuteMcpProposal(
     throw err;
   }
 
-  // Write-ahead immutable audit event BEFORE business side effect begins
+  // Write-ahead immutable audit event (deterministic ID -> safe cross-connection replay) BEFORE business side effect begins
   let intentAuditId: string | null = null;
   try {
     intentAuditId = await recordAudit({
+      deterministicId: deterministicIntentAuditId,
       action: 'MCP_APPROVAL_EXECUTION_INTENT',
       entityType: 'MCP_EXECUTION',
       entityId: executionId,
       actorId: actor.actorId,
-      actorEmail: actor.actorEmail,
+      actorEmail: actor.actorEmail ?? undefined,
+      requestId: executionId,
       reason: suppliedReason || `Execution intent for ${tool.toolName} (${cleanId})`,
       metadata: {
         executionId,
@@ -1054,9 +1095,9 @@ export async function approveAndExecuteMcpProposal(
         toolName: tool.toolName,
         tenantScope: existing.tenantScope,
         requestedById: existing.requestedById,
-        delegationId: ownership.delegationId,
-        delegatedById: ownership.delegatedById,
-        soleOwnerSelfApproval: ownership.soleOwnerSelfApproval,
+        delegationId: null,
+        delegatedById: null,
+        soleOwnerSelfApproval: false,
         paramsHash: existing.paramsHash,
       } as any,
     });
@@ -1079,7 +1120,7 @@ export async function approveAndExecuteMcpProposal(
         where: { id: cleanId, status: 'EXECUTING' },
         data: { status: 'FAILED' },
       }),
-    ]).catch(() => {});
+    ]).catch(() => { });
     throw new McpToolError(
       503,
       'AUDIT_UNAVAILABLE',
@@ -1087,15 +1128,18 @@ export async function approveAndExecuteMcpProposal(
     );
   }
 
-  // Transition Execution -> EXECUTION_RUNNING immediately before tool.execute
-  await prisma.mcpToolExecution.update({
-    where: { id: executionId },
+  // Fenced transition Execution -> EXECUTION_RUNNING immediately before tool.execute
+  const startFence = await prisma.mcpToolExecution.updateMany({
+    where: { id: executionId, status: 'EXECUTION_INTENT', leaseOwner },
     data: {
       status: 'EXECUTION_RUNNING',
       auditIntentEventId: intentAuditId,
       leaseExpiresAt: new Date(Date.now() + EXECUTION_LEASE_MS),
     },
   });
+  if (startFence.count !== 1) {
+    throw new McpToolError(409, 'LEASE_FENCED', `Execution ${executionId} lost its lease before starting.`);
+  }
 
   try {
     const execResult = await tool.execute(parsed.data, actor, {
@@ -1111,11 +1155,13 @@ export async function approveAndExecuteMcpProposal(
     let finalAuditId: string | null = null;
     try {
       finalAuditId = await recordAudit({
+        deterministicId: deterministicFinalAuditId,
         action: 'MCP_APPROVAL_EXECUTION_SUCCEEDED',
         entityType: 'MCP_EXECUTION',
         entityId: executionId,
         actorId: actor.actorId,
-        actorEmail: actor.actorEmail,
+        actorEmail: actor.actorEmail ?? undefined,
+        requestId: executionId,
         reason: suppliedReason || `Operator approved ${tool.toolName} (${cleanId})`,
         metadata: {
           executionId,
@@ -1139,7 +1185,7 @@ export async function approveAndExecuteMcpProposal(
       );
       await prisma.$transaction([
         prisma.mcpToolExecution.updateMany({
-          where: { id: executionId },
+          where: { id: executionId, status: 'EXECUTION_RUNNING' },
           data: {
             status: 'RECOVERY_REQUIRED',
             reconciliationStatus: 'AUDIT_FINALIZATION_FAILED',
@@ -1148,10 +1194,10 @@ export async function approveAndExecuteMcpProposal(
           },
         }),
         prisma.mcpToolApproval.updateMany({
-          where: { id: cleanId },
+          where: { id: cleanId, status: 'EXECUTING' },
           data: { status: 'RECOVERY_REQUIRED' },
         }),
-      ]).catch(() => {});
+      ]).catch(() => { });
       throw new McpToolError(
         500,
         'AUDIT_FINALIZATION_FAILED',
@@ -1183,21 +1229,28 @@ export async function approveAndExecuteMcpProposal(
       },
     });
 
-    const [, updatedApproval] = await prisma.$transaction([
-      prisma.mcpToolExecution.update({
-        where: { id: executionId },
+    const updatedApproval = await prisma.$transaction(async (tx) => {
+      const fenced = await tx.mcpToolExecution.updateMany({
+        where: { id: executionId, status: 'EXECUTION_RUNNING', leaseOwner },
         data: {
           status: 'AUTHORIZED_EXECUTED',
           invocationId: finalInvocation.id,
           finalAuditEventId: finalAuditId,
           reconciliationStatus: 'COMPLETED',
         },
-      }),
-      prisma.mcpToolApproval.update({
+      });
+      if (fenced.count !== 1) {
+        throw new McpToolError(
+          409,
+          'LEASE_FENCED',
+          `Execution ${executionId} was already reconciled or fenced before finalization.`,
+        );
+      }
+      return tx.mcpToolApproval.update({
         where: { id: cleanId },
         data: { status: 'SUCCEEDED', invocationId: finalInvocation.id },
-      }),
-    ]);
+      });
+    });
 
     return {
       approval: updatedApproval,
@@ -1212,7 +1265,7 @@ export async function approveAndExecuteMcpProposal(
       },
     };
   } catch (err: any) {
-    if (err instanceof McpToolError && err.code === 'AUDIT_FINALIZATION_FAILED') {
+    if (err instanceof McpToolError && (err.code === 'AUDIT_FINALIZATION_FAILED' || err.code === 'LEASE_FENCED')) {
       throw err;
     }
     const latencyMs = Math.max(1, Math.round(performance.now() - startedAt));
@@ -1222,11 +1275,13 @@ export async function approveAndExecuteMcpProposal(
     let failAuditId: string | null = null;
     try {
       failAuditId = await recordAudit({
+        deterministicId: deterministicFinalAuditId,
         action: 'MCP_APPROVAL_EXECUTION_FAILED',
         entityType: 'MCP_EXECUTION',
         entityId: executionId,
         actorId: actor.actorId,
-        actorEmail: actor.actorEmail,
+        actorEmail: actor.actorEmail ?? undefined,
+        requestId: executionId,
         reason: `Approved execution for ${tool.toolName} failed: ${code}`,
         metadata: { executionId, approvalId: cleanId, errorCode: code } as any,
       });
@@ -1258,9 +1313,9 @@ export async function approveAndExecuteMcpProposal(
       },
     });
 
-    await prisma.$transaction([
-      prisma.mcpToolExecution.update({
-        where: { id: executionId },
+    await prisma.$transaction(async (tx) => {
+      const fenced = await tx.mcpToolExecution.updateMany({
+        where: { id: executionId, status: { in: ['EXECUTION_INTENT', 'EXECUTION_RUNNING'] }, leaseOwner },
         data: {
           status: 'EXECUTION_FAILED',
           invocationId: failedInvocation.id,
@@ -1268,12 +1323,14 @@ export async function approveAndExecuteMcpProposal(
           lastErrorCode: code,
           lastErrorMessage: message,
         },
-      }),
-      prisma.mcpToolApproval.update({
-        where: { id: cleanId },
-        data: { status: 'FAILED', invocationId: failedInvocation.id },
-      }),
-    ]);
+      });
+      if (fenced.count === 1) {
+        await tx.mcpToolApproval.updateMany({
+          where: { id: cleanId, status: 'EXECUTING' },
+          data: { status: 'FAILED', invocationId: failedInvocation.id },
+        });
+      }
+    });
 
     if (err instanceof McpToolError) throw err;
     throw new McpToolError(500, 'MCP_EXECUTION_FAILED', message);
@@ -1318,19 +1375,20 @@ export async function rejectMcpProposal(
 
   try {
     await recordAudit({
+      deterministicId: mcpAuditEventId(cleanId, 'recovery'),
       action: 'MCP_APPROVAL_REJECTED',
       entityType: 'MCP_APPROVAL',
       entityId: cleanId,
       actorId: actor.actorId,
-      actorEmail: actor.actorEmail,
+      actorEmail: actor.actorEmail ?? undefined,
       reason,
       metadata: {
         approvalId: cleanId,
         toolName: existing.toolName,
         tenantScope: existing.tenantScope,
         requestedById: existing.requestedById,
-        delegationId: ownership.delegationId,
-        delegatedById: ownership.delegatedById,
+        delegationId: null,
+        delegatedById: null,
       } as any,
     });
   } catch (auditErr: any) {
@@ -1387,13 +1445,27 @@ export async function rejectMcpProposal(
 }
 
 /**
- * Preflight key retirement check: refuses retirement while any pending, executing, or recovery-required
- * record still references the key ID.
+ * Preflight key retirement check: refuses retirement while any pending, executing, recovery-required,
+ * or within-retention record still references the key ID. Zero operator retention bypass allowed.
  */
 export async function canRetireMcpKey(
   kid: string,
   kind: 'encryption' | 'hmac',
-): Promise<{ canRetire: boolean; blockingApprovals: number; blockingExecutions: number }> {
+  options: { retentionDays?: number; now?: Date } = {},
+): Promise<{
+  canRetire: boolean;
+  blockingApprovals: number;
+  blockingExecutions: number;
+  retainedApprovals: number;
+  retentionCutoff: string;
+}> {
+  const effectiveDays = Math.max(
+    1,
+    options.retentionDays ?? (Number(process.env.ORBITOX_MCP_KEY_RETENTION_DAYS) || DEFAULT_KEY_RETENTION_DAYS),
+  );
+  const now = options.now ?? new Date();
+  const retentionCutoff = new Date(now.getTime() - effectiveDays * 86_400_000);
+
   const approvalWhere =
     kind === 'encryption'
       ? { encryptionKid: kid, status: { in: ['PROPOSED', 'EXECUTING', 'RECOVERY_REQUIRED'] } }
@@ -1402,22 +1474,29 @@ export async function canRetireMcpKey(
     kind === 'encryption'
       ? { encryptionKid: kid, status: { in: ['EXECUTION_INTENT', 'EXECUTION_RUNNING', 'RECOVERY_REQUIRED'] } }
       : { hmacKid: kid, status: { in: ['EXECUTION_INTENT', 'EXECUTION_RUNNING', 'RECOVERY_REQUIRED'] } };
+  const retainedWhere =
+    kind === 'encryption'
+      ? { encryptionKid: kid, createdAt: { gt: retentionCutoff } }
+      : { hmacKid: kid, createdAt: { gt: retentionCutoff } };
 
-  const [blockingApprovals, blockingExecutions] = await Promise.all([
+  const [blockingApprovals, blockingExecutions, retainedApprovals] = await Promise.all([
     prisma.mcpToolApproval.count({ where: approvalWhere }),
     prisma.mcpToolExecution.count({ where: execWhere }),
+    prisma.mcpToolApproval.count({ where: retainedWhere }),
   ]);
 
   return {
-    canRetire: blockingApprovals === 0 && blockingExecutions === 0,
+    canRetire: blockingApprovals === 0 && blockingExecutions === 0 && retainedApprovals === 0,
     blockingApprovals,
     blockingExecutions,
+    retainedApprovals,
+    retentionCutoff: retentionCutoff.toISOString(),
   };
 }
 
 /**
  * Reconciles stale EXECUTION_INTENT, expired EXECUTION_RUNNING, and RECOVERY_REQUIRED executions
- * without blindly repeating business side effects.
+ * without blindly repeating business side effects. Uses deterministic audit IDs and domain correlation.
  */
 export async function reconcileStaleMcpExecutions(
   options: { now?: Date; deps?: McpGovernanceFaultDeps } = {},
@@ -1432,49 +1511,121 @@ export async function reconcileStaleMcpExecutions(
         { status: { in: ['EXECUTION_INTENT', 'EXECUTION_RUNNING'] }, leaseExpiresAt: { lte: now } },
       ],
     },
+    include: {
+      approval: {
+        select: { id: true, sanitizedParams: true, tenantScope: true },
+      },
+    },
     take: 50,
   });
 
   const reconciledIds: string[] = [];
   for (const exec of candidates) {
-    let resolvedStatus: 'AUTHORIZED_EXECUTED' | 'EXECUTION_FAILED' | 'RECOVERY_REQUIRED' = 'RECOVERY_REQUIRED';
+    let resolvedStatus: 'AUTHORIZED_EXECUTED' | 'EXECUTION_FAILED' | 'RECOVERY_REQUIRED' | 'STILL_RUNNING' =
+      'RECOVERY_REQUIRED';
     let reconciliationNote = 'Requires manual verification';
+    const sanitizedParams = (exec.approval?.sanitizedParams || {}) as Record<string, any>;
 
     if (exec.status === 'EXECUTION_INTENT') {
       resolvedStatus = 'EXECUTION_FAILED';
       reconciliationNote = 'RECONCILED_NOT_STARTED';
     } else if (exec.toolName === 'billing.send_payment_reminder') {
-      const outboxCount = await prisma.accountEmailOutbox.count({
-        where: { idempotencyKey: { startsWith: `${exec.idempotencyKey}:` } },
-      });
-      if (outboxCount > 0) {
+      const subIds = Array.isArray(sanitizedParams.subscriptionIds)
+        ? sanitizedParams.subscriptionIds.filter((s: unknown): s is string => typeof s === 'string' && s.length > 0)
+        : [];
+      const expectedKeys = subIds.map((subId) => `${exec.idempotencyKey}:${subId}`);
+      const outboxCount =
+        expectedKeys.length > 0
+          ? await prisma.accountEmailOutbox.count({
+            where: { idempotencyKey: { in: expectedKeys } },
+          })
+          : await prisma.accountEmailOutbox.count({
+            where: { idempotencyKey: { startsWith: `${exec.idempotencyKey}:` } },
+          });
+
+      if (expectedKeys.length > 0 && outboxCount >= expectedKeys.length) {
+        resolvedStatus = 'AUTHORIZED_EXECUTED';
+        reconciliationNote = `RECONCILED_OUTBOX_FOUND:${outboxCount}/${expectedKeys.length}`;
+      } else if (expectedKeys.length === 0 && outboxCount > 0) {
         resolvedStatus = 'AUTHORIZED_EXECUTED';
         reconciliationNote = `RECONCILED_OUTBOX_FOUND:${outboxCount}`;
+      } else if (outboxCount > 0) {
+        resolvedStatus = 'RECOVERY_REQUIRED';
+        reconciliationNote = `RECONCILED_PARTIAL_OUTBOX:${outboxCount}/${expectedKeys.length}`;
       }
     } else if (exec.toolName === 'tenants.suspend') {
       const proj = await prisma.platformProject.findFirst({
         where: { OR: [{ id: exec.tenantScope }, { slug: exec.tenantScope }] },
-        select: { status: true },
+        select: { id: true, organizationId: true, status: true },
       });
       if (proj?.status === 'SUSPENDED') {
-        resolvedStatus = 'AUTHORIZED_EXECUTED';
-        reconciliationNote = 'RECONCILED_TENANT_SUSPENDED';
+        const canonicalPrefix = `org/${proj.organizationId}/project/${proj.id}/`;
+        const nonSuspendedInstalls = await prisma.pluginInstallation.count({
+          where: {
+            OR: [{ tenantId: proj.id }, { tenantId: { startsWith: canonicalPrefix } }],
+            status: { notIn: ['SUSPENDED', 'ARCHIVED'] },
+          },
+        });
+        if (nonSuspendedInstalls === 0) {
+          resolvedStatus = 'AUTHORIZED_EXECUTED';
+          reconciliationNote = 'RECONCILED_TENANT_SUSPENDED';
+        } else {
+          resolvedStatus = 'RECOVERY_REQUIRED';
+          reconciliationNote = `RECONCILED_INSTALLATIONS_PENDING:${nonSuspendedInstalls}`;
+        }
+      }
+    } else if (exec.toolName === 'provisioning.retry') {
+      const operationId = typeof sanitizedParams.operationId === 'string' ? sanitizedParams.operationId : '';
+      if (operationId) {
+        const op = await prisma.platformOperation.findUnique({ where: { id: operationId } });
+        if (!op) {
+          resolvedStatus = 'EXECUTION_FAILED';
+          reconciliationNote = 'RECONCILED_OPERATION_NOT_FOUND';
+        } else {
+          const opMatchesCorrelation =
+            op.lastMcpExecutionId === exec.id || op.leaseOwner === `mcp:${exec.id}`;
+          if (!opMatchesCorrelation) {
+            resolvedStatus = 'RECOVERY_REQUIRED';
+            reconciliationNote = 'CORRELATION_MISMATCH_OR_SUPERSEDED';
+          } else if (['ACTIVE', 'COMPLETED'].includes(op.status)) {
+            resolvedStatus = 'AUTHORIZED_EXECUTED';
+            reconciliationNote = 'RECONCILED_PROVISIONING_COMPLETED';
+          } else if (['FAILED', 'CANCELLED'].includes(op.status)) {
+            resolvedStatus = 'EXECUTION_FAILED';
+            reconciliationNote = `RECONCILED_PROVISIONING_${op.status}`;
+          } else if (op.leaseExpiresAt && op.leaseExpiresAt.getTime() > now.getTime()) {
+            resolvedStatus = 'STILL_RUNNING';
+          } else {
+            resolvedStatus = 'RECOVERY_REQUIRED';
+            reconciliationNote = 'RECONCILED_OPERATION_LEASE_EXPIRED';
+          }
+        }
       }
     }
 
+    if (resolvedStatus === 'STILL_RUNNING') {
+      continue;
+    }
+
     if (resolvedStatus === 'RECOVERY_REQUIRED') {
-      await prisma.mcpToolExecution.update({
-        where: { id: exec.id },
+      await prisma.mcpToolExecution.updateMany({
+        where: { id: exec.id, status: { in: ['EXECUTION_RUNNING', 'RECOVERY_REQUIRED'] } },
         data: { status: 'RECOVERY_REQUIRED', reconciliationStatus: reconciliationNote },
+      });
+      await prisma.mcpToolApproval.updateMany({
+        where: { id: exec.approvalId, status: 'EXECUTING' },
+        data: { status: 'RECOVERY_REQUIRED' },
       });
       continue;
     }
 
     const auditId = await recordAudit({
+      deterministicId: mcpAuditEventId(exec.id, 'recovery'),
       action: 'MCP_APPROVAL_RECOVERY_COMPLETED',
       entityType: 'MCP_EXECUTION',
       entityId: exec.id,
       actorId: 'system:mcp-reconciler',
+      requestId: exec.id,
       reason: `Reconciled ${exec.toolName} (${exec.id}) -> ${resolvedStatus} (${reconciliationNote})`,
       metadata: {
         executionId: exec.id,
@@ -1484,20 +1635,25 @@ export async function reconcileStaleMcpExecutions(
       } as any,
     });
 
-    await prisma.$transaction([
-      prisma.mcpToolExecution.update({
-        where: { id: exec.id },
+    await prisma.$transaction(async (tx) => {
+      const updatedExec = await tx.mcpToolExecution.updateMany({
+        where: {
+          id: exec.id,
+          status: { in: ['EXECUTION_INTENT', 'EXECUTION_RUNNING', 'RECOVERY_REQUIRED'] },
+        },
         data: {
           status: resolvedStatus,
           finalAuditEventId: auditId,
           reconciliationStatus: reconciliationNote,
         },
-      }),
-      prisma.mcpToolApproval.update({
-        where: { id: exec.approvalId },
-        data: { status: resolvedStatus === 'AUTHORIZED_EXECUTED' ? 'SUCCEEDED' : 'FAILED' },
-      }),
-    ]);
+      });
+      if (updatedExec.count === 1) {
+        await tx.mcpToolApproval.updateMany({
+          where: { id: exec.approvalId, status: { in: ['EXECUTING', 'RECOVERY_REQUIRED'] } },
+          data: { status: resolvedStatus === 'AUTHORIZED_EXECUTED' ? 'SUCCEEDED' : 'FAILED' },
+        });
+      }
+    });
 
     reconciledIds.push(exec.id);
   }

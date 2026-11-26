@@ -258,6 +258,57 @@ for (const name of ['ORBITOX_MFA_ENCRYPTION_KEY', 'ORBITOX_ACCOUNT_TOKEN_ENCRYPT
   }
 }
 
+if (isProduction) {
+  const mcpEncRaw = process.env.ORBITOX_MCP_ENCRYPTION_KEYS?.trim();
+  const mcpEncKid = process.env.ORBITOX_MCP_ACTIVE_KID?.trim();
+  const mcpHmacRaw = process.env.ORBITOX_MCP_HMAC_KEYS?.trim();
+  const mcpHmacKid = process.env.ORBITOX_MCP_ACTIVE_HMAC_KID?.trim();
+
+  if (!mcpEncRaw || !mcpEncKid || !mcpHmacRaw || !mcpHmacKid) {
+    errors.push({
+      name: 'ORBITOX_MCP_*',
+      reason: 'ORBITOX_MCP_ENCRYPTION_KEYS, ORBITOX_MCP_ACTIVE_KID, ORBITOX_MCP_HMAC_KEYS, and ORBITOX_MCP_ACTIVE_HMAC_KID must all be set',
+      purpose: 'Dedicated AES-256-GCM and HMAC-SHA256 key rings for MCP governance approvals',
+    });
+  } else {
+    try {
+      const encMap = JSON.parse(mcpEncRaw);
+      const hmacMap = JSON.parse(mcpHmacRaw);
+      if (!encMap || typeof encMap !== 'object' || Array.isArray(encMap) || !encMap[mcpEncKid]) {
+        throw new Error(`Active ORBITOX_MCP_ACTIVE_KID "${mcpEncKid}" not found in ORBITOX_MCP_ENCRYPTION_KEYS`);
+      }
+      if (!hmacMap || typeof hmacMap !== 'object' || Array.isArray(hmacMap) || !hmacMap[mcpHmacKid]) {
+        throw new Error(`Active ORBITOX_MCP_ACTIVE_HMAC_KID "${mcpHmacKid}" not found in ORBITOX_MCP_HMAC_KEYS`);
+      }
+      for (const [kid, b64] of Object.entries(encMap)) {
+        const buf = Buffer.from(String(b64).trim(), 'base64');
+        if (buf.length !== 32 || buf.toString('base64') !== String(b64).trim()) {
+          throw new Error(`ORBITOX_MCP_ENCRYPTION_KEYS["${kid}"] must be a canonical 32-byte base64 key`);
+        }
+      }
+      for (const [kid, b64] of Object.entries(hmacMap)) {
+        const buf = Buffer.from(String(b64).trim(), 'base64');
+        if (buf.length !== 32 || buf.toString('base64') !== String(b64).trim()) {
+          throw new Error(`ORBITOX_MCP_HMAC_KEYS["${kid}"] must be a canonical 32-byte base64 key`);
+        }
+      }
+      for (const encVal of Object.values(encMap)) {
+        for (const hmacVal of Object.values(hmacMap)) {
+          if (Buffer.from(String(encVal), 'base64').equals(Buffer.from(String(hmacVal), 'base64'))) {
+            throw new Error('ORBITOX_MCP_HMAC_KEYS must be cryptographically distinct from ORBITOX_MCP_ENCRYPTION_KEYS');
+          }
+        }
+      }
+    } catch (mcpErr) {
+      errors.push({
+        name: 'ORBITOX_MCP_*',
+        reason: mcpErr instanceof Error ? mcpErr.message : 'Invalid MCP key ring JSON configuration',
+        purpose: 'Dedicated AES-256-GCM and HMAC-SHA256 key rings for MCP governance approvals',
+      });
+    }
+  }
+}
+
 const publicBaseUrl = process.env.ORBITOX_PUBLIC_BASE_URL?.trim();
 try {
   if (!publicBaseUrl || new URL(publicBaseUrl).protocol !== 'https:') throw new Error();

@@ -50,6 +50,8 @@ export const KEYED_ROTATABLE_SECRETS = [
   'ORBITOX_EXPORT_ENCRYPTION_KEYS',
   'ORBITOX_BRIDGE_KEYS',
   'ORBITOX_SERVER_PEPPERS',
+  'ORBITOX_MCP_ENCRYPTION_KEYS',
+  'ORBITOX_MCP_HMAC_KEYS',
 ] as const;
 
 export interface DatabaseRoleConfig {
@@ -216,6 +218,10 @@ export const SECRET_GENERATORS: Record<string, () => string> = {
   ORBITOX_EXPORT_ENCRYPTION_KEY_ACTIVE: () => 'k1',
   ORBITOX_BRIDGE_KEYS: generateBridgeKeys,
   ORBITOX_BRIDGE_ACTIVE_KID: () => 'k1',
+  ORBITOX_MCP_ENCRYPTION_KEYS: () => JSON.stringify({ k1: crypto.randomBytes(32).toString('base64') }),
+  ORBITOX_MCP_ACTIVE_KID: () => 'k1',
+  ORBITOX_MCP_HMAC_KEYS: () => JSON.stringify({ h1: crypto.randomBytes(32).toString('base64') }),
+  ORBITOX_MCP_ACTIVE_HMAC_KID: () => 'h1',
   ORBITOX_EMAIL_WEBHOOK_SECRET: () => 'whsec_' + crypto.randomBytes(32).toString('base64'),
   STAFF_AUTH_SECRET: () => crypto.randomBytes(32).toString('hex'),
   RESTAURANT_STATION_SECRETS: generateRestaurantStationSecrets,
@@ -277,7 +283,7 @@ export function handleAdditiveKeyRotation(options: {
   if (checkRes.status === 0) {
     try {
       currentString = JSON.parse(checkRes.stdout).SecretString || '';
-    } catch {}
+    } catch { }
   }
 
   if (name === 'ORBITOX_PHI_KEYS') {
@@ -432,16 +438,22 @@ export function handleAdditiveKeyRotation(options: {
     return { name, action: 'added-key', detail: `Added key ${newKid}` };
   }
 
-  if (name === 'ORBITOX_EXPORT_ENCRYPTION_KEYS') {
+  if (name === 'ORBITOX_EXPORT_ENCRYPTION_KEYS' || name === 'ORBITOX_MCP_ENCRYPTION_KEYS' || name === 'ORBITOX_MCP_HMAC_KEYS') {
+    const activeSecretMap: Record<string, { prefix: string; activeVar: string }> = {
+      ORBITOX_EXPORT_ENCRYPTION_KEYS: { prefix: 'k', activeVar: 'ORBITOX_EXPORT_ENCRYPTION_KEY_ACTIVE' },
+      ORBITOX_MCP_ENCRYPTION_KEYS: { prefix: 'k', activeVar: 'ORBITOX_MCP_ACTIVE_KID' },
+      ORBITOX_MCP_HMAC_KEYS: { prefix: 'h', activeVar: 'ORBITOX_MCP_ACTIVE_HMAC_KID' },
+    };
+    const cfg = activeSecretMap[name]!;
     let keysMap: Record<string, string> = {};
     if (currentString) {
       try {
         keysMap = JSON.parse(currentString);
       } catch {
-        throw new Error('Existing ORBITOX_EXPORT_ENCRYPTION_KEYS is not valid JSON.');
+        throw new Error(`Existing ${name} is not valid JSON.`);
       }
     }
-    const newKid = `k${Object.keys(keysMap).length + 1}`;
+    const newKid = `${cfg.prefix}${Object.keys(keysMap).length + 1}`;
     keysMap[newKid] = crypto.randomBytes(32).toString('base64');
 
     const putRes = runner(
@@ -463,7 +475,7 @@ export function handleAdditiveKeyRotation(options: {
     }
 
     if (options.activate) {
-      const activeSecretId = `orbitox/${env}/ORBITOX_EXPORT_ENCRYPTION_KEY_ACTIVE`;
+      const activeSecretId = `orbitox/${env}/${cfg.activeVar}`;
       runner(
         [
           'secretsmanager',
@@ -715,34 +727,44 @@ export function handleActivateKey(options: {
     return { name: 'ORBITOX_DELETION_CERT_KEY_ACTIVE', action: 'activated', detail: `Activated deletion cert key ID ${kid}` };
   }
 
-  if (name === 'ORBITOX_EXPORT_ENCRYPTION_KEYS') {
-    const exportSecretId = `orbitox/${env}/ORBITOX_EXPORT_ENCRYPTION_KEYS`;
+  if (
+    name === 'ORBITOX_EXPORT_ENCRYPTION_KEYS' ||
+    name === 'ORBITOX_MCP_ENCRYPTION_KEYS' ||
+    name === 'ORBITOX_MCP_HMAC_KEYS'
+  ) {
+    const activeVars: Record<string, string> = {
+      ORBITOX_EXPORT_ENCRYPTION_KEYS: 'ORBITOX_EXPORT_ENCRYPTION_KEY_ACTIVE',
+      ORBITOX_MCP_ENCRYPTION_KEYS: 'ORBITOX_MCP_ACTIVE_KID',
+      ORBITOX_MCP_HMAC_KEYS: 'ORBITOX_MCP_ACTIVE_HMAC_KID',
+    };
+    const activeVar = activeVars[name]!;
+    const keySecretId = `orbitox/${env}/${name}`;
     const checkRes = runner([
       'secretsmanager',
       'get-secret-value',
       '--secret-id',
-      exportSecretId,
+      keySecretId,
       '--region',
       region,
       '--output',
       'json',
     ]);
     if (checkRes.status !== 0) {
-      throw new Error(`Failed to read ${exportSecretId} from Secrets Manager.`);
+      throw new Error(`Failed to read ${keySecretId} from Secrets Manager.`);
     }
     let parsed: Record<string, string> = {};
     try {
       parsed = JSON.parse(JSON.parse(checkRes.stdout).SecretString);
     } catch {
-      throw new Error(`Invalid JSON in ${exportSecretId}`);
+      throw new Error(`Invalid JSON in ${keySecretId}`);
     }
     if (!parsed[kid]) {
       throw new Error(
-        `Export encryption key "${kid}" does not exist in ${exportSecretId}. Existing keys: ${Object.keys(parsed).join(', ')}`,
+        `Key "${kid}" does not exist in ${keySecretId}. Existing keys: ${Object.keys(parsed).join(', ')}`,
       );
     }
 
-    const activeSecretId = `orbitox/${env}/ORBITOX_EXPORT_ENCRYPTION_KEY_ACTIVE`;
+    const activeSecretId = `orbitox/${env}/${activeVar}`;
     const putRes = runner(
       [
         'secretsmanager',
@@ -759,11 +781,13 @@ export function handleActivateKey(options: {
     if (putRes.status !== 0) {
       throw new Error(`Failed to update ${activeSecretId} in Secrets Manager.`);
     }
-    console.log(`ORBITOX_EXPORT_ENCRYPTION_KEY_ACTIVE: activated export encryption key ID ${kid}`);
-    return { name: 'ORBITOX_EXPORT_ENCRYPTION_KEY_ACTIVE', action: 'activated', detail: `Activated export encryption key ID ${kid}` };
+    console.log(`${activeVar}: activated key ID ${kid}`);
+    return { name: activeVar, action: 'activated', detail: `Activated key ID ${kid}` };
   }
 
-  throw new Error(`Activation not supported for secret "${name}". Supported: ORBITOX_SERVER_PEPPERS, ORBITOX_DELETION_CERT_KEYS, ORBITOX_EXPORT_ENCRYPTION_KEYS`);
+  throw new Error(
+    `Activation not supported for secret "${name}". Supported: ORBITOX_SERVER_PEPPERS, ORBITOX_DELETION_CERT_KEYS, ORBITOX_EXPORT_ENCRYPTION_KEYS, ORBITOX_MCP_ENCRYPTION_KEYS, ORBITOX_MCP_HMAC_KEYS`,
+  );
 }
 
 export function runDatabaseCredentialGenerator(options: {
@@ -794,7 +818,7 @@ export function runDatabaseCredentialGenerator(options: {
       if (tfOut && !tfOut.includes('No outputs found') && !tfOut.includes('Warning')) {
         platformHost = tfOut;
       }
-    } catch {}
+    } catch { }
   }
   if (!platformHost) {
     platformHost = `orbitox-${env}-pg16.internal`;
@@ -963,6 +987,16 @@ export function runSecretGenerator(options: {
       if (target === 'ORBITOX_EXPORT_ENCRYPTION_KEY_ACTIVE') {
         throw new Error(
           `Secret "${target}" cannot be blind-rotated. Rotate export encryption keys via --add-key=ORBITOX_EXPORT_ENCRYPTION_KEYS and promote via --activate=ORBITOX_EXPORT_ENCRYPTION_KEYS --kid=<ID>.`,
+        );
+      }
+      if (target === 'ORBITOX_MCP_ACTIVE_KID') {
+        throw new Error(
+          `Secret "${target}" cannot be blind-rotated. Rotate MCP encryption keys via --add-key=ORBITOX_MCP_ENCRYPTION_KEYS and promote via --activate=ORBITOX_MCP_ENCRYPTION_KEYS --kid=<ID>.`,
+        );
+      }
+      if (target === 'ORBITOX_MCP_ACTIVE_HMAC_KID') {
+        throw new Error(
+          `Secret "${target}" cannot be blind-rotated. Rotate MCP HMAC keys via --add-key=ORBITOX_MCP_HMAC_KEYS and promote via --activate=ORBITOX_MCP_HMAC_KEYS --kid=<ID>.`,
         );
       }
       throw new Error(`Secret "${target}" is not recognized or not eligible for rotation.`);

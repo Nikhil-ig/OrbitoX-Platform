@@ -993,8 +993,13 @@ export function withApiGuard<T = any>(
       tenantId = 'default';
     }
 
-    // 8. Fail-Closed Microservice Gates for Customer APIs
-    if (routeClass === 'customer' && serviceId !== 'system' && serviceId !== 'admin' && serviceId !== 'platform') {
+    // 8. Fail-Closed Microservice Gates for Customer APIs (and project-bound keys even on adminOnly service routes)
+    const isProjectBoundSuspensibleCaller =
+      Boolean(matchedKey) && matchedKey?.keyType !== 'PLATFORM_GLOBAL';
+    if (
+      (routeClass === 'customer' && serviceId !== 'system' && serviceId !== 'admin' && serviceId !== 'platform') ||
+      (isProjectBoundSuspensibleCaller && project && (project.status || '').toLowerCase() === 'suspended')
+    ) {
       // 8.1 Fail-closed project resolution: missing project = deny
       if (!project) {
         const latencyMs = Math.round(performance.now() - startTime);
@@ -1272,12 +1277,30 @@ export function withApiGuard<T = any>(
       );
     }
 
-    // 10. Context Preparation
+    // 10. Context Preparation (never expose raw API keys or admin tokens in request context)
+    const resolvedKeyId = matchedKey ? (matchedKey.id || matchedKey.keyId) : undefined;
+    const authMethod: ApiRequestContext['authMethod'] = matchedKey
+      ? 'api_key'
+      : isInternalAdmin || isInternalAutomation
+        ? 'operator_session'
+        : isDirectAdmin
+          ? 'admin_token'
+          : 'public';
+    const actorLabel = resolvedKeyId
+      ? `key:${resolvedKeyId}`
+      : isInternalAdmin && operatorId
+        ? `operator:${operatorId}`
+        : isDirectAdmin
+          ? 'platform_admin_token'
+          : undefined;
+
     const context: ApiRequestContext = {
       tenantId,
       serviceId,
-      apiKey: rawApiKey,
-      credential: matchedKey ? rawApiKey : hasAdminSession ? presentedCred || req.headers.get('x-orbitox-credential') || undefined : undefined,
+      keyId: resolvedKeyId,
+      maskedKeyDisplay: matchedKey?.maskedDisplay,
+      actorLabel,
+      authMethod,
       operatorId: isInternalAdmin ? operatorId || undefined : undefined,
       keyPrefix: matchedKey?.keyPrefix,
       environment: matchedKey?.environment || 'production',

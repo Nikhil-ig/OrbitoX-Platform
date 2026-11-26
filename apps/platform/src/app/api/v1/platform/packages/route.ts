@@ -118,7 +118,7 @@ export const POST = withApiGuard(
         action: 'PACKAGE_INSTALLED',
         entityType: 'PACKAGE_INSTALLATION',
         entityId: installation.id,
-        userId: ctx.apiKey || 'platform_admin',
+        userId: ctx.actorLabel || ctx.keyId || ctx.operatorId || 'platform_admin',
         contextId: ctx.tenantId || 'global',
         reason: `Installed verified package [${packageId}] version [${versionId}] into environment [${environmentId}]`,
         newValue: {
@@ -132,7 +132,7 @@ export const POST = withApiGuard(
         entityType: 'PACKAGE_INSTALLATION',
         entityId: installation.id,
         environmentId,
-        actorId: ctx.apiKey || 'platform_admin',
+        actorId: ctx.actorLabel || ctx.keyId || ctx.operatorId || 'platform_admin',
         reason: `Installed ${packageId} ${versionId}`,
         metadata: { environmentId, packageId, versionId },
       });

@@ -82,7 +82,7 @@ export const PATCH = withApiGuard(
         action: 'PLAN_UPDATED',
         entityType: 'PLAN',
         entityId: planId,
-        actorId: ctx.apiKey || 'platform_admin',
+        actorId: ctx.actorLabel || ctx.keyId || ctx.operatorId || 'platform_admin',
         reason: `Updated plan ${planId}`,
         metadata: JSON.parse(JSON.stringify({ old: previousPlan, new: updated })),
       });

@@ -72,7 +72,7 @@ export const POST = withApiGuard(
         action: 'PLAN_CREATED',
         entityType: 'PLAN',
         entityId: plan.planId,
-        actorId: ctx.apiKey || 'platform_admin',
+        actorId: ctx.actorLabel || ctx.keyId || ctx.operatorId || 'platform_admin',
         reason: `Created plan ${plan.planId} for plugin ${plan.pluginId}`,
         metadata: { tier: plan.tier, priceMinor: plan.priceMinor },
       });

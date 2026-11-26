@@ -27,6 +27,15 @@ const templates: Record<string, (data: Record<string, unknown>) => RenderedEmail
   }),
   PAYMENT_FAILED: () => billingEmail('Payment needs attention', 'A subscription payment failed. Review billing settings to restore full access.'),
   GRACE_STARTED: () => billingEmail('Subscription payment needs attention', 'A subscription has entered its payment grace period. Review billing settings.'),
+  BILLING_GRACE_REMINDER: (data) => {
+    const custom = typeof data.customMessage === 'string' ? data.customMessage.trim() : '';
+    return billingEmail(
+      'Payment reminder: subscription grace period',
+      custom
+        ? `A subscription payment is overdue and remains in its grace period.\n\nOperator note: ${custom}\n\nPlease update billing settings to avoid suspension.`
+        : 'A subscription payment is overdue and remains in its grace period. Please review and update billing settings to avoid suspension.',
+    );
+  },
   READ_ONLY: () => billingEmail('Subscription is now read-only', 'A subscription is read-only until billing is updated.'),
   SUSPENDED: () => billingEmail('Subscription access is suspended', 'A subscription has been suspended. Update billing to restore access.'),
   REACTIVATED: () => billingEmail('Subscription access restored', 'Subscription access has been restored.'),

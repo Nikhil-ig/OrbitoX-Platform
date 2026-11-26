@@ -38,7 +38,7 @@ export const POST = withApiGuard(
         action: 'API_KEY_REVOKED',
         entityType: 'PLATFORM_KEY',
         entityId: existing.id,
-        userId: ctx.apiKey || 'platform_admin',
+        userId: ctx.actorLabel || ctx.keyId || ctx.operatorId || 'platform_admin',
         contextId: ctx.tenantId || 'global',
         reason,
         oldValue: { status: existing.status },
@@ -50,7 +50,7 @@ export const POST = withApiGuard(
         entityId: existing.id,
         projectId: existing.projectId,
         environmentId: existing.environmentId,
-        actorId: ctx.apiKey || 'platform_admin',
+        actorId: ctx.actorLabel || ctx.keyId || ctx.operatorId || 'platform_admin',
         reason,
         metadata: { oldStatus: existing.status, newStatus: 'REVOKED' },
       });

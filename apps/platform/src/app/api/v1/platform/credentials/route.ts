@@ -75,7 +75,7 @@ export const POST = withApiGuard(
         environmentId,
         projectId,
         plaintextSecret,
-        ownerEmail: ownerEmail || ctx.apiKey || 'operator@orbitox.io',
+        ownerEmail: ownerEmail || 'operator@orbitox.io',
         rotationIntervalDays: rotationIntervalDays ? Number(rotationIntervalDays) : 90,
       });
       await platformRepository.recordPlatformAdminAudit({
@@ -84,7 +84,7 @@ export const POST = withApiGuard(
         entityId: credential.id,
         projectId,
         environmentId,
-        actorId: ctx.apiKey || 'platform_admin',
+        actorId: ctx.actorLabel || ctx.keyId || ctx.operatorId || 'platform_admin',
         reason: `Envelope-encrypted ${provider} credential`,
         metadata: { provider, fingerprint: credential.secretFingerprint },
       });
@@ -94,7 +94,7 @@ export const POST = withApiGuard(
         action: 'CREDENTIAL_VAULTED',
         entityType: 'PLATFORM_CREDENTIAL',
         entityId: credential.id,
-        userId: ctx.apiKey || 'platform_admin',
+        userId: ctx.actorLabel || ctx.keyId || ctx.operatorId || 'platform_admin',
         contextId: ctx.tenantId || 'global',
         reason: `Envelope-encrypted external [${provider}] credential for environment [${environmentId}]`,
         newValue: {

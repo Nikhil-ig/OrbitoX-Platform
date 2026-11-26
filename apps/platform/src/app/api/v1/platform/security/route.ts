@@ -166,7 +166,7 @@ export const POST = withApiGuard(
       action: 'SECURITY_POSTURE_SWEEP_EXECUTED',
       entityType: 'PLATFORM_SECURITY',
       entityId: 'sec_sweep_engine',
-      userId: ctx.apiKey || 'platform_admin@orbitox.io',
+      userId: ctx.actorLabel || ctx.keyId || ctx.operatorId || 'platform_admin@orbitox.io',
       contextId: ctx.tenantId || 'global',
       reason: 'Manual or automated security posture and cryptographic verification sweep executed',
       newValue: {

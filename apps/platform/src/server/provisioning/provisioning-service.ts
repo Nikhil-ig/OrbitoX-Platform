@@ -254,7 +254,7 @@ export class ProvisioningService {
       for (const org of orgs) {
         orgNameMap.set(org.id, org.name);
       }
-    } catch {}
+    } catch { }
 
     let items = ops.map((op) => mapRowToOperationItem(op, orgNameMap));
 
@@ -282,7 +282,7 @@ export class ProvisioningService {
     try {
       const org = await platformRepository.getOrganization(op.organizationId);
       if (org) orgNameMap.set(org.id, org.name);
-    } catch {}
+    } catch { }
 
     return mapRowToOperationItem(op, orgNameMap);
   }
@@ -333,7 +333,8 @@ export class ProvisioningService {
 
   async retryOperation(
     id: string,
-    operator: OperatorContext
+    operator: OperatorContext,
+    options: { mcpExecutionId?: string } = {}
   ): Promise<ProvisioningOperationItem> {
     const existing = await operationStore.getOperation(id);
     if (!existing) {
@@ -353,11 +354,12 @@ export class ProvisioningService {
       metadata: {
         operationId: id,
         tenantId: existing.tenantId,
+        ...(options.mcpExecutionId ? { mcpExecutionId: options.mcpExecutionId } : {}),
         retriedAt: new Date().toISOString(),
       },
     });
 
-    const retried = await provisioningSaga.retryOperation(id);
+    const retried = await provisioningSaga.retryOperation(id, options);
     if (!retried) {
       throw new Error(`RETRY_LOCKED: Operation ${id} is locked by another server lease.`);
     }

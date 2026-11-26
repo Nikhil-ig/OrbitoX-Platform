@@ -103,7 +103,7 @@ export const POST = withApiGuard(
         entityId: result.project.id,
         organizationId: targetOrgId,
         projectId: result.project.id,
-        actorId: ctx.apiKey || 'platform_admin',
+        actorId: ctx.actorLabel || ctx.keyId || ctx.operatorId || 'platform_admin',
         reason: `Provisioned project ${name}`,
         metadata: { environments: result.environments.map((environment) => environment.slug) },
       });
@@ -113,7 +113,7 @@ export const POST = withApiGuard(
         action: 'PROJECT_CREATED',
         entityType: 'PLATFORM_PROJECT',
         entityId: result.project.id,
-        userId: ctx.apiKey || 'platform_admin',
+        userId: ctx.actorLabel || ctx.keyId || ctx.operatorId || 'platform_admin',
         userEmail: contactEmail || 'operator@orbitox.io',
         userName: technicalLead || 'SuperAdmin',
         contextId: ctx.tenantId || 'global',

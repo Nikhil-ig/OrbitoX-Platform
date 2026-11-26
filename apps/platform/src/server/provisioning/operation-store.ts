@@ -95,6 +95,7 @@ function rowToRecord(row: any): PlatformOperationRecord {
     leaseExpiresAt: row.leaseExpiresAt
       ? (row.leaseExpiresAt instanceof Date ? row.leaseExpiresAt.toISOString() : String(row.leaseExpiresAt))
       : null,
+    lastMcpExecutionId: row.lastMcpExecutionId ?? null,
     steps: (typeof row.steps === 'string' ? JSON.parse(row.steps) : row.steps) || [],
     request: (typeof row.request === 'string' ? JSON.parse(row.request) : row.request) || {},
     result: (typeof row.result === 'string' ? JSON.parse(row.result) : row.result) || null,
@@ -617,10 +618,11 @@ export class OperationStore {
     id: string,
     leaseOwner: string,
     ttlSeconds?: number,
-    options: { force?: boolean; allowCancelled?: boolean } = {}
+    options: { force?: boolean; allowCancelled?: boolean; mcpExecutionId?: string } = {}
   ): Promise<boolean> {
     const isForce = Boolean(options.force);
     const allowCancelled = Boolean(options.allowCancelled);
+    const mcpExecutionId = options.mcpExecutionId?.trim() || null;
     const effectiveTtl = ttlSeconds ?? (
       process.env.OPERATION_LEASE_TTL_SECONDS
         ? Number(process.env.OPERATION_LEASE_TTL_SECONDS)
@@ -639,6 +641,7 @@ export class OperationStore {
         if (isForce || !mem.leaseExpiresAt || expiresAt < now) {
           mem.leaseOwner = leaseOwner;
           mem.leaseExpiresAt = new Date(now + effectiveTtl * 1000).toISOString();
+          if (mcpExecutionId) mem.lastMcpExecutionId = mcpExecutionId;
           return true;
         }
         return false;
@@ -652,6 +655,7 @@ export class OperationStore {
             UPDATE "PlatformOperation"
             SET "leaseOwner" = ${leaseOwner},
                 "leaseExpiresAt" = NOW() + (${effectiveTtl} * INTERVAL '1 second'),
+                "lastMcpExecutionId" = COALESCE(${mcpExecutionId}, "lastMcpExecutionId"),
                 "updatedAt" = NOW()
             WHERE "id" = ${id}
               AND (${isForce} = true OR "leaseExpiresAt" IS NULL OR "leaseExpiresAt" < NOW())
@@ -662,6 +666,7 @@ export class OperationStore {
             UPDATE "PlatformOperation"
             SET "leaseOwner" = ${leaseOwner},
                 "leaseExpiresAt" = NOW() + (${effectiveTtl} * INTERVAL '1 second'),
+                "lastMcpExecutionId" = COALESCE(${mcpExecutionId}, "lastMcpExecutionId"),
                 "updatedAt" = NOW()
             WHERE "id" = ${id}
               AND (${isForce} = true OR "leaseExpiresAt" IS NULL OR "leaseExpiresAt" < NOW())

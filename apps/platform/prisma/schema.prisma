@@ -1775,22 +1775,24 @@ model PlatformOperation {
   organizationId String
   idempotencyKey String?
   status         String    @default("PROVISIONING")
-  leaseOwner     String?
-  leaseExpiresAt DateTime?
-  steps          Json      @default("[]")
-  request        Json      @default("{}")
-  result         Json?
-  error          String?
-  operatorId     String?
-  requestId      String?
-  createdAt      DateTime  @default(now())
-  updatedAt      DateTime  @updatedAt
-  completedAt    DateTime?
+  leaseOwner         String?
+  leaseExpiresAt     DateTime?
+  lastMcpExecutionId String?
+  steps              Json      @default("[]")
+  request            Json      @default("{}")
+  result             Json?
+  error              String?
+  operatorId         String?
+  requestId          String?
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+  completedAt        DateTime?
 
   @@index([organizationId])
   @@index([tenantId])
   @@index([status])
   @@index([leaseExpiresAt])
+  @@index([lastMcpExecutionId])
   @@unique([organizationId, idempotencyKey])
 }
 
@@ -1810,7 +1812,7 @@ model McpToolApproval {
   reason           String?
   tenantScope      String
   requestedById    String
-  requestedByEmail String
+  requestedByEmail String?
   approvedById     String?
   approvedByEmail  String?
   delegationId     String?
@@ -1885,7 +1887,7 @@ model McpToolInvocation {
   approvalPolicy    String
   status            String
   actorId           String
-  actorEmail        String
+  actorEmail        String?
   authType          String
   callerAgent       String
   tenantScope       String

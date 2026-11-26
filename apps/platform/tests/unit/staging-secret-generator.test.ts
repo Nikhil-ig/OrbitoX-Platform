@@ -140,6 +140,15 @@ describe('Phase 6F B0: Staging Secret Generator Verification', () => {
         assert.ok(typeof parsed.keys.k1 === 'string' && parsed.keys.k1.length >= 32);
       } else if (name === 'ORBITOX_BRIDGE_ACTIVE_KID') {
         assert.match(val, /^[a-zA-Z0-9_-]+$/);
+      } else if (name === 'ORBITOX_MCP_ENCRYPTION_KEYS' || name === 'ORBITOX_MCP_HMAC_KEYS') {
+        const parsed = JSON.parse(val);
+        const firstKid = Object.keys(parsed)[0];
+        assert.ok(firstKid, `${name} must include an initial key ID`);
+        assert.equal(Buffer.from(parsed[firstKid], 'base64').length, 32, `${name} key must decode to 32 bytes`);
+      } else if (name === 'ORBITOX_MCP_ACTIVE_KID') {
+        assert.equal(val, 'k1');
+      } else if (name === 'ORBITOX_MCP_ACTIVE_HMAC_KID') {
+        assert.equal(val, 'h1');
       } else {
         assert.ok(val.length >= 32, `Secret "${name}" length must be at least 32 (got ${val.length})`);
       }

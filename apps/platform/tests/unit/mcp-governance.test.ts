@@ -19,10 +19,23 @@ import {
   canRetireMcpKey,
   getMcpGatewayInventory,
   invokeMcpTool,
+  mcpAuditEventId,
+  PLATFORM_CANONICAL_SCOPE,
   reconcileStaleMcpExecutions,
   rejectMcpProposal,
+  resolveCanonicalOutboxTenantScope,
 } from '@/server/ai/mcp-governance-service';
 import { McpToolError, type McpActorContext } from '@/server/ai/mcp-tools';
+import { decryptAccountEmailPayload } from '@/server/accounts/account-email-payload';
+import { renderAccountEmail } from '@/server/accounts/account-email';
+import {
+  CUSTOMER_WEBHOOK_EVENT_TYPES,
+  dispatchClaimedMessage,
+  isCustomerWebhookEventType,
+  processMcpAuditOutboxBatch,
+} from '@/server/provisioning/webhook-emitter';
+import { suspendTenant } from '@/server/tenants/tenants-service';
+import { platformRepository } from '@/server/db/platform-repository';
 import { withTenantTx } from '@/server/db/tenant-db';
 import { blindIndex, getPhiKeyRing, seal } from '@/server/hospital/phi-crypto';
 
@@ -226,6 +239,9 @@ if (process.env.ORBITOX_PLATFORM_REPOSITORY === 'prisma') {
         });
         process.env.ORBITOX_MCP_ACTIVE_HMAC_KID = 'h1';
       }
+      if (!process.env.ORBITOX_ACCOUNT_TOKEN_ENCRYPTION_KEY) {
+        process.env.ORBITOX_ACCOUNT_TOKEN_ENCRYPTION_KEY = crypto.randomBytes(32).toString('base64');
+      }
       const phiRing = getPhiKeyRing();
 
       await ownerPrisma.platformOrganization.create({
@@ -340,16 +356,19 @@ if (process.env.ORBITOX_PLATFORM_REPOSITORY === 'prisma') {
 
     after(async () => {
       await ownerPrisma.mcpToolInvocation.deleteMany({
-        where: { actorId: { in: [ids.operatorId, ids.supportOpId, `op_billing_${run}`, `op_delegate_${run}`, `op_owner2_${run}`] } },
+        where: { actorId: { in: [ids.operatorId, ids.supportOpId, `op_billing_${run}`, `op_delegate_${run}`, `op_owner2_${run}`, `key_scoped_${run}`] } },
       });
       await ownerPrisma.mcpApprovalDelegation.deleteMany({
         where: { delegatorId: { in: [ids.operatorId, `op_owner2_${run}`] } },
       });
       await ownerPrisma.mcpToolApproval.deleteMany({
-        where: { requestedById: { in: [ids.operatorId, ids.supportOpId, `op_billing_${run}`, `op_delegate_${run}`, `op_owner2_${run}`] } },
+        where: { requestedById: { in: [ids.operatorId, ids.supportOpId, `op_billing_${run}`, `op_delegate_${run}`, `op_owner2_${run}`, `key_scoped_${run}`] } },
+      });
+      await ownerPrisma.platformOperation.deleteMany({
+        where: { id: { startsWith: `op_retry_corr_${run}` } },
       });
       await ownerPrisma.platformOutboxMessage.deleteMany({
-        where: { aggregateType: { in: ['MCP_APPROVAL', 'MCP_EXECUTION'] }, tenantId: { in: [`org/${ids.orgId}/project/${ids.projectId}/environment/${ids.envId}`, ids.projectId, 'platform'] } },
+        where: { aggregateType: { in: ['MCP_APPROVAL', 'MCP_EXECUTION'] }, tenantId: { in: [`org/${ids.orgId}/project/${ids.projectId}/environment/${ids.envId}`, ids.projectId, 'platform', PLATFORM_CANONICAL_SCOPE] } },
       });
       await ownerPrisma.accountEmailOutbox.deleteMany({
         where: { recipient: `billing-mcp-${run}@example.invalid` },
@@ -361,7 +380,7 @@ if (process.env.ORBITOX_PLATFORM_REPOSITORY === 'prisma') {
         await tx.query(`DELETE FROM "HmsBed" WHERE "id" = $1`, [ids.bedId]);
         await tx.query(`DELETE FROM "HmsWard" WHERE "id" = $1`, [ids.wardId]);
         await tx.query(`DELETE FROM "HmsDepartment" WHERE "id" = $1`, [`dept_mcp_${run}`]);
-      }).catch(() => {});
+      }).catch(() => { });
       await ownerPrisma.platformProject.deleteMany({ where: { id: { in: [ids.projectId, ids.hmsProjectId] } } });
       await ownerPrisma.platformOrganization.deleteMany({ where: { id: { in: [ids.orgId, ids.hmsOrgId] } } });
       await ownerPrisma.$disconnect();
@@ -475,7 +494,7 @@ if (process.env.ORBITOX_PLATFORM_REPOSITORY === 'prisma') {
       });
       assert.equal(preOutbox, 0);
 
-      // Approve once -> executes and queues real email
+      // Approve once -> executes and queues real AES-256-GCM encrypted email with BILLING_GRACE_REMINDER template
       const approved = await approveAndExecuteMcpProposal(
         {
           approvalId: proposal.approval.id,
@@ -486,10 +505,15 @@ if (process.env.ORBITOX_PLATFORM_REPOSITORY === 'prisma') {
       assert.equal(approved.approval.status, 'SUCCEEDED');
       assert.equal((approved.output as any).queuedCount, 1);
 
-      const postOutbox = await ownerPrisma.accountEmailOutbox.count({
+      const postOutboxRows = await ownerPrisma.accountEmailOutbox.findMany({
         where: { recipient: `billing-mcp-${run}@example.invalid` },
       });
-      assert.equal(postOutbox, 1);
+      assert.equal(postOutboxRows.length, 1);
+      assert.equal(postOutboxRows[0]!.template, 'BILLING_GRACE_REMINDER');
+      const decryptedEmail = decryptAccountEmailPayload<Record<string, unknown>>(postOutboxRows[0]!.encryptedPayload);
+      const renderedEmail = renderAccountEmail(postOutboxRows[0]!.template, decryptedEmail);
+      assert.ok(renderedEmail.subject.includes('Payment reminder'));
+      assert.ok(renderedEmail.text.includes(`Please settle invoice for MCP Bistro ${run}.`));
 
       // Replay attempt -> 409 conflict & NO duplicate email queued
       await assert.rejects(
@@ -730,8 +754,9 @@ if (process.env.ORBITOX_PLATFORM_REPOSITORY === 'prisma') {
     it('enforces API key tenant boundaries and blocks tenant-scoped keys from PLATFORM_GLOBAL tools', async () => {
       const scopedApiKeyActor: McpActorContext = {
         kind: 'api_key',
-        actorId: 'key_scoped_test',
-        actorEmail: 'key_scoped_test@example.invalid',
+        actorId: `key_scoped_${run}`,
+        actorEmail: null,
+        maskedKeyDisplay: 'ox_live_****test',
         capabilities: ['platform.tenants.read', 'hms.beds.view'],
         allowedTenants: [canonicalHmsTenant],
         projectTenantId: ids.hmsProjectId,
@@ -749,13 +774,20 @@ if (process.env.ORBITOX_PLATFORM_REPOSITORY === 'prisma') {
         (err: any) => err instanceof McpToolError && err.status === 403 && err.code === 'TENANT_SCOPE_VIOLATION',
       );
 
-      // 3. Tenant-scoped key invoking HMS tool on its own tenant -> 200 OK
+      // 3. Tenant-scoped key invoking HMS tool on its own tenant -> 200 OK & null actorEmail persisted cleanly
       const allowedRes = await invokeMcpTool(
         { toolName: 'hms_read_beds', parameters: { tenantId: canonicalHmsTenant } },
         scopedApiKeyActor,
       );
       assert.equal(allowedRes.kind, 'executed');
       assert.equal(allowedRes.status, 200);
+      const apiKeyInv = await ownerPrisma.mcpToolInvocation.findFirst({
+        where: { actorId: `key_scoped_${run}`, toolName: 'hms_read_beds', status: 'AUTHORIZED_EXECUTED' },
+        orderBy: { createdAt: 'desc' },
+      });
+      assert.ok(apiKeyInv);
+      assert.equal(apiKeyInv.actorEmail, null);
+      assert.equal(apiKeyInv.callerAgent, `api_key:key_scoped_${run}`);
     });
 
     it('guarantees atomic concurrency and prevents duplicate execution across parallel requests', async () => {
@@ -873,11 +905,21 @@ if (process.env.ORBITOX_PLATFORM_REPOSITORY === 'prisma') {
         process.env.ORBITOX_MCP_ACTIVE_KID = prevEnc;
       }
 
-      const preflightAfter = await canRetireMcpKey('k1', 'encryption');
-      assert.equal(preflightAfter.canRetire, true);
+      // Immediately after execution, retention window still blocks k1 retirement (zero bypass allowed)
+      const preflightWithinRetention = await canRetireMcpKey('k1', 'encryption', { retentionDays: 90 });
+      assert.equal(preflightWithinRetention.canRetire, false);
+      assert.equal(preflightWithinRetention.blockingApprovals, 0);
+      assert.ok(preflightWithinRetention.retainedApprovals >= 1);
+
+      // Only after retention cutoff elapses AND zero active/recovery rows remain can k1 be retired
+      const preflightAfterRetention = await canRetireMcpKey('k1', 'encryption', {
+        retentionDays: 90,
+        now: new Date(Date.now() + 91 * 86_400_000),
+      });
+      assert.equal(preflightAfterRetention.canRetire, true);
     });
 
-    it('enforces risk-based ownership, server-side McpApprovalDelegation, and blocks unauthorized cross-actor decisions', async () => {
+    it('disables delegated approvals (Approach B), blocks emergencySelfApproval, and permits independent PLATFORM_OWNER approval', async () => {
       const requesterBilling: McpActorContext = {
         kind: 'operator',
         actorId: `op_billing_${run}`,
@@ -912,36 +954,13 @@ if (process.env.ORBITOX_PLATFORM_REPOSITORY === 'prisma') {
       assert.equal(proposal.kind, 'approval_required');
       const approvalId = proposal.approval.id;
 
-      // Unauthorized cross-actor approval & rejection must fail 403 APPROVAL_OWNERSHIP_REQUIRED
+      // Reject emergencySelfApproval flag unconditionally
       await assert.rejects(
-        () => approveAndExecuteMcpProposal({ approvalId }, otherBilling),
-        (err: any) => err instanceof McpToolError && err.status === 403 && err.code === 'APPROVAL_OWNERSHIP_REQUIRED',
-      );
-      await assert.rejects(
-        () => rejectMcpProposal({ approvalId, reason: 'Unauthorized reject' }, otherBilling),
-        (err: any) => err instanceof McpToolError && err.status === 403 && err.code === 'APPROVAL_OWNERSHIP_REQUIRED',
+        () => approveAndExecuteMcpProposal({ approvalId, emergencySelfApproval: true }, requesterBilling),
+        (err: any) => err instanceof McpToolError && err.status === 403 && err.code === 'EMERGENCY_SELF_APPROVAL_DISABLED',
       );
 
-      // Expired delegation must still fail 403
-      await ownerPrisma.mcpApprovalDelegation.create({
-        data: {
-          id: `del_exp_${run}`,
-          delegatorId: requesterBilling.actorId,
-          delegatorEmail: requesterBilling.actorEmail,
-          delegateId: otherBilling.actorId,
-          delegateEmail: otherBilling.actorEmail,
-          allowedRiskTier: 'ASK_FIRST',
-          tenantScope: '*',
-          reason: 'Expired test delegation',
-          expiresAt: new Date(Date.now() - 10000),
-        },
-      });
-      await assert.rejects(
-        () => approveAndExecuteMcpProposal({ approvalId }, otherBilling),
-        (err: any) => err instanceof McpToolError && err.status === 403 && err.code === 'APPROVAL_OWNERSHIP_REQUIRED',
-      );
-
-      // Active server-side delegation authorizes approval and records delegationId
+      // Even with a delegation row in DB, delegated execution is disabled (Decision D-1 Approach B)
       await ownerPrisma.mcpApprovalDelegation.create({
         data: {
           id: `del_act_${run}`,
@@ -955,9 +974,16 @@ if (process.env.ORBITOX_PLATFORM_REPOSITORY === 'prisma') {
           expiresAt: new Date(Date.now() + 60000),
         },
       });
-      const delegatedRes = await approveAndExecuteMcpProposal({ approvalId }, otherBilling);
-      assert.equal(delegatedRes.approval.status, 'SUCCEEDED');
-      assert.equal(delegatedRes.approval.delegationId, `del_act_${run}`);
+      await assert.rejects(
+        () => approveAndExecuteMcpProposal({ approvalId }, otherBilling),
+        (err: any) => err instanceof McpToolError && err.status === 403 && err.code === 'APPROVAL_OWNERSHIP_REQUIRED',
+      );
+
+      // Independent PLATFORM_OWNER (non-delegated) still approves cleanly
+      const ownerRes = await approveAndExecuteMcpProposal({ approvalId }, makeOperatorActor());
+      assert.equal(ownerRes.approval.status, 'SUCCEEDED');
+      assert.equal(ownerRes.approval.delegationId, null);
+      assert.equal(ownerRes.approval.delegatedById, null);
     });
 
     it('prevents side effects on pre-execution audit failure and reconciles RECOVERY_REQUIRED without duplicate emails', async () => {
@@ -1037,6 +1063,148 @@ if (process.env.ORBITOX_PLATFORM_REPOSITORY === 'prisma') {
 
       const finalApp = await ownerPrisma.mcpToolApproval.findUnique({ where: { id: propPost.approval.id } });
       assert.equal(finalApp?.status, 'SUCCEEDED');
+    });
+
+    it('separates internal mcp.audit.* outbox from customer webhooks, resolves canonical RLS tenantId, and dedups audit inserts', async () => {
+      assert.equal(isCustomerWebhookEventType('mcp.audit.approval_proposed'), false);
+      assert.equal(isCustomerWebhookEventType('mcp.audit.execution_intent'), false);
+      assert.equal(isCustomerWebhookEventType('entitlement.updated'), true);
+      assert.ok(CUSTOMER_WEBHOOK_EVENT_TYPES.includes('tenant.ready'));
+
+      const globalScope = await resolveCanonicalOutboxTenantScope('platform');
+      assert.equal(globalScope, PLATFORM_CANONICAL_SCOPE);
+      const projScope = await resolveCanonicalOutboxTenantScope(ids.projectId);
+      assert.equal(projScope, `org/${ids.orgId}/project/${ids.projectId}/environment/${ids.envId}`);
+
+      await assert.rejects(
+        () =>
+          dispatchClaimedMessage({
+            id: `outbox_block_${run}`,
+            tenantId: projScope,
+            eventType: 'mcp.audit.execution_intent',
+            aggregateType: 'MCP_EXECUTION',
+            aggregateId: `exec_block_${run}`,
+            payload: {},
+            retryCount: 0,
+            maxAttempts: 5,
+            claimOwner: 'worker_test',
+            claimExpiresAt: new Date(Date.now() + 30000),
+          }),
+        /OUTBOX_CHANNEL_VIOLATION/,
+      );
+
+      // Deterministic audit IDempotency (ON CONFLICT DO NOTHING) across replay calls
+      const detId = mcpAuditEventId(`exec_det_${run}`, 'final');
+      const r1 = await platformRepository.recordPlatformAdminAudit({
+        deterministicId: detId,
+        action: 'MCP_APPROVAL_EXECUTION_SUCCEEDED',
+        entityType: 'MCP_EXECUTION',
+        entityId: `exec_det_${run}`,
+        organizationId: ids.orgId,
+        projectId: ids.projectId,
+        environmentId: ids.envId,
+        reason: 'Deterministic replay 1',
+      });
+      const r2 = await platformRepository.recordPlatformAdminAudit({
+        deterministicId: detId,
+        action: 'MCP_APPROVAL_EXECUTION_SUCCEEDED',
+        entityType: 'MCP_EXECUTION',
+        entityId: `exec_det_${run}`,
+        organizationId: ids.orgId,
+        projectId: ids.projectId,
+        environmentId: ids.envId,
+        reason: 'Deterministic replay 2',
+      });
+      assert.equal(r1, detId);
+      assert.equal(r2, detId);
+      const detCount = await ownerPrisma.platformAuditEvent.count({ where: { id: detId } });
+      assert.equal(detCount, 1);
+
+      // Internal outbox consumer drains pending mcp.audit.* rows deterministically
+      const batchResult = await processMcpAuditOutboxBatch({ limit: 25 });
+      assert.ok(batchResult.claimed >= 0);
+    });
+
+    it('correlates provisioning.retry reconciliation strictly by lastMcpExecutionId and reports truthful external suspension sync states', async () => {
+      const actor = makeOperatorActor();
+      const opId = `op_retry_corr_${run}`;
+      await ownerPrisma.platformOperation.create({
+        data: {
+          id: opId,
+          type: 'TENANT_PROVISION',
+          tenantId: `org/${ids.orgId}/project/${ids.projectId}/environment/${ids.envId}`,
+          organizationId: ids.orgId,
+          status: 'FAILED',
+          steps: [],
+          request: { name: `MCP Retry ${run}`, slug: `mcp-bistro-${run}`, plugins: [] },
+        },
+      });
+
+      const proposal = await invokeMcpTool(
+        { toolName: 'provisioning.retry', parameters: { operationId: opId } },
+        actor,
+      );
+      assert.equal(proposal.kind, 'approval_required');
+
+      const mismatchedExecId = `exec_mismatch_${run}`;
+      await ownerPrisma.mcpToolExecution.create({
+        data: {
+          id: mismatchedExecId,
+          approvalId: proposal.approval.id,
+          toolName: 'provisioning.retry',
+          tenantScope: proposal.approval.tenantScope,
+          idempotencyKey: `idem_mismatch_${run}`,
+          status: 'RECOVERY_REQUIRED',
+          leaseOwner: `platform:test`,
+          leaseExpiresAt: new Date(Date.now() - 5000),
+        },
+      });
+      // Unrelated concurrent retry stamped a different lastMcpExecutionId
+      await ownerPrisma.platformOperation.update({
+        where: { id: opId },
+        data: { status: 'ACTIVE', lastMcpExecutionId: `exec_other_${run}` },
+      });
+
+      await reconcileStaleMcpExecutions();
+      const mismatchedAfter = await ownerPrisma.mcpToolExecution.findUnique({ where: { id: mismatchedExecId } });
+      assert.equal(mismatchedAfter?.status, 'RECOVERY_REQUIRED');
+      assert.equal(mismatchedAfter?.reconciliationStatus, 'CORRELATION_MISMATCH_OR_SUPERSEDED');
+
+      // Matching correlation resolves cleanly to AUTHORIZED_EXECUTED
+      await ownerPrisma.platformOperation.update({
+        where: { id: opId },
+        data: { lastMcpExecutionId: mismatchedExecId },
+      });
+      const recMatch = await reconcileStaleMcpExecutions();
+      assert.ok(recMatch.ids.includes(mismatchedExecId));
+      const matchedAfter = await ownerPrisma.mcpToolExecution.findUnique({ where: { id: mismatchedExecId } });
+      assert.equal(matchedAfter?.status, 'AUTHORIZED_EXECUTED');
+      assert.equal(matchedAfter?.reconciliationStatus, 'RECONCILED_PROVISIONING_COMPLETED');
+
+      // Verify truthful suspension sync states when an external bridge fails vs acknowledges
+      const degradedResult = await suspendTenant(
+        ids.projectId,
+        { reason: 'Degraded external bridge test', idempotencyKey: `idem_susp_${run}` },
+        null,
+        {
+          repository: {
+            getProject: async () => ({ id: ids.projectId, slug: `mcp-bistro-${run}`, name: `MCP Bistro ${run}`, organizationId: ids.orgId, status: 'ACTIVE' }),
+            listPluginInstallations: async () => [{ tenantId: `org/${ids.orgId}/project/${ids.projectId}/environment/${ids.envId}`, pluginId: '@orbitox/restaurant', status: 'ACTIVE' }],
+            updateProject: async () => { },
+            updatePluginInstallationStatus: async () => ({ entitlementRevision: 4 }),
+            recordPlatformAdminAudit: async () => `audit_susp_${run}`,
+          },
+          lifecycleClient: {
+            invokeLifecycle: async () => {
+              throw new Error('Bridge ECONNREFUSED');
+            },
+          },
+        },
+      );
+      assert.equal(degradedResult.platformAccessState, 'PLATFORM_ACCESS_BLOCKED');
+      assert.equal(degradedResult.externalSuspensionState, 'PARTIALLY_DEGRADED');
+      assert.equal(degradedResult.suspensionState, 'PARTIALLY_DEGRADED');
+      assert.equal(degradedResult.runtimeSync?.['@orbitox/restaurant']?.acked, false);
     });
   });
 }

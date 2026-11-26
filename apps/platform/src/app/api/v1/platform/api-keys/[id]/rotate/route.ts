@@ -34,7 +34,7 @@ export const POST = withApiGuard(
 
       const result = await platformRepository.rotateApiKey(existing.id, {
         graceWindowDays,
-        operatorEmail: body.operatorEmail || ctx.apiKey || 'platform_admin@orbitox.io',
+        operatorEmail: body.operatorEmail || 'platform_admin@orbitox.io',
       });
 
       if (!result) {
@@ -53,7 +53,7 @@ export const POST = withApiGuard(
         action: 'API_KEY_ROTATED',
         entityType: 'PLATFORM_KEY',
         entityId: existing.id,
-        userId: ctx.apiKey || 'platform_admin',
+        userId: ctx.actorLabel || ctx.keyId || ctx.operatorId || 'platform_admin',
         contextId: ctx.tenantId || 'global',
         reason: `Zero-downtime key rotation. Replacement: [${result.replacementKey.keyId}]. Grace window: ${graceWindowDays} days.`,
         oldValue: { keyId: existing.keyId, status: existing.status },
@@ -69,7 +69,7 @@ export const POST = withApiGuard(
         entityId: existing.id,
         projectId: existing.projectId,
         environmentId: existing.environmentId,
-        actorId: ctx.apiKey || 'platform_admin',
+        actorId: ctx.actorLabel || ctx.keyId || ctx.operatorId || 'platform_admin',
         reason: `Key rotation; grace window ${graceWindowDays} days`,
         metadata: {
           replacementKeyId: result.replacementKey.keyId,

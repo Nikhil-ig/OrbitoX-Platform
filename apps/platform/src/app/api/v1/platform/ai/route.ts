@@ -32,10 +32,26 @@ function buildApiKeyActor(ctx: ApiRequestContext): McpActorContext {
   if (scopes.includes('*') || scopes.includes('admin')) {
     allowedTenants.push('*');
   }
+
+  let stableActorId: string | undefined;
+  if (ctx.authMethod === 'api_key') {
+    if (!ctx.keyId) {
+      throw new McpToolError(401, 'INVALID_KEY_IDENTITY', 'Authenticated API key is missing a stable key identifier.');
+    }
+    stableActorId = ctx.keyId;
+  } else {
+    stableActorId = ctx.keyId || ctx.sub || ctx.actorLabel || (ctx.operatorId ? `operator:${ctx.operatorId}` : undefined);
+  }
+
+  if (!stableActorId) {
+    throw new McpToolError(401, 'ACTOR_IDENTITY_REQUIRED', 'Unable to derive a non-secret actor identifier.');
+  }
+
   return {
     kind: 'api_key',
-    actorId: ctx.apiKey || ctx.sub || 'api_key',
-    actorEmail: ctx.apiKey || ctx.sub || 'api_key',
+    actorId: stableActorId,
+    actorEmail: null,
+    ...(ctx.maskedKeyDisplay ? { maskedKeyDisplay: ctx.maskedKeyDisplay } : {}),
     capabilities: scopes,
     allowedTenants,
     projectTenantId: ctx.tenantId,

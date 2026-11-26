@@ -92,7 +92,7 @@ export const POST = withApiGuard(
         rateLimitPerMin: rateLimitPerMin || 1200,
         tenantScope: tenantScope || [],
         expiresInDays: expiresInDays ? Number(expiresInDays) : 90,
-        createdBy: ctx.apiKey || 'platform_admin',
+        createdBy: ctx.actorLabel || ctx.keyId || ctx.operatorId || 'platform_admin',
       });
       await platformRepository.recordPlatformAdminAudit({
         action: 'API_KEY_ISSUED',
@@ -100,7 +100,7 @@ export const POST = withApiGuard(
         entityId: created.keyRecord.id,
         projectId,
         environmentId,
-        actorId: ctx.apiKey || 'platform_admin',
+        actorId: ctx.actorLabel || ctx.keyId || ctx.operatorId || 'platform_admin',
         reason: `Issued new machine key ${name}`,
         metadata: {
           keyId: created.keyRecord.keyId,
@@ -115,7 +115,7 @@ export const POST = withApiGuard(
         action: 'API_KEY_ISSUED',
         entityType: 'PLATFORM_KEY',
         entityId: created.keyRecord.id,
-        userId: ctx.apiKey || 'platform_admin',
+        userId: ctx.actorLabel || ctx.keyId || ctx.operatorId || 'platform_admin',
         contextId: ctx.tenantId || 'global',
         reason: `Issued new machine key [${name}] for environment [${environmentId}]`,
         newValue: {

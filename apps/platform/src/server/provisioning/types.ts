@@ -50,6 +50,7 @@ export interface PlatformOperationRecord {
   status: OperationStatus;
   leaseOwner?: string | null;
   leaseExpiresAt?: string | null;
+  lastMcpExecutionId?: string | null;
   steps: OperationStep[];
   request: Record<string, any>;
   result?: Record<string, any> | null;

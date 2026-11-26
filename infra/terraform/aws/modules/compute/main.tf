@@ -225,7 +225,11 @@ resource "aws_iam_policy" "web_secrets_access" {
           var.secrets_map["RAZORPAY_KEY_SECRET"],
           var.secrets_map["RAZORPAY_WEBHOOK_SECRET"],
           var.secrets_map["ORBITOX_BRIDGE_KEYS"],
-          var.secrets_map["ORBITOX_BRIDGE_ACTIVE_KID"]
+          var.secrets_map["ORBITOX_BRIDGE_ACTIVE_KID"],
+          var.secrets_map["ORBITOX_MCP_ENCRYPTION_KEYS"],
+          var.secrets_map["ORBITOX_MCP_ACTIVE_KID"],
+          var.secrets_map["ORBITOX_MCP_HMAC_KEYS"],
+          var.secrets_map["ORBITOX_MCP_ACTIVE_HMAC_KID"]
         ]
       },
       {
@@ -638,7 +642,9 @@ resource "aws_ecs_task_definition" "web" {
         { name = "ORBITOX_OBJECT_STORE_ENCRYPTION", value = var.object_store_encryption },
         { name = "ORBITOX_OBJECT_STORE_ENDPOINT", value = var.object_store_endpoint },
         { name = "ORBITOX_OBJECT_STORE_KMS_KEY_ID", value = var.object_store_kms_key_id },
-        { name = "S3_BUCKET_NAME", value = var.exports_bucket_name }
+        { name = "S3_BUCKET_NAME", value = var.exports_bucket_name },
+        { name = "ORBITOX_MCP_EXECUTION_ENABLED", value = "true" },
+        { name = "ORBITOX_MCP_KEY_RETENTION_DAYS", value = "90" }
       ]
       secrets = [
         { name = "APP_DATABASE_URL", valueFrom = var.secrets_map["APP_DATABASE_URL"] },
@@ -666,7 +672,11 @@ resource "aws_ecs_task_definition" "web" {
         { name = "RAZORPAY_KEY_SECRET", valueFrom = var.secrets_map["RAZORPAY_KEY_SECRET"] },
         { name = "RAZORPAY_WEBHOOK_SECRET", valueFrom = var.secrets_map["RAZORPAY_WEBHOOK_SECRET"] },
         { name = "ORBITOX_BRIDGE_KEYS", valueFrom = var.secrets_map["ORBITOX_BRIDGE_KEYS"] },
-        { name = "ORBITOX_BRIDGE_ACTIVE_KID", valueFrom = var.secrets_map["ORBITOX_BRIDGE_ACTIVE_KID"] }
+        { name = "ORBITOX_BRIDGE_ACTIVE_KID", valueFrom = var.secrets_map["ORBITOX_BRIDGE_ACTIVE_KID"] },
+        { name = "ORBITOX_MCP_ENCRYPTION_KEYS", valueFrom = var.secrets_map["ORBITOX_MCP_ENCRYPTION_KEYS"] },
+        { name = "ORBITOX_MCP_ACTIVE_KID", valueFrom = var.secrets_map["ORBITOX_MCP_ACTIVE_KID"] },
+        { name = "ORBITOX_MCP_HMAC_KEYS", valueFrom = var.secrets_map["ORBITOX_MCP_HMAC_KEYS"] },
+        { name = "ORBITOX_MCP_ACTIVE_HMAC_KID", valueFrom = var.secrets_map["ORBITOX_MCP_ACTIVE_HMAC_KID"] }
       ]
       logConfiguration = {
         logDriver = "awslogs"

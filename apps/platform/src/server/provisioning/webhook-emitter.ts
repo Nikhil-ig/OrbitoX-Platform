@@ -58,6 +58,25 @@ interface MemoryOutboxItem {
 const memoryOutboxStore = new Map<string, MemoryOutboxItem>();
 const webhookDeliveries: PlatformWebhookDelivery[] = [];
 
+export const CUSTOMER_WEBHOOK_EVENT_TYPES = [
+  'tenant.ready',
+  'entitlement.updated',
+  'entitlement.test',
+] as const;
+
+export const MCP_AUDIT_OUTBOX_EVENT_TYPES = [
+  'mcp.audit.approval_proposed',
+  'mcp.audit.execution_intent',
+] as const;
+
+export function isCustomerWebhookEventType(eventType: string): boolean {
+  return (CUSTOMER_WEBHOOK_EVENT_TYPES as readonly string[]).includes(eventType);
+}
+
+export function isMcpAuditOutboxEventType(eventType: string): boolean {
+  return (MCP_AUDIT_OUTBOX_EVENT_TYPES as readonly string[]).includes(eventType);
+}
+
 let relayClient: PrismaClient | null = null;
 function getOutboxDbClient(): PrismaClient {
   const relayUrl = process.env.OUTBOX_RELAY_DATABASE_URL;
@@ -118,6 +137,7 @@ export async function claimPendingOutboxMessages(options: {
   if (process.env.ORBITOX_PLATFORM_REPOSITORY === 'json') {
     const claimed: ClaimedOutboxMessage[] = [];
     for (const item of memoryOutboxStore.values()) {
+      if (!isCustomerWebhookEventType(item.eventType)) continue;
       if (options.tenantId && item.tenantId !== options.tenantId) continue;
       const isPending = item.status === 'PENDING';
       const isExpired = item.status === 'PROCESSING' && (!item.claimExpiresAt || item.claimExpiresAt < now);
@@ -175,6 +195,7 @@ export async function claimPendingOutboxMessages(options: {
           WHERE ("status" = 'PENDING' OR ("status" = 'PROCESSING' AND "claimExpiresAt" < NOW()))
             AND ("nextAttemptAt" IS NULL OR "nextAttemptAt" <= NOW())
             AND "retryCount" < "maxAttempts"
+            AND "eventType" = ANY(${[...CUSTOMER_WEBHOOK_EVENT_TYPES]}::text[])
             ${options.tenantId ? Prisma.sql`AND "tenantId" = ${options.tenantId}` : Prisma.empty}
           ORDER BY "createdAt" ASC
           LIMIT ${limit}
@@ -237,6 +258,12 @@ export async function dispatchClaimedMessage(
 
   const webhookUrl = process.env.ORBITOX_WEBHOOK_URL;
   let dispatchError: string | null = null;
+
+  if (!isCustomerWebhookEventType(message.eventType)) {
+    throw new Error(
+      `OUTBOX_CHANNEL_VIOLATION: Event type "${message.eventType}" is internal and cannot be dispatched to customer webhooks.`,
+    );
+  }
 
   if (webhookUrl) {
     delivery.url = webhookUrl;
@@ -670,6 +697,170 @@ export function getEmittedWebhooks(filter?: { tenantId?: string; event?: string 
     if (filter?.tenantId && d.tenantId !== filter.tenantId) return false;
     if (filter?.event && d.event !== filter.event) return false;
     return true;
+  });
+}
+
+/**
+ * Dedicated internal audit outbox consumer for mcp.audit.* events.
+ * Claims pending internal MCP audit outbox rows and ensures idempotent PlatformAuditEvent writes
+ * without routing internal events to external customer webhooks.
+ */
+export async function processMcpAuditOutboxBatch(
+  options: {
+    limit?: number;
+    workerId?: string;
+    claimTtlSeconds?: number;
+    baseDelayMs?: number;
+    jitterMs?: number;
+    recordAudit?: (input: any) => Promise<string>;
+  } = {}
+): Promise<{ claimed: number; dispatched: number; retried: number; failed: number }> {
+  const workerId = options.workerId || `mcp_audit_worker_${crypto.randomUUID().slice(0, 8)}`;
+  const limit = Math.max(1, options.limit ?? 50);
+  const ttlSeconds = Math.max(1, options.claimTtlSeconds ?? 30);
+  const recordAudit =
+    options.recordAudit ??
+    (await import('@/server/db/platform-repository')).platformRepository.recordPlatformAdminAudit;
+
+  const result = { claimed: 0, dispatched: 0, retried: 0, failed: 0 };
+
+  if (process.env.ORBITOX_PLATFORM_REPOSITORY === 'json') {
+    const now = Date.now();
+    for (const item of memoryOutboxStore.values()) {
+      if (!isMcpAuditOutboxEventType(item.eventType)) continue;
+      const isRunnable =
+        item.status === 'PENDING' ||
+        (item.status === 'PROCESSING' && (!item.claimExpiresAt || item.claimExpiresAt < now));
+      const isTimeEligible = !item.nextAttemptAt || item.nextAttemptAt <= now;
+      if (!isRunnable || !isTimeEligible || item.retryCount >= item.maxAttempts) continue;
+
+      item.status = 'PROCESSING';
+      item.claimOwner = workerId;
+      item.claimExpiresAt = now + ttlSeconds * 1000;
+      result.claimed += 1;
+      try {
+        await persistInternalMcpAuditMessage(item, recordAudit);
+        item.status = 'DISPATCHED';
+        item.dispatchedAt = new Date().toISOString();
+        item.claimOwner = undefined;
+        item.claimExpiresAt = undefined;
+        result.dispatched += 1;
+      } catch (err: any) {
+        const nextRetry = item.retryCount + 1;
+        const isDead = nextRetry >= item.maxAttempts;
+        item.status = isDead ? 'FAILED' : 'PENDING';
+        item.retryCount = nextRetry;
+        item.lastError = err?.message || 'Internal audit relay failed';
+        item.nextAttemptAt = isDead
+          ? undefined
+          : Date.now() + calculateBackoff(nextRetry, options.baseDelayMs, 300000, options.jitterMs);
+        item.claimOwner = undefined;
+        item.claimExpiresAt = undefined;
+        if (isDead) result.failed += 1;
+        else result.retried += 1;
+      }
+      if (result.claimed >= limit) break;
+    }
+    return result;
+  }
+
+  const client = getOutboxDbClient();
+  const claimedRows = await client.$queryRaw<Array<{
+    id: string;
+    tenantId: string;
+    eventType: string;
+    aggregateType: string;
+    aggregateId: string;
+    payload: any;
+    retryCount: number;
+    maxAttempts: number;
+  }>>`
+    WITH claimable AS (
+      SELECT "id"
+      FROM "PlatformOutboxMessage"
+      WHERE ("status" = 'PENDING' OR ("status" = 'PROCESSING' AND "claimExpiresAt" < NOW()))
+        AND ("nextAttemptAt" IS NULL OR "nextAttemptAt" <= NOW())
+        AND "retryCount" < "maxAttempts"
+        AND "eventType" = ANY(${[...MCP_AUDIT_OUTBOX_EVENT_TYPES]}::text[])
+      ORDER BY "createdAt" ASC
+      LIMIT ${limit}
+      FOR UPDATE SKIP LOCKED
+    )
+    UPDATE "PlatformOutboxMessage" m
+    SET "status" = 'PROCESSING',
+        "claimOwner" = ${workerId},
+        "claimExpiresAt" = NOW() + (${ttlSeconds} * INTERVAL '1 second'),
+        "updatedAt" = NOW()
+    FROM claimable c
+    WHERE m."id" = c."id"
+    RETURNING m."id", m."tenantId", m."eventType", m."aggregateType", m."aggregateId", m."payload", m."retryCount", m."maxAttempts"
+  `;
+
+  result.claimed = claimedRows.length;
+  for (const row of claimedRows) {
+    const payload = typeof row.payload === 'string' ? JSON.parse(row.payload) : (row.payload || {});
+    try {
+      await persistInternalMcpAuditMessage({ ...row, payload }, recordAudit);
+      await client.$queryRaw`
+        UPDATE "PlatformOutboxMessage"
+        SET "status" = 'DISPATCHED',
+            "dispatchedAt" = NOW(),
+            "claimOwner" = NULL,
+            "claimExpiresAt" = NULL,
+            "updatedAt" = NOW()
+        WHERE "id" = ${row.id}
+          AND "claimOwner" = ${workerId}
+          AND "status" = 'PROCESSING'
+      `;
+      result.dispatched += 1;
+    } catch (err: any) {
+      const nextRetry = (row.retryCount ?? 0) + 1;
+      const isDead = nextRetry >= (row.maxAttempts ?? 5);
+      const delayMs = calculateBackoff(nextRetry, options.baseDelayMs, 300000, options.jitterMs);
+      await client.$queryRaw`
+        UPDATE "PlatformOutboxMessage"
+        SET "status" = ${isDead ? 'FAILED' : 'PENDING'}::"OutboxStatus",
+            "retryCount" = ${nextRetry},
+            "lastError" = ${err?.message || 'Internal audit relay failed'},
+            "nextAttemptAt" = ${isDead ? null : Prisma.sql`NOW() + (${delayMs} * INTERVAL '1 millisecond')`},
+            "claimOwner" = NULL,
+            "claimExpiresAt" = NULL,
+            "updatedAt" = NOW()
+        WHERE "id" = ${row.id}
+          AND "claimOwner" = ${workerId}
+          AND "status" = 'PROCESSING'
+      `;
+      if (isDead) result.failed += 1;
+      else result.retried += 1;
+    }
+  }
+  return result;
+}
+
+async function persistInternalMcpAuditMessage(
+  msg: { id: string; tenantId: string; eventType: string; aggregateType: string; aggregateId: string; payload: Record<string, any> },
+  recordAudit: (input: any) => Promise<string>,
+): Promise<void> {
+  const payload = msg.payload || {};
+  const stage = msg.eventType === 'mcp.audit.approval_proposed' ? 'proposed' : 'intent';
+  const deterministicId =
+    typeof payload.deterministicAuditId === 'string' && payload.deterministicAuditId
+      ? payload.deterministicAuditId
+      : `audit_mcp_${crypto.createHash('sha256').update(`${msg.aggregateId}:${stage}`).digest('hex').slice(0, 28)}`;
+  const match = /^org\/([^/]+)\/project\/([^/]+)\/environment\/([^/]+)$/.exec(msg.tenantId);
+
+  await recordAudit({
+    deterministicId,
+    action: msg.eventType === 'mcp.audit.approval_proposed' ? 'MCP_APPROVAL_PROPOSED' : 'MCP_APPROVAL_EXECUTION_INTENT',
+    entityType: msg.aggregateType || 'MCP_GOVERNANCE',
+    entityId: msg.aggregateId,
+    actorId: payload.approvedById || payload.requestedById || 'system:mcp-outbox',
+    organizationId: match && match[1] !== 'platform' ? match[1] : undefined,
+    projectId: match && match[2] !== 'operations' ? match[2] : undefined,
+    environmentId: match ? match[3] : undefined,
+    requestId: payload.executionId || payload.approvalId || msg.aggregateId,
+    reason: `Durable MCP internal audit outbox event (${msg.eventType})`,
+    metadata: { ...payload, outboxMessageId: msg.id },
   });
 }
 
