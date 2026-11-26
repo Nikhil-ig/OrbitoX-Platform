@@ -4,14 +4,22 @@ import crypto from 'node:crypto';
 import { PrismaClient } from '@prisma/client';
 import {
   canonicalJsonHash,
+  computeCanonicalApprovalHash,
+  McpCryptoError,
+  McpKeyRing,
   redactSensitiveData,
   scanPromptInjection,
+  sealExecutionPayload,
+  unsealExecutionPayload,
+  verifyCanonicalApprovalHash,
 } from '@/server/ai/mcp-guardrails';
 import { calculateNews2Score } from '@/lib/clinical-news2';
 import {
   approveAndExecuteMcpProposal,
+  canRetireMcpKey,
   getMcpGatewayInventory,
   invokeMcpTool,
+  reconcileStaleMcpExecutions,
   rejectMcpProposal,
 } from '@/server/ai/mcp-governance-service';
 import { McpToolError, type McpActorContext } from '@/server/ai/mcp-tools';
@@ -65,6 +73,89 @@ describe('MCP Guardrails & Shared Clinical NEWS2 Unit Invariants', () => {
     const emergency = calculateNews2Score({ spo2: 81, heartRate: 155, systolicBp: 185, temperature: 39.4, respiratoryRate: 34 });
     assert.equal(emergency.riskLevel, 'EMERGENCY_CODE_BLUE');
     assert.ok(emergency.score >= 7);
+  });
+
+  it('fails closed when MCP encryption/HMAC keys are missing or overlapping and supports key rotation', () => {
+    assert.throws(
+      () => McpKeyRing.fromEnv({}),
+      (err: any) => err instanceof McpCryptoError && err.code === 'MCP_CONFIG_INVALID',
+    );
+
+    const sharedKey = crypto.randomBytes(32).toString('base64');
+    assert.throws(
+      () =>
+        new McpKeyRing({
+          encryptionKeys: { k1: sharedKey },
+          activeEncryptionKid: 'k1',
+          hmacKeys: { h1: sharedKey },
+          activeHmacKid: 'h1',
+        }),
+      (err: any) => err instanceof McpCryptoError && err.code === 'MCP_CONFIG_INVALID',
+    );
+
+    const k1 = crypto.randomBytes(32).toString('base64');
+    const k2 = crypto.randomBytes(32).toString('base64');
+    const h1 = crypto.randomBytes(32).toString('base64');
+    const h2 = crypto.randomBytes(32).toString('base64');
+
+    const ringV1 = new McpKeyRing({
+      encryptionKeys: { k1 },
+      activeEncryptionKid: 'k1',
+      hmacKeys: { h1 },
+      activeHmacKid: 'h1',
+    });
+
+    const ctx = {
+      approvalId: 'mcp_appr_rot_1',
+      toolName: 'billing.send_payment_reminder',
+      serverId: 'mcp-server-billing',
+      approvalPolicy: 'ASK_FIRST',
+      tenantScope: 'org/1/project/p1/environment/e1',
+      requestedById: 'op_1',
+    };
+    const payload = { subscriptionIds: ['sub_1'], customMessage: 'Hello' };
+
+    const { sealed, kid } = sealExecutionPayload(payload, ctx, ringV1);
+    assert.equal(kid, 'k1');
+    assert.ok(sealed.startsWith('v1.k1.'));
+    const { hash, hmacKid } = computeCanonicalApprovalHash({ ...ctx, params: payload }, ringV1);
+    assert.equal(hmacKid, 'h1');
+    assert.ok(hash.startsWith('v1.h1.'));
+
+    // Rotate to k2/h2 while retaining k1/h1 -> old record still decrypts & verifies
+    const ringV2 = new McpKeyRing({
+      encryptionKeys: { k1, k2 },
+      activeEncryptionKid: 'k2',
+      hmacKeys: { h1, h2 },
+      activeHmacKid: 'h2',
+    });
+    const unsealed = unsealExecutionPayload(sealed, ctx, ringV2);
+    assert.deepEqual(unsealed.payload, payload);
+    assert.equal(verifyCanonicalApprovalHash(hash, { ...ctx, params: payload }, ringV2).valid, true);
+
+    // Wrong approvalId in AAD fails closed
+    assert.throws(
+      () => unsealExecutionPayload(sealed, { ...ctx, approvalId: 'mcp_appr_other' }, ringV2),
+      (err: any) => err instanceof McpCryptoError && err.code === 'MCP_DECRYPT_FAILED',
+    );
+
+    // Legacy unkeyed hash rejected
+    assert.equal(
+      verifyCanonicalApprovalHash(canonicalJsonHash(payload), { ...ctx, params: payload }, ringV2).valid,
+      false,
+    );
+
+    // Retired/unknown key ID fails closed
+    const ringK2Only = new McpKeyRing({
+      encryptionKeys: { k2 },
+      activeEncryptionKid: 'k2',
+      hmacKeys: { h2 },
+      activeHmacKid: 'h2',
+    });
+    assert.throws(
+      () => unsealExecutionPayload(sealed, ctx, ringK2Only),
+      (err: any) => err instanceof McpCryptoError && err.code === 'MCP_KEY_UNAVAILABLE',
+    );
   });
 });
 
@@ -120,6 +211,20 @@ if (process.env.ORBITOX_PLATFORM_REPOSITORY === 'prisma') {
         process.env.ORBITOX_PHI_KEYS = JSON.stringify({ k1: crypto.randomBytes(32).toString('base64') });
         process.env.ORBITOX_PHI_ACTIVE_KID = 'k1';
         process.env.ORBITOX_PHI_INDEX_KEY = crypto.randomBytes(32).toString('base64');
+      }
+      if (!process.env.ORBITOX_MCP_ENCRYPTION_KEYS) {
+        process.env.ORBITOX_MCP_ENCRYPTION_KEYS = JSON.stringify({
+          k1: crypto.randomBytes(32).toString('base64'),
+          k2: crypto.randomBytes(32).toString('base64'),
+        });
+        process.env.ORBITOX_MCP_ACTIVE_KID = 'k1';
+      }
+      if (!process.env.ORBITOX_MCP_HMAC_KEYS) {
+        process.env.ORBITOX_MCP_HMAC_KEYS = JSON.stringify({
+          h1: crypto.randomBytes(32).toString('base64'),
+          h2: crypto.randomBytes(32).toString('base64'),
+        });
+        process.env.ORBITOX_MCP_ACTIVE_HMAC_KID = 'h1';
       }
       const phiRing = getPhiKeyRing();
 
@@ -235,10 +340,16 @@ if (process.env.ORBITOX_PLATFORM_REPOSITORY === 'prisma') {
 
     after(async () => {
       await ownerPrisma.mcpToolInvocation.deleteMany({
-        where: { actorId: { in: [ids.operatorId, ids.supportOpId] } },
+        where: { actorId: { in: [ids.operatorId, ids.supportOpId, `op_billing_${run}`, `op_delegate_${run}`, `op_owner2_${run}`] } },
+      });
+      await ownerPrisma.mcpApprovalDelegation.deleteMany({
+        where: { delegatorId: { in: [ids.operatorId, `op_owner2_${run}`] } },
       });
       await ownerPrisma.mcpToolApproval.deleteMany({
-        where: { requestedById: { in: [ids.operatorId, ids.supportOpId] } },
+        where: { requestedById: { in: [ids.operatorId, ids.supportOpId, `op_billing_${run}`, `op_delegate_${run}`, `op_owner2_${run}`] } },
+      });
+      await ownerPrisma.platformOutboxMessage.deleteMany({
+        where: { aggregateType: { in: ['MCP_APPROVAL', 'MCP_EXECUTION'] }, tenantId: { in: [`org/${ids.orgId}/project/${ids.projectId}/environment/${ids.envId}`, ids.projectId, 'platform'] } },
       });
       await ownerPrisma.accountEmailOutbox.deleteMany({
         where: { recipient: `billing-mcp-${run}@example.invalid` },
@@ -391,9 +502,24 @@ if (process.env.ORBITOX_PLATFORM_REPOSITORY === 'prisma') {
       assert.equal(replayOutbox, 1);
     });
 
-    it('enforces STEP_UP_MFA fresh reauth, reason length, and rejects expired/rejected approvals', async () => {
-      const staleActor = makeOperatorActor({ reauthenticatedAt: new Date(Date.now() - 10 * 60 * 1000) });
+    it('enforces STEP_UP_MFA separation of duties, fresh reauth, reason length, and rejects expired/rejected approvals', async () => {
       const freshActor = makeOperatorActor({ reauthenticatedAt: new Date() });
+      const otherOwnerStale: McpActorContext = {
+        kind: 'operator',
+        actorId: `op_owner2_${run}`,
+        actorEmail: `mcp-owner2-${run}@example.invalid`,
+        role: 'PLATFORM_OWNER',
+        reauthenticatedAt: new Date(Date.now() - 10 * 60 * 1000),
+        allowedTenants: '*',
+        session: {
+          id: `sess_o2_${run}`,
+          operatorId: `op_owner2_${run}`,
+          email: `mcp-owner2-${run}@example.invalid`,
+          role: 'PLATFORM_OWNER',
+          csrfTokenHash: 'test',
+          reauthenticatedAt: new Date(Date.now() - 10 * 60 * 1000),
+        },
+      };
 
       // Propose tenant suspension (allowed for PLATFORM_OWNER)
       const proposal = await invokeMcpTool(
@@ -405,12 +531,27 @@ if (process.env.ORBITOX_PLATFORM_REPOSITORY === 'prisma') {
       );
       assert.equal(proposal.kind, 'approval_required');
 
-      // Approval with stale reauthentication MUST fail 403 REAUTH_REQUIRED
+      // Self-approval of STEP_UP_MFA when >1 active PLATFORM_OWNER exists MUST fail 403 SELF_APPROVAL_PROHIBITED
+      const activeOwners = await ownerPrisma.platformOperator.count({
+        where: { role: 'PLATFORM_OWNER', status: 'ACTIVE' },
+      });
+      if (activeOwners > 1) {
+        await assert.rejects(
+          () =>
+            approveAndExecuteMcpProposal(
+              { approvalId: proposal.approval.id, reason: 'Billing default test suspension' },
+              freshActor,
+            ),
+          (err: any) => err instanceof McpToolError && err.status === 403 && err.code === 'SELF_APPROVAL_PROHIBITED',
+        );
+      }
+
+      // Independent owner approval with stale reauthentication MUST fail 403 REAUTH_REQUIRED
       await assert.rejects(
         () =>
           approveAndExecuteMcpProposal(
             { approvalId: proposal.approval.id, reason: 'Billing default test suspension' },
-            staleActor,
+            otherOwnerStale,
           ),
         (err: any) => err instanceof McpToolError && err.status === 403 && err.code === 'REAUTH_REQUIRED',
       );
@@ -435,6 +576,467 @@ if (process.env.ORBITOX_PLATFORM_REPOSITORY === 'prisma') {
 
       const inv = await getMcpGatewayInventory(ids.operatorId);
       assert.ok(inv.guardrails.totalRecordedInvocations >= 1);
+    });
+
+    it('enforces PostgreSQL CHECK constraints on McpToolApproval and McpToolInvocation', async () => {
+      // 1. Invalid status on McpToolApproval
+      await assert.rejects(
+        () =>
+          ownerPrisma.mcpToolApproval.create({
+            data: {
+              toolName: 'kernel_inspect_environment',
+              serverId: 'mcp-server-core',
+              approvalPolicy: 'READ_FREELY',
+              status: 'INVALID_STATUS',
+              paramsHash: 'dummy',
+              sanitizedParams: {},
+              previewSummary: 'Test summary',
+              tenantScope: 'platform',
+              requestedById: ids.operatorId,
+              requestedByEmail: ids.operatorEmail,
+              expiresAt: new Date(Date.now() + 60000),
+            },
+          }),
+        (err: any) => err.message.includes('McpToolApproval_status_check') || err.message.includes('check constraint'),
+      );
+
+      // 2. Invalid approvalPolicy on McpToolApproval
+      await assert.rejects(
+        () =>
+          ownerPrisma.mcpToolApproval.create({
+            data: {
+              toolName: 'kernel_inspect_environment',
+              serverId: 'mcp-server-core',
+              approvalPolicy: 'INVALID_POLICY',
+              status: 'PROPOSED',
+              paramsHash: 'dummy',
+              sanitizedParams: {},
+              previewSummary: 'Test summary',
+              tenantScope: 'platform',
+              requestedById: ids.operatorId,
+              requestedByEmail: ids.operatorEmail,
+              expiresAt: new Date(Date.now() + 60000),
+            },
+          }),
+        (err: any) => err.message.includes('McpToolApproval_approvalPolicy_check') || err.message.includes('check constraint'),
+      );
+
+      // 3. Invalid status on McpToolInvocation
+      await assert.rejects(
+        () =>
+          ownerPrisma.mcpToolInvocation.create({
+            data: {
+              toolName: 'kernel_inspect_environment',
+              serverId: 'mcp-server-core',
+              approvalPolicy: 'READ_FREELY',
+              status: 'BOGUS_STATUS',
+              actorId: ids.operatorId,
+              actorEmail: ids.operatorEmail,
+              authType: 'operator',
+              callerAgent: 'test',
+              tenantScope: 'platform',
+              sanitizedParams: {},
+              latencyMs: 10,
+            },
+          }),
+        (err: any) => err.message.includes('McpToolInvocation_status_check') || err.message.includes('check constraint'),
+      );
+
+      // 4. Invalid approvalPolicy on McpToolInvocation
+      await assert.rejects(
+        () =>
+          ownerPrisma.mcpToolInvocation.create({
+            data: {
+              toolName: 'kernel_inspect_environment',
+              serverId: 'mcp-server-core',
+              approvalPolicy: 'BOGUS_POLICY',
+              status: 'AUTHORIZED_EXECUTED',
+              actorId: ids.operatorId,
+              actorEmail: ids.operatorEmail,
+              authType: 'operator',
+              callerAgent: 'test',
+              tenantScope: 'platform',
+              sanitizedParams: {},
+              latencyMs: 10,
+            },
+          }),
+        (err: any) => err.message.includes('McpToolInvocation_approvalPolicy_check') || err.message.includes('check constraint'),
+      );
+    });
+
+    it('durably transitions expired proposals to EXPIRED status in PostgreSQL without rollback', async () => {
+      const actor = makeOperatorActor();
+      const proposal = await invokeMcpTool(
+        {
+          toolName: 'billing.send_payment_reminder',
+          parameters: { subscriptionIds: [ids.subId] },
+        },
+        actor,
+      );
+      assert.equal(proposal.kind, 'approval_required');
+      const approvalId = proposal.approval.id;
+
+      // Fast-forward expiration in DB
+      await ownerPrisma.mcpToolApproval.update({
+        where: { id: approvalId },
+        data: { expiresAt: new Date(Date.now() - 5000) },
+      });
+
+      // Attempt execution -> must throw APPROVAL_EXPIRED (410)
+      await assert.rejects(
+        () => approveAndExecuteMcpProposal({ approvalId }, actor),
+        (err: any) => err instanceof McpToolError && err.status === 410 && err.code === 'APPROVAL_EXPIRED',
+      );
+
+      // Verify row in PostgreSQL is now DURABLY in status EXPIRED!
+      const row = await ownerPrisma.mcpToolApproval.findUnique({ where: { id: approvalId } });
+      assert.ok(row);
+      assert.equal(row.status, 'EXPIRED', 'Expired approval must remain durably in status EXPIRED in PostgreSQL');
+    });
+
+    it('encrypts execution payload at rest and prevents execution when tampered', async () => {
+      const actor = makeOperatorActor();
+      const proposal = await invokeMcpTool(
+        {
+          toolName: 'billing.send_payment_reminder',
+          parameters: { subscriptionIds: [ids.subId], customMessage: 'Special confidential reminder notes.' },
+        },
+        actor,
+      );
+      assert.equal(proposal.kind, 'approval_required');
+      const approvalId = proposal.approval.id;
+
+      // Verify database record has encryptedPayload sealed via AES-256-GCM
+      const dbRecord = await ownerPrisma.mcpToolApproval.findUnique({ where: { id: approvalId } });
+      assert.ok(dbRecord);
+      assert.ok(dbRecord.encryptedPayload, 'encryptedPayload column must be populated');
+      assert.ok(dbRecord.encryptedPayload.startsWith('v1.'), 'encryptedPayload must use v1 GCM wire format');
+
+      // Tamper test: Alter tenantScope in the DB row -> HMAC/AAD verification must fail closed
+      await ownerPrisma.mcpToolApproval.update({
+        where: { id: approvalId },
+        data: { tenantScope: 'forged_foreign_tenant' },
+      });
+
+      await assert.rejects(
+        () => approveAndExecuteMcpProposal({ approvalId }, actor),
+        (err: any) => err instanceof McpToolError && err.status === 409 && err.code === 'PARAM_HASH_MISMATCH',
+      );
+
+      const failedRecord = await ownerPrisma.mcpToolApproval.findUnique({ where: { id: approvalId } });
+      assert.equal(failedRecord?.status, 'FAILED');
+    });
+
+    it('enforces API key tenant boundaries and blocks tenant-scoped keys from PLATFORM_GLOBAL tools', async () => {
+      const scopedApiKeyActor: McpActorContext = {
+        kind: 'api_key',
+        actorId: 'key_scoped_test',
+        actorEmail: 'key_scoped_test@example.invalid',
+        capabilities: ['platform.tenants.read', 'hms.beds.view'],
+        allowedTenants: [canonicalHmsTenant],
+        projectTenantId: ids.hmsProjectId,
+      };
+
+      // 1. Tenant-scoped key invoking PLATFORM_GLOBAL tool -> 403 TENANT_SCOPE_VIOLATION
+      await assert.rejects(
+        () => invokeMcpTool({ toolName: 'tenants.search / get', parameters: { idOrSlug: ids.projectId } }, scopedApiKeyActor),
+        (err: any) => err instanceof McpToolError && err.status === 403 && err.code === 'TENANT_SCOPE_VIOLATION',
+      );
+
+      // 2. Tenant-scoped key invoking HMS tool on foreign tenant -> 403 TENANT_SCOPE_VIOLATION
+      await assert.rejects(
+        () => invokeMcpTool({ toolName: 'hms_read_beds', parameters: { tenantId: ids.projectId } }, scopedApiKeyActor),
+        (err: any) => err instanceof McpToolError && err.status === 403 && err.code === 'TENANT_SCOPE_VIOLATION',
+      );
+
+      // 3. Tenant-scoped key invoking HMS tool on its own tenant -> 200 OK
+      const allowedRes = await invokeMcpTool(
+        { toolName: 'hms_read_beds', parameters: { tenantId: canonicalHmsTenant } },
+        scopedApiKeyActor,
+      );
+      assert.equal(allowedRes.kind, 'executed');
+      assert.equal(allowedRes.status, 200);
+    });
+
+    it('guarantees atomic concurrency and prevents duplicate execution across parallel requests', async () => {
+      const actor = makeOperatorActor();
+      const proposal = await invokeMcpTool(
+        {
+          toolName: 'billing.send_payment_reminder',
+          parameters: { subscriptionIds: [ids.subId] },
+        },
+        actor,
+      );
+      assert.equal(proposal.kind, 'approval_required');
+      const approvalId = proposal.approval.id;
+
+      // Fire 5 concurrent execution claims simultaneously
+      const results = await Promise.allSettled(
+        Array.from({ length: 5 }, () =>
+          approveAndExecuteMcpProposal({ approvalId, editedMessage: 'Concurrent execution race test' }, actor),
+        ),
+      );
+
+      const fulfilled = results.filter((r) => r.status === 'fulfilled');
+      const rejected = results.filter((r) => r.status === 'rejected');
+
+      assert.equal(fulfilled.length, 1, 'Exactly one concurrent claim must succeed');
+      assert.equal(rejected.length, 4, 'Four concurrent claims must be rejected with 409 conflicts');
+
+      for (const rej of rejected) {
+        const reason = (rej as PromiseRejectedResult).reason;
+        assert.ok(reason instanceof McpToolError);
+        assert.equal(reason.status, 409);
+        assert.ok(
+          reason.code === 'APPROVAL_CONFLICT' || reason.code === 'APPROVAL_ALREADY_CONSUMED',
+          `Expected 409 conflict code, got ${reason.code}`,
+        );
+      }
+    });
+
+    it('rejects NULL encryptedPayload and legacy unkeyed hashes without downgrading to sanitizedParams', async () => {
+      const actor = makeOperatorActor();
+      const proposal = await invokeMcpTool(
+        {
+          toolName: 'billing.send_payment_reminder',
+          parameters: { subscriptionIds: [ids.subId], customMessage: 'Bearer ox_live_secret_token_123456' },
+        },
+        actor,
+      );
+      assert.equal(proposal.kind, 'approval_required');
+      const approvalId = proposal.approval.id;
+
+      // Assert sanitizedParams redacts secrets & inventory omits encryptedPayload
+      const dbRecord = await ownerPrisma.mcpToolApproval.findUnique({ where: { id: approvalId } });
+      assert.ok(dbRecord?.encryptedPayload?.startsWith('v1.k1.'));
+      assert.equal((dbRecord?.sanitizedParams as any)?.customMessage, '[REDACTED_SECRET]');
+      const inv = await getMcpGatewayInventory(ids.operatorId);
+      const invRow = inv.pendingApprovals.find((a: any) => a.id === approvalId) as any;
+      assert.ok(invRow);
+      assert.equal('encryptedPayload' in invRow, false, 'Inventory API must never expose encryptedPayload');
+
+      // Nullify encryptedPayload -> must reject 409 MISSING_EXECUTION_PAYLOAD
+      await ownerPrisma.mcpToolApproval.update({
+        where: { id: approvalId },
+        data: { encryptedPayload: null },
+      });
+      await assert.rejects(
+        () => approveAndExecuteMcpProposal({ approvalId }, actor),
+        (err: any) => err instanceof McpToolError && err.status === 409 && err.code === 'MISSING_EXECUTION_PAYLOAD',
+      );
+
+      // Legacy unkeyed SHA-256 hash -> must reject 409 PARAM_HASH_MISMATCH
+      const proposal2 = await invokeMcpTool(
+        {
+          toolName: 'billing.send_payment_reminder',
+          parameters: { subscriptionIds: [ids.subId] },
+        },
+        actor,
+      );
+      assert.equal(proposal2.kind, 'approval_required');
+      const legacySha = canonicalJsonHash({
+        toolName: 'billing.send_payment_reminder',
+        params: { subscriptionIds: [ids.subId] },
+      });
+      await ownerPrisma.mcpToolApproval.update({
+        where: { id: proposal2.approval.id },
+        data: { paramsHash: legacySha },
+      });
+      await assert.rejects(
+        () => approveAndExecuteMcpProposal({ approvalId: proposal2.approval.id }, actor),
+        (err: any) => err instanceof McpToolError && err.status === 409 && err.code === 'PARAM_HASH_MISMATCH',
+      );
+    });
+
+    it('blocks key retirement while unresolved k1 proposals exist and permits after resolution', async () => {
+      const actor = makeOperatorActor();
+      const proposal = await invokeMcpTool(
+        {
+          toolName: 'billing.send_payment_reminder',
+          parameters: { subscriptionIds: [ids.subId] },
+        },
+        actor,
+      );
+      assert.equal(proposal.kind, 'approval_required');
+
+      const preflightBlocked = await canRetireMcpKey('k1', 'encryption');
+      assert.equal(preflightBlocked.canRetire, false);
+      assert.ok(preflightBlocked.blockingApprovals >= 1);
+
+      // Rotate active key to k2 while k1 remains retained -> k1 proposal still executes cleanly
+      const prevEnc = process.env.ORBITOX_MCP_ACTIVE_KID;
+      process.env.ORBITOX_MCP_ACTIVE_KID = 'k2';
+      try {
+        const res = await approveAndExecuteMcpProposal({ approvalId: proposal.approval.id }, actor);
+        assert.equal(res.approval.status, 'SUCCEEDED');
+      } finally {
+        process.env.ORBITOX_MCP_ACTIVE_KID = prevEnc;
+      }
+
+      const preflightAfter = await canRetireMcpKey('k1', 'encryption');
+      assert.equal(preflightAfter.canRetire, true);
+    });
+
+    it('enforces risk-based ownership, server-side McpApprovalDelegation, and blocks unauthorized cross-actor decisions', async () => {
+      const requesterBilling: McpActorContext = {
+        kind: 'operator',
+        actorId: `op_billing_${run}`,
+        actorEmail: `billing-op-${run}@example.invalid`,
+        role: 'BILLING',
+        reauthenticatedAt: new Date(),
+        allowedTenants: '*',
+        session: {
+          id: `sess_b_${run}`,
+          operatorId: `op_billing_${run}`,
+          email: `billing-op-${run}@example.invalid`,
+          role: 'BILLING',
+          csrfTokenHash: 'test',
+          reauthenticatedAt: new Date(),
+        },
+      };
+      const otherBilling: McpActorContext = {
+        ...requesterBilling,
+        actorId: `op_delegate_${run}`,
+        actorEmail: `delegate-op-${run}@example.invalid`,
+        session: {
+          ...requesterBilling.session,
+          operatorId: `op_delegate_${run}`,
+          email: `delegate-op-${run}@example.invalid`,
+        },
+      };
+
+      const proposal = await invokeMcpTool(
+        { toolName: 'billing.send_payment_reminder', parameters: { subscriptionIds: [ids.subId] } },
+        requesterBilling,
+      );
+      assert.equal(proposal.kind, 'approval_required');
+      const approvalId = proposal.approval.id;
+
+      // Unauthorized cross-actor approval & rejection must fail 403 APPROVAL_OWNERSHIP_REQUIRED
+      await assert.rejects(
+        () => approveAndExecuteMcpProposal({ approvalId }, otherBilling),
+        (err: any) => err instanceof McpToolError && err.status === 403 && err.code === 'APPROVAL_OWNERSHIP_REQUIRED',
+      );
+      await assert.rejects(
+        () => rejectMcpProposal({ approvalId, reason: 'Unauthorized reject' }, otherBilling),
+        (err: any) => err instanceof McpToolError && err.status === 403 && err.code === 'APPROVAL_OWNERSHIP_REQUIRED',
+      );
+
+      // Expired delegation must still fail 403
+      await ownerPrisma.mcpApprovalDelegation.create({
+        data: {
+          id: `del_exp_${run}`,
+          delegatorId: requesterBilling.actorId,
+          delegatorEmail: requesterBilling.actorEmail,
+          delegateId: otherBilling.actorId,
+          delegateEmail: otherBilling.actorEmail,
+          allowedRiskTier: 'ASK_FIRST',
+          tenantScope: '*',
+          reason: 'Expired test delegation',
+          expiresAt: new Date(Date.now() - 10000),
+        },
+      });
+      await assert.rejects(
+        () => approveAndExecuteMcpProposal({ approvalId }, otherBilling),
+        (err: any) => err instanceof McpToolError && err.status === 403 && err.code === 'APPROVAL_OWNERSHIP_REQUIRED',
+      );
+
+      // Active server-side delegation authorizes approval and records delegationId
+      await ownerPrisma.mcpApprovalDelegation.create({
+        data: {
+          id: `del_act_${run}`,
+          delegatorId: requesterBilling.actorId,
+          delegatorEmail: requesterBilling.actorEmail,
+          delegateId: otherBilling.actorId,
+          delegateEmail: otherBilling.actorEmail,
+          allowedRiskTier: 'ASK_FIRST',
+          tenantScope: '*',
+          reason: 'On-call shift handoff',
+          expiresAt: new Date(Date.now() + 60000),
+        },
+      });
+      const delegatedRes = await approveAndExecuteMcpProposal({ approvalId }, otherBilling);
+      assert.equal(delegatedRes.approval.status, 'SUCCEEDED');
+      assert.equal(delegatedRes.approval.delegationId, `del_act_${run}`);
+    });
+
+    it('prevents side effects on pre-execution audit failure and reconciles RECOVERY_REQUIRED without duplicate emails', async () => {
+      const actor = makeOperatorActor();
+
+      // 1. Pre-execution audit failure -> 503 AUDIT_UNAVAILABLE & zero outbox emails queued
+      const propPre = await invokeMcpTool(
+        { toolName: 'billing.send_payment_reminder', parameters: { subscriptionIds: [ids.subId] } },
+        actor,
+      );
+      assert.equal(propPre.kind, 'approval_required');
+      const beforePreCount = await ownerPrisma.accountEmailOutbox.count({
+        where: { recipient: `billing-mcp-${run}@example.invalid` },
+      });
+
+      await assert.rejects(
+        () =>
+          approveAndExecuteMcpProposal(
+            { approvalId: propPre.approval.id },
+            actor,
+            {
+              recordAudit: async () => {
+                throw new Error('Simulated audit DB outage');
+              },
+            },
+          ),
+        (err: any) => err instanceof McpToolError && err.status === 503 && err.code === 'AUDIT_UNAVAILABLE',
+      );
+
+      const afterPreCount = await ownerPrisma.accountEmailOutbox.count({
+        where: { recipient: `billing-mcp-${run}@example.invalid` },
+      });
+      assert.equal(afterPreCount, beforePreCount, 'Pre-execution audit failure must NOT queue any email');
+
+      // 2. Post-execution audit failure -> 500 AUDIT_FINALIZATION_FAILED, RECOVERY_REQUIRED, then reconciled without duplicate
+      const propPost = await invokeMcpTool(
+        { toolName: 'billing.send_payment_reminder', parameters: { subscriptionIds: [ids.subId] } },
+        actor,
+      );
+      assert.equal(propPost.kind, 'approval_required');
+
+      let auditCalls = 0;
+      await assert.rejects(
+        () =>
+          approveAndExecuteMcpProposal(
+            { approvalId: propPost.approval.id },
+            actor,
+            {
+              recordAudit: async () => {
+                auditCalls += 1;
+                if (auditCalls === 1) return `audit_intent_${run}`;
+                throw new Error('Simulated post-execution audit outage');
+              },
+            },
+          ),
+        (err: any) => err instanceof McpToolError && err.status === 500 && err.code === 'AUDIT_FINALIZATION_FAILED',
+      );
+
+      const afterPostCount = await ownerPrisma.accountEmailOutbox.count({
+        where: { recipient: `billing-mcp-${run}@example.invalid` },
+      });
+      assert.equal(afterPostCount, beforePreCount + 1, 'Email was queued once before final audit failure');
+
+      const recExec = await ownerPrisma.mcpToolExecution.findUnique({
+        where: { approvalId: propPost.approval.id },
+      });
+      assert.equal(recExec?.status, 'RECOVERY_REQUIRED');
+
+      // Reconcile stale / RECOVERY_REQUIRED execution -> transitions to AUTHORIZED_EXECUTED / SUCCEEDED without duplicating email
+      const reconciled = await reconcileStaleMcpExecutions();
+      assert.ok(reconciled.ids.includes(recExec!.id));
+
+      const afterRecCount = await ownerPrisma.accountEmailOutbox.count({
+        where: { recipient: `billing-mcp-${run}@example.invalid` },
+      });
+      assert.equal(afterRecCount, beforePreCount + 1, 'Reconciliation must NEVER queue a duplicate email');
+
+      const finalApp = await ownerPrisma.mcpToolApproval.findUnique({ where: { id: propPost.approval.id } });
+      assert.equal(finalApp?.status, 'SUCCEEDED');
     });
   });
 }

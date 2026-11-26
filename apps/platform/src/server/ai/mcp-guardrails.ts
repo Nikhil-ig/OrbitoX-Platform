@@ -187,19 +187,325 @@ export function redactSensitiveData<T>(input: T, options: { maskEmails?: boolean
 }
 
 /**
+ * Sorts object keys recursively to produce deterministic canonical representations.
+ */
+export function sortJsonKeys(v: unknown): unknown {
+  if (Array.isArray(v)) return v.map(sortJsonKeys);
+  if (v && typeof v === 'object' && !(v instanceof Date)) {
+    const sorted: Record<string, unknown> = {};
+    for (const k of Object.keys(v as Record<string, unknown>).sort()) {
+      sorted[k] = sortJsonKeys((v as Record<string, unknown>)[k]);
+    }
+    return sorted;
+  }
+  return v;
+}
+
+/**
  * Computes a deterministic SHA-256 hash over canonical JSON so approvals cannot suffer parameter tampering.
  */
 export function canonicalJsonHash(value: unknown): string {
-  function sortKeys(v: unknown): unknown {
-    if (Array.isArray(v)) return v.map(sortKeys);
-    if (v && typeof v === 'object' && !(v instanceof Date)) {
-      const sorted: Record<string, unknown> = {};
-      for (const k of Object.keys(v as Record<string, unknown>).sort()) {
-        sorted[k] = sortKeys((v as Record<string, unknown>)[k]);
-      }
-      return sorted;
-    }
-    return v;
+  return crypto.createHash('sha256').update(JSON.stringify(sortJsonKeys(value))).digest('hex');
+}
+
+export interface McpApprovalBindingContext {
+  approvalId: string;
+  toolName: string;
+  serverId: string;
+  approvalPolicy: string;
+  tenantScope: string;
+  requestedById: string;
+}
+
+const KID_RE = /^[A-Za-z0-9_-]{1,32}$/;
+const SEALED_PAYLOAD_RE =
+  /^v1\.([A-Za-z0-9_-]{1,32})\.([A-Za-z0-9_-]{16})\.([A-Za-z0-9_-]{22})\.([A-Za-z0-9_-]+)$/;
+const HASH_ENVELOPE_RE = /^v1\.([A-Za-z0-9_-]{1,32})\.([a-f0-9]{64})$/;
+
+export class McpCryptoError extends Error {
+  constructor(
+    public readonly code:
+      | 'MCP_CONFIG_INVALID'
+      | 'MCP_KEY_UNAVAILABLE'
+      | 'MCP_DECRYPT_FAILED'
+      | 'MCP_INPUT_INVALID'
+      | 'MCP_HASH_MISMATCH',
+    message: string,
+  ) {
+    super(message);
+    this.name = 'McpCryptoError';
   }
-  return crypto.createHash('sha256').update(JSON.stringify(sortKeys(value))).digest('hex');
+}
+
+export interface McpKeyRingConfig {
+  encryptionKeys: Record<string, string>;
+  activeEncryptionKid: string;
+  hmacKeys: Record<string, string>;
+  activeHmacKid: string;
+}
+
+function parseKeyMap(
+  rawMap: Record<string, string>,
+  label: string,
+): Map<string, Buffer> {
+  const result = new Map<string, Buffer>();
+  for (const [kid, b64] of Object.entries(rawMap)) {
+    if (!KID_RE.test(kid)) {
+      throw new McpCryptoError('MCP_CONFIG_INVALID', `Invalid ${label} key ID "${kid}".`);
+    }
+    if (typeof b64 !== 'string' || !b64.trim()) {
+      throw new McpCryptoError('MCP_CONFIG_INVALID', `${label} key "${kid}" must be non-empty base64.`);
+    }
+    const trimmed = b64.trim();
+    const decoded = Buffer.from(trimmed, 'base64');
+    if (decoded.length !== 32 || decoded.toString('base64') !== trimmed) {
+      throw new McpCryptoError('MCP_CONFIG_INVALID', `${label} key "${kid}" must be a canonical base64 32-byte key.`);
+    }
+    result.set(kid, decoded);
+  }
+  if (result.size === 0) {
+    throw new McpCryptoError('MCP_CONFIG_INVALID', `${label} must configure at least one key.`);
+  }
+  return result;
+}
+
+export class McpKeyRing {
+  private readonly encryptionKeys: Map<string, Buffer>;
+  private readonly hmacKeys: Map<string, Buffer>;
+  readonly activeEncryptionKid: string;
+  readonly activeHmacKid: string;
+
+  constructor(cfg: McpKeyRingConfig) {
+    this.encryptionKeys = parseKeyMap(cfg.encryptionKeys, 'encryption');
+    this.hmacKeys = parseKeyMap(cfg.hmacKeys, 'HMAC');
+
+    if (!this.encryptionKeys.has(cfg.activeEncryptionKid)) {
+      throw new McpCryptoError('MCP_CONFIG_INVALID', 'Active MCP encryption key ID is not in key ring.');
+    }
+    if (!this.hmacKeys.has(cfg.activeHmacKid)) {
+      throw new McpCryptoError('MCP_CONFIG_INVALID', 'Active MCP HMAC key ID is not in key ring.');
+    }
+
+    for (const encKey of this.encryptionKeys.values()) {
+      for (const hmacKey of this.hmacKeys.values()) {
+        if (crypto.timingSafeEqual(encKey, hmacKey)) {
+          throw new McpCryptoError(
+            'MCP_CONFIG_INVALID',
+            'MCP HMAC keys must be cryptographically distinct from MCP encryption keys.',
+          );
+        }
+      }
+    }
+
+    this.activeEncryptionKid = cfg.activeEncryptionKid;
+    this.activeHmacKid = cfg.activeHmacKid;
+  }
+
+  static fromEnv(
+    env: NodeJS.ProcessEnv | Record<string, string | undefined> = process.env,
+  ): McpKeyRing {
+    const rawEnc = env.ORBITOX_MCP_ENCRYPTION_KEYS?.trim();
+    const activeEncKid = env.ORBITOX_MCP_ACTIVE_KID?.trim() || '';
+    const rawHmac = env.ORBITOX_MCP_HMAC_KEYS?.trim();
+    const activeHmacKid = env.ORBITOX_MCP_ACTIVE_HMAC_KID?.trim() || '';
+
+    if (!rawEnc || !activeEncKid || !rawHmac || !activeHmacKid) {
+      throw new McpCryptoError(
+        'MCP_CONFIG_INVALID',
+        'ORBITOX_MCP_ENCRYPTION_KEYS, ORBITOX_MCP_ACTIVE_KID, ORBITOX_MCP_HMAC_KEYS, and ORBITOX_MCP_ACTIVE_HMAC_KID are required.',
+      );
+    }
+
+    let encObj: unknown;
+    let hmacObj: unknown;
+    try {
+      encObj = JSON.parse(rawEnc);
+    } catch {
+      throw new McpCryptoError('MCP_CONFIG_INVALID', 'ORBITOX_MCP_ENCRYPTION_KEYS must be valid JSON.');
+    }
+    try {
+      hmacObj = JSON.parse(rawHmac);
+    } catch {
+      throw new McpCryptoError('MCP_CONFIG_INVALID', 'ORBITOX_MCP_HMAC_KEYS must be valid JSON.');
+    }
+
+    if (!encObj || typeof encObj !== 'object' || Array.isArray(encObj)) {
+      throw new McpCryptoError('MCP_CONFIG_INVALID', 'ORBITOX_MCP_ENCRYPTION_KEYS must be a JSON object.');
+    }
+    if (!hmacObj || typeof hmacObj !== 'object' || Array.isArray(hmacObj)) {
+      throw new McpCryptoError('MCP_CONFIG_INVALID', 'ORBITOX_MCP_HMAC_KEYS must be a JSON object.');
+    }
+
+    return new McpKeyRing({
+      encryptionKeys: encObj as Record<string, string>,
+      activeEncryptionKid: activeEncKid,
+      hmacKeys: hmacObj as Record<string, string>,
+      activeHmacKid,
+    });
+  }
+
+  encryptionKeyFor(kid: string): Buffer {
+    const k = this.encryptionKeys.get(kid);
+    if (!k) throw new McpCryptoError('MCP_KEY_UNAVAILABLE', `MCP encryption key "${kid}" is not configured.`);
+    return k;
+  }
+
+  hmacKeyFor(kid: string): Buffer {
+    const k = this.hmacKeys.get(kid);
+    if (!k) throw new McpCryptoError('MCP_KEY_UNAVAILABLE', `MCP HMAC key "${kid}" is not configured.`);
+    return k;
+  }
+}
+
+function computeAad(ctx: McpApprovalBindingContext): Buffer {
+  if (
+    !ctx.approvalId ||
+    !ctx.tenantScope ||
+    !ctx.serverId ||
+    !ctx.toolName ||
+    !ctx.approvalPolicy ||
+    !ctx.requestedById
+  ) {
+    throw new McpCryptoError('MCP_INPUT_INVALID', 'All AAD binding fields are required.');
+  }
+  return Buffer.from(
+    JSON.stringify([
+      ctx.approvalId,
+      ctx.tenantScope,
+      ctx.serverId,
+      ctx.toolName,
+      ctx.approvalPolicy,
+      ctx.requestedById,
+    ]),
+    'utf8',
+  );
+}
+
+/**
+ * Encrypts an execution payload at rest using AES-256-GCM with versioned key ID and canonical JSON AAD.
+ * Wire format: v1.<kid>.<iv_b64url>.<tag_b64url>.<ciphertext_b64url>
+ */
+export function sealExecutionPayload(
+  payload: unknown,
+  context: McpApprovalBindingContext,
+  ring: McpKeyRing = McpKeyRing.fromEnv(),
+): { sealed: string; kid: string } {
+  const plaintext = JSON.stringify(sortJsonKeys(payload));
+  const iv = crypto.randomBytes(12);
+  const kid = ring.activeEncryptionKid;
+  const cipher = crypto.createCipheriv('aes-256-gcm', ring.encryptionKeyFor(kid), iv);
+  cipher.setAAD(computeAad(context));
+  const ciphertext = Buffer.concat([cipher.update(plaintext, 'utf8'), cipher.final()]);
+  const sealed = [
+    'v1',
+    kid,
+    iv.toString('base64url'),
+    cipher.getAuthTag().toString('base64url'),
+    ciphertext.toString('base64url'),
+  ].join('.');
+  return { sealed, kid };
+}
+
+/**
+ * Decrypts a versioned execution payload and validates its AAD binding and GCM tag.
+ */
+export function unsealExecutionPayload<T = unknown>(
+  sealed: string,
+  context: McpApprovalBindingContext,
+  ring: McpKeyRing = McpKeyRing.fromEnv(),
+): { payload: T; kid: string } {
+  const match = SEALED_PAYLOAD_RE.exec(sealed);
+  if (!match || !match[1] || !match[2] || !match[3] || !match[4]) {
+    throw new McpCryptoError('MCP_DECRYPT_FAILED', 'Malformed or unsupported execution payload envelope.');
+  }
+  const [, kid, ivText, tagText, ctText] = match;
+  const decipher = crypto.createDecipheriv(
+    'aes-256-gcm',
+    ring.encryptionKeyFor(kid),
+    Buffer.from(ivText, 'base64url'),
+  );
+  decipher.setAAD(computeAad(context));
+  decipher.setAuthTag(Buffer.from(tagText, 'base64url'));
+  try {
+    const decrypted = Buffer.concat([
+      decipher.update(Buffer.from(ctText, 'base64url')),
+      decipher.final(),
+    ]).toString('utf8');
+    return { payload: JSON.parse(decrypted) as T, kid };
+  } catch {
+    throw new McpCryptoError(
+      'MCP_DECRYPT_FAILED',
+      'Execution payload decryption failed: authentication tag or approval context mismatch.',
+    );
+  }
+}
+
+/**
+ * Computes a versioned HMAC-SHA256 over deterministic canonical JSON binding the full approved operation.
+ * Wire format: v1.<hmac_kid>.<64_hex>
+ */
+export function computeCanonicalApprovalHash(
+  context: McpApprovalBindingContext & { params: unknown },
+  ring: McpKeyRing = McpKeyRing.fromEnv(),
+): { hash: string; hmacKid: string } {
+  const hmacKid = ring.activeHmacKid;
+  const canonicalObj = sortJsonKeys({
+    v: 1,
+    approvalId: context.approvalId,
+    toolName: context.toolName,
+    serverId: context.serverId,
+    approvalPolicy: context.approvalPolicy,
+    tenantScope: context.tenantScope,
+    requestedById: context.requestedById,
+    params: context.params,
+  });
+  const digest = crypto
+    .createHmac('sha256', ring.hmacKeyFor(hmacKid))
+    .update(JSON.stringify(canonicalObj))
+    .digest('hex');
+  return { hash: `v1.${hmacKid}.${digest}`, hmacKid };
+}
+
+/**
+ * Constant-time verification of a versioned approval HMAC digest. Rejects legacy unkeyed hashes.
+ */
+export function verifyCanonicalApprovalHash(
+  storedHash: string,
+  context: McpApprovalBindingContext & { params: unknown },
+  ring: McpKeyRing = McpKeyRing.fromEnv(),
+): { valid: boolean; hmacKid: string } {
+  const match = HASH_ENVELOPE_RE.exec(storedHash);
+  if (!match || !match[1] || !match[2]) {
+    return { valid: false, hmacKid: '' };
+  }
+  const [, hmacKid, storedHex] = match;
+  const key = ring.hmacKeyFor(hmacKid);
+  const canonicalObj = sortJsonKeys({
+    v: 1,
+    approvalId: context.approvalId,
+    toolName: context.toolName,
+    serverId: context.serverId,
+    approvalPolicy: context.approvalPolicy,
+    tenantScope: context.tenantScope,
+    requestedById: context.requestedById,
+    params: context.params,
+  });
+  const expectedBuf = crypto
+    .createHmac('sha256', key)
+    .update(JSON.stringify(canonicalObj))
+    .digest();
+  const actualBuf = Buffer.from(storedHex, 'hex');
+  if (actualBuf.length !== expectedBuf.length) {
+    return { valid: false, hmacKid };
+  }
+  return { valid: crypto.timingSafeEqual(actualBuf, expectedBuf), hmacKid };
+}
+
+/**
+ * Sanitizes audit-only operator reason strings (strips control characters, trims, bounds length).
+ */
+export function sanitizeApprovalReason(raw: unknown): string | undefined {
+  if (typeof raw !== 'string') return undefined;
+  const cleaned = raw.replace(/[\u0000-\u001F\u007F]/g, ' ').trim().slice(0, 500);
+  return cleaned.length > 0 ? cleaned : undefined;
 }

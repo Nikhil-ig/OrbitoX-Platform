@@ -75,6 +75,26 @@ const REQUIRED_SECRETS = [
     purpose: 'Base64-encoded 32-byte AES key protecting queued single-use account links',
   },
   {
+    name: 'ORBITOX_MCP_ENCRYPTION_KEYS',
+    minLen: 10,
+    purpose: 'JSON key ring of base64-encoded 32-byte AES-256-GCM keys for MCP approval payloads',
+  },
+  {
+    name: 'ORBITOX_MCP_ACTIVE_KID',
+    minLen: 1,
+    purpose: 'Active key identifier in ORBITOX_MCP_ENCRYPTION_KEYS',
+  },
+  {
+    name: 'ORBITOX_MCP_HMAC_KEYS',
+    minLen: 10,
+    purpose: 'JSON key ring of base64-encoded 32-byte HMAC keys for MCP canonical approval hashes',
+  },
+  {
+    name: 'ORBITOX_MCP_ACTIVE_HMAC_KID',
+    minLen: 1,
+    purpose: 'Active key identifier in ORBITOX_MCP_HMAC_KEYS',
+  },
+  {
     name: 'ORBITOX_EMAIL_WEBHOOK_SECRET',
     minLen: 32,
     purpose: 'Resend whsec_ signing secret for Svix-verified bounce and complaint webhooks',

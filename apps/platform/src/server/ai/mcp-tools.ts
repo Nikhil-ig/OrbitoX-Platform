@@ -69,7 +69,7 @@ export interface McpToolDefinition<TParams = any> {
   execute: (
     params: TParams,
     actor: McpActorContext,
-    context: { editedMessage?: string | null; reason?: string | null },
+    context: { editedMessage?: string | null; reason?: string | null; executionId?: string; idempotencyKey?: string },
   ) => Promise<McpToolExecutionResult>;
 }
 
@@ -571,7 +571,7 @@ export const MCP_TOOLS: McpToolDefinition[] = [
       try {
         const res = await suspendTenant(
           params.idOrSlug,
-          { reason: effectiveReason, operatorEmail: operator.email },
+          { reason: effectiveReason, operatorEmail: operator.email, requestId: context.executionId },
           operator,
         );
         return {
@@ -752,6 +752,7 @@ export const MCP_TOOLS: McpToolDefinition[] = [
         const res = await sendGraceReminder(subId, operator, {
           customMessage,
           source: 'MCP_APPROVED_WORKFLOW',
+          idempotencyKey: context.idempotencyKey ? `${context.idempotencyKey}:${subId}` : undefined,
         });
         results.push(res);
       }

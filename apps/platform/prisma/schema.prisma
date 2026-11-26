@@ -876,18 +876,19 @@ model AccountAuthRateLimitBucket {
 }
 
 model AccountEmailOutbox {
-  id              String    @id @default(cuid())
-  recipient       String
-  template        String
+  id               String    @id @default(cuid())
+  recipient        String
+  template         String
   encryptedPayload String
-  status          String    @default("PENDING")
-  retryCount      Int       @default(0)
-  lastError       String?
-  createdAt       DateTime  @default(now()) @db.Timestamptz
-  dispatchedAt    DateTime? @db.Timestamptz
-  claimedAt       DateTime? @db.Timestamptz
-  claimToken      String?
-  nextAttemptAt   DateTime  @default(now()) @db.Timestamptz
+  idempotencyKey   String?
+  status           String    @default("PENDING")
+  retryCount       Int       @default(0)
+  lastError        String?
+  createdAt        DateTime  @default(now()) @db.Timestamptz
+  dispatchedAt     DateTime? @db.Timestamptz
+  claimedAt        DateTime? @db.Timestamptz
+  claimToken       String?
+  nextAttemptAt    DateTime  @default(now()) @db.Timestamptz
 
   @@index([status, createdAt])
 }
@@ -1801,6 +1802,9 @@ model McpToolApproval {
   status           String    @default("PROPOSED")
   paramsHash       String
   sanitizedParams  Json
+  encryptedPayload String?
+  encryptionKid    String?
+  hmacKid          String?
   previewSummary   String
   editedMessage    String?
   reason           String?
@@ -1809,6 +1813,8 @@ model McpToolApproval {
   requestedByEmail String
   approvedById     String?
   approvedByEmail  String?
+  delegationId     String?
+  delegatedById    String?
   invocationId     String?
   expiresAt        DateTime  @db.Timestamptz
   consumedAt       DateTime? @db.Timestamptz
@@ -1816,14 +1822,64 @@ model McpToolApproval {
   createdAt        DateTime  @default(now()) @db.Timestamptz
   updatedAt        DateTime  @default(now()) @updatedAt @db.Timestamptz
 
+  execution        McpToolExecution?
+
   @@index([status, expiresAt])
   @@index([requestedById, createdAt])
   @@index([toolName, createdAt])
+  @@index([tenantScope, createdAt])
+  @@index([paramsHash])
+}
+
+model McpToolExecution {
+  id                   String    @id @default(cuid())
+  approvalId           String    @unique
+  invocationId         String?
+  toolName             String
+  tenantScope          String
+  idempotencyKey       String    @unique
+  status               String    @default("EXECUTION_INTENT")
+  encryptionKid        String?
+  hmacKid              String?
+  startedAt            DateTime  @default(now()) @db.Timestamptz
+  leaseOwner           String?
+  leaseExpiresAt       DateTime? @db.Timestamptz
+  attemptNumber        Int       @default(1)
+  reconciliationStatus String?
+  auditIntentEventId   String?
+  finalAuditEventId    String?
+  lastErrorCode        String?
+  lastErrorMessage     String?
+  createdAt            DateTime  @default(now()) @db.Timestamptz
+  updatedAt            DateTime  @default(now()) @updatedAt @db.Timestamptz
+
+  approval             McpToolApproval @relation(fields: [approvalId], references: [id], onDelete: Cascade)
+
+  @@index([status, leaseExpiresAt])
+  @@index([tenantScope, createdAt])
+}
+
+model McpApprovalDelegation {
+  id              String    @id @default(cuid())
+  delegatorId     String
+  delegatorEmail  String
+  delegateId      String
+  delegateEmail   String
+  allowedRiskTier String
+  tenantScope     String    @default("*")
+  reason          String
+  expiresAt       DateTime  @db.Timestamptz
+  revokedAt       DateTime? @db.Timestamptz
+  createdAt       DateTime  @default(now()) @db.Timestamptz
+
+  @@index([delegateId, revokedAt, expiresAt])
 }
 
 model McpToolInvocation {
   id                String   @id @default(cuid())
   approvalId        String?
+  executionId       String?
+  idempotencyKey    String?
   toolName          String
   serverId          String
   approvalPolicy    String
@@ -1848,4 +1904,5 @@ model McpToolInvocation {
   @@index([status, createdAt])
   @@index([actorId, createdAt])
   @@index([approvalId])
+  @@index([tenantScope, createdAt])
 }

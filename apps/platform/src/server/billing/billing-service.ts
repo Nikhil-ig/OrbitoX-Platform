@@ -779,7 +779,7 @@ export async function updateGracePeriod(
 export async function sendGraceReminder(
   subscriptionId: string,
   operator: OperatorSessionContext,
-  options?: { customMessage?: string; source?: string },
+  options?: { customMessage?: string; source?: string; idempotencyKey?: string },
 ): Promise<{ success: boolean; subscriptionId: string; recipient: string; message: string }> {
   requireOperatorAuthorization(operator);
 
@@ -802,23 +802,33 @@ export async function sendGraceReminder(
       throw new Error(`BILLING_EMAIL_NOT_CONFIGURED: Organization for subscription ${cleanId} has no configured billing contact email.`);
     }
 
-    // Persist real email outbox job - fail closed if database fails
+    // Persist real email outbox job - fail closed if database fails (idempotent on idempotencyKey)
     try {
       await prisma.accountEmailOutbox.create({
         data: {
           recipient,
           template: 'BILLING_GRACE_REMINDER',
+          idempotencyKey: options?.idempotencyKey || null,
           encryptedPayload: JSON.stringify({
             subscriptionId: cleanId,
             operatorEmail: operator.email,
             ...(customMessage ? { customMessage } : {}),
             ...(options?.source ? { source: options.source } : {}),
+            ...(options?.idempotencyKey ? { idempotencyKey: options.idempotencyKey } : {}),
             dispatchedAt: new Date().toISOString(),
           }),
           status: 'PENDING',
         },
       });
     } catch (err: any) {
+      if (options?.idempotencyKey && err?.code === 'P2002') {
+        return {
+          success: true,
+          subscriptionId: cleanId,
+          recipient,
+          message: `Payment reminder already queued for delivery to ${recipient} (idempotent).`,
+        };
+      }
       throw new Error(`EMAIL_OUTBOX_ERROR: Failed to queue grace reminder: ${err.message}`);
     }
   } else {
