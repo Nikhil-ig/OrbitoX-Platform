@@ -18,3 +18,19 @@ BEGIN
 END
 $$;
 GRANT USAGE ON SCHEMA public TO orbitox_outbox_relay;
+
+DO $$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'orbitox_mcp_reconciler') THEN
+        CREATE ROLE orbitox_mcp_reconciler NOINHERIT;
+    END IF;
+END
+$$;
+ALTER ROLE orbitox_mcp_reconciler LOGIN PASSWORD :'mcp_reconciler_password';
+
+DO $$
+BEGIN
+    EXECUTE format('GRANT CONNECT ON DATABASE %I TO orbitox_mcp_reconciler', current_database());
+END
+$$;
+GRANT USAGE ON SCHEMA public TO orbitox_mcp_reconciler;

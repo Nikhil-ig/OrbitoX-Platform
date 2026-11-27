@@ -930,13 +930,13 @@ export class ProvisioningSaga {
    */
   async retryOperation(
     operationId: string,
-    options: { mcpExecutionId?: string } = {}
+    options: { mcpExecutionId?: string; allowCancelled?: boolean } = {}
   ): Promise<PlatformOperationRecord | null> {
     const op = await operationStore.getOperation(operationId);
     if (!op) return null;
     if (op.status === 'ACTIVE') return op;
-    if (op.status === 'CANCELLING') {
-      console.log(`[ProvisioningSaga] Operation ${operationId} cannot be retried because compensation is actively running (${op.status}).`);
+    if (op.status === 'CANCELLING' || (op.status === 'CANCELLED' && !options.allowCancelled)) {
+      console.log(`[ProvisioningSaga] Operation ${operationId} cannot be retried because compensation is actively running or operation is terminal (${op.status}).`);
       return null;
     }
 
@@ -946,7 +946,7 @@ export class ProvisioningSaga {
       ? `mcp:${options.mcpExecutionId}`
       : `${this.workerInstanceId}:${attemptId}`;
     const claimed = await operationStore.claimOperationLease(operationId, attemptLeaseOwner, undefined, {
-      allowCancelled: true,
+      allowCancelled: options.allowCancelled,
       mcpExecutionId: options.mcpExecutionId,
     });
     if (!claimed) {

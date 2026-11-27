@@ -11,11 +11,37 @@ export function runWithOperationTenant<T>(tenantId: string, fn: () => Promise<T>
   return operationTenantAls.run(tenantId, fn);
 }
 
+async function resolveScopeForOperation(operationId: string): Promise<string | null> {
+  try {
+    const rows = (await (prisma as any).$queryRawUnsafe(
+      'SELECT organization_id, tenant_id FROM public.resolve_platform_operation_scope($1)',
+      operationId,
+    )) as Array<{ organization_id: string; tenant_id: string }>;
+    if (rows && rows.length > 0 && rows[0]) {
+      const { organization_id, tenant_id } = rows[0];
+      if (/^org\/[^/]+\/project\/[^/]+\/environment\/[^/]+$/.test(tenant_id)) {
+        return tenant_id;
+      }
+      return `org/${organization_id}/project/operations/environment/default`;
+    }
+  } catch {
+    // Ignore RPC failure if in mock / json repository mode
+  }
+  return null;
+}
+
 async function withOperationRlsTx<T>(
-  explicitTenantId: string | null | undefined,
+  explicitTenantOrOpId: string | null | undefined,
   fn: (db: any) => Promise<T>,
 ): Promise<T> {
-  const scope = (explicitTenantId || operationTenantAls.getStore() || '').trim();
+  let scope = (explicitTenantOrOpId || operationTenantAls.getStore() || '').trim();
+  if (scope && !/^org\/[^/]+\/project\/[^/]+\/environment\/[^/]+$/.test(scope)) {
+    const resolved = await resolveScopeForOperation(scope);
+    if (resolved) {
+      scope = resolved;
+    }
+  }
+
   if (/^org\/[^/]+\/project\/[^/]+\/environment\/[^/]+$/.test(scope)) {
     return (prisma as any).$transaction(async (tx: any) => {
       await tx.$executeRaw`SELECT set_config('app.current_tenant_id', ${scope}, true)`;
@@ -191,7 +217,7 @@ export class OperationStore {
     }
 
     try {
-      const row = await withOperationRlsTx(undefined, (db) =>
+      const row = await withOperationRlsTx(id, (db) =>
         db.platformOperation.findUnique({
           where: { id },
         }),
@@ -332,7 +358,7 @@ export class OperationStore {
         whereClause.leaseExpiresAt = { gte: new Date() };
       }
 
-      const { updateResult, row } = await withOperationRlsTx(undefined, async (db) => {
+      const { updateResult, row } = await withOperationRlsTx(id, async (db) => {
         const res = await db.platformOperation.updateMany({
           where: whereClause,
           data: {
@@ -404,7 +430,7 @@ export class OperationStore {
     }
 
     try {
-      const rows = await withOperationRlsTx(undefined, (db) => db.$queryRaw<Array<{ id: string }>>`
+      const rows = await withOperationRlsTx(id, (db) => db.$queryRaw<Array<{ id: string }>>`
         UPDATE "PlatformOperation"
         SET "status" = 'CANCELLING',
             "leaseOwner" = NULL,
@@ -683,7 +709,11 @@ export class OperationStore {
 
     try {
       const claimed = await (prisma as any).$transaction(async (tx: any) => {
-        const scope = operationTenantAls.getStore()?.trim();
+        let scope = operationTenantAls.getStore()?.trim();
+        if (!scope || !/^org\/[^/]+\/project\/[^/]+\/environment\/[^/]+$/.test(scope)) {
+          const resolved = await resolveScopeForOperation(id);
+          if (resolved) scope = resolved;
+        }
         if (scope && /^org\/[^/]+\/project\/[^/]+\/environment\/[^/]+$/.test(scope)) {
           await tx.$executeRaw`SELECT set_config('app.current_tenant_id', ${scope}, true)`;
         }
@@ -783,7 +813,7 @@ export class OperationStore {
     }
 
     try {
-      const rows = await withOperationRlsTx(undefined, (db) => db.$queryRaw<Array<{ id: string }>>`
+      const rows = await withOperationRlsTx(id, (db) => db.$queryRaw<Array<{ id: string }>>`
         UPDATE "PlatformOperation"
         SET "leaseExpiresAt" = NOW() + (${effectiveTtl} * INTERVAL '1 second'),
             "updatedAt" = NOW()
@@ -822,7 +852,7 @@ export class OperationStore {
     }
 
     try {
-      await withOperationRlsTx(undefined, async (db) => {
+      await withOperationRlsTx(operationId, async (db) => {
         if (leaseOwner === '*') {
           await db.$executeRaw`
             UPDATE "PlatformOperationAttempt"
@@ -868,7 +898,7 @@ export class OperationStore {
     }
 
     try {
-      await withOperationRlsTx(undefined, (db) => db.$executeRaw`
+      await withOperationRlsTx(id, (db) => db.$executeRaw`
         UPDATE "PlatformOperation"
         SET "leaseOwner" = NULL,
             "leaseExpiresAt" = NULL,

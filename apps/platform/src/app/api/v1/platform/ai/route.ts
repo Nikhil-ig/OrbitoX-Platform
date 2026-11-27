@@ -61,8 +61,9 @@ function buildApiKeyActor(ctx: ApiRequestContext): McpActorContext {
 async function handleGetMcpInventory(
   requestId: string,
   operatorContext?: { operatorId?: string; operatorRole?: string },
+  apiKeyActor?: McpActorContext,
 ) {
-  const inventory = await getMcpGatewayInventory(operatorContext);
+  const inventory = await getMcpGatewayInventory(operatorContext, apiKeyActor);
   return NextResponse.json<ApiResponse>(
     {
       success: true,
@@ -165,7 +166,8 @@ const getWithApiKey = withApiGuard(
     requiredScopes: ['platform.ai', 'admin'],
     scopeMode: 'any',
   },
-  async (_req: NextRequest, ctx: ApiRequestContext) => handleGetMcpInventory(ctx.requestId),
+  async (_req: NextRequest, ctx: ApiRequestContext) =>
+    handleGetMcpInventory(ctx.requestId, undefined, buildApiKeyActor(ctx)),
 );
 
 const getWithOperator = withOperatorAuth(async (_req: NextRequest, session) => {

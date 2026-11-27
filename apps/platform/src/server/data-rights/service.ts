@@ -1516,6 +1516,7 @@ export async function processDueOrganizationDeletions(input: {
         const tenantIds = (checkpoint.tenants || []).map((t) => t.tenantId);
 
         const deletedPlatformCounts = await maintenance.$transaction(async (tx) => {
+          await tx.$executeRaw`SELECT set_config('app.dsr_purge_organization_id', ${organizationId}, true)`;
           const counts: Record<string, number> = {};
 
           const delTokens = await tx.dataExportDownloadToken.deleteMany({

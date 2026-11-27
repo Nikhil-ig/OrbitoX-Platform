@@ -22,6 +22,10 @@ import {
   unsealExecutionPayload,
   verifyCanonicalApprovalHash,
 } from './mcp-guardrails';
+import {
+  buildCanonicalMcpAuditEvent,
+  parseCanonicalAuditScope,
+} from './mcp-audit-events';
 
 const APPROVAL_TTL_MS = 15 * 60 * 1000;
 const STEP_UP_MAX_AGE_MS = 5 * 60 * 1000;
@@ -296,6 +300,7 @@ function resolveMcpKeyRetentionDays(explicitDays?: number): number {
 
 export async function getMcpGatewayInventory(
   operatorOrOptions?: string | { operatorId?: string; operatorRole?: string },
+  apiKeyActor?: McpActorContext,
 ) {
   const opts =
     typeof operatorOrOptions === 'string'
@@ -328,9 +333,31 @@ export async function getMcpGatewayInventory(
     }
   }
 
+  let tenantScopeFilter: Record<string, any> | undefined;
+  if (apiKeyActor && apiKeyActor.kind === 'api_key') {
+    const isWildcard =
+      apiKeyActor.capabilities.includes('*') ||
+      apiKeyActor.capabilities.includes('admin') ||
+      apiKeyActor.allowedTenants.includes('*');
+    if (!isWildcard) {
+      const allowed = apiKeyActor.allowedTenants.filter((t) => t && t !== '*');
+      if (allowed.length === 0) {
+        tenantScopeFilter = { id: '__none__' };
+      } else {
+        tenantScopeFilter = {
+          OR: [
+            { tenantScope: { in: allowed } },
+            ...allowed.map((t) => ({ tenantScope: { contains: t } })),
+          ],
+        };
+      }
+    }
+  }
+
   const [recentExecutions, pendingApprovals, perToolStats, aggTotals, blockedInjectionCount] =
     await Promise.all([
       prisma.mcpToolInvocation.findMany({
+        where: tenantScopeFilter,
         orderBy: { createdAt: 'desc' },
         take: 20,
       }),
@@ -339,6 +366,7 @@ export async function getMcpGatewayInventory(
           status: 'PROPOSED',
           expiresAt: { gt: now },
           ...(approvalFilter || {}),
+          ...(tenantScopeFilter || {}),
         },
         select: {
           id: true,
@@ -368,15 +396,17 @@ export async function getMcpGatewayInventory(
       }),
       prisma.mcpToolInvocation.groupBy({
         by: ['toolName'],
+        where: tenantScopeFilter,
         _count: { _all: true },
         _avg: { latencyMs: true },
       }),
       prisma.mcpToolInvocation.aggregate({
+        where: tenantScopeFilter,
         _count: { _all: true },
         _sum: { redactionsApplied: true, secretsFiltered: true },
       }),
       prisma.mcpToolInvocation.count({
-        where: { injectionBlocked: true },
+        where: { injectionBlocked: true, ...(tenantScopeFilter || {}) },
       }),
     ]);
 
@@ -787,7 +817,21 @@ export async function invokeMcpTool(
     const sanitizedProposalParams = redactSensitiveData(parsed.data, { maskEmails: true });
     const sanitizedReason = sanitizeApprovalReason((parsed.data as any).reason);
     const outboxTenantId = await resolveCanonicalOutboxTenantScope(proposalMeta.tenantScope);
-    const deterministicProposedAuditId = mcpAuditEventId(approvalId, 'proposed');
+
+    const canonicalProposed = buildCanonicalMcpAuditEvent({
+      eventType: 'mcp.audit.approval_proposed',
+      approvalId,
+      toolName: tool.toolName,
+      serverId: tool.serverId,
+      approvalPolicy: tool.approvalPolicy,
+      tenantScope: proposalMeta.tenantScope,
+      canonicalTenantId: outboxTenantId,
+      actorId: actor.actorId,
+      actorEmail: actor.actorEmail,
+      paramsHash,
+      sanitizedParams: sanitizedProposalParams.value,
+      reason: proposalMeta.previewSummary,
+    });
 
     const approval = await prisma.$transaction(async (tx) => {
       await tx.$queryRaw`SELECT set_config('app.current_tenant_id', ${outboxTenantId}, true)`;
@@ -819,20 +863,11 @@ export async function invokeMcpTool(
       await tx.platformOutboxMessage.create({
         data: {
           tenantId: outboxTenantId,
-          eventType: 'mcp.audit.approval_proposed',
-          aggregateType: 'MCP_APPROVAL',
-          aggregateId: approvalId,
-          deduplicationKey: `mcp_proposed:${approvalId}`,
-          payload: {
-            deterministicAuditId: deterministicProposedAuditId,
-            approvalId,
-            toolName: tool.toolName,
-            approvalPolicy: tool.approvalPolicy,
-            tenantScope: proposalMeta.tenantScope,
-            canonicalTenantId: outboxTenantId,
-            requestedById: actor.actorId,
-            paramsHash,
-          } as any,
+          eventType: canonicalProposed.outboxEventType,
+          aggregateType: canonicalProposed.aggregateType,
+          aggregateId: canonicalProposed.aggregateId,
+          deduplicationKey: canonicalProposed.deduplicationKey,
+          payload: canonicalProposed.outboxPayload as any,
         },
       });
 
@@ -840,23 +875,16 @@ export async function invokeMcpTool(
     });
 
     try {
-      await platformRepository.recordPlatformAdminAudit({
-        deterministicId: deterministicProposedAuditId,
-        action: 'MCP_APPROVAL_PROPOSED',
-        entityType: 'MCP_APPROVAL',
-        entityId: approval.id,
-        actorId: actor.actorId,
-        actorEmail: actor.actorEmail ?? undefined,
-        reason: proposalMeta.previewSummary,
-        metadata: {
-          approvalId: approval.id,
-          toolName: tool.toolName,
-          approvalPolicy: tool.approvalPolicy,
-          tenantScope: proposalMeta.tenantScope,
-          sanitizedParams: sanitizedProposalParams.value,
-          paramsHash,
-        } as any,
-      });
+      await platformRepository.recordPlatformAdminAudit(canonicalProposed.auditInput);
+      await prisma.$executeRaw`
+        UPDATE "PlatformOutboxMessage"
+        SET "status" = 'DISPATCHED',
+            "dispatchedAt" = NOW(),
+            "updatedAt" = NOW()
+        WHERE "tenantId" = ${outboxTenantId}
+          AND "deduplicationKey" = ${canonicalProposed.deduplicationKey}
+          AND "status" = 'PENDING'
+      `.catch(() => {});
     } catch (auditErr: any) {
       await prisma.mcpToolApproval
         .updateMany({ where: { id: approval.id, status: 'PROPOSED' }, data: { status: 'FAILED' } })
@@ -1132,6 +1160,23 @@ export async function approveAndExecuteMcpProposal(
   const deterministicIntentAuditId = mcpAuditEventId(executionId, 'intent');
   const deterministicFinalAuditId = mcpAuditEventId(executionId, 'final');
 
+  const canonicalIntent = buildCanonicalMcpAuditEvent({
+    eventType: 'mcp.audit.execution_intent',
+    approvalId: cleanId,
+    executionId,
+    toolName: tool.toolName,
+    serverId: tool.serverId,
+    approvalPolicy: tool.approvalPolicy,
+    tenantScope: existing.tenantScope,
+    canonicalTenantId: outboxTenantId,
+    actorId: actor.actorId,
+    actorEmail: actor.actorEmail,
+    idempotencyKey,
+    paramsHash: existing.paramsHash,
+    sanitizedParams: redactedParams.value,
+    reason: suppliedReason || `Execution intent for ${tool.toolName} (${cleanId})`,
+  });
+
   // Correction A & B: Atomic Claim + Execution Intent + Append-only Invocation Intent + RLS-Scoped Internal Outbox Intent
   let claimedTxResult: { approval: typeof existing; intentInvocationId: string };
   try {
@@ -1202,28 +1247,11 @@ export async function approveAndExecuteMcpProposal(
       await tx.platformOutboxMessage.create({
         data: {
           tenantId: outboxTenantId,
-          eventType: 'mcp.audit.execution_intent',
-          aggregateType: 'MCP_EXECUTION',
-          aggregateId: executionId,
-          deduplicationKey: `mcp_intent:${executionId}`,
-          payload: {
-            deterministicAuditId: deterministicIntentAuditId,
-            executionId,
-            approvalId: cleanId,
-            invocationId: intentInvocation.id,
-            idempotencyKey,
-            toolName: tool.toolName,
-            serverId: tool.serverId,
-            approvalPolicy: tool.approvalPolicy,
-            tenantScope: existing.tenantScope,
-            canonicalTenantId: outboxTenantId,
-            requestedById: existing.requestedById,
-            approvedById: actor.actorId,
-            delegationId: null,
-            delegatedById: null,
-            soleOwnerSelfApproval: false,
-            paramsHash: existing.paramsHash,
-          } as any,
+          eventType: canonicalIntent.outboxEventType,
+          aggregateType: canonicalIntent.aggregateType,
+          aggregateId: canonicalIntent.aggregateId,
+          deduplicationKey: canonicalIntent.deduplicationKey,
+          payload: canonicalIntent.outboxPayload as any,
         },
       });
 
@@ -1247,29 +1275,16 @@ export async function approveAndExecuteMcpProposal(
   // Write-ahead immutable audit event (deterministic ID -> safe cross-connection replay) BEFORE business side effect begins
   let intentAuditId: string | null = null;
   try {
-    intentAuditId = await recordAudit({
-      deterministicId: deterministicIntentAuditId,
-      action: 'MCP_APPROVAL_EXECUTION_INTENT',
-      entityType: 'MCP_EXECUTION',
-      entityId: executionId,
-      actorId: actor.actorId,
-      actorEmail: actor.actorEmail ?? undefined,
-      requestId: executionId,
-      reason: suppliedReason || `Execution intent for ${tool.toolName} (${cleanId})`,
-      metadata: {
-        executionId,
-        approvalId: cleanId,
-        invocationId: claimedTxResult.intentInvocationId,
-        idempotencyKey,
-        toolName: tool.toolName,
-        tenantScope: existing.tenantScope,
-        requestedById: existing.requestedById,
-        delegationId: null,
-        delegatedById: null,
-        soleOwnerSelfApproval: false,
-        paramsHash: existing.paramsHash,
-      } as any,
-    });
+    intentAuditId = await recordAudit(canonicalIntent.auditInput);
+    await prisma.$executeRaw`
+      UPDATE "PlatformOutboxMessage"
+      SET "status" = 'DISPATCHED',
+          "dispatchedAt" = NOW(),
+          "updatedAt" = NOW()
+      WHERE "tenantId" = ${outboxTenantId}
+        AND "deduplicationKey" = ${canonicalIntent.deduplicationKey}
+        AND "status" = 'PENDING'
+    `.catch(() => {});
   } catch (auditErr: any) {
     console.error(
       JSON.stringify({
@@ -1280,6 +1295,15 @@ export async function approveAndExecuteMcpProposal(
         timestamp: new Date().toISOString(),
       }),
     );
+    await prisma.$executeRaw`
+      UPDATE "PlatformOutboxMessage"
+      SET "status" = 'FAILED',
+          "lastError" = ${auditErr?.message || 'Pre-execution audit failed'},
+          "updatedAt" = NOW()
+      WHERE "tenantId" = ${outboxTenantId}
+        AND "deduplicationKey" = ${canonicalIntent.deduplicationKey}
+        AND "status" = 'PENDING'
+    `.catch(() => {});
     await prisma.$transaction([
       prisma.mcpToolExecution.updateMany({
         where: { id: executionId, status: 'EXECUTION_INTENT' },
@@ -1327,27 +1351,26 @@ export async function approveAndExecuteMcpProposal(
     const responseRedacted = redactSensitiveData(execResult.data, { maskEmails: false });
     const auditRedacted = redactSensitiveData(execResult.data, { maskEmails: true });
 
+    const canonicalSuccess = buildCanonicalMcpAuditEvent({
+      eventType: 'mcp.audit.execution_succeeded',
+      approvalId: cleanId,
+      executionId,
+      toolName: tool.toolName,
+      serverId: tool.serverId,
+      approvalPolicy: tool.approvalPolicy,
+      tenantScope: execResult.tenantScope,
+      canonicalTenantId: outboxTenantId,
+      actorId: actor.actorId,
+      actorEmail: actor.actorEmail,
+      idempotencyKey,
+      paramsHash: existing.paramsHash,
+      latencyMs,
+      reason: suppliedReason || `Operator approved ${tool.toolName} (${cleanId})`,
+    });
+
     let finalAuditId: string | null = null;
     try {
-      finalAuditId = await recordAudit({
-        deterministicId: deterministicFinalAuditId,
-        action: 'MCP_APPROVAL_EXECUTION_SUCCEEDED',
-        entityType: 'MCP_EXECUTION',
-        entityId: executionId,
-        actorId: actor.actorId,
-        actorEmail: actor.actorEmail ?? undefined,
-        requestId: executionId,
-        reason: suppliedReason || `Operator approved ${tool.toolName} (${cleanId})`,
-        metadata: {
-          executionId,
-          approvalId: cleanId,
-          idempotencyKey,
-          toolName: tool.toolName,
-          tenantScope: execResult.tenantScope,
-          latencyMs,
-          paramsHash: existing.paramsHash,
-        } as any,
-      });
+      finalAuditId = await recordAudit(canonicalSuccess.auditInput);
     } catch (postAuditErr: any) {
       console.error(
         JSON.stringify({
@@ -1390,22 +1413,11 @@ export async function approveAndExecuteMcpProposal(
           data: [
             {
               tenantId: outboxTenantId,
-              eventType: 'mcp.audit.execution_succeeded',
-              aggregateType: 'MCP_EXECUTION',
-              aggregateId: executionId,
-              deduplicationKey: `mcp_final:${executionId}`,
-              payload: {
-                deterministicAuditId: deterministicFinalAuditId,
-                executionId,
-                approvalId: cleanId,
-                idempotencyKey,
-                toolName: tool.toolName,
-                tenantScope: execResult.tenantScope,
-                canonicalTenantId: outboxTenantId,
-                approvedById: actor.actorId,
-                latencyMs,
-                paramsHash: existing.paramsHash,
-              } as any,
+              eventType: canonicalSuccess.outboxEventType,
+              aggregateType: canonicalSuccess.aggregateType,
+              aggregateId: canonicalSuccess.aggregateId,
+              deduplicationKey: canonicalSuccess.deduplicationKey,
+              payload: canonicalSuccess.outboxPayload as any,
             },
           ],
           skipDuplicates: true,
@@ -1496,19 +1508,27 @@ export async function approveAndExecuteMcpProposal(
     const code = err instanceof McpToolError ? err.code : 'MCP_EXECUTION_FAILED';
     const message = err?.message || 'Approved execution failed.';
 
+    const canonicalFail = buildCanonicalMcpAuditEvent({
+      eventType: 'mcp.audit.execution_failed',
+      approvalId: cleanId,
+      executionId,
+      toolName: tool.toolName,
+      serverId: tool.serverId,
+      approvalPolicy: tool.approvalPolicy,
+      tenantScope: existing.tenantScope,
+      canonicalTenantId: outboxTenantId,
+      actorId: actor.actorId,
+      actorEmail: actor.actorEmail,
+      idempotencyKey,
+      paramsHash: existing.paramsHash,
+      errorCode: code,
+      latencyMs,
+      reason: `Approved execution for ${tool.toolName} failed: ${code}`,
+    });
+
     let failAuditId: string | null = null;
     try {
-      failAuditId = await recordAudit({
-        deterministicId: deterministicFinalAuditId,
-        action: 'MCP_APPROVAL_EXECUTION_FAILED',
-        entityType: 'MCP_EXECUTION',
-        entityId: executionId,
-        actorId: actor.actorId,
-        actorEmail: actor.actorEmail ?? undefined,
-        requestId: executionId,
-        reason: `Approved execution for ${tool.toolName} failed: ${code}`,
-        metadata: { executionId, approvalId: cleanId, errorCode: code } as any,
-      });
+      failAuditId = await recordAudit(canonicalFail.auditInput);
     } catch (failAuditErr: any) {
       console.error(
         JSON.stringify({
@@ -1584,22 +1604,11 @@ export async function approveAndExecuteMcpProposal(
           data: [
             {
               tenantId: outboxTenantId,
-              eventType: 'mcp.audit.execution_failed',
-              aggregateType: 'MCP_EXECUTION',
-              aggregateId: executionId,
-              deduplicationKey: `mcp_fail:${executionId}`,
-              payload: {
-                deterministicAuditId: deterministicFinalAuditId,
-                executionId,
-                approvalId: cleanId,
-                idempotencyKey,
-                toolName: tool.toolName,
-                tenantScope: existing.tenantScope,
-                canonicalTenantId: outboxTenantId,
-                approvedById: actor.actorId,
-                errorCode: code,
-                latencyMs,
-              } as any,
+              eventType: canonicalFail.outboxEventType,
+              aggregateType: canonicalFail.aggregateType,
+              aggregateId: canonicalFail.aggregateId,
+              deduplicationKey: canonicalFail.deduplicationKey,
+              payload: canonicalFail.outboxPayload as any,
             },
           ],
           skipDuplicates: true,
@@ -1649,6 +1658,7 @@ export async function rejectMcpProposal(
   }
 
   try {
+    const scopeParts = parseCanonicalAuditScope(existing.tenantScope);
     await recordAudit({
       deterministicId: mcpAuditEventId(cleanId, 'recovery'),
       action: 'MCP_APPROVAL_REJECTED',
@@ -1656,6 +1666,10 @@ export async function rejectMcpProposal(
       entityId: cleanId,
       actorId: actor.actorId,
       actorEmail: actor.actorEmail ?? undefined,
+      organizationId: scopeParts.organizationId,
+      projectId: scopeParts.projectId,
+      environmentId: scopeParts.environmentId,
+      requestId: cleanId,
       reason,
       metadata: {
         approvalId: cleanId,
@@ -1983,21 +1997,32 @@ export async function reconcileStaleMcpExecutions(
       continue;
     }
 
-    const auditId = await recordAudit({
-      deterministicId: mcpAuditEventId(exec.id, 'recovery'),
-      action: 'MCP_APPROVAL_RECOVERY_COMPLETED',
-      entityType: 'MCP_EXECUTION',
-      entityId: exec.id,
+    const canonicalRecovery = buildCanonicalMcpAuditEvent({
+      eventType: 'mcp.audit.recovery_completed',
+      approvalId: exec.approvalId,
+      executionId: exec.id,
+      toolName: exec.toolName,
+      tenantScope: exec.tenantScope,
+      canonicalTenantId: exec.tenantScope,
       actorId: 'system:mcp-reconciler',
-      requestId: exec.id,
+      resolvedStatus,
+      reconciliationNote,
       reason: `Reconciled ${exec.toolName} (${exec.id}) -> ${resolvedStatus} (${reconciliationNote})`,
-      metadata: {
-        executionId: exec.id,
-        approvalId: exec.approvalId,
-        resolvedStatus,
-        reconciliationNote,
-      } as any,
     });
+
+    let auditId: string | null = null;
+    try {
+      auditId = await recordAudit(canonicalRecovery.auditInput);
+    } catch (recAuditErr: any) {
+      console.error(
+        JSON.stringify({
+          event: 'mcp.reconciler_audit_failure_fallback_outbox',
+          executionId: exec.id,
+          error: recAuditErr?.message || String(recAuditErr),
+          timestamp: new Date().toISOString(),
+        }),
+      );
+    }
 
     await db.$transaction(async (tx) => {
       const updatedExec = await tx.mcpToolExecution.updateMany({
@@ -2021,6 +2046,23 @@ export async function reconcileStaleMcpExecutions(
           data: { status: resolvedStatus === 'AUTHORIZED_EXECUTED' ? 'SUCCEEDED' : 'FAILED' },
         });
         reconciledIds.push(exec.id);
+      }
+
+      if (!auditId) {
+        await tx.$queryRaw`SELECT set_config('app.current_tenant_id', ${exec.tenantScope}, true)`;
+        await tx.platformOutboxMessage.createMany({
+          data: [
+            {
+              tenantId: exec.tenantScope,
+              eventType: canonicalRecovery.outboxEventType,
+              aggregateType: canonicalRecovery.aggregateType,
+              aggregateId: canonicalRecovery.aggregateId,
+              deduplicationKey: canonicalRecovery.deduplicationKey,
+              payload: canonicalRecovery.outboxPayload as any,
+            },
+          ],
+          skipDuplicates: true,
+        });
       }
     });
   }

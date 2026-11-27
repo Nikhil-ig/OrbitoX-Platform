@@ -885,7 +885,7 @@ resource "aws_iam_role_policy_attachment" "mcp_worker_execution_standard" {
 
 resource "aws_iam_policy" "mcp_worker_secrets_access" {
   name        = "orbitox-${var.environment}-ecs-mcp-worker-secrets-policy"
-  description = "Allows worker-mcp-governance to read ONLY outbox relay, audit writer, maintenance, and runtime DB secrets"
+  description = "Allows worker-mcp-governance to read ONLY outbox relay, audit writer, and reconciler DB secrets"
 
   policy = jsonencode({
     Version = "2012-10-17"
@@ -896,8 +896,7 @@ resource "aws_iam_policy" "mcp_worker_secrets_access" {
         Resource = [
           var.secrets_map["OUTBOX_RELAY_DATABASE_URL"],
           var.secrets_map["PLATFORM_ADMIN_AUDIT_DATABASE_URL"],
-          var.secrets_map["MAINTENANCE_DATABASE_URL"],
-          var.secrets_map["APP_DATABASE_URL"]
+          var.secrets_map["MCP_RECONCILER_DATABASE_URL"]
         ]
       },
       {
@@ -936,8 +935,7 @@ resource "aws_ecs_task_definition" "worker_mcp_governance" {
       secrets = [
         { name = "OUTBOX_RELAY_DATABASE_URL", valueFrom = var.secrets_map["OUTBOX_RELAY_DATABASE_URL"] },
         { name = "PLATFORM_ADMIN_AUDIT_DATABASE_URL", valueFrom = var.secrets_map["PLATFORM_ADMIN_AUDIT_DATABASE_URL"] },
-        { name = "MAINTENANCE_DATABASE_URL", valueFrom = var.secrets_map["MAINTENANCE_DATABASE_URL"] },
-        { name = "APP_DATABASE_URL", valueFrom = var.secrets_map["APP_DATABASE_URL"] }
+        { name = "MCP_RECONCILER_DATABASE_URL", valueFrom = var.secrets_map["MCP_RECONCILER_DATABASE_URL"] }
       ]
       logConfiguration = {
         logDriver = "awslogs"

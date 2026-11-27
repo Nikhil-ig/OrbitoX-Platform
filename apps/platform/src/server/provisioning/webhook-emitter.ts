@@ -70,6 +70,7 @@ export const MCP_AUDIT_OUTBOX_EVENT_TYPES = [
   'mcp.audit.execution_succeeded',
   'mcp.audit.execution_failed',
   'mcp.audit.execution_recovery',
+  'mcp.audit.recovery_completed',
 ] as const;
 
 export function isCustomerWebhookEventType(eventType: string): boolean {
@@ -750,8 +751,9 @@ export async function processMcpAuditOutboxBatch(
         item.claimExpiresAt = undefined;
         result.dispatched += 1;
       } catch (err: any) {
-        const nextRetry = item.retryCount + 1;
-        const isDead = nextRetry >= item.maxAttempts;
+        const isPermanent = isPermanentMcpAuditError(err);
+        const nextRetry = isPermanent ? item.maxAttempts : item.retryCount + 1;
+        const isDead = isPermanent || nextRetry >= item.maxAttempts;
         item.status = isDead ? 'FAILED' : 'PENDING';
         item.retryCount = nextRetry;
         item.lastError = err?.message || 'Internal audit relay failed';
@@ -818,8 +820,9 @@ export async function processMcpAuditOutboxBatch(
       `;
       result.dispatched += 1;
     } catch (err: any) {
-      const nextRetry = (row.retryCount ?? 0) + 1;
-      const isDead = nextRetry >= (row.maxAttempts ?? 5);
+      const isPermanent = isPermanentMcpAuditError(err);
+      const nextRetry = isPermanent ? (row.maxAttempts ?? 5) : (row.retryCount ?? 0) + 1;
+      const isDead = isPermanent || nextRetry >= (row.maxAttempts ?? 5);
       const delayMs = calculateBackoff(nextRetry, options.baseDelayMs, 300000, options.jitterMs);
       await client.$queryRaw`
         UPDATE "PlatformOutboxMessage"
@@ -841,6 +844,21 @@ export async function processMcpAuditOutboxBatch(
   return result;
 }
 
+export function isPermanentMcpAuditError(err: any): boolean {
+  if (!err) return false;
+  const msg = typeof err === 'string' ? err : err.message || '';
+  const code = err.code || '';
+  return (
+    code === 'AUDIT_ID_CONFLICT' ||
+    msg.startsWith('AUDIT_ID_CONFLICT:') ||
+    code === 'INVALID_INTERNAL_AUDIT_EVENT' ||
+    (!msg.includes('AUDIT_CHAIN_SEQUENCE_MISMATCH') && (
+      msg.includes('already exists with conflicting payload') ||
+      msg.includes('INVALID_INTERNAL_AUDIT_EVENT')
+    ))
+  );
+}
+
 function resolveMcpOutboxEventMeta(eventType: string): {
   stage: 'proposed' | 'intent' | 'final' | 'recovery';
   action: string;
@@ -853,6 +871,7 @@ function resolveMcpOutboxEventMeta(eventType: string): {
     case 'mcp.audit.execution_failed':
       return { stage: 'final', action: 'MCP_APPROVAL_EXECUTION_FAILED' };
     case 'mcp.audit.execution_recovery':
+    case 'mcp.audit.recovery_completed':
       return { stage: 'recovery', action: 'MCP_APPROVAL_RECOVERY_COMPLETED' };
     default:
       return { stage: 'intent', action: 'MCP_APPROVAL_EXECUTION_INTENT' };
@@ -864,6 +883,25 @@ async function persistInternalMcpAuditMessage(
   recordAudit: (input: any) => Promise<string>,
 ): Promise<void> {
   const payload = msg.payload || {};
+
+  if (payload.canonicalAudit && typeof payload.canonicalAudit === 'object') {
+    const canonical = payload.canonicalAudit;
+    const match = /^org\/([^/]+)\/project\/([^/]+)\/environment\/([^/]+)$/.exec(msg.tenantId);
+    await recordAudit({
+      ...canonical,
+      deterministicId: canonical.deterministicId || payload.deterministicAuditId,
+      organizationId: match && match[1] !== 'platform' ? match[1] : (canonical.organizationId ?? undefined),
+      projectId: match && match[2] !== 'operations' ? match[2] : (canonical.projectId ?? undefined),
+      environmentId: match ? match[3] : (canonical.environmentId ?? undefined),
+      requestId: canonical.requestId || payload.executionId || payload.approvalId || msg.aggregateId,
+      metadata: {
+        ...(canonical.metadata && typeof canonical.metadata === 'object' ? canonical.metadata : {}),
+        outboxMessageId: msg.id,
+      },
+    });
+    return;
+  }
+
   const { stage, action } = resolveMcpOutboxEventMeta(msg.eventType);
   const deterministicId =
     typeof payload.deterministicAuditId === 'string' && payload.deterministicAuditId

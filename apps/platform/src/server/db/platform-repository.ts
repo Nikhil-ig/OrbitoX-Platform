@@ -905,8 +905,9 @@ export function createPrismaPlatformRepository(
             }
             return clean;
         }
+        const normalized = clean.startsWith('tenant_') ? clean.replace(/^tenant_/, '') : clean;
         const proj = await txOrClient.platformProject.findFirst({
-            where: { OR: [{ id: clean }, { slug: clean.toLowerCase() }] },
+            where: { OR: [{ id: normalized }, { slug: normalized.toLowerCase() }] },
             include: { environments: { orderBy: [{ isProduction: 'desc' }, { createdAt: 'asc' }], take: 1 } },
         });
         if (!proj) return null;
@@ -2228,7 +2229,10 @@ export function createPrismaPlatformRepository(
             const canonical = canonicalizePluginId(pluginId);
             const candidateTenantIds = await resolveCandidateTenantIds(tenantId);
             return await client.$transaction(async (tx) => {
-                const scope = (await resolveRlsTenantScope(tx, tenantId)) || tenantId;
+                const scope = await resolveRlsTenantScope(tx, tenantId);
+                if (!scope) {
+                    throw new Error(`CANONICAL_TENANT_SCOPE_REQUIRED: Unable to resolve tenant RLS scope for "${tenantId}".`);
+                }
                 await tx.$executeRaw`SELECT set_config('app.current_tenant_id', ${scope}, true)`;
                 const existing = await tx.pluginInstallation.findFirst({
                     where: {
@@ -2396,7 +2400,10 @@ export function createPrismaPlatformRepository(
         ): Promise<PluginInstallationRecord> {
             const canonical = canonicalizePluginId(pluginId);
             return await client.$transaction(async (tx) => {
-                const scope = (await resolveRlsTenantScope(tx, tenantId)) || tenantId;
+                const scope = await resolveRlsTenantScope(tx, tenantId);
+                if (!scope) {
+                    throw new Error(`CANONICAL_TENANT_SCOPE_REQUIRED: Unable to resolve tenant RLS scope for "${tenantId}".`);
+                }
                 await tx.$executeRaw`SELECT set_config('app.current_tenant_id', ${scope}, true)`;
                 const existing = await tx.pluginInstallation.findFirst({
                     where: {
@@ -2454,7 +2461,10 @@ export function createPrismaPlatformRepository(
         ): Promise<PluginInstallationRecord> {
             const canonical = canonicalizePluginId(pluginId);
             return await client.$transaction(async (tx) => {
-                const scope = (await resolveRlsTenantScope(tx, tenantId)) || tenantId;
+                const scope = await resolveRlsTenantScope(tx, tenantId);
+                if (!scope) {
+                    throw new Error(`CANONICAL_TENANT_SCOPE_REQUIRED: Unable to resolve tenant RLS scope for "${tenantId}".`);
+                }
                 await tx.$executeRaw`SELECT set_config('app.current_tenant_id', ${scope}, true)`;
                 const existing = await tx.pluginInstallation.findFirst({
                     where: {
@@ -2517,7 +2527,10 @@ export function createPrismaPlatformRepository(
         ): Promise<PluginInstallationRecord> {
             const canonical = canonicalizePluginId(pluginId);
             return await client.$transaction(async (tx) => {
-                const scope = (await resolveRlsTenantScope(tx, tenantId)) || tenantId;
+                const scope = await resolveRlsTenantScope(tx, tenantId);
+                if (!scope) {
+                    throw new Error(`CANONICAL_TENANT_SCOPE_REQUIRED: Unable to resolve tenant RLS scope for "${tenantId}".`);
+                }
                 await tx.$executeRaw`SELECT set_config('app.current_tenant_id', ${scope}, true)`;
                 const existing = await tx.pluginInstallation.findFirst({
                     where: {
@@ -2827,7 +2840,8 @@ export function createPrismaPlatformRepository(
                 }
 
                 for (const inst of affectedInstallations) {
-                    const scope = (await resolveRlsTenantScope(tx, inst.tenantId)) || inst.tenantId;
+                    const scope = await resolveRlsTenantScope(tx, inst.tenantId);
+                    if (!scope) continue;
                     await tx.$executeRaw`SELECT set_config('app.current_tenant_id', ${scope}, true)`;
                     const updatedInst = await tx.pluginInstallation.update({
                         where: { id: inst.id },

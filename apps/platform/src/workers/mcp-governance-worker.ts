@@ -12,32 +12,35 @@ async function main(): Promise<void> {
   const auditUrl =
     process.env.PLATFORM_ADMIN_AUDIT_DATABASE_URL?.trim() ||
     process.env.PLATFORM_AUDIT_DATABASE_URL?.trim();
-  const maintenanceUrl = process.env.MAINTENANCE_DATABASE_URL?.trim();
+  const reconcilerUrl =
+    process.env.MCP_RECONCILER_DATABASE_URL?.trim() ||
+    process.env.MAINTENANCE_DATABASE_URL?.trim();
 
-  if (!outboxUrl || !auditUrl || !maintenanceUrl) {
+  if (!outboxUrl || !auditUrl || !reconcilerUrl) {
     throw new Error(
-      'OUTBOX_RELAY_DATABASE_URL, PLATFORM_ADMIN_AUDIT_DATABASE_URL, and MAINTENANCE_DATABASE_URL are required.',
+      'OUTBOX_RELAY_DATABASE_URL, PLATFORM_ADMIN_AUDIT_DATABASE_URL, and MCP_RECONCILER_DATABASE_URL are required.',
     );
   }
 
   const outboxDb = new PrismaClient({ datasourceUrl: outboxUrl });
   const auditDb = new PrismaClient({ datasourceUrl: auditUrl });
-  const maintenanceDb = new PrismaClient({ datasourceUrl: maintenanceUrl });
+  const reconcilerDb = new PrismaClient({ datasourceUrl: reconcilerUrl });
 
   try {
     const roles = await Promise.all([
       outboxDb.$queryRaw<Array<{ role: string }>>`SELECT current_user AS role`,
       auditDb.$queryRaw<Array<{ role: string }>>`SELECT current_user AS role`,
-      maintenanceDb.$queryRaw<Array<{ role: string }>>`SELECT current_user AS role`,
+      reconcilerDb.$queryRaw<Array<{ role: string }>>`SELECT current_user AS role`,
     ]);
 
+    const allowedReconcilerRoles = new Set(['orbitox_mcp_reconciler', 'orbitox_maintenance']);
     if (
       roles[0]?.[0]?.role !== 'orbitox_outbox_relay' ||
       roles[1]?.[0]?.role !== 'orbitox_platform_admin_audit' ||
-      roles[2]?.[0]?.role !== 'orbitox_maintenance'
+      !allowedReconcilerRoles.has(roles[2]?.[0]?.role || '')
     ) {
       throw new Error(
-        `MCP governance worker requires restricted database roles (got outbox=${roles[0]?.[0]?.role}, audit=${roles[1]?.[0]?.role}, maintenance=${roles[2]?.[0]?.role}).`,
+        `MCP governance worker requires restricted database roles (got outbox=${roles[0]?.[0]?.role}, audit=${roles[1]?.[0]?.role}, reconciler=${roles[2]?.[0]?.role}).`,
       );
     }
 
@@ -48,7 +51,7 @@ async function main(): Promise<void> {
       recordAudit,
     });
     const reconcilerResult = await reconcileStaleMcpExecutions({
-      maintenancePrisma: maintenanceDb,
+      maintenancePrisma: reconcilerDb,
       deps: { recordAudit },
     });
 
@@ -61,7 +64,7 @@ async function main(): Promise<void> {
       }),
     );
   } finally {
-    await Promise.all([outboxDb.$disconnect(), auditDb.$disconnect(), maintenanceDb.$disconnect()]);
+    await Promise.all([outboxDb.$disconnect(), auditDb.$disconnect(), reconcilerDb.$disconnect()]);
   }
 }
 

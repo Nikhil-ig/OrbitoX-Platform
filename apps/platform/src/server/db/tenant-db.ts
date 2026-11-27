@@ -220,3 +220,26 @@ export async function withTenantTx<T>(
     }
   }
 }
+
+export async function withVerifiedPrismaTenantTx<T>(
+  prisma: PrismaClient,
+  tenantId: string,
+  fn: (tx: Prisma.TransactionClient) => Promise<T>,
+  opts: { timeout?: number; maxWait?: number } = {}
+): Promise<T> {
+  const cleanTenant = (tenantId || '').trim();
+  const isValid = TENANT_RE.test(cleanTenant) || cleanTenant === 'org/platform/project/operations/environment/platform-admin';
+  if (!isValid) {
+    throw new TenantScopeError(`invalid tenant id for verified tx: ${cleanTenant}`);
+  }
+
+  return await prisma.$transaction(async (tx) => {
+    await tx.$queryRaw`SELECT set_config('app.current_tenant_id', ${cleanTenant}, true)`;
+    const checkRows = await tx.$queryRaw<{ bound: string }[]>`SELECT current_setting('app.current_tenant_id', true) AS bound`;
+    const bound = checkRows?.[0]?.bound;
+    if (bound !== cleanTenant) {
+      throw new TenantScopeError(`Failed to bind verified tenant context: expected ${cleanTenant}, actual ${bound}`);
+    }
+    return await fn(tx);
+  }, { timeout: opts.timeout ?? 10_000, maxWait: opts.maxWait ?? 5_000 });
+}

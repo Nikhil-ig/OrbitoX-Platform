@@ -49,6 +49,7 @@ const INDEPENDENT_EXPECTED_ROLES = Object.freeze([
   { rolname: 'orbitox_audit_resolver', rolsuper: false, rolbypassrls: false, rolcanlogin: false, rolcreatedb: false, rolcreaterole: false, rolinherit: false },
   { rolname: 'orbitox_audit_recovery', rolsuper: false, rolbypassrls: false, rolcanlogin: false, rolcreatedb: false, rolcreaterole: false, rolinherit: false },
   { rolname: 'orbitox_audit_reader', rolsuper: false, rolbypassrls: false, rolcanlogin: true, rolcreatedb: false, rolcreaterole: false, rolinherit: false },
+  { rolname: 'orbitox_mcp_reconciler', rolsuper: false, rolbypassrls: false, rolcanlogin: true, rolcreatedb: false, rolcreaterole: false, rolinherit: false },
 ]);
 
 const INDEPENDENT_AUDIT_COLUMNS = Object.freeze([
@@ -91,6 +92,9 @@ const INDEPENDENT_RLS_RELATIONS = Object.freeze([
   'HmsWard',
   'KitchenPreparationTask',
   'KitchenStation',
+  'McpToolApproval',
+  'McpToolExecution',
+  'McpToolInvocation',
   'PlatformAuditChainHead',
   'PlatformAuditDeterministicKey',
   'PlatformAuditEvent',
@@ -231,6 +235,33 @@ const INDEPENDENT_FUNCTIONS = Object.freeze([
     maintenanceExec: false,
     publicExec: false,
   },
+  {
+    name: 'claim_platform_audit_chain_slot',
+    argTypes: ['text', 'text', 'text', 'text', 'text', 'text'],
+    owner: 'orbitox_migrator',
+    secdef: true,
+    runtimeExec: true,
+    maintenanceExec: true,
+    publicExec: false,
+  },
+  {
+    name: 'advance_platform_audit_chain_head',
+    argTypes: ['text', 'bigint', 'text', 'text', 'text', 'text', 'text', 'text'],
+    owner: 'orbitox_migrator',
+    secdef: true,
+    runtimeExec: true,
+    maintenanceExec: true,
+    publicExec: false,
+  },
+  {
+    name: 'resolve_platform_operation_scope',
+    argTypes: ['text'],
+    owner: 'orbitox_migrator',
+    secdef: true,
+    runtimeExec: true,
+    maintenanceExec: true,
+    publicExec: false,
+  },
 ]);
 
 const INDEPENDENT_MIGRATIONS = Object.freeze([
@@ -285,6 +316,7 @@ const INDEPENDENT_MIGRATIONS = Object.freeze([
   '20261127120000_mcp_rev_1_6_9_integrity',
   '20261127123000_mcp_rev_1_6_9_chainhead_owner_policy',
   '20261127140000_mcp_rev_1_6_9_workstream_g_rls',
+  '20261127150000_mcp_rev_1_6_9_phase3_2_isolation',
 ]);
 
 // Helper to create a mock Prisma client
