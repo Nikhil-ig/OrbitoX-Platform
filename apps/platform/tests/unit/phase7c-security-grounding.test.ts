@@ -483,11 +483,13 @@ describe('Phase 7C Security Grounding & Invariant Enforcement', () => {
       const prevEnv = process.env.NODE_ENV;
       const prevAuditUrl = process.env.PLATFORM_ADMIN_AUDIT_DATABASE_URL;
       const prevAuditUrl2 = process.env.PLATFORM_AUDIT_DATABASE_URL;
+      const prevAuditUrl3 = process.env.AUDIT_READER_DATABASE_URL;
 
       try {
         (process.env as any).NODE_ENV = 'production';
         delete process.env.PLATFORM_ADMIN_AUDIT_DATABASE_URL;
         delete process.env.PLATFORM_AUDIT_DATABASE_URL;
+        delete process.env.AUDIT_READER_DATABASE_URL;
 
         (client.platformAuditEvent as any).findMany = async () => [];
         const unprivResult = await auditConsoleService.verifyPostgresAuditChain();
@@ -498,6 +500,7 @@ describe('Phase 7C Security Grounding & Invariant Enforcement', () => {
         (process.env as any).NODE_ENV = prevEnv;
         if (prevAuditUrl) process.env.PLATFORM_ADMIN_AUDIT_DATABASE_URL = prevAuditUrl;
         if (prevAuditUrl2) process.env.PLATFORM_AUDIT_DATABASE_URL = prevAuditUrl2;
+        if (prevAuditUrl3) process.env.AUDIT_READER_DATABASE_URL = prevAuditUrl3;
       }
     } finally {
       (client.platformAuditEvent as any).findMany = originalFindMany;

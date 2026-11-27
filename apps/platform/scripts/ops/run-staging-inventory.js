@@ -29,7 +29,7 @@ const EXIT_CODES = Object.freeze({
 
 // ── Expected Manifests (Source of Truth) ───────────────────────────────────────
 
-// 1. All 8 System Roles
+// 1. All 9 System Roles
 const EXPECTED_ROLES = Object.freeze([
   { rolname: 'orbitox_migrator', rolsuper: false, rolbypassrls: false, rolcanlogin: true, rolcreatedb: true, rolcreaterole: true, rolinherit: false },
   { rolname: 'orbitox_runtime', rolsuper: false, rolbypassrls: false, rolcanlogin: true, rolcreatedb: false, rolcreaterole: false, rolinherit: false },
@@ -39,6 +39,7 @@ const EXPECTED_ROLES = Object.freeze([
   { rolname: 'orbitox_outbox_relay', rolsuper: false, rolbypassrls: false, rolcanlogin: true, rolcreatedb: false, rolcreaterole: false, rolinherit: false },
   { rolname: 'orbitox_audit_resolver', rolsuper: false, rolbypassrls: false, rolcanlogin: false, rolcreatedb: false, rolcreaterole: false, rolinherit: false },
   { rolname: 'orbitox_audit_recovery', rolsuper: false, rolbypassrls: false, rolcanlogin: false, rolcreatedb: false, rolcreaterole: false, rolinherit: false },
+  { rolname: 'orbitox_audit_reader', rolsuper: false, rolbypassrls: false, rolcanlogin: true, rolcreatedb: false, rolcreaterole: false, rolinherit: false },
 ]);
 
 // 2. Authoritative 16-Column Manifest for PlatformAuditEvent (schema.prisma lines 1396-1413)
@@ -61,8 +62,9 @@ const EXPECTED_AUDIT_COLUMNS = Object.freeze([
   { name: 'occurredAt', type: 'timestamp without time zone', notNull: true },
 ]);
 
-// 3. Complete 42 Surviving Relations Requiring RLS and FORCE RLS
+// 3. Complete 50 Surviving Relations Requiring RLS and FORCE RLS
 const EXPECTED_RLS_RELATIONS = Object.freeze([
+  'AccountEmailOutbox',
   'BillingProviderCache',
   'HmsAdmission',
   'HmsAppointment',
@@ -82,10 +84,16 @@ const EXPECTED_RLS_RELATIONS = Object.freeze([
   'HmsWard',
   'KitchenPreparationTask',
   'KitchenStation',
+  'PlatformAuditChainHead',
+  'PlatformAuditDeterministicKey',
   'PlatformAuditEvent',
   'PlatformIdempotencyRecord',
+  'PlatformOperation',
+  'PlatformOperationAttempt',
   'PlatformOutboxMessage',
   'PlatformPluginUsage',
+  'PluginGrantRevision',
+  'PluginInstallation',
   'RestaurantCatalogItem',
   'RestaurantDiningSession',
   'RestaurantInventoryStock',
@@ -105,6 +113,7 @@ const EXPECTED_RLS_RELATIONS = Object.freeze([
   'SessionParticipant',
   'TenantIdempotencyKey',
   'TenantOutbox',
+  'TenantSuspensionSync',
 ]);
 
 // 4. Exactly 32 Dropped Phase 7A Sample Tables
@@ -242,7 +251,7 @@ const APPROVED_TRIGGER_FUNCTIONS = Object.freeze([
   'keep_customer_organization_owner',
 ]);
 
-// 6. Chronological 44 Prisma Migrations Manifest
+// 6. Chronological 51 Prisma Migrations Manifest
 const EXPECTED_MIGRATIONS = Object.freeze([
   '20261027000000_orbitox_phase2_full_baseline',
   '20261027000100_orbitox_phase2_step1_security',
@@ -288,11 +297,13 @@ const EXPECTED_MIGRATIONS = Object.freeze([
   '20261113210000_orbitox_phase7b1_appearance_runtime_grants',
   '20261115200000_orbitox_phase7d_customer_onboarding',
   '20261117140000_orbitox_outbox_concurrency_and_retry_hardening',
+  '20261125120000_mcp_tool_governance',
   '20261126140000_mcp_governance_integrity',
   '20261126150000_mcp_audit_durability',
   '20261126193000_mcp_governance_rev_1_6_8',
   '20261127120000_mcp_rev_1_6_9_integrity',
   '20261127123000_mcp_rev_1_6_9_chainhead_owner_policy',
+  '20261127140000_mcp_rev_1_6_9_workstream_g_rls',
 ]);
 
 // ── Redaction Utility ─────────────────────────────────────────────────────────
@@ -401,6 +412,42 @@ const QUERIES = Object.freeze({
         m.admin_option,
         m.inherit_option,
         m.set_option,
+        rg.depth + 1
+      FROM pg_auth_members m
+      JOIN role_graph rg ON m.member = rg.roleid
+    )
+    SELECT
+      r_parent.rolname AS parent_role,
+      r_member.rolname AS member_role,
+      rg.admin_option,
+      rg.inherit_option,
+      rg.set_option,
+      rg.depth
+    FROM role_graph rg
+    JOIN pg_roles r_parent ON r_parent.oid = rg.roleid
+    JOIN pg_roles r_member ON r_member.oid = rg.member;
+  `,
+
+  Q03_ROLE_MEMBERSHIP_GRAPH_PG14: `
+    WITH RECURSIVE role_graph AS (
+      SELECT
+        m.roleid,
+        m.member,
+        m.grantor,
+        m.admin_option,
+        false AS inherit_option,
+        false AS set_option,
+        1 AS depth
+      FROM pg_auth_members m
+      WHERE m.member = (SELECT oid FROM pg_roles WHERE rolname = 'orbitox_runtime')
+      UNION ALL
+      SELECT
+        m.roleid,
+        m.member,
+        m.grantor,
+        m.admin_option,
+        false AS inherit_option,
+        false AS set_option,
         rg.depth + 1
       FROM pg_auth_members m
       JOIN role_graph rg ON m.member = rg.roleid
@@ -697,7 +744,7 @@ async function checkQ01_ConnectionIdentity(prisma, results) {
 
 async function checkQ02_SystemRoles(prisma, results) {
   const checkId = 'Q-02';
-  const name = 'Complete 8-system-role attribute inventory';
+  const name = 'Complete 9-system-role attribute inventory';
   try {
     const targetRoles = EXPECTED_ROLES.map((r) => r.rolname);
     const rows = await prisma.$queryRawUnsafe(QUERIES.Q02_SYSTEM_ROLES, targetRoles);
@@ -756,7 +803,16 @@ async function checkQ03_RoleMembershipAndDDL(prisma, results) {
   const checkId = 'Q-03';
   const name = 'Role membership graph & DDL authority lockout';
   try {
-    const graphRows = await prisma.$queryRawUnsafe(QUERIES.Q03_ROLE_MEMBERSHIP_GRAPH);
+    let graphQuery = QUERIES.Q03_ROLE_MEMBERSHIP_GRAPH;
+    try {
+      const versionRow = await prisma.$queryRawUnsafe('SELECT current_setting(\'server_version_num\')::int AS v;');
+      if ((versionRow?.[0]?.v || 0) < 160000) {
+        graphQuery = QUERIES.Q03_ROLE_MEMBERSHIP_GRAPH_PG14;
+      }
+    } catch {
+      // Fallback to standard query if version detection fails
+    }
+    const graphRows = await prisma.$queryRawUnsafe(graphQuery);
     const ddlRows = await prisma.$queryRawUnsafe(QUERIES.Q03_DDL_AUTHORITY);
 
     if (!ddlRows || ddlRows.length === 0) {
@@ -981,7 +1037,7 @@ async function checkQ04_PlatformAuditEventACL(prisma, results) {
 
 async function checkQ05_RLSRelations(prisma, results) {
   const checkId = 'Q-05';
-  const name = 'Complete 42-relation RLS & FORCE RLS verification';
+  const name = 'Complete 50-relation RLS & FORCE RLS verification';
   try {
     const rows = await prisma.$queryRawUnsafe(QUERIES.Q05_RLS_RELATIONS, EXPECTED_RLS_RELATIONS);
     if (!rows) {
@@ -993,7 +1049,7 @@ async function checkQ05_RLSRelations(prisma, results) {
     const relationMap = new Map(rows.map((r) => [r.relname, r]));
 
     if (rows.length !== EXPECTED_RLS_RELATIONS.length) {
-      errors.push(`Expected 42 relations, found ${rows.length}`);
+      errors.push(`Expected 50 relations, found ${rows.length}`);
     }
 
     for (const expName of EXPECTED_RLS_RELATIONS) {
@@ -1010,7 +1066,7 @@ async function checkQ05_RLSRelations(prisma, results) {
     if (errors.length > 0) {
       results.push({ id: checkId, name, status: 'FAIL', details: errors.join('; ') });
     } else {
-      results.push({ id: checkId, name, status: 'PASS', details: 'All 42 surviving operational tables have relrowsecurity=true and relforcerowsecurity=true.' });
+      results.push({ id: checkId, name, status: 'PASS', details: 'All 50 surviving operational tables have relrowsecurity=true and relforcerowsecurity=true.' });
     }
   } catch (err) {
     results.push({ id: checkId, name, status: 'INCOMPLETE', details: `Query failed: ${redactCredentials(err.message)}` });
@@ -1457,7 +1513,7 @@ async function checkQ11_MigrationLedger(prisma, results, migrationsDir) {
 // ── Orchestration Engine ───────────────────────────────────────────────────────
 
 async function runInventory(options = {}) {
-  const databaseUrl = options.databaseUrl || process.env.APP_DATABASE_URL;
+  const databaseUrl = options.databaseUrl !== undefined ? options.databaseUrl : process.env.APP_DATABASE_URL;
 
   // 1. Missing or whitespace-only configuration
   if (!databaseUrl || databaseUrl.trim() === '') {
@@ -1528,7 +1584,7 @@ async function runInventory(options = {}) {
     if (ownPrisma && prisma) {
       try {
         await prisma.$disconnect();
-      } catch {}
+      } catch { }
     }
   }
 

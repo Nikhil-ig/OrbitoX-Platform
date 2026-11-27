@@ -8,7 +8,7 @@ import {
   PlatformOperationRecord,
   OperationStep,
 } from '@/server/provisioning/types';
-import { operationStore, oneTimeSecretStore } from '@/server/provisioning/operation-store';
+import { operationStore, oneTimeSecretStore, runWithOperationTenant } from '@/server/provisioning/operation-store';
 import { pluginLifecycleClient } from '@/server/provisioning/plugin-lifecycle-client';
 import { emitPlatformWebhook, dispatchOutboxMessage } from '@/server/provisioning/webhook-emitter';
 
@@ -180,44 +180,48 @@ export class ProvisioningSaga {
       completedAt: null,
     };
 
-    await operationStore.createOperation(operation);
+    return runWithOperationTenant(initialTenantId, async () => {
+      await operationStore.createOperation(operation);
 
-    const workerId = options.workerId || `${this.workerInstanceId}:${randomUUID().slice(0, 8)}`;
-    await operationStore.claimOperationLease(operationId, workerId);
-    const syncOptions = { ...options, workerId };
+      const workerId = options.workerId || `${this.workerInstanceId}:${randomUUID().slice(0, 8)}`;
+      await operationStore.claimOperationLease(operationId, workerId);
+      const syncOptions = { ...options, workerId };
 
-    // Execute steps 1-4 synchronously
-    const { tenantId, rawApiKey } = await this.executeSyncSteps(
-      operationId,
-      validatedInput,
-      org,
-      cleanSlug,
-      environmentSlug,
-      syncOptions
-    );
+      // Execute steps 1-4 synchronously
+      const { tenantId, rawApiKey } = await this.executeSyncSteps(
+        operationId,
+        validatedInput,
+        org,
+        cleanSlug,
+        environmentSlug,
+        syncOptions
+      );
 
-    // Launch steps 5-7 asynchronously in background (or await in test/sync mode)
-    const asyncPromise = this.executeAsyncSteps(
-      operationId,
-      validatedInput,
-      tenantId,
-      org,
-      cleanSlug,
-      environmentSlug,
-      syncOptions
-    ).catch((err) => {
-      console.error(`[ProvisioningSaga] Operation ${operationId} background failure:`, err);
+      // Launch steps 5-7 asynchronously in background (or await in test/sync mode)
+      const asyncPromise = runWithOperationTenant(tenantId, () =>
+        this.executeAsyncSteps(
+          operationId,
+          validatedInput,
+          tenantId,
+          org,
+          cleanSlug,
+          environmentSlug,
+          syncOptions
+        ),
+      ).catch((err) => {
+        console.error(`[ProvisioningSaga] Operation ${operationId} background failure:`, err);
+      });
+
+      if (process.env.NODE_ENV === 'test' && process.env.ORBITOX_SYNC_SAGA === 'true') {
+        await asyncPromise;
+      }
+
+      const currentOp = (await runWithOperationTenant(tenantId, () => operationStore.getOperation(operationId))) || operation;
+      return {
+        ...currentOp,
+        rawApiKey,
+      };
     });
-
-    if (process.env.NODE_ENV === 'test' && process.env.ORBITOX_SYNC_SAGA === 'true') {
-      await asyncPromise;
-    }
-
-    const currentOp = (await operationStore.getOperation(operationId)) || operation;
-    return {
-      ...currentOp,
-      rawApiKey,
-    };
   }
 
   /**

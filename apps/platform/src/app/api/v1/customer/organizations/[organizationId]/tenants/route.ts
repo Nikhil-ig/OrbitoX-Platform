@@ -43,9 +43,17 @@ export const GET = withCustomerAuth<RouteContext>(async (_request, session, cont
   const envIds = projects.flatMap((project) => project.environments.map((e) => e.id));
   const [installations, subscriptions, verifiedDomains] = tenantIds.length
     ? await Promise.all([
-      prisma.pluginInstallation.findMany({
-        where: { tenantId: { in: tenantIds } },
-        select: { tenantId: true, pluginId: true, status: true, statusReason: true, planId: true },
+      prisma.$transaction(async (tx) => {
+        const collected: Array<{ tenantId: string; pluginId: string; status: string; statusReason: string | null; planId: string | null }> = [];
+        for (const tId of tenantIds) {
+          await tx.$executeRaw`SELECT set_config('app.current_tenant_id', ${tId}, true)`;
+          const rows = await tx.pluginInstallation.findMany({
+            where: { tenantId: tId },
+            select: { tenantId: true, pluginId: true, status: true, statusReason: true, planId: true },
+          });
+          collected.push(...rows);
+        }
+        return collected;
       }),
       prisma.billingSubscription.findMany({
         where: { tenantId: { in: tenantIds } },

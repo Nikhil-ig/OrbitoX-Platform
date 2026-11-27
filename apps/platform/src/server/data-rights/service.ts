@@ -192,9 +192,12 @@ export async function resolveTenantPlugins(
   for (const project of projects) {
     for (const env of project.environments) {
       const tenantId = `org/${organizationId}/project/${project.id}/environment/${env.id}`;
-      const installations = await client.pluginInstallation.findMany({
-        where: { tenantId },
-        select: { pluginId: true },
+      const installations = await client.$transaction(async (tx) => {
+        await tx.$executeRaw`SELECT set_config('app.current_tenant_id', ${tenantId}, true)`;
+        return tx.pluginInstallation.findMany({
+          where: { tenantId },
+          select: { pluginId: true },
+        });
       });
 
       const pluginSet = new Set<'@orbitox/hms' | '@orbitox/restaurant'>();
@@ -549,19 +552,25 @@ export async function processExportJobs(input: {
       });
 
       const tenantIds = resolved.tenants.map((t) => t.tenantId);
-      const [installations, grantRevisions, subscriptions, dataRightsJobs, deletionRequests] = await Promise.all([
-        tenantIds.length > 0
-          ? runtimePrisma.pluginInstallation.findMany({
-              where: { OR: [{ tenantId: { in: tenantIds } }, { runtimeTenantId: { in: tenantIds } }] },
-              orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
-            })
-          : [],
-        tenantIds.length > 0
-          ? runtimePrisma.pluginGrantRevision.findMany({
-              where: { tenantId: { in: tenantIds } },
-              orderBy: [{ tenantId: 'asc' }, { pluginId: 'asc' }],
-            })
-          : [],
+      const [installations, grantRevisions] = tenantIds.length > 0
+        ? await runtimePrisma.$transaction(async (tx) => {
+            const insts: any[] = [];
+            const revs: any[] = [];
+            for (const tid of tenantIds) {
+              await tx.$executeRaw`SELECT set_config('app.current_tenant_id', ${tid}, true)`;
+              insts.push(...await tx.pluginInstallation.findMany({
+                where: { OR: [{ tenantId: tid }, { runtimeTenantId: tid }] },
+                orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
+              }));
+              revs.push(...await tx.pluginGrantRevision.findMany({
+                where: { tenantId: tid },
+                orderBy: [{ tenantId: 'asc' }, { pluginId: 'asc' }],
+              }));
+            }
+            return [insts, revs] as const;
+          })
+        : [[], []];
+      const [subscriptions, dataRightsJobs, deletionRequests] = await Promise.all([
         runtimePrisma.billingSubscription.findMany({
           where: { organizationId },
           include: {

@@ -214,6 +214,7 @@ export async function POST(request: NextRequest): Promise<Response> {
         return { duplicate: false as const, applied: false, reason: decision.reason };
       }
 
+      await tx.$queryRaw`SELECT set_config('app.current_tenant_id', ${subscription.tenantId}, true)`;
       const installation = await tx.pluginInstallation.findFirst({
         where: { tenantId: subscription.tenantId, pluginId: subscription.pluginId },
       });

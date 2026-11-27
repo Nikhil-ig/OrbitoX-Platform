@@ -79,36 +79,40 @@ export const GET = withCustomerAuth<RouteContext>(
       },
     });
 
-    // 2. Query Provisioning Saga PlatformOperation with exact canonical tenant association
-    const activeOp = await (prisma as any).platformOperation.findFirst({
-      where: {
-        organizationId: project.organizationId,
-        tenantId: canonicalTenantId,
-      },
-      orderBy: { createdAt: 'desc' },
-      select: {
-        id: true,
-        type: true,
-        status: true,
-        step: true,
-        error: true,
-        createdAt: true,
-      },
-    }).catch(() => null);
-
-    // 3. Query PluginInstallation with exact RestaurantOS plugin mapping
-    const installation = await prisma.pluginInstallation.findFirst({
-      where: {
-        tenantId: canonicalTenantId,
-        pluginId: { in: ['restaurant-os', '@orbitox-io/restaurant-os'] },
-      },
-      select: {
-        id: true,
-        pluginId: true,
-        status: true,
-        planId: true,
-        statusReason: true,
-      },
+    // 2 & 3. Query Provisioning Saga PlatformOperation & PluginInstallation under tenant RLS context
+    const { activeOp, installation } = await prisma.$transaction(async (tx) => {
+      await tx.$executeRaw`SELECT set_config('app.current_tenant_id', ${canonicalTenantId}, true)`;
+      const [opRow, instRow] = await Promise.all([
+        (tx as any).platformOperation.findFirst({
+          where: {
+            organizationId: project.organizationId,
+            tenantId: canonicalTenantId,
+          },
+          orderBy: { createdAt: 'desc' },
+          select: {
+            id: true,
+            type: true,
+            status: true,
+            step: true,
+            error: true,
+            createdAt: true,
+          },
+        }).catch(() => null),
+        tx.pluginInstallation.findFirst({
+          where: {
+            tenantId: canonicalTenantId,
+            pluginId: { in: ['restaurant-os', '@orbitox-io/restaurant-os'] },
+          },
+          select: {
+            id: true,
+            pluginId: true,
+            status: true,
+            planId: true,
+            statusReason: true,
+          },
+        }),
+      ]);
+      return { activeOp: opRow, installation: instRow };
     });
 
     // 4. Query RestaurantOS runtime for authoritative tenant health and status

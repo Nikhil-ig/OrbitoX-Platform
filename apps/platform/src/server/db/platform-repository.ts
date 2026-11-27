@@ -883,6 +883,51 @@ export function createPrismaPlatformRepository(
         return Array.from(candidates);
     }
 
+    async function resolveRlsTenantScope(txOrClient: any, rawTenantOrProjectId: string): Promise<string | null> {
+        const clean = (rawTenantOrProjectId || '').trim();
+        if (!clean) return null;
+        const tenantMatch = /^org\/([^/]+)\/project\/([^/]+)\/environment\/([^/]+)$/.exec(clean);
+        if (tenantMatch) {
+            const [, , projPart, envPart] = tenantMatch;
+            const proj = projPart
+                ? await txOrClient.platformProject.findFirst({
+                    where: { OR: [{ id: projPart }, { slug: projPart.toLowerCase() }] },
+                    include: { environments: true },
+                })
+                : null;
+            if (proj) {
+                const env = proj.environments?.find(
+                    (e: any) => e.id === envPart || (envPart && e.slug.toLowerCase() === envPart.toLowerCase()),
+                ) || proj.environments?.[0];
+                if (env) {
+                    return `org/${proj.organizationId}/project/${proj.id}/environment/${env.id}`;
+                }
+            }
+            return clean;
+        }
+        const proj = await txOrClient.platformProject.findFirst({
+            where: { OR: [{ id: clean }, { slug: clean.toLowerCase() }] },
+            include: { environments: { orderBy: [{ isProduction: 'desc' }, { createdAt: 'asc' }], take: 1 } },
+        });
+        if (!proj) return null;
+        const envId = proj.environments?.[0]?.id || 'production';
+        return `org/${proj.organizationId}/project/${proj.id}/environment/${envId}`;
+    }
+
+    async function withCanonicalTenantTx<T>(
+        rawTenantOrProjectId: string,
+        fn: (tx: any, canonicalScope: string) => Promise<T>,
+    ): Promise<T> {
+        return client.$transaction(async (tx) => {
+            const scope = await resolveRlsTenantScope(tx, rawTenantOrProjectId);
+            if (!scope) {
+                throw new Error(`CANONICAL_TENANT_SCOPE_REQUIRED: Unable to resolve tenant RLS scope for "${rawTenantOrProjectId}".`);
+            }
+            await tx.$executeRaw`SELECT set_config('app.current_tenant_id', ${scope}, true)`;
+            return fn(tx, scope);
+        });
+    }
+
     return {
         async listOrganizations(): Promise<PlatformOrganization[]> {
             return (await client.platformOrganization.findMany({ orderBy: { createdAt: 'asc' } })).map(toOrganization);
@@ -1005,6 +1050,9 @@ export function createPrismaPlatformRepository(
 
                 // Rule 2: Create project and installations in ONE transaction. Delete every catch {} around installation writes.
                 // A claim conflict or failure must surface.
+                if (pluginsToInstall.length > 0) {
+                    await tx.$executeRaw`SELECT set_config('app.current_tenant_id', ${canonicalTenantId}, true)`;
+                }
                 for (const item of pluginsToInstall) {
                     const existingClaim = await tx.pluginInstallation.findFirst({
                         where: {
@@ -1069,10 +1117,16 @@ export function createPrismaPlatformRepository(
             const row = await client.platformProject.update({ where: { id: existing.id }, data: toDatabaseProjectData(updates as any) });
 
             if (updates.status) {
-                await client.pluginInstallation.updateMany({
-                    where: { OR: [{ tenantId: existing.slug }, { tenantId: existing.id }] },
-                    data: { status: updates.status as any },
-                }).catch(() => { });
+                const scope = await resolveRlsTenantScope(client, existing.id);
+                if (scope) {
+                    await client.$transaction(async (tx) => {
+                        await tx.$executeRaw`SELECT set_config('app.current_tenant_id', ${scope}, true)`;
+                        await tx.pluginInstallation.updateMany({
+                            where: { OR: [{ tenantId: existing.slug }, { tenantId: existing.id }, { tenantId: scope }] },
+                            data: { status: updates.status as any },
+                        });
+                    }).catch(() => { });
+                }
             }
 
             return toProject(row);
@@ -1092,6 +1146,11 @@ export function createPrismaPlatformRepository(
                     where: { id: project.id },
                     data: { status: 'SUSPENDED' as any },
                 });
+
+                const controlPlaneScope = await resolveRlsTenantScope(tx, project.id);
+                if (controlPlaneScope) {
+                    await tx.$executeRaw`SELECT set_config('app.current_tenant_id', ${controlPlaneScope}, true)`;
+                }
 
                 const candidateIds = await resolveCandidateTenantIds(project.id);
                 const installations = await tx.pluginInstallation.findMany({
@@ -1211,6 +1270,11 @@ export function createPrismaPlatformRepository(
                     data: { status: 'ACTIVE' as any },
                 });
 
+                const controlPlaneScope = await resolveRlsTenantScope(tx, project.id);
+                if (controlPlaneScope) {
+                    await tx.$executeRaw`SELECT set_config('app.current_tenant_id', ${controlPlaneScope}, true)`;
+                }
+
                 const candidateIds = await resolveCandidateTenantIds(project.id);
                 const installations = await tx.pluginInstallation.findMany({
                     where: { tenantId: { in: candidateIds } },
@@ -1319,13 +1383,15 @@ export function createPrismaPlatformRepository(
             lastError?: string | null;
         }): Promise<void> {
             const canonicalPlugin = canonicalizePluginId(input.pluginId);
-            await client.tenantSuspensionSync.updateMany({
-                where: { projectId: input.projectId, pluginId: canonicalPlugin },
-                data: {
-                    status: input.status,
-                    ...(input.acknowledgedRevision !== undefined ? { acknowledgedRevision: input.acknowledgedRevision } : {}),
-                    lastError: input.lastError ?? null,
-                },
+            await withCanonicalTenantTx(input.projectId, async (tx) => {
+                await tx.tenantSuspensionSync.updateMany({
+                    where: { projectId: input.projectId, pluginId: canonicalPlugin },
+                    data: {
+                        status: input.status,
+                        ...(input.acknowledgedRevision !== undefined ? { acknowledgedRevision: input.acknowledgedRevision } : {}),
+                        lastError: input.lastError ?? null,
+                    },
+                });
             });
         },
         async deleteProject(projectId: string): Promise<boolean> {
@@ -1989,22 +2055,55 @@ export function createPrismaPlatformRepository(
             return toInstallation(row);
         },
         async listPluginInstallations(tenantId?: string): Promise<PluginInstallationRecord[]> {
-            const candidateTenantIds = tenantId ? await resolveCandidateTenantIds(tenantId) : undefined;
-            return (await client.pluginInstallation.findMany({
-                where: candidateTenantIds ? { tenantId: { in: candidateTenantIds } } : undefined,
-                orderBy: { createdAt: 'desc' },
-            })).map(toPluginInstallation);
+            if (tenantId) {
+                const candidateTenantIds = await resolveCandidateTenantIds(tenantId);
+                return withCanonicalTenantTx(tenantId, async (tx) => {
+                    return (await tx.pluginInstallation.findMany({
+                        where: { tenantId: { in: candidateTenantIds } },
+                        orderBy: { createdAt: 'desc' },
+                    })).map(toPluginInstallation);
+                });
+            }
+            const projects = await client.platformProject.findMany({
+                include: { environments: { orderBy: [{ isProduction: 'desc' }, { createdAt: 'asc' }], take: 1 } },
+            });
+            return client.$transaction(async (tx) => {
+                const seen = new Set<string>();
+                const out: PluginInstallationRecord[] = [];
+                for (const proj of projects) {
+                    const envId = proj.environments?.[0]?.id || 'production';
+                    const scope = `org/${proj.organizationId}/project/${proj.id}/environment/${envId}`;
+                    await tx.$executeRaw`SELECT set_config('app.current_tenant_id', ${scope}, true)`;
+                    const rows = await tx.pluginInstallation.findMany({
+                        where: { OR: [{ tenantId: scope }, { tenantId: proj.id }, { tenantId: proj.slug }] },
+                        orderBy: { createdAt: 'desc' },
+                    });
+                    for (const row of rows) {
+                        if (!seen.has(row.id)) {
+                            seen.add(row.id);
+                            out.push(toPluginInstallation(row));
+                        }
+                    }
+                }
+                return out;
+            });
         },
         async getPluginInstallation(tenantId: string, pluginId: string): Promise<PluginInstallationRecord | undefined> {
             const canonical = canonicalizePluginId(pluginId);
             const candidateTenantIds = await resolveCandidateTenantIds(tenantId);
             if (candidateTenantIds.length === 0) return undefined;
 
-            const row = await client.pluginInstallation.findFirst({
-                where: {
-                    tenantId: { in: candidateTenantIds },
-                    pluginId: { in: [canonical, pluginId, canonical.replace(/^@orbitox\//, '')] },
-                },
+            const scope = await resolveRlsTenantScope(client, tenantId);
+            if (!scope) return undefined;
+
+            const row = await client.$transaction(async (tx) => {
+                await tx.$executeRaw`SELECT set_config('app.current_tenant_id', ${scope}, true)`;
+                return tx.pluginInstallation.findFirst({
+                    where: {
+                        tenantId: { in: candidateTenantIds },
+                        pluginId: { in: [canonical, pluginId, canonical.replace(/^@orbitox\//, '')] },
+                    },
+                });
             });
             return row ? toPluginInstallation(row) : undefined;
         },
@@ -2022,6 +2121,8 @@ export function createPrismaPlatformRepository(
             }
 
             return await client.$transaction(async (tx) => {
+                const scope = await resolveRlsTenantScope(tx, runtimeTenantId) || await resolveRlsTenantScope(tx, rawTenantId) || runtimeTenantId;
+                await tx.$executeRaw`SELECT set_config('app.current_tenant_id', ${scope}, true)`;
                 const existing = await tx.pluginInstallation.findFirst({
                     where: {
                         tenantId: rawTenantId,
@@ -2127,6 +2228,8 @@ export function createPrismaPlatformRepository(
             const canonical = canonicalizePluginId(pluginId);
             const candidateTenantIds = await resolveCandidateTenantIds(tenantId);
             return await client.$transaction(async (tx) => {
+                const scope = (await resolveRlsTenantScope(tx, tenantId)) || tenantId;
+                await tx.$executeRaw`SELECT set_config('app.current_tenant_id', ${scope}, true)`;
                 const existing = await tx.pluginInstallation.findFirst({
                     where: {
                         tenantId: { in: candidateTenantIds },
@@ -2210,6 +2313,8 @@ export function createPrismaPlatformRepository(
                 let previousStatus: string | undefined;
 
                 if (tenantId && canonicalPlugin) {
+                    const scope = (await resolveRlsTenantScope(tx, tenantId)) || tenantId;
+                    await tx.$executeRaw`SELECT set_config('app.current_tenant_id', ${scope}, true)`;
                     const existing = await tx.pluginInstallation.findFirst({
                         where: {
                             tenantId,
@@ -2291,6 +2396,8 @@ export function createPrismaPlatformRepository(
         ): Promise<PluginInstallationRecord> {
             const canonical = canonicalizePluginId(pluginId);
             return await client.$transaction(async (tx) => {
+                const scope = (await resolveRlsTenantScope(tx, tenantId)) || tenantId;
+                await tx.$executeRaw`SELECT set_config('app.current_tenant_id', ${scope}, true)`;
                 const existing = await tx.pluginInstallation.findFirst({
                     where: {
                         tenantId,
@@ -2347,6 +2454,8 @@ export function createPrismaPlatformRepository(
         ): Promise<PluginInstallationRecord> {
             const canonical = canonicalizePluginId(pluginId);
             return await client.$transaction(async (tx) => {
+                const scope = (await resolveRlsTenantScope(tx, tenantId)) || tenantId;
+                await tx.$executeRaw`SELECT set_config('app.current_tenant_id', ${scope}, true)`;
                 const existing = await tx.pluginInstallation.findFirst({
                     where: {
                         tenantId,
@@ -2408,6 +2517,8 @@ export function createPrismaPlatformRepository(
         ): Promise<PluginInstallationRecord> {
             const canonical = canonicalizePluginId(pluginId);
             return await client.$transaction(async (tx) => {
+                const scope = (await resolveRlsTenantScope(tx, tenantId)) || tenantId;
+                await tx.$executeRaw`SELECT set_config('app.current_tenant_id', ${scope}, true)`;
                 const existing = await tx.pluginInstallation.findFirst({
                     where: {
                         tenantId,
@@ -2470,15 +2581,19 @@ export function createPrismaPlatformRepository(
         ): Promise<{ allowed: boolean; limit?: number; currentCount: number; remaining?: number; reason?: string }> {
             const canonical = canonicalizePluginId(pluginId);
             const candidateTenantIds = await resolveCandidateTenantIds(tenantId);
-            const row = await client.pluginInstallation.findFirst({
-                where: {
-                    tenantId: { in: candidateTenantIds },
-                    OR: [
-                        { pluginId: canonical },
-                        { pluginId },
-                        { pluginId: canonical.replace(/^@orbitox\//, '') },
-                    ],
-                },
+            const row = await client.$transaction(async (tx) => {
+                const scope = (await resolveRlsTenantScope(tx, tenantId)) || tenantId;
+                await tx.$executeRaw`SELECT set_config('app.current_tenant_id', ${scope}, true)`;
+                return tx.pluginInstallation.findFirst({
+                    where: {
+                        tenantId: { in: candidateTenantIds },
+                        OR: [
+                            { pluginId: canonical },
+                            { pluginId },
+                            { pluginId: canonical.replace(/^@orbitox\//, '') },
+                        ],
+                    },
+                });
             });
             if (!row) {
                 return { allowed: false, currentCount, reason: 'NOT_INSTALLED' };
@@ -2691,11 +2806,29 @@ export function createPrismaPlatformRepository(
 
                 // Requirement Part B: A plan change bumps the revision of every affected installation.
                 // Requirement Part C: writes an outbox row, in the same transaction.
-                const affectedInstallations = await tx.pluginInstallation.findMany({
-                    where: { planId },
+                const projectsForPlan = await tx.platformProject.findMany({
+                    include: { environments: { orderBy: [{ isProduction: 'desc' }, { createdAt: 'asc' }], take: 1 } },
                 });
+                const seenInstallIds = new Set<string>();
+                const affectedInstallations: any[] = [];
+                for (const proj of projectsForPlan) {
+                    const envId = proj.environments?.[0]?.id || 'production';
+                    const scope = `org/${proj.organizationId}/project/${proj.id}/environment/${envId}`;
+                    await tx.$executeRaw`SELECT set_config('app.current_tenant_id', ${scope}, true)`;
+                    const rows = await tx.pluginInstallation.findMany({
+                        where: { planId, OR: [{ tenantId: scope }, { tenantId: proj.id }, { tenantId: proj.slug }] },
+                    });
+                    for (const inst of rows) {
+                        if (!seenInstallIds.has(inst.id)) {
+                            seenInstallIds.add(inst.id);
+                            affectedInstallations.push(inst);
+                        }
+                    }
+                }
 
                 for (const inst of affectedInstallations) {
+                    const scope = (await resolveRlsTenantScope(tx, inst.tenantId)) || inst.tenantId;
+                    await tx.$executeRaw`SELECT set_config('app.current_tenant_id', ${scope}, true)`;
                     const updatedInst = await tx.pluginInstallation.update({
                         where: { id: inst.id },
                         data: { entitlementRevision: { increment: 1 } },

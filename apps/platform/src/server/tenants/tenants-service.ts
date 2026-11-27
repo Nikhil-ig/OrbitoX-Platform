@@ -267,19 +267,34 @@ export async function listTenants(
   }
 
   if (hasDatabase()) {
-    const [fetchedProjects, count, plugins] = await Promise.all([
+    const [fetchedProjects, count] = await Promise.all([
       prisma.platformProject.findMany({
         where: whereClause,
-        include: { organization: true },
+        include: {
+          organization: true,
+          environments: { orderBy: [{ isProduction: 'desc' }, { createdAt: 'asc' }], take: 1 },
+        },
         orderBy: { createdAt: 'desc' },
         skip,
         take: pageSize,
       }),
       prisma.platformProject.count({ where: whereClause }),
-      prisma.pluginInstallation.findMany({
-        select: { tenantId: true, pluginId: true },
-      }).catch(() => []),
     ]);
+
+    const plugins = await prisma.$transaction(async (tx) => {
+      const collected: Array<{ tenantId: string; pluginId: string }> = [];
+      for (const p of fetchedProjects) {
+        const envId = p.environments?.[0]?.id || 'production';
+        const scope = `org/${p.organizationId}/project/${p.id}/environment/${envId}`;
+        await tx.$executeRaw`SELECT set_config('app.current_tenant_id', ${scope}, true)`;
+        const rows = await tx.pluginInstallation.findMany({
+          where: { OR: [{ tenantId: scope }, { tenantId: p.id }, { tenantId: p.slug }] },
+          select: { tenantId: true, pluginId: true },
+        });
+        collected.push(...rows.map((r) => ({ tenantId: p.id, pluginId: r.pluginId })));
+      }
+      return collected;
+    }).catch(() => []);
 
     let items = fetchedProjects.map((p) => {
       const installed = plugins
@@ -400,10 +415,21 @@ export async function getTenantDetail(
   // Fetch plugin installations
   let rawPlugins: any[] = [];
   if (hasDatabase()) {
-    rawPlugins = await prisma.pluginInstallation.findMany({
-      where: {
-        OR: [{ tenantId: project.id }, { tenantId: project.slug }, { runtimeTenantId: project.id }],
-      },
+    const defaultEnvId = project.environments?.[0]?.id || 'production';
+    const canonicalScope = `org/${project.organizationId}/project/${project.id}/environment/${defaultEnvId}`;
+    rawPlugins = await prisma.$transaction(async (tx) => {
+      await tx.$executeRaw`SELECT set_config('app.current_tenant_id', ${canonicalScope}, true)`;
+      return tx.pluginInstallation.findMany({
+        where: {
+          OR: [
+            { tenantId: canonicalScope },
+            { tenantId: project.id },
+            { tenantId: project.slug },
+            { runtimeTenantId: project.id },
+            { runtimeTenantId: canonicalScope },
+          ],
+        },
+      });
     }).catch(() => []);
   } else if (project.installedPlugins || project.enabledServices) {
     rawPlugins = (project.installedPlugins || project.enabledServices).map((p: string) => ({

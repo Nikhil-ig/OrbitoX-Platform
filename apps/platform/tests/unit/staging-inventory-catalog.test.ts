@@ -48,6 +48,7 @@ const INDEPENDENT_EXPECTED_ROLES = Object.freeze([
   { rolname: 'orbitox_outbox_relay', rolsuper: false, rolbypassrls: false, rolcanlogin: true, rolcreatedb: false, rolcreaterole: false, rolinherit: false },
   { rolname: 'orbitox_audit_resolver', rolsuper: false, rolbypassrls: false, rolcanlogin: false, rolcreatedb: false, rolcreaterole: false, rolinherit: false },
   { rolname: 'orbitox_audit_recovery', rolsuper: false, rolbypassrls: false, rolcanlogin: false, rolcreatedb: false, rolcreaterole: false, rolinherit: false },
+  { rolname: 'orbitox_audit_reader', rolsuper: false, rolbypassrls: false, rolcanlogin: true, rolcreatedb: false, rolcreaterole: false, rolinherit: false },
 ]);
 
 const INDEPENDENT_AUDIT_COLUMNS = Object.freeze([
@@ -70,6 +71,7 @@ const INDEPENDENT_AUDIT_COLUMNS = Object.freeze([
 ]);
 
 const INDEPENDENT_RLS_RELATIONS = Object.freeze([
+  'AccountEmailOutbox',
   'BillingProviderCache',
   'HmsAdmission',
   'HmsAppointment',
@@ -89,10 +91,16 @@ const INDEPENDENT_RLS_RELATIONS = Object.freeze([
   'HmsWard',
   'KitchenPreparationTask',
   'KitchenStation',
+  'PlatformAuditChainHead',
+  'PlatformAuditDeterministicKey',
   'PlatformAuditEvent',
   'PlatformIdempotencyRecord',
+  'PlatformOperation',
+  'PlatformOperationAttempt',
   'PlatformOutboxMessage',
   'PlatformPluginUsage',
+  'PluginGrantRevision',
+  'PluginInstallation',
   'RestaurantCatalogItem',
   'RestaurantDiningSession',
   'RestaurantInventoryStock',
@@ -112,6 +120,7 @@ const INDEPENDENT_RLS_RELATIONS = Object.freeze([
   'SessionParticipant',
   'TenantIdempotencyKey',
   'TenantOutbox',
+  'TenantSuspensionSync',
 ]);
 
 const INDEPENDENT_DROPPED_TABLES = Object.freeze([
@@ -269,6 +278,13 @@ const INDEPENDENT_MIGRATIONS = Object.freeze([
   '20261113210000_orbitox_phase7b1_appearance_runtime_grants',
   '20261115200000_orbitox_phase7d_customer_onboarding',
   '20261117140000_orbitox_outbox_concurrency_and_retry_hardening',
+  '20261125120000_mcp_tool_governance',
+  '20261126140000_mcp_governance_integrity',
+  '20261126150000_mcp_audit_durability',
+  '20261126193000_mcp_governance_rev_1_6_8',
+  '20261127120000_mcp_rev_1_6_9_integrity',
+  '20261127123000_mcp_rev_1_6_9_chainhead_owner_policy',
+  '20261127140000_mcp_rev_1_6_9_workstream_g_rls',
 ]);
 
 // Helper to create a mock Prisma client
@@ -282,7 +298,7 @@ function createMockPrisma(queryHandlers: Record<string, (query: string, params?:
       }
       throw new Error(`Unhandled mock query: ${query.slice(0, 80)}...`);
     },
-    $disconnect: async () => {},
+    $disconnect: async () => { },
   };
 }
 
@@ -983,9 +999,9 @@ describe('Stage B: Staging Inventory Safety & Catalog Verification (Revision 4.9
       assert.strictEqual(results[0].details.includes('orbitox_migrator (table owner) must possess effective SELECT privilege'), true);
     });
 
-    it('T-20: Q-05 verifies exact 42 RLS relation count and fails if relation is missing', async () => {
-      // Return only 41 relations
-      const mockRelations = INDEPENDENT_RLS_RELATIONS.slice(0, 41).map((r: string) => ({
+    it('T-20: Q-05 verifies exact 50 RLS relation count and fails if relation is missing', async () => {
+      // Return only 49 relations
+      const mockRelations = INDEPENDENT_RLS_RELATIONS.slice(0, 49).map((r: string) => ({
         relname: r,
         relrowsecurity: true,
         relforcerowsecurity: true,
@@ -999,7 +1015,7 @@ describe('Stage B: Staging Inventory Safety & Catalog Verification (Revision 4.9
       const results: any[] = [];
       await checkQ05_RLSRelations(mockPrisma, results);
       assert.strictEqual(results[0].status, 'FAIL');
-      assert.strictEqual(results[0].details.includes('Expected 42 relations, found 41'), true);
+      assert.strictEqual(results[0].details.includes('Expected 50 relations, found 49'), true);
     });
 
     it('T-21: Q-05 fails if any relation has relforcerowsecurity = false', async () => {
@@ -1255,7 +1271,7 @@ describe('Stage B: Staging Inventory Safety & Catalog Verification (Revision 4.9
       assert.ok(guard.shouldRun);
     });
 
-    it('T-34: Local DB Integration - 42 RLS tables and Force-RLS enforcement', (t) => {
+    it('T-34: Local DB Integration - 50 RLS tables and Force-RLS enforcement', (t) => {
       const guard = evaluateIntegrationGuard(process.env.ORBITOX_TEST_DATABASE_URL);
       if (!guard.shouldRun) {
         t.skip(guard.reason);

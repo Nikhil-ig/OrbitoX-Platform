@@ -97,17 +97,26 @@ export const GET = withCustomerAuth<RouteContext>(
         runtimeTenant = json.tenant;
       } else if (res.status === 404) {
         // Runtime does not have this tenant. Check if provisioning saga is actively in progress.
-        activeOp = await (prisma as any).platformOperation.findFirst({
-          where: {
-            organizationId: project.organizationId,
-            status: { in: ['PROVISIONING', 'RUNNING', 'PENDING'] },
-            OR: [
-              { tenantId: { contains: project.slug } },
-              { tenantId: { contains: project.id } },
-            ],
-          },
-          orderBy: { createdAt: 'desc' },
-        }).catch(() => null);
+        const defaultEnv = project.environments?.find((e) => e.slug === 'production') || project.environments?.[0];
+        const canonicalScope = defaultEnv
+          ? `org/${project.organizationId}/project/${project.id}/environment/${defaultEnv.id}`
+          : '';
+        activeOp = canonicalScope
+          ? await prisma.$transaction(async (tx) => {
+              await tx.$executeRaw`SELECT set_config('app.current_tenant_id', ${canonicalScope}, true)`;
+              return (tx as any).platformOperation.findFirst({
+                where: {
+                  organizationId: project.organizationId,
+                  status: { in: ['PROVISIONING', 'RUNNING', 'PENDING'] },
+                  OR: [
+                    { tenantId: { contains: project.slug } },
+                    { tenantId: { contains: project.id } },
+                  ],
+                },
+                orderBy: { createdAt: 'desc' },
+              });
+            }).catch(() => null)
+          : null;
       } else {
         return NextResponse.json(
           { ok: false, error: 'RUNTIME_ERROR', message: 'Failed to fetch tenant status from restaurant runtime.' },

@@ -1,8 +1,29 @@
 import 'server-only';
 import crypto from 'node:crypto';
+import { AsyncLocalStorage } from 'node:async_hooks';
 import { prisma } from '@/server/db/prisma';
 import { platformRepository } from '@/server/db/platform-repository';
 import { PlatformOperationRecord, OperationStep } from '@/server/provisioning/types';
+
+const operationTenantAls = new AsyncLocalStorage<string>();
+
+export function runWithOperationTenant<T>(tenantId: string, fn: () => Promise<T>): Promise<T> {
+  return operationTenantAls.run(tenantId, fn);
+}
+
+async function withOperationRlsTx<T>(
+  explicitTenantId: string | null | undefined,
+  fn: (db: any) => Promise<T>,
+): Promise<T> {
+  const scope = (explicitTenantId || operationTenantAls.getStore() || '').trim();
+  if (/^org\/[^/]+\/project\/[^/]+\/environment\/[^/]+$/.test(scope)) {
+    return (prisma as any).$transaction(async (tx: any) => {
+      await tx.$executeRaw`SELECT set_config('app.current_tenant_id', ${scope}, true)`;
+      return fn(tx);
+    });
+  }
+  return fn(prisma as any);
+}
 
 // In-memory fallback for JSON / mock test adapter modes
 const memoryOperations = new Map<string, PlatformOperationRecord>();
@@ -133,27 +154,29 @@ export class OperationStore {
     }
 
     try {
-      const row = await (prisma as any).platformOperation.create({
-        data: {
-          id: sanitizedOp.id,
-          type: sanitizedOp.type || 'TENANT_PROVISION',
-          tenantId: sanitizedOp.tenantId,
-          organizationId: sanitizedOp.organizationId,
-          idempotencyKey: sanitizedOp.idempotencyKey,
-          status: sanitizedOp.status,
-          leaseOwner: sanitizedOp.leaseOwner || null,
-          leaseExpiresAt: sanitizedOp.leaseExpiresAt ? new Date(sanitizedOp.leaseExpiresAt) : null,
-          steps: sanitizedOp.steps as any,
-          request: sanitizedOp.request as any,
-          result: sanitizedOp.result as any,
-          error: sanitizedOp.error,
-          operatorId: sanitizedOp.operatorId,
-          requestId: sanitizedOp.requestId,
-          createdAt: new Date(sanitizedOp.createdAt),
-          updatedAt: new Date(sanitizedOp.updatedAt),
-          completedAt: sanitizedOp.completedAt ? new Date(sanitizedOp.completedAt) : null,
-        },
-      });
+      const row = await withOperationRlsTx(sanitizedOp.tenantId, (db) =>
+        db.platformOperation.create({
+          data: {
+            id: sanitizedOp.id,
+            type: sanitizedOp.type || 'TENANT_PROVISION',
+            tenantId: sanitizedOp.tenantId,
+            organizationId: sanitizedOp.organizationId,
+            idempotencyKey: sanitizedOp.idempotencyKey,
+            status: sanitizedOp.status,
+            leaseOwner: sanitizedOp.leaseOwner || null,
+            leaseExpiresAt: sanitizedOp.leaseExpiresAt ? new Date(sanitizedOp.leaseExpiresAt) : null,
+            steps: sanitizedOp.steps as any,
+            request: sanitizedOp.request as any,
+            result: sanitizedOp.result as any,
+            error: sanitizedOp.error,
+            operatorId: sanitizedOp.operatorId,
+            requestId: sanitizedOp.requestId,
+            createdAt: new Date(sanitizedOp.createdAt),
+            updatedAt: new Date(sanitizedOp.updatedAt),
+            completedAt: sanitizedOp.completedAt ? new Date(sanitizedOp.completedAt) : null,
+          },
+        }),
+      );
       return rowToRecord(row);
     } catch (err: any) {
       console.error('[OperationStore] createOperation DB write failed (fail-closed):', err?.message || err);
@@ -168,9 +191,11 @@ export class OperationStore {
     }
 
     try {
-      const row = await (prisma as any).platformOperation.findUnique({
-        where: { id },
-      });
+      const row = await withOperationRlsTx(undefined, (db) =>
+        db.platformOperation.findUnique({
+          where: { id },
+        }),
+      );
       return row ? rowToRecord(row) : null;
     } catch (err: any) {
       console.error('[OperationStore] getOperation DB query failed (fail-closed):', err?.message || err);
@@ -307,20 +332,27 @@ export class OperationStore {
         whereClause.leaseExpiresAt = { gte: new Date() };
       }
 
-      const updateResult = await (prisma as any).platformOperation.updateMany({
-        where: whereClause,
-        data: {
-          ...(updates.status ? { status: updates.status } : {}),
-          ...(updates.steps ? { steps: updates.steps as any } : {}),
-          ...(updates.result !== undefined ? { result: sanitizedResult as any } : {}),
-          ...(updates.error !== undefined ? { error: updates.error } : {}),
-          ...(updates.leaseOwner !== undefined ? { leaseOwner: updates.leaseOwner } : {}),
-          ...(updates.leaseExpiresAt !== undefined
-            ? { leaseExpiresAt: updates.leaseExpiresAt ? new Date(updates.leaseExpiresAt) : null }
-            : {}),
-          updatedAt: new Date(nowIso),
-          ...(completedAtIso ? { completedAt: new Date(completedAtIso) } : {}),
-        },
+      const { updateResult, row } = await withOperationRlsTx(undefined, async (db) => {
+        const res = await db.platformOperation.updateMany({
+          where: whereClause,
+          data: {
+            ...(updates.status ? { status: updates.status } : {}),
+            ...(updates.steps ? { steps: updates.steps as any } : {}),
+            ...(updates.result !== undefined ? { result: sanitizedResult as any } : {}),
+            ...(updates.error !== undefined ? { error: updates.error } : {}),
+            ...(updates.leaseOwner !== undefined ? { leaseOwner: updates.leaseOwner } : {}),
+            ...(updates.leaseExpiresAt !== undefined
+              ? { leaseExpiresAt: updates.leaseExpiresAt ? new Date(updates.leaseExpiresAt) : null }
+              : {}),
+            updatedAt: new Date(nowIso),
+            ...(completedAtIso ? { completedAt: new Date(completedAtIso) } : {}),
+          },
+        });
+        if (res.count === 0) {
+          return { updateResult: res, row: null };
+        }
+        const updatedRow = await db.platformOperation.findUnique({ where: { id } });
+        return { updateResult: res, row: updatedRow };
       });
 
       if (updateResult.count === 0) {
@@ -338,7 +370,6 @@ export class OperationStore {
         }
       }
 
-      const row = await (prisma as any).platformOperation.findUnique({ where: { id } });
       return row ? rowToRecord(row) : null;
     } catch (err: any) {
       if (
@@ -373,7 +404,7 @@ export class OperationStore {
     }
 
     try {
-      const rows = await (prisma as any).$queryRaw<Array<{ id: string }>>`
+      const rows = await withOperationRlsTx(undefined, (db) => db.$queryRaw<Array<{ id: string }>>`
         UPDATE "PlatformOperation"
         SET "status" = 'CANCELLING',
             "leaseOwner" = NULL,
@@ -383,7 +414,7 @@ export class OperationStore {
         WHERE "id" = ${id}
           AND "status" NOT IN ('ACTIVE', 'CANCELLED', 'FAILED')
         RETURNING "id"
-      `;
+      `);
       return Array.isArray(rows) && rows.length > 0;
     } catch (err: any) {
       console.error('[OperationStore] transitionToCancelling failed (fail-closed):', err?.message || err);
@@ -497,6 +528,7 @@ export class OperationStore {
       let outboxMessageId = '';
 
       await (prisma as any).$transaction(async (tx: any) => {
+        await (tx as any).$queryRaw`SELECT set_config('app.current_tenant_id', ${input.tenantId}, true)`;
         const op = await tx.platformOperation.findUnique({
           where: { id: input.operationId },
         });
@@ -651,6 +683,10 @@ export class OperationStore {
 
     try {
       const claimed = await (prisma as any).$transaction(async (tx: any) => {
+        const scope = operationTenantAls.getStore()?.trim();
+        if (scope && /^org\/[^/]+\/project\/[^/]+\/environment\/[^/]+$/.test(scope)) {
+          await tx.$executeRaw`SELECT set_config('app.current_tenant_id', ${scope}, true)`;
+        }
         const rows = allowCancelled
           ? await tx.$queryRaw<Array<{ id: string }>>`
               UPDATE "PlatformOperation"
@@ -747,7 +783,7 @@ export class OperationStore {
     }
 
     try {
-      const rows = await (prisma as any).$queryRaw<Array<{ id: string }>>`
+      const rows = await withOperationRlsTx(undefined, (db) => db.$queryRaw<Array<{ id: string }>>`
         UPDATE "PlatformOperation"
         SET "leaseExpiresAt" = NOW() + (${effectiveTtl} * INTERVAL '1 second'),
             "updatedAt" = NOW()
@@ -756,7 +792,7 @@ export class OperationStore {
           AND "leaseExpiresAt" >= NOW()
           AND "status" NOT IN ('CANCELLED', 'CANCELLING', 'COMPLETED')
         RETURNING id
-      `;
+      `);
       return Array.isArray(rows) && rows.length > 0;
     } catch (err: any) {
       console.error('[OperationStore] renewOperationLease DB update failed (fail-closed):', err?.message || err);
@@ -786,28 +822,30 @@ export class OperationStore {
     }
 
     try {
-      if (leaseOwner === '*') {
-        await (prisma as any).$executeRaw`
-          UPDATE "PlatformOperationAttempt"
-          SET "status" = ${status},
-              "errorCode" = ${errorInfo?.code ?? null},
-              "errorMessage" = ${errorInfo?.message ? errorInfo.message.slice(0, 1000) : null},
-              "completedAt" = NOW()
-          WHERE "operationId" = ${operationId}
-            AND "status" = 'STARTED'
-        `;
-      } else {
-        await (prisma as any).$executeRaw`
-          UPDATE "PlatformOperationAttempt"
-          SET "status" = ${status},
-              "errorCode" = ${errorInfo?.code ?? null},
-              "errorMessage" = ${errorInfo?.message ? errorInfo.message.slice(0, 1000) : null},
-              "completedAt" = NOW()
-          WHERE "operationId" = ${operationId}
-            AND "leaseOwner" = ${leaseOwner}
-            AND "status" = 'STARTED'
-        `;
-      }
+      await withOperationRlsTx(undefined, async (db) => {
+        if (leaseOwner === '*') {
+          await db.$executeRaw`
+            UPDATE "PlatformOperationAttempt"
+            SET "status" = ${status},
+                "errorCode" = ${errorInfo?.code ?? null},
+                "errorMessage" = ${errorInfo?.message ? errorInfo.message.slice(0, 1000) : null},
+                "completedAt" = NOW()
+            WHERE "operationId" = ${operationId}
+              AND "status" = 'STARTED'
+          `;
+        } else {
+          await db.$executeRaw`
+            UPDATE "PlatformOperationAttempt"
+            SET "status" = ${status},
+                "errorCode" = ${errorInfo?.code ?? null},
+                "errorMessage" = ${errorInfo?.message ? errorInfo.message.slice(0, 1000) : null},
+                "completedAt" = NOW()
+            WHERE "operationId" = ${operationId}
+              AND "leaseOwner" = ${leaseOwner}
+              AND "status" = 'STARTED'
+          `;
+        }
+      });
     } catch (err: any) {
       console.error('[OperationStore] finalizeOperationAttempt failed:', err?.message || err);
     }
@@ -830,14 +868,14 @@ export class OperationStore {
     }
 
     try {
-      await (prisma as any).$executeRaw`
+      await withOperationRlsTx(undefined, (db) => db.$executeRaw`
         UPDATE "PlatformOperation"
         SET "leaseOwner" = NULL,
             "leaseExpiresAt" = NULL,
             "updatedAt" = NOW()
         WHERE "id" = ${id}
           AND "leaseOwner" = ${leaseOwner}
-      `;
+      `);
     } catch (err: any) {
       console.error('[OperationStore] releaseOperationLease DB update failed (fail-closed):', err?.message || err);
       throw new DatabasePersistenceError('releaseOperationLease', err);

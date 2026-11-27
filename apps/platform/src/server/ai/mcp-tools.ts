@@ -155,13 +155,16 @@ async function resolveHmsTenant(
   const hasHmsService = (project.enabledServices || []).some((s: string) =>
     s.toLowerCase().includes('hms'),
   );
-  const hmsInstall = await prisma.pluginInstallation
-    .findFirst({
-      where: {
-        tenantId: { in: [canonicalTenantId, project.id, project.slug] },
-        pluginId: { contains: 'hms' },
-        status: { in: ['ACTIVE', 'READ_ONLY'] },
-      },
+  const hmsInstall = await prisma
+    .$transaction(async (tx) => {
+      await tx.$executeRaw`SELECT set_config('app.current_tenant_id', ${canonicalTenantId}, true)`;
+      return tx.pluginInstallation.findFirst({
+        where: {
+          tenantId: { in: [canonicalTenantId, project.id, project.slug] },
+          pluginId: { contains: 'hms' },
+          status: { in: ['ACTIVE', 'READ_ONLY'] },
+        },
+      });
     })
     .catch(() => null);
 
