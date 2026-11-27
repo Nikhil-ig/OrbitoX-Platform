@@ -67,6 +67,9 @@ export const CUSTOMER_WEBHOOK_EVENT_TYPES = [
 export const MCP_AUDIT_OUTBOX_EVENT_TYPES = [
   'mcp.audit.approval_proposed',
   'mcp.audit.execution_intent',
+  'mcp.audit.execution_succeeded',
+  'mcp.audit.execution_failed',
+  'mcp.audit.execution_recovery',
 ] as const;
 
 export function isCustomerWebhookEventType(eventType: string): boolean {
@@ -713,6 +716,7 @@ export async function processMcpAuditOutboxBatch(
     baseDelayMs?: number;
     jitterMs?: number;
     recordAudit?: (input: any) => Promise<string>;
+    prismaClient?: PrismaClient;
   } = {}
 ): Promise<{ claimed: number; dispatched: number; retried: number; failed: number }> {
   const workerId = options.workerId || `mcp_audit_worker_${crypto.randomUUID().slice(0, 8)}`;
@@ -764,7 +768,7 @@ export async function processMcpAuditOutboxBatch(
     return result;
   }
 
-  const client = getOutboxDbClient();
+  const client = options.prismaClient ?? getOutboxDbClient();
   const claimedRows = await client.$queryRaw<Array<{
     id: string;
     tenantId: string;
@@ -837,12 +841,30 @@ export async function processMcpAuditOutboxBatch(
   return result;
 }
 
+function resolveMcpOutboxEventMeta(eventType: string): {
+  stage: 'proposed' | 'intent' | 'final' | 'recovery';
+  action: string;
+} {
+  switch (eventType) {
+    case 'mcp.audit.approval_proposed':
+      return { stage: 'proposed', action: 'MCP_APPROVAL_PROPOSED' };
+    case 'mcp.audit.execution_succeeded':
+      return { stage: 'final', action: 'MCP_APPROVAL_EXECUTION_SUCCEEDED' };
+    case 'mcp.audit.execution_failed':
+      return { stage: 'final', action: 'MCP_APPROVAL_EXECUTION_FAILED' };
+    case 'mcp.audit.execution_recovery':
+      return { stage: 'recovery', action: 'MCP_APPROVAL_RECOVERY_COMPLETED' };
+    default:
+      return { stage: 'intent', action: 'MCP_APPROVAL_EXECUTION_INTENT' };
+  }
+}
+
 async function persistInternalMcpAuditMessage(
   msg: { id: string; tenantId: string; eventType: string; aggregateType: string; aggregateId: string; payload: Record<string, any> },
   recordAudit: (input: any) => Promise<string>,
 ): Promise<void> {
   const payload = msg.payload || {};
-  const stage = msg.eventType === 'mcp.audit.approval_proposed' ? 'proposed' : 'intent';
+  const { stage, action } = resolveMcpOutboxEventMeta(msg.eventType);
   const deterministicId =
     typeof payload.deterministicAuditId === 'string' && payload.deterministicAuditId
       ? payload.deterministicAuditId
@@ -851,7 +873,7 @@ async function persistInternalMcpAuditMessage(
 
   await recordAudit({
     deterministicId,
-    action: msg.eventType === 'mcp.audit.approval_proposed' ? 'MCP_APPROVAL_PROPOSED' : 'MCP_APPROVAL_EXECUTION_INTENT',
+    action,
     entityType: msg.aggregateType || 'MCP_GOVERNANCE',
     entityId: msg.aggregateId,
     actorId: payload.approvedById || payload.requestedById || 'system:mcp-outbox',

@@ -69,6 +69,7 @@ async function enableRoles(migratorUrl) {
       'orbitox_maintenance',
       'orbitox_outbox_relay',
       'orbitox_platform_admin_audit',
+      'orbitox_audit_reader',
       'hms_audit_reader'
     ];
 
@@ -77,6 +78,7 @@ async function enableRoles(migratorUrl) {
       orbitox_maintenance: getPasswordFromUrl(process.env.MAINTENANCE_DATABASE_URL),
       orbitox_outbox_relay: getPasswordFromUrl(process.env.OUTBOX_RELAY_DATABASE_URL),
       orbitox_platform_admin_audit: getPasswordFromUrl(process.env.PLATFORM_ADMIN_AUDIT_DATABASE_URL || process.env.PLATFORM_AUDIT_DATABASE_URL),
+      orbitox_audit_reader: getPasswordFromUrl(process.env.AUDIT_READER_DATABASE_URL),
       hms_audit_reader: getPasswordFromUrl(process.env.HMS_AUDIT_DATABASE_URL),
     };
 

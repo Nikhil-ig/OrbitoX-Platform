@@ -63,6 +63,7 @@ locals {
     "MAINTENANCE_DATABASE_URL",
     "OUTBOX_RELAY_DATABASE_URL",
     "PLATFORM_ADMIN_AUDIT_DATABASE_URL",
+    "AUDIT_READER_DATABASE_URL",
     "HMS_AUDIT_DATABASE_URL",
     "RESTAURANT_OS_DATABASE_URL",
     "SESSION_SECRET",
@@ -100,6 +101,7 @@ locals {
     "db/orbitox_maintenance",
     "db/orbitox_outbox_relay",
     "db/orbitox_platform_admin_audit",
+    "db/orbitox_audit_reader",
     "db/hms_audit_reader",
     "db/restaurantos_app"
   ]

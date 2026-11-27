@@ -131,7 +131,7 @@ export function verifyAdminTokenForRequestSync(
  * Generates an internal cryptographic token proving the request was verified by middleware
  */
 export async function createInternalAuthToken(
-  principal: 'admin' | 'runtime',
+  principal: 'admin' | 'runtime' | 'customer-org-admin',
   actorId?: string,
 ): Promise<{ signature: string; timestamp: string }> {
   const ts = Date.now().toString();

@@ -39,6 +39,7 @@ type GuestRouteHandler = (request: NextRequest, routeContext: RouteContext, gues
 interface LegacyGuardOptions {
   serviceId: string;
   adminOnly?: boolean;
+  allowOrgAdminCustomerSession?: boolean;
   sensitive?: boolean;
   feature?: string;
 }
@@ -388,16 +389,19 @@ function withLegacyGuard(options: LegacyGuardOptions, handler: GuardedRouteHandl
             );
           }
           if (options.adminOnly) {
+            return NextResponse.json(
+              { success: false, error: { code: 'FORBIDDEN', message: 'Operator privileges required for this administrative endpoint.' } },
+              { status: 403 },
+            );
+          }
+
+          if (options.allowOrgAdminCustomerSession) {
             const isOrgAdmin = customerSession.memberships.some((m) =>
               ['OWNER', 'ADMIN'].includes(m.role),
             );
-            const pathname = request.nextUrl?.pathname || new URL(request.url).pathname;
-            const isStaffAuthEndpoint =
-              pathname === '/api/hospital/security/login' ||
-              pathname === '/api/hospital/security/session';
-            if (!isOrgAdmin || !isStaffAuthEndpoint) {
+            if (!isOrgAdmin) {
               return NextResponse.json(
-                { success: false, error: { code: 'FORBIDDEN', message: 'Operator privileges required for this administrative endpoint.' } },
+                { success: false, error: { code: 'FORBIDDEN', message: 'Organization administrator privileges required for this endpoint.' } },
                 { status: 403 },
               );
             }
@@ -422,9 +426,10 @@ function withLegacyGuard(options: LegacyGuardOptions, handler: GuardedRouteHandl
             );
           }
 
-          const { signature, timestamp } = await createInternalAuthToken('admin', customerSession.userId);
+          const internalPrincipal = options.allowOrgAdminCustomerSession ? 'customer-org-admin' : 'runtime';
+          const { signature, timestamp } = await createInternalAuthToken(internalPrincipal, customerSession.userId);
           const forwardedHeaders = new Headers(request.headers);
-          forwardedHeaders.set('x-orbitox-principal', 'admin');
+          forwardedHeaders.set('x-orbitox-principal', internalPrincipal);
           forwardedHeaders.set('x-orbitox-internal-sig', signature);
           forwardedHeaders.set('x-orbitox-internal-ts', timestamp);
           forwardedHeaders.set('x-orbitox-operator-id', customerSession.userId);

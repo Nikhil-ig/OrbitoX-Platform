@@ -1420,6 +1420,25 @@ model PlatformAuditEvent {
   @@index([status, occurredAt])
 }
 
+model PlatformAuditChainHead {
+  scope        String   @id
+  lastSequence BigInt   @default(0)
+  lastRowHash  String   @default("GENESIS")
+  updatedAt    DateTime @default(now()) @updatedAt @db.Timestamptz
+}
+
+model PlatformAuditDeterministicKey {
+  id         String   @id
+  scope      String
+  action     String
+  entityType String
+  entityId   String?
+  requestId  String?
+  createdAt  DateTime @default(now()) @db.Timestamptz
+
+  @@index([scope, createdAt])
+}
+
 model PlatformRateLimitBucket {
   scopeType    String
   scopeId      String
@@ -1906,5 +1925,59 @@ model McpToolInvocation {
   @@index([status, createdAt])
   @@index([actorId, createdAt])
   @@index([approvalId])
+  @@index([executionId])
   @@index([tenantScope, createdAt])
+}
+
+model PlatformOperationAttempt {
+  id             String    @id @default(cuid())
+  operationId    String
+  attemptNumber  Int
+  mcpExecutionId String?
+  leaseOwner     String?
+  triggeredBy    String?
+  status         String    @default("STARTED")
+  errorCode      String?
+  errorMessage   String?
+  startedAt      DateTime  @default(now()) @db.Timestamptz
+  completedAt    DateTime? @db.Timestamptz
+
+  @@unique([operationId, attemptNumber])
+  @@index([operationId, startedAt])
+  @@index([mcpExecutionId])
+}
+
+model BillingReminderBatchItem {
+  id             String   @id @default(cuid())
+  executionId    String
+  approvalId     String?
+  subscriptionId String
+  organizationId String
+  idempotencyKey String   @unique
+  emailOutboxId  String?
+  status         String   @default("QUEUED")
+  errorMessage   String?
+  createdAt      DateTime @default(now()) @db.Timestamptz
+  updatedAt      DateTime @default(now()) @updatedAt @db.Timestamptz
+
+  @@unique([executionId, subscriptionId])
+  @@index([executionId, status])
+  @@index([subscriptionId, createdAt])
+}
+
+model TenantSuspensionSync {
+  id                   String   @id @default(cuid())
+  projectId            String
+  pluginId             String
+  targetTenantId       String
+  targetRevision       Int
+  acknowledgedRevision Int?
+  status               String   @default("PENDING")
+  lastError            String?
+  idempotencyKey       String
+  createdAt            DateTime @default(now()) @db.Timestamptz
+  updatedAt            DateTime @default(now()) @updatedAt @db.Timestamptz
+
+  @@unique([projectId, pluginId])
+  @@index([status, updatedAt])
 }

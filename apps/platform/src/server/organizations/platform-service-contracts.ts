@@ -40,6 +40,7 @@ export const PLATFORM_SERVICE_CONTRACTS = {
     secrets: [
       'APP_DATABASE_URL',
       'PLATFORM_ADMIN_AUDIT_DATABASE_URL',
+      'AUDIT_READER_DATABASE_URL',
       'HMS_AUDIT_DATABASE_URL',
       'SESSION_SECRET',
       'ORBITOX_ADMIN_TOKEN',
@@ -121,6 +122,18 @@ export const PLATFORM_SERVICE_CONTRACTS = {
       'ORBITOX_BRIDGE_ACTIVE_KID',
     ],
   },
+  worker_mcp_governance: {
+    environment: [
+      'NODE_ENV',
+      'ORBITOX_PLATFORM_REPOSITORY',
+    ],
+    secrets: [
+      'OUTBOX_RELAY_DATABASE_URL',
+      'PLATFORM_ADMIN_AUDIT_DATABASE_URL',
+      'MAINTENANCE_DATABASE_URL',
+      'APP_DATABASE_URL',
+    ],
+  },
   restaurant_os: {
     environment: [
       'NODE_ENV',
@@ -158,6 +171,7 @@ export const EXTERNAL_PROVIDER_SECRETS = [
 export const DATABASE_URL_SECRETS = [
   'APP_DATABASE_URL',
   'PLATFORM_ADMIN_AUDIT_DATABASE_URL',
+  'AUDIT_READER_DATABASE_URL',
   'HMS_AUDIT_DATABASE_URL',
   'OUTBOX_RELAY_DATABASE_URL',
   'MAINTENANCE_DATABASE_URL',

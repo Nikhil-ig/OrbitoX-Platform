@@ -614,7 +614,7 @@ export default function ConsoleAskOrbitoXPage() {
                   <div className="min-w-0">
                     <div className="font-semibold text-[var(--color-text)]">{ap.previewSummary}</div>
                     <div className="text-[11px] font-mono text-[var(--color-text-muted)]">
-                      {ap.toolName} · {ap.approvalPolicy} · expires {new Date(ap.expiresAt).toLocaleTimeString()}
+                      {ap.toolName} · {ap.approvalPolicy} · requested by {ap.requestedByEmail || ap.requestedById} · expires {new Date(ap.expiresAt).toLocaleTimeString()}
                     </div>
                   </div>
                   <div className="flex items-center gap-2 shrink-0">

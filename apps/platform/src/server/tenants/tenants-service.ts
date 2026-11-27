@@ -591,67 +591,132 @@ export async function suspendTenant(
     }
 
     const previousStatus = project.status;
-    const installations = await repo.listPluginInstallations(project.id);
     const updatedPlugins: Array<{ targetTenantId: string; pluginId: string; previousStatus: string }> = [];
+    const usesAtomicControlPlaneTx = typeof repo.suspendProjectControlPlaneTx === 'function';
 
     try {
-      // 1. Synchronous platform cutoff: project + installations + platform sessions
-      await repo.updateProject(project.id, { status: 'SUSPENDED' });
-
       const pluginResults: Record<string, any> = {};
       const runtimeSync: Record<
         string,
         { target: string; acked: boolean; status: string; revision?: number; error?: string }
       > = {};
 
-      for (const inst of installations) {
-        const targetTenantId = inst.tenantId || project.id;
-        const updatedInst = await repo.updatePluginInstallationStatus(targetTenantId, inst.pluginId, 'SUSPENDED');
-        updatedPlugins.push({ targetTenantId, pluginId: inst.pluginId, previousStatus: inst.status || 'ACTIVE' });
+      if (usesAtomicControlPlaneTx) {
+        const cutoff = await repo.suspendProjectControlPlaneTx({
+          projectId: project.id,
+          reason,
+          idempotencyKey: effectiveIdempotencyKey,
+        });
 
-        try {
-          const res = await lifecycle.invokeLifecycle(
-            inst.pluginId,
-            'suspend',
-            targetTenantId,
-            {
-              reason,
-              revision: updatedInst?.entitlementRevision,
-              entitlementRevision: updatedInst?.entitlementRevision,
-            },
-            { idempotencyKey: `${effectiveIdempotencyKey}:${inst.pluginId}` },
-          );
-          const acked = Boolean(res && res.ok !== false && !res.error && res.status !== 'HOOK_FAILED');
-          pluginResults[inst.pluginId] = res;
-          runtimeSync[inst.pluginId] = {
-            target: targetTenantId,
-            acked,
-            status: acked ? 'EXTERNAL_SUSPENSION_ACKNOWLEDGED' : 'PARTIALLY_DEGRADED',
-            revision: typeof res?.revision === 'number' ? res.revision : updatedInst?.entitlementRevision,
-            ...(acked ? {} : { error: res?.error || 'Runtime did not confirm suspension' }),
-          };
-        } catch (hookErr: any) {
-          pluginResults[inst.pluginId] = {
-            status: 'HOOK_FAILED',
-            invoked: false,
-            error: hookErr?.message || 'Lifecycle hook execution failed',
-          };
-          runtimeSync[inst.pluginId] = {
-            target: targetTenantId,
-            acked: false,
-            status: 'PARTIALLY_DEGRADED',
-            revision: updatedInst?.entitlementRevision,
-            error: hookErr?.message || 'Lifecycle hook execution failed',
-          };
+        for (const inst of cutoff.installations) {
+          const targetTenantId = inst.tenantId || project.id;
+          try {
+            const res = await lifecycle.invokeLifecycle(
+              inst.pluginId,
+              'suspend',
+              targetTenantId,
+              {
+                reason,
+                revision: inst.entitlementRevision,
+                entitlementRevision: inst.entitlementRevision,
+              },
+              { idempotencyKey: `${effectiveIdempotencyKey}:${inst.pluginId}` },
+            );
+            const acked = Boolean(res && res.ok !== false && !res.error && res.status !== 'HOOK_FAILED');
+            const ackRevision = typeof res?.revision === 'number' ? res.revision : inst.entitlementRevision;
+            pluginResults[inst.pluginId] = res;
+            runtimeSync[inst.pluginId] = {
+              target: targetTenantId,
+              acked,
+              status: acked ? 'EXTERNAL_SUSPENSION_ACKNOWLEDGED' : 'PARTIALLY_DEGRADED',
+              revision: ackRevision,
+              ...(acked ? {} : { error: res?.error || 'Runtime did not confirm suspension' }),
+            };
+            if (typeof repo.updateTenantSuspensionSync === 'function') {
+              await repo.updateTenantSuspensionSync({
+                projectId: project.id,
+                pluginId: inst.pluginId,
+                status: acked ? 'ACKNOWLEDGED' : 'DEGRADED',
+                ...(acked ? { acknowledgedRevision: ackRevision } : {}),
+                lastError: acked ? null : (res?.error || 'Runtime did not confirm suspension'),
+              }).catch(() => { });
+            }
+          } catch (hookErr: any) {
+            const hookMsg = hookErr?.message || 'Lifecycle hook execution failed';
+            pluginResults[inst.pluginId] = {
+              status: 'HOOK_FAILED',
+              invoked: false,
+              error: hookMsg,
+            };
+            runtimeSync[inst.pluginId] = {
+              target: targetTenantId,
+              acked: false,
+              status: 'PARTIALLY_DEGRADED',
+              revision: inst.entitlementRevision,
+              error: hookMsg,
+            };
+            if (typeof repo.updateTenantSuspensionSync === 'function') {
+              await repo.updateTenantSuspensionSync({
+                projectId: project.id,
+                pluginId: inst.pluginId,
+                status: 'DEGRADED',
+                lastError: hookMsg,
+              }).catch(() => { });
+            }
+          }
         }
-      }
+      } else {
+        const installations = await repo.listPluginInstallations(project.id);
+        await repo.updateProject(project.id, { status: 'SUSPENDED' });
 
-      // Revoke active platform-held HMS staff sessions scoped to this tenant
-      if (process.env.ORBITOX_PLATFORM_REPOSITORY !== 'json') {
-        const { prisma } = await import('@/server/db/prisma');
-        await prisma.hmsStaffSession
-          .deleteMany({ where: { tenantId: project.id } })
-          .catch(() => { });
+        for (const inst of installations) {
+          const targetTenantId = inst.tenantId || project.id;
+          const updatedInst = await repo.updatePluginInstallationStatus(targetTenantId, inst.pluginId, 'SUSPENDED');
+          updatedPlugins.push({ targetTenantId, pluginId: inst.pluginId, previousStatus: inst.status || 'ACTIVE' });
+
+          try {
+            const res = await lifecycle.invokeLifecycle(
+              inst.pluginId,
+              'suspend',
+              targetTenantId,
+              {
+                reason,
+                revision: updatedInst?.entitlementRevision,
+                entitlementRevision: updatedInst?.entitlementRevision,
+              },
+              { idempotencyKey: `${effectiveIdempotencyKey}:${inst.pluginId}` },
+            );
+            const acked = Boolean(res && res.ok !== false && !res.error && res.status !== 'HOOK_FAILED');
+            pluginResults[inst.pluginId] = res;
+            runtimeSync[inst.pluginId] = {
+              target: targetTenantId,
+              acked,
+              status: acked ? 'EXTERNAL_SUSPENSION_ACKNOWLEDGED' : 'PARTIALLY_DEGRADED',
+              revision: typeof res?.revision === 'number' ? res.revision : updatedInst?.entitlementRevision,
+              ...(acked ? {} : { error: res?.error || 'Runtime did not confirm suspension' }),
+            };
+          } catch (hookErr: any) {
+            pluginResults[inst.pluginId] = {
+              status: 'HOOK_FAILED',
+              invoked: false,
+              error: hookErr?.message || 'Lifecycle hook execution failed',
+            };
+            runtimeSync[inst.pluginId] = {
+              target: targetTenantId,
+              acked: false,
+              status: 'PARTIALLY_DEGRADED',
+              revision: updatedInst?.entitlementRevision,
+              error: hookErr?.message || 'Lifecycle hook execution failed',
+            };
+          }
+        }
+
+        if (process.env.ORBITOX_PLATFORM_REPOSITORY !== 'json') {
+          const { prisma } = await import('@/server/db/prisma');
+          await prisma.hmsStaffSession
+            .deleteMany({ where: { tenantId: project.id } })
+            .catch(() => { });
+        }
       }
 
       const syncEntries = Object.values(runtimeSync);
@@ -778,28 +843,62 @@ export async function resumeTenant(
     }
 
     const previousStatus = project.status;
-    const installations = await repo.listPluginInstallations(project.id);
     const updatedPlugins: Array<{ targetTenantId: string; pluginId: string; previousStatus: string }> = [];
+    const usesAtomicControlPlaneTx = typeof repo.resumeProjectControlPlaneTx === 'function';
 
     try {
-      await repo.updateProject(project.id, { status: 'ACTIVE' });
-
       const pluginResults: Record<string, any> = {};
-      for (const inst of installations) {
-        const targetTenantId = inst.tenantId || project.id;
-        await repo.updatePluginInstallationStatus(targetTenantId, inst.pluginId, 'ACTIVE');
-        updatedPlugins.push({ targetTenantId, pluginId: inst.pluginId, previousStatus: inst.status || 'SUSPENDED' });
 
-        try {
-          const res = await lifecycle.invokeLifecycle(
-            inst.pluginId,
-            'resume',
-            targetTenantId,
-            { reason }
-          );
-          pluginResults[inst.pluginId] = res;
-        } catch {
-          pluginResults[inst.pluginId] = { status: 'HOOK_FAILED', invoked: false, error: 'Lifecycle hook execution failed' };
+      if (usesAtomicControlPlaneTx) {
+        const restored = await repo.resumeProjectControlPlaneTx({
+          projectId: project.id,
+          reason,
+          idempotencyKey: requestId,
+        });
+        for (const inst of restored.installations) {
+          const targetTenantId = inst.tenantId || project.id;
+          try {
+            const res = await lifecycle.invokeLifecycle(
+              inst.pluginId,
+              'resume',
+              targetTenantId,
+              { reason, revision: inst.entitlementRevision },
+            );
+            const acked = Boolean(res && res.ok !== false && !res.error && res.status !== 'HOOK_FAILED');
+            pluginResults[inst.pluginId] = res;
+            if (typeof repo.updateTenantSuspensionSync === 'function') {
+              await repo.updateTenantSuspensionSync({
+                projectId: project.id,
+                pluginId: inst.pluginId,
+                status: acked ? 'ACKNOWLEDGED' : 'DEGRADED',
+                ...(acked ? { acknowledgedRevision: inst.entitlementRevision } : {}),
+                lastError: acked ? null : (res?.error || 'Runtime did not confirm resume'),
+              }).catch(() => { });
+            }
+          } catch (hookErr: any) {
+            pluginResults[inst.pluginId] = { status: 'HOOK_FAILED', invoked: false, error: hookErr?.message || 'Lifecycle hook execution failed' };
+          }
+        }
+      } else {
+        const installations = await repo.listPluginInstallations(project.id);
+        await repo.updateProject(project.id, { status: 'ACTIVE' });
+
+        for (const inst of installations) {
+          const targetTenantId = inst.tenantId || project.id;
+          await repo.updatePluginInstallationStatus(targetTenantId, inst.pluginId, 'ACTIVE');
+          updatedPlugins.push({ targetTenantId, pluginId: inst.pluginId, previousStatus: inst.status || 'SUSPENDED' });
+
+          try {
+            const res = await lifecycle.invokeLifecycle(
+              inst.pluginId,
+              'resume',
+              targetTenantId,
+              { reason }
+            );
+            pluginResults[inst.pluginId] = res;
+          } catch {
+            pluginResults[inst.pluginId] = { status: 'HOOK_FAILED', invoked: false, error: 'Lifecycle hook execution failed' };
+          }
         }
       }
 

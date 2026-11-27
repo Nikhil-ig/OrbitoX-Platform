@@ -863,6 +863,183 @@ export async function sendGraceReminder(
   };
 }
 
+export interface BillingReminderBatchResultItem {
+  subscriptionId: string;
+  organizationId: string;
+  status: 'QUEUED' | 'IDEMPOTENT_REPLAY' | 'FAILED';
+  emailOutboxId?: string | null;
+  message: string;
+}
+
+export async function sendGraceReminderBatch(
+  subscriptionIds: string[],
+  operator: OperatorSessionContext,
+  options: {
+    customMessage?: string;
+    source?: string;
+    executionId: string;
+    approvalId?: string;
+    idempotencyKey: string;
+  },
+): Promise<{
+  queuedCount: number;
+  replayedCount: number;
+  failedCount: number;
+  results: BillingReminderBatchResultItem[];
+}> {
+  requireOperatorAuthorization(operator);
+
+  const cleanIds = Array.from(new Set(subscriptionIds.map((id) => id.trim()).filter(Boolean)));
+  if (cleanIds.length === 0) {
+    throw new Error('INVALID_INPUT: At least one subscriptionId is required.');
+  }
+
+  const customMessage = options.customMessage?.trim()?.slice(0, 1000);
+  if (!hasDatabase()) {
+    const results: BillingReminderBatchResultItem[] = [];
+    for (const cleanId of cleanIds) {
+      const single = await sendGraceReminder(cleanId, operator, {
+        customMessage,
+        source: options.source,
+        idempotencyKey: `${options.idempotencyKey}:${cleanId}`,
+      });
+      results.push({
+        subscriptionId: single.subscriptionId,
+        organizationId: 'memory',
+        status: single.message.includes('idempotent') ? 'IDEMPOTENT_REPLAY' : 'QUEUED',
+        message: single.message,
+      });
+    }
+    return {
+      queuedCount: results.filter((r) => r.status === 'QUEUED').length,
+      replayedCount: results.filter((r) => r.status === 'IDEMPOTENT_REPLAY').length,
+      failedCount: 0,
+      results,
+    };
+  }
+
+  const subs = await prisma.billingSubscription.findMany({
+    where: { razorpaySubscriptionId: { in: cleanIds } },
+    select: { razorpaySubscriptionId: true, organizationId: true, tenantId: true },
+  });
+  const missingSubs = cleanIds.filter((id) => !subs.some((s) => s.razorpaySubscriptionId === id));
+  if (missingSubs.length > 0) {
+    throw new Error(`SUBSCRIPTION_NOT_FOUND: Unknown subscription ID(s): ${missingSubs.join(', ')}`);
+  }
+
+  const orgIds = Array.from(new Set(subs.map((s) => s.organizationId)));
+  const orgs = await prisma.platformOrganization.findMany({
+    where: { id: { in: orgIds } },
+    select: { id: true, billingEmail: true },
+  });
+  const orgEmailMap = new Map(orgs.map((o) => [o.id, o.billingEmail || '']));
+  const subMap = new Map(subs.map((s) => [s.razorpaySubscriptionId, s]));
+
+  // Preflight all recipients BEFORE persisting any outbox rows so batches fail cleanly without partial sends.
+  const prepared = cleanIds.map((subId) => {
+    const sub = subMap.get(subId)!;
+    const recipient = orgEmailMap.get(sub.organizationId) || '';
+    if (!recipient) {
+      throw new Error(
+        `BILLING_EMAIL_NOT_CONFIGURED: Organization for subscription ${subId} has no configured billing contact email.`,
+      );
+    }
+    const itemKey = `${options.idempotencyKey}:${subId}`;
+    const sealedPayload = encryptAccountEmailPayload({
+      subscriptionId: subId,
+      operatorEmail: operator.email,
+      ...(customMessage ? { customMessage } : {}),
+      ...(options.source ? { source: options.source } : {}),
+      idempotencyKey: itemKey,
+      executionId: options.executionId,
+      queuedAt: new Date().toISOString(),
+    });
+    return {
+      subId,
+      organizationId: sub.organizationId,
+      recipient,
+      itemKey,
+      sealedPayload,
+      outboxId: `mail_${crypto.randomUUID()}`,
+      batchItemId: `rem_${crypto.randomUUID()}`,
+    };
+  });
+
+  const batchResults = await prisma.$transaction(async (tx) => {
+    const out: BillingReminderBatchResultItem[] = [];
+    for (const item of prepared) {
+      // Raw INSERT without RETURNING preserves orbitox_runtime INSERT-only compatibility on AccountEmailOutbox.
+      const inserted = await tx.$executeRaw`
+        INSERT INTO public."AccountEmailOutbox" (
+          "id", "recipient", "template", "encryptedPayload", "idempotencyKey", "status"
+        ) VALUES (
+          ${item.outboxId},
+          ${item.recipient},
+          'BILLING_GRACE_REMINDER',
+          ${item.sealedPayload},
+          ${item.itemKey},
+          'PENDING'
+        )
+        ON CONFLICT ("idempotencyKey") WHERE "idempotencyKey" IS NOT NULL DO NOTHING
+      `;
+      const status: 'QUEUED' | 'IDEMPOTENT_REPLAY' = Number(inserted) > 0 ? 'QUEUED' : 'IDEMPOTENT_REPLAY';
+      await tx.$executeRaw`
+        INSERT INTO public."BillingReminderBatchItem" (
+          "id", "executionId", "approvalId", "subscriptionId", "organizationId",
+          "idempotencyKey", "emailOutboxId", "status"
+        ) VALUES (
+          ${item.batchItemId},
+          ${options.executionId},
+          ${options.approvalId || null},
+          ${item.subId},
+          ${item.organizationId},
+          ${item.itemKey},
+          ${status === 'QUEUED' ? item.outboxId : null},
+          ${status}
+        )
+        ON CONFLICT ("idempotencyKey") DO NOTHING
+      `;
+      out.push({
+        subscriptionId: item.subId,
+        organizationId: item.organizationId,
+        status,
+        emailOutboxId: status === 'QUEUED' ? item.outboxId : null,
+        message:
+          status === 'QUEUED'
+            ? `Payment reminder queued for delivery to ${item.recipient}.`
+            : `Payment reminder already queued for delivery to ${item.recipient} (idempotent).`,
+      });
+    }
+    return out;
+  });
+
+  await platformRepository.recordPlatformAdminAudit({
+    deterministicId: `audit_billing_batch_${options.executionId}`,
+    action: 'BILLING_GRACE_REMINDER_SENT',
+    entityType: 'BILLING_SUBSCRIPTION_BATCH',
+    entityId: options.executionId,
+    actorId: operator.email,
+    actorEmail: operator.email,
+    requestId: options.executionId,
+    reason: `Operator ${operator.email} queued batch grace reminders for ${cleanIds.length} subscription(s).`,
+    metadata: {
+      executionId: options.executionId,
+      subscriptionIds: cleanIds,
+      queuedCount: batchResults.filter((r) => r.status === 'QUEUED').length,
+      replayedCount: batchResults.filter((r) => r.status === 'IDEMPOTENT_REPLAY').length,
+      ...(options.source ? { source: options.source } : {}),
+      hasCustomMessage: Boolean(customMessage),
+    },
+  });
+
+  return {
+    queuedCount: batchResults.filter((r) => r.status === 'QUEUED').length,
+    replayedCount: batchResults.filter((r) => r.status === 'IDEMPOTENT_REPLAY').length,
+    failedCount: 0,
+    results: batchResults,
+  };
+}
+
 /**
  * Resolves an unknown billing webhook event with operator justification.
  */

@@ -58,8 +58,11 @@ function buildApiKeyActor(ctx: ApiRequestContext): McpActorContext {
   };
 }
 
-async function handleGetMcpInventory(requestId: string, operatorId?: string) {
-  const inventory = await getMcpGatewayInventory(operatorId);
+async function handleGetMcpInventory(
+  requestId: string,
+  operatorContext?: { operatorId?: string; operatorRole?: string },
+) {
+  const inventory = await getMcpGatewayInventory(operatorContext);
   return NextResponse.json<ApiResponse>(
     {
       success: true,
@@ -160,12 +163,16 @@ const getWithApiKey = withApiGuard(
     routeClass: 'platform-admin',
     allowPublic: false,
     requiredScopes: ['platform.ai', 'admin'],
+    scopeMode: 'any',
   },
   async (_req: NextRequest, ctx: ApiRequestContext) => handleGetMcpInventory(ctx.requestId),
 );
 
 const getWithOperator = withOperatorAuth(async (_req: NextRequest, session) => {
-  return handleGetMcpInventory(`op_${session.operatorId}`, session.operatorId);
+  return handleGetMcpInventory(`op_${session.operatorId}`, {
+    operatorId: session.operatorId,
+    operatorRole: session.role,
+  });
 });
 
 export async function GET(req: NextRequest): Promise<Response> {
@@ -184,6 +191,7 @@ const postWithApiKey = withApiGuard(
     serviceName: 'Platform AI & MCP Governance Gateway',
     routeClass: 'platform-admin',
     requiredScopes: ['platform.ai.execute', 'admin'],
+    scopeMode: 'any',
     allowPublic: false,
   },
   async (req: NextRequest, ctx: ApiRequestContext) =>

@@ -255,8 +255,79 @@ async function recordInvocationAndAudit(input: {
   return invocation;
 }
 
-export async function getMcpGatewayInventory(operatorId?: string) {
+export function isMcpExecutionEnabled(): boolean {
+  const raw = process.env.ORBITOX_MCP_EXECUTION_ENABLED?.trim().toLowerCase();
+  if (process.env.NODE_ENV === 'production' || !process.env.NODE_ENV) {
+    return raw === 'true';
+  }
+  if (raw === undefined || raw === '') {
+    return process.env.NODE_ENV === 'test' || process.env.NODE_ENV === 'development';
+  }
+  return raw === 'true';
+}
+
+function resolveMcpKeyRetentionDays(explicitDays?: number): number {
+  if (explicitDays !== undefined) {
+    if (!Number.isInteger(explicitDays) || explicitDays < 1) {
+      throw new McpToolError(
+        400,
+        'INVALID_RETENTION_POLICY',
+        'retentionDays must be a positive integer >= 1.',
+      );
+    }
+    return explicitDays;
+  }
+
+  const rawEnv = process.env.ORBITOX_MCP_KEY_RETENTION_DAYS;
+  if (rawEnv !== undefined) {
+    const trimmed = rawEnv.trim();
+    if (!/^[1-9]\d*$/.test(trimmed)) {
+      throw new McpToolError(
+        500,
+        'INVALID_RETENTION_POLICY',
+        `ORBITOX_MCP_KEY_RETENTION_DAYS must be a positive integer >= 1 (received "${rawEnv}").`,
+      );
+    }
+    return Number(trimmed);
+  }
+
+  return DEFAULT_KEY_RETENTION_DAYS;
+}
+
+export async function getMcpGatewayInventory(
+  operatorOrOptions?: string | { operatorId?: string; operatorRole?: string },
+) {
+  const opts =
+    typeof operatorOrOptions === 'string'
+      ? { operatorId: operatorOrOptions }
+      : (operatorOrOptions || {});
+  const operatorId = opts.operatorId;
+  let operatorRole = opts.operatorRole;
+  if (!operatorRole && operatorId) {
+    const opRecord = await prisma.platformOperator
+      .findUnique({ where: { id: operatorId }, select: { role: true } })
+      .catch(() => null);
+    operatorRole = opRecord?.role || undefined;
+  }
+
   const now = new Date();
+  let approvalFilter: Record<string, any> | undefined;
+  if (operatorId) {
+    if (operatorRole === 'PLATFORM_OWNER') {
+      approvalFilter = undefined;
+    } else if (operatorRole) {
+      const roleEligibleTools = MCP_TOOLS
+        .filter((t) => operatorRoleAllows(operatorRole as any, t.minRole))
+        .map((t) => t.toolName);
+      approvalFilter =
+        roleEligibleTools.length > 0
+          ? { OR: [{ requestedById: operatorId }, { toolName: { in: roleEligibleTools } }] }
+          : { requestedById: operatorId };
+    } else {
+      approvalFilter = { requestedById: operatorId };
+    }
+  }
+
   const [recentExecutions, pendingApprovals, perToolStats, aggTotals, blockedInjectionCount] =
     await Promise.all([
       prisma.mcpToolInvocation.findMany({
@@ -267,7 +338,7 @@ export async function getMcpGatewayInventory(operatorId?: string) {
         where: {
           status: 'PROPOSED',
           expiresAt: { gt: now },
-          ...(operatorId ? { requestedById: operatorId } : {}),
+          ...(approvalFilter || {}),
         },
         select: {
           id: true,
@@ -332,7 +403,7 @@ export async function getMcpGatewayInventory(operatorId?: string) {
   }));
 
   return {
-    executionEnabled: process.env.ORBITOX_MCP_EXECUTION_ENABLED !== 'false',
+    executionEnabled: isMcpExecutionEnabled(),
     servers,
     guardrails: {
       piiRedaction: {
@@ -371,40 +442,107 @@ export async function invokeMcpTool(
   actor: McpActorContext,
 ) {
   const startedAt = performance.now();
+  const callerAgent = buildCallerAgent(actor, input.agentCaller);
+  const rawParams = input.parameters && typeof input.parameters === 'object' ? input.parameters : {};
+  const redactedInput = redactSensitiveData(rawParams, { maskEmails: true });
+  const toolName = typeof input.toolName === 'string' ? input.toolName.trim() : '';
+  const boundedToolName = toolName.slice(0, 120) || 'unknown';
+  const rawTenantGuess =
+    typeof (rawParams as any).tenantId === 'string'
+      ? String((rawParams as any).tenantId).trim() || 'unscoped'
+      : typeof (rawParams as any).idOrSlug === 'string'
+        ? String((rawParams as any).idOrSlug).trim() || 'unscoped'
+        : 'platform';
 
-  if (process.env.ORBITOX_MCP_EXECUTION_ENABLED === 'false') {
-    throw new McpToolError(
-      503,
-      'MCP_EXECUTION_DISABLED',
-      'MCP tool execution is temporarily disabled by ORBITOX_MCP_EXECUTION_ENABLED=false.',
-    );
+  if (!isMcpExecutionEnabled()) {
+    const msg = 'MCP tool execution is disabled (ORBITOX_MCP_EXECUTION_ENABLED must be enabled).';
+    await recordInvocationAndAudit({
+      toolName: boundedToolName,
+      serverId: 'mcp-gateway',
+      approvalPolicy: 'READ_FREELY',
+      status: 'BLOCKED_UNAVAILABLE',
+      actor,
+      callerAgent,
+      tenantScope: rawTenantGuess,
+      sanitizedParams: redactedInput.value,
+      errorCode: 'MCP_EXECUTION_DISABLED',
+      errorMessage: msg,
+      latencyMs: Math.max(1, Math.round(performance.now() - startedAt)),
+      redactionsApplied: redactedInput.redactionsApplied,
+      secretsFiltered: redactedInput.secretsFiltered,
+      auditAction: 'MCP_EXECUTION_DISABLED',
+      auditReason: msg,
+    });
+    throw new McpToolError(503, 'MCP_EXECUTION_DISABLED', msg);
   }
 
-  const toolName = typeof input.toolName === 'string' ? input.toolName.trim() : '';
   if (!toolName) {
-    throw new McpToolError(400, 'INVALID_INPUT', 'toolName is required.');
+    const msg = 'toolName is required.';
+    await recordInvocationAndAudit({
+      toolName: 'unknown',
+      serverId: 'mcp-gateway',
+      approvalPolicy: 'READ_FREELY',
+      status: 'BLOCKED_VALIDATION',
+      actor,
+      callerAgent,
+      tenantScope: rawTenantGuess,
+      sanitizedParams: redactedInput.value,
+      errorCode: 'INVALID_INPUT',
+      errorMessage: msg,
+      latencyMs: Math.max(1, Math.round(performance.now() - startedAt)),
+      redactionsApplied: redactedInput.redactionsApplied,
+      secretsFiltered: redactedInput.secretsFiltered,
+      auditAction: 'MCP_TOOL_VALIDATION_FAILED',
+      auditReason: msg,
+    });
+    throw new McpToolError(400, 'INVALID_INPUT', msg);
   }
 
   const tool = findMcpTool(toolName);
   if (!tool) {
-    throw new McpToolError(
-      404,
-      'TOOL_NOT_FOUND',
-      `MCP tool ${toolName} is not registered in server inventory.`,
-    );
+    const msg = `MCP tool ${toolName} is not registered in server inventory.`;
+    await recordInvocationAndAudit({
+      toolName: boundedToolName,
+      serverId: 'mcp-gateway',
+      approvalPolicy: 'READ_FREELY',
+      status: 'BLOCKED_VALIDATION',
+      actor,
+      callerAgent,
+      tenantScope: rawTenantGuess,
+      sanitizedParams: redactedInput.value,
+      errorCode: 'TOOL_NOT_FOUND',
+      errorMessage: msg,
+      latencyMs: Math.max(1, Math.round(performance.now() - startedAt)),
+      redactionsApplied: redactedInput.redactionsApplied,
+      secretsFiltered: redactedInput.secretsFiltered,
+      auditAction: 'MCP_TOOL_NOT_FOUND',
+      auditReason: msg,
+    });
+    throw new McpToolError(404, 'TOOL_NOT_FOUND', msg);
   }
 
   if (!tool.available) {
-    throw new McpToolError(
-      501,
-      'TOOL_UNAVAILABLE',
-      `MCP tool ${toolName} is currently unavailable in this deployment.`,
-    );
+    const msg = `MCP tool ${toolName} is currently unavailable in this deployment.`;
+    await recordInvocationAndAudit({
+      toolName: tool.toolName,
+      serverId: tool.serverId,
+      approvalPolicy: tool.approvalPolicy,
+      status: 'BLOCKED_UNAVAILABLE',
+      actor,
+      callerAgent,
+      tenantScope: tool.tenantScopeMode === 'PLATFORM_GLOBAL' ? 'platform' : rawTenantGuess,
+      sanitizedParams: redactedInput.value,
+      errorCode: 'TOOL_UNAVAILABLE',
+      errorMessage: msg,
+      latencyMs: Math.max(1, Math.round(performance.now() - startedAt)),
+      redactionsApplied: redactedInput.redactionsApplied,
+      secretsFiltered: redactedInput.secretsFiltered,
+      auditAction: 'MCP_TOOL_UNAVAILABLE',
+      auditReason: msg,
+    });
+    throw new McpToolError(501, 'TOOL_UNAVAILABLE', msg);
   }
 
-  const callerAgent = buildCallerAgent(actor, input.agentCaller);
-  const rawParams = input.parameters && typeof input.parameters === 'object' ? input.parameters : {};
-  const redactedInput = redactSensitiveData(rawParams, { maskEmails: true });
   const initialTenantScope =
     typeof (rawParams as any).tenantId === 'string'
       ? String((rawParams as any).tenantId).trim() || 'unscoped'
@@ -501,11 +639,25 @@ export async function invokeMcpTool(
           ? (rawParams as any).idOrSlug.trim()
           : '';
     if (!explicitTarget || explicitTarget === 'global') {
-      throw new McpToolError(
-        400,
-        'TENANT_SCOPE_REQUIRED',
-        `Tool ${tool.toolName} requires an explicit tenantId or project slug and cannot run in global scope.`,
-      );
+      const msg = `Tool ${tool.toolName} requires an explicit tenantId or project slug and cannot run in global scope.`;
+      await recordInvocationAndAudit({
+        toolName: tool.toolName,
+        serverId: tool.serverId,
+        approvalPolicy: tool.approvalPolicy,
+        status: 'BLOCKED_VALIDATION',
+        actor,
+        callerAgent,
+        tenantScope: 'unscoped',
+        sanitizedParams: redactedInput.value,
+        errorCode: 'TENANT_SCOPE_REQUIRED',
+        errorMessage: msg,
+        latencyMs: Math.max(1, Math.round(performance.now() - startedAt)),
+        redactionsApplied: redactedInput.redactionsApplied,
+        secretsFiltered: redactedInput.secretsFiltered,
+        auditAction: 'MCP_TOOL_VALIDATION_FAILED',
+        auditReason: msg,
+      });
+      throw new McpToolError(400, 'TENANT_SCOPE_REQUIRED', msg);
     }
   }
 
@@ -567,9 +719,26 @@ export async function invokeMcpTool(
 
   const parsed = tool.schema.safeParse(rawParams);
   if (!parsed.success) {
-    throw new McpToolError(400, 'INVALID_INPUT', 'Tool parameters failed schema validation.', {
-      issues: parsed.error.issues.map((i) => `${i.path.join('.') || 'root'}: ${i.message}`),
+    const issues = parsed.error.issues.map((i) => `${i.path.join('.') || 'root'}: ${i.message}`);
+    const msg = 'Tool parameters failed schema validation.';
+    await recordInvocationAndAudit({
+      toolName: tool.toolName,
+      serverId: tool.serverId,
+      approvalPolicy: tool.approvalPolicy,
+      status: 'BLOCKED_VALIDATION',
+      actor,
+      callerAgent,
+      tenantScope: initialTenantScope,
+      sanitizedParams: redactedInput.value,
+      errorCode: 'INVALID_INPUT',
+      errorMessage: `${msg} (${issues.join('; ')})`.slice(0, 500),
+      latencyMs: Math.max(1, Math.round(performance.now() - startedAt)),
+      redactionsApplied: redactedInput.redactionsApplied,
+      secretsFiltered: redactedInput.secretsFiltered,
+      auditAction: 'MCP_TOOL_VALIDATION_FAILED',
+      auditReason: msg,
     });
+    throw new McpToolError(400, 'INVALID_INPUT', msg, { issues });
   }
 
   // 5. Enforce ASK_FIRST and STEP_UP_MFA via persistent server-side proposal
@@ -811,7 +980,7 @@ export async function approveAndExecuteMcpProposal(
     );
   }
 
-  if (process.env.ORBITOX_MCP_EXECUTION_ENABLED === 'false') {
+  if (!isMcpExecutionEnabled()) {
     throw new McpToolError(503, 'MCP_EXECUTION_DISABLED', 'MCP tool execution is disabled.');
   }
   if (actor.kind !== 'operator') {
@@ -1129,16 +1298,22 @@ export async function approveAndExecuteMcpProposal(
   }
 
   // Fenced transition Execution -> EXECUTION_RUNNING immediately before tool.execute
+  const fenceCheckTime = new Date();
   const startFence = await prisma.mcpToolExecution.updateMany({
-    where: { id: executionId, status: 'EXECUTION_INTENT', leaseOwner },
+    where: {
+      id: executionId,
+      status: 'EXECUTION_INTENT',
+      leaseOwner,
+      leaseExpiresAt: { gt: fenceCheckTime },
+    },
     data: {
       status: 'EXECUTION_RUNNING',
       auditIntentEventId: intentAuditId,
-      leaseExpiresAt: new Date(Date.now() + EXECUTION_LEASE_MS),
+      leaseExpiresAt: new Date(fenceCheckTime.getTime() + EXECUTION_LEASE_MS),
     },
   });
   if (startFence.count !== 1) {
-    throw new McpToolError(409, 'LEASE_FENCED', `Execution ${executionId} lost its lease before starting.`);
+    throw new McpToolError(409, 'LEASE_FENCED', `Execution ${executionId} lost its lease or lease expired before starting.`);
   }
 
   try {
@@ -1183,21 +1358,59 @@ export async function approveAndExecuteMcpProposal(
           timestamp: new Date().toISOString(),
         }),
       );
-      await prisma.$transaction([
-        prisma.mcpToolExecution.updateMany({
-          where: { id: executionId, status: 'EXECUTION_RUNNING' },
+      const recoveryMarkAt = new Date();
+      await prisma.$transaction(async (tx) => {
+        const fencedRecovery = await tx.mcpToolExecution.updateMany({
+          where: {
+            id: executionId,
+            status: 'EXECUTION_RUNNING',
+            leaseOwner,
+            leaseExpiresAt: { gt: recoveryMarkAt },
+          },
           data: {
             status: 'RECOVERY_REQUIRED',
             reconciliationStatus: 'AUDIT_FINALIZATION_FAILED',
             lastErrorCode: 'AUDIT_FINALIZATION_FAILED',
             lastErrorMessage: postAuditErr?.message || 'Post-execution audit write failed.',
           },
-        }),
-        prisma.mcpToolApproval.updateMany({
+        });
+        if (fencedRecovery.count !== 1) {
+          throw new McpToolError(
+            409,
+            'LEASE_FENCED',
+            `Execution ${executionId} lost its lease while marking RECOVERY_REQUIRED.`,
+          );
+        }
+        await tx.mcpToolApproval.updateMany({
           where: { id: cleanId, status: 'EXECUTING' },
           data: { status: 'RECOVERY_REQUIRED' },
-        }),
-      ]).catch(() => { });
+        });
+        await tx.$queryRaw`SELECT set_config('app.current_tenant_id', ${outboxTenantId}, true)`;
+        await tx.platformOutboxMessage.createMany({
+          data: [
+            {
+              tenantId: outboxTenantId,
+              eventType: 'mcp.audit.execution_succeeded',
+              aggregateType: 'MCP_EXECUTION',
+              aggregateId: executionId,
+              deduplicationKey: `mcp_final:${executionId}`,
+              payload: {
+                deterministicAuditId: deterministicFinalAuditId,
+                executionId,
+                approvalId: cleanId,
+                idempotencyKey,
+                toolName: tool.toolName,
+                tenantScope: execResult.tenantScope,
+                canonicalTenantId: outboxTenantId,
+                approvedById: actor.actorId,
+                latencyMs,
+                paramsHash: existing.paramsHash,
+              } as any,
+            },
+          ],
+          skipDuplicates: true,
+        });
+      });
       throw new McpToolError(
         500,
         'AUDIT_FINALIZATION_FAILED',
@@ -1206,35 +1419,19 @@ export async function approveAndExecuteMcpProposal(
       );
     }
 
-    const finalInvocation = await prisma.mcpToolInvocation.create({
-      data: {
-        approvalId: cleanId,
-        executionId,
-        idempotencyKey,
-        toolName: tool.toolName,
-        serverId: tool.serverId,
-        approvalPolicy: tool.approvalPolicy,
-        status: 'AUTHORIZED_EXECUTED',
-        actorId: actor.actorId,
-        actorEmail: actor.actorEmail,
-        authType: actor.kind,
-        callerAgent,
-        tenantScope: execResult.tenantScope,
-        sanitizedParams: redactedParams.value as any,
-        redactedOutput: auditRedacted.value as any,
-        latencyMs,
-        redactionsApplied: redactedParams.redactionsApplied + auditRedacted.redactionsApplied,
-        secretsFiltered: redactedParams.secretsFiltered + auditRedacted.secretsFiltered,
-        auditEventId: finalAuditId,
-      },
-    });
-
-    const updatedApproval = await prisma.$transaction(async (tx) => {
+    const finalInvocationId = `mcp_inv_${crypto.randomUUID()}`;
+    const finalizeTime = new Date();
+    const { updatedApproval, finalInvocation } = await prisma.$transaction(async (tx) => {
       const fenced = await tx.mcpToolExecution.updateMany({
-        where: { id: executionId, status: 'EXECUTION_RUNNING', leaseOwner },
+        where: {
+          id: executionId,
+          status: 'EXECUTION_RUNNING',
+          leaseOwner,
+          leaseExpiresAt: { gt: finalizeTime },
+        },
         data: {
           status: 'AUTHORIZED_EXECUTED',
-          invocationId: finalInvocation.id,
+          invocationId: finalInvocationId,
           finalAuditEventId: finalAuditId,
           reconciliationStatus: 'COMPLETED',
         },
@@ -1243,13 +1440,40 @@ export async function approveAndExecuteMcpProposal(
         throw new McpToolError(
           409,
           'LEASE_FENCED',
-          `Execution ${executionId} was already reconciled or fenced before finalization.`,
+          `Execution ${executionId} lost its lease or was already reconciled before finalization.`,
         );
       }
-      return tx.mcpToolApproval.update({
-        where: { id: cleanId },
-        data: { status: 'SUCCEEDED', invocationId: finalInvocation.id },
+
+      const createdInvocation = await tx.mcpToolInvocation.create({
+        data: {
+          id: finalInvocationId,
+          approvalId: cleanId,
+          executionId,
+          idempotencyKey,
+          toolName: tool.toolName,
+          serverId: tool.serverId,
+          approvalPolicy: tool.approvalPolicy,
+          status: 'AUTHORIZED_EXECUTED',
+          actorId: actor.actorId,
+          actorEmail: actor.actorEmail,
+          authType: actor.kind,
+          callerAgent,
+          tenantScope: execResult.tenantScope,
+          sanitizedParams: redactedParams.value as any,
+          redactedOutput: auditRedacted.value as any,
+          latencyMs,
+          redactionsApplied: redactedParams.redactionsApplied + auditRedacted.redactionsApplied,
+          secretsFiltered: redactedParams.secretsFiltered + auditRedacted.secretsFiltered,
+          auditEventId: finalAuditId,
+        },
       });
+
+      const approval = await tx.mcpToolApproval.update({
+        where: { id: cleanId },
+        data: { status: 'SUCCEEDED', invocationId: createdInvocation.id },
+      });
+
+      return { updatedApproval: approval, finalInvocation: createdInvocation };
     });
 
     return {
@@ -1285,49 +1509,100 @@ export async function approveAndExecuteMcpProposal(
         reason: `Approved execution for ${tool.toolName} failed: ${code}`,
         metadata: { executionId, approvalId: cleanId, errorCode: code } as any,
       });
-    } catch {
-      // Best-effort; original EXECUTION_INTENT outbox remains durable
+    } catch (failAuditErr: any) {
+      console.error(
+        JSON.stringify({
+          event: 'mcp.audit_failure_fallback_outbox',
+          executionId,
+          approvalId: cleanId,
+          error: failAuditErr?.message || String(failAuditErr),
+          timestamp: new Date().toISOString(),
+        }),
+      );
     }
 
-    const failedInvocation = await prisma.mcpToolInvocation.create({
-      data: {
-        approvalId: cleanId,
-        executionId,
-        idempotencyKey,
-        toolName: tool.toolName,
-        serverId: tool.serverId,
-        approvalPolicy: tool.approvalPolicy,
-        status: 'EXECUTION_FAILED',
-        actorId: actor.actorId,
-        actorEmail: actor.actorEmail,
-        authType: actor.kind,
-        callerAgent,
-        tenantScope: existing.tenantScope,
-        sanitizedParams: redactedParams.value as any,
-        errorCode: code,
-        errorMessage: message,
-        latencyMs,
-        redactionsApplied: redactedParams.redactionsApplied,
-        secretsFiltered: redactedParams.secretsFiltered,
-        auditEventId: failAuditId,
-      },
-    });
-
+    const failedInvocationId = `mcp_inv_${crypto.randomUUID()}`;
+    const failFenceTime = new Date();
     await prisma.$transaction(async (tx) => {
       const fenced = await tx.mcpToolExecution.updateMany({
-        where: { id: executionId, status: { in: ['EXECUTION_INTENT', 'EXECUTION_RUNNING'] }, leaseOwner },
+        where: {
+          id: executionId,
+          status: { in: ['EXECUTION_INTENT', 'EXECUTION_RUNNING'] },
+          leaseOwner,
+          leaseExpiresAt: { gt: failFenceTime },
+        },
         data: {
           status: 'EXECUTION_FAILED',
-          invocationId: failedInvocation.id,
+          invocationId: failedInvocationId,
           finalAuditEventId: failAuditId,
+          reconciliationStatus: failAuditId ? 'COMPLETED' : 'AUDIT_OUTBOX_PENDING',
           lastErrorCode: code,
           lastErrorMessage: message,
         },
       });
-      if (fenced.count === 1) {
-        await tx.mcpToolApproval.updateMany({
-          where: { id: cleanId, status: 'EXECUTING' },
-          data: { status: 'FAILED', invocationId: failedInvocation.id },
+      if (fenced.count !== 1) {
+        throw new McpToolError(
+          409,
+          'LEASE_FENCED',
+          `Execution ${executionId} lost its lease before recording failure state.`,
+        );
+      }
+
+      await tx.mcpToolInvocation.create({
+        data: {
+          id: failedInvocationId,
+          approvalId: cleanId,
+          executionId,
+          idempotencyKey,
+          toolName: tool.toolName,
+          serverId: tool.serverId,
+          approvalPolicy: tool.approvalPolicy,
+          status: 'EXECUTION_FAILED',
+          actorId: actor.actorId,
+          actorEmail: actor.actorEmail,
+          authType: actor.kind,
+          callerAgent,
+          tenantScope: existing.tenantScope,
+          sanitizedParams: redactedParams.value as any,
+          errorCode: code,
+          errorMessage: message,
+          latencyMs,
+          redactionsApplied: redactedParams.redactionsApplied,
+          secretsFiltered: redactedParams.secretsFiltered,
+          auditEventId: failAuditId,
+        },
+      });
+
+      await tx.mcpToolApproval.updateMany({
+        where: { id: cleanId, status: 'EXECUTING' },
+        data: { status: 'FAILED', invocationId: failedInvocationId },
+      });
+
+      if (!failAuditId) {
+        await tx.$queryRaw`SELECT set_config('app.current_tenant_id', ${outboxTenantId}, true)`;
+        await tx.platformOutboxMessage.createMany({
+          data: [
+            {
+              tenantId: outboxTenantId,
+              eventType: 'mcp.audit.execution_failed',
+              aggregateType: 'MCP_EXECUTION',
+              aggregateId: executionId,
+              deduplicationKey: `mcp_fail:${executionId}`,
+              payload: {
+                deterministicAuditId: deterministicFinalAuditId,
+                executionId,
+                approvalId: cleanId,
+                idempotencyKey,
+                toolName: tool.toolName,
+                tenantScope: existing.tenantScope,
+                canonicalTenantId: outboxTenantId,
+                approvedById: actor.actorId,
+                errorCode: code,
+                latencyMs,
+              } as any,
+            },
+          ],
+          skipDuplicates: true,
         });
       }
     });
@@ -1459,10 +1734,7 @@ export async function canRetireMcpKey(
   retainedApprovals: number;
   retentionCutoff: string;
 }> {
-  const effectiveDays = Math.max(
-    1,
-    options.retentionDays ?? (Number(process.env.ORBITOX_MCP_KEY_RETENTION_DAYS) || DEFAULT_KEY_RETENTION_DAYS),
-  );
+  const effectiveDays = resolveMcpKeyRetentionDays(options.retentionDays);
   const now = options.now ?? new Date();
   const retentionCutoff = new Date(now.getTime() - effectiveDays * 86_400_000);
 
@@ -1499,12 +1771,20 @@ export async function canRetireMcpKey(
  * without blindly repeating business side effects. Uses deterministic audit IDs and domain correlation.
  */
 export async function reconcileStaleMcpExecutions(
-  options: { now?: Date; deps?: McpGovernanceFaultDeps } = {},
+  options: {
+    now?: Date;
+    deps?: McpGovernanceFaultDeps;
+    maintenancePrisma?: typeof prisma;
+    workerId?: string;
+  } = {},
 ): Promise<{ reconciled: number; ids: string[] }> {
   const now = options.now ?? new Date();
+  const db = options.maintenancePrisma ?? prisma;
   const recordAudit = options.deps?.recordAudit ?? platformRepository.recordPlatformAdminAudit;
+  const reconcilerLeaseOwner = options.workerId || `reconciler:${crypto.randomUUID()}`;
+  const reconcilerLeaseExpiresAt = new Date(now.getTime() + EXECUTION_LEASE_MS);
 
-  const candidates = await prisma.mcpToolExecution.findMany({
+  const candidates = await db.mcpToolExecution.findMany({
     where: {
       OR: [
         { status: 'RECOVERY_REQUIRED' },
@@ -1521,6 +1801,35 @@ export async function reconcileStaleMcpExecutions(
 
   const reconciledIds: string[] = [];
   for (const exec of candidates) {
+    // Conditional reconciler claim prevents concurrent workers/reconcilers from racing on the same execution.
+    const claimed = await db.mcpToolExecution.updateMany({
+      where: {
+        id: exec.id,
+        OR: [
+          {
+            status: 'RECOVERY_REQUIRED',
+            OR: [
+              { leaseOwner: null },
+              { leaseExpiresAt: null },
+              { leaseExpiresAt: { lte: now } },
+              { NOT: { leaseOwner: { startsWith: 'reconciler:' } } },
+            ],
+          },
+          {
+            status: { in: ['EXECUTION_INTENT', 'EXECUTION_RUNNING'] },
+            leaseExpiresAt: { lte: now },
+          },
+        ],
+      },
+      data: {
+        leaseOwner: reconcilerLeaseOwner,
+        leaseExpiresAt: reconcilerLeaseExpiresAt,
+      },
+    });
+    if (claimed.count !== 1) {
+      continue;
+    }
+
     let resolvedStatus: 'AUTHORIZED_EXECUTED' | 'EXECUTION_FAILED' | 'RECOVERY_REQUIRED' | 'STILL_RUNNING' =
       'RECOVERY_REQUIRED';
     let reconciliationNote = 'Requires manual verification';
@@ -1534,50 +1843,92 @@ export async function reconcileStaleMcpExecutions(
         ? sanitizedParams.subscriptionIds.filter((s: unknown): s is string => typeof s === 'string' && s.length > 0)
         : [];
       const expectedKeys = subIds.map((subId) => `${exec.idempotencyKey}:${subId}`);
-      const outboxCount =
+      const [outboxCount, batchItems] = await Promise.all([
         expectedKeys.length > 0
-          ? await prisma.accountEmailOutbox.count({
-            where: { idempotencyKey: { in: expectedKeys } },
-          })
-          : await prisma.accountEmailOutbox.count({
-            where: { idempotencyKey: { startsWith: `${exec.idempotencyKey}:` } },
-          });
+          ? db.accountEmailOutbox.count({ where: { idempotencyKey: { in: expectedKeys } } })
+          : db.accountEmailOutbox.count({ where: { idempotencyKey: { startsWith: `${exec.idempotencyKey}:` } } }),
+        db.billingReminderBatchItem.findMany({ where: { executionId: exec.id } }).catch(() => []),
+      ]);
 
-      if (expectedKeys.length > 0 && outboxCount >= expectedKeys.length) {
+      const ledgerSucceededCount = batchItems.filter((item) => item.status !== 'FAILED').length;
+      const effectiveSucceeded = Math.max(outboxCount, ledgerSucceededCount);
+
+      if (expectedKeys.length > 0 && effectiveSucceeded >= expectedKeys.length && batchItems.every((i) => i.status !== 'FAILED')) {
         resolvedStatus = 'AUTHORIZED_EXECUTED';
-        reconciliationNote = `RECONCILED_OUTBOX_FOUND:${outboxCount}/${expectedKeys.length}`;
-      } else if (expectedKeys.length === 0 && outboxCount > 0) {
+        reconciliationNote = `RECONCILED_OUTBOX_FOUND:${effectiveSucceeded}/${expectedKeys.length}`;
+      } else if (expectedKeys.length === 0 && effectiveSucceeded > 0) {
         resolvedStatus = 'AUTHORIZED_EXECUTED';
-        reconciliationNote = `RECONCILED_OUTBOX_FOUND:${outboxCount}`;
-      } else if (outboxCount > 0) {
+        reconciliationNote = `RECONCILED_OUTBOX_FOUND:${effectiveSucceeded}`;
+      } else if (effectiveSucceeded > 0 || batchItems.some((i) => i.status === 'FAILED')) {
         resolvedStatus = 'RECOVERY_REQUIRED';
-        reconciliationNote = `RECONCILED_PARTIAL_OUTBOX:${outboxCount}/${expectedKeys.length}`;
+        reconciliationNote = `RECONCILED_PARTIAL_OUTBOX:${effectiveSucceeded}/${expectedKeys.length}`;
+      } else if (exec.status === 'EXECUTION_RUNNING' && exec.leaseExpiresAt && exec.leaseExpiresAt.getTime() <= now.getTime()) {
+        resolvedStatus = 'EXECUTION_FAILED';
+        reconciliationNote = 'RECONCILED_NO_OUTBOX_ROWS';
       }
     } else if (exec.toolName === 'tenants.suspend') {
-      const proj = await prisma.platformProject.findFirst({
+      const proj = await db.platformProject.findFirst({
         where: { OR: [{ id: exec.tenantScope }, { slug: exec.tenantScope }] },
         select: { id: true, organizationId: true, status: true },
       });
       if (proj?.status === 'SUSPENDED') {
         const canonicalPrefix = `org/${proj.organizationId}/project/${proj.id}/`;
-        const nonSuspendedInstalls = await prisma.pluginInstallation.count({
-          where: {
-            OR: [{ tenantId: proj.id }, { tenantId: { startsWith: canonicalPrefix } }],
-            status: { notIn: ['SUSPENDED', 'ARCHIVED'] },
-          },
-        });
-        if (nonSuspendedInstalls === 0) {
+        const [nonSuspendedInstalls, syncRecords] = await Promise.all([
+          db.pluginInstallation.count({
+            where: {
+              OR: [{ tenantId: proj.id }, { tenantId: { startsWith: canonicalPrefix } }],
+              status: { notIn: ['SUSPENDED', 'ARCHIVED'] },
+            },
+          }),
+          db.tenantSuspensionSync.findMany({ where: { projectId: proj.id } }).catch(() => []),
+        ]);
+        const degradedSyncCount = syncRecords.filter((s) => s.status !== 'ACKNOWLEDGED').length;
+        if (nonSuspendedInstalls === 0 && degradedSyncCount === 0) {
           resolvedStatus = 'AUTHORIZED_EXECUTED';
           reconciliationNote = 'RECONCILED_TENANT_SUSPENDED';
-        } else {
+        } else if (nonSuspendedInstalls > 0) {
           resolvedStatus = 'RECOVERY_REQUIRED';
           reconciliationNote = `RECONCILED_INSTALLATIONS_PENDING:${nonSuspendedInstalls}`;
+        } else {
+          resolvedStatus = 'RECOVERY_REQUIRED';
+          reconciliationNote = `RECONCILED_EXTERNAL_SYNC_DEGRADED:${degradedSyncCount}`;
         }
       }
     } else if (exec.toolName === 'provisioning.retry') {
       const operationId = typeof sanitizedParams.operationId === 'string' ? sanitizedParams.operationId : '';
-      if (operationId) {
-        const op = await prisma.platformOperation.findUnique({ where: { id: operationId } });
+      const attempt = await db.platformOperationAttempt
+        .findFirst({ where: { mcpExecutionId: exec.id } })
+        .catch(() => null);
+
+      if (attempt) {
+        if (attempt.status === 'SUCCEEDED') {
+          resolvedStatus = 'AUTHORIZED_EXECUTED';
+          reconciliationNote = 'RECONCILED_PROVISIONING_COMPLETED';
+        } else if (attempt.status === 'FAILED' || attempt.status === 'CANCELLED') {
+          resolvedStatus = 'EXECUTION_FAILED';
+          reconciliationNote = `RECONCILED_PROVISIONING_${attempt.status}`;
+        } else if (attempt.status === 'SUPERSEDED') {
+          resolvedStatus = 'EXECUTION_FAILED';
+          reconciliationNote = `RECONCILED_ATTEMPT_SUPERSEDED:${attempt.operationId}`;
+        } else {
+          const op = operationId
+            ? await db.platformOperation.findUnique({ where: { id: operationId } })
+            : await db.platformOperation.findUnique({ where: { id: attempt.operationId } });
+          if (op && ['ACTIVE', 'COMPLETED'].includes(op.status)) {
+            resolvedStatus = 'AUTHORIZED_EXECUTED';
+            reconciliationNote = 'RECONCILED_PROVISIONING_COMPLETED';
+          } else if (op && ['FAILED', 'CANCELLED'].includes(op.status)) {
+            resolvedStatus = 'EXECUTION_FAILED';
+            reconciliationNote = `RECONCILED_PROVISIONING_${op.status}`;
+          } else if (op?.leaseExpiresAt && op.leaseExpiresAt.getTime() > now.getTime()) {
+            resolvedStatus = 'STILL_RUNNING';
+          } else {
+            resolvedStatus = 'RECOVERY_REQUIRED';
+            reconciliationNote = 'RECONCILED_OPERATION_LEASE_EXPIRED';
+          }
+        }
+      } else if (operationId) {
+        const op = await db.platformOperation.findUnique({ where: { id: operationId } });
         if (!op) {
           resolvedStatus = 'EXECUTION_FAILED';
           reconciliationNote = 'RECONCILED_OPERATION_NOT_FOUND';
@@ -1604,15 +1955,28 @@ export async function reconcileStaleMcpExecutions(
     }
 
     if (resolvedStatus === 'STILL_RUNNING') {
+      await db.mcpToolExecution.updateMany({
+        where: { id: exec.id, leaseOwner: reconcilerLeaseOwner },
+        data: { leaseOwner: null, leaseExpiresAt: null },
+      });
       continue;
     }
 
     if (resolvedStatus === 'RECOVERY_REQUIRED') {
-      await prisma.mcpToolExecution.updateMany({
-        where: { id: exec.id, status: { in: ['EXECUTION_RUNNING', 'RECOVERY_REQUIRED'] } },
-        data: { status: 'RECOVERY_REQUIRED', reconciliationStatus: reconciliationNote },
+      await db.mcpToolExecution.updateMany({
+        where: {
+          id: exec.id,
+          status: { in: ['EXECUTION_RUNNING', 'RECOVERY_REQUIRED'] },
+          leaseOwner: reconcilerLeaseOwner,
+        },
+        data: {
+          status: 'RECOVERY_REQUIRED',
+          reconciliationStatus: reconciliationNote,
+          leaseOwner: null,
+          leaseExpiresAt: null,
+        },
       });
-      await prisma.mcpToolApproval.updateMany({
+      await db.mcpToolApproval.updateMany({
         where: { id: exec.approvalId, status: 'EXECUTING' },
         data: { status: 'RECOVERY_REQUIRED' },
       });
@@ -1635,16 +1999,20 @@ export async function reconcileStaleMcpExecutions(
       } as any,
     });
 
-    await prisma.$transaction(async (tx) => {
+    await db.$transaction(async (tx) => {
       const updatedExec = await tx.mcpToolExecution.updateMany({
         where: {
           id: exec.id,
           status: { in: ['EXECUTION_INTENT', 'EXECUTION_RUNNING', 'RECOVERY_REQUIRED'] },
+          leaseOwner: reconcilerLeaseOwner,
+          leaseExpiresAt: { gt: now },
         },
         data: {
           status: resolvedStatus,
           finalAuditEventId: auditId,
           reconciliationStatus: reconciliationNote,
+          leaseOwner: null,
+          leaseExpiresAt: null,
         },
       });
       if (updatedExec.count === 1) {
@@ -1652,10 +2020,9 @@ export async function reconcileStaleMcpExecutions(
           where: { id: exec.approvalId, status: { in: ['EXECUTING', 'RECOVERY_REQUIRED'] } },
           data: { status: resolvedStatus === 'AUTHORIZED_EXECUTED' ? 'SUCCEEDED' : 'FAILED' },
         });
+        reconciledIds.push(exec.id);
       }
     });
-
-    reconciledIds.push(exec.id);
   }
 
   return { reconciled: reconciledIds.length, ids: reconciledIds };

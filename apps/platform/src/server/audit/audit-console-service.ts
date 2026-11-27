@@ -3,7 +3,18 @@ import crypto from 'node:crypto';
 import { prisma } from '@/server/db/prisma';
 import { PrismaClient, type Prisma } from '@prisma/client';
 
+let privilegedAuditReaderClient: PrismaClient | null = null;
+let cachedAuditReaderUrl: string | null = null;
+
 export function getAuditReaderClient(): { client: any; isPrivileged: boolean } {
+  const readerUrl = process.env.AUDIT_READER_DATABASE_URL?.trim() || '';
+  if (readerUrl) {
+    if (!privilegedAuditReaderClient || cachedAuditReaderUrl !== readerUrl) {
+      privilegedAuditReaderClient = new PrismaClient({ datasources: { db: { url: readerUrl } } });
+      cachedAuditReaderUrl = readerUrl;
+    }
+    return { client: privilegedAuditReaderClient, isPrivileged: true };
+  }
   return { client: prisma, isPrivileged: false };
 }
 
@@ -296,32 +307,70 @@ export async function recordPlatformAuditEvent(
     // 3. Derive cryptographic hash chain link within this specific tenantScope
     let previousHash = 'GENESIS';
     let sequence = 1;
-    try {
-      if (typeof tx.platformAuditEvent?.findFirst === 'function') {
-        const lastEvent = await tx.platformAuditEvent.findFirst({
-          where: {
-            organizationId: orgId,
-            projectId: projId,
-            environmentId: envId,
-          },
-          orderBy: [{ occurredAt: 'desc' }, { id: 'desc' }],
-          select: { id: true, metadata: true },
-        });
-        if (lastEvent && typeof lastEvent.metadata === 'object' && lastEvent.metadata !== null) {
-          const chain = (lastEvent.metadata as any)._chain;
-          if (chain && typeof chain.rowHash === 'string') {
-            previousHash = chain.rowHash;
-            sequence = (typeof chain.sequence === 'number' ? chain.sequence : 1) + 1;
-          } else if (lastEvent.id) {
-            previousHash = crypto.createHash('sha256').update(lastEvent.id).digest('hex');
-          }
+    let slotUsed = false;
+    if (typeof tx.$queryRaw === 'function') {
+      try {
+        const slotRows = await tx.$queryRaw<
+          Array<{
+            already_exists: boolean;
+            conflict: boolean;
+            next_sequence: bigint | number;
+            previous_hash: string;
+          }>
+        >`
+          SELECT "already_exists", "conflict", "next_sequence", "previous_hash"
+          FROM public.claim_platform_audit_chain_slot(
+            ${tenantScope},
+            ${null},
+            ${input.action},
+            ${input.entityType},
+            ${input.entityId ?? null},
+            ${input.requestId ?? null}
+          )
+        `;
+        const slot = slotRows?.[0];
+        if (slot && !slot.conflict && !slot.already_exists) {
+          sequence = Number(slot.next_sequence);
+          previousHash = slot.previous_hash || 'GENESIS';
+          slotUsed = true;
+        }
+      } catch (err) {
+        if (process.env.NODE_ENV === 'production') {
+          throw new Error(
+            `Failed to acquire audit chain slot for scope [${tenantScope}]: ${err instanceof Error ? err.message : String(err)}`
+          );
         }
       }
-    } catch (err) {
-      if (process.env.NODE_ENV === 'production') {
-        throw new Error(
-          `Failed to read previous audit chain head for scope [${tenantScope}]: ${err instanceof Error ? err.message : String(err)}`
-        );
+    }
+
+    if (!slotUsed) {
+      try {
+        if (typeof tx.platformAuditEvent?.findFirst === 'function') {
+          const lastEvent = await tx.platformAuditEvent.findFirst({
+            where: {
+              organizationId: orgId,
+              projectId: projId,
+              environmentId: envId,
+            },
+            orderBy: [{ occurredAt: 'desc' }, { id: 'desc' }],
+            select: { id: true, metadata: true },
+          });
+          if (lastEvent && typeof lastEvent.metadata === 'object' && lastEvent.metadata !== null) {
+            const chain = (lastEvent.metadata as any)._chain;
+            if (chain && typeof chain.rowHash === 'string') {
+              previousHash = chain.rowHash;
+              sequence = (typeof chain.sequence === 'number' ? chain.sequence : 1) + 1;
+            } else if (lastEvent.id) {
+              previousHash = crypto.createHash('sha256').update(lastEvent.id).digest('hex');
+            }
+          }
+        }
+      } catch (err) {
+        if (process.env.NODE_ENV === 'production') {
+          throw new Error(
+            `Failed to read previous audit chain head for scope [${tenantScope}]: ${err instanceof Error ? err.message : String(err)}`
+          );
+        }
       }
     }
 
@@ -360,7 +409,7 @@ export async function recordPlatformAuditEvent(
       },
     };
 
-    return tx.platformAuditEvent.create({
+    const createdEvent = await tx.platformAuditEvent.create({
       data: {
         action: input.action,
         entityType: input.entityType,
@@ -379,6 +428,23 @@ export async function recordPlatformAuditEvent(
         occurredAt,
       },
     });
+
+    if (slotUsed && typeof tx.$executeRaw === 'function') {
+      await tx.$executeRaw`
+        SELECT public.advance_platform_audit_chain_head(
+          ${tenantScope},
+          ${BigInt(sequence)},
+          ${rowHash},
+          ${createdEvent.id},
+          ${input.action},
+          ${input.entityType},
+          ${input.entityId ?? null},
+          ${input.requestId ?? null}
+        )
+      `;
+    }
+
+    return createdEvent;
   };
 
   if (typeof (client as any).$transaction === 'function') {

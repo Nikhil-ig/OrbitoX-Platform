@@ -650,30 +650,68 @@ export class OperationStore {
     }
 
     try {
-      const rows = allowCancelled
-        ? await (prisma as any).$queryRaw<Array<{ id: string }>>`
-            UPDATE "PlatformOperation"
-            SET "leaseOwner" = ${leaseOwner},
-                "leaseExpiresAt" = NOW() + (${effectiveTtl} * INTERVAL '1 second'),
-                "lastMcpExecutionId" = COALESCE(${mcpExecutionId}, "lastMcpExecutionId"),
-                "updatedAt" = NOW()
-            WHERE "id" = ${id}
-              AND (${isForce} = true OR "leaseExpiresAt" IS NULL OR "leaseExpiresAt" < NOW())
-              AND "status" NOT IN ('CANCELLING', 'COMPLETED')
-            RETURNING id
-          `
-        : await (prisma as any).$queryRaw<Array<{ id: string }>>`
-            UPDATE "PlatformOperation"
-            SET "leaseOwner" = ${leaseOwner},
-                "leaseExpiresAt" = NOW() + (${effectiveTtl} * INTERVAL '1 second'),
-                "lastMcpExecutionId" = COALESCE(${mcpExecutionId}, "lastMcpExecutionId"),
-                "updatedAt" = NOW()
-            WHERE "id" = ${id}
-              AND (${isForce} = true OR "leaseExpiresAt" IS NULL OR "leaseExpiresAt" < NOW())
-              AND "status" NOT IN ('CANCELLED', 'CANCELLING', 'COMPLETED')
-            RETURNING id
-          `;
-      return Array.isArray(rows) && rows.length > 0;
+      const claimed = await (prisma as any).$transaction(async (tx: any) => {
+        const rows = allowCancelled
+          ? await tx.$queryRaw<Array<{ id: string }>>`
+              UPDATE "PlatformOperation"
+              SET "leaseOwner" = ${leaseOwner},
+                  "leaseExpiresAt" = NOW() + (${effectiveTtl} * INTERVAL '1 second'),
+                  "lastMcpExecutionId" = COALESCE(${mcpExecutionId}, "lastMcpExecutionId"),
+                  "updatedAt" = NOW()
+              WHERE "id" = ${id}
+                AND (${isForce} = true OR "leaseExpiresAt" IS NULL OR "leaseExpiresAt" < NOW())
+                AND "status" NOT IN ('CANCELLING', 'COMPLETED')
+              RETURNING id
+            `
+          : await tx.$queryRaw<Array<{ id: string }>>`
+              UPDATE "PlatformOperation"
+              SET "leaseOwner" = ${leaseOwner},
+                  "leaseExpiresAt" = NOW() + (${effectiveTtl} * INTERVAL '1 second'),
+                  "lastMcpExecutionId" = COALESCE(${mcpExecutionId}, "lastMcpExecutionId"),
+                  "updatedAt" = NOW()
+              WHERE "id" = ${id}
+                AND (${isForce} = true OR "leaseExpiresAt" IS NULL OR "leaseExpiresAt" < NOW())
+                AND "status" NOT IN ('CANCELLED', 'CANCELLING', 'COMPLETED')
+              RETURNING id
+            `;
+
+        if (!Array.isArray(rows) || rows.length === 0) {
+          return false;
+        }
+
+        await tx.$executeRaw`
+          UPDATE "PlatformOperationAttempt"
+          SET "status" = 'SUPERSEDED',
+              "completedAt" = NOW()
+          WHERE "operationId" = ${id}
+            AND "status" = 'STARTED'
+            AND "leaseOwner" IS DISTINCT FROM ${leaseOwner}
+        `;
+
+        const maxRows = await tx.$queryRaw<Array<{ next_num: number }>>`
+          SELECT (COALESCE(MAX("attemptNumber"), 0) + 1)::int AS next_num
+          FROM "PlatformOperationAttempt"
+          WHERE "operationId" = ${id}
+        `;
+        const nextNum = Number(maxRows?.[0]?.next_num || 1);
+        const attemptRowId = `att_${crypto.randomUUID()}`;
+        await tx.$executeRaw`
+          INSERT INTO "PlatformOperationAttempt" (
+            "id", "operationId", "attemptNumber", "mcpExecutionId", "leaseOwner", "triggeredBy", "status"
+          ) VALUES (
+            ${attemptRowId},
+            ${id},
+            ${nextNum},
+            ${mcpExecutionId},
+            ${leaseOwner},
+            ${mcpExecutionId ? 'mcp' : 'worker'},
+            'STARTED'
+          )
+          ON CONFLICT ("mcpExecutionId") WHERE "mcpExecutionId" IS NOT NULL DO NOTHING
+        `;
+        return true;
+      });
+      return claimed;
     } catch (err: any) {
       console.error('[OperationStore] claimOperationLease DB update failed (fail-closed):', err?.message || err);
       throw new DatabasePersistenceError('claimOperationLease', err);
@@ -735,6 +773,44 @@ export class OperationStore {
     ttlSeconds?: number
   ): Promise<boolean> {
     return this.renewOperationLease(id, leaseOwner, ttlSeconds);
+  }
+
+  async finalizeOperationAttempt(
+    operationId: string,
+    leaseOwner: string,
+    status: 'SUCCEEDED' | 'FAILED' | 'CANCELLED',
+    errorInfo?: { code?: string; message?: string },
+  ): Promise<void> {
+    if (process.env.ORBITOX_PLATFORM_REPOSITORY === 'json') {
+      return;
+    }
+
+    try {
+      if (leaseOwner === '*') {
+        await (prisma as any).$executeRaw`
+          UPDATE "PlatformOperationAttempt"
+          SET "status" = ${status},
+              "errorCode" = ${errorInfo?.code ?? null},
+              "errorMessage" = ${errorInfo?.message ? errorInfo.message.slice(0, 1000) : null},
+              "completedAt" = NOW()
+          WHERE "operationId" = ${operationId}
+            AND "status" = 'STARTED'
+        `;
+      } else {
+        await (prisma as any).$executeRaw`
+          UPDATE "PlatformOperationAttempt"
+          SET "status" = ${status},
+              "errorCode" = ${errorInfo?.code ?? null},
+              "errorMessage" = ${errorInfo?.message ? errorInfo.message.slice(0, 1000) : null},
+              "completedAt" = NOW()
+          WHERE "operationId" = ${operationId}
+            AND "leaseOwner" = ${leaseOwner}
+            AND "status" = 'STARTED'
+        `;
+      }
+    } catch (err: any) {
+      console.error('[OperationStore] finalizeOperationAttempt failed:', err?.message || err);
+    }
   }
 
   /**

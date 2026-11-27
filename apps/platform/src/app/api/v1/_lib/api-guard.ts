@@ -634,6 +634,13 @@ export function withApiGuard<T = any>(
       !operatorId &&
       verifyInternalAuthTokenSync('admin', internalSig, internalTs)
     );
+    const isCustomerOrgAdmin = Boolean(
+      forwardedPrincipal === 'customer-org-admin' &&
+      internalSig &&
+      internalTs &&
+      operatorId &&
+      verifyInternalAuthTokenSync('customer-org-admin', internalSig, internalTs, operatorId)
+    );
 
     // Mode B: Direct admin credential verification (Bearer, Basic, or x-admin-token)
     const presentedCred = extractPresentedCredential(req);
@@ -867,7 +874,7 @@ export function withApiGuard<T = any>(
 
     // 6. Check Required Scopes / Capabilities (fail-closed: missing creds = deny)
     if (options.requiredScopes && options.requiredScopes.length > 0) {
-      if (!matchedKey && !hasAdminSession) {
+      if (!matchedKey && !hasAdminSession && !isCustomerOrgAdmin) {
         const latencyMs = Math.round(performance.now() - startTime);
         return NextResponse.json<ApiResponse>(
           {
@@ -882,13 +889,31 @@ export function withApiGuard<T = any>(
         );
       }
 
+      if (isCustomerOrgAdmin && !matchedKey && !hasAdminSession) {
+        if (routeClass === 'platform-admin' || options.requiredScopes.includes('admin')) {
+          const latencyMs = Math.round(performance.now() - startTime);
+          return NextResponse.json<ApiResponse>(
+            {
+              success: false,
+              error: {
+                code: 'FORBIDDEN',
+                message: 'Customer organization sessions cannot invoke platform-admin endpoints.',
+              },
+              meta: { latencyMs, timestamp: new Date().toISOString(), requestId },
+            },
+            { status: 403 }
+          );
+        }
+      }
+
       if (matchedKey) {
         const grantedCapabilities: string[] = matchedKey.capabilities || matchedKey.scopes || [];
-        const hasAllCapabilities = options.requiredScopes.every((reqScope) =>
+        const scopeCheck = options.scopeMode === 'any' ? 'some' : 'every';
+        const hasRequiredCapabilities = options.requiredScopes[scopeCheck]((reqScope) =>
           hasCapability(grantedCapabilities, reqScope)
         );
 
-        if (!hasAllCapabilities) {
+        if (!hasRequiredCapabilities) {
           const latencyMs = Math.round(performance.now() - startTime);
           return NextResponse.json<ApiResponse>(
             {

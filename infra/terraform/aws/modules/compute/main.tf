@@ -105,6 +105,16 @@ resource "aws_cloudwatch_log_group" "worker_data_rights" {
   })
 }
 
+resource "aws_cloudwatch_log_group" "worker_mcp_governance" {
+  name              = "/ecs/orbitox-${var.environment}-worker-mcp-governance"
+  retention_in_days = 365
+
+  tags = merge(var.tags, {
+    Name        = "orbitox-${var.environment}-worker-mcp-governance-logs"
+    Environment = var.environment
+  })
+}
+
 resource "aws_cloudwatch_log_group" "restaurant_os" {
   name              = "/ecs/orbitox-${var.environment}-restaurant-os"
   retention_in_days = 365
@@ -202,6 +212,7 @@ resource "aws_iam_policy" "web_secrets_access" {
         Resource = [
           var.secrets_map["APP_DATABASE_URL"],
           var.secrets_map["PLATFORM_ADMIN_AUDIT_DATABASE_URL"],
+          var.secrets_map["AUDIT_READER_DATABASE_URL"],
           var.secrets_map["HMS_AUDIT_DATABASE_URL"],
           var.secrets_map["SESSION_SECRET"],
           var.secrets_map["ORBITOX_ADMIN_TOKEN"],
@@ -464,6 +475,7 @@ resource "aws_iam_policy" "migrate_secrets_access" {
           var.secrets_map["MAINTENANCE_DATABASE_URL"],
           var.secrets_map["OUTBOX_RELAY_DATABASE_URL"],
           var.secrets_map["PLATFORM_ADMIN_AUDIT_DATABASE_URL"],
+          var.secrets_map["AUDIT_READER_DATABASE_URL"],
           var.secrets_map["HMS_AUDIT_DATABASE_URL"]
         ]
       },
@@ -523,6 +535,7 @@ resource "aws_iam_policy" "inventory_secrets_access" {
           var.secrets_map["MAINTENANCE_DATABASE_URL"],
           var.secrets_map["OUTBOX_RELAY_DATABASE_URL"],
           var.secrets_map["PLATFORM_ADMIN_AUDIT_DATABASE_URL"],
+          var.secrets_map["AUDIT_READER_DATABASE_URL"],
           var.secrets_map["HMS_AUDIT_DATABASE_URL"]
         ]
       },
@@ -649,6 +662,7 @@ resource "aws_ecs_task_definition" "web" {
       secrets = [
         { name = "APP_DATABASE_URL", valueFrom = var.secrets_map["APP_DATABASE_URL"] },
         { name = "PLATFORM_ADMIN_AUDIT_DATABASE_URL", valueFrom = var.secrets_map["PLATFORM_ADMIN_AUDIT_DATABASE_URL"] },
+        { name = "AUDIT_READER_DATABASE_URL", valueFrom = var.secrets_map["AUDIT_READER_DATABASE_URL"] },
         { name = "HMS_AUDIT_DATABASE_URL", valueFrom = var.secrets_map["HMS_AUDIT_DATABASE_URL"] },
         { name = "SESSION_SECRET", valueFrom = var.secrets_map["SESSION_SECRET"] },
         { name = "ORBITOX_ADMIN_TOKEN", valueFrom = var.secrets_map["ORBITOX_ADMIN_TOKEN"] },
@@ -843,6 +857,105 @@ resource "aws_ecs_task_definition" "worker_data_rights" {
   })
 }
 
+# 3c. MCP Governance Worker Execution Role (Outbox relay + audit writer + maintenance reconciler)
+resource "aws_iam_role" "mcp_worker_execution_role" {
+  name = "orbitox-${var.environment}-ecs-mcp-worker-execution-role"
+
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Action    = "sts:AssumeRole"
+        Effect    = "Allow"
+        Principal = { Service = "ecs-tasks.amazonaws.com" }
+      }
+    ]
+  })
+
+  tags = merge(var.tags, {
+    Name        = "orbitox-${var.environment}-ecs-mcp-worker-execution-role"
+    Environment = var.environment
+  })
+}
+
+resource "aws_iam_role_policy_attachment" "mcp_worker_execution_standard" {
+  role       = aws_iam_role.mcp_worker_execution_role.name
+  policy_arn = "arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy"
+}
+
+resource "aws_iam_policy" "mcp_worker_secrets_access" {
+  name        = "orbitox-${var.environment}-ecs-mcp-worker-secrets-policy"
+  description = "Allows worker-mcp-governance to read ONLY outbox relay, audit writer, maintenance, and runtime DB secrets"
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect = "Allow"
+        Action = ["secretsmanager:GetSecretValue"]
+        Resource = [
+          var.secrets_map["OUTBOX_RELAY_DATABASE_URL"],
+          var.secrets_map["PLATFORM_ADMIN_AUDIT_DATABASE_URL"],
+          var.secrets_map["MAINTENANCE_DATABASE_URL"],
+          var.secrets_map["APP_DATABASE_URL"]
+        ]
+      },
+      {
+        Effect   = "Allow"
+        Action   = ["kms:Decrypt"]
+        Resource = [var.secrets_kms_key_arn]
+      }
+    ]
+  })
+}
+
+resource "aws_iam_role_policy_attachment" "mcp_worker_secrets_attach" {
+  role       = aws_iam_role.mcp_worker_execution_role.name
+  policy_arn = aws_iam_policy.mcp_worker_secrets_access.arn
+}
+
+resource "aws_ecs_task_definition" "worker_mcp_governance" {
+  family                   = "orbitox-${var.environment}-worker-mcp-governance"
+  network_mode             = "awsvpc"
+  requires_compatibilities = ["FARGATE"]
+  cpu                      = 512
+  memory                   = 1024
+  execution_role_arn       = aws_iam_role.mcp_worker_execution_role.arn
+  task_role_arn            = aws_iam_role.task_role.arn
+
+  container_definitions = jsonencode([
+    {
+      name      = "worker-mcp-governance"
+      image     = var.web_image_digest
+      essential = true
+      command   = ["node", "scripts/mcp-governance-worker.js"]
+      environment = [
+        { name = "NODE_ENV", value = "production" },
+        { name = "ORBITOX_PLATFORM_REPOSITORY", value = "prisma" }
+      ]
+      secrets = [
+        { name = "OUTBOX_RELAY_DATABASE_URL", valueFrom = var.secrets_map["OUTBOX_RELAY_DATABASE_URL"] },
+        { name = "PLATFORM_ADMIN_AUDIT_DATABASE_URL", valueFrom = var.secrets_map["PLATFORM_ADMIN_AUDIT_DATABASE_URL"] },
+        { name = "MAINTENANCE_DATABASE_URL", valueFrom = var.secrets_map["MAINTENANCE_DATABASE_URL"] },
+        { name = "APP_DATABASE_URL", valueFrom = var.secrets_map["APP_DATABASE_URL"] }
+      ]
+      logConfiguration = {
+        logDriver = "awslogs"
+        options = {
+          "awslogs-group"         = aws_cloudwatch_log_group.worker_mcp_governance.name
+          "awslogs-region"        = data.aws_region.current.name
+          "awslogs-stream-prefix" = "worker-mcp-governance"
+        }
+      }
+    }
+  ])
+
+  tags = merge(var.tags, {
+    Name        = "orbitox-${var.environment}-worker-mcp-governance-task"
+    Environment = var.environment
+  })
+}
+
 resource "aws_ecs_task_definition" "restaurant_os" {
   family                   = "orbitox-${var.environment}-restaurant-os"
   network_mode             = "awsvpc"
@@ -927,6 +1040,7 @@ resource "aws_ecs_task_definition" "migrate" {
         { name = "MAINTENANCE_DATABASE_URL", valueFrom = var.secrets_map["MAINTENANCE_DATABASE_URL"] },
         { name = "OUTBOX_RELAY_DATABASE_URL", valueFrom = var.secrets_map["OUTBOX_RELAY_DATABASE_URL"] },
         { name = "PLATFORM_ADMIN_AUDIT_DATABASE_URL", valueFrom = var.secrets_map["PLATFORM_ADMIN_AUDIT_DATABASE_URL"] },
+        { name = "AUDIT_READER_DATABASE_URL", valueFrom = var.secrets_map["AUDIT_READER_DATABASE_URL"] },
         { name = "HMS_AUDIT_DATABASE_URL", valueFrom = var.secrets_map["HMS_AUDIT_DATABASE_URL"] }
       ]
       logConfiguration = {
@@ -975,6 +1089,7 @@ resource "aws_ecs_task_definition" "inventory" {
         { name = "MAINTENANCE_DATABASE_URL", valueFrom = var.secrets_map["MAINTENANCE_DATABASE_URL"] },
         { name = "OUTBOX_RELAY_DATABASE_URL", valueFrom = var.secrets_map["OUTBOX_RELAY_DATABASE_URL"] },
         { name = "PLATFORM_ADMIN_AUDIT_DATABASE_URL", valueFrom = var.secrets_map["PLATFORM_ADMIN_AUDIT_DATABASE_URL"] },
+        { name = "AUDIT_READER_DATABASE_URL", valueFrom = var.secrets_map["AUDIT_READER_DATABASE_URL"] },
         { name = "HMS_AUDIT_DATABASE_URL", valueFrom = var.secrets_map["HMS_AUDIT_DATABASE_URL"] }
       ]
       logConfiguration = {
@@ -1114,7 +1229,8 @@ resource "aws_iam_role_policy" "events_run_task" {
         Action = ["ecs:RunTask"]
         Resource = [
           aws_ecs_task_definition.worker_sweep.arn,
-          aws_ecs_task_definition.worker_data_rights.arn
+          aws_ecs_task_definition.worker_data_rights.arn,
+          aws_ecs_task_definition.worker_mcp_governance.arn
         ]
       },
       {
@@ -1123,6 +1239,7 @@ resource "aws_iam_role_policy" "events_run_task" {
         Resource = [
           aws_iam_role.sweep_execution_role.arn,
           aws_iam_role.data_rights_execution_role.arn,
+          aws_iam_role.mcp_worker_execution_role.arn,
           aws_iam_role.task_role.arn
         ]
       }
@@ -1170,6 +1287,37 @@ resource "aws_cloudwatch_event_target" "data_rights_target" {
   ecs_target {
     task_count          = 1
     task_definition_arn = aws_ecs_task_definition.worker_data_rights.arn
+    launch_type         = "FARGATE"
+    platform_version    = "LATEST"
+
+    network_configuration {
+      subnets          = var.private_subnet_ids
+      security_groups  = [aws_security_group.ecs.id]
+      assign_public_ip = false
+    }
+  }
+}
+
+resource "aws_cloudwatch_event_rule" "mcp_governance_schedule" {
+  name                = "orbitox-${var.environment}-mcp-governance-worker-rule"
+  description         = "Drains internal MCP audit outbox and reconciles stale/RECOVERY_REQUIRED executions"
+  schedule_expression = "rate(1 minute)"
+
+  tags = merge(var.tags, {
+    Name        = "orbitox-${var.environment}-mcp-governance-worker-rule"
+    Environment = var.environment
+  })
+}
+
+resource "aws_cloudwatch_event_target" "mcp_governance_target" {
+  rule      = aws_cloudwatch_event_rule.mcp_governance_schedule.name
+  target_id = "orbitox-${var.environment}-mcp-governance-worker"
+  arn       = aws_ecs_cluster.main.arn
+  role_arn  = aws_iam_role.events_ecs_role.arn
+
+  ecs_target {
+    task_count          = 1
+    task_definition_arn = aws_ecs_task_definition.worker_mcp_governance.arn
     launch_type         = "FARGATE"
     platform_version    = "LATEST"
 

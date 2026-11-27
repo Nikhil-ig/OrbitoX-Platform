@@ -79,7 +79,7 @@ export const GET = withHospitalGuard(async (req: NextRequest, _routeContext, aut
     const apiErr = mapDbError(err);
     return NextResponse.json(errorBody(apiErr, authContext.requestId), { status: apiErr.status });
   }
-}, { adminOnly: true, sensitive: true });
+}, { allowOrgAdminCustomerSession: true, sensitive: true });
 
 export const DELETE = withHospitalGuard(async (req: NextRequest, _routeContext, authContext) => {
   try {
@@ -121,4 +121,4 @@ export const DELETE = withHospitalGuard(async (req: NextRequest, _routeContext, 
     const apiErr = mapDbError(err);
     return NextResponse.json(errorBody(apiErr, authContext.requestId), { status: apiErr.status });
   }
-}, { adminOnly: true, sensitive: true });
+}, { allowOrgAdminCustomerSession: true, sensitive: true });

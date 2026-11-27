@@ -217,6 +217,24 @@ const EXPECTED_FUNCTIONS = Object.freeze([
     maintenanceExec: false,
     publicExec: false,
   },
+  {
+    name: 'claim_platform_audit_chain_slot',
+    argTypes: ['text', 'text', 'text', 'text', 'text', 'text'],
+    owner: 'orbitox_migrator',
+    secdef: true,
+    runtimeExec: true,
+    maintenanceExec: true,
+    publicExec: false,
+  },
+  {
+    name: 'advance_platform_audit_chain_head',
+    argTypes: ['text', 'bigint', 'text', 'text', 'text', 'text', 'text', 'text'],
+    owner: 'orbitox_migrator',
+    secdef: true,
+    runtimeExec: true,
+    maintenanceExec: true,
+    publicExec: false,
+  },
 ]);
 
 // Approved Trigger Functions (SECURITY DEFINER trigger routines)
@@ -270,6 +288,11 @@ const EXPECTED_MIGRATIONS = Object.freeze([
   '20261113210000_orbitox_phase7b1_appearance_runtime_grants',
   '20261115200000_orbitox_phase7d_customer_onboarding',
   '20261117140000_orbitox_outbox_concurrency_and_retry_hardening',
+  '20261126140000_mcp_governance_integrity',
+  '20261126150000_mcp_audit_durability',
+  '20261126193000_mcp_governance_rev_1_6_8',
+  '20261127120000_mcp_rev_1_6_9_integrity',
+  '20261127123000_mcp_rev_1_6_9_chainhead_owner_policy',
 ]);
 
 // ── Redaction Utility ─────────────────────────────────────────────────────────

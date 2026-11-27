@@ -142,4 +142,4 @@ export const POST = withHospitalGuard(async (req: NextRequest, _routeContext, au
     const apiErr = mapDbError(err);
     return NextResponse.json(errorBody(apiErr, authContext.requestId), { status: apiErr.status });
   }
-}, { adminOnly: true, sensitive: true });
+}, { allowOrgAdminCustomerSession: true, sensitive: true });

@@ -90,6 +90,141 @@ export class PlatformRateLimitPartitionExhaustedError extends Error {
     }
 }
 
+export async function recordPlatformAdminAuditWithClient(
+    adminAuditClient: PrismaClient,
+    event: PlatformAdminAuditInput,
+): Promise<string> {
+    const deterministicId = event.deterministicId?.trim() || undefined;
+    const id = deterministicId || `audit_${crypto.randomUUID()}`;
+    const operatorId = event.actorId || event.actorEmail || 'system:orchestrator';
+    const orgId = event.organizationId || 'platform';
+    const projId = event.projectId || 'operations';
+    const envId = event.environmentId || 'platform-admin';
+    const scope = `org/${orgId}/project/${projId}/environment/${envId}`;
+
+    const metadataObj =
+        typeof event.metadata === 'object' && event.metadata !== null
+            ? (event.metadata as Record<string, unknown>)
+            : {};
+
+    const executeAtomicAuditInsert = async (tx: any): Promise<string> => {
+        if (typeof tx.$executeRaw === 'function') {
+            await tx.$executeRaw`SELECT set_config('app.current_tenant_id', ${scope}, true)`;
+        }
+
+        let previousHash = 'GENESIS';
+        let sequence = 1;
+
+        if (typeof tx.$queryRaw === 'function') {
+            const slotRows = await tx.$queryRaw<
+                Array<{
+                    already_exists: boolean;
+                    conflict: boolean;
+                    next_sequence: bigint | number;
+                    previous_hash: string;
+                }>
+            >`
+                SELECT "already_exists", "conflict", "next_sequence", "previous_hash"
+                FROM public.claim_platform_audit_chain_slot(
+                    ${scope},
+                    ${deterministicId ?? null},
+                    ${event.action},
+                    ${event.entityType},
+                    ${event.entityId ?? null},
+                    ${event.requestId ?? null}
+                )
+            `;
+            const slot = slotRows?.[0];
+            if (!slot) {
+                throw new Error(`Failed to acquire platform audit chain slot for scope [${scope}].`);
+            }
+            if (slot.conflict) {
+                throw new Error(
+                    `AUDIT_ID_CONFLICT: Deterministic audit event ID [${id}] already exists with conflicting payload.`,
+                );
+            }
+            if (slot.already_exists) {
+                return id;
+            }
+            sequence = Number(slot.next_sequence);
+            previousHash = slot.previous_hash || 'GENESIS';
+        }
+
+        // Capture occurredAt strictly AFTER acquiring the scope advisory lock so timestamps stay monotonic with sequence.
+        const occurredAt = new Date();
+        const rowHash = computeAuditRowHash({
+            scope,
+            sequence,
+            previousHash,
+            action: event.action,
+            entityType: event.entityType,
+            entityId: event.entityId ?? null,
+            actorId: operatorId,
+            actorEmail: event.actorEmail ?? null,
+            organizationId: event.organizationId ?? null,
+            projectId: event.projectId ?? null,
+            environmentId: event.environmentId ?? null,
+            reason: event.reason ?? null,
+            ipAddress: event.ipAddress ?? null,
+            requestId: event.requestId ?? null,
+            status: 'COMMITTED',
+            failureReason: null,
+            occurredAt: occurredAt.toISOString(),
+            metadata: { operatorId, ...metadataObj },
+        });
+
+        const metadataWithChain = {
+            operatorId,
+            ...metadataObj,
+            _chain: {
+                scope,
+                sequence,
+                previousHash,
+                rowHash,
+                algorithm: 'SHA-256',
+                occurredAt: occurredAt.toISOString(),
+                initialStatus: 'COMMITTED',
+            },
+        };
+
+        await tx.$executeRaw`
+            INSERT INTO "PlatformAuditEvent" (
+                "id", "actorId", "actorEmail", "action", "entityType", "entityId",
+                "organizationId", "projectId", "environmentId", "ipAddress", "requestId",
+                "reason", "metadata", "status", "occurredAt"
+            ) VALUES (
+                ${id}, ${operatorId}, ${event.actorEmail || null}, ${event.action},
+                ${event.entityType}, ${event.entityId || null}, ${event.organizationId || null},
+                ${event.projectId || null}, ${event.environmentId || null}, ${event.ipAddress || null},
+                ${event.requestId || null}, ${event.reason || null},
+                ${JSON.stringify(metadataWithChain)}::jsonb, 'COMMITTED', ${occurredAt}
+            )
+        `;
+
+        if (typeof tx.$executeRaw === 'function') {
+            await tx.$executeRaw`
+                SELECT public.advance_platform_audit_chain_head(
+                    ${scope},
+                    ${BigInt(sequence)},
+                    ${rowHash},
+                    ${id},
+                    ${event.action},
+                    ${event.entityType},
+                    ${event.entityId ?? null},
+                    ${event.requestId ?? null}
+                )
+            `;
+        }
+
+        return id;
+    };
+
+    if (typeof (adminAuditClient as any).$transaction === 'function') {
+        return (adminAuditClient as any).$transaction(executeAtomicAuditInsert);
+    }
+    return executeAtomicAuditInsert(adminAuditClient);
+}
+
 export function getCurrentBillingPeriod(date = new Date()): string {
     return date.toISOString().slice(0, 7);
 }
@@ -141,6 +276,41 @@ export type AsyncPlatformRepository = AsyncMethods<typeof PlatformRepository> & 
         remaining: number;
         resetSeconds: number;
     }>;
+    suspendProjectControlPlaneTx(input: {
+        projectId: string;
+        reason: string;
+        idempotencyKey: string;
+    }): Promise<{
+        project: PlatformProject;
+        installations: Array<{
+            id: string;
+            tenantId: string;
+            pluginId: string;
+            runtimeTenantId: string;
+            entitlementRevision: number;
+        }>;
+    }>;
+    resumeProjectControlPlaneTx(input: {
+        projectId: string;
+        reason: string;
+        idempotencyKey: string;
+    }): Promise<{
+        project: PlatformProject;
+        installations: Array<{
+            id: string;
+            tenantId: string;
+            pluginId: string;
+            runtimeTenantId: string;
+            entitlementRevision: number;
+        }>;
+    }>;
+    updateTenantSuspensionSync(input: {
+        projectId: string;
+        pluginId: string;
+        status: 'PENDING' | 'ACKNOWLEDGED' | 'DEGRADED';
+        acknowledgedRevision?: number;
+        lastError?: string | null;
+    }): Promise<void>;
     getApiKeyPepperDistribution(): Promise<Record<string, number>>;
     listPluginInstallations(tenantId?: string): Promise<PluginInstallationRecord[]>;
     getPluginInstallation(tenantId: string, pluginId: string): Promise<PluginInstallationRecord | undefined>;
@@ -906,6 +1076,257 @@ export function createPrismaPlatformRepository(
             }
 
             return toProject(row);
+        },
+        async suspendProjectControlPlaneTx(input: {
+            projectId: string;
+            reason: string;
+            idempotencyKey: string;
+        }) {
+            return client.$transaction(async (tx) => {
+                const project = await tx.platformProject.findUnique({ where: { id: input.projectId } });
+                if (!project) {
+                    throw new Error(`TENANT_NOT_FOUND: Project ${input.projectId} does not exist.`);
+                }
+
+                const updatedProj = await tx.platformProject.update({
+                    where: { id: project.id },
+                    data: { status: 'SUSPENDED' as any },
+                });
+
+                const candidateIds = await resolveCandidateTenantIds(project.id);
+                const installations = await tx.pluginInstallation.findMany({
+                    where: { tenantId: { in: candidateIds } },
+                });
+
+                const updatedInstalls: Array<{
+                    id: string;
+                    tenantId: string;
+                    pluginId: string;
+                    runtimeTenantId: string;
+                    entitlementRevision: number;
+                }> = [];
+
+                for (const inst of installations) {
+                    const canonicalPlugin = canonicalizePluginId(inst.pluginId);
+                    assertValidInstallationTransition(inst.status, 'SUSPENDED', false);
+                    const updated = await tx.pluginInstallation.update({
+                        where: { id: inst.id },
+                        data: {
+                            status: 'SUSPENDED' as any,
+                            statusReason: input.reason,
+                            entitlementRevision: { increment: 1 },
+                        },
+                    });
+
+                    for (const tId of Array.from(new Set([inst.tenantId, project.id]))) {
+                        await tx.pluginGrantRevision.upsert({
+                            where: { tenantId_pluginId: { tenantId: tId, pluginId: canonicalPlugin } },
+                            create: { tenantId: tId, pluginId: canonicalPlugin, highestRevision: updated.entitlementRevision },
+                            update: { highestRevision: updated.entitlementRevision },
+                        }).catch(() => { });
+                    }
+
+                    const outboxScope = TENANT_RE.test(inst.runtimeTenantId)
+                        ? inst.runtimeTenantId
+                        : (TENANT_RE.test(inst.tenantId) ? inst.tenantId : `org/${project.organizationId}/project/${project.id}/environment/production`);
+                    await tx.$queryRaw`SELECT set_config('app.current_tenant_id', ${outboxScope}, true)`;
+                    await tx.platformOutboxMessage.createMany({
+                        data: [
+                            {
+                                id: `outbox_${crypto.randomUUID()}`,
+                                tenantId: outboxScope,
+                                eventType: 'entitlement.updated',
+                                aggregateType: 'PluginInstallation',
+                                aggregateId: updated.id,
+                                deduplicationKey: `suspend:${input.idempotencyKey}:${updated.id}`,
+                                payload: {
+                                    tenantId: outboxScope,
+                                    pluginId: canonicalPlugin,
+                                    runtimeTenantId: updated.runtimeTenantId,
+                                    status: updated.status,
+                                    planId: updated.planId,
+                                    entitlementRevision: updated.entitlementRevision,
+                                    reason: input.reason,
+                                    updatedAt: new Date().toISOString(),
+                                },
+                                status: 'PENDING',
+                                retryCount: 0,
+                            },
+                        ],
+                        skipDuplicates: true,
+                    });
+
+                    await tx.tenantSuspensionSync.upsert({
+                        where: { projectId_pluginId: { projectId: project.id, pluginId: canonicalPlugin } },
+                        create: {
+                            projectId: project.id,
+                            pluginId: canonicalPlugin,
+                            targetTenantId: inst.tenantId || project.id,
+                            targetRevision: updated.entitlementRevision,
+                            acknowledgedRevision: null,
+                            status: 'PENDING',
+                            lastError: null,
+                            idempotencyKey: `${input.idempotencyKey}:${canonicalPlugin}`,
+                        },
+                        update: {
+                            targetTenantId: inst.tenantId || project.id,
+                            targetRevision: updated.entitlementRevision,
+                            acknowledgedRevision: null,
+                            status: 'PENDING',
+                            lastError: null,
+                            idempotencyKey: `${input.idempotencyKey}:${canonicalPlugin}`,
+                        },
+                    });
+
+                    updatedInstalls.push({
+                        id: updated.id,
+                        tenantId: updated.tenantId,
+                        pluginId: canonicalPlugin,
+                        runtimeTenantId: updated.runtimeTenantId,
+                        entitlementRevision: updated.entitlementRevision,
+                    });
+                }
+
+                await tx.hmsStaffSession.deleteMany({ where: { tenantId: project.id } });
+
+                return {
+                    project: toProject(updatedProj),
+                    installations: updatedInstalls,
+                };
+            });
+        },
+        async resumeProjectControlPlaneTx(input: {
+            projectId: string;
+            reason: string;
+            idempotencyKey: string;
+        }) {
+            return client.$transaction(async (tx) => {
+                const project = await tx.platformProject.findUnique({ where: { id: input.projectId } });
+                if (!project) {
+                    throw new Error(`TENANT_NOT_FOUND: Project ${input.projectId} does not exist.`);
+                }
+
+                const updatedProj = await tx.platformProject.update({
+                    where: { id: project.id },
+                    data: { status: 'ACTIVE' as any },
+                });
+
+                const candidateIds = await resolveCandidateTenantIds(project.id);
+                const installations = await tx.pluginInstallation.findMany({
+                    where: { tenantId: { in: candidateIds } },
+                });
+
+                const updatedInstalls: Array<{
+                    id: string;
+                    tenantId: string;
+                    pluginId: string;
+                    runtimeTenantId: string;
+                    entitlementRevision: number;
+                }> = [];
+
+                for (const inst of installations) {
+                    const canonicalPlugin = canonicalizePluginId(inst.pluginId);
+                    assertValidInstallationTransition(inst.status, 'ACTIVE', false);
+                    const updated = await tx.pluginInstallation.update({
+                        where: { id: inst.id },
+                        data: {
+                            status: 'ACTIVE' as any,
+                            statusReason: null,
+                            entitlementRevision: { increment: 1 },
+                        },
+                    });
+
+                    for (const tId of Array.from(new Set([inst.tenantId, project.id]))) {
+                        await tx.pluginGrantRevision.upsert({
+                            where: { tenantId_pluginId: { tenantId: tId, pluginId: canonicalPlugin } },
+                            create: { tenantId: tId, pluginId: canonicalPlugin, highestRevision: updated.entitlementRevision },
+                            update: { highestRevision: updated.entitlementRevision },
+                        }).catch(() => { });
+                    }
+
+                    const outboxScope = TENANT_RE.test(inst.runtimeTenantId)
+                        ? inst.runtimeTenantId
+                        : (TENANT_RE.test(inst.tenantId) ? inst.tenantId : `org/${project.organizationId}/project/${project.id}/environment/production`);
+                    await tx.$queryRaw`SELECT set_config('app.current_tenant_id', ${outboxScope}, true)`;
+                    await tx.platformOutboxMessage.createMany({
+                        data: [
+                            {
+                                id: `outbox_${crypto.randomUUID()}`,
+                                tenantId: outboxScope,
+                                eventType: 'entitlement.updated',
+                                aggregateType: 'PluginInstallation',
+                                aggregateId: updated.id,
+                                deduplicationKey: `resume:${input.idempotencyKey}:${updated.id}`,
+                                payload: {
+                                    tenantId: outboxScope,
+                                    pluginId: canonicalPlugin,
+                                    runtimeTenantId: updated.runtimeTenantId,
+                                    status: updated.status,
+                                    planId: updated.planId,
+                                    entitlementRevision: updated.entitlementRevision,
+                                    reason: input.reason,
+                                    updatedAt: new Date().toISOString(),
+                                },
+                                status: 'PENDING',
+                                retryCount: 0,
+                            },
+                        ],
+                        skipDuplicates: true,
+                    });
+
+                    await tx.tenantSuspensionSync.upsert({
+                        where: { projectId_pluginId: { projectId: project.id, pluginId: canonicalPlugin } },
+                        create: {
+                            projectId: project.id,
+                            pluginId: canonicalPlugin,
+                            targetTenantId: inst.tenantId || project.id,
+                            targetRevision: updated.entitlementRevision,
+                            acknowledgedRevision: null,
+                            status: 'PENDING',
+                            lastError: null,
+                            idempotencyKey: `${input.idempotencyKey}:${canonicalPlugin}`,
+                        },
+                        update: {
+                            targetTenantId: inst.tenantId || project.id,
+                            targetRevision: updated.entitlementRevision,
+                            acknowledgedRevision: null,
+                            status: 'PENDING',
+                            lastError: null,
+                            idempotencyKey: `${input.idempotencyKey}:${canonicalPlugin}`,
+                        },
+                    });
+
+                    updatedInstalls.push({
+                        id: updated.id,
+                        tenantId: updated.tenantId,
+                        pluginId: canonicalPlugin,
+                        runtimeTenantId: updated.runtimeTenantId,
+                        entitlementRevision: updated.entitlementRevision,
+                    });
+                }
+
+                return {
+                    project: toProject(updatedProj),
+                    installations: updatedInstalls,
+                };
+            });
+        },
+        async updateTenantSuspensionSync(input: {
+            projectId: string;
+            pluginId: string;
+            status: 'PENDING' | 'ACKNOWLEDGED' | 'DEGRADED';
+            acknowledgedRevision?: number;
+            lastError?: string | null;
+        }): Promise<void> {
+            const canonicalPlugin = canonicalizePluginId(input.pluginId);
+            await client.tenantSuspensionSync.updateMany({
+                where: { projectId: input.projectId, pluginId: canonicalPlugin },
+                data: {
+                    status: input.status,
+                    ...(input.acknowledgedRevision !== undefined ? { acknowledgedRevision: input.acknowledgedRevision } : {}),
+                    lastError: input.lastError ?? null,
+                },
+            });
         },
         async deleteProject(projectId: string): Promise<boolean> {
             const result = await client.platformProject.deleteMany({ where: { OR: [{ id: projectId }, { slug: projectId }] } });
@@ -2514,183 +2935,137 @@ export function createPrismaPlatformRepository(
             return { id, createdAt: new Date().toISOString(), ...event };
         },
         async recordPlatformAdminAudit(event: PlatformAdminAuditInput): Promise<string> {
-            const id = event.deterministicId?.trim() || `audit_${crypto.randomUUID()}`;
-            const operatorId = event.actorId || event.actorEmail || 'system:orchestrator';
-            const orgId = event.organizationId || 'platform';
-            const projId = event.projectId || 'operations';
-            const envId = event.environmentId || 'platform-admin';
-            const scope = `org/${orgId}/project/${projId}/environment/${envId}`;
-
-            let previousHash = 'GENESIS';
-            let sequence = 1;
-            try {
-                if (typeof client.platformAuditEvent?.findFirst === 'function' && event.organizationId && event.projectId) {
-                    await client.$executeRaw`SELECT set_config('app.current_tenant_id', ${scope}, true)`;
-                    const lastEvent = await client.platformAuditEvent.findFirst({
-                        where: {
-                            organizationId: event.organizationId,
-                            projectId: event.projectId,
-                            environmentId: event.environmentId || 'platform-admin',
-                        },
-                        orderBy: [{ occurredAt: 'desc' }, { id: 'desc' }],
-                        select: { id: true, metadata: true },
-                    });
-                    if (lastEvent?.metadata && typeof lastEvent.metadata === 'object') {
-                        const chain = (lastEvent.metadata as any)._chain;
-                        if (chain?.rowHash) {
-                            previousHash = chain.rowHash;
-                            sequence = (typeof chain.sequence === 'number' ? chain.sequence : 1) + 1;
-                        }
-                    }
-                }
-            } catch {
-                // If runtime cannot read or scope is unscoped, fallback to genesis
-            }
-
-            const metadataObj =
-                typeof event.metadata === 'object' && event.metadata !== null
-                    ? (event.metadata as Record<string, unknown>)
-                    : {};
-            const occurredAt = new Date();
-            const rowHash = computeAuditRowHash({
-                scope,
-                sequence,
-                previousHash,
-                action: event.action,
-                entityType: event.entityType,
-                entityId: event.entityId ?? null,
-                actorId: operatorId,
-                actorEmail: event.actorEmail ?? null,
-                organizationId: event.organizationId ?? null,
-                projectId: event.projectId ?? null,
-                environmentId: event.environmentId ?? null,
-                reason: event.reason ?? null,
-                ipAddress: event.ipAddress ?? null,
-                requestId: event.requestId ?? null,
-                status: 'COMMITTED',
-                failureReason: null,
-                occurredAt: occurredAt.toISOString(),
-                metadata: { operatorId, ...metadataObj },
-            });
-
-            const metadataWithChain = {
-                operatorId,
-                ...metadataObj,
-                _chain: {
-                    scope,
-                    sequence,
-                    previousHash,
-                    rowHash,
-                    algorithm: 'SHA-256',
-                    occurredAt: occurredAt.toISOString(),
-                    initialStatus: 'COMMITTED',
-                },
-            };
-
-            await adminAuditClient.$executeRaw`
-                INSERT INTO "PlatformAuditEvent" (
-                    "id", "actorId", "actorEmail", "action", "entityType", "entityId",
-                    "organizationId", "projectId", "environmentId", "ipAddress", "requestId",
-                    "reason", "metadata", "status", "occurredAt"
-                ) VALUES (
-                    ${id}, ${operatorId}, ${event.actorEmail || null}, ${event.action},
-                    ${event.entityType}, ${event.entityId || null}, ${event.organizationId || null},
-                    ${event.projectId || null}, ${event.environmentId || null}, ${event.ipAddress || null},
-                    ${event.requestId || null}, ${event.reason || null},
-                    ${JSON.stringify(metadataWithChain)}::jsonb, 'COMMITTED', ${occurredAt}
-                )
-                ON CONFLICT ("id") DO NOTHING
-            `;
-            return id;
+            return recordPlatformAdminAuditWithClient(adminAuditClient, event);
         },
         async createPlatformAdminAuditIntent(event: PlatformAdminAuditIntentInput): Promise<string> {
-            const id = `audit_${crypto.randomUUID()}`;
+            const deterministicId = event.deterministicId?.trim() || undefined;
+            const id = deterministicId || `audit_${crypto.randomUUID()}`;
             const operatorId = event.actorId || event.actorEmail || 'system:orchestrator';
             const orgId = event.organizationId;
             const projId = event.projectId;
             const envId = event.environmentId || 'platform-admin';
             const scope = `org/${orgId}/project/${projId}/environment/${envId}`;
 
-            let previousHash = 'GENESIS';
-            let sequence = 1;
-            try {
-                if (typeof client.platformAuditEvent?.findFirst === 'function') {
-                    await client.$executeRaw`SELECT set_config('app.current_tenant_id', ${scope}, true)`;
-                    const lastEvent = await client.platformAuditEvent.findFirst({
-                        where: {
-                            organizationId: orgId,
-                            projectId: projId,
-                            environmentId: envId,
-                        },
-                        orderBy: [{ occurredAt: 'desc' }, { id: 'desc' }],
-                        select: { id: true, metadata: true },
-                    });
-                    if (lastEvent?.metadata && typeof lastEvent.metadata === 'object') {
-                        const chain = (lastEvent.metadata as any)._chain;
-                        if (chain?.rowHash) {
-                            previousHash = chain.rowHash;
-                            sequence = (typeof chain.sequence === 'number' ? chain.sequence : 1) + 1;
-                        }
-                    }
-                }
-            } catch {
-                // If runtime cannot read, fallback to genesis
-            }
-
             const metadataObj =
                 typeof event.metadata === 'object' && event.metadata !== null
                     ? (event.metadata as Record<string, unknown>)
                     : {};
-            const occurredAt = new Date();
-            const rowHash = computeAuditRowHash({
-                scope,
-                sequence,
-                previousHash,
-                action: event.action,
-                entityType: event.entityType,
-                entityId: event.entityId ?? null,
-                actorId: operatorId,
-                actorEmail: event.actorEmail ?? null,
-                organizationId: orgId,
-                projectId: projId,
-                environmentId: event.environmentId ?? null,
-                reason: event.reason ?? null,
-                ipAddress: event.ipAddress ?? null,
-                requestId: event.requestId ?? null,
-                status: 'PENDING',
-                failureReason: null,
-                occurredAt: occurredAt.toISOString(),
-                metadata: { operatorId, ...metadataObj },
-            });
 
-            const metadataWithChain = {
-                operatorId,
-                ...metadataObj,
-                _chain: {
+            const executeAtomicIntentInsert = async (tx: any): Promise<string> => {
+                if (typeof tx.$executeRaw === 'function') {
+                    await tx.$executeRaw`SELECT set_config('app.current_tenant_id', ${scope}, true)`;
+                }
+
+                let previousHash = 'GENESIS';
+                let sequence = 1;
+
+                if (typeof tx.$queryRaw === 'function') {
+                    const slotRows = await tx.$queryRaw<
+                        Array<{
+                            already_exists: boolean;
+                            conflict: boolean;
+                            next_sequence: bigint | number;
+                            previous_hash: string;
+                        }>
+                    >`
+                        SELECT "already_exists", "conflict", "next_sequence", "previous_hash"
+                        FROM public.claim_platform_audit_chain_slot(
+                            ${scope},
+                            ${deterministicId ?? null},
+                            ${event.action},
+                            ${event.entityType},
+                            ${event.entityId ?? null},
+                            ${event.requestId ?? null}
+                        )
+                    `;
+                    const slot = slotRows?.[0];
+                    if (!slot) {
+                        throw new Error(`Failed to acquire platform audit intent slot for scope [${scope}].`);
+                    }
+                    if (slot.conflict) {
+                        throw new Error(
+                            `AUDIT_ID_CONFLICT: Deterministic audit intent ID [${id}] already exists with conflicting payload.`,
+                        );
+                    }
+                    if (slot.already_exists) {
+                        return id;
+                    }
+                    sequence = Number(slot.next_sequence);
+                    previousHash = slot.previous_hash || 'GENESIS';
+                }
+
+                const occurredAt = new Date();
+                const rowHash = computeAuditRowHash({
                     scope,
                     sequence,
                     previousHash,
-                    rowHash,
-                    algorithm: 'SHA-256',
+                    action: event.action,
+                    entityType: event.entityType,
+                    entityId: event.entityId ?? null,
+                    actorId: operatorId,
+                    actorEmail: event.actorEmail ?? null,
+                    organizationId: orgId,
+                    projectId: projId,
+                    environmentId: event.environmentId ?? null,
+                    reason: event.reason ?? null,
+                    ipAddress: event.ipAddress ?? null,
+                    requestId: event.requestId ?? null,
+                    status: 'PENDING',
+                    failureReason: null,
                     occurredAt: occurredAt.toISOString(),
-                    initialStatus: 'PENDING',
-                },
+                    metadata: { operatorId, ...metadataObj },
+                });
+
+                const metadataWithChain = {
+                    operatorId,
+                    ...metadataObj,
+                    _chain: {
+                        scope,
+                        sequence,
+                        previousHash,
+                        rowHash,
+                        algorithm: 'SHA-256',
+                        occurredAt: occurredAt.toISOString(),
+                        initialStatus: 'PENDING',
+                    },
+                };
+
+                await tx.$executeRaw`
+                    INSERT INTO "PlatformAuditEvent" (
+                        "id", "actorId", "actorEmail", "action", "entityType", "entityId",
+                        "organizationId", "projectId", "environmentId", "ipAddress", "requestId",
+                        "reason", "metadata", "status", "occurredAt"
+                    ) VALUES (
+                        ${id}, ${operatorId}, ${event.actorEmail || null}, ${event.action},
+                        ${event.entityType}, ${event.entityId || null}, ${orgId},
+                        ${projId}, ${event.environmentId || null}, ${event.ipAddress || null},
+                        ${event.requestId || null}, ${event.reason || null},
+                        ${JSON.stringify(metadataWithChain)}::jsonb, 'PENDING', ${occurredAt}
+                    )
+                `;
+
+                if (typeof tx.$executeRaw === 'function') {
+                    await tx.$executeRaw`
+                        SELECT public.advance_platform_audit_chain_head(
+                            ${scope},
+                            ${BigInt(sequence)},
+                            ${rowHash},
+                            ${id},
+                            ${event.action},
+                            ${event.entityType},
+                            ${event.entityId ?? null},
+                            ${event.requestId ?? null}
+                        )
+                    `;
+                }
+
+                return id;
             };
 
-            await adminAuditClient.$executeRaw`
-                INSERT INTO "PlatformAuditEvent" (
-                    "id", "actorId", "actorEmail", "action", "entityType", "entityId",
-                    "organizationId", "projectId", "environmentId", "ipAddress", "requestId",
-                    "reason", "metadata", "status", "occurredAt"
-                ) VALUES (
-                    ${id}, ${operatorId}, ${event.actorEmail || null}, ${event.action},
-                    ${event.entityType}, ${event.entityId || null}, ${orgId},
-                    ${projId}, ${event.environmentId || null}, ${event.ipAddress || null},
-                    ${event.requestId || null}, ${event.reason || null},
-                    ${JSON.stringify(metadataWithChain)}::jsonb, 'PENDING', ${occurredAt}
-                )
-            `;
-            return id;
+            if (typeof (adminAuditClient as any).$transaction === 'function') {
+                return (adminAuditClient as any).$transaction(executeAtomicIntentInsert);
+            }
+            return executeAtomicIntentInsert(adminAuditClient);
         },
     };
 }

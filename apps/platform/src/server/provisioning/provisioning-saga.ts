@@ -705,6 +705,11 @@ export class ProvisioningSaga {
             error: `Failed to provision plugins: ${failedPlugins.map((f) => `${f.pluginId} (${f.error})`).join(', ')}`,
           });
 
+          await operationStore.finalizeOperationAttempt(operationId, attemptLeaseOwner, 'FAILED', {
+            code: 'PARTIAL_PROVISIONING_FAILURE',
+            message: `Partial provisioning failure: ${failedPlugins.length} plugin(s) failed.`,
+          });
+
           await operationStore.updateOperation(operationId, {
             status: 'PARTIAL',
             error: `Partial provisioning failure: ${failedPlugins.length} plugin(s) failed.`,
@@ -819,6 +824,7 @@ export class ProvisioningSaga {
         });
 
         currentSteps = updatedSteps;
+        await operationStore.finalizeOperationAttempt(operationId, attemptLeaseOwner, 'SUCCEEDED');
 
         try {
           await platformRepository.recordPlatformAdminAudit({
@@ -856,6 +862,10 @@ export class ProvisioningSaga {
       }
 
       if (!leaseLost) {
+        await operationStore.finalizeOperationAttempt(operationId, attemptLeaseOwner, 'FAILED', {
+          code: 'PROVISIONING_STEP_FAILED',
+          message: errMsg,
+        });
         await operationStore.updateOperation(operationId, {
           status: 'FAILED',
           error: errMsg,
@@ -1167,6 +1177,11 @@ export class ProvisioningSaga {
         }
       } catch { }
     }
+
+    await operationStore.finalizeOperationAttempt(operationId, '*', 'CANCELLED', {
+      code: 'OPERATION_CANCELLED',
+      message: 'Operation cancelled by operator.',
+    });
 
     await operationStore.updateOperation(operationId, {
       status: 'CANCELLED',

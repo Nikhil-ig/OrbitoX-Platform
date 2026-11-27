@@ -30,6 +30,7 @@ export interface ApiGuardOptions {
   serviceId?: string;
   serviceName?: string;
   requiredScopes?: string[];
+  scopeMode?: 'all' | 'any';
   routeClass?: RouteClass;
   requireAuth?: boolean;
   rateLimitPerMin?: number;

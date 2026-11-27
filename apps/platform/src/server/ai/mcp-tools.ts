@@ -6,7 +6,7 @@ import { withTenantTx, TENANT_RE } from '@/server/db/tenant-db';
 import { platformRepository } from '@/server/db/platform-repository';
 import { listTenants, getTenantDetail, suspendTenant } from '@/server/tenants/tenants-service';
 import { provisioningService } from '@/server/provisioning/provisioning-service';
-import { sendGraceReminder } from '@/server/billing/billing-service';
+import { sendGraceReminderBatch } from '@/server/billing/billing-service';
 import { packageSignatureService } from '@/server/governance/package-signature-service';
 import { calculateNews2Score } from '@/lib/clinical-news2';
 import type { OperatorSessionContext } from '@/server/accounts/account-service';
@@ -758,23 +758,31 @@ export const MCP_TOOLS: McpToolDefinition[] = [
     execute: async (params, actor, context) => {
       const operator = asSyntheticOperator(actor);
       const customMessage = context.editedMessage?.trim() || params.customMessage;
-      const results = [];
-      for (const subId of params.subscriptionIds) {
-        const res = await sendGraceReminder(subId, operator, {
-          customMessage,
-          source: 'MCP_APPROVED_WORKFLOW',
-          idempotencyKey: context.idempotencyKey ? `${context.idempotencyKey}:${subId}` : undefined,
-        });
-        results.push(res);
-      }
+      const executionId = context.executionId || `exec_billing_${Date.now()}`;
+      const idempotencyKey = context.idempotencyKey || executionId;
+      const batch = await sendGraceReminderBatch(params.subscriptionIds, operator, {
+        customMessage,
+        source: 'MCP_APPROVED_WORKFLOW',
+        executionId,
+        idempotencyKey,
+      });
+      const firstSub = await prisma.billingSubscription
+        .findFirst({
+          where: { razorpaySubscriptionId: params.subscriptionIds[0] },
+          select: { tenantId: true },
+        })
+        .catch(() => null);
       return {
-        tenantScope: params.subscriptionIds.length === 1 ? results[0]!.subscriptionId : 'platform',
+        tenantScope: params.subscriptionIds.length === 1 ? (firstSub?.tenantId || params.subscriptionIds[0]!) : 'platform',
         maskEmailsInAudit: true,
         data: {
-          queuedCount: results.length,
-          results: results.map((r) => ({
+          queuedCount: batch.queuedCount,
+          replayedCount: batch.replayedCount,
+          failedCount: batch.failedCount,
+          results: batch.results.map((r) => ({
             subscriptionId: r.subscriptionId,
-            status: 'QUEUED_IN_OUTBOX',
+            status: r.status === 'IDEMPOTENT_REPLAY' ? 'QUEUED_IDEMPOTENT' : 'QUEUED_IN_OUTBOX',
+            emailOutboxId: r.emailOutboxId || undefined,
             message: r.message,
           })),
         },
